@@ -1,0 +1,276 @@
+@page "/admin/notifications"
+@inject ApiClient Api
+
+<div class="page admin">
+    <NavAdmin Actif="admin/notifications" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Notifications au titulaire</h1>
+                <p class="sous-titre">Rapport du soir par e-mail, alertes urgentes par SMS. Réservé au pharmacien titulaire.</p>
+            </div>
+            <button type="button" class="btn btn-principal" disabled="@(r is null || enCours)" @onclick="EnregistrerAsync">Enregistrer les réglages</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+        <div class="bandeau-attention" role="note">Aucune donnée de patient ni d’ordonnance n’est envoyée : chiffres, employés et noms de produits seulement.</div>
+
+        @if (r is not null)
+        {
+            <section class="panneau" aria-labelledby="t-smtp">
+                <h2 id="t-smtp">E-mail (serveur SMTP de la pharmacie)</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 2 1 220px"><label for="n-serveur">Serveur SMTP</label><input id="n-serveur" type="text" placeholder="ex. smtp.fournisseur.dz" @bind="r.SmtpServeur" /></div>
+                    <div class="champ" style="flex: 0 0 110px"><label for="n-port">Port</label><input id="n-port" type="number" min="1" max="65535" @bind="r.SmtpPort" /></div>
+                    <label class="case" style="flex: 0 0 auto; align-self: center"><input type="checkbox" @bind="r.SmtpTls" /><span>Connexion chiffrée (TLS)</span></label>
+                </div>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 220px"><label for="n-exp">Adresse de l’expéditeur</label><input id="n-exp" type="email" @bind="r.SmtpExpediteur" /></div>
+                    <div class="champ" style="flex: 1 1 200px"><label for="n-id">Identifiant</label><input id="n-id" type="text" autocomplete="off" @bind="r.SmtpIdentifiant" /></div>
+                    <div class="champ" style="flex: 1 1 200px">
+                        <label for="n-mdp">Mot de passe @(motDePasseEnregistre ? "(enregistré, chiffré)" : "")</label>
+                        <input id="n-mdp" type="password" autocomplete="new-password" placeholder="@(motDePasseEnregistre ? "laisser vide pour le garder" : "")" @bind="nouveauMotDePasse" />
+                    </div>
+                </div>
+            </section>
+
+            <section class="panneau" aria-labelledby="t-sms">
+                <h2 id="t-sms">SMS (modem GSM branché sur le serveur)</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 160px"><label for="n-com">Port du modem</label><input id="n-com" type="text" placeholder="ex. COM3 ; vide = pas de SMS" @bind="r.ModemPort" /></div>
+                    <div class="champ" style="flex: 0 0 220px"><label for="n-seuil">SMS si écart de caisse au-delà de (DA)</label><input id="n-seuil" type="number" min="0" placeholder="seuil de la caisse" @bind="r.SmsSeuilEcart" /></div>
+                    <div class="champ" style="flex: 0 0 180px"><label for="n-heure">Heure du rapport e-mail</label><input id="n-heure" type="time" @bind="r.HeureRapport" /></div>
+                </div>
+                <label class="case"><input type="checkbox" @bind="r.SmsLotBloque" /><span>SMS quand un lot est bloqué ou rappelé</span></label>
+                <label class="case"><input type="checkbox" @bind="r.SmsSauvegarde" /><span>SMS quand une sauvegarde échoue ou que le disque externe est absent</span></label>
+                <p class="detail" style="margin: 0">Dernier rapport envoyé : @(dernierRapport is { } d ? Libelles.Date(d) : "jamais") ·
+                    <button type="button" class="lien" disabled="@enCours" @onclick="RapportMaintenantAsync">envoyer le rapport du jour maintenant</button></p>
+            </section>
+        }
+
+        <section class="panneau" aria-labelledby="t-dest">
+            <h2 id="t-dest">Destinataires</h2>
+            <p class="detail" style="margin: 0">Seules ces personnes reçoivent les messages, et seulement après vérification : envoyez un test, puis cochez « vérifié » quand la personne l’a reçu.</p>
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 760px">
+                    <thead><tr><th scope="col">Nom</th><th scope="col">E-mail</th><th scope="col">Mobile</th><th scope="col">Messages</th><th scope="col">État</th><th scope="col"></th></tr></thead>
+                    <tbody>
+                        @foreach (var d in destinataires)
+                        {
+                            <tr>
+                                <td class="nom">@d.Nom</td>
+                                <td>@(d.CanalEmail ? d.Email : "—")</td>
+                                <td>@(d.CanalSms ? d.Telephone : "—")</td>
+                                <td class="detail">@string.Join(", ", d.Types.Select(LibelleType))</td>
+                                <td><span class="pastille @(d.Actif ? d.Valide ? "ok" : "attention" : "")">@(d.Actif ? d.Valide ? "Vérifié" : "À vérifier" : "Désactivé")</span></td>
+                                <td>
+                                    <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                                        <button type="button" class="btn" disabled="@(enCours || !d.Actif)" @onclick="() => TestAsync(d)">Test</button>
+                                        <button type="button" class="btn" disabled="@(enCours || !d.Actif)" @onclick="() => ValiderAsync(d, !d.Valide)">@(d.Valide ? "Retirer la vérification" : "Vérifié")</button>
+                                        <button type="button" class="btn" disabled="@enCours" @onclick="() => Editer(d)">Modifier</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                        @if (destinataires.Count == 0)
+                        {
+                            <tr><td colspan="6" class="vide">Aucun destinataire : ajoutez le titulaire ci-dessous.</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 style="margin: 8px 0 0">@(fiche.Id is null ? "Ajouter un destinataire" : $"Modifier {fiche.Nom}")</h3>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 1 1 180px"><label for="d-nom">Nom</label><input id="d-nom" type="text" @bind="fiche.Nom" /></div>
+                <div class="champ" style="flex: 1 1 220px"><label for="d-mail">E-mail</label><input id="d-mail" type="email" @bind="fiche.Email" /></div>
+                <div class="champ" style="flex: 1 1 160px"><label for="d-tel">Mobile</label><input id="d-tel" type="tel" placeholder="06 61 00 00 00" @bind="fiche.Telephone" /></div>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px 18px">
+                <label class="case"><input type="checkbox" @bind="fiche.CanalEmail" /><span>par e-mail</span></label>
+                <label class="case"><input type="checkbox" @bind="fiche.CanalSms" /><span>par SMS</span></label>
+                <label class="case"><input type="checkbox" @bind="fiche.Actif" /><span>actif</span></label>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px 18px">
+                @foreach (var t in TypesAbonnables)
+                {
+                    <label class="case"><input type="checkbox" checked="@fiche.Types.Contains(t)" @onchange="e => Basculer(t, e)" /><span>@LibelleType(t)</span></label>
+                }
+            </div>
+            <div style="display: flex; gap: 8px">
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerDestinataireAsync">@(fiche.Id is null ? "Ajouter" : "Enregistrer")</button>
+                @if (fiche.Id is not null) { <button type="button" class="btn" @onclick="() => fiche = new()">Annuler</button> }
+            </div>
+        </section>
+
+        <section class="panneau" aria-labelledby="t-file">
+            <div style="display: flex; justify-content: space-between; align-items: center">
+                <h2 id="t-file">File d’attente</h2>
+                <button type="button" class="btn" @onclick="ChargerFileAsync">Actualiser</button>
+            </div>
+            <p class="detail" style="margin: 0">Sans internet ou sans modem, chaque message est réessayé après 1, 5, 15 puis 60 minutes, ensuite toutes les heures, pendant 7 jours.</p>
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 760px">
+                    <thead><tr><th scope="col">Créé</th><th scope="col">Canal</th><th scope="col">Destinataire</th><th scope="col">Objet / texte</th><th scope="col">Statut</th></tr></thead>
+                    <tbody>
+                        @foreach (var m in file)
+                        {
+                            <tr>
+                                <td>@Libelles.DateHeureLocale(m.CreeLe)</td>
+                                <td>@(m.Canal == "sms" ? "SMS" : "E-mail")</td>
+                                <td>@m.Destinataire<br /><span class="detail">@m.Adresse</span></td>
+                                <td>@(m.Objet ?? m.Corps)</td>
+                                <td>
+                                    <span class="pastille @(m.Statut == "envoye" ? "ok" : m.Statut == "echec" ? "urgent" : "attention")">@LibelleStatut(m.Statut)</span>
+                                    @if (m.DerniereErreur is not null) { <br /><span class="detail">@m.DerniereErreur</span> }
+                                    @if (m.Statut == "en_attente" && m.ProchaineTentative is { } p) { <br /><span class="detail">essai n° @(m.Tentatives + 1) à @p.ToLocalTime().ToString("HH:mm")</span> }
+                                </td>
+                            </tr>
+                        }
+                        @if (file.Count == 0) { <tr><td colspan="5" class="vide">Aucun message.</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private sealed class Reglages
+    {
+        public string? SmtpServeur { get; set; }
+        public int SmtpPort { get; set; } = 587;
+        public bool SmtpTls { get; set; } = true;
+        public string? SmtpExpediteur { get; set; }
+        public string? SmtpIdentifiant { get; set; }
+        public string? ModemPort { get; set; }
+        public TimeOnly HeureRapport { get; set; } = new(21, 0);
+        public decimal? SmsSeuilEcart { get; set; }
+        public bool SmsLotBloque { get; set; } = true;
+        public bool SmsSauvegarde { get; set; } = true;
+    }
+
+    private sealed class Fiche
+    {
+        public long? Id { get; set; }
+        public string? Nom { get; set; }
+        public string? Email { get; set; }
+        public string? Telephone { get; set; }
+        public bool CanalEmail { get; set; } = true;
+        public bool CanalSms { get; set; } = true;
+        public bool Actif { get; set; } = true;
+        public HashSet<string> Types { get; set; } = [.. TypesAbonnables];
+    }
+
+    private static readonly string[] TypesAbonnables = ["rapport_quotidien", "ecart_caisse", "lot_bloque", "sauvegarde", "ecart_inventaire"];
+
+    private Reglages? r;
+    private bool motDePasseEnregistre;
+    private DateOnly? dernierRapport;
+    private string? nouveauMotDePasse;
+    private List<DestinataireDto> destinataires = [];
+    private List<MessageSortantDto> file = [];
+    private Fiche fiche = new();
+    private bool enCours;
+    private string? erreur, message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ChargerReglagesAsync();
+        (destinataires, _) = await Api.DestinatairesAsync();
+        await ChargerFileAsync();
+    }
+
+    private async Task ChargerReglagesAsync()
+    {
+        var (d, e) = await Api.ReglagesNotificationAsync();
+        if (e is not null) { erreur = e; return; }
+        r = new Reglages
+        {
+            SmtpServeur = d!.SmtpServeur, SmtpPort = d.SmtpPort, SmtpTls = d.SmtpTls, SmtpExpediteur = d.SmtpExpediteur, SmtpIdentifiant = d.SmtpIdentifiant,
+            ModemPort = d.ModemPort, HeureRapport = d.HeureRapport, SmsSeuilEcart = d.SmsSeuilEcart, SmsLotBloque = d.SmsLotBloque, SmsSauvegarde = d.SmsSauvegarde
+        };
+        (motDePasseEnregistre, dernierRapport) = (d.MotDePasseEnregistre, d.DernierRapport);
+    }
+
+    private async Task ChargerFileAsync()
+    {
+        string? e;
+        (file, e) = await Api.FileMessagesAsync();
+        erreur ??= e;
+    }
+
+    private async Task EnregistrerAsync() => await Executer(async () =>
+    {
+        var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
+            r.SmtpIdentifiant, string.IsNullOrEmpty(nouveauMotDePasse) ? null : nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde));
+        if (e is not null) return e;
+        nouveauMotDePasse = null;
+        await ChargerReglagesAsync();
+        message = "Réglages enregistrés." + (motDePasseEnregistre ? " Mot de passe chiffré sur ce serveur." : "");
+        return null;
+    });
+
+    private async Task EnregistrerDestinataireAsync() => await Executer(async () =>
+    {
+        var (_, e) = await Api.EnregistrerDestinataireAsync(fiche.Id,
+            new SaisieDestinataireDto(fiche.Nom, fiche.Email, fiche.Telephone, fiche.CanalEmail, fiche.CanalSms, fiche.Types.ToList(), fiche.Actif));
+        if (e is not null) return e;
+        message = $"{fiche.Nom} enregistré. Envoyez-lui un message de test pour vérifier l’adresse.";
+        fiche = new();
+        (destinataires, _) = await Api.DestinatairesAsync();
+        return null;
+    });
+
+    private async Task TestAsync(DestinataireDto d) => await Executer(async () =>
+    {
+        var (n, e) = await Api.EnvoyerTestAsync(d.Id);
+        if (e is not null) return e;
+        message = $"{n!.Nombre} message(s) de test mis en file pour {d.Nom}.";
+        await ChargerFileAsync();
+        return null;
+    });
+
+    private async Task ValiderAsync(DestinataireDto d, bool valide) => await Executer(async () =>
+    {
+        var e = await Api.ValiderDestinataireAsync(d.Id, valide);
+        if (e is not null) return e;
+        (destinataires, _) = await Api.DestinatairesAsync();
+        return null;
+    });
+
+    private async Task RapportMaintenantAsync() => await Executer(async () =>
+    {
+        var (n, e) = await Api.EnvoyerRapportMaintenantAsync();
+        if (e is not null) return e;
+        message = n!.Nombre == 0 ? "Aucun destinataire vérifié n’est abonné au rapport." : $"Rapport du jour mis en file ({n.Nombre} e-mail(s)).";
+        await ChargerFileAsync();
+        return null;
+    });
+
+    private void Editer(DestinataireDto d) => fiche = new Fiche
+    {
+        Id = d.Id, Nom = d.Nom, Email = d.Email, Telephone = d.Telephone, CanalEmail = d.CanalEmail, CanalSms = d.CanalSms, Actif = d.Actif, Types = [.. d.Types]
+    };
+
+    private void Basculer(string type, ChangeEventArgs e)
+    {
+        if (e.Value is true) fiche.Types.Add(type); else fiche.Types.Remove(type);
+    }
+
+    private static string LibelleType(string t) => t switch
+    {
+        "rapport_quotidien" => "Rapport du soir", "ecart_caisse" => "Écart de caisse", "lot_bloque" => "Lot bloqué", "sauvegarde" => "Sauvegarde", "ecart_inventaire" => "Écart d’inventaire", _ => t
+    };
+
+    private static string LibelleStatut(string s) => s switch { "envoye" => "Envoyé", "echec" => "Abandonné", _ => "En attente" };
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

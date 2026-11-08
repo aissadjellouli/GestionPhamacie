@@ -1,0 +1,102 @@
+@page "/admin/pharmacie"
+@inject ApiClient Api
+
+<div class="page admin">
+    <NavAdmin Actif="admin/pharmacie" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Langue et pharmacie</h1>
+                <p class="sous-titre">Réservé au titulaire · chaque modification est inscrite au journal</p>
+            </div>
+            <button type="button" class="btn btn-principal" disabled="@(saisie is null || enCours)" @onclick="EnregistrerAsync">Enregistrer</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (saisie is not null)
+        {
+            <section class="panneau" aria-labelledby="t-langue">
+                <div>
+                    <h2 id="t-langue">Langue par défaut</h2>
+                    <p class="sous-titre">Chaque employé pourra ensuite choisir sa propre langue sur son poste.</p>
+                </div>
+                <div class="filtres" role="radiogroup" aria-label="Langue par défaut">
+                    @foreach (var (langue, nom, dir, dispo) in Langues)
+                    {
+                        <button type="button" role="radio" class="puce" aria-checked="@(saisie.LangueDefaut == langue ? "true" : "false")"
+                                aria-pressed="@(saisie.LangueDefaut == langue ? "true" : "false")" disabled="@(!dispo)"
+                                title="@(dispo ? null : "Traductions à venir")" @onclick="() => saisie.LangueDefaut = langue">
+                            <span lang="@langue" dir="@dir">@nom</span>
+                        </button>
+                    }
+                </div>
+                <p class="sous-titre" style="margin: 0; font-size: 13px">L’arabe (de droite à gauche) et l’anglais seront proposés avec les traductions de l’interface.</p>
+            </section>
+
+            <section class="panneau" aria-labelledby="t-pharma">
+                <div>
+                    <h2 id="t-pharma">Informations de la pharmacie</h2>
+                    <p class="sous-titre">Affichées en tête des postes et imprimées sur les documents (rapport de clôture, puis tickets et bons de commande).</p>
+                </div>
+                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px">
+                    <div class="champ"><label for="ph-nom">Nom de la pharmacie</label><input id="ph-nom" type="text" @bind="saisie.Nom" /></div>
+                    <div class="champ"><label for="ph-tit">Pharmacien titulaire</label><input id="ph-tit" type="text" @bind="saisie.Titulaire" /></div>
+                    <div class="champ"><label for="ph-adr">Adresse</label><input id="ph-adr" type="text" @bind="saisie.Adresse" placeholder="Adresse, commune, wilaya" /></div>
+                    <div class="champ"><label for="ph-tel">Téléphone</label><input id="ph-tel" type="tel" @bind="saisie.Telephone" /></div>
+                    <div class="champ"><label for="ph-nif">NIF</label><input id="ph-nif" type="text" @bind="saisie.Nif" /></div>
+                    <div class="champ"><label for="ph-chifa">N° officine et centre payeur Chifa</label><input id="ph-chifa" type="text" @bind="saisie.ChifaOfficine" /></div>
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    private sealed class Saisie
+    {
+        public string? Nom { get; set; }
+        public string? Titulaire { get; set; }
+        public string? Adresse { get; set; }
+        public string? Telephone { get; set; }
+        public string? Nif { get; set; }
+        public string? ChifaOfficine { get; set; }
+        public string LangueDefaut { get; set; } = "fr";
+    }
+
+    private static readonly (string Code, string Nom, string Dir, bool Disponible)[] Langues =
+    [
+        ("ar", "العربية", "rtl", false),
+        ("fr", "Français", "ltr", true),
+        ("en", "English", "ltr", false)
+    ];
+
+    private Saisie? saisie;
+    private string? erreur, message;
+    private bool enCours;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var (p, err) = await Api.PharmacieAsync();
+        erreur = err;
+        if (p is not null)
+            saisie = new Saisie
+            {
+                Nom = p.Nom, Titulaire = p.Titulaire, Adresse = p.Adresse, Telephone = p.Telephone,
+                Nif = p.Nif, ChifaOfficine = p.ChifaOfficine, LangueDefaut = p.LangueDefaut
+            };
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (saisie is null) return;
+        enCours = true;
+        message = null;
+        erreur = await Api.ModifierPharmacieAsync(new PharmacieDto(saisie.Nom, saisie.Titulaire, saisie.Adresse, saisie.Telephone,
+            saisie.Nif, saisie.ChifaOfficine, saisie.LangueDefaut));
+        enCours = false;
+        if (erreur is null) message = "Informations enregistrées.";
+    }
+}

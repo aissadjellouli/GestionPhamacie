@@ -1,0 +1,70 @@
+@page "/achats"
+@inject SessionPoste Session
+@inject NavigationManager Nav
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Achats</h1>
+            <p class="sous-titre">Commandes aux grossistes, réceptions, retours et étiquettes internes</p>
+        </div>
+    </div>
+
+    <div class="filtres" role="tablist" aria-label="Rubriques des achats">
+        @foreach (var (id, libelle, permis) in Onglets)
+        {
+            <button type="button" role="tab" class="puce" aria-selected="@(id == onglet ? "true" : "false")" aria-pressed="@(id == onglet ? "true" : "false")"
+                    disabled="@(!permis)" title="@(permis ? null : "Droit nécessaire")" @onclick="() => Aller(id)">@libelle</button>
+        }
+    </div>
+
+    @switch (onglet)
+    {
+        case "commandes":
+            <OngletCommandes ProduitAAjouter="Produit" NomProduit="@Nom" CommandeOuverte="Commande" />
+            break;
+        case "receptions":
+            <OngletReceptions CommandeId="Commande" />
+            break;
+        case "retours":
+            <OngletRetours LotId="Lot" ProduitId="Produit" NumeroLot="@NumeroLot" Motif="@Motif" />
+            break;
+        case "etiquettes":
+            <OngletEtiquettes LotId="Lot" />
+            break;
+        default:
+            <OngletGrossistes />
+            break;
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "onglet")] public string? Onglet { get; set; }
+    [SupplyParameterFromQuery(Name = "produit")] public long? Produit { get; set; }
+    [SupplyParameterFromQuery(Name = "commande")] public long? Commande { get; set; }
+    [SupplyParameterFromQuery(Name = "nom")] public string? Nom { get; set; }
+    [SupplyParameterFromQuery(Name = "lot")] public long? Lot { get; set; }
+    [SupplyParameterFromQuery(Name = "numeroLot")] public string? NumeroLot { get; set; }
+    [SupplyParameterFromQuery(Name = "motif")] public string? Motif { get; set; }
+
+    private string onglet = "commandes";
+
+    private (string Id, string Libelle, bool Permis)[] Onglets =>
+    [
+        ("commandes", "Commandes", Session.A("achats.commander") || Session.A("achats.receptionner")),
+        ("receptions", "Réceptions", Session.A("achats.receptionner")),
+        ("retours", "Retours fournisseurs", Session.A("achats.retour_fournisseur")),
+        ("etiquettes", "Étiquettes internes", Session.A("achats.receptionner") || Session.A("stock.consulter")),
+        ("grossistes", "Grossistes", true)
+    ];
+
+    protected override void OnParametersSet()
+    {
+        var voulu = Onglet ?? "commandes";
+        // Premier onglet autorisé si celui demandé ne l'est pas
+        onglet = Onglets.FirstOrDefault(o => o.Id == voulu && o.Permis).Id
+                 ?? Onglets.First(o => o.Permis).Id;
+    }
+
+    private void Aller(string id) => Nav.NavigateTo($"achats?onglet={id}");
+}

@@ -1,0 +1,355 @@
+@page "/inventaire"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Inventaire tournant</h1>
+            <p class="sous-titre">Un rayon par jour, compté à l’aveugle. Les petits écarts sont corrigés tout de suite, les gros attendent le titulaire.</p>
+        </div>
+        <a href="stock" class="lien">Retour au stock</a>
+    </div>
+
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+    @if (tableau is null)
+    {
+        <p class="vide">Chargement…</p>
+    }
+    else
+    {
+        @if (tableau.EcartsAValider.Count > 0)
+        {
+            <section class="panneau" aria-labelledby="t-ecarts">
+                <h2 id="t-ecarts">Écarts à valider par le titulaire (@tableau.EcartsAValider.Count)</h2>
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 760px">
+                        <thead><tr><th scope="col">Produit</th><th scope="col">Rayon</th><th scope="col">Théorique</th><th scope="col">Compté</th><th scope="col">Écart</th><th scope="col">Compté par</th><th scope="col"></th></tr></thead>
+                        <tbody>
+                            @foreach (var e in tableau.EcartsAValider)
+                            {
+                                <tr>
+                                    <td><span class="nom">@e.Produit</span><br /><span class="detail">lot @e.NumeroLot</span></td>
+                                    <td>@e.Rayon</td>
+                                    <td>@e.Theorique</td>
+                                    <td>@e.Compte</td>
+                                    <td class="@(e.Ecart < 0 ? "texte-urgent" : null)"><strong>@Signe(e.Ecart)</strong><br /><span class="detail">@Libelles.Dinars(e.ValeurEcart, 2)</span></td>
+                                    <td>@e.ComptePar<br /><span class="detail">@Libelles.DateHeureLocale(e.CompteLe)</span></td>
+                                    <td>
+                                        @if (EstTitulaire)
+                                        {
+                                            <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                                                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => DeciderAsync(e, true)">Valider</button>
+                                                <button type="button" class="btn" disabled="@enCours" @onclick="() => DeciderAsync(e, false)" title="Le stock ne change pas : faites recompter">Refuser</button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="detail">En attente du titulaire</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        @if (inventaire is null)
+        {
+            <section class="panneau" aria-labelledby="t-jour">
+                <h2 id="t-jour">Rayon à compter</h2>
+                @if (tableau.Rayons.Count == 0)
+                {
+                    <p class="vide">Aucun emplacement : créez les rayons dans Administration, Emplacements, puis rangez les produits.</p>
+                }
+                else
+                {
+                    <div class="achats-ligne">
+                        <div class="champ" style="flex: 0 0 280px">
+                            <label for="i-rayon">Rayon @(rayonChoisi == tableau.RayonPropose ? "(proposé aujourd’hui)" : "")</label>
+                            <select id="i-rayon" class="selection" @bind="rayonChoisi">
+                                @foreach (var r in tableau.Rayons)
+                                {
+                                    <option value="@r.Rayon">Rayon @r.Rayon · @r.NombreLots lot(s)@(r.EnCoursId is not null ? " · en cours" : "")</option>
+                                }
+                            </select>
+                        </div>
+                        @if (Session.A("stock.ajuster"))
+                        {
+                            <button type="button" class="btn btn-principal" disabled="@(enCours || Choisi?.NombreLots == 0)" @onclick="CommencerAsync">
+                                @(Choisi?.EnCoursId is not null ? "Reprendre le comptage" : "Commencer le comptage")
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn" disabled title="Droit « stock.ajuster » nécessaire">Commencer le comptage</button>
+                        }
+                    </div>
+                    @if (Choisi is { } c)
+                    {
+                        <p class="detail" style="margin: 0">
+                            Dernier inventaire : @(c.DernierInventaire is { } d ? Libelles.DateLocale(d) : "jamais") ·
+                            @c.NombreLots lot(s) en stock@(c.LotsDateAVerifier > 0 ? $", dont {c.LotsDateAVerifier} à date à vérifier (reprise)" : "").
+                            Comptez toutes les boîtes de chaque lot, réserve comprise.
+                        </p>
+                    }
+                }
+            </section>
+        }
+        else if (inventaire.Statut == "en_cours")
+        {
+            var comptes = inventaire.Lignes.Count(l => l.Compte is not null);
+            <section class="panneau" aria-labelledby="t-comptage">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap">
+                    <h2 id="t-comptage">Comptage du rayon @inventaire.Rayon</h2>
+                    <span class="pastille @(comptes == inventaire.Lignes.Count ? "ok" : "attention")">@comptes / @inventaire.Lignes.Count lot(s) compté(s)</span>
+                </div>
+                <p class="detail" style="margin: 0">Comptage à l’aveugle : le stock du logiciel n’est montré qu’à la fin. Scannez chaque boîte (étiquette interne ou Data Matrix) ou saisissez le nombre ; 0 si le lot est introuvable.</p>
+                <div class="champ" style="max-width: 520px">
+                    <label for="i-scan">Scanner une boîte</label>
+                    <input id="i-scan" type="text" autocomplete="off" placeholder="Une boîte de plus sur la ligne de son lot" @bind="scan" @onkeydown="ToucheScanAsync" />
+                </div>
+                @if (infoScan is not null) { <p class="detail" role="status" style="margin: 0">@infoScan</p> }
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 760px">
+                        <thead><tr><th scope="col">Produit</th><th scope="col">Où chercher</th><th scope="col">Péremption</th><th scope="col">Boîtes comptées</th></tr></thead>
+                        <tbody>
+                            @foreach (var l in inventaire.Lignes)
+                            {
+                                <tr class="@(l.Compte is not null ? "ligne-comptee" : null)">
+                                    <td><span class="nom">@l.Produit</span><br /><span class="detail">lot @l.NumeroLot</span></td>
+                                    <td>@if (l.Emplacement is not null) { <span class="code-emplacement">@l.Emplacement</span> }</td>
+                                    <td>
+                                        @Libelles.Date(l.DatePeremption)
+                                        @if (l.DateAVerifier)
+                                        {
+                                            <br /><span class="pastille attention">Date à vérifier</span>
+                                            <br /><input type="date" aria-label="Date de péremption lue sur la boîte de @l.Produit" value="@l.DateVerifiee?.ToString("yyyy-MM-dd")"
+                                                         @onchange="e => DateLue(l, e)" />
+                                        }
+                                    </td>
+                                    <td>
+                                        <input type="number" min="0" style="width: 110px" aria-label="Boîtes comptées de @l.Produit lot @l.NumeroLot"
+                                               value="@l.Compte" @onchange="e => CompterAsync(l, e)" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                    <button type="button" class="btn btn-principal" disabled="@(enCours || comptes < inventaire.Lignes.Count)" @onclick="TerminerAsync"
+                            title="@(comptes < inventaire.Lignes.Count ? "Comptez d’abord tous les lots" : null)">Terminer l’inventaire</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="AnnulerAsync">Abandonner</button>
+                    <button type="button" class="btn" @onclick="() => inventaire = null">Plus tard</button>
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="panneau" aria-labelledby="t-resultat">
+                <h2 id="t-resultat">Résultat du rayon @inventaire.Rayon</h2>
+                @if (bilan is not null)
+                {
+                    <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))">
+                        <div class="tuile"><span class="tuile-libelle">Lots comptés</span><span class="tuile-valeur petite">@bilan.Lignes</span></div>
+                        <div class="tuile"><span class="tuile-libelle">Conformes</span><span class="tuile-valeur petite">@bilan.Conformes</span></div>
+                        <div class="tuile"><span class="tuile-libelle">Corrigés tout de suite</span><span class="tuile-valeur petite">@bilan.Ajustes</span></div>
+                        <div class="tuile"><span class="tuile-libelle">À valider (titulaire)</span><span class="tuile-valeur petite @(bilan.AValider > 0 ? "attention" : null)">@bilan.AValider</span></div>
+                    </div>
+                }
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 760px">
+                        <thead><tr><th scope="col">Produit</th><th scope="col">Théorique</th><th scope="col">Compté</th><th scope="col">Écart</th><th scope="col">Suite</th></tr></thead>
+                        <tbody>
+                            @foreach (var l in inventaire.Lignes)
+                            {
+                                <tr>
+                                    <td><span class="nom">@l.Produit</span><br /><span class="detail">lot @l.NumeroLot@(l.DateVerifiee is { } dv ? $" · péremption vérifiée {Libelles.Date(dv)}" : "")</span></td>
+                                    <td>@l.Theorique</td>
+                                    <td>@l.Compte</td>
+                                    <td>@(l.Ecart is { } e && e != 0 ? $"{Signe(e)} ({Libelles.Dinars(l.ValeurEcart ?? 0, 2)})" : "—")</td>
+                                    <td><span class="pastille @ClasseStatut(l.Statut)">@LibelleStatut(l.Statut)</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div><button type="button" class="btn" @onclick="FermerResultatAsync">Rayon suivant</button></div>
+            </section>
+        }
+
+        @if (EstTitulaire)
+        {
+            <section class="panneau" aria-labelledby="t-seuils">
+                <h2 id="t-seuils">Seuils de correction automatique (titulaire)</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 200px"><label for="i-sb">Écart maximal (boîtes)</label><input id="i-sb" type="number" min="0" @bind="seuilBoites" /></div>
+                    <div class="champ" style="flex: 0 0 240px"><label for="i-sm">Écart maximal (DA, prix d’achat)</label><input id="i-sm" type="number" min="0" step="0.01" @bind="seuilMontant" /></div>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="EnregistrerSeuilsAsync">Enregistrer</button>
+                </div>
+                <p class="detail" style="margin: 0">Un écart est corrigé tout de suite s’il reste sous les deux seuils ; sinon il attend votre validation et vous êtes prévenu (Notifications, « Écart d’inventaire »).</p>
+            </section>
+        }
+
+        <section class="tableau-cadre" aria-label="Derniers inventaires">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Date</th><th scope="col">Rayon</th><th scope="col">Par</th><th scope="col">Lots</th><th scope="col">Écarts</th><th scope="col">Valeur des écarts</th><th scope="col">État</th></tr></thead>
+                <tbody>
+                    @foreach (var h in tableau.Historique)
+                    {
+                        <tr>
+                            <td>@Libelles.DateHeureLocale(h.CommenceLe)</td>
+                            <td>@h.Rayon</td>
+                            <td>@h.CommencePar</td>
+                            <td>@h.Lignes</td>
+                            <td>@h.Ecarts@(h.AValider > 0 ? $" (dont {h.AValider} à valider)" : "")</td>
+                            <td>@Libelles.Dinars(h.ValeurEcarts, 2)</td>
+                            <td><span class="pastille @(h.Statut == "termine" ? "ok" : h.Statut == "en_cours" ? "attention" : "info")">@(h.Statut switch { "termine" => "Terminé", "en_cours" => "En cours", _ => "Abandonné" })</span></td>
+                        </tr>
+                    }
+                    @if (tableau.Historique.Count == 0) { <tr><td colspan="7" class="vide">Aucun inventaire pour l’instant.</td></tr> }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private TableauInventaireDto? tableau;
+    private InventaireDto? inventaire;
+    private BilanInventaireDto? bilan;
+    private string? rayonChoisi, scan, infoScan, erreur, message;
+    private int seuilBoites;
+    private decimal seuilMontant;
+    private bool enCours;
+    private readonly Dictionary<long, DateOnly?> datesLues = [];
+
+    private bool EstTitulaire => Session.A("role.titulaire");
+    private RayonInventaireDto? Choisi => tableau?.Rayons.FirstOrDefault(r => r.Rayon == rayonChoisi);
+
+    protected override Task OnInitializedAsync() => ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        string? e;
+        (tableau, e) = await Api.TableauInventaireAsync();
+        if (e is not null) { erreur = e; return; }
+        rayonChoisi ??= tableau!.RayonPropose ?? tableau.Rayons.FirstOrDefault()?.Rayon;
+        (seuilBoites, seuilMontant) = (tableau!.Parametres.SeuilBoites, tableau.Parametres.SeuilMontant);
+    }
+
+    private async Task CommencerAsync() => await Executer(async () =>
+    {
+        var (id, e) = await Api.CommencerInventaireAsync(rayonChoisi!);
+        if (e is not null) return e;
+        return await OuvrirAsync(id!.Id);
+    });
+
+    private async Task<string?> OuvrirAsync(long id)
+    {
+        var (d, e) = await Api.InventaireAsync(id);
+        if (e is not null) return e;
+        inventaire = d;
+        return null;
+    }
+
+    private void DateLue(LigneInventaireDto l, ChangeEventArgs e) =>
+        datesLues[l.Id] = DateOnly.TryParse(e.Value?.ToString(), out var d) ? d : null;
+
+    private async Task CompterAsync(LigneInventaireDto l, ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var n)) return;
+        await Executer(async () =>
+        {
+            var err = await Api.CompterLotAsync(inventaire!.Id, l.Id, n, datesLues.GetValueOrDefault(l.Id) ?? l.DateVerifiee);
+            if (err is not null) return err;
+            return await OuvrirAsync(inventaire.Id);
+        });
+    }
+
+    private async Task ToucheScanAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(scan)) return;
+        var code = scan;
+        scan = null;
+        var (r, err) = await Api.ScannerInventaireAsync(inventaire!.Id, code);
+        infoScan = err ?? $"{r!.Produit} · lot {r.NumeroLot} : {r.Compte} boîte(s) comptée(s).";
+        if (err is null) await OuvrirAsync(inventaire.Id);
+    }
+
+    private async Task TerminerAsync() => await Executer(async () =>
+    {
+        // Dates lues sur les boîtes mais pas encore envoyées (saisies sans changer la quantité)
+        foreach (var (ligneId, date) in datesLues.Where(d => d.Value is not null))
+        {
+            var l = inventaire!.Lignes.First(x => x.Id == ligneId);
+            if (l.DateVerifiee != date && l.Compte is { } c)
+                if (await Api.CompterLotAsync(inventaire.Id, ligneId, c, date) is { } err) return err;
+        }
+        var (b, e) = await Api.TerminerInventaireAsync(inventaire!.Id);
+        if (e is not null) return e;
+        bilan = b;
+        message = b!.AValider > 0
+            ? $"Inventaire terminé : {b.Ajustes} écart(s) corrigé(s), {b.AValider} en attente du titulaire (prévenu)."
+            : $"Inventaire terminé : {b.Ajustes} écart(s) corrigé(s), aucun en attente.";
+        await ChargerAsync();
+        return await OuvrirAsync(inventaire.Id);
+    });
+
+    private async Task AnnulerAsync() => await Executer(async () =>
+    {
+        var e = await Api.AnnulerInventaireAsync(inventaire!.Id);
+        if (e is not null) return e;
+        (inventaire, message) = (null, "Comptage abandonné : rien n’a été modifié dans le stock.");
+        await ChargerAsync();
+        return null;
+    });
+
+    private async Task FermerResultatAsync()
+    {
+        (inventaire, bilan, rayonChoisi, message) = (null, null, null, null);
+        datesLues.Clear();
+        await ChargerAsync();
+    }
+
+    private async Task DeciderAsync(EcartAValiderDto e, bool valider) => await Executer(async () =>
+    {
+        var err = await Api.DeciderEcartAsync(e.LigneId, valider);
+        if (err is not null) return err;
+        message = valider ? $"{e.Produit} : écart {Signe(e.Ecart)} validé, stock corrigé." : $"{e.Produit} : écart refusé, stock inchangé : faites recompter.";
+        await ChargerAsync();
+        return null;
+    });
+
+    private async Task EnregistrerSeuilsAsync() => await Executer(async () =>
+    {
+        var e = await Api.ParametresInventaireAsync(new ParametresInventaireDto(seuilBoites, seuilMontant));
+        if (e is not null) return e;
+        message = "Seuils enregistrés.";
+        return null;
+    });
+
+    private static string Signe(int n) => n > 0 ? $"+{n}" : n.ToString();
+
+    private static string LibelleStatut(string s) => s switch
+    {
+        "conforme" => "Conforme", "ajuste" => "Corrigé", "a_valider" => "À valider", "valide" => "Validé", "refuse" => "Refusé, à recompter", _ => s
+    };
+
+    private static string ClasseStatut(string s) => s switch
+    {
+        "conforme" or "ajuste" or "valide" => "ok", "a_valider" => "attention", "refuse" => "urgent", _ => "info"
+    };
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur) = (true, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

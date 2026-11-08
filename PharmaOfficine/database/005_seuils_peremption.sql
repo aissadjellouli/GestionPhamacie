@@ -5,25 +5,35 @@
 -- =====================================================================
 
 -- Par grossiste : son délai de reprise des produits avant péremption
-ALTER TABLE fournisseur ADD COLUMN jours_orange int CHECK (jours_orange > 0);
-ALTER TABLE fournisseur ADD COLUMN jours_rouge  int CHECK (jours_rouge  > 0);
+ALTER TABLE fournisseur ADD COLUMN IF NOT EXISTS jours_orange int CHECK (jours_orange > 0);
+ALTER TABLE fournisseur ADD COLUMN IF NOT EXISTS jours_rouge  int CHECK (jours_rouge  > 0);
 
 -- Par produit : cas particuliers (produits chers, froid, vente lente...)
-ALTER TABLE produit ADD COLUMN jours_orange int CHECK (jours_orange > 0);
-ALTER TABLE produit ADD COLUMN jours_rouge  int CHECK (jours_rouge  > 0);
+ALTER TABLE produit ADD COLUMN IF NOT EXISTS jours_orange int CHECK (jours_orange > 0);
+ALTER TABLE produit ADD COLUMN IF NOT EXISTS jours_rouge  int CHECK (jours_rouge  > 0);
 
 -- Le seuil rouge doit rester plus court que l'orange
-ALTER TABLE parametre_alerte ADD CONSTRAINT ck_seuils_general
-    CHECK (jours_rouge < jours_orange);
-ALTER TABLE fournisseur ADD CONSTRAINT ck_seuils_fournisseur
-    CHECK (jours_rouge IS NULL OR jours_orange IS NULL OR jours_rouge < jours_orange);
-ALTER TABLE produit ADD CONSTRAINT ck_seuils_produit
-    CHECK (jours_rouge IS NULL OR jours_orange IS NULL OR jours_rouge < jours_orange);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_seuils_general') THEN
+        ALTER TABLE parametre_alerte ADD CONSTRAINT ck_seuils_general CHECK (jours_rouge < jours_orange);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_seuils_fournisseur') THEN
+        ALTER TABLE fournisseur ADD CONSTRAINT ck_seuils_fournisseur
+            CHECK (jours_rouge IS NULL OR jours_orange IS NULL OR jours_rouge < jours_orange);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_seuils_produit') THEN
+        ALTER TABLE produit ADD CONSTRAINT ck_seuils_produit
+            CHECK (jours_rouge IS NULL OR jours_orange IS NULL OR jours_rouge < jours_orange);
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- La vue de risque applique le seuil le plus précis disponible
 -- (colonnes ajoutées en fin de vue, sans casser l'existant)
 -- ---------------------------------------------------------------------
+-- La vue change de colonnes d'un script à l'autre : on la recrée
+DROP VIEW IF EXISTS v_risque_peremption;
 CREATE OR REPLACE VIEW v_risque_peremption AS
 WITH prm AS (
     SELECT * FROM parametre_alerte WHERE id = 1

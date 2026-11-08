@@ -1,0 +1,329 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject NavigationManager Nav
+
+@if (message is not null)
+{
+    <div class="succes" role="status">@message</div>
+}
+@if (erreur is not null)
+{
+    <div class="erreur" role="alert">@erreur</div>
+}
+
+<div class="achats-grille">
+    <div class="liste">
+        @if (PeutCommander)
+        {
+            <section class="panneau" aria-labelledby="t-ajout">
+                <h2 id="t-ajout">Ajouter un produit à commander</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 200px">
+                        <label for="c-gros">Grossiste</label>
+                        <select id="c-gros" @bind="fournisseurId">
+                            @foreach (var f in fournisseurs)
+                            {
+                                <option value="@f.Id">@f.RaisonSociale</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="champ recherche" style="flex: 3 1 260px">
+                        <label for="c-prod">Produit</label>
+                        <input id="c-prod" type="search" autocomplete="off" placeholder="Nom, DCI ou code-barres"
+                               @bind="texteProduit" @bind:event="oninput" @bind:after="RechercherAsync" />
+                    </div>
+                    <div class="champ" style="flex: 0 0 110px">
+                        <label for="c-qte">Quantité</label>
+                        <input id="c-qte" type="number" min="1" @bind="quantite" />
+                    </div>
+                    <div class="champ" style="flex: 0 0 150px">
+                        <label for="c-prix">Prix HT (DA)</label>
+                        <input id="c-prix" type="number" min="0" step="0.01" placeholder="dernier prix" @bind="prix" />
+                    </div>
+                </div>
+                @if (produitChoisi is not null)
+                {
+                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+                        <span>Choisi : <strong>@produitChoisi.NomCommercial</strong> · stock @produitChoisi.Stock</span>
+                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => AjouterAsync(produitChoisi.Id)">Ajouter au bon</button>
+                    </div>
+                }
+                else if (suggestionsProduit.Count > 0)
+                {
+                    <ul class="liste-lecture" aria-label="Produits trouvés">
+                        @foreach (var p in suggestionsProduit)
+                        {
+                            <li><button type="button" @onclick="() => Choisir(p)"><span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage · stock @p.Stock</span></span><span>Choisir</span></button></li>
+                        }
+                    </ul>
+                }
+                <p class="detail" style="margin: 0">Le produit va sur le bon en brouillon du grossiste (créé au besoin). Sans prix, le dernier prix d’achat est repris ; le prix facturé est saisi à la réception.</p>
+            </section>
+
+            @if (suggestions.Count > 0)
+            {
+                <section class="panneau" aria-labelledby="t-sugg">
+                    <h2 id="t-sugg">À commander (ruptures et stocks critiques)</h2>
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Produit</th><th scope="col">Stock</th><th scope="col">Suggéré</th><th scope="col">Dernier achat</th><th scope="col"></th></tr></thead>
+                        <tbody>
+                            @foreach (var s in suggestions)
+                            {
+                                <tr>
+                                    <td><span class="nom">@s.Produit</span><br /><span class="pastille @(s.Statut == "rupture" ? "urgent" : "attention")">@(s.Statut == "rupture" ? "Rupture" : "Critique")</span></td>
+                                    <td>@s.Stock</td>
+                                    <td>@Math.Max(1, s.QteSuggeree)</td>
+                                    <td>@(s.DernierPrixHt is { } p ? $"{Libelles.Dinars(p, 2)} · {s.DernierFournisseur}" : "aucun")</td>
+                                    <td><button type="button" class="btn" disabled="@enCours" @onclick="() => AjouterSuggestionAsync(s)">Ajouter</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
+
+        <section class="tableau-cadre" aria-label="Bons de commande">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Bon</th><th scope="col">Grossiste</th><th scope="col">Date</th><th scope="col">Montant HT</th><th scope="col">Statut</th></tr></thead>
+                <tbody>
+                    @foreach (var c in commandes)
+                    {
+                        <tr class="ligne-cliquable @(detail?.Entete.Id == c.Id ? "choisie" : null)" @onclick="() => OuvrirAsync(c.Id)">
+                            <td><button type="button" class="lien" @onclick="() => OuvrirAsync(c.Id)" @onclick:stopPropagation="true">@c.Numero</button><br /><span class="detail">@c.NombreLignes ligne(s)</span></td>
+                            <td>@c.Fournisseur</td>
+                            <td>@Libelles.DateLocale(c.Date)</td>
+                            <td>@Libelles.Dinars(c.MontantHt, 2)</td>
+                            <td><span class="pastille @Libelles.ClasseStatutCommande(c.Statut)">@Libelles.StatutCommande(c.Statut)</span></td>
+                        </tr>
+                    }
+                    @if (commandes.Count == 0)
+                    {
+                        <tr><td colspan="5" class="vide">Aucun bon de commande.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <aside class="panneau" aria-label="Détail du bon">
+        @if (detail is null)
+        {
+            <p class="vide">Choisissez un bon pour le voir, le modifier ou l’émettre.</p>
+        }
+        else
+        {
+            var brouillon = detail.Entete.Statut == "brouillon";
+            <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center">
+                <h2>Bon @detail.Entete.Numero</h2>
+                <span class="pastille @Libelles.ClasseStatutCommande(detail.Entete.Statut)">@Libelles.StatutCommande(detail.Entete.Statut)</span>
+            </div>
+            <p class="detail" style="margin: 0">@detail.Entete.Fournisseur · @Libelles.DateLocale(detail.Entete.Date)</p>
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Produit</th><th scope="col">Qté</th><th scope="col">Prix HT</th>@if (!brouillon){<th scope="col">Reçu</th>}</tr></thead>
+                <tbody>
+                    @foreach (var l in lignesEdition)
+                    {
+                        <tr>
+                            <td>@l.Produit</td>
+                            @if (brouillon && PeutCommander)
+                            {
+                                <td><input type="number" min="0" style="width: 80px" aria-label="Quantité de @l.Produit" @bind="l.Quantite" @bind:after="() => EnregistrerLigneAsync(l)" /></td>
+                                <td><input type="number" min="0" step="0.01" style="width: 110px" aria-label="Prix HT de @l.Produit" @bind="l.Prix" @bind:after="() => EnregistrerLigneAsync(l)" /></td>
+                            }
+                            else
+                            {
+                                <td>@l.Quantite</td>
+                                <td>@Libelles.Dinars(l.Prix, 2)</td>
+                                <td>@l.Recue / @l.Quantite</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p style="margin: 0; font-weight: 600">Total HT : @Libelles.Dinars(lignesEdition.Sum(l => l.Quantite * l.Prix), 2)</p>
+            @if (brouillon)
+            {
+                <p class="detail" style="margin: 0">Quantité 0 : la ligne est retirée.</p>
+            }
+            <div style="display: flex; flex-wrap: wrap; gap: 8px">
+                @if (brouillon && PeutCommander)
+                {
+                    <button type="button" class="btn btn-principal" disabled="@(enCours || lignesEdition.Count == 0)" @onclick="EmettreAsync">Émettre le bon (PDF)</button>
+                }
+                else
+                {
+                    <button type="button" class="btn" disabled="@enCours" @onclick="ImprimerAsync">Imprimer le bon</button>
+                }
+                @if (detail.Entete.Statut is "envoyee" or "recue_partielle" && Session.A("achats.receptionner"))
+                {
+                    <button type="button" class="btn btn-principal" @onclick="@(() => Nav.NavigateTo($"achats?onglet=receptions&commande={detail.Entete.Id}"))">Réceptionner</button>
+                }
+                @if (detail.Entete.Statut is "brouillon" or "envoyee" && PeutCommander && detail.Lignes.All(l => l.QteRecue == 0))
+                {
+                    <button type="button" class="btn" disabled="@enCours" @onclick="AnnulerAsync">Annuler le bon</button>
+                }
+            </div>
+        }
+    </aside>
+</div>
+
+@code {
+    [Parameter] public long? ProduitAAjouter { get; set; }
+    [Parameter] public long? CommandeOuverte { get; set; }
+    [Parameter] public string? NomProduit { get; set; }
+
+    private sealed class LigneEdition(LigneCommandeAchatDto l)
+    {
+        public long Id { get; } = l.Id;
+        public string Produit { get; } = l.Produit;
+        public int Quantite { get; set; } = l.QteCommandee;
+        public decimal Prix { get; set; } = l.PrixAchatHt;
+        public int Recue { get; } = l.QteRecue;
+    }
+
+    private List<FournisseurDto> fournisseurs = [];
+    private List<CommandeAchatDto> commandes = [];
+    private List<SuggestionCommandeDto> suggestions = [];
+    private CommandeAchatDetailDto? detail;
+    private List<LigneEdition> lignesEdition = [];
+    private long fournisseurId;
+    private string texteProduit = "";
+    private List<ProduitDto> suggestionsProduit = [];
+    private ProduitDto? produitChoisi;
+    private int quantite = 1;
+    private decimal? prix;
+    private bool enCours;
+    private string? erreur, message;
+    private int requete;
+
+    private bool PeutCommander => Session.A("achats.commander");
+
+    protected override async Task OnInitializedAsync()
+    {
+        (fournisseurs, erreur) = await Api.FournisseursAsync();
+        fournisseurId = fournisseurs.FirstOrDefault()?.Id ?? 0;
+        await RechargerAsync();
+        if (PeutCommander) (suggestions, _) = await Api.SuggestionsCommandeAsync();
+
+        // Arrivée depuis une alerte « Commander » : produit présélectionné, grossiste et quantité suggérés
+        if (ProduitAAjouter is { } pid && PeutCommander)
+        {
+            if (suggestions.FirstOrDefault(s => s.ProduitId == pid) is { } s)
+            {
+                fournisseurId = s.DernierFournisseurId ?? fournisseurId;
+                quantite = Math.Max(1, s.QteSuggeree);
+            }
+            var connu = suggestions.FirstOrDefault(s => s.ProduitId == pid);
+            var nom = connu?.Produit ?? NomProduit;
+            if (nom is not null)
+            {
+                produitChoisi = new ProduitDto(pid, nom, null, null, null, 0, connu?.Stock ?? 0, "");
+                texteProduit = nom;
+            }
+        }
+        if (CommandeOuverte is { } cid) await OuvrirAsync(cid);
+    }
+
+    private async Task RechargerAsync()
+    {
+        string? e;
+        (commandes, e) = await Api.CommandesAchatAsync();
+        erreur ??= e;
+    }
+
+    private async Task RechercherAsync()
+    {
+        produitChoisi = null;
+        var n = ++requete;
+        if (texteProduit.Trim().Length < 2) { suggestionsProduit = []; return; }
+        var (trouves, _) = await Api.RechercherProduitsAsync(texteProduit);
+        if (n == requete) suggestionsProduit = trouves;
+    }
+
+    private void Choisir(ProduitDto p) => (produitChoisi, texteProduit, suggestionsProduit) = (p, p.NomCommercial, []);
+
+    private async Task AjouterAsync(long produitId)
+    {
+        if (fournisseurId == 0) { erreur = "Choisissez un grossiste."; return; }
+        await Executer(async () =>
+        {
+            var (r, e) = await Api.AjouterACommandeAsync(fournisseurId, produitId, quantite, prix);
+            if (e is not null) return e;
+            message = $"Ajouté au bon de {fournisseurs.First(f => f.Id == fournisseurId).RaisonSociale}.";
+            (produitChoisi, texteProduit, quantite, prix) = (null, "", 1, null);
+            await RechargerAsync();
+            await OuvrirAsync(r!.Id);
+            return null;
+        });
+    }
+
+    private async Task AjouterSuggestionAsync(SuggestionCommandeDto s)
+    {
+        if (s.DernierFournisseurId is null && fournisseurId == 0) { erreur = "Choisissez un grossiste."; return; }
+        await Executer(async () =>
+        {
+            var gros = s.DernierFournisseurId ?? fournisseurId;
+            var (r, e) = await Api.AjouterACommandeAsync(gros, s.ProduitId, Math.Max(1, s.QteSuggeree), null);
+            if (e is not null) return e;
+            message = $"{s.Produit} : {Math.Max(1, s.QteSuggeree)} boîte(s) ajoutée(s) au bon de {s.DernierFournisseur ?? "ce grossiste"}.";
+            suggestions.Remove(s);
+            await RechargerAsync();
+            await OuvrirAsync(r!.Id);
+            return null;
+        });
+    }
+
+    private async Task OuvrirAsync(long id)
+    {
+        var (d, e) = await Api.CommandeAchatAsync(id);
+        if (e is not null) { erreur = e; return; }
+        detail = d;
+        lignesEdition = d!.Lignes.Select(l => new LigneEdition(l)).ToList();
+    }
+
+    private async Task EnregistrerLigneAsync(LigneEdition l) => await Executer(async () =>
+    {
+        var e = await Api.ModifierLigneCommandeAsync(detail!.Entete.Id, l.Id, Math.Max(0, l.Quantite), l.Prix);
+        if (e is not null) return e;
+        await RechargerAsync();
+        await OuvrirAsync(detail.Entete.Id);
+        return null;
+    });
+
+    private async Task EmettreAsync() => await Executer(async () =>
+    {
+        var (pdf, nom, e) = await Api.EmettreCommandeAsync(detail!.Entete.Id);
+        if (e is not null) return e;
+        Documents.Ouvrir(Documents.Enregistrer("Commandes", nom!, pdf!));
+        message = $"Bon {detail.Entete.Numero} émis : PDF enregistré dans Documents\\Pharma Officine\\Commandes, à transmettre au grossiste.";
+        await RechargerAsync();
+        await OuvrirAsync(detail.Entete.Id);
+        return null;
+    });
+
+    private async Task ImprimerAsync() => await Executer(async () =>
+    {
+        var (pdf, nom, e) = await Api.BonCommandeAsync(detail!.Entete.Id);
+        if (e is not null) return e;
+        Documents.Ouvrir(Documents.Enregistrer("Commandes", nom!, pdf!));
+        return null;
+    });
+
+    private async Task AnnulerAsync() => await Executer(async () =>
+    {
+        var e = await Api.AnnulerCommandeAsync(detail!.Entete.Id);
+        if (e is not null) return e;
+        message = $"Bon {detail.Entete.Numero} annulé.";
+        await RechargerAsync();
+        await OuvrirAsync(detail.Entete.Id);
+        return null;
+    });
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

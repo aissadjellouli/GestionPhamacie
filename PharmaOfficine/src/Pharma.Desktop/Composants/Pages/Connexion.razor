@@ -1,9 +1,11 @@
 @page "/connexion"
 @inject ApiClient Api
 @inject NavigationManager Nav
+@inject SessionPoste Session
 
 <div class="page connexion">
     <div style="display: flex; flex-direction: column; gap: 4px">
+        <img class="logo-connexion" src="img/logo.svg" alt="Croix verte de pharmacie" />
         <h1>Connexion</h1>
         <p class="sous-titre">Chaque employé se connecte avec son propre identifiant.</p>
     </div>
@@ -17,6 +19,7 @@
             <input id="mdp" type="password" @bind="motDePasse" autocomplete="current-password" />
         </div>
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        else if (Session.MotifDeconnexion is { } motif) { <div class="info-bandeau" role="status">@motif</div> }
         <button class="btn btn-principal" type="submit" disabled="@enCours">Se connecter</button>
     </form>
 </div>

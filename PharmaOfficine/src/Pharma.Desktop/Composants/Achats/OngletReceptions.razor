@@ -1,0 +1,293 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject NavigationManager Nav
+
+@if (erreur is not null)
+{
+    <div class="erreur" role="alert">@erreur</div>
+}
+
+@if (resultat is not null)
+{
+    <section class="panneau" aria-labelledby="t-recue">
+        <h2 id="t-recue">Livraison enregistrée</h2>
+        <div class="succes" role="status">
+            @resultat.Lots.Count lot(s), @resultat.Lots.Sum(l => l.Quantite) boîte(s) entrées en stock · @Libelles.Dinars(resultat.MontantTtc, 2) TTC ajoutés à la dette du grossiste.
+        </div>
+        @if (resultat.Lots.Any(l => l.BoitesSansIdentite > 0))
+        {
+            <p style="margin: 0">Boîtes sans Data Matrix : imprimez une étiquette interne par boîte et collez-la avant la mise en rayon.</p>
+            <EtiquetagerLots Lots="@resultat.Lots.Where(l => l.BoitesSansIdentite > 0).Select(l => new LotAEtiqueterDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.BoitesSansIdentite)).ToList()" />
+        }
+        <div><button type="button" class="btn" @onclick="Nouvelle">Nouvelle réception</button></div>
+    </section>
+}
+else
+{
+    <section class="panneau" aria-labelledby="t-recep">
+        <h2 id="t-recep">Réceptionner une livraison</h2>
+        <div class="achats-ligne">
+            <div class="champ" style="flex: 1 1 200px">
+                <label for="r-gros">Grossiste</label>
+                <select id="r-gros" @bind="fournisseurId" @bind:after="ChoisirFournisseurAsync" disabled="@(lignes.Count > 0)">
+                    <option value="0">Choisir…</option>
+                    @foreach (var f in fournisseurs)
+                    {
+                        <option value="@f.Id">@f.RaisonSociale</option>
+                    }
+                </select>
+            </div>
+            <div class="champ" style="flex: 1 1 200px">
+                <label for="r-cmd">Bon de commande</label>
+                <select id="r-cmd" @bind="commandeId" @bind:after="ChargerCommandeAsync" disabled="@(lignes.Count > 0)">
+                    <option value="0">Livraison sans commande</option>
+                    @foreach (var c in commandes.Where(c => c.FournisseurId == fournisseurId))
+                    {
+                        <option value="@c.Id">@c.Numero (@Libelles.StatutCommande(c.Statut))</option>
+                    }
+                </select>
+            </div>
+            <div class="champ" style="flex: 1 1 160px">
+                <label for="r-bl">N° du bon de livraison</label>
+                <input id="r-bl" type="text" @bind="numeroBl" />
+            </div>
+            <div class="champ" style="flex: 1 1 160px">
+                <label for="r-fact">N° de facture (facultatif)</label>
+                <input id="r-fact" type="text" @bind="numeroFacture" />
+            </div>
+        </div>
+
+        @if (fournisseurId != 0)
+        {
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 1 1 280px">
+                    <label for="r-scan">Scanner une boîte (Data Matrix)</label>
+                    <input id="r-scan" type="text" autocomplete="off" placeholder="Le lot, la péremption et la série sont lus" @bind="scan" @onkeydown="ToucheScanAsync" />
+                </div>
+                <div class="champ recherche" style="flex: 1 1 280px">
+                    <label for="r-prod">Ou ajouter un produit (boîtes sans Data Matrix)</label>
+                    <input id="r-prod" type="search" autocomplete="off" placeholder="Nom, DCI ou code-barres" @bind="texteProduit" @bind:event="oninput" @bind:after="RechercherAsync" />
+                </div>
+            </div>
+            @if (trouves.Count > 0)
+            {
+                <ul class="liste-lecture" aria-label="Produits trouvés">
+                    @foreach (var p in trouves)
+                    {
+                        <li><button type="button" @onclick="() => AjouterProduit(p.Id, p.NomCommercial)"><span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage</span></span><span>Ajouter</span></button></li>
+                    }
+                </ul>
+            }
+            @if (infoScan is not null)
+            {
+                <p class="detail" role="status" style="margin: 0">@infoScan</p>
+            }
+            @if (Session.A("catalogue.creer") && creation is null)
+            {
+                <div><button type="button" class="lien" @onclick="() => creation = (gtinInconnu, texteProduit.Trim().Length > 1 ? texteProduit.Trim() : null)">Produit absent du catalogue ? Le créer@(gtinInconnu is null ? "" : $" (code {gtinInconnu})")</button></div>
+            }
+            @if (creation is { } c)
+            {
+                <FicheNouveauProduit CodeBarreInitial="@c.Code" NomInitial="@c.Nom" OnCree="ProduitCree" OnAnnule="() => creation = null" />
+            }
+        }
+
+        @if (lignes.Count > 0)
+        {
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 760px">
+                    <thead><tr><th scope="col">Produit</th><th scope="col">N° de lot</th><th scope="col">Péremption</th><th scope="col">Boîtes reçues</th><th scope="col">Prix HT</th><th scope="col">Data Matrix</th><th scope="col"></th></tr></thead>
+                    <tbody>
+                        @foreach (var l in lignes)
+                        {
+                            <tr>
+                                <td><span class="nom">@l.Nom</span>@if (l.Commandee is { } q){<br /><span class="detail">commandé : @q</span>}</td>
+                                <td><input type="text" style="width: 120px" aria-label="Numéro de lot de @l.Nom" @bind="l.NumeroLot" /></td>
+                                <td><input type="date" aria-label="Péremption de @l.Nom" @bind="l.Peremption" /></td>
+                                <td><input type="number" min="0" style="width: 80px" aria-label="Boîtes reçues de @l.Nom" @bind="l.Quantite" /></td>
+                                <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="Prix HT de @l.Nom" @bind="l.Prix" /></td>
+                                <td>@(l.Series.Count > 0 ? $"{l.Series.Count} scannée(s)" : "—")</td>
+                                <td><button type="button" class="btn btn-icone" aria-label="Retirer @l.Nom" title="Retirer" @onclick="() => lignes.Remove(l)">×</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+                <strong>Total HT : @Libelles.Dinars(lignes.Sum(l => l.Quantite * l.Prix), 2)</strong>
+                <span class="detail">La TVA de chaque produit est ajoutée pour la dette du grossiste. Une ligne à 0 boîte (non livrée) est ignorée.</span>
+            </div>
+            <div style="display: flex; gap: 8px">
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">Valider la réception</button>
+                <button type="button" class="btn" disabled="@enCours" @onclick="Nouvelle">Abandonner</button>
+            </div>
+        }
+    </section>
+}
+
+<section class="tableau-cadre" aria-label="Dernières réceptions">
+    <table class="tableau" style="min-width: 0">
+        <thead><tr><th scope="col">Date</th><th scope="col">Grossiste</th><th scope="col">BL</th><th scope="col">Commande</th><th scope="col">Lots</th><th scope="col">Boîtes</th><th scope="col">Montant TTC</th></tr></thead>
+        <tbody>
+            @foreach (var r in historique)
+            {
+                <tr>
+                    <td>@Libelles.DateHeureLocale(r.Date)</td>
+                    <td>@r.Fournisseur</td>
+                    <td>@(r.NumeroBl ?? "—")@if (r.NumeroFacture is not null){<br /><span class="detail">facture @r.NumeroFacture</span>}</td>
+                    <td>@(r.NumeroCommande ?? "sans")</td>
+                    <td>@r.NombreLots</td>
+                    <td>@(r.NombreBoites > 0 ? r.NombreBoites.ToString() : "—")</td>
+                    <td>@(r.MontantTtc > 0 ? Libelles.Dinars(r.MontantTtc, 2) : "—")</td>
+                </tr>
+            }
+            @if (historique.Count == 0)
+            {
+                <tr><td colspan="7" class="vide">Aucune réception.</td></tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    [Parameter] public long? CommandeId { get; set; }
+
+    private sealed class Ligne
+    {
+        public long ProduitId { get; init; }
+        public string Nom { get; init; } = "";
+        public string NumeroLot { get; set; } = "";
+        public DateOnly? Peremption { get; set; }
+        public int Quantite { get; set; }
+        public decimal Prix { get; set; }
+        public int? Commandee { get; init; }
+        public string? Gtin { get; set; }
+        public List<string> Series { get; } = [];
+    }
+
+    private List<FournisseurDto> fournisseurs = [];
+    private List<CommandeAchatDto> commandes = [];
+    private List<ReceptionResumeDto> historique = [];
+    private readonly List<Ligne> lignes = [];
+    private long fournisseurId, commandeId;
+    private string? numeroBl, numeroFacture, scan, infoScan, erreur;
+    private string texteProduit = "";
+    private List<ProduitDto> trouves = [];
+    private ReceptionEnregistreeDto? resultat;
+    private bool enCours;
+    private int requete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (fournisseurs, erreur) = await Api.FournisseursAsync();
+        (commandes, _) = await Api.CommandesAchatAsync();
+        commandes = commandes.Where(c => c.Statut is "envoyee" or "recue_partielle").ToList();
+        (historique, _) = await Api.ReceptionsAsync();
+        if (CommandeId is { } cid && commandes.FirstOrDefault(c => c.Id == cid) is { } c)
+        {
+            (fournisseurId, commandeId) = (c.FournisseurId, c.Id);
+            await ChargerCommandeAsync();
+        }
+    }
+
+    private Task ChoisirFournisseurAsync()
+    {
+        commandeId = 0;
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Reprend les lignes du bon (reste à recevoir et prix commandé), à compléter avec le lot et la péremption.</summary>
+    private async Task ChargerCommandeAsync()
+    {
+        lignes.Clear();
+        if (commandeId == 0) return;
+        var (d, e) = await Api.CommandeAchatAsync(commandeId);
+        if (e is not null) { erreur = e; return; }
+        foreach (var l in d!.Lignes.Where(l => l.QteRecue < l.QteCommandee))
+            lignes.Add(new Ligne { ProduitId = l.ProduitId, Nom = l.Produit, Quantite = l.QteCommandee - l.QteRecue, Prix = l.PrixAchatHt, Commandee = l.QteCommandee - l.QteRecue });
+    }
+
+    private async Task RechercherAsync()
+    {
+        var n = ++requete;
+        if (texteProduit.Trim().Length < 2) { trouves = []; return; }
+        var (t, _) = await Api.RechercherProduitsAsync(texteProduit);
+        if (n == requete) trouves = t;
+    }
+
+    private (string? Code, string? Nom)? creation;
+    private string? gtinInconnu;
+
+    /// <summary>Produit créé depuis la réception : ajouté aussitôt aux lignes de la livraison.</summary>
+    private void ProduitCree((long Id, string Nom) p)
+    {
+        (creation, gtinInconnu) = (null, null);
+        AjouterProduit(p.Id, p.Nom);
+        infoScan = $"« {p.Nom} » créé et ajouté à la livraison : complétez le lot, la péremption et le prix.";
+    }
+
+    private void AjouterProduit(long produitId, string nom)
+    {
+        lignes.Add(new Ligne { ProduitId = produitId, Nom = nom, Quantite = 1 });
+        (texteProduit, trouves) = ("", []);
+    }
+
+    /// <summary>Chaque boîte scannée : ajoute sa série à la ligne du même produit et du même lot (créée au besoin).</summary>
+    private async Task ToucheScanAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(scan)) return;
+        var code = scan;
+        scan = null;
+        var (b, err) = await Api.LireDataMatrixAsync(code);
+        if (err is not null) { infoScan = err; return; }
+        gtinInconnu = null;
+        if (b!.ProduitId is not { } pid)
+        {
+            gtinInconnu = b.Gtin;
+            infoScan = $"GTIN {b.Gtin} inconnu du catalogue : créez le produit, puis scannez à nouveau la boîte.";
+            return;
+        }
+
+        var ligne = lignes.FirstOrDefault(l => l.ProduitId == pid && (l.NumeroLot == "" || string.Equals(l.NumeroLot, b.NumeroLot, StringComparison.OrdinalIgnoreCase)));
+        if (ligne is null)
+        {
+            ligne = new Ligne { ProduitId = pid, Nom = b.Produit!, Quantite = 0 };
+            lignes.Add(ligne);
+        }
+        if (ligne.NumeroLot == "" && b.NumeroLot is not null) ligne.NumeroLot = b.NumeroLot;
+        ligne.Peremption ??= b.Peremption;
+        ligne.Gtin = b.Gtin;
+        if (b.NumeroSerie is { } serie)
+        {
+            if (ligne.Series.Contains(serie)) { infoScan = $"Boîte {serie} déjà scannée."; return; }
+            ligne.Series.Add(serie);
+            ligne.Quantite = Math.Max(ligne.Quantite, ligne.Series.Count);
+        }
+        infoScan = $"{b.Produit} · lot {b.NumeroLot ?? "?"} · boîte {b.NumeroSerie ?? "sans série"} ({ligne.Series.Count} scannée(s)).";
+    }
+
+    private async Task ValiderAsync()
+    {
+        erreur = null;
+        var aEnvoyer = lignes.Where(l => l.Quantite > 0).ToList();
+        if (aEnvoyer.FirstOrDefault(l => l.Peremption is null) is { } sansDate) { erreur = $"{sansDate.Nom} : indiquez la date de péremption."; return; }
+        enCours = true;
+        try
+        {
+            var (r, e) = await Api.ReceptionnerAsync(new ReceptionRequete(fournisseurId, commandeId == 0 ? null : commandeId, numeroBl, numeroFacture,
+                aEnvoyer.Select(l => new LigneReceptionDto(l.ProduitId, l.Nom, l.NumeroLot, l.Peremption!.Value, l.Quantite, l.Prix,
+                    l.Gtin, l.Series.Count > 0 ? l.Series : null)).ToList()));
+            if (e is not null) { erreur = e; return; }
+            resultat = r;
+            (historique, _) = await Api.ReceptionsAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    private void Nouvelle()
+    {
+        lignes.Clear();
+        (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur) = (null, 0, null, null, null, null);
+        Nav.NavigateTo("achats?onglet=receptions");
+    }
+}

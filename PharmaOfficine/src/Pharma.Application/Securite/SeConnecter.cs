@@ -15,6 +15,7 @@ public sealed class SeConnecter(
         if (compte is null || !compte.Actif || !verificateur.Verifier(motDePasse, compte.MotDePasseHash))
             return null;
 
+        await comptes.NoterConnexionAsync(compte.Id, ct);
         var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet);
         return new Session(jeton, compte.NomComplet, expire);
     }

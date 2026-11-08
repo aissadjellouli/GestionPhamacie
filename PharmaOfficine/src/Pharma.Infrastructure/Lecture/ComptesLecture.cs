@@ -27,4 +27,11 @@ public sealed class ComptesLecture(NpgsqlDataSource db) : IComptesLecture
             Actif = r.GetBoolean(6)
         };
     }
+
+    public async Task NoterConnexionAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("UPDATE utilisateur SET derniere_connexion = now() WHERE id = $1");
+        cmd.Parameters.AddWithValue(utilisateurId);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 }

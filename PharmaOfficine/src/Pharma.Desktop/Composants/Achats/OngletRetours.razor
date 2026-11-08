@@ -1,0 +1,269 @@
+@inject ApiClient Api
+
+@if (message is not null)
+{
+    <div class="succes" role="status">@message</div>
+}
+@if (erreur is not null)
+{
+    <div class="erreur" role="alert">@erreur</div>
+}
+
+<section class="panneau" aria-labelledby="t-prep">
+    <h2 id="t-prep">Préparer un retour au grossiste</h2>
+    <p class="detail" style="margin: 0">
+        Un lot ne repart que chez le grossiste qui l’a livré. Les boîtes sortent du stock dès la préparation (mises de côté) ;
+        une annulation les remet en stock. Les boîtes identifiées (étiquette interne ou Data Matrix) doivent être scannées.
+    </p>
+    <div class="achats-ligne">
+        <div class="champ recherche" style="flex: 2 1 280px">
+            <label for="rt-prod">Produit</label>
+            <input id="rt-prod" type="search" autocomplete="off" placeholder="Nom, DCI ou code-barres" @bind="texteProduit" @bind:event="oninput" @bind:after="RechercherAsync" />
+        </div>
+        <div class="champ" style="flex: 1 1 200px">
+            <label for="rt-motif">Motif</label>
+            <select id="rt-motif" @bind="motif">
+                @foreach (var (codeMotif, libelle) in Libelles.MotifsRetour)
+                {
+                    <option value="@codeMotif">@libelle</option>
+                }
+            </select>
+        </div>
+    </div>
+    @if (trouves.Count > 0)
+    {
+        <ul class="liste-lecture" aria-label="Produits trouvés">
+            @foreach (var p in trouves)
+            {
+                <li><button type="button" @onclick="() => ChargerLotsAsync(p.Id, null)"><span><strong>@p.NomCommercial</strong><br /><span class="detail">stock @p.Stock</span></span><span>Voir les lots</span></button></li>
+            }
+        </ul>
+    }
+    @if (proposes.Count > 0)
+    {
+        <ul class="liste-lecture" aria-label="Lots en stock">
+            @foreach (var l in proposes)
+            {
+                <li><button type="button" @onclick="() => Ajouter(l)"><span><strong>@l.Produit · lot @l.NumeroLot</strong><br /><span class="detail">@l.Fournisseur · exp. @Libelles.Date(l.DatePeremption) · @l.Disponible boîte(s)@(l.Bloque ? " · bloqué" : "")</span></span><span>Retourner</span></button></li>
+            }
+        </ul>
+    }
+
+    @if (lignes.Count > 0)
+    {
+        <div class="tableau-cadre">
+            <table class="tableau" style="min-width: 760px">
+                <thead><tr><th scope="col">Lot</th><th scope="col">Grossiste</th><th scope="col">En stock</th><th scope="col">À retourner</th><th scope="col">Boîtes scannées</th><th scope="col"></th></tr></thead>
+                <tbody>
+                    @foreach (var l in lignes)
+                    {
+                        var aScanner = AScanner(l);
+                        <tr>
+                            <td><span class="nom">@l.Lot.Produit</span><br /><span class="detail">lot @l.Lot.NumeroLot · exp. @Libelles.Date(l.Lot.DatePeremption)</span></td>
+                            <td>@l.Lot.Fournisseur</td>
+                            <td>@l.Lot.Disponible<br /><span class="detail">@l.Lot.BoitesIdentifiees identifiée(s)</span></td>
+                            <td><input type="number" min="1" max="@l.Lot.Disponible" style="width: 80px" aria-label="Boîtes à retourner du lot @l.Lot.NumeroLot" @bind="l.Quantite" /></td>
+                            <td>
+                                <input type="text" autocomplete="off" style="width: 200px" placeholder="Scanner une boîte" aria-label="Scanner une boîte du lot @l.Lot.NumeroLot"
+                                       @bind="l.Scan" @onkeydown="e => ToucheScan(e, l)" />
+                                <br /><span class="detail @(l.Codes.Count < aScanner ? "texte-attention" : null)">@l.Codes.Count scannée(s)@(aScanner > 0 ? $", au moins {aScanner} requise(s)" : "")</span>
+                                @if (l.Codes.Count > 0)
+                                {
+                                    <br /><span class="detail">@string.Join(", ", l.Codes)</span>
+                                }
+                            </td>
+                            <td><button type="button" class="btn btn-icone" aria-label="Retirer le lot @l.Lot.NumeroLot" title="Retirer" @onclick="() => lignes.Remove(l)">×</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+            <strong>Avoir attendu : @Libelles.Dinars(lignes.Sum(l => l.Quantite * l.Lot.PrixAchatHt), 2)</strong>
+            <span class="detail">au prix d’achat de chaque lot</span>
+        </div>
+        @if (lignes.Select(l => l.Lot.FournisseurId).Distinct().Count() > 1)
+        {
+            <div class="erreur" role="alert">Ces lots viennent de grossistes différents : préparez un retour par grossiste (retirez les autres lignes).</div>
+        }
+        <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="PreparerAsync">Préparer le retour</button></div>
+    }
+</section>
+
+<section class="tableau-cadre" aria-label="Retours fournisseurs">
+    <table class="tableau" style="min-width: 900px">
+        <thead><tr><th scope="col">Retour</th><th scope="col">Grossiste</th><th scope="col">Lots</th><th scope="col">Montant</th><th scope="col">Statut</th><th scope="col">Suivi</th></tr></thead>
+        <tbody>
+            @foreach (var r in retours)
+            {
+                <tr>
+                    <td><span class="nom">@r.Numero</span><br /><span class="detail">@Libelles.MotifRetour(r.Motif) · @Libelles.DateLocale(r.CreeLe)</span></td>
+                    <td>@r.Fournisseur</td>
+                    <td>@foreach (var l in r.Lignes){<span>@l.Produit · lot @l.NumeroLot × @l.Quantite</span><br />}</td>
+                    <td>attendu @Libelles.Dinars(r.MontantAttendu, 2)@if (r.MontantAvoir is { } a){<br /><strong>avoir @Libelles.Dinars(a, 2)</strong>}</td>
+                    <td><span class="pastille @Libelles.ClasseStatutRetour(r.Statut)">@Libelles.StatutRetour(r.Statut)</span>@if (r.EnvoyeLe is { } e){<br /><span class="detail">envoyé le @Libelles.DateLocale(e)</span>}</td>
+                    <td>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+                            @if (r.Statut == "brouillon")
+                            {
+                                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => EnvoyerAsync(r)">Envoyer (bon PDF)</button>
+                                <button type="button" class="btn" disabled="@enCours" @onclick="() => RefuserAsync(r, null)">Annuler</button>
+                            }
+                            else if (r.Statut == "envoye")
+                            {
+                                <input type="number" min="0" step="0.01" style="width: 120px" aria-label="Montant de l’avoir du retour @r.Numero"
+                                       value="@(avoirs.TryGetValue(r.Id, out var m) ? m : r.MontantAttendu)" @onchange="e => avoirs[r.Id] = decimal.TryParse(e.Value?.ToString(), out var v) ? v : 0" />
+                                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => AvoirAsync(r)">Avoir reçu</button>
+                                <button type="button" class="btn" disabled="@enCours" @onclick="@(() => RefuserAsync(r, "refusé par le grossiste"))">Refusé</button>
+                            }
+                            <button type="button" class="btn" disabled="@enCours" @onclick="() => ImprimerAsync(r)">Bon</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+            @if (retours.Count == 0)
+            {
+                <tr><td colspan="6" class="vide">Aucun retour fournisseur.</td></tr>
+            }
+        </tbody>
+    </table>
+</section>
+
+@code {
+    [Parameter] public long? LotId { get; set; }
+    [Parameter] public long? ProduitId { get; set; }
+    [Parameter] public string? NumeroLot { get; set; }
+    [Parameter] public string? Motif { get; set; }
+
+    private sealed class Ligne(LotRetournableDto lot)
+    {
+        public LotRetournableDto Lot { get; } = lot;
+        public int Quantite { get; set; } = lot.Disponible;
+        public List<string> Codes { get; } = [];
+        public string? Scan { get; set; }
+    }
+
+    private List<RetourDto> retours = [];
+    private readonly List<Ligne> lignes = [];
+    private List<LotRetournableDto> proposes = [];
+    private List<ProduitDto> trouves = [];
+    private readonly Dictionary<long, decimal> avoirs = [];
+    private string texteProduit = "";
+    private string motif = "peremption_proche";
+    private bool enCours;
+    private string? message, erreur;
+    private int requete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Motif is not null && Libelles.MotifsRetour.Any(m => m.Code == Motif)) motif = Motif;
+        await RechargerAsync();
+        // Arrivée depuis une alerte (un lot) ou un rappel de lot (tous les lots de ce numéro)
+        if (LotId is { } id)
+        {
+            var (lot, e) = await Api.LotRetournableAsync(id);
+            if (e is not null) erreur = e; else Ajouter(lot!);
+        }
+        else if (ProduitId is { } pid)
+            await ChargerLotsAsync(pid, NumeroLot);
+    }
+
+    private async Task RechargerAsync()
+    {
+        string? e;
+        (retours, e) = await Api.RetoursAsync();
+        erreur ??= e;
+    }
+
+    private async Task RechercherAsync()
+    {
+        var n = ++requete;
+        if (texteProduit.Trim().Length < 2) { trouves = []; return; }
+        var (t, _) = await Api.RechercherProduitsAsync(texteProduit);
+        if (n == requete) trouves = t;
+    }
+
+    private async Task ChargerLotsAsync(long produitId, string? numeroLot)
+    {
+        trouves = [];
+        var (l, e) = await Api.LotsRetournablesAsync(produitId, numeroLot);
+        if (e is not null) { erreur = e; return; }
+        proposes = l.Where(x => lignes.All(y => y.Lot.LotId != x.LotId)).ToList();
+        if (proposes.Count == 0) erreur = "Aucun lot en stock pour ce produit.";
+        // Rappel : un seul grossiste concerné, on prépare directement
+        if (numeroLot is not null && proposes.Count == 1) Ajouter(proposes[0]);
+    }
+
+    private void Ajouter(LotRetournableDto lot)
+    {
+        if (lignes.All(l => l.Lot.LotId != lot.LotId)) lignes.Add(new Ligne(lot));
+        proposes.RemoveAll(p => p.LotId == lot.LotId);
+        erreur = null;
+    }
+
+    private static int AScanner(Ligne l) => Math.Max(0, l.Quantite - (l.Lot.Disponible - l.Lot.BoitesIdentifiees));
+
+    private void ToucheScan(KeyboardEventArgs e, Ligne l)
+    {
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(l.Scan)) return;
+        var code = l.Scan.Trim();
+        l.Scan = null;
+        if (!l.Codes.Contains(code)) l.Codes.Add(code);
+    }
+
+    private async Task PreparerAsync() => await Executer(async () =>
+    {
+        var (r, e) = await Api.PreparerRetourAsync(new PreparationRetourRequete(motif,
+            lignes.Select(l => new LotARetournerDto(l.Lot.LotId, l.Quantite, l.Codes)).ToList()));
+        if (e is not null) return e;
+        message = $"Retour préparé : {lignes.Sum(l => l.Quantite)} boîte(s) sorties du stock. Envoyez-le pour imprimer le bon de retour.";
+        lignes.Clear();
+        proposes = [];
+        await RechargerAsync();
+        return null;
+    });
+
+    private async Task EnvoyerAsync(RetourDto r) => await Executer(async () =>
+    {
+        var (pdf, nom, e) = await Api.EnvoyerRetourAsync(r.Id);
+        if (e is not null) return e;
+        Documents.Ouvrir(Documents.Enregistrer("Retours", nom!, pdf!));
+        message = $"Retour {r.Numero} envoyé : bon de retour enregistré dans Documents\\Pharma Officine\\Retours.";
+        await RechargerAsync();
+        return null;
+    });
+
+    private async Task AvoirAsync(RetourDto r) => await Executer(async () =>
+    {
+        var montant = avoirs.TryGetValue(r.Id, out var m) ? m : r.MontantAttendu;
+        var e = await Api.EnregistrerAvoirAsync(r.Id, montant);
+        if (e is not null) return e;
+        message = $"Avoir de {Libelles.Dinars(montant, 2)} enregistré et déduit de la dette de {r.Fournisseur}.";
+        await RechargerAsync();
+        return null;
+    });
+
+    private async Task RefuserAsync(RetourDto r, string? motifRefus) => await Executer(async () =>
+    {
+        var e = await Api.RefuserRetourAsync(r.Id, motifRefus);
+        if (e is not null) return e;
+        message = $"Retour {r.Numero} {(motifRefus is null ? "annulé" : "refusé")} : {r.Lignes.Sum(l => l.Quantite)} boîte(s) remise(s) en stock.";
+        await RechargerAsync();
+        return null;
+    });
+
+    private async Task ImprimerAsync(RetourDto r) => await Executer(async () =>
+    {
+        var (pdf, nom, e) = await Api.BonRetourAsync(r.Id);
+        if (e is not null) return e;
+        Documents.Ouvrir(Documents.Enregistrer("Retours", nom!, pdf!));
+        return null;
+    });
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

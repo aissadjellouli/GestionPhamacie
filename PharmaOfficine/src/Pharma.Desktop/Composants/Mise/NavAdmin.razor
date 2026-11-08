@@ -1,0 +1,51 @@
+@inject SessionPoste Session
+
+@* Menu latéral de l'administration : chaque rubrique selon le droit de l'employé *@
+<nav class="admin-nav" aria-label="Rubriques d’administration">
+    @foreach (var r in Rubriques)
+    {
+        if (r.Lien is null)
+        {
+            <span class="nav-inactif" aria-disabled="true" title="@r.Raison">@r.Libelle</span>
+        }
+        else if (!Session.A(r.Permission!))
+        {
+            <span class="nav-inactif" aria-disabled="true" title="@(r.Permission == "role.titulaire" ? "Réservé au pharmacien titulaire" : $"Droit « {r.Permission} » nécessaire")">@r.Libelle</span>
+        }
+        else
+        {
+            <a href="@r.Lien" class="@(r.Lien == Actif ? "active" : null)" aria-current="@(r.Lien == Actif ? "page" : null)">@r.Libelle</a>
+        }
+    }
+</nav>
+
+@code {
+    /// <summary>Lien de la rubrique affichée (ex. « admin/seuils »).</summary>
+    [Parameter] public string Actif { get; set; } = "";
+
+    private sealed record Rubrique(string Libelle, string? Lien, string? Permission, string? Raison = null);
+
+    public static readonly IReadOnlyList<(string Lien, string Permission)> Accessibles =
+    [
+        ("admin/seuils", "admin.parametres"),
+        ("admin/droits", "admin.utilisateurs"),
+        ("admin/caisse", "admin.parametres"),
+        ("admin/emplacements", "admin.parametres"),
+        ("admin/pharmacie", "admin.parametres"),
+        ("admin/notifications", "role.titulaire"),
+        ("admin/sauvegardes", "admin.sauvegardes")
+    ];
+
+    private static readonly Rubrique[] Rubriques =
+    [
+        new("Alertes et seuils", "admin/seuils", "admin.parametres"),
+        new("Utilisateurs et droits", "admin/droits", "admin.utilisateurs"),
+        new("Caisse et contrôle", "admin/caisse", "admin.parametres"),
+        new("Emplacements", "admin/emplacements", "admin.parametres"),
+        new("Imprimantes et étiquettes", null, null, "Modèles d’imprimantes et de scanner à définir"),
+        new("Sauvegardes", "admin/sauvegardes", "admin.sauvegardes"),
+        new("Notifications au titulaire", "admin/notifications", "role.titulaire"),
+        new("Reprise de données", null, null, "Logiciel source de la reprise à définir"),
+        new("Langue et pharmacie", "admin/pharmacie", "admin.parametres")
+    ];
+}

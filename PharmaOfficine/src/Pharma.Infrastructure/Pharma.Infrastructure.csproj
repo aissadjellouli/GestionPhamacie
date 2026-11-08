@@ -6,8 +6,16 @@
   <ItemGroup>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="BCrypt.Net-Next" />
+    <PackageReference Include="PDFsharp-MigraDoc" />
+    <PackageReference Include="MailKit" />
+    <PackageReference Include="System.IO.Ports" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pharma.Application\Pharma.Application.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Logo imprimé en tête des documents PDF -->
+    <EmbeddedResource Include="Impression\Ressources\logo.png" LogicalName="Pharma.Logo.png" />
   </ItemGroup>
 </Project>

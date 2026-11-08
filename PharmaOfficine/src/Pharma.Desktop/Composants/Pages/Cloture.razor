@@ -1,0 +1,152 @@
+@page "/cloture"
+@inject ApiClient Api
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Clôture de caisse</h1>
+            @if (etat?.SessionId is not null)
+            {
+                <p class="sous-titre">Session ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value) avec un fond de caisse de @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste</p>
+            }
+        </div>
+        <a href="caisse" style="font-size: 14px; font-weight: 500">Retour à la caisse</a>
+    </div>
+
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+    @if (etat is null && erreur is null)
+    {
+        <p class="vide">Chargement…</p>
+    }
+    else if (etat is not null && etat.SessionId is null && resultat is null)
+    {
+        <div class="carte vide">Aucune caisse ouverte à votre nom. <a href="caisse">Ouvrir la caisse</a></div>
+    }
+    else if (etat is not null)
+    {
+        @if (etat.ComptageAveugle && resultat is null)
+        {
+            <div class="info-bandeau" role="note">
+                Comptage aveugle : le montant attendu n’est pas affiché. Comptez les espèces du tiroir, le logiciel calcule l’écart après validation.
+            </div>
+        }
+        else if (!etat.ComptageAveugle && etat.VentesEspeces is { } especes && resultat is null)
+        {
+            <div class="info-bandeau" role="note">
+                Attendu dans le tiroir : @Libelles.Dinars((etat.FondCaisse ?? 0) + especes, 2) (fond de caisse et ventes en espèces).
+            </div>
+        }
+
+        <div class="colonnes">
+            <section class="panneau colonne-principale" aria-labelledby="t-cpt">
+                <h2 id="t-cpt">Espèces comptées</h2>
+                <div class="grille-comptage">
+                    @foreach (var (coupure, valeur, libelle) in Coupures)
+                    {
+                        <div class="champ">
+                            <label for="@coupure">@libelle</label>
+                            <input id="@coupure" type="number" min="0" step="@(coupure == "autres" ? "any" : "1")" disabled="@(resultat is not null)"
+                                   value="@saisies[coupure]" @oninput="e => Saisir(coupure, e.Value)" />
+                        </div>
+                    }
+                </div>
+                <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+                    <span style="font-size: 16px">Total compté : <strong>@Libelles.Dinars(TotalCompte, 2)</strong></span>
+                    @if (resultat is null)
+                    {
+                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">Valider le comptage</button>
+                    }
+                </div>
+            </section>
+
+            <aside class="panneau colonne-laterale" aria-label="Résultat">
+                <h2>Résultat</h2>
+                @if (resultat is null)
+                {
+                    <p class="vide" style="margin: 0">Le résultat s’affiche après validation du comptage.</p>
+                }
+                else if (resultat.Attendu is null)
+                {
+                    <div class="succes" role="status">Comptage enregistré : @Libelles.Dinars(resultat.Compte, 2). L’attendu et l’écart sont consultables par le titulaire.</div>
+                    <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button>
+                }
+                else
+                {
+                    <div class="reglement">
+                        <div class="ligne-total"><span>Ventes en espèces</span><span>@Libelles.Dinars(resultat.VentesEspeces ?? 0, 2)</span></div>
+                        <div class="ligne-total"><span>Fond de caisse</span><span>@Libelles.Dinars(resultat.FondCaisse ?? 0, 2)</span></div>
+                        <div class="ligne-total"><span>Attendu</span><strong>@Libelles.Dinars(resultat.Attendu.Value, 2)</strong></div>
+                        <div class="ligne-total"><span>Compté</span><span>@Libelles.Dinars(resultat.Compte, 2)</span></div>
+                        <div class="a-payer">
+                            <span>Écart</span>
+                            <span style="color: @(resultat.Ecart < 0 ? "var(--urgent)" : "var(--accent)")">@(resultat.Ecart > 0 ? "+" : "")@Libelles.Dinars(resultat.Ecart ?? 0, 2)</span>
+                        </div>
+                        @if (resultat.AuDelaDuSeuil == true)
+                        {
+                            <div class="erreur" role="alert">Écart supérieur au seuil de @Libelles.Dinars(resultat.SeuilEcart ?? 0) : inscrit au journal des actions sensibles.</div>
+                        }
+                        <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button>
+                    </div>
+                }
+                @if (fichier is not null)
+                {
+                    <div class="succes" role="status">
+                        Rapport enregistré : @fichier
+                        <button type="button" class="lien-bouton" @onclick="() => Documents.Ouvrir(fichier)">Ouvrir</button>
+                    </div>
+                }
+            </aside>
+        </div>
+    }
+</div>
+
+@code {
+    // Mêmes coupures que Pharma.Domain.Caisse.Coupures (le poste ne référence pas le domaine)
+    private static readonly (string Code, decimal Valeur, string Libelle)[] Coupures =
+    [
+        ("b2000", 2000m, "Billets de 2 000 DA"),
+        ("b1000", 1000m, "Billets de 1 000 DA"),
+        ("b500", 500m, "Billets de 500 DA"),
+        ("b200", 200m, "Billets de 200 DA"),
+        ("p100", 100m, "Pièces de 100 DA"),
+        ("autres", 1m, "Autres pièces (total DA)")
+    ];
+
+    private EtatCaisseDto? etat;
+    private readonly Dictionary<string, decimal> saisies = Coupures.ToDictionary(c => c.Code, _ => 0m);
+    private ClotureDto? resultat;
+    private string? erreur, fichier;
+    private bool enCours;
+
+    private decimal TotalCompte => Coupures.Sum(c => saisies[c.Code] * c.Valeur);
+
+    protected override async Task OnInitializedAsync()
+    {
+        (etat, erreur) = await Api.EtatCaisseAsync();
+    }
+
+    private void Saisir(string code, object? valeur) =>
+        saisies[code] = decimal.TryParse(valeur?.ToString(), System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= 0 ? v : 0;
+
+    private async Task ValiderAsync()
+    {
+        enCours = true;
+        (resultat, erreur) = await Api.CloturerCaisseAsync(new Dictionary<string, decimal>(saisies));
+        enCours = false;
+    }
+
+    private async Task RapportAsync()
+    {
+        if (resultat is null) return;
+        var (contenu, nom, err) = await Api.RapportClotureAsync(resultat.SessionId);
+        if (err is not null) { erreur = err; return; }
+        try
+        {
+            fichier = Documents.Enregistrer("Clotures", nom!, contenu!);
+            Documents.Ouvrir(fichier);
+        }
+        catch (Exception ex) { erreur = $"Rapport impossible à ouvrir : {ex.Message}"; }
+    }
+}

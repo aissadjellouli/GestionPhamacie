@@ -35,10 +35,9 @@ Procédure détaillée (installation de PostgreSQL, création des bases, lanceme
 cd C:\MesDev\PharmaOfficine
 
 # 1. Créer les bases locales pharmacie_dev et pharmacie_test avec les données fictives
-#    (PostgreSQL 18 : ajouter -PgBin "C:\Program Files\PostgreSQL\18\bin")
+#    (scripts idempotents : relancer la commande met une base existante à jour)
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-$env:PGCLIENTENCODING = "UTF8"
-.\scripts\initialiser_base_locale.ps1 -Recreer
+.\scripts\initialiser_base_locale.ps1
 
 # 2. Compiler et tester
 dotnet build PharmaOfficine.slnx
@@ -65,6 +64,7 @@ Vérification rapide de l’API : `GET http://localhost:5080/api/sante`.
 - [Traçabilité des boîtes](docs/tracabilite.md)
 - [Chifa et cadre réglementaire](docs/chifa.md)
 - [Sécurité et droits](docs/securite-et-droits.md)
+- [Notifications au titulaire et sauvegardes](docs/notifications.md)
 - [Mise en production et reprise de données](docs/mise-en-production.md)
 - [Feuille de route](docs/feuille-de-route.md)
 - [Décisions d’architecture](docs/adr/)

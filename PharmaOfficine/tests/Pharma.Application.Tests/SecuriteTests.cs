@@ -5,6 +5,15 @@ namespace Pharma.Application.Tests;
 
 public class SecuriteTests
 {
+    [Fact]
+    public async Task La_connexion_est_datee()
+    {
+        var comptes = new ComptesEnMemoire(
+            new Utilisateur { Id = 7, Identifiant = "vendeur", NomComplet = "Vendeur Test", MotDePasseHash = "hash:secret" });
+        await new SeConnecter(comptes, new VerificateurFactice(), new JetonsFactices()).ExecuterAsync("vendeur", "secret");
+        Assert.Equal([7L], comptes.Connexions);
+    }
+
     private static SeConnecter CasDUsage() => new(
         new ComptesEnMemoire(
             new Utilisateur { Id = 7, Identifiant = "vendeur", NomComplet = "Vendeur Test", MotDePasseHash = "hash:secret" },

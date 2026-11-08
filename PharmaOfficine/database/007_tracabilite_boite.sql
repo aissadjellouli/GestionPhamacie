@@ -10,33 +10,38 @@
 -- ---------------------------------------------------------------------
 ALTER TABLE boite ALTER COLUMN gtin         DROP NOT NULL;
 ALTER TABLE boite ALTER COLUMN numero_serie DROP NOT NULL;
-ALTER TABLE boite ADD COLUMN code_etiquette text UNIQUE;
-ALTER TABLE boite ADD CONSTRAINT ck_boite_identifiant CHECK (
-    (gtin IS NOT NULL AND numero_serie IS NOT NULL) OR code_etiquette IS NOT NULL
-);
+ALTER TABLE boite ADD COLUMN IF NOT EXISTS code_etiquette text UNIQUE;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_boite_identifiant') THEN
+        ALTER TABLE boite ADD CONSTRAINT ck_boite_identifiant CHECK (
+            (gtin IS NOT NULL AND numero_serie IS NOT NULL) OR code_etiquette IS NOT NULL
+        );
+    END IF;
+END $$;
 
 -- Blocage d'un lot (rappel, suspicion de contrefaçon)
-ALTER TABLE lot ADD COLUMN bloque        boolean NOT NULL DEFAULT false;
-ALTER TABLE lot ADD COLUMN motif_blocage text;
+ALTER TABLE lot ADD COLUMN IF NOT EXISTS bloque        boolean NOT NULL DEFAULT false;
+ALTER TABLE lot ADD COLUMN IF NOT EXISTS motif_blocage text;
 
 -- Numéro de la facture Chifa_Officine correspondant à la vente
-ALTER TABLE vente ADD COLUMN num_facture_chifa text;
+ALTER TABLE vente ADD COLUMN IF NOT EXISTS num_facture_chifa text;
 
 -- ---------------------------------------------------------------------
 -- 2. Réglages de traçabilité (activés une fois le stock étiqueté)
 -- ---------------------------------------------------------------------
-CREATE TABLE parametre_tracabilite (
+CREATE TABLE IF NOT EXISTS parametre_tracabilite (
     id                  int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     boite_obligatoire   boolean NOT NULL DEFAULT false,   -- chaque boîte vendue doit être scannée
     patient_obligatoire text    NOT NULL DEFAULT 'ordonnance'
                         CHECK (patient_obligatoire IN ('jamais', 'psychotrope', 'ordonnance', 'toujours'))
 );
-INSERT INTO parametre_tracabilite DEFAULT VALUES;
+INSERT INTO parametre_tracabilite DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------
 -- 3. Historique de chaque boîte (non modifiable)
 -- ---------------------------------------------------------------------
-CREATE TABLE boite_evenement (
+CREATE TABLE IF NOT EXISTS boite_evenement (
     id                      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     boite_id                bigint NOT NULL REFERENCES boite(id),
     type                    text   NOT NULL CHECK (type IN (
@@ -50,7 +55,7 @@ CREATE TABLE boite_evenement (
     commentaire             text,
     cree_le                 timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_boite_evenement ON boite_evenement (boite_id, cree_le);
+CREATE INDEX IF NOT EXISTS idx_boite_evenement ON boite_evenement (boite_id, cree_le);
 
 CREATE OR REPLACE FUNCTION interdire_modification_historique() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -59,7 +64,7 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_boite_evenement_immuable
+CREATE OR REPLACE TRIGGER trg_boite_evenement_immuable
     BEFORE UPDATE OR DELETE ON boite_evenement
     FOR EACH ROW EXECUTE FUNCTION interdire_modification_historique();
 
@@ -73,7 +78,7 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_boite_entree
+CREATE OR REPLACE TRIGGER trg_boite_entree
     AFTER INSERT ON boite
     FOR EACH ROW EXECUTE FUNCTION journaliser_entree_boite();
 
@@ -193,6 +198,8 @@ BEGIN
 END;
 $$;
 
+-- OR REPLACE n'existe pas pour les déclencheurs de contrainte
+DROP TRIGGER IF EXISTS trg_tracabilite_vente ON vente;
 CREATE CONSTRAINT TRIGGER trg_tracabilite_vente
     AFTER INSERT OR UPDATE OF statut ON vente
     DEFERRABLE INITIALLY DEFERRED

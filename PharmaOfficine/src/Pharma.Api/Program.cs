@@ -19,9 +19,13 @@ builder.Host.UseWindowsService(o => o.ServiceName = "PharmaOfficine API");
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(new InfrastructureOptions(
     builder.Configuration.GetConnectionString("Pharmacie") ?? "",
-    builder.Configuration["Chifa:DossierExport"] ?? ""));
+    builder.Configuration["Chifa:DossierExport"] ?? "",
+    builder.Configuration["Ordonnances:Dossier"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Ordonnances"),
+    builder.Configuration["Sauvegardes:PgDump"]));
 builder.Services.AddSingleton<IGenerateurJeton, JetonService>();
 builder.Services.AddHostedService<AlertesQuotidiennes>();
+builder.Services.AddHostedService<EnvoiNotifications>();
+builder.Services.AddHostedService<SauvegardesAutomatiques>();
 builder.Services.AddProblemDetails();
 
 builder.Services
@@ -44,6 +48,7 @@ app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
     var (code, message) = ex switch
     {
         RegleMetierException r => (StatusCodes.Status422UnprocessableEntity, r.Message),
+        Pharma.Application.Commun.DroitRefuseException d => (StatusCodes.Status403Forbidden, d.Message),
         PostgresException { SqlState: "P0001" } p => (StatusCodes.Status422UnprocessableEntity, p.MessageText),
         BadHttpRequestException b => (b.StatusCode, "Requête invalide : données mal formées."),
         _ => (StatusCodes.Status500InternalServerError, "Erreur interne : voir le journal du serveur.")

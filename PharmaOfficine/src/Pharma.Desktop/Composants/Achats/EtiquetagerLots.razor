@@ -1,0 +1,78 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject ImprimanteEtiquettes Imprimante
+
+@* Impression des étiquettes internes : une par boîte sans identité, en PDF (toute imprimante) et en ZPL si une imprimante thermique est déclarée. *@
+
+@if (message is not null)
+{
+    <div class="succes" role="status">@message</div>
+}
+@if (erreur is not null)
+{
+    <div class="erreur" role="alert">@erreur</div>
+}
+<div class="tableau-cadre">
+    <table class="tableau" style="min-width: 0">
+        <thead><tr><th scope="col">Produit</th><th scope="col">Lot</th><th scope="col">Péremption</th><th scope="col">Sans identité</th><th scope="col">À imprimer</th><th scope="col"></th></tr></thead>
+        <tbody>
+            @foreach (var l in Lots)
+            {
+                var reste = Restant(l);
+                <tr>
+                    <td class="nom">@l.Produit</td>
+                    <td>@l.NumeroLot</td>
+                    <td>@Libelles.Date(l.DatePeremption)</td>
+                    <td>@reste / @l.Disponible</td>
+                    <td><input type="number" min="1" max="@reste" style="width: 80px" aria-label="Étiquettes à imprimer pour le lot @l.NumeroLot"
+                               value="@Nombre(l)" @onchange="e => nombres[l.LotId] = int.TryParse(e.Value?.ToString(), out var n) ? n : 0" disabled="@(reste == 0)" /></td>
+                    <td>
+                        <button type="button" class="btn btn-principal" disabled="@(enCours || reste == 0 || !Session.A("achats.receptionner"))"
+                                title="@(Session.A("achats.receptionner") ? null : "Droit « achats.receptionner » nécessaire")" @onclick="() => ImprimerAsync(l)">
+                            @(reste == 0 ? "Étiqueté" : "Imprimer")
+                        </button>
+                    </td>
+                </tr>
+            }
+            @if (Lots.Count == 0)
+            {
+                <tr><td colspan="6" class="vide">Toutes les boîtes en stock ont une identité.</td></tr>
+            }
+        </tbody>
+    </table>
+</div>
+<p class="detail" style="margin: 0">
+    Planche PDF A4 de 4 × 9 étiquettes 50 × 30 mm (Documents\Pharma Officine\Etiquettes).
+    @(Imprimante.EstConfiguree ? $"Envoi direct à l’imprimante thermique {Imprimante.Adresse}." : "Imprimante thermique : déclarez son adresse IP dans PHARMA_IMPRIMANTE_ETIQUETTES pour l’envoi direct en ZPL.")
+</p>
+
+@code {
+    [Parameter, EditorRequired] public List<LotAEtiqueterDto> Lots { get; set; } = [];
+
+    private readonly Dictionary<long, int> nombres = [];
+    private readonly Dictionary<long, int> imprimees = [];
+    private bool enCours;
+    private string? message, erreur;
+
+    private int Restant(LotAEtiqueterDto l) => l.BoitesSansIdentite - imprimees.GetValueOrDefault(l.LotId);
+    private int Nombre(LotAEtiqueterDto l) => nombres.TryGetValue(l.LotId, out var n) ? n : Restant(l);
+
+    private async Task ImprimerAsync(LotAEtiqueterDto l)
+    {
+        (enCours, message, erreur) = (true, null, null);
+        try
+        {
+            var nombre = Nombre(l);
+            var (e, err) = await Api.CreerEtiquettesAsync(l.LotId, nombre);
+            if (err is not null) { erreur = err; return; }
+            imprimees[l.LotId] = imprimees.GetValueOrDefault(l.LotId) + e!.Codes.Count;
+            nombres.Remove(l.LotId);
+            var chemin = Documents.Enregistrer("Etiquettes", $"etiquettes_{l.NumeroLot}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf", Convert.FromBase64String(e.PdfBase64));
+            message = $"{e.Codes.Count} étiquette(s) créée(s) pour le lot {l.NumeroLot} ({e.Codes[0]} à {e.Codes[^1]}).";
+            if (Imprimante.EstConfiguree)
+                message += await Imprimante.EnvoyerAsync(e.Zpl) is { } echec ? $" {echec}" : " Envoyées à l’imprimante thermique.";
+            Documents.Ouvrir(chemin);
+        }
+        finally { enCours = false; }
+    }
+}

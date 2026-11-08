@@ -7,7 +7,7 @@ public sealed record VenteARappeler(string Patient, string? Telephone, DateTime 
 
 public sealed record ResultatRappel(
     string Produit, string NumeroLot, int LotsBloques, int BoitesEnStock,
-    IReadOnlyList<VenteARappeler> Ventes)
+    IReadOnlyList<VenteARappeler> Ventes, string? Emplacements = null)
 {
     public int BoitesVendues => Ventes.Sum(v => v.Boites);
     public int VentesAnonymes => Ventes.Count(v => v.Anonyme);
@@ -24,7 +24,7 @@ public interface IRappelLot
 }
 
 /// <summary>Rappel de lot (fonction SQL rappel_lot) : blocage immédiat et liste des patients à contacter.</summary>
-public sealed class RappelerLot(IRappelLot rappel)
+public sealed class RappelerLot(IRappelLot rappel, Notifications.IAlertesTitulaire? alertes = null)
 {
     public async Task<ResultatRappel> ExecuterAsync(
         long produitId, string? numeroLot, string? motif, long utilisateurId, CancellationToken ct = default)
@@ -35,7 +35,14 @@ public sealed class RappelerLot(IRappelLot rappel)
         if (string.IsNullOrEmpty(lot)) throw new RegleMetierException("Indiquez le numéro de lot rappelé.");
         if (string.IsNullOrEmpty(raison)) throw new RegleMetierException("Indiquez le motif du rappel (il est inscrit au journal).");
 
-        return await rappel.RappelerAsync(produitId, lot, raison, utilisateurId, ct)
-               ?? throw new RegleMetierException($"Aucun lot {lot} pour ce produit : vérifiez le numéro.");
+        var r = await rappel.RappelerAsync(produitId, lot, raison, utilisateurId, ct)
+                ?? throw new RegleMetierException($"Aucun lot {lot} pour ce produit : vérifiez le numéro.");
+        // Alerte du titulaire : le blocage est fait, la notification ne doit pas le faire échouer
+        if (alertes is not null)
+        {
+            try { await alertes.LotBloqueAsync(r.Produit, r.NumeroLot, r.BoitesEnStock, r.BoitesVendues, ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { }
+        }
+        return r;
     }
 }

@@ -15,7 +15,7 @@ ALTER TABLE lot ADD COLUMN IF NOT EXISTS date_a_verifier boolean NOT NULL DEFAUL
 -- ---------------------------------------------------------------------
 -- 1. Sessions d'import (une répétition = une session, le jour J = une autre)
 -- ---------------------------------------------------------------------
-CREATE TABLE import.session (
+CREATE TABLE IF NOT EXISTS import.session (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     logiciel_source  text        NOT NULL,           -- nom et version de l'ancien logiciel
     debut            timestamptz NOT NULL DEFAULT now(),
@@ -27,7 +27,7 @@ CREATE TABLE import.session (
 -- ---------------------------------------------------------------------
 -- 2. Tables de transit : tout en texte, tel que lu dans l'export
 -- ---------------------------------------------------------------------
-CREATE TABLE import.produit_src (
+CREATE TABLE IF NOT EXISTS import.produit_src (
     session_id          bigint NOT NULL REFERENCES import.session(id),
     ref_source          text   NOT NULL,     -- identifiant dans l'ancien logiciel
     code_barre          text,
@@ -40,7 +40,7 @@ CREATE TABLE import.produit_src (
     PRIMARY KEY (session_id, ref_source)
 );
 
-CREATE TABLE import.fournisseur_src (
+CREATE TABLE IF NOT EXISTS import.fournisseur_src (
     session_id      bigint NOT NULL REFERENCES import.session(id),
     ref_source      text   NOT NULL,
     raison_sociale  text   NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE import.fournisseur_src (
     PRIMARY KEY (session_id, ref_source)
 );
 
-CREATE TABLE import.stock_src (
+CREATE TABLE IF NOT EXISTS import.stock_src (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     session_id          bigint NOT NULL REFERENCES import.session(id),
     ref_produit         text   NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE import.stock_src (
     fournisseur_ref     text
 );
 
-CREATE TABLE import.client_src (
+CREATE TABLE IF NOT EXISTS import.client_src (
     session_id      bigint NOT NULL REFERENCES import.session(id),
     ref_source      text   NOT NULL,
     nom             text   NOT NULL,
@@ -73,7 +73,7 @@ CREATE TABLE import.client_src (
 );
 
 -- Rapprochement des produits de l'ancien logiciel avec le catalogue
-CREATE TABLE import.correspondance_produit (
+CREATE TABLE IF NOT EXISTS import.correspondance_produit (
     session_id  bigint  NOT NULL REFERENCES import.session(id),
     ref_source  text    NOT NULL,
     produit_id  bigint  REFERENCES produit(id),
@@ -84,7 +84,7 @@ CREATE TABLE import.correspondance_produit (
     PRIMARY KEY (session_id, ref_source)
 );
 
-CREATE TABLE import.anomalie (
+CREATE TABLE IF NOT EXISTS import.anomalie (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     session_id  bigint NOT NULL REFERENCES import.session(id),
     entite      text   NOT NULL,

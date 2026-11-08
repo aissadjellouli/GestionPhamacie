@@ -1,5 +1,6 @@
 @page "/stock"
 @inject ApiClient Api
+@inject SessionPoste Session
 
 <div class="page page-serree">
     <div class="titre-page">
@@ -10,10 +11,27 @@
         <div class="actions">
             <a href="tracabilite" class="btn">Traçabilité et rappel de lot</a>
             <button type="button" class="btn" disabled title="Bientôt disponible">Registre des psychotropes</button>
-            <button type="button" class="btn" disabled title="Bientôt disponible">Imprimer des étiquettes</button>
-            <button type="button" class="btn btn-principal" disabled title="Bientôt disponible">Lancer un inventaire</button>
+            @if (Session.A("catalogue.creer"))
+            {
+                <button type="button" class="btn" @onclick="() => (creation, messageCreation) = (true, null)">Nouveau produit</button>
+            }
+            <a href="achats?onglet=etiquettes" class="btn">Imprimer des étiquettes</a>
+            <a href="inventaire" class="btn btn-principal">Inventaire tournant</a>
         </div>
     </div>
+
+    @if (creation)
+    {
+        <FicheNouveauProduit OnCree="ProduitCreeAsync" OnAnnule="() => creation = false" />
+    }
+    @if (messageCreation is not null)
+    {
+        <div class="succes" role="status">@messageCreation</div>
+    }
+    @if (erreurRangement is not null)
+    {
+        <div class="erreur" role="alert">@erreurRangement</div>
+    }
 
     @if (erreur is not null)
     {
@@ -47,6 +65,17 @@
                 <label for="rech">Rechercher (nom, DCI, code-barres, lot)</label>
                 <input id="rech" type="search" placeholder="Ex. amlodipine" @bind="recherche" @bind:event="oninput" />
             </div>
+            <div class="champ" style="flex: 0 0 200px">
+                <label for="f-rayon">Rayon</label>
+                <select id="f-rayon" class="selection" @bind="rayon">
+                    <option value="">Tous les rayons</option>
+                    <option value="-">Non rangés</option>
+                    @foreach (var r in emplacements.Where(e => e.Zone == "vente").GroupBy(e => e.Rayon))
+                    {
+                        <option value="@r.Key">Rayon @r.Key</option>
+                    }
+                </select>
+            </div>
             <div class="filtres" role="group" aria-label="Filtrer">
                 @foreach (var (id, libelle) in Filtres)
                 {
@@ -65,6 +94,7 @@
                         <th scope="col">Couverture</th>
                         <th scope="col">1re péremption</th>
                         <th scope="col">Grossistes</th>
+                        <th scope="col">Emplacement</th>
                         <th scope="col">Statut</th>
                     </tr>
                 </thead>
@@ -80,12 +110,40 @@
                             <td>@Couverture(l)</td>
                             <td>@(l.PremierePeremption is { } d ? Libelles.MoisAnnee(d) : "—")</td>
                             <td>@(l.Grossistes.Count > 0 ? string.Join(", ", l.Grossistes) : "—")</td>
+                            <td>
+                                @if (enRangement == l.ProduitId)
+                                {
+                                    <div style="display: flex; flex-direction: column; gap: 6px; min-width: 200px">
+                                        <select class="selection" aria-label="Emplacement de vente de @l.NomCommercial" @bind="choixVente">
+                                            <option value="0">Non rangé</option>
+                                            @foreach (var e in emplacements.Where(e => e.Zone == "vente" && e.Actif)) { <option value="@e.Id">@e.Code@(e.Libelle is null ? "" : $" · {e.Libelle}")</option> }
+                                        </select>
+                                        <select class="selection" aria-label="Réserve de @l.NomCommercial" @bind="choixReserve">
+                                            <option value="0">Pas de réserve</option>
+                                            @foreach (var e in emplacements.Where(e => e.Zone == "reserve" && e.Actif)) { <option value="@e.Id">@e.Code@(e.Libelle is null ? "" : $" · {e.Libelle}")</option> }
+                                        </select>
+                                        <div style="display: flex; gap: 6px">
+                                            <button type="button" class="btn btn-principal" @onclick="() => RangerAsync(l)">Enregistrer</button>
+                                            <button type="button" class="btn" @onclick="() => enRangement = null">Annuler</button>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    @if (l.Emplacement is not null) { <span class="code-emplacement">@l.Emplacement</span> } else { <span class="detail">non rangé</span> }
+                                    @if (l.Reserve is not null) { <br /><span class="detail">réserve @l.Reserve</span> }
+                                    @if (Session.A("stock.ajuster"))
+                                    {
+                                        <br /><button type="button" class="lien" @onclick="() => OuvrirRangement(l)">Ranger</button>
+                                    }
+                                }
+                            </td>
                             <td><span class="pastille @Libelles.ClasseStatutStock(l.Statut)">@Libelles.StatutStock(l.Statut)</span></td>
                         </tr>
                     }
                     @if (Visibles.Count == 0)
                     {
-                        <tr><td colspan="6" class="vide">Aucun produit ne correspond.</td></tr>
+                        <tr><td colspan="7" class="vide">Aucun produit ne correspond.</td></tr>
                     }
                 </tbody>
             </table>
@@ -98,6 +156,41 @@
     private string? erreur;
     private string recherche = "";
     private string filtre = "tous";
+    // ---- Emplacements ----
+    private List<EmplacementDto> emplacements = [];
+    private string rayon = "";
+    private long? enRangement;
+    private long choixVente, choixReserve;
+    private string? erreurRangement;
+
+    private bool PasseRayon(LigneStockDto l) => rayon switch
+    {
+        "" => true,
+        "-" => l.EmplacementId is null,
+        _ => emplacements.FirstOrDefault(e => e.Id == l.EmplacementId)?.Rayon == rayon
+    };
+
+    private void OuvrirRangement(LigneStockDto l) =>
+        (enRangement, choixVente, choixReserve) = (l.ProduitId, l.EmplacementId ?? 0, l.ReserveId ?? 0);
+
+    private async Task RangerAsync(LigneStockDto l)
+    {
+        var e = await Api.RangerProduitAsync(l.ProduitId, choixVente == 0 ? null : choixVente, choixReserve == 0 ? null : choixReserve);
+        if (e is not null) { erreurRangement = e; return; }
+        (enRangement, messageCreation, erreurRangement) = (null, $"« {l.NomCommercial} » rangé.", null);
+        (etat, erreur) = await Api.StockAsync();
+        (emplacements, _) = await Api.EmplacementsAsync();
+    }
+
+    private bool creation;
+    private string? messageCreation;
+
+    private async Task ProduitCreeAsync((long Id, string Nom) p)
+    {
+        (creation, messageCreation) = (false, $"« {p.Nom} » ajouté au catalogue. Il sera vendable après sa première réception (Achats, Réceptions).");
+        (etat, erreur) = await Api.StockAsync();
+        (emplacements, _) = await Api.EmplacementsAsync();
+    }
 
     private static readonly (string, string)[] Filtres =
         [("tous", "Tous"), ("commander", "À commander"), ("peremption", "Péremption proche"), ("psychotropes", "Psychotropes")];
@@ -105,10 +198,11 @@
     protected override async Task OnInitializedAsync()
     {
         (etat, erreur) = await Api.StockAsync();
+        (emplacements, _) = await Api.EmplacementsAsync();
     }
 
     private List<LigneStockDto> Visibles =>
-        etat?.Lignes.Where(l => PasseFiltre(l) && PasseRecherche(l)).ToList() ?? [];
+        etat?.Lignes.Where(l => PasseFiltre(l) && PasseRecherche(l) && PasseRayon(l)).ToList() ?? [];
 
     private bool PasseFiltre(LigneStockDto l) => filtre switch
     {
@@ -124,7 +218,8 @@
         if (t.Length == 0) return true;
         bool Contient(string? s) => s?.Contains(t, StringComparison.CurrentCultureIgnoreCase) == true;
         return Contient(l.NomCommercial) || Contient(l.Dci) || l.CodeBarre == t
-               || l.NumerosLots.Any(n => n.Equals(t, StringComparison.OrdinalIgnoreCase));
+               || l.NumerosLots.Any(n => n.Equals(t, StringComparison.OrdinalIgnoreCase))
+               || string.Equals(l.Emplacement, t, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Detail(LigneStockDto l)

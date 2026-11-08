@@ -6,7 +6,7 @@
 -- ---------------------------------------------------------------------
 -- 1. Catalogue des permissions (fixé par le logiciel)
 -- ---------------------------------------------------------------------
-CREATE TABLE permission (
+CREATE TABLE IF NOT EXISTS permission (
     code        text PRIMARY KEY,
     module      text    NOT NULL,
     libelle     text    NOT NULL,
@@ -38,12 +38,15 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('rapports.marges',             'Rapports',    'Voir les prix d''achat et les marges',       true),
     ('admin.parametres',            'Administration','Modifier les paramètres',                  true),
     ('admin.utilisateurs',          'Administration','Gérer les utilisateurs et les droits',     true),
-    ('admin.sauvegardes',           'Administration','Gérer les sauvegardes',                    true);
+    ('admin.sauvegardes',           'Administration','Gérer les sauvegardes',                    true)
+-- Catalogue fixé par le logiciel : une réexécution remet les libellés à jour
+ON CONFLICT (code) DO UPDATE
+    SET module = EXCLUDED.module, libelle = EXCLUDED.libelle, sensible = EXCLUDED.sensible;
 
 -- ---------------------------------------------------------------------
 -- 2. Rôles, modifiables par le titulaire
 -- ---------------------------------------------------------------------
-CREATE TABLE role (
+CREATE TABLE IF NOT EXISTS role (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     code                text    NOT NULL UNIQUE,
     nom                 text    NOT NULL,
@@ -51,7 +54,7 @@ CREATE TABLE role (
     remise_max_pct      numeric(5,2) NOT NULL DEFAULT 0 CHECK (remise_max_pct BETWEEN 0 AND 100)
 );
 
-CREATE TABLE role_permission (
+CREATE TABLE IF NOT EXISTS role_permission (
     role_id         bigint NOT NULL REFERENCES role(id) ON DELETE CASCADE,
     permission_code text   NOT NULL REFERENCES permission(code),
     PRIMARY KEY (role_id, permission_code)
@@ -61,49 +64,69 @@ INSERT INTO role (code, nom, systeme, remise_max_pct) VALUES
     ('titulaire',  'Pharmacien titulaire', true,  100),
     ('assistant',  'Pharmacien assistant', false, 10),
     ('vendeur',    'Vendeur',              false, 0),
-    ('stagiaire',  'Stagiaire',            false, 0);
+    ('stagiaire',  'Stagiaire',            false, 0)
+-- Les rôles existants gardent les réglages du titulaire
+ON CONFLICT (code) DO NOTHING;
+
+-- Droits de départ : posés uniquement pour un rôle qui n'a encore aucun droit,
+-- pour qu'une réexécution n'écrase jamais les choix du titulaire.
 
 -- Titulaire : tout
 INSERT INTO role_permission
-SELECT r.id, p.code FROM role r CROSS JOIN permission p WHERE r.code = 'titulaire';
+SELECT r.id, p.code FROM role r CROSS JOIN permission p
+WHERE r.code = 'titulaire'
+  AND NOT EXISTS (SELECT 1 FROM role_permission x WHERE x.role_id = r.id);
 
 -- Pharmacien assistant : tout sauf administration et marges
 INSERT INTO role_permission
 SELECT r.id, p.code FROM role r CROSS JOIN permission p
 WHERE r.code = 'assistant'
   AND p.module <> 'Administration'
-  AND p.code NOT IN ('rapports.marges', 'caisse.voir_ecart', 'prix.modifier');
+  AND p.code NOT IN ('rapports.marges', 'caisse.voir_ecart', 'prix.modifier')
+  AND NOT EXISTS (SELECT 1 FROM role_permission x WHERE x.role_id = r.id);
 
 -- Vendeur : comptoir et réception
 INSERT INTO role_permission
 SELECT r.id, p.code FROM role r CROSS JOIN permission p
 WHERE r.code = 'vendeur'
   AND p.code IN ('caisse.vendre', 'credit.accorder', 'stock.consulter',
-                 'achats.receptionner', 'chifa.importer');
+                 'achats.receptionner', 'chifa.importer')
+  AND NOT EXISTS (SELECT 1 FROM role_permission x WHERE x.role_id = r.id);
 
 -- Stagiaire : vente simple uniquement
 INSERT INTO role_permission
 SELECT r.id, p.code FROM role r CROSS JOIN permission p
 WHERE r.code = 'stagiaire'
-  AND p.code IN ('caisse.vendre', 'stock.consulter');
+  AND p.code IN ('caisse.vendre', 'stock.consulter')
+  AND NOT EXISTS (SELECT 1 FROM role_permission x WHERE x.role_id = r.id);
 
 -- ---------------------------------------------------------------------
 -- 3. Rattacher les utilisateurs aux rôles (remplace l'ancienne colonne role)
 -- ---------------------------------------------------------------------
-ALTER TABLE utilisateur ADD COLUMN role_id  bigint REFERENCES role(id);
-ALTER TABLE utilisateur ADD COLUMN pin_hash text;     -- code court pour la caisse (haché par l'application)
-ALTER TABLE utilisateur ADD COLUMN derniere_connexion timestamptz;
+ALTER TABLE utilisateur ADD COLUMN IF NOT EXISTS role_id  bigint REFERENCES role(id);
+ALTER TABLE utilisateur ADD COLUMN IF NOT EXISTS pin_hash text;     -- code court pour la caisse (haché par l'application)
+ALTER TABLE utilisateur ADD COLUMN IF NOT EXISTS derniere_connexion timestamptz;
 
-UPDATE utilisateur u SET role_id = r.id
-FROM role r
-WHERE r.code = CASE u.role
-                   WHEN 'admin'      THEN 'titulaire'
-                   WHEN 'pharmacien' THEN 'assistant'
-                   ELSE 'vendeur'
-               END;
+-- Migration de l'ancienne colonne role, seulement si elle existe encore (première exécution)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema() AND table_name = 'utilisateur' AND column_name = 'role') THEN
+        EXECUTE $migration$
+            UPDATE utilisateur u SET role_id = r.id
+            FROM role r
+            WHERE u.role_id IS NULL
+              AND r.code = CASE u.role
+                               WHEN 'admin'      THEN 'titulaire'
+                               WHEN 'pharmacien' THEN 'assistant'
+                               ELSE 'vendeur'
+                           END
+        $migration$;
+        ALTER TABLE utilisateur DROP COLUMN role;
+    END IF;
+END $$;
 
 ALTER TABLE utilisateur ALTER COLUMN role_id SET NOT NULL;
-ALTER TABLE utilisateur DROP COLUMN role;
 
 -- Le rôle titulaire est intouchable
 CREATE OR REPLACE FUNCTION proteger_role_systeme() RETURNS trigger
@@ -118,7 +141,7 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_proteger_role_systeme
+CREATE OR REPLACE TRIGGER trg_proteger_role_systeme
     BEFORE INSERT OR DELETE ON role_permission
     FOR EACH ROW EXECUTE FUNCTION proteger_role_systeme();
 
@@ -136,6 +159,8 @@ BEGIN
 END;
 $$;
 
+-- OR REPLACE n'existe pas pour les déclencheurs de contrainte
+DROP TRIGGER IF EXISTS trg_garder_un_titulaire ON utilisateur;
 CREATE CONSTRAINT TRIGGER trg_garder_un_titulaire
     AFTER UPDATE OR DELETE ON utilisateur
     DEFERRABLE INITIALLY DEFERRED
@@ -159,8 +184,8 @@ $$;
 -- ---------------------------------------------------------------------
 -- 5. Journal des actions sensibles, avec qui a autorisé
 -- ---------------------------------------------------------------------
-ALTER TABLE journal_audit ADD COLUMN permission_code text REFERENCES permission(code);
-ALTER TABLE journal_audit ADD COLUMN autorise_par    bigint REFERENCES utilisateur(id);
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS permission_code text REFERENCES permission(code);
+ALTER TABLE journal_audit ADD COLUMN IF NOT EXISTS autorise_par    bigint REFERENCES utilisateur(id);
 
 CREATE OR REPLACE FUNCTION interdire_modification_journal() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -169,6 +194,6 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_journal_immuable
+CREATE OR REPLACE TRIGGER trg_journal_immuable
     BEFORE UPDATE OR DELETE ON journal_audit
     FOR EACH ROW EXECUTE FUNCTION interdire_modification_journal();

@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- ---------------------------------------------------------------------
 -- 1. Utilisateurs et sécurité
 -- ---------------------------------------------------------------------
-CREATE TABLE utilisateur (
+CREATE TABLE IF NOT EXISTS utilisateur (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nom_complet         text        NOT NULL,
     identifiant         text        NOT NULL UNIQUE,
@@ -21,18 +21,18 @@ CREATE TABLE utilisateur (
 -- ---------------------------------------------------------------------
 -- 2. Catalogue (nomenclature)
 -- ---------------------------------------------------------------------
-CREATE TABLE dci (
+CREATE TABLE IF NOT EXISTS dci (
     id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nom     text NOT NULL UNIQUE
 );
 
-CREATE TABLE laboratoire (
+CREATE TABLE IF NOT EXISTS laboratoire (
     id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nom     text NOT NULL,
     pays    text
 );
 
-CREATE TABLE produit (
+CREATE TABLE IF NOT EXISTS produit (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     num_enregistrement  text UNIQUE,                 -- numéro de la nomenclature
     code_barre          text UNIQUE,
@@ -55,13 +55,13 @@ CREATE TABLE produit (
 );
 
 -- Recherche rapide et tolérante aux fautes au comptoir
-CREATE INDEX idx_produit_nom_trgm ON produit USING gin (nom_commercial gin_trgm_ops);
-CREATE INDEX idx_dci_nom_trgm     ON dci     USING gin (nom gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_produit_nom_trgm ON produit USING gin (nom_commercial gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_dci_nom_trgm     ON dci     USING gin (nom gin_trgm_ops);
 
 -- ---------------------------------------------------------------------
 -- 3. Fournisseurs et achats
 -- ---------------------------------------------------------------------
-CREATE TABLE fournisseur (
+CREATE TABLE IF NOT EXISTS fournisseur (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     raison_sociale  text          NOT NULL,
     nif             text,
@@ -71,7 +71,7 @@ CREATE TABLE fournisseur (
     solde           numeric(12,2) NOT NULL DEFAULT 0   -- dette envers le fournisseur
 );
 
-CREATE TABLE commande_fournisseur (
+CREATE TABLE IF NOT EXISTS commande_fournisseur (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     fournisseur_id  bigint        NOT NULL REFERENCES fournisseur(id),
     numero          text          NOT NULL UNIQUE,
@@ -82,7 +82,7 @@ CREATE TABLE commande_fournisseur (
     utilisateur_id  bigint        REFERENCES utilisateur(id)
 );
 
-CREATE TABLE ligne_commande (
+CREATE TABLE IF NOT EXISTS ligne_commande (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     commande_id     bigint        NOT NULL REFERENCES commande_fournisseur(id) ON DELETE CASCADE,
     produit_id      bigint        NOT NULL REFERENCES produit(id),
@@ -94,7 +94,7 @@ CREATE TABLE ligne_commande (
 -- ---------------------------------------------------------------------
 -- 4. Stock par lot
 -- ---------------------------------------------------------------------
-CREATE TABLE lot (
+CREATE TABLE IF NOT EXISTS lot (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     produit_id          bigint        NOT NULL REFERENCES produit(id),
     ligne_commande_id   bigint        REFERENCES ligne_commande(id),
@@ -106,9 +106,9 @@ CREATE TABLE lot (
 );
 
 -- Sert la règle FEFO : premier périmé, premier sorti
-CREATE INDEX idx_lot_fefo ON lot (produit_id, date_peremption) WHERE quantite_disponible > 0;
+CREATE INDEX IF NOT EXISTS idx_lot_fefo ON lot (produit_id, date_peremption) WHERE quantite_disponible > 0;
 
-CREATE TABLE mouvement_stock (
+CREATE TABLE IF NOT EXISTS mouvement_stock (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     lot_id          bigint      NOT NULL REFERENCES lot(id),
     type            text        NOT NULL CHECK (type IN (
@@ -119,18 +119,18 @@ CREATE TABLE mouvement_stock (
     utilisateur_id  bigint      REFERENCES utilisateur(id),
     cree_le         timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_mouvement_lot ON mouvement_stock (lot_id, cree_le);
+CREATE INDEX IF NOT EXISTS idx_mouvement_lot ON mouvement_stock (lot_id, cree_le);
 
 -- ---------------------------------------------------------------------
 -- 5. Patients, prescripteurs, ordonnances
 -- ---------------------------------------------------------------------
-CREATE TABLE organisme (
+CREATE TABLE IF NOT EXISTS organisme (
     id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     code    text NOT NULL UNIQUE,     -- 'CNAS', 'CASNOS', ...
     nom     text NOT NULL
 );
 
-CREATE TABLE patient (
+CREATE TABLE IF NOT EXISTS patient (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nom             text          NOT NULL,
     prenom          text,
@@ -143,17 +143,17 @@ CREATE TABLE patient (
     solde_credit    numeric(12,2) NOT NULL DEFAULT 0,   -- ce que le patient doit à l'officine
     cree_le         timestamptz   NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_patient_nom_trgm ON patient USING gin (nom gin_trgm_ops);
-CREATE INDEX idx_patient_num_assure ON patient (num_assure);
+CREATE INDEX IF NOT EXISTS idx_patient_nom_trgm ON patient USING gin (nom gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_patient_num_assure ON patient (num_assure);
 
-CREATE TABLE medecin (
+CREATE TABLE IF NOT EXISTS medecin (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     nom                 text NOT NULL,
     specialite          text,
     code_prestataire    text
 );
 
-CREATE TABLE ordonnance (
+CREATE TABLE IF NOT EXISTS ordonnance (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     patient_id          bigint NOT NULL REFERENCES patient(id),
     medecin_id          bigint REFERENCES medecin(id),
@@ -165,7 +165,7 @@ CREATE TABLE ordonnance (
 -- ---------------------------------------------------------------------
 -- 6. Tiers payant : bordereaux
 -- ---------------------------------------------------------------------
-CREATE TABLE bordereau (
+CREATE TABLE IF NOT EXISTS bordereau (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     organisme_id    bigint        NOT NULL REFERENCES organisme(id),
     numero          text          NOT NULL UNIQUE,
@@ -181,7 +181,7 @@ CREATE TABLE bordereau (
 -- ---------------------------------------------------------------------
 -- 7. Ventes
 -- ---------------------------------------------------------------------
-CREATE TABLE vente (
+CREATE TABLE IF NOT EXISTS vente (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     numero          text          NOT NULL UNIQUE,
     date_vente      timestamptz   NOT NULL DEFAULT now(),
@@ -198,10 +198,10 @@ CREATE TABLE vente (
                     CHECK (statut IN ('en_cours', 'validee', 'annulee')),
     CHECK (type = 'libre' OR (organisme_id IS NOT NULL AND patient_id IS NOT NULL))
 );
-CREATE INDEX idx_vente_date ON vente (date_vente);
-CREATE INDEX idx_vente_bordereau ON vente (bordereau_id);
+CREATE INDEX IF NOT EXISTS idx_vente_date ON vente (date_vente);
+CREATE INDEX IF NOT EXISTS idx_vente_bordereau ON vente (bordereau_id);
 
-CREATE TABLE ligne_vente (
+CREATE TABLE IF NOT EXISTS ligne_vente (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     vente_id            bigint        NOT NULL REFERENCES vente(id) ON DELETE CASCADE,
     produit_id          bigint        NOT NULL REFERENCES produit(id),
@@ -213,9 +213,9 @@ CREATE TABLE ligne_vente (
     montant_organisme   numeric(12,2) NOT NULL DEFAULT 0,
     montant_patient     numeric(12,2) NOT NULL DEFAULT 0
 );
-CREATE INDEX idx_ligne_vente_lot ON ligne_vente (lot_id);
+CREATE INDEX IF NOT EXISTS idx_ligne_vente_lot ON ligne_vente (lot_id);
 
-CREATE TABLE paiement (
+CREATE TABLE IF NOT EXISTS paiement (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     vente_id        bigint        REFERENCES vente(id),
     patient_id      bigint        REFERENCES patient(id),
@@ -230,7 +230,7 @@ CREATE TABLE paiement (
 -- ---------------------------------------------------------------------
 -- 8. Registre des psychotropes et stupéfiants (non modifiable)
 -- ---------------------------------------------------------------------
-CREATE TABLE registre_psychotrope (
+CREATE TABLE IF NOT EXISTS registre_psychotrope (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     lot_id          bigint      NOT NULL REFERENCES lot(id),
     ligne_vente_id  bigint      UNIQUE REFERENCES ligne_vente(id),
@@ -251,14 +251,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_registre_immuable
+CREATE OR REPLACE TRIGGER trg_registre_immuable
     BEFORE UPDATE OR DELETE ON registre_psychotrope
     FOR EACH ROW EXECUTE FUNCTION interdire_modification();
 
 -- ---------------------------------------------------------------------
 -- 9. Journal d'audit
 -- ---------------------------------------------------------------------
-CREATE TABLE journal_audit (
+CREATE TABLE IF NOT EXISTS journal_audit (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     utilisateur_id      bigint      REFERENCES utilisateur(id),
     action              text        NOT NULL,
@@ -267,11 +267,12 @@ CREATE TABLE journal_audit (
     details             jsonb,
     cree_le             timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_audit_date ON journal_audit (cree_le);
+CREATE INDEX IF NOT EXISTS idx_audit_date ON journal_audit (cree_le);
 
 -- ---------------------------------------------------------------------
 -- 10. Données initiales
 -- ---------------------------------------------------------------------
 INSERT INTO organisme (code, nom) VALUES
     ('CNAS',   'Caisse nationale des assurances sociales des travailleurs salariés'),
-    ('CASNOS', 'Caisse nationale de sécurité sociale des non-salariés');
+    ('CASNOS', 'Caisse nationale de sécurité sociale des non-salariés')
+ON CONFLICT (code) DO NOTHING;

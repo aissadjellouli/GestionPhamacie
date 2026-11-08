@@ -7,9 +7,9 @@
 -- Le code identifie un LOT précis : produit, grossiste, péremption.
 -- =====================================================================
 
-CREATE SEQUENCE seq_code_interne START 1;
+CREATE SEQUENCE IF NOT EXISTS seq_code_interne START 1;
 
-ALTER TABLE lot ADD COLUMN code_interne text UNIQUE;
+ALTER TABLE lot ADD COLUMN IF NOT EXISTS code_interne text UNIQUE;
 
 -- Clé de contrôle EAN-13 à partir des 12 premiers chiffres
 CREATE OR REPLACE FUNCTION ean13_cle(p12 text) RETURNS char(1)

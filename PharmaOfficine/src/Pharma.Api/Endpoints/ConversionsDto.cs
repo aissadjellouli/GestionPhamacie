@@ -23,24 +23,26 @@ internal static class ConversionsDto
     public static LotFefoDto VersDto(this LotAServir l, IEnumerable<LotEcarte> ecartes) =>
         new(l.LotId, l.NumeroLot, l.DatePeremption, l.Quantite, l.Fournisseur, ecartes.Select(VersDto).ToList());
 
-    public static ProduitAlternatifDto VersDto(this ProduitAlternatif a) => new(a.ProduitId, a.NomCommercial, a.PrixPublic, a.Stock);
+    public static ProduitAlternatifDto VersDto(this ProduitAlternatif a) =>
+        new(a.ProduitId, a.NomCommercial, a.PrixPublic, a.Stock, a.Exact, a.Dosage, a.Forme);
 
     public static AlerteDto VersDto(this Alerte a) =>
         new(a.Id, a.Type, a.Niveau, a.ProduitId, a.LotId, a.Message, a.ValeurDzd, a.Statut, a.MiseAJourLe,
-            a.Produit, a.NumeroLot);
+            a.Produit, a.NumeroLot, a.Emplacement);
 
     public static EtatStockDto VersDto(this EtatStock e) =>
         new(new IndicateursStockDto(e.Indicateurs.ReferencesEnStock, e.Indicateurs.ValeurAchat, e.Indicateurs.LotsDateAVerifier),
             e.Lignes.Select(l => new LigneStockDto(
                 l.ProduitId, l.NomCommercial, l.Dci, l.CodeBarre, l.Classe.Code(), l.Stock, l.CouvertureJours,
-                l.PremierePeremption, l.NombreLots, l.Grossistes, l.NumerosLots, l.Statut, l.PeremptionProche)).ToList());
+                l.PremierePeremption, l.NombreLots, l.Grossistes, l.NumerosLots, l.Statut, l.PeremptionProche,
+                l.EmplacementId, l.Emplacement, l.ReserveId, l.Reserve)).ToList());
 
     public static EtatEtiquetageDto VersDto(this EtatEtiquetage e) =>
         new(e.BoitesIdentifiees, e.BoitesEnStock, e.Pourcentage, e.ModeStrict);
 
     public static RappelLotDto VersDto(this ResultatRappel r) =>
         new(r.Produit, r.NumeroLot, r.LotsBloques, r.BoitesEnStock, r.BoitesVendues, r.PatientsAContacter, r.VentesAnonymes,
-            r.Ventes.Select(v => new VenteARappelerDto(v.Patient, v.Telephone, v.DateVente, v.Ticket, v.Boites, v.Anonyme)).ToList());
+            r.Ventes.Select(v => new VenteARappelerDto(v.Patient, v.Telephone, v.DateVente, v.Ticket, v.Boites, v.Anonyme)).ToList(), r.Emplacements);
 
     public static ParcoursBoiteDto VersDto(this ParcoursBoite p) =>
         new(p.BoiteId, p.Identifiant, p.Produit, p.NumeroLot, p.DatePeremption,

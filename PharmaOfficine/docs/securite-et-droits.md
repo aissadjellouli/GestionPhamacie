@@ -8,9 +8,10 @@
 
 ## Droits
 
-- 25 permissions (table `permission`, constantes `Pharma.Domain.Securite.Permissions`).
+- 26 permissions (table `permission`, constantes `Pharma.Domain.Securite.Permissions`), dont « catalogue.creer » (création d'un produit, titulaire et assistant par défaut ; script 015).
 - Rôles de départ : titulaire (tout, non modifiable), pharmacien assistant, vendeur, stagiaire. Le titulaire ajuste les droits depuis l’administration.
 - Chaque point d’accès déclare sa permission : `.ExigerPermission(Permissions.StockConsulter)`. La vérification se fait en base à chaque appel, donc un droit retiré s’applique immédiatement.
+- Certaines actions sont **réservées au titulaire** quel que soit le réglage des droits : `.ExigerTitulaire()` côté API et `ExigerTitulaireAsync` dans les cas d'usage (rôle système). C'est le cas des notifications : réglages, destinataires, messages de test et file d'attente. Le poste reçoit le marqueur `role.titulaire` dans la liste des droits pour afficher ces écrans.
 - Action sensible non autorisée : le poste demande le code du titulaire ; le journal enregistre qui a agi et qui a autorisé (à développer côté API).
 
 ## Garanties en base

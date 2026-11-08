@@ -1,0 +1,217 @@
+@page "/admin/seuils"
+@inject ApiClient Api
+
+<div class="page admin">
+    <NavAdmin Actif="admin/seuils" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Alertes et seuils</h1>
+                <p class="sous-titre">Réservé au titulaire · chaque modification est inscrite au journal</p>
+            </div>
+            <button type="button" class="btn btn-principal" disabled="@(g is null || enCours)" @onclick="EnregistrerAsync">Enregistrer</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (g is not null)
+        {
+            <section class="panneau" aria-labelledby="t-general">
+                <div>
+                    <h2 id="t-general">Péremption : réglage général</h2>
+                    <p class="sous-titre">Utilisé pour tous les produits et grossistes sans réglage particulier. L’alerte rouge doit être plus courte que l’orange.</p>
+                </div>
+                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+                    <div class="champ">
+                        <label for="g-orange">Alerte orange (jours)</label>
+                        <input id="g-orange" type="number" min="1" @bind="g.JoursOrange" />
+                        <span class="tuile-note">@Environ(g.JoursOrange) : préparer un retour</span>
+                    </div>
+                    <div class="champ">
+                        <label for="g-rouge">Alerte rouge (jours)</label>
+                        <input id="g-rouge" type="number" min="1" @bind="g.JoursRouge" />
+                        <span class="tuile-note">@Environ(g.JoursRouge) : vendre en priorité</span>
+                    </div>
+                    <div class="champ">
+                        <label for="g-horizon">Calcul du risque d’écoulement (jours)</label>
+                        <input id="g-horizon" type="number" min="1" @bind="g.HorizonRisqueJours" />
+                        <span class="tuile-note">anticiper les pertes selon les ventes</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panneau" aria-labelledby="t-grossistes">
+                <div>
+                    <h2 id="t-grossistes">Par grossiste</h2>
+                    <p class="sous-titre">Selon le délai de reprise de chaque grossiste. Champ vide : le réglage général s’applique.</p>
+                </div>
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 640px">
+                        <thead><tr><th scope="col">Grossiste</th><th scope="col">Reprise jusqu’à (jours avant péremption)</th><th scope="col">Orange (j)</th><th scope="col">Rouge (j)</th></tr></thead>
+                        <tbody>
+                            @foreach (var f in grossistes)
+                            {
+                                <tr>
+                                    <td class="nom">@f.Nom</td>
+                                    <td><input type="number" min="1" style="width: 140px" aria-label="Délai de reprise, @f.Nom" placeholder="à renseigner" @bind="f.DelaiRepriseJours" /></td>
+                                    <td><input type="number" min="1" style="width: 120px" aria-label="Alerte orange, @f.Nom" placeholder="@($"{g.JoursOrange} (général)")" @bind="f.JoursOrange" /></td>
+                                    <td><input type="number" min="1" style="width: 120px" aria-label="Alerte rouge, @f.Nom" placeholder="@($"{g.JoursRouge} (général)")" @bind="f.JoursRouge" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panneau" aria-labelledby="t-produits">
+                <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px">
+                    <div>
+                        <h2 id="t-produits">Exceptions par produit</h2>
+                        <p class="sous-titre">Prioritaires sur tout le reste : produits chers, à rotation lente ou conservés au froid.</p>
+                    </div>
+                    <button type="button" class="btn" @onclick="() => ajout = !ajout">Ajouter un produit</button>
+                </div>
+                @if (ajout)
+                {
+                    <div class="champ recherche">
+                        <input type="search" aria-label="Rechercher un produit" placeholder="Nom, DCI ou code-barres" autocomplete="off" autofocus
+                               @bind="recherche" @bind:event="oninput" @bind:after="RechercherAsync" />
+                        @if (suggestions.Count > 0)
+                        {
+                            <ul class="suggestions" aria-label="Produits trouvés">
+                                @foreach (var p in suggestions)
+                                {
+                                    <li><button type="button" @onclick="() => AjouterException(p)"><span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage</span></span></button></li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                }
+                @if (exceptions.Count == 0)
+                {
+                    <p class="vide" style="margin: 0">Aucune exception : tous les produits suivent leur grossiste ou le réglage général.</p>
+                }
+                @foreach (var e in exceptions)
+                {
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--bordure-2)">
+                        <span style="flex: 999 1 240px; font-weight: 500">@e.Nom</span>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 14px">Orange <input type="number" min="1" style="width: 100px" @bind="e.JoursOrange" /></label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 14px">Rouge <input type="number" min="1" style="width: 100px" @bind="e.JoursRouge" /></label>
+                        <button type="button" class="btn" @onclick="() => exceptions.Remove(e)">Retirer</button>
+                    </div>
+                }
+            </section>
+
+            <section class="panneau" aria-labelledby="t-stock">
+                <div>
+                    <h2 id="t-stock">Stock et commandes</h2>
+                    <p class="sous-titre">Servent au calcul du stock critique, de la commande suggérée et des produits dormants.</p>
+                </div>
+                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+                    <div class="champ"><label for="s-delai">Délai de livraison (jours)</label><input id="s-delai" type="number" min="0" @bind="g.DelaiFournisseurJours" /></div>
+                    <div class="champ"><label for="s-secu">Stock de sécurité (jours)</label><input id="s-secu" type="number" min="0" @bind="g.JoursSecurite" /></div>
+                    <div class="champ"><label for="s-cible">Stock visé après commande (jours)</label><input id="s-cible" type="number" min="1" @bind="g.JoursCibleCommande" /></div>
+                    <div class="champ"><label for="s-dormant">Produit dormant après (jours sans vente)</label><input id="s-dormant" type="number" min="1" @bind="g.JoursDormant" /></div>
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    private sealed class General
+    {
+        public int JoursOrange { get; set; }
+        public int JoursRouge { get; set; }
+        public int HorizonRisqueJours { get; set; }
+        public int DelaiFournisseurJours { get; set; }
+        public int JoursSecurite { get; set; }
+        public int JoursCibleCommande { get; set; }
+        public int JoursDormant { get; set; }
+    }
+
+    private sealed class Grossiste
+    {
+        public long Id { get; init; }
+        public string Nom { get; init; } = "";
+        public int? DelaiRepriseJours { get; set; }
+        public int? JoursOrange { get; set; }
+        public int? JoursRouge { get; set; }
+    }
+
+    private sealed class ExceptionSaisie
+    {
+        public long ProduitId { get; init; }
+        public string Nom { get; init; } = "";
+        public int? JoursOrange { get; set; }
+        public int? JoursRouge { get; set; }
+    }
+
+    private General? g;
+    private List<Grossiste> grossistes = [];
+    private List<ExceptionSaisie> exceptions = [];
+    private string? erreur, message;
+    private bool enCours, ajout;
+    private string recherche = "";
+    private List<ProduitDto> suggestions = [];
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        var (s, err) = await Api.SeuilsAsync();
+        erreur = err;
+        if (s is null) return;
+        g = new General
+        {
+            JoursOrange = s.General.JoursOrange, JoursRouge = s.General.JoursRouge, HorizonRisqueJours = s.General.HorizonRisqueJours,
+            DelaiFournisseurJours = s.General.DelaiFournisseurJours, JoursSecurite = s.General.JoursSecurite,
+            JoursCibleCommande = s.General.JoursCibleCommande, JoursDormant = s.General.JoursDormant
+        };
+        grossistes = s.Grossistes.Select(f => new Grossiste
+        {
+            Id = f.FournisseurId, Nom = f.Nom, DelaiRepriseJours = f.DelaiRepriseJours, JoursOrange = f.JoursOrange, JoursRouge = f.JoursRouge
+        }).ToList();
+        exceptions = s.Exceptions.Select(e => new ExceptionSaisie
+        {
+            ProduitId = e.ProduitId, Nom = e.Nom, JoursOrange = e.JoursOrange, JoursRouge = e.JoursRouge
+        }).ToList();
+    }
+
+    private static string Environ(int jours) => jours switch
+    {
+        < 45 => $"environ {jours} jours",
+        _ => $"environ {Math.Round(jours / 30.0)} mois"
+    };
+
+    private async Task RechercherAsync()
+    {
+        if (recherche.Trim().Length < 2) { suggestions = []; return; }
+        (suggestions, _) = await Api.RechercherProduitsAsync(recherche);
+    }
+
+    private void AjouterException(ProduitDto p)
+    {
+        if (exceptions.All(e => e.ProduitId != p.Id))
+            exceptions.Add(new ExceptionSaisie { ProduitId = p.Id, Nom = p.NomCommercial });
+        (recherche, suggestions, ajout) = ("", [], false);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (g is null) return;
+        enCours = true;
+        message = null;
+        var (resultat, err) = await Api.EnregistrerSeuilsAsync(new ReglagesSeuilsDto(
+            new ParametresAlerteDto(g.JoursOrange, g.JoursRouge, g.HorizonRisqueJours, g.DelaiFournisseurJours, g.JoursSecurite, g.JoursCibleCommande, g.JoursDormant),
+            grossistes.Select(f => new SeuilGrossisteDto(f.Id, f.Nom, f.DelaiRepriseJours, f.JoursOrange, f.JoursRouge)).ToList(),
+            exceptions.Select(e => new ExceptionProduitDto(e.ProduitId, e.Nom, e.JoursOrange, e.JoursRouge)).ToList()));
+        enCours = false;
+        erreur = err;
+        if (resultat is null) return;
+        message = $"Paramètres enregistrés. Les alertes sont recalculées immédiatement ({resultat.AlertesMisesAJour} alertes créées ou mises à jour).";
+        await ChargerAsync();
+    }
+}

@@ -23,4 +23,4 @@
 - [ ] Bordereaux et rejets, rapports, achats et retours
 - [ ] Traductions arabe et anglais (fichiers `.resx`), interface de droite à gauche
 - [ ] Installateur (Inno Setup) et mises à jour automatiques (Velopack)
-- [ ] Application mobile du titulaire
+- [ ] Alertes SMS et rapport e-mail au titulaire, puis accès à distance par VPN

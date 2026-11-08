@@ -3,7 +3,7 @@ namespace Pharma.Application.Alertes;
 public sealed record Alerte(
     long Id, string Type, string Niveau, long ProduitId, long? LotId,
     string Message, decimal? ValeurDzd, string Statut, DateTime MiseAJourLe,
-    string Produit, string? NumeroLot);
+    string Produit, string? NumeroLot, string? Emplacement = null);
 
 public interface IAlertesLecture
 {

@@ -6,7 +6,7 @@
 -- ---------------------------------------------------------------------
 -- 1. Paramètres réglables par la pharmacie (une seule ligne)
 -- ---------------------------------------------------------------------
-CREATE TABLE parametre_alerte (
+CREATE TABLE IF NOT EXISTS parametre_alerte (
     id                      int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     jours_orange            int NOT NULL DEFAULT 180,  -- péremption proche : agir (retour fournisseur)
     jours_rouge             int NOT NULL DEFAULT 90,   -- péremption imminente : vendre en priorité
@@ -18,7 +18,7 @@ CREATE TABLE parametre_alerte (
     jours_dormant           int NOT NULL DEFAULT 90,
     jours_surstock          int NOT NULL DEFAULT 180
 );
-INSERT INTO parametre_alerte DEFAULT VALUES;
+INSERT INTO parametre_alerte DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 
 -- Produit en tension / rupture nationale (signalé manuellement ou par le grossiste)
 ALTER TABLE produit ADD COLUMN IF NOT EXISTS en_tension boolean NOT NULL DEFAULT false;
@@ -50,6 +50,8 @@ LEFT JOIN ventes ON ventes.produit_id = p.id;
 --    Simule l'écoulement FEFO : les lots qui périment en premier sont
 --    vendus en premier. Calcul volontairement prudent.
 -- ---------------------------------------------------------------------
+-- La vue change de colonnes d'un script à l'autre : on la recrée
+DROP VIEW IF EXISTS v_risque_peremption;
 CREATE OR REPLACE VIEW v_risque_peremption AS
 WITH prm AS (
     SELECT * FROM parametre_alerte WHERE id = 1
@@ -183,14 +185,14 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_ligne_vente_peremption
+CREATE OR REPLACE TRIGGER trg_ligne_vente_peremption
     BEFORE INSERT ON ligne_vente
     FOR EACH ROW EXECUTE FUNCTION verifier_lot_vendable();
 
 -- ---------------------------------------------------------------------
 -- 8. Table des alertes, avec suivi des actions
 -- ---------------------------------------------------------------------
-CREATE TABLE alerte (
+CREATE TABLE IF NOT EXISTS alerte (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     type                text NOT NULL CHECK (type IN (
                             'peremption', 'perime', 'risque_ecoulement',
@@ -211,11 +213,11 @@ CREATE TABLE alerte (
 );
 
 -- Une seule alerte ouverte par type, produit et lot
-CREATE UNIQUE INDEX ux_alerte_ouverte
+CREATE UNIQUE INDEX IF NOT EXISTS ux_alerte_ouverte
     ON alerte (type, produit_id, COALESCE(lot_id, 0))
     WHERE statut IN ('nouvelle', 'vue', 'reportee');
 
-CREATE INDEX idx_alerte_ouverte_tri
+CREATE INDEX IF NOT EXISTS idx_alerte_ouverte_tri
     ON alerte (niveau, valeur_dzd DESC)
     WHERE statut IN ('nouvelle', 'vue');
 

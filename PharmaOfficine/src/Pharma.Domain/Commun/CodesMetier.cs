@@ -40,6 +40,39 @@ public static class CodesMetier
         [StatutVente.Annulee] = "annulee"
     };
 
+    private static readonly Dictionary<ModePaiement, string> ModesPaiement = new()
+    {
+        [ModePaiement.Especes] = "especes",
+        [ModePaiement.Carte] = "carte",
+        [ModePaiement.Cheque] = "cheque",
+        [ModePaiement.Credit] = "credit"
+    };
+
+    private static readonly Dictionary<Achats.MotifRetour, string> MotifsRetour = new()
+    {
+        [Achats.MotifRetour.PeremptionProche] = "peremption_proche",
+        [Achats.MotifRetour.Perime] = "perime",
+        [Achats.MotifRetour.Defaut] = "defaut",
+        [Achats.MotifRetour.ErreurLivraison] = "erreur_livraison",
+        [Achats.MotifRetour.RappelLot] = "rappel_lot"
+    };
+
+    private static readonly Dictionary<Achats.StatutRetour, string> StatutsRetour = new()
+    {
+        [Achats.StatutRetour.Brouillon] = "brouillon",
+        [Achats.StatutRetour.Envoye] = "envoye",
+        [Achats.StatutRetour.AvoirRecu] = "avoir_recu",
+        [Achats.StatutRetour.Refuse] = "refuse"
+    };
+
+    public static string Code(this Achats.MotifRetour v) => MotifsRetour[v];
+    public static Achats.MotifRetour MotifRetourDepuisCode(string code) => Depuis(MotifsRetour, code);
+    public static string Code(this Achats.StatutRetour v) => StatutsRetour[v];
+    public static Achats.StatutRetour StatutRetourDepuisCode(string code) => Depuis(StatutsRetour, code);
+
+    public static string Code(this ModePaiement v) => ModesPaiement[v];
+    public static ModePaiement ModePaiementDepuisCode(string code) => Depuis(ModesPaiement, code);
+
     public static string Code(this ClasseReglementaire v) => Classes[v];
     public static string Code(this StatutBoite v) => StatutsBoite[v];
     public static string Code(this TypeVente v) => TypesVente[v];

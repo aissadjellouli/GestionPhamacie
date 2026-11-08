@@ -1,0 +1,30 @@
+@inject ApiClient Api
+
+@if (erreur is not null)
+{
+    <div class="erreur" role="alert">@erreur</div>
+}
+<section class="tableau-cadre" aria-label="Grossistes">
+    <table class="tableau" style="min-width: 0">
+        <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">Dette (solde)</th><th scope="col">Délai de reprise</th></tr></thead>
+        <tbody>
+            @foreach (var f in fournisseurs)
+            {
+                <tr>
+                    <td class="nom">@f.RaisonSociale</td>
+                    <td>@(f.Telephone ?? "—")</td>
+                    <td>@Libelles.Dinars(f.Solde, 2)</td>
+                    <td>@(f.DelaiRepriseJours is { } j ? $"{j} jours avant péremption" : "non renseigné")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</section>
+<p class="detail" style="margin: 0">La dette augmente du montant TTC de chaque réception et diminue de chaque avoir reçu. Le règlement des factures grossistes n’est pas encore géré.</p>
+
+@code {
+    private List<FournisseurDto> fournisseurs = [];
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => (fournisseurs, erreur) = await Api.FournisseursAsync();
+}

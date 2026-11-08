@@ -1,108 +1,452 @@
 @page "/caisse"
+@implements IAsyncDisposable
 @inject ApiClient Api
+@inject SessionPoste Session
+@inject ConfigurationPoste Poste
+@inject IJSRuntime JS
 
 <div class="page" style="padding-top: 24px">
-    <div class="colonnes" style="gap: 24px">
-        <section class="colonne-principale" aria-label="Panier">
-            <div class="champ recherche">
-                <label for="scan">Scanner ou rechercher un produit (nom, DCI, code-barres)</label>
-                <input id="scan" class="grand" type="search" placeholder="Ex. amoxicilline" autofocus autocomplete="off"
-                       @bind="texte" @bind:event="oninput" @bind:after="RechercherAsync" @onkeydown="ToucheAsync" />
-                @if (suggestions.Count > 0)
-                {
-                    <ul class="suggestions" aria-label="Produits trouvés">
-                        @foreach (var p in suggestions)
-                        {
-                            <li>
-                                <button type="button" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, p.Dci, p.PrixPublic)">
-                                    <span>
-                                        <strong>@p.NomCommercial</strong><br />
-                                        <span class="detail">@p.Dci @p.Dosage · stock @p.Stock</span>
-                                    </span>
-                                    <span>@Libelles.Dinars(p.PrixPublic, 2)</span>
-                                </button>
-                            </li>
-                        }
-                    </ul>
-                }
+    @if (erreurEtat is not null)
+    {
+        <div class="erreur" role="alert">@erreurEtat</div>
+    }
+    else if (etat is null)
+    {
+        <p class="vide">Chargement de la caisse…</p>
+    }
+    else if (etat.SessionId is null)
+    {
+        <section class="panneau" style="max-width: 460px" aria-labelledby="t-ouvrir">
+            <h2 id="t-ouvrir">Ouvrir la caisse</h2>
+            <p class="sous-titre">Comptez le fond de caisse avant la première vente. La caisse reste à votre nom jusqu’à la clôture.</p>
+            <div class="champ">
+                <label for="fond">Fond de caisse (DA)</label>
+                <input id="fond" type="number" min="0" step="1" @bind="fondCaisse" />
             </div>
+            @if (erreurOuverture is not null) { <div class="erreur" role="alert">@erreurOuverture</div> }
+            <button type="button" class="btn btn-principal btn-large" disabled="@enCours" @onclick="OuvrirAsync">Ouvrir la caisse</button>
+        </section>
+    }
+    else
+    {
+        <p class="sous-titre" style="margin: 0">
+            Caisse ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value) · fond de caisse @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste
+        </p>
 
-            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (venteFaite is not null)
+        {
+            <div class="succes" role="status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px">
+                <strong>Vente @venteFaite.Numero encaissée : @Libelles.Dinars(venteFaite.MontantTotal, 2)</strong>
+                @if (venteFaite.PartOrganisme > 0) { <span>part organisme @Libelles.Dinars(venteFaite.PartOrganisme, 2)</span> }
+                @if (venteFaite.Mode == "especes" && venteFaite.Rendu > 0) { <span style="font-size: 18px; font-weight: 600">Rendu : @Libelles.Dinars(venteFaite.Rendu, 2)</span> }
+                @if (venteFaite.Mode == "credit") { <span>mise en crédit</span> }
+                <button type="button" class="btn" disabled title="Imprimante de tickets à définir (modèle ESC/POS inconnu)">Imprimer le ticket</button>
+            </div>
+        }
 
-            @if (bandeau is not null)
-            {
-                <div class="bandeau" role="alert">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 1px"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
-                    <div>
-                        <strong>@bandeau.Titre</strong>
-                        @if (bandeau.Detail is not null) { <span>@bandeau.Detail</span> }
-                    </div>
+        <div class="colonnes" style="gap: 24px">
+            <section class="colonne-principale" aria-label="Panier">
+                <div class="barre-ordonnance" role="group" aria-label="Ordonnance">
+                    <span class="etiquette-champ">Ordonnance :</span>
+                    <button type="button" class="btn" disabled="@lectureEnCours" @onclick="ScannerOrdonnanceAsync">Scanner</button>
+                    <button type="button" class="btn" disabled="@lectureEnCours" @onclick="OuvrirCameraAsync">Caméra</button>
+                    <button type="button" class="btn" disabled="@lectureEnCours" @onclick="ImporterOrdonnanceAsync">Importer un fichier</button>
+                    @if (lectureEnCours) { <span class="sous-titre" role="status">Lecture de l’ordonnance…</span> }
                 </div>
-            }
 
-            @if (lignes.Count == 0)
-            {
-                <div class="carte vide">Panier vide : scannez une boîte ou recherchez un produit.</div>
-            }
-            else
-            {
-                <div class="panier">
-                    @foreach (var l in lignes)
+                @if (cameraOuverte)
+                {
+                    <div class="panneau camera">
+                        <video id="camera-video" autoplay playsinline muted aria-label="Image de la caméra"></video>
+                        <div class="actions">
+                            <button type="button" class="btn btn-principal" @onclick="PrendrePhotoAsync">Prendre la photo</button>
+                            <button type="button" class="btn" @onclick="FermerCameraAsync">Annuler</button>
+                        </div>
+                    </div>
+                }
+
+                @if (erreurScan is not null) { <div class="erreur" role="alert">@erreurScan</div> }
+
+                @if (image is not null)
+                {
+                    <section class="ordonnance" aria-label="Ordonnance scannée">
+                        <button type="button" class="ordonnance-image" title="Agrandir l’ordonnance" @onclick="() => imageAgrandie = true">
+                            <img src="@image.UrlDonnees" alt="Ordonnance scannée" />
+                        </button>
+                        <div class="ordonnance-lignes">
+                            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px">
+                                <div>
+                                    <strong>Médicaments de l’ordonnance</strong><br />
+                                    <span class="detail">@lignesOrdonnance.Count reconnu(s)@(lignesIgnorees > 0 ? $" · {lignesIgnorees} ligne(s) non reconnue(s) : vérifiez l’image" : "")</span>
+                                </div>
+                                <div class="actions">
+                                    @if (lignesOrdonnance.Any(l => !l.Traitee))
+                                    {
+                                        <button type="button" class="btn btn-principal" @onclick="ToutAjouterAsync">Tout ajouter</button>
+                                    }
+                                    <button type="button" class="btn" @onclick="RetirerOrdonnanceAsync">Retirer l’ordonnance</button>
+                                </div>
+                            </div>
+                            @if (lignesOrdonnance.Count == 0)
+                            {
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+                                    <p class="detail" style="margin: 0; flex: 1 1 240px">@(motifSaisieManuelle ?? "Aucun médicament reconnu") : saisissez les produits à la main en lisant l’image.</p>
+                                    <button type="button" class="btn btn-principal" @onclick="OuvrirSaisieManuelleAsync">Saisir les produits à la main</button>
+                                </div>
+                            }
+                            @foreach (var lo in lignesOrdonnance.Where(l => !l.Traitee))
+                            {
+                                <div class="ligne-ordonnance">
+                                    <span class="detail">Lu : « @lo.Texte »</span>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+                                        <select class="selection" style="flex: 999 1 260px; min-width: 0" aria-label="Produit pour « @lo.Texte »" @bind="lo.ChoixId">
+                                            @foreach (var c in lo.Candidats)
+                                            {
+                                                <option value="@c.ProduitId">@c.NomCommercial @c.Dosage · @(c.Stock > 0 ? $"stock {c.Stock}" : "rupture : équivalent proposé") · @Math.Round(c.Score * 100) %</option>
+                                            }
+                                        </select>
+                                        <input type="number" min="1" style="width: 80px" aria-label="Nombre de boîtes" @bind="lo.Quantite" />
+                                        <button type="button" class="btn btn-principal" @onclick="() => AjouterLigneOrdonnanceAsync(lo)">Ajouter</button>
+                                        <button type="button" class="btn" @onclick="() => lo.Traitee = true">Écarter</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </section>
+                    @if (imageAgrandie)
                     {
-                        @if (l.Lot is { } lot)
+                        <div class="lecture-ordonnance" role="dialog" aria-modal="true" aria-label="Lecture de l’ordonnance" @onkeydown="ToucheLecture">
+                            <div class="lecture-image">
+                                <div class="lecture-outils" role="toolbar" aria-label="Affichage de l’ordonnance">
+                                    <button type="button" class="btn btn-icone" title="Tourner à gauche" aria-label="Tourner à gauche" @onclick="() => rotation = (rotation + 270) % 360">↺</button>
+                                    <button type="button" class="btn btn-icone" title="Tourner à droite" aria-label="Tourner à droite" @onclick="() => rotation = (rotation + 90) % 360">↻</button>
+                                    <button type="button" class="btn btn-icone" title="Réduire" aria-label="Réduire" @onclick="() => zoom = Math.Max(0.5, zoom - 0.25)">−</button>
+                                    <span class="detail">@Math.Round(zoom * 100) %</span>
+                                    <button type="button" class="btn btn-icone" title="Agrandir" aria-label="Agrandir" @onclick="() => zoom = Math.Min(4, zoom + 0.25)">+</button>
+                                </div>
+                                <div class="lecture-defilement">
+                                    <img src="@image.UrlDonnees" alt="Ordonnance" style="transform: rotate(@(rotation)deg); width: @(Math.Round(zoom * 100))%" />
+                                </div>
+                            </div>
+                            <aside class="lecture-saisie" aria-label="Saisie des produits lus">
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+                                    <strong>Produits lus sur l’ordonnance</strong>
+                                    <button type="button" class="btn" @onclick="() => imageAgrandie = false">Fermer (Échap)</button>
+                                </div>
+                                @if (lignesOrdonnance.Count == 0)
+                                {
+                                    <div class="bandeau-attention" role="status">
+                                        <strong>Lecture automatique impossible</strong><br />
+                                        @(motifSaisieManuelle ?? "Aucun médicament reconnu sur l’image") : à vous de saisir les produits en lisant l’ordonnance.
+                                    </div>
+                                }
+                                <p class="detail" style="margin: 0">Tapez le nom lu sur l’image ou la DCI (quelques lettres suffisent, les fautes sont tolérées), choisissez la quantité, puis ajoutez. Fermez quand l’ordonnance est complète.</p>
+                                <div class="champ recherche">
+                                    <label for="lecture-recherche">Produit</label>
+                                    <input id="lecture-recherche" type="search" autocomplete="off" placeholder="Ex. sintrom" @ref="champLecture"
+                                           @bind="lectureTexte" @bind:event="oninput" @bind:after="RechercherLectureAsync" />
+                                </div>
+                                @if (lectureSansResultat is { } cherche)
+                                {
+                                    <p class="detail texte-attention" role="status" style="margin: 0">Aucun produit du catalogue ne correspond à « @cherche ». Vérifiez l’orthographe ou cherchez par la DCI ; un produit absent du catalogue ne peut pas être vendu.</p>
+                                }
+                                <div class="champ">
+                                    <label for="lecture-qte">Boîtes</label>
+                                    <input id="lecture-qte" type="number" min="1" max="20" style="width: 100px" @bind="lectureQuantite" />
+                                </div>
+                                <ul class="liste-lecture" aria-label="Produits trouvés">
+                                    @foreach (var p in lectureSuggestions)
+                                    {
+                                        <li>
+                                            <button type="button" @onclick="() => AjouterDepuisLectureAsync(p)">
+                                                <span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage · @(p.Stock > 0 ? $"stock {p.Stock}" : "rupture : équivalent proposé")</span></span>
+                                                <span>Ajouter</span>
+                                            </button>
+                                        </li>
+                                    }
+                                </ul>
+                                @if (lectureAjouts.Count > 0)
+                                {
+                                    <div class="succes" role="status">Ajouté au panier : @string.Join(", ", lectureAjouts)</div>
+                                }
+                            </aside>
+                        </div>
+                    }
+                }
+
+                <div class="champ recherche">
+                    <label for="scan">Scanner ou rechercher un produit (nom, DCI, code-barres)</label>
+                    <input id="scan" class="grand" type="search" placeholder="Ex. amoxicilline" autofocus autocomplete="off"
+                           @bind="texte" @bind:event="oninput" @bind:after="RechercherAsync" @onkeydown="ToucheAsync" />
+                    @if (suggestions.Count > 0)
+                    {
+                        <ul class="suggestions" aria-label="Produits trouvés">
+                            @foreach (var p in suggestions)
+                            {
+                                <li>
+                                    <button type="button" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, p.PrixPublic)">
+                                        <span>
+                                            <strong>@p.NomCommercial</strong><br />
+                                            <span class="detail">@p.Dci @p.Dosage · stock @p.Stock@(Libelles.EstSousRegistre(p.Classe) ? " · ordonnance" : "")</span>
+                                        </span>
+                                        <span>@Libelles.Dinars(p.PrixPublic, 2)</span>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+
+                @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+                @if (bandeau is not null)
+                {
+                    <div class="bandeau" role="alert">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 1px"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+                        <div>
+                            <strong>@bandeau.Titre</strong>
+                            @if (bandeau.Detail is not null) { <span>@bandeau.Detail</span> }
+                        </div>
+                    </div>
+                }
+
+                @if (lignes.Count == 0)
+                {
+                    <div class="carte vide">Panier vide : scannez une boîte ou recherchez un produit.</div>
+                }
+                else
+                {
+                    <div class="panier">
+                        @foreach (var l in lignes)
                         {
-                            <div class="panier-ligne">
-                                <div class="panier-produit">
-                                    <span>@l.Nom</span>
-                                    <span>Lot servi @lot.NumeroLot · exp. @Libelles.Date(lot.DatePeremption) · <span class="fefo">premier à expirer (FEFO)</span></span>
+                            @if (l.Lot is { } lot)
+                            {
+                                <div class="panier-ligne">
+                                    <div class="panier-produit">
+                                        <span>@l.Nom</span>
+                                        <span>Lot servi @lot.NumeroLot · exp. @Libelles.Date(lot.DatePeremption) · <span class="fefo">premier à expirer (FEFO)</span></span>
+                                    </div>
+                                    <div class="quantite">
+                                        <button type="button" class="btn btn-icone" aria-label="Retirer une boîte" @onclick="() => ChangerAsync(l, -1)">−</button>
+                                        <span>× @l.Quantite</span>
+                                        <button type="button" class="btn btn-icone" aria-label="Ajouter une boîte" disabled="@(l.Quantite >= lot.Quantite)" @onclick="() => ChangerAsync(l, +1)">+</button>
+                                    </div>
+                                    <span class="montant">@Libelles.Dinars(l.Prix * l.Quantite)</span>
+                                    @if (l.QuantiteDemandee > l.Quantite)
+                                    {
+                                        <div class="manque">
+                                            <span class="alerte-rupture">Stock insuffisant : @l.QuantiteDemandee demandée(s), @l.Quantite disponible(s) dans ce lot.</span>
+                                            @foreach (var alt in l.Alternatives.Take(1))
+                                            {
+                                                <div class="alternative">
+                                                    <span>@LibelleEquivalent(alt)</span>
+                                                    <button type="button" class="btn btn-principal" @onclick="() => CompleterAsync(l, alt)">Compléter avec @(l.QuantiteDemandee - l.Quantite)</button>
+                                                </div>
+                                            }
+                                            @if (l.Alternatives.Count == 0) { <span class="detail">Aucun équivalent de même DCI en stock.</span> }
+                                        </div>
+                                    }
                                 </div>
-                                <div class="quantite">
-                                    <button type="button" class="btn btn-icone" aria-label="Retirer une boîte" @onclick="() => Changer(l, -1)">−</button>
-                                    <span>× @l.Quantite</span>
-                                    <button type="button" class="btn btn-icone" aria-label="Ajouter une boîte" disabled="@(l.Quantite >= lot.Quantite)" @onclick="() => Changer(l, +1)">+</button>
+                            }
+                            else
+                            {
+                                <div class="panier-ligne rupture">
+                                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px">
+                                        <div class="panier-produit">
+                                            <span>@l.Nom</span>
+                                            <span class="alerte-rupture">@(l.Ecartes.Count > 0 ? "Aucun lot vendable (périmé ou bloqué)" : "En rupture de stock")</span>
+                                        </div>
+                                        <button type="button" class="btn" @onclick="() => RetirerAsync(l)">Retirer</button>
+                                    </div>
+                                    @foreach (var alt in l.Alternatives.Take(3))
+                                    {
+                                        <div class="alternative">
+                                            <span>@LibelleEquivalent(alt)</span>
+                                            <button type="button" class="btn btn-principal" @onclick="() => RemplacerAsync(l, alt)">Remplacer</button>
+                                        </div>
+                                    }
+                                    @if (l.Alternatives.Count == 0) { <span class="detail">Aucun équivalent de même DCI en stock.</span> }
                                 </div>
-                                <span class="montant">@Libelles.Dinars(l.Prix * l.Quantite)</span>
+                            }
+                        }
+                    </div>
+                }
+            </section>
+
+            <aside class="panneau colonne-laterale reglement" aria-label="Règlement">
+                <div class="filtres" role="group" aria-label="Type de vente">
+                    <button type="button" class="puce" aria-pressed="@(!tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(false)">Vente libre</button>
+                    <button type="button" class="puce" aria-pressed="@(tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(true)">Tiers payant</button>
+                </div>
+
+                @if (tiersPayant)
+                {
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px">
+                        <div class="champ" style="flex: 1 1 140px">
+                            <label for="org">Organisme</label>
+                            <select id="org" class="selection" @bind="organismeId" @bind:after="RecalculerAsync">
+                                @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                            </select>
+                        </div>
+                        <div class="champ" style="flex: 1 1 140px">
+                            <span class="etiquette-champ">Taux</span>
+                            <div class="filtres" role="group" aria-label="Taux de remboursement">
+                                <button type="button" class="puce" aria-pressed="@(taux == 80 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(80)">80 %</button>
+                                <button type="button" class="puce" aria-pressed="@(taux == 100 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(100)">100 %</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- Patient -->
+                <div class="champ recherche">
+                    <span class="etiquette-champ">Patient @(PatientObligatoire ? "(obligatoire)" : "(facultatif)")</span>
+                    @if (patient is not null)
+                    {
+                        <div class="choix">
+                            <div>
+                                <strong>@patient.Nom @patient.Prenom</strong><br />
+                                <span class="detail">
+                                    @(patient.NumAssure is null ? "sans n° d’assuré" : $"Assuré {patient.NumAssure}")@(patient.Organisme is null ? "" : $" · {patient.Organisme}")
+                                    · crédit @Libelles.Dinars(patient.SoldeCredit) / plafond @Libelles.Dinars(patient.PlafondCredit)
+                                </span>
+                            </div>
+                            <button type="button" class="lien-bouton" @onclick="RetirerPatientAsync">Changer</button>
+                        </div>
+                    }
+                    else if (!nouveauPatient)
+                    {
+                        <input type="search" aria-label="Rechercher un patient" placeholder="Nom, téléphone ou n° d’assuré" autocomplete="off"
+                               @bind="patientTexte" @bind:event="oninput" @bind:after="RechercherPatientsAsync" />
+                        @if (patients.Count > 0)
+                        {
+                            <ul class="suggestions" aria-label="Patients trouvés">
+                                @foreach (var p in patients)
+                                {
+                                    <li><button type="button" @onclick="() => ChoisirPatientAsync(p)"><span><strong>@p.Nom @p.Prenom</strong><br /><span class="detail">@p.Telephone @p.NumAssure</span></span></button></li>
+                                }
+                            </ul>
+                        }
+                        <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="OuvrirNouveauPatient">Nouveau patient</button>
+                    }
+                    else
+                    {
+                        <div class="sous-formulaire">
+                            <input type="text" aria-label="Nom" placeholder="Nom *" @bind="np.Nom" />
+                            <input type="text" aria-label="Prénom" placeholder="Prénom" @bind="np.Prenom" />
+                            <input type="text" aria-label="Téléphone" placeholder="Téléphone" @bind="np.Telephone" />
+                            <input type="text" aria-label="N° d’assuré" placeholder="N° d’assuré" @bind="np.NumAssure" />
+                            <select class="selection" aria-label="Organisme" @bind="np.OrganismeId">
+                                <option value="0">Sans organisme</option>
+                                @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                            </select>
+                            <input type="number" min="0" aria-label="Plafond de crédit (DA)" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
+                            <div class="actions">
+                                <button type="button" class="btn btn-principal" @onclick="CreerPatientAsync">Créer</button>
+                                <button type="button" class="btn" @onclick="() => nouveauPatient = false">Annuler</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Ordonnance : scannée, ou obligatoire pour un psychotrope -->
+                @if (apercu?.OrdonnanceRequise == true || jetonScan is not null)
+                {
+                    <div class="champ recherche">
+                        <span class="etiquette-champ">
+                            @(apercu?.OrdonnanceRequise == true ? "Ordonnance (psychotrope : médecin obligatoire)" : "Ordonnance scannée (médecin facultatif)")
+                        </span>
+                        @if (medecin is not null)
+                        {
+                            <div class="choix">
+                                <div><strong>@medecin.Nom</strong><br /><span class="detail">@medecin.Specialite</span></div>
+                                <button type="button" class="lien-bouton" @onclick="() => medecin = null">Changer</button>
                             </div>
                         }
                         else
                         {
-                            <div class="panier-ligne rupture">
-                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px">
-                                    <div class="panier-produit">
-                                        <span>@l.Nom</span>
-                                        <span class="alerte-rupture">@(l.Ecartes.Count > 0 ? "Aucun lot vendable (périmé ou bloqué)" : "En rupture de stock")</span>
-                                    </div>
-                                    <button type="button" class="btn" @onclick="() => lignes.Remove(l)">Retirer</button>
-                                </div>
-                                @foreach (var alt in l.Alternatives.Take(1))
-                                {
-                                    <div class="alternative">
-                                        <span>Alternative en stock (même DCI, dosage et forme) : <strong>@alt.NomCommercial</strong>, @alt.Stock boîtes</span>
-                                        <button type="button" class="btn btn-principal" @onclick="() => RemplacerAsync(l, alt)">Remplacer</button>
-                                    </div>
-                                }
-                            </div>
+                            <input type="search" aria-label="Rechercher le médecin prescripteur" placeholder="Médecin prescripteur" autocomplete="off"
+                                   @bind="medecinTexte" @bind:event="oninput" @bind:after="RechercherMedecinsAsync" />
+                            @if (medecins.Count > 0)
+                            {
+                                <ul class="suggestions" aria-label="Médecins trouvés">
+                                    @foreach (var m in medecins)
+                                    {
+                                        <li><button type="button" @onclick="() => (medecin, medecins, medecinTexte) = (m, [], m.Nom)"><span><strong>@m.Nom</strong> <span class="detail">@m.Specialite</span></span></button></li>
+                                    }
+                                </ul>
+                            }
+                            @if (medecinTexte.Trim().Length >= 2)
+                            {
+                                <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="CreerMedecinAsync">Créer le médecin « @medecinTexte.Trim() »</button>
+                            }
                         }
+                        <div style="display: flex; gap: 8px">
+                            <input type="date" aria-label="Date de prescription" @bind="datePrescription" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                            <input type="text" aria-label="Numéro d’ordonnance" placeholder="N° d’ordonnance" @bind="numeroOrdonnance" style="flex: 1; min-width: 0" />
+                        </div>
+                    </div>
+                }
+
+                @if (Session.A("caisse.remise"))
+                {
+                    <div class="champ">
+                        <label for="remise">Remise sur la part du patient (%)</label>
+                        <input id="remise" type="number" min="0" max="100" step="1" @bind="remisePct" @bind:after="RecalculerAsync" />
+                    </div>
+                }
+
+                <div class="separateur"></div>
+                @if (erreurCalcul is not null) { <div class="erreur" role="alert">@erreurCalcul</div> }
+                <div class="ligne-total"><span>Total</span><span>@Libelles.Dinars(apercu?.MontantBrut ?? 0, 2)</span></div>
+                @if (tiersPayant)
+                {
+                    <div class="ligne-total"><span>Part @(organismes.FirstOrDefault(o => o.Id == organismeId)?.Code ?? "organisme")</span><span>@Libelles.Dinars(apercu?.PartOrganisme ?? 0, 2)</span></div>
+                }
+                @if ((apercu?.MontantRemise ?? 0) > 0)
+                {
+                    <div class="ligne-total"><span>Remise @remisePct.ToString("0.##") %</span><span>− @Libelles.Dinars(apercu!.MontantRemise, 2)</span></div>
+                }
+                <div class="a-payer"><span>À payer par le patient</span><span>@Libelles.Dinars(apercu?.PartPatient ?? 0, 2)</span></div>
+
+                <div class="filtres" role="group" aria-label="Mode de paiement">
+                    @foreach (var (code, libelle) in Modes)
+                    {
+                        <button type="button" class="puce" aria-pressed="@(mode == code ? "true" : "false")" @onclick="() => mode = code">@libelle</button>
                     }
                 </div>
-            }
-        </section>
+                @if (mode == "especes")
+                {
+                    <div style="display: flex; gap: 12px; align-items: flex-end">
+                        <div class="champ" style="flex: 1">
+                            <label for="recu">Montant reçu (DA)</label>
+                            <input id="recu" type="number" min="0" step="1" @bind="montantRecu" @bind:event="oninput" placeholder="Appoint exact" />
+                        </div>
+                        <div class="champ" style="flex: 1">
+                            <span class="etiquette-champ">Rendu</span>
+                            <strong style="font-size: 20px; line-height: 44px">@Libelles.Dinars(Rendu, 2)</strong>
+                        </div>
+                    </div>
+                }
 
-        <aside class="panneau colonne-laterale reglement" aria-label="Règlement">
-            <div style="display: flex; flex-direction: column; gap: 4px">
-                <span class="tuile-libelle">Type de vente</span>
-                <span style="font-size: 15px; font-weight: 600">Vente libre</span>
-                <button type="button" class="lien-bouton" style="align-self: flex-start" disabled title="Bientôt disponible">Passer en tiers payant</button>
-            </div>
-            <div class="separateur"></div>
-            <div class="ligne-total"><span>Total</span><span>@Libelles.Dinars(Total)</span></div>
-            <div class="ligne-total"><span>Part organisme</span><span>@Libelles.Dinars(0)</span></div>
-            <div class="a-payer"><span>À payer par le patient</span><span>@Libelles.Dinars(Total)</span></div>
-            <button type="button" class="btn btn-principal btn-large" disabled title="Bientôt disponible">Encaisser (F12)</button>
-            <button type="button" class="btn" disabled title="Bientôt disponible">Mettre en crédit</button>
-            <button type="button" class="btn" disabled title="Bientôt disponible">Clôturer la caisse</button>
-        </aside>
-    </div>
+                @if (erreurEncaissement is not null) { <div class="erreur" role="alert">@erreurEncaissement</div> }
+
+                <button type="button" class="btn btn-principal btn-large" disabled="@(!PeutEncaisser)" title="@RaisonBlocage" @onclick="() => EncaisserAsync(mode)">
+                    Encaisser (F12)
+                </button>
+                <button type="button" class="btn" disabled="@(RaisonBlocageCredit is not null)" title="@RaisonBlocageCredit"
+                        @onclick="@(() => EncaisserAsync("credit"))">
+                    Mettre en crédit
+                </button>
+                @if (lignes.Count > 0 && patient is null && Session.A("credit.accorder"))
+                {
+                    <span class="sous-titre" style="font-size: 13px">Pour mettre en crédit, choisissez d’abord le patient.</span>
+                }
+                <a href="cloture" class="btn">Clôturer la caisse</a>
+                <button type="button" class="btn" disabled title="Tiroir-caisse : matériel à définir">Ouvrir le tiroir</button>
+            </aside>
+        </div>
+    }
 </div>
 
 @code {
@@ -113,12 +457,43 @@
         public required decimal Prix { get; init; }
         public LotFefoDto? Lot { get; init; }
         public IReadOnlyList<LotEcarteDto> Ecartes { get; init; } = [];
-        public IReadOnlyList<ProduitAlternatifDto> Alternatives { get; init; } = [];
+        public IReadOnlyList<ProduitAlternatifDto> Alternatives { get; set; } = [];
         public int Quantite { get; set; } = 1;
+        /// <summary>Boîtes voulues (ordonnance) : au-delà du stock du lot, un équivalent est proposé.</summary>
+        public int QuantiteDemandee { get; set; } = 1;
+    }
+
+    /// <summary>Ligne lue sur l'ordonnance, en attente de validation par le caissier.</summary>
+    private sealed class LigneOrdonnance
+    {
+        public required string Texte { get; init; }
+        public required IReadOnlyList<ProduitCandidatDto> Candidats { get; init; }
+        public long ChoixId { get; set; }
+        public int Quantite { get; set; } = 1;
+        public bool Traitee { get; set; }
+    }
+
+    private sealed class NouveauPatientSaisie
+    {
+        public string Nom { get; set; } = "";
+        public string? Prenom { get; set; }
+        public string? Telephone { get; set; }
+        public string? NumAssure { get; set; }
+        public long OrganismeId { get; set; }
+        public decimal Plafond { get; set; }
     }
 
     private sealed record Bandeau(string Titre, string? Detail);
 
+    private static readonly (string, string)[] Modes = [("especes", "Espèces"), ("carte", "Carte"), ("cheque", "Chèque")];
+
+    // Caisse
+    private EtatCaisseDto? etat;
+    private string? erreurEtat, erreurOuverture;
+    private decimal fondCaisse;
+    private bool enCours;
+
+    // Panier
     private string texte = "";
     private List<ProduitDto> suggestions = [];
     private readonly List<LignePanier> lignes = [];
@@ -126,7 +501,87 @@
     private string? erreur;
     private int requete;
 
-    private decimal Total => lignes.Where(l => l.Lot is not null).Sum(l => l.Prix * l.Quantite);
+    // Règlement
+    private List<OrganismeDto> organismes = [];
+    private bool tiersPayant;
+    private long organismeId;
+    private int taux = 80;
+    private PatientDto? patient;
+    private string patientTexte = "";
+    private List<PatientDto> patients = [];
+    private bool nouveauPatient;
+    private NouveauPatientSaisie np = new();
+    private MedecinDto? medecin;
+    private string medecinTexte = "";
+    private List<MedecinDto> medecins = [];
+    private DateOnly datePrescription = DateOnly.FromDateTime(DateTime.Today);
+    private string? numeroOrdonnance;
+    private decimal remisePct;
+    private string mode = "especes";
+    private decimal? montantRecu;
+    private ApercuVenteDto? apercu;
+    private string? erreurCalcul, erreurEncaissement;
+    private int requeteCalcul;
+    private VenteEncaisseeDto? venteFaite;
+    private DotNetObjectReference<Caisse>? reference;
+
+    // Ordonnance scannée
+    private ImageOrdonnance? image;
+    private string? jetonScan, texteReconnu, erreurScan;
+    private List<LigneOrdonnance> lignesOrdonnance = [];
+    private int lignesIgnorees;
+    private bool lectureEnCours, cameraOuverte, imageAgrandie;
+
+    // Une vente sur ordonnance exige le patient (réglage par défaut de la base : « patient obligatoire : ordonnance »)
+    private bool PatientObligatoire => tiersPayant || apercu?.OrdonnanceRequise == true || jetonScan is not null;
+    private decimal Rendu => montantRecu is { } r && apercu is { } a && r > a.PartPatient ? r - a.PartPatient : 0;
+
+    private string? RaisonBlocage =>
+        lignes.Count == 0 ? "Panier vide"
+        : lignes.Any(l => l.Lot is null) ? "Retirez ou remplacez les produits sans lot vendable"
+        : erreurCalcul is not null ? erreurCalcul
+        : PatientObligatoire && patient is null ? "Choisissez le patient"
+        : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
+        : null;
+
+    private bool PeutEncaisser => !enCours && apercu is not null && RaisonBlocage is null;
+
+    /// <summary>Le crédit est rattaché à un patient (sa dette augmente) et demande le droit « credit.accorder ».</summary>
+    private string? RaisonBlocageCredit =>
+        !Session.A("credit.accorder") ? "Droit « credit.accorder » nécessaire"
+        : !PeutEncaisser ? RaisonBlocage ?? "Encaissement en cours"
+        : patient is null ? "Choisissez le patient à qui la vente est accordée"
+        : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (organismes, _) = await Api.OrganismesAsync();
+        organismeId = organismes.FirstOrDefault()?.Id ?? 0;
+        await ChargerEtatAsync();
+    }
+
+    [JSInvokable]
+    public async Task SurF12()
+    {
+        if (PeutEncaisser) await EncaisserAsync(mode);
+        StateHasChanged();
+    }
+
+    private async Task ChargerEtatAsync()
+    {
+        (etat, erreurEtat) = await Api.EtatCaisseAsync();
+        if (etat is not null) fondCaisse = etat.FondCaisseDefaut;
+    }
+
+    private async Task OuvrirAsync()
+    {
+        enCours = true;
+        (_, erreurOuverture) = await Api.OuvrirCaisseAsync(Poste.Poste, fondCaisse);
+        enCours = false;
+        if (erreurOuverture is null) await ChargerEtatAsync();
+    }
+
+    // ---- Panier ---------------------------------------------------------------
 
     private async Task RechercherAsync()
     {
@@ -144,42 +599,256 @@
         // Au scan, le lecteur envoie le code-barres puis Entrée : on attend la recherche en cours
         await RechercherAsync();
         if (suggestions.FirstOrDefault() is { } p)
-            await AjouterAsync(p.Id, p.NomCommercial, p.Dci, p.PrixPublic);
+            await AjouterAsync(p.Id, p.NomCommercial, p.PrixPublic);
     }
 
-    private async Task AjouterAsync(long produitId, string nom, string? dci, decimal prix)
+    private async Task AjouterAsync(long produitId, string nom, decimal prix, int quantite = 1)
     {
-        (texte, suggestions, erreur, bandeau) = ("", [], null, null);
+        (texte, suggestions, erreur, bandeau, venteFaite) = ("", [], null, null, null);
+        quantite = Math.Max(1, quantite);
 
         var existante = lignes.FirstOrDefault(l => l.ProduitId == produitId && l.Lot is not null);
         if (existante is not null)
         {
-            Changer(existante, +1);
+            existante.QuantiteDemandee = Math.Max(existante.QuantiteDemandee, existante.Quantite) + quantite;
+            existante.Quantite = Math.Min(existante.QuantiteDemandee, existante.Lot!.Quantite);
+            await ProposerEquivalentSiManqueAsync(existante);
+            await RecalculerAsync();
             return;
         }
 
         var reponse = await Api.LotFefoAsync(produitId);
         if (reponse.Erreur is not null) { erreur = reponse.Erreur; return; }
 
-        var alternatives = reponse.Lot is null ? (await Api.AlternativesAsync(produitId)).Item1 : [];
-        lignes.Add(new LignePanier
+        var ligne = new LignePanier
         {
-            ProduitId = produitId, Nom = nom, Prix = prix,
-            Lot = reponse.Lot, Ecartes = reponse.Ecartes, Alternatives = alternatives
-        });
+            ProduitId = produitId, Nom = nom, Prix = prix, Lot = reponse.Lot, Ecartes = reponse.Ecartes,
+            QuantiteDemandee = quantite,
+            Quantite = reponse.Lot is { } lot ? Math.Min(quantite, lot.Quantite) : quantite
+        };
+        // Toujours un équivalent quand le produit manque (rupture ou stock du lot insuffisant)
+        if (reponse.Lot is null) ligne.Alternatives = (await Api.AlternativesAsync(produitId)).Item1;
+        else await ProposerEquivalentSiManqueAsync(ligne);
+        lignes.Add(ligne);
         bandeau = Expliquer(reponse);
+        await RecalculerAsync();
+    }
+
+    private async Task ProposerEquivalentSiManqueAsync(LignePanier l)
+    {
+        if (l.QuantiteDemandee > l.Quantite && l.Alternatives.Count == 0)
+            l.Alternatives = (await Api.AlternativesAsync(l.ProduitId)).Item1;
     }
 
     private async Task RemplacerAsync(LignePanier rupture, ProduitAlternatifDto alt)
     {
         lignes.Remove(rupture);
-        await AjouterAsync(alt.ProduitId, alt.NomCommercial, null, alt.PrixPublic);
+        await AjouterAsync(alt.ProduitId, alt.NomCommercial, alt.PrixPublic, rupture.QuantiteDemandee);
     }
 
-    private void Changer(LignePanier l, int delta)
+    /// <summary>Le lot ne suffit pas : le reste est servi avec l'équivalent.</summary>
+    private async Task CompleterAsync(LignePanier l, ProduitAlternatifDto alt)
     {
+        var reste = l.QuantiteDemandee - l.Quantite;
+        l.QuantiteDemandee = l.Quantite;
+        await AjouterAsync(alt.ProduitId, alt.NomCommercial, alt.PrixPublic, reste);
+    }
+
+    private static string LibelleEquivalent(ProduitAlternatifDto a) => a.Exact
+        ? $"Équivalent en stock (même DCI, dosage et forme) : {a.NomCommercial}, {a.Stock} boîte(s)"
+        : $"Même DCI, autre dosage ou forme ({a.Dosage} {a.Forme}) : {a.NomCommercial}, {a.Stock} boîte(s) · à valider par le pharmacien";
+
+    // ---- Ordonnance scannée -----------------------------------------------------
+
+    private Task ScannerOrdonnanceAsync() => TraiterImageAsync(LectureOrdonnance.ScannerAsync);
+
+    private Task ImporterOrdonnanceAsync() => TraiterImageAsync(LectureOrdonnance.ChoisirFichierAsync);
+
+    private async Task OuvrirCameraAsync()
+    {
+        erreurScan = null;
+        cameraOuverte = true;
+        StateHasChanged();
+        await Task.Delay(100);   // la balise vidéo doit être affichée avant de démarrer la caméra
+        try { await JS.InvokeVoidAsync("pharma.camera.demarrer", "camera-video"); }
+        catch (JSException e)
+        {
+            cameraOuverte = false;
+            erreurScan = $"Caméra indisponible : {e.Message}";
+        }
+    }
+
+    private async Task PrendrePhotoAsync()
+    {
+        var base64 = await JS.InvokeAsync<string>("pharma.camera.capturer", "camera-video");
+        await FermerCameraAsync();
+        await TraiterImageAsync(() => Task.FromResult<ImageOrdonnance?>(LectureOrdonnance.DepuisCamera(base64)));
+    }
+
+    private async Task FermerCameraAsync()
+    {
+        cameraOuverte = false;
+        await JS.InvokeVoidAsync("pharma.camera.arreter");
+    }
+
+    /// <summary>
+    /// Image capturée : lecture du texte sur le poste, rapprochement avec le catalogue et envoi de l'image au serveur.
+    /// Les médicaments trouvés attendent la validation du caissier.
+    /// </summary>
+    private async Task TraiterImageAsync(Func<Task<ImageOrdonnance?>> source)
+    {
+        erreurScan = null;
+        lectureEnCours = true;
+        StateHasChanged();
+        try
+        {
+            var nouvelle = await source();
+            if (nouvelle is null) return;
+            image = nouvelle;
+            jetonScan = null;
+            (rotation, zoom) = (0, 1);
+            lectureAjouts.Clear();
+
+            motifSaisieManuelle = null;
+            var envoi = Api.EnvoyerScanOrdonnanceAsync(nouvelle);
+            IReadOnlyList<string> lues;
+            try
+            {
+                lues = await LectureOrdonnance.LireTexteAsync(nouvelle.Contenu);
+            }
+            catch (Exception ex)
+            {
+                // OCR indisponible ou image illisible : l'image reste affichée, le caissier saisit à la main
+                lues = [];
+                motifSaisieManuelle = $"Lecture du texte impossible ({ex.Message})";
+            }
+            texteReconnu = lues.Count == 0 ? null : string.Join('\n', lues) is { Length: > 4000 } t ? t[..4000] : string.Join('\n', lues);
+
+            var (analyse, errAnalyse) = lues.Count > 0 ? await Api.AnalyserOrdonnanceAsync(lues) : (null, null);
+            lignesOrdonnance = analyse?.Lignes.Select(l => new LigneOrdonnance
+            {
+                Texte = l.Texte, Candidats = l.Candidats, ChoixId = l.Candidats[0].ProduitId, Quantite = l.NombreBoites ?? 1
+            }).ToList() ?? [];
+            lignesIgnorees = analyse?.LignesIgnorees ?? lues.Count;
+
+            var (jeton, errEnvoi) = await envoi;
+            jetonScan = jeton;
+            erreurScan = errEnvoi is not null ? $"Image non enregistrée sur le serveur : {errEnvoi}" : errAnalyse;
+            await RecalculerAsync();
+
+            // Rien de reconnu (manuscrit, photo floue, texte non lu) : la main passe au caissier
+            if (lignesOrdonnance.Count == 0)
+            {
+                motifSaisieManuelle ??= lues.Count == 0 ? "Aucun texte lu sur l’image (écriture manuscrite ou photo floue ?)"
+                    : errAnalyse is not null ? "Les lignes lues n’ont pas pu être comparées au catalogue"
+                    : "Aucune ligne lue ne correspond à un médicament du catalogue";
+                await OuvrirSaisieManuelleAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            erreurScan = ex.Message;
+        }
+        finally
+        {
+            lectureEnCours = false;
+        }
+    }
+
+    // ---- Lecture assistée (ordonnance manuscrite) : image agrandie et saisie côte à côte ----
+
+    private int rotation;
+    private double zoom = 1;
+    private string lectureTexte = "";
+    private int lectureQuantite = 1;
+    private List<ProduitDto> lectureSuggestions = [];
+    private readonly List<string> lectureAjouts = [];
+    private int requeteLecture;
+
+    private string? motifSaisieManuelle;
+    private string? lectureSansResultat;
+    private ElementReference champLecture;
+    private bool focusLecture;
+
+    /// <summary>Ouvre l'image agrandie avec la saisie à côté, curseur dans le champ produit.</summary>
+    private Task OuvrirSaisieManuelleAsync()
+    {
+        imageAgrandie = true;
+        focusLecture = true;
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool premierAffichage)
+    {
+        if (premierAffichage)
+        {
+            reference = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("pharma.ecouterF12", reference);
+        }
+        if (focusLecture && imageAgrandie)
+        {
+            focusLecture = false;
+            await champLecture.FocusAsync();
+        }
+    }
+
+    private async Task RechercherLectureAsync()
+    {
+        var numero = ++requeteLecture;
+        var t = lectureTexte.Trim();
+        if (t.Length < 2) { (lectureSuggestions, lectureSansResultat) = ([], null); return; }
+        var (trouves, _) = await Api.RechercherProduitsAsync(t);
+        if (numero != requeteLecture) return;
+        lectureSuggestions = trouves;
+        lectureSansResultat = trouves.Count == 0 ? t : null;
+    }
+
+    private async Task AjouterDepuisLectureAsync(ProduitDto p)
+    {
+        await AjouterAsync(p.Id, p.NomCommercial, p.PrixPublic, Math.Clamp(lectureQuantite, 1, 20));
+        lectureAjouts.Add($"{p.NomCommercial} × {Math.Clamp(lectureQuantite, 1, 20)}");
+        (lectureTexte, lectureSuggestions, lectureQuantite, lectureSansResultat) = ("", [], 1, null);
+    }
+
+    private void ToucheLecture(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") imageAgrandie = false;
+    }
+
+    private async Task AjouterLigneOrdonnanceAsync(LigneOrdonnance lo)
+    {
+        var choix = lo.Candidats.First(c => c.ProduitId == lo.ChoixId);
+        lo.Traitee = true;
+        await AjouterAsync(choix.ProduitId, choix.NomCommercial, choix.PrixPublic, lo.Quantite);
+    }
+
+    private async Task ToutAjouterAsync()
+    {
+        foreach (var lo in lignesOrdonnance.Where(l => !l.Traitee).ToList())
+            await AjouterLigneOrdonnanceAsync(lo);
+    }
+
+    private async Task RetirerOrdonnanceAsync()
+    {
+        (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, erreurScan) = (null, null, null, [], 0, null);
+        lectureAjouts.Clear();
+        (motifSaisieManuelle, lectureSansResultat, imageAgrandie) = (null, null, false);
+        await RecalculerAsync();
+    }
+
+    private async Task RetirerAsync(LignePanier l)
+    {
+        lignes.Remove(l);
+        await RecalculerAsync();
+    }
+
+    private async Task ChangerAsync(LignePanier l, int delta)
+    {
+        if (l.Lot is { } lot && l.Quantite + delta > lot.Quantite) return;
         l.Quantite += delta;
+        l.QuantiteDemandee = l.Quantite;   // réglage manuel : le caissier a tranché
         if (l.Quantite <= 0) lignes.Remove(l);
+        await RecalculerAsync();
     }
 
     /// <summary>Explique au comptoir pourquoi un lot a été écarté et lequel est servi à la place.</summary>
@@ -194,5 +863,117 @@
             ? $"Le lot {lot.NumeroLot} (expire le {Libelles.Date(lot.DatePeremption)}) a été proposé automatiquement."
             : "Aucun autre lot vendable pour ce produit.";
         return new Bandeau(titre, detail);
+    }
+
+    // ---- Règlement ------------------------------------------------------------
+
+    private async Task ChoisirTiersPayantAsync(bool oui)
+    {
+        tiersPayant = oui;
+        if (oui && patient?.OrganismeId is { } org) organismeId = org;
+        await RecalculerAsync();
+    }
+
+    private async Task ChoisirTauxAsync(int t)
+    {
+        taux = t;
+        await RecalculerAsync();
+    }
+
+    private async Task RechercherPatientsAsync()
+    {
+        if (patientTexte.Trim().Length < 2) { patients = []; return; }
+        (patients, _) = await Api.RechercherPatientsAsync(patientTexte);
+    }
+
+    private async Task ChoisirPatientAsync(PatientDto p)
+    {
+        (patient, patients, patientTexte) = (p, [], "");
+        if (tiersPayant && p.OrganismeId is { } org) organismeId = org;
+        await RecalculerAsync();
+    }
+
+    private async Task RetirerPatientAsync()
+    {
+        patient = null;
+        await RecalculerAsync();
+    }
+
+    private void OuvrirNouveauPatient()
+    {
+        np = new NouveauPatientSaisie { Nom = patientTexte.Trim(), OrganismeId = tiersPayant ? organismeId : 0 };
+        nouveauPatient = true;
+    }
+
+    private async Task CreerPatientAsync()
+    {
+        var saisie = new NouveauPatientDto(np.Nom, np.Prenom, np.Telephone, np.NumAssure,
+            np.OrganismeId > 0 ? np.OrganismeId : null, np.Plafond);
+        var (cree, err) = await Api.CreerPatientAsync(saisie);
+        if (err is not null) { erreurEncaissement = err; return; }
+        var organisme = organismes.FirstOrDefault(o => o.Id == np.OrganismeId);
+        nouveauPatient = false;
+        erreurEncaissement = null;
+        await ChoisirPatientAsync(new PatientDto(cree!.Id, saisie.Nom.Trim(), saisie.Prenom, saisie.Telephone, saisie.NumAssure,
+            saisie.OrganismeId, organisme?.Code, saisie.PlafondCredit, 0));
+    }
+
+    private async Task RechercherMedecinsAsync()
+    {
+        if (medecinTexte.Trim().Length < 2) { medecins = []; return; }
+        (medecins, _) = await Api.RechercherMedecinsAsync(medecinTexte);
+    }
+
+    private async Task CreerMedecinAsync()
+    {
+        var nom = medecinTexte.Trim();
+        var (cree, err) = await Api.CreerMedecinAsync(new NouveauMedecinDto(nom, null));
+        if (err is not null) { erreurEncaissement = err; return; }
+        (medecin, medecins) = (new MedecinDto(cree!.Id, nom, null), []);
+    }
+
+    private CommandeVenteDto Commande(string modePaiement) => new(
+        lignes.Where(l => l.Lot is not null).Select(l => new LigneCommandeDto(l.ProduitId, l.Lot!.LotId, l.Quantite)).ToList(),
+        tiersPayant, tiersPayant ? organismeId : null, tiersPayant ? taux : null,
+        patient?.Id,
+        jetonScan is not null || (apercu?.OrdonnanceRequise == true && medecin is not null)
+            ? new OrdonnanceDto(medecin?.Id, datePrescription, string.IsNullOrWhiteSpace(numeroOrdonnance) ? null : numeroOrdonnance.Trim(),
+                jetonScan, texteReconnu)
+            : null,
+        remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null);
+
+    /// <summary>Les totaux viennent du serveur : mêmes règles que l'encaissement (tiers payant, remise).</summary>
+    private async Task RecalculerAsync()
+    {
+        var numero = ++requeteCalcul;
+        if (!lignes.Any(l => l.Lot is not null)) { (apercu, erreurCalcul) = (null, null); return; }
+        var (resultat, err) = await Api.CalculerVenteAsync(Commande("especes"));
+        if (numero != requeteCalcul) return;
+        (apercu, erreurCalcul) = (resultat, err);
+    }
+
+    private async Task EncaisserAsync(string modePaiement)
+    {
+        if (!PeutEncaisser) return;
+        enCours = true;
+        erreurEncaissement = null;
+        var (vente, err) = await Api.EncaisserAsync(Commande(modePaiement));
+        enCours = false;
+        if (err is not null) { erreurEncaissement = err; return; }
+
+        venteFaite = vente;
+        lignes.Clear();
+        (apercu, bandeau, erreur, montantRecu, remisePct) = (null, null, null, null, 0);
+        (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode) = (null, null, "", null, false, "especes");
+        (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
+        lectureAjouts.Clear();
+        (motifSaisieManuelle, lectureSansResultat) = (null, null);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("pharma.arreterF12"); }
+        catch (JSDisconnectedException) { }
+        reference?.Dispose();
     }
 }

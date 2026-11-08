@@ -11,6 +11,14 @@ public static class PharmaEndpoints
         api.MapCatalogue();
         api.MapAlertes();
         api.MapStock();
+        api.MapCaisse();
+        api.MapPatients();
+        api.MapOrdonnances();
+        api.MapAdmin();
         api.MapTracabilite();
+        api.MapAchats();
+        api.MapNotifications();
+        api.MapEmplacements();
+        api.MapInventaire();
     }
 }

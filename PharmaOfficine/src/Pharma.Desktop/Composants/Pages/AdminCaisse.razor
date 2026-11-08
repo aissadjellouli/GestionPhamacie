@@ -1,0 +1,116 @@
+@page "/admin/caisse"
+@inject ApiClient Api
+
+<div class="page admin">
+    <NavAdmin Actif="admin/caisse" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Caisse et contrôle</h1>
+                <p class="sous-titre">Règles de caisse et journal des actions sensibles</p>
+            </div>
+            <button type="button" class="btn btn-principal" disabled="@(parametres is null || enCours)" @onclick="EnregistrerAsync">Enregistrer</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (parametres is not null)
+        {
+            <section class="panneau" aria-labelledby="t-regles">
+                <h2 id="t-regles">Règles</h2>
+                <label class="case"><input type="checkbox" @bind="parametres.ComptageAveugle" /><span>Clôture en comptage aveugle obligatoire</span></label>
+                <label class="case inactif" title="Imprimante de tickets à définir (modèle ESC/POS inconnu)"><input type="checkbox" disabled /><span>Ticket imprimé pour chaque vente</span></label>
+                <label class="case inactif" title="Bientôt disponible"><input type="checkbox" disabled /><span>Code du titulaire pour une action sensible non autorisée</span></label>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+                    <label class="case"><input type="checkbox" checked="@(parametres.DeconnexionMinutes > 0)" @onchange="BasculerDeconnexion" /><span>Déconnexion automatique du poste après</span></label>
+                    <input type="number" min="1" max="240" style="width: 90px" aria-label="Minutes d’inactivité"
+                           disabled="@(parametres.DeconnexionMinutes <= 0)" @bind="parametres.DeconnexionMinutes" />
+                    <span>minutes d’inactivité</span>
+                </div>
+                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+                    <div class="champ"><label for="fond">Fond de caisse (DA)</label><input id="fond" type="number" min="0" @bind="parametres.FondCaisseDefaut" /></div>
+                    <div class="champ"><label for="seuil">Alerte si écart supérieur à (DA)</label><input id="seuil" type="number" min="0" @bind="parametres.SeuilEcart" /></div>
+                    <div class="champ" title="L’annulation de vente n’est pas encore disponible">
+                        <label for="annul">Alerte au-delà de N annulations par session</label><input id="annul" type="number" disabled />
+                    </div>
+                </div>
+            </section>
+        }
+
+        <section class="panneau" aria-labelledby="t-journal">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+                <h2 id="t-journal">Journal des actions sensibles</h2>
+                <span class="pastille info">Non modifiable</span>
+            </div>
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 720px">
+                    <thead>
+                        <tr><th scope="col">Date</th><th scope="col">Employé</th><th scope="col">Action</th><th scope="col">Détail</th><th scope="col" style="white-space: nowrap">Autorisé par</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var j in journal)
+                        {
+                            <tr>
+                                <td style="white-space: nowrap">@Libelles.DateHeureLocale(j.Date)</td>
+                                <td style="white-space: nowrap">@j.Employe</td>
+                                <td>@Libelles.ActionJournal(j.Action)</td>
+                                <td style="white-space: pre-line">@Libelles.DetailJournal(j.Action, j.Details)</td>
+                                <td>@(j.AutorisePar ?? "—")</td>
+                            </tr>
+                        }
+                        @if (journal.Count == 0) { <tr><td colspan="5" class="vide">Aucune action sensible enregistrée.</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private sealed class Saisie
+    {
+        public bool ComptageAveugle { get; set; }
+        public decimal FondCaisseDefaut { get; set; }
+        public decimal SeuilEcart { get; set; }
+        public int DeconnexionMinutes { get; set; }
+    }
+
+    private Saisie? parametres;
+    private List<EntreeJournalDto> journal = [];
+    private string? erreur, message;
+    private bool enCours;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var (p, err) = await Api.ParametresCaisseAsync();
+        erreur = err;
+        if (p is not null)
+            parametres = new Saisie
+            {
+                ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
+                SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes
+            };
+        (journal, _) = await Api.JournalAsync();
+    }
+
+    private void BasculerDeconnexion(ChangeEventArgs e)
+    {
+        if (parametres is null) return;
+        parametres.DeconnexionMinutes = e.Value is true ? Math.Max(parametres.DeconnexionMinutes, 5) : 0;
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (parametres is null) return;
+        enCours = true;
+        message = null;
+        erreur = await Api.ModifierParametresCaisseAsync(new ParametresCaisseDto(
+            parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes));
+        enCours = false;
+        if (erreur is not null) return;
+        message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";
+        (journal, _) = await Api.JournalAsync();
+    }
+}

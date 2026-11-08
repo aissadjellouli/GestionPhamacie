@@ -4,25 +4,31 @@
 @inject ConfigurationPoste Poste
 @inject ApiClient Api
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <header class="entete">
     <div class="entete-interieur">
         <div class="marque">
-            <div class="logo">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-            </div>
+            <img class="logo" src="img/logo.svg" alt="" aria-hidden="true" />
             <div class="marque-textes">
                 <span class="marque-nom">@Poste.NomLogiciel</span>
-                <span class="marque-poste">@Poste.SousTitre</span>
+                <span class="marque-poste">@SousTitre</span>
             </div>
         </div>
         @if (Session.EstConnecte)
         {
             <nav class="nav" aria-label="Navigation principale">
-                <a href="caisse" class="@Actif("caisse")" aria-current="@Courant("caisse")">Caisse</a>
+                <a href="caisse" class="@Actif("caisse", "cloture")" aria-current="@Courant("caisse", "cloture")">Caisse</a>
                 <a href="stock" class="@Actif("stock", "tracabilite")" aria-current="@Courant("stock", "tracabilite")">Stock</a>
-                <span class="nav-inactif" aria-disabled="true" title="Bientôt disponible">Achats</span>
-                <span class="nav-inactif" aria-disabled="true" title="Bientôt disponible">Chifa</span>
+                @if (Session.A("achats.commander") || Session.A("achats.receptionner") || Session.A("achats.retour_fournisseur"))
+                {
+                    <a href="achats" class="@Actif("achats")" aria-current="@Courant("achats")">Achats</a>
+                }
+                else
+                {
+                    <span class="nav-inactif" aria-disabled="true" title="Droit d’achat nécessaire">Achats</span>
+                }
+                <span class="nav-inactif" aria-disabled="true" title="Format des factures Chifa à obtenir">Chifa</span>
                 <a href="" class="@Actif("")" aria-current="@Courant("")">
                     Alertes
                     @if (urgentes > 0 && Chemin != "")
@@ -31,7 +37,14 @@
                     }
                 </a>
                 <span class="nav-inactif" aria-disabled="true" title="Bientôt disponible">Rapports</span>
-                <span class="nav-inactif" aria-disabled="true" title="Bientôt disponible">Administration</span>
+                @if (PremiereRubriqueAdmin is { } lienAdmin)
+                {
+                    <a href="@lienAdmin" class="@ActifPrefixe("admin")" aria-current="@(Chemin.StartsWith("admin") ? "page" : null)">Administration</a>
+                }
+                else
+                {
+                    <span class="nav-inactif" aria-disabled="true" title="Réservé au titulaire">Administration</span>
+                }
             </nav>
             <div class="utilisateur">
                 <span>Connecté : @Session.NomComplet</span>
@@ -53,12 +66,20 @@
 
 @code {
     private int urgentes;
+    private PeriodicTimer? minuterie;
 
     private string Chemin => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/');
+
+    /// <summary>Nom enregistré en base, sinon réglage du poste (PHARMA_PHARMACIE), puis nom du poste.</summary>
+    private string SousTitre => (Session.NomPharmacie ?? Poste.Pharmacie) is { } nom ? $"{nom} · {Poste.Poste}" : Poste.Poste;
+
+    private string? PremiereRubriqueAdmin =>
+        NavAdmin.Accessibles.FirstOrDefault(r => Session.A(r.Permission)).Lien;
     private bool EstPageConnexion => Chemin.StartsWith("connexion", StringComparison.Ordinal);
 
     private string? Actif(params string[] chemins) => chemins.Contains(Chemin) ? "active" : null;
     private string? Courant(params string[] chemins) => chemins.Contains(Chemin) ? "page" : null;
+    private string? ActifPrefixe(string prefixe) => Chemin.StartsWith(prefixe, StringComparison.Ordinal) ? "active" : null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -66,6 +87,7 @@
         Session.Changee += SurSession;
         Api.AlertesModifiees += SurSession;
         await CompterUrgentesAsync();
+        _ = SurveillerInactiviteAsync();
     }
 
     private async Task CompterUrgentesAsync()
@@ -73,6 +95,28 @@
         if (!Session.EstConnecte) { urgentes = 0; return; }
         var (alertes, erreur) = await Api.AlertesAsync();
         urgentes = erreur is null ? alertes.Count(a => a.Niveau == "urgent") : 0;
+    }
+
+    /// <summary>Déconnexion automatique (paramètre de caisse) : vérifiée toutes les 15 secondes.</summary>
+    private async Task SurveillerInactiviteAsync()
+    {
+        minuterie = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        try
+        {
+            while (await minuterie.WaitForNextTickAsync())
+            {
+                if (!Session.EstConnecte || Session.DeconnexionMinutes <= 0) continue;
+                var secondes = await JS.InvokeAsync<int>("pharma.inactiviteSecondes");
+                if (secondes < Session.DeconnexionMinutes * 60) continue;
+                await InvokeAsync(() =>
+                {
+                    Session.Fermer($"Déconnexion automatique après {Session.DeconnexionMinutes} minutes d’inactivité.");
+                    Nav.NavigateTo("connexion");
+                });
+            }
+        }
+        catch (ObjectDisposedException) { /* fenêtre fermée */ }
+        catch (JSDisconnectedException) { /* fenêtre fermée */ }
     }
 
     private async void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -95,6 +139,7 @@
 
     public void Dispose()
     {
+        minuterie?.Dispose();
         Nav.LocationChanged -= SurNavigation;
         Session.Changee -= SurSession;
         Api.AlertesModifiees -= SurSession;

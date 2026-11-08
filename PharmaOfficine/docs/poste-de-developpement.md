@@ -44,25 +44,34 @@ Dans une fenêtre PowerShell :
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 cd C:\MesDev\PharmaOfficine
-
-# Les scripts SQL contiennent des accents : psql doit les lire en UTF-8
-$env:PGCLIENTENCODING = "UTF8"
-
-# Le script vise PostgreSQL 17 par défaut : indiquer le dossier de la version 18
-.\scripts\initialiser_base_locale.ps1 -PgBin "C:\Program Files\PostgreSQL\18\bin" -Recreer
+.\scripts\initialiser_base_locale.ps1
 ```
 
 Le script :
+- trouve tout seul la dernière version de PostgreSQL installée (sinon : `-PgBin "C:\Program Files\PostgreSQL\18\bin"`) ;
+- règle l’encodage UTF-8 de psql (les scripts contiennent des accents) ;
 - demande le mot de passe de `postgres` ;
 - crée le compte applicatif `pharma_app` (mot de passe de développement `pharma_dev`, celui de `src/Pharma.Api/appsettings.json`) ;
-- crée les deux bases, applique `database/001` à `008` dans l’ordre, puis les données fictives `database/demo/900_donnees_demo.sql`.
+- crée les bases manquantes, puis applique `database/001` à `009` dans l’ordre et les données fictives `database/demo/900_donnees_demo.sql`.
 
-Options : `-SansDemo` pour une base vide, sans `-Recreer` pour ne pas toucher aux bases existantes.
+Les scripts SQL sont **idempotents** (voir [base-de-donnees.md](base-de-donnees.md#scripts-idempotents)) : sur une base existante, le script la **met à jour** sans rien perdre.
+
+### Mettre à jour une base après un nouveau script SQL
+
+Par exemple après l’arrivée de `009_caisse.sql`, sans mot de passe `postgres` :
+```powershell
+.\scripts\initialiser_base_locale.ps1 -MiseAJour
+```
+Ne pas oublier d’arrêter l’API avant, puis de la relancer.
+
+### Repartir de zéro
 
 Pour remettre à zéro une seule base (par exemple `pharmacie_test` après des essais de rappel de lot, qui bloquent un lot définitivement) :
 ```powershell
-.\scripts\initialiser_base_locale.ps1 -PgBin "C:\Program Files\PostgreSQL\18\bin" -Bases pharmacie_test -Recreer
+.\scripts\initialiser_base_locale.ps1 -Bases pharmacie_test -Recreer
 ```
+
+Options : `-SansDemo` pour ne pas charger les données fictives, `-Bases` pour choisir les bases.
 
 Pour lancer l’API sur `pharmacie_test` au lieu de `pharmacie_dev` (essais d’écriture) :
 ```powershell
@@ -103,6 +112,11 @@ Sans ce profil : clic droit sur la solution > **Configurer les projets de démar
 | `PHARMA_API` | Adresse de l’API | `http://localhost:5080/` |
 | `PHARMA_PHARMACIE` | Nom de la pharmacie affiché dans l’en-tête | (aucun) |
 | `PHARMA_POSTE` | Nom du poste, ex. « Poste caisse 1 » | `Poste <nom du PC>` |
+| `PHARMA_IMPRIMANTE_ETIQUETTES` | Adresse IP de l'imprimante thermique d'étiquettes (ZPL, port 9100) ; sans elle, seule la planche PDF est produite | (aucune) |
+
+Côté API, `Sauvegardes:PgDump` (dans `appsettings.json`) indique le chemin de `pg_dump.exe` si PostgreSQL n'est pas installé dans `C:\Program Files\PostgreSQL` ; les notifications et les sauvegardes se règlent ensuite dans l'Administration (voir [notifications.md](notifications.md)).
+
+Côté API, le dossier des images d'ordonnances scannées se règle dans `appsettings.json` (`Ordonnances:Dossier`, par défaut `C:\ProgramData\PharmaOfficine\Ordonnances`) ; les PDF produits par le poste (bons de commande, bons de retour, étiquettes, rapports de clôture) sont enregistrés dans `Documents\Pharma Officine`.
 
 Exemple (une fois, puis redémarrer Visual Studio) : `setx PHARMA_PHARMACIE "Pharmacie [Nom]"` et `setx PHARMA_POSTE "Poste caisse 1"`.
 
@@ -122,8 +136,8 @@ Le dossier contient deux solutions (`.sln` et `.slnx`) : toujours préciser le f
 | Symptôme | Cause | Solution |
 | --- | --- | --- |
 | `l’exécution de scripts est désactivée sur ce système` | Stratégie d’exécution PowerShell par défaut | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` dans la même fenêtre |
-| `psql introuvable : C:\Program Files\PostgreSQL\17\bin\psql.exe` | Le script vise la version 17 par défaut | Ajouter `-PgBin "C:\Program Files\PostgreSQL\18\bin"` |
-| Accents illisibles ou `séquence d’octets invalide pour l’encodage « UTF8 »` | Encodage de la console Windows | `$env:PGCLIENTENCODING = "UTF8"` avant psql ; pour une requête avec accents, la mettre dans un fichier UTF-8 et utiliser `psql -f` |
+| `PostgreSQL introuvable` ou `psql introuvable` | PostgreSQL installé ailleurs que dans `C:\Program Files\PostgreSQL` | Ajouter `-PgBin "<dossier>\bin"` (le script trouve seul la dernière version installée au chemin standard) |
+| Accents illisibles ou `séquence d’octets invalide pour l’encodage « UTF8 »` | Encodage de la console Windows | Le script d’initialisation le règle seul ; pour psql lancé à la main : `$env:PGCLIENTENCODING = "UTF8"` ; pour une requête avec accents, la mettre dans un fichier UTF-8 et utiliser `psql -f` |
 | `Could not load file or assembly 'Microsoft.Windows.SDK.NET'` au lancement du poste | WebView2 a besoin de la projection du SDK Windows | Corrigé : le poste cible `net10.0-windows10.0.19041.0`. Si l’erreur revient : *Générer > Régénérer la solution* |
 | `MSB3027 … le fichier est verrouillé par Pharma.Api` | L’API tourne encore pendant un build | Arrêter le débogage (**Maj+F5**) avant de recompiler |
 | `NU1301 … VCFNugets … 401 (Unauthorized)` en ligne de commande | Le feed NuGet VCF de la configuration NuGet globale exige une authentification | Compiler avec `--source https://api.nuget.org/v3/index.json`. Les avertissements NU1507 et NU1900 dans Visual Studio viennent de la même configuration et ne bloquent pas |

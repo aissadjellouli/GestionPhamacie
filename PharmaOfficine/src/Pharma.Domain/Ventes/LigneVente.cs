@@ -22,4 +22,13 @@ public class LigneVente
         MontantOrganisme = part;
         MontantPatient = PrixUnitaire * Quantite - part;
     }
+
+    /// <summary>Produit non remboursé (ou vente libre) : le patient paie tout.</summary>
+    public void SansTiersPayant()
+    {
+        BaseRemboursement = 0;
+        TauxRemboursement = 0;
+        MontantOrganisme = 0;
+        MontantPatient = PrixUnitaire * Quantite;
+    }
 }

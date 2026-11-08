@@ -1,5 +1,6 @@
 @page "/"
 @inject ApiClient Api
+@inject SessionPoste Session
 
 <div class="page">
     <div class="titre-page">
@@ -7,7 +8,14 @@
             <h1>Alertes du jour</h1>
             <p class="sous-titre">@Libelles.Aujourdhui() · triées par urgence puis par montant en jeu</p>
         </div>
-        <button type="button" class="btn" disabled title="Bientôt disponible">Paramètres des seuils</button>
+        @if (Session.A("admin.parametres"))
+        {
+            <a href="admin/seuils" class="btn">Paramètres des seuils</a>
+        }
+        else
+        {
+            <button type="button" class="btn" disabled title="Réservé au titulaire">Paramètres des seuils</button>
+        }
     </div>
 
     @if (erreur is not null)
@@ -73,6 +81,10 @@
                             </div>
                             <h2 class="alerte-titre">@Libelles.TitreAlerte(a)</h2>
                             <p class="alerte-detail">@Libelles.DetailAlerte(a)</p>
+                            @if (a.Emplacement is not null)
+                            {
+                                <p class="alerte-detail" style="margin: 0">Rangé : <span class="code-emplacement">@a.Emplacement</span></p>
+                            }
                         </div>
                         @if (a.ValeurDzd is { } valeur && Libelles.LibelleValeur(a) is { } libelle)
                         {
@@ -86,7 +98,14 @@
                             <div class="actions">
                                 @if (Libelles.ActionAlerte(a) is { } action)
                                 {
-                                    <button type="button" class="btn btn-principal" disabled title="Bientôt disponible">@action</button>
+                                    if (LienAction(a) is { } lien)
+                                    {
+                                        <a class="btn btn-principal" href="@lien">@action</a>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-principal" disabled title="@RaisonActionIndisponible(a)">@action</button>
+                                    }
                                 }
                                 <button type="button" class="btn" @onclick="() => Ouvrir(a, Mode.Reporter)">Reporter</button>
                                 <button type="button" class="btn" @onclick="() => Ouvrir(a, Mode.Traiter)">Traité</button>
@@ -127,6 +146,23 @@
 </div>
 
 @code {
+    /// <summary>Lien vers les Achats pour les actions disponibles, selon les droits de l'employé.</summary>
+    private string? LienAction(AlerteDto a) => a.Type switch
+    {
+        "rupture" or "stock_critique" when Session.A("achats.commander") =>
+            $"achats?onglet=commandes&produit={a.ProduitId}&nom={Uri.EscapeDataString(a.Produit)}",
+        "peremption" or "risque_ecoulement" when a.LotId is { } lot && Session.A("achats.retour_fournisseur") =>
+            $"achats?onglet=retours&lot={lot}&motif=peremption_proche",
+        _ => null
+    };
+
+    private static string RaisonActionIndisponible(AlerteDto a) => a.Type switch
+    {
+        "rupture" or "stock_critique" => "Droit « achats.commander » nécessaire",
+        "peremption" or "risque_ecoulement" => "Droit « achats.retour_fournisseur » nécessaire",
+        _ => "Bientôt disponible"
+    };
+
     private List<AlerteDto>? alertes;
     private string? erreur;
     private string filtre = "toutes";

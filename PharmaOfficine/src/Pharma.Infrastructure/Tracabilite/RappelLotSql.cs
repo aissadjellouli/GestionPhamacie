@@ -76,7 +76,19 @@ public sealed class RappelLotSql(NpgsqlDataSource db) : IRappelLot
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
+        // Où retirer les boîtes : emplacement de vente et réserve du produit
+        string? ou;
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT concat_ws(', réserve ', ev.code || COALESCE(' (' || ev.libelle || ')', ''), er.code)
+            FROM produit p LEFT JOIN emplacement ev ON ev.id = p.emplacement_id LEFT JOIN emplacement er ON er.id = p.reserve_id
+            WHERE p.id = $1
+            """, connexion, tx))
+        {
+            cmd.Parameters.AddWithValue(produitId);
+            ou = await cmd.ExecuteScalarAsync(ct) as string;
+        }
+
         await tx.CommitAsync(ct);
-        return new ResultatRappel(produit, numeroLot, lots, enStock, ventes);
+        return new ResultatRappel(produit, numeroLot, lots, enStock, ventes, string.IsNullOrEmpty(ou) ? null : ou);
     }
 }

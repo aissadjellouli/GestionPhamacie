@@ -35,6 +35,14 @@ internal sealed class ComptesEnMemoire(params Utilisateur[] comptes) : IComptesL
 {
     public Task<Utilisateur?> TrouverActifAsync(string identifiant, CancellationToken ct = default) =>
         Task.FromResult(comptes.FirstOrDefault(c => c.Identifiant == identifiant && c.Actif));
+
+    public List<long> Connexions { get; } = [];
+
+    public Task NoterConnexionAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        Connexions.Add(utilisateurId);
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>Le "hash" est simplement le mot de passe préfixé : suffisant pour tester le cas d'usage.</summary>

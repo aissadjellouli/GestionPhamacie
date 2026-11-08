@@ -1,0 +1,90 @@
+@inject ApiClient Api
+
+@* Fiche de création d'un produit absent du catalogue (droit catalogue.creer) *@
+<section class="panneau fiche-produit" aria-labelledby="t-nouveau-produit">
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+        <h2 id="t-nouveau-produit">Nouveau produit</h2>
+        <button type="button" class="btn" @onclick="OnAnnule">Annuler</button>
+    </div>
+    <p class="detail" style="margin: 0">Le produit est créé sans stock : il sera vendable après une réception. La création est inscrite au journal.</p>
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    <div class="achats-ligne">
+        <div class="champ" style="flex: 2 1 240px"><label for="p-nom">Nom commercial *</label><input id="p-nom" type="text" @bind="nom" placeholder="ex. Sintrom 4 mg cp" /></div>
+        <div class="champ recherche" style="flex: 2 1 220px">
+            <label for="p-dci">DCI *</label>
+            <input id="p-dci" type="text" autocomplete="off" @bind="dci" @bind:event="oninput" @bind:after="RechercherDciAsync" placeholder="ex. acénocoumarol" />
+            @if (dcis.Count > 0)
+            {
+                <ul class="suggestions" aria-label="DCI existantes">
+                    @foreach (var d in dcis)
+                    {
+                        <li><button type="button" @onclick="() => (dci, dcis) = (d, [])">@d</button></li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+    <div class="achats-ligne">
+        <div class="champ" style="flex: 1 1 120px"><label for="p-dosage">Dosage *</label><input id="p-dosage" type="text" @bind="dosage" placeholder="ex. 4 mg" /></div>
+        <div class="champ" style="flex: 1 1 140px"><label for="p-forme">Forme *</label><input id="p-forme" type="text" list="formes" @bind="forme" placeholder="ex. comprimé" />
+            <datalist id="formes"><option value="comprimé" /><option value="gélule" /><option value="sirop" /><option value="ampoule" /><option value="injectable" /><option value="pommade" /><option value="collyre" /><option value="sachet" /><option value="stylo" /></datalist>
+        </div>
+        <div class="champ" style="flex: 1 1 140px"><label for="p-prix">Prix public (DA) *</label><input id="p-prix" type="number" min="0" step="0.01" @bind="prix" /></div>
+        <div class="champ" style="flex: 1 1 160px">
+            <label for="p-classe">Classe *</label>
+            <select id="p-classe" @bind="classe">
+                <option value="libre">Libre</option><option value="liste_i">Liste I</option><option value="liste_ii">Liste II</option>
+                <option value="psychotrope">Psychotrope</option><option value="stupefiant">Stupéfiant</option>
+            </select>
+        </div>
+    </div>
+    <div class="achats-ligne">
+        <div class="champ" style="flex: 1 1 180px"><label for="p-cb">Code-barres (facultatif)</label><input id="p-cb" type="text" inputmode="numeric" @bind="codeBarre" /></div>
+        <div class="champ" style="flex: 1 1 160px"><label for="p-tarif">Tarif de référence (DA)</label><input id="p-tarif" type="number" min="0" step="0.01" @bind="tarif" /></div>
+        <div class="champ" style="flex: 0 0 110px"><label for="p-tva">TVA (%)</label><input id="p-tva" type="number" min="0" max="100" step="0.01" @bind="tva" /></div>
+        <div class="champ" style="flex: 0 0 140px"><label for="p-min">Stock minimum</label><input id="p-min" type="number" min="0" @bind="stockMin" /></div>
+        <label class="case" style="align-self: center"><input type="checkbox" @bind="remboursable" /><span>Remboursable</span></label>
+    </div>
+    <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CreerAsync">Créer le produit</button></div>
+</section>
+
+@code {
+    [Parameter] public string? CodeBarreInitial { get; set; }
+    [Parameter] public string? NomInitial { get; set; }
+    [Parameter] public EventCallback<(long Id, string Nom)> OnCree { get; set; }
+    [Parameter] public EventCallback OnAnnule { get; set; }
+
+    private string? nom, dci, dosage, forme, codeBarre;
+    private decimal prix;
+    private decimal? tarif;
+    private decimal tva;
+    private int stockMin;
+    private bool remboursable;
+    private string classe = "libre";
+    private List<string> dcis = [];
+    private bool enCours;
+    private string? erreur;
+    private int requete;
+
+    protected override void OnInitialized() => (codeBarre, nom) = (CodeBarreInitial, NomInitial);
+
+    private async Task RechercherDciAsync()
+    {
+        var n = ++requete;
+        if ((dci?.Trim().Length ?? 0) < 2) { dcis = []; return; }
+        var (liste, _) = await Api.DciAsync(dci!);
+        if (n == requete) dcis = liste.Where(d => !string.Equals(d, dci?.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    private async Task CreerAsync()
+    {
+        (enCours, erreur) = (true, null);
+        try
+        {
+            var (r, e) = await Api.CreerProduitAsync(new NouveauProduitDto(nom, dci, dosage, forme, prix, classe, codeBarre, tarif, remboursable, tva, stockMin));
+            if (e is not null) { erreur = e; return; }
+            await OnCree.InvokeAsync((r!.Id, nom!.Trim()));
+        }
+        finally { enCours = false; }
+    }
+}

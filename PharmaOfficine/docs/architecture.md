@@ -69,7 +69,7 @@ Un cas d’usage est une classe injectée avec une méthode `ExecuterAsync`, san
 
 ## Principes
 
-- **Hors ligne** : aucune dépendance au cloud. Internet n’est utile qu’à Chifa_Officine lui-même.
+- **Hors ligne** : aucune dépendance au cloud. Internet n’est utile qu’à Chifa_Officine et à l’envoi des e-mails au titulaire par le serveur SMTP de la pharmacie ; les SMS passent par un modem GSM (voir [notifications.md](notifications.md)).
 - **Règles dans le domaine, base en filet** : les règles métier sont écrites et testées dans `Pharma.Domain` et appliquées par les cas d’usage (ex. le lot FEFO est choisi par `Lot.Fefo`). Les règles critiques (lot périmé ou bloqué, registre des psychotropes, journal non modifiable) restent aussi garanties par la base (déclencheurs), en dernier recours.
 - **Droits côté serveur** : chaque point d’accès vérifie la permission avec `a_permission()`. Masquer un bouton ne suffit pas.
 - **Schéma piloté par SQL** : voir [base-de-donnees.md](base-de-donnees.md) et l’[ADR 0002](adr/0002-schema-pilote-par-sql.md).

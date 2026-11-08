@@ -42,12 +42,15 @@ public sealed class StockLecture(NpgsqlDataSource db) : IStockLecture
             SELECT e.produit_id, p.nom_commercial, d.nom, p.code_barre, p.classe, e.stock::int,
                    e.couverture_jours::int, lots.premiere, COALESCE(lots.nb_lots, 0),
                    COALESCE(lots.grossistes, '{}'), COALESCE(lots.numeros, '{}'),
-                   e.statut, proche.produit_id IS NOT NULL
+                   e.statut, proche.produit_id IS NOT NULL,
+                   p.emplacement_id, ev.code, p.reserve_id, er.code
             FROM v_etat_stock e
             JOIN produit p       ON p.id = e.produit_id
             LEFT JOIN dci d      ON d.id = p.dci_id
             LEFT JOIN lots       ON lots.produit_id = e.produit_id
             LEFT JOIN proche     ON proche.produit_id = e.produit_id
+            LEFT JOIN emplacement ev ON ev.id = p.emplacement_id
+            LEFT JOIN emplacement er ON er.id = p.reserve_id
             ORDER BY p.nom_commercial
             """;
         await using var cmd = db.CreateCommand(sql);
@@ -60,7 +63,9 @@ public sealed class StockLecture(NpgsqlDataSource db) : IStockLecture
                 r.GetInt32(5), r.IsDBNull(6) ? null : r.GetInt32(6),
                 r.IsDBNull(7) ? null : r.GetFieldValue<DateOnly>(7), r.GetInt32(8),
                 r.GetFieldValue<string[]>(9), r.GetFieldValue<string[]>(10),
-                r.GetString(11), r.GetBoolean(12)));
+                r.GetString(11), r.GetBoolean(12),
+                r.IsDBNull(13) ? null : r.GetInt64(13), r.IsDBNull(14) ? null : r.GetString(14),
+                r.IsDBNull(15) ? null : r.GetInt64(15), r.IsDBNull(16) ? null : r.GetString(16)));
         return liste;
     }
 }

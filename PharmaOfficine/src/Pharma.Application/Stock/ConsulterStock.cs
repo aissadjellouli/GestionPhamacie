@@ -12,7 +12,7 @@ public sealed record LigneStock(
     long ProduitId, string NomCommercial, string? Dci, string? CodeBarre, ClasseReglementaire Classe,
     int Stock, int? CouvertureJours, DateOnly? PremierePeremption, int NombreLots,
     IReadOnlyList<string> Grossistes, IReadOnlyList<string> NumerosLots,
-    string Statut, bool PeremptionProche);
+    string Statut, bool PeremptionProche, long? EmplacementId = null, string? Emplacement = null, long? ReserveId = null, string? Reserve = null);
 
 public sealed record EtatStock(IndicateursStock Indicateurs, IReadOnlyList<LigneStock> Lignes);
 

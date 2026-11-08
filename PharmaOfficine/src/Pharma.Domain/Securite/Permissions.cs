@@ -18,6 +18,7 @@ public static class Permissions
     public const string StockAjuster = "stock.ajuster";
     public const string StockDeclarerPerime = "stock.declarer_perime";
     public const string PrixModifier = "prix.modifier";
+    public const string CatalogueCreer = "catalogue.creer";
     public const string AchatsCommander = "achats.commander";
     public const string AchatsReceptionner = "achats.receptionner";
     public const string AchatsRetourFournisseur = "achats.retour_fournisseur";

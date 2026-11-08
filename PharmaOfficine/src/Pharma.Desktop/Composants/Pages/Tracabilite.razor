@@ -1,5 +1,6 @@
 @page "/tracabilite"
 @inject ApiClient Api
+@inject SessionPoste Session
 
 <div class="page page-serree">
     <div class="titre-page">
@@ -25,7 +26,7 @@
                         : "mode strict désactivé : il s’active quand toutes les boîtes en stock sont identifiées.")
                 </span>
             </div>
-            <button type="button" class="btn btn-contour" disabled title="Bientôt disponible">Voir les lots à étiqueter</button>
+            <a href="achats?onglet=etiquettes" class="btn btn-contour">Voir les lots à étiqueter</a>
         </section>
     }
 
@@ -118,6 +119,10 @@
                 <div class="confirmation-rappel" role="status">
                     <strong>Lot @rappel.NumeroLot bloqué chez tous les grossistes</strong>
                     <span>@ResumeRappel(rappel)</span>
+                    @if (rappel.Emplacements is not null)
+                    {
+                        <span>Boîtes à retirer : <span class="code-emplacement">@rappel.Emplacements</span></span>
+                    }
                 </div>
                 @if (rappel.Ventes.Count > 0)
                 {
@@ -140,7 +145,14 @@
                 }
                 <div class="actions">
                     <button type="button" class="btn btn-principal" disabled="@(rappel.Ventes.Count == 0)" @onclick="Exporter">Exporter la liste à contacter</button>
-                    <button type="button" class="btn" disabled title="Bientôt disponible">Préparer le retour fournisseur</button>
+                    @if (Session.A("achats.retour_fournisseur"))
+                    {
+                        <a class="btn" href="@($"achats?onglet=retours&produit={produitId}&numeroLot={Uri.EscapeDataString(rappel.NumeroLot)}&motif=rappel_lot")">Préparer le retour fournisseur</a>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn" disabled title="Droit « achats.retour_fournisseur » nécessaire">Préparer le retour fournisseur</button>
+                    }
                     <button type="button" class="btn" @onclick="NouveauRappel">Nouveau rappel</button>
                 </div>
             }

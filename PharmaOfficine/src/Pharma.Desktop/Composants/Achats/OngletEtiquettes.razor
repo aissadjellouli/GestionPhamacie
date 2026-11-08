@@ -1,0 +1,34 @@
+@inject ApiClient Api
+
+<section class="panneau" aria-labelledby="t-etiq">
+    <h2 id="t-etiq">Lots à étiqueter</h2>
+    <p class="detail" style="margin: 0">Boîtes en stock sans Data Matrix ni étiquette interne. Chaque étiquette porte un code EAN-13 unique (préfixe 20) qui suit la boîte jusqu’au patient.</p>
+    @if (erreur is not null)
+    {
+        <div class="erreur" role="alert">@erreur</div>
+    }
+    else if (lots is null)
+    {
+        <p class="vide">Chargement…</p>
+    }
+    else
+    {
+        <EtiquetagerLots Lots="Visibles" />
+    }
+</section>
+
+@code {
+    [Parameter] public long? LotId { get; set; }
+
+    private List<LotAEtiqueterDto>? lots;
+    private string? erreur;
+
+    private List<LotAEtiqueterDto> Visibles => LotId is { } id ? lots!.Where(l => l.LotId == id).ToList() : lots!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        List<LotAEtiqueterDto> l;
+        (l, erreur) = await Api.LotsAEtiqueterAsync();
+        lots = l;
+    }
+}

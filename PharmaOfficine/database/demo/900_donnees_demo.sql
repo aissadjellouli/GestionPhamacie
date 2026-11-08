@@ -4,7 +4,16 @@
 -- rupture avec alternative, stock critique, produit dormant, psychotrope.
 -- Dates calculées par rapport au jour d'exécution.
 -- Mot de passe de tous les comptes : demo
+--
+-- Réexécution sans effet : si les données de démonstration sont déjà
+-- présentes, le script s'arrête (instructions psql \gset et \if).
 -- =====================================================================
+SELECT EXISTS (SELECT 1 FROM utilisateur WHERE identifiant = 'titulaire') AS demo_deja_chargee \gset
+\if :demo_deja_chargee
+\echo 'Données de démonstration déjà présentes : rien à faire.'
+\quit
+\endif
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Utilisateurs

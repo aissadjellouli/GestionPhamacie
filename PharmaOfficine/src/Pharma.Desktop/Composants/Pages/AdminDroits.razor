@@ -1,0 +1,238 @@
+@page "/admin/droits"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+<div class="page admin">
+    <NavAdmin Actif="admin/droits" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Utilisateurs et droits</h1>
+                <p class="sous-titre">Réservé au titulaire · chaque modification est inscrite au journal</p>
+            </div>
+            <button type="button" class="btn btn-principal" disabled="@(etat is null || enCours)" @onclick="EnregistrerDroitsAsync">Enregistrer les droits</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (etat is not null)
+        {
+            <section class="panneau" aria-labelledby="t-users">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+                    <h2 id="t-users">Utilisateurs</h2>
+                    <button type="button" class="btn" @onclick="NouvelUtilisateur">Ajouter un utilisateur</button>
+                </div>
+
+                @if (fiche is not null)
+                {
+                    <div class="sous-formulaire" role="group" aria-label="@(fiche.Id is null ? "Nouvel utilisateur" : "Modifier l’utilisateur")">
+                        <strong>@(fiche.Id is null ? "Nouvel utilisateur" : $"Modifier {fiche.Identifiant}")</strong>
+                        <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px">
+                            <div class="champ"><label for="u-nom">Nom complet</label><input id="u-nom" type="text" @bind="fiche.NomComplet" /></div>
+                            @if (fiche.Id is null)
+                            {
+                                <div class="champ"><label for="u-id">Identifiant de connexion</label><input id="u-id" type="text" autocomplete="off" @bind="fiche.Identifiant" placeholder="ex. amina.b" /></div>
+                            }
+                            <div class="champ">
+                                <label for="u-role">Rôle</label>
+                                <select id="u-role" class="selection" @bind="fiche.RoleId">
+                                    @foreach (var r in etat.Roles.Where(r => !r.Systeme || EstTitulaire)) { <option value="@r.Id">@r.Nom</option> }
+                                </select>
+                            </div>
+                            <div class="champ">
+                                <label for="u-mdp">@(fiche.Id is null ? "Mot de passe (8 caractères minimum)" : "Nouveau mot de passe (vide : inchangé)")</label>
+                                <input id="u-mdp" type="password" autocomplete="new-password" @bind="fiche.MotDePasse" />
+                            </div>
+                        </div>
+                        @if (etat.Roles.FirstOrDefault(r => r.Id == fiche.RoleId)?.Systeme == true)
+                        {
+                            <div class="bandeau-attention" role="note">Pharmacien titulaire : tous les droits, y compris les notifications et la gestion des comptes. Il reste toujours au moins un titulaire actif.</div>
+                        }
+                        @if (fiche.Id is not null)
+                        {
+                            <label class="case"><input type="checkbox" @bind="fiche.Actif" /><span>Compte actif (décoché : l’employé ne peut plus se connecter)</span></label>
+                        }
+                        <div class="actions">
+                            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerFicheAsync">@(fiche.Id is null ? "Créer" : "Enregistrer")</button>
+                            <button type="button" class="btn" @onclick="() => fiche = null">Annuler</button>
+                        </div>
+                    </div>
+                }
+
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 640px">
+                        <thead><tr><th scope="col">Nom</th><th scope="col">Rôle</th><th scope="col">État</th><th scope="col">Dernière connexion</th><th scope="col"><span class="visuellement-cache">Actions</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var u in etat.Utilisateurs)
+                            {
+                                <tr>
+                                    <td><span class="nom">@u.NomComplet</span><br /><span class="detail">@u.Identifiant</span></td>
+                                    <td>@u.Role</td>
+                                    <td><span class="pastille @(u.Actif ? "ok" : "info")">@(u.Actif ? "Actif" : "Désactivé")</span></td>
+                                    <td>@(u.DerniereConnexion is { } d ? Libelles.DateHeureLocale(d) : "Jamais")</td>
+                                    <td>
+                                        @if (u.RoleSysteme && !EstTitulaire)
+                                        {
+                                            <span class="detail">Réservé au titulaire</span>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn" @onclick="() => Modifier(u)">Modifier</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panneau" aria-labelledby="t-droits">
+                <div>
+                    <h2 id="t-droits">Droits par rôle</h2>
+                    <p class="sous-titre">Le cadenas signale une action sensible, inscrite au journal. Le titulaire a toujours tous les droits. Les changements s’appliquent dès la prochaine action de chaque employé.</p>
+                </div>
+                <div class="tableau-cadre">
+                    <table class="tableau matrice" style="min-width: 720px">
+                        <thead>
+                            <tr>
+                                <th scope="col">Action</th>
+                                @foreach (var r in etat.Roles) { <th scope="col" style="text-align: center">@r.Nom</th> }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var groupe in etat.Permissions.GroupBy(p => p.Module))
+                            {
+                                <tr class="groupe"><th scope="rowgroup" colspan="@(etat.Roles.Count + 1)">@groupe.Key</th></tr>
+                                @foreach (var p in groupe)
+                                {
+                                    <tr>
+                                        <th scope="row" style="font-weight: 400">
+                                            @p.Libelle
+                                            @if (p.Sensible)
+                                            {
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" role="img" aria-label="Action sensible" style="vertical-align: -2px; color: var(--attention)"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+                                            }
+                                        </th>
+                                        @foreach (var r in etat.Roles)
+                                        {
+                                            <td style="text-align: center">
+                                                <input type="checkbox" class="case-droit" aria-label="@($"{p.Libelle} : {r.Nom}")"
+                                                       checked="@(r.Systeme || droits[r.Id].Contains(p.Code))" disabled="@r.Systeme"
+                                                       title="@(r.Systeme ? "Toujours accordé" : null)"
+                                                       @onchange="e => Basculer(r.Id, p.Code, e.Value is true)" />
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            }
+                            <tr class="groupe"><th scope="rowgroup" colspan="@(etat.Roles.Count + 1)">Caisse</th></tr>
+                            <tr>
+                                <th scope="row" style="font-weight: 400">Remise maximale (%)</th>
+                                @foreach (var r in etat.Roles)
+                                {
+                                    <td style="text-align: center">
+                                        @if (r.Systeme)
+                                        {
+                                            <span title="Non modifiable">@r.RemiseMaxPct.ToString("0.##")</span>
+                                        }
+                                        else
+                                        {
+                                            <input type="number" min="0" max="100" style="width: 80px" aria-label="Remise maximale, @r.Nom"
+                                                   value="@remises[r.Id]" @onchange="e => remises[r.Id] = decimal.TryParse(e.Value?.ToString(), out var v) ? v : 0" />
+                                        }
+                                    </td>
+                                }
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>Seul un titulaire voit le rôle titulaire et peut modifier le compte d'un titulaire (le serveur le revérifie).</summary>
+    private bool EstTitulaire => Session.A("role.titulaire");
+
+    private sealed class Fiche
+    {
+        public long? Id { get; init; }
+        public string NomComplet { get; set; } = "";
+        public string Identifiant { get; set; } = "";
+        public long RoleId { get; set; }
+        public bool Actif { get; set; } = true;
+        public string MotDePasse { get; set; } = "";
+    }
+
+    private EtatDroitsDto? etat;
+    private Dictionary<long, HashSet<string>> droits = [];
+    private Dictionary<long, decimal> remises = [];
+    private Fiche? fiche;
+    private string? erreur, message;
+    private bool enCours;
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        (etat, erreur) = await Api.DroitsAsync();
+        if (etat is null) return;
+        droits = etat.Roles.ToDictionary(r => r.Id, r => r.Permissions.ToHashSet());
+        remises = etat.Roles.ToDictionary(r => r.Id, r => r.RemiseMaxPct);
+    }
+
+    private void Basculer(long roleId, string code, bool accorde)
+    {
+        if (accorde) droits[roleId].Add(code); else droits[roleId].Remove(code);
+    }
+
+    private void NouvelUtilisateur()
+    {
+        message = null;
+        fiche = new Fiche { RoleId = etat!.Roles.FirstOrDefault(r => !r.Systeme)?.Id ?? 0 };
+    }
+
+    private void Modifier(UtilisateurAdminDto u)
+    {
+        message = null;
+        fiche = new Fiche { Id = u.Id, NomComplet = u.NomComplet, Identifiant = u.Identifiant, RoleId = u.RoleId, Actif = u.Actif };
+    }
+
+    private async Task EnregistrerFicheAsync()
+    {
+        if (fiche is null) return;
+        enCours = true;
+        if (fiche.Id is null)
+        {
+            (_, erreur) = await Api.CreerUtilisateurAsync(new NouvelUtilisateurDto(fiche.NomComplet, fiche.Identifiant, fiche.MotDePasse, fiche.RoleId));
+            if (erreur is null) message = $"Compte « {fiche.Identifiant.Trim().ToLowerInvariant()} » créé.";
+        }
+        else
+        {
+            erreur = await Api.ModifierUtilisateurAsync(fiche.Id.Value,
+                new ModificationUtilisateurDto(fiche.NomComplet, fiche.RoleId, fiche.Actif, string.IsNullOrEmpty(fiche.MotDePasse) ? null : fiche.MotDePasse));
+            if (erreur is null) message = $"Compte « {fiche.Identifiant} » enregistré.";
+        }
+        enCours = false;
+        if (erreur is not null) return;
+        fiche = null;
+        await ChargerAsync();
+    }
+
+    private async Task EnregistrerDroitsAsync()
+    {
+        if (etat is null) return;
+        enCours = true;
+        message = null;
+        erreur = await Api.EnregistrerDroitsAsync(etat.Roles.Where(r => !r.Systeme)
+            .Select(r => new DroitsRoleDto(r.Id, remises[r.Id], droits[r.Id].ToList())).ToList());
+        enCours = false;
+        if (erreur is not null) return;
+        message = "Droits enregistrés. Ils s’appliquent dès la prochaine action de chaque utilisateur.";
+        await ChargerAsync();
+    }
+}

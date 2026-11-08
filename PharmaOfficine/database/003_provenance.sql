@@ -6,7 +6,7 @@
 -- ---------------------------------------------------------------------
 -- 1. Réception : chaque livraison d'un grossiste (avec ou sans commande)
 -- ---------------------------------------------------------------------
-CREATE TABLE reception (
+CREATE TABLE IF NOT EXISTS reception (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     fournisseur_id  bigint      NOT NULL REFERENCES fournisseur(id),
     commande_id     bigint      REFERENCES commande_fournisseur(id),
@@ -15,14 +15,14 @@ CREATE TABLE reception (
     date_reception  timestamptz NOT NULL DEFAULT now(),
     utilisateur_id  bigint      REFERENCES utilisateur(id)
 );
-CREATE INDEX idx_reception_fournisseur ON reception (fournisseur_id, date_reception);
+CREATE INDEX IF NOT EXISTS idx_reception_fournisseur ON reception (fournisseur_id, date_reception);
 
 -- ---------------------------------------------------------------------
 -- 2. Chaque lot en stock est rattaché à une réception, donc à un grossiste
 --    (un même numéro de lot reçu de deux grossistes = deux lignes distinctes)
 -- ---------------------------------------------------------------------
-ALTER TABLE lot ADD COLUMN reception_id   bigint REFERENCES reception(id);
-ALTER TABLE lot ADD COLUMN fournisseur_id bigint REFERENCES fournisseur(id);
+ALTER TABLE lot ADD COLUMN IF NOT EXISTS reception_id   bigint REFERENCES reception(id);
+ALTER TABLE lot ADD COLUMN IF NOT EXISTS fournisseur_id bigint REFERENCES fournisseur(id);
 
 -- Si la table lot contient déjà des données, renseigner ces deux colonnes
 -- avant d'exécuter les deux lignes suivantes.
@@ -30,8 +30,13 @@ ALTER TABLE lot ALTER COLUMN reception_id   SET NOT NULL;
 ALTER TABLE lot ALTER COLUMN fournisseur_id SET NOT NULL;
 
 ALTER TABLE lot DROP CONSTRAINT IF EXISTS lot_produit_id_numero_lot_key;
-ALTER TABLE lot ADD CONSTRAINT ux_lot_reception UNIQUE (reception_id, produit_id, numero_lot);
-CREATE INDEX idx_lot_fournisseur ON lot (fournisseur_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ux_lot_reception') THEN
+        ALTER TABLE lot ADD CONSTRAINT ux_lot_reception UNIQUE (reception_id, produit_id, numero_lot);
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_lot_fournisseur ON lot (fournisseur_id);
 
 -- Garantit que le grossiste du lot est bien celui de la réception
 CREATE OR REPLACE FUNCTION verifier_fournisseur_lot() RETURNS trigger
@@ -45,7 +50,7 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_lot_fournisseur
+CREATE OR REPLACE TRIGGER trg_lot_fournisseur
     BEFORE INSERT OR UPDATE OF fournisseur_id, reception_id ON lot
     FOR EACH ROW EXECUTE FUNCTION verifier_fournisseur_lot();
 
@@ -53,7 +58,7 @@ CREATE TRIGGER trg_lot_fournisseur
 -- 3. Boîtes sérialisées (Data Matrix) : provenance à l'unité
 --    Utilisé dès que la boîte porte un numéro de série.
 -- ---------------------------------------------------------------------
-CREATE TABLE boite (
+CREATE TABLE IF NOT EXISTS boite (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     lot_id          bigint NOT NULL REFERENCES lot(id),
     gtin            text   NOT NULL,            -- identifiant produit (GS1 AI 01)
@@ -64,12 +69,12 @@ CREATE TABLE boite (
     scannee_le      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (gtin, numero_serie)                -- une même boîte ne peut entrer deux fois
 );
-CREATE INDEX idx_boite_lot ON boite (lot_id);
+CREATE INDEX IF NOT EXISTS idx_boite_lot ON boite (lot_id);
 
 -- ---------------------------------------------------------------------
 -- 4. Retours fournisseur : une boîte ne repart que chez son grossiste
 -- ---------------------------------------------------------------------
-CREATE TABLE retour_fournisseur (
+CREATE TABLE IF NOT EXISTS retour_fournisseur (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     fournisseur_id  bigint      NOT NULL REFERENCES fournisseur(id),
     numero          text        NOT NULL UNIQUE,
@@ -82,7 +87,7 @@ CREATE TABLE retour_fournisseur (
     utilisateur_id  bigint      REFERENCES utilisateur(id)
 );
 
-CREATE TABLE ligne_retour_fournisseur (
+CREATE TABLE IF NOT EXISTS ligne_retour_fournisseur (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     retour_id   bigint  NOT NULL REFERENCES retour_fournisseur(id) ON DELETE CASCADE,
     lot_id      bigint  NOT NULL REFERENCES lot(id),
@@ -104,7 +109,7 @@ BEGIN
 END;
 $$;
 
-CREATE TRIGGER trg_retour_bon_fournisseur
+CREATE OR REPLACE TRIGGER trg_retour_bon_fournisseur
     BEFORE INSERT OR UPDATE ON ligne_retour_fournisseur
     FOR EACH ROW EXECUTE FUNCTION verifier_retour_bon_fournisseur();
 
@@ -112,6 +117,8 @@ CREATE TRIGGER trg_retour_bon_fournisseur
 -- 5. Le risque de péremption affiche désormais le grossiste du lot
 --    (colonnes ajoutées en fin de vue, sans casser l'existant)
 -- ---------------------------------------------------------------------
+-- La vue change de colonnes d'un script à l'autre : on la recrée
+DROP VIEW IF EXISTS v_risque_peremption;
 CREATE OR REPLACE VIEW v_risque_peremption AS
 WITH prm AS (
     SELECT * FROM parametre_alerte WHERE id = 1

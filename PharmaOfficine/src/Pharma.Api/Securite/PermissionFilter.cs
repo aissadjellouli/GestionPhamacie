@@ -11,7 +11,25 @@ public static class PermissionExtensions
         long.Parse(user.FindFirstValue(ClaimTypes.NameIdentifier)
                    ?? throw new InvalidOperationException("Utilisateur non authentifié."));
 
-    public static TBuilder ExigerPermission<TBuilder>(this TBuilder builder, string permission)
+    /// <summary>Une seule des permissions suffit (lecture commune à plusieurs droits).</summary>
+    /// <summary>Réservé au pharmacien titulaire (rôle système), quel que soit le réglage des droits.</summary>
+    public static TBuilder ExigerTitulaire<TBuilder>(this TBuilder builder) where TBuilder : IEndpointConventionBuilder
+    {
+        builder.RequireAuthorization();
+        builder.AddEndpointFilter(async (ctx, next) =>
+        {
+            var http = ctx.HttpContext;
+            if (!long.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var utilisateurId))
+                return Results.Unauthorized();
+            var droits = http.RequestServices.GetRequiredService<IPermissionService>();
+            if (!await droits.EstTitulaireAsync(utilisateurId, http.RequestAborted))
+                return Results.Problem(title: "Action non autorisée", detail: "Réservé au pharmacien titulaire.", statusCode: StatusCodes.Status403Forbidden);
+            return await next(ctx);
+        });
+        return builder;
+    }
+
+    public static TBuilder ExigerPermission<TBuilder>(this TBuilder builder, params string[] permissionsAcceptees)
         where TBuilder : IEndpointConventionBuilder
     {
         builder.RequireAuthorization();
@@ -23,10 +41,13 @@ public static class PermissionExtensions
                 return Results.Unauthorized();
 
             var permissions = http.RequestServices.GetRequiredService<IPermissionService>();
-            if (!await permissions.APermissionAsync(utilisateurId, permission, http.RequestAborted))
+            var autorise = false;
+            foreach (var p in permissionsAcceptees)
+                if (autorise = await permissions.APermissionAsync(utilisateurId, p, http.RequestAborted)) break;
+            if (!autorise)
                 return Results.Problem(
                     title: "Action non autorisée",
-                    detail: $"Le droit « {permission} » est nécessaire. Le code du titulaire peut l'autoriser.",
+                    detail: $"Le droit « {string.Join(" » ou « ", permissionsAcceptees)} » est nécessaire. Le code du titulaire peut l'autoriser.",
                     statusCode: StatusCodes.Status403Forbidden);
 
             return await next(ctx);

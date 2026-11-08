@@ -24,6 +24,7 @@ public partial class App : Application
         var api = Environment.GetEnvironmentVariable("PHARMA_API") ?? "http://localhost:5080/";
         services.AddSingleton(new HttpClient { BaseAddress = new Uri(api) });
         services.AddSingleton<ConfigurationPoste>();
+        services.AddSingleton<ImprimanteEtiquettes>();
         services.AddSingleton<SessionPoste>();
         services.AddSingleton<ApiClient>();
 
