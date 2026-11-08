@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Pharma.Domain/Pharma.Domain.csproj" />
+    <Project Path="src/Pharma.Shared/Pharma.Shared.csproj" />
+    <Project Path="src/Pharma.Application/Pharma.Application.csproj" />
+    <Project Path="src/Pharma.Infrastructure/Pharma.Infrastructure.csproj" />
+    <Project Path="src/Pharma.Api/Pharma.Api.csproj" />
+    <Project Path="src/Pharma.Desktop/Pharma.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pharma.Domain.Tests/Pharma.Domain.Tests.csproj" />
+    <Project Path="tests/Pharma.Application.Tests/Pharma.Application.Tests.csproj" />
+    <Project Path="tests/Pharma.Architecture.Tests/Pharma.Architecture.Tests.csproj" />
+  </Folder>
+</Solution>

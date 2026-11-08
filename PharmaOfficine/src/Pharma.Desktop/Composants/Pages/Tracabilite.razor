@@ -1,0 +1,274 @@
+@page "/tracabilite"
+@inject ApiClient Api
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Traçabilité</h1>
+            <p class="sous-titre">Chaque boîte, du grossiste au patient</p>
+        </div>
+        <a href="stock" style="font-size: 14px; font-weight: 500">Retour au stock</a>
+    </div>
+
+    @if (etiquetage is not null)
+    {
+        <section class="carte" aria-labelledby="t-etiq" style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px">
+            <div style="flex: 999 1 320px; display: flex; flex-direction: column; gap: 8px">
+                <h2 id="t-etiq" style="font-size: 15px; font-weight: 600">Étiquetage du stock : @etiquetage.Pourcentage % des boîtes ont une identité</h2>
+                <div class="progression" role="progressbar" aria-valuenow="@etiquetage.Pourcentage" aria-valuemin="0" aria-valuemax="100" aria-label="Boîtes identifiées">
+                    <div style="width: @(etiquetage.Pourcentage)%"></div>
+                </div>
+                <span class="sous-titre" style="font-size: 13px">
+                    @etiquetage.BoitesIdentifiees boîtes identifiées sur @etiquetage.BoitesEnStock en stock ·
+                    @(etiquetage.ModeStrict
+                        ? "mode strict activé : chaque boîte vendue doit être scannée."
+                        : "mode strict désactivé : il s’active quand toutes les boîtes en stock sont identifiées.")
+                </span>
+            </div>
+            <button type="button" class="btn btn-contour" disabled title="Bientôt disponible">Voir les lots à étiqueter</button>
+        </section>
+    }
+
+    <div class="colonnes">
+        <section class="panneau colonne-principale" aria-labelledby="t-parcours">
+            <h2 id="t-parcours">Parcours d’une boîte</h2>
+            <div class="champ">
+                <label for="code-boite">Scanner la boîte (Data Matrix ou étiquette interne)</label>
+                <input id="code-boite" type="text" @bind="code" @onkeyup="ToucheAsync" placeholder="Ex. 2000000000015" />
+            </div>
+
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+            @if (parcours is not null)
+            {
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: 14px">
+                    <span style="font-weight: 600">@parcours.Produit</span>
+                    <span class="sous-titre">Lot @parcours.NumeroLot · exp. @Libelles.Date(parcours.DatePeremption)</span>
+                    <span class="pastille @(parcours.Statut == "en_stock" || parcours.Statut == "vendue" ? "ok" : "info")">@Libelles.StatutBoite(parcours.Statut)</span>
+                    @if (parcours.LotBloque) { <span class="pastille urgent">Lot bloqué</span> }
+                </div>
+                <ol class="frise">
+                    @{ var etapes = Etapes(parcours); }
+                    @for (var i = 0; i < etapes.Count; i++)
+                    {
+                        var e = etapes[i];
+                        <li>
+                            <div class="frise-repere">
+                                <span class="frise-point"></span>
+                                @if (i < etapes.Count - 1) { <span class="frise-trait"></span> }
+                            </div>
+                            <div class="frise-texte">
+                                <span>@e.Titre</span>
+                                @if (e.Detail is not null) { <span>@e.Detail</span> }
+                            </div>
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+
+        <section class="panneau colonne-laterale" aria-labelledby="t-rappel" style="flex: 1 1 380px">
+            <h2 id="t-rappel">Rappel de lot</h2>
+
+            @if (rappel is null)
+            {
+                <div class="champ recherche">
+                    <label for="r-prod">Produit</label>
+                    <input id="r-prod" type="search" autocomplete="off" disabled="@etape2"
+                           @bind="produitTexte" @bind:event="oninput" @bind:after="RechercherProduitAsync" />
+                    @if (suggestions.Count > 0)
+                    {
+                        <ul class="suggestions" aria-label="Produits trouvés">
+                            @foreach (var p in suggestions)
+                            {
+                                <li>
+                                    <button type="button" @onclick="() => ChoisirProduit(p.Id, p.NomCommercial)">
+                                        <span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage</span></span>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <div class="champ"><label for="r-lot">Numéro de lot</label><input id="r-lot" type="text" @bind="numeroLot" disabled="@etape2" /></div>
+                <div class="champ"><label for="r-motif">Motif</label><input id="r-motif" type="text" @bind="motif" disabled="@etape2" placeholder="Ex. rappel du laboratoire, suspicion de contrefaçon" /></div>
+
+                @if (erreurRappel is not null) { <div class="erreur" role="alert">@erreurRappel</div> }
+
+                @if (!etape2)
+                {
+                    <button type="button" class="btn btn-danger" style="height: 48px; font-size: 15px" @onclick="Preparer">
+                        Bloquer le lot et lister les patients
+                    </button>
+                }
+                else
+                {
+                    <div class="confirmation-rappel" role="alertdialog" aria-labelledby="conf-titre">
+                        <strong id="conf-titre">Bloquer le lot @numeroLot.Trim() de @produitNom ?</strong>
+                        <span>Le lot sera bloqué chez tous les grossistes et ne pourra plus être vendu. L’action est inscrite au journal et ne peut pas être annulée depuis le logiciel.</span>
+                        <div class="actions">
+                            <button type="button" class="btn btn-danger" disabled="@enCours" @onclick="ConfirmerAsync">Confirmer le blocage</button>
+                            <button type="button" class="btn" disabled="@enCours" @onclick="() => etape2 = false">Annuler</button>
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="confirmation-rappel" role="status">
+                    <strong>Lot @rappel.NumeroLot bloqué chez tous les grossistes</strong>
+                    <span>@ResumeRappel(rappel)</span>
+                </div>
+                @if (rappel.Ventes.Count > 0)
+                {
+                    <div class="liste-rappel">
+                        @foreach (var v in rappel.Ventes)
+                        {
+                            <div>
+                                <span>@(v.Anonyme ? $"Vente anonyme · ticket {v.Ticket}" : $"{v.Patient} · {v.Telephone ?? "téléphone inconnu"}")</span>
+                                <span>@Libelles.DateLocale(v.DateVente) · @v.Boites @(v.Boites > 1 ? "boîtes" : "boîte")</span>
+                            </div>
+                        }
+                    </div>
+                }
+                @if (fichierExporte is not null)
+                {
+                    <div class="succes" role="status">
+                        Liste enregistrée : @fichierExporte
+                        <button type="button" class="lien-bouton" @onclick="() => ExportRappel.Montrer(fichierExporte)">Ouvrir le dossier</button>
+                    </div>
+                }
+                <div class="actions">
+                    <button type="button" class="btn btn-principal" disabled="@(rappel.Ventes.Count == 0)" @onclick="Exporter">Exporter la liste à contacter</button>
+                    <button type="button" class="btn" disabled title="Bientôt disponible">Préparer le retour fournisseur</button>
+                    <button type="button" class="btn" @onclick="NouveauRappel">Nouveau rappel</button>
+                </div>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private string code = "";
+    private ParcoursBoiteDto? parcours;
+    private EtatEtiquetageDto? etiquetage;
+    private string? erreur;
+
+    // Rappel de lot
+    private string produitTexte = "";
+    private long produitId;
+    private string produitNom = "";
+    private string numeroLot = "";
+    private string motif = "";
+    private List<ProduitDto> suggestions = [];
+    private int requete;
+    private bool etape2;
+    private bool enCours;
+    private string? erreurRappel;
+    private RappelLotDto? rappel;
+    private string? fichierExporte;
+
+    private sealed record Etape(string Titre, string? Detail);
+
+    protected override async Task OnInitializedAsync()
+    {
+        (etiquetage, _) = await Api.EtiquetageAsync();
+    }
+
+    private async Task ToucheAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || string.IsNullOrWhiteSpace(code)) return;
+        (parcours, erreur) = await Api.ParcoursBoiteAsync(code);
+        // Le rappel se prépare souvent depuis la boîte scannée
+        if (parcours is not null && rappel is null && !etape2)
+        {
+            ChoisirProduit(parcours.ProduitId, parcours.Produit);
+            numeroLot = parcours.NumeroLot;
+        }
+    }
+
+    private async Task RechercherProduitAsync()
+    {
+        produitId = 0;
+        var numero = ++requete;
+        if (produitTexte.Trim().Length < 2) { suggestions = []; return; }
+        var (trouves, _) = await Api.RechercherProduitsAsync(produitTexte);
+        if (numero == requete) suggestions = trouves;
+    }
+
+    private void ChoisirProduit(long id, string nom)
+    {
+        (produitId, produitNom, produitTexte, suggestions) = (id, nom, nom, []);
+    }
+
+    private void Preparer()
+    {
+        erreurRappel = produitId <= 0 ? "Choisissez le produit dans la liste proposée."
+            : string.IsNullOrWhiteSpace(numeroLot) ? "Indiquez le numéro de lot rappelé."
+            : string.IsNullOrWhiteSpace(motif) ? "Indiquez le motif du rappel (il est inscrit au journal)."
+            : null;
+        etape2 = erreurRappel is null;
+    }
+
+    private async Task ConfirmerAsync()
+    {
+        enCours = true;
+        (rappel, erreurRappel) = await Api.RappelerLotAsync(produitId, numeroLot.Trim(), motif.Trim());
+        enCours = false;
+        etape2 = false;
+        if (rappel is not null && parcours is not null && parcours.NumeroLot == rappel.NumeroLot)
+            (parcours, erreur) = await Api.ParcoursBoiteAsync(code);   // affiche « Lot bloqué » et l'étape de blocage
+    }
+
+    private void Exporter()
+    {
+        if (rappel is null) return;
+        try { fichierExporte = ExportRappel.Enregistrer(rappel); }
+        catch (Exception ex) { erreurRappel = $"Export impossible : {ex.Message}"; }
+    }
+
+    private void NouveauRappel()
+    {
+        (rappel, fichierExporte, erreurRappel, etape2) = (null, null, null, false);
+        (produitTexte, produitId, produitNom, numeroLot, motif) = ("", 0, "", "", "");
+    }
+
+    private static string ResumeRappel(RappelLotDto r)
+    {
+        var stock = r.BoitesEnStock switch
+        {
+            0 => "aucune boîte en stock",
+            1 => "1 boîte en stock retirée de la vente",
+            var n => $"{n} boîtes en stock retirées de la vente"
+        };
+        if (r.BoitesVendues == 0) return $"{Majuscule(stock)} · aucune vente de ce lot.";
+        var patients = r.PatientsAContacter == 1 ? "1 patient" : $"{r.PatientsAContacter} patients";
+        var anonymes = r.VentesAnonymes switch { 0 => "", 1 => ", dont 1 vente anonyme", var n => $", dont {n} ventes anonymes" };
+        return $"{Majuscule(stock)} · {r.BoitesVendues} vendue(s) : {patients} à contacter{anonymes}.";
+    }
+
+    private static string Majuscule(string s) => char.ToUpper(s[0]) + s[1..];
+
+    private static List<Etape> Etapes(ParcoursBoiteDto p)
+    {
+        var liste = new List<Etape>();
+        foreach (var e in p.Etapes)
+        {
+            var titre = $"{Libelles.Etape(e.Type)} · {Libelles.DateHeureLocale(e.Date)}";
+            var detail = e.Type switch
+            {
+                "reception" => Joindre(p.Fournisseur, p.NumeroBl is null ? null : $"BL {p.NumeroBl}", e.Commentaire),
+                "vente" => Joindre(p.Ticket is null ? null : $"Ticket {p.Ticket}",
+                                   p.NumFactureChifa is null ? null : $"facture Chifa {p.NumFactureChifa}", e.Commentaire),
+                _ => e.Commentaire
+            };
+            liste.Add(new Etape(titre, detail));
+        }
+        if (p.Patient is not null)
+            liste.Add(new Etape("Patient", p.Patient));
+        return liste;
+    }
+
+    private static string? Joindre(params string?[] parties) =>
+        parties.Where(x => !string.IsNullOrWhiteSpace(x)).ToList() is { Count: > 0 } l ? string.Join(" · ", l) : null;
+}

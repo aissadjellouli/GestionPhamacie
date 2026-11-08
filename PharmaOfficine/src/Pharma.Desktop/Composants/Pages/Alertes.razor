@@ -1,0 +1,195 @@
+@page "/"
+@inject ApiClient Api
+
+<div class="page">
+    <div class="titre-page">
+        <div>
+            <h1>Alertes du jour</h1>
+            <p class="sous-titre">@Libelles.Aujourdhui() · triées par urgence puis par montant en jeu</p>
+        </div>
+        <button type="button" class="btn" disabled title="Bientôt disponible">Paramètres des seuils</button>
+    </div>
+
+    @if (erreur is not null)
+    {
+        <div class="erreur" role="alert">@erreur</div>
+    }
+    else if (alertes is null)
+    {
+        <p class="vide">Chargement des alertes…</p>
+    }
+    else
+    {
+        <section class="tuiles" aria-label="Indicateurs">
+            <div class="tuile">
+                <span class="tuile-libelle">Valeur à risque (péremption)</span>
+                <span class="tuile-valeur urgent">@Libelles.Dinars(ValeurARisque)</span>
+                <span class="tuile-note">au prix d’achat</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Lots périmés à retirer</span>
+                <span class="tuile-valeur">@Compter("perime")</span>
+                <span class="tuile-note">vente bloquée automatiquement</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Ruptures</span>
+                <span class="tuile-valeur">@Compter("rupture")</span>
+                <span class="tuile-note">commande suggérée dans l’alerte</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Stock critique</span>
+                <span class="tuile-valeur">@Compter("stock_critique")</span>
+                <span class="tuile-note">commande suggérée dans l’alerte</span>
+            </div>
+        </section>
+
+        <div class="filtres" role="group" aria-label="Filtrer les alertes">
+            @foreach (var f in Filtres)
+            {
+                <button type="button" class="puce" aria-pressed="@(f.Id == filtre ? "true" : "false")"
+                        @onclick="() => filtre = f.Id">@f.Libelle (@f.Nombre)</button>
+            }
+        </div>
+
+        @if (confirmation is not null)
+        {
+            <div class="succes" role="status">@confirmation</div>
+        }
+
+        @if (Visibles.Count == 0)
+        {
+            <div class="carte vide">Aucune alerte ouverte dans cette catégorie. Le stock est en ordre.</div>
+        }
+        else
+        {
+            <section class="liste" aria-label="Liste des alertes">
+                @foreach (var a in Visibles)
+                {
+                    <article class="carte alerte">
+                        <div class="alerte-corps">
+                            <div class="alerte-entete">
+                                <span class="pastille @Libelles.ClasseNiveau(a.Niveau)">@Libelles.Niveau(a.Niveau)</span>
+                                <span class="etiquette-type">@Libelles.TypeAlerte(a)</span>
+                            </div>
+                            <h2 class="alerte-titre">@Libelles.TitreAlerte(a)</h2>
+                            <p class="alerte-detail">@Libelles.DetailAlerte(a)</p>
+                        </div>
+                        @if (a.ValeurDzd is { } valeur && Libelles.LibelleValeur(a) is { } libelle)
+                        {
+                            <div class="alerte-valeur">
+                                <span>@libelle</span>
+                                <span>@Libelles.Dinars(valeur)</span>
+                            </div>
+                        }
+                        @if (enEdition != a.Id)
+                        {
+                            <div class="actions">
+                                @if (Libelles.ActionAlerte(a) is { } action)
+                                {
+                                    <button type="button" class="btn btn-principal" disabled title="Bientôt disponible">@action</button>
+                                }
+                                <button type="button" class="btn" @onclick="() => Ouvrir(a, Mode.Reporter)">Reporter</button>
+                                <button type="button" class="btn" @onclick="() => Ouvrir(a, Mode.Traiter)">Traité</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="action-en-cours">
+                                @if (mode == Mode.Reporter)
+                                {
+                                    <div class="champ">
+                                        <label for="report-@a.Id">Faire réapparaître l’alerte le</label>
+                                        <input id="report-@a.Id" type="date" @bind="dateReport" min="@Demain.ToString("yyyy-MM-dd")" />
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="champ" style="flex: 1 1 320px">
+                                        <label for="action-@a.Id">Action prise (facultatif)</label>
+                                        <input id="action-@a.Id" type="text" @bind="actionPrise" maxlength="200"
+                                               placeholder="@(Libelles.ActionAlerte(a) ?? "Ex. mis en avant en vitrine")" />
+                                    </div>
+                                }
+                                <div class="actions">
+                                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => ConfirmerAsync(a)">
+                                        @(mode == Mode.Reporter ? "Reporter" : "Marquer traitée")
+                                    </button>
+                                    <button type="button" class="btn" disabled="@enCours" @onclick="Annuler">Annuler</button>
+                                </div>
+                                @if (erreurAction is not null) { <div class="erreur" role="alert" style="flex-basis: 100%">@erreurAction</div> }
+                            </div>
+                        }
+                    </article>
+                }
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private List<AlerteDto>? alertes;
+    private string? erreur;
+    private string filtre = "toutes";
+
+    private sealed record Filtre(string Id, string Libelle, int Nombre);
+
+    private enum Mode { Reporter, Traiter }
+
+    private long? enEdition;
+    private Mode mode;
+    private DateOnly dateReport;
+    private string actionPrise = "";
+    private string? erreurAction;
+    private string? confirmation;
+    private bool enCours;
+
+    private static DateOnly Demain => DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync() => (alertes, erreur) = await Api.AlertesAsync();
+
+    private void Ouvrir(AlerteDto a, Mode m)
+    {
+        (enEdition, mode, erreurAction, confirmation) = (a.Id, m, null, null);
+        dateReport = DateOnly.FromDateTime(DateTime.Today.AddDays(7));
+        actionPrise = "";
+    }
+
+    private void Annuler() => (enEdition, erreurAction) = (null, null);
+
+    private async Task ConfirmerAsync(AlerteDto a)
+    {
+        enCours = true;
+        erreurAction = mode == Mode.Reporter
+            ? await Api.ReporterAlerteAsync(a.Id, dateReport)
+            : await Api.TraiterAlerteAsync(a.Id, actionPrise);
+        enCours = false;
+        if (erreurAction is not null) return;
+
+        confirmation = mode == Mode.Reporter
+            ? $"« {Libelles.TitreAlerte(a)} » reportée au {Libelles.Date(dateReport)}."
+            : $"« {Libelles.TitreAlerte(a)} » marquée traitée.";
+        enEdition = null;
+        await ChargerAsync();
+    }
+
+    private int Compter(string type) => alertes?.Count(a => a.Type == type) ?? 0;
+
+    private decimal ValeurARisque =>
+        alertes?.Where(Libelles.EstPeremption).Sum(a => a.ValeurDzd ?? 0) ?? 0;
+
+    private bool Correspond(AlerteDto a, string id) => id switch
+    {
+        "urgent" => a.Niveau == "urgent",
+        "peremption" => Libelles.EstPeremption(a),
+        "stock" => !Libelles.EstPeremption(a),
+        _ => true
+    };
+
+    private IEnumerable<Filtre> Filtres =>
+        new[] { ("toutes", "Toutes"), ("urgent", "Urgentes"), ("peremption", "Péremption"), ("stock", "Stock") }
+            .Select(f => new Filtre(f.Item1, f.Item2, alertes?.Count(a => Correspond(a, f.Item1)) ?? 0));
+
+    private List<AlerteDto> Visibles => alertes?.Where(a => Correspond(a, filtre)).ToList() ?? [];
+}

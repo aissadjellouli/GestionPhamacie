@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Rapports</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F6F7F5}
+a{color:#0F766E}a:hover{color:#115E59}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #1D2939; background: #F6F7F5; min-height: 100vh">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E4E7EC">
+<div style="max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px">
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="width: 34px; height: 34px; border-radius: 8px; background: #0F766E; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></div>
+<div style="display: flex; flex-direction: column"><span style="font-weight: 600; font-size: 15px">[Nom du logiciel]</span><span style="font-size: 12px; color: #475467">Pharmacie [Nom] · Connecté : titulaire</span></div>
+</div>
+<nav aria-label="Navigation principale" style="display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 400px">
+<a href="Caisse.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Caisse</a>
+<a href="Stock.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Stock</a>
+<a href="Achats.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Achats</a>
+<a href="Chifa.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Chifa</a>
+<a href="Main.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Alertes</a>
+<a href="#" aria-current="page" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #0F766E; background: #E6F4F1; font-weight: 600; text-decoration: none">Rapports</a>
+<a href="Admin.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Administration</a>
+</nav>
+</div>
+</header>
+
+<main style="max-width: 1280px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-direction: column; gap: 20px">
+
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 600">Rapports</h1>
+<p style="margin: 0; font-size: 14px; color: #475467">Semaine du 2 au 8 novembre 2026 · données fictives</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<div role="group" aria-label="Période" style="display: flex; gap: 4px; padding: 4px; border-radius: 10px; background: #EAECF0">
+<button type="button" aria-pressed="false" style="height: 40px; padding: 0 14px; border-radius: 8px; border: none; background: transparent; color: #344054; font: inherit; font-size: 14px; cursor: pointer">Jour</button>
+<button type="button" aria-pressed="true" style="height: 40px; padding: 0 14px; border-radius: 8px; border: none; background: #FFFFFF; color: #1D2939; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer">Semaine</button>
+<button type="button" aria-pressed="false" style="height: 40px; padding: 0 14px; border-radius: 8px; border: none; background: transparent; color: #344054; font: inherit; font-size: 14px; cursor: pointer">Mois</button>
+</div>
+<button type="button" style="height: 48px; padding: 0 16px; border-radius: 8px; border: 1px solid #D0D5DD; background: #FFFFFF; color: #344054; font: inherit; font-size: 14px; cursor: pointer">Exporter (PDF, Excel)</button>
+</div>
+</div>
+
+<section aria-label="Indicateurs" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #475467">Chiffre d’affaires</span><span style="font-size: 24px; font-weight: 600">[montant] DA</span></div>
+<div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #475467">Part Chifa à recevoir</span><span style="font-size: 24px; font-weight: 600">[montant] DA</span></div>
+<div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #475467">Crédits clients accordés</span><span style="font-size: 24px; font-weight: 600">[montant] DA</span></div>
+<div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #475467; display: flex; align-items: center; gap: 6px">Marge brute <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475467" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="réservé au titulaire"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span><span style="font-size: 24px; font-weight: 600">[montant] DA</span></div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: stretch">
+
+<section aria-labelledby="t-ca" style="flex: 999 1 520px; min-width: 0; background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<h2 id="t-ca" style="margin: 0; font-size: 17px; font-weight: 600">Ventes par jour</h2>
+<div role="img" aria-label="Ventes par jour, du lundi au dimanche, plus fortes en début de semaine (exemple)" style="display: flex; align-items: flex-end; gap: 12px; height: 200px; padding-top: 8px; border-bottom: 1px solid #D0D5DD">
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end"><div style="width: 100%; max-width: 48px; height: 78%; background: #0F766E; border-radius: 6px 6px 0 0"></div></div>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end"><div style="width: 100%; max-width: 48px; height: 92%; background: #0F766E; border-radius: 6px 6px 0 0"></div></div>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end"><div style="width: 100%; max-width: 48px; height: 70%; background: #0F766E; border-radius: 6px 6px 0 0"></div></div>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end"><div style="width: 100%; max-width: 48px; height: 65%; background: #0F766E; border-radius: 6px 6px 0 0"></div></div>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end"><div style="width: 100%; max-width: 48px; height: 40%; background: #0F766E; border-radius: 6px 6px 0 0"></div></div>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end"><div style="width: 100%; max-width: 48px; height: 55%; background: #0F766E; border-radius: 6px 6px 0 0"></div></div>
+<div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end"><div style="width: 100%; max-width: 48px; height: 84%; background: #0F766E; border-radius: 6px 6px 0 0"></div></div>
+</div>
+<div aria-hidden="true" style="display: flex; gap: 12px; font-size: 12px; color: #475467"><span style="flex: 1; text-align: center">Lun</span><span style="flex: 1; text-align: center">Mar</span><span style="flex: 1; text-align: center">Mer</span><span style="flex: 1; text-align: center">Jeu</span><span style="flex: 1; text-align: center">Ven</span><span style="flex: 1; text-align: center">Sam</span><span style="flex: 1; text-align: center">Dim</span></div>
+</section>
+
+<section aria-labelledby="t-top" style="flex: 1 1 320px; background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 10px">
+<h2 id="t-top" style="margin: 0; font-size: 17px; font-weight: 600">Produits les plus vendus</h2>
+<div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #EAECF0; font-size: 14px"><span>Paracétamol 500 mg cp</span><span style="font-weight: 600">48</span></div>
+<div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #EAECF0; font-size: 14px"><span>Amoxicilline 1 g cp</span><span style="font-weight: 600">31</span></div>
+<div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #EAECF0; font-size: 14px"><span>Amlodipine 5 mg cp</span><span style="font-weight: 600">17</span></div>
+<div style="display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid #EAECF0; font-size: 14px"><span>Metformine 850 mg cp</span><span style="font-weight: 600">15</span></div>
+</section>
+
+</div>
+
+<section aria-labelledby="t-clo" style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<h2 id="t-clo" style="margin: 0; font-size: 17px; font-weight: 600">Clôtures de caisse</h2>
+<div style="overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; min-width: 720px">
+<thead><tr style="text-align: left; color: #475467; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em">
+<th scope="col" style="padding: 8px 8px 8px 0; font-weight: 500">Employé</th><th scope="col" style="padding: 8px; font-weight: 500">Session</th><th scope="col" style="padding: 8px; font-weight: 500">Attendu</th><th scope="col" style="padding: 8px; font-weight: 500">Compté</th><th scope="col" style="padding: 8px; font-weight: 500">Écart</th><th scope="col" style="padding: 8px; font-weight: 500">Annulations</th><th scope="col" style="padding: 8px; font-weight: 500">Remises</th>
+</tr></thead>
+<tbody>
+<tr style="border-top: 1px solid #EAECF0"><td style="padding: 10px 8px 10px 0; font-weight: 500">[Prénom 1]</td><td style="padding: 10px 8px">08/11 matin</td><td style="padding: 10px 8px">42 300 DA</td><td style="padding: 10px 8px">42 300 DA</td><td style="padding: 10px 8px"><span style="padding: 3px 10px; border-radius: 999px; background: #E6F4F1; color: #115E59; font-size: 12px; font-weight: 600">0 DA</span></td><td style="padding: 10px 8px">0</td><td style="padding: 10px 8px">1</td></tr>
+<tr style="border-top: 1px solid #EAECF0"><td style="padding: 10px 8px 10px 0; font-weight: 500">[Prénom 2]</td><td style="padding: 10px 8px">07/11 soir</td><td style="padding: 10px 8px">50 000 DA</td><td style="padding: 10px 8px">48 500 DA</td><td style="padding: 10px 8px"><span style="padding: 3px 10px; border-radius: 999px; background: #FEE4E2; color: #912018; font-size: 12px; font-weight: 600">−1 500 DA</span></td><td style="padding: 10px 8px; color: #912018; font-weight: 600">3</td><td style="padding: 10px 8px">0</td></tr>
+<tr style="border-top: 1px solid #EAECF0"><td style="padding: 10px 8px 10px 0; font-weight: 500">[Prénom 1]</td><td style="padding: 10px 8px">07/11 matin</td><td style="padding: 10px 8px">39 750 DA</td><td style="padding: 10px 8px">39 800 DA</td><td style="padding: 10px 8px"><span style="padding: 3px 10px; border-radius: 999px; background: #EAECF0; color: #344054; font-size: 12px; font-weight: 600">+50 DA</span></td><td style="padding: 10px 8px">1</td><td style="padding: 10px 8px">0</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

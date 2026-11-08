@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Réception : impression des étiquettes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F6F7F5}
+a{color:#0F766E}a:hover{color:#115E59}
+</style>
+</head>
+<body>
+<div style="font-family: Inter, system-ui, sans-serif; color: #1D2939; background: #F6F7F5; min-height: 100vh">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E4E7EC">
+<div style="max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px">
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="width: 34px; height: 34px; border-radius: 8px; background: #0F766E; display: flex; align-items: center; justify-content: center">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+</div>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 600; font-size: 15px">[Nom du logiciel]</span>
+<span style="font-size: 12px; color: #475467">Pharmacie [Nom] · Poste back-office</span>
+</div>
+</div>
+<nav aria-label="Navigation principale" style="display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 400px">
+<a href="Caisse.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Caisse</a>
+<a href="Stock.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Stock</a>
+<a href="Achats.html" aria-current="page" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #0F766E; background: #E6F4F1; font-weight: 600; text-decoration: none">Achats</a>
+<a href="Chifa.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Chifa</a>
+<a href="Main.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Alertes</a>
+<a href="Rapports.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Rapports</a>
+<a href="Admin.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Administration</a>
+</nav>
+</div>
+</header>
+
+<main style="max-width: 1280px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-direction: column; gap: 20px">
+
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 600">Réception de livraison</h1>
+<p style="margin: 0; font-size: 14px; color: #475467">Grossiste [Nom] (GR-03) · BL n° [numéro] · 08/11/2026 · données fictives</p>
+</div>
+
+
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 16px 18px; border-radius: 12px; background: #FFFAEB; border: 1px solid #FEDF89">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B54708" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6"></path><rect x="4" y="9" width="16" height="8" rx="1"></rect><path d="M7 14h10v7H7z"></path></svg>
+<div style="display: flex; flex-direction: column; gap: 2px; flex: 999 1 320px">
+<span style="font-size: 15px; font-weight: 600; color: #7A2E0E">3 produits sans code-barres lisible</span>
+<span style="font-size: 14px; color: #7A2E0E">24 étiquettes à imprimer, une par boîte. Chaque étiquette garde le lot, la péremption et le grossiste.</span>
+</div>
+<button type="button" style="height: 48px; padding: 0 20px; border-radius: 8px; border: none; background: #0F766E; color: #FFFFFF; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer">Imprimer les 24 étiquettes</button>
+<label for="imprimante" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Imprimante d’étiquettes</label>
+<select id="imprimante" style="height: 48px; padding: 0 12px; border-radius: 8px; border: 1px solid #D0D5DD; background: #FFFFFF; font: inherit; font-size: 14px; color: #344054">
+<option>Imprimante étiquettes (réseau)</option>
+<option>Imprimante étiquettes (USB)</option>
+</select>
+</div>
+
+
+<div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start">
+
+<section aria-label="Produits reçus" style="flex: 999 1 600px; min-width: 0; background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; overflow: hidden">
+
+<div style="padding: 16px 20px; border-bottom: 1px solid #EAECF0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+<div style="display: flex; flex-direction: column; gap: 4px; flex: 999 1 260px; min-width: 0">
+<span style="font-size: 15px; font-weight: 600">Paracétamol 500 mg comprimés</span>
+<span style="font-size: 13px; color: #475467">Lot P8831 · exp. 05/2028 · 40 boîtes</span>
+</div>
+<span style="padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; background: #EAECF0; color: #344054">Code fabricant lu</span>
+
+</div>
+
+<div style="padding: 16px 20px; border-bottom: 1px solid #EAECF0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+<div style="display: flex; flex-direction: column; gap: 4px; flex: 999 1 260px; min-width: 0">
+<span style="font-size: 15px; font-weight: 600">Amoxicilline 1 g comprimés</span>
+<span style="font-size: 13px; color: #475467">Lot B1182 · exp. 03/2027 · 20 boîtes</span>
+</div>
+<span style="padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; background: #E6F4F1; color: #115E59">Data Matrix lu : lot et date remplis</span>
+
+</div>
+
+<div style="padding: 16px 20px; border-bottom: 1px solid #EAECF0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+<div style="display: flex; flex-direction: column; gap: 4px; flex: 999 1 260px; min-width: 0">
+<span style="font-size: 15px; font-weight: 600">Crème hydratante (parapharmacie)</span>
+<span style="font-size: 13px; color: #475467">Lot CH204 · exp. 12/2027 · 6 boîtes</span>
+</div>
+<span style="padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; background: #FEF0C7; color: #7A2E0E">Sans code : étiquette</span>
+
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #0F766E; background: #FFFFFF; color: #0F766E; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer">Imprimer 6</button>
+
+</div>
+
+<div style="padding: 16px 20px; border-bottom: 1px solid #EAECF0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+<div style="display: flex; flex-direction: column; gap: 4px; flex: 999 1 260px; min-width: 0">
+<span style="font-size: 15px; font-weight: 600">Sirop pédiatrique (import)</span>
+<span style="font-size: 13px; color: #475467">Lot SP77 · exp. 09/2027 · 12 boîtes</span>
+</div>
+<span style="padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; background: #FEF0C7; color: #7A2E0E">Code illisible : étiquette</span>
+
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #0F766E; background: #FFFFFF; color: #0F766E; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer">Imprimer 12</button>
+
+</div>
+
+<div style="padding: 16px 20px; border-bottom: 1px solid #EAECF0; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+<div style="display: flex; flex-direction: column; gap: 4px; flex: 999 1 260px; min-width: 0">
+<span style="font-size: 15px; font-weight: 600">Bandes de contention</span>
+<span style="font-size: 13px; color: #475467">Lot BC10 · exp. 01/2029 · 6 boîtes</span>
+</div>
+<span style="padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; background: #FEF0C7; color: #7A2E0E">Sans code : étiquette</span>
+
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #0F766E; background: #FFFFFF; color: #0F766E; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer">Imprimer 6</button>
+
+</div>
+
+</section>
+
+<aside aria-label="Aperçu de l’étiquette" style="flex: 1 1 300px; display: flex; flex-direction: column; gap: 12px">
+<span style="font-size: 13px; color: #475467">Aperçu de l’étiquette (50 × 30 mm)</span>
+<div style="width: 300px; height: 180px; box-sizing: border-box; background: #FFFFFF; border: 1px solid #D0D5DD; border-radius: 6px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Sirop pédiatrique (import)</span>
+<span style="font-size: 12px; color: #1D2939">Lot SP77 · Exp 09/2027 · GR-03</span>
+<svg width="200" height="64" viewBox="0 0 200 64" role="img" aria-label="Code-barres EAN-13 2000000001272" style="margin: 4px auto 0">
+<rect x="10" y="0" width="2" height="64" fill="#101828"></rect><rect x="14" y="0" width="2" height="64" fill="#101828"></rect>
+<rect x="20" y="0" width="4" height="56" fill="#101828"></rect><rect x="28" y="0" width="2" height="56" fill="#101828"></rect>
+<rect x="34" y="0" width="6" height="56" fill="#101828"></rect><rect x="44" y="0" width="2" height="56" fill="#101828"></rect>
+<rect x="50" y="0" width="4" height="56" fill="#101828"></rect><rect x="58" y="0" width="2" height="56" fill="#101828"></rect>
+<rect x="64" y="0" width="6" height="56" fill="#101828"></rect><rect x="74" y="0" width="2" height="56" fill="#101828"></rect>
+<rect x="80" y="0" width="4" height="56" fill="#101828"></rect><rect x="88" y="0" width="2" height="56" fill="#101828"></rect>
+<rect x="96" y="0" width="2" height="64" fill="#101828"></rect><rect x="100" y="0" width="2" height="64" fill="#101828"></rect>
+<rect x="106" y="0" width="2" height="56" fill="#101828"></rect><rect x="112" y="0" width="6" height="56" fill="#101828"></rect>
+<rect x="122" y="0" width="2" height="56" fill="#101828"></rect><rect x="126" y="0" width="4" height="56" fill="#101828"></rect>
+<rect x="134" y="0" width="2" height="56" fill="#101828"></rect><rect x="140" y="0" width="6" height="56" fill="#101828"></rect>
+<rect x="150" y="0" width="4" height="56" fill="#101828"></rect><rect x="158" y="0" width="2" height="56" fill="#101828"></rect>
+<rect x="164" y="0" width="2" height="56" fill="#101828"></rect><rect x="170" y="0" width="6" height="56" fill="#101828"></rect>
+<rect x="184" y="0" width="2" height="64" fill="#101828"></rect><rect x="188" y="0" width="2" height="64" fill="#101828"></rect>
+</svg>
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<span style="font-size: 12px; letter-spacing: 0.08em; color: #1D2939">2 000000 001272</span>
+<span style="font-size: 16px; font-weight: 600">450,00 DA</span>
+</div>
+</div>
+<p style="margin: 0; font-size: 13px; color: #475467; line-height: 1.5">Code interne commençant par 20 : réservé à l’usage en officine, jamais en conflit avec un code fabricant. Au scan, la caisse retrouve ce lot exact.</p>
+</aside>
+
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,139 @@
+@page "/stock"
+@inject ApiClient Api
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Stock</h1>
+            <p class="sous-titre">Par produit, avec lots, péremptions et grossistes</p>
+        </div>
+        <div class="actions">
+            <a href="tracabilite" class="btn">Traçabilité et rappel de lot</a>
+            <button type="button" class="btn" disabled title="Bientôt disponible">Registre des psychotropes</button>
+            <button type="button" class="btn" disabled title="Bientôt disponible">Imprimer des étiquettes</button>
+            <button type="button" class="btn btn-principal" disabled title="Bientôt disponible">Lancer un inventaire</button>
+        </div>
+    </div>
+
+    @if (erreur is not null)
+    {
+        <div class="erreur" role="alert">@erreur</div>
+    }
+    else if (etat is null)
+    {
+        <p class="vide">Chargement du stock…</p>
+    }
+    else
+    {
+        <section class="tuiles" aria-label="Indicateurs">
+            <div class="tuile">
+                <span class="tuile-libelle">Références en stock</span>
+                <span class="tuile-valeur petite">@etat.Indicateurs.ReferencesEnStock.ToString("N0")</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Valeur du stock (prix d’achat)</span>
+                <span class="tuile-valeur petite">@Libelles.Dinars(etat.Indicateurs.ValeurAchat)</span>
+                <span class="tuile-note">hors lots périmés</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Lots à date à vérifier</span>
+                <span class="tuile-valeur petite @(etat.Indicateurs.LotsDateAVerifier > 0 ? "attention" : null)">@etat.Indicateurs.LotsDateAVerifier</span>
+                <span class="tuile-note">issus de l’ancien logiciel</span>
+            </div>
+        </section>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end">
+            <div class="champ" style="flex: 999 1 320px">
+                <label for="rech">Rechercher (nom, DCI, code-barres, lot)</label>
+                <input id="rech" type="search" placeholder="Ex. amlodipine" @bind="recherche" @bind:event="oninput" />
+            </div>
+            <div class="filtres" role="group" aria-label="Filtrer">
+                @foreach (var (id, libelle) in Filtres)
+                {
+                    <button type="button" class="puce" aria-pressed="@(id == filtre ? "true" : "false")"
+                            @onclick="() => filtre = id">@libelle</button>
+                }
+            </div>
+        </div>
+
+        <section class="tableau-cadre" aria-label="Liste des produits">
+            <table class="tableau">
+                <thead>
+                    <tr>
+                        <th scope="col">Produit</th>
+                        <th scope="col">Stock</th>
+                        <th scope="col">Couverture</th>
+                        <th scope="col">1re péremption</th>
+                        <th scope="col">Grossistes</th>
+                        <th scope="col">Statut</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var l in Visibles)
+                    {
+                        <tr>
+                            <td>
+                                <span class="nom">@l.NomCommercial</span><br />
+                                <span class="detail">@Detail(l)</span>
+                            </td>
+                            <td>@l.Stock</td>
+                            <td>@Couverture(l)</td>
+                            <td>@(l.PremierePeremption is { } d ? Libelles.MoisAnnee(d) : "—")</td>
+                            <td>@(l.Grossistes.Count > 0 ? string.Join(", ", l.Grossistes) : "—")</td>
+                            <td><span class="pastille @Libelles.ClasseStatutStock(l.Statut)">@Libelles.StatutStock(l.Statut)</span></td>
+                        </tr>
+                    }
+                    @if (Visibles.Count == 0)
+                    {
+                        <tr><td colspan="6" class="vide">Aucun produit ne correspond.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private EtatStockDto? etat;
+    private string? erreur;
+    private string recherche = "";
+    private string filtre = "tous";
+
+    private static readonly (string, string)[] Filtres =
+        [("tous", "Tous"), ("commander", "À commander"), ("peremption", "Péremption proche"), ("psychotropes", "Psychotropes")];
+
+    protected override async Task OnInitializedAsync()
+    {
+        (etat, erreur) = await Api.StockAsync();
+    }
+
+    private List<LigneStockDto> Visibles =>
+        etat?.Lignes.Where(l => PasseFiltre(l) && PasseRecherche(l)).ToList() ?? [];
+
+    private bool PasseFiltre(LigneStockDto l) => filtre switch
+    {
+        "commander" => l.Statut is "rupture" or "critique",
+        "peremption" => l.PeremptionProche,
+        "psychotropes" => Libelles.EstSousRegistre(l.Classe),
+        _ => true
+    };
+
+    private bool PasseRecherche(LigneStockDto l)
+    {
+        var t = recherche.Trim();
+        if (t.Length == 0) return true;
+        bool Contient(string? s) => s?.Contains(t, StringComparison.CurrentCultureIgnoreCase) == true;
+        return Contient(l.NomCommercial) || Contient(l.Dci) || l.CodeBarre == t
+               || l.NumerosLots.Any(n => n.Equals(t, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string Detail(LigneStockDto l)
+    {
+        var lots = l.NombreLots switch { 0 => "aucun lot", 1 => "1 lot", var n => $"{n} lots" };
+        var registre = Libelles.EstSousRegistre(l.Classe) ? " · registre" : "";
+        return $"{l.Dci ?? "DCI non renseignée"} · {lots}{registre}";
+    }
+
+    private static string Couverture(LigneStockDto l) =>
+        l.CouvertureJours is { } j ? $"{j} j" : l.Stock > 0 ? "aucune vente" : "—";
+}

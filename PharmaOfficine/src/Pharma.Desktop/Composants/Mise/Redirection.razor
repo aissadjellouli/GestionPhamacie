@@ -1,0 +1,5 @@
+@inject NavigationManager Nav
+@code {
+    [Parameter] public string Vers { get; set; } = "";
+    protected override void OnInitialized() => Nav.NavigateTo(Vers);
+}

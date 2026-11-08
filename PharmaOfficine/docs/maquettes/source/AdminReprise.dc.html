@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Administration : reprise de données</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F6F7F5}
+a{color:#0F766E}a:hover{color:#115E59}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #1D2939; background: #F6F7F5; min-height: 100vh">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E4E7EC">
+<div style="max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px">
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="width: 34px; height: 34px; border-radius: 8px; background: #0F766E; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></div>
+<div style="display: flex; flex-direction: column"><span style="font-weight: 600; font-size: 15px">[Nom du logiciel]</span><span style="font-size: 12px; color: #475467">Pharmacie [Nom] · Connecté : titulaire</span></div>
+</div>
+<nav aria-label="Navigation principale" style="display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 400px">
+<a href="Caisse.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Caisse</a>
+<a href="Stock.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Stock</a>
+<a href="Achats.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Achats</a>
+<a href="Chifa.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Chifa</a>
+<a href="Main.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Alertes</a>
+<a href="Rapports.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Rapports</a>
+<a href="Admin.dc.html" aria-current="page" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #0F766E; background: #E6F4F1; font-weight: 600; text-decoration: none">Administration</a>
+</nav>
+</div>
+</header>
+
+<main style="max-width: 1280px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<nav aria-label="Rubriques d’administration" style="flex: 1 1 220px; background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 2px">
+<a href="Admin.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Alertes et seuils</a>
+<a href="Droits.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Utilisateurs et droits</a>
+<a href="AdminCaisse.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Caisse et contrôle</a>
+<a href="AdminImpression.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Imprimantes et étiquettes</a>
+<a href="AdminSauvegardes.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Sauvegardes</a>
+<a href="#" aria-current="page" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: #0F766E; background: #E6F4F1; text-decoration: none">Reprise de données</a>
+<a href="AdminLangue.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Langue et pharmacie</a>
+</nav>
+
+<div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 600">Reprise de données</h1>
+<p style="margin: 0; font-size: 14px; color: #475467">Depuis l’ancien logiciel : [nom et version] · session de répétition n° 2 · l’ancienne base n’est jamais modifiée · données fictives</p>
+</div>
+
+<ol aria-label="Étapes" style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px">
+<li style="padding: 10px 14px; border-radius: 999px; background: #E6F4F1; color: #115E59; font-size: 14px; font-weight: 500">1. Source ✓</li>
+<li style="padding: 10px 14px; border-radius: 999px; background: #0F766E; color: #FFFFFF; font-size: 14px; font-weight: 600" aria-current="step">2. Rapprochement</li>
+<li style="padding: 10px 14px; border-radius: 999px; background: #EAECF0; color: #344054; font-size: 14px">3. Contrôles</li>
+<li style="padding: 10px 14px; border-radius: 999px; background: #EAECF0; color: #344054; font-size: 14px">4. Chargement</li>
+<li style="padding: 10px 14px; border-radius: 999px; background: #EAECF0; color: #344054; font-size: 14px">5. Vérification</li>
+</ol>
+
+<section aria-label="Résultat du rapprochement" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #475467">Par code-barres</span><span style="font-size: 26px; font-weight: 600; color: #115E59">1 610</span></div>
+<div style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #475467">Par n° d’enregistrement</span><span style="font-size: 26px; font-weight: 600; color: #115E59">154</span></div>
+<div style="background: #FFFFFF; border: 1px solid #FEDF89; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #475467">Par nom, à confirmer</span><span style="font-size: 26px; font-weight: 600; color: #7A2E0E">61</span></div>
+<div style="background: #FFFFFF; border: 1px solid #FECDCA; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 13px; color: #475467">Sans correspondance</span><span style="font-size: 26px; font-weight: 600; color: #912018">17</span></div>
+</section>
+
+<section aria-labelledby="t-conf" style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<h2 id="t-conf" style="margin: 0; font-size: 17px; font-weight: 600">À confirmer par le pharmacien</h2>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 0; border-top: 1px solid #EAECF0">
+<div style="flex: 999 1 300px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 13px; color: #475467">Ancien logiciel</span><span style="font-weight: 500">AMLODIPINE 5MG B/30</span><span style="font-size: 13px; color: #475467">Proposé : Amlodipine 5 mg cp (ressemblance 0,82)</span></div>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: none; background: #0F766E; color: #FFFFFF; font: inherit; font-size: 14px; cursor: pointer">Confirmer</button>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #D0D5DD; background: #FFFFFF; color: #344054; font: inherit; font-size: 14px; cursor: pointer">Choisir un autre</button>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 0; border-top: 1px solid #EAECF0">
+<div style="flex: 999 1 300px; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 13px; color: #475467">Ancien logiciel</span><span style="font-weight: 500">CREME MAINS 50ML</span><span style="font-size: 13px; color: #912018">Aucune correspondance dans la nomenclature</span></div>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: none; background: #0F766E; color: #FFFFFF; font: inherit; font-size: 14px; cursor: pointer">Créer le produit</button>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #D0D5DD; background: #FFFFFF; color: #344054; font: inherit; font-size: 14px; cursor: pointer">Rechercher</button>
+</div>
+</section>
+
+<section aria-labelledby="t-bilan" style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+<h2 id="t-bilan" style="margin: 0; font-size: 17px; font-weight: 600">Contrôles avant chargement</h2>
+<button type="button" disabled style="height: 48px; padding: 0 20px; border-radius: 8px; border: none; background: #D0D5DD; color: #344054; font: inherit; font-size: 15px; font-weight: 600; cursor: not-allowed">Charger (78 anomalies bloquantes)</button>
+</div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 0; border-top: 1px solid #EAECF0; font-size: 14px"><span>Produits à confirmer ou créer</span><span style="color: #912018; font-weight: 600">78 bloquants</span></div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 0; border-top: 1px solid #EAECF0; font-size: 14px"><span>Lots sans date de péremption</span><span style="color: #7A2E0E; font-weight: 600">37 à vérifier à l’inventaire</span></div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 0; border-top: 1px solid #EAECF0; font-size: 14px"><span>Lots déjà périmés</span><span style="color: #7A2E0E; font-weight: 600">5, importés et bloqués à la vente</span></div>
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 0; border-top: 1px solid #EAECF0; font-size: 14px"><span>Crédits clients et dettes grossistes</span><span style="color: #115E59; font-weight: 600">Lisibles</span></div>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

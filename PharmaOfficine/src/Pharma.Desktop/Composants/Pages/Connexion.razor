@@ -1,0 +1,37 @@
+@page "/connexion"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<div class="page connexion">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1>Connexion</h1>
+        <p class="sous-titre">Chaque employé se connecte avec son propre identifiant.</p>
+    </div>
+    <form class="carte" @onsubmit="SeConnecterAsync">
+        <div class="champ">
+            <label for="identifiant">Identifiant</label>
+            <input id="identifiant" type="text" @bind="identifiant" autocomplete="username" autofocus />
+        </div>
+        <div class="champ">
+            <label for="mdp">Mot de passe</label>
+            <input id="mdp" type="password" @bind="motDePasse" autocomplete="current-password" />
+        </div>
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        <button class="btn btn-principal" type="submit" disabled="@enCours">Se connecter</button>
+    </form>
+</div>
+
+@code {
+    private string identifiant = "";
+    private string motDePasse = "";
+    private string? erreur;
+    private bool enCours;
+
+    private async Task SeConnecterAsync()
+    {
+        enCours = true;
+        erreur = await Api.ConnecterAsync(identifiant, motDePasse);
+        enCours = false;
+        if (erreur is null) Nav.NavigateTo("");
+    }
+}

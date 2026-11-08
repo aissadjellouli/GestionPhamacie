@@ -1,0 +1,14 @@
+<Window x:Class="Pharma.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:blazor="http://schemas.microsoft.com/winfx/2006/xaml/presentation/blazor"
+        xmlns:local="clr-namespace:Pharma.Desktop"
+        Title="Pharma Officine" Height="800" Width="1280" WindowState="Maximized">
+    <Grid>
+        <blazor:BlazorWebView HostPage="wwwroot\index.html" Services="{DynamicResource services}">
+            <blazor:BlazorWebView.RootComponents>
+                <blazor:RootComponent Selector="#app" ComponentType="{x:Type local:Routes}" />
+            </blazor:BlazorWebView.RootComponents>
+        </blazor:BlazorWebView>
+    </Grid>
+</Window>

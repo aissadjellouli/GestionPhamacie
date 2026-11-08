@@ -1,0 +1,198 @@
+@page "/caisse"
+@inject ApiClient Api
+
+<div class="page" style="padding-top: 24px">
+    <div class="colonnes" style="gap: 24px">
+        <section class="colonne-principale" aria-label="Panier">
+            <div class="champ recherche">
+                <label for="scan">Scanner ou rechercher un produit (nom, DCI, code-barres)</label>
+                <input id="scan" class="grand" type="search" placeholder="Ex. amoxicilline" autofocus autocomplete="off"
+                       @bind="texte" @bind:event="oninput" @bind:after="RechercherAsync" @onkeydown="ToucheAsync" />
+                @if (suggestions.Count > 0)
+                {
+                    <ul class="suggestions" aria-label="Produits trouvés">
+                        @foreach (var p in suggestions)
+                        {
+                            <li>
+                                <button type="button" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, p.Dci, p.PrixPublic)">
+                                    <span>
+                                        <strong>@p.NomCommercial</strong><br />
+                                        <span class="detail">@p.Dci @p.Dosage · stock @p.Stock</span>
+                                    </span>
+                                    <span>@Libelles.Dinars(p.PrixPublic, 2)</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+            @if (bandeau is not null)
+            {
+                <div class="bandeau" role="alert">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#B42318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none; margin-top: 1px"><circle cx="12" cy="12" r="9"></circle><path d="M5.6 5.6l12.8 12.8"></path></svg>
+                    <div>
+                        <strong>@bandeau.Titre</strong>
+                        @if (bandeau.Detail is not null) { <span>@bandeau.Detail</span> }
+                    </div>
+                </div>
+            }
+
+            @if (lignes.Count == 0)
+            {
+                <div class="carte vide">Panier vide : scannez une boîte ou recherchez un produit.</div>
+            }
+            else
+            {
+                <div class="panier">
+                    @foreach (var l in lignes)
+                    {
+                        @if (l.Lot is { } lot)
+                        {
+                            <div class="panier-ligne">
+                                <div class="panier-produit">
+                                    <span>@l.Nom</span>
+                                    <span>Lot servi @lot.NumeroLot · exp. @Libelles.Date(lot.DatePeremption) · <span class="fefo">premier à expirer (FEFO)</span></span>
+                                </div>
+                                <div class="quantite">
+                                    <button type="button" class="btn btn-icone" aria-label="Retirer une boîte" @onclick="() => Changer(l, -1)">−</button>
+                                    <span>× @l.Quantite</span>
+                                    <button type="button" class="btn btn-icone" aria-label="Ajouter une boîte" disabled="@(l.Quantite >= lot.Quantite)" @onclick="() => Changer(l, +1)">+</button>
+                                </div>
+                                <span class="montant">@Libelles.Dinars(l.Prix * l.Quantite)</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="panier-ligne rupture">
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px">
+                                    <div class="panier-produit">
+                                        <span>@l.Nom</span>
+                                        <span class="alerte-rupture">@(l.Ecartes.Count > 0 ? "Aucun lot vendable (périmé ou bloqué)" : "En rupture de stock")</span>
+                                    </div>
+                                    <button type="button" class="btn" @onclick="() => lignes.Remove(l)">Retirer</button>
+                                </div>
+                                @foreach (var alt in l.Alternatives.Take(1))
+                                {
+                                    <div class="alternative">
+                                        <span>Alternative en stock (même DCI, dosage et forme) : <strong>@alt.NomCommercial</strong>, @alt.Stock boîtes</span>
+                                        <button type="button" class="btn btn-principal" @onclick="() => RemplacerAsync(l, alt)">Remplacer</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        </section>
+
+        <aside class="panneau colonne-laterale reglement" aria-label="Règlement">
+            <div style="display: flex; flex-direction: column; gap: 4px">
+                <span class="tuile-libelle">Type de vente</span>
+                <span style="font-size: 15px; font-weight: 600">Vente libre</span>
+                <button type="button" class="lien-bouton" style="align-self: flex-start" disabled title="Bientôt disponible">Passer en tiers payant</button>
+            </div>
+            <div class="separateur"></div>
+            <div class="ligne-total"><span>Total</span><span>@Libelles.Dinars(Total)</span></div>
+            <div class="ligne-total"><span>Part organisme</span><span>@Libelles.Dinars(0)</span></div>
+            <div class="a-payer"><span>À payer par le patient</span><span>@Libelles.Dinars(Total)</span></div>
+            <button type="button" class="btn btn-principal btn-large" disabled title="Bientôt disponible">Encaisser (F12)</button>
+            <button type="button" class="btn" disabled title="Bientôt disponible">Mettre en crédit</button>
+            <button type="button" class="btn" disabled title="Bientôt disponible">Clôturer la caisse</button>
+        </aside>
+    </div>
+</div>
+
+@code {
+    private sealed class LignePanier
+    {
+        public required long ProduitId { get; init; }
+        public required string Nom { get; init; }
+        public required decimal Prix { get; init; }
+        public LotFefoDto? Lot { get; init; }
+        public IReadOnlyList<LotEcarteDto> Ecartes { get; init; } = [];
+        public IReadOnlyList<ProduitAlternatifDto> Alternatives { get; init; } = [];
+        public int Quantite { get; set; } = 1;
+    }
+
+    private sealed record Bandeau(string Titre, string? Detail);
+
+    private string texte = "";
+    private List<ProduitDto> suggestions = [];
+    private readonly List<LignePanier> lignes = [];
+    private Bandeau? bandeau;
+    private string? erreur;
+    private int requete;
+
+    private decimal Total => lignes.Where(l => l.Lot is not null).Sum(l => l.Prix * l.Quantite);
+
+    private async Task RechercherAsync()
+    {
+        var numero = ++requete;
+        if (texte.Trim().Length < 2) { suggestions = []; return; }
+        var (trouves, err) = await Api.RechercherProduitsAsync(texte);
+        if (numero != requete) return;   // une frappe plus récente a déjà relancé la recherche
+        (suggestions, erreur) = (trouves, err);
+    }
+
+    private async Task ToucheAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { suggestions = []; return; }
+        if (e.Key != "Enter") return;
+        // Au scan, le lecteur envoie le code-barres puis Entrée : on attend la recherche en cours
+        await RechercherAsync();
+        if (suggestions.FirstOrDefault() is { } p)
+            await AjouterAsync(p.Id, p.NomCommercial, p.Dci, p.PrixPublic);
+    }
+
+    private async Task AjouterAsync(long produitId, string nom, string? dci, decimal prix)
+    {
+        (texte, suggestions, erreur, bandeau) = ("", [], null, null);
+
+        var existante = lignes.FirstOrDefault(l => l.ProduitId == produitId && l.Lot is not null);
+        if (existante is not null)
+        {
+            Changer(existante, +1);
+            return;
+        }
+
+        var reponse = await Api.LotFefoAsync(produitId);
+        if (reponse.Erreur is not null) { erreur = reponse.Erreur; return; }
+
+        var alternatives = reponse.Lot is null ? (await Api.AlternativesAsync(produitId)).Item1 : [];
+        lignes.Add(new LignePanier
+        {
+            ProduitId = produitId, Nom = nom, Prix = prix,
+            Lot = reponse.Lot, Ecartes = reponse.Ecartes, Alternatives = alternatives
+        });
+        bandeau = Expliquer(reponse);
+    }
+
+    private async Task RemplacerAsync(LignePanier rupture, ProduitAlternatifDto alt)
+    {
+        lignes.Remove(rupture);
+        await AjouterAsync(alt.ProduitId, alt.NomCommercial, null, alt.PrixPublic);
+    }
+
+    private void Changer(LignePanier l, int delta)
+    {
+        l.Quantite += delta;
+        if (l.Quantite <= 0) lignes.Remove(l);
+    }
+
+    /// <summary>Explique au comptoir pourquoi un lot a été écarté et lequel est servi à la place.</summary>
+    private static Bandeau? Expliquer(ReponseLotFefo r)
+    {
+        if (r.Ecartes.FirstOrDefault() is not { } e) return null;
+        var titre = e.Raison == "bloque"
+            ? $"Lot {e.NumeroLot} bloqué ({e.MotifBlocage ?? "sans motif"}) : vente bloquée"
+            : $"Lot {e.NumeroLot} périmé : vente bloquée";
+        if (r.Ecartes.Count > 1) titre += $" (+{r.Ecartes.Count - 1} autre(s) lot(s) écarté(s))";
+        var detail = r.Lot is { } lot
+            ? $"Le lot {lot.NumeroLot} (expire le {Libelles.Date(lot.DatePeremption)}) a été proposé automatiquement."
+            : "Aucun autre lot vendable pour ce produit.";
+        return new Bandeau(titre, detail);
+    }
+}
