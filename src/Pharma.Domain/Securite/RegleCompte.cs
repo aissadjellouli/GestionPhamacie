@@ -12,16 +12,16 @@ public static partial class RegleCompte
     {
         var id = identifiant?.Trim().ToLowerInvariant() ?? "";
         if (!Identifiant().IsMatch(id))
-            throw new RegleMetierException("Identifiant : 3 à 30 caractères, lettres minuscules sans accent, chiffres, point, tiret ou souligné.");
+            throw new RegleMetierException("Identifiant : 3 à 30 caractères, lettres minuscules sans accent, chiffres, point, tiret ou souligné.", "identifiant");
         return id;
     }
 
     public static void VerifierMotDePasse(string? motDePasse)
     {
         if (motDePasse is null || motDePasse.Length < LongueurMinMotDePasse)
-            throw new RegleMetierException($"Le mot de passe doit contenir au moins {LongueurMinMotDePasse} caractères.");
+            throw new RegleMetierException($"Le mot de passe doit contenir au moins {LongueurMinMotDePasse} caractères.", "mot_de_passe");
         if (string.IsNullOrWhiteSpace(motDePasse))
-            throw new RegleMetierException("Le mot de passe ne peut pas être fait que d’espaces.");
+            throw new RegleMetierException("Le mot de passe ne peut pas être fait que d’espaces.", "mot_de_passe");
     }
 
     [GeneratedRegex("^[a-z0-9._-]{3,30}$")]

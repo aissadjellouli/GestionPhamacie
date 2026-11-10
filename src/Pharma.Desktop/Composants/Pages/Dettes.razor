@@ -55,7 +55,7 @@
                 <div class="achats-ligne" style="align-items: flex-end; margin-top: 8px">
                     <div class="champ" style="flex: 0 0 240px">
                         <label for="d-delai">Signaler au-delà de (jours)</label>
-                        <input id="d-delai" type="number" min="1" max="365" @bind="delai" />
+                        <input id="d-delai" data-champ="delai_alerte" type="number" min="1" max="365" @bind="delai" />
                     </div>
                     <button type="button" class="btn" disabled="@(enCours || delai == s.DelaiJours)" @onclick="EnregistrerDelaiAsync">Enregistrer le délai</button>
                 </div>

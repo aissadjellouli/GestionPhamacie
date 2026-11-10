@@ -110,7 +110,7 @@ public sealed class ModifierDelaiAlerteDettes(ISuiviDettes suivi, IPermissionSer
     public async Task ExecuterAsync(int jours, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "régler le délai d'alerte des dettes", ct);
-        if (jours is < 1 or > 365) throw new RegleMetierException("Délai d'alerte entre 1 et 365 jours.");
+        if (jours is < 1 or > 365) throw new RegleMetierException("Délai d'alerte entre 1 et 365 jours.", "delai_alerte");
         var avant = await suivi.DelaiAlerteAsync(ct);
         await suivi.ModifierDelaiAlerteAsync(jours, ct);
         await journal.EcrireAsync(utilisateurId, "delai_alerte_dettes", "parametre_caisse", 1,

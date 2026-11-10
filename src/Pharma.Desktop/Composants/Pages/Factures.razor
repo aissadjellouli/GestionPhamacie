@@ -93,7 +93,11 @@
             @if (d.DestinataireInfos is { } inf) { <p class="detail" style="margin: 0; white-space: pre-line">@inf</p> }
             <p style="margin: 0">@Etat(r)</p>
             @if (r.HorsSuivi) { <div class="info-bandeau" role="status">Hors suivi de trésorerie : @r.MotifHorsSuivi</div> }
-            @if (r.MotifRejet is { } mr) { <div class="erreur" role="status">Rejetée : @mr</div> }
+            @if (r.MotifRejet is { } mr)
+            {
+                @if (r.Reste > 0) { <div class="erreur" role="status">Rejetée : @mr</div> }
+                else { <div class="info-bandeau" role="status">Payée en entier après son rejet (« @mr ») : elle est soldée. Le rejet reste dans l’historique.</div> }
+            }
 
             <div class="tableau-cadre">
                 <table class="tableau">
@@ -117,6 +121,27 @@
                 </table>
             </div>
 
+            @if (historique.Count > 0 && (versionVue is null || versionVue == r.Version))
+            {
+                <h3 class="sous-titre-panneau">Historique</h3>
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Date</th><th scope="col">Événement</th><th scope="col" class="nombre">Montant</th><th scope="col">Par</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in historique)
+                            {
+                                <tr>
+                                    <td style="white-space: nowrap">@Libelles.DateHeureLocale(h.Date)</td>
+                                    <td>@h.Libelle@if (h.Detail is { } det) { <br /><span class="detail">@det</span> }</td>
+                                    <td class="nombre" style="white-space: nowrap">@(h.Montant is { } m ? Libelles.Dinars(m, 2) : "")</td>
+                                    <td>@if (h.Employe is { } emp) { <LienContact Type="employe" Id="h.EmployeId" Nom="@emp" /> } else { <span>—</span> }</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
             @if (d.Versions.Count > 0)
             {
                 <p class="detail" style="margin: 0">Versions précédentes :
@@ -132,10 +157,10 @@
             {
                 <h3 class="sous-titre-panneau">Actions</h3>
                 <div class="achats-ligne" style="align-items: flex-end">
-                    <div class="champ" style="flex: 1 1 260px"><label for="a-motif">Motif (rejet, avoir, retrait du suivi)</label><input id="a-motif" type="text" maxlength="300" @bind="motifAction" /></div>
+                    <div class="champ" style="flex: 1 1 260px"><label for="a-motif">Motif (rejet, avoir, retrait du suivi)</label><input id="a-motif" data-champ="motif" type="text" maxlength="300" @bind="motifAction" /></div>
                     @if (r.Statut != "remplacee")
                     {
-                        <div class="champ" style="flex: 0 0 150px"><label for="a-avoir">Montant de l’avoir</label><input id="a-avoir" type="number" min="0.01" step="0.01" @bind="montantAvoir" /></div>
+                        <div class="champ" style="flex: 0 0 150px"><label for="a-avoir">Montant de l’avoir</label><input id="a-avoir" data-champ="montant_avoir" type="number" min="0.01" step="0.01" @bind="montantAvoir" /></div>
                     }
                 </div>
                 <div class="filtres">
@@ -143,7 +168,7 @@
                     {
                         <button type="button" class="btn" disabled="@enCours" @onclick="RejeterAsync">Enregistrer un rejet</button>
                     }
-                    @if (r.Statut == "rejetee")
+                    @if (r.Statut == "rejetee" && r.Reste > 0)
                     {
                         <button type="button" class="btn btn-principal" @onclick="() => Editer(Correction, d)">Corriger (même numéro)</button>
                         <button type="button" class="btn" @onclick="() => Editer(Remplacement, d)">Remplacer par une nouvelle facture</button>
@@ -174,6 +199,7 @@
     private string? suivi, recherche, filtreDestinataire, erreur, message, mode, motifAction;
     private DateOnly? du, au;
     private decimal montantAvoir;
+    private List<EvenementFactureDto> historique = [];
     private bool enCours;
     private int cleEditeur;
 
@@ -219,6 +245,7 @@
         if (e is not null) { erreur = e; return; }
         (detail, versionVue, motifAction, montantAvoir) = (d, version ?? d!.Resume.Version, null, 0);
         donnerFocus = true;
+        (historique, _) = await Api.HistoriqueFactureAsync(id);
     }
 
     private void FermerDetail() => (detail, erreur, message) = (null, null, null);
@@ -299,7 +326,7 @@
         ? $"Avoir sur {f.OrigineNumero}"
         : f.Statut switch
         {
-            "rejetee" => "Rejetée",
+            "rejetee" => f.Reste <= 0 && !f.HorsSuivi ? "Soldée (après un rejet)" : "Rejetée",
             "remplacee" => $"Remplacée par {f.RemplaceeParNumero} (non comptabilisée)",
             _ => (f.HorsSuivi ? "Hors suivi" : f.Reste <= 0 ? "Soldée" : "À encaisser") + (f.RemplaceNumero is { } x ? $" · remplace {x}" : "")
         };

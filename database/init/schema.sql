@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 041 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 043 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 041 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 043 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict c3LwdC2wVkKuWvbzov9gJJYCdM14quT0UUHA3WnbuiVwb2r0PKkgi7dscdzKBLf
+\restrict oDzXbyrXveMF1LpCVFPoptEdJobensS8U5QgCJAuCPWeKIf0vhKdt3JPEpFpuoh
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -993,6 +993,36 @@ END $$;
 
 
 --
+-- Name: proteger_historique_facture(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.proteger_historique_facture() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_TABLE_NAME = 'facture_client_version' THEN
+        RAISE EXCEPTION 'Historique des factures : la version % de la facture % ne peut être ni modifiée ni supprimée.',
+            OLD.version, OLD.facture_id USING ERRCODE = 'P0001';
+    END IF;
+    IF TG_TABLE_NAME = 'facture_client' THEN
+        IF TG_OP = 'DELETE' THEN
+            RAISE EXCEPTION 'Historique des factures : la facture % ne peut pas être supprimée (corrigez-la, remplacez-la ou émettez un avoir).',
+                OLD.numero USING ERRCODE = 'P0001';
+        END IF;
+        IF OLD.statut = 'remplacee' THEN
+            RAISE EXCEPTION 'Historique des factures : la facture % a été remplacée et ne peut plus être modifiée.', OLD.numero USING ERRCODE = 'P0001';
+        END IF;
+        RETURN NEW;
+    END IF;
+    -- facture_client_ligne : lignes figées dès que leur facture est remplacée
+    IF EXISTS (SELECT 1 FROM facture_client f WHERE f.id = OLD.facture_id AND f.statut = 'remplacee') THEN
+        RAISE EXCEPTION 'Historique des factures : les lignes d''une facture remplacée ne peuvent plus être modifiées.' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END $$;
+
+
+--
 -- Name: proteger_ligne_role_systeme(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1743,7 +1773,8 @@ CREATE TABLE public.client_facture (
     nis text,
     article_imposition text,
     actif boolean DEFAULT true NOT NULL,
-    cree_le timestamp with time zone DEFAULT now() NOT NULL
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    email text
 );
 
 
@@ -2114,6 +2145,7 @@ CREATE TABLE public.fournisseur (
     jours_orange integer,
     jours_rouge integer,
     delai_reprise_jours integer,
+    email text,
     CONSTRAINT ck_seuils_fournisseur CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
     CONSTRAINT fournisseur_delai_reprise_jours_check CHECK ((delai_reprise_jours > 0)),
     CONSTRAINT fournisseur_jours_orange_check CHECK ((jours_orange > 0)),
@@ -2916,7 +2948,8 @@ CREATE TABLE public.patient (
     est_chronique boolean DEFAULT false NOT NULL,
     plafond_credit numeric(12,2) DEFAULT 0 NOT NULL,
     solde_credit numeric(12,2) DEFAULT 0 NOT NULL,
-    cree_le timestamp with time zone DEFAULT now() NOT NULL
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    email text
 );
 
 
@@ -5946,6 +5979,27 @@ CREATE CONSTRAINT TRIGGER trg_garder_un_titulaire AFTER DELETE OR UPDATE ON publ
 
 
 --
+-- Name: facture_client trg_historique_facture; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_historique_facture BEFORE DELETE OR UPDATE ON public.facture_client FOR EACH ROW EXECUTE FUNCTION public.proteger_historique_facture();
+
+
+--
+-- Name: facture_client_ligne trg_historique_facture_ligne; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_historique_facture_ligne BEFORE DELETE OR UPDATE ON public.facture_client_ligne FOR EACH ROW EXECUTE FUNCTION public.proteger_historique_facture();
+
+
+--
+-- Name: facture_client_version trg_historique_facture_version; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_historique_facture_version BEFORE DELETE OR UPDATE ON public.facture_client_version FOR EACH ROW EXECUTE FUNCTION public.proteger_historique_facture();
+
+
+--
 -- Name: journal_audit trg_journal_immuable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7172,5 +7226,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict c3LwdC2wVkKuWvbzov9gJJYCdM14quT0UUHA3WnbuiVwb2r0PKkgi7dscdzKBLf
+\unrestrict oDzXbyrXveMF1LpCVFPoptEdJobensS8U5QgCJAuCPWeKIf0vhKdt3JPEpFpuoh
 

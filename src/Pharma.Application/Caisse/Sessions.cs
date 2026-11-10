@@ -177,9 +177,9 @@ public sealed class ModifierParametresCaisse(ISessionsCaisse sessions, IJournal 
     public async Task ExecuterAsync(ParametresCaisse p, long utilisateurId, CancellationToken ct = default)
     {
         if (p.FondCaisseDefaut < 0 || p.SeuilEcart < 0)
-            throw new RegleMetierException("Le fond de caisse et le seuil d’écart ne peuvent pas être négatifs.");
+            throw new RegleMetierException("Le fond de caisse et le seuil d’écart ne peuvent pas être négatifs.", "fond_caisse");
         if (p.DeconnexionMinutes is < 0 or > 240)
-            throw new RegleMetierException("La déconnexion automatique doit être comprise entre 0 (désactivée) et 240 minutes.");
+            throw new RegleMetierException("La déconnexion automatique doit être comprise entre 0 (désactivée) et 240 minutes.", "deconnexion");
         if (p.VersementCloture is not ("manuel" or "automatique"))
             throw new RegleMetierException("Versement des caisses au coffre : « manuel » ou « automatique ».");
         var avant = await sessions.ParametresAsync(ct);

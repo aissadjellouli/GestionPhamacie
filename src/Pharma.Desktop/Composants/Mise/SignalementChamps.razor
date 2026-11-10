@@ -1,0 +1,21 @@
+@implements IDisposable
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+@* Posé dans la mise en page : quand le serveur refuse une saisie en désignant le champ en cause (ErreurDto.Champ), ce champ
+   (data-champ="…") passe en rouge, l'écran défile jusqu'à lui et le message s'affiche dans une bulle à côté (js/erreurs.js).
+   Aucun écran n'a de code à ajouter : il suffit que le champ porte data-champ. *@
+
+@code {
+    protected override void OnInitialized() => Api.ChampEnErreur += Signaler;
+    public void Dispose() => Api.ChampEnErreur -= Signaler;
+
+    private void Signaler(string champ, string message) => _ = InvokeAsync(async () =>
+    {
+        // Laisse l'écran afficher d'abord son message d'erreur, puis désigne le champ
+        await Task.Delay(30);
+        try { await JS.InvokeVoidAsync("pharma.erreurs.marquer", champ, message); }
+        catch (JSException) { }
+        catch (InvalidOperationException) { }
+    });
+}

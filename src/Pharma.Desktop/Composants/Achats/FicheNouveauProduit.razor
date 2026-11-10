@@ -44,7 +44,7 @@
     }
 
     <div class="achats-ligne">
-        <div class="champ" style="flex: 2 1 240px"><label for="p-nom" class="requis">Nom commercial</label><input id="p-nom" type="text" @ref="champNom" @bind="nom" @bind:event="oninput" placeholder="ex. Sintrom 4 mg cp"
+        <div class="champ" style="flex: 2 1 240px"><label for="p-nom" class="requis">Nom commercial</label><input id="p-nom" data-champ="nom_commercial" type="text" @ref="champNom" @bind="nom" @bind:event="oninput" placeholder="ex. Sintrom 4 mg cp"
             class="@Obligatoire.Classe(NomManque)" aria-invalid="@Obligatoire.Aria(NomManque)" /></div>
         <div class="champ recherche" style="flex: 2 1 220px">
             <label for="p-dci" class="requis">DCI</label>
@@ -68,22 +68,22 @@
             class="@Obligatoire.Classe(FormeManque)" aria-invalid="@Obligatoire.Aria(FormeManque)" />
             <datalist id="formes"><option value="comprimé" /><option value="gélule" /><option value="sirop" /><option value="ampoule" /><option value="injectable" /><option value="pommade" /><option value="collyre" /><option value="sachet" /><option value="stylo" /></datalist>
         </div>
-        <div class="champ" style="flex: 1 1 140px"><label for="p-prix" class="requis">Prix public (DA)</label><input id="p-prix" type="number" min="0" step="0.01" @ref="champPrix" @bind="prix"
+        <div class="champ" style="flex: 1 1 140px"><label for="p-prix" class="requis">Prix public (DA)</label><input id="p-prix" data-champ="prix_public" type="number" min="0" step="0.01" @ref="champPrix" @bind="prix"
             class="@Obligatoire.Classe(PrixManque)" aria-invalid="@Obligatoire.Aria(PrixManque)" /></div>
         <div class="champ" style="flex: 1 1 160px">
             <label for="p-classe" class="requis">Classe</label>
-            <select id="p-classe" @bind="classe">
+            <select data-champ="classe" id="p-classe" @bind="classe">
                 <option value="libre">Libre</option><option value="liste_i">Liste I</option><option value="liste_ii">Liste II</option>
                 <option value="psychotrope">Psychotrope</option><option value="stupefiant">Stupéfiant</option>
             </select>
         </div>
     </div>
     <div class="achats-ligne">
-        <div class="champ" style="flex: 1 1 180px"><label for="p-cb">Code-barres (facultatif)</label><input id="p-cb" type="text" inputmode="numeric" @bind="codeBarre" /></div>
-        <div class="champ" style="flex: 1 1 160px"><label for="p-tarif" class="@(remboursable ? "requis" : null)">Tarif de référence (DA)</label><input id="p-tarif" type="number" min="0" step="0.01" @ref="champTarif" @bind="tarif"
+        <div class="champ" style="flex: 1 1 180px"><label for="p-cb">Code-barres (facultatif)</label><input id="p-cb" data-champ="code_barre" type="text" inputmode="numeric" @bind="codeBarre" /></div>
+        <div class="champ" style="flex: 1 1 160px"><label for="p-tarif" class="@(remboursable ? "requis" : null)">Tarif de référence (DA)</label><input id="p-tarif" data-champ="tarif_reference" type="number" min="0" step="0.01" @ref="champTarif" @bind="tarif"
             class="@Obligatoire.Classe(TarifManque)" aria-invalid="@Obligatoire.Aria(TarifManque)" /></div>
-        <div class="champ" style="flex: 0 0 110px"><label for="p-tva">TVA (%)</label><input id="p-tva" type="number" min="0" max="100" step="0.01" @bind="tva" /></div>
-        <div class="champ" style="flex: 0 0 200px"><label for="p-min">Seuil d’alerte (boîtes)</label><input id="p-min" type="number" min="0" placeholder="automatique" @bind="stockMin" /></div>
+        <div class="champ" style="flex: 0 0 110px"><label for="p-tva">TVA (%)</label><input id="p-tva" data-champ="tva" type="number" min="0" max="100" step="0.01" @bind="tva" /></div>
+        <div class="champ" style="flex: 0 0 200px"><label for="p-min">Seuil d’alerte (boîtes)</label><input id="p-min" data-champ="stock_minimum" type="number" min="0" placeholder="automatique" @bind="stockMin" /></div>
         <label class="case" style="align-self: center"><input type="checkbox" @bind="remboursable" /><span>Remboursable</span></label>
     </div>
     <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CreerAsync">Créer le produit</button></div>

@@ -37,6 +37,10 @@ internal static class FacturesEndpoints
         f.MapGet("/{id:long}", async (long id, int? version, ConsulterFactures c, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok(VersDto(await c.DetailAsync(id, version, user.UtilisateurId(), ct))));
 
+        f.MapGet("/{id:long}/historique", async (long id, ConsulterFactures c, ClaimsPrincipal user, CancellationToken ct) =>
+            Results.Ok((await c.HistoriqueAsync(id, user.UtilisateurId(), ct))
+                .Select(e => new EvenementFactureDto(e.Date, e.Libelle, e.Detail, e.Employe, e.EmployeId, e.Montant)).ToList()));
+
         f.MapGet("/{id:long}/pdf", async (long id, int? version, ConsulterFactures c, IDocumentsFactures pdf, IPharmacie pharmacie, ClaimsPrincipal user,
                 CancellationToken ct) =>
             {
@@ -83,11 +87,11 @@ internal static class FacturesEndpoints
 
         f.MapGet("/clients", async (ConsulterFactures c, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok((await c.ClientsAsync(user.UtilisateurId(), ct)).Select(x =>
-                new ClientFactureDto(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif))));
+                new ClientFactureDto(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif, x.Email))));
 
         f.MapPost("/clients", async (ClientFactureDto x, Facturation fa, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok(new IdentifiantDto(await fa.EnregistrerClientAsync(
-                new ClientFacture(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif), user.UtilisateurId(), ct))));
+                new ClientFacture(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif, x.Email), user.UtilisateurId(), ct))));
 
         // Organismes (tiers payant et factures) : lecture pour qui facture, modification par le titulaire
         api.MapGet("/admin/organismes", async (IFactures factures, CancellationToken ct) =>

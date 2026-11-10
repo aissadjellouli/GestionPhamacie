@@ -74,6 +74,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{38
 		database\039_suivi_dettes.sql = database\039_suivi_dettes.sql
 		database\040_facture_echeance.sql = database\040_facture_echeance.sql
 		database\041_contacts.sql = database\041_contacts.sql
+		database\042_email_tiers.sql = database\042_email_tiers.sql
+		database\043_historique_factures.sql = database\043_historique_factures.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"

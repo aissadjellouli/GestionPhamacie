@@ -45,6 +45,8 @@
     <File Path="database/039_suivi_dettes.sql" />
     <File Path="database/040_facture_echeance.sql" />
     <File Path="database/041_contacts.sql" />
+    <File Path="database/042_email_tiers.sql" />
+    <File Path="database/043_historique_factures.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

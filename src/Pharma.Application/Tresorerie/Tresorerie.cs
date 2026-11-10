@@ -75,7 +75,7 @@ public sealed class EnregistrerCompteTresorerie(ITresorerie tresorerie, IPermiss
     public async Task<long> ExecuterAsync(CompteAEcrire c, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.TresorerieGerer, "gérer les comptes de trésorerie", ct);
-        if (string.IsNullOrWhiteSpace(c.Nom)) throw new RegleMetierException("Indiquez le nom du compte.");
+        if (string.IsNullOrWhiteSpace(c.Nom)) throw new RegleMetierException("Indiquez le nom du compte.", "nom_compte");
         var existant = c.Id is { } id ? (await tresorerie.ComptesAsync(ct)).FirstOrDefault(x => x.Id == id) ?? throw new RegleMetierException("Compte introuvable.") : null;
         if (existant?.Type == "coffre" && (c.RecoitCarte || !c.Actif))
             throw new RegleMetierException("Le coffre ne reçoit pas les cartes et reste actif.");
@@ -106,9 +106,9 @@ public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissio
         RegleTresorerie.VerifierMouvement(n, montant, libelle, categorie, organismeId, jour, horloge.Aujourdhui, compte.DateInitiale);
         if (n != NatureMouvement.VersementOrganisme) (organismeId, bordereauId) = (null, null);
         if (bordereauId is not null && statutBordereau is not ("paye" or "rejet_partiel"))
-            throw new RegleMetierException("Bordereau : indiquez s’il est payé en entier ou en rejet partiel.");
+            throw new RegleMetierException("Bordereau : indiquez s’il est payé en entier ou en rejet partiel.", "statut_bordereau");
         if (n == NatureMouvement.Depense && compte.Solde < montant)
-            throw new RegleMetierException($"Solde insuffisant sur {compte.Nom} ({compte.Solde:N2} DA).");
+            throw new RegleMetierException($"Solde insuffisant sur {compte.Nom} ({compte.Solde:N2} DA).", "montant");
 
         // Factures clients soldées par cette entrée (versement d'organisme, encaissement) : dans l'ordre choisi, au plus leur reste
         IReadOnlyList<(long, decimal)>? imputations = null;
@@ -134,7 +134,7 @@ public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissio
     }
 
     internal static async Task<CompteTresorerie> CompteActif(ITresorerie tresorerie, long id, CancellationToken ct) =>
-        (await tresorerie.ComptesAsync(ct)).FirstOrDefault(c => c.Id == id && c.Actif) ?? throw new RegleMetierException("Compte introuvable ou inactif.");
+        (await tresorerie.ComptesAsync(ct)).FirstOrDefault(c => c.Id == id && c.Actif) ?? throw new RegleMetierException("Compte introuvable ou inactif.", "compte");
 }
 
 /// <summary>Transfert entre comptes : dépôt d'espèces du coffre à la banque, retrait, virement entre banques.</summary>
@@ -148,7 +148,7 @@ public sealed class TransfererTresorerie(ITresorerie tresorerie, IPermissionServ
         var cible = await SaisirMouvementTresorerie.CompteActif(tresorerie, vers, ct);
         var jour = date ?? horloge.Aujourdhui;
         RegleTresorerie.VerifierMontantEtDate(montant, jour, horloge.Aujourdhui, source.DateInitiale > cible.DateInitiale ? source.DateInitiale : cible.DateInitiale);
-        if (source.Solde < montant) throw new RegleMetierException($"Solde insuffisant sur {source.Nom} ({source.Solde:N2} DA).");
+        if (source.Solde < montant) throw new RegleMetierException($"Solde insuffisant sur {source.Nom} ({source.Solde:N2} DA).", "montant");
         var id = await tresorerie.TransfererAsync(de, vers, jour, montant, $"{source.Nom} → {cible.Nom}", EnregistrerCompteTresorerie.Vide(reference), utilisateurId, ct);
         await journal.EcrireAsync(utilisateurId, "transfert_tresorerie", "mouvement_tresorerie", id,
             new Dictionary<string, object?> { ["de"] = source.Nom, ["vers"] = cible.Nom, ["montant"] = montant }, Permissions.TresorerieGerer, ct);
@@ -196,7 +196,7 @@ public sealed class VerserCaisseAuCoffre(ITresorerie tresorerie, ISessionsCaisse
         var session = await sessions.SessionDuPosteAsync(nom, ct) ?? throw new RegleMetierException("Aucune caisse ouverte sur ce poste.");
         var dansTiroir = session.FondCaisse + await sessions.VentesEspecesAsync(session.Id, ct);
         if (montant <= 0) throw new RegleMetierException("Le montant doit être supérieur à 0.");
-        if (montant > dansTiroir) throw new RegleMetierException($"Le tiroir ne contient en principe que {dansTiroir:N2} DA.");
+        if (montant > dansTiroir) throw new RegleMetierException($"Le tiroir ne contient en principe que {dansTiroir:N2} DA.", "montant");
         return await VerserAsync(session.Id, montant, pendant: true, automatique: false, utilisateurId, nom, ct);
     }
 

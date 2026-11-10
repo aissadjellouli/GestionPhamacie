@@ -20,7 +20,7 @@ internal static class AchatsEndpoints
         var achats = api.MapGroup("/achats");
 
         achats.MapGet("/fournisseurs", async (ListerFournisseurs lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(f => new FournisseurDto(f.Id, f.RaisonSociale, f.Telephone, f.Solde, f.DelaiRepriseJours))))
+                Results.Ok((await lister.ExecuterAsync(ct)).Select(f => new FournisseurDto(f.Id, f.RaisonSociale, f.Telephone, f.Solde, f.DelaiRepriseJours, f.Email))))
            .ExigerPermission(Lecture);
 
         // ---- Commandes ----
@@ -113,7 +113,7 @@ internal static class AchatsEndpoints
             {
                 MotifRetour motif;
                 try { motif = CodesMetier.MotifRetourDepuisCode(req.Motif); }
-                catch (ArgumentException) { throw new RegleMetierException("Motif de retour inconnu."); }
+                catch (ArgumentException) { throw new RegleMetierException("Motif de retour inconnu.", "motif_retour"); }
                 return Results.Ok(new IdentifiantDto(await preparer.ExecuterAsync(motif,
                     req.Lots.Select(l => new LotARetourner(l.LotId, l.Quantite, l.CodesBoites ?? [])).ToList(), user.UtilisateurId(), ct)));
             })

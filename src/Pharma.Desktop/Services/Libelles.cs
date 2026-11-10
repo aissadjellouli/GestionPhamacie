@@ -195,6 +195,7 @@ public static class Libelles
         "droits_modifies" => "Droits modifiés",
         "utilisateur_cree" => "Compte créé",
         "utilisateur_modifie" => "Compte modifié",
+        "coordonnees_modifiees" => "Coordonnées modifiées",
         "seuils_alerte" => "Seuils d’alerte",
         "pharmacie_modifiee" => "Identité de la pharmacie",
         "commande_emise" => "Commande émise",

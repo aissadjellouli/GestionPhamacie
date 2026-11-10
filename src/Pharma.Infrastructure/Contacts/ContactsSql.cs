@@ -34,7 +34,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             SELECT trim(concat_ws(' ', p.nom, p.prenom)), p.telephone, p.num_assure, o.nom, o.code, p.date_naissance, p.est_chronique,
                    p.plafond_credit, p.solde_credit, p.cree_le,
                    (SELECT max(v.date_vente) FROM vente v WHERE v.patient_id = p.id AND v.statut = 'validee'),
-                   o.id
+                   o.id, p.email
             FROM patient p LEFT JOIN organisme o ON o.id = p.organisme_id
             WHERE p.id = $1
             """);
@@ -44,6 +44,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             if (!await r.ReadAsync(ct)) return null;
             var coord = new List<InfoContact>();
             Ajouter(coord, "Téléphone", T(r, 1), "telephone");
+            Email(coord, T(r, 12));
             var situation = new List<InfoContact> { new("Dette en cours", Da(r.GetDecimal(8)), r.GetDecimal(8) > 0 ? "montant_du" : null) };
             if (r.GetDecimal(7) > 0) situation.Add(new("Plafond de crédit", Da(r.GetDecimal(7))));
             Ajouter(situation, "Organisme", r.IsDBNull(3) ? null : $"{r.GetString(3)} ({r.GetString(4)})");
@@ -52,7 +53,8 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             if (r.GetBoolean(6)) situation.Add(new("Malade chronique", "oui"));
             Ajouter(situation, "Dernier achat", r.IsDBNull(10) ? null : Date(r.GetDateTime(10)));
             situation.Add(new("Fiche créée le", Date(r.GetDateTime(9))));
-            var fiche = new FicheContact(TypesContact.Patient, id, r.GetString(0), "Patient", true, coord, situation);
+            var fiche = new FicheContact(TypesContact.Patient, id, r.GetString(0), "Patient", true, coord, situation,
+                Saisie: new CoordonneesContact(T(r, 1), T(r, 12), null));
             await r.CloseAsync();
             return fiche with { Situation = [.. fiche.Situation, .. await FacturesAsync("f.patient_id = $1", id, ct)] };
         }
@@ -64,7 +66,8 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             SELECT f.raison_sociale, f.telephone, f.adresse, f.nif, f.rc, f.solde,
                    (SELECT count(*)::int FROM v_facture_fournisseur x WHERE x.fournisseur_id = f.id AND x.reste > 0),
                    (SELECT COALESCE(SUM(x.reste), 0) FROM v_facture_fournisseur x WHERE x.fournisseur_id = f.id AND x.reste > 0),
-                   (SELECT max(r.date_reception) FROM reception r WHERE r.fournisseur_id = f.id)
+                   (SELECT max(r.date_reception) FROM reception r WHERE r.fournisseur_id = f.id),
+                   f.email
             FROM fournisseur f WHERE f.id = $1
             """);
         cmd.Parameters.AddWithValue(id);
@@ -72,6 +75,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
         if (!await r.ReadAsync(ct)) return null;
         var coord = new List<InfoContact>();
         Ajouter(coord, "Téléphone", T(r, 1), "telephone");
+        Email(coord, T(r, 9));
         Ajouter(coord, "Adresse", T(r, 2));
         Ajouter(coord, "NIF", T(r, 3));
         Ajouter(coord, "RC", T(r, 4));
@@ -82,7 +86,8 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             new("Factures à payer", r.GetInt32(6) == 0 ? "aucune" : $"{r.GetInt32(6)} · {Da(r.GetDecimal(7))}")
         };
         Ajouter(situation, "Dernière livraison", r.IsDBNull(8) ? null : Date(r.GetDateTime(8)));
-        return new FicheContact(TypesContact.Grossiste, id, r.GetString(0), "Grossiste", true, coord, situation);
+        return new FicheContact(TypesContact.Grossiste, id, r.GetString(0), "Grossiste", true, coord, situation,
+            Saisie: new CoordonneesContact(T(r, 1), T(r, 9), T(r, 2)));
     }
 
     private async Task<FicheContact?> OrganismeAsync(long id, CancellationToken ct)
@@ -106,19 +111,21 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
     private async Task<FicheContact?> ClientAsync(long id, CancellationToken ct)
     {
         FicheContact fiche;
-        await using (var cmd = db.CreateCommand("SELECT raison_sociale, telephone, adresse, nif, rc, nis, article_imposition, actif FROM client_facture WHERE id = $1"))
+        await using (var cmd = db.CreateCommand("SELECT raison_sociale, telephone, adresse, nif, rc, nis, article_imposition, actif, email FROM client_facture WHERE id = $1"))
         {
             cmd.Parameters.AddWithValue(id);
             await using var r = await cmd.ExecuteReaderAsync(ct);
             if (!await r.ReadAsync(ct)) return null;
             var coord = new List<InfoContact>();
             Ajouter(coord, "Téléphone", T(r, 1), "telephone");
+            Email(coord, T(r, 8));
             Ajouter(coord, "Adresse", T(r, 2));
             Ajouter(coord, "NIF", T(r, 3));
             Ajouter(coord, "RC", T(r, 4));
             Ajouter(coord, "NIS", T(r, 5));
             Ajouter(coord, "Article d'imposition", T(r, 6));
-            fiche = new FicheContact(TypesContact.Client, id, r.GetString(0), "Entreprise cliente", r.GetBoolean(7), coord, []);
+            fiche = new FicheContact(TypesContact.Client, id, r.GetString(0), "Entreprise cliente", r.GetBoolean(7), coord, [],
+                Saisie: new CoordonneesContact(T(r, 1), T(r, 8), T(r, 2)));
         }
         return fiche with { Situation = await FacturesAsync("f.client_id = $1", id, ct) };
     }
@@ -154,6 +161,28 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
         var n = r.GetInt32(0);
         return [new("Factures à encaisser", n == 0 ? "aucune" : $"{n} · {Da(r.GetDecimal(1))}", n > 0 ? "montant_du" : null)];
     }
+
+    public async Task<bool> ModifierCoordonneesAsync(string type, long id, CoordonneesContact c, CancellationToken ct = default)
+    {
+        var sql = type switch
+        {
+            TypesContact.Patient => "UPDATE patient SET telephone = $2, email = $3 WHERE id = $1",
+            TypesContact.Grossiste => "UPDATE fournisseur SET telephone = $2, email = $3, adresse = $4 WHERE id = $1",
+            TypesContact.Client => "UPDATE client_facture SET telephone = $2, email = $3, adresse = $4 WHERE id = $1",
+            _ => throw new ArgumentOutOfRangeException(nameof(type))
+        };
+        await using var cmd = db.CreateCommand(sql);
+        cmd.Parameters.AddWithValue(id);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)c.Telephone ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)c.Email ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        if (type != TypesContact.Patient)
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)c.Adresse ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    /// <summary>E-mail : information essentielle mais facultative, signalée « à compléter » tant qu'elle manque.</summary>
+    private static void Email(List<InfoContact> liste, string? email) =>
+        liste.Add(string.IsNullOrWhiteSpace(email) ? new InfoContact("E-mail", "à compléter", "manquant") : new InfoContact("E-mail", email, "email"));
 
     private static void Ajouter(List<InfoContact> liste, string libelle, string? valeur, string? genre = null)
     {

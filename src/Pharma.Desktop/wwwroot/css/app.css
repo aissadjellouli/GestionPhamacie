@@ -307,6 +307,25 @@ select, .panneau input[type="date"] { height: 44px; padding: 0 10px; border-radi
 input.champ-invalide, select.champ-invalide { border-color: var(--urgent-vif); background: var(--urgent-fond); box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.15); }
 .message-champ { font-size: 13px; color: var(--urgent); font-weight: 500; }
 input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--urgent-vif); background: var(--urgent-fond); box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.15); }
+/* Barre d'état en bas de la fenêtre (BarreEtat.razor) : information secondaire, seuls les états anormaux ressortent */
+body { padding-bottom: 32px; }
+.barre-etat { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: 32px; box-sizing: border-box; display: flex; align-items: center; gap: 4px;
+  padding: 0 16px; background: var(--surface); border-top: 1px solid var(--bordure); font-size: 13px; color: var(--texte-2); white-space: nowrap; overflow: hidden; }
+.element-etat { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; height: 24px; border: none; border-radius: 6px; background: none;
+  font: inherit; color: inherit; }
+.element-etat + .element-etat { border-left: 1px solid var(--bordure); border-radius: 0; }
+button.element-etat { cursor: pointer; }
+button.element-etat:hover, button.element-etat:focus-visible { color: var(--texte); text-decoration: underline; }
+.element-etat.attention { color: var(--attention); font-weight: 600; }
+.element-etat.anormal { color: var(--urgent-vif); font-weight: 600; }
+.element-etat.droite { margin-left: auto; border-left: none; }
+.voyant { width: 8px; height: 8px; border-radius: 50%; background: var(--texte-2); }
+.voyant.ok { background: #12B76A; }
+.voyant.ko { background: var(--urgent-vif); }
+/* Bulle d'erreur posée à côté du champ à corriger (js/erreurs.js) : au premier plan, même au-dessus d'une fenêtre */
+.bulle-erreur { position: absolute; z-index: 100; max-width: min(420px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 8px;
+  background: var(--urgent-vif); color: #FFFFFF; font-size: 13px; font-weight: 500; line-height: 1.4; box-shadow: 0 6px 18px rgba(16, 24, 40, 0.25); pointer-events: none; }
+.bulle-erreur::before { content: ""; position: absolute; top: -6px; left: 16px; border: 6px solid transparent; border-top: 0; border-bottom-color: var(--urgent-vif); }
 label.requis::after, .etiquette-champ.requis::after { content: " *"; color: var(--urgent-vif); font-weight: 600; }
 /* Réception : lot à trancher (date différente, lot bloqué) */
 .ligne-conflit td { padding-top: 0; }

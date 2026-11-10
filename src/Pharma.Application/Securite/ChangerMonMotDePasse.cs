@@ -17,7 +17,7 @@ public sealed class ChangerMonMotDePasse(IComptesLecture comptes, IVerificateurM
         var compte = await comptes.ParIdAsync(utilisateurId, ct);
         if (compte is null || !compte.Actif) throw new RegleMetierException("Compte introuvable ou désactivé.");
         if (string.IsNullOrEmpty(actuel) || !verificateur.Verifier(actuel, compte.MotDePasseHash))
-            throw new RegleMetierException("Mot de passe actuel incorrect.");
+            throw new RegleMetierException("Mot de passe actuel incorrect.", "mot_de_passe_actuel");
         RegleMotDePasse.Verifier(nouveau, confirmation, actuel);
 
         await comptes.ChangerMotDePasseAsync(compte.Id, hacheur.Hacher(nouveau!), ct);

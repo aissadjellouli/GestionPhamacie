@@ -18,7 +18,9 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 040.
+-- Valeurs identiques à celles posées par les scripts 001 à 043 (vérifié : permissions, rôles,
+-- droits de départ, substances, organismes, coffre). Règle : tout script numéroté qui ajoute
+-- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
 
 BEGIN;

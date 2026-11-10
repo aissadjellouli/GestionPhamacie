@@ -69,12 +69,15 @@ internal static class NotificationsEndpoints
         // ---- Sauvegardes ----
         var s = api.MapGroup("/admin/sauvegardes");
 
-        s.MapGet("", async (ObtenirSauvegardes obtenir, CancellationToken ct) =>
+        s.MapGet("", async (ObtenirSauvegardes obtenir, IConfiguration config, CancellationToken ct) =>
             {
                 var (r, journal) = await obtenir.ExecuterAsync(ct);
+                // Base sauvegardée, à titre d'information : nom et serveur seulement, jamais le mot de passe
+                var cnx = new Npgsql.NpgsqlConnectionStringBuilder(config.GetConnectionString("Pharmacie") ?? "");
                 return Results.Ok(new EtatSauvegardesDto(
                     new ReglagesSauvegardeDto(r.Actif, r.Dossier, r.Heure, r.Conservation, r.DerniereExecution),
-                    journal.Select(j => new EntreeSauvegardeDto(j.Id, j.Debut, j.Fin, j.Statut, j.Declenchement, j.Fichier, j.TailleOctets, j.Message, j.Utilisateur)).ToList()));
+                    journal.Select(j => new EntreeSauvegardeDto(j.Id, j.Debut, j.Fin, j.Statut, j.Declenchement, j.Fichier, j.TailleOctets, j.Message, j.Utilisateur)).ToList(),
+                    cnx.Database, cnx.Host is { } h ? $"{h}:{cnx.Port}" : null));
             })
            .ExigerPermission(Permissions.AdminSauvegardes);
 

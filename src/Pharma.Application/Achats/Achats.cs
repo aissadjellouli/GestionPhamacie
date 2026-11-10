@@ -9,7 +9,7 @@ namespace Pharma.Application.Achats;
 
 // ---- Modèles ----------------------------------------------------------------
 
-public sealed record Fournisseur(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours);
+public sealed record Fournisseur(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours, string? Email = null);
 
 /// <summary>Statuts de la base : brouillon, envoyee, recue_partielle, recue, annulee.</summary>
 public sealed record CommandeResume(
@@ -173,7 +173,7 @@ public sealed class AjouterACommande(IAchats achats, IPermissionService droits)
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsCommander, "passer une commande", ct);
         var nom = await achats.NomProduitAsync(produitId, ct) ?? throw new RegleMetierException("Produit introuvable.");
         if (await achats.FournisseurAsync(fournisseurId, ct) is null)
-            throw new RegleMetierException("Grossiste introuvable.");
+            throw new RegleMetierException("Grossiste introuvable.", "grossiste");
         var prix = prixHt ?? (await achats.DernierAchatAsync(produitId, fournisseurId, ct))?.PrixAchatHt
             ?? throw new RegleMetierException($"{nom} : aucun achat précédent, saisissez le prix d’achat.");
         RegleAchats.VerifierCommande([new LigneCommandeSaisie(produitId, nom, quantite, prix)]);
@@ -266,7 +266,7 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "réceptionner une livraison", ct);
         if (await achats.FournisseurAsync(s.FournisseurId, ct) is null)
-            throw new RegleMetierException("Grossiste introuvable.");
+            throw new RegleMetierException("Grossiste introuvable.", "grossiste");
 
         var lignes = s.Lignes.Select(l => l with
         {

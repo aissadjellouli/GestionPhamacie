@@ -7,7 +7,7 @@ public sealed record PatientResume(
     long Id, string Nom, string? Prenom, string? Telephone, string? NumAssure,
     long? OrganismeId, string? Organisme, decimal PlafondCredit, decimal SoldeCredit);
 
-public sealed record NouveauPatient(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit);
+public sealed record NouveauPatient(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
 
 public sealed record Medecin(long Id, string Nom, string? Specialite);
 public sealed record Organisme(long Id, string Code, string Nom);
@@ -48,13 +48,14 @@ public sealed class CreerPatient(IPatients patients)
     public Task<long> ExecuterAsync(NouveauPatient p, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(p.Nom))
-            throw new RegleMetierException("Le nom du patient est obligatoire.");
+            throw new RegleMetierException("Le nom du patient est obligatoire.", "nom_patient");
         if (p.PlafondCredit < 0)
-            throw new RegleMetierException("Le plafond de crédit ne peut pas être négatif.");
+            throw new RegleMetierException("Le plafond de crédit ne peut pas être négatif.", "plafond");
         static string? Net(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         return patients.CreerAsync(p with
         {
-            Nom = p.Nom.Trim(), Prenom = Net(p.Prenom), Telephone = Net(p.Telephone), NumAssure = Net(p.NumAssure)
+            Nom = p.Nom.Trim(), Prenom = Net(p.Prenom), Telephone = Net(p.Telephone), NumAssure = Net(p.NumAssure),
+            Email = Contacts.RegleContact.Email(p.Email)
         }, ct);
     }
 }
@@ -73,7 +74,7 @@ public sealed class CreerMedecin(IMedecins medecins)
     public Task<long> ExecuterAsync(string? nom, string? specialite, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(nom))
-            throw new RegleMetierException("Le nom du médecin est obligatoire.");
+            throw new RegleMetierException("Le nom du médecin est obligatoire.", "nom_medecin");
         return medecins.CreerAsync(nom.Trim(), string.IsNullOrWhiteSpace(specialite) ? null : specialite.Trim(), ct);
     }
 }

@@ -363,12 +363,12 @@ public sealed partial class ModifierReglagesNotification(INotificationsDepot dep
             SmtpServeur = Net(m.SmtpServeur), SmtpExpediteur = Net(m.SmtpExpediteur), SmtpIdentifiant = Net(m.SmtpIdentifiant),
             ModemPort = Net(m.ModemPort)?.ToUpperInvariant()
         };
-        if (r.SmtpPort is < 1 or > 65535) throw new RegleMetierException("Port SMTP entre 1 et 65535.");
-        if (r.SmtpExpediteur is not null && !r.SmtpExpediteur.Contains('@')) throw new RegleMetierException("Adresse de l’expéditeur invalide.");
+        if (r.SmtpPort is < 1 or > 65535) throw new RegleMetierException("Port SMTP entre 1 et 65535.", "smtp_port");
+        if (r.SmtpExpediteur is not null && !r.SmtpExpediteur.Contains('@')) throw new RegleMetierException("Adresse de l’expéditeur invalide.", "smtp_expediteur");
         if ((r.SmtpServeur is null) != (r.SmtpExpediteur is null))
             throw new RegleMetierException("Renseignez à la fois le serveur SMTP et l’adresse de l’expéditeur, ou aucun des deux.");
         if (r.ModemPort is not null && !FormatPort().IsMatch(r.ModemPort)) throw new RegleMetierException("Port du modem invalide (ex. COM3).");
-        if (r.SmsSeuilEcart is < 0) throw new RegleMetierException("Le seuil d’écart ne peut pas être négatif.");
+        if (r.SmsSeuilEcart is < 0) throw new RegleMetierException("Le seuil d’écart ne peut pas être négatif.", "sms_seuil");
 
         var changer = m.NouveauMotDePasse is not null;
         var chiffre = string.IsNullOrEmpty(m.NouveauMotDePasse) ? null : secrets.Chiffrer(m.NouveauMotDePasse);

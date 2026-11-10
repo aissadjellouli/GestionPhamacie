@@ -22,7 +22,7 @@ public static class ErreursMetier
             }
             catch (RegleMetierException e)
             {
-                return Refus(ctx.HttpContext, StatusCodes.Status422UnprocessableEntity, e.Message, e);
+                return Refus(ctx.HttpContext, StatusCodes.Status422UnprocessableEntity, e.Message, e, e.Champ);
             }
             catch (DroitRefuseException e)
             {
@@ -36,10 +36,10 @@ public static class ErreursMetier
         return builder;
     }
 
-    private static IResult Refus(HttpContext http, int statut, string message, Exception e)
+    private static IResult Refus(HttpContext http, int statut, string message, Exception e, string? champ = null)
     {
         http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus")
             .LogInformation("{Chemin} refusé ({Type}) : {Message}", http.Request.Path, e.GetType().Name, message);
-        return Results.Json(new ErreurDto(message), statusCode: statut);
+        return Results.Json(new ErreurDto(message, champ), statusCode: statut);
     }
 }

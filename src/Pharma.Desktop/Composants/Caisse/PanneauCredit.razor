@@ -138,8 +138,8 @@
                 @if (correction)
                 {
                     <div class="achats-ligne" style="align-items: flex-end; margin-top: 8px">
-                        <div class="champ" style="flex: 0 0 180px"><label for="c-nouvelle" class="requis">Nouvelle dette (DA)</label><input id="c-nouvelle" type="number" min="0" step="0.01" @bind="nouvelleDette" /></div>
-                        <div class="champ" style="flex: 1 1 260px"><label for="c-motif" class="requis">Motif de la correction</label><input id="c-motif" type="text" maxlength="300" @bind="motifCorrection" /></div>
+                        <div class="champ" style="flex: 0 0 180px"><label for="c-nouvelle" class="requis">Nouvelle dette (DA)</label><input id="c-nouvelle" data-champ="nouvelle_dette" type="number" min="0" step="0.01" @bind="nouvelleDette" /></div>
+                        <div class="champ" style="flex: 1 1 260px"><label for="c-motif" class="requis">Motif de la correction</label><input id="c-motif" data-champ="motif_correction" type="text" maxlength="300" @bind="motifCorrection" /></div>
                         <button type="button" class="btn btn-danger" disabled="@enCours" @onclick="CorrigerAsync">Enregistrer la correction</button>
                     </div>
                     <p class="detail" style="margin: 4px 0 0">Réservé au titulaire. La correction est inscrite au relevé et au journal, avec votre nom et le motif.</p>
@@ -149,7 +149,7 @@
             <div class="achats-ligne" style="align-items: flex-end">
                 <div class="champ" style="flex: 0 0 200px">
                     <label for="c-montant" class="requis">Montant réglé (DA)</label>
-                    <input id="c-montant" type="number" min="0.01" max="@s.Patient.Solde.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="0.01" @bind="montant" />
+                    <input id="c-montant" data-champ="montant" type="number" min="0.01" max="@s.Patient.Solde.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="0.01" @bind="montant" />
                 </div>
                 <div class="filtres" role="radiogroup" aria-label="Mode de règlement">
                     @foreach (var (code, libelle) in Modes)
@@ -302,7 +302,7 @@
     private async Task EncaisserAsync()
     {
         if (situation is null) return;
-        if (montant <= 0 || montant > situation.Patient.Solde) { erreur = $"Montant entre 0,01 et {Libelles.Dinars(situation.Patient.Solde, 2)}."; return; }
+        if (montant <= 0 || montant > situation.Patient.Solde) { erreur = Api.SignalerChamp("montant", $"Montant entre 0,01 et {Libelles.Dinars(situation.Patient.Solde, 2)}."); return; }
         enCours = true;
         var (r, e) = await Api.ReglerCreditAsync(situation.Patient.Id, new ReglementCreditRequete(montant, mode));
         enCours = false;

@@ -70,6 +70,12 @@ public class RegleFactureTests
         Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierRejet("facture", "rejetee", "Erreur de taux"));
         Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierReprise("emise"));
         RegleFacture.VerifierReprise("rejetee");
+        // Rejetée puis payée en entier : soldée, plus de correction ni de remplacement
+        RegleFacture.VerifierReprise("rejetee", 100);
+        Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierReprise("rejetee", 0));
+        Assert.True(RegleFacture.RejetLeve("rejetee", 0, horsSuivi: false));
+        Assert.False(RegleFacture.RejetLeve("rejetee", 50, horsSuivi: false));
+        Assert.False(RegleFacture.RejetLeve("emise", 0, horsSuivi: false));
         Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierAvoir("facture", "emise", 1000, 800, 300, "Retour"));
         Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierAvoir("facture", "remplacee", 1000, 0, 100, "Retour"));
         Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierHorsSuivi(true, null));

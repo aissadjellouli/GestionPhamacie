@@ -198,6 +198,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
         }.Where(x => x is not null)), []);
     public Task<(FactureDetailDto?, string?)> FactureAsync(long id, int? version = null) =>
         GetAsync<FactureDetailDto?>($"api/factures/{id}{(version is { } v ? $"?version={v}" : "")}", null);
+    public Task<(List<EvenementFactureDto>, string?)> HistoriqueFactureAsync(long id) =>
+        GetAsync<List<EvenementFactureDto>>($"api/factures/{id}/historique", []);
     public Task<(byte[]?, string?, string?)> FacturePdfAsync(long id, string numero, int? version = null) =>
         FichierAsync(HttpMethod.Get, $"api/factures/{id}/pdf{(version is { } v ? $"?version={v}" : "")}", $"{numero}.pdf");
     public Task<(FactureEmiseDto?, string?)> EmettreFactureAsync(DemandeFactureDto d) => PostAsync<DemandeFactureDto, FactureEmiseDto>("api/factures", d);
@@ -586,8 +588,27 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
 
     // ---- Achats ------------------------------------------------------------------
 
+    /// <summary>Barre d'état : le serveur répond-il ? (route publique /api/sante, 4 secondes au plus)</summary>
+    public async Task<bool> ServeurJoignableAsync()
+    {
+        try
+        {
+            using var delai = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            using var rep = await http.GetAsync("api/sante", delai.Token);
+            return rep.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is OperationCanceledException || EstEchecAppel(ex))
+        {
+            return false;
+        }
+    }
+
+    public Task<(EtatPosteDto?, string?)> EtatPosteAsync() => GetAsync<EtatPosteDto?>("api/etat-poste", null);
+
     /// <summary>Fiche contact d'un tiers : type patient, grossiste, organisme, client ou employe.</summary>
     public Task<(FicheContactDto?, string?)> ContactAsync(string type, long id) => GetAsync<FicheContactDto?>($"api/contacts/{type}/{id}", null);
+    public async Task<string?> ModifierCoordonneesContactAsync(string type, long id, CoordonneesContactDto c) =>
+        (await EnvoyerCorpsAsync<CoordonneesContactDto, object>(HttpMethod.Put, $"api/contacts/{type}/{id}/coordonnees", c)).Item2;
 
     public Task<(List<FournisseurDto>, string?)> FournisseursAsync() => GetAsync<List<FournisseurDto>>("api/achats/fournisseurs", []);
     public Task<(PageDto<CommandeAchatDto>?, string?)> CommandesAchatAsync(int page = 1, int taille = 10, long? fournisseurId = null, string? statut = null,
@@ -736,15 +757,33 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
         return "Session expirée : reconnectez-vous.";
     }
 
-    private static async Task<string> MessageAsync(HttpResponseMessage rep)
+    /// <summary>
+    /// Le serveur a désigné le champ en cause d'un refus (ErreurDto.Champ) : la mise en page le fait passer en rouge
+    /// (data-champ), avec le message dans une bulle à côté.
+    /// </summary>
+    public event Action<string, string>? ChampEnErreur;
+
+    /// <summary>Contrôle fait sur le poste : désigne le champ en cause comme le ferait un refus du serveur (champ data-champ).</summary>
+    public string SignalerChamp(string champ, string message)
+    {
+        ChampEnErreur?.Invoke(champ, message);
+        return message;
+    }
+
+    private async Task<string> MessageAsync(HttpResponseMessage rep)
     {
         try
         {
-            // ErreurDto { message } ou ProblemDetails { detail }
+            // ErreurDto { message, champ } ou ProblemDetails { detail }
             using var doc = System.Text.Json.JsonDocument.Parse(await rep.Content.ReadAsStringAsync());
             foreach (var nom in new[] { "message", "detail", "title" })
                 if (doc.RootElement.TryGetProperty(nom, out var v) && v.GetString() is { Length: > 0 } texte)
+                {
+                    if (doc.RootElement.TryGetProperty("champ", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String
+                        && c.GetString() is { Length: > 0 } champ)
+                        ChampEnErreur?.Invoke(champ, texte);
                     return texte;
+                }
         }
         catch { /* corps vide ou non JSON */ }
         return $"Erreur {(int)rep.StatusCode}.";

@@ -44,6 +44,7 @@ public static class DependencyInjection
         services.AddScoped<Ordonnances.AnalyserOrdonnance>();
         services.AddScoped<Ordonnances.EnregistrerScanOrdonnance>();
         services.AddScoped<Administration.ObtenirSeuils>();
+        services.AddScoped<Administration.ObtenirEtatPoste>();
         services.AddScoped<Administration.EnregistrerSeuils>();
         services.AddScoped<Administration.ObtenirDroits>();
         services.AddScoped<Administration.CreerUtilisateur>();
@@ -103,6 +104,7 @@ public static class DependencyInjection
         services.AddScoped<Caisse.CorrigerDetteCredit>();
         services.AddScoped<Suivi.ObtenirSuiviDettes>();
         services.AddScoped<Contacts.ConsulterContact>();
+        services.AddScoped<Contacts.ModifierCoordonneesContact>();
         services.AddScoped<Suivi.ModifierDelaiAlerteDettes>();
         services.AddScoped<Tresorerie.ConsulterTresorerie>();
         services.AddScoped<Tresorerie.EnregistrerCompteTresorerie>();

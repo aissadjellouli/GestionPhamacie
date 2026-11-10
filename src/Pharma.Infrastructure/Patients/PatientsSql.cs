@@ -51,8 +51,8 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
     public async Task<long> CreerAsync(NouveauPatient p, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            INSERT INTO patient (nom, prenom, telephone, num_assure, organisme_id, plafond_credit)
-            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            INSERT INTO patient (nom, prenom, telephone, num_assure, organisme_id, plafond_credit, email)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
             """);
         cmd.Parameters.AddWithValue(p.Nom);
         cmd.Parameters.Add(Nullable(p.Prenom, NpgsqlDbType.Text));
@@ -60,6 +60,7 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         cmd.Parameters.Add(Nullable(p.NumAssure, NpgsqlDbType.Text));
         cmd.Parameters.Add(Nullable(p.OrganismeId, NpgsqlDbType.Bigint));
         cmd.Parameters.AddWithValue(p.PlafondCredit);
+        cmd.Parameters.Add(Nullable(p.Email, NpgsqlDbType.Text));
         return (long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 

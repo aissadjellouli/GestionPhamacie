@@ -43,7 +43,7 @@ public sealed class CreerUtilisateur(IUtilisateursAdmin admin, IHacheurMotDePass
         long auteurId, string? telephone = null, string? email = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(nomComplet))
-            throw new RegleMetierException("Le nom de l’employé est obligatoire.");
+            throw new RegleMetierException("Le nom de l’employé est obligatoire.", "nom_employe");
         var id = RegleCompte.NormaliserIdentifiant(identifiant);
         RegleCompte.VerifierMotDePasse(motDePasse);
         var (tel, mail) = (Contacts.RegleContact.Telephone(telephone), Contacts.RegleContact.Email(email));
@@ -68,7 +68,7 @@ public sealed class ModifierUtilisateur(IUtilisateursAdmin admin, IHacheurMotDeP
         long auteurId, string? telephone = null, string? email = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(nomComplet))
-            throw new RegleMetierException("Le nom de l’employé est obligatoire.");
+            throw new RegleMetierException("Le nom de l’employé est obligatoire.", "nom_employe");
         var (tel, mail) = (Contacts.RegleContact.Telephone(telephone), Contacts.RegleContact.Email(email));
         var etat = await admin.LireAsync(ct);
         var cible = etat.Utilisateurs.FirstOrDefault(u => u.Id == id)

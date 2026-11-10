@@ -35,6 +35,7 @@ internal sealed class FacturesEnMemoire : IFactures
         Task.FromResult(new ListeFactures(new Pharma.Application.Commun.Page<FactureResume>([], 0, p.Page, p.Taille), 0, 0));
     public Task<IReadOnlyList<FactureResume>> ListerAsync(FiltreFactures f, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<FactureResume>>([]);
     public Task<FactureDetail?> DetailAsync(long id, int? v, CancellationToken ct = default) => Task.FromResult(Detail);
+    public Task<IReadOnlyList<EvenementFacture>> HistoriqueAsync(long id, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<EvenementFacture>>([]);
     public Task RejeterAsync(long id, string motif, CancellationToken ct = default) => Task.CompletedTask;
     public Task CorrigerAsync(long id, FactureAEcrire f, string? motif, CancellationToken ct = default) { Emises.Add(f); return Task.CompletedTask; }
     public Task HorsSuiviAsync(long id, bool h, string? m, CancellationToken ct = default) { Suivi = (id, h, m); return Task.CompletedTask; }

@@ -70,7 +70,8 @@ public sealed record ParcoursBoiteDto(
     string? Ticket, DateTime? DateVente, string? NumFactureChifa, string? Patient,
     IReadOnlyList<EtapeParcoursDto> Etapes, long ProduitId);
 
-public sealed record ErreurDto(string Message);
+/// <summary>Refus renvoyé au poste. Champ : champ de saisie en cause (data-champ côté poste), ou null.</summary>
+public sealed record ErreurDto(string Message, string? Champ = null);
 
 // ---- Caisse -----------------------------------------------------------------
 
@@ -122,7 +123,7 @@ public sealed record PatientDto(
     long Id, string Nom, string? Prenom, string? Telephone, string? NumAssure,
     long? OrganismeId, string? Organisme, decimal PlafondCredit, decimal SoldeCredit);
 
-public sealed record NouveauPatientDto(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit);
+public sealed record NouveauPatientDto(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
 public sealed record MedecinDto(long Id, string Nom, string? Specialite);
 public sealed record NouveauMedecinDto(string Nom, string? Specialite);
 public sealed record OrganismeDto(long Id, string Code, string Nom);
@@ -172,7 +173,7 @@ public sealed record ScanOrdonnanceDto(string Jeton);
 
 // ---- Achats -----------------------------------------------------------------
 
-public sealed record FournisseurDto(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours);
+public sealed record FournisseurDto(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours, string? Email = null);
 
 /// <summary>Statut : brouillon, envoyee, recue_partielle, recue ou annulee.</summary>
 public sealed record CommandeAchatDto(
@@ -267,7 +268,8 @@ public sealed record ReglagesSauvegardeDto(bool Actif, string? Dossier, TimeOnly
 public sealed record EntreeSauvegardeDto(
     long Id, DateTime Debut, DateTime? Fin, string Statut, string Declenchement, string? Fichier, long? TailleOctets, string? Message, string? Utilisateur);
 
-public sealed record EtatSauvegardesDto(ReglagesSauvegardeDto Reglages, IReadOnlyList<EntreeSauvegardeDto> Journal);
+/// <summary>Base et Serveur : base de données que le serveur utilise et sauvegarde (à titre d'information, sans mot de passe).</summary>
+public sealed record EtatSauvegardesDto(ReglagesSauvegardeDto Reglages, IReadOnlyList<EntreeSauvegardeDto> Journal, string? Base = null, string? Serveur = null);
 public sealed record ResultatSauvegardeDto(string Statut, string? Fichier, long? TailleOctets, string Message);
 
 // ---- Création d'un produit ----------------------------------------------------
@@ -546,13 +548,21 @@ public sealed record SuiviDettesDto(int DelaiJours, DateOnly Jour, decimal Total
 
 public sealed record DelaiAlerteDettesRequete(int Jours);
 
+// ---- Barre d'état du poste ------------------------------------------------------------------
+
+/// <summary>StatutSauvegarde : reussie, echouee, disque_absent ou null (jamais).</summary>
+public sealed record EtatPosteDto(bool SauvegardeActive, DateTime? DerniereSauvegarde, string? StatutSauvegarde,
+    long? CaisseSessionId, DateTime? CaisseOuverteLe);
+
 // ---- Fiche contact d'un tiers --------------------------------------------------------------
 
 /// <summary>Genre : « telephone », « email » (lien d'appel ou de courrier), « montant_du » (somme due mise en avant), sinon texte.</summary>
 public sealed record InfoContactDto(string Libelle, string Valeur, string? Genre);
 /// <summary>Type : patient, grossiste, organisme, client ou employe. CoordonneesMasquees : coordonnées d'un employé réservées à lui et au titulaire.</summary>
 public sealed record FicheContactDto(string Type, long Id, string Nom, string Precision, bool Actif, IReadOnlyList<InfoContactDto> Coordonnees,
-    IReadOnlyList<InfoContactDto> Situation, bool CoordonneesMasquees);
+    IReadOnlyList<InfoContactDto> Situation, bool CoordonneesMasquees, CoordonneesContactDto? Saisie = null, bool Modifiable = false);
+/// <summary>Coordonnées modifiables depuis la fiche contact (adresse : grossiste et entreprise seulement).</summary>
+public sealed record CoordonneesContactDto(string? Telephone, string? Email, string? Adresse);
 
 // ---- Pagination commune aux listes ---------------------------------------------------------
 

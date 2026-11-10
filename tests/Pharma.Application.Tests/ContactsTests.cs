@@ -7,11 +7,22 @@ namespace Pharma.Application.Tests;
 internal sealed class ContactsEnMemoire : IContacts
 {
     public bool? CoordonneesDemandees { get; private set; }
+    public string? TelephoneActuel { get; init; }
 
     public Task<FicheContact?> LireAsync(string type, long id, bool coordonneesEmploye, CancellationToken ct = default)
     {
         CoordonneesDemandees = coordonneesEmploye;
-        return Task.FromResult<FicheContact?>(id == 404 ? null : new FicheContact(type, id, "Nom", "Précision", true, [], []));
+        return Task.FromResult<FicheContact?>(id == 404 ? null : new FicheContact(type, id, "Nom", "Précision", true, [], [],
+            Saisie: type is "patient" or "grossiste" or "client" ? new CoordonneesContact(TelephoneActuel, null, null) : null));
+    }
+
+    public (string Type, long Id, CoordonneesContact C)? Modifie { get; private set; }
+
+    public Task<bool> ModifierCoordonneesAsync(string type, long id, CoordonneesContact c, CancellationToken ct = default)
+    {
+        if (id == 404) return Task.FromResult(false);
+        Modifie = (type, id, c);
+        return Task.FromResult(true);
     }
 }
 
@@ -74,6 +85,67 @@ public class ContactsTests
         await new ConsulterContact(contacts, droits).ExecuterAsync("employe", fiche, 9);
         Assert.Equal(attendu, contacts.CoordonneesDemandees);
     }
+
+    [Theory]
+    [InlineData("patient", "caisse.vendre")]
+    [InlineData("grossiste", "achats.commander")]
+    [InlineData("client", "factures.gerer")]
+    public async Task La_fiche_est_modifiable_avec_le_droit_du_tiers(string type, string droit)
+    {
+        var sans = await new ConsulterContact(new ContactsEnMemoire(), new DroitsFactices("caisse.vendre", "factures.gerer")).ExecuterAsync(type, 1, 9);
+        var avec = await new ConsulterContact(new ContactsEnMemoire(), new DroitsFactices(droit, "caisse.vendre", "factures.gerer")).ExecuterAsync(type, 1, 9);
+        Assert.True(avec.Modifiable);
+        Assert.Equal(droit != "achats.commander", sans.Modifiable);
+    }
+
+    [Fact]
+    public async Task Organisme_et_employe_ne_se_modifient_pas_depuis_la_fiche()
+    {
+        var c = new ConsulterContact(new ContactsEnMemoire(), new DroitsFactices("admin.parametres", "admin.utilisateurs") { Titulaire = true });
+        Assert.False((await c.ExecuterAsync("organisme", 1, 9)).Modifiable);
+        Assert.False((await c.ExecuterAsync("employe", 1, 9)).Modifiable);
+        await Assert.ThrowsAsync<RegleMetierException>(() =>
+            new ModifierCoordonneesContact(new ContactsEnMemoire(), new DroitsFactices("admin.parametres"), new JournalEspion())
+                .ExecuterAsync("organisme", 1, null, "a@b.dz", null, 9));
+    }
+
+    [Fact]
+    public async Task Les_coordonnees_sont_controlees_nettoyees_et_journalisees()
+    {
+        var contacts = new ContactsEnMemoire();
+        var journal = new JournalEspion();
+        var m = new ModifierCoordonneesContact(contacts, new DroitsFactices("achats.commander"), journal);
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.ExecuterAsync("grossiste", 1, null, "pas-un-email", null, 9));
+        await m.ExecuterAsync("grossiste", 1, " 021 00 00 00 ", " ventes@grossiste.dz ", " Zone industrielle ", 9);
+        Assert.Equal(("grossiste", 1L, new CoordonneesContact("021 00 00 00", "ventes@grossiste.dz", "Zone industrielle")), contacts.Modifie);
+        Assert.Contains("coordonnees_modifiees", journal.Actions);
+    }
+
+    [Fact]
+    public async Task Un_patient_n_a_pas_d_adresse_et_l_e_mail_reste_facultatif()
+    {
+        var contacts = new ContactsEnMemoire();
+        await new ModifierCoordonneesContact(contacts, new DroitsFactices("caisse.vendre"), new JournalEspion())
+            .ExecuterAsync("patient", 1, "0555 00 00 00", "", "rue X", 9);
+        Assert.Equal(new CoordonneesContact("0555 00 00 00", null, null), contacts.Modifie?.C);
+    }
+
+    [Fact]
+    public async Task Un_telephone_repris_hors_format_n_empeche_pas_d_ajouter_l_e_mail()
+    {
+        var contacts = new ContactsEnMemoire { TelephoneActuel = "0555/12.34.56 (soir)" };
+        var m = new ModifierCoordonneesContact(contacts, new DroitsFactices("caisse.vendre"), new JournalEspion());
+        await m.ExecuterAsync("patient", 1, "0555/12.34.56 (soir)", "patient@exemple.dz", null, 9);
+        Assert.Equal(new CoordonneesContact("0555/12.34.56 (soir)", "patient@exemple.dz", null), contacts.Modifie?.C);
+        // Un nouveau numéro saisi est contrôlé
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.ExecuterAsync("patient", 1, "abc", null, null, 9));
+    }
+
+    [Fact]
+    public async Task Modifier_un_grossiste_demande_le_droit_de_commander() =>
+        await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            new ModifierCoordonneesContact(new ContactsEnMemoire(), new DroitsFactices("caisse.vendre"), new JournalEspion())
+                .ExecuterAsync("grossiste", 1, null, null, null, 9));
 
     [Fact]
     public async Task Type_inconnu_ou_contact_disparu_refuses()

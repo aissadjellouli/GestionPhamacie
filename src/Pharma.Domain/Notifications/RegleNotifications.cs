@@ -85,13 +85,13 @@ public static partial class RegleDestinataire
     public static void Verifier(string? nom, string? email, string? telephone, bool canalEmail, bool canalSms, IReadOnlyCollection<TypeNotification> types)
     {
         if (string.IsNullOrWhiteSpace(nom))
-            throw new RegleMetierException("Le nom du destinataire est obligatoire.");
+            throw new RegleMetierException("Le nom du destinataire est obligatoire.", "nom_destinataire");
         if (!canalEmail && !canalSms)
             throw new RegleMetierException("Choisissez au moins un canal : e-mail ou SMS.");
         if (canalEmail && (email is null || !FormatEmail().IsMatch(email.Trim())))
-            throw new RegleMetierException("Adresse e-mail invalide.");
+            throw new RegleMetierException("Adresse e-mail invalide.", "email");
         if (canalSms && (telephone is null || !FormatMobile().IsMatch(NormaliserTelephone(telephone))))
-            throw new RegleMetierException("Numéro de mobile invalide : 05, 06 ou 07 suivi de 8 chiffres, ou +213.");
+            throw new RegleMetierException("Numéro de mobile invalide : 05, 06 ou 07 suivi de 8 chiffres, ou +213.", "telephone");
         if (types.Count == 0)
             throw new RegleMetierException("Choisissez au moins un type de message.");
         if (types.Contains(TypeNotification.Test))

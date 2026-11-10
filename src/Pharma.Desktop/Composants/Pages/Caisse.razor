@@ -382,17 +382,18 @@
                     else
                     {
                         <div class="sous-formulaire">
-                            <input type="text" aria-label="Nom (obligatoire)" placeholder="Nom *" @ref="champNomPatient" @bind="np.Nom" @bind:event="oninput"
+                            <input type="text" aria-label="Nom (obligatoire)" data-champ="nom_patient" placeholder="Nom *" @ref="champNomPatient" @bind="np.Nom" @bind:event="oninput"
                                    class="@Obligatoire.Classe(NomPatientManquant)" aria-invalid="@Obligatoire.Aria(NomPatientManquant)" />
                             @if (NomPatientManquant) { <span class="message-champ">Le nom du patient est obligatoire.</span> }
                             <input type="text" aria-label="Prénom" placeholder="Prénom" @bind="np.Prenom" />
-                            <input type="text" aria-label="Téléphone" placeholder="Téléphone" @bind="np.Telephone" />
+                            <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" @bind="np.Telephone" />
+                            <input type="email" aria-label="E-mail (facultatif)" data-champ="email" placeholder="E-mail" maxlength="120" @bind="np.Email" />
                             <input type="text" aria-label="N° d’assuré" placeholder="N° d’assuré" @bind="np.NumAssure" />
                             <select class="selection" aria-label="Organisme" @bind="np.OrganismeId">
                                 <option value="0">Sans organisme</option>
                                 @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
                             </select>
-                            <input type="number" min="0" aria-label="Plafond de crédit (DA)" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
+                            <input type="number" min="0" aria-label="Plafond de crédit (DA)" data-champ="plafond" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
                             <div class="actions">
                                 <button type="button" class="btn btn-principal" @onclick="CreerPatientAsync">Créer</button>
                                 <button type="button" class="btn" @onclick="() => (nouveauPatient, controlePatient) = (false, false)">Annuler</button>
@@ -422,7 +423,7 @@
                         }
                         else
                         {
-                            <input type="search" aria-label="Rechercher le médecin prescripteur" placeholder="Médecin prescripteur" autocomplete="off" aria-invalid="@Obligatoire.Aria(MedecinManquant)"
+                            <input type="search" aria-label="Rechercher le médecin prescripteur" data-champ="nom_medecin" placeholder="Médecin prescripteur" autocomplete="off" aria-invalid="@Obligatoire.Aria(MedecinManquant)"
                                    @bind="medecinTexte" @bind:event="oninput" @bind:after="RechercherMedecinsAsync" />
                             @if (medecins.Count > 0)
                             {
@@ -570,6 +571,7 @@
         public string Nom { get; set; } = "";
         public string? Prenom { get; set; }
         public string? Telephone { get; set; }
+        public string? Email { get; set; }
         public string? NumAssure { get; set; }
         public long OrganismeId { get; set; }
         public decimal Plafond { get; set; }
@@ -1144,7 +1146,7 @@
             return;
         }
         var saisie = new NouveauPatientDto(np.Nom, np.Prenom, np.Telephone, np.NumAssure,
-            np.OrganismeId > 0 ? np.OrganismeId : null, np.Plafond);
+            np.OrganismeId > 0 ? np.OrganismeId : null, np.Plafond, np.Email);
         var (cree, err) = await Api.CreerPatientAsync(saisie);
         if (err is not null) { erreurEncaissement = err; return; }
         var organisme = organismes.FirstOrDefault(o => o.Id == np.OrganismeId);

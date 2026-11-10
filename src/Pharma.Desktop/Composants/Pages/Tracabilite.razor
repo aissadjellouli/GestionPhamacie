@@ -75,7 +75,7 @@
             {
                 <div class="champ recherche">
                     <label for="r-prod" class="requis">Produit</label>
-                    <input id="r-prod" type="search" autocomplete="off" disabled="@etape2" @ref="champProduit"
+                    <input id="r-prod" data-champ="produit_rappel" type="search" autocomplete="off" disabled="@etape2" @ref="champProduit"
                            class="@Obligatoire.Classe(ProduitManquant)" aria-invalid="@Obligatoire.Aria(ProduitManquant)"
                            @bind="produitTexte" @bind:event="oninput" @bind:after="RechercherProduitAsync" />
                     @if (ProduitManquant) { <span class="message-champ">Choisissez le produit dans la liste proposée.</span> }
@@ -93,9 +93,9 @@
                         </ul>
                     }
                 </div>
-                <div class="champ"><label for="r-lot" class="requis">Numéro de lot</label><input id="r-lot" type="text" @ref="champLot" @bind="numeroLot" @bind:event="oninput" disabled="@etape2"
+                <div class="champ"><label for="r-lot" class="requis">Numéro de lot</label><input id="r-lot" data-champ="lot_rappel" type="text" @ref="champLot" @bind="numeroLot" @bind:event="oninput" disabled="@etape2"
                     class="@Obligatoire.Classe(LotManquant)" aria-invalid="@Obligatoire.Aria(LotManquant)" /></div>
-                <div class="champ"><label for="r-motif" class="requis">Motif</label><input id="r-motif" type="text" @ref="champMotif" @bind="motif" @bind:event="oninput" disabled="@etape2"
+                <div class="champ"><label for="r-motif" class="requis">Motif</label><input id="r-motif" data-champ="motif_rappel" type="text" @ref="champMotif" @bind="motif" @bind:event="oninput" disabled="@etape2"
                     class="@Obligatoire.Classe(MotifManquant)" aria-invalid="@Obligatoire.Aria(MotifManquant)" placeholder="Ex. rappel du laboratoire, suspicion de contrefaçon" /></div>
 
                 @if (erreurRappel is not null) { <div class="erreur" role="alert">@erreurRappel</div> }

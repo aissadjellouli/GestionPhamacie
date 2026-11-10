@@ -65,14 +65,37 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `039_suivi_dettes.sql` | Suivi des dettes et créances de tous les tiers : `fournisseur_mouvement` (relevé de la dette envers chaque grossiste, écrit par le déclencheur `trg_fournisseur_dette`, contexte posé par `dette_fournisseur_contexte()`, non modifiable) ; `parametre_caisse.delai_alerte_dette_jours` (ancienneté signalée, 30 jours par défaut) ; vue `v_suivi_dettes` (une ligne par somme due : patients, factures clients, bordereaux d'organismes, factures de grossistes, effets à échéance) |
 | `040_facture_echeance.sql` | Factures clients : `facture_client.date_echeance` (date d'échéance, obligatoire pour une facture, jamais avant la date d'établissement `date_facture` ; pas d'échéance pour un avoir ; factures existantes : établissement + 30 jours) ; `v_suivi_dettes` porte l'échéance des factures (une facture est en retard quand son échéance est dépassée). `v_facture_client` n'est pas modifiée : l'échéance se lit dans la table |
 | `041_contacts.sql` | Coordonnées : `utilisateur.telephone` et `utilisateur.email` (employé, saisis dans « Utilisateurs et droits ») ; `organisme.telephone` et `organisme.email` (saisis dans « Factures › Organismes »). Colonnes facultatives, affichées dans la fiche contact |
+| `042_email_tiers.sql` | E-mail facultatif des grossistes (`fournisseur.email`), des entreprises clientes (`client_facture.email`) et des patients (`patient.email`) : saisi à la création ou depuis la fiche contact, signalé « à compléter » tant qu'il manque |
+| `043_historique_factures.sql` | Historique des factures clients intouchable : aucune facture ni aucun avoir ne peut être supprimé, une facture remplacée et ses lignes ne peuvent plus être modifiées, une version archivée (`facture_client_version`) ne peut être ni modifiée ni supprimée (déclencheurs `trg_historique_facture*`) |
 
-Pour une nouvelle évolution : ajouter un script `041_...sql` idempotent, et dans la même modification régénérer `init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges --no-comments` d'une base où tous les scripts ont été rejoués dans l'ordre) et compléter `init/seed_referentiel.sql` s'il ajoute des données de référence. Les scripts se rejouent **tous, dans l'ordre** : rejouer un ancien script seul peut ramener une fonction ou une vue à une version antérieure. Dans une vue, nommer les colonnes une à une (pas de `table.*`) et ne jamais ajouter de colonne à une vue définie par un script antérieur : le rejeu de l'ancien script échouerait.
+### Règle permanente : tout script est répliqué dans `init/`
+
+**Toute modification de la base passe par un script numéroté idempotent, et la même modification met à jour les scripts
+d'installation :**
+
+1. **Structure** (table, colonne, contrainte, index, vue, fonction, déclencheur) : `init/schema.sql` est régénéré à partir
+   d'une base où tous les scripts ont été rejoués dans l'ordre, et son en-tête cite le dernier script couvert (« 001 à NNN »).
+2. **Référentiel** (rôles, permissions et droits par défaut, paramètres, organismes de départ, substances surveillées, comptes
+   de trésorerie de départ, et toute donnée qu'une pharmacie neuve doit trouver) : `init/seed_referentiel.sql` reçoit les
+   mêmes valeurs, réexécutables (`ON CONFLICT`, `NOT EXISTS`), et son en-tête cite le dernier script couvert.
+3. Ne vont **pas** dans `init/` : les données de démonstration (`data/9xx`) et les migrations ponctuelles de données existantes
+   (reprise d'un ancien solde, recalcul d'une colonne) : une base neuve n'a rien à migrer.
+
+Contrôle avant de livrer : `init/schema.sql` identique (hors en-tête) à un `pg_dump --schema-only` des bases rejouées, et
+référentiel des bases (permissions, rôles, droits de départ, substances, organismes de départ, coffre) identique au seed — un
+réglage fait ensuite dans l'application (ex. remise maximale changée par le titulaire) n'est pas un écart.
+
+Contrôle automatique : `tests/Pharma.Architecture.Tests/ScriptsInitTests.cs` échoue si les en-têtes de `schema.sql` et du seed ne citent
+pas le dernier script, si une table, une vue, une fonction ou une colonne créée par un script manque dans `schema.sql`, ou si
+une permission du logiciel (`Pharma.Domain.Securite.Permissions`) manque dans un script numéroté ou dans le seed.
+
+Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dans la même modification régénérer `init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges --no-comments` d'une base où tous les scripts ont été rejoués dans l'ordre) et compléter `init/seed_referentiel.sql` s'il ajoute des données de référence. Les scripts se rejouent **tous, dans l'ordre** : rejouer un ancien script seul peut ramener une fonction ou une vue à une version antérieure. Dans une vue, nommer les colonnes une à une (pas de `table.*`) et ne jamais ajouter de colonne à une vue définie par un script antérieur : le rejeu de l'ancien script échouerait.
 
 ### Installation neuve : `database/init/`
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 041, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 043, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

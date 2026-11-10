@@ -76,12 +76,12 @@
             @if (s.Solde > 0)
             {
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 0 0 170px"><label for="r-date" class="requis">Date</label><input id="r-date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="date" /></div>
+                    <div class="champ" style="flex: 0 0 170px"><label for="r-date" class="requis">Date</label><input id="r-date" data-champ="date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="date" /></div>
                     <div class="champ" style="flex: 0 0 180px"><label for="r-montant" class="requis">Montant (DA)</label>
-                        <input id="r-montant" type="number" min="0.01" step="0.01" @bind="montant" class="@Obligatoire.Classe(MontantManque)" aria-invalid="@Obligatoire.Aria(MontantManque)" /></div>
+                        <input id="r-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montant" class="@Obligatoire.Classe(MontantManque)" aria-invalid="@Obligatoire.Aria(MontantManque)" /></div>
                     <div class="champ" style="flex: 0 0 170px">
                         <label for="r-moyen" class="requis">Moyen</label>
-                        <select id="r-moyen" @bind="moyen">
+                        <select data-champ="moyen" id="r-moyen" @bind="moyen">
                             <option value="especes">Espèces</option><option value="cheque">Chèque</option>
                             <option value="virement">Virement</option><option value="effet">Effet / traite</option>
                         </select>
@@ -108,7 +108,7 @@
                     @if (moyen == "effet")
                     {
                         <div class="champ" style="flex: 0 0 170px"><label for="r-echeance" class="requis">Échéance</label>
-                            <input id="r-echeance" type="date" @bind="echeance" class="@Obligatoire.Classe(EcheanceManque)" aria-invalid="@Obligatoire.Aria(EcheanceManque)" /></div>
+                            <input id="r-echeance" data-champ="echeance" type="date" @bind="echeance" class="@Obligatoire.Classe(EcheanceManque)" aria-invalid="@Obligatoire.Aria(EcheanceManque)" /></div>
                     }
                 </div>
                 @if (moyen == "especes")
@@ -117,7 +117,7 @@
                         <label class="case"><input type="checkbox" @bind="avecTiroir" /><span>Compléter avec le tiroir de la caisse</span></label>
                         @if (avecTiroir)
                         {
-                            <div class="champ" style="flex: 0 0 200px"><label for="r-tiroir">Pris dans le tiroir (DA)</label><input id="r-tiroir" type="number" min="0" step="0.01" @bind="partTiroir" /></div>
+                            <div class="champ" style="flex: 0 0 200px"><label for="r-tiroir">Pris dans le tiroir (DA)</label><input id="r-tiroir" data-champ="tiroir" type="number" min="0" step="0.01" @bind="partTiroir" /></div>
                             <span class="detail">Le reste (@Libelles.Dinars(Math.Max(0, montant - partTiroir), 2)) vient du coffre. Seule la part du tiroir diminue l’attendu de la caisse ouverte.</span>
                         }
                     </div>

@@ -16,7 +16,7 @@ internal static class PatientsEndpoints
 
         api.MapPost("/patients", async (NouveauPatientDto req, CreerPatient creer, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await creer.ExecuterAsync(new NouveauPatient(
-                    req.Nom, req.Prenom, req.Telephone, req.NumAssure, req.OrganismeId, req.PlafondCredit), ct))))
+                    req.Nom, req.Prenom, req.Telephone, req.NumAssure, req.OrganismeId, req.PlafondCredit, req.Email), ct))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         api.MapGet("/medecins", async (string? q, RechercherMedecins rechercher, CancellationToken ct) =>

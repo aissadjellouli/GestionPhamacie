@@ -21,13 +21,17 @@
 
         @if (r is not null)
         {
+            @if (baseSauvegardee is not null)
+            {
+                <div class="info-bandeau" role="status">Base de données sauvegardée : <strong>@baseSauvegardee</strong>@(serveurBase is { } sv ? $" · serveur {sv}" : "")</div>
+            }
             <section class="panneau" aria-labelledby="t-reg">
                 <h2 id="t-reg">Réglages</h2>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 2 1 280px"><label for="s-dossier" class="@(r.Actif ? "requis" : null)">Dossier sur le disque externe</label><input id="s-dossier" type="text" placeholder="ex. E:\SauvegardesPharmacie" @ref="champDossier" @bind="r.Dossier" @bind:event="oninput"
+                    <div class="champ" style="flex: 2 1 280px"><label for="s-dossier" class="@(r.Actif ? "requis" : null)">Dossier sur le disque externe</label><input id="s-dossier" data-champ="dossier" type="text" placeholder="ex. E:\SauvegardesPharmacie" @ref="champDossier" @bind="r.Dossier" @bind:event="oninput"
                         class="@Obligatoire.Classe(DossierManque)" aria-invalid="@Obligatoire.Aria(DossierManque)" /></div>
                     <div class="champ" style="flex: 0 0 150px"><label for="s-heure">Heure</label><input id="s-heure" type="time" @bind="r.Heure" /></div>
-                    <div class="champ" style="flex: 0 0 200px"><label for="s-garde">Sauvegardes conservées</label><input id="s-garde" type="number" min="1" max="365" @bind="r.Conservation" /></div>
+                    <div class="champ" style="flex: 0 0 200px"><label for="s-garde">Sauvegardes conservées</label><input id="s-garde" data-champ="conservation" type="number" min="1" max="365" @bind="r.Conservation" /></div>
                 </div>
                 <label class="case"><input type="checkbox" @bind="r.Actif" /><span>Sauvegarde automatique chaque jour</span></label>
                 <p class="detail" style="margin: 0">Format pg_dump (restauration avec pg_restore). Dernière sauvegarde automatique : @(derniere is { } d ? Libelles.Date(d) : "jamais").</p>
@@ -68,7 +72,7 @@
     private DateOnly? derniere;
     private List<EntreeSauvegardeDto> journal = [];
     private bool enCours;
-    private string? erreur, message;
+    private string? erreur, message, baseSauvegardee, serveurBase;
 
     protected override Task OnInitializedAsync() => ChargerAsync();
 
@@ -78,6 +82,7 @@
         if (e is not null) { erreur = e; return; }
         r = new Reglages { Actif = etat!.Reglages.Actif, Dossier = etat.Reglages.Dossier, Heure = etat.Reglages.Heure, Conservation = etat.Reglages.Conservation };
         derniere = etat.Reglages.DerniereExecution;
+        (baseSauvegardee, serveurBase) = (etat.Base, etat.Serveur);
         journal = etat.Journal.ToList();
     }
 

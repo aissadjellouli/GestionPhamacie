@@ -30,8 +30,11 @@ public sealed record MotifRequete(string? Motif);
 public sealed record AvoirClientRequete(decimal Montant, string? Motif);
 public sealed record SuiviRequete(bool HorsSuivi, string? Motif);
 
+/// <summary>Événement de la chronologie d'une facture.</summary>
+public sealed record EvenementFactureDto(DateTime Date, string Libelle, string? Detail, string? Employe, long? EmployeId, decimal? Montant);
+
 public sealed record ClientFactureDto(long? Id, string RaisonSociale, string? Adresse, string? Telephone, string? Nif, string? Rc, string? Nis,
-    string? ArticleImposition, bool Actif);
+    string? ArticleImposition, bool Actif, string? Email = null);
 
 public sealed record OrganismeFicheDto(long? Id, string Code, string Nom, string? Adresse, string? Nif, bool Actif, string? Telephone = null, string? Email = null);
 

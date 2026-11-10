@@ -148,7 +148,7 @@
                             <strong>Vente sans patient identifié.</strong> Avant de rendre l’argent, demandez au patient s’il a un crédit en cours à la pharmacie.
                             S’il accepte de donner son nom ou son téléphone, recherchez-le : le logiciel vérifie sa dette.
                             <div style="display: flex; gap: 8px; margin-top: 8px">
-                                <input type="search" aria-label="Nom ou téléphone du patient" placeholder="Nom ou téléphone du patient" @bind="rechercheDette" @bind:event="oninput" @onkeydown="ToucheRechercheDette" style="flex: 1" />
+                                <input type="search" data-champ="recherche_patient" aria-label="Nom ou téléphone du patient" placeholder="Nom ou téléphone du patient" @bind="rechercheDette" @bind:event="oninput" @onkeydown="ToucheRechercheDette" style="flex: 1" />
                                 <button type="button" class="btn" disabled="@enCours" @onclick="ChercherPatientDetteAsync">Vérifier sa dette</button>
                             </div>
                             @if (patientDette is { } pd)
@@ -244,7 +244,7 @@
     private async Task ChercherPatientDetteAsync()
     {
         (erreur, patientDette, solderDette) = (null, null, null);
-        if ((rechercheDette?.Trim().Length ?? 0) < 2) { erreur = "Tapez au moins 2 caractères du nom ou du téléphone du patient."; return; }
+        if ((rechercheDette?.Trim().Length ?? 0) < 2) { erreur = Api.SignalerChamp("recherche_patient", "Tapez au moins 2 caractères du nom ou du téléphone du patient."); return; }
         string? e;
         (patientsTrouves, e) = await Api.RechercherPatientsAsync(rechercheDette!.Trim());
         if (e is not null) { erreur = e; return; }

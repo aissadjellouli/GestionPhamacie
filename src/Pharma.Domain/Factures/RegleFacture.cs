@@ -118,7 +118,7 @@ public static class RegleFacture
     {
         if (type != "facture") throw new RegleMetierException("Un avoir ne se rejette pas.");
         if (statut != "emise") throw new RegleMetierException("Seule une facture émise peut être rejetée.");
-        if (string.IsNullOrWhiteSpace(motif)) throw new RegleMetierException("Indiquez le motif du rejet.");
+        if (string.IsNullOrWhiteSpace(motif)) throw new RegleMetierException("Indiquez le motif du rejet.", "motif");
     }
 
     /// <summary>Correction sur place ou remplacement : seulement après un rejet.</summary>
@@ -127,20 +127,30 @@ public static class RegleFacture
         if (statut != "rejetee") throw new RegleMetierException("Seule une facture rejetée peut être corrigée ou remplacée.");
     }
 
+    /// <summary>Une facture rejetée puis payée en entier est soldée : il n'y a plus rien à corriger ni à remplacer.</summary>
+    public static void VerifierReprise(string statut, decimal reste)
+    {
+        VerifierReprise(statut);
+        if (reste <= 0) throw new RegleMetierException("Cette facture a été payée en entier après son rejet : elle est soldée, il n'y a plus rien à corriger.");
+    }
+
+    /// <summary>État affiché d'une facture rejetée : « soldée » dès qu'elle est payée en entier (le rejet reste dans son historique).</summary>
+    public static bool RejetLeve(string statut, decimal reste, bool horsSuivi) => statut == "rejetee" && reste <= 0 && !horsSuivi;
+
     /// <summary>Avoir : sur une facture émise, motif obligatoire, au plus le montant encore non couvert par d'autres avoirs.</summary>
     public static void VerifierAvoir(string type, string statut, decimal montantFacture, decimal avoirsDeja, decimal montant, string? motif)
     {
         if (type != "facture" || statut == "remplacee") throw new RegleMetierException("Un avoir se fait sur une facture en vigueur.");
-        if (string.IsNullOrWhiteSpace(motif)) throw new RegleMetierException("Indiquez le motif de l’avoir.");
-        if (montant <= 0) throw new RegleMetierException("Le montant de l’avoir doit être supérieur à 0.");
+        if (string.IsNullOrWhiteSpace(motif)) throw new RegleMetierException("Indiquez le motif de l’avoir.", "motif");
+        if (montant <= 0) throw new RegleMetierException("Le montant de l’avoir doit être supérieur à 0.", "montant_avoir");
         if (montant > montantFacture - avoirsDeja)
-            throw new RegleMetierException($"L’avoir dépasse ce qui reste de la facture ({montantFacture - avoirsDeja:N2} DA).");
+            throw new RegleMetierException($"L’avoir dépasse ce qui reste de la facture ({montantFacture - avoirsDeja:N2} DA).", "montant_avoir");
     }
 
     /// <summary>Retrait du suivi de trésorerie : motif obligatoire (la facture reste valable et imprimable).</summary>
     public static void VerifierHorsSuivi(bool retirer, string? motif)
     {
-        if (retirer && string.IsNullOrWhiteSpace(motif)) throw new RegleMetierException("Indiquez pourquoi la facture sort du suivi.");
+        if (retirer && string.IsNullOrWhiteSpace(motif)) throw new RegleMetierException("Indiquez pourquoi la facture sort du suivi.", "motif");
     }
 
     /// <summary>Règlements imputés aux factures choisies, dans l'ordre, au plus le reste de chacune.</summary>

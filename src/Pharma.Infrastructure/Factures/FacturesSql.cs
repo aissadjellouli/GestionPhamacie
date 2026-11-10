@@ -230,7 +230,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
                OR ($3 = 'echues' AND type = 'facture' AND statut <> 'remplacee' AND NOT hors_suivi AND reste > 0
                    AND (SELECT fe.date_echeance FROM facture_client fe WHERE fe.id = v_facture_client.id) < CURRENT_DATE)
                OR ($3 = 'soldees' AND type = 'facture' AND statut <> 'remplacee' AND reste = 0)
-               OR ($3 = 'rejetees' AND statut = 'rejetee')
+               OR ($3 = 'rejetees' AND statut = 'rejetee' AND reste > 0)
                OR ($3 = 'hors_suivi' AND hors_suivi)
                OR ($3 = 'avoirs' AND type = 'avoir'))
           AND ($4::date IS NULL OR date_facture >= $4)
@@ -295,6 +295,47 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetString(11), r.GetInt32(12), r.GetBoolean(13), Txt(r, 14),
         Txt(r, 15), Txt(r, 16), Txt(r, 17), Txt(r, 18), Nl(r, 19), r.IsDBNull(30) ? null : DateOnly.FromDateTime(r.GetDateTime(30)),
         Nl(r, 20), Nl(r, 21));
+
+    public async Task<IReadOnlyList<EvenementFacture>> HistoriqueAsync(long id, CancellationToken ct = default)
+    {
+        // Émission (ou remplacement), rejets, corrections, suivi : table et journal ; remplacement, avoirs, règlements : leurs lignes
+        await using var cmd = db.CreateCommand("""
+            SELECT date, libelle, detail, employe, employe_id, montant FROM (
+                SELECT f.cree_le AS date,
+                       CASE WHEN f.type = 'avoir' THEN 'Avoir émis' WHEN r.numero IS NOT NULL THEN 'Émise en remplacement de ' || r.numero ELSE 'Émise' END AS libelle,
+                       NULL::text AS detail, u.nom_complet AS employe, f.utilisateur_id AS employe_id, f.montant_ttc AS montant
+                FROM facture_client f LEFT JOIN facture_client r ON r.id = f.remplace_id LEFT JOIN utilisateur u ON u.id = f.utilisateur_id
+                WHERE f.id = $1
+                UNION ALL
+                SELECT j.cree_le,
+                       CASE j.action WHEN 'facture_rejetee' THEN 'Rejetée' WHEN 'facture_corrigee' THEN 'Corrigée (nouvelle version, l''ancienne est archivée)'
+                                     WHEN 'facture_hors_suivi' THEN 'Retirée du suivi de trésorerie' ELSE 'Remise dans le suivi de trésorerie' END,
+                       j.details->>'motif', u.nom_complet, j.utilisateur_id, NULL
+                FROM journal_audit j LEFT JOIN utilisateur u ON u.id = j.utilisateur_id
+                WHERE j.table_cible = 'facture_client' AND j.enregistrement_id = $1
+                  AND j.action IN ('facture_rejetee', 'facture_corrigee', 'facture_hors_suivi', 'facture_remise_en_suivi')
+                UNION ALL
+                SELECT n.cree_le, 'Remplacée par ' || n.numero, NULL, u.nom_complet, n.utilisateur_id, n.montant_ttc
+                FROM facture_client n LEFT JOIN utilisateur u ON u.id = n.utilisateur_id WHERE n.remplace_id = $1
+                UNION ALL
+                SELECT a.cree_le, 'Avoir ' || a.numero, a.motif, u.nom_complet, a.utilisateur_id, a.montant_ttc
+                FROM facture_client a LEFT JOIN utilisateur u ON u.id = a.utilisateur_id WHERE a.facture_origine_id = $1 AND a.type = 'avoir'
+                UNION ALL
+                SELECT m.cree_le, CASE m.nature WHEN 'versement_organisme' THEN 'Payée par l''organisme' ELSE 'Règlement reçu' END,
+                       NULLIF(concat_ws(' · ', c.nom, m.reference), ''), u.nom_complet, m.utilisateur_id, rf.montant
+                FROM reglement_facture_client rf JOIN mouvement_tresorerie m ON m.id = rf.mouvement_id
+                JOIN compte_tresorerie c ON c.id = m.compte_id LEFT JOIN utilisateur u ON u.id = m.utilisateur_id
+                WHERE rf.facture_id = $1
+            ) h
+            ORDER BY date
+            """);
+        cmd.Parameters.AddWithValue(id);
+        var liste = new List<EvenementFacture>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            liste.Add(new EvenementFacture(r.GetDateTime(0), r.GetString(1), Txt(r, 2), Txt(r, 3), Nl(r, 4), r.IsDBNull(5) ? null : r.GetDecimal(5)));
+        return liste;
+    }
 
     public async Task<FactureDetail?> DetailAsync(long id, int? version, CancellationToken ct = default)
     {
@@ -426,26 +467,27 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
     public async Task<IReadOnlyList<ClientFacture>> ClientsAsync(CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(
-            "SELECT id, raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif FROM client_facture ORDER BY NOT actif, raison_sociale");
+            "SELECT id, raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif, email FROM client_facture ORDER BY NOT actif, raison_sociale");
         var liste = new List<ClientFacture>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
-            liste.Add(new ClientFacture(r.GetInt64(0), r.GetString(1), Txt(r, 2), Txt(r, 3), Txt(r, 4), Txt(r, 5), Txt(r, 6), Txt(r, 7), r.GetBoolean(8)));
+            liste.Add(new ClientFacture(r.GetInt64(0), r.GetString(1), Txt(r, 2), Txt(r, 3), Txt(r, 4), Txt(r, 5), Txt(r, 6), Txt(r, 7), r.GetBoolean(8), Txt(r, 9)));
         return liste;
     }
 
     public async Task<long> EnregistrerClientAsync(ClientFacture c, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(c.Id is null
-            ? "INSERT INTO client_facture (raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif) VALUES ($2, $3, $4, $5, $6, $7, $8, $9) RETURNING id"
+            ? "INSERT INTO client_facture (raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif, email) VALUES ($2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id"
             : """
-              UPDATE client_facture SET raison_sociale = $2, adresse = $3, telephone = $4, nif = $5, rc = $6, nis = $7, article_imposition = $8, actif = $9
+              UPDATE client_facture SET raison_sociale = $2, adresse = $3, telephone = $4, nif = $5, rc = $6, nis = $7, article_imposition = $8, actif = $9, email = $10
               WHERE id = $1 RETURNING id
               """);
         cmd.Parameters.Add(Long(c.Id));
         cmd.Parameters.AddWithValue(c.RaisonSociale);
         foreach (var v in new[] { c.Adresse, c.Telephone, c.Nif, c.Rc, c.Nis, c.ArticleImposition }) cmd.Parameters.Add(Texte(v));
         cmd.Parameters.AddWithValue(c.Actif);
+        cmd.Parameters.Add(Texte(c.Email));
         try { return (long)(await cmd.ExecuteScalarAsync(ct))!; }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {

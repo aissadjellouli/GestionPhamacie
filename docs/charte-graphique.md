@@ -88,6 +88,33 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 - Le détail d'un élément d'une liste s'ouvre dans une fenêtre au-dessus de la liste (`.voile` et un panneau), fermée par
   « Fermer », la touche Échap, ou un clic à côté quand aucune saisie n'est en cours.
 
+## Erreurs de saisie
+
+- Un champ obligatoire vide ou invalide passe en rouge (`Obligatoire.Classe` et `aria-invalid="true"`), et le message d'erreur
+  s'affiche dans un bloc `.erreur` (`role="alert"`).
+- L'erreur est toujours mise sous les yeux, sur tous les écrans, par `wwwroot/js/erreurs.js` : après un clic, l'écran défile
+  jusqu'au premier champ en rouge, y place le curseur et affiche le message dans une bulle à côté ; sans champ en rouge, il
+  défile jusqu'au message, qui clignote. Un écran n'a rien à ajouter pour en profiter : il lui suffit de marquer ses champs
+  avec `aria-invalid` et d'afficher ses messages avec la classe `.erreur`.
+- **Erreurs du serveur** : une règle qui vise un champ le désigne (`throw new RegleMetierException(message, "montant")`) ; la réponse
+  d'erreur porte ce nom (`ErreurDto.Champ`) et le poste met en rouge le champ qui porte `data-champ="montant"` (dans la fenêtre
+  ouverte au premier plan, sinon dans la page). Un contrôle fait sur le poste sans aller au serveur passe par le même chemin :
+  `erreur = Api.SignalerChamp("montant", "…")`. Noms en minuscules avec soulignés (`montant`, `email`, `motif`, `nom_patient`…).
+- **Tout champ obligatoire** (libellé `requis`) porte `aria-invalid` (contrôle sur le poste) ou `data-champ` (désigné par le
+  serveur) ; et tout nom de champ utilisé par le serveur existe en `data-champ` sur un écran. Les deux règles sont vérifiées par
+  `tests/Pharma.Architecture.Tests/ChampsObligatoiresTests.cs`.
+
+## Barre d'état
+
+- Une bande fixe de 32 px en bas de la fenêtre, sur tous les écrans et tous les postes (`Composants/Mise/BarreEtat.razor`) : liaison
+  avec le serveur, caisse du poste, dernière sauvegarde, version, date et heure. Le nom de la base n'y figure pas : il est affiché à
+  titre d'information dans Administration › Sauvegardes. Avant la connexion :
+  liaison au serveur et version seulement.
+- Texte en 13 px gris (information secondaire) ; seuls les états anormaux ressortent : serveur injoignable et sauvegarde échouée
+  en rouge, caisse ouverte depuis un autre jour, sauvegarde absente, désactivée ou plus vieille qu'hier en orange.
+- Un clic ouvre l'écran correspondant, selon les droits : caisse (ouverte : relève et clôture ; fermée : caisse), sauvegarde
+  (Administration › Sauvegardes) ; un clic sur le serveur le revérifie aussitôt.
+
 ## Tiers et fiche contact
 
 - **Tout nom de tiers affiché dans une ligne est cliquable** : patient, grossiste, organisme, entreprise cliente, employé. On

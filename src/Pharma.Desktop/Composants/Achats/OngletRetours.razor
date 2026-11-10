@@ -22,7 +22,7 @@
         </div>
         <div class="champ" style="flex: 1 1 200px">
             <label for="rt-motif" class="requis">Motif</label>
-            <select id="rt-motif" @bind="motif">
+            <select data-champ="motif_retour" id="rt-motif" @bind="motif">
                 @foreach (var (codeMotif, libelle) in Libelles.MotifsRetour)
                 {
                     <option value="@codeMotif">@libelle</option>

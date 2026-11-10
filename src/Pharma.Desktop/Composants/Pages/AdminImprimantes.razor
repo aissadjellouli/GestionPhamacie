@@ -65,7 +65,7 @@
             <div class="achats-ligne">
                 <div class="champ" style="flex: 0 1 280px">
                     <label for="i-etiq">Adresse IP de l’imprimante d’étiquettes</label>
-                    <input id="i-etiq" type="text" inputmode="decimal" placeholder="ex. 192.168.1.50" @bind="v.ImprimanteEtiquettes" @bind:event="oninput" />
+                    <input id="i-etiq" data-champ="ip_etiquettes" type="text" inputmode="decimal" placeholder="ex. 192.168.1.50" @bind="v.ImprimanteEtiquettes" @bind:event="oninput" />
                 </div>
             </div>
             <p class="detail" style="margin: 0">Envoi direct en ZPL (port 9100). Laissez vide pour n’utiliser que la planche PDF à imprimer.</p>
@@ -189,7 +189,7 @@
         (erreur, message) = (null, null);
         if (Saisie().ImprimanteEtiquettes is { } ip && !System.Net.IPAddress.TryParse(ip, out _))
         {
-            erreur = "Adresse IP de l’imprimante d’étiquettes invalide (ex. 192.168.1.50).";
+            erreur = Api.SignalerChamp("ip_etiquettes", "Adresse IP de l’imprimante d’étiquettes invalide (ex. 192.168.1.50).");
             return;
         }
         erreur = Reglages.Enregistrer(Saisie());

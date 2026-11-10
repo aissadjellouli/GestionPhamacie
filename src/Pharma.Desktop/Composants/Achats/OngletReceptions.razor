@@ -40,7 +40,7 @@ else
         <div class="achats-ligne">
             <div class="champ" style="flex: 1 1 200px">
                 <label for="r-gros" class="requis">Grossiste</label>
-                <select id="r-gros" @bind="fournisseurId" @bind:after="ChoisirFournisseurAsync" disabled="@(lignes.Count > 0)">
+                <select data-champ="grossiste" id="r-gros" @bind="fournisseurId" @bind:after="ChoisirFournisseurAsync" disabled="@(lignes.Count > 0)">
                     <option value="0">Choisir…</option>
                     @foreach (var f in fournisseurs)
                     {

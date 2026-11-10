@@ -20,13 +20,13 @@
         <form class="carte" style="display: flex; flex-direction: column; gap: 12px" @onsubmit="EnregistrerAsync">
             <div class="champ">
                 <label for="nouveau-code" class="requis">Nouveau code (4 à 6 chiffres)</label>
-                <input id="nouveau-code" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="new-password"
+                <input id="nouveau-code" data-champ="code_comptoir" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="new-password"
                        onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
                        @bind="code" @bind:event="oninput" class="@Obligatoire.Classe(CodeManque)" aria-invalid="@Obligatoire.Aria(CodeManque)" />
             </div>
             <div class="champ">
                 <label for="confirmation" class="requis">Confirmez le code</label>
-                <input id="confirmation" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="new-password"
+                <input id="confirmation" data-champ="confirmation_code" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="new-password"
                        onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
                        @bind="confirmation" @bind:event="oninput" class="@Obligatoire.Classe(ConfirmationManque)" aria-invalid="@Obligatoire.Aria(ConfirmationManque)" />
             </div>
@@ -53,7 +53,7 @@
         (controle, erreur, message) = (true, null, null);
         if (CodeManque || ConfirmationManque) { erreur = "Saisissez le code deux fois."; return; }
         if (CodeComptoirSaisie.Erreur(code, nouveauCode: true) is { } invalide) { erreur = invalide; return; }
-        if (code != confirmation) { erreur = "Les deux codes sont différents."; return; }
+        if (code != confirmation) { erreur = Api.SignalerChamp("confirmation_code", "Les deux codes sont différents."); return; }
         enCours = true;
         erreur = await Api.DefinirCodeComptoirAsync(code);
         enCours = false;

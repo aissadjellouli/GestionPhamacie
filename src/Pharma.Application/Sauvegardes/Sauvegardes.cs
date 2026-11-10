@@ -46,7 +46,7 @@ public sealed class LancerSauvegarde(ISauvegardesDepot depot, IStockageSauvegard
     {
         var r = await depot.ReglagesAsync(ct);
         if (string.IsNullOrWhiteSpace(r.Dossier))
-            throw new RegleMetierException("Choisissez d’abord le dossier de sauvegarde (disque externe).");
+            throw new RegleMetierException("Choisissez d’abord le dossier de sauvegarde (disque externe).", "dossier");
         var declenchement = automatique ? "automatique" : "manuel";
         var debut = horloge.MaintenantUtc;
 
@@ -119,9 +119,9 @@ public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal
     {
         var d = string.IsNullOrWhiteSpace(dossier) ? null : dossier.Trim();
         if (d is not null && !Path.IsPathFullyQualified(d))
-            throw new RegleMetierException("Indiquez un chemin complet, par exemple E:\\SauvegardesPharmacie.");
-        if (actif && d is null) throw new RegleMetierException("Choisissez le dossier avant d’activer les sauvegardes.");
-        if (conservation is < 1 or > 365) throw new RegleMetierException("Nombre de sauvegardes conservées entre 1 et 365.");
+            throw new RegleMetierException("Indiquez un chemin complet, par exemple E:\\SauvegardesPharmacie.", "dossier");
+        if (actif && d is null) throw new RegleMetierException("Choisissez le dossier avant d’activer les sauvegardes.", "dossier");
+        if (conservation is < 1 or > 365) throw new RegleMetierException("Nombre de sauvegardes conservées entre 1 et 365.", "conservation");
         await depot.EnregistrerReglagesAsync(actif, d, heure, conservation, ct);
         await journal.EcrireAsync(utilisateurId, "reglages_sauvegarde", "parametre_sauvegarde", 1,
             new Dictionary<string, object?> { ["actif"] = actif, ["dossier"] = d, ["heure"] = heure.ToString("HH:mm"), ["conservation"] = conservation },

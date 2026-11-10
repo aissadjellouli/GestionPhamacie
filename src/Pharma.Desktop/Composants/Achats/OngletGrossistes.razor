@@ -6,13 +6,14 @@
 }
 <section class="tableau-cadre" aria-label="Grossistes">
     <table class="tableau" style="min-width: 0">
-        <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">Dette (solde)</th><th scope="col">Délai de reprise</th></tr></thead>
+        <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">E-mail</th><th scope="col">Dette (solde)</th><th scope="col">Délai de reprise</th></tr></thead>
         <tbody>
             @foreach (var f in fournisseurs)
             {
                 <tr>
                     <td class="nom"><LienContact Type="grossiste" Id="f.Id" Nom="@f.RaisonSociale" /></td>
                     <td>@(f.Telephone ?? "—")</td>
+                    <td>@if (f.Email is { } mail) { @mail } else { <span class="pastille attention">à compléter</span> }</td>
                     <td>@Libelles.Dinars(f.Solde, 2)</td>
                     <td>@(f.DelaiRepriseJours is { } j ? $"{j} jours avant péremption" : "non renseigné")</td>
                 </tr>
@@ -20,7 +21,7 @@
         </tbody>
     </table>
 </section>
-<p class="detail" style="margin: 0">La dette augmente du montant TTC de chaque réception et diminue de chaque avoir reçu. Le règlement des factures grossistes n’est pas encore géré.</p>
+<p class="detail" style="margin: 0">La dette augmente du montant TTC de chaque réception et diminue de chaque avoir et de chaque règlement. Pour compléter le téléphone, l’e-mail ou l’adresse d’un grossiste, ouvrez sa fiche en cliquant sur son nom.</p>
 
 @code {
     private List<FournisseurDto> fournisseurs = [];

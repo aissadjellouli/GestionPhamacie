@@ -18,7 +18,7 @@ public static class CodeComptoir
     public static void VerifierFormat(string? code)
     {
         if (code is null || code.Length is < 4 or > 6 || !code.All(char.IsAsciiDigit))
-            throw new RegleMetierException("Le code comptoir doit compter 4 à 6 chiffres.");
+            throw new RegleMetierException("Le code comptoir doit compter 4 à 6 chiffres.", "code_comptoir");
         if (code.Distinct().Count() == 1)
             throw new RegleMetierException("Code trop simple : évitez les chiffres tous identiques.");
         var montant = code.Zip(code.Skip(1), (a, b) => b - a).Distinct().ToList();

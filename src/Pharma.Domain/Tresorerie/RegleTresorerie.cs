@@ -36,33 +36,33 @@ public static class RegleTresorerie
     {
         VerifierMontantEtDate(montant, date, aujourdhui, departCompte);
         if (nature == NatureMouvement.Depense && !Categories.Any(c => c.Code == categorie))
-            throw new RegleMetierException("Choisissez la catégorie de la dépense.");
+            throw new RegleMetierException("Choisissez la catégorie de la dépense.", "categorie");
         if (nature == NatureMouvement.VersementOrganisme && organismeId is null)
-            throw new RegleMetierException("Choisissez l’organisme qui a versé (CNAS, CASNOS…).");
+            throw new RegleMetierException("Choisissez l’organisme qui a versé (CNAS, CASNOS…).", "organisme");
         if (nature != NatureMouvement.VersementOrganisme && string.IsNullOrWhiteSpace(libelle))
-            throw new RegleMetierException("Indiquez le libellé du mouvement.");
+            throw new RegleMetierException("Indiquez le libellé du mouvement.", "libelle");
     }
 
     public static void VerifierMontantEtDate(decimal montant, DateOnly date, DateOnly aujourdhui, DateOnly departCompte)
     {
-        if (montant <= 0) throw new RegleMetierException("Le montant doit être supérieur à 0.");
-        if (decimal.Round(montant, 2) != montant) throw new RegleMetierException("Le montant compte au plus deux décimales.");
-        if (date > aujourdhui) throw new RegleMetierException("La date ne peut pas être dans le futur.");
+        if (montant <= 0) throw new RegleMetierException("Le montant doit être supérieur à 0.", "montant");
+        if (decimal.Round(montant, 2) != montant) throw new RegleMetierException("Le montant compte au plus deux décimales.", "montant");
+        if (date > aujourdhui) throw new RegleMetierException("La date ne peut pas être dans le futur.", "date");
         if (date < departCompte)
-            throw new RegleMetierException($"La date précède le départ du compte ({departCompte:dd/MM/yyyy}) : elle ne compterait pas dans son solde.");
+            throw new RegleMetierException($"La date précède le départ du compte ({departCompte:dd/MM/yyyy}) : elle ne compterait pas dans son solde.", "date");
     }
 
     /// <summary>Un transfert relie deux comptes différents, tous deux actifs.</summary>
     public static void VerifierTransfert(long de, long vers)
     {
-        if (de == vers) throw new RegleMetierException("Choisissez deux comptes différents.");
+        if (de == vers) throw new RegleMetierException("Choisissez deux comptes différents.", "compte_vers");
     }
 
     /// <summary>Argent versé au coffre depuis une caisse clôturée : au plus ce qui a été compté.</summary>
     public static void VerifierVersementCaisse(decimal montant, decimal compte)
     {
-        if (montant <= 0) throw new RegleMetierException("Le montant versé doit être supérieur à 0.");
-        if (montant > compte) throw new RegleMetierException($"Le versement dépasse l’argent compté à la clôture ({compte:N2} DA).");
+        if (montant <= 0) throw new RegleMetierException("Le montant versé doit être supérieur à 0.", "montant");
+        if (montant > compte) throw new RegleMetierException($"Le versement dépasse l’argent compté à la clôture ({compte:N2} DA).", "montant");
     }
 
     /// <summary>Automatique : compté moins le fond par défaut (laissé au tiroir pour le lendemain), jamais négatif.</summary>

@@ -32,8 +32,8 @@ public static class RegleReglement
 
     public static void Verifier(decimal montant, MoyenReglement moyen, string? reference, DateOnly? echeance, decimal partTiroir, DateOnly dateReglement, DateOnly aujourdhui)
     {
-        if (montant <= 0) throw new RegleMetierException("Le montant réglé doit être supérieur à 0.");
-        if (dateReglement > aujourdhui) throw new RegleMetierException("La date du règlement ne peut pas être dans le futur.");
+        if (montant <= 0) throw new RegleMetierException("Le montant réglé doit être supérieur à 0.", "montant");
+        if (dateReglement > aujourdhui) throw new RegleMetierException("La date du règlement ne peut pas être dans le futur.", "date");
         if (moyen != MoyenReglement.Especes && string.IsNullOrWhiteSpace(reference))
             throw new RegleMetierException(moyen switch
             {
@@ -41,10 +41,10 @@ public static class RegleReglement
                 MoyenReglement.Virement => "Indiquez la référence du virement.",
                 _ => "Indiquez le n° de l’effet."
             });
-        if (moyen == MoyenReglement.Effet && echeance is null) throw new RegleMetierException("Indiquez la date d’échéance de l’effet.");
-        if (partTiroir < 0) throw new RegleMetierException("Le complément pris dans le tiroir ne peut pas être négatif.");
+        if (moyen == MoyenReglement.Effet && echeance is null) throw new RegleMetierException("Indiquez la date d’échéance de l’effet.", "echeance");
+        if (partTiroir < 0) throw new RegleMetierException("Le complément pris dans le tiroir ne peut pas être négatif.", "tiroir");
         if (partTiroir > 0 && moyen != MoyenReglement.Especes) throw new RegleMetierException("Seul un paiement en espèces peut être complété par le tiroir de la caisse.");
-        if (partTiroir > montant) throw new RegleMetierException("Le complément pris dans le tiroir dépasse le montant réglé.");
+        if (partTiroir > montant) throw new RegleMetierException("Le complément pris dans le tiroir dépasse le montant réglé.", "tiroir");
     }
 
     /// <summary>Montant réparti sur les factures, des plus anciennes aux plus récentes ; le surplus reste « non imputé ».</summary>
@@ -71,7 +71,7 @@ public static class RegleReglement
             if (!restes.TryGetValue(id, out var r)) throw new RegleMetierException("Facture inconnue pour ce grossiste.");
             if (m > r) throw new RegleMetierException($"Une facture n’a plus que {r:N2} DA à payer.");
         }
-        if (imputations.Sum(i => i.Montant) > montant) throw new RegleMetierException("Le total imputé aux factures dépasse le montant réglé.");
+        if (imputations.Sum(i => i.Montant) > montant) throw new RegleMetierException("Le total imputé aux factures dépasse le montant réglé.", "montant");
     }
 }
 

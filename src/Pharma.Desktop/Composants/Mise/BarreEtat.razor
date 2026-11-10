@@ -1,0 +1,138 @@
+@implements IDisposable
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject NavigationManager Nav
+
+@* Barre d'état en bas de la fenêtre (charte graphique, « Barre d'état ») : liaison au serveur, caisse du poste, dernière
+   sauvegarde, version, date et heure. Un clic ouvre l'écran correspondant.
+   Avant la connexion : liaison au serveur et version seulement. *@
+<footer class="barre-etat" aria-label="État du poste">
+    <button type="button" class="element-etat @(serveurJoignable == false ? "anormal" : null)" title="Vérifier la liaison avec le serveur maintenant"
+            @onclick="VerifierServeurAsync">
+        <span class="voyant @(serveurJoignable switch { true => "ok", false => "ko", _ => null })" aria-hidden="true"></span>
+        @(serveurJoignable switch { true => "Serveur connecté", false => "Serveur injoignable", _ => "Serveur…" })
+    </button>
+
+    @if (Session.EstConnecte && etat is { } e)
+    {
+        @if (Session.A("caisse.vendre"))
+        {
+            <button type="button" class="element-etat @(CaisseAncienne ? "attention" : null)" title="@(e.CaisseSessionId is null ? "Ouvrir la caisse" : "Relève et clôture de la caisse")"
+                    @onclick="@(() => Nav.NavigateTo(e.CaisseSessionId is null ? "caisse" : "cloture"))">
+                @LibelleCaisse
+            </button>
+        }
+        @if (Session.A("admin.sauvegardes"))
+        {
+            <button type="button" class="element-etat @ClasseSauvegarde" title="Sauvegardes" @onclick="@(() => Nav.NavigateTo("admin/sauvegardes"))">@LibelleSauvegarde</button>
+        }
+        else
+        {
+            <span class="element-etat @ClasseSauvegarde">@LibelleSauvegarde</span>
+        }
+    }
+
+    <span class="element-etat droite">v@(Version) · @maintenant.ToString("ddd dd/MM/yyyy · HH:mm", Fr)</span>
+</footer>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+    private static readonly string Version = typeof(BarreEtat).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "?";
+
+    private bool? serveurJoignable;
+    private EtatPosteDto? etat;
+    private DateTime maintenant = DateTime.Now;
+    private PeriodicTimer? minuterie;
+    private int tours;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += SurNavigation;
+        Session.Changee += SurSession;
+        await ActualiserAsync(complet: true);
+        _ = BouclerAsync();
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= SurNavigation;
+        Session.Changee -= SurSession;
+        minuterie?.Dispose();
+    }
+
+    // Serveur et heure toutes les 15 secondes ; caisse et sauvegarde toutes les minutes (et à chaque changement d'écran)
+    private async Task BouclerAsync()
+    {
+        minuterie = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        try
+        {
+            while (await minuterie.WaitForNextTickAsync())
+                await InvokeAsync(async () => { await ActualiserAsync(complet: ++tours % 4 == 0); StateHasChanged(); });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task ActualiserAsync(bool complet)
+    {
+        maintenant = DateTime.Now;
+        serveurJoignable = await Api.ServeurJoignableAsync();
+        if (complet && serveurJoignable == true && Session.EstConnecte)
+        {
+            var (e, erreur) = await Api.EtatPosteAsync();
+            if (erreur is null) etat = e;
+        }
+        if (!Session.EstConnecte) etat = null;
+    }
+
+    private async Task VerifierServeurAsync()
+    {
+        serveurJoignable = null;
+        StateHasChanged();
+        await ActualiserAsync(complet: true);
+    }
+
+    private void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
+        _ = InvokeAsync(async () => { await ActualiserAsync(complet: true); StateHasChanged(); });
+
+    private void SurSession() => _ = InvokeAsync(async () => { await ActualiserAsync(complet: true); StateHasChanged(); });
+
+    // ---- Libellés ----
+    private static DateTime Local(DateTime d) => d.Kind == DateTimeKind.Utc ? d.ToLocalTime() : d;
+
+    /// <summary>Caisse ouverte un autre jour qu'aujourd'hui : signalée (clôture oubliée).</summary>
+    private bool CaisseAncienne => etat?.CaisseOuverteLe is { } o && Local(o).Date < DateTime.Today;
+
+    private string LibelleCaisse => etat?.CaisseOuverteLe is { } o
+        ? Local(o).Date == DateTime.Today ? $"Caisse ouverte depuis {Local(o):HH:mm}" : $"Caisse ouverte depuis le {Local(o):dd/MM à HH:mm}"
+        : "Caisse fermée";
+
+    private string LibelleSauvegarde
+    {
+        get
+        {
+            if (etat is null) return "";
+            var quand = etat.DerniereSauvegarde is { } d ? Quand(Local(d)) : null;
+            return (etat.SauvegardeActive, etat.StatutSauvegarde) switch
+            {
+                (_, null) => etat.SauvegardeActive ? "Sauvegarde : jamais faite" : "Sauvegarde automatique désactivée",
+                (_, "reussie") => $"Sauvegarde : {quand} ✓" + (etat.SauvegardeActive ? "" : " (automatique désactivée)"),
+                (_, "disque_absent") => $"Sauvegarde : disque absent {quand}",
+                _ => $"Sauvegarde échouée {quand}"
+            };
+        }
+    }
+
+    private string? ClasseSauvegarde => etat switch
+    {
+        null => null,
+        { StatutSauvegarde: "echouee" or "disque_absent" } => "anormal",
+        { StatutSauvegarde: null } or { SauvegardeActive: false } => "attention",
+        { DerniereSauvegarde: { } d } when Local(d).Date < DateTime.Today.AddDays(-1) => "attention",   // plus vieille qu'hier
+        _ => null
+    };
+
+    private static string Quand(DateTime d) =>
+        d.Date == DateTime.Today ? $"aujourd’hui {d:HH:mm}"
+        : d.Date == DateTime.Today.AddDays(-1) ? $"hier {d:HH:mm}"
+        : $"le {d:dd/MM à HH:mm}";
+}

@@ -25,11 +25,11 @@
                     <div class="champ" style="flex: 2 1 220px"><label for="n-serveur" class="@(string.IsNullOrWhiteSpace(r.SmtpExpediteur) ? null : "requis")">Serveur SMTP</label><input id="n-serveur" type="text" placeholder="ex. smtp.fournisseur.dz" @ref="champServeur" @bind="r.SmtpServeur" @bind:event="oninput"
                         class="@Obligatoire.Classe(ServeurManquant)" aria-invalid="@Obligatoire.Aria(ServeurManquant)" />
                         @if (ServeurManquant) { <span class="message-champ">Avec une adresse d’expéditeur, le serveur SMTP est obligatoire.</span> }</div>
-                    <div class="champ" style="flex: 0 0 110px"><label for="n-port">Port</label><input id="n-port" type="number" min="1" max="65535" @bind="r.SmtpPort" /></div>
+                    <div class="champ" style="flex: 0 0 110px"><label for="n-port">Port</label><input id="n-port" data-champ="smtp_port" type="number" min="1" max="65535" @bind="r.SmtpPort" /></div>
                     <label class="case" style="flex: 0 0 auto; align-self: center"><input type="checkbox" @bind="r.SmtpTls" /><span>Connexion chiffrée (TLS)</span></label>
                 </div>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 1 1 220px"><label for="n-exp" class="@(string.IsNullOrWhiteSpace(r.SmtpServeur) ? null : "requis")">Adresse de l’expéditeur</label><input id="n-exp" type="email" @ref="champExpediteur" @bind="r.SmtpExpediteur" @bind:event="oninput"
+                    <div class="champ" style="flex: 1 1 220px"><label for="n-exp" class="@(string.IsNullOrWhiteSpace(r.SmtpServeur) ? null : "requis")">Adresse de l’expéditeur</label><input id="n-exp" data-champ="smtp_expediteur" type="email" @ref="champExpediteur" @bind="r.SmtpExpediteur" @bind:event="oninput"
                         class="@Obligatoire.Classe(ExpediteurManquant)" aria-invalid="@Obligatoire.Aria(ExpediteurManquant)" />
                         @if (ExpediteurManquant) { <span class="message-champ">Avec un serveur SMTP, l’adresse de l’expéditeur est obligatoire.</span> }</div>
                     <div class="champ" style="flex: 1 1 200px"><label for="n-id">Identifiant</label><input id="n-id" type="text" autocomplete="off" @bind="r.SmtpIdentifiant" /></div>
@@ -44,7 +44,7 @@
                 <h2 id="t-sms">SMS (modem GSM branché sur le serveur)</h2>
                 <div class="achats-ligne">
                     <div class="champ" style="flex: 0 0 160px"><label for="n-com">Port du modem</label><input id="n-com" type="text" placeholder="ex. COM3 ; vide = pas de SMS" @bind="r.ModemPort" /></div>
-                    <div class="champ" style="flex: 0 0 220px"><label for="n-seuil">SMS si écart de caisse au-delà de (DA)</label><input id="n-seuil" type="number" min="0" placeholder="seuil de la caisse" @bind="r.SmsSeuilEcart" /></div>
+                    <div class="champ" style="flex: 0 0 220px"><label for="n-seuil">SMS si écart de caisse au-delà de (DA)</label><input id="n-seuil" data-champ="sms_seuil" type="number" min="0" placeholder="seuil de la caisse" @bind="r.SmsSeuilEcart" /></div>
                     <div class="champ" style="flex: 0 0 180px"><label for="n-heure">Heure du rapport e-mail</label><input id="n-heure" type="time" @bind="r.HeureRapport" /></div>
                 </div>
                 <label class="case"><input type="checkbox" @bind="r.SmsLotBloque" /><span>SMS quand un lot est bloqué ou rappelé</span></label>
@@ -88,11 +88,11 @@
 
             <h3 style="margin: 8px 0 0">@(fiche.Id is null ? "Ajouter un destinataire" : $"Modifier {fiche.Nom}")</h3>
             <div class="achats-ligne">
-                <div class="champ" style="flex: 1 1 180px"><label for="d-nom" class="requis">Nom</label><input id="d-nom" type="text" @ref="champNomDest" @bind="fiche.Nom" @bind:event="oninput"
+                <div class="champ" style="flex: 1 1 180px"><label for="d-nom" class="requis">Nom</label><input id="d-nom" data-champ="nom_destinataire" type="text" @ref="champNomDest" @bind="fiche.Nom" @bind:event="oninput"
                     class="@Obligatoire.Classe(NomDestManquant)" aria-invalid="@Obligatoire.Aria(NomDestManquant)" /></div>
-                <div class="champ" style="flex: 1 1 220px"><label for="d-mail" class="@(fiche.CanalEmail ? "requis" : null)">E-mail</label><input id="d-mail" type="email" @ref="champMail" @bind="fiche.Email" @bind:event="oninput"
+                <div class="champ" style="flex: 1 1 220px"><label for="d-mail" class="@(fiche.CanalEmail ? "requis" : null)">E-mail</label><input id="d-mail" data-champ="email" type="email" @ref="champMail" @bind="fiche.Email" @bind:event="oninput"
                     class="@Obligatoire.Classe(MailManquant)" aria-invalid="@Obligatoire.Aria(MailManquant)" /></div>
-                <div class="champ" style="flex: 1 1 160px"><label for="d-tel" class="@(fiche.CanalSms ? "requis" : null)">Mobile</label><input id="d-tel" type="tel" placeholder="06 61 00 00 00" @ref="champTel" @bind="fiche.Telephone" @bind:event="oninput"
+                <div class="champ" style="flex: 1 1 160px"><label for="d-tel" class="@(fiche.CanalSms ? "requis" : null)">Mobile</label><input id="d-tel" data-champ="telephone" type="tel" placeholder="06 61 00 00 00" @ref="champTel" @bind="fiche.Telephone" @bind:event="oninput"
                     class="@Obligatoire.Classe(TelManquant)" aria-invalid="@Obligatoire.Aria(TelManquant)" /></div>
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px 18px">

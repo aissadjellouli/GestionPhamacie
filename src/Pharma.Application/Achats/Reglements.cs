@@ -75,7 +75,7 @@ public sealed class EnregistrerReglement(IReglementsFournisseurs reglements, ISe
         RegleReglement.Verifier(montant, m, reference, echeance, partTiroir, jour, horloge.Aujourdhui);
         var situation = await reglements.SituationAsync(fournisseurId, ct) ?? throw new RegleMetierException("Grossiste introuvable.");
         if (montant > Math.Max(situation.Solde, 0) + 0.005m)
-            throw new RegleMetierException($"Le montant dépasse la dette envers {situation.Nom} ({situation.Solde:N2} DA).");
+            throw new RegleMetierException($"Le montant dépasse la dette envers {situation.Nom} ({situation.Solde:N2} DA).", "montant");
 
         var restes = situation.Factures.ToDictionary(f => f.ReceptionId, f => f.Reste);
         IReadOnlyList<(long, decimal)> lignes = imputations is { Count: > 0 }

@@ -62,6 +62,8 @@ public class DependancesTests
 
     private static string RacineDepot()
     {
+        // Compilation hors du dépôt (dossier de sortie séparé) : le chemin du dépôt peut être donné par PHARMA_RACINE_DEPOT
+        if (Environment.GetEnvironmentVariable("PHARMA_RACINE_DEPOT") is { Length: > 0 } racine) return racine;
         var dossier = new DirectoryInfo(AppContext.BaseDirectory);
         while (dossier is not null && !File.Exists(Path.Combine(dossier.FullName, "PharmaOfficine.slnx")))
             dossier = dossier.Parent;

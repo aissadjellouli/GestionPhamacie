@@ -14,12 +14,12 @@
     @if (edition is { } e)
     {
         <div class="achats-ligne">
-            <div class="champ" style="flex: 0 0 120px"><label for="o-code" class="requis">Sigle</label><input id="o-code" type="text" maxlength="20" @bind="e.Code" /></div>
-            <div class="champ" style="flex: 1 1 260px"><label for="o-nom" class="requis">Nom</label><input id="o-nom" type="text" @bind="e.Nom" /></div>
+            <div class="champ" style="flex: 0 0 120px"><label for="o-code" class="requis">Sigle</label><input id="o-code" data-champ="sigle" type="text" maxlength="20" @bind="e.Code" /></div>
+            <div class="champ" style="flex: 1 1 260px"><label for="o-nom" class="requis">Nom</label><input id="o-nom" data-champ="nom_organisme" type="text" @bind="e.Nom" /></div>
             <div class="champ" style="flex: 1 1 220px"><label for="o-adr">Adresse</label><input id="o-adr" type="text" @bind="e.Adresse" /></div>
             <div class="champ" style="flex: 0 0 180px"><label for="o-nif">NIF</label><input id="o-nif" type="text" @bind="e.Nif" /></div>
-            <div class="champ" style="flex: 0 0 180px"><label for="o-tel">Téléphone</label><input id="o-tel" type="tel" maxlength="30" @bind="e.Telephone" /></div>
-            <div class="champ" style="flex: 1 1 220px"><label for="o-mail">E-mail</label><input id="o-mail" type="email" maxlength="120" @bind="e.Email" /></div>
+            <div class="champ" style="flex: 0 0 180px"><label for="o-tel">Téléphone</label><input id="o-tel" data-champ="telephone" type="tel" maxlength="30" @bind="e.Telephone" /></div>
+            <div class="champ" style="flex: 1 1 220px"><label for="o-mail">E-mail</label><input id="o-mail" data-champ="email" type="email" maxlength="120" @bind="e.Email" /></div>
         </div>
         <label class="case"><input type="checkbox" @bind="e.Actif" /><span>Actif (proposé à la caisse)</span></label>
         <div class="filtres">

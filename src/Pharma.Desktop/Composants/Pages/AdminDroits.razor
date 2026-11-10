@@ -30,11 +30,11 @@
                     <div class="sous-formulaire" role="group" aria-label="@(fiche.Id is null ? "Nouvel utilisateur" : "Modifier l’utilisateur")">
                         <strong>@(fiche.Id is null ? "Nouvel utilisateur" : $"Modifier {fiche.Identifiant}")</strong>
                         <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px">
-                            <div class="champ"><label for="u-nom" class="requis">Nom complet</label><input id="u-nom" type="text" @ref="champNom" @bind="fiche.NomComplet" @bind:event="oninput"
+                            <div class="champ"><label for="u-nom" class="requis">Nom complet</label><input id="u-nom" data-champ="nom_employe" type="text" @ref="champNom" @bind="fiche.NomComplet" @bind:event="oninput"
                                 class="@Obligatoire.Classe(NomManque)" aria-invalid="@Obligatoire.Aria(NomManque)" /></div>
                             @if (fiche.Id is null)
                             {
-                                <div class="champ"><label for="u-id" class="requis">Identifiant de connexion</label><input id="u-id" type="text" autocomplete="off" @ref="champIdentifiant" @bind="fiche.Identifiant" @bind:event="oninput" placeholder="ex. amina.b"
+                                <div class="champ"><label for="u-id" class="requis">Identifiant de connexion</label><input id="u-id" data-champ="identifiant" type="text" autocomplete="off" @ref="champIdentifiant" @bind="fiche.Identifiant" @bind:event="oninput" placeholder="ex. amina.b"
                                     class="@Obligatoire.Classe(IdentifiantManque)" aria-invalid="@Obligatoire.Aria(IdentifiantManque)" /></div>
                             }
                             <div class="champ">
@@ -45,11 +45,11 @@
                             </div>
                             <div class="champ">
                                 <label for="u-mdp" class="@(fiche.Id is null ? "requis" : null)">@(fiche.Id is null ? "Mot de passe (8 caractères minimum)" : "Nouveau mot de passe (vide : inchangé)")</label>
-                                <input id="u-mdp" type="password" autocomplete="new-password" @ref="champMotDePasse" @bind="fiche.MotDePasse" @bind:event="oninput"
+                                <input id="u-mdp" data-champ="mot_de_passe" type="password" autocomplete="new-password" @ref="champMotDePasse" @bind="fiche.MotDePasse" @bind:event="oninput"
                                        class="@Obligatoire.Classe(MotDePasseManque)" aria-invalid="@Obligatoire.Aria(MotDePasseManque)" />
                             </div>
-                            <div class="champ"><label for="u-tel">Téléphone</label><input id="u-tel" type="tel" autocomplete="off" maxlength="30" @bind="fiche.Telephone" /></div>
-                            <div class="champ"><label for="u-mail">E-mail</label><input id="u-mail" type="email" autocomplete="off" maxlength="120" @bind="fiche.Email" /></div>
+                            <div class="champ"><label for="u-tel">Téléphone</label><input id="u-tel" data-champ="telephone" type="tel" autocomplete="off" maxlength="30" @bind="fiche.Telephone" /></div>
+                            <div class="champ"><label for="u-mail">E-mail</label><input id="u-mail" data-champ="email" type="email" autocomplete="off" maxlength="120" @bind="fiche.Email" /></div>
                         </div>
                         @if (etat.Roles.FirstOrDefault(r => r.Id == fiche.RoleId)?.Systeme == true)
                         {

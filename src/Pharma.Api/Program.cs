@@ -64,7 +64,7 @@ app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
         _ => (StatusCodes.Status500InternalServerError, "Erreur interne : voir le journal du serveur.")
     };
     ctx.Response.StatusCode = code;
-    await ctx.Response.WriteAsJsonAsync(new ErreurDto(message));
+    await ctx.Response.WriteAsJsonAsync(new ErreurDto(message, (ex as RegleMetierException)?.Champ));
 }));
 
 // Page du scanner mobile (wwwroot/mobile) : fichiers statiques, sans données

@@ -36,7 +36,7 @@
         <section class="panneau" aria-labelledby="t-compte">
             <h2 id="t-compte">@(e.Id is null ? "Nouvelle banque" : $"Modifier « {e.Nom} »")</h2>
             <div class="achats-ligne">
-                <div class="champ" style="flex: 1 1 200px"><label for="c-nom" class="requis">Nom du compte</label><input id="c-nom" type="text" @bind="e.Nom" placeholder="Ex. CPA agence centre" /></div>
+                <div class="champ" style="flex: 1 1 200px"><label for="c-nom" class="requis">Nom du compte</label><input id="c-nom" data-champ="nom_compte" type="text" @bind="e.Nom" placeholder="Ex. CPA agence centre" /></div>
                 @if (e.Type != "coffre")
                 {
                     <div class="champ" style="flex: 1 1 160px"><label for="c-banque">Banque</label><input id="c-banque" type="text" @bind="e.Banque" placeholder="CPA, BNA, BADR, CCP…" /></div>
@@ -135,28 +135,28 @@
                 @if (nature == "transfert")
                 {
                     <div class="champ" style="flex: 1 1 170px"><label for="m-de" class="requis">De</label>
-                        <select id="m-de" @bind="compteDe">@foreach (var c in Actifs) { <option value="@c.Id">@c.Nom (@Libelles.Dinars(c.Solde))</option> }</select></div>
+                        <select data-champ="compte" id="m-de" @bind="compteDe">@foreach (var c in Actifs) { <option value="@c.Id">@c.Nom (@Libelles.Dinars(c.Solde))</option> }</select></div>
                     <div class="champ" style="flex: 1 1 170px"><label for="m-vers" class="requis">Vers</label>
-                        <select id="m-vers" @bind="compteVers">@foreach (var c in Actifs) { <option value="@c.Id">@c.Nom</option> }</select></div>
+                        <select id="m-vers" data-champ="compte_vers" @bind="compteVers">@foreach (var c in Actifs) { <option value="@c.Id">@c.Nom</option> }</select></div>
                 }
                 else
                 {
                     <div class="champ" style="flex: 1 1 170px"><label for="m-compte" class="requis">@(nature == "depense" ? "Payé depuis" : "Versé sur")</label>
-                        <select id="m-compte" @bind="compteSaisie">@foreach (var c in Actifs) { <option value="@c.Id">@c.Nom (@Libelles.Dinars(c.Solde))</option> }</select></div>
+                        <select data-champ="compte" id="m-compte" @bind="compteSaisie">@foreach (var c in Actifs) { <option value="@c.Id">@c.Nom (@Libelles.Dinars(c.Solde))</option> }</select></div>
                 }
-                <div class="champ" style="flex: 0 0 160px"><label for="m-date" class="requis">Date</label><input id="m-date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="dateSaisie" /></div>
-                <div class="champ" style="flex: 0 0 160px"><label for="m-montant" class="requis">Montant (DA)</label><input id="m-montant" type="number" min="0.01" step="0.01" @bind="montant" /></div>
+                <div class="champ" style="flex: 0 0 160px"><label for="m-date" class="requis">Date</label><input id="m-date" data-champ="date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="dateSaisie" /></div>
+                <div class="champ" style="flex: 0 0 160px"><label for="m-montant" class="requis">Montant (DA)</label><input id="m-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montant" /></div>
             </div>
             @if (nature == "depense")
             {
                 <div class="champ"><label for="m-cat" class="requis">Catégorie</label>
-                    <select id="m-cat" @bind="categorie"><option value="">— choisir —</option>@foreach (var c in categories) { <option value="@c.Code">@c.Libelle</option> }</select></div>
+                    <select id="m-cat" data-champ="categorie" @bind="categorie"><option value="">— choisir —</option>@foreach (var c in categories) { <option value="@c.Code">@c.Libelle</option> }</select></div>
             }
             @if (nature == "versement_organisme")
             {
                 <div class="achats-ligne">
                     <div class="champ" style="flex: 0 0 160px"><label for="m-org" class="requis">Organisme</label>
-                        <select id="m-org" @bind="organismeId" @bind:after="() => bordereauId = 0"><option value="0">— choisir —</option>@foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }</select></div>
+                        <select id="m-org" data-champ="organisme" @bind="organismeId" @bind:after="() => bordereauId = 0"><option value="0">— choisir —</option>@foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }</select></div>
                     <div class="champ" style="flex: 1 1 220px"><label for="m-bord">Bordereau payé (facultatif)</label>
                         <select id="m-bord" @bind="bordereauId" @bind:after="ProposerMontantBordereau">
                             <option value="0">— aucun —</option>
@@ -165,14 +165,14 @@
                     @if (bordereauId > 0)
                     {
                         <div class="champ" style="flex: 0 0 180px"><label for="m-statut">Bordereau</label>
-                            <select id="m-statut" @bind="statutBordereau"><option value="paye">Payé en entier</option><option value="rejet_partiel">Rejet partiel</option></select></div>
+                            <select id="m-statut" data-champ="statut_bordereau" @bind="statutBordereau"><option value="paye">Payé en entier</option><option value="rejet_partiel">Rejet partiel</option></select></div>
                     }
                 </div>
             }
             @if (nature != "transfert")
             {
                 <div class="champ"><label for="m-lib" class="@(nature == "versement_organisme" ? null : "requis")">Libellé</label>
-                    <input id="m-lib" type="text" maxlength="200" @bind="libelle" placeholder="@(nature == "depense" ? "Ex. Facture Sonelgaz octobre" : nature == "encaissement" ? "Ex. Apport du titulaire" : "Facultatif : « Versement CNAS » par défaut")" /></div>
+                    <input id="m-lib" data-champ="libelle" type="text" maxlength="200" @bind="libelle" placeholder="@(nature == "depense" ? "Ex. Facture Sonelgaz octobre" : nature == "encaissement" ? "Ex. Apport du titulaire" : "Facultatif : « Versement CNAS » par défaut")" /></div>
             }
             @if (nature is "encaissement" or "versement_organisme" && FacturesProposees.Any())
             {

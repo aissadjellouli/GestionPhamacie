@@ -29,13 +29,16 @@ public sealed record FactureDetail(FactureResume Resume, long? PatientId, long? 
     decimal Ht, decimal Tva, string? Commentaire, string? Motif, string Employe, IReadOnlyList<LigneFacture> Lignes, IReadOnlyList<int> Versions,
     long? EmployeId = null);
 
+/// <summary>Un événement de la vie d'une facture : émission, rejet, correction, remplacement, avoir, règlement, retrait du suivi.</summary>
+public sealed record EvenementFacture(DateTime Date, string Libelle, string? Detail, string? Employe, long? EmployeId, decimal? Montant);
+
 public sealed record FiltreFactures(string? Recherche, string? Destinataire, string? Suivi, DateOnly? Du, DateOnly? Au);
 
 /// <summary>Page de factures ; TotalTtc et TotalReste portent sur toutes les factures qui répondent aux filtres, toutes pages confondues.</summary>
 public sealed record ListeFactures(Page<FactureResume> Page, decimal TotalTtc, decimal TotalReste);
 
 public sealed record ClientFacture(long? Id, string RaisonSociale, string? Adresse, string? Telephone, string? Nif, string? Rc, string? Nis,
-    string? ArticleImposition, bool Actif);
+    string? ArticleImposition, bool Actif, string? Email = null);
 
 public sealed record OrganismeFiche(long? Id, string Code, string Nom, string? Adresse, string? Nif, bool Actif, string? Telephone = null, string? Email = null);
 
@@ -54,6 +57,8 @@ public interface IFactures
     Task<ListeFactures> PageAsync(FiltreFactures filtre, DemandePage page, CancellationToken ct = default);
     /// <summary>Version null : la version en vigueur ; sinon une version précédente (correction après rejet).</summary>
     Task<FactureDetail?> DetailAsync(long id, int? version, CancellationToken ct = default);
+    /// <summary>Chronologie de la facture, de la plus ancienne à la plus récente (journal, versions, avoirs, règlements).</summary>
+    Task<IReadOnlyList<EvenementFacture>> HistoriqueAsync(long id, CancellationToken ct = default);
     Task RejeterAsync(long id, string motif, CancellationToken ct = default);
     /// <summary>Garde la version en vigueur dans l'historique, remplace contenu et totaux, version + 1, statut émise.</summary>
     Task CorrigerAsync(long id, FactureAEcrire f, string? motif, CancellationToken ct = default);
@@ -76,7 +81,7 @@ public sealed class ConsulterFactures(IFactures factures, IPermissionService dro
     {
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "préparer une facture", ct);
         var d = RegleFacture.Lire(destinataire);
-        if (au < du) throw new RegleMetierException("La date de fin précède la date de début.");
+        if (au < du) throw new RegleMetierException("La date de fin précède la date de début.", "periode_au");
         return await factures.CandidatesAsync(RegleFacture.Part(d), d == Destinataire.Patient ? patientId : null,
             d == Destinataire.Organisme ? organismeId : null, du, au, string.IsNullOrWhiteSpace(recherche) ? null : recherche.Trim(), ct);
     }
@@ -97,6 +102,12 @@ public sealed class ConsulterFactures(IFactures factures, IPermissionService dro
     {
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "consulter les factures", ct);
         return await factures.DetailAsync(id, version, ct) ?? throw new RegleMetierException("Facture introuvable.");
+    }
+
+    public async Task<IReadOnlyList<EvenementFacture>> HistoriqueAsync(long id, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "consulter les factures", ct);
+        return await factures.HistoriqueAsync(id, ct);
     }
 
     public async Task<IReadOnlyList<ClientFacture>> ClientsAsync(long utilisateurId, CancellationToken ct = default)
@@ -133,7 +144,7 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
     {
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "corriger une facture rejetée", ct);
         var ancienne = await Detail(id, ct);
-        RegleFacture.VerifierReprise(ancienne.Resume.Statut);
+        RegleFacture.VerifierReprise(ancienne.Resume.Statut, ancienne.Resume.Reste);
         var f = await PreparerAsync(MemeDestinataire(demande, ancienne), sauf: id, utilisateurId, ct);
         await factures.CorrigerAsync(id, f, string.IsNullOrWhiteSpace(motif) ? null : motif.Trim(), ct);
         await Journaliser(utilisateurId, "facture_corrigee", id, ancienne.Resume.Numero, f);
@@ -144,7 +155,7 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
     {
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "remplacer une facture rejetée", ct);
         var ancienne = await Detail(id, ct);
-        RegleFacture.VerifierReprise(ancienne.Resume.Statut);
+        RegleFacture.VerifierReprise(ancienne.Resume.Statut, ancienne.Resume.Reste);
         var f = await PreparerAsync(MemeDestinataire(demande, ancienne), sauf: id, utilisateurId, ct);
         var r = await factures.EmettreAsync(f, id, ct);
         await Journaliser(utilisateurId, "facture_remplacee", r.Id, r.Numero, f, ancienne.Resume.Numero);
@@ -184,12 +195,12 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
     public async Task<long> EnregistrerClientAsync(ClientFacture c, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "gérer les clients facturés", ct);
-        if (string.IsNullOrWhiteSpace(c.RaisonSociale)) throw new RegleMetierException("Indiquez la raison sociale.");
+        if (string.IsNullOrWhiteSpace(c.RaisonSociale)) throw new RegleMetierException("Indiquez la raison sociale.", "raison_sociale");
         static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         return await factures.EnregistrerClientAsync(c with
         {
             RaisonSociale = c.RaisonSociale.Trim(), Adresse = N(c.Adresse), Telephone = N(c.Telephone), Nif = N(c.Nif), Rc = N(c.Rc), Nis = N(c.Nis),
-            ArticleImposition = N(c.ArticleImposition)
+            ArticleImposition = N(c.ArticleImposition), Email = Contacts.RegleContact.Email(c.Email)
         }, ct);
     }
 
@@ -197,7 +208,8 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
     public async Task<long> EnregistrerOrganismeAsync(OrganismeFiche o, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "gérer les organismes", ct);
-        if (string.IsNullOrWhiteSpace(o.Code) || string.IsNullOrWhiteSpace(o.Nom)) throw new RegleMetierException("Indiquez le sigle et le nom de l’organisme.");
+        if (string.IsNullOrWhiteSpace(o.Code)) throw new RegleMetierException("Indiquez le sigle de l’organisme.", "sigle");
+        if (string.IsNullOrWhiteSpace(o.Nom)) throw new RegleMetierException("Indiquez le nom de l’organisme.", "nom_organisme");
         static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         var id = await factures.EnregistrerOrganismeAsync(o with { Code = o.Code.Trim().ToUpperInvariant(), Nom = o.Nom.Trim(), Adresse = N(o.Adresse), Nif = N(o.Nif),
             Telephone = Contacts.RegleContact.Telephone(o.Telephone), Email = Contacts.RegleContact.Email(o.Email) }, ct);
@@ -241,11 +253,11 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
 
         var dejaPaye = dest == Destinataire.Organisme || ventes.Count == 0 ? 0 : await factures.PayeAuComptoirAsync(ventes, ct);
         var date = d.Date ?? horloge.Aujourdhui;
-        if (date > horloge.Aujourdhui) throw new RegleMetierException("La date de la facture ne peut pas être dans le futur.");
+        if (date > horloge.Aujourdhui) throw new RegleMetierException("La date de la facture ne peut pas être dans le futur.", "date_facture");
         if (d.Du is { } du && d.Au is { } au && au < du) throw new RegleMetierException("La période facturée est inversée.");
         // Date d'échéance : celle saisie, sinon la date d'établissement plus le délai habituel ; jamais avant l'établissement
         var echeance = d.Echeance ?? date.AddDays(RegleFacture.DelaiEcheanceJours);
-        if (echeance < date) throw new RegleMetierException("La date d’échéance ne peut pas précéder la date d’établissement de la facture.");
+        if (echeance < date) throw new RegleMetierException("La date d’échéance ne peut pas précéder la date d’établissement de la facture.", "echeance");
         return new FactureAEcrire("facture", dest, dest == Destinataire.Patient ? idDest : null, dest == Destinataire.Entreprise ? idDest : null,
             dest == Destinataire.Organisme ? idDest : null, nom, infos, date, d.Du, d.Au, RegleFacture.Calculer(lignes), dejaPaye, lignes, null, null,
             string.IsNullOrWhiteSpace(d.Commentaire) ? null : d.Commentaire.Trim(), utilisateurId, echeance);

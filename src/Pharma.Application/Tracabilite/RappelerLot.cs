@@ -31,9 +31,9 @@ public sealed class RappelerLot(IRappelLot rappel, Notifications.IAlertesTitulai
     {
         var lot = numeroLot?.Trim();
         var raison = motif?.Trim();
-        if (produitId <= 0) throw new RegleMetierException("Choisissez le produit concerné par le rappel.");
-        if (string.IsNullOrEmpty(lot)) throw new RegleMetierException("Indiquez le numéro de lot rappelé.");
-        if (string.IsNullOrEmpty(raison)) throw new RegleMetierException("Indiquez le motif du rappel (il est inscrit au journal).");
+        if (produitId <= 0) throw new RegleMetierException("Choisissez le produit concerné par le rappel.", "produit_rappel");
+        if (string.IsNullOrEmpty(lot)) throw new RegleMetierException("Indiquez le numéro de lot rappelé.", "lot_rappel");
+        if (string.IsNullOrEmpty(raison)) throw new RegleMetierException("Indiquez le motif du rappel (il est inscrit au journal).", "motif_rappel");
 
         var r = await rappel.RappelerAsync(produitId, lot, raison, utilisateurId, ct)
                 ?? throw new RegleMetierException($"Aucun lot {lot} pour ce produit : vérifiez le numéro.");

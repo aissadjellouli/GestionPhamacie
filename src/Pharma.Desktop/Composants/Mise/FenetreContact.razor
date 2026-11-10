@@ -5,11 +5,12 @@
 @inject NavigationManager Nav
 
 @* Fenêtre unique de la fiche contact, posée dans la mise en page : coordonnées, situation, raccourcis vers les écrans du tiers.
-   Fermeture : « Fermer », la touche Échap ou un clic à côté (la fiche ne contient aucune saisie). *@
+   Coordonnées d'un patient, d'un grossiste ou d'une entreprise modifiables ici, selon les droits.
+   Fermeture : « Fermer », la touche Échap ou un clic à côté, sauf pendant une modification (pour ne pas perdre la saisie). *@
 @if (Fiches.Ouverte is { } o)
 {
     <div class="voile voile-contact" role="dialog" aria-modal="true" aria-labelledby="t-contact" tabindex="-1" @ref="fenetre"
-         @onkeydown="Touche" @onkeydown:stopPropagation="true" @onclick="Fiches.Fermer" @onclick:stopPropagation="true">
+         @onkeydown="Touche" @onkeydown:stopPropagation="true" @onclick="ClicACote" @onclick:stopPropagation="true">
         <section class="panneau fenetre-contact" @onclick:stopPropagation="true">
             <div class="titre-fenetre">
                 <div>
@@ -27,8 +28,29 @@
             {
                 <p class="vide" style="margin: 0">Chargement…</p>
             }
+            else if (saisie is not null)
+            {
+                <h3>Modifier les coordonnées</h3>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 180px"><label for="fc-tel">Téléphone</label>
+                        <input id="fc-tel" data-champ="telephone" type="tel" maxlength="30" @bind="saisie.Telephone" /></div>
+                    <div class="champ" style="flex: 1 1 240px"><label for="fc-mail">E-mail</label>
+                        <input id="fc-mail" data-champ="email" type="email" maxlength="120" @bind="saisie.Email" /></div>
+                </div>
+                @if (fiche.Type != "patient")
+                {
+                    <div class="champ"><label for="fc-adr">Adresse</label><input id="fc-adr" data-champ="adresse" type="text" maxlength="300" @bind="saisie.Adresse" /></div>
+                }
+                <p class="detail" style="margin: 0">Toutes ces informations sont facultatives ; l’e-mail est utile pour joindre @(fiche.Type == "patient" ? "le patient" : fiche.Type == "grossiste" ? "le grossiste" : "l’entreprise"). La modification est inscrite au journal.</p>
+                @if (erreurSaisie is not null) { <div class="erreur" role="alert">@erreurSaisie</div> }
+                <div class="filtres">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="() => (saisie, erreurSaisie) = (null, null)">Annuler</button>
+                </div>
+            }
             else
             {
+                @if (message is not null) { <div class="succes" role="status">@message</div> }
                 <h3>Coordonnées</h3>
                 @if (fiche.Coordonnees.Count == 0)
                 {
@@ -50,6 +72,9 @@
                                         break;
                                     case "email":
                                         <a href="@($"mailto:{i.Valeur}")">@i.Valeur</a>
+                                        break;
+                                    case "manquant":
+                                        <span class="pastille attention">@i.Valeur</span>
                                         break;
                                     default:
                                         @i.Valeur
@@ -76,9 +101,13 @@
                     </dl>
                 }
 
-                @if (Raccourcis.Count > 0)
+                @if (Raccourcis.Count > 0 || fiche.Modifiable)
                 {
                     <div class="filtres">
+                        @if (fiche.Modifiable)
+                        {
+                            <button type="button" class="btn" @onclick="Modifier">Modifier les coordonnées</button>
+                        }
                         @foreach (var (libelle, route) in Raccourcis)
                         {
                             <button type="button" class="btn" @onclick="() => Aller(route)">@libelle</button>
@@ -94,18 +123,49 @@
 @code {
     private ElementReference fenetre;
     private FicheContactDto? fiche;
-    private string? erreur, copie;
+    private string? erreur, copie, message, erreurSaisie;
     private (string Type, long Id)? chargee;
-    private bool aFocaliser;
+    private bool aFocaliser, enCours;
+
+    private sealed class Saisie
+    {
+        public string? Telephone { get; set; }
+        public string? Email { get; set; }
+        public string? Adresse { get; set; }
+    }
+    private Saisie? saisie;
+
+    private void Modifier()
+    {
+        if (fiche?.Saisie is not { } s) return;
+        (saisie, erreurSaisie, message, copie) = (new Saisie { Telephone = s.Telephone, Email = s.Email, Adresse = s.Adresse }, null, null, null);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (fiche is null || saisie is null) return;
+        (enCours, erreurSaisie) = (true, null);
+        try
+        {
+            var e = await Api.ModifierCoordonneesContactAsync(fiche.Type, fiche.Id, new CoordonneesContactDto(saisie.Telephone, saisie.Email, saisie.Adresse));
+            if (e is not null) { erreurSaisie = e; return; }
+            var (f, err) = await Api.ContactAsync(fiche.Type, fiche.Id);
+            (fiche, erreur, saisie, message) = (f ?? fiche, err, null, "Coordonnées enregistrées.");
+        }
+        finally { enCours = false; }
+    }
+
+    // Pendant une modification, un clic à côté ou Échap ne ferme pas la fiche : la saisie serait perdue
+    private void ClicACote() { if (saisie is null) Fiches.Fermer(); }
 
     protected override void OnInitialized() => Fiches.Changee += Rafraichir;
     public void Dispose() => Fiches.Changee -= Rafraichir;
 
     private void Rafraichir() => _ = InvokeAsync(async () =>
     {
-        if (Fiches.Ouverte is not { } o) { (fiche, erreur, copie, chargee) = (null, null, null, null); StateHasChanged(); return; }
+        if (Fiches.Ouverte is not { } o) { (fiche, erreur, copie, chargee, saisie, message, erreurSaisie) = (null, null, null, null, null, null, null); StateHasChanged(); return; }
         if (chargee == (o.Type, o.Id)) return;
-        (fiche, erreur, copie, chargee, aFocaliser) = (null, null, null, (o.Type, o.Id), true);
+        (fiche, erreur, copie, chargee, aFocaliser, saisie, message, erreurSaisie) = (null, null, null, (o.Type, o.Id), true, null, null, null);
         StateHasChanged();
         var (f, e) = await Api.ContactAsync(o.Type, o.Id);
         if (chargee != (o.Type, o.Id)) return;   // une autre fiche a été demandée entre-temps
@@ -120,7 +180,12 @@
         try { await fenetre.FocusAsync(); } catch (InvalidOperationException) { }
     }
 
-    private void Touche(KeyboardEventArgs e) { if (e.Key == "Escape") Fiches.Fermer(); }
+    private void Touche(KeyboardEventArgs e)
+    {
+        if (e.Key != "Escape") return;
+        if (saisie is not null) (saisie, erreurSaisie) = (null, null);   // Échap annule d'abord la modification
+        else Fiches.Fermer();
+    }
 
     private void Aller(string route)
     {
