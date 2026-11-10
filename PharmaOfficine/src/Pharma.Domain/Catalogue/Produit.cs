@@ -14,7 +14,8 @@ public class Produit
     public decimal? TarifReference { get; init; }
     public bool Remboursable { get; init; }
     public ClasseReglementaire Classe { get; init; } = ClasseReglementaire.Libre;
-    public int StockMinimum { get; init; }
+    /// <summary>Seuil d'alerte saisi (boîtes) ; null : seuil automatique.</summary>
+    public int? StockMinimum { get; init; }
     public bool Actif { get; init; } = true;
 
     /// <summary>Psychotropes et stupéfiants : inscription au registre obligatoire.</summary>

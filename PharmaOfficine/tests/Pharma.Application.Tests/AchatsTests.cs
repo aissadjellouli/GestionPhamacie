@@ -44,7 +44,12 @@ internal sealed class AchatsEnMemoire : IAchats
     public Task<IReadOnlyList<Fournisseur>> FournisseursAsync(CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<CommandeResume>> CommandesAsync(int limite, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<SuggestionCommande>> SuggestionsAsync(CancellationToken ct = default) => throw new NotSupportedException();
-    public Task<(long Id, string Nom)?> ProduitParGtinAsync(string gtin, CancellationToken ct = default) => throw new NotSupportedException();
+    public List<Pharma.Domain.Stock.LotExistant> MemeNumero { get; } = [];
+    public Task<IReadOnlyList<Pharma.Domain.Stock.LotExistant>> LotsMemeNumeroAsync(long produitId, long fournisseurId, string numeroLot, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<Pharma.Domain.Stock.LotExistant>>(MemeNumero);
+    public Dictionary<string, (long Id, string Nom)> Gtins { get; } = [];
+    public Task<(long Id, string Nom)?> ProduitParGtinAsync(string gtin, CancellationToken ct = default) =>
+        Task.FromResult<(long Id, string Nom)?>(Gtins.TryGetValue(gtin, out var p) ? p : null);
     public Task ModifierLigneAsync(long commandeId, long ligneId, int quantite, decimal prixHt, CancellationToken ct = default) => throw new NotSupportedException();
     public Task SupprimerLigneAsync(long commandeId, long ligneId, CancellationToken ct = default) => throw new NotSupportedException();
     public Task ChangerStatutCommandeAsync(long commandeId, string statut, CancellationToken ct = default) => throw new NotSupportedException();
@@ -57,6 +62,7 @@ internal sealed class AchatsEnMemoire : IAchats
     public Task RefuserRetourAsync(long retourId, long utilisateurId, string commentaire, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<LotAEtiqueter>> LotsAEtiqueterAsync(CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<EtiquetteBoite>> CreerEtiquettesAsync(long lotId, int nombre, CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<IReadOnlyList<EtiquetteBoite>> EtiquettesReceptionAsync(long receptionId, CancellationToken ct = default) => throw new NotSupportedException();
 }
 
 public class AchatsApplicationTests
@@ -161,4 +167,22 @@ public class AchatsApplicationTests
     public async Task Meme_lot_sur_deux_lignes_refuse() =>
         await Assert.ThrowsAsync<RegleMetierException>(() => Reception(new AchatsEnMemoire()).ExecuterAsync(new SaisieReception(1, null, "BL", null,
             [new LigneReceptionSaisie(1, "x", "l1", Aujourdhui.AddYears(1), 1, 1m), new LigneReceptionSaisie(1, "x", "L1", Aujourdhui.AddYears(1), 1, 1m)]), 5));
+}
+
+public class AnalyseReceptionTests
+{
+    [Fact]
+    public async Task Signale_la_date_differente_et_le_lot_bloque_par_ligne()
+    {
+        var achats = new AchatsEnMemoire();
+        achats.MemeNumero.Add(new(1, new DateOnly(2027, 11, 30), false, 5, 200, true));
+        var d = new DateOnly(2028, 5, 31);
+        var conflits = await new AnalyserReception(achats, new DroitsFactices("achats.receptionner")).ExecuterAsync(1,
+            [new Pharma.Domain.Achats.LigneReceptionSaisie(3, "Amlodipine", "am55", d, 2, 0)], 2);
+
+        Assert.Equal([Pharma.Domain.Stock.ConflitLot.DateDifferente, Pharma.Domain.Stock.ConflitLot.LotBloque], conflits.Select(c => c.Type));
+        Assert.All(conflits, c => Assert.Equal(0, c.Index));
+        Assert.Contains("30/11/2027", conflits[0].Message);
+        Assert.Contains("AM55", conflits[0].Message);
+    }
 }

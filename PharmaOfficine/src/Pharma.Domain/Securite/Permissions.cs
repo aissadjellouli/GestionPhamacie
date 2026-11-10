@@ -21,6 +21,9 @@ public static class Permissions
     public const string CatalogueCreer = "catalogue.creer";
     public const string AchatsCommander = "achats.commander";
     public const string AchatsReceptionner = "achats.receptionner";
+    public const string AchatsRegler = "achats.regler";
+    public const string TresorerieGerer = "tresorerie.gerer";
+    public const string FacturesGerer = "factures.gerer";
     public const string AchatsRetourFournisseur = "achats.retour_fournisseur";
     public const string ChifaImporter = "chifa.importer";
     public const string ChifaBordereaux = "chifa.bordereaux";

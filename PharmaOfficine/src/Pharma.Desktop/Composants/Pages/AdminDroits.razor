@@ -30,20 +30,23 @@
                     <div class="sous-formulaire" role="group" aria-label="@(fiche.Id is null ? "Nouvel utilisateur" : "Modifier l’utilisateur")">
                         <strong>@(fiche.Id is null ? "Nouvel utilisateur" : $"Modifier {fiche.Identifiant}")</strong>
                         <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px">
-                            <div class="champ"><label for="u-nom">Nom complet</label><input id="u-nom" type="text" @bind="fiche.NomComplet" /></div>
+                            <div class="champ"><label for="u-nom" class="requis">Nom complet</label><input id="u-nom" type="text" @ref="champNom" @bind="fiche.NomComplet" @bind:event="oninput"
+                                class="@Obligatoire.Classe(NomManque)" aria-invalid="@Obligatoire.Aria(NomManque)" /></div>
                             @if (fiche.Id is null)
                             {
-                                <div class="champ"><label for="u-id">Identifiant de connexion</label><input id="u-id" type="text" autocomplete="off" @bind="fiche.Identifiant" placeholder="ex. amina.b" /></div>
+                                <div class="champ"><label for="u-id" class="requis">Identifiant de connexion</label><input id="u-id" type="text" autocomplete="off" @ref="champIdentifiant" @bind="fiche.Identifiant" @bind:event="oninput" placeholder="ex. amina.b"
+                                    class="@Obligatoire.Classe(IdentifiantManque)" aria-invalid="@Obligatoire.Aria(IdentifiantManque)" /></div>
                             }
                             <div class="champ">
-                                <label for="u-role">Rôle</label>
-                                <select id="u-role" class="selection" @bind="fiche.RoleId">
+                                <label for="u-role" class="requis">Rôle</label>
+                                <select id="u-role" class="selection @Obligatoire.Classe(RoleManque)" aria-invalid="@Obligatoire.Aria(RoleManque)" @bind="fiche.RoleId">
                                     @foreach (var r in etat.Roles.Where(r => !r.Systeme || EstTitulaire)) { <option value="@r.Id">@r.Nom</option> }
                                 </select>
                             </div>
                             <div class="champ">
-                                <label for="u-mdp">@(fiche.Id is null ? "Mot de passe (8 caractères minimum)" : "Nouveau mot de passe (vide : inchangé)")</label>
-                                <input id="u-mdp" type="password" autocomplete="new-password" @bind="fiche.MotDePasse" />
+                                <label for="u-mdp" class="@(fiche.Id is null ? "requis" : null)">@(fiche.Id is null ? "Mot de passe (8 caractères minimum)" : "Nouveau mot de passe (vide : inchangé)")</label>
+                                <input id="u-mdp" type="password" autocomplete="new-password" @ref="champMotDePasse" @bind="fiche.MotDePasse" @bind:event="oninput"
+                                       class="@Obligatoire.Classe(MotDePasseManque)" aria-invalid="@Obligatoire.Aria(MotDePasseManque)" />
                             </div>
                         </div>
                         @if (etat.Roles.FirstOrDefault(r => r.Id == fiche.RoleId)?.Systeme == true)
@@ -63,7 +66,7 @@
 
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 640px">
-                        <thead><tr><th scope="col">Nom</th><th scope="col">Rôle</th><th scope="col">État</th><th scope="col">Dernière connexion</th><th scope="col"><span class="visuellement-cache">Actions</span></th></tr></thead>
+                        <thead><tr><th scope="col">Nom</th><th scope="col">Rôle</th><th scope="col">État</th><th scope="col">Dernière connexion</th><th scope="col">Code comptoir</th><th scope="col"><span class="visuellement-cache">Actions</span></th></tr></thead>
                         <tbody>
                             @foreach (var u in etat.Utilisateurs)
                             {
@@ -72,6 +75,22 @@
                                     <td>@u.Role</td>
                                     <td><span class="pastille @(u.Actif ? "ok" : "info")">@(u.Actif ? "Actif" : "Désactivé")</span></td>
                                     <td>@(u.DerniereConnexion is { } d ? Libelles.DateHeureLocale(d) : "Jamais")</td>
+                                    <td>
+                                        @if (!u.CodeComptoir)
+                                        {
+                                            <span class="detail">Aucun</span>
+                                        }
+                                        else if (u.RoleSysteme && !EstTitulaire)
+                                        {
+                                            <span class="detail">Défini</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="detail">Défini</span>
+                                            <button type="button" class="lien-bouton" style="margin-left: 8px" disabled="@enCours"
+                                                    title="Code oublié ou divulgué : l'employé en choisira un nouveau" @onclick="() => EffacerCodeAsync(u)">Effacer</button>
+                                        }
+                                    </td>
                                     <td>
                                         @if (u.RoleSysteme && !EstTitulaire)
                                         {
@@ -177,6 +196,18 @@
 
     protected override async Task OnInitializedAsync() => await ChargerAsync();
 
+    private async Task EffacerCodeAsync(UtilisateurAdminDto u)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        erreur = await Api.EffacerCodeComptoirAsync(u.Id);
+        enCours = false;
+        if (erreur is null)
+        {
+            message = $"Code comptoir de {u.NomComplet} effacé : l'employé en choisira un nouveau (lien « Mon code comptoir » en haut de l’écran).";
+            await ChargerAsync();
+        }
+    }
+
     private async Task ChargerAsync()
     {
         (etat, erreur) = await Api.DroitsAsync();
@@ -190,21 +221,39 @@
         if (accorde) droits[roleId].Add(code); else droits[roleId].Remove(code);
     }
 
+    // Champs obligatoires de la fiche utilisateur, en rouge après un premier essai d'enregistrement
+    private bool controle;
+    private ElementReference champNom, champIdentifiant, champMotDePasse;
+    private bool NomManque => fiche is not null && Obligatoire.Manque(controle, fiche.NomComplet);
+    private bool IdentifiantManque => fiche is { Id: null } && Obligatoire.Manque(controle, fiche.Identifiant);
+    private bool RoleManque => fiche is not null && Obligatoire.Manque(controle, fiche.RoleId);
+    private bool MotDePasseManque => fiche is { Id: null } && Obligatoire.Manque(controle, fiche.MotDePasse);
+
     private void NouvelUtilisateur()
     {
-        message = null;
+        (message, controle) = (null, false);
         fiche = new Fiche { RoleId = etat!.Roles.FirstOrDefault(r => !r.Systeme)?.Id ?? 0 };
     }
 
     private void Modifier(UtilisateurAdminDto u)
     {
-        message = null;
+        (message, controle) = (null, false);
         fiche = new Fiche { Id = u.Id, NomComplet = u.NomComplet, Identifiant = u.Identifiant, RoleId = u.RoleId, Actif = u.Actif };
     }
 
     private async Task EnregistrerFicheAsync()
     {
         if (fiche is null) return;
+        controle = true;
+        if (NomManque || IdentifiantManque || RoleManque || MotDePasseManque)
+        {
+            erreur = NomManque ? "Le nom de l’employé est obligatoire."
+                : IdentifiantManque ? "Indiquez l’identifiant de connexion."
+                : RoleManque ? "Choisissez le rôle."
+                : "Indiquez le mot de passe (8 caractères minimum).";
+            await (NomManque ? champNom : IdentifiantManque ? champIdentifiant : champMotDePasse).FocusAsync();
+            return;
+        }
         enCours = true;
         if (fiche.Id is null)
         {
@@ -219,7 +268,7 @@
         }
         enCours = false;
         if (erreur is not null) return;
-        fiche = null;
+        (fiche, controle) = (null, false);
         await ChargerAsync();
     }
 

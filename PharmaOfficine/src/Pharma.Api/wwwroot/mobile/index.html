@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0E5A32" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1F6B43" media="(prefers-color-scheme: dark)">
+  <title>Scanner Pharma Officine</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="mobile.css">
+</head>
+<body>
+  <header class="entete">
+    <img src="logo.svg" alt="" width="36" height="36">
+    <div class="entete-titre">
+      <strong>Pharma Officine</strong>
+      <span id="qui">Scanner mobile</span>
+    </div>
+    <button type="button" id="deconnexion" class="lien-clair" hidden>Se déconnecter</button>
+  </header>
+
+  <main>
+    <!-- Connexion -->
+    <section id="ecran-connexion" class="carte" aria-labelledby="t-connexion">
+      <h1 id="t-connexion">Connexion</h1>
+      <form id="form-connexion" autocomplete="on">
+        <label for="identifiant">Identifiant</label>
+        <input id="identifiant" name="username" autocomplete="username" required>
+        <label for="mot-de-passe">Mot de passe</label>
+        <input id="mot-de-passe" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit" class="btn btn-principal">Se connecter</button>
+      </form>
+    </section>
+
+    <!-- Application -->
+    <div id="ecran-app" hidden>
+      <nav class="onglets" role="tablist" aria-label="Usages">
+        <button type="button" role="tab" data-onglet="pilotage" aria-selected="false" hidden>Pilotage</button>
+        <button type="button" role="tab" data-onglet="controle" aria-selected="true">Contrôle</button>
+        <button type="button" role="tab" data-onglet="inventaire" aria-selected="false">Inventaire</button>
+        <button type="button" role="tab" data-onglet="reception" aria-selected="false">Réception</button>
+      </nav>
+
+      <div class="barre-scan" id="barre-scan">
+        <label for="scan" id="libelle-scan">Scanner une boîte</label>
+        <div class="barre-scan-ligne">
+          <input id="scan" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false"
+                 placeholder="Douchette, laser ou caméra">
+          <button type="button" id="clavier" class="btn btn-icone" aria-label="Taper le code au clavier" title="Taper le code">⌨</button>
+          <button type="button" id="camera" class="btn btn-principal">Caméra</button>
+        </div>
+        <p id="info-camera" class="detail" hidden></p>
+      </div>
+
+      <div id="video-cadre" class="video-cadre" hidden>
+        <video id="video" playsinline muted></video>
+        <div class="viseur" aria-hidden="true"></div>
+        <button type="button" id="arreter-camera" class="btn">Arrêter la caméra</button>
+      </div>
+
+      <p id="statut" class="statut" role="status" aria-live="polite"></p>
+
+      <section id="onglet-pilotage" class="onglet" aria-label="Tableau de bord du titulaire" hidden>
+        <div id="pilotage"></div>
+      </section>
+
+      <section id="onglet-controle" class="onglet" aria-label="Contrôle en rayon">
+        <p class="detail">Scannez une boîte : stock, emplacement, lots et péremptions. Confirmez les dates « à vérifier » et rangez le produit.</p>
+        <div id="fiche"></div>
+      </section>
+
+      <section id="onglet-inventaire" class="onglet" aria-label="Inventaire tournant" hidden>
+        <div id="inventaire"></div>
+      </section>
+
+      <section id="onglet-reception" class="onglet" aria-label="Réception" hidden>
+        <p class="detail">Scannez chaque boîte au déballage. Sur le poste, dans Réceptions, cliquez sur « Importer les scans du mobile » puis validez la livraison.</p>
+        <div id="reception"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="mobile.js"></script>
+</body>
+</html>

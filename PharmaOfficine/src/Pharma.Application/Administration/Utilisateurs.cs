@@ -7,7 +7,7 @@ namespace Pharma.Application.Administration;
 
 public sealed record UtilisateurAdmin(
     long Id, string NomComplet, string Identifiant, long RoleId, string Role, bool RoleSysteme,
-    bool Actif, DateTime? DerniereConnexion);
+    bool Actif, DateTime? DerniereConnexion, bool CodeComptoir = false);
 
 public sealed record RoleAdmin(long Id, string Code, string Nom, bool Systeme, decimal RemiseMaxPct, IReadOnlyList<string> Permissions);
 public sealed record PermissionAdmin(string Code, string Module, string Libelle, bool Sensible);

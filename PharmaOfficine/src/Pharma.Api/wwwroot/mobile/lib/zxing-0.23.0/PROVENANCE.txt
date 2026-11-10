@@ -1,0 +1,3 @@
+@zxing/library 0.23.0 (npm), fichier umd/index.min.js, licence Apache-2.0 (LICENSE.txt).
+Intégrité npm : sha512-6fkkoFwP8CHxl6ugnPsj74PLJgX2iRv5zczGAyt5OBzQgxFhuhF0NCEc4t4OvSr8xAv2MRLlI0Iu9ZGDZQ2urA==
+Servi par l'API de la pharmacie (pas d'accès internet). Chargé seulement si le navigateur ne lit pas les Data Matrix lui-même.

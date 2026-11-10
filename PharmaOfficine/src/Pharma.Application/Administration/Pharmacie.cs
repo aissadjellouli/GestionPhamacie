@@ -6,7 +6,8 @@ namespace Pharma.Application.Administration;
 
 /// <summary>Identité de la pharmacie (table pharmacie). Langue : ar, fr ou en.</summary>
 public sealed record IdentitePharmacie(
-    string? Nom, string? Titulaire, string? Adresse, string? Telephone, string? Nif, string? ChifaOfficine, string LangueDefaut);
+    string? Nom, string? Titulaire, string? Adresse, string? Telephone, string? Nif, string? ChifaOfficine, string LangueDefaut,
+    string? Rc = null, string? Nis = null, string? ArticleImposition = null);
 
 public interface IPharmacie
 {
@@ -30,7 +31,7 @@ public sealed class ModifierPharmacie(IPharmacie pharmacie, IJournal journal)
             throw new RegleMetierException("Seul le français est disponible pour l’instant : les traductions arabe et anglaise sont à venir.");
         static string? Net(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         var propre = new IdentitePharmacie(Net(i.Nom), Net(i.Titulaire), Net(i.Adresse), Net(i.Telephone), Net(i.Nif),
-            Net(i.ChifaOfficine), i.LangueDefaut);
+            Net(i.ChifaOfficine), i.LangueDefaut, Net(i.Rc), Net(i.Nis), Net(i.ArticleImposition));
 
         var avant = await pharmacie.LireAsync(ct);
         await pharmacie.EnregistrerAsync(propre, ct);

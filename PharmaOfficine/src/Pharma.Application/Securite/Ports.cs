@@ -54,6 +54,11 @@ public interface IComptesLecture
 
     /// <summary>Date de dernière connexion (affichée dans l'administration des utilisateurs).</summary>
     Task NoterConnexionAsync(long utilisateurId, CancellationToken ct = default);
+
+    Task<Utilisateur?> ParIdAsync(long utilisateurId, CancellationToken ct = default);
+
+    /// <summary>Nouveau mot de passe (haché) choisi par l'employé ; lève l'obligation de le changer.</summary>
+    Task ChangerMotDePasseAsync(long utilisateurId, string hash, CancellationToken ct = default);
 }
 
 public interface IVerificateurMotDePasse
@@ -63,5 +68,15 @@ public interface IVerificateurMotDePasse
 
 public interface IGenerateurJeton
 {
-    (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet);
+    /// <param name="comptoir">Connexion par code comptoir : jeton limité aux droits du comptoir.</param>
+    /// <param name="motDePasseAChanger">Mot de passe provisoire : jeton sans aucun droit, sauf changer son mot de passe.</param>
+    (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false);
 }
+
+/// <summary>Employés actifs qui détiennent un droit (pour dire au comptoir qui peut prendre le relais).</summary>
+public interface IDetenteursDroit
+{
+    Task<IReadOnlyList<DetenteurDroit>> ListerAsync(string permission, CancellationToken ct = default);
+}
+
+public sealed record DetenteurDroit(string NomComplet, bool CodeComptoir);

@@ -1,0 +1,140 @@
+@inject ApiClient Api
+@inject ImprimanteTickets Tickets
+@inject SessionPoste Session
+
+@* Le patient rembourse tout ou partie de sa dette : l'argent entre dans la caisse ouverte du poste *@
+<div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-credit">
+    <section class="panneau fenetre-annulation">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+            <h2 id="t-credit">Règlement d’un crédit</h2>
+            <button type="button" class="btn" @onclick="OnFerme">Fermer</button>
+        </div>
+
+        @if (recu is { } r)
+        {
+            <div class="succes" role="status">
+                Reçu n° @r.Numero : @Libelles.Dinars(r.Montant, 2) encaissés (@Libelles.ModePaiement(r.Mode)) de @r.Patient.
+                Reste dû : @Libelles.Dinars(r.ResteDu, 2).
+            </div>
+            @if (messageImpression is not null) { <div class="@(impressionOk ? "info-bandeau" : "erreur")" role="status">@messageImpression</div> }
+            <div class="filtres">
+                <button type="button" class="btn" disabled="@enCours" @onclick="ImprimerAsync">Imprimer le reçu</button>
+                <button type="button" class="btn btn-principal" @onclick="OnFerme">Terminer</button>
+            </div>
+        }
+        else if (situation is not { } s)
+        {
+            <div class="champ">
+                <label for="c-recherche">Patient (nom ou téléphone)</label>
+                <input id="c-recherche" type="search" placeholder="Tous les patients qui ont un crédit" @bind="recherche" @bind:event="oninput" @bind:after="RechercherApresSaisieAsync" />
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (patients.Count == 0 && charge)
+            {
+                <p class="vide" style="margin: 0">Aucun patient avec un crédit en cours.</p>
+            }
+            <div class="liste-ventes">
+                @foreach (var p in patients)
+                {
+                    <button type="button" class="ligne-vente" @onclick="() => ChoisirAsync(p.Id)">
+                        <span><strong>@p.Nom</strong>@(p.Telephone is { } t ? $" · {t}" : "")<br /><span class="detail">@(p.DerniereVente is { } d ? $"dernier crédit le {Libelles.DateHeureLocale(d)}" : "crédit repris de l’ancien logiciel")</span></span>
+                        <span class="montant-du">@Libelles.Dinars(p.Solde, 2)</span>
+                    </button>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="carte">
+                <strong>@s.Patient.Nom</strong>@(s.Patient.Telephone is { } t ? $" · {t}" : "")
+                · doit <strong class="montant-du">@Libelles.Dinars(s.Patient.Solde, 2)</strong>@(s.Patient.Plafond > 0 ? $" (plafond {Libelles.Dinars(s.Patient.Plafond)})" : "")
+                <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => situation = null">Changer de patient</button>
+                @if (s.Ventes.Count > 0)
+                {
+                    <ul style="margin: 8px 0 0">
+                        @foreach (var v in s.Ventes) { <li>@v.Numero · @Libelles.DateHeureLocale(v.Date) · @Libelles.Dinars(v.Montant, 2) en crédit</li> }
+                    </ul>
+                }
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            <div class="achats-ligne" style="align-items: flex-end">
+                <div class="champ" style="flex: 0 0 200px">
+                    <label for="c-montant" class="requis">Montant réglé (DA)</label>
+                    <input id="c-montant" type="number" min="0.01" max="@s.Patient.Solde.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="0.01" @bind="montant" />
+                </div>
+                <div class="filtres" role="radiogroup" aria-label="Mode de règlement">
+                    @foreach (var (code, libelle) in Modes)
+                    {
+                        <button type="button" role="radio" class="puce" aria-pressed="@(mode == code ? "true" : "false")" aria-checked="@(mode == code ? "true" : "false")" @onclick="() => mode = code">@libelle</button>
+                    }
+                </div>
+            </div>
+            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EncaisserAsync">Encaisser @Libelles.Dinars(montant, 2)</button>
+        }
+    </section>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnFerme { get; set; }
+    /// <summary>Prévient la caisse qu'un règlement est entré (attendu de caisse).</summary>
+    [Parameter] public EventCallback OnEncaisse { get; set; }
+
+    private static readonly (string, string)[] Modes = [("especes", "Espèces"), ("carte", "Carte"), ("cheque", "Chèque")];
+    private string? recherche, erreur, messageImpression;
+    private string mode = "especes";
+    private decimal montant;
+    private List<PatientEnCreditDto> patients = [];
+    private SituationCreditDto? situation;
+    private RecuCreditDto? recu;
+    private bool charge, enCours, impressionOk;
+    private int requete;
+
+    protected override Task OnInitializedAsync() => RechercherAsync();
+
+    private async Task RechercherApresSaisieAsync()
+    {
+        var n = ++requete;
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
+        if (n == requete) await RechercherAsync();
+    }
+
+    private async Task RechercherAsync()
+    {
+        var n = ++requete;
+        var (liste, e) = await Api.PatientsEnCreditAsync(recherche);
+        if (n != requete) return;
+        (patients, erreur, charge) = (liste, e, true);
+    }
+
+    private async Task ChoisirAsync(long id)
+    {
+        var (s, e) = await Api.SituationCreditAsync(id);
+        (situation, erreur) = (s, e);
+        montant = s?.Patient.Solde ?? 0;
+    }
+
+    private async Task EncaisserAsync()
+    {
+        if (situation is null) return;
+        if (montant <= 0 || montant > situation.Patient.Solde) { erreur = $"Montant entre 0,01 et {Libelles.Dinars(situation.Patient.Solde, 2)}."; return; }
+        enCours = true;
+        var (r, e) = await Api.ReglerCreditAsync(situation.Patient.Id, new ReglementCreditRequete(montant, mode));
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        recu = r;
+        await OnEncaisse.InvokeAsync();
+    }
+
+    /// <summary>Reçu imprimé comme un ticket (imprimante du poste) : montant, mode, reste dû ; sans le nom du patient.</summary>
+    private async Task ImprimerAsync()
+    {
+        if (recu is null) return;
+        enCours = true;
+        var t = new TicketDto($"R-{recu.Numero:000000}", DateTime.UtcNow, Session.NomComplet ?? "", null, "validee", null, null,
+            [new LigneTicketDto($"Règlement de crédit (reste dû {Libelles.Dinars(recu.ResteDu, 2)})", 1, recu.Montant, recu.Montant, 0)],
+            recu.Montant, 0, 0, recu.Montant, recu.Mode, Session.NomPharmacie, null, null, null);
+        var e = await Tickets.ImprimerAsync(t);
+        enCours = false;
+        (impressionOk, messageImpression) = (e is null, e ?? "Reçu envoyé à l’imprimante.");
+    }
+}

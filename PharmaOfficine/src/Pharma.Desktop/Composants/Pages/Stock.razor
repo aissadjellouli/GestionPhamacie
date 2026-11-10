@@ -10,7 +10,14 @@
         </div>
         <div class="actions">
             <a href="tracabilite" class="btn">Traçabilité et rappel de lot</a>
-            <button type="button" class="btn" disabled title="Bientôt disponible">Registre des psychotropes</button>
+            @if (Session.A("psychotropes.registre"))
+            {
+                <a href="stock/registre" class="btn">Registre des psychotropes</a>
+            }
+            else
+            {
+                <button type="button" class="btn" disabled title="Droit « Consulter le registre » nécessaire">Registre des psychotropes</button>
+            }
             @if (Session.A("catalogue.creer"))
             {
                 <button type="button" class="btn" @onclick="() => (creation, messageCreation) = (true, null)">Nouveau produit</button>
@@ -99,8 +106,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var l in Visibles)
-                    {
+                    @* Seules les lignes visibles à l’écran sont dessinées : la page reste fluide avec des milliers de produits *@
+                    <Virtualize Items="Visibles" Context="l" ItemSize="58" OverscanCount="15" SpacerElement="tr">
                         <tr>
                             <td>
                                 <span class="nom">@l.NomCommercial</span><br />
@@ -140,7 +147,7 @@
                             </td>
                             <td><span class="pastille @Libelles.ClasseStatutStock(l.Statut)">@Libelles.StatutStock(l.Statut)</span></td>
                         </tr>
-                    }
+                    </Virtualize>
                     @if (Visibles.Count == 0)
                     {
                         <tr><td colspan="7" class="vide">Aucun produit ne correspond.</td></tr>
@@ -197,12 +204,32 @@
 
     protected override async Task OnInitializedAsync()
     {
-        (etat, erreur) = await Api.StockAsync();
-        (emplacements, _) = await Api.EmplacementsAsync();
+        // Les deux listes sont chargées en même temps
+        var stock = Api.StockAsync();
+        var lieux = Api.EmplacementsAsync();
+        (etat, erreur) = await stock;
+        (emplacements, _) = await lieux;
     }
 
-    private List<LigneStockDto> Visibles =>
-        etat?.Lignes.Where(l => PasseFiltre(l) && PasseRecherche(l) && PasseRayon(l)).ToList() ?? [];
+    // Liste filtrée gardée tant que le stock, la recherche, le filtre et le rayon ne changent pas
+    // (avant : recalculée plusieurs fois à chaque affichage)
+    private (EtatStockDto? Etat, string Recherche, string Filtre, string Rayon, List<EmplacementDto> Emplacements) cleVisibles;
+    private List<LigneStockDto> visiblesEnCache = [];
+
+    private List<LigneStockDto> Visibles
+    {
+        get
+        {
+            // Références des listes : un rechargement (même de même taille) invalide le filtre gardé
+            var cle = (etat, recherche, filtre, rayon, emplacements);
+            if (cle != cleVisibles)
+            {
+                visiblesEnCache = etat?.Lignes.Where(l => PasseFiltre(l) && PasseRecherche(l) && PasseRayon(l)).ToList() ?? [];
+                cleVisibles = cle;
+            }
+            return visiblesEnCache;
+        }
+    }
 
     private bool PasseFiltre(LigneStockDto l) => filtre switch
     {

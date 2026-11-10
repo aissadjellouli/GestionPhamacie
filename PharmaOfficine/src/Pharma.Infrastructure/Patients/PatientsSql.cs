@@ -87,7 +87,7 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
 
     public async Task<IReadOnlyList<Organisme>> ListerAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT id, code, nom FROM organisme ORDER BY code");
+        await using var cmd = db.CreateCommand("SELECT id, code, nom FROM organisme WHERE actif ORDER BY code");
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<Organisme>();
         while (await r.ReadAsync(ct)) liste.Add(new Organisme(r.GetInt64(0), r.GetString(1), r.GetString(2)));

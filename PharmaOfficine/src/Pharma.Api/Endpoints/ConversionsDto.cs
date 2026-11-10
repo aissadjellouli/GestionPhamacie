@@ -12,7 +12,7 @@ namespace Pharma.Api.Endpoints;
 /// <summary>Modèles de l'Application vers le contrat HTTP partagé avec les postes (Pharma.Shared).</summary>
 internal static class ConversionsDto
 {
-    public static ConnexionReponse VersDto(this Session s) => new(s.Jeton, s.NomComplet, s.ExpireLe);
+    public static ConnexionReponse VersDto(this Session s) => new(s.Jeton, s.NomComplet, s.ExpireLe, s.DoitChangerMotDePasse);
 
     public static ProduitDto VersDto(this ProduitResume p) =>
         new(p.Id, p.NomCommercial, p.Dci, p.Dosage, p.Forme, p.PrixPublic, p.Stock, p.Classe.Code());
@@ -21,7 +21,7 @@ internal static class ConversionsDto
         new(l.NumeroLot, l.DatePeremption, l.Raison == RaisonNonVendable.Bloque ? "bloque" : "perime", l.MotifBlocage);
 
     public static LotFefoDto VersDto(this LotAServir l, IEnumerable<LotEcarte> ecartes) =>
-        new(l.LotId, l.NumeroLot, l.DatePeremption, l.Quantite, l.Fournisseur, ecartes.Select(VersDto).ToList());
+        new(l.LotId, l.NumeroLot, l.DatePeremption, l.Quantite, l.Fournisseur, ecartes.Select(VersDto).ToList(), l.StockProduit);
 
     public static ProduitAlternatifDto VersDto(this ProduitAlternatif a) =>
         new(a.ProduitId, a.NomCommercial, a.PrixPublic, a.Stock, a.Exact, a.Dosage, a.Forme);

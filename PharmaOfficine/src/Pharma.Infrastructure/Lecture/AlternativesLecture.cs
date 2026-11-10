@@ -14,7 +14,9 @@ public sealed class AlternativesLecture(NpgsqlDataSource db) : IAlternativesLect
                    alt.dosage, alt.forme
             FROM produit p
             JOIN produit alt    ON alt.dci_id = p.dci_id AND alt.id <> p.id AND alt.actif
-            JOIN v_etat_stock e ON e.produit_id = alt.id
+            -- Stock vendable (même calcul que v_etat_stock), lu pour chaque alternative seulement
+            CROSS JOIN LATERAL (SELECT COALESCE(sum(l.quantite_disponible), 0) AS stock FROM lot l
+                                WHERE l.produit_id = alt.id AND l.date_peremption > current_date) e
             WHERE p.id = $1 AND e.stock > 0
             ORDER BY exact DESC, e.stock DESC, alt.nom_commercial
             """);

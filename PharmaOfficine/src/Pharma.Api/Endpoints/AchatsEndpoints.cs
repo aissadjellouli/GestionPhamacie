@@ -80,10 +80,17 @@ internal static class AchatsEndpoints
             {
                 var r = await receptionner.ExecuterAsync(new SaisieReception(req.FournisseurId, req.CommandeId, req.NumeroBl, req.NumeroFacture,
                     req.Lignes.Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
-                        l.PrixAchatHt, l.Gtin, l.NumerosSerie)).ToList()), user.UtilisateurId(), ct);
+                        l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque)).ToList()), user.UtilisateurId(), ct);
                 return Results.Ok(new ReceptionEnregistreeDto(r.ReceptionId, r.MontantTtc,
-                    r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.BoitesSansIdentite)).ToList()));
+                    r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList()));
             })
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        achats.MapPost("/receptions/conflits", async (ReceptionRequete req, AnalyserReception analyser, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok((await analyser.ExecuterAsync(req.FournisseurId,
+                    req.Lignes.Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.PrixAchatHt)).ToList(),
+                    user.UtilisateurId(), ct)).Select(c => new ConflitReceptionDto(c.Index,
+                        c.Type == Pharma.Domain.Stock.ConflitLot.DateDifferente ? "date_differente" : "lot_bloque", c.Message, c.Peremptions))))
            .ExigerPermission(Permissions.AchatsReceptionner);
 
         // ---- Retours ----
@@ -138,6 +145,13 @@ internal static class AchatsEndpoints
                 Results.Ok((await lister.ExecuterAsync(ct)).Select(l => new LotAEtiqueterDto(
                     l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Disponible, l.BoitesSansIdentite))))
            .ExigerPermission(Permissions.AchatsReceptionner, Permissions.StockConsulter);
+
+        achats.MapGet("/receptions/{id:long}/etiquettes", async (long id, ImprimerEtiquettesReception imprimer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var e = await imprimer.ExecuterAsync(id, user.UtilisateurId(), ct);
+                return Results.Ok(new EtiquettesDto(e.Codes, Convert.ToBase64String(e.Pdf), e.Zpl));
+            })
+           .ExigerPermission(Permissions.AchatsReceptionner);
 
         achats.MapPost("/etiquettes", async (EtiquettesRequete req, ImprimerEtiquettes imprimer, ClaimsPrincipal user, CancellationToken ct) =>
             {

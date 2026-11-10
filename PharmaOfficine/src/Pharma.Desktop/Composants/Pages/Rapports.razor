@@ -1,0 +1,269 @@
+@page "/rapports"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+<div class="page">
+    <div class="titre-page">
+        <div>
+            <h1>Rapports</h1>
+            <p class="sous-titre">@(rapport?.Libelle ?? "Chargement…")</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <button type="button" class="btn" disabled="@(rapport is null || enCours)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
+            <button type="button" class="btn" disabled="@(rapport is null || enCours)" @onclick='() => ExporterAsync("excel")'>Exporter pour Excel</button>
+        </div>
+    </div>
+
+    <div class="rapport-filtres">
+        <div class="filtres" role="group" aria-label="Période">
+            @foreach (var (code, libelle) in Periodes)
+            {
+                <button type="button" class="puce" aria-pressed="@(periode == code ? "true" : "false")" @onclick="() => ChoisirAsync(code)">@libelle</button>
+            }
+        </div>
+        @if (periode == "dates")
+        {
+            <div class="filtres dates-rapport" role="group" aria-label="Dates choisies">
+                <label for="rapport-du">Du</label>
+                <input id="rapport-du" type="date" max="@Aujourdhui.ToString("yyyy-MM-dd")" @bind="du" @bind:after="ChargerAsync" />
+                <label for="rapport-au">au</label>
+                <input id="rapport-au" type="date" max="@Aujourdhui.ToString("yyyy-MM-dd")" @bind="au" @bind:after="ChargerAsync" />
+            </div>
+        }
+        else
+        {
+            <div class="filtres dates-rapport" role="group" aria-label="Aller à une date">
+                <label for="rapport-date">Aller au</label>
+                <input id="rapport-date" type="date" max="@Aujourdhui.ToString("yyyy-MM-dd")" @bind="reference" @bind:after="ChargerAsync" />
+            </div>
+        }
+        <div class="filtres" role="group" aria-label="Changer de période">
+            <button type="button" class="puce" disabled="@(rapport is null)" @onclick="() => DeplacerAsync(-1)" aria-label="Période précédente">‹ Précédent</button>
+            <button type="button" class="puce" @onclick="AujourdhuiAsync">Aujourd’hui</button>
+            <button type="button" class="puce" disabled="@(rapport is null || rapport.Au >= Aujourdhui)" @onclick="() => DeplacerAsync(+1)" aria-label="Période suivante">Suivant ›</button>
+        </div>
+    </div>
+
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+    @if (rapport is { } r)
+    {
+        <div class="tuiles">
+            <div class="tuile">
+                <span class="tuile-libelle">Chiffre d’affaires</span>
+                <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.ChiffreAffaires)</span>
+                <span class="tuile-pied">@r.Synthese.NombreVentes vente(s) · remises @Libelles.Dinars(r.Synthese.Remises)</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Part Chifa à recevoir</span>
+                <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.PartOrganismes)</span>
+                <span class="tuile-pied">tiers payant (CNAS, CASNOS)</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Crédits clients accordés</span>
+                <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.CreditsAccordes)</span>
+                <span class="tuile-pied">@r.Synthese.Annulations vente(s) annulée(s)</span>
+            </div>
+            @if (r.Marge is { } m)
+            {
+                <div class="tuile">
+                    <span class="tuile-libelle">Marge brute</span>
+                    <span class="tuile-valeur">@Libelles.Dinars(m.Montant)</span>
+                    <span class="tuile-pied">@(m.Taux is { } t ? $"{t:0.0} % du CA HT" : "pas de vente") · coût @Libelles.Dinars(m.CoutAchat)</span>
+                </div>
+            }
+        </div>
+
+        <div class="rapport-colonnes">
+            @if (r.ParJour.Count > 1)
+            {
+                var max = Math.Max(1m, r.ParJour.Max(j => j.ChiffreAffaires));
+                <section class="panneau" aria-labelledby="t-jours">
+                    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px">
+                        <h2 id="t-jours">@(r.ParSemaine ? "Ventes par semaine" : "Ventes par jour")</h2>
+                        <button type="button" class="lien" @onclick="() => tableauJours = !tableauJours">@(tableauJours ? "Voir le graphique" : "Voir en tableau")</button>
+                    </div>
+                    @if (tableauJours)
+                    {
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col">@(r.ParSemaine ? "Semaine du" : "Jour")</th><th scope="col">Ventes</th><th scope="col">Chiffre d’affaires</th></tr></thead>
+                            <tbody>
+                                @foreach (var j in r.ParJour)
+                                {
+                                    <tr><td>@Jour(j.Date, true)</td><td>@j.NombreVentes</td><td>@Libelles.Dinars(j.ChiffreAffaires)</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <div class="histogramme" role="img" aria-label="@($"Chiffre d’affaires par {(r.ParSemaine ? "semaine" : "jour")}, maximum {Libelles.Dinars(max)}. Le détail est disponible en tableau.")">
+                            <div class="histogramme-echelle" aria-hidden="true"><span>@Libelles.Dinars(max)</span><span>0</span></div>
+                            <div class="histogramme-barres" style="--colonnes: @r.ParJour.Count">
+                                @foreach (var j in r.ParJour)
+                                {
+                                    <div class="histogramme-colonne" title="@($"{Jour(j.Date, true)} : {Libelles.Dinars(j.ChiffreAffaires)}, {j.NombreVentes} vente(s)")">
+                                        <div class="histogramme-zone">
+                                            <div class="histogramme-barre" style="height: @Pourcent(j.ChiffreAffaires, max)"></div>
+                                        </div>
+                                        <span class="histogramme-jour">@Jour(j.Date, false)</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </section>
+            }
+
+            <section class="panneau" aria-labelledby="t-top">
+                <h2 id="t-top">Produits les plus vendus</h2>
+                @if (r.TopProduits.Count == 0)
+                {
+                    <p class="vide">Aucune vente sur la période.</p>
+                }
+                else
+                {
+                    var maxQ = r.TopProduits.Max(p => p.Quantite);
+                    <ol class="classement">
+                        @foreach (var p in r.TopProduits)
+                        {
+                            <li title="@($"{p.Produit} : {p.Quantite} boîte(s), {Libelles.Dinars(p.ChiffreAffaires)}")">
+                                <span class="classement-nom">@p.Produit</span>
+                                <span class="classement-piste"><span class="classement-barre" style="width: @Pourcent(p.Quantite, maxQ)"></span></span>
+                                <span class="classement-valeur">@p.Quantite</span>
+                            </li>
+                        }
+                    </ol>
+                    <p class="detail" style="margin: 0">Nombre de boîtes vendues.</p>
+                }
+            </section>
+        </div>
+
+        <section class="panneau" aria-labelledby="t-clo">
+            <h2 id="t-clo">Clôtures de caisse</h2>
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Employé</th><th scope="col">Session</th>
+                            @if (r.EcartsVisibles) { <th scope="col">Attendu</th> }
+                            <th scope="col">Compté</th>
+                            @if (r.EcartsVisibles) { <th scope="col">Écart</th> }
+                            <th scope="col">Annulations</th><th scope="col">Remises</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in r.Clotures)
+                        {
+                            <tr>
+                                <td class="nom">@c.Employe<br /><span class="detail">@c.Poste</span></td>
+                                <td>@Libelles.DateHeureLocale(c.OuverteLe)<br /><span class="detail">clôturée @(c.FermeeLe is { } f ? Libelles.DateHeureLocale(f) : "—")</span></td>
+                                @if (r.EcartsVisibles) { <td>@Libelles.Dinars(c.Attendu ?? 0)</td> }
+                                <td>@Libelles.Dinars(c.Compte ?? 0)</td>
+                                @if (r.EcartsVisibles)
+                                {
+                                    <td class="@((c.Ecart ?? 0) < 0 ? "texte-urgent" : null)"><strong>@Signe(c.Ecart ?? 0)</strong></td>
+                                }
+                                <td>@c.Annulations</td>
+                                <td>@c.Remises</td>
+                            </tr>
+                        }
+                        @if (r.Clotures.Count == 0)
+                        {
+                            <tr><td colspan="@(r.EcartsVisibles ? 7 : 5)" class="vide">Aucune clôture de caisse sur la période.</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (!r.EcartsVisibles)
+            {
+                <p class="detail" style="margin: 0">L’attendu et l’écart sont réservés au droit « Voir les écarts de caisse ».</p>
+            }
+        </section>
+
+        <p class="detail">
+            Ventes validées seulement, remises déduites. Marge brute : chiffre d’affaires hors TVA moins le coût d’achat HT des boîtes vendues,
+            au prix réel de chaque boîte identifiée, sinon au prix de son lot.
+        </p>
+    }
+</div>
+
+@code {
+    private static readonly (string Code, string Libelle)[] Periodes = [("jour", "Jour"), ("semaine", "Semaine"), ("mois", "Mois"), ("dates", "Dates choisies")];
+    private static readonly System.Globalization.CultureInfo Fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+
+    private RapportActiviteDto? rapport;
+    private string periode = "semaine";
+    private DateOnly reference = DateOnly.FromDateTime(DateTime.Now);
+    // Dates choisies : par défaut, du début du mois à aujourd'hui
+    private DateOnly du = new(DateTime.Now.Year, DateTime.Now.Month, 1), au = DateOnly.FromDateTime(DateTime.Now);
+    private bool enCours, tableauJours;
+    private string? erreur, message;
+
+    private static DateOnly Aujourdhui => DateOnly.FromDateTime(DateTime.Now);
+
+    protected override Task OnInitializedAsync() => ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        enCours = true;
+        try
+        {
+            var (r, e) = await Api.RapportAsync(periode, reference, du, au);
+            // Dates refusées (fin avant début, futur, plus d'un an) : le message s'affiche, le rapport précédent reste
+            if (r is not null) rapport = r;
+            erreur = e;
+        }
+        finally { enCours = false; }
+    }
+
+    private Task ChoisirAsync(string code) { (periode, message) = (code, null); return ChargerAsync(); }
+    private Task AujourdhuiAsync()
+    {
+        (reference, message) = (Aujourdhui, null);
+        if (periode == "dates") (du, au) = (Aujourdhui, Aujourdhui);
+        return ChargerAsync();
+    }
+
+    /// <summary>Période précédente ou suivante : le jour juste avant le début, ou juste après la fin.</summary>
+    private Task DeplacerAsync(int sens)
+    {
+        if (rapport is null) return Task.CompletedTask;
+        if (periode == "dates")
+        {
+            // Même durée, juste avant ou juste après
+            var jours = au.DayNumber - du.DayNumber + 1;
+            (du, au, message) = (du.AddDays(sens * jours), au.AddDays(sens * jours), null);
+            return ChargerAsync();
+        }
+        (reference, message) = (sens < 0 ? rapport.Du.AddDays(-1) : rapport.Au.AddDays(1), null);
+        return ChargerAsync();
+    }
+
+    private async Task ExporterAsync(string format)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var (contenu, nom, e) = await Api.ExporterRapportAsync(periode, reference, du, au, format);
+            if (e is not null) { erreur = e; return; }
+            var chemin = Documents.Enregistrer("Rapports", nom!, contenu!);
+            message = $"Rapport enregistré : {chemin}";
+            Documents.Ouvrir(chemin);
+        }
+        finally { enCours = false; }
+    }
+
+    private string Jour(DateOnly d, bool complet) =>
+        rapport?.ParSemaine == true ? (complet ? $"Semaine du {d.ToString("dd/MM/yyyy", Fr)}" : d.ToString("dd/MM", Fr))
+        : complet ? d.ToString("dddd dd/MM", Fr)
+        : periode == "mois" ? d.Day.ToString()
+        : periode == "dates" && rapport is { } r && r.Au.DayNumber - r.Du.DayNumber > 6 ? d.ToString("d/M", Fr)
+        : d.ToString("ddd", Fr).TrimEnd('.');
+
+    private static string Pourcent(decimal valeur, decimal max) =>
+        (max <= 0 ? 0 : Math.Round(valeur / max * 100, 1)).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    private static string Signe(decimal n) => n > 0 ? $"+{Libelles.Dinars(n)}" : Libelles.Dinars(n);
+}

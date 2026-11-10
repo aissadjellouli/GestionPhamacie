@@ -8,17 +8,17 @@ namespace Pharma.Infrastructure.Lecture;
 
 /// <summary>
 /// Inventaire tournant. Un lot appartient au rayon de l'emplacement de vente de son produit
-/// (à défaut, de sa réserve) : on compte toutes ses boîtes, réserve comprise, pour éviter les faux écarts.
+/// (à défaut, de sa réserve, sinon « (Sans emplacement) ») : on compte toutes ses boîtes, réserve comprise, pour éviter les faux écarts.
 /// </summary>
 public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
 {
     private const string LotsParRayon = """
-        SELECT COALESCE(ev.rayon, er.rayon) AS rayon, l.id AS lot_id, l.date_a_verifier
+        SELECT COALESCE(ev.rayon, er.rayon, '(Sans emplacement)') AS rayon, l.id AS lot_id, l.date_a_verifier
         FROM lot l
         JOIN produit p ON p.id = l.produit_id
         LEFT JOIN emplacement ev ON ev.id = p.emplacement_id
         LEFT JOIN emplacement er ON er.id = p.reserve_id
-        WHERE l.quantite_disponible > 0 AND COALESCE(ev.rayon, er.rayon) IS NOT NULL
+        WHERE l.quantite_disponible > 0
         """;
 
     public async Task<ParametresInventaire> ParametresAsync(CancellationToken ct = default)
@@ -41,7 +41,8 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
     {
         await using var cmd = db.CreateCommand($"""
             WITH lots AS ({LotsParRayon}),
-                 rayons AS (SELECT DISTINCT rayon FROM emplacement WHERE actif)
+                 rayons AS (SELECT DISTINCT rayon FROM emplacement WHERE actif
+                            UNION SELECT DISTINCT rayon FROM lots WHERE rayon = '(Sans emplacement)')
             SELECT r.rayon,
                    (SELECT max(i.termine_le) FROM inventaire i WHERE i.rayon = r.rayon AND i.statut = 'termine'),
                    (SELECT count(*) FROM lots WHERE lots.rayon = r.rayon)::int,
@@ -63,7 +64,11 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
         long id;
-        await using (var cmd = new NpgsqlCommand("INSERT INTO inventaire (rayon, commence_par) VALUES ($1, $2) RETURNING id", cnx, tx))
+        // Pendant un inventaire complet, le rayon compté lui est rattaché
+        await using (var cmd = new NpgsqlCommand("""
+            INSERT INTO inventaire (rayon, commence_par, campagne_id)
+            VALUES ($1, $2, (SELECT id FROM campagne_inventaire WHERE statut = 'en_cours')) RETURNING id
+            """, cnx, tx))
         {
             cmd.Parameters.AddWithValue(rayon);
             cmd.Parameters.AddWithValue(utilisateurId);
@@ -99,10 +104,11 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
 
         await using var lignes = db.CreateCommand("""
             SELECT li.id, l.id, p.nom_commercial, l.numero_lot, l.date_peremption, l.date_a_verifier,
-                   concat_ws(' + réserve ', ev.code, er.code), l.prix_achat_ht, li.compte, li.date_verifiee, li.statut,
+                   concat_ws(' + réserve ', ev.code, er.code), COALESCE(vl.prix_unitaire, l.prix_achat_ht), li.compte, li.date_verifiee, li.statut,
                    li.theorique, li.ecart, li.valeur_ecart
             FROM ligne_inventaire li
             JOIN lot l ON l.id = li.lot_id
+            LEFT JOIN v_valeur_lot vl ON vl.lot_id = l.id
             JOIN produit p ON p.id = l.produit_id
             LEFT JOIN emplacement ev ON ev.id = p.emplacement_id
             LEFT JOIN emplacement er ON er.id = p.reserve_id

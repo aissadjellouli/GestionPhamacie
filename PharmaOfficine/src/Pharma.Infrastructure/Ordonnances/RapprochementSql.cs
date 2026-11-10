@@ -14,7 +14,7 @@ public sealed class RapprochementSql(NpgsqlDataSource db) : IRapprochementCatalo
     private const string Sql = """
         WITH c AS (
             SELECT p.id, p.nom_commercial, d.nom AS dci, p.dosage, p.forme, p.prix_public,
-                   COALESCE(e.stock, 0)::int AS stock, p.classe,
+                   p.classe,
                    LEAST(1.0, GREATEST(
                        word_similarity(lower(split_part(p.nom_commercial, ' ', 1)), lower($1)),
                        word_similarity(lower(p.nom_commercial), lower($1)),
@@ -25,11 +25,13 @@ public sealed class RapprochementSql(NpgsqlDataSource db) : IRapprochementCatalo
                    word_similarity(lower(p.nom_commercial), lower($1)) AS ressemblance_nom
             FROM produit p
             LEFT JOIN dci d          ON d.id = p.dci_id
-            LEFT JOIN v_etat_stock e ON e.produit_id = p.id
             WHERE p.actif
         )
         SELECT id, nom_commercial, dci, dosage, forme, prix_public, stock, classe, score::float8
         FROM c
+        -- Stock vendable (même calcul que v_etat_stock), lu pour les seuls produits retenus
+        CROSS JOIN LATERAL (SELECT COALESCE(sum(l.quantite_disponible), 0)::int AS stock FROM lot l
+                            WHERE l.produit_id = c.id AND l.date_peremption > current_date) e
         WHERE score >= $3
         ORDER BY score DESC, ressemblance_nom DESC, stock DESC, nom_commercial
         LIMIT $2

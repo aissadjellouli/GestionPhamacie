@@ -3,7 +3,8 @@ using Pharma.Domain.Stock;
 
 namespace Pharma.Application.Catalogue;
 
-public sealed record LotAServir(long LotId, string NumeroLot, DateOnly DatePeremption, int Quantite, string Fournisseur);
+/// <summary>StockProduit : boîtes vendables du produit, tous lots (ni périmées, ni bloquées).</summary>
+public sealed record LotAServir(long LotId, string NumeroLot, DateOnly DatePeremption, int Quantite, string Fournisseur, int StockProduit = 0);
 
 /// <summary>Lot encore en stock mais écarté de la vente (périmé ou bloqué).</summary>
 public sealed record LotEcarte(string NumeroLot, DateOnly DatePeremption, RaisonNonVendable Raison, string? MotifBlocage);
@@ -36,7 +37,7 @@ public sealed class ObtenirLotFefo(ILotsLecture lots, IHorloge horloge)
         var servi = lot is null
             ? null
             : new LotAServir(lot.Id, lot.NumeroLot, lot.DatePeremption, lot.QuantiteDisponible,
-                lot.Fournisseur?.RaisonSociale ?? "");
+                lot.Fournisseur?.RaisonSociale ?? "", enStock.Where(l => l.EstVendable(aujourdhui)).Sum(l => l.QuantiteDisponible));
         return new ResultatLotFefo(servi, ecartes);
     }
 }

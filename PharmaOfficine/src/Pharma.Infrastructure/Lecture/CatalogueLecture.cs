@@ -6,25 +6,29 @@ namespace Pharma.Infrastructure.Lecture;
 
 public sealed class CatalogueLecture(NpgsqlDataSource db) : ICatalogueLecture
 {
-    // Accents ignorés des deux côtés : « paracet » trouve « Paracétamol » (saisie rapide au comptoir)
-    private const string SansAccent = "'àâäáãçéèêëíìîïñóòôöõúùûüÿœÀÂÄÁÃÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜŸŒ', 'aaaaaceeeeiiiinooooouuuuyoAAAAACEEEEIIIINOOOOOUUUUYO'";
-
-    // Code-barres exact, puis nom ou DCI, tolérante aux fautes (pg_trgm)
-    private const string SqlRecherche = $$"""
-        WITH q AS (SELECT translate($1, {{SansAccent}}) AS t)
+    // Accents ignorés des deux côtés : « paracet » trouve « Paracétamol » (saisie rapide au comptoir).
+    // sans_accent() (033_index_performance.sql) est indexée en trigrammes sur le nom et la DCI :
+    // chaque condition passe par un index, au lieu de recalculer tous les produits à chaque frappe.
+    // Tolérance aux fautes : opérateur % de pg_trgm (similarité au moins 0,3, réglage par défaut).
+    private const string SqlRecherche = """
+        WITH q AS (SELECT sans_accent($1) AS t),
+             trouves AS (
+                SELECT id FROM produit WHERE code_barre = $1
+                UNION SELECT p.id FROM produit p, q WHERE sans_accent(p.nom_commercial) ILIKE '%' || q.t || '%'
+                UNION SELECT p.id FROM produit p, q WHERE sans_accent(p.nom_commercial) % q.t
+                UNION SELECT p.id FROM produit p JOIN dci d ON d.id = p.dci_id, q WHERE sans_accent(d.nom) ILIKE '%' || q.t || '%')
         SELECT p.id, p.nom_commercial, d.nom, p.dosage, p.forme, p.prix_public,
                COALESCE(e.stock, 0)::int, p.classe
-        FROM produit p
+        FROM trouves t
+        JOIN produit p ON p.id = t.id
         CROSS JOIN q
         LEFT JOIN dci d          ON d.id = p.dci_id
-        LEFT JOIN v_etat_stock e ON e.produit_id = p.id
+        -- Stock vendable (même calcul que v_etat_stock : lots non périmés), lu pour ce produit seulement
+        LEFT JOIN LATERAL (SELECT sum(l.quantite_disponible) AS stock FROM lot l
+                           WHERE l.produit_id = p.id AND l.date_peremption > current_date) e ON true
         WHERE p.actif
-          AND (p.code_barre = $1
-               OR translate(p.nom_commercial, {{SansAccent}}) ILIKE '%' || q.t || '%'
-               OR translate(d.nom, {{SansAccent}}) ILIKE '%' || q.t || '%'
-               OR similarity(translate(p.nom_commercial, {{SansAccent}}), q.t) > 0.3)
         ORDER BY COALESCE(p.code_barre = $1, false) DESC,
-                 similarity(translate(p.nom_commercial, {{SansAccent}}), q.t) DESC, p.nom_commercial
+                 similarity(sans_accent(p.nom_commercial), q.t) DESC, p.nom_commercial
         LIMIT $2
         """;
 

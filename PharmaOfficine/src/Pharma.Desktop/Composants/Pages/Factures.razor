@@ -1,0 +1,239 @@
+@page "/factures"
+@inject ApiClient Api
+
+<div class="page">
+    <div class="titre-page">
+        <div>
+            <h1>Factures</h1>
+            <p class="sous-titre">Patients, entreprises et organismes : ventes, ordonnances, lignes libres ; rejets, corrections, avoirs et suivi des encaissements</p>
+        </div>
+        <button type="button" class="btn btn-principal" @onclick="() => Editer(Nouvelle, null)">Nouvelle facture</button>
+    </div>
+
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+    @if (mode is not null)
+    {
+        <EditeurFacture @key="cleEditeur" Mode="@mode" Origine="origine" OnFerme="() => mode = null" OnTermine="TermineAsync" />
+    }
+
+    <!-- Filtres -->
+    <div class="filtres" role="tablist" aria-label="Suivi">
+        @foreach (var (code, libelle) in Suivis)
+        {
+            <button type="button" role="tab" class="puce" aria-selected="@(suivi == code ? "true" : "false")" aria-pressed="@(suivi == code ? "true" : "false")"
+                    @onclick="() => FiltrerAsync(code)">@libelle</button>
+        }
+    </div>
+    <div class="achats-ligne" style="align-items: flex-end">
+        <div class="champ" style="flex: 1 1 220px"><label for="l-q">N° ou destinataire</label><input id="l-q" type="search" @bind="recherche" @bind:after="ChargerAsync" /></div>
+        <div class="champ" style="flex: 0 0 170px"><label for="l-dest">Destinataire</label>
+            <select id="l-dest" @bind="filtreDestinataire" @bind:after="ChargerAsync"><option value="">Tous</option><option value="patient">Patients</option><option value="entreprise">Entreprises</option><option value="organisme">Organismes</option></select></div>
+        <div class="champ" style="flex: 0 0 160px"><label for="l-du">Du</label><input id="l-du" type="date" @bind="du" @bind:after="ChargerAsync" /></div>
+        <div class="champ" style="flex: 0 0 160px"><label for="l-au">Au</label><input id="l-au" type="date" @bind="au" @bind:after="ChargerAsync" /></div>
+    </div>
+
+    <div class="tableau-cadre">
+        <table class="tableau">
+            <thead><tr><th scope="col">N°</th><th scope="col">Date</th><th scope="col">Destinataire</th><th scope="col" class="nombre">TTC</th><th scope="col" class="nombre">Payé / réglé</th>
+                <th scope="col" class="nombre">Reste</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+            <tbody>
+                @foreach (var f in factures)
+                {
+                    <tr class="@(detail?.Resume.Id == f.Id ? "ligne-choisie" : null)">
+                        <td style="white-space: nowrap"><strong>@f.Numero</strong>@(f.Version > 1 ? $" v{f.Version}" : "")</td>
+                        <td>@f.Date.ToString("dd/MM/yyyy")</td>
+                        <td>@f.DestinataireNom<br /><span class="detail">@Destinataire(f.Destinataire)</span></td>
+                        <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(f.Ttc, 2)</td>
+                        <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(f.DejaPaye + f.Regle + f.Avoirs, 2)</td>
+                        <td class="nombre" style="white-space: nowrap">@(f.Type == "avoir" ? "—" : Libelles.Dinars(f.Reste, 2))</td>
+                        <td>@Etat(f)</td>
+                        <td><button type="button" class="lien-bouton" @onclick="() => OuvrirAsync(f.Id)">Ouvrir</button></td>
+                    </tr>
+                }
+                @if (factures.Count == 0) { <tr><td colspan="8" class="vide">Aucune facture.</td></tr> }
+            </tbody>
+            @if (suivi == "a_encaisser" && factures.Count > 0)
+            {
+                <tfoot><tr><th scope="row" colspan="5">Total à encaisser</th><td class="nombre"><strong>@Libelles.Dinars(factures.Sum(f => f.Reste), 2)</strong></td><td colspan="2"></td></tr></tfoot>
+            }
+        </table>
+    </div>
+
+    @if (detail is { } d)
+    {
+        var r = d.Resume;
+        <section class="panneau" aria-labelledby="t-detail">
+            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px">
+                <h2 id="t-detail">@(r.Type == "avoir" ? "Avoir" : "Facture") @r.Numero@(versionVue is { } vv && vv != r.Version ? $" · version {vv} (historique)" : r.Version > 1 ? $" · version {r.Version}" : "")</h2>
+                <div class="filtres">
+                    <button type="button" class="btn" @onclick="() => PdfAsync(d)">Imprimer (PDF)</button>
+                    <button type="button" class="btn" @onclick="() => detail = null">Fermer</button>
+                </div>
+            </div>
+            <p style="margin: 0"><strong>@r.DestinataireNom</strong> · @Destinataire(r.Destinataire) · le @r.Date.ToString("dd/MM/yyyy") · par @d.Employe</p>
+            @if (d.DestinataireInfos is { } inf) { <p class="detail" style="margin: 0; white-space: pre-line">@inf</p> }
+            <p style="margin: 0">@Etat(r)</p>
+            @if (r.HorsSuivi) { <div class="info-bandeau" role="status">Hors suivi de trésorerie : @r.MotifHorsSuivi</div> }
+            @if (r.MotifRejet is { } mr) { <div class="erreur" role="status">Rejetée : @mr</div> }
+
+            <div class="tableau-cadre">
+                <table class="tableau">
+                    <thead><tr><th scope="col">Désignation</th><th scope="col" class="nombre">Qté</th><th scope="col" class="nombre">P.U. TTC</th><th scope="col" class="nombre">TVA</th><th scope="col" class="nombre">Montant TTC</th></tr></thead>
+                    <tbody>
+                        @foreach (var l in d.Lignes)
+                        {
+                            <tr><td>@l.Designation</td><td class="nombre">@l.Quantite.ToString("0.##")</td><td class="nombre">@Libelles.Dinars(l.PrixUnitaireTtc, 2)</td>
+                                <td class="nombre">@l.TauxTva.ToString("0.##") %</td><td class="nombre" style="white-space: nowrap">@Libelles.Dinars(l.MontantTtc, 2)</td></tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                        <tr><th scope="row" colspan="4">Total HT · TVA</th><td class="nombre">@Libelles.Dinars(d.Ht, 2) · @Libelles.Dinars(d.Tva, 2)</td></tr>
+                        <tr><th scope="row" colspan="4">Total TTC</th><td class="nombre"><strong>@Libelles.Dinars(r.Ttc, 2)</strong></td></tr>
+                        @if (r.Type == "facture")
+                        {
+                            <tr><th scope="row" colspan="4">Payé au comptoir · réglé · avoirs</th><td class="nombre">@Libelles.Dinars(r.DejaPaye, 2) · @Libelles.Dinars(r.Regle, 2) · @Libelles.Dinars(r.Avoirs, 2)</td></tr>
+                            <tr><th scope="row" colspan="4">Reste à encaisser</th><td class="nombre"><strong>@Libelles.Dinars(r.Reste, 2)</strong></td></tr>
+                        }
+                    </tfoot>
+                </table>
+            </div>
+
+            @if (d.Versions.Count > 0)
+            {
+                <p class="detail" style="margin: 0">Versions précédentes :
+                    @foreach (var v in d.Versions)
+                    {
+                        <button type="button" class="lien-bouton" style="margin-left: 6px" @onclick="() => OuvrirAsync(r.Id, v)">version @v</button>
+                    }
+                    @if (versionVue is not null && versionVue != r.Version) { <button type="button" class="lien-bouton" style="margin-left: 6px" @onclick="() => OuvrirAsync(r.Id)">version en vigueur</button> }
+                </p>
+            }
+
+            @if (r.Type == "facture" && (versionVue is null || versionVue == r.Version))
+            {
+                <h3 class="sous-titre-panneau">Actions</h3>
+                <div class="achats-ligne" style="align-items: flex-end">
+                    <div class="champ" style="flex: 1 1 260px"><label for="a-motif">Motif (rejet, avoir, retrait du suivi)</label><input id="a-motif" type="text" maxlength="300" @bind="motifAction" /></div>
+                    @if (r.Statut != "remplacee")
+                    {
+                        <div class="champ" style="flex: 0 0 150px"><label for="a-avoir">Montant de l’avoir</label><input id="a-avoir" type="number" min="0.01" step="0.01" @bind="montantAvoir" /></div>
+                    }
+                </div>
+                <div class="filtres">
+                    @if (r.Statut == "emise")
+                    {
+                        <button type="button" class="btn" disabled="@enCours" @onclick="RejeterAsync">Enregistrer un rejet</button>
+                    }
+                    @if (r.Statut == "rejetee")
+                    {
+                        <button type="button" class="btn btn-principal" @onclick="() => Editer(Correction, d)">Corriger (même numéro)</button>
+                        <button type="button" class="btn" @onclick="() => Editer(Remplacement, d)">Remplacer par une nouvelle facture</button>
+                    }
+                    @if (r.Statut != "remplacee")
+                    {
+                        <button type="button" class="btn" disabled="@(enCours || montantAvoir <= 0)" @onclick="AvoirAsync">Émettre un avoir</button>
+                        <button type="button" class="btn" disabled="@enCours" @onclick="SuiviAsync">@(r.HorsSuivi ? "Remettre dans le suivi de trésorerie" : "Retirer du suivi de trésorerie")</button>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private const string Nouvelle = "nouvelle", Correction = "correction", Remplacement = "remplacement";
+    private static readonly (string?, string)[] Suivis =
+        [(null, "Toutes"), ("a_encaisser", "À encaisser"), ("rejetees", "Rejetées"), ("hors_suivi", "Hors suivi"), ("avoirs", "Avoirs")];
+
+    private List<FactureResumeDto> factures = [];
+    private FactureDetailDto? detail, origine;
+    private int? versionVue;
+    private string? suivi, recherche, filtreDestinataire, erreur, message, mode, motifAction;
+    private DateOnly? du, au;
+    private decimal montantAvoir;
+    private bool enCours;
+    private int cleEditeur;
+
+    protected override Task OnInitializedAsync() => ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        string? e;
+        (factures, e) = await Api.FacturesAsync(recherche, string.IsNullOrEmpty(filtreDestinataire) ? null : filtreDestinataire, suivi, du, au);
+        erreur ??= e;
+    }
+
+    private Task FiltrerAsync(string? code) { suivi = code; return ChargerAsync(); }
+
+    private async Task OuvrirAsync(long id, int? version = null)
+    {
+        var (d, e) = await Api.FactureAsync(id, version);
+        if (e is not null) { erreur = e; return; }
+        (detail, versionVue, motifAction, montantAvoir) = (d, version ?? d!.Resume.Version, null, 0);
+    }
+
+    private void Editer(string m, FactureDetailDto? d)
+    {
+        (mode, origine, erreur, message) = (m, d, null, null);
+        cleEditeur++;
+    }
+
+    private async Task TermineAsync((long Id, string Numero) f)
+    {
+        message = mode switch
+        {
+            "correction" => $"Facture {f.Numero} corrigée (nouvelle version).",
+            "remplacement" => $"Facture {f.Numero} émise ; la facture {origine?.Resume.Numero} est marquée « remplacée », hors comptabilité.",
+            _ => $"Facture {f.Numero} émise."
+        };
+        mode = null;
+        await ChargerAsync();
+        await OuvrirAsync(f.Id);
+        if (detail is not null) await PdfAsync(detail);
+    }
+
+    private async Task PdfAsync(FactureDetailDto d)
+    {
+        var version = versionVue is { } v && v != d.Resume.Version ? v : (int?)null;
+        var (contenu, nom, e) = await Api.FacturePdfAsync(d.Resume.Id, d.Resume.Numero, version);
+        if (e is not null) { erreur = e; return; }
+        try { Documents.Ouvrir(Documents.Enregistrer("Factures", nom!, contenu!)); }
+        catch (Exception ex) { erreur = $"Facture impossible à ouvrir : {ex.Message}"; }
+    }
+
+    private Task RejeterAsync() => Agir(() => Api.RejeterFactureAsync(detail!.Resume.Id, motifAction), "Rejet enregistré : corrigez la facture ou remplacez-la.");
+
+    private Task AvoirAsync() => Agir(async () => (await Api.AvoirFactureAsync(detail!.Resume.Id, montantAvoir, motifAction)).Item2, "Avoir émis.");
+
+    private Task SuiviAsync()
+    {
+        var retirer = !detail!.Resume.HorsSuivi;
+        return Agir(() => Api.SuiviFactureAsync(detail.Resume.Id, retirer, motifAction),
+            retirer ? "Facture retirée du suivi de trésorerie (elle reste valable)." : "Facture remise dans le suivi de trésorerie.");
+    }
+
+    private async Task Agir(Func<Task<string?>> action, string succes)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        var e = await action();
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        message = succes;
+        var id = detail!.Resume.Id;
+        await ChargerAsync();
+        await OuvrirAsync(id);
+    }
+
+    private static string Destinataire(string d) => d switch { "organisme" => "Organisme", "entreprise" => "Entreprise", _ => "Patient" };
+
+    private static string Etat(FactureResumeDto f) => f.Type == "avoir"
+        ? $"Avoir sur {f.OrigineNumero}"
+        : f.Statut switch
+        {
+            "rejetee" => "Rejetée",
+            "remplacee" => $"Remplacée par {f.RemplaceeParNumero} (non comptabilisée)",
+            _ => (f.HorsSuivi ? "Hors suivi" : f.Reste <= 0 ? "Soldée" : "À encaisser") + (f.RemplaceNumero is { } x ? $" · remplace {x}" : "")
+        };
+}

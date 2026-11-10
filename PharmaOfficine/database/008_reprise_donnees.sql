@@ -322,7 +322,7 @@ BEGIN
     -- Lots (date inconnue : provisoirement à un an, et signalée à vérifier)
     INSERT INTO lot (produit_id, reception_id, fournisseur_id, numero_lot,
                      date_peremption, quantite_disponible, prix_achat_ht, date_a_verifier)
-    SELECT c.produit_id, rc.reception_id, rc.fournisseur_id, x.numero_lot,
+    SELECT c.produit_id, rc.reception_id, rc.fournisseur_id, x.lot_reprise,
            COALESCE(MIN(x.dte), current_date + 365),
            SUM(x.qte)::int,
            MAX(COALESCE(import.nombre(ps.prix_achat), 0)),
@@ -331,9 +331,9 @@ BEGIN
         SELECT st.*,
                import.nombre(st.quantite)        AS qte,
                import.date_src(st.date_peremption) AS dte,
-               COALESCE(NULLIF(btrim(st.numero_lot), ''),
-                        'REPRISE-' || COALESCE(to_char(import.date_src(st.date_peremption), 'YYYYMM'), 'ND'))
-                                                 AS numero_lot
+               upper(COALESCE(NULLIF(btrim(st.numero_lot), ''),
+                        'REPRISE-' || COALESCE(to_char(import.date_src(st.date_peremption), 'YYYYMM'), 'ND')))
+                                                 AS lot_reprise   -- normalisé comme à la réception (018)
         FROM import.stock_src st
         WHERE st.session_id = p_session
     ) x
@@ -345,11 +345,11 @@ BEGIN
          ON fs.session_id = x.session_id AND fs.ref_source = x.fournisseur_ref
     JOIN _rec rc ON rc.fournisseur_id = COALESCE(fs.fournisseur_id, v_reprise)
     WHERE x.qte > 0
-    GROUP BY c.produit_id, rc.reception_id, rc.fournisseur_id, x.numero_lot;
+    GROUP BY c.produit_id, rc.reception_id, rc.fournisseur_id, x.lot_reprise;
 
     -- Mouvements d'entrée pour la traçabilité
-    INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id)
-    SELECT l.id, 'entree', l.quantite_disponible, v_ref, p_utilisateur_id
+    INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id, reception_id, prix_achat_ht)
+    SELECT l.id, 'entree', l.quantite_disponible, v_ref, p_utilisateur_id, l.reception_id, l.prix_achat_ht
     FROM lot l
     WHERE l.reception_id IN (SELECT reception_id FROM _rec);
 

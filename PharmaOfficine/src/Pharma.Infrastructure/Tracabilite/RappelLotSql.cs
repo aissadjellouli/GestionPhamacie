@@ -24,7 +24,7 @@ public sealed class RappelLotSql(NpgsqlDataSource db) : IRappelLot
         await using (var cmd = new NpgsqlCommand("""
             SELECT p.nom_commercial, count(l.id)::int, COALESCE(SUM(l.quantite_disponible), 0)::int
             FROM produit p
-            LEFT JOIN lot l ON l.produit_id = p.id AND l.numero_lot = $2
+            LEFT JOIN lot l ON l.produit_id = p.id AND l.numero_lot = upper(btrim($2))
             WHERE p.id = $1
             GROUP BY p.nom_commercial
             """, connexion, tx))

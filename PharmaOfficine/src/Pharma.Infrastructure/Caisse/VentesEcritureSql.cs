@@ -119,8 +119,9 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
             {
                 await using var cmd = new NpgsqlCommand("""
                     INSERT INTO registre_psychotrope (lot_id, ligne_vente_id, type_mouvement, quantite, solde_apres,
-                                                      patient_id, medecin_id, ordonnance_id, utilisateur_id)
-                    VALUES ($1, $2, 'sortie', $3, $4, $5, $6, $7, $8)
+                                                      patient_id, medecin_id, ordonnance_id, utilisateur_id,
+                                                      porteur_nom, porteur_adresse, porteur_piece)
+                    VALUES ($1, $2, 'sortie', $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     """, cx, tx);
                 cmd.Parameters.AddWithValue(l.LotId);
                 cmd.Parameters.AddWithValue(ligneId);
@@ -130,6 +131,10 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
                 cmd.Parameters.Add(Valeur(medecinId, NpgsqlDbType.Bigint));
                 cmd.Parameters.Add(Valeur(ordonnanceId, NpgsqlDbType.Bigint));
                 cmd.Parameters.AddWithValue(v.UtilisateurId);
+                var porteur = a.Ordonnance?.Porteur;
+                cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)porteur?.Nom ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+                cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)porteur?.Adresse ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+                cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)porteur?.PieceIdentite ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
                 await cmd.ExecuteNonQueryAsync(ct);
             }
         }

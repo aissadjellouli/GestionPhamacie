@@ -4,10 +4,10 @@
 <div class="page page-serree">
     <div class="titre-page">
         <div>
-            <h1>Clôture de caisse</h1>
+            <h1>@(Releve ? "Relève de caisse" : "Clôture de caisse")</h1>
             @if (etat?.SessionId is not null)
             {
-                <p class="sous-titre">Session ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value) avec un fond de caisse de @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste</p>
+                <p class="sous-titre">Session ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value)@(etat.OuvertePar is { } par ? $" par {par}" : "") avec un fond de caisse de @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste</p>
             }
         </div>
         <a href="caisse" style="font-size: 14px; font-weight: 500">Retour à la caisse</a>
@@ -21,10 +21,17 @@
     }
     else if (etat is not null && etat.SessionId is null && resultat is null)
     {
-        <div class="carte vide">Aucune caisse ouverte à votre nom. <a href="caisse">Ouvrir la caisse</a></div>
+        <div class="carte vide">Aucune caisse ouverte sur ce poste. <a href="caisse">Ouvrir la caisse</a></div>
     }
     else if (etat is not null)
     {
+        @if (Releve && resultat is null)
+        {
+            <div class="info-bandeau" role="note">
+                Changement d’équipe : comptez le tiroir. La période en cours est clôturée avec ce comptage, et la caisse reste ouverte
+                avec l’argent compté comme fond. L’écart de chaque période est ainsi attribué. Les ventes restent au nom de chaque vendeur.
+            </div>
+        }
         @if (etat.ComptageAveugle && resultat is null)
         {
             <div class="info-bandeau" role="note">
@@ -55,7 +62,7 @@
                     <span style="font-size: 16px">Total compté : <strong>@Libelles.Dinars(TotalCompte, 2)</strong></span>
                     @if (resultat is null)
                     {
-                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">Valider le comptage</button>
+                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">@(Releve ? "Valider la relève" : "Valider le comptage")</button>
                     }
                 </div>
             </section>
@@ -86,7 +93,18 @@
                         {
                             <div class="erreur" role="alert">Écart supérieur au seuil de @Libelles.Dinars(resultat.SeuilEcart ?? 0) : inscrit au journal des actions sensibles.</div>
                         }
+                        @if (resultat.VerseAuCoffre > 0)
+                        {
+                            <div class="info-bandeau" role="status">@Libelles.Dinars(resultat.VerseAuCoffre, 2) portés au coffre automatiquement ; le fond de caisse reste dans le tiroir.</div>
+                        }
                         <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button>
+                    </div>
+                }
+                @if (nouvelleSession is not null && resultat is not null)
+                {
+                    <div class="succes" role="status">
+                        Relève faite : la caisse reste ouverte avec un fond de @Libelles.Dinars(resultat.Compte, 2).
+                        <a href="caisse">Retour à la caisse</a>
                     </div>
                 }
                 @if (fichier is not null)
@@ -113,6 +131,10 @@
         ("autres", 1m, "Autres pièces (total DA)")
     ];
 
+    /// <summary>Relève au changement d'équipe : comptage, puis caisse rouverte avec l'argent compté.</summary>
+    [SupplyParameterFromQuery(Name = "releve")] public bool Releve { get; set; }
+
+    private long? nouvelleSession;
     private EtatCaisseDto? etat;
     private readonly Dictionary<string, decimal> saisies = Coupures.ToDictionary(c => c.Code, _ => 0m);
     private ClotureDto? resultat;
@@ -133,7 +155,13 @@
     private async Task ValiderAsync()
     {
         enCours = true;
-        (resultat, erreur) = await Api.CloturerCaisseAsync(new Dictionary<string, decimal>(saisies));
+        if (Releve)
+        {
+            var (releve, err) = await Api.ReleveCaisseAsync(new Dictionary<string, decimal>(saisies));
+            (resultat, nouvelleSession, erreur) = (releve?.Cloture, releve?.NouvelleSessionId, err);
+        }
+        else
+            (resultat, erreur) = await Api.CloturerCaisseAsync(new Dictionary<string, decimal>(saisies));
         enCours = false;
     }
 

@@ -7,7 +7,7 @@ public sealed record LigneCommandeSaisie(long ProduitId, string Nom, int Quantit
 /// <summary>Une ligne de livraison : un lot d'un produit, avec ses boîtes sérialisées éventuelles (Data Matrix).</summary>
 public sealed record LigneReceptionSaisie(
     long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, int Quantite, decimal PrixAchatHt,
-    string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null);
+    string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null, bool LotSepare = false, bool EntrerBloque = false);
 
 public static class RegleAchats
 {

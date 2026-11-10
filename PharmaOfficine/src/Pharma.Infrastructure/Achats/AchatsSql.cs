@@ -72,15 +72,14 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     public async Task<IReadOnlyList<SuggestionCommande>> SuggestionsAsync(CancellationToken ct = default)
     {
         // Dernier achat : le lot reçu le plus récemment pour ce produit
-        await using var cmd = db.CreateCommand("""
+        await using var cmd = db.CreateCommand($"""
             SELECT e.produit_id, e.nom_commercial, e.statut, e.stock::int, e.qte_suggeree::int,
                    d.prix_achat_ht, d.fournisseur_id, d.raison_sociale
             FROM v_etat_stock e
             LEFT JOIN LATERAL (
-                SELECT l.prix_achat_ht, l.fournisseur_id, f.raison_sociale
-                FROM lot l JOIN reception r ON r.id = l.reception_id JOIN fournisseur f ON f.id = l.fournisseur_id
-                WHERE l.produit_id = e.produit_id
-                ORDER BY r.date_reception DESC, l.id DESC LIMIT 1) d ON true
+                SELECT a.prix_achat_ht, a.fournisseur_id, f.raison_sociale
+                FROM ({AchatsDuProduit("e.produit_id")}) a JOIN fournisseur f ON f.id = a.fournisseur_id
+                ORDER BY a.date_reception DESC, a.ordre DESC LIMIT 1) d ON true
             WHERE e.statut IN ('rupture', 'critique')
             ORDER BY CASE e.statut WHEN 'rupture' THEN 0 ELSE 1 END, e.nom_commercial
             """);
@@ -89,14 +88,29 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
             r.IsDBNull(5) ? null : r.GetDecimal(5), r.IsDBNull(6) ? null : r.GetInt64(6), Texte(r, 7)), ct);
     }
 
+    /// <summary>
+    /// Chaque achat d'un produit, avec son prix et sa date : une entrée en stock par livraison (018_lot_unique.sql),
+    /// ou le lot lui-même quand il n'a pas de mouvement d'entrée (lots créés avant, données de démonstration).
+    /// </summary>
+    private static string AchatsDuProduit(string produit) => $"""
+        SELECT l.fournisseur_id, COALESCE(m.prix_achat_ht, l.prix_achat_ht) AS prix_achat_ht, r.date_reception, m.id AS ordre
+        FROM mouvement_stock m JOIN lot l ON l.id = m.lot_id
+        JOIN reception r ON r.id = COALESCE(m.reception_id, l.reception_id)
+        WHERE l.produit_id = {produit} AND m.type = 'entree'
+        UNION ALL
+        SELECT l.fournisseur_id, l.prix_achat_ht, r.date_reception, 0
+        FROM lot l JOIN reception r ON r.id = l.reception_id
+        WHERE l.produit_id = {produit}
+          AND NOT EXISTS (SELECT 1 FROM mouvement_stock m WHERE m.lot_id = l.id AND m.type = 'entree')
+        """;
+
     public async Task<DernierAchat?> DernierAchatAsync(long produitId, long fournisseurId, CancellationToken ct = default)
     {
         // Chez ce grossiste d'abord, sinon chez n'importe lequel
-        await using var cmd = db.CreateCommand("""
-            SELECT l.prix_achat_ht, l.fournisseur_id
-            FROM lot l JOIN reception r ON r.id = l.reception_id
-            WHERE l.produit_id = $1
-            ORDER BY (l.fournisseur_id = $2) DESC, r.date_reception DESC, l.id DESC
+        await using var cmd = db.CreateCommand($"""
+            SELECT a.prix_achat_ht, a.fournisseur_id
+            FROM ({AchatsDuProduit("$1")}) a
+            ORDER BY (a.fournisseur_id = $2) DESC, a.date_reception DESC, a.ordre DESC
             LIMIT 1
             """);
         cmd.Parameters.AddWithValue(produitId);
@@ -252,36 +266,63 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         foreach (var l in n.Lignes)
         {
             long? ligneCommandeId = lignesCommande.TryGetValue(l.ProduitId, out var lcid) ? lcid : null;
+            var numero = Pharma.Domain.Stock.RegleLot.Normaliser(l.NumeroLot);
+
+            // Même n° de lot chez ce grossiste : la livraison complète le lot de même date ; date différente
+            // ou lot bloqué selon le choix de l'utilisateur (RegleLot.Decider)
+            var memeNumero = await LotsMemeNumeroAsync(cnx, tx, l.ProduitId, n.FournisseurId, numero, verrouiller: true, ct);
+            var decision = Pharma.Domain.Stock.RegleLot.Decider(memeNumero, l.DatePeremption,
+                new Pharma.Domain.Stock.ChoixLot(l.LotSepare, l.EntrerBloque), l.Nom, numero);
+
             long lotId;
-            await using (var cmd = new NpgsqlCommand("""
-                INSERT INTO lot (produit_id, ligne_commande_id, numero_lot, date_peremption, quantite_disponible,
-                                 prix_achat_ht, reception_id, fournisseur_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
-                """, cnx, tx))
+            if (decision.Completer is { } e)
             {
+                // Pas de moyenne : chaque boîte garde le prix de sa livraison, le lot garde celui de sa première livraison
+                lotId = e.Id;
+                await Executer(cnx, tx, """
+                    UPDATE lot SET quantite_disponible = quantite_disponible + $2, date_peremption = $3, date_a_verifier = false
+                    WHERE id = $1
+                    """, ct, lotId, l.Quantite, l.DatePeremption);
+            }
+            else
+            {
+                await using var cmd = new NpgsqlCommand("""
+                    INSERT INTO lot (produit_id, ligne_commande_id, numero_lot, date_peremption, quantite_disponible,
+                                     prix_achat_ht, reception_id, fournisseur_id, bloque, motif_blocage)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+                    """, cnx, tx);
                 cmd.Parameters.AddWithValue(l.ProduitId);
                 cmd.Parameters.Add(Nul(ligneCommandeId, NpgsqlDbType.Bigint));
-                cmd.Parameters.AddWithValue(l.NumeroLot);
+                cmd.Parameters.AddWithValue(numero);
                 cmd.Parameters.AddWithValue(l.DatePeremption);
                 cmd.Parameters.AddWithValue(l.Quantite);
                 cmd.Parameters.AddWithValue(l.PrixAchatHt);
                 cmd.Parameters.AddWithValue(receptionId);
                 cmd.Parameters.AddWithValue(n.FournisseurId);
+                cmd.Parameters.AddWithValue(decision.NouveauBloque);
+                cmd.Parameters.Add(Nul(decision.NouveauBloque ? "Même n° de lot qu'un lot rappelé : entré bloqué à la réception" : null, NpgsqlDbType.Text));
                 lotId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
             await Executer(cnx, tx, """
-                INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id)
-                VALUES ($1, 'entree', $2, $3, $4)
-                """, ct, lotId, l.Quantite, $"BL {n.NumeroBl}", n.UtilisateurId);
+                INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id, reception_id, prix_achat_ht)
+                VALUES ($1, 'entree', $2, $3, $4, $5, $6)
+                """, ct, lotId, l.Quantite, $"BL {n.NumeroBl}", n.UtilisateurId, receptionId, l.PrixAchatHt);
 
             // Boîtes sérialisées (Data Matrix) : identité connue dès la réception
             foreach (var serie in l.NumerosSerie ?? [])
-                await Executer(cnx, tx, "INSERT INTO boite (lot_id, gtin, numero_serie) VALUES ($1, $2, $3)", ct, lotId, l.Gtin!, serie);
+                await Executer(cnx, tx, "INSERT INTO boite (lot_id, gtin, numero_serie, reception_id, prix_achat_ht) VALUES ($1, $2, $3, $4, $5)",
+                    ct, lotId, l.Gtin!, serie, receptionId, l.PrixAchatHt);
+
+
+            // Les autres reçoivent chacune une étiquette interne, dans la même transaction : aucune boîte n'entre sans identité
+            var aEtiqueter = l.Quantite - (l.NumerosSerie?.Count ?? 0);
+            if (aEtiqueter > 0)
+                await Executer(cnx, tx, "SELECT count(*) FROM creer_boites_internes($1, $2, $3, $4)", ct, lotId, aEtiqueter, receptionId, l.PrixAchatHt);
 
             if (ligneCommandeId is { } id)
                 await Executer(cnx, tx, "UPDATE ligne_commande SET qte_recue = qte_recue + $2 WHERE id = $1", ct, id, l.Quantite);
 
-            lots.Add(new LotRecu(lotId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.Quantite - (l.NumerosSerie?.Count ?? 0)));
+            lots.Add(new LotRecu(lotId, l.Nom, numero, l.DatePeremption, l.Quantite, Math.Max(0, aEtiqueter), decision.Completer is not null));
         }
 
         if (n.CommandeId is { } commande)
@@ -301,9 +342,10 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     {
         await using var cmd = db.CreateCommand("""
             SELECT r.id, f.raison_sociale, r.numero_bl, r.numero_facture, c.numero, r.date_reception,
-                   (SELECT count(*) FROM lot l WHERE l.reception_id = r.id)::int,
+                   (SELECT count(*) FROM lot l WHERE l.reception_id = r.id OR EXISTS (
+                        SELECT 1 FROM mouvement_stock m WHERE m.lot_id = l.id AND m.reception_id = r.id AND m.type = 'entree'))::int,
                    COALESCE((SELECT SUM(m.quantite) FROM mouvement_stock m JOIN lot l ON l.id = m.lot_id
-                             WHERE l.reception_id = r.id AND m.type = 'entree'), 0)::int,
+                             WHERE COALESCE(m.reception_id, l.reception_id) = r.id AND m.type = 'entree'), 0)::int,
                    r.montant_ttc
             FROM reception r
             JOIN fournisseur f ON f.id = r.fournisseur_id
@@ -323,8 +365,9 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     {
         await using var cmd = db.CreateCommand("""
             SELECT l.id, l.produit_id, p.nom_commercial, l.numero_lot, l.date_peremption, l.fournisseur_id,
-                   f.raison_sociale, l.quantite_disponible, l.prix_achat_ht, l.bloque
+                   f.raison_sociale, l.quantite_disponible, COALESCE(vl.prix_unitaire, l.prix_achat_ht), l.bloque
             FROM lot l JOIN produit p ON p.id = l.produit_id JOIN fournisseur f ON f.id = l.fournisseur_id
+            LEFT JOIN v_valeur_lot vl ON vl.lot_id = l.id
             WHERE l.id = $1
             """);
         cmd.Parameters.AddWithValue(lotId);
@@ -344,7 +387,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     public async Task<IReadOnlyList<long>> LotsEnStockAsync(long produitId, string? numeroLot, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT id FROM lot WHERE produit_id = $1 AND quantite_disponible > 0 AND ($2::text IS NULL OR numero_lot = $2)
+            SELECT id FROM lot WHERE produit_id = $1 AND quantite_disponible > 0 AND ($2::text IS NULL OR numero_lot = upper(btrim($2)))
             ORDER BY date_peremption, id
             """);
         cmd.Parameters.AddWithValue(produitId);
@@ -543,6 +586,43 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         return await Lister(cmd, r => new EtiquetteBoite(
             r.GetString(0), r.GetString(1), r.GetFieldValue<DateOnly>(2), r.GetDecimal(3), r.GetString(4), r.GetString(5),
             r.IsDBNull(6) ? null : r.GetString(6)), ct);
+    }
+
+    public async Task<IReadOnlyList<EtiquetteBoite>> EtiquettesReceptionAsync(long receptionId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT p.nom_commercial, l.numero_lot, l.date_peremption, p.prix_public, f.raison_sociale, b.code_etiquette, e.code
+            FROM boite b
+            JOIN lot l ON l.id = b.lot_id JOIN produit p ON p.id = l.produit_id JOIN fournisseur f ON f.id = l.fournisseur_id
+            LEFT JOIN emplacement e ON e.id = p.emplacement_id
+            WHERE b.reception_id = $1 AND b.code_etiquette IS NOT NULL AND b.statut = 'en_stock'
+            ORDER BY p.nom_commercial, b.code_etiquette
+            """);
+        cmd.Parameters.AddWithValue(receptionId);
+        return await Lister(cmd, r => new EtiquetteBoite(
+            r.GetString(0), r.GetString(1), r.GetFieldValue<DateOnly>(2), r.GetDecimal(3), r.GetString(4), r.GetString(5),
+            r.IsDBNull(6) ? null : r.GetString(6)), ct);
+    }
+
+    public async Task<IReadOnlyList<Pharma.Domain.Stock.LotExistant>> LotsMemeNumeroAsync(long produitId, long fournisseurId, string numeroLot, CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        return await LotsMemeNumeroAsync(cnx, null, produitId, fournisseurId, Pharma.Domain.Stock.RegleLot.Normaliser(numeroLot), verrouiller: false, ct);
+    }
+
+    private static async Task<IReadOnlyList<Pharma.Domain.Stock.LotExistant>> LotsMemeNumeroAsync(NpgsqlConnection cnx, NpgsqlTransaction? tx,
+        long produitId, long fournisseurId, string numero, bool verrouiller, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand($"""
+            SELECT id, date_peremption, date_a_verifier, quantite_disponible, prix_achat_ht, bloque
+            FROM lot WHERE produit_id = $1 AND fournisseur_id = $2 AND numero_lot = $3
+            ORDER BY date_peremption {(verrouiller ? "FOR UPDATE" : "")}
+            """, cnx, tx);
+        cmd.Parameters.AddWithValue(produitId);
+        cmd.Parameters.AddWithValue(fournisseurId);
+        cmd.Parameters.AddWithValue(numero);
+        return await Lister(cmd, r => new Pharma.Domain.Stock.LotExistant(r.GetInt64(0), r.GetFieldValue<DateOnly>(1), r.GetBoolean(2),
+            r.GetInt32(3), r.GetDecimal(4), r.GetBoolean(5)), ct);
     }
 
     // ---- Outils -------------------------------------------------------------

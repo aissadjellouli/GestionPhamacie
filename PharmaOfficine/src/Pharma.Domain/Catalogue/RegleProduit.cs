@@ -5,7 +5,8 @@ namespace Pharma.Domain.Catalogue;
 /// <summary>Fiche d'un produit créé à la main (absent de la nomenclature chargée).</summary>
 public sealed record FicheProduit(
     string NomCommercial, string Dci, string Dosage, string Forme, decimal PrixPublic, ClasseReglementaire Classe,
-    string? CodeBarre, decimal? TarifReference, bool Remboursable, decimal TauxTva, int StockMinimum);
+    string? CodeBarre, decimal? TarifReference, bool Remboursable, decimal TauxTva, int? StockMinimum,
+    string? NumEnregistrement = null);
 
 public static class RegleProduit
 {
@@ -27,7 +28,7 @@ public static class RegleProduit
         if (f.TarifReference is <= 0) throw new RegleMetierException("Le tarif de référence doit être supérieur à 0.");
         if (f.Remboursable && f.TarifReference is null) throw new RegleMetierException("Un produit remboursable a besoin d’un tarif de référence.");
         if (f.TauxTva is < 0 or > 100) throw new RegleMetierException("Taux de TVA entre 0 et 100 %.");
-        if (f.StockMinimum < 0) throw new RegleMetierException("Le stock minimum ne peut pas être négatif.");
+        if (f.StockMinimum is < 0 or > 100_000) throw new RegleMetierException("Le seuil d’alerte doit être entre 0 et 100 000 boîtes (vide : automatique).");
 
         string? code = null;
         if (!string.IsNullOrWhiteSpace(f.CodeBarre))
@@ -38,6 +39,7 @@ public static class RegleProduit
             if (Ean13.Parse(code).EstInterne) throw new RegleMetierException("Les codes commençant par 20 sont réservés aux étiquettes internes de l’officine.");
         }
 
-        return f with { NomCommercial = nom, Dci = dci, Dosage = dosage, Forme = forme, CodeBarre = code };
+        var num = string.IsNullOrWhiteSpace(f.NumEnregistrement) ? null : f.NumEnregistrement.Trim();
+        return f with { NomCommercial = nom, Dci = dci, Dosage = dosage, Forme = forme, CodeBarre = code, NumEnregistrement = num };
     }
 }

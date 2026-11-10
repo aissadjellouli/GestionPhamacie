@@ -16,13 +16,13 @@ internal static class AdminEndpoints
         admin.MapGet("/caisse", async (ObtenirParametresCaisse obtenir, CancellationToken ct) =>
             {
                 var p = await obtenir.ExecuterAsync(ct);
-                return Results.Ok(new ParametresCaisseDto(p.ComptageAveugle, p.FondCaisseDefaut, p.SeuilEcart, p.DeconnexionMinutes));
+                return Results.Ok(new ParametresCaisseDto(p.ComptageAveugle, p.FondCaisseDefaut, p.SeuilEcart, p.DeconnexionMinutes, p.VersementCloture));
             })
            .ExigerPermission(Permissions.AdminParametres);
 
         admin.MapPut("/caisse", async (ParametresCaisseDto req, ModifierParametresCaisse modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await modifier.ExecuterAsync(new ParametresCaisse(req.ComptageAveugle, req.FondCaisseDefaut, req.SeuilEcart, req.DeconnexionMinutes),
+                await modifier.ExecuterAsync(new ParametresCaisse(req.ComptageAveugle, req.FondCaisseDefaut, req.SeuilEcart, req.DeconnexionMinutes, req.VersementCloture ?? "manuel"),
                     user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
@@ -34,6 +34,18 @@ internal static class AdminEndpoints
            .ExigerPermission(Permissions.AdminParametres);
 
         // ---- Alertes et seuils ----
+        admin.MapGet("/seuils-stock", async (ListerSeuilsStockManuels lister, CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(ct)).Select(VersDto)))
+           .ExigerPermission(Permissions.AdminParametres);
+
+        admin.MapGet("/seuils-stock/{produitId:long}", async (long produitId, ObtenirSeuilStock obtenir, CancellationToken ct) =>
+                await obtenir.ExecuterAsync(produitId, ct) is { } s ? Results.Ok(VersDto(s)) : Results.NotFound(new ErreurDto("Produit introuvable.")))
+           .ExigerPermission(Permissions.AdminParametres);
+
+        admin.MapPut("/seuils-stock/{produitId:long}", async (long produitId, SeuilStockRequete req, DefinirSeuilStock definir, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(VersDto(await definir.ExecuterAsync(produitId, req.Seuil, user.UtilisateurId(), ct))))
+           .ExigerPermission(Permissions.AdminParametres);
+
         admin.MapGet("/seuils", async (ObtenirSeuils obtenir, CancellationToken ct) =>
                 Results.Ok(VersDto(await obtenir.ExecuterAsync(ct))))
            .ExigerPermission(Permissions.AdminParametres);
@@ -54,7 +66,7 @@ internal static class AdminEndpoints
             {
                 var e = await obtenir.ExecuterAsync(ct);
                 return Results.Ok(new EtatDroitsDto(
-                    e.Utilisateurs.Select(u => new UtilisateurAdminDto(u.Id, u.NomComplet, u.Identifiant, u.RoleId, u.Role, u.RoleSysteme, u.Actif, u.DerniereConnexion)).ToList(),
+                    e.Utilisateurs.Select(u => new UtilisateurAdminDto(u.Id, u.NomComplet, u.Identifiant, u.RoleId, u.Role, u.RoleSysteme, u.Actif, u.DerniereConnexion, u.CodeComptoir)).ToList(),
                     e.Roles.Select(r => new RoleAdminDto(r.Id, r.Code, r.Nom, r.Systeme, r.RemiseMaxPct, r.Permissions)).ToList(),
                     e.Permissions.Select(p => new PermissionAdminDto(p.Code, p.Module, p.Libelle, p.Sensible)).ToList()));
             })
@@ -78,10 +90,18 @@ internal static class AdminEndpoints
             })
            .ExigerPermission(Permissions.AdminUtilisateurs);
 
+        // Code comptoir oublié ou divulgué : effacé ici, l'employé en choisit un nouveau
+        admin.MapDelete("/utilisateurs/{id:long}/code-comptoir", async (long id, Pharma.Application.Securite.EffacerCodeComptoir effacer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await effacer.ExecuterAsync(id, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.AdminUtilisateurs);
+
         // ---- Langue et pharmacie ----
         admin.MapPut("/pharmacie", async (PharmacieDto req, ModifierPharmacie modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await modifier.ExecuterAsync(new IdentitePharmacie(req.Nom, req.Titulaire, req.Adresse, req.Telephone, req.Nif, req.ChifaOfficine, req.LangueDefaut),
+                await modifier.ExecuterAsync(new IdentitePharmacie(req.Nom, req.Titulaire, req.Adresse, req.Telephone, req.Nif, req.ChifaOfficine, req.LangueDefaut, req.Rc, req.Nis, req.ArticleImposition),
                     user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
@@ -91,10 +111,13 @@ internal static class AdminEndpoints
         api.MapGet("/pharmacie", async (ObtenirPharmacie obtenir, CancellationToken ct) =>
             {
                 var p = await obtenir.ExecuterAsync(ct);
-                return Results.Ok(new PharmacieDto(p.Nom, p.Titulaire, p.Adresse, p.Telephone, p.Nif, p.ChifaOfficine, p.LangueDefaut));
+                return Results.Ok(new PharmacieDto(p.Nom, p.Titulaire, p.Adresse, p.Telephone, p.Nif, p.ChifaOfficine, p.LangueDefaut, p.Rc, p.Nis, p.ArticleImposition));
             })
            .RequireAuthorization();
     }
+
+    private static SeuilStockDto VersDto(SeuilStockProduit s) =>
+        new(s.ProduitId, s.Nom, s.Stock, s.VentesParJour, s.SeuilAuto, s.SeuilManuel, s.SeuilApplique, s.Statut);
 
     private static ReglagesSeuilsDto VersDto(ReglagesSeuils s) => new(
         new ParametresAlerteDto(s.General.JoursOrange, s.General.JoursRouge, s.General.HorizonRisqueJours,

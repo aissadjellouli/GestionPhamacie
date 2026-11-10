@@ -3,15 +3,23 @@ using Pharma.Application.Securite;
 
 namespace Pharma.Infrastructure.Securite;
 
-/// <summary>Vérifie un droit côté serveur avec la fonction SQL a_permission.</summary>
+/// <summary>
+/// Vérifie un droit côté serveur avec la fonction SQL a_permission. Service créé pour chaque requête HTTP :
+/// une réponse est gardée le temps de la requête (le filtre de l'API puis le cas d'usage vérifient le même droit).
+/// </summary>
 public sealed class PermissionService(NpgsqlDataSource db) : IPermissionService
 {
+    private readonly Dictionary<(long, string), bool> dejaVerifies = [];
+
     public async Task<bool> APermissionAsync(long utilisateurId, string permission, CancellationToken ct = default)
     {
+        if (dejaVerifies.TryGetValue((utilisateurId, permission), out var connu)) return connu;
         await using var cmd = db.CreateCommand("SELECT a_permission($1, $2)");
         cmd.Parameters.AddWithValue(utilisateurId);
         cmd.Parameters.AddWithValue(permission);
-        return await cmd.ExecuteScalarAsync(ct) is true;
+        var autorise = await cmd.ExecuteScalarAsync(ct) is true;
+        dejaVerifies[(utilisateurId, permission)] = autorise;
+        return autorise;
     }
 
     public async Task<IReadOnlyList<string>> ListerAsync(long utilisateurId, CancellationToken ct = default)

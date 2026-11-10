@@ -25,6 +25,28 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pharma.Application.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pharma.Architecture.Tests", "tests\Pharma.Architecture.Tests\Pharma.Architecture.Tests.csproj", "{C098DDCF-4A00-4EF2-BF9F-C940528C8890}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}"
+	ProjectSection(SolutionItems) = preProject
+		docs\a-faire.md = docs\a-faire.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{386EBD72-0D5B-4454-978E-2D35C00026D8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"
+	ProjectSection(SolutionItems) = preProject
+		database\data\900_donnees_demo.sql = database\data\900_donnees_demo.sql
+		database\data\901_complement_sintrom.sql = database\data\901_complement_sintrom.sql
+		database\data\902_emplacements_demo.sql = database\data\902_emplacements_demo.sql
+		database\data\NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx = database\data\NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{F7EF4CD7-5740-415E-8001-0454EA5D98E0}"
+	ProjectSection(SolutionItems) = preProject
+		database\init\schema.sql = database\init\schema.sql
+		database\init\seed_referentiel.sql = database\init\seed_referentiel.sql
+		database\init\clean.sql = database\init\clean.sql
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -81,6 +103,8 @@ Global
 		{AA1BB26C-96C8-4BB6-82C9-A57ED86E8349} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
 		{47EA6D26-66C3-4716-8528-539BB21ABA43} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
 		{C098DDCF-4A00-4EF2-BF9F-C940528C8890} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
+		{FA6BA489-4AF9-4CBD-A777-F282E75E959F} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
+		{F7EF4CD7-5740-415E-8001-0454EA5D98E0} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {82509D8C-BF89-40EE-96D5-21A0C4CD1E18}

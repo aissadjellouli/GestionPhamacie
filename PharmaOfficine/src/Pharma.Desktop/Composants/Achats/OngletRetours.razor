@@ -21,7 +21,7 @@
             <input id="rt-prod" type="search" autocomplete="off" placeholder="Nom, DCI ou code-barres" @bind="texteProduit" @bind:event="oninput" @bind:after="RechercherAsync" />
         </div>
         <div class="champ" style="flex: 1 1 200px">
-            <label for="rt-motif">Motif</label>
+            <label for="rt-motif" class="requis">Motif</label>
             <select id="rt-motif" @bind="motif">
                 @foreach (var (codeMotif, libelle) in Libelles.MotifsRetour)
                 {
@@ -53,7 +53,7 @@
     {
         <div class="tableau-cadre">
             <table class="tableau" style="min-width: 760px">
-                <thead><tr><th scope="col">Lot</th><th scope="col">Grossiste</th><th scope="col">En stock</th><th scope="col">À retourner</th><th scope="col">Boîtes scannées</th><th scope="col"></th></tr></thead>
+                <thead><tr><th scope="col">Lot</th><th scope="col">Grossiste</th><th scope="col">En stock</th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">À retourner</span></th><th scope="col">Boîtes scannées</th><th scope="col"></th></tr></thead>
                 <tbody>
                     @foreach (var l in lignes)
                     {
@@ -62,7 +62,8 @@
                             <td><span class="nom">@l.Lot.Produit</span><br /><span class="detail">lot @l.Lot.NumeroLot · exp. @Libelles.Date(l.Lot.DatePeremption)</span></td>
                             <td>@l.Lot.Fournisseur</td>
                             <td>@l.Lot.Disponible<br /><span class="detail">@l.Lot.BoitesIdentifiees identifiée(s)</span></td>
-                            <td><input type="number" min="1" max="@l.Lot.Disponible" style="width: 80px" aria-label="Boîtes à retourner du lot @l.Lot.NumeroLot" @bind="l.Quantite" /></td>
+                            <td><input type="number" min="1" max="@l.Lot.Disponible" style="width: 80px" aria-label="Boîtes à retourner du lot @l.Lot.NumeroLot" @bind="l.Quantite"
+                                       @ref="l.Champ" class="@Obligatoire.Classe(QuantiteInvalide(l))" aria-invalid="@Obligatoire.Aria(QuantiteInvalide(l))" /></td>
                             <td>
                                 <input type="text" autocomplete="off" style="width: 200px" placeholder="Scanner une boîte" aria-label="Scanner une boîte du lot @l.Lot.NumeroLot"
                                        @bind="l.Scan" @onkeydown="e => ToucheScan(e, l)" />
@@ -141,6 +142,7 @@
         public int Quantite { get; set; } = lot.Disponible;
         public List<string> Codes { get; } = [];
         public string? Scan { get; set; }
+        public ElementReference Champ { get; set; }
     }
 
     private List<RetourDto> retours = [];
@@ -153,6 +155,10 @@
     private bool enCours;
     private string? message, erreur;
     private int requete;
+
+    // Nombre de boîtes à retourner (RegleRetour) : en rouge après un premier essai de préparation
+    private bool controle;
+    private bool QuantiteInvalide(Ligne l) => controle && (l.Quantite <= 0 || l.Quantite > l.Lot.Disponible);
 
     protected override async Task OnInitializedAsync()
     {
@@ -211,7 +217,22 @@
         if (!l.Codes.Contains(code)) l.Codes.Add(code);
     }
 
-    private async Task PreparerAsync() => await Executer(async () =>
+    private async Task PreparerAsync()
+    {
+        controle = true;
+        // Premier lot sans quantité valable : message et curseur dessus, sans appel au serveur
+        if (lignes.FirstOrDefault(QuantiteInvalide) is { } invalide)
+        {
+            (erreur, message) = (invalide.Quantite <= 0
+                ? "Indiquez le nombre de boîtes à retourner."
+                : $"Lot {invalide.Lot.NumeroLot} : {invalide.Lot.Disponible} boîte(s) en stock, {invalide.Quantite} à retourner.", null);
+            await invalide.Champ.FocusAsync();
+            return;
+        }
+        await Executer(PreparerSurServeurAsync);
+    }
+
+    private async Task<string?> PreparerSurServeurAsync()
     {
         var (r, e) = await Api.PreparerRetourAsync(new PreparationRetourRequete(motif,
             lignes.Select(l => new LotARetournerDto(l.Lot.LotId, l.Quantite, l.Codes)).ToList()));
@@ -219,9 +240,10 @@
         message = $"Retour préparé : {lignes.Sum(l => l.Quantite)} boîte(s) sorties du stock. Envoyez-le pour imprimer le bon de retour.";
         lignes.Clear();
         proposes = [];
+        controle = false;
         await RechargerAsync();
         return null;
-    });
+    }
 
     private async Task EnvoyerAsync(RetourDto r) => await Executer(async () =>
     {

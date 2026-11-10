@@ -1,0 +1,314 @@
+@inject ApiClient Api
+
+@* Préparation d'une facture : destinataire, ventes (par ordonnance ou une à une) et lignes libres.
+   Mode : nouvelle, correction (même numéro, version + 1) ou remplacement (nouveau numéro) d'une facture rejetée. *@
+<section class="panneau" aria-labelledby="t-editeur">
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+        <h2 id="t-editeur">@Titre</h2>
+        <button type="button" class="btn" @onclick="OnFerme">Fermer</button>
+    </div>
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+    <!-- Destinataire -->
+    <div class="filtres" role="radiogroup" aria-label="Destinataire">
+        @foreach (var (code, libelle) in Destinataires)
+        {
+            <button type="button" role="radio" class="puce" aria-checked="@(destinataire == code ? "true" : "false")" aria-pressed="@(destinataire == code ? "true" : "false")"
+                    disabled="@(Origine is not null)" @onclick="() => ChangerDestinataire(code)">@libelle</button>
+        }
+    </div>
+    @if (Origine is not null)
+    {
+        <p class="detail" style="margin: 0">Destinataire de la facture @Origine.Resume.Numero : <strong>@Origine.Resume.DestinataireNom</strong> (inchangé).</p>
+    }
+    else if (destinataire == "patient")
+    {
+        @if (patient is { } p)
+        {
+            <p style="margin: 0"><strong>@p.Nom @p.Prenom</strong>@(p.NumAssure is { } n ? $" · n° d’assuré {n}" : "")
+                <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => { patient = null; candidates = []; }">Changer</button></p>
+        }
+        else
+        {
+            <div class="champ recherche">
+                <label for="f-patient">Patient (nom, téléphone ou n° d’assuré)</label>
+                <input id="f-patient" type="search" @bind="recherchePatient" @bind:event="oninput" @bind:after="ChercherPatientsAsync" />
+                @if (patients.Count > 0)
+                {
+                    <ul class="suggestions" aria-label="Patients trouvés">
+                        @foreach (var x in patients)
+                        {
+                            <li><button type="button" @onclick="() => { patient = x; patients = []; }"><span><strong>@x.Nom @x.Prenom</strong><br /><span class="detail">@x.Telephone @x.NumAssure</span></span></button></li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+    }
+    else if (destinataire == "entreprise")
+    {
+        <div class="achats-ligne" style="align-items: flex-end">
+            <div class="champ" style="flex: 1 1 260px">
+                <label for="f-client">Client</label>
+                <select id="f-client" @bind="clientId"><option value="0">— choisir —</option>@foreach (var c in clients.Where(c => c.Actif)) { <option value="@c.Id">@c.RaisonSociale</option> }</select>
+            </div>
+            <button type="button" class="btn" @onclick="() => nouveauClient = new()">Nouveau client</button>
+        </div>
+        @if (nouveauClient is { } nc)
+        {
+            <div class="carte" style="display: grid; gap: 8px">
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 240px"><label for="nc-rs" class="requis">Raison sociale</label><input id="nc-rs" type="text" @bind="nc.RaisonSociale" /></div>
+                    <div class="champ" style="flex: 1 1 240px"><label for="nc-adr">Adresse</label><input id="nc-adr" type="text" @bind="nc.Adresse" /></div>
+                    <div class="champ" style="flex: 0 0 160px"><label for="nc-tel">Téléphone</label><input id="nc-tel" type="tel" @bind="nc.Telephone" /></div>
+                </div>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 140px"><label for="nc-rc">RC</label><input id="nc-rc" type="text" @bind="nc.Rc" /></div>
+                    <div class="champ" style="flex: 1 1 140px"><label for="nc-nif">NIF</label><input id="nc-nif" type="text" @bind="nc.Nif" /></div>
+                    <div class="champ" style="flex: 1 1 140px"><label for="nc-nis">NIS</label><input id="nc-nis" type="text" @bind="nc.Nis" /></div>
+                    <div class="champ" style="flex: 1 1 140px"><label for="nc-ai">AI</label><input id="nc-ai" type="text" @bind="nc.Ai" /></div>
+                </div>
+                <div class="filtres">
+                    <button type="button" class="btn btn-principal" @onclick="CreerClientAsync">Enregistrer le client</button>
+                    <button type="button" class="btn" @onclick="() => nouveauClient = null">Annuler</button>
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="champ" style="max-width: 360px">
+            <label for="f-org">Organisme</label>
+            <select id="f-org" @bind="organismeId" @bind:after="() => candidates = []"><option value="0">— choisir —</option>@foreach (var o in organismes) { <option value="@o.Id">@o.Code · @o.Nom</option> }</select>
+        </div>
+    }
+
+    <!-- Ventes -->
+    <h3 class="sous-titre-panneau">Ventes à facturer @(destinataire == "organisme" ? "(part prise en charge par l’organisme)" : "(part payée par le patient)")</h3>
+    <div class="achats-ligne" style="align-items: flex-end">
+        <div class="champ" style="flex: 0 0 160px"><label for="f-du">Du</label><input id="f-du" type="date" @bind="du" /></div>
+        <div class="champ" style="flex: 0 0 160px"><label for="f-au">Au</label><input id="f-au" type="date" @bind="au" /></div>
+        <div class="champ" style="flex: 1 1 200px"><label for="f-q">N° de vente, d’ordonnance ou patient</label><input id="f-q" type="search" @bind="rechercheVente" /></div>
+        <button type="button" class="btn" disabled="@(!DestinataireChoisi)" @onclick="ChercherVentesAsync">Chercher les ventes</button>
+    </div>
+    @if (charge && candidates.Count == 0) { <p class="vide" style="margin: 0">Aucune vente sur la période.</p> }
+    @if (candidates.Count > 0)
+    {
+        <div class="filtres">
+            <button type="button" class="lien-bouton" @onclick="ToutCocher">Tout cocher</button>
+            <button type="button" class="lien-bouton" @onclick="() => ventes.Clear()">Tout décocher</button>
+        </div>
+        <div class="tableau-cadre" style="max-height: 420px; overflow: auto">
+            <table class="tableau">
+                <thead><tr><th scope="col"><span class="visuellement-cache">Choisir</span></th><th scope="col">Vente</th><th scope="col">Date</th><th scope="col">Patient</th><th scope="col">Produits</th><th scope="col" class="nombre">Montant</th></tr></thead>
+                <tbody>
+                    @foreach (var groupe in ParOrdonnance)
+                    {
+                        @if (groupe.Key.Id is not null)
+                        {
+                            var ids = groupe.Select(v => v.VenteId).Where(Disponible).ToList();
+                            <tr class="ligne-groupe">
+                                <td><input type="checkbox" aria-label="@($"Toute l’ordonnance {groupe.Key.Numero}")" disabled="@(ids.Count == 0)"
+                                           checked="@(ids.Count > 0 && ids.All(ventes.Contains))" @onchange="e => CocherGroupe(ids, e)" /></td>
+                                <td colspan="5"><strong>Ordonnance @(groupe.Key.Numero ?? $"n° {groupe.Key.Id}")</strong> · @groupe.Count() vente(s)</td>
+                            </tr>
+                        }
+                        @foreach (var v in groupe)
+                        {
+                            var libre = Disponible(v.VenteId);
+                            <tr style="@(libre ? null : "opacity: .55")">
+                                <td><input type="checkbox" aria-label="@($"Vente {v.Numero}")" disabled="@(!libre)" checked="@ventes.Contains(v.VenteId)" @onchange="e => Cocher(v.VenteId, e)" /></td>
+                                <td>@v.Numero@(libre ? "" : " · déjà facturée")</td>
+                                <td style="white-space: nowrap">@Libelles.DateHeureLocale(v.Date)</td>
+                                <td>@(v.Patient ?? "—")</td>
+                                <td>@v.Produits</td>
+                                <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(v.Montant, 2)</td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- Lignes libres -->
+    <h3 class="sous-titre-panneau">Lignes libres</h3>
+    @foreach (var l in libres)
+    {
+        <div class="achats-ligne" style="align-items: flex-end">
+            <div class="champ" style="flex: 1 1 260px"><label>Désignation</label><input type="text" @bind="l.Designation" /></div>
+            <div class="champ" style="flex: 0 0 90px"><label>Qté</label><input type="number" min="0.01" step="0.01" @bind="l.Quantite" /></div>
+            <div class="champ" style="flex: 0 0 140px"><label>P.U. TTC (DA)</label><input type="number" min="0.01" step="0.01" @bind="l.Prix" /></div>
+            <div class="champ" style="flex: 0 0 100px"><label>TVA (%)</label><input type="number" min="0" max="100" step="0.01" @bind="l.Tva" /></div>
+            <button type="button" class="btn" @onclick="() => libres.Remove(l)">Retirer</button>
+        </div>
+    }
+    <div><button type="button" class="btn" @onclick="() => libres.Add(new())">Ajouter une ligne libre</button></div>
+
+    <div class="achats-ligne">
+        <div class="champ" style="flex: 0 0 170px"><label for="f-date">Date de la facture</label><input id="f-date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="dateFacture" /></div>
+        <div class="champ" style="flex: 1 1 260px"><label for="f-com">Commentaire imprimé</label><input id="f-com" type="text" maxlength="300" @bind="commentaire" /></div>
+        @if (Mode == "correction")
+        {
+            <div class="champ" style="flex: 1 1 220px"><label for="f-motif">Correction apportée</label><input id="f-motif" type="text" maxlength="200" @bind="motif" /></div>
+        }
+    </div>
+    <p style="margin: 0">@ventes.Count vente(s) · @libres.Count ligne(s) libre(s) · total estimé <strong>@Libelles.Dinars(TotalEstime, 2)</strong></p>
+    <div><button type="button" class="btn btn-principal" disabled="@(enCours || !DestinataireChoisi)" @onclick="ValiderAsync">@Action</button></div>
+</section>
+
+@code {
+    /// <summary>nouvelle, correction ou remplacement.</summary>
+    [Parameter] public string Mode { get; set; } = "nouvelle";
+    /// <summary>Facture rejetée à corriger ou remplacer.</summary>
+    [Parameter] public FactureDetailDto? Origine { get; set; }
+    [Parameter] public EventCallback OnFerme { get; set; }
+    [Parameter] public EventCallback<(long Id, string Numero)> OnTermine { get; set; }
+
+    private sealed class Libre
+    {
+        public string Designation { get; set; } = "";
+        public decimal Quantite { get; set; } = 1;
+        public decimal Prix { get; set; }
+        public decimal Tva { get; set; }
+    }
+
+    private sealed record VenteAffichee(long VenteId, string Numero, DateTime Date, string? Patient, long? OrdonnanceId, string? OrdonnanceNumero,
+        string Produits, decimal Montant, bool DejaFacturee);
+
+    private sealed class NouveauClient
+    {
+        public string RaisonSociale { get; set; } = "";
+        public string? Adresse { get; set; }
+        public string? Telephone { get; set; }
+        public string? Nif { get; set; }
+        public string? Rc { get; set; }
+        public string? Nis { get; set; }
+        public string? Ai { get; set; }
+    }
+
+    private static readonly (string, string)[] Destinataires = [("patient", "Patient"), ("entreprise", "Entreprise"), ("organisme", "Organisme")];
+    private string destinataire = "patient";
+    private PatientDto? patient;
+    private List<PatientDto> patients = [];
+    private List<ClientFactureDto> clients = [];
+    private List<OrganismeDto> organismes = [];
+    private long clientId, organismeId;
+    private NouveauClient? nouveauClient;
+    private string? recherchePatient, rechercheVente, commentaire, motif, erreur;
+    private DateOnly du = new(DateTime.Today.Year, DateTime.Today.Month, 1), au = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly dateFacture = DateOnly.FromDateTime(DateTime.Today);
+    private List<VenteAffichee> candidates = [];
+    private readonly HashSet<long> ventes = [];
+    /// <summary>Ventes de la facture d'origine : disponibles bien que déjà facturées (par elle).</summary>
+    private readonly HashSet<long> ventesOrigine = [];
+    private readonly List<Libre> libres = [];
+    private bool charge, enCours;
+
+    private string Titre => Mode switch
+    {
+        "correction" => $"Corriger la facture {Origine?.Resume.Numero} (version {Origine?.Resume.Version + 1})",
+        "remplacement" => $"Remplacer la facture {Origine?.Resume.Numero} par une nouvelle facture",
+        _ => "Nouvelle facture"
+    };
+    private string Action => Mode switch { "correction" => "Enregistrer la correction", "remplacement" => "Émettre la facture de remplacement", _ => "Émettre la facture" };
+    private bool DestinataireChoisi => Origine is not null || destinataire switch { "patient" => patient is not null, "entreprise" => clientId > 0, _ => organismeId > 0 };
+    private bool Disponible(long venteId) => ventesOrigine.Contains(venteId) || candidates.FirstOrDefault(c => c.VenteId == venteId)?.DejaFacturee != true;
+    private IEnumerable<IGrouping<(long? Id, string? Numero), VenteAffichee>> ParOrdonnance =>
+        candidates.GroupBy(v => (v.OrdonnanceId, v.OrdonnanceNumero)).OrderBy(g => g.Key.OrdonnanceId is null).ThenBy(g => g.Min(v => v.Date));
+    private decimal TotalEstime => candidates.Where(c => ventes.Contains(c.VenteId)).Sum(c => c.Montant) + libres.Sum(l => decimal.Round(l.Quantite * l.Prix, 2));
+
+    protected override async Task OnInitializedAsync()
+    {
+        (clients, _) = await Api.ClientsFactureAsync();
+        (organismes, _) = await Api.OrganismesAsync();
+        if (Origine is { } o)
+        {
+            destinataire = o.Resume.Destinataire;
+            organismeId = o.Resume.OrganismeId ?? 0;
+            clientId = o.ClientId ?? 0;
+            commentaire = o.Commentaire;
+            foreach (var v in o.Lignes.Where(l => l.VenteId is not null).Select(l => l.VenteId!.Value).Distinct()) { ventes.Add(v); ventesOrigine.Add(v); }
+            libres.AddRange(o.Lignes.Where(l => l.Part == "libre").Select(l => new Libre { Designation = l.Designation, Quantite = l.Quantite, Prix = l.PrixUnitaireTtc, Tva = l.TauxTva }));
+            if (o.Du is { } d1) du = d1;
+            if (o.Au is { } a1) au = a1;
+            // Période élargie aux ventes déjà facturées, pour les retrouver dans la liste
+            await ChercherVentesAsync(o.PatientId);
+        }
+    }
+
+    private void ChangerDestinataire(string code)
+    {
+        destinataire = code;
+        (candidates, charge) = ([], false);
+        ventes.Clear();
+    }
+
+    private async Task ChercherPatientsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(recherchePatient) || recherchePatient.Trim().Length < 2) { patients = []; return; }
+        (patients, _) = await Api.RechercherPatientsAsync(recherchePatient);
+    }
+
+    private async Task CreerClientAsync()
+    {
+        if (nouveauClient is not { } c) return;
+        var (id, e) = await Api.EnregistrerClientFactureAsync(new ClientFactureDto(null, c.RaisonSociale, c.Adresse, c.Telephone, c.Nif, c.Rc, c.Nis, c.Ai, true));
+        if (e is not null) { erreur = e; return; }
+        (clients, _) = await Api.ClientsFactureAsync();
+        (clientId, nouveauClient, erreur) = (id!.Id, null, null);
+    }
+
+    private Task ChercherVentesAsync() => ChercherVentesAsync(Origine?.PatientId);
+
+    private async Task ChercherVentesAsync(long? patientOrigine)
+    {
+        erreur = null;
+        var (lignes, e) = await Api.VentesAFacturerAsync(destinataire, patientOrigine ?? patient?.Id, organismeId > 0 ? organismeId : null, du, au, rechercheVente);
+        if (e is not null) { erreur = e; return; }
+        var organisme = destinataire == "organisme";
+        candidates = lignes.GroupBy(l => l.VenteId).Select(g =>
+        {
+            var x = g.First();
+            var montant = organisme ? g.Sum(l => l.MontantOrganisme) : g.Sum(l => l.MontantPatient) - x.RemiseVente;
+            return new VenteAffichee(x.VenteId, x.NumeroVente, x.DateVente, x.Patient, x.OrdonnanceId, x.OrdonnanceNumero,
+                string.Join(", ", g.Select(l => $"{l.Designation} ×{l.Quantite:0.##}")), montant, g.Any(l => l.DejaFacturee));
+        }).Where(v => v.Montant > 0).ToList();
+        charge = true;
+    }
+
+    private void Cocher(long id, ChangeEventArgs e) { if (e.Value is true) ventes.Add(id); else ventes.Remove(id); }
+
+    private void CocherGroupe(List<long> ids, ChangeEventArgs e)
+    {
+        foreach (var id in ids) { if (e.Value is true) ventes.Add(id); else ventes.Remove(id); }
+    }
+
+    private void ToutCocher() { foreach (var v in candidates.Where(c => Disponible(c.VenteId))) ventes.Add(v.VenteId); }
+
+    private async Task ValiderAsync()
+    {
+        (enCours, erreur) = (true, null);
+        var demande = new DemandeFactureDto(destinataire, patient?.Id ?? Origine?.PatientId, clientId > 0 ? clientId : null, organismeId > 0 ? organismeId : null,
+            dateFacture, ventes.Count > 0 ? du : null, ventes.Count > 0 ? au : null, ventes.ToList(),
+            libres.Select(l => new LigneLibreDto(l.Designation, l.Quantite, l.Prix, l.Tva)).ToList(), commentaire, motif);
+        (long Id, string Numero)? resultat = null;
+        switch (Mode)
+        {
+            case "correction":
+                erreur = await Api.CorrigerFactureAsync(Origine!.Resume.Id, demande);
+                if (erreur is null) resultat = (Origine.Resume.Id, Origine.Resume.Numero);
+                break;
+            case "remplacement":
+                var (r, e1) = await Api.RemplacerFactureAsync(Origine!.Resume.Id, demande);
+                (erreur, resultat) = (e1, r is null ? null : (r.Id, r.Numero));
+                break;
+            default:
+                var (n, e2) = await Api.EmettreFactureAsync(demande);
+                (erreur, resultat) = (e2, n is null ? null : (n.Id, n.Numero));
+                break;
+        }
+        enCours = false;
+        if (resultat is { } ok) await OnTermine.InvokeAsync(ok);
+    }
+}

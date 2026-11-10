@@ -16,6 +16,11 @@ internal static class AlertesEndpoints
                 Results.Ok((await lister.ExecuterAsync(ct)).Select(a => a.VersDto())))
            .ExigerPermission(Permissions.StockConsulter);
 
+        // Pastille du bandeau : le nombre seulement (avant : toute la liste, à chaque navigation)
+        api.MapGet("/alertes/urgentes", async (ListerAlertesOuvertes lister, CancellationToken ct) =>
+                Results.Ok(new CompteDto(await lister.CompterUrgentesAsync(ct))))
+           .ExigerPermission(Permissions.StockConsulter);
+
         api.MapPost("/alertes/generer", async (GenererAlertes generer, CancellationToken ct) =>
                 Results.Ok(new { misesAJour = await generer.ExecuterAsync(ct) }))
            .ExigerPermission(Permissions.AdminParametres);

@@ -6,7 +6,7 @@
     <div class="titre-page">
         <div>
             <h1>Achats</h1>
-            <p class="sous-titre">Commandes aux grossistes, réceptions, retours et étiquettes internes</p>
+            <p class="sous-titre">Commandes aux grossistes, réceptions, retours, étiquettes internes et règlements</p>
         </div>
     </div>
 
@@ -32,6 +32,9 @@
         case "etiquettes":
             <OngletEtiquettes LotId="Lot" />
             break;
+        case "reglements":
+            <OngletReglements />
+            break;
         default:
             <OngletGrossistes />
             break;
@@ -55,6 +58,7 @@
         ("receptions", "Réceptions", Session.A("achats.receptionner")),
         ("retours", "Retours fournisseurs", Session.A("achats.retour_fournisseur")),
         ("etiquettes", "Étiquettes internes", Session.A("achats.receptionner") || Session.A("stock.consulter")),
+        ("reglements", "Règlements", Session.A("achats.regler")),
         ("grossistes", "Grossistes", true)
     ];
 

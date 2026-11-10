@@ -1,4 +1,19 @@
 <Solution>
+  <Folder Name="/Documents/">
+    <File Path="docs/a-faire.md" />
+  </Folder>
+  <Folder Name="/database/" />
+  <Folder Name="/database/init/">
+    <File Path="database/init/schema.sql" />
+    <File Path="database/init/seed_referentiel.sql" />
+    <File Path="database/init/clean.sql" />
+  </Folder>
+  <Folder Name="/database/data/">
+    <File Path="database/data/900_donnees_demo.sql" />
+    <File Path="database/data/901_complement_sintrom.sql" />
+    <File Path="database/data/902_emplacements_demo.sql" />
+    <File Path="database/data/NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Pharma.Domain/Pharma.Domain.csproj" />
     <Project Path="src/Pharma.Shared/Pharma.Shared.csproj" />

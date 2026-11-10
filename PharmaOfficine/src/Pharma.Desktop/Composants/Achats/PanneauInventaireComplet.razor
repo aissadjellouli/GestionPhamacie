@@ -1,0 +1,114 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Inventaire complet (annuel) : chaque rayon se compte avec l'outil de l'inventaire tournant ; lancement et clôture par le titulaire. *@
+<section class="panneau" aria-labelledby="t-complet">
+    <h2 id="t-complet">Inventaire complet</h2>
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+    @if (etat?.EnCours is { } c)
+    {
+        var faits = etat.Rayons.Count(r => r.Statut == "termine" || r.NombreLots == 0);
+        <div class="@(c.Mode == "fermee" ? "erreur" : "info-bandeau")" role="status">
+            En cours depuis le @Libelles.DateHeureLocale(c.CommenceLe) (@c.CommencePar) ·
+            @(c.Mode == "fermee" ? "pharmacie fermée : la caisse refuse les ventes jusqu’à la clôture" : "pharmacie ouverte : les ventes continuent, chaque lot est relevé au moment de son comptage")
+        </div>
+        <p style="margin: 0">@faits / @etat.Rayons.Count rayon(s) terminé(s)@(etat.Rayons.Sum(r => r.EcartsAValider) is var e and > 0 ? $" · {e} gros écart(s) à valider" : "")</p>
+        <div class="tableau-cadre">
+            <table class="tableau">
+                <thead><tr><th scope="col">Rayon</th><th scope="col" class="nombre">Lots en stock</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                <tbody>
+                    @foreach (var r in etat.Rayons)
+                    {
+                        <tr>
+                            <td>@r.Rayon</td>
+                            <td class="nombre">@r.NombreLots</td>
+                            <td>@(r.Statut switch { "termine" => "Terminé", "en_cours" => "Comptage en cours", _ => r.NombreLots == 0 ? "Vide" : "À compter" })@(r.EcartsAValider > 0 ? $" · {r.EcartsAValider} écart(s) à valider" : "")</td>
+                            <td>
+                                @if (r.Statut != "termine" && r.NombreLots > 0 && Session.A("stock.ajuster"))
+                                {
+                                    <button type="button" class="lien-bouton" @onclick="() => OnCompter.InvokeAsync(r.Rayon)">@(r.Statut == "en_cours" ? "Reprendre" : "Compter")</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (EstTitulaire)
+        {
+            <div class="achats-ligne" style="align-items: flex-end">
+                <div class="champ" style="flex: 1 1 280px"><label for="ic-com">Commentaire imprimé sur l’état</label><input id="ic-com" type="text" maxlength="300" @bind="commentaire" /></div>
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => Executer(() => Api.CloturerInventaireCompletAsync(c.Id, commentaire), true)">Clôturer et imprimer l’état</button>
+                <button type="button" class="btn" disabled="@enCours" @onclick="() => Executer(() => Api.AnnulerInventaireCompletAsync(c.Id), false)">Annuler l’inventaire complet</button>
+            </div>
+        }
+    }
+    else
+    {
+        <p class="detail" style="margin: 0">Tous les rayons, réserve et produits sans emplacement compris, avec les règles de l’inventaire tournant. À la clôture, le stock est valorisé au prix d’achat HT (état d’inventaire signé).</p>
+        @if (EstTitulaire)
+        {
+            <div class="filtres" role="radiogroup" aria-label="Pharmacie pendant l’inventaire">
+                <button type="button" role="radio" class="puce" aria-checked="@(mode == "ouverte" ? "true" : "false")" aria-pressed="@(mode == "ouverte" ? "true" : "false")" @onclick="@(() => mode = "ouverte")">Pharmacie ouverte (ventes continues)</button>
+                <button type="button" role="radio" class="puce" aria-checked="@(mode == "fermee" ? "true" : "false")" aria-pressed="@(mode == "fermee" ? "true" : "false")" @onclick="@(() => mode = "fermee")">Pharmacie fermée (ventes bloquées)</button>
+            </div>
+            <div><button type="button" class="btn btn-principal" disabled="@(enCours || mode is null)" @onclick="() => Executer(() => Api.CommencerInventaireCompletAsync(mode!), false)">Lancer l’inventaire complet</button></div>
+        }
+        else
+        {
+            <p class="detail" style="margin: 0">Le lancement est réservé au pharmacien titulaire.</p>
+        }
+    }
+
+    @if (etat?.Historique.Where(h => h.Statut == "cloturee").ToList() is { Count: > 0 } passes)
+    {
+        <h3 class="sous-titre-panneau">Inventaires complets clôturés</h3>
+        @foreach (var h in passes)
+        {
+            <p style="margin: 0">@Libelles.DateHeureLocale(h.ClotureLe!.Value) · @h.NombreLots lot(s), @h.NombreBoites boîte(s) · <strong>@Libelles.Dinars(h.ValeurStock ?? 0, 2) HT</strong>
+                @if (EstTitulaire) { <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => EtatAsync(h.Id)">État d’inventaire (PDF)</button> }</p>
+        }
+    }
+</section>
+
+@code {
+    [Parameter] public EventCallback<string> OnCompter { get; set; }
+
+    private InventaireCompletDto? etat;
+    private string? mode, commentaire, erreur, message;
+    private bool enCours;
+    private bool EstTitulaire => Session.A("role.titulaire");
+
+    protected override Task OnInitializedAsync() => ChargerAsync();
+
+    /// <summary>Appelé par la page quand un rayon est terminé.</summary>
+    public async Task ChargerAsync()
+    {
+        string? e;
+        (etat, e) = await Api.InventaireCompletAsync();
+        erreur ??= e;
+        StateHasChanged();
+    }
+
+    private async Task Executer(Func<Task<string?>> action, bool imprimer)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        var id = etat?.EnCours?.Id;
+        var e = await action();
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        await ChargerAsync();
+        message = imprimer ? "Inventaire complet clôturé : état d’inventaire ouvert." : etat?.EnCours is not null ? "Inventaire complet lancé." : "Inventaire complet annulé.";
+        if (imprimer && id is { } i) await EtatAsync(i);
+    }
+
+    private async Task EtatAsync(long id)
+    {
+        var (contenu, nom, e) = await Api.EtatInventaireAsync(id);
+        if (e is not null) { erreur = e; return; }
+        try { Documents.Ouvrir(Documents.Enregistrer("Inventaires", nom!, contenu!)); }
+        catch (Exception ex) { erreur = $"État impossible à ouvrir : {ex.Message}"; }
+    }
+}

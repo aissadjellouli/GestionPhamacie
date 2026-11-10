@@ -1,0 +1,231 @@
+@inject ApiClient Api
+
+@* Règlement des grossistes, facture par facture (droit achats.regler) *@
+<div class="colonnes">
+    <section class="panneau colonne-laterale" aria-labelledby="t-grossistes-dette">
+        <h2 id="t-grossistes-dette">Dette par grossiste</h2>
+        @if (grossistes is null)
+        {
+            <p class="vide">Chargement…</p>
+        }
+        else
+        {
+            <div class="liste-ventes">
+                @foreach (var g in grossistes)
+                {
+                    <button type="button" class="ligne-vente @(situation?.Id == g.Id ? "choisie" : null)" @onclick="() => ChoisirAsync(g.Id)">
+                        <span><strong>@g.Nom</strong><br /><span class="detail">@(g.FacturesOuvertes > 0 ? $"{g.FacturesOuvertes} facture(s) à payer" : "aucune facture ouverte")</span></span>
+                        <span class="@(g.Solde > 0 ? "montant-du" : null)">@Libelles.Dinars(g.Solde, 2)</span>
+                    </button>
+                }
+            </div>
+        }
+    </section>
+
+    <section class="panneau colonne-principale" aria-labelledby="t-reglement">
+        @if (situation is not { } s)
+        {
+            <h2 id="t-reglement">Règlement</h2>
+            <p class="vide" style="margin: 0">Choisissez un grossiste dans la liste.</p>
+        }
+        else
+        {
+            <h2 id="t-reglement">@s.Nom · dette @Libelles.Dinars(s.Solde, 2)</h2>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+            @if (s.Factures.Count > 0)
+            {
+                <div class="tableau-cadre">
+                    <table class="tableau">
+                        <thead><tr><th scope="col"><span class="visuellement-cache">Choisir</span></th><th scope="col">Facture</th><th scope="col">Date</th><th scope="col" class="nombre">Montant</th><th scope="col" class="nombre">Déjà réglé</th><th scope="col" class="nombre">Reste</th><th scope="col" class="nombre">Imputé</th></tr></thead>
+                        <tbody>
+                            @foreach (var f in s.Factures)
+                            {
+                                var choisie = imputations.ContainsKey(f.ReceptionId);
+                                <tr>
+                                    <td><input type="checkbox" aria-label="@($"Régler la facture {f.NumeroFacture ?? f.NumeroBl}")" checked="@choisie" @onchange="e => Basculer(f, e)" /></td>
+                                    <td>@(f.NumeroFacture ?? "—")<br /><span class="detail">BL @(f.NumeroBl ?? "—")</span></td>
+                                    <td>@Libelles.DateHeureLocale(f.Date)</td>
+                                    <td class="nombre">@Libelles.Dinars(f.Montant, 2)</td>
+                                    <td class="nombre">@Libelles.Dinars(f.Regle, 2)</td>
+                                    <td class="nombre"><strong>@Libelles.Dinars(f.Reste, 2)</strong></td>
+                                    <td class="nombre">
+                                        @if (choisie)
+                                        {
+                                            <input type="number" min="0.01" max="@f.Reste.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="0.01" style="width: 120px"
+                                                   aria-label="@($"Montant imputé à la facture {f.NumeroFacture}")" value="@imputations[f.ReceptionId].ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                                   @onchange="e => Imputer(f, e)" />
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="detail" style="margin: 0">
+                    @(imputations.Count == 0 ? "Aucune facture cochée : le montant réglé couvrira les plus anciennes." : $"Total imputé : {Libelles.Dinars(imputations.Values.Sum(), 2)}.")
+                    @if (s.Solde > s.Factures.Sum(f => f.Reste)) { <text> Une part de la dette (@Libelles.Dinars(s.Solde - s.Factures.Sum(f => f.Reste), 2)) n’est rattachée à aucune facture (reprise, ancien solde) : un montant supérieur aux factures la réduit.</text> }
+                </p>
+            }
+            else
+            {
+                <p class="detail" style="margin: 0">Aucune facture ouverte@(s.Solde > 0 ? " : la dette vient de la reprise ou d’un ancien solde." : ".")</p>
+            }
+
+            @if (s.Solde > 0)
+            {
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 170px"><label for="r-date" class="requis">Date</label><input id="r-date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="date" /></div>
+                    <div class="champ" style="flex: 0 0 180px"><label for="r-montant" class="requis">Montant (DA)</label>
+                        <input id="r-montant" type="number" min="0.01" step="0.01" @bind="montant" class="@Obligatoire.Classe(MontantManque)" aria-invalid="@Obligatoire.Aria(MontantManque)" /></div>
+                    <div class="champ" style="flex: 0 0 170px">
+                        <label for="r-moyen" class="requis">Moyen</label>
+                        <select id="r-moyen" @bind="moyen">
+                            <option value="especes">Espèces</option><option value="cheque">Chèque</option>
+                            <option value="virement">Virement</option><option value="effet">Effet / traite</option>
+                        </select>
+                    </div>
+                    @if (moyen != "especes")
+                    {
+                        <div class="champ" style="flex: 1 1 180px"><label for="r-ref" class="requis">@(moyen == "cheque" ? "N° du chèque" : moyen == "virement" ? "Référence du virement" : "N° de l’effet")</label>
+                            <input id="r-ref" type="text" @bind="reference" @bind:event="oninput" class="@Obligatoire.Classe(ReferenceManque)" aria-invalid="@Obligatoire.Aria(ReferenceManque)" /></div>
+                    }
+                    @if (moyen != "especes" && banques.Count > 0)
+                    {
+                        <div class="champ" style="flex: 1 1 180px">
+                            <label for="r-compte">Compte débité</label>
+                            <select id="r-compte" @bind="compteId">
+                                <option value="0">— hors trésorerie —</option>
+                                @foreach (var b in banques) { <option value="@b.Id">@b.Nom</option> }
+                            </select>
+                        </div>
+                    }
+                    @if (moyen is "cheque" or "virement")
+                    {
+                        <div class="champ" style="flex: 1 1 160px"><label for="r-banque">Banque du grossiste</label><input id="r-banque" type="text" @bind="banque" /></div>
+                    }
+                    @if (moyen == "effet")
+                    {
+                        <div class="champ" style="flex: 0 0 170px"><label for="r-echeance" class="requis">Échéance</label>
+                            <input id="r-echeance" type="date" @bind="echeance" class="@Obligatoire.Classe(EcheanceManque)" aria-invalid="@Obligatoire.Aria(EcheanceManque)" /></div>
+                    }
+                </div>
+                @if (moyen == "especes")
+                {
+                    <div class="achats-ligne" style="align-items: center">
+                        <label class="case"><input type="checkbox" @bind="avecTiroir" /><span>Compléter avec le tiroir de la caisse</span></label>
+                        @if (avecTiroir)
+                        {
+                            <div class="champ" style="flex: 0 0 200px"><label for="r-tiroir">Pris dans le tiroir (DA)</label><input id="r-tiroir" type="number" min="0" step="0.01" @bind="partTiroir" /></div>
+                            <span class="detail">Le reste (@Libelles.Dinars(Math.Max(0, montant - partTiroir), 2)) vient du coffre. Seule la part du tiroir diminue l’attendu de la caisse ouverte.</span>
+                        }
+                    </div>
+                }
+                <div class="champ"><label for="r-comm">Commentaire</label><input id="r-comm" type="text" maxlength="300" @bind="commentaire" /></div>
+                <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer le règlement</button></div>
+            }
+
+            @if (s.Reglements.Count > 0)
+            {
+                <h3 style="margin: 8px 0 0">Derniers règlements</h3>
+                <div class="tableau-cadre">
+                    <table class="tableau">
+                        <thead><tr><th scope="col">Date</th><th scope="col" class="nombre">Montant</th><th scope="col">Moyen</th><th scope="col">Référence</th><th scope="col">Employé</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in s.Reglements)
+                            {
+                                <tr>
+                                    <td>@r.Date.ToString("dd/MM/yyyy")</td>
+                                    <td class="nombre">@Libelles.Dinars(r.Montant, 2)@(r.PartTiroir > 0 ? $" (dont tiroir {Libelles.Dinars(r.PartTiroir, 2)})" : "")</td>
+                                    <td>@Moyen(r.Moyen)@(r.Echeance is { } e ? $" · échéance {e:dd/MM/yyyy}" : "")</td>
+                                    <td>@(r.Reference ?? "—")</td>
+                                    <td>@r.Employe</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    </section>
+</div>
+
+@code {
+    private List<GrossisteAReglementDto>? grossistes;
+    private List<CompteBancaireDto> banques = [];
+    private long compteId;
+    private SituationGrossisteDto? situation;
+    private readonly Dictionary<long, decimal> imputations = [];
+    private DateOnly date = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? echeance;
+    private decimal montant, partTiroir;
+    private string moyen = "especes";
+    private string? reference, banque, commentaire, erreur, message;
+    private bool avecTiroir, enCours, controle;
+
+    private bool MontantManque => controle && montant <= 0;
+    private bool ReferenceManque => controle && moyen != "especes" && string.IsNullOrWhiteSpace(reference);
+    private bool EcheanceManque => controle && moyen == "effet" && echeance is null;
+
+    private static string Moyen(string m) => m switch { "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", _ => "Effet" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ChargerAsync();
+        (banques, _) = await Api.BanquesReglementAsync();
+        compteId = banques.FirstOrDefault(b => b.RecoitCarte)?.Id ?? banques.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private async Task ChargerAsync()
+    {
+        string? e;
+        (grossistes, e) = await Api.GrossistesAReglerAsync();
+        erreur ??= e;
+    }
+
+    private async Task ChoisirAsync(long id)
+    {
+        (erreur, message) = (null, null);
+        var (s, e) = await Api.SituationGrossisteAsync(id);
+        if (e is not null) { erreur = e; return; }
+        situation = s;
+        imputations.Clear();
+        (montant, partTiroir, avecTiroir, reference, banque, commentaire, echeance, controle) = (s!.Solde > 0 ? s.Solde : 0, 0, false, null, null, null, null, false);
+    }
+
+    private void Basculer(FactureFournisseurDto f, ChangeEventArgs e)
+    {
+        if (e.Value is true) imputations[f.ReceptionId] = f.Reste; else imputations.Remove(f.ReceptionId);
+        if (imputations.Count > 0) montant = imputations.Values.Sum();
+    }
+
+    private void Imputer(FactureFournisseurDto f, ChangeEventArgs e)
+    {
+        if (decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var m) && m > 0)
+            imputations[f.ReceptionId] = Math.Min(m, f.Reste);
+        montant = imputations.Values.Sum();
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        (controle, erreur, message) = (true, null, null);
+        erreur = MontantManque ? "Le montant réglé doit être supérieur à 0."
+            : ReferenceManque ? "Indiquez la référence du paiement."
+            : EcheanceManque ? "Indiquez la date d’échéance de l’effet." : null;
+        if (erreur is not null || situation is null) return;
+        enCours = true;
+        var nom = situation.Nom;
+        var req = new ReglementRequete(date, montant, moyen, reference, banque, moyen == "effet" ? echeance : null,
+            moyen == "especes" && avecTiroir ? partTiroir : 0, commentaire,
+            imputations.Count > 0 ? imputations.Select(i => new ImputationDto(i.Key, i.Value)).ToList() : null,
+            moyen != "especes" && compteId > 0 ? compteId : null);
+        var e = await Api.EnregistrerReglementAsync(situation.Id, req);
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        var regle = montant;
+        await ChargerAsync();
+        await ChoisirAsync(situation.Id);
+        message = $"Règlement de {Libelles.Dinars(regle, 2)} à {nom} enregistré. Nouvelle dette : {Libelles.Dinars(situation?.Solde ?? 0, 2)}.";
+    }
+}

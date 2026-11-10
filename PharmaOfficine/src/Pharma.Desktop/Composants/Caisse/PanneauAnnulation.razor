@@ -1,0 +1,307 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Vente encaissée : annulation complète (récente par le caissier, ancienne validée sur place)
+   ou retour de produits par le patient (le pharmacien choisit : remis en stock ou à détruire) *@
+<div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-annulation">
+    <section class="panneau fenetre-annulation">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+            <h2 id="t-annulation">@(mode == "retour" ? "Retour de produits" : "Annuler une vente ou faire un retour")</h2>
+            <button type="button" class="btn" @onclick="OnFerme">Fermer</button>
+        </div>
+
+        @if (message is not null)
+        {
+            <div class="succes" role="status">@message</div>
+            <button type="button" class="btn btn-principal" @onclick="OnFerme">Terminer</button>
+        }
+        else
+        {
+            @if (choisie is null)
+            {
+                <div class="champ">
+                    <label for="a-numero">N° de ticket (vide : dernières ventes de cette caisse)</label>
+                    <div style="display: flex; gap: 8px">
+                        <input id="a-numero" type="search" placeholder="ex. T-000012" @bind="numero" @bind:event="oninput" @onkeydown="ToucheRecherche" style="flex: 1" />
+                        <button type="button" class="btn" @onclick="RechercherAsync">Chercher</button>
+                    </div>
+                </div>
+            }
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+            @if (choisie is null)
+            {
+                @if (ventes.Count == 0 && recherche)
+                {
+                    <p class="vide" style="margin: 0">Aucune vente trouvée.</p>
+                }
+                <div class="liste-ventes">
+                    @foreach (var v in ventes)
+                    {
+                        <button type="button" class="ligne-vente @(v.Statut == "annulee" ? "annulee" : null)" disabled="@(v.Statut != "validee")" @onclick="() => Choisir(v)">
+                            <span><strong>@v.Numero</strong> · @Libelles.DateHeureLocale(v.Date) · @v.Vendeur@(v.Patient is { } p ? $" · {p}" : "")</span>
+                            <span>@(v.Statut == "annulee" ? "Annulée" : Libelles.Dinars(v.Total, 2))</span>
+                        </button>
+                    }
+                </div>
+            }
+            else
+            {
+                var v = choisie;
+                <div class="carte">
+                    <strong>@v.Numero</strong> · @Libelles.DateHeureLocale(v.Date) · vendu par @v.Vendeur@(v.Patient is { } p ? $" · {p}" : "")
+                    <ul style="margin: 8px 0">
+                        @foreach (var l in v.Lignes) { <li>@l.Quantite × @l.Produit · @Libelles.Dinars(l.Montant, 2)</li> }
+                    </ul>
+                    Total @Libelles.Dinars(v.Total, 2)@(v.PartOrganisme > 0 ? $" · part organisme {Libelles.Dinars(v.PartOrganisme, 2)}" : "")
+                    · payé par le patient @Libelles.Dinars(v.PartPatient, 2) (@Libelles.ModePaiement(v.Mode))
+                    <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="ChangerDeVente">Changer de vente</button>
+                </div>
+
+                @if (v.DansUnBordereau)
+                {
+                    <div class="erreur" role="alert">Cette vente figure déjà sur un bordereau envoyé à l’organisme : l’annulation ou le retour passe par la régularisation Chifa.</div>
+                }
+                else if (mode is null)
+                {
+                    <div class="filtres" role="group" aria-label="Que faire de cette vente ?">
+                        <button type="button" class="btn" @onclick='() => ChoisirMode("annulation")'>Annuler toute la vente</button>
+                        <button type="button" class="btn" @onclick='() => ChoisirModeAsync("retour")'>Retour de produits (partiel)</button>
+                    </div>
+                }
+                else if (mode == "annulation")
+                {
+                    <div class="@(v.CaisseOuverte ? "info-bandeau" : "avertissement")" role="note">
+                        @if (v.CaisseOuverte)
+                        {
+                            <text>Vente récente (sa caisse est encore ouverte) : annulation directe.</text>
+                        }
+                        else if (Session.A("caisse.annuler_vente"))
+                        {
+                            <text>Vente d’une caisse déjà clôturée : vous avez le droit de l’annuler. L’argent rendu sort de la caisse ouverte de ce poste.</text>
+                        }
+                        else
+                        {
+                            <text>Vente d’une caisse déjà clôturée : le pharmacien ou l’assistant doit valider avec son code. L’argent rendu sort de la caisse ouverte de ce poste.</text>
+                        }
+                    </div>
+                    @ChampMotif
+                    @if (ValidationRequise) { @ChampValidation }
+                    @if (v.FactureNumero is { } facture)
+                    {
+                        <div class="info-bandeau" role="note">Vente portée sur la facture @facture : retirez-la d’abord de la facture (Factures : rejet puis correction), ou faites un retour.</div>
+                    }
+                    <button type="button" class="btn btn-danger" disabled="@(enCours || v.FactureNumero is not null)" @onclick="AnnulerAsync">
+                        Annuler la vente@(v.ARendreAnnulation > 0 ? $" et rendre {Libelles.Dinars(v.ARendreAnnulation, 2)}" + (v.Mode is "credit" or "especes" ? " en espèces" : "") : "")
+                    </button>
+                }
+                else if (retour is not null)
+                {
+                    <div class="info-bandeau" role="note">
+                        Pour chaque produit rapporté : quantité, puis remis en stock (boîte intacte) ou à détruire. Laisser à 0 ce qui n’est pas rendu.
+                        Refuser le retour : fermez simplement cette fenêtre.
+                    </div>
+                    @foreach (var s in saisies)
+                    {
+                        var l = s.Ligne;
+                        var reste = l.QuantiteVendue - l.DejaRendue;
+                        <div class="carte ligne-retour">
+                            <div><strong>@l.Produit</strong> <span class="detail">lot @l.NumeroLot · @l.QuantiteVendue vendue(s)@(l.DejaRendue > 0 ? $", {l.DejaRendue} déjà rendue(s)" : "")</span></div>
+                            @if (reste <= 0)
+                            {
+                                <span class="detail">Tout a déjà été rendu.</span>
+                            }
+                            else
+                            {
+                                <div class="achats-ligne" style="align-items: flex-end">
+                                    @if (l.Boites.Count == 0)
+                                    {
+                                        <div class="champ" style="flex: 0 0 140px">
+                                            <label for="q-@l.LigneVenteId">Rendue(s) (0 à @reste)</label>
+                                            <input id="q-@l.LigneVenteId" type="number" min="0" max="@reste" @bind="s.Quantite" />
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <fieldset class="boites-retour">
+                                            <legend>Boîtes rendues (n° de série)</legend>
+                                            @foreach (var b in l.Boites)
+                                            {
+                                                <label class="case"><input type="checkbox" checked="@s.Boites.Contains(b.Id)" @onchange="e => BasculerBoite(s, b.Id, e)" /><span>@b.NumeroSerie</span></label>
+                                            }
+                                        </fieldset>
+                                    }
+                                    <div class="filtres" role="radiogroup" aria-label="@($"Destination de {l.Produit}")">
+                                        <label class="case"><input type="radio" name="d-@l.LigneVenteId" checked="@(s.Destination == "stock")" @onchange='() => s.Destination = "stock"' /><span>Remettre en stock</span></label>
+                                        <label class="case"><input type="radio" name="d-@l.LigneVenteId" checked="@(s.Destination == "destruction")" @onchange='() => s.Destination = "destruction"' /><span>À détruire</span></label>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    @ChampMotif
+                    @if (ValidationRequise) { @ChampValidation }
+                    <button type="button" class="btn btn-danger" disabled="@(enCours || ARendre is null)" @onclick="EnregistrerRetourAsync">
+                        Enregistrer le retour@(ARendre is > 0 && v.Mode != "credit" ? $" et rendre {Libelles.Dinars(ARendre.Value, 2)}" : "")
+                    </button>
+                }
+            }
+        }
+    </section>
+</div>
+
+@code {
+    [Parameter] public string? NumeroInitial { get; set; }
+    [Parameter] public EventCallback OnFerme { get; set; }
+    /// <summary>Prévient la caisse qu'une vente a été annulée ou reprise (stock, attendu de caisse).</summary>
+    [Parameter] public EventCallback OnAnnulee { get; set; }
+
+    private sealed class SaisieRetour(LigneRetournableDto ligne)
+    {
+        public LigneRetournableDto Ligne { get; } = ligne;
+        public int Quantite { get; set; }
+        public HashSet<long> Boites { get; } = [];
+        public string Destination { get; set; } = "stock";
+        public int Rendue => Ligne.Boites.Count > 0 ? Boites.Count : Math.Clamp(Quantite, 0, Ligne.QuantiteVendue - Ligne.DejaRendue);
+    }
+
+    private string? numero, motif, validateur, code, erreur, message;
+    private string? mode;   // null : choix ; « annulation » ; « retour »
+    private List<VenteAnnulableDto> ventes = [];
+    private List<VendeurComptoirDto> validateurs = [];
+    private VenteAnnulableDto? choisie;
+    private VenteRetournableDto? retour;
+    private List<SaisieRetour> saisies = [];
+    private bool recherche, enCours, controle;
+
+    private string DroitRequis => mode == "retour" ? "caisse.retour_especes" : "caisse.annuler_vente";
+    private bool ValidationRequise => mode == "retour" ? !Session.A(DroitRequis) : choisie is { CaisseOuverte: false } && !Session.A(DroitRequis);
+    private bool MotifManque => controle && (motif?.Trim().Length ?? 0) < 3;
+    private bool ValidateurManque => controle && ValidationRequise && string.IsNullOrEmpty(validateur);
+    private bool CodeManque => controle && ValidationRequise && CodeComptoirSaisie.Erreur(code, nouveauCode: false) is not null;
+
+    /// <summary>Part payée par le patient pour les boîtes rendues (même calcul que le serveur) ; null si rien n'est rendu.</summary>
+    // Estimation affichée : même calcul que le serveur (prix des lignes avant remise, ramené à ce que le patient a payé)
+    private decimal? ARendre => saisies.Sum(s => s.Rendue) == 0 || retour is null ? null
+        : saisies.Sum(s => s.Ligne.QuantiteVendue == 0 ? 0
+            : Math.Round(Math.Round(s.Ligne.MontantPatient * s.Rendue / s.Ligne.QuantiteVendue, 2, MidpointRounding.AwayFromZero) * RatioPaye, 2, MidpointRounding.AwayFromZero));
+
+    private decimal RatioPaye => retour?.Lignes.Sum(l => l.MontantPatient) is > 0 and var brut ? Math.Min(retour.Vente.PartPatient / brut, 1m) : 1m;
+
+    private RenderFragment ChampMotif => __builder =>
+    {
+        <div class="champ">
+            <label for="a-motif" class="requis">Motif</label>
+            <input id="a-motif" type="text" maxlength="300" placeholder="@(mode == "retour" ? "ex. traitement arrêté, mauvais dosage" : "ex. erreur de produit, patient a renoncé")"
+                   @bind="motif" @bind:event="oninput" class="@Obligatoire.Classe(MotifManque)" aria-invalid="@Obligatoire.Aria(MotifManque)" />
+        </div>
+    };
+
+    private RenderFragment ChampValidation => __builder =>
+    {
+        <div class="achats-ligne">
+            <div class="champ" style="flex: 2 1 220px">
+                <label for="a-valideur" class="requis">Validé par</label>
+                <select id="a-valideur" @bind="validateur" class="@Obligatoire.Classe(ValidateurManque)" aria-invalid="@Obligatoire.Aria(ValidateurManque)">
+                    <option value="">Choisir…</option>
+                    @foreach (var val in validateurs) { <option value="@val.Identifiant">@val.NomComplet</option> }
+                </select>
+            </div>
+            <div class="champ" style="flex: 1 1 140px">
+                <label for="a-code" class="requis">Son code comptoir</label>
+                <input id="a-code" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"
+                       onbeforeinput="@CodeComptoirSaisie.FiltreChiffres" @bind="code" @bind:event="oninput"
+                       class="@Obligatoire.Classe(CodeManque)" aria-invalid="@Obligatoire.Aria(CodeManque)" />
+            </div>
+        </div>
+        @if (validateurs.Count == 0)
+        {
+            <p class="detail" style="margin: 0">Aucun pharmacien ou assistant n’a encore choisi de code comptoir (en haut de l’écran, « Mon code comptoir »).</p>
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        numero = NumeroInitial;
+        await RechercherAsync();
+        if (ventes.Count == 1 && NumeroInitial is not null && ventes[0].Statut == "validee") Choisir(ventes[0]);
+    }
+
+    private async Task ToucheRecherche(KeyboardEventArgs e) { if (e.Key == "Enter") await RechercherAsync(); }
+
+    private async Task RechercherAsync()
+    {
+        (erreur, choisie, mode) = (null, null, null);
+        (ventes, erreur) = await Api.VentesAnnulablesAsync(numero);
+        recherche = true;
+    }
+
+    private void Choisir(VenteAnnulableDto v) => (choisie, mode, retour, saisies, motif, validateur, code, controle, erreur) = (v, null, null, [], null, null, null, false, null);
+
+    private void ChangerDeVente() => (choisie, mode, retour, erreur) = (null, null, null, null);
+
+    private async Task ChargerValidateursAsync()
+    {
+        if (!ValidationRequise) return;
+        (validateurs, _) = mode == "retour" ? await Api.ValidateursRetourAsync() : await Api.ValidateursAnnulationAsync();
+    }
+
+    private async void ChoisirMode(string m)
+    {
+        mode = m;
+        await ChargerValidateursAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ChoisirModeAsync(string m)
+    {
+        mode = m;
+        var (r, e) = await Api.VenteRetournableAsync(choisie!.Id);
+        if (e is not null) { (erreur, mode) = (e, null); return; }
+        retour = r;
+        saisies = r!.Lignes.Select(l => new SaisieRetour(l)).ToList();
+        await ChargerValidateursAsync();
+    }
+
+    private static void BasculerBoite(SaisieRetour s, long boite, ChangeEventArgs e)
+    {
+        if (e.Value is true) s.Boites.Add(boite); else s.Boites.Remove(boite);
+    }
+
+    private string? Controler()
+    {
+        controle = true;
+        return MotifManque ? "Indiquez le motif."
+            : ValidateurManque ? "Choisissez le pharmacien ou l’assistant qui valide."
+            : CodeManque ? "Tapez son code comptoir (4 à 6 chiffres)." : null;
+    }
+
+    private async Task AnnulerAsync()
+    {
+        if ((erreur = Controler()) is not null || choisie is null) return;
+        enCours = true;
+        var (r, e) = await Api.AnnulerVenteAsync(choisie.Id, new AnnulationVenteRequete(motif, ValidationRequise ? validateur : null, ValidationRequise ? code : null));
+        (enCours, code) = (false, null);
+        if (e is not null) { erreur = e; return; }
+        message = $"Vente {r!.Numero} annulée{(r.ValidePar is { } p ? $", validée par {p}" : "")}."
+                  + (r.ARendre > 0 ? $" À rendre au patient : {Libelles.Dinars(r.ARendre, 2)} ({Libelles.ModePaiement(r.Mode)})." : r.Mode == "credit" ? " Crédit du patient diminué d’autant." : "")
+                  + " Stock remis sur les mêmes lots.";
+        await OnAnnulee.InvokeAsync();
+    }
+
+    private async Task EnregistrerRetourAsync()
+    {
+        if ((erreur = Controler()) is not null || choisie is null) return;
+        var lignes = saisies.Where(s => s.Rendue > 0)
+            .Select(s => new LigneRetourClientDto(s.Ligne.LigneVenteId, s.Rendue, s.Destination, s.Ligne.Boites.Count > 0 ? s.Boites.ToList() : null)).ToList();
+        if (lignes.Count == 0) { erreur = "Indiquez au moins un produit rendu."; return; }
+        enCours = true;
+        var (r, e) = await Api.RetourClientAsync(choisie.Id, new RetourClientRequete(motif, lignes, ValidationRequise ? validateur : null, ValidationRequise ? code : null));
+        (enCours, code) = (false, null);
+        if (e is not null) { erreur = e; return; }
+        message = $"Retour enregistré sur la vente {r!.Numero}{(r.ValidePar is { } p ? $", validé par {p}" : "")} : "
+                  + $"{r.RemisEnStock} boîte(s) remise(s) en stock, {r.ADetruire} à détruire."
+                  + (r.ARendre > 0 ? $" À rendre au patient : {Libelles.Dinars(r.ARendre, 2)} ({Libelles.ModePaiement(r.Mode)})." : r.Mode == "credit" ? " Crédit du patient diminué d’autant." : "");
+        await OnAnnulee.InvokeAsync();
+    }
+}

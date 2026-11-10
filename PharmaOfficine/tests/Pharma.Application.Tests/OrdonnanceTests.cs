@@ -117,22 +117,22 @@ public class OrdonnanceTests
     public async Task Psychotrope_sans_medecin_refuse()
     {
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() => Encaisser(new ScansEnMemoire())
-            .ExecuterAsync(Commande(7, 70, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null)), 5));
+            .ExecuterAsync(Commande(7, 70, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null)), 5, "Caisse 1"));
         Assert.Contains("médecin", ex.Message);
     }
 
     [Fact]
     public async Task Ordonnance_scannee_sans_medecin_acceptee_hors_psychotrope() =>
         await Encaisser(new ScansEnMemoire()).ExecuterAsync(
-            Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null, "0123456789abcdef0123456789abcdef.jpg", "Amoxicilline 1g")), 5);
+            Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null, "0123456789abcdef0123456789abcdef.jpg", "Amoxicilline 1g")), 5, "Caisse 1");
 
     [Fact]
     public async Task Image_inconnue_refusee() =>
         await Assert.ThrowsAsync<RegleMetierException>(() => Encaisser(new ScansEnMemoire()).ExecuterAsync(
-            Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null, "../../windows/win.ini", null)), 5));
+            Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null, "../../windows/win.ini", null)), 5, "Caisse 1"));
 
     [Fact]
     public async Task Prescription_datee_du_futur_refusee() =>
         await Assert.ThrowsAsync<RegleMetierException>(() => Encaisser(new ScansEnMemoire()).ExecuterAsync(
-            Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui.AddDays(1), null)), 5));
+            Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui.AddDays(1), null)), 5, "Caisse 1"));
 }

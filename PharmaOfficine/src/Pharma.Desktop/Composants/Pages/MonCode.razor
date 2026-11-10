@@ -1,0 +1,66 @@
+@page "/mon-code"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject NavigationManager Nav
+
+<div class="page page-serree" style="max-width: 520px">
+    <div class="titre-page">
+        <div>
+            <h1>Mon code comptoir</h1>
+            <p class="sous-titre">Pour reprendre la caisse du poste en quelques secondes, sans la fermer, quand un collègue y travaille aussi.</p>
+        </div>
+    </div>
+
+    @if (Session.ParCode)
+    {
+        <div class="info-bandeau" role="note">Reconnectez-vous avec votre mot de passe pour changer votre code comptoir.</div>
+    }
+    else
+    {
+        <form class="carte" style="display: flex; flex-direction: column; gap: 12px" @onsubmit="EnregistrerAsync">
+            <div class="champ">
+                <label for="nouveau-code" class="requis">Nouveau code (4 à 6 chiffres)</label>
+                <input id="nouveau-code" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="new-password"
+                       onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
+                       @bind="code" @bind:event="oninput" class="@Obligatoire.Classe(CodeManque)" aria-invalid="@Obligatoire.Aria(CodeManque)" />
+            </div>
+            <div class="champ">
+                <label for="confirmation" class="requis">Confirmez le code</label>
+                <input id="confirmation" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="new-password"
+                       onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
+                       @bind="confirmation" @bind:event="oninput" class="@Obligatoire.Classe(ConfirmationManque)" aria-invalid="@Obligatoire.Aria(ConfirmationManque)" />
+            </div>
+            <p class="sous-titre" style="margin: 0; font-size: 13px">
+                Évitez les codes évidents (1234, 0000, date de naissance). Ne le communiquez à personne : les ventes faites avec votre code sont à votre nom.
+                Avec le code, seuls les écrans du comptoir sont accessibles. Après 5 erreurs, il est bloqué 5 minutes.
+            </p>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+            <button type="submit" class="btn btn-principal" disabled="@enCours">Enregistrer mon code</button>
+        </form>
+    }
+</div>
+
+@code {
+    private string code = "", confirmation = "";
+    private string? erreur, message;
+    private bool enCours, controle;
+    private bool CodeManque => Obligatoire.Manque(controle, code);
+    private bool ConfirmationManque => Obligatoire.Manque(controle, confirmation);
+
+    private async Task EnregistrerAsync()
+    {
+        (controle, erreur, message) = (true, null, null);
+        if (CodeManque || ConfirmationManque) { erreur = "Saisissez le code deux fois."; return; }
+        if (CodeComptoirSaisie.Erreur(code, nouveauCode: true) is { } invalide) { erreur = invalide; return; }
+        if (code != confirmation) { erreur = "Les deux codes sont différents."; return; }
+        enCours = true;
+        erreur = await Api.DefinirCodeComptoirAsync(code);
+        enCours = false;
+        if (erreur is null)
+        {
+            (code, confirmation, controle) = ("", "", false);
+            Nav.NavigateTo("caisse");
+        }
+    }
+}

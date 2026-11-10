@@ -52,6 +52,8 @@ public class SessionCaisse
     public long Id { get; init; }
     public long UtilisateurId { get; init; }
     public string Poste { get; init; } = "";
+    /// <summary>Employé qui a ouvert la caisse du poste.</summary>
+    public string? OuvertePar { get; init; }
     public DateTime OuverteLe { get; init; }
     public decimal FondCaisse { get; init; }
     public DateTime? FermeeLe { get; init; }

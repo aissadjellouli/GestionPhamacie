@@ -3,6 +3,7 @@ using Pharma.Application.Securite;
 using Pharma.Domain.Achats;
 using Pharma.Domain.Commun;
 using Pharma.Domain.Securite;
+using Pharma.Domain.Stock;
 
 namespace Pharma.Application.Achats;
 
@@ -31,8 +32,8 @@ public sealed record ReceptionResume(
     long Id, string Fournisseur, string? NumeroBl, string? NumeroFacture, string? NumeroCommande,
     DateTime Date, int NombreLots, int NombreBoites, decimal MontantTtc);
 
-/// <summary>Lot créé à la réception, avec le nombre de boîtes encore sans identité (à étiqueter).</summary>
-public sealed record LotRecu(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int BoitesSansIdentite);
+/// <summary>Lot reçu : nouveau ou complété (même lot, même grossiste), avec les étiquettes internes créées pour ses boîtes sans Data Matrix.</summary>
+public sealed record LotRecu(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int Etiquettes, bool LotExistant = false);
 
 public sealed record ReceptionEnregistree(long ReceptionId, decimal MontantTtc, IReadOnlyList<LotRecu> Lots);
 
@@ -93,6 +94,8 @@ public interface IAchats
     /// <summary>Réception, lots, boîtes sérialisées, mouvements, quantités reçues et dette du grossiste : une seule transaction.</summary>
     Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception reception, CancellationToken ct = default);
     Task<IReadOnlyList<ReceptionResume>> ReceptionsAsync(int limite, CancellationToken ct = default);
+    /// <summary>Lots du même produit, même n° (normalisé) et même grossiste, toutes dates de péremption.</summary>
+    Task<IReadOnlyList<LotExistant>> LotsMemeNumeroAsync(long produitId, long fournisseurId, string numeroLot, CancellationToken ct = default);
 
     Task<LotRetournable?> LotRetournableAsync(long lotId, CancellationToken ct = default);
     /// <summary>Lots encore en stock d'un produit (tous grossistes), éventuellement d'un numéro de lot donné.</summary>
@@ -110,6 +113,8 @@ public interface IAchats
     Task<IReadOnlyList<LotAEtiqueter>> LotsAEtiqueterAsync(CancellationToken ct = default);
     /// <summary>Crée les boîtes et leurs codes EAN-13 internes (fonction creer_boites_internes).</summary>
     Task<IReadOnlyList<EtiquetteBoite>> CreerEtiquettesAsync(long lotId, int nombre, CancellationToken ct = default);
+    /// <summary>Étiquettes internes des boîtes d'une livraison encore en stock (réimpression).</summary>
+    Task<IReadOnlyList<EtiquetteBoite>> EtiquettesReceptionAsync(long receptionId, CancellationToken ct = default);
 }
 
 public interface IDocumentsAchats
@@ -240,7 +245,8 @@ public sealed record SaisieReception(
     long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionSaisie> Lignes);
 
 /// <summary>
-/// Entrée en stock d'une livraison : un lot par ligne, rattaché à la réception et au grossiste.
+/// Entrée en stock d'une livraison : un lot par ligne (le même lot déjà livré par ce grossiste est complété),
+/// une étiquette interne créée pour chaque boîte sans Data Matrix.
 /// La dette du grossiste augmente du total TTC (TVA du catalogue).
 /// </summary>
 public sealed class Receptionner(IAchats achats, IPermissionService droits, IHorloge horloge, IJournal journal)
@@ -253,7 +259,7 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
 
         var lignes = s.Lignes.Select(l => l with
         {
-            NumeroLot = l.NumeroLot?.Trim() ?? "",
+            NumeroLot = RegleLot.Normaliser(l.NumeroLot),
             Gtin = string.IsNullOrWhiteSpace(l.Gtin) ? null : l.Gtin.Trim(),
             NumerosSerie = l.NumerosSerie?.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()).ToList()
         }).ToList();
@@ -421,6 +427,19 @@ public sealed class ListerLotsAEtiqueter(IAchats achats)
 
 public sealed record EtiquettesImprimables(IReadOnlyList<string> Codes, byte[] Pdf, string Zpl);
 
+/// <summary>Réimpression des étiquettes d'une livraison (créées à la réception).</summary>
+public sealed class ImprimerEtiquettesReception(IAchats achats, IPermissionService droits, IDocumentsAchats documents)
+{
+    public async Task<EtiquettesImprimables> ExecuterAsync(long receptionId, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "imprimer des étiquettes", ct);
+        var etiquettes = await achats.EtiquettesReceptionAsync(receptionId, ct);
+        if (etiquettes.Count == 0)
+            throw new RegleMetierException("Aucune boîte de cette livraison n'a d'étiquette interne en stock.");
+        return new EtiquettesImprimables(etiquettes.Select(e => e.Code).ToList(), documents.PlancheEtiquettes(etiquettes), documents.EtiquettesZpl(etiquettes));
+    }
+}
+
 /// <summary>Un code EAN-13 interne par boîte sans identité, en PDF (toute imprimante) et en ZPL (thermique).</summary>
 public sealed class ImprimerEtiquettes(IAchats achats, IPermissionService droits, IDocumentsAchats documents)
 {
@@ -453,5 +472,37 @@ public sealed class LireDataMatrix(IAchats achats)
             throw new RegleMetierException("Ce code n’est pas un Data Matrix de médicament (GTIN introuvable).");
         var produit = await achats.ProduitParGtinAsync(dm.Gtin, ct);
         return new BoiteLue(dm.Gtin, dm.Lot, dm.Peremption, dm.NumeroSerie, produit?.Id, produit?.Nom);
+    }
+}
+
+// ---- Cas d'usage : conflits de lot à trancher à la réception ------------------------
+
+/// <summary>Index : position de la ligne dans la saisie ; Peremptions : dates déjà en stock pour ce n° de lot.</summary>
+public sealed record ConflitReception(int Index, ConflitLot Type, string Message, IReadOnlyList<DateOnly> Peremptions);
+
+/// <summary>
+/// Avant de valider : signale, ligne par ligne, une date différente d'un lot déjà en stock ou un lot bloqué,
+/// pour que l'utilisateur choisisse (corriger la date ou créer un lot séparé ; mettre de côté ou entrer bloqué).
+/// </summary>
+public sealed class AnalyserReception(IAchats achats, IPermissionService droits)
+{
+    public async Task<IReadOnlyList<ConflitReception>> ExecuterAsync(long fournisseurId, IReadOnlyList<LigneReceptionSaisie> lignes,
+        long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "réceptionner une livraison", ct);
+        var conflits = new List<ConflitReception>();
+        for (var i = 0; i < lignes.Count; i++)
+        {
+            var l = lignes[i];
+            var numero = RegleLot.Normaliser(l.NumeroLot);
+            if (numero.Length == 0 || l.Quantite <= 0) continue;
+            var memeNumero = await achats.LotsMemeNumeroAsync(l.ProduitId, fournisseurId, numero, ct);
+            var dates = memeNumero.Select(x => x.DatePeremption).Distinct().ToList();
+            foreach (var c in RegleLot.Conflits(memeNumero, l.DatePeremption))
+                conflits.Add(new ConflitReception(i, c, c == ConflitLot.DateDifferente
+                    ? $"{l.Nom}, lot {numero} : déjà en stock avec la péremption du {string.Join(", ", dates.Select(d => d.ToString("dd/MM/yyyy")))}, pas du {l.DatePeremption:dd/MM/yyyy}."
+                    : $"{l.Nom}, lot {numero} : lot bloqué (rappel), vente interdite.", dates));
+        }
+        return conflits;
     }
 }

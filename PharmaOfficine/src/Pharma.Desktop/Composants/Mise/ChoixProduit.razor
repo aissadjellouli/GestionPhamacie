@@ -1,0 +1,138 @@
+@inject ApiClient Api
+
+@* Saisie assistée d'un produit du catalogue : liste sous le champ dès la première lettre (nom, DCI ou code-barres),
+   flèches haut et bas pour se déplacer, Entrée pour choisir, Échap pour fermer. *@
+
+<div class="champ recherche" style="@Style">
+    <label for="@Id" class="@(Requis ? "requis" : null)">@Libelle</label>
+    <input id="@Id" type="search" autocomplete="off" placeholder="@Placeholder" aria-invalid="@(Invalide ? "true" : null)"
+           role="combobox" aria-autocomplete="list" aria-expanded="@(Ouverte ? "true" : "false")" aria-controls="@($"{Id}-liste")"
+           aria-activedescendant="@(Ouverte && actif >= 0 ? $"{Id}-opt-{actif}" : null)"
+           value="@texte" @oninput="SaisieAsync" @onkeydown="ToucheAsync" @onfocus="Ouvrir" @onblur="Fermer" />
+    @if (Ouverte)
+    {
+        <ul class="suggestions" id="@($"{Id}-liste")" role="listbox" aria-label="Produits du catalogue">
+            @if (resultats.Count == 0)
+            {
+                <li class="choix-vide" role="option" aria-disabled="true">@(chargement ? "Recherche…" : $"Aucun produit pour « {texte} ».")</li>
+            }
+            @for (var i = 0; i < resultats.Count; i++)
+            {
+                var p = resultats[i];
+                var index = i;
+                <li id="@($"{Id}-opt-{index}")" role="option" aria-selected="@(index == actif ? "true" : "false")">
+                    <button type="button" tabindex="-1" class="@(index == actif ? "actif" : null)"
+                            @onmousedown:preventDefault @onmousedown="() => ChoisirAsync(p)" @onmouseenter="() => actif = index">
+                        <span>
+                            <strong>@Surligner(p.NomCommercial)</strong><br />
+                            <span class="detail">@string.Join(" · ", new[] { p.Dci, p.Dosage, p.Forme }.Where(x => !string.IsNullOrWhiteSpace(x)))</span>
+                        </span>
+                        <span class="pastille @(p.Stock <= 0 ? "urgent" : "info")">@(p.Stock <= 0 ? "Rupture" : $"Stock {p.Stock}")</span>
+                    </button>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public string Libelle { get; set; } = "Produit";
+    [Parameter] public string Placeholder { get; set; } = "Tapez le nom, la DCI ou scannez le code-barres";
+    [Parameter] public string? Style { get; set; }
+    /// <summary>Champ obligatoire : astérisque sur le libellé (facultatif, non par défaut).</summary>
+    [Parameter] public bool Requis { get; set; }
+    /// <summary>Champ obligatoire manquant : bordure rouge (facultatif, non par défaut).</summary>
+    [Parameter] public bool Invalide { get; set; }
+    [Parameter] public EventCallback<ProduitDto> OnChoisi { get; set; }
+    /// <summary>Appelé quand le texte change après un choix (le produit choisi n'est plus valable).</summary>
+    [Parameter] public EventCallback OnEfface { get; set; }
+    /// <summary>Texte tapé (ex. pour proposer de créer un produit absent du catalogue).</summary>
+    [Parameter] public EventCallback<string> OnTexte { get; set; }
+
+    private string texte = "";
+    private List<ProduitDto> resultats = [];
+    private int actif = -1, requete;
+    private bool ouverte, chargement;
+
+    private bool Ouverte => ouverte && texte.Trim().Length > 0;
+
+    /// <summary>Affiche un produit choisi ailleurs (ex. depuis une alerte) ou vide le champ.</summary>
+    public void Afficher(string? nom)
+    {
+        (texte, resultats, actif, ouverte) = (nom ?? "", [], -1, false);
+        StateHasChanged();
+    }
+
+    private async Task SaisieAsync(ChangeEventArgs e)
+    {
+        texte = e.Value?.ToString() ?? "";
+        ouverte = true;
+        await OnEfface.InvokeAsync();
+        await OnTexte.InvokeAsync(texte);
+        var n = ++requete;
+        if (texte.Trim().Length == 0) { (resultats, chargement) = ([], false); return; }
+        chargement = true;
+        // Une seule requête par mot tapé : recherche 250 ms après la dernière touche
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
+        if (n != requete) return;
+        await RechercherMaintenantAsync(n);
+    }
+
+    private async Task RechercherMaintenantAsync(int n)
+    {
+        var (trouves, _) = await Api.RechercherProduitsAsync(texte.Trim());
+        if (n != requete) return;
+        (resultats, chargement) = (trouves, false);
+        actif = resultats.Count > 0 ? 0 : -1;
+    }
+
+    private async Task ToucheAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when resultats.Count > 0:
+                ouverte = true;
+                actif = (actif + 1) % resultats.Count;
+                break;
+            case "ArrowUp" when resultats.Count > 0:
+                actif = actif <= 0 ? resultats.Count - 1 : actif - 1;
+                break;
+            // Recherche en attente (douchette : code puis Entrée en quelques ms) : on cherche tout de suite le texte
+            // saisi, puis on prend le premier résultat ; la liste affichée correspondait encore au texte précédent
+            case "Enter" when chargement && texte.Trim().Length > 0:
+                var n = ++requete;
+                await RechercherMaintenantAsync(n);
+                if (n == requete && resultats.Count > 0) await ChoisirAsync(resultats[0]);
+                break;
+            case "Enter" when Ouverte && actif >= 0 && actif < resultats.Count:
+                await ChoisirAsync(resultats[actif]);
+                break;
+            case "Escape":
+                ouverte = false;
+                break;
+        }
+    }
+
+    private async Task ChoisirAsync(ProduitDto p)
+    {
+        (texte, ouverte, resultats, actif) = (p.NomCommercial, false, [], -1);
+        await OnChoisi.InvokeAsync(p);
+    }
+
+    private void Ouvrir() => ouverte = resultats.Count > 0;
+    private void Fermer() => ouverte = false;
+
+    /// <summary>Met en gras la partie tapée dans le nom (sans tenir compte des majuscules).</summary>
+    private RenderFragment Surligner(string nom) => builder =>
+    {
+        var t = texte.Trim();
+        var i = t.Length > 0 ? nom.IndexOf(t, StringComparison.CurrentCultureIgnoreCase) : -1;
+        if (i < 0) { builder.AddContent(0, nom); return; }
+        builder.AddContent(1, nom[..i]);
+        builder.OpenElement(2, "mark");
+        builder.AddContent(3, nom.Substring(i, t.Length));
+        builder.CloseElement();
+        builder.AddContent(4, nom[(i + t.Length)..]);
+    };
+}

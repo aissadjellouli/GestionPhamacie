@@ -1,6 +1,7 @@
 namespace Pharma.Application.Securite;
 
-public sealed record Session(string Jeton, string NomComplet, DateTime ExpireLe);
+/// <summary>DoitChangerMotDePasse : jeton sans aucun droit tant que le mot de passe provisoire n'est pas changé.</summary>
+public sealed record Session(string Jeton, string NomComplet, DateTime ExpireLe, bool DoitChangerMotDePasse = false);
 
 /// <summary>Connexion d'un employé : renvoie une session, ou null si l'identifiant ou le mot de passe est faux.</summary>
 public sealed class SeConnecter(
@@ -16,7 +17,7 @@ public sealed class SeConnecter(
             return null;
 
         await comptes.NoterConnexionAsync(compte.Id, ct);
-        var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet);
-        return new Session(jeton, compte.NomComplet, expire);
+        var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet, motDePasseAChanger: compte.DoitChangerMotDePasse);
+        return new Session(jeton, compte.NomComplet, expire, compte.DoitChangerMotDePasse);
     }
 }

@@ -1,0 +1,592 @@
+@page "/admin/reprise"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+<div class="page admin">
+    <NavAdmin Actif="admin/reprise" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Reprise de données</h1>
+                <p class="sous-titre">Depuis l’ancien logiciel, lu en lecture seule par ODBC : l’ancienne base n’est jamais modifiée. Travaillez de préférence sur une copie.</p>
+            </div>
+        </div>
+
+        @if (!Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Réservé au pharmacien titulaire.</div>
+        }
+        else
+        {
+            <ol class="etapes-reprise" aria-label="Étapes">
+                @foreach (var (n, libelle) in Etapes)
+                {
+                    <li class="@(n == etape ? "en-cours" : n < etape ? "faite" : null)" aria-current="@(n == etape ? "step" : null)">@n. @libelle</li>
+                }
+            </ol>
+
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+            @* ---- 1. Source -------------------------------------------------------- *@
+            @if (etape == 1)
+            {
+                <section class="panneau" aria-labelledby="t-source">
+                    <h2 id="t-source">Où est l’ancienne base ?</h2>
+                    <div class="achats-ligne">
+                        <div class="champ" style="flex: 1 1 360px">
+                            <label for="rp-dossier">Dossier de l’ancien logiciel (facultatif)</label>
+                            <input id="rp-dossier" type="text" placeholder="Ex. C:\AncienLogiciel\Donnees" @bind="dossier" />
+                        </div>
+                        <button type="button" class="btn" disabled="@enCours" @onclick="ParcourirDossierAsync">Parcourir…</button>
+                        <button type="button" class="btn" disabled="@enCours" @onclick="ChercherAsync">Chercher les bases</button>
+                    </div>
+                    <p class="detail" style="margin: 0">
+                        Le dossier doit être lisible par le PC serveur : ce PC s’il fait aussi serveur, sinon un partage réseau (\\SERVEUR\…).
+                        Sans dossier, seules les sources ODBC déjà déclarées sur le PC serveur sont listées.
+                    </p>
+
+                    @if (sources.Count > 0)
+                    {
+                        <ul class="liste-lecture" aria-label="Sources trouvées">
+                            @foreach (var s in sources)
+                            {
+                                <li>
+                                    <button type="button" disabled="@(s.ChaineConnexion is null)" @onclick="() => ChoisirSource(s)">
+                                        <span><strong>@s.Libelle</strong>@if (s.Remarque is not null){<br /><span class="detail">@s.Remarque</span>}</span>
+                                        <span>@(s.ChaineConnexion is null ? "inutilisable" : "Choisir")</span>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    else if (recherche)
+                    {
+                        <p class="vide">Aucune base trouvée dans ce dossier : renseignez la connexion ci-dessous.</p>
+                    }
+                </section>
+
+                <section class="panneau" aria-labelledby="t-connexion">
+                    <h2 id="t-connexion">Connexion à l’ancienne base</h2>
+                    <div class="achats-ligne">
+                        <div class="champ" style="flex: 1 1 320px">
+                            <label for="rp-pilote" class="requis">Pilote ODBC</label>
+                            <select id="rp-pilote" class="selection" @bind="pilote" @bind:after="Recalculer" aria-invalid="@Obligatoire.Aria(Obligatoire.Manque(controle, pilote))">
+                                <option value="">— choisir —</option>
+                                <option value="@ChaineOdbc.SourceDeclaree">Source ODBC déjà déclarée (DSN)</option>
+                                @foreach (var p in pilotes) { <option value="@p">@p</option> }
+                            </select>
+                        </div>
+                        @if (pilote == ChaineOdbc.SourceDeclaree)
+                        {
+                            <div class="champ" style="flex: 1 1 260px">
+                                <label for="rp-dsn" class="requis">Nom de la source</label>
+                                <select id="rp-dsn" class="selection" @bind="dsn" @bind:after="Recalculer" aria-invalid="@Obligatoire.Aria(Obligatoire.Manque(controle, dsn))">
+                                    <option value="">— choisir —</option>
+                                    @foreach (var s in sources.Where(s => s.Dsn is not null && s.ChaineConnexion is not null)) { <option value="@s.Dsn">@s.Libelle</option> }
+                                </select>
+                            </div>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(pilote) && pilote != ChaineOdbc.SourceDeclaree)
+                    {
+                        var famille = ChaineOdbc.FamilleDe(pilote);
+                        <div class="achats-ligne">
+                            <div class="champ" style="flex: 2 1 360px">
+                                <label for="rp-emplacement" class="requis">@LibelleEmplacement(famille)</label>
+                                <input id="rp-emplacement" type="text" @bind="emplacement" @bind:event="oninput" @bind:after="Recalculer"
+                                       placeholder="@(famille == ChaineOdbc.Famille.Serveur ? "Ex. 192.168.1.20 ou SERVEUR\\INSTANCE" : "")"
+                                       aria-invalid="@Obligatoire.Aria(Obligatoire.Manque(controle, emplacement))" />
+                            </div>
+                            @if (famille != ChaineOdbc.Famille.Serveur)
+                            {
+                                <button type="button" class="btn" @onclick="() => ParcourirEmplacement(famille)">Parcourir…</button>
+                            }
+                            @if (famille == ChaineOdbc.Famille.Serveur)
+                            {
+                                <div class="champ" style="flex: 1 1 200px">
+                                    <label for="rp-base">Base de données</label>
+                                    <input id="rp-base" type="text" @bind="baseDeDonnees" @bind:event="oninput" @bind:after="Recalculer" />
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(pilote))
+                    {
+                        <div class="achats-ligne">
+                            <div class="champ" style="flex: 1 1 220px">
+                                <label for="rp-utilisateur">Utilisateur</label>
+                                <input id="rp-utilisateur" type="text" autocomplete="off" @bind="utilisateur" @bind:event="oninput" @bind:after="Recalculer" />
+                            </div>
+                            <div class="champ" style="flex: 1 1 220px">
+                                <label for="rp-mdp">Mot de passe</label>
+                                <input id="rp-mdp" type="password" autocomplete="new-password" @bind="motDePasse" @bind:event="oninput" @bind:after="Recalculer" />
+                            </div>
+                        </div>
+                        <p class="detail" style="margin: 0">Laissez vides si la base n’en demande pas. Le mot de passe sert seulement pendant l’opération : il n’est enregistré nulle part.</p>
+                    }
+
+                    <details class="avance">
+                        <summary>Avancé : chaîne de connexion</summary>
+                        <div class="champ">
+                            <label for="rp-chaine">Chaîne de connexion ODBC (calculée à partir des champs ; modifiable si l’éditeur de l’ancien logiciel en fournit une)</label>
+                            <textarea id="rp-chaine" rows="2" spellcheck="false" @bind="chaineSaisie" @bind:event="oninput" @bind:after="() => chaineModifiee = true"></textarea>
+                            @if (chaineModifiee) { <button type="button" class="lien" @onclick="() => { chaineModifiee = false; Recalculer(); }">Revenir à la chaîne calculée</button> }
+                        </div>
+                    </details>
+                    <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ScannerAsync">Se connecter et analyser la base</button></div>
+                </section>
+
+                @if (sessions.Count > 0)
+                {
+                    <section class="tableau-cadre" aria-label="Reprises précédentes">
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col">N°</th><th scope="col">Ancien logiciel</th><th scope="col">Début</th><th scope="col">État</th><th scope="col"></th></tr></thead>
+                            <tbody>
+                                @foreach (var s in sessions)
+                                {
+                                    <tr>
+                                        <td>@s.Id</td><td>@s.Logiciel</td><td>@Libelles.DateHeureLocale(s.Debut)</td>
+                                        <td><span class="pastille @(s.Statut == "charge" ? "ok" : s.Statut == "en_cours" ? "attention" : "info")">@LibelleStatut(s.Statut)</span></td>
+                                        <td><button type="button" class="lien" @onclick="() => OuvrirSessionAsync(s.Id)">Ouvrir</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+            }
+
+            @* ---- 2. Correspondance -------------------------------------------------- *@
+            @if (etape == 2 && scan is { } sc)
+            {
+                <section class="panneau" aria-labelledby="t-corr">
+                    <h2 id="t-corr">Correspondance proposée</h2>
+                    <p class="detail" style="margin: 0">
+                        @sc.Tables.Count table(s) lue(s) avec le pilote « @sc.Pilote »@(sc.Version is null ? "" : $" ({sc.Version})").
+                        La correspondance est déduite des noms et des valeurs : vérifiez chaque colonne avec les exemples avant d’extraire.
+                        Les noms et téléphones des patients sont masqués.
+                    </p>
+                    <div class="champ" style="max-width: 420px">
+                        <label for="rp-logiciel" class="requis">Ancien logiciel (nom et version)</label>
+                        <input id="rp-logiciel" type="text" @bind="logiciel" @bind:event="oninput" aria-invalid="@Obligatoire.Aria(Obligatoire.Manque(controle, logiciel))" />
+                    </div>
+                </section>
+
+                @foreach (var cible in Cibles)
+                {
+                    var choix = correspondances[cible.Code];
+                    var table = sc.Tables.FirstOrDefault(t => t.Nom == choix.Table);
+                    var proposition = sc.Propositions.First(p => p.Cible == cible.Code);
+                    <section class="panneau" aria-labelledby="@($"t-{cible.Code}")">
+                        <div style="display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: baseline">
+                            <h2 id="@($"t-{cible.Code}")">@cible.Libelle</h2>
+                            @if (proposition.Table is not null)
+                            {
+                                <span class="pastille @(proposition.Score >= 0.7 ? "ok" : "attention")">Proposé : @proposition.Table (confiance @((int)Math.Round(proposition.Score * 100)) %)</span>
+                            }
+                            else
+                            {
+                                <span class="pastille info">Aucune table reconnue</span>
+                            }
+                        </div>
+                        <div class="champ" style="max-width: 420px">
+                            <label for="@($"rp-t-{cible.Code}")" class="@(cible.Code == "produits" ? "requis" : null)">Table de l’ancienne base</label>
+                            <select id="@($"rp-t-{cible.Code}")" class="selection" value="@choix.Table" @onchange="e => ChoisirTable(cible.Code, e.Value?.ToString())">
+                                <option value="">— ne pas reprendre —</option>
+                                @foreach (var t in sc.Tables) { <option value="@t.Nom">@t.Nom (@(t.Lignes?.ToString("N0") ?? "?") lignes)</option> }
+                            </select>
+                        </div>
+                        @if (table is not null)
+                        {
+                            <div class="tableau-cadre">
+                                <table class="tableau" style="min-width: 0">
+                                    <thead><tr><th scope="col">Donnée</th><th scope="col">Colonne de l’ancienne base</th><th scope="col">Exemples</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var champ in sc.Champs.Where(c => c.Cible == cible.Code))
+                                        {
+                                            var colonne = choix.Colonnes.GetValueOrDefault(champ.Code);
+                                            var col = table.Colonnes.FirstOrDefault(c => c.Nom == colonne);
+                                            var manque = controle && champ.Obligatoire && colonne is null;
+                                            <tr>
+                                                <td><span class="@(champ.Obligatoire ? "etiquette-champ requis" : null)">@champ.Libelle</span></td>
+                                                <td>
+                                                    <select class="selection" aria-label="@($"Colonne pour {champ.Libelle}")" value="@(colonne ?? "")" aria-invalid="@Obligatoire.Aria(manque)"
+                                                            @onchange="e => ChoisirColonne(cible.Code, champ.Code, e.Value?.ToString())">
+                                                        <option value="">— aucune —</option>
+                                                        @foreach (var c in table.Colonnes) { <option value="@c.Nom">@c.Nom</option> }
+                                                    </select>
+                                                </td>
+                                                <td class="detail exemples">@(col is null ? "" : string.Join(" · ", col.Exemples.Where(v => !string.IsNullOrWhiteSpace(v)).Take(4)))</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </section>
+                }
+
+                <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ExtraireAsync">Extraire vers la reprise</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="() => (etape, scan) = (1, null)">Revenir à la source</button>
+                </div>
+            }
+
+            @* ---- 3 à 5. Rapprochement, contrôles, chargement, vérification -------------------- *@
+            @if (etape >= 3 && etat is { } et)
+            {
+                var bloquants = et.Anomalies.Count(a => a.Gravite == "bloquant");
+                <section class="panneau" aria-labelledby="t-session">
+                    <h2 id="t-session">Reprise n° @et.Session.Id · @et.Session.Logiciel · <span class="pastille @(et.Session.Statut == "charge" ? "ok" : "attention")">@LibelleStatut(et.Session.Statut)</span></h2>
+                    <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
+                        @foreach (var (cle, lib) in new[] { ("produits", "Produits"), ("stock", "Lignes de stock"), ("grossistes", "Grossistes"), ("clients", "Clients") })
+                        {
+                            <div class="tuile"><span class="tuile-libelle">@lib</span><span class="tuile-valeur petite">@et.Lignes.GetValueOrDefault(cle)</span></div>
+                        }
+                    </div>
+                    <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
+                        @foreach (var (cle, lib) in new[] { ("code_barre", "Par code-barres"), ("num_enregistrement", "Par n° d’enregistrement"), ("nom_a_confirmer", "Par nom, à confirmer"),
+                                                             ("manuel", "Choisis à la main"), ("nouveau", "À créer"), ("aucune", "Sans correspondance") })
+                        {
+                            <div class="tuile"><span class="tuile-libelle">@lib</span><span class="tuile-valeur petite @(cle is "nom_a_confirmer" or "aucune" && et.Rapprochement.GetValueOrDefault(cle) > 0 ? "attention" : null)">@et.Rapprochement.GetValueOrDefault(cle)</span></div>
+                        }
+                    </div>
+                </section>
+
+                @if (et.Session.Statut == "en_cours" && et.AConfirmer.Count > 0)
+                {
+                    <section class="panneau" aria-labelledby="t-confirmer">
+                        <h2 id="t-confirmer">Produits à confirmer par le pharmacien (@et.AConfirmer.Count)</h2>
+                        <ul class="liste-reprise">
+                            @foreach (var p in et.AConfirmer)
+                            {
+                                <li>
+                                    <div>
+                                        <span class="detail">Ancien logiciel</span> <strong>@p.Nom</strong> @p.Dosage
+                                        @if (p.CodeBarre is not null) { <span class="detail">· @p.CodeBarre</span> }
+                                        <br />
+                                        @if (p.NomPropose is not null)
+                                        {
+                                            <span>Proposé : <strong>@p.NomPropose</strong> <span class="detail">(ressemblance @p.Score?.ToString("0.00"))</span></span>
+                                        }
+                                        else
+                                        {
+                                            <span class="detail">Aucune correspondance dans le catalogue</span>
+                                        }
+                                    </div>
+                                    @if (choixAutre == p.RefSource)
+                                    {
+                                        <ChoixProduit Id="@($"rp-autre-{p.RefSource}")" Libelle="Produit du catalogue" Style="flex: 1 1 260px"
+                                                      OnChoisi='pr => DeciderAsync(p.RefSource, "autre", pr.Id)' />
+                                        <button type="button" class="btn" @onclick="() => choixAutre = null">Annuler</button>
+                                    }
+                                    else
+                                    {
+                                        <div class="choix-conflit">
+                                            @if (p.ProduitPropose is not null) { <button type="button" class="btn btn-principal" disabled="@enCours" @onclick='() => DeciderAsync(p.RefSource, "confirmer", null)'>Confirmer</button> }
+                                            <button type="button" class="btn" disabled="@enCours" @onclick="() => choixAutre = p.RefSource">Choisir un autre</button>
+                                            <button type="button" class="btn" disabled="@enCours" @onclick='() => DeciderAsync(p.RefSource, "creer", null)'>Créer le produit</button>
+                                        </div>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </section>
+                }
+
+                @if (et.Anomalies.Count > 0)
+                {
+                    <section class="tableau-cadre" aria-label="Contrôles avant chargement">
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col">Contrôle</th><th scope="col">Donnée</th><th scope="col">Réf.</th><th scope="col">Message</th></tr></thead>
+                            <tbody>
+                                @foreach (var a in et.Anomalies.Take(200))
+                                {
+                                    <tr>
+                                        <td><span class="pastille @(a.Gravite == "bloquant" ? "urgent" : "attention")">@(a.Gravite == "bloquant" ? "Bloquant" : "À vérifier")</span></td>
+                                        <td>@a.Entite</td><td>@a.RefSource</td><td>@a.Message</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </section>
+                }
+
+                @if (et.Session.Statut == "en_cours")
+                {
+                    <section class="panneau" aria-labelledby="t-charger">
+                        <h2 id="t-charger">Chargement</h2>
+                        @if (bloquants > 0)
+                        {
+                            <p style="margin: 0">@bloquants anomalie(s) bloquante(s) : traitez-les avant de charger.</p>
+                        }
+                        else if (!confirmerChargement)
+                        {
+                            <p style="margin: 0">Tout est prêt. Le chargement crée les produits à créer, les grossistes, le stock (lots « date à vérifier » si la péremption manque), les clients et leurs crédits, en une seule opération.</p>
+                        }
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                            @if (confirmerChargement)
+                            {
+                                <span class="texte-urgent" style="align-self: center"><strong>Confirmez : le chargement est définitif.</strong></span>
+                                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ChargerAsync">Confirmer le chargement</button>
+                                <button type="button" class="btn" @onclick="() => confirmerChargement = false">Annuler</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-principal" disabled="@(enCours || bloquants > 0)" @onclick="() => confirmerChargement = true">Charger dans Pharma Officine</button>
+                                <button type="button" class="btn" disabled="@enCours" @onclick="AbandonnerAsync">Abandonner cette reprise</button>
+                            }
+                        </div>
+                    </section>
+                }
+
+                @if (et.Verification.Count > 0)
+                {
+                    <section class="panneau" aria-labelledby="t-verif">
+                        <h2 id="t-verif">Vérification : ancien logiciel / Pharma Officine</h2>
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col">Indicateur</th><th scope="col">Ancien</th><th scope="col">Nouveau</th><th scope="col">Écart</th></tr></thead>
+                            <tbody>
+                                @foreach (var v in et.Verification)
+                                {
+                                    <tr><td>@v.Indicateur</td><td>@v.Ancien.ToString("N2")</td><td>@v.Nouveau.ToString("N2")</td>
+                                        <td><span class="pastille @(v.Ecart == 0 ? "ok" : "urgent")">@(v.Ecart == 0 ? "identique" : v.Ecart.ToString("N2"))</span></td></tr>
+                                }
+                            </tbody>
+                        </table>
+                        <p class="detail" style="margin: 0">Imprimez cette page et faites-la signer par le pharmacien. Les lots « date à vérifier » sont proposés en priorité dans l’inventaire tournant.</p>
+                    </section>
+                }
+
+                <div><button type="button" class="btn" @onclick="RetourAsync">Nouvelle reprise ou autre session</button></div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly (int, string)[] Etapes = [(1, "Source"), (2, "Correspondance"), (3, "Rapprochement et contrôles"), (4, "Chargement"), (5, "Vérification")];
+    private static readonly (string Code, string Libelle)[] Cibles =
+        [("produits", "Produits"), ("stock", "Stock par lot"), ("fournisseurs", "Grossistes et dettes"), ("clients", "Clients et crédits")];
+
+    private sealed class Choix
+    {
+        public string? Table { get; set; }
+        public Dictionary<string, string?> Colonnes { get; set; } = [];
+    }
+
+    private int etape = 1;
+    private string? dossier, chaine, logiciel, erreur, message, choixAutre;
+    // Connexion saisie champ par champ ; la chaîne ODBC en est déduite
+    private string? pilote, dsn, emplacement, baseDeDonnees, utilisateur, motDePasse, chaineSaisie;
+    private bool chaineModifiee;
+    private List<string> pilotes = [];
+    private bool enCours, controle, recherche, confirmerChargement;
+    private List<SourceRepriseDto> sources = [];
+    private List<SessionRepriseDto> sessions = [];
+    private ScanRepriseDto? scan;
+    private EtatRepriseDto? etat;
+    private Dictionary<string, Choix> correspondances = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.A("role.titulaire")) return;
+        (sessions, _) = await Api.SessionsRepriseAsync();
+        (pilotes, _) = await Api.PilotesOdbcAsync();
+        await ChercherAsync(silencieux: true);
+    }
+
+    // ---- Connexion : champs, choix d'une source trouvée, explorateur Windows ----
+
+    private const string MasqueMotDePasse = "Pwd=••••••";
+
+    private string ChaineCalculee() => ChaineOdbc.Construire(pilote, dsn, emplacement, baseDeDonnees, utilisateur, motDePasse);
+
+    /// <summary>Chaîne envoyée au serveur : calculée, ou saisie dans « Avancé » (le mot de passe masqué y est remis).</summary>
+    private string ChaineEffective() => chaineModifiee && !string.IsNullOrWhiteSpace(chaineSaisie)
+        ? chaineSaisie.Replace(MasqueMotDePasse, "Pwd=" + ChaineOdbc.Echapper(motDePasse ?? ""))
+        : ChaineCalculee();
+
+    private bool ConnexionIncomplete => !chaineModifiee && (string.IsNullOrEmpty(pilote)
+        || (pilote == ChaineOdbc.SourceDeclaree ? string.IsNullOrWhiteSpace(dsn) : string.IsNullOrWhiteSpace(emplacement)));
+
+    /// <summary>La chaîne affichée ne montre jamais le mot de passe en clair.</summary>
+    private void Recalculer()
+    {
+        if (!chaineModifiee) chaineSaisie = ChaineOdbc.Masquer(ChaineCalculee(), motDePasse);
+    }
+
+    private void ChoisirSource(SourceRepriseDto s)
+    {
+        (chaineModifiee, baseDeDonnees) = (false, null);
+        if (s.Dsn is not null) (pilote, dsn, emplacement) = (ChaineOdbc.SourceDeclaree, s.Dsn, null);
+        else (pilote, dsn, emplacement) = (s.Pilote, null, s.Emplacement);
+        // Pilote non listé (cas rare) : on garde la chaîne proposée telle quelle
+        if (pilote is not null && pilote != ChaineOdbc.SourceDeclaree && !pilotes.Contains(pilote)) (chaineModifiee, chaineSaisie) = (true, s.ChaineConnexion);
+        Recalculer();
+        message = $"Source choisie : {s.Libelle}. Complétez l’utilisateur et le mot de passe si la base en demande.";
+    }
+
+    private async Task ParcourirDossierAsync()
+    {
+        if (Dialogues.ChoisirDossier("Dossier de l’ancien logiciel", dossier) is not { } choisi) return;
+        dossier = choisi;
+        await ChercherAsync();
+    }
+
+    private void ParcourirEmplacement(ChaineOdbc.Famille famille)
+    {
+        var choisi = famille == ChaineOdbc.Famille.Dossier
+            ? Dialogues.ChoisirDossier("Dossier des tables de l’ancienne base", emplacement ?? dossier)
+            : Dialogues.ChoisirFichier("Fichier de l’ancienne base",
+                "Bases de données|*.mdb;*.accdb;*.xls;*.xlsx;*.fdb;*.gdb;*.db;*.sqlite;*.sqlite3;*.db3|Tous les fichiers|*.*",
+                System.IO.Path.GetDirectoryName(emplacement) ?? dossier);
+        if (choisi is null) return;
+        emplacement = choisi;
+        Recalculer();
+    }
+
+    private static string LibelleEmplacement(ChaineOdbc.Famille f) => f switch
+    {
+        ChaineOdbc.Famille.Dossier => "Dossier des tables",
+        ChaineOdbc.Famille.Serveur => "Serveur (adresse, nom ou instance)",
+        _ => "Fichier de la base"
+    };
+
+    private async Task ChercherAsync() => await ChercherAsync(false);
+
+    private async Task ChercherAsync(bool silencieux)
+    {
+        await Executer(async () =>
+        {
+            var (s, e) = await Api.SourcesRepriseAsync(dossier);
+            if (e is not null) return silencieux ? null : e;
+            (sources, recherche) = (s!, !silencieux);
+            return null;
+        });
+    }
+
+    private async Task ScannerAsync()
+    {
+        controle = true;
+        chaine = ChaineEffective();
+        if (string.IsNullOrWhiteSpace(chaine) || ConnexionIncomplete) { erreur = "Choisissez une source trouvée, ou renseignez le pilote et l’emplacement de la base."; return; }
+        await Executer(async () =>
+        {
+            var (s, e) = await Api.ScannerRepriseAsync(chaine!);
+            if (e is not null) return e;
+            scan = s;
+            correspondances = s!.Propositions.ToDictionary(p => p.Cible, p => new Choix { Table = p.Table, Colonnes = p.Colonnes.ToDictionary(kv => kv.Key, kv => kv.Value) });
+            (etape, controle, message) = (2, false, $"Connexion réussie : {s.Tables.Count} table(s) analysée(s).");
+            return null;
+        });
+    }
+
+    private void ChoisirTable(string cible, string? table)
+    {
+        var c = correspondances[cible];
+        c.Table = string.IsNullOrEmpty(table) ? null : table;
+        // Nouvelle table : on reprend la correspondance proposée si c'est la même, sinon on repart à vide
+        var p = scan!.Propositions.First(x => x.Cible == cible);
+        c.Colonnes = p.Table == c.Table ? p.Colonnes.ToDictionary(kv => kv.Key, kv => kv.Value)
+                                        : scan.Champs.Where(f => f.Cible == cible).ToDictionary(f => f.Code, _ => (string?)null);
+        if (c.Table is not null && p.Table != c.Table)
+        {
+            var t = scan.Tables.First(x => x.Nom == c.Table);
+            foreach (var f in scan.Champs.Where(f => f.Cible == cible))
+                c.Colonnes[f.Code] = t.Colonnes.FirstOrDefault(col => string.Equals(col.Nom, f.Code, StringComparison.OrdinalIgnoreCase))?.Nom;
+        }
+    }
+
+    private void ChoisirColonne(string cible, string champ, string? colonne) =>
+        correspondances[cible].Colonnes[champ] = string.IsNullOrEmpty(colonne) ? null : colonne;
+
+    private async Task ExtraireAsync()
+    {
+        controle = true;
+        if (string.IsNullOrWhiteSpace(logiciel)) { erreur = "Indiquez le nom et la version de l’ancien logiciel."; return; }
+        var requises = scan!.Champs.Where(f => f.Obligatoire).ToList();
+        var incomplete = correspondances.Where(kv => kv.Value.Table is not null)
+            .FirstOrDefault(kv => requises.Any(f => f.Cible == kv.Key && kv.Value.Colonnes.GetValueOrDefault(f.Code) is null));
+        if (incomplete.Key is not null) { erreur = $"{Cibles.First(c => c.Code == incomplete.Key).Libelle} : choisissez les colonnes marquées d’un astérisque."; return; }
+        if (correspondances["produits"].Table is null) { erreur = "La table des produits est indispensable."; return; }
+
+        await Executer(async () =>
+        {
+            var liste = correspondances.Where(kv => kv.Value.Table is not null)
+                .Select(kv => new CorrespondanceTableDto(kv.Key, kv.Value.Table!, kv.Value.Colonnes.Where(c => c.Value is not null).ToDictionary(c => c.Key, c => c.Value!)))
+                .ToList();
+            var (r, e) = await Api.ExtraireRepriseAsync(new ExtractionRepriseRequete(chaine!, logiciel!, liste));
+            if (e is not null) return e;
+            message = $"Extraction terminée : {string.Join(", ", r!.Lignes.Select(kv => $"{kv.Value} {kv.Key}"))}"
+                      + (r.Doublons > 0 ? $" ({r.Doublons} ligne(s) en double ignorée(s))" : "") + $". {r.Bloquants} anomalie(s) bloquante(s).";
+            (chaine, motDePasse, chaineSaisie, chaineModifiee) = (null, null, null, false);   // le mot de passe n'est plus gardé
+            return await ChargerEtatAsync(r.SessionId);
+        });
+    }
+
+    private async Task OuvrirSessionAsync(long id) => await Executer(() => ChargerEtatAsync(id));
+
+    private async Task<string?> ChargerEtatAsync(long id)
+    {
+        var (e, err) = await Api.EtatRepriseAsync(id);
+        if (err is not null) return err;
+        etat = e;
+        etape = e!.Session.Statut == "charge" ? 5 : e.Anomalies.Any(a => a.Gravite == "bloquant") ? 3 : 4;
+        return null;
+    }
+
+    private async Task DeciderAsync(string refSource, string decision, long? produitId)
+    {
+        await Executer(async () =>
+        {
+            var (_, e) = await Api.DeciderProduitRepriseAsync(etat!.Session.Id, new DecisionProduitRepriseRequete(refSource, decision, produitId));
+            if (e is not null) return e;
+            choixAutre = null;
+            return await ChargerEtatAsync(etat.Session.Id);
+        });
+    }
+
+    private async Task ChargerAsync()
+    {
+        await Executer(async () =>
+        {
+            var (e, err) = await Api.ChargerRepriseAsync(etat!.Session.Id);
+            confirmerChargement = false;
+            if (err is not null) return err;
+            (etat, etape, message) = (e, 5, "Reprise chargée. Comparez les totaux ci-dessous.");
+            return null;
+        });
+    }
+
+    private async Task AbandonnerAsync()
+    {
+        await Executer(async () =>
+        {
+            var e = await Api.AnnulerRepriseAsync(etat!.Session.Id);
+            if (e is not null) return e;
+            message = "Reprise abandonnée : rien n’a été chargé.";
+            return await ChargerEtatAsync(etat.Session.Id);
+        });
+    }
+
+    private async Task RetourAsync()
+    {
+        (etape, etat, scan, chaine, message, erreur, controle, motDePasse) = (1, null, null, null, null, null, false, null);
+        Recalculer();
+        (sessions, _) = await Api.SessionsRepriseAsync();
+    }
+
+    private static string LibelleStatut(string s) => s switch { "charge" => "Chargée", "en_cours" => "En cours", _ => "Abandonnée" };
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur) = (true, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

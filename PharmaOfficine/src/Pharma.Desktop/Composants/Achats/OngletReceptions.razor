@@ -1,6 +1,7 @@
-@inject ApiClient Api
+﻿@inject ApiClient Api
 @inject SessionPoste Session
 @inject NavigationManager Nav
+@inject ImprimanteEtiquettes Imprimante
 
 @if (erreur is not null)
 {
@@ -14,12 +15,22 @@
         <div class="succes" role="status">
             @resultat.Lots.Count lot(s), @resultat.Lots.Sum(l => l.Quantite) boîte(s) entrées en stock · @Libelles.Dinars(resultat.MontantTtc, 2) TTC ajoutés à la dette du grossiste.
         </div>
-        @if (resultat.Lots.Any(l => l.BoitesSansIdentite > 0))
+        @foreach (var l in resultat.Lots.Where(l => l.LotExistant))
         {
-            <p style="margin: 0">Boîtes sans Data Matrix : imprimez une étiquette interne par boîte et collez-la avant la mise en rayon.</p>
-            <EtiquetagerLots Lots="@resultat.Lots.Where(l => l.BoitesSansIdentite > 0).Select(l => new LotAEtiqueterDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.BoitesSansIdentite)).ToList()" />
+            <p class="detail" style="margin: 0">@l.Produit, lot @l.NumeroLot : déjà en stock chez ce grossiste, les @l.Quantite boîte(s) ont été ajoutées au même lot.</p>
         }
-        <div><button type="button" class="btn" @onclick="Nouvelle">Nouvelle réception</button></div>
+        @if (resultat.Lots.Sum(l => l.Etiquettes) is var nbEtiquettes and > 0)
+        {
+            <p style="margin: 0"><strong>@nbEtiquettes étiquette(s) interne(s) créée(s)</strong> pour les boîtes sans Data Matrix : collez-les avant la mise en rayon. Chaque boîte est ainsi reliée à son lot, son grossiste et ce bon de livraison.</p>
+            @if (infoEtiquettes is not null) { <p class="detail" role="status" style="margin: 0">@infoEtiquettes</p> }
+        }
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            @if (resultat.Lots.Sum(l => l.Etiquettes) > 0)
+            {
+                <button type="button" class="btn btn-principal" disabled="@impression" @onclick="() => ImprimerEtiquettesAsync(resultat.ReceptionId)">Réimprimer les étiquettes</button>
+            }
+            <button type="button" class="btn" @onclick="Nouvelle">Nouvelle réception</button>
+        </div>
     </section>
 }
 else
@@ -28,7 +39,7 @@ else
         <h2 id="t-recep">Réceptionner une livraison</h2>
         <div class="achats-ligne">
             <div class="champ" style="flex: 1 1 200px">
-                <label for="r-gros">Grossiste</label>
+                <label for="r-gros" class="requis">Grossiste</label>
                 <select id="r-gros" @bind="fournisseurId" @bind:after="ChoisirFournisseurAsync" disabled="@(lignes.Count > 0)">
                     <option value="0">Choisir…</option>
                     @foreach (var f in fournisseurs)
@@ -48,8 +59,10 @@ else
                 </select>
             </div>
             <div class="champ" style="flex: 1 1 160px">
-                <label for="r-bl">N° du bon de livraison</label>
-                <input id="r-bl" type="text" @bind="numeroBl" />
+                <label for="r-bl" class="requis">N° du bon de livraison</label>
+                <input id="r-bl" type="text" @ref="champBl" @bind="numeroBl" @bind:event="oninput" class="@(BlInvalide ? "champ-invalide" : null)"
+                       aria-invalid="@(BlInvalide ? "true" : "false")" aria-describedby="@(BlInvalide ? "r-bl-erreur" : null)" />
+                @if (BlInvalide) { <span id="r-bl-erreur" class="message-champ">Indiquez le numéro du bon de livraison.</span> }
             </div>
             <div class="champ" style="flex: 1 1 160px">
                 <label for="r-fact">N° de facture (facultatif)</label>
@@ -64,20 +77,16 @@ else
                     <label for="r-scan">Scanner une boîte (Data Matrix)</label>
                     <input id="r-scan" type="text" autocomplete="off" placeholder="Le lot, la péremption et la série sont lus" @bind="scan" @onkeydown="ToucheScanAsync" />
                 </div>
-                <div class="champ recherche" style="flex: 1 1 280px">
-                    <label for="r-prod">Ou ajouter un produit (boîtes sans Data Matrix)</label>
-                    <input id="r-prod" type="search" autocomplete="off" placeholder="Nom, DCI ou code-barres" @bind="texteProduit" @bind:event="oninput" @bind:after="RechercherAsync" />
-                </div>
+                <ChoixProduit @ref="choixProduit" Id="r-prod" Libelle="Ou ajouter un produit (boîtes sans Data Matrix)" Style="flex: 1 1 280px"
+                              OnChoisi="p => AjouterProduit(p.Id, p.NomCommercial)" OnTexte="t => texteProduit = t" />
             </div>
-            @if (trouves.Count > 0)
-            {
-                <ul class="liste-lecture" aria-label="Produits trouvés">
-                    @foreach (var p in trouves)
-                    {
-                        <li><button type="button" @onclick="() => AjouterProduit(p.Id, p.NomCommercial)"><span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage</span></span><span>Ajouter</span></button></li>
-                    }
-                </ul>
-            }
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+                <button type="button" class="btn btn-contour" disabled="@(enCours || scansMobile == 0)" @onclick="ImporterScansMobileAsync">
+                    Importer les scans du mobile (@scansMobile)
+                </button>
+                <button type="button" class="lien" @onclick="CompterScansMobileAsync">Actualiser</button>
+                <span class="detail">Boîtes scannées au déballage avec le téléphone (page /mobile du serveur).</span>
+            </div>
             @if (infoScan is not null)
             {
                 <p class="detail" role="status" style="margin: 0">@infoScan</p>
@@ -96,19 +105,58 @@ else
         {
             <div class="tableau-cadre">
                 <table class="tableau" style="min-width: 760px">
-                    <thead><tr><th scope="col">Produit</th><th scope="col">N° de lot</th><th scope="col">Péremption</th><th scope="col">Boîtes reçues</th><th scope="col">Prix HT</th><th scope="col">Data Matrix</th><th scope="col"></th></tr></thead>
+                    <thead><tr><th scope="col">Produit</th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">N° de lot</span></th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">Péremption</span></th><th scope="col">Boîtes reçues</th><th scope="col">Prix HT</th><th scope="col">Data Matrix</th><th scope="col"></th></tr></thead>
                     <tbody>
                         @foreach (var l in lignes)
                         {
                             <tr>
                                 <td><span class="nom">@l.Nom</span>@if (l.Commandee is { } q){<br /><span class="detail">commandé : @q</span>}</td>
-                                <td><input type="text" style="width: 120px" aria-label="Numéro de lot de @l.Nom" @bind="l.NumeroLot" /></td>
-                                <td><input type="date" aria-label="Péremption de @l.Nom" @bind="l.Peremption" /></td>
+                                <td><input type="text" style="width: 120px" aria-label="Numéro de lot de @l.Nom" @bind="l.NumeroLot" @bind:event="oninput" @bind:after="l.Reinitialiser"
+                                           class="@(LotInvalide(l) ? "champ-invalide" : null)" aria-invalid="@(LotInvalide(l) ? "true" : "false")" /></td>
+                                <td><input type="date" aria-label="Péremption de @l.Nom" @bind="l.Peremption" @bind:after="l.Reinitialiser"
+                                           class="@(DateInvalide(l) ? "champ-invalide" : null)" aria-invalid="@(DateInvalide(l) ? "true" : "false")" /></td>
                                 <td><input type="number" min="0" style="width: 80px" aria-label="Boîtes reçues de @l.Nom" @bind="l.Quantite" /></td>
                                 <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="Prix HT de @l.Nom" @bind="l.Prix" /></td>
                                 <td>@(l.Series.Count > 0 ? $"{l.Series.Count} scannée(s)" : "—")</td>
-                                <td><button type="button" class="btn btn-icone" aria-label="Retirer @l.Nom" title="Retirer" @onclick="() => lignes.Remove(l)">×</button></td>
+                                <td><button type="button" class="btn btn-icone" aria-label="Retirer @l.Nom" title="Retirer" @onclick="() => RetirerLigneAsync(l)">×</button></td>
                             </tr>
+                            @foreach (var c in l.Conflits)
+                            {
+                                <tr class="ligne-conflit">
+                                    <td colspan="7">
+                                        <div class="conflit-lot" role="alert">
+                                            <span>@c.Message</span>
+                                            @if (c.Type == "date_differente")
+                                            {
+                                                @if (l.LotSepare)
+                                                {
+                                                    <span class="choix-fait">Choix : lot séparé avec la péremption du @Libelles.Date(l.Peremption!.Value).
+                                                        <button type="button" class="lien" @onclick="() => l.LotSepare = false">Changer</button></span>
+                                                }
+                                                else
+                                                {
+                                                    <div class="choix-conflit">
+                                                        <button type="button" class="btn" @onclick="() => CorrigerDate(l)">Corriger la date</button>
+                                                        <button type="button" class="btn btn-principal" @onclick="() => l.LotSepare = true">Créer un lot séparé (péremption du @Libelles.Date(l.Peremption!.Value))</button>
+                                                    </div>
+                                                }
+                                            }
+                                            else if (l.EntrerBloque)
+                                            {
+                                                <span class="choix-fait">Choix : boîtes entrées en stock, bloquées (vente interdite), à retourner au grossiste.
+                                                    <button type="button" class="lien" @onclick="() => l.EntrerBloque = false">Changer</button></span>
+                                            }
+                                            else
+                                            {
+                                                <div class="choix-conflit">
+                                                    <button type="button" class="btn" @onclick="() => RetirerLigneAsync(l)">Mettre de côté (ne pas entrer)</button>
+                                                    <button type="button" class="btn btn-principal" @onclick="() => l.EntrerBloque = true">Entrer en stock bloqué</button>
+                                                </div>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
                         }
                     </tbody>
                 </table>
@@ -127,7 +175,7 @@ else
 
 <section class="tableau-cadre" aria-label="Dernières réceptions">
     <table class="tableau" style="min-width: 0">
-        <thead><tr><th scope="col">Date</th><th scope="col">Grossiste</th><th scope="col">BL</th><th scope="col">Commande</th><th scope="col">Lots</th><th scope="col">Boîtes</th><th scope="col">Montant TTC</th></tr></thead>
+        <thead><tr><th scope="col">Date</th><th scope="col">Grossiste</th><th scope="col">BL</th><th scope="col">Commande</th><th scope="col">Lots</th><th scope="col">Boîtes</th><th scope="col">Montant TTC</th><th scope="col"></th></tr></thead>
         <tbody>
             @foreach (var r in historique)
             {
@@ -139,11 +187,12 @@ else
                     <td>@r.NombreLots</td>
                     <td>@(r.NombreBoites > 0 ? r.NombreBoites.ToString() : "—")</td>
                     <td>@(r.MontantTtc > 0 ? Libelles.Dinars(r.MontantTtc, 2) : "—")</td>
+                    <td><button type="button" class="btn btn-contour" disabled="@impression" title="Réimprimer les étiquettes internes de cette livraison encore en stock" @onclick="() => ImprimerEtiquettesAsync(r.Id)">Étiquettes</button></td>
                 </tr>
             }
             @if (historique.Count == 0)
             {
-                <tr><td colspan="7" class="vide">Aucune réception.</td></tr>
+                <tr><td colspan="8" class="vide">Aucune réception.</td></tr>
             }
         </tbody>
     </table>
@@ -163,6 +212,16 @@ else
         public int? Commandee { get; init; }
         public string? Gtin { get; set; }
         public List<string> Series { get; } = [];
+        /// <summary>Scans du mobile repris dans cette ligne (remis en attente si la ligne est retirée ou la réception abandonnée).</summary>
+        public List<long> ScansMobile { get; } = [];
+        /// <summary>Conflits signalés par le serveur (date différente, lot bloqué) et choix de l'utilisateur.</summary>
+        public List<ConflitReceptionDto> Conflits { get; set; } = [];
+        public bool LotSepare { get; set; }
+        public bool EntrerBloque { get; set; }
+        public bool ChoixManquant => Conflits.Any(c => c.Type == "date_differente" && !LotSepare || c.Type == "lot_bloque" && !EntrerBloque);
+
+        /// <summary>Le lot ou la date a changé : conflits et choix sont à revoir.</summary>
+        public void Reinitialiser() => (Conflits, LotSepare, EntrerBloque) = ([], false, false);
     }
 
     private List<FournisseurDto> fournisseurs = [];
@@ -172,10 +231,9 @@ else
     private long fournisseurId, commandeId;
     private string? numeroBl, numeroFacture, scan, infoScan, erreur;
     private string texteProduit = "";
-    private List<ProduitDto> trouves = [];
+    private ChoixProduit? choixProduit;
     private ReceptionEnregistreeDto? resultat;
     private bool enCours;
-    private int requete;
 
     protected override async Task OnInitializedAsync()
     {
@@ -183,6 +241,7 @@ else
         (commandes, _) = await Api.CommandesAchatAsync();
         commandes = commandes.Where(c => c.Statut is "envoyee" or "recue_partielle").ToList();
         (historique, _) = await Api.ReceptionsAsync();
+        await CompterScansMobileAsync();
         if (CommandeId is { } cid && commandes.FirstOrDefault(c => c.Id == cid) is { } c)
         {
             (fournisseurId, commandeId) = (c.FournisseurId, c.Id);
@@ -207,14 +266,6 @@ else
             lignes.Add(new Ligne { ProduitId = l.ProduitId, Nom = l.Produit, Quantite = l.QteCommandee - l.QteRecue, Prix = l.PrixAchatHt, Commandee = l.QteCommandee - l.QteRecue });
     }
 
-    private async Task RechercherAsync()
-    {
-        var n = ++requete;
-        if (texteProduit.Trim().Length < 2) { trouves = []; return; }
-        var (t, _) = await Api.RechercherProduitsAsync(texteProduit);
-        if (n == requete) trouves = t;
-    }
-
     private (string? Code, string? Nom)? creation;
     private string? gtinInconnu;
 
@@ -226,10 +277,59 @@ else
         infoScan = $"« {p.Nom} » créé et ajouté à la livraison : complétez le lot, la péremption et le prix.";
     }
 
+    private int scansMobile;
+
+    /// <summary>Corriger la date : le conflit disparaît, la date sera revérifiée à la validation.</summary>
+    private void CorrigerDate(Ligne l)
+    {
+        l.Reinitialiser();
+        erreur = $"{l.Nom} : corrigez la date de péremption lue sur la boîte, puis validez.";
+    }
+
+    private async Task RetirerLigneAsync(Ligne l)
+    {
+        lignes.Remove(l);
+        await RemettreScansAsync(l.ScansMobile);
+    }
+
+    private async Task RemettreScansAsync(IReadOnlyList<long> ids)
+    {
+        if (ids.Count == 0) return;
+        var (n, e) = await Api.RemettreScansMobileAsync(ids);
+        if (e is not null) { erreur = $"Scans du mobile non remis en attente : {e}"; return; }
+        await CompterScansMobileAsync();
+        infoScan = $"{n!.Nombre} boîte(s) scannée(s) sur le mobile remise(s) en attente d’import.";
+    }
+
+    private async Task CompterScansMobileAsync() => scansMobile = (await Api.ScansMobileAsync()).Item1.Count;
+
+    /// <summary>Reprend les boîtes scannées sur le mobile : une ligne par produit, lot et péremption, complétée si elle existe déjà.</summary>
+    private async Task ImporterScansMobileAsync()
+    {
+        var (importees, e) = await Api.ImporterScansMobileAsync();
+        if (e is not null) { erreur = e; return; }
+        foreach (var s in importees!)
+        {
+            var ligne = lignes.FirstOrDefault(l => l.ProduitId == s.ProduitId && string.Equals(l.NumeroLot, s.NumeroLot ?? "", StringComparison.OrdinalIgnoreCase)
+                                                   && (s.Peremption is null || l.Peremption == s.Peremption));
+            if (ligne is null)
+            {
+                ligne = new Ligne { ProduitId = s.ProduitId, Nom = s.Produit, NumeroLot = s.NumeroLot ?? "", Peremption = s.Peremption, Gtin = s.Gtin };
+                lignes.Add(ligne);
+            }
+            foreach (var serie in s.Series.Where(x => !ligne.Series.Contains(x))) ligne.Series.Add(serie);
+            ligne.ScansMobile.AddRange(s.ScanIds ?? []);
+            ligne.Quantite = Math.Max(ligne.Quantite + s.Quantite, ligne.Series.Count);
+        }
+        infoScan = $"{importees.Sum(s => s.Quantite)} boîte(s) importée(s) du mobile : vérifiez les lots, les dates et les prix, puis validez.";
+        scansMobile = 0;
+    }
+
     private void AjouterProduit(long produitId, string nom)
     {
         lignes.Add(new Ligne { ProduitId = produitId, Nom = nom, Quantite = 1 });
-        (texteProduit, trouves) = ("", []);
+        texteProduit = "";
+        choixProduit?.Afficher(null);
     }
 
     /// <summary>Chaque boîte scannée : ajoute sa série à la ligne du même produit et du même lot (créée au besoin).</summary>
@@ -266,28 +366,82 @@ else
         infoScan = $"{b.Produit} · lot {b.NumeroLot ?? "?"} · boîte {b.NumeroSerie ?? "sans série"} ({ligne.Series.Count} scannée(s)).";
     }
 
+    // Champs obligatoires en rouge après un premier essai de validation
+    private bool controle;
+    private ElementReference champBl;
+    private bool BlInvalide => controle && string.IsNullOrWhiteSpace(numeroBl);
+    private bool LotInvalide(Ligne l) => controle && l.Quantite > 0 && string.IsNullOrWhiteSpace(l.NumeroLot);
+    private bool DateInvalide(Ligne l) => controle && l.Quantite > 0 && l.Peremption is null;
+
     private async Task ValiderAsync()
     {
-        erreur = null;
+        (erreur, controle) = (null, true);
         var aEnvoyer = lignes.Where(l => l.Quantite > 0).ToList();
+        if (BlInvalide)
+        {
+            erreur = "Indiquez le numéro du bon de livraison.";
+            await champBl.FocusAsync();
+            return;
+        }
+        if (aEnvoyer.FirstOrDefault(l => string.IsNullOrWhiteSpace(l.NumeroLot)) is { } sansLot) { erreur = $"{sansLot.Nom} : indiquez le numéro de lot."; return; }
         if (aEnvoyer.FirstOrDefault(l => l.Peremption is null) is { } sansDate) { erreur = $"{sansDate.Nom} : indiquez la date de péremption."; return; }
         enCours = true;
         try
         {
-            var (r, e) = await Api.ReceptionnerAsync(new ReceptionRequete(fournisseurId, commandeId == 0 ? null : commandeId, numeroBl, numeroFacture,
+            ReceptionRequete Requete() => new(fournisseurId, commandeId == 0 ? null : commandeId, numeroBl, numeroFacture,
                 aEnvoyer.Select(l => new LigneReceptionDto(l.ProduitId, l.Nom, l.NumeroLot, l.Peremption!.Value, l.Quantite, l.Prix,
-                    l.Gtin, l.Series.Count > 0 ? l.Series : null)).ToList()));
+                    l.Gtin, l.Series.Count > 0 ? l.Series : null, l.LotSepare, l.EntrerBloque)).ToList());
+
+            // Date différente d'un lot en stock ou lot bloqué : l'utilisateur choisit sur la ligne avant d'entrer en stock
+            var (conflits, ec) = await Api.ConflitsReceptionAsync(Requete());
+            if (ec is not null) { erreur = ec; return; }
+            foreach (var l in aEnvoyer) l.Conflits = [];
+            foreach (var c in conflits!) aEnvoyer[c.Index].Conflits.Add(c);
+            if (aEnvoyer.Any(l => l.ChoixManquant))
+            {
+                erreur = "Un ou plusieurs lots demandent votre choix (en orange sous la ligne) avant l’entrée en stock.";
+                return;
+            }
+
+            var (r, e) = await Api.ReceptionnerAsync(Requete());
             if (e is not null) { erreur = e; return; }
             resultat = r;
             (historique, _) = await Api.ReceptionsAsync();
         }
         finally { enCours = false; }
+        // Étiquettes créées avec la réception : impression tout de suite
+        if (resultat is not null && resultat.Lots.Sum(l => l.Etiquettes) > 0)
+            await ImprimerEtiquettesAsync(resultat.ReceptionId);
     }
 
-    private void Nouvelle()
+    private bool impression;
+    private string? infoEtiquettes;
+
+    /// <summary>Planche PDF ouverte (toute imprimante) et envoi ZPL si une imprimante thermique est déclarée.</summary>
+    private async Task ImprimerEtiquettesAsync(long receptionId)
     {
+        (impression, infoEtiquettes) = (true, null);
+        try
+        {
+            var (e, err) = await Api.EtiquettesReceptionAsync(receptionId);
+            if (err is not null) { (infoEtiquettes, erreur) = (null, err); return; }
+            var chemin = Documents.Enregistrer("Etiquettes", $"etiquettes_reception_{receptionId}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf", Convert.FromBase64String(e!.PdfBase64));
+            infoEtiquettes = $"{e.Codes.Count} étiquette(s) ({e.Codes[0]} à {e.Codes[^1]}) : planche PDF ouverte.";
+            if (Imprimante.EstConfiguree)
+                infoEtiquettes += await Imprimante.EnvoyerAsync(e.Zpl) is { } echec ? $" {echec}" : " Envoyées à l’imprimante thermique.";
+            Documents.Ouvrir(chemin);
+        }
+        finally { impression = false; }
+    }
+
+    /// <summary>« Nouvelle réception » après validation, ou « Abandonner » : dans ce cas les scans du mobile reviennent en attente.</summary>
+    private async Task Nouvelle()
+    {
+        var aRemettre = resultat is null ? lignes.SelectMany(l => l.ScansMobile).ToList() : [];
         lignes.Clear();
-        (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur) = (null, 0, null, null, null, null);
+        (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
+        controle = false;
+        await RemettreScansAsync(aRemettre);
         Nav.NavigateTo("achats?onglet=receptions");
     }
 }

@@ -136,6 +136,34 @@ public static class Libelles
 
     public static bool EstSousRegistre(string classe) => classe is "psychotrope" or "stupefiant";
 
+    public static string ModePaiement(string? mode) => mode switch
+    {
+        "especes" => "espèces",
+        "carte" => "carte",
+        "cheque" => "chèque",
+        "credit" => "crédit",
+        _ => "—"
+    };
+
+    public static string Classe(string? classe) => classe switch
+    {
+        "liste_i" => "Liste I",
+        "liste_ii" => "Liste II",
+        "psychotrope" => "Psychotrope",
+        "stupefiant" => "Stupéfiant",
+        "libre" => "Libre",
+        _ => "—"
+    };
+
+    /// <summary>Situation dans la nomenclature nationale.</summary>
+    public static string SituationNomenclature(string? situation) => situation switch
+    {
+        "retire" => "Retiré",
+        "non_renouvele" => "Non renouvelé",
+        "en_vigueur" => "En vigueur",
+        _ => "Absent de la nomenclature"
+    };
+
     // ---- Journal des actions sensibles ------------------------------------
 
     public static string ActionJournal(string action) => action switch
@@ -167,6 +195,8 @@ public static class Libelles
         "ecart_inventaire_valide" => "Écart d’inventaire validé",
         "ecart_inventaire_refuse" => "Écart d’inventaire refusé",
         "seuils_inventaire" => "Seuils d’inventaire",
+        "seuil_stock" => "Seuil de stock d’un produit",
+        "peremption_verifiee" => "Date de péremption confirmée",
         _ => Humaniser(action)
     };
 
@@ -241,6 +271,8 @@ public static class Libelles
                 "inventaire_termine" => $"Rayon {T("rayon")} · {T("lots")} lot(s) · {T("ajustes")} corrigé(s) · {T("a_valider")} à valider · écart {T("boites_ecart")} boîte(s), {Dinars(N("valeur_ecart"), 2)}",
                 "ecart_inventaire_valide" or "ecart_inventaire_refuse" => $"{T("produit")} lot {T("lot")} (rayon {T("rayon")}) : théorique {T("theorique")}, compté {T("compte")}, écart {T("ecart")} ({Dinars(N("valeur"), 2)})",
                 "seuils_inventaire" => $"{T("seuil_boites")} boîte(s) · {Dinars(N("seuil_montant"), 2)}",
+                "seuil_stock" => $"{T("produit")} : {(T("apres") == "—" ? "seuil automatique" : $"seuil {T("apres")} boîte(s)")} (automatique : {T("automatique")}, avant : {(T("avant") == "—" ? "automatique" : T("avant"))})",
+                "peremption_verifiee" => $"{T("produit")} lot {T("lot")} : péremption au {T("date")} (lue sur la boîte)",
                 "reglages_sauvegarde" => $"{(B("actif") ? "Automatique" : "Manuelle seulement")} à {T("heure")} · dossier {T("dossier")} · {T("conservation")} conservée(s)",
                 _ => Generique(d)
             };

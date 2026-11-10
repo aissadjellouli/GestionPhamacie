@@ -7,3 +7,8 @@ obj/
 TestResults/
 appsettings.Development.json
 *.dump
+# HTTPS du scanner mobile : propres à chaque PC serveur (scripts/certificat_mobile.ps1)
+appsettings.Https.json
+autorite-pharmacie.crt
+# Vidéos de démonstration : trop lourdes pour git (limite GitHub 100 Mo), à partager à part
+demo/*.mp4

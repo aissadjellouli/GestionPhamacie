@@ -12,6 +12,9 @@ using Pharma.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// HTTPS pour le scanner mobile (caméra du téléphone) : fichier écrit par scripts/certificat_mobile.ps1
+builder.Configuration.AddJsonFile("appsettings.Https.json", optional: true, reloadOnChange: false);
+
 // Exécution en service Windows sur le PC serveur de l'officine
 builder.Host.UseWindowsService(o => o.ServiceName = "PharmaOfficine API");
 
@@ -23,6 +26,10 @@ builder.Services.AddInfrastructure(new InfrastructureOptions(
     builder.Configuration["Ordonnances:Dossier"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Ordonnances"),
     builder.Configuration["Sauvegardes:PgDump"]));
 builder.Services.AddSingleton<IGenerateurJeton, JetonService>();
+// Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<Pharma.Infrastructure.Securite.PermissionService>();
+builder.Services.AddScoped<IPermissionService, PermissionsComptoir>();
 builder.Services.AddHostedService<AlertesQuotidiennes>();
 builder.Services.AddHostedService<EnvoiNotifications>();
 builder.Services.AddHostedService<SauvegardesAutomatiques>();
@@ -56,6 +63,18 @@ app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
     ctx.Response.StatusCode = code;
     await ctx.Response.WriteAsJsonAsync(new ErreurDto(message));
 }));
+
+// Page du scanner mobile (wwwroot/mobile) : fichiers statiques, sans données
+app.Use((ctx, suite) =>
+{
+    if (ctx.Request.Path.Value == "/mobile") { ctx.Response.Redirect("/mobile/"); return Task.CompletedTask; }
+    return suite();
+});
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = c => c.Context.Response.Headers.CacheControl = "no-cache"
+});
 
 app.UseAuthentication();
 app.UseAuthorization();

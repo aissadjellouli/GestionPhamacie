@@ -74,9 +74,11 @@
             @if (rappel is null)
             {
                 <div class="champ recherche">
-                    <label for="r-prod">Produit</label>
-                    <input id="r-prod" type="search" autocomplete="off" disabled="@etape2"
+                    <label for="r-prod" class="requis">Produit</label>
+                    <input id="r-prod" type="search" autocomplete="off" disabled="@etape2" @ref="champProduit"
+                           class="@Obligatoire.Classe(ProduitManquant)" aria-invalid="@Obligatoire.Aria(ProduitManquant)"
                            @bind="produitTexte" @bind:event="oninput" @bind:after="RechercherProduitAsync" />
+                    @if (ProduitManquant) { <span class="message-champ">Choisissez le produit dans la liste proposée.</span> }
                     @if (suggestions.Count > 0)
                     {
                         <ul class="suggestions" aria-label="Produits trouvés">
@@ -91,8 +93,10 @@
                         </ul>
                     }
                 </div>
-                <div class="champ"><label for="r-lot">Numéro de lot</label><input id="r-lot" type="text" @bind="numeroLot" disabled="@etape2" /></div>
-                <div class="champ"><label for="r-motif">Motif</label><input id="r-motif" type="text" @bind="motif" disabled="@etape2" placeholder="Ex. rappel du laboratoire, suspicion de contrefaçon" /></div>
+                <div class="champ"><label for="r-lot" class="requis">Numéro de lot</label><input id="r-lot" type="text" @ref="champLot" @bind="numeroLot" @bind:event="oninput" disabled="@etape2"
+                    class="@Obligatoire.Classe(LotManquant)" aria-invalid="@Obligatoire.Aria(LotManquant)" /></div>
+                <div class="champ"><label for="r-motif" class="requis">Motif</label><input id="r-motif" type="text" @ref="champMotif" @bind="motif" @bind:event="oninput" disabled="@etape2"
+                    class="@Obligatoire.Classe(MotifManquant)" aria-invalid="@Obligatoire.Aria(MotifManquant)" placeholder="Ex. rappel du laboratoire, suspicion de contrefaçon" /></div>
 
                 @if (erreurRappel is not null) { <div class="erreur" role="alert">@erreurRappel</div> }
 
@@ -213,13 +217,24 @@
         (produitId, produitNom, produitTexte, suggestions) = (id, nom, nom, []);
     }
 
-    private void Preparer()
+    // Champs obligatoires du rappel : produit choisi dans la liste, numéro de lot, motif
+    private bool controleRappel;
+    private ElementReference champProduit, champLot, champMotif;
+    private bool ProduitManquant => Obligatoire.Manque(controleRappel, produitId);
+    private bool LotManquant => Obligatoire.Manque(controleRappel, numeroLot);
+    private bool MotifManquant => Obligatoire.Manque(controleRappel, motif);
+
+    private async Task Preparer()
     {
-        erreurRappel = produitId <= 0 ? "Choisissez le produit dans la liste proposée."
-            : string.IsNullOrWhiteSpace(numeroLot) ? "Indiquez le numéro de lot rappelé."
-            : string.IsNullOrWhiteSpace(motif) ? "Indiquez le motif du rappel (il est inscrit au journal)."
+        controleRappel = true;
+        erreurRappel = ProduitManquant ? "Choisissez le produit dans la liste proposée."
+            : LotManquant ? "Indiquez le numéro de lot rappelé."
+            : MotifManquant ? "Indiquez le motif du rappel (il est inscrit au journal)."
             : null;
         etape2 = erreurRappel is null;
+        if (ProduitManquant) await champProduit.FocusAsync();
+        else if (LotManquant) await champLot.FocusAsync();
+        else if (MotifManquant) await champMotif.FocusAsync();
     }
 
     private async Task ConfirmerAsync()
@@ -241,7 +256,7 @@
 
     private void NouveauRappel()
     {
-        (rappel, fichierExporte, erreurRappel, etape2) = (null, null, null, false);
+        (rappel, fichierExporte, erreurRappel, etape2, controleRappel) = (null, null, null, false, false);
         (produitTexte, produitId, produitNom, numeroLot, motif) = ("", 0, "", "", "");
     }
 

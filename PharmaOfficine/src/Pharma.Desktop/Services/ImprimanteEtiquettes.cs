@@ -8,10 +8,12 @@ namespace Pharma.Desktop.Services;
 /// Imprimante thermique d'étiquettes (ZPL, port 9100) du poste, déclarée par la variable
 /// d'environnement PHARMA_IMPRIMANTE_ETIQUETTES (adresse IP). Sans elle, seule la planche PDF est proposée.
 /// </summary>
-public sealed class ImprimanteEtiquettes
+public sealed class ImprimanteEtiquettes(ReglagesPoste reglages)
 {
-    public string? Adresse { get; } =
-        Environment.GetEnvironmentVariable("PHARMA_IMPRIMANTE_ETIQUETTES") is { Length: > 0 } ip ? ip.Trim() : null;
+    /// <summary>Réglage du poste (Administration, Imprimantes et étiquettes), sinon PHARMA_IMPRIMANTE_ETIQUETTES.</summary>
+    public string? Adresse =>
+        reglages.Actuelles.ImprimanteEtiquettes is { Length: > 0 } r ? r.Trim()
+        : Environment.GetEnvironmentVariable("PHARMA_IMPRIMANTE_ETIQUETTES") is { Length: > 0 } ip ? ip.Trim() : null;
 
     public bool EstConfiguree => Adresse is not null;
 

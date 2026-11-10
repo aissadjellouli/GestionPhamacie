@@ -46,3 +46,24 @@ window.pharma.camera = {
     this._flux = null;
   }
 };
+
+// Affichage choisi par l'employé : clair, sombre, ou auto (suit le réglage de Windows, même s'il change en cours de journée)
+window.pharma.affichage = {
+  _poste: null,
+  _requete: window.matchMedia('(prefers-color-scheme: dark)'),
+  appliquer: function (mode) {
+    if (mode === 'clair' || mode === 'sombre') document.documentElement.dataset.theme = mode;
+    else delete document.documentElement.dataset.theme;
+    return this.estSombre();
+  },
+  estSombre: function () {
+    const force = document.documentElement.dataset.theme;
+    return force ? force === 'sombre' : this._requete.matches;
+  },
+  // Le poste est prévenu quand Windows passe en clair ou en sombre (pour la barre de titre)
+  suivre: function (reference) { this._poste = reference; }
+};
+window.pharma.affichage._requete.addEventListener('change', function () {
+  const a = window.pharma.affichage;
+  if (a._poste) a._poste.invokeMethodAsync('SurChangementAffichage', a.estSombre());
+});

@@ -5,6 +5,13 @@ namespace Pharma.Infrastructure.Lecture;
 
 public sealed class AlertesLecture(NpgsqlDataSource db) : IAlertesLecture
 {
+    // Même périmètre que la liste : alertes nouvelles ou vues (index idx_alerte_ouverte_tri)
+    public async Task<int> CompterUrgentesAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT count(*)::int FROM alerte WHERE statut IN ('nouvelle', 'vue') AND niveau = 'urgent'");
+        return (int)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
     public async Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(CancellationToken ct = default)
     {
         const string sql = """

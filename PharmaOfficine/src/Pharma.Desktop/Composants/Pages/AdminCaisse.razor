@@ -21,7 +21,7 @@
             <section class="panneau" aria-labelledby="t-regles">
                 <h2 id="t-regles">Règles</h2>
                 <label class="case"><input type="checkbox" @bind="parametres.ComptageAveugle" /><span>Clôture en comptage aveugle obligatoire</span></label>
-                <label class="case inactif" title="Imprimante de tickets à définir (modèle ESC/POS inconnu)"><input type="checkbox" disabled /><span>Ticket imprimé pour chaque vente</span></label>
+                <p class="detail" style="margin: 0">Ticket imprimé pour chaque vente : se règle pour chaque poste dans <a href="admin/imprimantes">Imprimantes et étiquettes</a>.</p>
                 <label class="case inactif" title="Bientôt disponible"><input type="checkbox" disabled /><span>Code du titulaire pour une action sensible non autorisée</span></label>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
                     <label class="case"><input type="checkbox" checked="@(parametres.DeconnexionMinutes > 0)" @onchange="BasculerDeconnexion" /><span>Déconnexion automatique du poste après</span></label>
@@ -36,6 +36,13 @@
                         <label for="annul">Alerte au-delà de N annulations par session</label><input id="annul" type="number" disabled />
                     </div>
                 </div>
+                <fieldset class="champ" style="border: 0; padding: 0; margin: 0">
+                    <legend class="etiquette-champ">À la clôture d’une caisse, l’argent compté part au coffre :</legend>
+                    <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "manuel")" @onchange="@(() => parametres.VersementCloture = "manuel")" />
+                        <span>À la main : le versement se saisit dans Trésorerie (caisses à verser)</span></label>
+                    <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "automatique")" @onchange="@(() => parametres.VersementCloture = "automatique")" />
+                        <span>Automatiquement : le compté moins le fond de caisse (@Libelles.Dinars(parametres.FondCaisseDefaut)), qui reste dans le tiroir ; pas à la relève d’équipe</span></label>
+                </fieldset>
             </section>
         }
 
@@ -75,6 +82,7 @@
         public decimal FondCaisseDefaut { get; set; }
         public decimal SeuilEcart { get; set; }
         public int DeconnexionMinutes { get; set; }
+        public string VersementCloture { get; set; } = "manuel";
     }
 
     private Saisie? parametres;
@@ -90,7 +98,7 @@
             parametres = new Saisie
             {
                 ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
-                SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes
+                SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel"
             };
         (journal, _) = await Api.JournalAsync();
     }
@@ -107,7 +115,7 @@
         enCours = true;
         message = null;
         erreur = await Api.ModifierParametresCaisseAsync(new ParametresCaisseDto(
-            parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes));
+            parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture));
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";

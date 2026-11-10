@@ -22,12 +22,16 @@
             <section class="panneau" aria-labelledby="t-smtp">
                 <h2 id="t-smtp">E-mail (serveur SMTP de la pharmacie)</h2>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 2 1 220px"><label for="n-serveur">Serveur SMTP</label><input id="n-serveur" type="text" placeholder="ex. smtp.fournisseur.dz" @bind="r.SmtpServeur" /></div>
+                    <div class="champ" style="flex: 2 1 220px"><label for="n-serveur" class="@(string.IsNullOrWhiteSpace(r.SmtpExpediteur) ? null : "requis")">Serveur SMTP</label><input id="n-serveur" type="text" placeholder="ex. smtp.fournisseur.dz" @ref="champServeur" @bind="r.SmtpServeur" @bind:event="oninput"
+                        class="@Obligatoire.Classe(ServeurManquant)" aria-invalid="@Obligatoire.Aria(ServeurManquant)" />
+                        @if (ServeurManquant) { <span class="message-champ">Avec une adresse d’expéditeur, le serveur SMTP est obligatoire.</span> }</div>
                     <div class="champ" style="flex: 0 0 110px"><label for="n-port">Port</label><input id="n-port" type="number" min="1" max="65535" @bind="r.SmtpPort" /></div>
                     <label class="case" style="flex: 0 0 auto; align-self: center"><input type="checkbox" @bind="r.SmtpTls" /><span>Connexion chiffrée (TLS)</span></label>
                 </div>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 1 1 220px"><label for="n-exp">Adresse de l’expéditeur</label><input id="n-exp" type="email" @bind="r.SmtpExpediteur" /></div>
+                    <div class="champ" style="flex: 1 1 220px"><label for="n-exp" class="@(string.IsNullOrWhiteSpace(r.SmtpServeur) ? null : "requis")">Adresse de l’expéditeur</label><input id="n-exp" type="email" @ref="champExpediteur" @bind="r.SmtpExpediteur" @bind:event="oninput"
+                        class="@Obligatoire.Classe(ExpediteurManquant)" aria-invalid="@Obligatoire.Aria(ExpediteurManquant)" />
+                        @if (ExpediteurManquant) { <span class="message-champ">Avec un serveur SMTP, l’adresse de l’expéditeur est obligatoire.</span> }</div>
                     <div class="champ" style="flex: 1 1 200px"><label for="n-id">Identifiant</label><input id="n-id" type="text" autocomplete="off" @bind="r.SmtpIdentifiant" /></div>
                     <div class="champ" style="flex: 1 1 200px">
                         <label for="n-mdp">Mot de passe @(motDePasseEnregistre ? "(enregistré, chiffré)" : "")</label>
@@ -84,24 +88,31 @@
 
             <h3 style="margin: 8px 0 0">@(fiche.Id is null ? "Ajouter un destinataire" : $"Modifier {fiche.Nom}")</h3>
             <div class="achats-ligne">
-                <div class="champ" style="flex: 1 1 180px"><label for="d-nom">Nom</label><input id="d-nom" type="text" @bind="fiche.Nom" /></div>
-                <div class="champ" style="flex: 1 1 220px"><label for="d-mail">E-mail</label><input id="d-mail" type="email" @bind="fiche.Email" /></div>
-                <div class="champ" style="flex: 1 1 160px"><label for="d-tel">Mobile</label><input id="d-tel" type="tel" placeholder="06 61 00 00 00" @bind="fiche.Telephone" /></div>
+                <div class="champ" style="flex: 1 1 180px"><label for="d-nom" class="requis">Nom</label><input id="d-nom" type="text" @ref="champNomDest" @bind="fiche.Nom" @bind:event="oninput"
+                    class="@Obligatoire.Classe(NomDestManquant)" aria-invalid="@Obligatoire.Aria(NomDestManquant)" /></div>
+                <div class="champ" style="flex: 1 1 220px"><label for="d-mail" class="@(fiche.CanalEmail ? "requis" : null)">E-mail</label><input id="d-mail" type="email" @ref="champMail" @bind="fiche.Email" @bind:event="oninput"
+                    class="@Obligatoire.Classe(MailManquant)" aria-invalid="@Obligatoire.Aria(MailManquant)" /></div>
+                <div class="champ" style="flex: 1 1 160px"><label for="d-tel" class="@(fiche.CanalSms ? "requis" : null)">Mobile</label><input id="d-tel" type="tel" placeholder="06 61 00 00 00" @ref="champTel" @bind="fiche.Telephone" @bind:event="oninput"
+                    class="@Obligatoire.Classe(TelManquant)" aria-invalid="@Obligatoire.Aria(TelManquant)" /></div>
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 6px 18px">
+                <span class="etiquette-champ requis">Envoi</span>
                 <label class="case"><input type="checkbox" @bind="fiche.CanalEmail" /><span>par e-mail</span></label>
                 <label class="case"><input type="checkbox" @bind="fiche.CanalSms" /><span>par SMS</span></label>
                 <label class="case"><input type="checkbox" @bind="fiche.Actif" /><span>actif</span></label>
             </div>
+            @if (CanalManquant) { <span class="message-champ">Choisissez au moins un canal : e-mail ou SMS.</span> }
             <div style="display: flex; flex-wrap: wrap; gap: 6px 18px">
+                <span class="etiquette-champ requis">Messages</span>
                 @foreach (var t in TypesAbonnables)
                 {
                     <label class="case"><input type="checkbox" checked="@fiche.Types.Contains(t)" @onchange="e => Basculer(t, e)" /><span>@LibelleType(t)</span></label>
                 }
             </div>
+            @if (TypesManquants) { <span class="message-champ">Choisissez au moins un type de message.</span> }
             <div style="display: flex; gap: 8px">
                 <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerDestinataireAsync">@(fiche.Id is null ? "Ajouter" : "Enregistrer")</button>
-                @if (fiche.Id is not null) { <button type="button" class="btn" @onclick="() => fiche = new()">Annuler</button> }
+                @if (fiche.Id is not null) { <button type="button" class="btn" @onclick="() => (fiche, controleDest) = (new(), false)">Annuler</button> }
             </div>
         </section>
 
@@ -202,12 +213,28 @@
         erreur ??= e;
     }
 
+    // Champs obligatoires : SMTP (serveur et expéditeur vont ensemble), destinataire (nom, canal, adresse du canal, type)
+    private bool controleSmtp, controleDest;
+    private ElementReference champServeur, champExpediteur, champNomDest, champMail, champTel;
+    private bool ServeurManquant => controleSmtp && r is not null && string.IsNullOrWhiteSpace(r.SmtpServeur) && !string.IsNullOrWhiteSpace(r.SmtpExpediteur);
+    private bool ExpediteurManquant => controleSmtp && r is not null && string.IsNullOrWhiteSpace(r.SmtpExpediteur) && !string.IsNullOrWhiteSpace(r.SmtpServeur);
+    private bool NomDestManquant => Obligatoire.Manque(controleDest, fiche.Nom);
+    private bool CanalManquant => controleDest && !fiche.CanalEmail && !fiche.CanalSms;
+    private bool MailManquant => controleDest && fiche.CanalEmail && string.IsNullOrWhiteSpace(fiche.Email);
+    private bool TelManquant => controleDest && fiche.CanalSms && string.IsNullOrWhiteSpace(fiche.Telephone);
+    private bool TypesManquants => controleDest && fiche.Types.Count == 0;
+
     private async Task EnregistrerAsync() => await Executer(async () =>
     {
+        controleSmtp = true;
+        const string smtpIncomplet = "Renseignez à la fois le serveur SMTP et l’adresse de l’expéditeur, ou aucun des deux.";
+        if (ServeurManquant) { await champServeur.FocusAsync(); return smtpIncomplet; }
+        if (ExpediteurManquant) { await champExpediteur.FocusAsync(); return smtpIncomplet; }
         var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
             r.SmtpIdentifiant, string.IsNullOrEmpty(nouveauMotDePasse) ? null : nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde));
         if (e is not null) return e;
         nouveauMotDePasse = null;
+        controleSmtp = false;
         await ChargerReglagesAsync();
         message = "Réglages enregistrés." + (motDePasseEnregistre ? " Mot de passe chiffré sur ce serveur." : "");
         return null;
@@ -215,11 +242,18 @@
 
     private async Task EnregistrerDestinataireAsync() => await Executer(async () =>
     {
+        controleDest = true;
+        if (NomDestManquant) { await champNomDest.FocusAsync(); return "Le nom du destinataire est obligatoire."; }
+        if (CanalManquant) return "Choisissez au moins un canal : e-mail ou SMS.";
+        if (MailManquant) { await champMail.FocusAsync(); return "Indiquez l’adresse e-mail du destinataire."; }
+        if (TelManquant) { await champTel.FocusAsync(); return "Indiquez le numéro de mobile du destinataire."; }
+        if (TypesManquants) return "Choisissez au moins un type de message.";
         var (_, e) = await Api.EnregistrerDestinataireAsync(fiche.Id,
             new SaisieDestinataireDto(fiche.Nom, fiche.Email, fiche.Telephone, fiche.CanalEmail, fiche.CanalSms, fiche.Types.ToList(), fiche.Actif));
         if (e is not null) return e;
         message = $"{fiche.Nom} enregistré. Envoyez-lui un message de test pour vérifier l’adresse.";
         fiche = new();
+        controleDest = false;
         (destinataires, _) = await Api.DestinatairesAsync();
         return null;
     });
@@ -250,10 +284,14 @@
         return null;
     });
 
-    private void Editer(DestinataireDto d) => fiche = new Fiche
+    private void Editer(DestinataireDto d)
     {
-        Id = d.Id, Nom = d.Nom, Email = d.Email, Telephone = d.Telephone, CanalEmail = d.CanalEmail, CanalSms = d.CanalSms, Actif = d.Actif, Types = [.. d.Types]
-    };
+        controleDest = false;
+        fiche = new Fiche
+        {
+            Id = d.Id, Nom = d.Nom, Email = d.Email, Telephone = d.Telephone, CanalEmail = d.CanalEmail, CanalSms = d.CanalSms, Actif = d.Actif, Types = [.. d.Types]
+        };
+    }
 
     private void Basculer(string type, ChangeEventArgs e)
     {

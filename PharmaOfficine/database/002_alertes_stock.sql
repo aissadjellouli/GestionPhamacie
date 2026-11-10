@@ -283,9 +283,11 @@ BEGIN
                                     e.nom_commercial,
                                     CASE WHEN e.en_tension THEN ' Produit en tension nationale.' ELSE '' END,
                                     e.qte_suggeree)
-               WHEN 'critique' THEN format('%s : stock %s, couverture %s jours. Commande suggérée : %s unités.',
-                                    e.nom_commercial, e.stock,
-                                    COALESCE(e.couverture_jours::text, '?'), e.qte_suggeree)
+               WHEN 'critique' THEN format('%s : stock %s, sous le seuil de %s. %s Commande suggérée : %s unités.',
+                                    e.nom_commercial, e.stock, e.seuil_alerte,
+                                    CASE WHEN e.couverture_jours IS NULL THEN 'Aucune vente récente.'
+                                         ELSE format('Couverture : %s jours.', e.couverture_jours) END,
+                                    e.qte_suggeree)
                WHEN 'dormant'  THEN format('%s : %s unités sans vente récente.',
                                     e.nom_commercial, e.stock)
                ELSE format('%s : %s jours de stock, surstock.',

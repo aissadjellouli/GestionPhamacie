@@ -99,14 +99,14 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
     {
         var utilisateurs = new List<UtilisateurAdmin>();
         await using (var cmd = db.CreateCommand("""
-            SELECT u.id, u.nom_complet, u.identifiant, r.id, r.nom, r.systeme, u.actif, u.derniere_connexion
+            SELECT u.id, u.nom_complet, u.identifiant, r.id, r.nom, r.systeme, u.actif, u.derniere_connexion, u.pin_hash IS NOT NULL
             FROM utilisateur u JOIN role r ON r.id = u.role_id
             ORDER BY r.systeme DESC, u.actif DESC, u.nom_complet
             """))
         await using (var r = await cmd.ExecuteReaderAsync(ct))
             while (await r.ReadAsync(ct))
                 utilisateurs.Add(new UtilisateurAdmin(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetInt64(3), r.GetString(4),
-                    r.GetBoolean(5), r.GetBoolean(6), r.IsDBNull(7) ? null : r.GetDateTime(7)));
+                    r.GetBoolean(5), r.GetBoolean(6), r.IsDBNull(7) ? null : r.GetDateTime(7), r.GetBoolean(8)));
 
         var roles = new List<RoleAdmin>();
         await using (var cmd = db.CreateCommand("""
@@ -201,22 +201,25 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
     async Task<IdentitePharmacie> IPharmacie.LireAsync(CancellationToken ct)
     {
         await using var cmd = db.CreateCommand(
-            "SELECT nom, titulaire, adresse, telephone, nif, chifa_officine, langue_defaut FROM pharmacie WHERE id = 1");
+            "SELECT nom, titulaire, adresse, telephone, nif, chifa_officine, langue_defaut, rc, nis, article_imposition FROM pharmacie WHERE id = 1");
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return new IdentitePharmacie(null, null, null, null, null, null, "fr");
         string? T(int i) => r.IsDBNull(i) ? null : r.GetString(i);
-        return new IdentitePharmacie(T(0), T(1), T(2), T(3), T(4), T(5), r.GetString(6));
+        return new IdentitePharmacie(T(0), T(1), T(2), T(3), T(4), T(5), r.GetString(6), T(7), T(8), T(9));
     }
 
     public async Task EnregistrerAsync(IdentitePharmacie i, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            UPDATE pharmacie SET nom = $1, titulaire = $2, adresse = $3, telephone = $4, nif = $5, chifa_officine = $6, langue_defaut = $7
+            UPDATE pharmacie SET nom = $1, titulaire = $2, adresse = $3, telephone = $4, nif = $5, chifa_officine = $6, langue_defaut = $7,
+                                 rc = $8, nis = $9, article_imposition = $10
             WHERE id = 1
             """);
         foreach (var v in new[] { i.Nom, i.Titulaire, i.Adresse, i.Telephone, i.Nif, i.ChifaOfficine })
             cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(i.LangueDefaut);
+        foreach (var v in new[] { i.Rc, i.Nis, i.ArticleImposition })
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

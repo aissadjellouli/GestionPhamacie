@@ -22,9 +22,16 @@ public partial class App : Application
 #endif
         // Adresse de l'API sur le PC serveur de l'officine (variable d'environnement PHARMA_API)
         var api = Environment.GetEnvironmentVariable("PHARMA_API") ?? "http://localhost:5080/";
-        services.AddSingleton(new HttpClient { BaseAddress = new Uri(api) });
-        services.AddSingleton<ConfigurationPoste>();
+        // Chaque appel nomme le poste : il identifie la caisse (le tiroir) partagée par les employés du poste
+        var poste = new ConfigurationPoste();
+        var client = new HttpClient { BaseAddress = new Uri(api) };
+        client.DefaultRequestHeaders.Add("X-Pharma-Poste", Uri.EscapeDataString(poste.Poste));
+        services.AddSingleton(client);
+        services.AddSingleton(poste);
+        services.AddSingleton<ReglagesPoste>();
         services.AddSingleton<ImprimanteEtiquettes>();
+        services.AddSingleton<ImprimanteTickets>();
+        services.AddSingleton<AfficheurClient>();
         services.AddSingleton<SessionPoste>();
         services.AddSingleton<ApiClient>();
 

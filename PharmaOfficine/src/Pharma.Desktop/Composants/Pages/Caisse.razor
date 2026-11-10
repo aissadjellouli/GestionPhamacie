@@ -3,7 +3,9 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject ConfigurationPoste Poste
+@inject AfficheurClient Afficheur
 @inject IJSRuntime JS
+@inject ImprimanteTickets Tickets
 
 <div class="page" style="padding-top: 24px">
     @if (erreurEtat is not null)
@@ -30,7 +32,8 @@
     else
     {
         <p class="sous-titre" style="margin: 0">
-            Caisse ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value) · fond de caisse @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste
+            Caisse du poste ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value)@(etat.OuvertePar is { } par ? $" par {par}" : "") · fond de caisse @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste
+            · vendeur : <strong>@Session.NomComplet</strong>
         </p>
 
         @if (venteFaite is not null)
@@ -40,8 +43,10 @@
                 @if (venteFaite.PartOrganisme > 0) { <span>part organisme @Libelles.Dinars(venteFaite.PartOrganisme, 2)</span> }
                 @if (venteFaite.Mode == "especes" && venteFaite.Rendu > 0) { <span style="font-size: 18px; font-weight: 600">Rendu : @Libelles.Dinars(venteFaite.Rendu, 2)</span> }
                 @if (venteFaite.Mode == "credit") { <span>mise en crédit</span> }
-                <button type="button" class="btn" disabled title="Imprimante de tickets à définir (modèle ESC/POS inconnu)">Imprimer le ticket</button>
+                <button type="button" class="btn" disabled="@impressionEnCours" @onclick="ImprimerTicketAsync">@(impressionEnCours ? "Impression…" : "Imprimer le ticket")</button>
+                <button type="button" class="lien-bouton" @onclick="() => OuvrirAnnulation(venteFaite.Numero)">Annuler ou retour</button>
             </div>
+            @if (messageTicket is not null) { <div class="@(ticketImprime ? "info-bandeau" : "erreur")" role="status">@messageTicket</div> }
         }
 
         <div class="colonnes" style="gap: 24px">
@@ -174,10 +179,40 @@
                     }
                 }
 
+                <!-- Ventes en attente du poste (gardées sur le serveur) -->
+                @if (lignes.Count > 0 || attentes.Count > 0)
+                {
+                    <div class="ventes-attente" role="group" aria-label="Ventes en attente">
+                        @if (lignes.Count > 0)
+                        {
+                            <button type="button" class="btn" disabled="@enCours" @onclick="MettreEnAttenteAsync" title="Mettre ce panier de côté pour servir un autre patient">⏸ Mettre en attente</button>
+                        }
+                        @foreach (var v in attentes)
+                        {
+                            <span class="vente-attente">
+                                <button type="button" class="lien-bouton" disabled="@enCours" @onclick="() => ReprendreAsync(v)"
+                                        title="@($"Mise en attente à {v.CreeLe.ToLocalTime():HH:mm} par {v.Employe}")">
+                                    ▶ @v.Libelle · @v.Lignes produit(s) · @Libelles.Dinars(v.Total)
+                                </button>
+                                @if (aAbandonner == v.Id)
+                                {
+                                    <button type="button" class="lien-bouton danger" @onclick="() => AbandonnerAsync(v)">Confirmer l’abandon</button>
+                                    <button type="button" class="lien-bouton" @onclick="() => aAbandonner = null">Garder</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn-icone" aria-label="@($"Abandonner la vente en attente {v.Libelle}")" title="Abandonner" @onclick="() => aAbandonner = v.Id">×</button>
+                                }
+                            </span>
+                        }
+                    </div>
+                    @if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
+                }
+
                 <div class="champ recherche">
                     <label for="scan">Scanner ou rechercher un produit (nom, DCI, code-barres)</label>
                     <input id="scan" class="grand" type="search" placeholder="Ex. amoxicilline" autofocus autocomplete="off"
-                           @bind="texte" @bind:event="oninput" @bind:after="RechercherAsync" @onkeydown="ToucheAsync" />
+                           @bind="texte" @bind:event="oninput" @bind:after="RechercherApresSaisieAsync" @onkeydown="ToucheAsync" />
                     @if (suggestions.Count > 0)
                     {
                         <ul class="suggestions" aria-label="Produits trouvés">
@@ -224,8 +259,23 @@
                                 <div class="panier-ligne">
                                     <div class="panier-produit">
                                         <span>@l.Nom</span>
-                                        <span>Lot servi @lot.NumeroLot · exp. @Libelles.Date(lot.DatePeremption) · <span class="fefo">premier à expirer (FEFO)</span></span>
+                                        <span>Lot servi @lot.NumeroLot · exp. @Libelles.Date(lot.DatePeremption) ·
+                                            @if (l.LotConseilleServi) { <span class="fefo">lot conseillé (péremption proche)</span> } else if (l.BoiteScannee) { <span class="fefo">boîte scannée</span> } else { <span class="fefo">premier à expirer (FEFO)</span> }
+                                        </span>
+                                        <span class="stock-restant @(StockApresVente(l) == 0 ? "epuise" : null)">
+                                            Stock : @l.StockProduit boîte(s) · reste @StockApresVente(l) après cette vente
+                                        </span>
                                     </div>
+                                    @if (l.AvertissementFefo is not null && l.LotConseille is { } conseille)
+                                    {
+                                        <div class="avertissement-fefo" role="alert">
+                                            <span>@l.AvertissementFefo</span>
+                                            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                                                <button type="button" class="btn btn-principal" @onclick="() => ServirLotConseilleAsync(l)">J’ai pris une boîte du lot @conseille.NumeroLot</button>
+                                                <button type="button" class="btn" @onclick="() => { l.AvertissementFefo = null; l.LotConseille = null; }">Garder cette boîte</button>
+                                            </div>
+                                        </div>
+                                    }
                                     <div class="quantite">
                                         <button type="button" class="btn btn-icone" aria-label="Retirer une boîte" @onclick="() => ChangerAsync(l, -1)">−</button>
                                         <span>× @l.Quantite</span>
@@ -300,7 +350,7 @@
 
                 <!-- Patient -->
                 <div class="champ recherche">
-                    <span class="etiquette-champ">Patient @(PatientObligatoire ? "(obligatoire)" : "(facultatif)")</span>
+                    <span class="etiquette-champ @(PatientObligatoire ? "requis" : null)">Patient @(PatientObligatoire ? "(obligatoire)" : "(facultatif)")</span>
                     @if (patient is not null)
                     {
                         <div class="choix">
@@ -316,7 +366,7 @@
                     }
                     else if (!nouveauPatient)
                     {
-                        <input type="search" aria-label="Rechercher un patient" placeholder="Nom, téléphone ou n° d’assuré" autocomplete="off"
+                        <input type="search" aria-label="Rechercher un patient" placeholder="Nom, téléphone ou n° d’assuré" autocomplete="off" aria-invalid="@Obligatoire.Aria(PatientManquant)"
                                @bind="patientTexte" @bind:event="oninput" @bind:after="RechercherPatientsAsync" />
                         @if (patients.Count > 0)
                         {
@@ -332,7 +382,9 @@
                     else
                     {
                         <div class="sous-formulaire">
-                            <input type="text" aria-label="Nom" placeholder="Nom *" @bind="np.Nom" />
+                            <input type="text" aria-label="Nom (obligatoire)" placeholder="Nom *" @ref="champNomPatient" @bind="np.Nom" @bind:event="oninput"
+                                   class="@Obligatoire.Classe(NomPatientManquant)" aria-invalid="@Obligatoire.Aria(NomPatientManquant)" />
+                            @if (NomPatientManquant) { <span class="message-champ">Le nom du patient est obligatoire.</span> }
                             <input type="text" aria-label="Prénom" placeholder="Prénom" @bind="np.Prenom" />
                             <input type="text" aria-label="Téléphone" placeholder="Téléphone" @bind="np.Telephone" />
                             <input type="text" aria-label="N° d’assuré" placeholder="N° d’assuré" @bind="np.NumAssure" />
@@ -343,17 +395,22 @@
                             <input type="number" min="0" aria-label="Plafond de crédit (DA)" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
                             <div class="actions">
                                 <button type="button" class="btn btn-principal" @onclick="CreerPatientAsync">Créer</button>
-                                <button type="button" class="btn" @onclick="() => nouveauPatient = false">Annuler</button>
+                                <button type="button" class="btn" @onclick="() => (nouveauPatient, controlePatient) = (false, false)">Annuler</button>
                             </div>
                         </div>
                     }
                 </div>
 
+                @if (PsychotropeInterdit)
+                {
+                    <div class="erreur" role="alert">@MessagePsychotrope</div>
+                }
+
                 <!-- Ordonnance : scannée, ou obligatoire pour un psychotrope -->
                 @if (apercu?.OrdonnanceRequise == true || jetonScan is not null)
                 {
                     <div class="champ recherche">
-                        <span class="etiquette-champ">
+                        <span class="etiquette-champ @(apercu?.OrdonnanceRequise == true ? "requis" : null)">
                             @(apercu?.OrdonnanceRequise == true ? "Ordonnance (psychotrope : médecin obligatoire)" : "Ordonnance scannée (médecin facultatif)")
                         </span>
                         @if (medecin is not null)
@@ -365,7 +422,7 @@
                         }
                         else
                         {
-                            <input type="search" aria-label="Rechercher le médecin prescripteur" placeholder="Médecin prescripteur" autocomplete="off"
+                            <input type="search" aria-label="Rechercher le médecin prescripteur" placeholder="Médecin prescripteur" autocomplete="off" aria-invalid="@Obligatoire.Aria(MedecinManquant)"
                                    @bind="medecinTexte" @bind:event="oninput" @bind:after="RechercherMedecinsAsync" />
                             @if (medecins.Count > 0)
                             {
@@ -385,6 +442,20 @@
                             <input type="date" aria-label="Date de prescription" @bind="datePrescription" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
                             <input type="text" aria-label="Numéro d’ordonnance" placeholder="N° d’ordonnance" @bind="numeroOrdonnance" style="flex: 1; min-width: 0" />
                         </div>
+                        @if (apercu?.OrdonnanceRequise == true)
+                        {
+                            <!-- Porteur différent du patient : inscrit au registre (arrêté du 29 juin 2013, art. 7) -->
+                            <label class="case"><input type="checkbox" @bind="porteurAutre" /><span>Le porteur de l’ordonnance n’est pas le patient</span></label>
+                            @if (porteurAutre)
+                            {
+                                <input type="text" aria-label="Nom et prénom du porteur" placeholder="Nom et prénom du porteur *" @bind="porteurNom" @bind:event="oninput"
+                                       class="@Obligatoire.Classe(PorteurNomManque)" aria-invalid="@Obligatoire.Aria(PorteurNomManque)" />
+                                <input type="text" aria-label="Adresse du porteur" placeholder="Adresse du porteur *" @bind="porteurAdresse" @bind:event="oninput"
+                                       class="@Obligatoire.Classe(PorteurAdresseManque)" aria-invalid="@Obligatoire.Aria(PorteurAdresseManque)" />
+                                <input type="text" aria-label="Pièce d’identité du porteur" placeholder="Pièce d’identité (type et n°) *" @bind="porteurPiece" @bind:event="oninput"
+                                       class="@Obligatoire.Classe(PorteurPieceManque)" aria-invalid="@Obligatoire.Aria(PorteurPieceManque)" />
+                            }
+                        }
                     </div>
                 }
 
@@ -442,6 +513,9 @@
                 {
                     <span class="sous-titre" style="font-size: 13px">Pour mettre en crédit, choisissez d’abord le patient.</span>
                 }
+                <a href="cloture?releve=true" class="btn" title="Changement d’équipe : compter le tiroir sans fermer la caisse">Relève (comptage)</a>
+                <button type="button" class="btn" @onclick="() => OuvrirAnnulation(null)">Annulation ou retour</button>
+                <button type="button" class="btn" @onclick="() => creditOuvert = true">Règlement d’un crédit</button>
                 <a href="cloture" class="btn">Clôturer la caisse</a>
                 <button type="button" class="btn" disabled title="Tiroir-caisse : matériel à définir">Ouvrir le tiroir</button>
             </aside>
@@ -449,13 +523,31 @@
     }
 </div>
 
+@if (creditOuvert)
+{
+    <PanneauCredit OnFerme="() => creditOuvert = false" OnEncaisse="ChargerEtatAsync" />
+}
+
+@if (annulationOuverte)
+{
+    <PanneauAnnulation NumeroInitial="@annulationNumero" OnFerme="() => annulationOuverte = false" OnAnnulee="VenteAnnuleeAsync" />
+}
+
 @code {
     private sealed class LignePanier
     {
         public required long ProduitId { get; init; }
         public required string Nom { get; init; }
         public required decimal Prix { get; init; }
-        public LotFefoDto? Lot { get; init; }
+        public LotFefoDto? Lot { get; set; }
+        /// <summary>Boîtes vendables du produit, tous lots (pour afficher le stock restant).</summary>
+        public int StockProduit { get; set; }
+        /// <summary>Lot de la boîte scannée (sinon lot FEFO choisi par le logiciel).</summary>
+        public bool BoiteScannee { get; init; }
+        /// <summary>Le caissier a pris une boîte du lot conseillé à la place de la boîte scannée.</summary>
+        public bool LotConseilleServi { get; set; }
+        public string? AvertissementFefo { get; set; }
+        public LotFefoDto? LotConseille { get; set; }
         public IReadOnlyList<LotEcarteDto> Ecartes { get; init; } = [];
         public IReadOnlyList<ProduitAlternatifDto> Alternatives { get; set; } = [];
         public int Quantite { get; set; } = 1;
@@ -540,9 +632,32 @@
         lignes.Count == 0 ? "Panier vide"
         : lignes.Any(l => l.Lot is null) ? "Retirez ou remplacez les produits sans lot vendable"
         : erreurCalcul is not null ? erreurCalcul
+        : PsychotropeInterdit ? "Psychotrope : délivrance réservée aux employés qui en ont le droit"
         : PatientObligatoire && patient is null ? "Choisissez le patient"
         : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
+        : PorteurIncomplet ? "Porteur de l’ordonnance : nom, adresse et pièce d’identité obligatoires"
         : null;
+
+    // Psychotrope au panier sans le droit de le délivrer : on nomme ceux qui peuvent reprendre la vente
+    private bool PsychotropeInterdit => apercu?.OrdonnanceRequise == true && !Session.A("psychotropes.delivrer");
+    private List<DetenteurDroitDto>? detenteursPsychotropes;
+    private string MessagePsychotrope => detenteursPsychotropes switch
+    {
+        null => "Psychotrope ou stupéfiant : vous n’avez pas le droit de le délivrer.",
+        [] => "Psychotrope ou stupéfiant : aucun employé actif n’a le droit de le délivrer. Le titulaire peut l’accorder dans Utilisateurs et droits.",
+        var l => $"Psychotrope ou stupéfiant : délivrance réservée à {string.Join(", ", l.Select(d => d.CodeComptoir ? d.NomComplet + " (code comptoir)" : d.NomComplet))}. "
+                 + "Demandez à l’une de ces personnes de reprendre la vente (« Changer d’utilisateur ») ; mettez le panier en attente si besoin."
+    };
+
+    // Porteur de l'ordonnance quand ce n'est pas le patient (psychotrope)
+    private bool porteurAutre;
+    private string? porteurNom, porteurAdresse, porteurPiece;
+    private bool PorteurDemande => porteurAutre && apercu?.OrdonnanceRequise == true;
+    private bool PorteurIncomplet => PorteurDemande
+        && (string.IsNullOrWhiteSpace(porteurNom) || string.IsNullOrWhiteSpace(porteurAdresse) || string.IsNullOrWhiteSpace(porteurPiece));
+    private bool PorteurNomManque => PorteurDemande && string.IsNullOrWhiteSpace(porteurNom);
+    private bool PorteurAdresseManque => PorteurDemande && string.IsNullOrWhiteSpace(porteurAdresse);
+    private bool PorteurPieceManque => PorteurDemande && string.IsNullOrWhiteSpace(porteurPiece);
 
     private bool PeutEncaisser => !enCours && apercu is not null && RaisonBlocage is null;
 
@@ -571,6 +686,7 @@
     {
         (etat, erreurEtat) = await Api.EtatCaisseAsync();
         if (etat is not null) fondCaisse = etat.FondCaisseDefaut;
+        if (etat?.SessionId is not null) await ChargerAttentesAsync();
     }
 
     private async Task OuvrirAsync()
@@ -583,6 +699,18 @@
 
     // ---- Panier ---------------------------------------------------------------
 
+    /// <summary>Frappe au clavier : recherche lancée 250 ms après la dernière touche (une seule requête par mot tapé).</summary>
+    private async Task RechercherApresSaisieAsync()
+    {
+        var numero = ++requete;
+        if (texte.Trim().Length < 2) { suggestions = []; return; }
+        await Task.Delay(DelaiSaisie);
+        if (numero == requete) await RechercherAsync();
+    }
+
+    internal static readonly TimeSpan DelaiSaisie = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Recherche immédiate (Entrée après un scan).</summary>
     private async Task RechercherAsync()
     {
         var numero = ++requete;
@@ -596,6 +724,14 @@
     {
         if (e.Key == "Escape") { suggestions = []; return; }
         if (e.Key != "Enter") return;
+        // Étiquette interne ou Data Matrix : la boîte désigne son lot, servi tel quel (contrôle de péremption)
+        var code = texte.Trim();
+        if (code.Length >= 8 && !code.Contains(' '))
+        {
+            var (boite, errBoite) = await Api.BoiteCaisseAsync(code);
+            if (errBoite is not null) { (texte, suggestions, erreur, bandeau) = ("", [], errBoite, null); return; }
+            if (boite is not null) { await AjouterBoiteAsync(boite); return; }
+        }
         // Au scan, le lecteur envoie le code-barres puis Entrée : on attend la recherche en cours
         await RechercherAsync();
         if (suggestions.FirstOrDefault() is { } p)
@@ -622,7 +758,7 @@
 
         var ligne = new LignePanier
         {
-            ProduitId = produitId, Nom = nom, Prix = prix, Lot = reponse.Lot, Ecartes = reponse.Ecartes,
+            ProduitId = produitId, Nom = nom, Prix = prix, Lot = reponse.Lot, Ecartes = reponse.Ecartes, StockProduit = reponse.Lot?.StockProduit ?? 0,
             QuantiteDemandee = quantite,
             Quantite = reponse.Lot is { } lot ? Math.Min(quantite, lot.Quantite) : quantite
         };
@@ -633,6 +769,43 @@
         bandeau = Expliquer(reponse);
         await RecalculerAsync();
     }
+
+    private async Task AjouterBoiteAsync(BoiteCaisseDto b)
+    {
+        (texte, suggestions, erreur, bandeau, venteFaite) = ("", [], null, null, null);
+        var existante = lignes.FirstOrDefault(l => l.ProduitId == b.ProduitId && l.Lot?.LotId == b.Lot.LotId);
+        if (existante is not null)
+        {
+            if (existante.Quantite < existante.Lot!.Quantite) existante.Quantite++;
+            existante.QuantiteDemandee = existante.Quantite;
+            existante.StockProduit = b.StockProduit;
+            existante.AvertissementFefo ??= b.Avertissement;
+            existante.LotConseille ??= b.LotConseille;
+        }
+        else
+        {
+            lignes.Add(new LignePanier
+            {
+                ProduitId = b.ProduitId, Nom = b.Produit, Prix = b.PrixPublic, Lot = b.Lot, StockProduit = b.StockProduit,
+                BoiteScannee = true, AvertissementFefo = b.Avertissement, LotConseille = b.LotConseille
+            });
+        }
+        await RecalculerAsync();
+    }
+
+    /// <summary>Le caissier a pris une boîte du lot conseillé (qui périme avant) : c'est ce lot qui est vendu.</summary>
+    private async Task ServirLotConseilleAsync(LignePanier l)
+    {
+        if (l.LotConseille is not { } conseille) return;
+        var autre = lignes.FirstOrDefault(x => x != l && x.ProduitId == l.ProduitId && x.Lot?.LotId == conseille.LotId);
+        if (autre is not null) { autre.Quantite = Math.Min(autre.Quantite + l.Quantite, conseille.Quantite); lignes.Remove(l); }
+        else { l.Lot = conseille; l.Quantite = Math.Min(l.Quantite, conseille.Quantite); }
+        (l.AvertissementFefo, l.LotConseille, l.LotConseilleServi) = (null, null, true);
+        await RecalculerAsync();
+    }
+
+    /// <summary>Stock du produit après cette vente (toutes les lignes du même produit).</summary>
+    private int StockApresVente(LignePanier l) => Math.Max(0, l.StockProduit - lignes.Where(x => x.ProduitId == l.ProduitId).Sum(x => x.Quantite));
 
     private async Task ProposerEquivalentSiManqueAsync(LignePanier l)
     {
@@ -790,6 +963,11 @@
             focusLecture = false;
             await champLecture.FocusAsync();
         }
+        if (PsychotropeInterdit && detenteursPsychotropes is null)
+        {
+            (detenteursPsychotropes, _) = await Api.DelivrancePsychotropesAsync();
+            StateHasChanged();
+        }
     }
 
     private async Task RechercherLectureAsync()
@@ -880,9 +1058,14 @@
         await RecalculerAsync();
     }
 
+    private int requetePatient;
+
     private async Task RechercherPatientsAsync()
     {
+        var numero = ++requetePatient;
         if (patientTexte.Trim().Length < 2) { patients = []; return; }
+        await Task.Delay(DelaiSaisie);
+        if (numero != requetePatient) return;   // une frappe plus récente relancera la recherche
         (patients, _) = await Api.RechercherPatientsAsync(patientTexte);
     }
 
@@ -903,10 +1086,25 @@
     {
         np = new NouveauPatientSaisie { Nom = patientTexte.Trim(), OrganismeId = tiersPayant ? organismeId : 0 };
         nouveauPatient = true;
+        controlePatient = false;
     }
+
+    // Champs obligatoires : patient (tiers payant, ordonnance), médecin (psychotrope), nom du nouveau patient
+    private bool PatientManquant => PatientObligatoire && patient is null && !nouveauPatient;
+    private bool MedecinManquant => apercu?.OrdonnanceRequise == true && medecin is null;
+    private bool controlePatient;
+    private ElementReference champNomPatient;
+    private bool NomPatientManquant => Obligatoire.Manque(controlePatient, np.Nom);
 
     private async Task CreerPatientAsync()
     {
+        controlePatient = true;
+        if (NomPatientManquant)
+        {
+            erreurEncaissement = "Le nom du patient est obligatoire.";
+            await champNomPatient.FocusAsync();
+            return;
+        }
         var saisie = new NouveauPatientDto(np.Nom, np.Prenom, np.Telephone, np.NumAssure,
             np.OrganismeId > 0 ? np.OrganismeId : null, np.Plafond);
         var (cree, err) = await Api.CreerPatientAsync(saisie);
@@ -914,6 +1112,7 @@
         var organisme = organismes.FirstOrDefault(o => o.Id == np.OrganismeId);
         nouveauPatient = false;
         erreurEncaissement = null;
+        controlePatient = false;
         await ChoisirPatientAsync(new PatientDto(cree!.Id, saisie.Nom.Trim(), saisie.Prenom, saisie.Telephone, saisie.NumAssure,
             saisie.OrganismeId, organisme?.Code, saisie.PlafondCredit, 0));
     }
@@ -938,7 +1137,8 @@
         patient?.Id,
         jetonScan is not null || (apercu?.OrdonnanceRequise == true && medecin is not null)
             ? new OrdonnanceDto(medecin?.Id, datePrescription, string.IsNullOrWhiteSpace(numeroOrdonnance) ? null : numeroOrdonnance.Trim(),
-                jetonScan, texteReconnu)
+                jetonScan, texteReconnu,
+                PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null)
             : null,
         remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null);
 
@@ -946,15 +1146,36 @@
     private async Task RecalculerAsync()
     {
         var numero = ++requeteCalcul;
-        if (!lignes.Any(l => l.Lot is not null)) { (apercu, erreurCalcul) = (null, null); return; }
+        if (!lignes.Any(l => l.Lot is not null)) { (apercu, erreurCalcul) = (null, null); Afficheur.Accueil(); return; }
         var (resultat, err) = await Api.CalculerVenteAsync(Commande("especes"));
         if (numero != requeteCalcul) return;
         (apercu, erreurCalcul) = (resultat, err);
+        // Afficheur client : lignes du panier et part à payer par le patient
+        Afficheur.Panier(lignes.Where(l => l.Lot is not null).Select(l => (l.Nom, l.Quantite, l.Prix * l.Quantite)).ToList(), apercu?.PartPatient ?? 0);
+    }
+
+    // Ticket de la dernière vente, imprimé par Windows (imprimante du poste ou imprimante par défaut)
+    private bool impressionEnCours, ticketImprime;
+    private string? messageTicket;
+
+    private async Task ImprimerTicketAsync()
+    {
+        if (venteFaite is null) return;
+        (impressionEnCours, messageTicket) = (true, null);
+        try
+        {
+            var (ticket, e) = await Api.TicketAsync(venteFaite.VenteId);
+            e ??= await Tickets.ImprimerAsync(ticket!, venteFaite.Mode == "especes" ? venteFaite.Rendu : null);
+            ticketImprime = e is null;
+            messageTicket = e ?? $"Ticket {venteFaite.Numero} envoyé à l’imprimante{(Tickets.NomDeclare is { } n ? $" « {n} »" : " par défaut")}.";
+        }
+        finally { impressionEnCours = false; }
     }
 
     private async Task EncaisserAsync(string modePaiement)
     {
         if (!PeutEncaisser) return;
+        messageTicket = null;
         enCours = true;
         erreurEncaissement = null;
         var (vente, err) = await Api.EncaisserAsync(Commande(modePaiement));
@@ -962,12 +1183,89 @@
         if (err is not null) { erreurEncaissement = err; return; }
 
         venteFaite = vente;
+        Afficheur.Paiement(vente!.PartPatient, vente.Mode == "especes" ? montantRecu : null, vente.Mode == "especes" ? vente.Rendu : 0);
+        // Réglage du poste : ticket imprimé sans clic après chaque vente
+        if (Tickets.Automatique) _ = InvokeAsync(async () => { await ImprimerTicketAsync(); StateHasChanged(); });
+        ViderPanier();
+    }
+
+    // ---- Annulation d'une vente (panneau) ----
+    private bool annulationOuverte, creditOuvert;
+    private string? annulationNumero;
+
+    private void OuvrirAnnulation(string? numero) => (annulationOuverte, annulationNumero) = (true, numero);
+
+    private async Task VenteAnnuleeAsync()
+    {
+        if (venteFaite is not null && venteFaite.Numero == annulationNumero) venteFaite = null;
+        await ChargerEtatAsync();   // attendu de caisse mis à jour
+    }
+
+    // ---- Ventes en attente (poste) ----
+    private List<VenteEnAttenteDto> attentes = [];
+    private long? aAbandonner;
+    private string? erreurAttente;
+
+    private async Task ChargerAttentesAsync()
+    {
+        var (liste, e) = await Api.VentesEnAttenteAsync();
+        (attentes, erreurAttente) = (liste, e);
+    }
+
+    /// <summary>Le panier et le règlement en cours de saisie partent sur le serveur ; la caisse est libérée.</summary>
+    private async Task MettreEnAttenteAsync()
+    {
+        if (lignes.Count == 0) return;
+        erreurAttente = null;
+        var panier = new PanierAttenteDto(
+            lignes.Select(l => new LignePanierAttenteDto(l.ProduitId, l.Nom, l.Prix, l.Lot, l.Quantite, l.BoiteScannee, l.StockProduit)).ToList(),
+            tiersPayant, organismeId, taux, patient, medecin, datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu);
+        var libelle = patient is { } p ? $"{p.Nom} {p.Prenom}".Trim() : $"Vente de {DateTime.Now:HH:mm}";
+        var total = apercu?.MontantTotal ?? lignes.Sum(l => l.Prix * l.Quantite);
+        var e = await Api.MettreEnAttenteAsync(new MiseEnAttenteRequete(libelle, lignes.Count, total,
+            System.Text.Json.JsonSerializer.Serialize(panier)));
+        if (e is not null) { erreurAttente = e; return; }
+        venteFaite = null;
+        ViderPanier();
+        await ChargerAttentesAsync();
+    }
+
+    /// <summary>Reprise : le panier en cours (s'il y en a un) part d'abord en attente, rien n'est perdu.</summary>
+    private async Task ReprendreAsync(VenteEnAttenteDto v)
+    {
+        erreurAttente = null;
+        if (lignes.Count > 0) { await MettreEnAttenteAsync(); if (erreurAttente is not null) return; }
+        var (json, e) = await Api.ReprendreVenteEnAttenteAsync(v.Id);
+        if (e is not null) { erreurAttente = e; await ChargerAttentesAsync(); return; }
+        var p = System.Text.Json.JsonSerializer.Deserialize<PanierAttenteDto>(json!)!;
+        ViderPanier();
+        venteFaite = null;
+        foreach (var l in p.Lignes)
+            lignes.Add(new LignePanier { ProduitId = l.ProduitId, Nom = l.Nom, Prix = l.Prix, Lot = l.Lot, Quantite = l.Quantite, BoiteScannee = l.BoiteScannee, StockProduit = l.StockProduit });
+        (tiersPayant, organismeId, taux, patient, medecin) = (p.TiersPayant, p.OrganismeId, p.Taux, p.Patient, p.Medecin);
+        (datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu) = (p.DatePrescription, p.NumeroOrdonnance, p.RemisePct, p.JetonScan, p.TexteReconnu);
+        if (medecin is not null) medecinTexte = medecin.Nom;
+        await ChargerAttentesAsync();
+        await RecalculerAsync();   // prix et parts recalculés par le serveur
+    }
+
+    private async Task AbandonnerAsync(VenteEnAttenteDto v)
+    {
+        aAbandonner = null;
+        erreurAttente = await Api.SupprimerVenteEnAttenteAsync(v.Id);
+        await ChargerAttentesAsync();
+    }
+
+    /// <summary>Panier et règlement remis à zéro (après une vente ou une mise en attente).</summary>
+    private void ViderPanier()
+    {
         lignes.Clear();
         (apercu, bandeau, erreur, montantRecu, remisePct) = (null, null, null, null, 0);
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode) = (null, null, "", null, false, "especes");
         (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
         lectureAjouts.Clear();
         (motifSaisieManuelle, lectureSansResultat) = (null, null);
+        (porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (false, null, null, null);
     }
 
     public async ValueTask DisposeAsync()

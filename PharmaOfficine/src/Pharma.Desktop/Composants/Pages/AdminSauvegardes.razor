@@ -24,7 +24,8 @@
             <section class="panneau" aria-labelledby="t-reg">
                 <h2 id="t-reg">Réglages</h2>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 2 1 280px"><label for="s-dossier">Dossier sur le disque externe</label><input id="s-dossier" type="text" placeholder="ex. E:\SauvegardesPharmacie" @bind="r.Dossier" /></div>
+                    <div class="champ" style="flex: 2 1 280px"><label for="s-dossier" class="@(r.Actif ? "requis" : null)">Dossier sur le disque externe</label><input id="s-dossier" type="text" placeholder="ex. E:\SauvegardesPharmacie" @ref="champDossier" @bind="r.Dossier" @bind:event="oninput"
+                        class="@Obligatoire.Classe(DossierManque)" aria-invalid="@Obligatoire.Aria(DossierManque)" /></div>
                     <div class="champ" style="flex: 0 0 150px"><label for="s-heure">Heure</label><input id="s-heure" type="time" @bind="r.Heure" /></div>
                     <div class="champ" style="flex: 0 0 200px"><label for="s-garde">Sauvegardes conservées</label><input id="s-garde" type="number" min="1" max="365" @bind="r.Conservation" /></div>
                 </div>
@@ -80,16 +81,45 @@
         journal = etat.Journal.ToList();
     }
 
-    private async Task EnregistrerAsync() => await Executer(async () =>
-    {
-        var e = await Api.ModifierReglagesSauvegardeAsync(new ReglagesSauvegardeDto(r!.Actif, r.Dossier, r.Heure, r.Conservation, null));
-        if (e is not null) return e;
-        message = "Réglages enregistrés.";
-        await ChargerAsync();
-        return null;
-    });
+    // Dossier obligatoire pour activer la sauvegarde automatique ou sauvegarder maintenant : en rouge s'il manque
+    private bool controleEnregistrer, controleLancer;
+    private ElementReference champDossier;
+    private bool DossierManque => r is not null && string.IsNullOrWhiteSpace(r.Dossier) && ((controleEnregistrer && r.Actif) || controleLancer);
 
-    private async Task LancerAsync() => await Executer(async () =>
+    private async Task EnregistrerAsync()
+    {
+        (controleEnregistrer, controleLancer) = (true, false);
+        if (DossierManque)
+        {
+            (erreur, message) = ("Choisissez le dossier avant d’activer les sauvegardes.", null);
+            await champDossier.FocusAsync();
+            return;
+        }
+        await Executer(async () =>
+        {
+            var e = await Api.ModifierReglagesSauvegardeAsync(new ReglagesSauvegardeDto(r!.Actif, r.Dossier, r.Heure, r.Conservation, null));
+            if (e is not null) return e;
+            message = "Réglages enregistrés.";
+            controleEnregistrer = false;
+            await ChargerAsync();
+            return null;
+        });
+    }
+
+    private async Task LancerAsync()
+    {
+        (controleLancer, controleEnregistrer) = (true, false);
+        if (DossierManque)
+        {
+            (erreur, message) = ("Choisissez d’abord le dossier de sauvegarde (disque externe).", null);
+            await champDossier.FocusAsync();
+            return;
+        }
+        controleLancer = false;
+        await LancerSauvegardeAsync();
+    }
+
+    private async Task LancerSauvegardeAsync() => await Executer(async () =>
     {
         var (res, e) = await Api.LancerSauvegardeAsync();
         if (e is not null) return e;

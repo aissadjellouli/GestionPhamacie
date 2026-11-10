@@ -11,8 +11,9 @@ public sealed class StockLecture(NpgsqlDataSource db) : IStockLecture
         // Même périmètre que v_etat_stock : le périmé ne compte pas dans le stock vendable
         const string sql = """
             SELECT (SELECT count(*) FROM v_etat_stock WHERE stock > 0)::int,
-                   (SELECT COALESCE(SUM(quantite_disponible * prix_achat_ht), 0)
-                    FROM lot WHERE quantite_disponible > 0 AND date_peremption > current_date),
+                   (SELECT COALESCE(SUM(v.valeur), 0)                       -- prix réel de chaque boîte (021_prix_boite.sql)
+                    FROM lot l JOIN v_valeur_lot v ON v.lot_id = l.id
+                    WHERE l.quantite_disponible > 0 AND l.date_peremption > current_date),
                    (SELECT count(*) FROM lot WHERE date_a_verifier AND quantite_disponible > 0)::int
             """;
         await using var cmd = db.CreateCommand(sql);

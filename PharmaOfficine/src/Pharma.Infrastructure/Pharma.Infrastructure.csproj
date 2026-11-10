@@ -10,6 +10,7 @@
     <PackageReference Include="MailKit" />
     <PackageReference Include="System.IO.Ports" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+    <PackageReference Include="System.Data.Odbc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pharma.Application\Pharma.Application.csproj" />

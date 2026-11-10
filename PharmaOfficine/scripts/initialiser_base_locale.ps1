@@ -61,7 +61,8 @@ function Invoke-Psql([string]$utilisateur, [string]$motDePasse, [string]$base, [
 }
 
 $scripts = Get-ChildItem (Join-Path $racine "database") -Filter "*.sql" | Sort-Object Name
-$demo    = Get-ChildItem (Join-Path $racine "database\demo") -Filter "*.sql" | Sort-Object Name
+# Fichiers qui remplissent la base (données fictives) : database\data
+$demo    = Get-ChildItem (Join-Path $racine "database\data") -Filter "*.sql" | Sort-Object Name
 
 try {
     if (-not $MiseAJour) {
@@ -103,7 +104,7 @@ try {
         # 4. Données fictives (le script ne fait rien si elles sont déjà présentes)
         if (-not $SansDemo) {
             foreach ($s in $demo) {
-                Write-Host "  demo\$($s.Name)"
+                Write-Host "  data\$($s.Name)"
                 Invoke-Psql $AppUser $AppPassword $base @("-f", $s.FullName)
             }
         }

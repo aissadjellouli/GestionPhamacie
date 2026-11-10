@@ -52,7 +52,7 @@ Le script :
 - règle l’encodage UTF-8 de psql (les scripts contiennent des accents) ;
 - demande le mot de passe de `postgres` ;
 - crée le compte applicatif `pharma_app` (mot de passe de développement `pharma_dev`, celui de `src/Pharma.Api/appsettings.json`) ;
-- crée les bases manquantes, puis applique `database/001` à `009` dans l’ordre et les données fictives `database/demo/900_donnees_demo.sql`.
+- crée les bases manquantes, puis applique `database/001` à `009` dans l’ordre et les données fictives `database/data/9xx_*.sql`.
 
 Les scripts SQL sont **idempotents** (voir [base-de-donnees.md](base-de-donnees.md#scripts-idempotents)) : sur une base existante, le script la **met à jour** sans rien perdre.
 

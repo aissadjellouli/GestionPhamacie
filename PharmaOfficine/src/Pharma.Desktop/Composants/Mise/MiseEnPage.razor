@@ -36,7 +36,22 @@
                         <span class="compteur" aria-label="@($"{urgentes} alertes urgentes")">@urgentes</span>
                     }
                 </a>
-                <span class="nav-inactif" aria-disabled="true" title="Bientôt disponible">Rapports</span>
+                @if (Session.A("rapports.ventes"))
+                {
+                    <a href="rapports" class="@Actif("rapports")" aria-current="@Courant("rapports")">Rapports</a>
+                }
+                else
+                {
+                    <span class="nav-inactif" aria-disabled="true" title="Droit « Rapports de ventes » nécessaire">Rapports</span>
+                }
+                @if (Session.A("factures.gerer"))
+                {
+                    <a href="factures" class="@Actif("factures")" aria-current="@Courant("factures")">Factures</a>
+                }
+                @if (Session.A("tresorerie.gerer"))
+                {
+                    <a href="tresorerie" class="@Actif("tresorerie")" aria-current="@Courant("tresorerie")">Trésorerie</a>
+                }
                 @if (PremiereRubriqueAdmin is { } lienAdmin)
                 {
                     <a href="@lienAdmin" class="@ActifPrefixe("admin")" aria-current="@(Chemin.StartsWith("admin") ? "page" : null)">Administration</a>
@@ -48,13 +63,31 @@
             </nav>
             <div class="utilisateur">
                 <span>Connecté : @Session.NomComplet</span>
+                @if (Session.ParCode)
+                {
+                    <span class="badge-code" title="Connecté par code comptoir : écrans du comptoir seulement">code comptoir</span>
+                }
+                else
+                {
+                    <a href="mon-code" class="lien-bouton">Mon code comptoir</a>
+                    <a href="mot-de-passe" class="lien-bouton">Mot de passe</a>
+                }
+                <button type="button" class="lien-bouton bouton-affichage" @onclick="ChangerAffichageAsync"
+                        title="Affichage : Automatique (suit Windows), Clair ou Sombre. Cliquer pour changer ; votre choix est retenu."
+                        aria-label="@($"Affichage : {LibelleAffichage}. Changer l’affichage")">@SymboleAffichage @LibelleAffichage</button>
+                <button type="button" class="lien-bouton" @onclick="ChangerUtilisateur" title="La caisse du poste reste ouverte">Changer d’utilisateur</button>
                 <button type="button" class="lien-bouton" @onclick="SeDeconnecter">Se déconnecter</button>
             </div>
         }
     </div>
 </header>
 <main>
-    @if (Session.EstConnecte || EstPageConnexion)
+    @if (Session.EstConnecte && Session.DoitChangerMotDePasse && !Chemin.StartsWith("mot-de-passe", StringComparison.Ordinal))
+    {
+        @* Mot de passe provisoire : rien d'autre tant qu'il n'est pas changé *@
+        <Redirection Vers="mot-de-passe" />
+    }
+    else if (Session.EstConnecte || EstPageConnexion)
     {
         @Body
     }
@@ -93,8 +126,8 @@
     private async Task CompterUrgentesAsync()
     {
         if (!Session.EstConnecte) { urgentes = 0; return; }
-        var (alertes, erreur) = await Api.AlertesAsync();
-        urgentes = erreur is null ? alertes.Count(a => a.Niveau == "urgent") : 0;
+        var (compte, erreur) = await Api.AlertesUrgentesAsync();
+        urgentes = erreur is null ? compte?.Nombre ?? 0 : 0;
     }
 
     /// <summary>Déconnexion automatique (paramètre de caisse) : vérifiée toutes les 15 secondes.</summary>
@@ -128,12 +161,54 @@
     private async void SurSession()
     {
         await CompterUrgentesAsync();
-        await InvokeAsync(StateHasChanged);
+        await InvokeAsync(async () => { await AppliquerAffichageAsync(); StateHasChanged(); });
+    }
+
+    // ---- Affichage clair, sombre ou automatique (choix de l'employé) ----
+    private DotNetObjectReference<MiseEnPage>? reference;
+    private string? affichageApplique;
+
+    private string LibelleAffichage => Session.Affichage switch { "clair" => "Clair", "sombre" => "Sombre", _ => "Automatique" };
+    private string SymboleAffichage => Session.Affichage switch { "clair" => "☀", "sombre" => "☾", _ => "◐" };
+
+    protected override async Task OnAfterRenderAsync(bool premierAffichage)
+    {
+        if (!premierAffichage) return;
+        reference = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("pharma.affichage.suivre", reference);
+        await AppliquerAffichageAsync();
+    }
+
+    private async Task AppliquerAffichageAsync()
+    {
+        if (reference is null || affichageApplique == Session.Affichage) return;
+        affichageApplique = Session.Affichage;
+        try { BarreDeTitre.Appliquer(await JS.InvokeAsync<bool>("pharma.affichage.appliquer", Session.Affichage)); }
+        catch (JSDisconnectedException) { /* fenêtre fermée */ }
+    }
+
+    /// <summary>Windows passe en clair ou en sombre (mode Automatique) : la barre de titre suit.</summary>
+    [JSInvokable]
+    public void SurChangementAffichage(bool sombre) => BarreDeTitre.Appliquer(sombre);
+
+    /// <summary>Automatique → Clair → Sombre → Automatique ; enregistré pour l'employé.</summary>
+    private async Task ChangerAffichageAsync()
+    {
+        var suivant = Session.Affichage switch { "auto" => "clair", "clair" => "sombre", _ => "auto" };
+        Session.DefinirAffichage(suivant);
+        await Api.DefinirAffichageAsync(suivant);
     }
 
     private void SeDeconnecter()
     {
         Session.Fermer();
+        Nav.NavigateTo("connexion");
+    }
+
+    // Caisse partagée : l'employé suivant reprend la main par son code, sans fermer la caisse
+    private void ChangerUtilisateur()
+    {
+        Session.Fermer($"{Session.NomComplet} a quitté le poste. La caisse reste ouverte.");
         Nav.NavigateTo("connexion");
     }
 
@@ -143,5 +218,6 @@
         Nav.LocationChanged -= SurNavigation;
         Session.Changee -= SurSession;
         Api.AlertesModifiees -= SurSession;
+        reference?.Dispose();
     }
 }

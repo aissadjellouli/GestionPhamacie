@@ -1,0 +1,155 @@
+@page "/stock/registre"
+@inject ApiClient Api
+
+<div class="page">
+    <div class="titre-page">
+        <div>
+            <h1>Registre des psychotropes</h1>
+            <p class="sous-titre">Entrées et sorties des psychotropes et stupéfiants, numérotées et non modifiables, avec la balance mensuelle.</p>
+        </div>
+        <div class="actions">
+            <a href="stock" style="font-size: 14px; font-weight: 500; align-self: center">Retour au stock</a>
+            <button type="button" class="btn" disabled="@(registre is null || enCours)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
+            <button type="button" class="btn" disabled="@(registre is null || enCours)" @onclick='() => ExporterAsync("csv")'>Exporter pour Excel</button>
+        </div>
+    </div>
+
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (fichier is not null)
+    {
+        <div class="succes" role="status">Fichier enregistré : @fichier <button type="button" class="lien-bouton" @onclick="() => Documents.Ouvrir(fichier)">Ouvrir</button></div>
+    }
+
+    <section class="panneau" aria-label="Filtres">
+        <div class="achats-ligne">
+            <div class="champ" style="flex: 2 1 260px">
+                <label for="r-produit">Produit</label>
+                <select id="r-produit" @bind="produitId" @bind:after="ChargerAsync">
+                    <option value="">Tous les produits sous registre</option>
+                    @foreach (var p in produits) { <option value="@p.Id">@p.Nom</option> }
+                </select>
+            </div>
+            <div class="champ" style="flex: 0 0 170px"><label for="r-du">Du</label><input id="r-du" type="date" @bind="du" @bind:after="ChargerAsync" /></div>
+            <div class="champ" style="flex: 0 0 170px"><label for="r-au">Au</label><input id="r-au" type="date" @bind="au" @bind:after="ChargerAsync" /></div>
+        </div>
+        @if (registre?.NomsMasques == true)
+        {
+            <p class="detail" style="margin: 8px 0 0">Noms des patients et des porteurs abrégés : seul le titulaire les voit en entier.</p>
+        }
+    </section>
+
+    @if (registre is null)
+    {
+        <p class="vide">Chargement…</p>
+    }
+    else
+    {
+        <section class="panneau" aria-labelledby="t-lignes">
+            <h2 id="t-lignes">Inscriptions (@registre.Lignes.Count)</h2>
+            @if (registre.Lignes.Count == 0)
+            {
+                <p class="vide" style="margin: 0">Aucune inscription sur la période.</p>
+            }
+            else
+            {
+                <div class="tableau-cadre">
+                    <table class="tableau tableau-registre">
+                        <thead>
+                            <tr>
+                                <th scope="col">N°</th><th scope="col">Date</th><th scope="col">Produit · lot</th><th scope="col">Opération</th>
+                                <th scope="col" class="nombre">Entrée</th><th scope="col" class="nombre">Sortie</th>
+                                <th scope="col" class="nombre">Solde produit</th><th scope="col" class="nombre">Solde lot</th>
+                                <th scope="col">Patient · porteur</th><th scope="col">Médecin · ordonnance</th><th scope="col">Référence · grossiste</th><th scope="col">Employé</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var l in registre.Lignes)
+                            {
+                                <tr>
+                                    <td>@l.Numero</td>
+                                    <td>@Libelles.DateHeureLocale(l.Date)</td>
+                                    <td><span class="nom">@l.Produit</span><br /><span class="detail">lot @l.NumeroLot</span></td>
+                                    <td>@l.Operation</td>
+                                    <td class="nombre">@l.Entree</td>
+                                    <td class="nombre">@l.Sortie</td>
+                                    <td class="nombre"><strong>@(l.SoldeProduit?.ToString() ?? "—")</strong></td>
+                                    <td class="nombre">@l.SoldeLot</td>
+                                    <td>
+                                        @l.Patient
+                                        @if (l.PorteurNom is not null)
+                                        {
+                                            <br /><span class="detail">Porteur : @l.PorteurNom, @l.PorteurAdresse, pièce @l.PorteurPiece</span>
+                                        }
+                                    </td>
+                                    <td>@l.Medecin @if (l.Ordonnance is not null) { <br /><span class="detail">n° @l.Ordonnance</span> }</td>
+                                    <td>@l.Reference @if (l.Fournisseur is not null) { <br /><span class="detail">@l.Fournisseur</span> }</td>
+                                    <td>@l.Employe</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="panneau" aria-labelledby="t-balance">
+            <h2 id="t-balance">Balance mensuelle</h2>
+            @if (registre.Balance.Count == 0)
+            {
+                <p class="vide" style="margin: 0">Pas de mouvement sur la période.</p>
+            }
+            else
+            {
+                <div class="tableau-cadre">
+                    <table class="tableau">
+                        <thead><tr><th scope="col">Produit</th><th scope="col">Mois</th><th scope="col" class="nombre">Entrées</th><th scope="col" class="nombre">Sorties</th><th scope="col" class="nombre">Solde fin de mois</th></tr></thead>
+                        <tbody>
+                            @foreach (var b in registre.Balance)
+                            {
+                                <tr><td>@b.Produit</td><td>@($"{b.Mois:00}/{b.Annee}")</td><td class="nombre">@b.Entrees</td><td class="nombre">@b.Sorties</td><td class="nombre">@(b.SoldeFin?.ToString() ?? "—")</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private List<ProduitRegistreDto> produits = [];
+    private long? produitId;
+    private DateOnly du = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateOnly au = DateOnly.FromDateTime(DateTime.Today);
+    private RegistreDto? registre;
+    private string? erreur, fichier;
+    private bool enCours;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (produits, erreur) = await Api.ProduitsRegistreAsync();
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        (erreur, fichier) = (null, null);
+        var (r, e) = await Api.RegistreAsync(produitId, du, au);
+        if (e is not null) { erreur = e; return; }
+        registre = r;
+    }
+
+    private async Task ExporterAsync(string format)
+    {
+        (erreur, fichier, enCours) = (null, null, true);
+        try
+        {
+            var (contenu, nom, e) = await Api.ExporterRegistreAsync(produitId, du, au, format);
+            if (e is not null) { erreur = e; return; }
+            fichier = Documents.Enregistrer("Registre", nom!, contenu!);
+            Documents.Ouvrir(fichier);
+        }
+        catch (Exception ex) { erreur = $"Fichier impossible à ouvrir : {ex.Message}"; }
+        finally { enCours = false; }
+    }
+}

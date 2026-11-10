@@ -7,43 +7,65 @@ namespace Pharma.Infrastructure.Caisse;
 
 public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
 {
-    public async Task<SessionCaisse?> SessionOuverteAsync(long utilisateurId, CancellationToken ct = default)
+    /// <summary>Caisse ouverte du poste (une au plus : index ux_session_poste_ouverte).</summary>
+    public async Task<SessionCaisse?> SessionDuPosteAsync(string poste, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT id, utilisateur_id, poste, ouverte_le, fond_caisse
-            FROM session_caisse WHERE utilisateur_id = $1 AND fermee_le IS NULL
+            SELECT s.id, s.utilisateur_id, s.poste, s.ouverte_le, s.fond_caisse, u.nom_complet
+            FROM session_caisse s JOIN utilisateur u ON u.id = s.utilisateur_id
+            WHERE s.poste = $1 AND s.fermee_le IS NULL
             """);
-        cmd.Parameters.AddWithValue(utilisateurId);
+        cmd.Parameters.AddWithValue(poste);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         return new SessionCaisse
         {
             Id = r.GetInt64(0), UtilisateurId = r.GetInt64(1), Poste = r.GetString(2),
-            OuverteLe = r.GetDateTime(3), FondCaisse = r.GetDecimal(4)
+            OuverteLe = r.GetDateTime(3), FondCaisse = r.GetDecimal(4), OuvertePar = r.GetString(5)
         };
     }
 
-    public async Task<long> OuvrirAsync(long utilisateurId, string poste, decimal fondCaisse, CancellationToken ct = default)
+    public async Task<long> OuvrirAsync(long utilisateurId, string poste, decimal fondCaisse, long? releveDe = null, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(
-            "INSERT INTO session_caisse (utilisateur_id, poste, fond_caisse) VALUES ($1, $2, $3) RETURNING id");
+            "INSERT INTO session_caisse (utilisateur_id, poste, fond_caisse, releve_de) VALUES ($1, $2, $3, $4) RETURNING id");
         cmd.Parameters.AddWithValue(utilisateurId);
         cmd.Parameters.AddWithValue(poste);
         cmd.Parameters.AddWithValue(fondCaisse);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)releveDe ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bigint });
         try
         {
             return (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            throw new RegleMetierException("Votre caisse est déjà ouverte (sur ce poste ou un autre).");
+            throw new RegleMetierException("La caisse de ce poste est déjà ouverte : vendez dessus, ou faites une relève.");
         }
+    }
+
+    public async Task<IReadOnlyList<Vendeur>> VendeursAsync(long sessionId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT DISTINCT u.id, u.nom_complet FROM vente v JOIN utilisateur u ON u.id = v.utilisateur_id
+            WHERE v.session_caisse_id = $1 ORDER BY u.nom_complet
+            """);
+        cmd.Parameters.AddWithValue(sessionId);
+        var liste = new List<Vendeur>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) liste.Add(new Vendeur(r.GetInt64(0), r.GetString(1)));
+        return liste;
     }
 
     public async Task<decimal> VentesEspecesAsync(long sessionId, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand(
-            "SELECT COALESCE(SUM(montant), 0) FROM paiement WHERE session_caisse_id = $1 AND mode = 'especes'");
+        // Espèces encaissées, moins l'argent rendu depuis cette caisse : vente annulée (027), retour client (028), complément pris pour payer un grossiste (029), argent porté au coffre pendant la journée (030) ; les remboursements de crédit (paiements sans vente) y sont comptés
+        await using var cmd = db.CreateCommand("""
+            SELECT COALESCE((SELECT SUM(montant) FROM paiement WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
+                 - COALESCE((SELECT SUM(montant_rembourse) FROM annulation_vente WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
+                 - COALESCE((SELECT SUM(montant_rembourse) FROM retour_client WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
+                 - COALESCE((SELECT SUM(part_tiroir) FROM reglement_fournisseur WHERE session_caisse_id = $1), 0)
+                 - COALESCE((SELECT SUM(montant) FROM mouvement_tresorerie WHERE session_caisse_id = $1 AND pendant_session), 0)
+            """);
         cmd.Parameters.AddWithValue(sessionId);
         return (decimal)(await cmd.ExecuteScalarAsync(ct))!;
     }
@@ -115,10 +137,10 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
     public async Task<ParametresCaisse> ParametresAsync(CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(
-            "SELECT comptage_aveugle, fond_caisse_defaut, seuil_ecart, deconnexion_minutes FROM parametre_caisse WHERE id = 1");
+            "SELECT comptage_aveugle, fond_caisse_defaut, seuil_ecart, deconnexion_minutes, versement_cloture FROM parametre_caisse WHERE id = 1");
         await using var r = await cmd.ExecuteReaderAsync(ct);
         return await r.ReadAsync(ct)
-            ? new ParametresCaisse(r.GetBoolean(0), r.GetDecimal(1), r.GetDecimal(2), r.GetInt32(3))
+            ? new ParametresCaisse(r.GetBoolean(0), r.GetDecimal(1), r.GetDecimal(2), r.GetInt32(3), r.GetString(4))
             : new ParametresCaisse(true, 0, 0, 0);
     }
 
@@ -126,13 +148,14 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
     {
         await using var cmd = db.CreateCommand("""
             UPDATE parametre_caisse
-            SET comptage_aveugle = $1, fond_caisse_defaut = $2, seuil_ecart = $3, deconnexion_minutes = $4
+            SET comptage_aveugle = $1, fond_caisse_defaut = $2, seuil_ecart = $3, deconnexion_minutes = $4, versement_cloture = $5
             WHERE id = 1
             """);
         cmd.Parameters.AddWithValue(p.ComptageAveugle);
         cmd.Parameters.AddWithValue(p.FondCaisseDefaut);
         cmd.Parameters.AddWithValue(p.SeuilEcart);
         cmd.Parameters.AddWithValue(p.DeconnexionMinutes);
+        cmd.Parameters.AddWithValue(p.VersementCloture);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

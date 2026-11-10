@@ -19,22 +19,18 @@
                 <h2 id="t-ajout">Ajouter un produit à commander</h2>
                 <div class="achats-ligne">
                     <div class="champ" style="flex: 1 1 200px">
-                        <label for="c-gros">Grossiste</label>
-                        <select id="c-gros" @bind="fournisseurId">
+                        <label for="c-gros" class="requis">Grossiste</label>
+                        <select id="c-gros" @ref="champGrossiste" @bind="fournisseurId" class="@Obligatoire.Classe(GrossisteManque)" aria-invalid="@Obligatoire.Aria(GrossisteManque)">
                             @foreach (var f in fournisseurs)
                             {
                                 <option value="@f.Id">@f.RaisonSociale</option>
                             }
                         </select>
                     </div>
-                    <div class="champ recherche" style="flex: 3 1 260px">
-                        <label for="c-prod">Produit</label>
-                        <input id="c-prod" type="search" autocomplete="off" placeholder="Nom, DCI ou code-barres"
-                               @bind="texteProduit" @bind:event="oninput" @bind:after="RechercherAsync" />
-                    </div>
+                    <ChoixProduit @ref="choixProduit" Id="c-prod" Style="flex: 3 1 260px" Requis="true" OnChoisi="Choisir" OnEfface="() => produitChoisi = null" />
                     <div class="champ" style="flex: 0 0 110px">
-                        <label for="c-qte">Quantité</label>
-                        <input id="c-qte" type="number" min="1" @bind="quantite" />
+                        <label for="c-qte" class="requis">Quantité</label>
+                        <input id="c-qte" type="number" min="1" @ref="champQuantite" @bind="quantite" class="@Obligatoire.Classe(QuantiteInvalide)" aria-invalid="@Obligatoire.Aria(QuantiteInvalide)" />
                     </div>
                     <div class="champ" style="flex: 0 0 150px">
                         <label for="c-prix">Prix HT (DA)</label>
@@ -47,15 +43,6 @@
                         <span>Choisi : <strong>@produitChoisi.NomCommercial</strong> · stock @produitChoisi.Stock</span>
                         <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => AjouterAsync(produitChoisi.Id)">Ajouter au bon</button>
                     </div>
-                }
-                else if (suggestionsProduit.Count > 0)
-                {
-                    <ul class="liste-lecture" aria-label="Produits trouvés">
-                        @foreach (var p in suggestionsProduit)
-                        {
-                            <li><button type="button" @onclick="() => Choisir(p)"><span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage · stock @p.Stock</span></span><span>Choisir</span></button></li>
-                        }
-                    </ul>
                 }
                 <p class="detail" style="margin: 0">Le produit va sur le bon en brouillon du grossiste (créé au besoin). Sans prix, le dernier prix d’achat est repris ; le prix facturé est saisi à la réception.</p>
             </section>
@@ -188,14 +175,18 @@
     private CommandeAchatDetailDto? detail;
     private List<LigneEdition> lignesEdition = [];
     private long fournisseurId;
-    private string texteProduit = "";
-    private List<ProduitDto> suggestionsProduit = [];
+    private ChoixProduit? choixProduit;
+
+    // Grossiste et quantité (RegleAchats) : en rouge après un premier essai d'ajout ; le produit est déjà choisi quand le bouton apparaît
+    private bool controle;
+    private ElementReference champGrossiste, champQuantite;
+    private bool GrossisteManque => Obligatoire.Manque(controle, fournisseurId);
+    private bool QuantiteInvalide => controle && quantite is <= 0 or > 10_000;
     private ProduitDto? produitChoisi;
     private int quantite = 1;
     private decimal? prix;
     private bool enCours;
     private string? erreur, message;
-    private int requete;
 
     private bool PeutCommander => Session.A("achats.commander");
 
@@ -219,10 +210,18 @@
             if (nom is not null)
             {
                 produitChoisi = new ProduitDto(pid, nom, null, null, null, 0, connu?.Stock ?? 0, "");
-                texteProduit = nom;
             }
         }
         if (CommandeOuverte is { } cid) await OuvrirAsync(cid);
+    }
+
+    // Produit présélectionné depuis une alerte : son nom s'affiche dans le champ
+    private bool nomAffiche;
+    protected override void OnAfterRender(bool premierRendu)
+    {
+        if (nomAffiche || choixProduit is null || produitChoisi is null) return;
+        nomAffiche = true;
+        choixProduit.Afficher(produitChoisi.NomCommercial);
     }
 
     private async Task RechargerAsync()
@@ -232,26 +231,21 @@
         erreur ??= e;
     }
 
-    private async Task RechercherAsync()
-    {
-        produitChoisi = null;
-        var n = ++requete;
-        if (texteProduit.Trim().Length < 2) { suggestionsProduit = []; return; }
-        var (trouves, _) = await Api.RechercherProduitsAsync(texteProduit);
-        if (n == requete) suggestionsProduit = trouves;
-    }
-
-    private void Choisir(ProduitDto p) => (produitChoisi, texteProduit, suggestionsProduit) = (p, p.NomCommercial, []);
+    private void Choisir(ProduitDto p) => produitChoisi = p;
 
     private async Task AjouterAsync(long produitId)
     {
-        if (fournisseurId == 0) { erreur = "Choisissez un grossiste."; return; }
+        controle = true;
+        if (GrossisteManque) { erreur = "Choisissez un grossiste."; await champGrossiste.FocusAsync(); return; }
+        if (QuantiteInvalide) { erreur = "Quantité à commander entre 1 et 10 000."; await champQuantite.FocusAsync(); return; }
         await Executer(async () =>
         {
             var (r, e) = await Api.AjouterACommandeAsync(fournisseurId, produitId, quantite, prix);
             if (e is not null) return e;
             message = $"Ajouté au bon de {fournisseurs.First(f => f.Id == fournisseurId).RaisonSociale}.";
-            (produitChoisi, texteProduit, quantite, prix) = (null, "", 1, null);
+            (produitChoisi, quantite, prix) = (null, 1, null);
+            controle = false;
+            choixProduit?.Afficher(null);
             await RechargerAsync();
             await OuvrirAsync(r!.Id);
             return null;

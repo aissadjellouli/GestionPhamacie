@@ -6,18 +6,27 @@ using Pharma.Domain.Securite;
 
 namespace Pharma.Application.Caisse;
 
-public sealed record ParametresCaisse(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes);
+/// <summary>VersementCloture : « manuel » (saisi en Trésorerie) ou « automatique » (compté moins le fond par défaut porté au coffre à la clôture).</summary>
+public sealed record ParametresCaisse(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string VersementCloture = "manuel");
 
 /// <summary>Données d'une session pour l'écran et le rapport.</summary>
 public sealed record DetailSession(
     long Id, long UtilisateurId, string Employe, string Poste, DateTime OuverteLe, decimal FondCaisse,
     DateTime? FermeeLe, decimal? VentesEspeces, decimal? Attendu, decimal? Compte, decimal? Ecart,
-    int NombreVentes, decimal TotalVentes, IReadOnlyList<LigneComptage> Comptage);
+    int NombreVentes, decimal TotalVentes, IReadOnlyList<LigneComptage> Comptage, IReadOnlyList<string>? Vendeurs = null);
 
+public sealed record Vendeur(long Id, string Nom);
+
+/// <summary>
+/// Une caisse ouverte par poste (un tiroir) : plusieurs employés y vendent, chaque vente garde son vendeur.
+/// </summary>
 public interface ISessionsCaisse
 {
-    Task<SessionCaisse?> SessionOuverteAsync(long utilisateurId, CancellationToken ct = default);
-    Task<long> OuvrirAsync(long utilisateurId, string poste, decimal fondCaisse, CancellationToken ct = default);
+    Task<SessionCaisse?> SessionDuPosteAsync(string poste, CancellationToken ct = default);
+    /// <param name="releveDe">Session clôturée par une relève, juste avant celle-ci.</param>
+    Task<long> OuvrirAsync(long utilisateurId, string poste, decimal fondCaisse, long? releveDe = null, CancellationToken ct = default);
+    /// <summary>Employés qui ont vendu pendant la session.</summary>
+    Task<IReadOnlyList<Vendeur>> VendeursAsync(long sessionId, CancellationToken ct = default);
     Task<decimal> VentesEspecesAsync(long sessionId, CancellationToken ct = default);
     Task CloturerAsync(long sessionId, Comptage comptage, ResultatCloture resultat, CancellationToken ct = default);
     Task<DetailSession?> DetailAsync(long sessionId, CancellationToken ct = default);
@@ -28,15 +37,23 @@ public interface ISessionsCaisse
 /// <summary>État de la caisse pour le poste. Les montants attendus ne sont donnés qu'avec le droit de voir les écarts.</summary>
 public sealed record EtatCaisse(
     long? SessionId, DateTime? OuverteLe, decimal? FondCaisse, string? Poste,
-    ParametresCaisse Parametres, bool PeutVoirEcart, decimal? VentesEspecesVisibles);
+    ParametresCaisse Parametres, bool PeutVoirEcart, decimal? VentesEspecesVisibles, string? OuvertePar = null);
+
+public static class PosteCaisse
+{
+    /// <summary>Le poste identifie le tiroir : sans nom de poste, pas de caisse.</summary>
+    public static string Exiger(string? poste) => string.IsNullOrWhiteSpace(poste)
+        ? throw new RegleMetierException("Poste inconnu : le poste doit être nommé (PHARMA_POSTE) pour utiliser la caisse.")
+        : poste.Trim();
+}
 
 public sealed class ObtenirEtatCaisse(ISessionsCaisse sessions, IPermissionService droits)
 {
-    public async Task<EtatCaisse> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
+    public async Task<EtatCaisse> ExecuterAsync(long utilisateurId, string? poste, CancellationToken ct = default)
     {
         var parametres = await sessions.ParametresAsync(ct);
         var voirEcart = await droits.APermissionAsync(utilisateurId, Permissions.CaisseVoirEcart, ct);
-        var session = await sessions.SessionOuverteAsync(utilisateurId, ct);
+        var session = await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct);
         if (session is null)
             return new EtatCaisse(null, null, null, null, parametres, voirEcart, null);
 
@@ -44,7 +61,7 @@ public sealed class ObtenirEtatCaisse(ISessionsCaisse sessions, IPermissionServi
         decimal? especes = !parametres.ComptageAveugle && voirEcart
             ? await sessions.VentesEspecesAsync(session.Id, ct)
             : null;
-        return new EtatCaisse(session.Id, session.OuverteLe, session.FondCaisse, session.Poste, parametres, voirEcart, especes);
+        return new EtatCaisse(session.Id, session.OuverteLe, session.FondCaisse, session.Poste, parametres, voirEcart, especes, session.OuvertePar);
     }
 }
 
@@ -52,12 +69,13 @@ public sealed class OuvrirSessionCaisse(ISessionsCaisse sessions)
 {
     public async Task<long> ExecuterAsync(long utilisateurId, string? poste, decimal? fondCaisse, CancellationToken ct = default)
     {
-        if (await sessions.SessionOuverteAsync(utilisateurId, ct) is not null)
-            throw new RegleMetierException("Votre caisse est déjà ouverte.");
+        var nomPoste = PosteCaisse.Exiger(poste);
+        if (await sessions.SessionDuPosteAsync(nomPoste, ct) is { } ouverte)
+            throw new RegleMetierException(
+                $"La caisse de ce poste est déjà ouverte (par {ouverte.OuvertePar ?? "un collègue"}) : vendez dessus, ou faites une relève.");
         var fond = fondCaisse ?? (await sessions.ParametresAsync(ct)).FondCaisseDefaut;
         SessionCaisse.VerifierFond(fond);
-        var nomPoste = string.IsNullOrWhiteSpace(poste) ? "Poste inconnu" : poste.Trim();
-        return await sessions.OuvrirAsync(utilisateurId, nomPoste, fond, ct);
+        return await sessions.OuvrirAsync(utilisateurId, nomPoste, fond, null, ct);
     }
 }
 
@@ -70,10 +88,10 @@ public sealed record ClotureVue(
 
 public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionService droits, IJournal journal, Notifications.IAlertesTitulaire? alertes = null)
 {
-    public async Task<ClotureVue> ExecuterAsync(long utilisateurId, IReadOnlyDictionary<string, decimal> saisies, CancellationToken ct = default)
+    public async Task<ClotureVue> ExecuterAsync(long utilisateurId, string? poste, IReadOnlyDictionary<string, decimal> saisies, CancellationToken ct = default)
     {
-        var session = await sessions.SessionOuverteAsync(utilisateurId, ct)
-                      ?? throw new RegleMetierException("Aucune caisse ouverte à clôturer.");
+        var session = await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct)
+                      ?? throw new RegleMetierException("Aucune caisse ouverte à clôturer sur ce poste.");
         var parametres = await sessions.ParametresAsync(ct);
         var comptage = Comptage.Depuis(saisies);
         var resultat = session.Cloturer(comptage, await sessions.VentesEspecesAsync(session.Id, ct), parametres.SeuilEcart);
@@ -101,6 +119,26 @@ public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionS
     }
 }
 
+public sealed record Releve(ClotureVue Cloture, long NouvelleSessionId);
+
+/// <summary>
+/// Relève au changement d'équipe (facultative) : le tiroir est compté, la session se clôture avec ce comptage
+/// et une nouvelle s'ouvre aussitôt, avec l'argent compté comme fond. L'écart de chaque période est ainsi attribué.
+/// </summary>
+public sealed class ReleverCaisse(ISessionsCaisse sessions, CloturerSessionCaisse cloturer, IJournal journal)
+{
+    public async Task<Releve> ExecuterAsync(long utilisateurId, string? poste, IReadOnlyDictionary<string, decimal> saisies, CancellationToken ct = default)
+    {
+        var nomPoste = PosteCaisse.Exiger(poste);
+        var precedente = await sessions.SessionDuPosteAsync(nomPoste, ct) ?? throw new RegleMetierException("Aucune caisse ouverte sur ce poste.");
+        var cloture = await cloturer.ExecuterAsync(utilisateurId, nomPoste, saisies, ct);
+        var nouvelle = await sessions.OuvrirAsync(utilisateurId, nomPoste, cloture.Compte, precedente.Id, ct);
+        await journal.EcrireAsync(utilisateurId, "releve_caisse", "session_caisse", nouvelle,
+            new Dictionary<string, object?> { ["poste"] = nomPoste, ["session_precedente"] = precedente.Id, ["fond"] = cloture.Compte }, null, ct);
+        return new Releve(cloture, nouvelle);
+    }
+}
+
 public interface IDocumentsPdf
 {
     /// <summary>Rapport de clôture ; avec <paramref name="avecEcart"/> faux, ni attendu ni écart n'y figurent.</summary>
@@ -115,8 +153,11 @@ public sealed class ObtenirRapportCloture(ISessionsCaisse sessions, IPermissionS
         var detail = await sessions.DetailAsync(sessionId, ct);
         if (detail is null) return null;
         var voirEcart = await droits.APermissionAsync(utilisateurId, Permissions.CaisseVoirEcart, ct);
-        if (detail.UtilisateurId != utilisateurId && !voirEcart)
-            throw new DroitRefuseException(Permissions.CaisseVoirEcart, "consulter la clôture d’un autre employé");
+        // Caisse partagée : celui qui l'a ouverte et ceux qui y ont vendu ont accès au rapport
+        var vendeurs = await sessions.VendeursAsync(sessionId, ct);
+        if (detail.UtilisateurId != utilisateurId && vendeurs.All(v => v.Id != utilisateurId) && !voirEcart)
+            throw new DroitRefuseException(Permissions.CaisseVoirEcart, "consulter la clôture d’une caisse où vous n’avez pas vendu");
+        detail = detail with { Vendeurs = vendeurs.Select(v => v.Nom).ToList() };
         if (detail.FermeeLe is null)
             throw new RegleMetierException("La session n’est pas encore clôturée.");
         var parametres = await sessions.ParametresAsync(ct);
@@ -139,6 +180,8 @@ public sealed class ModifierParametresCaisse(ISessionsCaisse sessions, IJournal 
             throw new RegleMetierException("Le fond de caisse et le seuil d’écart ne peuvent pas être négatifs.");
         if (p.DeconnexionMinutes is < 0 or > 240)
             throw new RegleMetierException("La déconnexion automatique doit être comprise entre 0 (désactivée) et 240 minutes.");
+        if (p.VersementCloture is not ("manuel" or "automatique"))
+            throw new RegleMetierException("Versement des caisses au coffre : « manuel » ou « automatique ».");
         var avant = await sessions.ParametresAsync(ct);
         await sessions.ModifierParametresAsync(p, ct);
         await journal.EcrireAsync(utilisateurId, "parametres_caisse", "parametre_caisse", 1,

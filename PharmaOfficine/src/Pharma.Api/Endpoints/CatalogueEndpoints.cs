@@ -21,7 +21,7 @@ internal static class CatalogueEndpoints
                 try { classe = Pharma.Domain.Commun.CodesMetier.ClasseDepuisCode(d.Classe); }
                 catch (ArgumentException) { throw new Pharma.Domain.Commun.RegleMetierException("Classe réglementaire inconnue."); }
                 var id = await creer.ExecuterAsync(new Pharma.Domain.Catalogue.FicheProduit(d.NomCommercial ?? "", d.Dci ?? "", d.Dosage ?? "", d.Forme ?? "",
-                    d.PrixPublic, classe, d.CodeBarre, d.TarifReference, d.Remboursable, d.TauxTva, d.StockMinimum), user.UtilisateurId(), ct);
+                    d.PrixPublic, classe, d.CodeBarre, d.TarifReference, d.Remboursable, d.TauxTva, d.StockMinimum, d.NumEnregistrement), user.UtilisateurId(), ct);
                 return Results.Ok(new IdentifiantDto(id));
             })
            .ExigerPermission(Permissions.CatalogueCreer);

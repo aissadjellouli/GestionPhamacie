@@ -9,19 +9,54 @@
         <h1>Connexion</h1>
         <p class="sous-titre">Chaque employé se connecte avec son propre identifiant.</p>
     </div>
-    <form class="carte" @onsubmit="SeConnecterAsync">
-        <div class="champ">
-            <label for="identifiant">Identifiant</label>
-            <input id="identifiant" type="text" @bind="identifiant" autocomplete="username" autofocus />
+
+    @if (caisseOuverte)
+    {
+        <div class="onglets-connexion" role="tablist" aria-label="Mode de connexion">
+            <button type="button" role="tab" aria-selected="@(parCode ? "true" : "false")" class="@(parCode ? "actif" : null)" @onclick="() => Basculer(true)">Code comptoir</button>
+            <button type="button" role="tab" aria-selected="@(parCode ? "false" : "true")" class="@(parCode ? null : "actif")" @onclick="() => Basculer(false)">Mot de passe</button>
         </div>
-        <div class="champ">
-            <label for="mdp">Mot de passe</label>
-            <input id="mdp" type="password" @bind="motDePasse" autocomplete="current-password" />
-        </div>
-        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
-        else if (Session.MotifDeconnexion is { } motif) { <div class="info-bandeau" role="status">@motif</div> }
-        <button class="btn btn-principal" type="submit" disabled="@enCours">Se connecter</button>
-    </form>
+    }
+
+    @if (parCode)
+    {
+        <form class="carte" @onsubmit="SeConnecterParCodeAsync">
+            <p class="sous-titre" style="margin: 0">La caisse du poste reste ouverte : tapez votre identifiant et votre code.</p>
+            <div class="champ">
+                <label for="c-identifiant" class="requis">Identifiant</label>
+                <input id="c-identifiant" type="text" autocomplete="username" autofocus @bind="vendeur" @bind:event="oninput"
+                       class="@Obligatoire.Classe(VendeurManque)" aria-invalid="@Obligatoire.Aria(VendeurManque)" />
+            </div>
+            <div class="champ">
+                <label for="code" class="requis">Code comptoir</label>
+                <input id="code" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" @ref="champCode"
+                       onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
+                       @bind="code" @bind:event="oninput" class="@Obligatoire.Classe(CodeManque)" aria-invalid="@Obligatoire.Aria(CodeManque)" />
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            else if (Session.MotifDeconnexion is { } motif) { <div class="info-bandeau" role="status">@motif</div> }
+            <button class="btn btn-principal" type="submit" disabled="@enCours">Reprendre la caisse</button>
+            <p class="sous-titre" style="margin: 0; font-size: 13px">Avec le code, seuls les écrans du comptoir sont accessibles (caisse, stock, crédit).</p>
+        </form>
+    }
+    else
+    {
+        <form class="carte" @onsubmit="SeConnecterAsync">
+            <div class="champ">
+                <label for="identifiant" class="requis">Identifiant</label>
+                <input id="identifiant" type="text" @ref="champIdentifiant" @bind="identifiant" @bind:event="oninput" autocomplete="username" autofocus
+                       class="@Obligatoire.Classe(IdentifiantManque)" aria-invalid="@Obligatoire.Aria(IdentifiantManque)" />
+            </div>
+            <div class="champ">
+                <label for="mdp" class="requis">Mot de passe</label>
+                <input id="mdp" type="password" @ref="champMotDePasse" @bind="motDePasse" @bind:event="oninput" autocomplete="current-password"
+                       class="@Obligatoire.Classe(MotDePasseManque)" aria-invalid="@Obligatoire.Aria(MotDePasseManque)" />
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            else if (Session.MotifDeconnexion is { } motif) { <div class="info-bandeau" role="status">@motif</div> }
+            <button class="btn btn-principal" type="submit" disabled="@enCours">Se connecter</button>
+        </form>
+    }
 </div>
 
 @code {
@@ -30,11 +65,56 @@
     private string? erreur;
     private bool enCours;
 
+    // Changement d'utilisateur au comptoir : proposé quand la caisse du poste est ouverte (identifiant tapé, aucune liste de noms)
+    private bool caisseOuverte, parCode;
+    private string? vendeur;
+    private bool VendeurManque => Obligatoire.Manque(controle, vendeur ?? "");
+    private string code = "";
+    private ElementReference champCode;
+
+    // Champs en rouge s'ils manquent à la validation
+    private bool controle;
+    private ElementReference champIdentifiant, champMotDePasse;
+    private bool IdentifiantManque => Obligatoire.Manque(controle, identifiant);
+    private bool MotDePasseManque => Obligatoire.Manque(controle, motDePasse);
+    private bool CodeManque => Obligatoire.Manque(controle, code);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var (comptoir, _) = await Api.ComptoirAsync();
+        parCode = caisseOuverte = comptoir?.CaisseOuverte == true;
+    }
+
+    private void Basculer(bool versCode)
+    {
+        (parCode, erreur, controle) = (versCode, null, false);
+    }
+
+    private async Task SeConnecterParCodeAsync()
+    {
+        controle = true;
+        if (string.IsNullOrWhiteSpace(vendeur)) { erreur = "Tapez votre identifiant."; return; }
+        if (CodeManque) { erreur = "Tapez votre code comptoir."; await champCode.FocusAsync(); return; }
+        if (CodeComptoirSaisie.Erreur(code, nouveauCode: false) is { } invalide) { erreur = invalide; await champCode.FocusAsync(); return; }
+        enCours = true;
+        erreur = await Api.ConnecterParCodeAsync(vendeur.Trim(), code);
+        enCours = false;
+        code = "";
+        if (erreur is null) Nav.NavigateTo("caisse");
+    }
+
     private async Task SeConnecterAsync()
     {
+        controle = true;
+        if (IdentifiantManque || MotDePasseManque)
+        {
+            erreur = "Saisissez votre identifiant et votre mot de passe.";
+            await (IdentifiantManque ? champIdentifiant : champMotDePasse).FocusAsync();
+            return;
+        }
         enCours = true;
         erreur = await Api.ConnecterAsync(identifiant, motDePasse);
         enCours = false;
-        if (erreur is null) Nav.NavigateTo("");
+        if (erreur is null) Nav.NavigateTo(Session.DoitChangerMotDePasse ? "mot-de-passe" : "");
     }
 }

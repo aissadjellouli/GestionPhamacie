@@ -59,13 +59,22 @@ internal sealed class VentesEspion : IVentesEcriture
 
 internal sealed class SessionsEnMemoire : ISessionsCaisse
 {
-    public SessionCaisse? Ouverte { get; set; } = new() { Id = 1, UtilisateurId = 5, FondCaisse = 5000, Poste = "Caisse 1" };
+    public SessionCaisse? Ouverte { get; set; } = new() { Id = 1, UtilisateurId = 5, FondCaisse = 5000, Poste = "Caisse 1", OuvertePar = "Vendeur A" };
     public decimal Especes { get; set; }
     public ParametresCaisse Parametres { get; set; } = new(true, 5000, 500, 0);
     public ResultatCloture? Cloture { get; private set; }
+    public List<(long Utilisateur, string Poste, decimal Fond, long? ReleveDe)> Ouvertures { get; } = [];
+    public List<Vendeur> Vendeurs { get; set; } = [];
 
-    public Task<SessionCaisse?> SessionOuverteAsync(long u, CancellationToken ct = default) => Task.FromResult(Ouverte);
-    public Task<long> OuvrirAsync(long u, string poste, decimal fond, CancellationToken ct = default) => Task.FromResult(2L);
+    /// <summary>Une caisse par poste : seule celle de « Ouverte.Poste » existe.</summary>
+    public Task<SessionCaisse?> SessionDuPosteAsync(string poste, CancellationToken ct = default) =>
+        Task.FromResult(Ouverte?.Poste == poste && Cloture is null ? Ouverte : null);
+    public Task<long> OuvrirAsync(long u, string poste, decimal fond, long? releveDe = null, CancellationToken ct = default)
+    {
+        Ouvertures.Add((u, poste, fond, releveDe));
+        return Task.FromResult(2L);
+    }
+    public Task<IReadOnlyList<Vendeur>> VendeursAsync(long s, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Vendeur>>(Vendeurs);
     public Task<decimal> VentesEspecesAsync(long s, CancellationToken ct = default) => Task.FromResult(Especes);
     public Task CloturerAsync(long s, Comptage c, ResultatCloture r, CancellationToken ct = default) { Cloture = r; return Task.CompletedTask; }
     public Task<DetailSession?> DetailAsync(long s, CancellationToken ct = default) => Task.FromResult<DetailSession?>(null);
@@ -97,7 +106,7 @@ public class CaisseApplicationTests
     {
         var sessions = new SessionsEnMemoire { Ouverte = null };
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() =>
-            Cas(sessions, new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20), 5));
+            Cas(sessions, new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20), 5, "Caisse 1"));
         Assert.Contains("Ouvrez la caisse", ex.Message);
     }
 
@@ -105,7 +114,7 @@ public class CaisseApplicationTests
     public async Task Vente_enregistree_avec_la_session()
     {
         var ventes = new VentesEspion();
-        var r = await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes).ExecuterAsync(Commande(2, 20, qte: 2), 5);
+        var r = await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes).ExecuterAsync(Commande(2, 20, qte: 2), 5, "Caisse 1");
 
         Assert.Equal("T-000001", r.Numero);
         Assert.Equal(1L, ventes.Recu!.Vente.SessionCaisseId);
@@ -119,7 +128,23 @@ public class CaisseApplicationTests
         var ordonnance = new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, null);
         await Assert.ThrowsAsync<DroitRefuseException>(() =>
             Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion())
-                .ExecuterAsync(Commande(7, 70, patientId: 3, ordonnance: ordonnance), 5));
+                .ExecuterAsync(Commande(7, 70, patientId: 3, ordonnance: ordonnance), 5, "Caisse 1"));
+    }
+
+    [Fact]
+    public async Task Psychotrope_sans_le_droit_nomme_les_personnes_qui_peuvent_delivrer()
+    {
+        var ordonnance = new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, null);
+        var cas = new Encaisser(new CatalogueEnMemoire(), new PatientsEnMemoire(), new VentesEspion(), new SessionsEnMemoire(),
+            new DroitsFactices("caisse.vendre"), new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire(),
+            new DetenteursFactices(new DetenteurDroit("Dr Assistant Fictif", true), new DetenteurDroit("Dr Titulaire Fictif", false)));
+        var e = await Assert.ThrowsAsync<DroitRefuseException>(() => cas.ExecuterAsync(Commande(7, 70, patientId: 3, ordonnance: ordonnance), 5, "Caisse 1"));
+        Assert.Contains("Dr Assistant Fictif (code comptoir), Dr Titulaire Fictif", e.Message);
+    }
+
+    private sealed class DetenteursFactices(params DetenteurDroit[] d) : IDetenteursDroit
+    {
+        public Task<IReadOnlyList<DetenteurDroit>> ListerAsync(string permission, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<DetenteurDroit>>(d);
     }
 
     [Fact]
@@ -128,7 +153,7 @@ public class CaisseApplicationTests
         var ventes = new VentesEspion();
         var ordonnance = new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, "ORD-1");
         await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "psychotropes.delivrer"), ventes)
-            .ExecuterAsync(Commande(7, 70, patientId: 3, ordonnance: ordonnance), 5);
+            .ExecuterAsync(Commande(7, 70, patientId: 3, ordonnance: ordonnance), 5, "Caisse 1");
         Assert.Contains(7L, ventes.Recu!.ProduitsSousRegistre);
         Assert.Equal(ordonnance, ventes.Recu.Ordonnance);
     }
@@ -136,13 +161,13 @@ public class CaisseApplicationTests
     [Fact]
     public async Task Remise_sans_le_droit_refusee() =>
         await Assert.ThrowsAsync<DroitRefuseException>(() =>
-            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20, remise: 5), 5));
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20, remise: 5), 5, "Caisse 1"));
 
     [Fact]
     public async Task Credit_sans_patient_refuse() =>
         await Assert.ThrowsAsync<RegleMetierException>(() =>
             Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "credit.accorder"), new VentesEspion())
-                .ExecuterAsync(Commande(2, 20, mode: ModePaiement.Credit), 5));
+                .ExecuterAsync(Commande(2, 20, mode: ModePaiement.Credit), 5, "Caisse 1"));
 
     [Fact]
     public async Task Credit_au_dela_du_plafond_selon_le_droit()
@@ -152,12 +177,12 @@ public class CaisseApplicationTests
 
         await Assert.ThrowsAsync<RegleMetierException>(() =>
             Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "credit.accorder"), new VentesEspion(), patient)
-                .ExecuterAsync(commande, 5));
+                .ExecuterAsync(commande, 5, "Caisse 1"));
 
         var ventes = new VentesEspion();
         var patient2 = new Patient { Id = 3, Nom = "Fictif", PlafondCredit = 1000, SoldeCredit = 800 };
         await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "credit.accorder", "credit.depasser_plafond"), ventes, patient2)
-            .ExecuterAsync(commande, 5);
+            .ExecuterAsync(commande, 5, "Caisse 1");
         Assert.True(ventes.Recu!.CreditAccorde);
         Assert.Equal(ModePaiement.Credit, ventes.Recu.Reglement.Mode);
     }
@@ -176,7 +201,7 @@ public class CaisseApplicationTests
         var sessions = new SessionsEnMemoire { Especes = 45000 };
         var journal = new JournalEspion();
         var vue = await new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), journal)
-            .ExecuterAsync(5, new Dictionary<string, decimal> { ["b2000"] = 24, ["b500"] = 1 });
+            .ExecuterAsync(5, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 24, ["b500"] = 1 });
 
         Assert.Equal(48500m, vue.Compte);
         Assert.Null(vue.Attendu);
@@ -189,7 +214,7 @@ public class CaisseApplicationTests
     public async Task Cloture_avec_droit_montre_l_ecart()
     {
         var vue = await new CloturerSessionCaisse(new SessionsEnMemoire { Especes = 1000 }, new DroitsFactices("caisse.voir_ecart"), new JournalEspion())
-            .ExecuterAsync(5, new Dictionary<string, decimal> { ["b2000"] = 3 });
+            .ExecuterAsync(5, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 3 });
         Assert.Equal(6000m, vue.Attendu);
         Assert.Equal(0m, vue.Ecart);
         Assert.False(vue.AuDelaDuSeuil);
@@ -199,4 +224,56 @@ public class CaisseApplicationTests
     public async Task Deuxieme_ouverture_refusee() =>
         await Assert.ThrowsAsync<RegleMetierException>(() =>
             new OuvrirSessionCaisse(new SessionsEnMemoire()).ExecuterAsync(5, "Caisse 1", 5000));
+
+    // ---- Caisse partagée par poste ----
+
+    [Fact]
+    public async Task Un_collegue_ne_peut_pas_ouvrir_une_seconde_caisse_sur_le_meme_poste()
+    {
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() =>
+            new OuvrirSessionCaisse(new SessionsEnMemoire()).ExecuterAsync(9, "Caisse 1", 5000));
+        Assert.Contains("Vendeur A", ex.Message);
+    }
+
+    [Fact]
+    public async Task Un_autre_poste_ouvre_sa_propre_caisse()
+    {
+        var sessions = new SessionsEnMemoire();
+        await new OuvrirSessionCaisse(sessions).ExecuterAsync(9, "Caisse 2", 3000);
+        Assert.Equal((9L, "Caisse 2", 3000m, (long?)null), sessions.Ouvertures.Single());
+    }
+
+    [Fact]
+    public async Task Sans_nom_de_poste_pas_de_caisse() =>
+        await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20), 5, " "));
+
+    [Fact]
+    public async Task Un_collegue_vend_sur_la_caisse_du_poste_a_son_nom()
+    {
+        var ventes = new VentesEspion();
+        // Caisse ouverte par l'employé 5 ; l'employé 9 vend dessus
+        await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes).ExecuterAsync(Commande(2, 20), 9, "Caisse 1");
+        Assert.Equal(9, ventes.Recu!.Vente.UtilisateurId);
+        Assert.Equal(1, ventes.Recu.Vente.SessionCaisseId);
+    }
+
+    [Fact]
+    public async Task Pas_de_vente_sur_un_poste_dont_la_caisse_est_fermee() =>
+        await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20), 5, "Caisse 2"));
+
+    [Fact]
+    public async Task Releve_cloture_avec_le_comptage_et_rouvre_avec_l_argent_compte()
+    {
+        var sessions = new SessionsEnMemoire { Especes = 1000 };
+        var journal = new JournalEspion();
+        var cloturer = new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), journal);
+        var r = await new ReleverCaisse(sessions, cloturer, journal)
+            .ExecuterAsync(9, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 3 });
+        Assert.Equal(6000m, r.Cloture.Compte);
+        Assert.NotNull(sessions.Cloture);
+        Assert.Equal((9L, "Caisse 1", 6000m, (long?)1), sessions.Ouvertures.Single());
+        Assert.Contains("releve_caisse", journal.Actions);
+    }
 }

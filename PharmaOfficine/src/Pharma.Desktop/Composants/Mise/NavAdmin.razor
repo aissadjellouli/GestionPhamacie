@@ -30,10 +30,13 @@
         ("admin/seuils", "admin.parametres"),
         ("admin/droits", "admin.utilisateurs"),
         ("admin/caisse", "admin.parametres"),
+        ("admin/imprimantes", "admin.parametres"),
         ("admin/emplacements", "admin.parametres"),
         ("admin/pharmacie", "admin.parametres"),
         ("admin/notifications", "role.titulaire"),
-        ("admin/sauvegardes", "admin.sauvegardes")
+        ("admin/sauvegardes", "admin.sauvegardes"),
+        ("admin/reprise", "role.titulaire"),
+        ("admin/nomenclature", "role.titulaire")
     ];
 
     private static readonly Rubrique[] Rubriques =
@@ -42,10 +45,11 @@
         new("Utilisateurs et droits", "admin/droits", "admin.utilisateurs"),
         new("Caisse et contrôle", "admin/caisse", "admin.parametres"),
         new("Emplacements", "admin/emplacements", "admin.parametres"),
-        new("Imprimantes et étiquettes", null, null, "Modèles d’imprimantes et de scanner à définir"),
+        new("Imprimantes et étiquettes", "admin/imprimantes", "admin.parametres"),
         new("Sauvegardes", "admin/sauvegardes", "admin.sauvegardes"),
         new("Notifications au titulaire", "admin/notifications", "role.titulaire"),
-        new("Reprise de données", null, null, "Logiciel source de la reprise à définir"),
+        new("Reprise de données", "admin/reprise", "role.titulaire"),
+        new("Nomenclature nationale", "admin/nomenclature", "role.titulaire"),
         new("Langue et pharmacie", "admin/pharmacie", "admin.parametres")
     ];
 }

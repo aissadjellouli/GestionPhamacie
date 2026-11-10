@@ -36,6 +36,11 @@ internal sealed class ComptesEnMemoire(params Utilisateur[] comptes) : IComptesL
     public Task<Utilisateur?> TrouverActifAsync(string identifiant, CancellationToken ct = default) =>
         Task.FromResult(comptes.FirstOrDefault(c => c.Identifiant == identifiant && c.Actif));
 
+    public Task<Utilisateur?> ParIdAsync(long id, CancellationToken ct = default) => Task.FromResult(comptes.FirstOrDefault(c => c.Id == id));
+
+    public (long Id, string Hash)? Change { get; private set; }
+    public Task ChangerMotDePasseAsync(long id, string hash, CancellationToken ct = default) { Change = (id, hash); return Task.CompletedTask; }
+
     public List<long> Connexions { get; } = [];
 
     public Task NoterConnexionAsync(long utilisateurId, CancellationToken ct = default)
@@ -53,8 +58,17 @@ internal sealed class VerificateurFactice : IVerificateurMotDePasse
 
 internal sealed class JetonsFactices : IGenerateurJeton
 {
-    public (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet) =>
-        ($"jeton-{utilisateurId}", new DateTime(2026, 11, 8, 20, 0, 0, DateTimeKind.Utc));
+    /// <summary>Portée demandée pour chaque jeton créé (vrai = connexion par code comptoir).</summary>
+    public List<bool> Comptoir { get; } = [];
+
+    public List<bool> AChanger { get; } = [];
+
+    public (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false)
+    {
+        Comptoir.Add(comptoir);
+        AChanger.Add(motDePasseAChanger);
+        return ($"jeton-{utilisateurId}", new DateTime(2026, 11, 8, 20, 0, 0, DateTimeKind.Utc));
+    }
 }
 
 internal sealed class TracabiliteEspion : ITracabiliteLecture

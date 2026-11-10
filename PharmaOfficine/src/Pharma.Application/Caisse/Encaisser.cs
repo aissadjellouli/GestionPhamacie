@@ -15,7 +15,10 @@ public sealed record LigneCommande(long ProduitId, long LotId, int Quantite);
 /// (image conservée sur le serveur, désignée par son jeton).
 /// </summary>
 public sealed record OrdonnanceSaisie(long? MedecinId, DateOnly DatePrescription, string? Numero,
-    string? JetonScan = null, string? TexteReconnu = null);
+    string? JetonScan = null, string? TexteReconnu = null, PorteurOrdonnance? Porteur = null);
+
+/// <summary>Porteur de l'ordonnance quand ce n'est pas le patient : inscrit au registre des psychotropes.</summary>
+public sealed record PorteurOrdonnance(string? Nom, string? Adresse, string? PieceIdentite);
 
 /// <summary>Panier envoyé par le poste, avec le règlement choisi.</summary>
 public sealed record CommandeVente(
@@ -54,7 +57,8 @@ public interface IVentesEcriture
 
 public sealed class Encaisser(
     IPreparationVente preparation, IPatients patients, IVentesEcriture ventes,
-    ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, Ordonnances.IStockageOrdonnances scans)
+    ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, Ordonnances.IStockageOrdonnances scans,
+    IDetenteursDroit? detenteurs = null, Stock.ICampagnesInventaire? campagnes = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
@@ -65,15 +69,27 @@ public sealed class Encaisser(
             vente.PartPatient, vente.MontantTotal, vente.ContientSousRegistre);
     }
 
-    public async Task<VenteEncaissee> ExecuterAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
+    /// <summary>Nomme les employés qui peuvent délivrer : l'un d'eux reprend la vente (Changer d'utilisateur, par son code).</summary>
+    private async Task<string> MessagePsychotropeAsync(CancellationToken ct)
     {
-        var session = await sessions.SessionOuverteAsync(utilisateurId, ct)
-                      ?? throw new RegleMetierException("Ouvrez la caisse avant d’encaisser.");
+        var liste = detenteurs is null ? [] : await detenteurs.ListerAsync(Permissions.PsychotropesDelivrer, ct);
+        if (liste.Count == 0)
+            return "Psychotrope ou stupéfiant : aucun employé actif n’a le droit de le délivrer. Le titulaire peut l’accorder dans Utilisateurs et droits.";
+        var noms = string.Join(", ", liste.Select(d => d.CodeComptoir ? d.NomComplet + " (code comptoir)" : d.NomComplet));
+        return $"Psychotrope ou stupéfiant : délivrance réservée à {noms}. Demandez à l’une de ces personnes de reprendre la vente (« Changer d’utilisateur »).";
+    }
 
+    /// <summary>La vente est enregistrée sur la caisse du poste, au nom de l'employé connecté.</summary>
+    public async Task<VenteEncaissee> ExecuterAsync(CommandeVente commande, long utilisateurId, string? poste, CancellationToken ct = default)
+    {
+        var session = await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct)
+                      ?? throw new RegleMetierException("Ouvrez la caisse du poste avant d’encaisser.");
+
+        await Stock.VentesSuspendues.VerifierAsync(campagnes, ct);
         var (vente, produits) = await ConstruireAsync(commande, utilisateurId, session.Id, ct);
 
-        if (vente.ContientSousRegistre)
-            await droits.ExigerAsync(utilisateurId, Permissions.PsychotropesDelivrer, "délivrer un psychotrope", ct);
+        if (vente.ContientSousRegistre && !await droits.APermissionAsync(utilisateurId, Permissions.PsychotropesDelivrer, ct))
+            throw new DroitRefuseException(Permissions.PsychotropesDelivrer, "délivrer un psychotrope", await MessagePsychotropeAsync(ct));
         if (commande.RemisePct > 0)
             await droits.ExigerAsync(utilisateurId, Permissions.CaisseRemise, "accorder une remise", ct);
 
@@ -85,6 +101,8 @@ public sealed class Encaisser(
                 throw new RegleMetierException("Image de l’ordonnance introuvable sur le serveur : scannez-la de nouveau.");
             if (o.DatePrescription > horloge.Aujourdhui)
                 throw new RegleMetierException("La date de prescription ne peut pas être dans le futur.");
+            // Porteur différent du patient : nom, adresse et pièce d'identité au registre (psychotropes seulement)
+            commande = commande with { Ordonnance = o with { Porteur = vente.ContientSousRegistre && o.Porteur is { } p ? VerifierPorteur(p) : null } };
         }
         vente.VerifierAvantEncaissement(commande.Ordonnance is not null);
 
@@ -149,5 +167,15 @@ public sealed class Encaisser(
             vente.AppliquerRemise(c.RemisePct, await droits.RemiseMaxAsync(utilisateurId, ct));
 
         return (vente, produits);
+    }
+
+    /// <summary>Les trois informations sont exigées dès qu'un porteur est déclaré (arrêté du 29 juin 2013, art. 7).</summary>
+    public static PorteurOrdonnance VerifierPorteur(PorteurOrdonnance p)
+    {
+        static string Requis(string? v, string champ) => string.IsNullOrWhiteSpace(v)
+            ? throw new RegleMetierException($"Porteur de l’ordonnance : {champ} obligatoire.")
+            : v.Trim().Length > 200 ? throw new RegleMetierException($"Porteur de l’ordonnance : {champ} trop long (200 caractères au plus).")
+            : v.Trim();
+        return new PorteurOrdonnance(Requis(p.Nom, "nom et prénom"), Requis(p.Adresse, "adresse"), Requis(p.PieceIdentite, "pièce d’identité"));
     }
 }

@@ -8,11 +8,48 @@
     </div>
     <p class="detail" style="margin: 0">Le produit est créé sans stock : il sera vendable après une réception. La création est inscrite au journal.</p>
     @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+    <div class="champ">
+        <label for="p-nomenclature">Chercher dans la nomenclature nationale (nom, DCI ou n° d’enregistrement)</label>
+        <input id="p-nomenclature" type="search" autocomplete="off" placeholder="ex. lyrica, prégabaline, 595/15 A 068/06/22"
+               @bind="recherche" @bind:event="oninput" @bind:after="RechercherNomenclatureAsync" />
+    </div>
+    @if (resultats.Count > 0)
+    {
+        <div class="resultats-nomenclature" role="listbox" aria-label="Médicaments de la nomenclature">
+            @foreach (var m in resultats)
+            {
+                <button type="button" role="option" disabled="@m.DejaAuCatalogue" @onclick="() => Choisir(m)">
+                    <span><strong>@m.Marque</strong> @m.Dosage · @m.Forme · @m.Conditionnement<br /><span class="detail">@m.Dci · @m.Laboratoire</span></span>
+                    <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px">
+                        @if (m.DejaAuCatalogue) { <span class="pastille info">Déjà au catalogue</span> }
+                        else if (m.Situation != "en_vigueur") { <span class="pastille attention">@Libelles.SituationNomenclature(m.Situation)</span> }
+                        @if (Libelles.EstSousRegistre(m.ClasseProposee)) { <span class="pastille urgent">@Libelles.Classe(m.ClasseProposee)</span> }
+                    </span>
+                </button>
+            }
+        </div>
+    }
+    else if (rechercheFaite)
+    {
+        <p class="detail" style="margin: 0">Aucun médicament trouvé dans la nomenclature@(nomenclatureVide ? " (pas encore importée : Administration, Nomenclature nationale)" : "") : saisissez la fiche à la main.</p>
+    }
+    @if (choisi is not null)
+    {
+        <div class="@(choisi.Situation == "en_vigueur" ? "info-bandeau" : "erreur")" role="status">
+            Fiche remplie depuis la nomenclature : n° @choisi.NumEnregistrement · @choisi.Laboratoire (@choisi.Pays) · @Libelles.SituationNomenclature(choisi.Situation).
+            @if (choisi.Situation != "en_vigueur") { <text> Vérifiez avant de le référencer.</text> }
+            Complétez le prix public.
+        </div>
+    }
+
     <div class="achats-ligne">
-        <div class="champ" style="flex: 2 1 240px"><label for="p-nom">Nom commercial *</label><input id="p-nom" type="text" @bind="nom" placeholder="ex. Sintrom 4 mg cp" /></div>
+        <div class="champ" style="flex: 2 1 240px"><label for="p-nom" class="requis">Nom commercial</label><input id="p-nom" type="text" @ref="champNom" @bind="nom" @bind:event="oninput" placeholder="ex. Sintrom 4 mg cp"
+            class="@Obligatoire.Classe(NomManque)" aria-invalid="@Obligatoire.Aria(NomManque)" /></div>
         <div class="champ recherche" style="flex: 2 1 220px">
-            <label for="p-dci">DCI *</label>
-            <input id="p-dci" type="text" autocomplete="off" @bind="dci" @bind:event="oninput" @bind:after="RechercherDciAsync" placeholder="ex. acénocoumarol" />
+            <label for="p-dci" class="requis">DCI</label>
+            <input id="p-dci" type="text" autocomplete="off" @ref="champDci" @bind="dci" @bind:event="oninput" @bind:after="RechercherDciAsync" placeholder="ex. acénocoumarol"
+                   class="@Obligatoire.Classe(DciManque)" aria-invalid="@Obligatoire.Aria(DciManque)" />
             @if (dcis.Count > 0)
             {
                 <ul class="suggestions" aria-label="DCI existantes">
@@ -25,13 +62,16 @@
         </div>
     </div>
     <div class="achats-ligne">
-        <div class="champ" style="flex: 1 1 120px"><label for="p-dosage">Dosage *</label><input id="p-dosage" type="text" @bind="dosage" placeholder="ex. 4 mg" /></div>
-        <div class="champ" style="flex: 1 1 140px"><label for="p-forme">Forme *</label><input id="p-forme" type="text" list="formes" @bind="forme" placeholder="ex. comprimé" />
+        <div class="champ" style="flex: 1 1 120px"><label for="p-dosage" class="requis">Dosage</label><input id="p-dosage" type="text" @ref="champDosage" @bind="dosage" @bind:event="oninput" placeholder="ex. 4 mg"
+            class="@Obligatoire.Classe(DosageManque)" aria-invalid="@Obligatoire.Aria(DosageManque)" /></div>
+        <div class="champ" style="flex: 1 1 140px"><label for="p-forme" class="requis">Forme</label><input id="p-forme" type="text" list="formes" @ref="champForme" @bind="forme" @bind:event="oninput" placeholder="ex. comprimé"
+            class="@Obligatoire.Classe(FormeManque)" aria-invalid="@Obligatoire.Aria(FormeManque)" />
             <datalist id="formes"><option value="comprimé" /><option value="gélule" /><option value="sirop" /><option value="ampoule" /><option value="injectable" /><option value="pommade" /><option value="collyre" /><option value="sachet" /><option value="stylo" /></datalist>
         </div>
-        <div class="champ" style="flex: 1 1 140px"><label for="p-prix">Prix public (DA) *</label><input id="p-prix" type="number" min="0" step="0.01" @bind="prix" /></div>
+        <div class="champ" style="flex: 1 1 140px"><label for="p-prix" class="requis">Prix public (DA)</label><input id="p-prix" type="number" min="0" step="0.01" @ref="champPrix" @bind="prix"
+            class="@Obligatoire.Classe(PrixManque)" aria-invalid="@Obligatoire.Aria(PrixManque)" /></div>
         <div class="champ" style="flex: 1 1 160px">
-            <label for="p-classe">Classe *</label>
+            <label for="p-classe" class="requis">Classe</label>
             <select id="p-classe" @bind="classe">
                 <option value="libre">Libre</option><option value="liste_i">Liste I</option><option value="liste_ii">Liste II</option>
                 <option value="psychotrope">Psychotrope</option><option value="stupefiant">Stupéfiant</option>
@@ -40,9 +80,10 @@
     </div>
     <div class="achats-ligne">
         <div class="champ" style="flex: 1 1 180px"><label for="p-cb">Code-barres (facultatif)</label><input id="p-cb" type="text" inputmode="numeric" @bind="codeBarre" /></div>
-        <div class="champ" style="flex: 1 1 160px"><label for="p-tarif">Tarif de référence (DA)</label><input id="p-tarif" type="number" min="0" step="0.01" @bind="tarif" /></div>
+        <div class="champ" style="flex: 1 1 160px"><label for="p-tarif" class="@(remboursable ? "requis" : null)">Tarif de référence (DA)</label><input id="p-tarif" type="number" min="0" step="0.01" @ref="champTarif" @bind="tarif"
+            class="@Obligatoire.Classe(TarifManque)" aria-invalid="@Obligatoire.Aria(TarifManque)" /></div>
         <div class="champ" style="flex: 0 0 110px"><label for="p-tva">TVA (%)</label><input id="p-tva" type="number" min="0" max="100" step="0.01" @bind="tva" /></div>
-        <div class="champ" style="flex: 0 0 140px"><label for="p-min">Stock minimum</label><input id="p-min" type="number" min="0" @bind="stockMin" /></div>
+        <div class="champ" style="flex: 0 0 200px"><label for="p-min">Seuil d’alerte (boîtes)</label><input id="p-min" type="number" min="0" placeholder="automatique" @bind="stockMin" /></div>
         <label class="case" style="align-self: center"><input type="checkbox" @bind="remboursable" /><span>Remboursable</span></label>
     </div>
     <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CreerAsync">Créer le produit</button></div>
@@ -58,7 +99,7 @@
     private decimal prix;
     private decimal? tarif;
     private decimal tva;
-    private int stockMin;
+    private int? stockMin;
     private bool remboursable;
     private string classe = "libre";
     private List<string> dcis = [];
@@ -66,7 +107,45 @@
     private string? erreur;
     private int requete;
 
+    // Champs obligatoires (RegleProduit) : en rouge après un premier essai de création
+    private bool controle;
+    private ElementReference champNom, champDci, champDosage, champForme, champPrix, champTarif;
+    private bool NomManque => Obligatoire.Manque(controle, nom);
+    private bool DciManque => Obligatoire.Manque(controle, dci);
+    private bool DosageManque => Obligatoire.Manque(controle, dosage);
+    private bool FormeManque => Obligatoire.Manque(controle, forme);
+    private bool PrixManque => controle && prix <= 0;
+    private bool TarifManque => controle && remboursable && tarif is null;
+
     protected override void OnInitialized() => (codeBarre, nom) = (CodeBarreInitial, NomInitial);
+
+    // Nomenclature nationale : la fiche est remplie depuis le médicament choisi
+    private string? recherche;
+    private List<MedicamentNomenclatureDto> resultats = [];
+    private MedicamentNomenclatureDto? choisi;
+    private bool rechercheFaite, nomenclatureVide;
+    private int requeteNomenclature;
+
+    private async Task RechercherNomenclatureAsync()
+    {
+        var n = ++requeteNomenclature;
+        if ((recherche?.Trim().Length ?? 0) < 2) { (resultats, rechercheFaite) = ([], false); return; }
+        var (liste, _) = await Api.RechercherNomenclatureAsync(recherche!.Trim());
+        if (n != requeteNomenclature) return;
+        (resultats, rechercheFaite) = (liste, true);
+        if (liste.Count == 0) nomenclatureVide = (await Api.RechercherNomenclatureAsync("a")).Item1.Count == 0;
+    }
+
+    private void Choisir(MedicamentNomenclatureDto m)
+    {
+        choisi = m;
+        nom = m.Marque;
+        dci = m.Dci;
+        dosage = m.Dosage;
+        forme = m.Forme;
+        classe = m.ClasseProposee;
+        (resultats, rechercheFaite, recherche, dcis) = ([], false, null, []);
+    }
 
     private async Task RechercherDciAsync()
     {
@@ -78,11 +157,25 @@
 
     private async Task CreerAsync()
     {
-        (enCours, erreur) = (true, null);
+        (erreur, controle) = (null, true);
+        // Premier champ manquant : message et curseur dessus, sans appel au serveur
+        (ElementReference Champ, string Message)? manquant =
+            NomManque ? (champNom, "Nom commercial obligatoire.")
+            : DciManque ? (champDci, "DCI obligatoire.")
+            : DosageManque ? (champDosage, "Dosage obligatoire.")
+            : FormeManque ? (champForme, "Forme obligatoire.")
+            : PrixManque ? (champPrix, "Le prix public doit être supérieur à 0.")
+            : TarifManque ? (champTarif, "Un produit remboursable a besoin d’un tarif de référence.")
+            : null;
+        if (manquant is { } m) { erreur = m.Message; await m.Champ.FocusAsync(); return; }
+
+        enCours = true;
         try
         {
-            var (r, e) = await Api.CreerProduitAsync(new NouveauProduitDto(nom, dci, dosage, forme, prix, classe, codeBarre, tarif, remboursable, tva, stockMin));
+            var (r, e) = await Api.CreerProduitAsync(new NouveauProduitDto(nom, dci, dosage, forme, prix, classe, codeBarre, tarif, remboursable, tva, stockMin,
+                choisi?.NumEnregistrement));
             if (e is not null) { erreur = e; return; }
+            controle = false;
             await OnCree.InvokeAsync((r!.Id, nom!.Trim()));
         }
         finally { enCours = false; }
