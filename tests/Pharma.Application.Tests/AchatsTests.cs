@@ -27,6 +27,9 @@ internal sealed class AchatsEnMemoire : IAchats
         return Task.CompletedTask;
     }
     public Task<CommandeDetail?> CommandeAsync(long id, CancellationToken ct = default) => Task.FromResult(Commande?.Entete.Id == id ? Commande : null);
+    public Task<IReadOnlyList<InfoAchatProduit>> InfosAchatAsync(IEnumerable<long> produitIds, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<InfoAchatProduit>>(produitIds.Select(id => new InfoAchatProduit(id, id == 2 ? "liste_ii" : "liste_i", 100, 0,
+            id == 2 ? Pharma.Domain.Achats.RegleShp.ListeII : Pharma.Domain.Achats.RegleShp.ListeI)).ToList());
     public Task<IReadOnlyDictionary<long, decimal>> TauxTvaAsync(IEnumerable<long> produitIds, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<long, decimal>>(produitIds.Where(p => p != 99).ToDictionary(p => p, p => p == 2 ? 19m : 0m));
     public Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception reception, CancellationToken ct = default)
@@ -53,6 +56,8 @@ internal sealed class AchatsEnMemoire : IAchats
     public Task ModifierLigneAsync(long commandeId, long ligneId, int quantite, decimal prixHt, CancellationToken ct = default) => throw new NotSupportedException();
     public Task SupprimerLigneAsync(long commandeId, long ligneId, CancellationToken ct = default) => throw new NotSupportedException();
     public Task ChangerStatutCommandeAsync(long commandeId, string statut, CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<IReadOnlyList<ReceptionResume>> ReceptionsAvecDocumentAsync(long f, string n, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ReceptionResume>>(n == "26/F-015695" ? [new ReceptionResume(9, "Qouds", n, null, null, DateTime.UtcNow, 0, 0, 100, f)] : []);
     public Task<Pharma.Application.Commun.Page<ReceptionResume>> ReceptionsAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<long>> LotsEnStockAsync(long produitId, string? numeroLot, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<RetourResume?> RetourAsync(long id, CancellationToken ct = default) => throw new NotSupportedException();
@@ -150,6 +155,25 @@ public class AchatsApplicationTests
         Assert.Equal("BL-9", r.NumeroBl);
         Assert.Equal("L1", r.Lignes[0].NumeroLot);
         Assert.Equal("Produit 1", r.Lignes[0].Nom);   // nom du catalogue
+    }
+
+    [Fact]
+    public async Task Reception_detaillee_remise_timbre_et_SHP_selon_la_liste()
+    {
+        var achats = new AchatsEnMemoire();
+        await Reception(achats).ExecuterAsync(new SaisieReception(1, null, "BL-10", null,
+        [
+            new LigneReceptionSaisie(1, "x", "L1", Aujourdhui.AddYears(1), 10, 100m, RemisePct: 10, Ppa: 125m),   // liste I, TVA 0 %
+            new LigneReceptionSaisie(2, "x", "L2", Aujourdhui.AddYears(1), 2, 50m, Shp: 0.75m)                     // SHP saisi, TVA 19 %
+        ], Timbre: 20m), 5);
+        var r = achats.ReceptionRecue!;
+        // HT 1 100 ; remise 100 ; net HT 1 000 ; TVA 19 % de 100 = 19 ; timbre 20 → net à payer 1 039 (dette du grossiste)
+        Assert.Equal(1039m, r.MontantTtc);
+        Assert.Equal((1100m, 100m, 19m, 20m), (r.Totaux!.MontantHt, r.Totaux.Remise, r.Totaux.Tva, r.Totaux.Timbre));
+        Assert.Equal(90m, r.Lignes[0].PrixNetHt);                       // coût du stock : net de remise
+        Assert.Equal(Pharma.Domain.Achats.RegleShp.ListeI, r.Lignes[0].Shp); // SHP proposé selon la liste
+        Assert.Equal(0.75m, r.Lignes[1].Shp);                            // SHP saisi gardé
+        Assert.Equal(26.50m, r.Totaux.ShpTotal);                         // 10 × 2,50 + 2 × 0,75, hors net à payer
     }
 
     [Fact]

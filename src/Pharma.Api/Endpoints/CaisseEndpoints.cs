@@ -21,7 +21,7 @@ internal static class CaisseEndpoints
                 if (b is null) return Results.NoContent();
                 LotFefoDto Lot(LotCaisse l) => new(l.LotId, l.NumeroLot, l.DatePeremption, l.Quantite, l.Fournisseur, [], b.StockProduit);
                 return Results.Ok(new BoiteCaisseDto(b.ProduitId, b.Produit, b.PrixPublic, b.StockProduit, Lot(b.Lot),
-                    b.LotConseille is null ? null : Lot(b.LotConseille), b.Avertissement));
+                    b.LotConseille is null ? null : Lot(b.LotConseille), b.Avertissement, b.Emplacement));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 

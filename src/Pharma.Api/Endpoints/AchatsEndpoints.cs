@@ -65,6 +65,17 @@ internal static class AchatsEndpoints
            .ExigerPermission(Permissions.AchatsCommander);
 
         // ---- Réceptions ----
+        // N° de BL ou de facture (saisi ou scanné sur le QR code) déjà réceptionné pour ce grossiste
+        achats.MapGet("/receptions/document", async (long fournisseurId, string? numero, ChercherDocumentReception chercher, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                var liste = await chercher.ExecuterAsync(fournisseurId, numero, user.UtilisateurId(), ct);
+                return Results.Ok(new DocumentReceptionDto(RegleDocumentReception.Normaliser(numero),
+                    liste.Select(r => new ReceptionResumeDto(r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, 0, 0, r.MontantTtc,
+                        r.FournisseurId)).ToList()));
+            })
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
         achats.MapGet("/receptions", async (long? fournisseurId, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerReceptions lister, CancellationToken ct) =>
                 Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, null, du, au, q), ct), r => new ReceptionResumeDto(
                     r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, r.NombreLots, r.NombreBoites, r.MontantTtc, r.FournisseurId))))
@@ -81,9 +92,19 @@ internal static class AchatsEndpoints
             {
                 var r = await receptionner.ExecuterAsync(new SaisieReception(req.FournisseurId, req.CommandeId, req.NumeroBl, req.NumeroFacture,
                     req.Lignes.Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
-                        l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque)).ToList()), user.UtilisateurId(), ct);
+                        l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp)).ToList(), req.Timbre),
+                    user.UtilisateurId(), ct);
                 return Results.Ok(new ReceptionEnregistreeDto(r.ReceptionId, r.MontantTtc,
                     r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList()));
+            })
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        // Infos d'achat des produits d'une réception : SHP proposé, prix public du catalogue (contrôle du PPA facturé), TVA
+        achats.MapGet("/produits/infos", async (string? ids, LireInfosAchat lire, CancellationToken ct) =>
+            {
+                var liste = (ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => long.TryParse(x, out var v) ? v : 0).Where(v => v > 0);
+                return Results.Ok((await lire.ExecuterAsync(liste, ct))
+                    .Select(i => new InfoAchatProduitDto(i.ProduitId, i.Classe, i.PrixPublic, i.TauxTva, i.ShpParBoite)).ToList());
             })
            .ExigerPermission(Permissions.AchatsReceptionner);
 

@@ -500,6 +500,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     // ---- Alertes, stock, traçabilité -------------------------------------------
 
     public Task<(List<AlerteDto>, string?)> AlertesAsync() => GetAsync<List<AlerteDto>>("api/alertes", []);
+    public Task<(IndicateursAlertesDto?, string?)> IndicateursAlertesAsync() => GetAsync<IndicateursAlertesDto?>("api/alertes/indicateurs", null);
     public Task<(CompteDto?, string?)> AlertesUrgentesAsync() => GetAsync<CompteDto?>("api/alertes/urgentes", null);
 
     public Task<(List<ProduitDto>, string?)> RechercherProduitsAsync(string q) =>
@@ -627,6 +628,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public Task<(byte[]?, string?, string?)> EmettreCommandeAsync(long id) => FichierAsync(HttpMethod.Post, $"api/achats/commandes/{id}/emettre", $"commande_{id}.pdf");
     public Task<(byte[]?, string?, string?)> BonCommandeAsync(long id) => FichierAsync(HttpMethod.Get, $"api/achats/commandes/{id}/pdf", $"commande_{id}.pdf");
     public async Task<string?> AnnulerCommandeAsync(long id) => (await PostAsync<object, object>($"api/achats/commandes/{id}/annuler", new())).Item2;
+
+    public Task<(List<InfoAchatProduitDto>, string?)> InfosAchatAsync(IEnumerable<long> produitIds) =>
+        GetAsync<List<InfoAchatProduitDto>>("api/achats/produits/infos?ids=" + string.Join(",", produitIds.Distinct()), []);
+
+    public Task<(DocumentReceptionDto?, string?)> DocumentReceptionAsync(long fournisseurId, string numero) =>
+        GetAsync<DocumentReceptionDto?>("api/achats/receptions/document?" + Requete(("fournisseurId", fournisseurId), ("numero", numero)), null);
 
     public Task<(PageDto<ReceptionResumeDto>?, string?)> ReceptionsAsync(int page = 1, int taille = 10, long? fournisseurId = null, DateOnly? du = null,
         DateOnly? au = null, string? q = null) =>

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 043 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 044 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 043 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 044 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict oDzXbyrXveMF1LpCVFPoptEdJobensS8U5QgCJAuCPWeKIf0vhKdt3JPEpFpuoh
+\restrict 005pMfdPUlqv0DjXTYNPnhtpD8479CEeraP6q6FQ01NZ2dahqKgfACefDHigdG0
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3066,6 +3066,12 @@ CREATE TABLE public.reception (
     date_reception timestamp with time zone DEFAULT now() NOT NULL,
     utilisateur_id bigint,
     montant_ttc numeric(12,2),
+    montant_ht numeric(12,2),
+    remise numeric(12,2) DEFAULT 0 NOT NULL,
+    montant_tva numeric(12,2),
+    timbre numeric(12,2) DEFAULT 0 NOT NULL,
+    shp_total numeric(12,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_reception_montants CHECK (((remise >= (0)::numeric) AND (timbre >= (0)::numeric) AND (shp_total >= (0)::numeric) AND ((montant_ht IS NULL) OR (montant_ht >= (0)::numeric)) AND ((montant_tva IS NULL) OR (montant_tva >= (0)::numeric)))),
     CONSTRAINT reception_montant_ttc_check CHECK ((montant_ttc >= (0)::numeric))
 );
 
@@ -3082,6 +3088,50 @@ ALTER TABLE public.reception ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     NO MAXVALUE
     CACHE 1
 );
+
+
+--
+-- Name: reception_ligne; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reception_ligne (
+    id bigint NOT NULL,
+    reception_id bigint NOT NULL,
+    lot_id bigint NOT NULL,
+    produit_id bigint NOT NULL,
+    quantite integer NOT NULL,
+    prix_achat_ht numeric(12,2) NOT NULL,
+    remise_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    prix_net_ht numeric(12,2) NOT NULL,
+    ppa numeric(12,2),
+    shp numeric(8,2) DEFAULT 0 NOT NULL,
+    taux_tva numeric(5,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT reception_ligne_ppa_check CHECK (((ppa IS NULL) OR (ppa >= (0)::numeric))),
+    CONSTRAINT reception_ligne_prix_achat_ht_check CHECK ((prix_achat_ht >= (0)::numeric)),
+    CONSTRAINT reception_ligne_prix_net_ht_check CHECK ((prix_net_ht >= (0)::numeric)),
+    CONSTRAINT reception_ligne_quantite_check CHECK ((quantite > 0)),
+    CONSTRAINT reception_ligne_remise_pct_check CHECK (((remise_pct >= (0)::numeric) AND (remise_pct <= (100)::numeric))),
+    CONSTRAINT reception_ligne_shp_check CHECK ((shp >= (0)::numeric))
+);
+
+
+--
+-- Name: reception_ligne_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.reception_ligne_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: reception_ligne_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.reception_ligne_id_seq OWNED BY public.reception_ligne.id;
 
 
 --
@@ -4454,6 +4504,13 @@ ALTER TABLE public.vente ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: reception_ligne id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reception_ligne ALTER COLUMN id SET DEFAULT nextval('public.reception_ligne_id_seq'::regclass);
+
+
+--
 -- Name: anomalie anomalie_pkey; Type: CONSTRAINT; Schema: import; Owner: -
 --
 
@@ -5038,6 +5095,14 @@ ALTER TABLE ONLY public.produit
 
 
 --
+-- Name: reception_ligne reception_ligne_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reception_ligne
+    ADD CONSTRAINT reception_ligne_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: reception reception_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5606,6 +5671,20 @@ CREATE INDEX idx_produit_nom_trgm ON public.produit USING gin (nom_commercial pu
 --
 
 CREATE INDEX idx_reception_fournisseur ON public.reception USING btree (fournisseur_id, date_reception);
+
+
+--
+-- Name: idx_reception_ligne_lot; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_reception_ligne_lot ON public.reception_ligne USING btree (lot_id);
+
+
+--
+-- Name: idx_reception_ligne_reception; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_reception_ligne_reception ON public.reception_ligne USING btree (reception_id);
 
 
 --
@@ -6895,6 +6974,30 @@ ALTER TABLE ONLY public.reception
 
 
 --
+-- Name: reception_ligne reception_ligne_lot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reception_ligne
+    ADD CONSTRAINT reception_ligne_lot_id_fkey FOREIGN KEY (lot_id) REFERENCES public.lot(id);
+
+
+--
+-- Name: reception_ligne reception_ligne_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reception_ligne
+    ADD CONSTRAINT reception_ligne_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
+-- Name: reception_ligne reception_ligne_reception_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reception_ligne
+    ADD CONSTRAINT reception_ligne_reception_id_fkey FOREIGN KEY (reception_id) REFERENCES public.reception(id);
+
+
+--
 -- Name: reception reception_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7226,5 +7329,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict oDzXbyrXveMF1LpCVFPoptEdJobensS8U5QgCJAuCPWeKIf0vhKdt3JPEpFpuoh
+\unrestrict 005pMfdPUlqv0DjXTYNPnhtpD8479CEeraP6q6FQ01NZ2dahqKgfACefDHigdG0
 

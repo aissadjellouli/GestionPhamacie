@@ -270,6 +270,7 @@
                                     {
                                         <div class="avertissement-fefo" role="alert">
                                             <span>@l.AvertissementFefo</span>
+                                            <span class="detail">Lot @conseille.NumeroLot : @conseille.Quantite boîte(s) en stock@(l.EmplacementConseille is { } empl ? $" · rangé {empl}" : "") · fournisseur @conseille.Fournisseur</span>
                                             <div style="display: flex; gap: 8px; flex-wrap: wrap">
                                                 <button type="button" class="btn btn-principal" @onclick="() => ServirLotConseilleAsync(l)">J’ai pris une boîte du lot @conseille.NumeroLot</button>
                                                 <button type="button" class="btn" @onclick="() => { l.AvertissementFefo = null; l.LotConseille = null; }">Garder cette boîte</button>
@@ -549,6 +550,8 @@
         public bool LotConseilleServi { get; set; }
         public string? AvertissementFefo { get; set; }
         public LotFefoDto? LotConseille { get; set; }
+        /// <summary>Où trouver une boîte du lot conseillé (emplacement ou réserve du produit).</summary>
+        public string? EmplacementConseille { get; set; }
         public IReadOnlyList<LotEcarteDto> Ecartes { get; init; } = [];
         public IReadOnlyList<ProduitAlternatifDto> Alternatives { get; set; } = [];
         public int Quantite { get; set; } = 1;
@@ -821,13 +824,14 @@
             existante.StockProduit = b.StockProduit;
             existante.AvertissementFefo ??= b.Avertissement;
             existante.LotConseille ??= b.LotConseille;
+            existante.EmplacementConseille ??= b.Emplacement;
         }
         else
         {
             lignes.Add(new LignePanier
             {
                 ProduitId = b.ProduitId, Nom = b.Produit, Prix = b.PrixPublic, Lot = b.Lot, StockProduit = b.StockProduit,
-                BoiteScannee = true, AvertissementFefo = b.Avertissement, LotConseille = b.LotConseille
+                BoiteScannee = true, AvertissementFefo = b.Avertissement, LotConseille = b.LotConseille, EmplacementConseille = b.Emplacement
             });
         }
         await RecalculerAsync();

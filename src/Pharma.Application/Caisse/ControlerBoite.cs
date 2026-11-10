@@ -14,7 +14,7 @@ public sealed record LotCaisse(long LotId, string NumeroLot, DateOnly DatePeremp
 /// LotConseille : lot qui périme avant elle avec une péremption proche, à servir d'abord.
 /// </summary>
 public sealed record BoiteCaisse(long ProduitId, string Produit, decimal PrixPublic, int StockProduit,
-    LotCaisse Lot, LotCaisse? LotConseille, string? Avertissement);
+    LotCaisse Lot, LotCaisse? LotConseille, string? Avertissement, string? Emplacement = null);
 
 /// <summary>
 /// Scan en caisse d'un code qui désigne un lot (étiquette interne de boîte ou de lot, Data Matrix).
@@ -53,6 +53,8 @@ public sealed class ControlerBoiteCaisse(IMobile codes, IPermissionService droit
 
         static LotCaisse VersCaisse(LotFiche l) => new(l.Id, l.NumeroLot, l.DatePeremption, l.Quantite, l.Fournisseur);
         return new BoiteCaisse(fiche.ProduitId, fiche.Nom, fiche.PrixPublic, vendables.Sum(l => l.Quantite),
-            VersCaisse(lot), avertissement is null ? null : VersCaisse(premier!), avertissement);
+            VersCaisse(lot), avertissement is null ? null : VersCaisse(premier!), avertissement,
+            // Où trouver une boîte du lot à servir d'abord : emplacement au comptoir, sinon réserve
+            fiche.Emplacement ?? (fiche.Reserve is { } res ? $"réserve {res}" : null));
     }
 }

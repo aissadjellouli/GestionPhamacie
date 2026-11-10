@@ -47,6 +47,7 @@
     <File Path="database/041_contacts.sql" />
     <File Path="database/042_email_tiers.sql" />
     <File Path="database/043_historique_factures.sql" />
+    <File Path="database/044_reception_detaillee.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

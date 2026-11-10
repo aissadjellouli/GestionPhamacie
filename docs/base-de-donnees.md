@@ -67,6 +67,7 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `041_contacts.sql` | Coordonnées : `utilisateur.telephone` et `utilisateur.email` (employé, saisis dans « Utilisateurs et droits ») ; `organisme.telephone` et `organisme.email` (saisis dans « Factures › Organismes »). Colonnes facultatives, affichées dans la fiche contact |
 | `042_email_tiers.sql` | E-mail facultatif des grossistes (`fournisseur.email`), des entreprises clientes (`client_facture.email`) et des patients (`patient.email`) : saisi à la création ou depuis la fiche contact, signalé « à compléter » tant qu'il manque |
 | `043_historique_factures.sql` | Historique des factures clients intouchable : aucune facture ni aucun avoir ne peut être supprimé, une facture remplacée et ses lignes ne peuvent plus être modifiées, une version archivée (`facture_client_version`) ne peut être ni modifiée ni supprimée (déclencheurs `trg_historique_facture*`) |
+| `044_reception_detaillee.sql` | Réception détaillée comme la facture du grossiste : `reception` (montant HT avant remise, remise, TVA, timbre, total SHP ; `montant_ttc` = net à payer) et `reception_ligne` (prix HT avant remise, remise %, prix net = coût du stock, PPA facturé, SHP par boîte, TVA) |
 
 ### Règle permanente : tout script est répliqué dans `init/`
 
@@ -95,7 +96,7 @@ Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dan
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 043, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 044, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

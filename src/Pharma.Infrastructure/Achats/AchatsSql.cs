@@ -241,6 +241,14 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         return d;
     }
 
+    public async Task<IReadOnlyList<InfoAchatProduit>> InfosAchatAsync(IEnumerable<long> produitIds, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT id, classe, prix_public, taux_tva FROM produit WHERE id = ANY($1)");
+        cmd.Parameters.AddWithValue(produitIds.ToArray());
+        return await Lister(cmd, r => new InfoAchatProduit(r.GetInt64(0), r.GetString(1), r.GetDecimal(2), r.GetDecimal(3),
+            Pharma.Domain.Achats.RegleShp.ParBoite(r.GetString(1))), ct);
+    }
+
     public async Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception n, CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
@@ -248,8 +256,9 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
 
         long receptionId;
         await using (var cmd = new NpgsqlCommand("""
-            INSERT INTO reception (fournisseur_id, commande_id, numero_bl, numero_facture, utilisateur_id, montant_ttc)
-            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            INSERT INTO reception (fournisseur_id, commande_id, numero_bl, numero_facture, utilisateur_id, montant_ttc,
+                                   montant_ht, remise, montant_tva, timbre, shp_total)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
             """, cnx, tx))
         {
             cmd.Parameters.AddWithValue(n.FournisseurId);
@@ -258,6 +267,11 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
             cmd.Parameters.Add(Nul(n.NumeroFacture, NpgsqlDbType.Text));
             cmd.Parameters.AddWithValue(n.UtilisateurId);
             cmd.Parameters.AddWithValue(n.MontantTtc);
+            cmd.Parameters.Add(Nul(n.Totaux?.MontantHt, NpgsqlDbType.Numeric));
+            cmd.Parameters.AddWithValue(n.Totaux?.Remise ?? 0m);
+            cmd.Parameters.Add(Nul(n.Totaux?.Tva, NpgsqlDbType.Numeric));
+            cmd.Parameters.AddWithValue(n.Totaux?.Timbre ?? 0m);
+            cmd.Parameters.AddWithValue(n.Totaux?.ShpTotal ?? 0m);
             receptionId = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
 
@@ -305,7 +319,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 cmd.Parameters.AddWithValue(numero);
                 cmd.Parameters.AddWithValue(l.DatePeremption);
                 cmd.Parameters.AddWithValue(l.Quantite);
-                cmd.Parameters.AddWithValue(l.PrixAchatHt);
+                cmd.Parameters.AddWithValue(l.PrixNetHt);
                 cmd.Parameters.AddWithValue(receptionId);
                 cmd.Parameters.AddWithValue(n.FournisseurId);
                 cmd.Parameters.AddWithValue(decision.NouveauBloque);
@@ -315,7 +329,26 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
             await Executer(cnx, tx, """
                 INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id, reception_id, prix_achat_ht)
                 VALUES ($1, 'entree', $2, $3, $4, $5, $6)
-                """, ct, lotId, l.Quantite, $"BL {n.NumeroBl}", n.UtilisateurId, receptionId, l.PrixAchatHt);
+                """, ct, lotId, l.Quantite, $"BL {n.NumeroBl}", n.UtilisateurId, receptionId, l.PrixNetHt);
+
+            // Ligne telle qu'écrite sur la facture du grossiste (044) : prix avant remise, remise, PPA, SHP, TVA
+            await using (var lr = new NpgsqlCommand("""
+                INSERT INTO reception_ligne (reception_id, lot_id, produit_id, quantite, prix_achat_ht, remise_pct, prix_net_ht, ppa, shp, taux_tva)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                """, cnx, tx))
+            {
+                lr.Parameters.AddWithValue(receptionId);
+                lr.Parameters.AddWithValue(lotId);
+                lr.Parameters.AddWithValue(l.ProduitId);
+                lr.Parameters.AddWithValue(l.Quantite);
+                lr.Parameters.AddWithValue(l.PrixAchatHt);
+                lr.Parameters.AddWithValue(l.RemisePct);
+                lr.Parameters.AddWithValue(l.PrixNetHt);
+                lr.Parameters.Add(Nul(l.Ppa, NpgsqlDbType.Numeric));
+                lr.Parameters.AddWithValue(l.Shp ?? 0m);
+                lr.Parameters.AddWithValue(n.TauxTva.GetValueOrDefault(l.ProduitId));
+                await lr.ExecuteNonQueryAsync(ct);
+            }
 
             // Boîtes sérialisées (Data Matrix) : identité connue dès la réception
             // Une boîte (GTIN, n° de série) n'existe qu'une fois : scannée deux fois, ou déjà entrée par une autre réception,
@@ -342,7 +375,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 try
                 {
                     await Executer(cnx, tx, "INSERT INTO boite (lot_id, gtin, numero_serie, reception_id, prix_achat_ht) VALUES ($1, $2, $3, $4, $5)",
-                        ct, lotId, l.Gtin!, serie, receptionId, l.PrixAchatHt);
+                        ct, lotId, l.Gtin!, serie, receptionId, l.PrixNetHt);
                 }
                 catch (PostgresException doublon) when (doublon.SqlState == PostgresErrorCodes.UniqueViolation)
                 {
@@ -355,7 +388,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
             // Les autres reçoivent chacune une étiquette interne, dans la même transaction : aucune boîte n'entre sans identité
             var aEtiqueter = l.Quantite - (l.NumerosSerie?.Count ?? 0);
             if (aEtiqueter > 0)
-                await Executer(cnx, tx, "SELECT count(*) FROM creer_boites_internes($1, $2, $3, $4)", ct, lotId, aEtiqueter, receptionId, l.PrixAchatHt);
+                await Executer(cnx, tx, "SELECT count(*) FROM creer_boites_internes($1, $2, $3, $4)", ct, lotId, aEtiqueter, receptionId, l.PrixNetHt);
 
             if (ligneCommandeId is { } id)
                 await Executer(cnx, tx, "UPDATE ligne_commande SET qte_recue = qte_recue + $2 WHERE id = $1", ct, id, l.Quantite);
@@ -376,6 +409,26 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         await Executer(cnx, tx, "UPDATE fournisseur SET solde = solde + $2 WHERE id = $1", ct, n.FournisseurId, n.MontantTtc);
         await tx.CommitAsync(ct);
         return new ReceptionEnregistree(receptionId, n.MontantTtc, lots);
+    }
+
+    public async Task<IReadOnlyList<ReceptionResume>> ReceptionsAvecDocumentAsync(long fournisseurId, string numero, CancellationToken ct = default)
+    {
+        // Comparaison sans casse ni espaces : « 26/F-015695 » saisi ou scanné retrouve « 26/f-015695 »
+        await using var cmd = db.CreateCommand("""
+            SELECT r.id, f.raison_sociale, r.numero_bl, r.numero_facture, c.numero, r.date_reception, 0, 0, r.montant_ttc, r.fournisseur_id
+            FROM reception r
+            JOIN fournisseur f ON f.id = r.fournisseur_id
+            LEFT JOIN commande_fournisseur c ON c.id = r.commande_id
+            WHERE r.fournisseur_id = $1
+              AND ($2 = regexp_replace(upper(COALESCE(r.numero_bl, '')), '\s', '', 'g')
+                   OR $2 = regexp_replace(upper(COALESCE(r.numero_facture, '')), '\s', '', 'g'))
+            ORDER BY r.date_reception DESC
+            LIMIT 5
+            """);
+        cmd.Parameters.AddWithValue(fournisseurId);
+        cmd.Parameters.AddWithValue(System.Text.RegularExpressions.Regex.Replace(numero.ToUpperInvariant(), @"\s", ""));
+        return await Lister(cmd, r => new ReceptionResume(
+            r.GetInt64(0), r.GetString(1), Texte(r, 2), Texte(r, 3), Texte(r, 4), r.GetDateTime(5), 0, 0, r.IsDBNull(8) ? 0 : r.GetDecimal(8), r.GetInt64(9)), ct);
     }
 
     public async Task<Page<ReceptionResume>> ReceptionsAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default)

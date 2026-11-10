@@ -35,6 +35,11 @@ public sealed record AucunLotDto(string Message, IReadOnlyList<LotEcarteDto> Eca
 public sealed record ProduitAlternatifDto(long ProduitId, string NomCommercial, decimal PrixPublic, int Stock,
     bool Exact = true, string? Dosage = null, string? Forme = null);
 
+/// <summary>Lots qui périment dans les N jours (cumulé), au prix d'achat.</summary>
+public sealed record HorizonPeremptionDto(int Jours, int Lots, int Boites, decimal Valeur);
+/// <summary>ReglementsAPreparer et MontantAPreparer : null sans le droit de régler les grossistes.</summary>
+public sealed record IndicateursAlertesDto(IReadOnlyList<HorizonPeremptionDto> Peremption, int? ReglementsAPreparer, decimal? MontantAPreparer);
+
 public sealed record AlerteDto(
     long Id, string Type, string Niveau, long ProduitId, long? LotId,
     string Message, decimal? ValeurDzd, string Statut, DateTime MiseAJourLe,
@@ -190,15 +195,23 @@ public sealed record SuggestionCommandeDto(
 public sealed record AjoutCommandeRequete(long FournisseurId, long ProduitId, int Quantite, decimal? PrixAchatHt);
 public sealed record ModificationLigneCommandeRequete(int Quantite, decimal PrixAchatHt);
 
+/// <summary>PrixAchatHt : avant remise, comme sur la facture. Shp null : selon la liste du produit.</summary>
 public sealed record LigneReceptionDto(
     long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, int Quantite, decimal PrixAchatHt,
-    string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null, bool LotSepare = false, bool EntrerBloque = false);
+    string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null, bool LotSepare = false, bool EntrerBloque = false,
+    decimal RemisePct = 0, decimal? Ppa = null, decimal? Shp = null);
 
 public sealed record ReceptionRequete(
-    long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionDto> Lignes);
+    long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionDto> Lignes, decimal Timbre = 0);
+
+/// <summary>Liste du médicament, prix public du catalogue, TVA et SHP proposé par boîte.</summary>
+public sealed record InfoAchatProduitDto(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite);
 
 public sealed record LotRecuDto(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int Etiquettes, bool LotExistant);
 public sealed record ReceptionEnregistreeDto(long ReceptionId, decimal MontantTtc, IReadOnlyList<LotRecuDto> Lots);
+
+/// <summary>Numero : numéro relu (un scan fait en clavier QWERTY est remis en chiffres) ; DejaRecues : réceptions qui le portent déjà.</summary>
+public sealed record DocumentReceptionDto(string? Numero, IReadOnlyList<ReceptionResumeDto> DejaRecues);
 
 public sealed record ReceptionResumeDto(
     long Id, string Fournisseur, string? NumeroBl, string? NumeroFacture, string? NumeroCommande,
@@ -327,7 +340,7 @@ public sealed record IdsRequete(IReadOnlyList<long> Ids);
 
 /// <summary>Boîte scannée en caisse : son lot est servi ; LotConseille périme avant elle (péremption proche).</summary>
 public sealed record BoiteCaisseDto(long ProduitId, string Produit, decimal PrixPublic, int StockProduit,
-    LotFefoDto Lot, LotFefoDto? LotConseille, string? Avertissement);
+    LotFefoDto Lot, LotFefoDto? LotConseille, string? Avertissement, string? Emplacement = null);
 
 /// <summary>Seuil d'alerte de stock d'un produit : SeuilManuel (saisi) remplace SeuilAuto ; null = automatique.</summary>
 public sealed record SeuilStockDto(long ProduitId, string Nom, int Stock, decimal VentesParJour, int SeuilAuto, int? SeuilManuel, int SeuilApplique, string Statut);

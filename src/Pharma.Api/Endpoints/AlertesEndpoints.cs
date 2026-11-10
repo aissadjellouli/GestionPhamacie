@@ -17,6 +17,15 @@ internal static class AlertesEndpoints
            .ExigerPermission(Permissions.StockConsulter);
 
         // Pastille du bandeau : le nombre seulement (avant : toute la liste, à chaque navigation)
+        // Péremption à 30, 60 et 180 jours ; règlements grossistes à préparer (avec le droit de régler)
+        api.MapGet("/alertes/indicateurs", async (ObtenirIndicateursAlertes obtenir, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var i = await obtenir.ExecuterAsync(user.UtilisateurId(), ct);
+                return Results.Ok(new IndicateursAlertesDto(
+                    i.Peremption.Select(h => new HorizonPeremptionDto(h.Jours, h.Lots, h.Boites, h.Valeur)).ToList(), i.ReglementsAPreparer, i.MontantAPreparer));
+            })
+           .ExigerPermission(Permissions.StockConsulter);
+
         api.MapGet("/alertes/urgentes", async (ListerAlertesOuvertes lister, CancellationToken ct) =>
                 Results.Ok(new CompteDto(await lister.CompterUrgentesAsync(ct))))
            .ExigerPermission(Permissions.StockConsulter);

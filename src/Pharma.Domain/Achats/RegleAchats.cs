@@ -4,10 +4,18 @@ namespace Pharma.Domain.Achats;
 
 public sealed record LigneCommandeSaisie(long ProduitId, string Nom, int Quantite, decimal PrixAchatHt);
 
-/// <summary>Une ligne de livraison : un lot d'un produit, avec ses boîtes sérialisées éventuelles (Data Matrix).</summary>
+/// <summary>
+/// Une ligne de livraison : un lot d'un produit, avec ses boîtes sérialisées éventuelles (Data Matrix). PrixAchatHt : prix
+/// unitaire HT avant remise, comme sur la facture ; RemisePct : remise de la ligne ; Ppa : prix public facturé ; Shp : supplément
+/// d'honoraire par boîte (null : selon la liste du produit, RegleShp). Le coût du stock est le prix net de remise (PrixNetHt).
+/// </summary>
 public sealed record LigneReceptionSaisie(
     long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, int Quantite, decimal PrixAchatHt,
-    string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null, bool LotSepare = false, bool EntrerBloque = false);
+    string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null, bool LotSepare = false, bool EntrerBloque = false,
+    decimal RemisePct = 0, decimal? Ppa = null, decimal? Shp = null)
+{
+    public decimal PrixNetHt => RegleFactureAchat.PrixNet(PrixAchatHt, RemisePct);
+}
 
 public static class RegleAchats
 {

@@ -37,10 +37,14 @@ public sealed record LotRecu(long LotId, string Produit, string NumeroLot, DateO
 
 public sealed record ReceptionEnregistree(long ReceptionId, decimal MontantTtc, IReadOnlyList<LotRecu> Lots);
 
+/// <summary>MontantTtc : net à payer au grossiste (dette) ; Totaux : détail de la facture (044).</summary>
 public sealed record NouvelleReception(
     long FournisseurId, long? CommandeId, string NumeroBl, string? NumeroFacture,
     IReadOnlyList<LigneReceptionSaisie> Lignes, IReadOnlyDictionary<long, decimal> TauxTva,
-    decimal MontantTtc, long UtilisateurId);
+    decimal MontantTtc, long UtilisateurId, TotauxFactureAchat? Totaux = null);
+
+/// <summary>Ce qu'il faut savoir d'un produit pour lire la facture du grossiste : liste (SHP), prix public du catalogue, TVA.</summary>
+public sealed record InfoAchatProduit(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite);
 
 /// <summary>Lot vu pour un retour : provenance, stock, boîtes identifiées encore en stock.</summary>
 public sealed record LotRetournable(
@@ -102,9 +106,13 @@ public interface IAchats
     Task ChangerStatutCommandeAsync(long commandeId, string statut, CancellationToken ct = default);
 
     Task<IReadOnlyDictionary<long, decimal>> TauxTvaAsync(IEnumerable<long> produitIds, CancellationToken ct = default);
+    /// <summary>Liste du médicament (pour le SHP), prix public du catalogue et TVA de chaque produit.</summary>
+    Task<IReadOnlyList<InfoAchatProduit>> InfosAchatAsync(IEnumerable<long> produitIds, CancellationToken ct = default);
     /// <summary>Réception, lots, boîtes sérialisées, mouvements, quantités reçues et dette du grossiste : une seule transaction.</summary>
     Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception reception, CancellationToken ct = default);
     Task<Page<ReceptionResume>> ReceptionsAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default);
+    /// <summary>Réceptions du grossiste dont le n° de BL ou de facture est ce numéro (casse et espaces ignorés).</summary>
+    Task<IReadOnlyList<ReceptionResume>> ReceptionsAvecDocumentAsync(long fournisseurId, string numero, CancellationToken ct = default);
     /// <summary>Lots du même produit, même n° (normalisé) et même grossiste, toutes dates de péremption.</summary>
     Task<IReadOnlyList<LotExistant>> LotsMemeNumeroAsync(long produitId, long fournisseurId, string numeroLot, CancellationToken ct = default);
 
@@ -253,12 +261,13 @@ public sealed class AnnulerCommande(IAchats achats, IPermissionService droits, I
 // ---- Cas d'usage : réception -----------------------------------------------
 
 public sealed record SaisieReception(
-    long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionSaisie> Lignes);
+    long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionSaisie> Lignes, decimal Timbre = 0);
 
 /// <summary>
 /// Entrée en stock d'une livraison : un lot par ligne (le même lot déjà livré par ce grossiste est complété),
 /// une étiquette interne créée pour chaque boîte sans Data Matrix.
-/// La dette du grossiste augmente du total TTC (TVA du catalogue).
+/// La dette du grossiste augmente du net à payer : HT moins les remises, plus la TVA du catalogue, plus le timbre (044).
+/// Le SHP de chaque ligne, s'il n'est pas saisi, suit la liste du produit (RegleShp).
 /// </summary>
 public sealed class Receptionner(IAchats achats, IPermissionService droits, IHorloge horloge, IJournal journal)
 {
@@ -275,6 +284,7 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
             NumerosSerie = l.NumerosSerie?.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()).ToList()
         }).ToList();
         RegleAchats.VerifierReception(s.NumeroBl, lignes, horloge.Aujourdhui);
+        RegleFactureAchat.Verifier(lignes, s.Timbre);
         if (lignes.GroupBy(l => (l.ProduitId, l.NumeroLot.ToUpperInvariant())).Any(g => g.Count() > 1))
             throw new RegleMetierException("Un même lot figure deux fois : regroupez les quantités sur une ligne.");
 
@@ -294,15 +304,72 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
         // Nom du catalogue (et non celui saisi) sur les lots et les étiquettes
         for (var i = 0; i < lignes.Count; i++)
             lignes[i] = lignes[i] with { Nom = await achats.NomProduitAsync(lignes[i].ProduitId, ct) ?? lignes[i].Nom };
-        var ttc = lignes.Sum(l => RegleAchats.MontantTtc(l.Quantite, l.PrixAchatHt, tva[l.ProduitId]));
+        // SHP non saisi : selon la liste du produit
+        var infos = (await achats.InfosAchatAsync(lignes.Select(l => l.ProduitId).Distinct(), ct)).ToDictionary(i => i.ProduitId);
+        for (var i = 0; i < lignes.Count; i++)
+            if (lignes[i].Shp is null)
+                lignes[i] = lignes[i] with { Shp = infos.TryGetValue(lignes[i].ProduitId, out var info) ? info.ShpParBoite : 0 };
+        var totaux = RegleFactureAchat.Totaux(lignes, tva, s.Timbre);
+        var ttc = totaux.NetAPayer;
 
         var r = await achats.ReceptionnerAsync(new NouvelleReception(
             s.FournisseurId, s.CommandeId, s.NumeroBl!.Trim(), string.IsNullOrWhiteSpace(s.NumeroFacture) ? null : s.NumeroFacture.Trim(),
-            lignes, tva, ttc, utilisateurId), ct);
+            lignes, tva, ttc, utilisateurId, totaux), ct);
         await journal.EcrireAsync(utilisateurId, "reception", "reception", r.ReceptionId,
-            new Dictionary<string, object?> { ["bl"] = s.NumeroBl, ["lots"] = r.Lots.Count, ["montant_ttc"] = ttc }, Permissions.AchatsReceptionner, ct);
+            new Dictionary<string, object?>
+            {
+                ["bl"] = s.NumeroBl, ["lots"] = r.Lots.Count, ["montant_ht"] = totaux.MontantHt, ["remise"] = totaux.Remise,
+                ["tva"] = totaux.Tva, ["timbre"] = totaux.Timbre, ["montant_ttc"] = ttc, ["shp"] = totaux.ShpTotal
+            }, Permissions.AchatsReceptionner, ct);
         return r;
     }
+}
+
+/// <summary>
+/// N° de BL ou de facture saisi ou scanné (QR code de la facture) : réceptions du même grossiste qui portent déjà ce numéro,
+/// pour prévenir d'une livraison enregistrée deux fois. Simple avertissement : une facture peut couvrir plusieurs livraisons.
+/// </summary>
+public sealed class ChercherDocumentReception(IAchats achats, Securite.IPermissionService droits)
+{
+    public async Task<IReadOnlyList<ReceptionResume>> ExecuterAsync(long fournisseurId, string? numero, long utilisateurId, CancellationToken ct = default)
+    {
+        await Securite.PermissionServiceExtensions.ExigerAsync(droits, utilisateurId, Domain.Securite.Permissions.AchatsReceptionner, "réceptionner une livraison", ct);
+        var n = RegleDocumentReception.Normaliser(numero);
+        return fournisseurId <= 0 || n is null ? [] : await achats.ReceptionsAvecDocumentAsync(fournisseurId, n, ct);
+    }
+}
+
+/// <summary>Numéro de document lu sur une facture (saisi ou scanné).</summary>
+public static class RegleDocumentReception
+{
+    // Douchette réglée en clavier QWERTY sur un poste AZERTY : chaque touche tapée donne le caractère AZERTY de la même touche.
+    // « 26/F-015695 » arrive ainsi en « é-!F)à&(-ç( » ; on remet chaque caractère à sa valeur QWERTY.
+    private static readonly Dictionary<char, char> AzertyVersQwerty = new()
+    {
+        ['&'] = '1', ['é'] = '2', ['"'] = '3', ['\''] = '4', ['('] = '5', ['-'] = '6', ['è'] = '7', ['_'] = '8', ['ç'] = '9', ['à'] = '0',
+        [')'] = '-', ['!'] = '/', [':'] = '.', [';'] = ',', [','] = 'm', ['?'] = 'M',
+        ['a'] = 'q', ['q'] = 'a', ['z'] = 'w', ['w'] = 'z', ['A'] = 'Q', ['Q'] = 'A', ['Z'] = 'W', ['W'] = 'Z', ['m'] = ';', ['M'] = ':'
+    };
+    private const string RangeeChiffresAzerty = "&é\"'(-è_çà";
+
+    /// <summary>
+    /// Numéro nettoyé (espaces retirés en bordure), ou null s'il est vide. Un numéro sans aucun chiffre mais avec au moins trois
+    /// caractères de la rangée des chiffres AZERTY (« é-!F)à&(-ç( ») vient d'une douchette réglée en QWERTY : il est relu.
+    /// </summary>
+    public static string? Normaliser(string? numero)
+    {
+        if (string.IsNullOrWhiteSpace(numero)) return null;
+        var n = numero.Trim();
+        if (n.Any(char.IsAsciiDigit) || n.Count(c => RangeeChiffresAzerty.Contains(c)) < 3) return n;
+        return new string(n.Select(c => AzertyVersQwerty.TryGetValue(c, out var q) ? q : c).ToArray());
+    }
+}
+
+/// <summary>Infos d'achat des produits d'une réception (SHP proposé, prix public du catalogue pour contrôler le PPA facturé, TVA).</summary>
+public sealed class LireInfosAchat(IAchats achats)
+{
+    public Task<IReadOnlyList<InfoAchatProduit>> ExecuterAsync(IEnumerable<long> produitIds, CancellationToken ct = default) =>
+        achats.InfosAchatAsync(produitIds.Distinct().Take(200), ct);
 }
 
 public sealed class ListerReceptions(IAchats achats)

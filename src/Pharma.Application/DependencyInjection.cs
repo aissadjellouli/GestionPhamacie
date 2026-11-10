@@ -23,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<ConsulterStock>();
         services.AddScoped<ObtenirEtatEtiquetage>();
         services.AddScoped<ListerAlertesOuvertes>();
+        services.AddScoped<ObtenirIndicateursAlertes>();
         services.AddScoped<GenererAlertes>();
         services.AddScoped<ReporterAlerte>();
         services.AddScoped<TraiterAlerte>();
@@ -64,6 +65,8 @@ public static class DependencyInjection
         services.AddScoped<Achats.AnnulerCommande>();
         services.AddScoped<Achats.Receptionner>();
         services.AddScoped<Achats.ListerReceptions>();
+        services.AddScoped<Achats.ChercherDocumentReception>();
+        services.AddScoped<Achats.LireInfosAchat>();
         services.AddScoped<Achats.ObtenirLotRetournable>();
         services.AddScoped<Achats.ListerRetours>();
         services.AddScoped<Achats.ListerLotsRetournables>();

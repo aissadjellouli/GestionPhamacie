@@ -51,6 +51,29 @@
             </div>
         </section>
 
+        @if (indicateurs is { } ind)
+        {
+            <section class="tuiles" aria-label="Péremptions à venir et règlements">
+                @foreach (var h in ind.Peremption)
+                {
+                    <div class="tuile">
+                        <span class="tuile-libelle">Périment dans @h.Jours jours</span>
+                        <span class="tuile-valeur @(h.Jours <= 30 && h.Lots > 0 ? "urgent" : null)">@h.Lots lot(s)</span>
+                        <span class="tuile-note">@h.Boites boîte(s) · @Libelles.Dinars(h.Valeur) au prix d’achat</span>
+                    </div>
+                }
+                @if (ind.ReglementsAPreparer is { } nb)
+                {
+                    <div class="tuile">
+                        <span class="tuile-libelle">Règlements grossistes à préparer</span>
+                        <span class="tuile-valeur @(nb > 0 ? "urgent" : null)">@nb</span>
+                        <span class="tuile-note">@Libelles.Dinars(ind.MontantAPreparer ?? 0) · factures en retard et effets à payer sous 7 jours
+                            @if (nb > 0) { <br /><a href="achats?onglet=reglements">Préparer les règlements</a> }</span>
+                    </div>
+                }
+            </section>
+        }
+
         <div class="filtres" role="group" aria-label="Filtrer les alertes">
             @foreach (var f in Filtres)
             {
@@ -183,7 +206,13 @@
 
     protected override async Task OnInitializedAsync() => await ChargerAsync();
 
-    private async Task ChargerAsync() => (alertes, erreur) = await Api.AlertesAsync();
+    private IndicateursAlertesDto? indicateurs;
+
+    private async Task ChargerAsync()
+    {
+        (alertes, erreur) = await Api.AlertesAsync();
+        (indicateurs, _) = await Api.IndicateursAlertesAsync();
+    }
 
     private void Ouvrir(AlerteDto a, Mode m)
     {

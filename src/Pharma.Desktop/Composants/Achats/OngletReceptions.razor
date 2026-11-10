@@ -60,15 +60,27 @@ else
             </div>
             <div class="champ" style="flex: 1 1 160px">
                 <label for="r-bl" class="requis">N° du bon de livraison</label>
-                <input id="r-bl" type="text" @ref="champBl" @bind="numeroBl" @bind:event="oninput" class="@(BlInvalide ? "champ-invalide" : null)"
+                <input id="r-bl" type="text" @ref="champBl" @bind="numeroBl" @bind:event="oninput" @bind:after="DocumentSaisiAsync" class="@(BlInvalide ? "champ-invalide" : null)"
                        aria-invalid="@(BlInvalide ? "true" : "false")" aria-describedby="@(BlInvalide ? "r-bl-erreur" : null)" />
                 @if (BlInvalide) { <span id="r-bl-erreur" class="message-champ">Indiquez le numéro du bon de livraison.</span> }
             </div>
             <div class="champ" style="flex: 1 1 160px">
                 <label for="r-fact">N° de facture (facultatif)</label>
-                <input id="r-fact" type="text" @bind="numeroFacture" />
+                <input id="r-fact" type="text" @bind="numeroFacture" @bind:event="oninput" @bind:after="DocumentSaisiAsync" />
             </div>
         </div>
+        <p class="detail" style="margin: 0">Le QR code d’une facture contient son numéro (BL ou facture selon le grossiste) : cliquez dans la case, puis scannez-le avec la douchette.</p>
+        @if (dejaRecues.Count > 0)
+        {
+            <div class="bandeau-attention" role="alert">
+                <strong>Document déjà réceptionné ?</strong>
+                @foreach (var d in dejaRecues)
+                {
+                    <br /><span>Le @Libelles.DateHeureLocale(d.Date) : BL @(d.NumeroBl ?? "—")@(d.NumeroFacture is { } nf ? $", facture {nf}" : "")@(d.MontantTtc > 0 ? $", {Libelles.Dinars(d.MontantTtc, 2)} TTC" : "").</span>
+                }
+                <br /><span>Vérifiez qu’il ne s’agit pas de la même livraison avant d’enregistrer (une facture peut toutefois couvrir plusieurs livraisons).</span>
+            </div>
+        }
 
         @if (fournisseurId != 0)
         {
@@ -104,26 +116,34 @@ else
         @if (lignes.Count > 0)
         {
             <div class="tableau-cadre">
-                <table class="tableau" style="min-width: 760px">
-                    <thead><tr><th scope="col">Produit</th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">N° de lot</span></th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">Péremption</span></th><th scope="col">Boîtes reçues</th><th scope="col">Prix HT</th><th scope="col">Data Matrix</th><th scope="col"></th></tr></thead>
+                <table class="tableau" style="min-width: 1100px">
+                    <thead><tr><th scope="col">Produit</th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">N° de lot</span></th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">Péremption</span></th><th scope="col">Boîtes reçues</th><th scope="col">Prix HT</th><th scope="col">Remise %</th><th scope="col">PPA</th><th scope="col">SHP</th><th scope="col">Marge</th><th scope="col">Data Matrix</th><th scope="col"></th></tr></thead>
                     <tbody>
                         @foreach (var l in lignes)
                         {
                             <tr>
-                                <td><span class="nom">@l.Nom</span>@if (l.Commandee is { } q){<br /><span class="detail">commandé : @q</span>}</td>
+                                <td><span class="nom">@l.Nom</span>@if (l.Commandee is { } q){<br /><span class="detail">commandé : @q</span>}
+                                    @if (l.EcartPpa is { } prixCatalogue)
+                                    {
+                                        <br /><span class="texte-attention">PPA facturé @Libelles.Dinars(l.Ppa!.Value, 2) ≠ prix public du catalogue @Libelles.Dinars(prixCatalogue, 2)</span>
+                                    }</td>
                                 <td><input type="text" style="width: 120px" aria-label="Numéro de lot de @l.Nom" @bind="l.NumeroLot" @bind:event="oninput" @bind:after="l.Reinitialiser"
                                            class="@(LotInvalide(l) ? "champ-invalide" : null)" aria-invalid="@(LotInvalide(l) ? "true" : "false")" /></td>
                                 <td><input type="date" aria-label="Péremption de @l.Nom" @bind="l.Peremption" @bind:after="l.Reinitialiser"
                                            class="@(DateInvalide(l) ? "champ-invalide" : null)" aria-invalid="@(DateInvalide(l) ? "true" : "false")" /></td>
                                 <td><input type="number" min="0" style="width: 80px" aria-label="Boîtes reçues de @l.Nom" @bind="l.Quantite" /></td>
-                                <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="Prix HT de @l.Nom" @bind="l.Prix" /></td>
+                                <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="Prix HT de @l.Nom (avant remise)" @bind="l.Prix" /></td>
+                                <td><input type="number" min="0" max="100" step="0.01" style="width: 70px" aria-label="Remise en % de @l.Nom" @bind="l.RemisePct" /></td>
+                                <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="PPA facturé de @l.Nom" @bind="l.Ppa" /></td>
+                                <td><input type="number" min="0" step="0.01" style="width: 70px" aria-label="SHP par boîte de @l.Nom" title="@(l.Info is { } inf ? $"Proposé selon la liste du produit ({Libelles.Classe(inf.Classe)})" : null)" @bind="l.Shp" /></td>
+                                <td style="white-space: nowrap">@(l.MargePct is { } m ? $"{m:0.00} %" : "—")</td>
                                 <td>@(l.Series.Count > 0 ? $"{l.Series.Count} scannée(s)" : "—")</td>
                                 <td><button type="button" class="btn btn-icone" aria-label="Retirer @l.Nom" title="Retirer" @onclick="() => RetirerLigneAsync(l)">×</button></td>
                             </tr>
                             @if (l.QuantiteMobile is { } qm && l.QuantiteSaisie is { } qs)
                             {
                                 <tr class="ligne-conflit">
-                                    <td colspan="7">
+                                    <td colspan="11">
                                         <div class="conflit-lot" role="alert">
                                             <span>Cette ligne était déjà saisie (@qs boîte(s)) et le mobile en a scanné @qm pour le même lot. Quelle quantité retenir ?</span>
                                             <div class="choix-conflit">
@@ -138,7 +158,7 @@ else
                             @foreach (var c in l.Conflits)
                             {
                                 <tr class="ligne-conflit">
-                                    <td colspan="7">
+                                    <td colspan="11">
                                         <div class="conflit-lot" role="alert">
                                             <span>@c.Message</span>
                                             @if (c.Type == "date_differente")
@@ -176,10 +196,23 @@ else
                     </tbody>
                 </table>
             </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
-                <strong>Total HT : @Libelles.Dinars(lignes.Sum(l => l.Quantite * l.Prix), 2)</strong>
-                <span class="detail">La TVA de chaque produit est ajoutée pour la dette du grossiste. Une ligne à 0 boîte (non livrée) est ignorée.</span>
+            var t = Totaux;
+            <div class="pied-facture-achat">
+                <dl class="fiche-infos">
+                    <dt>Total HT</dt><dd>@Libelles.Dinars(t.Ht, 2)</dd>
+                    <dt>Remise</dt><dd>@Libelles.Dinars(t.Remise, 2)</dd>
+                    <dt>Net HT</dt><dd>@Libelles.Dinars(t.Ht - t.Remise, 2)</dd>
+                    <dt>TVA</dt><dd>@Libelles.Dinars(t.Tva, 2)</dd>
+                    <dt><label for="r-timbre">Timbre</label></dt>
+                    <dd><input id="r-timbre" data-champ="timbre" type="number" min="0" step="0.01" style="width: 120px" @bind="timbre" /></dd>
+                    <dt><strong>Net à payer</strong></dt><dd><strong>@Libelles.Dinars(t.Ht - t.Remise + t.Tva + timbre, 2)</strong></dd>
+                </dl>
+                <dl class="fiche-infos">
+                    <dt>Total PPA</dt><dd>@Libelles.Dinars(t.Ppa, 2)</dd>
+                    <dt>Total SHP</dt><dd>@Libelles.Dinars(t.Shp, 2)</dd>
+                </dl>
             </div>
+            <p class="detail" style="margin: 0">Saisissez chaque ligne comme sur la facture : prix HT avant remise et remise en % ; le coût du stock est le prix net de remise. Le net à payer fait la dette du grossiste (TVA du catalogue). Le SHP, proposé selon la liste du produit, et le PPA sont indiqués à part : ils ne sont pas dus au grossiste. Une ligne à 0 boîte (non livrée) est ignorée.</p>
             <div style="display: flex; gap: 8px">
                 <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">Valider la réception</button>
                 <button type="button" class="btn" disabled="@enCours" @onclick="Nouvelle">Abandonner</button>
@@ -237,6 +270,16 @@ else
         public DateOnly? Peremption { get; set; }
         public int Quantite { get; set; }
         public decimal Prix { get; set; }
+        public decimal RemisePct { get; set; }
+        public decimal? Ppa { get; set; }
+        public decimal? Shp { get; set; }
+        /// <summary>Liste du produit, prix public du catalogue, TVA et SHP proposé (chargés à l'ajout de la ligne).</summary>
+        public InfoAchatProduitDto? Info { get; set; }
+        public bool InfoDemandee { get; set; }
+        /// <summary>Marge sur le prix d'achat, comme la colonne « MGE » des factures : PPA ÷ prix HT − 1.</summary>
+        public decimal? MargePct => Ppa is > 0 && Prix > 0 ? Math.Round((Ppa.Value / Prix - 1) * 100, 2, MidpointRounding.AwayFromZero) : null;
+        /// <summary>Prix public du catalogue quand le PPA facturé en diffère (à vérifier : le prix de vente n'est pas changé).</summary>
+        public decimal? EcartPpa => Ppa is > 0 && Info is { PrixPublic: > 0 } i && Math.Abs(i.PrixPublic - Ppa.Value) >= 0.01m ? i.PrixPublic : null;
         public int? Commandee { get; init; }
         public string? Gtin { get; set; }
         public List<string> Series { get; } = [];
@@ -304,7 +347,60 @@ else
     private Task ChoisirFournisseurAsync()
     {
         commandeId = 0;
-        return Task.CompletedTask;
+        return DocumentSaisiAsync();
+    }
+
+    // ---- Pied de facture, calculé comme sur les factures des grossistes (RegleFactureAchat côté serveur) ----
+    private decimal timbre;
+
+    private (decimal Ht, decimal Remise, decimal Tva, decimal Ppa, decimal Shp) Totaux
+    {
+        get
+        {
+            var actives = lignes.Where(l => l.Quantite > 0).ToList();
+            static decimal A(decimal v) => Math.Round(v, 2, MidpointRounding.AwayFromZero);
+            var ht = actives.Sum(l => A(l.Quantite * l.Prix));
+            var remise = A(actives.Sum(l => l.Quantite * l.Prix * l.RemisePct / 100m));
+            var tva = A(actives.Sum(l => l.Quantite * l.Prix * (1 - l.RemisePct / 100m) * (l.Info?.TauxTva ?? 0) / 100m));
+            return (ht, remise, tva, A(actives.Sum(l => l.Quantite * (l.Ppa ?? 0))), A(actives.Sum(l => l.Quantite * (l.Shp ?? 0))));
+        }
+    }
+
+    // Lignes ajoutées (saisie, commande, scan, mobile) : infos d'achat chargées une fois, SHP proposé selon la liste du produit
+    protected override async Task OnAfterRenderAsync(bool premierRendu)
+    {
+        var aCharger = lignes.Where(l => l.Info is null && !l.InfoDemandee).ToList();
+        if (aCharger.Count == 0) return;
+        aCharger.ForEach(l => l.InfoDemandee = true);
+        var (infos, _) = await Api.InfosAchatAsync(aCharger.Select(l => l.ProduitId));
+        foreach (var l in aCharger)
+            if (infos.FirstOrDefault(i => i.ProduitId == l.ProduitId) is { } info)
+            {
+                l.Info = info;
+                l.Shp ??= info.ShpParBoite;
+            }
+        StateHasChanged();
+    }
+
+    // N° de BL ou de facture saisi ou scanné : réceptions de ce grossiste qui le portent déjà (avertissement seulement)
+    private List<ReceptionResumeDto> dejaRecues = [];
+    private int requeteDocument;
+
+    private async Task DocumentSaisiAsync()
+    {
+        var n = ++requeteDocument;
+        await Task.Delay(300);   // la douchette tape le numéro caractère par caractère : on attend la fin
+        if (n != requeteDocument) return;
+        var trouvees = new List<ReceptionResumeDto>();
+        foreach (var (valeur, mettre) in new (string?, Action<string>)[] { (numeroBl, v => numeroBl = v), (numeroFacture, v => numeroFacture = v) })
+        {
+            if (fournisseurId == 0 || string.IsNullOrWhiteSpace(valeur)) continue;
+            var (r, _) = await Api.DocumentReceptionAsync(fournisseurId, valeur);
+            if (r is null || n != requeteDocument) continue;
+            if (r.Numero is { } relu && relu != valeur.Trim()) mettre(relu);   // scan fait en clavier QWERTY : remis en chiffres
+            trouvees.AddRange(r.DejaRecues.Where(x => trouvees.All(t => t.Id != x.Id)));
+        }
+        if (n == requeteDocument) dejaRecues = trouvees;
     }
 
     /// <summary>Reprend les lignes du bon (reste à recevoir et prix commandé), à compléter avec le lot et la péremption.</summary>
@@ -471,7 +567,7 @@ else
         {
             ReceptionRequete Requete() => new(fournisseurId, commandeId == 0 ? null : commandeId, numeroBl, numeroFacture,
                 aEnvoyer.Select(l => new LigneReceptionDto(l.ProduitId, l.Nom, l.NumeroLot, l.Peremption!.Value, l.Quantite, l.Prix,
-                    l.Gtin, l.Series.Count > 0 ? l.Series : null, l.LotSepare, l.EntrerBloque)).ToList());
+                    l.Gtin, l.Series.Count > 0 ? l.Series : null, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp)).ToList(), timbre);
 
             // Date différente d'un lot en stock ou lot bloqué : l'utilisateur choisit sur la ligne avant d'entrer en stock
             var (conflits, ec) = await Api.ConflitsReceptionAsync(Requete());
@@ -521,6 +617,7 @@ else
         var aRemettre = resultat is null ? lignes.SelectMany(l => l.ScansMobile).ToList() : [];
         lignes.Clear();
         (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
+        (dejaRecues, timbre) = ([], 0);
         controle = false;
         await RemettreScansAsync(aRemettre);
         Nav.NavigateTo("achats?onglet=receptions");
