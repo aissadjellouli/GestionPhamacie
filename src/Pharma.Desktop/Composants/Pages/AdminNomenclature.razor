@@ -1,0 +1,145 @@
+@page "/admin/nomenclature"
+@inject ApiClient Api
+
+<div class="page admin">
+    <NavAdmin Actif="admin/nomenclature" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Nomenclature nationale</h1>
+                <p class="sous-titre">Liste officielle des médicaments enregistrés en Algérie (ministère de l’Industrie pharmaceutique), pour créer les produits et repérer les psychotropes.</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ImporterAsync">@(enCours ? "Import en cours…" : "Importer le fichier Excel…")</button>
+            </div>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        <section class="panneau" aria-labelledby="t-version">
+            <h2 id="t-version">Version chargée</h2>
+            @if (etat is null)
+            {
+                <p class="vide">Chargement…</p>
+            }
+            else if (etat.Version is not { } v)
+            {
+                <p class="vide" style="margin: 0">Aucune nomenclature importée. Téléchargez le fichier Excel sur le site du ministère (miph.gov.dz, « Nomenclature nationale des produits pharmaceutiques ») puis importez-le ici.</p>
+            }
+            else
+            {
+                <div class="tuiles-nomenclature">
+                    <div><span class="detail">Version</span><strong>@v.Libelle</strong></div>
+                    <div><span class="detail">En vigueur</span><strong>@v.EnVigueur.ToString("N0")</strong></div>
+                    <div><span class="detail">Non renouvelés</span><strong>@v.NonRenouveles.ToString("N0")</strong></div>
+                    <div><span class="detail">Retirés</span><strong>@v.Retraits.ToString("N0")</strong></div>
+                </div>
+                <p class="detail" style="margin: 8px 0 0">Fichier « @v.Fichier », importé le @Libelles.DateHeureLocale(v.ImporteeLe) par @v.ImporteePar. Un nouvel import remplace cette version.</p>
+            }
+            <p class="detail" style="margin: 8px 0 0">
+                Psychotropes reconnus par leur DCI (arrêté interministériel du 11 août 2021, JO n° 61) : buprénorphine, tramadol, clonazépam,
+                prégabaline, trihexyphénidyle, clorazépate, midazolam, zolpidem.
+            </p>
+        </section>
+
+        @if (etat is not null)
+        {
+            <section class="panneau" aria-labelledby="t-verif">
+                <h2 id="t-verif">Produits du catalogue à vérifier</h2>
+                @if (etat.AVerifier.Count == 0)
+                {
+                    <p class="vide" style="margin: 0">Rien à signaler : aucun psychotrope mal classé, aucun produit retiré, non renouvelé ou absent de la nomenclature dans le catalogue.</p>
+                }
+                else
+                {
+                    <div class="tableau-cadre">
+                        <table class="tableau" style="min-width: 760px">
+                            <thead><tr><th scope="col">Produit</th><th scope="col">N° d’enregistrement</th><th scope="col">Classe actuelle</th><th scope="col">Nomenclature</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                            <tbody>
+                                @foreach (var p in etat.AVerifier)
+                                {
+                                    <tr>
+                                        <td><span class="nom">@p.Nom</span> <span class="detail">@p.Dosage @p.Forme</span><br /><span class="detail">@p.Dci</span></td>
+                                        <td>@(p.NumEnregistrement ?? "—")</td>
+                                        <td>@Libelles.Classe(p.Classe)</td>
+                                        <td>
+                                            @if (p.Motif == "classe")
+                                            {
+                                                <span class="pastille urgent">@Libelles.Classe(p.ClasseProposee)</span>
+                                            }
+                                            else if (p.Motif == "absent")
+                                            {
+                                                <span class="pastille attention" title="Le n° d’enregistrement du produit n’est pas dans la nomenclature chargée">Absent de la nomenclature</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="pastille attention">@Libelles.SituationNomenclature(p.Situation)</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (p.Motif == "classe" && p.ClasseProposee is { } proposee)
+                                            {
+                                                <button type="button" class="btn" disabled="@enCours" @onclick="() => AppliquerAsync(p, proposee)">Classer « @Libelles.Classe(proposee) »</button>
+                                            }
+                                            else if (p.Motif == "absent")
+                                            {
+                                                <span class="detail">Vérifier le n° d’enregistrement (erreur de saisie ?) ou le statut du médicament auprès du ministère</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="detail">À vérifier avant de recommander</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    private EtatNomenclatureDto? etat;
+    private string? erreur, message;
+    private bool enCours;
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        string? e;
+        (etat, e) = await Api.EtatNomenclatureAsync();
+        if (e is not null) erreur = e;
+    }
+
+    private async Task ImporterAsync()
+    {
+        (erreur, message) = (null, null);
+        var chemin = Dialogues.ChoisirFichier("Fichier Excel de la nomenclature nationale", "Classeur Excel (*.xlsx)|*.xlsx");
+        if (chemin is null) return;
+        enCours = true;
+        StateHasChanged();
+        var (v, e) = await Api.ImporterNomenclatureAsync(chemin);
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        message = $"« {v!.Libelle} » importée : {v.EnVigueur:N0} médicaments en vigueur, {v.NonRenouveles:N0} non renouvelés, {v.Retraits:N0} retirés.";
+        await ChargerAsync();
+    }
+
+    private async Task AppliquerAsync(ProduitAVerifierDto p, string classe)
+    {
+        (erreur, message, enCours) = (null, null, true);
+        erreur = await Api.ChangerClasseProduitAsync(p.ProduitId, classe);
+        enCours = false;
+        if (erreur is null)
+        {
+            message = $"{p.Nom} classé « {Libelles.Classe(classe)} » : ordonnance et registre exigés à la vente.";
+            await ChargerAsync();
+        }
+    }
+}

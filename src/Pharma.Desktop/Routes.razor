@@ -1,0 +1,8 @@
+<Router AppAssembly="@typeof(Routes).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MiseEnPage)" />
+    </Found>
+    <NotFound>
+        <MiseEnPage><p class="page">Page introuvable.</p></MiseEnPage>
+    </NotFound>
+</Router>

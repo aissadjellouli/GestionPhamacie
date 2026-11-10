@@ -1,0 +1,16 @@
+[
+  {
+    "Name": "API + Poste client",
+    "Projects": [
+      {
+        "Path": "src\\Pharma.Api\\Pharma.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "Pharma.Api"
+      },
+      {
+        "Path": "src\\Pharma.Desktop\\Pharma.Desktop.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

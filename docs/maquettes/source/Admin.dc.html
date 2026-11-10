@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Administration : paramètres des alertes</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F6F7F5}
+a{color:#0F766E}a:hover{color:#115E59}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #1D2939; background: #F6F7F5; min-height: 100vh">
+
+<header style="background: #FFFFFF; border-bottom: 1px solid #E4E7EC">
+<div style="max-width: 1280px; margin: 0 auto; padding: 14px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 32px">
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="width: 34px; height: 34px; border-radius: 8px; background: #0F766E; display: flex; align-items: center; justify-content: center">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+</div>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 600; font-size: 15px">[Nom du logiciel]</span>
+<span style="font-size: 12px; color: #475467">Pharmacie [Nom] · Connecté : titulaire</span>
+</div>
+</div>
+<nav aria-label="Navigation principale" style="display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 400px">
+<a href="Caisse.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Caisse</a>
+<a href="Stock.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Stock</a>
+<a href="Achats.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Achats</a>
+<a href="Chifa.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Chifa</a>
+<a href="Main.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Alertes</a>
+<a href="Rapports.dc.html" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #344054; text-decoration: none">Rapports</a>
+<a href="#" aria-current="page" style="padding: 8px 12px; border-radius: 6px; font-size: 14px; color: #0F766E; background: #E6F4F1; font-weight: 600; text-decoration: none">Administration</a>
+</nav>
+</div>
+</header>
+
+<main style="max-width: 1280px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<nav aria-label="Rubriques d’administration" style="flex: 1 1 220px; background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 2px">
+<a href="#" aria-current="page" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; color: #0F766E; background: #E6F4F1; text-decoration: none">Alertes et seuils</a>
+<a href="Droits.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Utilisateurs et droits</a>
+<a href="AdminCaisse.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Caisse et contrôle</a>
+<a href="AdminImpression.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Imprimantes et étiquettes</a>
+<a href="AdminSauvegardes.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Sauvegardes</a>
+<a href="AdminReprise.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Reprise de données</a>
+<a href="AdminLangue.dc.html" style="padding: 12px 14px; border-radius: 8px; font-size: 14px; color: #344054; text-decoration: none">Langue et pharmacie</a>
+</nav>
+
+<div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 600">Alertes et seuils</h1>
+<p style="margin: 0; font-size: 14px; color: #475467; display: flex; align-items: center; gap: 6px">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#475467" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+Réservé au titulaire · chaque modification est inscrite au journal
+</p>
+</div>
+<button type="button" onClick="{{enregistrer}}" style="height: 48px; padding: 0 22px; border-radius: 8px; border: none; background: #0F766E; color: #FFFFFF; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer">Enregistrer</button>
+</div>
+
+<sc-if value="{{enregistre}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="padding: 14px 16px; border-radius: 10px; background: #E6F4F1; border: 1px solid #99D5C9; font-size: 14px; color: #115E59; font-weight: 500">Paramètres enregistrés. Les alertes sont recalculées immédiatement.</div>
+</sc-if>
+
+<section aria-labelledby="t-general" style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 id="t-general" style="margin: 0; font-size: 17px; font-weight: 600">Péremption : réglage général</h2>
+<p style="margin: 0; font-size: 13px; color: #475467">Utilisé pour tous les produits et grossistes sans réglage particulier. L’alerte rouge doit être plus courte que l’orange.</p>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="g-orange" style="font-size: 13px; font-weight: 500; color: #344054">Alerte orange (jours)</label>
+<input id="g-orange" type="number" min="1" value="180" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit; font-size: 15px">
+<span style="font-size: 12px; color: #475467">environ 6 mois : préparer un retour</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="g-rouge" style="font-size: 13px; font-weight: 500; color: #344054">Alerte rouge (jours)</label>
+<input id="g-rouge" type="number" min="1" value="90" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit; font-size: 15px">
+<span style="font-size: 12px; color: #475467">environ 3 mois : vendre en priorité</span>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="g-horizon" style="font-size: 13px; font-weight: 500; color: #344054">Calcul du risque d’écoulement (jours)</label>
+<input id="g-horizon" type="number" min="1" value="365" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit; font-size: 15px">
+<span style="font-size: 12px; color: #475467">anticiper les pertes selon les ventes</span>
+</div>
+</div>
+</section>
+
+<section aria-labelledby="t-grossistes" style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 id="t-grossistes" style="margin: 0; font-size: 17px; font-weight: 600">Par grossiste</h2>
+<p style="margin: 0; font-size: 13px; color: #475467">Selon le délai de reprise de chaque grossiste. Champ vide : le réglage général s’applique.</p>
+</div>
+<div style="overflow-x: auto">
+<table style="width: 100%; border-collapse: collapse; font-size: 14px; min-width: 520px">
+<thead>
+<tr style="text-align: left; color: #475467; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em">
+<th scope="col" style="padding: 8px 8px 8px 0; font-weight: 500">Grossiste</th>
+<th scope="col" style="padding: 8px; font-weight: 500">Reprise jusqu’à</th>
+<th scope="col" style="padding: 8px; font-weight: 500">Orange (j)</th>
+<th scope="col" style="padding: 8px; font-weight: 500">Rouge (j)</th>
+</tr>
+</thead>
+<tbody>
+<tr style="border-top: 1px solid #EAECF0">
+<td style="padding: 10px 8px 10px 0; font-weight: 500">Grossiste A (GR-01)</td>
+<td style="padding: 10px 8px; color: #344054">6 mois avant</td>
+<td style="padding: 10px 8px"><input aria-label="Alerte orange, grossiste A" type="number" min="1" value="195" style="width: 90px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit"></td>
+<td style="padding: 10px 8px"><input aria-label="Alerte rouge, grossiste A" type="number" min="1" placeholder="90 (général)" style="width: 120px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit"></td>
+</tr>
+<tr style="border-top: 1px solid #EAECF0">
+<td style="padding: 10px 8px 10px 0; font-weight: 500">Grossiste B (GR-02)</td>
+<td style="padding: 10px 8px; color: #344054">[à renseigner]</td>
+<td style="padding: 10px 8px"><input aria-label="Alerte orange, grossiste B" type="number" min="1" placeholder="180 (général)" style="width: 120px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit"></td>
+<td style="padding: 10px 8px"><input aria-label="Alerte rouge, grossiste B" type="number" min="1" placeholder="90 (général)" style="width: 120px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit"></td>
+</tr>
+<tr style="border-top: 1px solid #EAECF0">
+<td style="padding: 10px 8px 10px 0; font-weight: 500">Grossiste C (GR-03)</td>
+<td style="padding: 10px 8px; color: #344054">3 mois avant</td>
+<td style="padding: 10px 8px"><input aria-label="Alerte orange, grossiste C" type="number" min="1" value="105" style="width: 90px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit"></td>
+<td style="padding: 10px 8px"><input aria-label="Alerte rouge, grossiste C" type="number" min="1" value="60" style="width: 90px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit"></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section aria-labelledby="t-produits" style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 id="t-produits" style="margin: 0; font-size: 17px; font-weight: 600">Exceptions par produit</h2>
+<p style="margin: 0; font-size: 13px; color: #475467">Prioritaires sur tout le reste : produits chers, à rotation lente ou conservés au froid.</p>
+</div>
+<button type="button" style="height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid #0F766E; background: #FFFFFF; color: #0F766E; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer">Ajouter un produit</button>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 0; border-top: 1px solid #EAECF0">
+<span style="flex: 999 1 240px; font-size: 14px; font-weight: 500">Insuline glargine 100 UI/ml</span>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #344054">Orange <input type="number" min="1" value="270" style="width: 80px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit"></label>
+<label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #344054">Rouge <input type="number" min="1" value="120" style="width: 80px; height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit"></label>
+<button type="button" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #D0D5DD; background: #FFFFFF; color: #344054; font: inherit; font-size: 14px; cursor: pointer">Retirer</button>
+</div>
+</section>
+
+<section aria-labelledby="t-stock" style="background: #FFFFFF; border: 1px solid #E4E7EC; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<h2 id="t-stock" style="margin: 0; font-size: 17px; font-weight: 600">Stock et commandes</h2>
+<p style="margin: 0; font-size: 13px; color: #475467">Les seuils de stock s’adaptent aux ventes réelles de chaque produit.</p>
+</div>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="s-delai" style="font-size: 13px; font-weight: 500; color: #344054">Délai de livraison (jours)</label>
+<input id="s-delai" type="number" min="0" value="2" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit; font-size: 15px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="s-secu" style="font-size: 13px; font-weight: 500; color: #344054">Stock de sécurité (jours)</label>
+<input id="s-secu" type="number" min="0" value="7" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit; font-size: 15px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="s-cible" style="font-size: 13px; font-weight: 500; color: #344054">Stock visé après commande (jours)</label>
+<input id="s-cible" type="number" min="1" value="30" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit; font-size: 15px">
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<label for="s-dormant" style="font-size: 13px; font-weight: 500; color: #344054">Produit dormant après (jours)</label>
+<input id="s-dormant" type="number" min="1" value="90" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #D0D5DD; font: inherit; font-size: 15px">
+</div>
+</div>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1320}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { enregistre: false };
+  }
+  renderVals() {
+    return {
+      enregistre: this.state.enregistre,
+      enregistrer: () => this.setState({ enregistre: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

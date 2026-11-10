@@ -1,0 +1,246 @@
+@page "/admin/imprimantes"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject ConfigurationPoste Poste
+@inject ReglagesPoste Reglages
+@inject ImprimanteTickets Tickets
+@inject ImprimanteEtiquettes Etiquettes
+@inject AfficheurClient Afficheur
+
+<div class="page admin">
+    <NavAdmin Actif="admin/imprimantes" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Imprimantes et étiquettes</h1>
+                <p class="sous-titre">Réglages de ce poste (@Poste.Poste) : chaque ordinateur a ses propres imprimantes.</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="Enregistrer">Enregistrer</button>
+            </div>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        <section class="panneau" aria-labelledby="t-tickets">
+            <h2 id="t-tickets">Tickets de caisse</h2>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 2 1 300px">
+                    <label for="i-ticket">Imprimante de tickets (installée dans Windows)</label>
+                    <div style="display: flex; gap: 8px">
+                        <select id="i-ticket" @bind="v.ImprimanteTickets" style="flex: 1; min-width: 0">
+                            <option value="">Imprimante par défaut de Windows@(Defaut is { } d ? $" ({d})" : "")</option>
+                            @foreach (var (nom, _) in imprimantes) { <option value="@nom">@nom</option> }
+                            @if (v.ImprimanteTickets is { Length: > 0 } choisie && imprimantes.All(i => i.Nom != choisie))
+                            {
+                                <option value="@choisie">@choisie (introuvable dans Windows)</option>
+                            }
+                        </select>
+                        <button type="button" class="btn" disabled="@enCours" @onclick="Actualiser" title="Relire les imprimantes installées dans Windows">Actualiser la liste</button>
+                    </div>
+                </div>
+                <div class="champ" style="flex: 0 0 200px">
+                    <label for="i-largeur">Largeur du rouleau</label>
+                    <select id="i-largeur" @bind="largeur">
+                        <option value="80">80 mm</option>
+                        <option value="58">58 mm</option>
+                    </select>
+                </div>
+            </div>
+            <label class="case"><input type="checkbox" @bind="v.TicketAutomatique" /><span>Imprimer le ticket automatiquement après chaque vente</span></label>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+                <button type="button" class="btn" disabled="@enCours" @onclick="EssaiTicketAsync">Imprimer un ticket d’essai</button>
+                <span class="detail">L’essai utilise le choix affiché, même avant d’enregistrer.</span>
+            </div>
+            @if (imprimantes.Count == 0)
+            {
+                <p class="detail" style="margin: 0">Aucune imprimante trouvée dans Windows : installez le pilote de l’imprimante de tickets (fourni par le fabricant).</p>
+            }
+        </section>
+
+        <section class="panneau" aria-labelledby="t-etiq">
+            <h2 id="t-etiq">Étiquettes internes (imprimante thermique réseau)</h2>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 0 1 280px">
+                    <label for="i-etiq">Adresse IP de l’imprimante d’étiquettes</label>
+                    <input id="i-etiq" type="text" inputmode="decimal" placeholder="ex. 192.168.1.50" @bind="v.ImprimanteEtiquettes" @bind:event="oninput" />
+                </div>
+            </div>
+            <p class="detail" style="margin: 0">Envoi direct en ZPL (port 9100). Laissez vide pour n’utiliser que la planche PDF à imprimer.</p>
+            <div>
+                <button type="button" class="btn" disabled="@(enCours || string.IsNullOrWhiteSpace(v.ImprimanteEtiquettes))" @onclick="EssaiEtiquetteAsync">Imprimer une étiquette d’essai</button>
+            </div>
+        </section>
+
+        <section class="panneau" aria-labelledby="t-afficheur">
+            <h2 id="t-afficheur">Afficheur client</h2>
+            <div class="filtres" role="radiogroup" aria-label="Afficheur client">
+                @foreach (var (code, libelle) in Afficheurs)
+                {
+                    <button type="button" role="radio" class="puce" aria-checked="@(ModeAfficheur == code ? "true" : "false")" aria-pressed="@(ModeAfficheur == code ? "true" : "false")"
+                            @onclick="() => v.Afficheur = code">@libelle</button>
+                }
+            </div>
+            @if (ModeAfficheur is "ecran" or "les_deux")
+            {
+                <div class="champ" style="max-width: 360px">
+                    <label for="a-ecran">Écran tourné vers le client</label>
+                    <select id="a-ecran" @bind="ecranClient">
+                        <option value="0">Automatique (premier écran secondaire)</option>
+                        @foreach (var (index, libelle) in ecrans) { <option value="@index">@libelle</option> }
+                    </select>
+                </div>
+                @if (ecrans.Count < 2) { <p class="detail" style="margin: 0">Un seul écran détecté : branchez l’écran client, puis rouvrez cette page.</p> }
+            }
+            @if (ModeAfficheur is "vfd" or "les_deux")
+            {
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 160px">
+                        <label for="a-port">Port série</label>
+                        <select id="a-port" @bind="v.PortAfficheur">
+                            <option value="">— choisir —</option>
+                            @foreach (var p in ports) { <option value="@p">@p</option> }
+                        </select>
+                    </div>
+                    <div class="champ" style="flex: 0 0 140px">
+                        <label for="a-vitesse">Vitesse (bauds)</label>
+                        <select id="a-vitesse" @bind="vitesse">@foreach (var b in new[] { 2400, 4800, 9600, 19200, 38400 }) { <option value="@b">@b</option> }</select>
+                    </div>
+                    <div class="champ" style="flex: 0 0 220px">
+                        <label for="a-proto">Jeu de commandes</label>
+                        <select id="a-proto" @bind="v.ProtocoleAfficheur"><option value="epson">ESC/POS (Epson, le plus courant)</option><option value="cd5220">CD5220</option></select>
+                    </div>
+                </div>
+                <p class="detail" style="margin: 0">2 lignes de 20 caractères, sans accents. Port et réglages se lisent sur l’étiquette de l’afficheur ou dans le Gestionnaire de périphériques (Ports COM).</p>
+            }
+            @if (ModeAfficheur != "aucun")
+            {
+                <div><button type="button" class="btn" @onclick="EssaiAfficheurAsync">Essayer l’afficheur</button></div>
+            }
+        </section>
+
+        <section class="panneau" aria-labelledby="t-plus">
+            <h2 id="t-plus">À venir</h2>
+            <label class="case inactif" title="Modèle d’imprimante ESC/POS à définir"><input type="checkbox" disabled /><span>Ouverture du tiroir-caisse et coupe du papier (impression directe ESC/POS)</span></label>
+            <label class="case inactif" title="Les douchettes et terminaux se règlent sur l’appareil (mode GS1)"><input type="checkbox" disabled /><span>Réglage des scanners de codes-barres</span></label>
+            <p class="detail" style="margin: 0">Réglages enregistrés dans @ReglagesPoste.CheminFichier.</p>
+        </section>
+    </div>
+</div>
+
+@code {
+    private ReglagesPoste.Valeurs v = new();
+    private static readonly (string, string)[] Afficheurs = [("aucun", "Aucun"), ("ecran", "Écran secondaire"), ("vfd", "Afficheur 2 lignes"), ("les_deux", "Les deux")];
+    private IReadOnlyList<(int Index, string Libelle)> ecrans = [];
+    private string[] ports = [];
+    private int ecranClient, vitesse = 9600;
+    private string ModeAfficheur => v.Afficheur ?? "aucun";
+    private IReadOnlyList<(string Nom, bool ParDefaut)> imprimantes = [];
+    private int largeur = 80;
+    private string? erreur, message;
+    private bool enCours;
+
+    private string? Defaut => imprimantes.FirstOrDefault(i => i.ParDefaut).Nom;
+
+    protected override void OnInitialized()
+    {
+        var a = Reglages.Actuelles;
+        v = new ReglagesPoste.Valeurs
+        {
+            ImprimanteTickets = a.ImprimanteTickets, LargeurTicketMm = a.LargeurTicketMm,
+            TicketAutomatique = a.TicketAutomatique, ImprimanteEtiquettes = a.ImprimanteEtiquettes,
+            Afficheur = a.Afficheur, PortAfficheur = a.PortAfficheur, ProtocoleAfficheur = a.ProtocoleAfficheur ?? "epson"
+        };
+        (ecranClient, vitesse) = (a.EcranClient ?? 0, a.VitesseAfficheur ?? 9600);
+        ecrans = AfficheurClient.Ecrans();
+        ports = AfficheurClient.Ports();
+        largeur = Tickets.LargeurMm;
+        imprimantes = ImprimanteTickets.Installees();
+    }
+
+    /// <summary>Imprimante installée pendant que la page est ouverte : relecture de la liste de Windows.</summary>
+    private void Actualiser()
+    {
+        (erreur, message) = (null, null);
+        var avant = imprimantes.Count;
+        imprimantes = ImprimanteTickets.Installees();
+        message = imprimantes.Count == 0
+            ? "Aucune imprimante dans Windows : installez le pilote de l’imprimante de tickets."
+            : $"{imprimantes.Count} imprimante(s) dans Windows{(imprimantes.Count > avant ? $", dont {imprimantes.Count - avant} nouvelle(s)" : "")} : {string.Join(", ", imprimantes.Select(i => i.Nom))}.";
+    }
+
+    private ReglagesPoste.Valeurs Saisie() => new()
+    {
+        ImprimanteTickets = string.IsNullOrWhiteSpace(v.ImprimanteTickets) ? null : v.ImprimanteTickets,
+        LargeurTicketMm = largeur,
+        TicketAutomatique = v.TicketAutomatique,
+        ImprimanteEtiquettes = string.IsNullOrWhiteSpace(v.ImprimanteEtiquettes) ? null : v.ImprimanteEtiquettes.Trim(),
+        Afficheur = ModeAfficheur == "aucun" ? null : ModeAfficheur,
+        EcranClient = ecranClient > 0 ? ecranClient : null,
+        PortAfficheur = string.IsNullOrWhiteSpace(v.PortAfficheur) ? null : v.PortAfficheur,
+        VitesseAfficheur = vitesse,
+        ProtocoleAfficheur = v.ProtocoleAfficheur ?? "epson"
+    };
+
+    private void Enregistrer()
+    {
+        (erreur, message) = (null, null);
+        if (Saisie().ImprimanteEtiquettes is { } ip && !System.Net.IPAddress.TryParse(ip, out _))
+        {
+            erreur = "Adresse IP de l’imprimante d’étiquettes invalide (ex. 192.168.1.50).";
+            return;
+        }
+        erreur = Reglages.Enregistrer(Saisie());
+        if (erreur is null) { message = "Réglages du poste enregistrés."; Afficheur.Reappliquer(); }
+    }
+
+    // L'essai applique la saisie affichée le temps de l'impression, sans l'enregistrer
+    private async Task EssaiTicketAsync()
+    {
+        (erreur, message, enCours) = (null, null, true);
+        var avant = Reglages.Actuelles;
+        try
+        {
+            Reglages.Appliquer(Saisie());
+            var (pharmacie, _) = await Api.PharmacieAsync();
+            var e = await Tickets.ImprimerEssaiAsync(pharmacie?.Nom);
+            if (e is null) message = $"Ticket d’essai envoyé à « {Tickets.NomDeclare ?? Defaut ?? "imprimante par défaut"} » ({Tickets.LargeurMm} mm).";
+            else erreur = e;
+        }
+        finally { Reglages.Appliquer(avant); enCours = false; }
+    }
+
+    private async Task EssaiEtiquetteAsync()
+    {
+        (erreur, message, enCours) = (null, null, true);
+        var avant = Reglages.Actuelles;
+        try
+        {
+            Reglages.Appliquer(Saisie());
+            const string zpl = "^XA^CI28^FO30,30^A0N,32,32^FDEtiquette d'essai^FS^FO30,80^A0N,24,24^FDPharma Officine^FS^XZ";
+            var e = await Etiquettes.EnvoyerAsync(zpl);
+            if (e is null) message = $"Étiquette d’essai envoyée à {Etiquettes.Adresse}.";
+            else erreur = e;
+        }
+        finally { Reglages.Appliquer(avant); enCours = false; }
+    }
+}
+
+@code {
+    /// <summary>Essai avec la saisie affichée : accueil, puis un panier fictif, puis le paiement.</summary>
+    private async Task EssaiAfficheurAsync()
+    {
+        (erreur, message) = (null, null);
+        Reglages.Appliquer(Saisie());
+        Afficheur.Reappliquer();
+        await Task.Delay(1500);
+        Afficheur.Panier([("Produit d’essai", 2, 450m), ("Autre produit d’essai", 1, 120m)], 570m);
+        await Task.Delay(2500);
+        Afficheur.Paiement(570m, 1000m, 430m);
+        await Task.Delay(800);
+        if (Afficheur.DerniereErreur is { } e) erreur = e;
+        else message = "Essai envoyé : accueil, panier (570 DA) puis rendu (430 DA). Enregistrez pour garder ces réglages.";
+    }
+}

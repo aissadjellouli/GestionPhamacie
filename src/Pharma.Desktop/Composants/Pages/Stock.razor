@@ -1,0 +1,261 @@
+@page "/stock"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Stock</h1>
+            <p class="sous-titre">Par produit, avec lots, péremptions et grossistes</p>
+        </div>
+        <div class="actions">
+            <a href="tracabilite" class="btn">Traçabilité et rappel de lot</a>
+            @if (Session.A("psychotropes.registre"))
+            {
+                <a href="stock/registre" class="btn">Registre des psychotropes</a>
+            }
+            else
+            {
+                <button type="button" class="btn" disabled title="Droit « Consulter le registre » nécessaire">Registre des psychotropes</button>
+            }
+            @if (Session.A("catalogue.creer"))
+            {
+                <button type="button" class="btn" @onclick="() => (creation, messageCreation) = (true, null)">Nouveau produit</button>
+            }
+            <a href="achats?onglet=etiquettes" class="btn">Imprimer des étiquettes</a>
+            <a href="inventaire" class="btn btn-principal">Inventaire tournant</a>
+        </div>
+    </div>
+
+    @if (creation)
+    {
+        <FicheNouveauProduit OnCree="ProduitCreeAsync" OnAnnule="() => creation = false" />
+    }
+    @if (messageCreation is not null)
+    {
+        <div class="succes" role="status">@messageCreation</div>
+    }
+    @if (erreurRangement is not null)
+    {
+        <div class="erreur" role="alert">@erreurRangement</div>
+    }
+
+    @if (erreur is not null)
+    {
+        <div class="erreur" role="alert">@erreur</div>
+    }
+    else if (etat is null)
+    {
+        <p class="vide">Chargement du stock…</p>
+    }
+    else
+    {
+        <section class="tuiles" aria-label="Indicateurs">
+            <div class="tuile">
+                <span class="tuile-libelle">Références en stock</span>
+                <span class="tuile-valeur petite">@etat.Indicateurs.ReferencesEnStock.ToString("N0")</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Valeur du stock (prix d’achat)</span>
+                <span class="tuile-valeur petite">@Libelles.Dinars(etat.Indicateurs.ValeurAchat)</span>
+                <span class="tuile-note">hors lots périmés</span>
+            </div>
+            <div class="tuile">
+                <span class="tuile-libelle">Lots à date à vérifier</span>
+                <span class="tuile-valeur petite @(etat.Indicateurs.LotsDateAVerifier > 0 ? "attention" : null)">@etat.Indicateurs.LotsDateAVerifier</span>
+                <span class="tuile-note">issus de l’ancien logiciel</span>
+            </div>
+        </section>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end">
+            <div class="champ" style="flex: 999 1 320px">
+                <label for="rech">Rechercher (nom, DCI, code-barres, lot)</label>
+                <input id="rech" type="search" placeholder="Ex. amlodipine" @bind="recherche" @bind:event="oninput" />
+            </div>
+            <div class="champ" style="flex: 0 0 200px">
+                <label for="f-rayon">Rayon</label>
+                <select id="f-rayon" class="selection" @bind="rayon">
+                    <option value="">Tous les rayons</option>
+                    <option value="-">Non rangés</option>
+                    @foreach (var r in emplacements.Where(e => e.Zone == "vente").GroupBy(e => e.Rayon))
+                    {
+                        <option value="@r.Key">Rayon @r.Key</option>
+                    }
+                </select>
+            </div>
+            <div class="filtres" role="group" aria-label="Filtrer">
+                @foreach (var (id, libelle) in Filtres)
+                {
+                    <button type="button" class="puce" aria-pressed="@(id == filtre ? "true" : "false")"
+                            @onclick="() => filtre = id">@libelle</button>
+                }
+            </div>
+        </div>
+
+        <section class="tableau-cadre" aria-label="Liste des produits">
+            <table class="tableau">
+                <thead>
+                    <tr>
+                        <th scope="col">Produit</th>
+                        <th scope="col">Stock</th>
+                        <th scope="col">Couverture</th>
+                        <th scope="col">1re péremption</th>
+                        <th scope="col">Grossistes</th>
+                        <th scope="col">Emplacement</th>
+                        <th scope="col">Statut</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @* Seules les lignes visibles à l’écran sont dessinées : la page reste fluide avec des milliers de produits *@
+                    <Virtualize Items="Visibles" Context="l" ItemSize="58" OverscanCount="15" SpacerElement="tr">
+                        <tr>
+                            <td>
+                                <span class="nom">@l.NomCommercial</span><br />
+                                <span class="detail">@Detail(l)</span>
+                            </td>
+                            <td>@l.Stock</td>
+                            <td>@Couverture(l)</td>
+                            <td>@(l.PremierePeremption is { } d ? Libelles.MoisAnnee(d) : "—")</td>
+                            <td>@(l.Grossistes.Count > 0 ? string.Join(", ", l.Grossistes) : "—")</td>
+                            <td>
+                                @if (enRangement == l.ProduitId)
+                                {
+                                    <div style="display: flex; flex-direction: column; gap: 6px; min-width: 200px">
+                                        <select class="selection" aria-label="Emplacement de vente de @l.NomCommercial" @bind="choixVente">
+                                            <option value="0">Non rangé</option>
+                                            @foreach (var e in emplacements.Where(e => e.Zone == "vente" && e.Actif)) { <option value="@e.Id">@e.Code@(e.Libelle is null ? "" : $" · {e.Libelle}")</option> }
+                                        </select>
+                                        <select class="selection" aria-label="Réserve de @l.NomCommercial" @bind="choixReserve">
+                                            <option value="0">Pas de réserve</option>
+                                            @foreach (var e in emplacements.Where(e => e.Zone == "reserve" && e.Actif)) { <option value="@e.Id">@e.Code@(e.Libelle is null ? "" : $" · {e.Libelle}")</option> }
+                                        </select>
+                                        <div style="display: flex; gap: 6px">
+                                            <button type="button" class="btn btn-principal" @onclick="() => RangerAsync(l)">Enregistrer</button>
+                                            <button type="button" class="btn" @onclick="() => enRangement = null">Annuler</button>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    @if (l.Emplacement is not null) { <span class="code-emplacement">@l.Emplacement</span> } else { <span class="detail">non rangé</span> }
+                                    @if (l.Reserve is not null) { <br /><span class="detail">réserve @l.Reserve</span> }
+                                    @if (Session.A("stock.ajuster"))
+                                    {
+                                        <br /><button type="button" class="lien" @onclick="() => OuvrirRangement(l)">Ranger</button>
+                                    }
+                                }
+                            </td>
+                            <td><span class="pastille @Libelles.ClasseStatutStock(l.Statut)">@Libelles.StatutStock(l.Statut)</span></td>
+                        </tr>
+                    </Virtualize>
+                    @if (Visibles.Count == 0)
+                    {
+                        <tr><td colspan="7" class="vide">Aucun produit ne correspond.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+</div>
+
+@code {
+    private EtatStockDto? etat;
+    private string? erreur;
+    private string recherche = "";
+    private string filtre = "tous";
+    // ---- Emplacements ----
+    private List<EmplacementDto> emplacements = [];
+    private string rayon = "";
+    private long? enRangement;
+    private long choixVente, choixReserve;
+    private string? erreurRangement;
+
+    private bool PasseRayon(LigneStockDto l) => rayon switch
+    {
+        "" => true,
+        "-" => l.EmplacementId is null,
+        _ => emplacements.FirstOrDefault(e => e.Id == l.EmplacementId)?.Rayon == rayon
+    };
+
+    private void OuvrirRangement(LigneStockDto l) =>
+        (enRangement, choixVente, choixReserve) = (l.ProduitId, l.EmplacementId ?? 0, l.ReserveId ?? 0);
+
+    private async Task RangerAsync(LigneStockDto l)
+    {
+        var e = await Api.RangerProduitAsync(l.ProduitId, choixVente == 0 ? null : choixVente, choixReserve == 0 ? null : choixReserve);
+        if (e is not null) { erreurRangement = e; return; }
+        (enRangement, messageCreation, erreurRangement) = (null, $"« {l.NomCommercial} » rangé.", null);
+        (etat, erreur) = await Api.StockAsync();
+        (emplacements, _) = await Api.EmplacementsAsync();
+    }
+
+    private bool creation;
+    private string? messageCreation;
+
+    private async Task ProduitCreeAsync((long Id, string Nom) p)
+    {
+        (creation, messageCreation) = (false, $"« {p.Nom} » ajouté au catalogue. Il sera vendable après sa première réception (Achats, Réceptions).");
+        (etat, erreur) = await Api.StockAsync();
+        (emplacements, _) = await Api.EmplacementsAsync();
+    }
+
+    private static readonly (string, string)[] Filtres =
+        [("tous", "Tous"), ("commander", "À commander"), ("peremption", "Péremption proche"), ("psychotropes", "Psychotropes")];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Les deux listes sont chargées en même temps
+        var stock = Api.StockAsync();
+        var lieux = Api.EmplacementsAsync();
+        (etat, erreur) = await stock;
+        (emplacements, _) = await lieux;
+    }
+
+    // Liste filtrée gardée tant que le stock, la recherche, le filtre et le rayon ne changent pas
+    // (avant : recalculée plusieurs fois à chaque affichage)
+    private (EtatStockDto? Etat, string Recherche, string Filtre, string Rayon, List<EmplacementDto> Emplacements) cleVisibles;
+    private List<LigneStockDto> visiblesEnCache = [];
+
+    private List<LigneStockDto> Visibles
+    {
+        get
+        {
+            // Références des listes : un rechargement (même de même taille) invalide le filtre gardé
+            var cle = (etat, recherche, filtre, rayon, emplacements);
+            if (cle != cleVisibles)
+            {
+                visiblesEnCache = etat?.Lignes.Where(l => PasseFiltre(l) && PasseRecherche(l) && PasseRayon(l)).ToList() ?? [];
+                cleVisibles = cle;
+            }
+            return visiblesEnCache;
+        }
+    }
+
+    private bool PasseFiltre(LigneStockDto l) => filtre switch
+    {
+        "commander" => l.Statut is "rupture" or "critique",
+        "peremption" => l.PeremptionProche,
+        "psychotropes" => Libelles.EstSousRegistre(l.Classe),
+        _ => true
+    };
+
+    private bool PasseRecherche(LigneStockDto l)
+    {
+        var t = recherche.Trim();
+        if (t.Length == 0) return true;
+        bool Contient(string? s) => s?.Contains(t, StringComparison.CurrentCultureIgnoreCase) == true;
+        return Contient(l.NomCommercial) || Contient(l.Dci) || l.CodeBarre == t
+               || l.NumerosLots.Any(n => n.Equals(t, StringComparison.OrdinalIgnoreCase))
+               || string.Equals(l.Emplacement, t, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Detail(LigneStockDto l)
+    {
+        var lots = l.NombreLots switch { 0 => "aucun lot", 1 => "1 lot", var n => $"{n} lots" };
+        var registre = Libelles.EstSousRegistre(l.Classe) ? " · registre" : "";
+        return $"{l.Dci ?? "DCI non renseignée"} · {lots}{registre}";
+    }
+
+    private static string Couverture(LigneStockDto l) =>
+        l.CouvertureJours is { } j ? $"{j} j" : l.Stock > 0 ? "aucune vente" : "—";
+}

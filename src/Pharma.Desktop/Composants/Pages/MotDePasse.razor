@@ -1,0 +1,56 @@
+@page "/mot-de-passe"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject NavigationManager Nav
+
+<div class="page connexion">
+    <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1>@(Session.DoitChangerMotDePasse ? "Choisissez votre mot de passe" : "Changer mon mot de passe")</h1>
+        <p class="sous-titre">
+            @(Session.DoitChangerMotDePasse
+                ? "Vous êtes connecté avec un mot de passe provisoire : choisissez votre mot de passe personnel avant de continuer."
+                : "Votre mot de passe personnel : personne d’autre ne doit le connaître.")
+        </p>
+    </div>
+    <form class="carte" @onsubmit="ChangerAsync">
+        <div class="champ">
+            <label for="mdp-actuel" class="requis">Mot de passe actuel@(Session.DoitChangerMotDePasse ? " (provisoire)" : "")</label>
+            <input id="mdp-actuel" type="password" autocomplete="current-password" autofocus @bind="actuel" @bind:event="oninput" />
+        </div>
+        <div class="champ">
+            <label for="mdp-nouveau" class="requis">Nouveau mot de passe (@Pharma.Desktop.Composants.Pages.MotDePasse.LongueurMin caractères minimum)</label>
+            <input id="mdp-nouveau" type="password" autocomplete="new-password" @bind="nouveau" @bind:event="oninput" />
+        </div>
+        <div class="champ">
+            <label for="mdp-confirmation" class="requis">Confirmation</label>
+            <input id="mdp-confirmation" type="password" autocomplete="new-password" @bind="confirmation" @bind:event="oninput" />
+        </div>
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+        <button class="btn btn-principal" type="submit" disabled="@enCours">Enregistrer le mot de passe</button>
+    </form>
+</div>
+
+@code {
+    /// <summary>Même règle que le serveur (RegleMotDePasse) : le serveur revérifie toujours.</summary>
+    public const int LongueurMin = 8;
+
+    private string actuel = "", nouveau = "", confirmation = "";
+    private string? erreur, message;
+    private bool enCours;
+
+    private async Task ChangerAsync()
+    {
+        (erreur, message) = (null, null);
+        if (nouveau.Length < LongueurMin) { erreur = $"Le nouveau mot de passe doit compter au moins {LongueurMin} caractères."; return; }
+        if (nouveau != confirmation) { erreur = "La confirmation ne correspond pas au nouveau mot de passe."; return; }
+        enCours = true;
+        var premiere = Session.DoitChangerMotDePasse;
+        erreur = await Api.ChangerMotDePasseAsync(actuel, nouveau, confirmation);
+        enCours = false;
+        (actuel, nouveau, confirmation) = ("", "", "");
+        if (erreur is not null) return;
+        if (premiere) Nav.NavigateTo("");
+        else message = "Mot de passe changé.";
+    }
+}
