@@ -70,22 +70,16 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
                 throw new RegleMetierException("Une partie de ces boîtes vient déjà d’être rendue : rechargez la vente.");
         }
 
-        long retourId;
-        await using (var cmd = new NpgsqlCommand("""
-            INSERT INTO retour_client (vente_id, motif, utilisateur_id, valide_par, mode, montant_rembourse, session_caisse_id, poste)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
-            """, cx, tx))
-        {
-            cmd.Parameters.AddWithValue(a.VenteId);
-            cmd.Parameters.AddWithValue(a.Motif);
-            cmd.Parameters.AddWithValue(a.UtilisateurId);
-            cmd.Parameters.AddWithValue(a.ValidePar);
-            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.Mode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
-            cmd.Parameters.AddWithValue(a.Montant);
-            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.SessionCaisseId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
-            cmd.Parameters.AddWithValue(a.Poste);
-            retourId = (long)(await cmd.ExecuteScalarAsync(ct))!;
-        }
+        // Dette diminuée (vente à crédit, ou dette soldée au choix du caissier) : une écriture « credit » pour cette part,
+        // et une seconde écriture (sans ligne) pour l'argent rendu. Le total des deux reste le « déjà rendu » de la vente ;
+        // seule l'écriture de l'argent rendu sort de la caisse ou de la banque.
+        var rendu = a.Montant - a.ReductionDette;
+        var modeRendu = a.Mode == "credit" ? "especes" : a.Mode;
+        var (modePrincipal, montantPrincipal) = a.ReductionDette > 0 ? ("credit", a.ReductionDette)
+            : (a.Mode == "credit" && rendu == 0 ? "credit" : modeRendu, rendu);
+        var retourId = await InsererRetourAsync(cx, tx, a, modePrincipal, montantPrincipal, ct);
+        if (a.ReductionDette > 0 && rendu > 0)
+            await InsererRetourAsync(cx, tx, a, modeRendu, rendu, ct);
 
         var reference = $"Retour client {a.Numero}";
         foreach (var l in a.Lignes)
@@ -124,13 +118,41 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
             }
         }
 
-        // Vente à crédit : la dette du patient diminue de la part rendue
-        if (a.Mode == "credit" && a.Montant > 0)
-            await Executer(cx, tx, """
-                UPDATE patient SET solde_credit = GREATEST(0, solde_credit - $2) WHERE id = (SELECT patient_id FROM vente WHERE id = $1)
-                """, ct, a.VenteId, a.Montant);
+        // Vente à crédit : la dette diminue de ce qui reste dû (calculé avant) ; si elle a bougé entre-temps, on refuse
+        if (a.ReductionDette > 0)
+        {
+            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Retour, a.VenteId, a.UtilisateurId, a.Poste, $"Retour client {a.Numero} : {a.Motif}", ct);
+            await using var cmd = new NpgsqlCommand("""
+                UPDATE patient SET solde_credit = solde_credit - $2
+                WHERE id = COALESCE($3, (SELECT patient_id FROM vente WHERE id = $1)) AND solde_credit >= $2
+                """, cx, tx);
+            cmd.Parameters.AddWithValue(a.VenteId);
+            cmd.Parameters.AddWithValue(a.ReductionDette);
+            // Vente sans patient : dette du patient qui s'est nommé au retour
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.PatientDetteId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+            if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+                throw new RegleMetierException("La dette du patient vient de changer : rechargez la vente avant d’enregistrer le retour.");
+        }
 
         await tx.CommitAsync(ct);
+    }
+
+    private static async Task<long> InsererRetourAsync(NpgsqlConnection cx, NpgsqlTransaction tx, RetourAEcrire a, string? mode, decimal montant,
+        CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand("""
+            INSERT INTO retour_client (vente_id, motif, utilisateur_id, valide_par, mode, montant_rembourse, session_caisse_id, poste)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+            """, cx, tx);
+        cmd.Parameters.AddWithValue(a.VenteId);
+        cmd.Parameters.AddWithValue(a.Motif);
+        cmd.Parameters.AddWithValue(a.UtilisateurId);
+        cmd.Parameters.AddWithValue(a.ValidePar);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)mode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.AddWithValue(montant);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.SessionCaisseId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.AddWithValue(a.Poste);
+        return (long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
     private static async Task Executer(NpgsqlConnection cx, NpgsqlTransaction tx, string sql, CancellationToken ct, params object[] valeurs)

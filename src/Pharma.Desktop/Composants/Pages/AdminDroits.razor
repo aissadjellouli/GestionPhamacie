@@ -48,6 +48,8 @@
                                 <input id="u-mdp" type="password" autocomplete="new-password" @ref="champMotDePasse" @bind="fiche.MotDePasse" @bind:event="oninput"
                                        class="@Obligatoire.Classe(MotDePasseManque)" aria-invalid="@Obligatoire.Aria(MotDePasseManque)" />
                             </div>
+                            <div class="champ"><label for="u-tel">Téléphone</label><input id="u-tel" type="tel" autocomplete="off" maxlength="30" @bind="fiche.Telephone" /></div>
+                            <div class="champ"><label for="u-mail">E-mail</label><input id="u-mail" type="email" autocomplete="off" maxlength="120" @bind="fiche.Email" /></div>
                         </div>
                         @if (etat.Roles.FirstOrDefault(r => r.Id == fiche.RoleId)?.Systeme == true)
                         {
@@ -71,7 +73,7 @@
                             @foreach (var u in etat.Utilisateurs)
                             {
                                 <tr>
-                                    <td><span class="nom">@u.NomComplet</span><br /><span class="detail">@u.Identifiant</span></td>
+                                    <td><span class="nom"><LienContact Type="employe" Id="u.Id" Nom="@u.NomComplet" /></span><br /><span class="detail">@u.Identifiant@(u.Telephone is { } tel ? $" · {tel}" : "")</span></td>
                                     <td>@u.Role</td>
                                     <td><span class="pastille @(u.Actif ? "ok" : "info")">@(u.Actif ? "Actif" : "Désactivé")</span></td>
                                     <td>@(u.DerniereConnexion is { } d ? Libelles.DateHeureLocale(d) : "Jamais")</td>
@@ -185,6 +187,8 @@
         public long RoleId { get; set; }
         public bool Actif { get; set; } = true;
         public string MotDePasse { get; set; } = "";
+        public string? Telephone { get; set; }
+        public string? Email { get; set; }
     }
 
     private EtatDroitsDto? etat;
@@ -238,7 +242,7 @@
     private void Modifier(UtilisateurAdminDto u)
     {
         (message, controle) = (null, false);
-        fiche = new Fiche { Id = u.Id, NomComplet = u.NomComplet, Identifiant = u.Identifiant, RoleId = u.RoleId, Actif = u.Actif };
+        fiche = new Fiche { Id = u.Id, NomComplet = u.NomComplet, Identifiant = u.Identifiant, RoleId = u.RoleId, Actif = u.Actif, Telephone = u.Telephone, Email = u.Email };
     }
 
     private async Task EnregistrerFicheAsync()
@@ -257,13 +261,13 @@
         enCours = true;
         if (fiche.Id is null)
         {
-            (_, erreur) = await Api.CreerUtilisateurAsync(new NouvelUtilisateurDto(fiche.NomComplet, fiche.Identifiant, fiche.MotDePasse, fiche.RoleId));
+            (_, erreur) = await Api.CreerUtilisateurAsync(new NouvelUtilisateurDto(fiche.NomComplet, fiche.Identifiant, fiche.MotDePasse, fiche.RoleId, fiche.Telephone, fiche.Email));
             if (erreur is null) message = $"Compte « {fiche.Identifiant.Trim().ToLowerInvariant()} » créé.";
         }
         else
         {
             erreur = await Api.ModifierUtilisateurAsync(fiche.Id.Value,
-                new ModificationUtilisateurDto(fiche.NomComplet, fiche.RoleId, fiche.Actif, string.IsNullOrEmpty(fiche.MotDePasse) ? null : fiche.MotDePasse));
+                new ModificationUtilisateurDto(fiche.NomComplet, fiche.RoleId, fiche.Actif, string.IsNullOrEmpty(fiche.MotDePasse) ? null : fiche.MotDePasse, fiche.Telephone, fiche.Email));
             if (erreur is null) message = $"Compte « {fiche.Identifiant} » enregistré.";
         }
         enCours = false;

@@ -22,6 +22,26 @@ public class RegleFactureTests
     }
 
     [Fact]
+    public void La_remise_porte_la_tva_des_produits_remises()
+    {
+        // Produit à 19 % vendu 119 DA TTC avec 19 DA de remise : TTC 100, HT 84,03, TVA 15,97 (et non TVA 19)
+        var lignes = RegleFacture.DepuisVentes(Destinataire.Patient, [new LigneVendue(2, "T-000004", 20, "Parapharmacie", 19, 1, 119, 0, 19)]);
+        Assert.Equal([(119m, 19m), (-19m, 19m)], lignes.Select(l => (l.MontantTtc, l.TauxTva)));
+        var t = RegleFacture.Calculer(lignes);
+        Assert.Equal((84.03m, 15.97m, 100m), (t.Ht, t.Tva, t.Ttc));
+    }
+
+    [Fact]
+    public void La_remise_est_repartie_entre_les_taux_de_tva_au_prorata()
+    {
+        // 300 DA à 0 % et 100 DA à 19 % : la remise de 40 DA se partage 30 / 10, sans perdre un centime
+        LigneVendue[] vente = [new(3, "T-000005", 30, "Médicament", 0, 1, 300, 0, 40), new(3, "T-000005", 31, "Parapharmacie", 19, 1, 100, 0, 40)];
+        var remises = RegleFacture.DepuisVentes(Destinataire.Patient, vente).Where(l => l.MontantTtc < 0).ToList();
+        Assert.Equal([(-30m, 0m), (-10m, 19m)], remises.Select(l => (l.MontantTtc, l.TauxTva)));
+        Assert.Equal(360m, RegleFacture.Calculer(RegleFacture.DepuisVentes(Destinataire.Patient, vente)).Ttc);
+    }
+
+    [Fact]
     public void Facture_organisme_reprend_la_part_prise_en_charge_sans_remise()
     {
         var lignes = RegleFacture.DepuisVentes(Destinataire.Organisme, Vente);

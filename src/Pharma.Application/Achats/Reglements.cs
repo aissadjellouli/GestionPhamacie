@@ -11,10 +11,15 @@ public sealed record GrossisteAReglement(long Id, string Nom, decimal Solde, dec
 
 public sealed record FactureFournisseur(long ReceptionId, string? NumeroFacture, string? NumeroBl, DateTime Date, decimal Montant, decimal Regle, decimal Reste);
 
-public sealed record ReglementPasse(long Id, DateOnly Date, decimal Montant, string Moyen, string? Reference, DateOnly? Echeance, decimal PartTiroir, string Employe);
+public sealed record ReglementPasse(long Id, DateOnly Date, decimal Montant, string Moyen, string? Reference, DateOnly? Echeance, decimal PartTiroir, string Employe,
+    long? EmployeId = null);
 
 /// <summary>Dette du grossiste (solde, avoirs et reprise compris), factures encore à payer, derniers règlements.</summary>
-public sealed record SituationGrossiste(long Id, string Nom, decimal Solde, IReadOnlyList<FactureFournisseur> Factures, IReadOnlyList<ReglementPasse> Reglements);
+/// <summary>Ligne du relevé de la dette envers un grossiste ; Montant positif : la dette augmente, négatif : elle diminue.</summary>
+public sealed record MouvementGrossiste(DateTime Date, string Type, decimal Montant, decimal SoldeApres, string? Employe, string? Reference, long? EmployeId = null);
+
+public sealed record SituationGrossiste(long Id, string Nom, decimal Solde, IReadOnlyList<FactureFournisseur> Factures, IReadOnlyList<ReglementPasse> Reglements,
+    IReadOnlyList<MouvementGrossiste>? Mouvements = null, int MouvementsTotal = 0);
 
 public sealed record ReglementAEcrire(long FournisseurId, DateOnly Date, decimal Montant, MoyenReglement Moyen, string? Reference, string? Banque,
     DateOnly? Echeance, decimal PartTiroir, long? SessionCaisseId, long UtilisateurId, string? Commentaire,
@@ -24,6 +29,8 @@ public interface IReglementsFournisseurs
 {
     Task<IReadOnlyList<GrossisteAReglement>> GrossistesAsync(CancellationToken ct = default);
     Task<SituationGrossiste?> SituationAsync(long fournisseurId, CancellationToken ct = default);
+    /// <summary>Une page du relevé de la dette envers un grossiste, du mouvement le plus récent au plus ancien.</summary>
+    Task<Page<MouvementGrossiste>> MouvementsAsync(long fournisseurId, DemandePage page, FiltreReleve? filtre = null, CancellationToken ct = default);
     Task<long> EnregistrerAsync(ReglementAEcrire r, CancellationToken ct = default);
 }
 
@@ -33,6 +40,12 @@ public sealed class ConsulterReglements(IReglementsFournisseurs reglements, IPer
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsRegler, "consulter les règlements des grossistes", ct);
         return await reglements.GrossistesAsync(ct);
+    }
+
+    public async Task<Page<MouvementGrossiste>> MouvementsAsync(long fournisseurId, DemandePage page, FiltreReleve? filtre, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.AchatsRegler, "consulter les règlements des grossistes", ct);
+        return await reglements.MouvementsAsync(fournisseurId, page, filtre, ct);
     }
 
     public async Task<SituationGrossiste> SituationAsync(long fournisseurId, long utilisateurId, CancellationToken ct = default)

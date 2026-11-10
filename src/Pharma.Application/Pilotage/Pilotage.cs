@@ -22,11 +22,16 @@ public interface IPilotage
 }
 
 /// <summary>Réservé au titulaire : chiffres de la journée et décisions qui l'attendent.</summary>
-public sealed class ObtenirPilotage(IPilotage pilotage, IPermissionService droits)
+public sealed class ObtenirPilotage(IPilotage pilotage, IPermissionService droits, Suivi.ObtenirSuiviDettes? suiviDettes = null)
 {
     public async Task<TableauPilotage> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "consulter le tableau de bord", ct);
-        return await pilotage.TableauAsync(ct);
+        var tableau = await pilotage.TableauAsync(ct);
+        if (suiviDettes is null) return tableau;
+        // Dettes et créances en retard, de tous les tiers (patients, factures, organismes, grossistes, effets) : remontées avec les alertes
+        var dettes = (await suiviDettes.CalculerAsync(ct)).Alertes
+            .Select(a => new AlerteResume("dette_" + a.Categorie, a.Sens == "dette" ? "urgent" : "attention", a.Message)).ToList();
+        return dettes.Count == 0 ? tableau : tableau with { Alertes = [.. tableau.Alertes, .. dettes] };
     }
 }

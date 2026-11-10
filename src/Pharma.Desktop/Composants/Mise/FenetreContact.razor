@@ -1,0 +1,172 @@
+@implements IDisposable
+@inject FichesContact Fiches
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject NavigationManager Nav
+
+@* Fenêtre unique de la fiche contact, posée dans la mise en page : coordonnées, situation, raccourcis vers les écrans du tiers.
+   Fermeture : « Fermer », la touche Échap ou un clic à côté (la fiche ne contient aucune saisie). *@
+@if (Fiches.Ouverte is { } o)
+{
+    <div class="voile voile-contact" role="dialog" aria-modal="true" aria-labelledby="t-contact" tabindex="-1" @ref="fenetre"
+         @onkeydown="Touche" @onkeydown:stopPropagation="true" @onclick="Fiches.Fermer" @onclick:stopPropagation="true">
+        <section class="panneau fenetre-contact" @onclick:stopPropagation="true">
+            <div class="titre-fenetre">
+                <div>
+                    <h2 id="t-contact">@(fiche?.Nom ?? o.Nom)</h2>
+                    <p class="sous-titre">@(fiche?.Precision ?? Libelles.TypeContact(o.Type))@(fiche is { Actif: false } ? " · inactif" : "")</p>
+                </div>
+                <button type="button" class="btn" @onclick="Fiches.Fermer">Fermer</button>
+            </div>
+
+            @if (erreur is not null)
+            {
+                <div class="erreur" role="alert">@erreur</div>
+            }
+            else if (fiche is null)
+            {
+                <p class="vide" style="margin: 0">Chargement…</p>
+            }
+            else
+            {
+                <h3>Coordonnées</h3>
+                @if (fiche.Coordonnees.Count == 0)
+                {
+                    <p class="detail" style="margin: 0">
+                        @(fiche.CoordonneesMasquees ? "Les coordonnées d’un employé ne sont visibles que par lui-même et par le titulaire." : "Aucune coordonnée enregistrée.")
+                    </p>
+                }
+                else
+                {
+                    <dl class="fiche-infos">
+                        @foreach (var i in fiche.Coordonnees)
+                        {
+                            <dt>@i.Libelle</dt>
+                            <dd>
+                                @switch (i.Genre)
+                                {
+                                    case "telephone":
+                                        <strong>@i.Valeur</strong>
+                                        break;
+                                    case "email":
+                                        <a href="@($"mailto:{i.Valeur}")">@i.Valeur</a>
+                                        break;
+                                    default:
+                                        @i.Valeur
+                                        break;
+                                }
+                                @if (i.Genre is "telephone" or "email")
+                                {
+                                    <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => CopierAsync(i.Valeur)">Copier</button>
+                                }
+                            </dd>
+                        }
+                    </dl>
+                }
+
+                @if (fiche.Situation.Count > 0)
+                {
+                    <h3>Situation</h3>
+                    <dl class="fiche-infos">
+                        @foreach (var i in fiche.Situation)
+                        {
+                            <dt>@i.Libelle</dt>
+                            <dd class="@(i.Genre == "montant_du" ? "montant-du" : null)">@i.Valeur</dd>
+                        }
+                    </dl>
+                }
+
+                @if (Raccourcis.Count > 0)
+                {
+                    <div class="filtres">
+                        @foreach (var (libelle, route) in Raccourcis)
+                        {
+                            <button type="button" class="btn" @onclick="() => Aller(route)">@libelle</button>
+                        }
+                    </div>
+                }
+                @if (copie is not null) { <p class="detail" role="status" style="margin: 0">@copie</p> }
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private ElementReference fenetre;
+    private FicheContactDto? fiche;
+    private string? erreur, copie;
+    private (string Type, long Id)? chargee;
+    private bool aFocaliser;
+
+    protected override void OnInitialized() => Fiches.Changee += Rafraichir;
+    public void Dispose() => Fiches.Changee -= Rafraichir;
+
+    private void Rafraichir() => _ = InvokeAsync(async () =>
+    {
+        if (Fiches.Ouverte is not { } o) { (fiche, erreur, copie, chargee) = (null, null, null, null); StateHasChanged(); return; }
+        if (chargee == (o.Type, o.Id)) return;
+        (fiche, erreur, copie, chargee, aFocaliser) = (null, null, null, (o.Type, o.Id), true);
+        StateHasChanged();
+        var (f, e) = await Api.ContactAsync(o.Type, o.Id);
+        if (chargee != (o.Type, o.Id)) return;   // une autre fiche a été demandée entre-temps
+        (fiche, erreur) = (f, e);
+        StateHasChanged();
+    });
+
+    protected override async Task OnAfterRenderAsync(bool premierRendu)
+    {
+        if (!aFocaliser || Fiches.Ouverte is null) return;
+        aFocaliser = false;
+        try { await fenetre.FocusAsync(); } catch (InvalidOperationException) { }
+    }
+
+    private void Touche(KeyboardEventArgs e) { if (e.Key == "Escape") Fiches.Fermer(); }
+
+    private void Aller(string route)
+    {
+        Fiches.Fermer();
+        Nav.NavigateTo(route);
+    }
+
+    private async Task CopierAsync(string valeur)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(valeur);
+            copie = $"« {valeur} » copié.";
+        }
+        catch (System.Runtime.InteropServices.ExternalException) { copie = "Copie impossible : le presse-papiers est occupé, réessayez."; }
+        await Task.CompletedTask;
+    }
+
+    /// <summary>Écrans du tiers que l'employé a le droit d'ouvrir.</summary>
+    private List<(string Libelle, string Route)> Raccourcis
+    {
+        get
+        {
+            var liste = new List<(string, string)>();
+            if (fiche is null) return liste;
+            var nom = Uri.EscapeDataString(fiche.Nom);
+            switch (fiche.Type)
+            {
+                case "patient":
+                    if (Session.A("caisse.vendre")) liste.Add(("Relevé de dette", $"caisse?credit={fiche.Id}"));
+                    if (Session.A("factures.gerer")) liste.Add(("Factures", $"factures?q={nom}"));
+                    break;
+                case "grossiste":
+                    if (Session.A("achats.regler")) liste.Add(("Règlements et relevé", $"achats?onglet=reglements&grossiste={fiche.Id}"));
+                    if (Session.A("achats.commander") || Session.A("achats.receptionner")) liste.Add(("Bons de commande", $"achats?onglet=commandes&grossiste={fiche.Id}"));
+                    break;
+                case "organisme":
+                case "client":
+                    if (Session.A("factures.gerer")) liste.Add(("Factures", $"factures?q={nom}"));
+                    break;
+                case "employe":
+                    if (Session.A("admin.parametres")) liste.Add(("Journal des actions", $"admin/caisse?employe={nom}"));
+                    if (Session.A("admin.utilisateurs")) liste.Add(("Utilisateurs et droits", "admin/droits"));
+                    break;
+            }
+            return liste;
+        }
+    }
+}

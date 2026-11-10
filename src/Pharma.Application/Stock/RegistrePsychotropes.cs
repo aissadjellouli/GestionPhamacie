@@ -11,7 +11,7 @@ public sealed record LigneRegistre(
     long Numero, DateTime Date, long ProduitId, string Produit, string NumeroLot, string Type,
     int? Entree, int? Sortie, int? SoldeProduit, int SoldeLot,
     string? Patient, string? Medecin, string? Ordonnance, string? Fournisseur, string? Reference,
-    string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe);
+    string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe, long? PatientId = null);
 
 /// <summary>Balance mensuelle des entrées et sorties d'un produit (arrêté du 23 août 1999, art. 4).</summary>
 public sealed record BalanceMensuelle(long ProduitId, string Produit, int Annee, int Mois, int Entrees, int Sorties, int? SoldeFin);
@@ -56,7 +56,7 @@ public sealed class ConsulterRegistre(IRegistrePsychotropes registre, IPermissio
         if (masquer)
             lignes = lignes.Select(l => l with
             {
-                Patient = Initiales(l.Patient), PorteurNom = Initiales(l.PorteurNom),
+                Patient = Initiales(l.Patient), PatientId = null, PorteurNom = Initiales(l.PorteurNom),
                 PorteurAdresse = l.PorteurAdresse is null ? null : "•••", PorteurPiece = l.PorteurPiece is null ? null : "•••"
             }).ToList();
 

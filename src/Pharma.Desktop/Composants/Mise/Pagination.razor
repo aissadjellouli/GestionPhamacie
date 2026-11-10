@@ -1,0 +1,42 @@
+@* Pied de liste commun, toujours affiché sous un tableau paginé : « lignes 11 à 20 sur 1 240 », page précédente et suivante,
+   et le nombre de lignes par page (5 à 200, 10 par défaut). Total compte toutes les lignes qui répondent aux filtres :
+   la coupure n'est jamais silencieuse. *@
+<nav class="pagination" aria-label="@(Libelle ?? "Pages de la liste")">
+    <span class="detail">@(Total == 0 ? "Aucune ligne" : $"Lignes {Debut} à {Fin} sur {Total:N0}")</span>
+    @if (Pages > 1 || Numero > 1)
+    {
+        <button type="button" class="btn" disabled="@(Occupe || Numero <= 1)" @onclick="() => AllerAsync(Numero - 1)">‹ Précédent</button>
+        <span class="detail">Page @Numero sur @Pages</span>
+        <button type="button" class="btn" disabled="@(Occupe || Numero >= Pages)" @onclick="() => AllerAsync(Numero + 1)">Suivant ›</button>
+    }
+    <label class="detail pagination-taille">Lignes par page
+        <select value="@Taille" @onchange="ChangerTailleAsync" disabled="@Occupe" aria-label="Lignes par page">
+            @foreach (var t in Tailles.Append(Taille).Distinct().Order())
+            {
+                <option value="@t" selected="@(t == Taille)">@t</option>
+            }
+        </select>
+    </label>
+</nav>
+
+@code {
+    public const int TailleParDefaut = 10;
+    private static readonly int[] Tailles = [5, 10, 20, 30, 50, 100, 200];
+
+    [Parameter] public int Total { get; set; }
+    [Parameter] public int Numero { get; set; } = 1;
+    [Parameter] public int Taille { get; set; } = TailleParDefaut;
+    [Parameter] public bool Occupe { get; set; }
+    [Parameter] public string? Libelle { get; set; }
+    /// <summary>Appelé avec la page et la taille demandées : l'écran recharge sa liste.</summary>
+    [Parameter] public EventCallback<(int Numero, int Taille)> OnChange { get; set; }
+
+    private int Pages => Math.Max(1, (int)Math.Ceiling(Total / (double)Math.Max(Taille, 1)));
+    private int Debut => Total == 0 ? 0 : (Numero - 1) * Taille + 1;
+    private int Fin => Math.Min(Numero * Taille, Total);
+
+    private Task AllerAsync(int numero) => OnChange.InvokeAsync((Math.Clamp(numero, 1, Pages), Taille));
+
+    private Task ChangerTailleAsync(ChangeEventArgs e) =>
+        OnChange.InvokeAsync((1, int.TryParse(e.Value?.ToString(), out var t) ? t : Taille));
+}

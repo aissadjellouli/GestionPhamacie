@@ -51,6 +51,7 @@
                 @if (Session.A("tresorerie.gerer"))
                 {
                     <a href="tresorerie" class="@Actif("tresorerie")" aria-current="@Courant("tresorerie")">Trésorerie</a>
+                    <a href="dettes" class="@Actif("dettes")" aria-current="@Courant("dettes")">Dettes et créances</a>
                 }
                 @if (PremiereRubriqueAdmin is { } lienAdmin)
                 {
@@ -89,7 +90,18 @@
     }
     else if (Session.EstConnecte || EstPageConnexion)
     {
-        @Body
+        @* Erreur imprévue dans un écran : elle s'affiche ici au lieu d'arrêter le poste ; le reste du logiciel reste utilisable *@
+        <ErrorBoundary @ref="garde">
+            <ChildContent>@Body</ChildContent>
+            <ErrorContent Context="exception">
+                <div class="erreur" role="alert">
+                    <p style="margin: 0 0 8px"><strong>Cet écran a rencontré une erreur imprévue.</strong> Ce qui était déjà enregistré sur le serveur le reste : rechargez l’écran et vérifiez avant de recommencer.</p>
+                    <p class="detail" style="margin: 0 0 8px">@exception.GetType().Name : @exception.Message</p>
+                    <button type="button" class="btn" @onclick="() => garde?.Recover()">Recharger l’écran</button>
+                </div>
+            </ErrorContent>
+        </ErrorBoundary>
+        <FenetreContact />
     }
     else
     {
@@ -152,8 +164,12 @@
         catch (JSDisconnectedException) { /* fenêtre fermée */ }
     }
 
+    private ErrorBoundary? garde;
+
     private async void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
+        // Changer d'écran efface l'erreur affichée par le précédent
+        garde?.Recover();
         await CompterUrgentesAsync();
         await InvokeAsync(StateHasChanged);
     }

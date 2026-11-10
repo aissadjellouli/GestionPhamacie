@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Pharma.Api.Securite;
+using Pharma.Application.Commun;
 using Pharma.Application.Achats;
 using Pharma.Domain.Achats;
 using Pharma.Domain.Commun;
@@ -23,8 +24,8 @@ internal static class AchatsEndpoints
            .ExigerPermission(Lecture);
 
         // ---- Commandes ----
-        achats.MapGet("/commandes", async (ListerCommandes lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(VersDto)))
+        achats.MapGet("/commandes", async (long? fournisseurId, string? statut, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerCommandes lister, CancellationToken ct) =>
+                Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, statut, du, au, q), ct), x => VersDto(x))))
            .ExigerPermission(Lecture);
 
         achats.MapGet("/commandes/{id:long}", async (long id, ObtenirCommande obtenir, CancellationToken ct) =>
@@ -64,9 +65,9 @@ internal static class AchatsEndpoints
            .ExigerPermission(Permissions.AchatsCommander);
 
         // ---- Réceptions ----
-        achats.MapGet("/receptions", async (ListerReceptions lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(r => new ReceptionResumeDto(
-                    r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, r.NombreLots, r.NombreBoites, r.MontantTtc))))
+        achats.MapGet("/receptions", async (long? fournisseurId, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerReceptions lister, CancellationToken ct) =>
+                Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, null, du, au, q), ct), r => new ReceptionResumeDto(
+                    r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, r.NombreLots, r.NombreBoites, r.MontantTtc, r.FournisseurId))))
            .ExigerPermission(Lecture);
 
         achats.MapPost("/datamatrix", async (DataMatrixRequete req, LireDataMatrix lire, CancellationToken ct) =>
@@ -94,8 +95,8 @@ internal static class AchatsEndpoints
            .ExigerPermission(Permissions.AchatsReceptionner);
 
         // ---- Retours ----
-        achats.MapGet("/retours", async (ListerRetours lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(VersDto)))
+        achats.MapGet("/retours", async (long? fournisseurId, string? statut, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerRetours lister, CancellationToken ct) =>
+                Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, statut, du, au, q), ct), x => VersDto(x))))
            .ExigerPermission(Lecture);
 
         achats.MapGet("/lots/{id:long}/retour", async (long id, ObtenirLotRetournable obtenir, CancellationToken ct) =>
@@ -162,6 +163,9 @@ internal static class AchatsEndpoints
     }
 
     private static IResult Fichier(DocumentGenere d) => Results.File(d.Contenu, "application/pdf", d.NomFichier);
+
+    private static PageDto<TDto> VersPage<T, TDto>(Page<T> p, Func<T, TDto> convertir) =>
+        new(p.Lignes.Select(convertir).ToList(), p.Total, p.Numero, p.Taille);
 
     private static CommandeAchatDto VersDto(CommandeResume c) =>
         new(c.Id, c.Numero, c.FournisseurId, c.Fournisseur, c.Date, c.Statut, c.NombreLignes, c.MontantHt);

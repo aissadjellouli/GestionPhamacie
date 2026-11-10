@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.AddSingleton<Pharma.Application.Stock.IDocumentsRegistre, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Factures.IDocumentsFactures, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Stock.IDocumentsInventaire, DocumentsPdf>();
+        services.AddSingleton<Pharma.Application.Caisse.IDocumentsCredit, DocumentsPdf>();
         services.AddScoped<Pharma.Application.Stock.ICampagnesInventaire, Lecture.CampagnesInventaireSql>();
         services.AddScoped<Pharma.Application.Pilotage.IPilotage, Lecture.PilotageSql>();
         services.AddScoped<Pharma.Application.Stock.IRegistrePsychotropes, RegistreSql>();
@@ -88,6 +89,8 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Caisse.IAnnulationsVente, Caisse.AnnulationsVenteSql>();
         services.AddScoped<Pharma.Application.Caisse.IRetoursClient, Caisse.RetoursClientSql>();
         services.AddScoped<Pharma.Application.Caisse.ICreditsClients, Caisse.CreditsClientsSql>();
+        services.AddScoped<Pharma.Application.Suivi.ISuiviDettes, Suivi.SuiviDettesSql>();
+        services.AddScoped<Pharma.Application.Contacts.IContacts, Contacts.ContactsSql>();
         services.AddScoped<Pharma.Application.Securite.IDetenteursDroit, Securite.DetenteursDroitSql>();
         services.AddScoped<Pharma.Application.Tresorerie.ITresorerie, Tresorerie.TresorerieSql>();
         services.AddScoped<Pharma.Application.Factures.IFactures, Factures.FacturesSql>();

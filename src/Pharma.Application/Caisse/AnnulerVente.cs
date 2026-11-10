@@ -12,7 +12,7 @@ public sealed record LigneVenteAnnulable(string Produit, int Quantite, decimal M
 public sealed record VenteAnnulable(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulable> Lignes,
-    decimal DejaRendu = 0, decimal SoldeCreditPatient = 0, string? FactureNumero = null);
+    decimal DejaRendu = 0, decimal SoldeCreditPatient = 0, string? FactureNumero = null, long? VendeurId = null, long? PatientId = null);
 
 /// <summary>
 /// Annulation à écrire en une transaction : vente, stock (hors boîtes déjà rendues), boîtes, crédit, argent rendu.

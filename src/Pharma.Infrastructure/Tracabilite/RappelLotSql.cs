@@ -15,6 +15,8 @@ public sealed class RappelLotSql(NpgsqlDataSource db) : IRappelLot
     public async Task<ResultatRappel?> RappelerAsync(
         long produitId, string numeroLot, string motif, long utilisateurId, CancellationToken ct = default)
     {
+        // Les lots sont enregistrés en majuscules sans espaces (018) : la même valeur sert à la recherche, au blocage et au journal
+        numeroLot = Pharma.Domain.Stock.RegleLot.Normaliser(numeroLot);
         await using var connexion = await db.OpenConnectionAsync(ct);
         await using var tx = await connexion.BeginTransactionAsync(ct);
 
@@ -24,7 +26,7 @@ public sealed class RappelLotSql(NpgsqlDataSource db) : IRappelLot
         await using (var cmd = new NpgsqlCommand("""
             SELECT p.nom_commercial, count(l.id)::int, COALESCE(SUM(l.quantite_disponible), 0)::int
             FROM produit p
-            LEFT JOIN lot l ON l.produit_id = p.id AND l.numero_lot = upper(btrim($2))
+            LEFT JOIN lot l ON l.produit_id = p.id AND l.numero_lot = $2
             WHERE p.id = $1
             GROUP BY p.nom_commercial
             """, connexion, tx))

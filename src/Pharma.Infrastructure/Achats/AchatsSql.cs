@@ -1,6 +1,7 @@
 using Npgsql;
 using NpgsqlTypes;
 using Pharma.Application.Achats;
+using Pharma.Application.Commun;
 using Pharma.Domain.Commun;
 
 namespace Pharma.Infrastructure.Achats;
@@ -41,16 +42,24 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     private static CommandeResume LireCommande(NpgsqlDataReader r) =>
         new(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetString(3), r.GetDateTime(4), r.GetString(5), r.GetInt32(6), r.GetDecimal(7));
 
-    public async Task<IReadOnlyList<CommandeResume>> CommandesAsync(int limite, CancellationToken ct = default)
+    public async Task<Page<CommandeResume>> CommandesAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand(SelectCommande + """
+        const string ou = """
+
+            WHERE ($1::bigint IS NULL OR c.fournisseur_id = $1) AND ($2::text IS NULL OR c.statut = $2)
+              AND ($3::date IS NULL OR c.date_commande >= $3::date) AND ($4::date IS NULL OR c.date_commande < $4::date + 1)
+              AND ($5::text IS NULL OR c.numero ILIKE '%' || $5 || '%')
+            """;
+        await using var cmd = db.CreateCommand(SelectCommande + ou + """
 
             ORDER BY CASE c.statut WHEN 'brouillon' THEN 0 WHEN 'envoyee' THEN 1 WHEN 'recue_partielle' THEN 1 ELSE 2 END,
                      c.date_commande DESC
-            LIMIT $1
+            LIMIT $6 OFFSET $7
             """);
-        cmd.Parameters.AddWithValue(limite);
-        return await Lister(cmd, LireCommande, ct);
+        ParametresFiltre(cmd, filtre);
+        cmd.Parameters.AddWithValue(page.Taille);
+        cmd.Parameters.AddWithValue(page.Decalage);
+        return new Page<CommandeResume>(await Lister(cmd, LireCommande, ct), await CompterAsync("commande_fournisseur c" + ou, filtre, ct), page.Page, page.Taille);
     }
 
     public async Task<CommandeDetail?> CommandeAsync(long id, CancellationToken ct = default)
@@ -309,9 +318,38 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 """, ct, lotId, l.Quantite, $"BL {n.NumeroBl}", n.UtilisateurId, receptionId, l.PrixAchatHt);
 
             // Boîtes sérialisées (Data Matrix) : identité connue dès la réception
+            // Une boîte (GTIN, n° de série) n'existe qu'une fois : scannée deux fois, ou déjà entrée par une autre réception,
+            // elle est nommée à l'utilisateur plutôt que de faire échouer toute la réception sans explication
+            if (l.NumerosSerie is { Count: > 0 } series)
+            {
+                var enDouble = series.GroupBy(s => s).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+                if (enDouble.Count == 0)
+                {
+                    await using var connues = new NpgsqlCommand(
+                        "SELECT numero_serie FROM boite WHERE gtin = $1 AND numero_serie = ANY($2) ORDER BY numero_serie", cnx, tx);
+                    connues.Parameters.AddWithValue(l.Gtin!);
+                    connues.Parameters.AddWithValue(series.ToArray());
+                    enDouble = (await Lister(connues, r => r.GetString(0), ct)).ToList();
+                    if (enDouble.Count > 0)
+                        throw new RegleMetierException(
+                            $"{l.Nom} : boîte(s) déjà enregistrée(s) dans le logiciel (n° de série {string.Join(", ", enDouble)}). Retirez-les de la réception : ce BL a peut-être déjà été saisi.");
+                }
+                else
+                    throw new RegleMetierException($"{l.Nom} : n° de série scanné deux fois ({string.Join(", ", enDouble)}).");
+            }
             foreach (var serie in l.NumerosSerie ?? [])
-                await Executer(cnx, tx, "INSERT INTO boite (lot_id, gtin, numero_serie, reception_id, prix_achat_ht) VALUES ($1, $2, $3, $4, $5)",
-                    ct, lotId, l.Gtin!, serie, receptionId, l.PrixAchatHt);
+            {
+                try
+                {
+                    await Executer(cnx, tx, "INSERT INTO boite (lot_id, gtin, numero_serie, reception_id, prix_achat_ht) VALUES ($1, $2, $3, $4, $5)",
+                        ct, lotId, l.Gtin!, serie, receptionId, l.PrixAchatHt);
+                }
+                catch (PostgresException doublon) when (doublon.SqlState == PostgresErrorCodes.UniqueViolation)
+                {
+                    // Même boîte reçue au même instant sur un autre poste
+                    throw new RegleMetierException($"{l.Nom} : la boîte n° de série {serie} vient d’être enregistrée par une autre réception.");
+                }
+            }
 
 
             // Les autres reçoivent chacune une étiquette interne, dans la même transaction : aucune boîte n'entre sans identité
@@ -333,30 +371,44 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 WHERE id = $1
                 """, ct, commande);
 
+        await ReleveGrossiste.ContexteAsync(cnx, tx, ReleveGrossiste.Reception, n.UtilisateurId,
+            $"Réception BL {n.NumeroBl}{(n.NumeroFacture is null ? "" : $", facture {n.NumeroFacture}")}", ct);
         await Executer(cnx, tx, "UPDATE fournisseur SET solde = solde + $2 WHERE id = $1", ct, n.FournisseurId, n.MontantTtc);
         await tx.CommitAsync(ct);
         return new ReceptionEnregistree(receptionId, n.MontantTtc, lots);
     }
 
-    public async Task<IReadOnlyList<ReceptionResume>> ReceptionsAsync(int limite, CancellationToken ct = default)
+    public async Task<Page<ReceptionResume>> ReceptionsAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default)
     {
+        // Une réception n'a pas de statut : $2 est lié (les cinq critères sont partagés) mais ne filtre rien
+        const string tables = """
+            reception r
+            JOIN fournisseur f ON f.id = r.fournisseur_id
+            LEFT JOIN commande_fournisseur c ON c.id = r.commande_id
+            WHERE ($1::bigint IS NULL OR r.fournisseur_id = $1) AND ($2::text IS NULL OR true)
+              AND ($3::date IS NULL OR r.date_reception >= $3::date) AND ($4::date IS NULL OR r.date_reception < $4::date + 1)
+              AND ($5::text IS NULL OR r.numero_bl ILIKE '%' || $5 || '%' OR r.numero_facture ILIKE '%' || $5 || '%' OR c.numero ILIKE '%' || $5 || '%')
+            """;
         await using var cmd = db.CreateCommand("""
             SELECT r.id, f.raison_sociale, r.numero_bl, r.numero_facture, c.numero, r.date_reception,
                    (SELECT count(*) FROM lot l WHERE l.reception_id = r.id OR EXISTS (
                         SELECT 1 FROM mouvement_stock m WHERE m.lot_id = l.id AND m.reception_id = r.id AND m.type = 'entree'))::int,
                    COALESCE((SELECT SUM(m.quantite) FROM mouvement_stock m JOIN lot l ON l.id = m.lot_id
                              WHERE COALESCE(m.reception_id, l.reception_id) = r.id AND m.type = 'entree'), 0)::int,
-                   r.montant_ttc
-            FROM reception r
-            JOIN fournisseur f ON f.id = r.fournisseur_id
-            LEFT JOIN commande_fournisseur c ON c.id = r.commande_id
+                   r.montant_ttc, r.fournisseur_id
+            FROM
+            """ + " " + tables + """
+
             ORDER BY r.date_reception DESC
-            LIMIT $1
+            LIMIT $6 OFFSET $7
             """);
-        cmd.Parameters.AddWithValue(limite);
-        return await Lister(cmd, r => new ReceptionResume(
+        ParametresFiltre(cmd, filtre);
+        cmd.Parameters.AddWithValue(page.Taille);
+        cmd.Parameters.AddWithValue(page.Decalage);
+        var lignes = await Lister(cmd, r => new ReceptionResume(
             r.GetInt64(0), r.GetString(1), Texte(r, 2), Texte(r, 3), Texte(r, 4), r.GetDateTime(5),
-            r.GetInt32(6), r.GetInt32(7), r.IsDBNull(8) ? 0 : r.GetDecimal(8)), ct);
+            r.GetInt32(6), r.GetInt32(7), r.IsDBNull(8) ? 0 : r.GetDecimal(8), r.GetInt64(9)), ct);
+        return new Page<ReceptionResume>(lignes, await CompterAsync(tables, filtre, ct), page.Page, page.Taille);
     }
 
     // ---- Retours fournisseurs -----------------------------------------------
@@ -466,15 +518,23 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         return (await LireRetours(cmd, ct)).FirstOrDefault();
     }
 
-    public async Task<IReadOnlyList<RetourResume>> RetoursAsync(int limite, CancellationToken ct = default)
+    public async Task<Page<RetourResume>> RetoursAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand(SelectRetour + """
+        const string ou = """
+
+            WHERE ($1::bigint IS NULL OR r.fournisseur_id = $1) AND ($2::text IS NULL OR r.statut = $2)
+              AND ($3::date IS NULL OR r.cree_le >= $3::date) AND ($4::date IS NULL OR r.cree_le < $4::date + 1)
+              AND ($5::text IS NULL OR r.numero ILIKE '%' || $5 || '%' OR r.motif ILIKE '%' || $5 || '%')
+            """;
+        await using var cmd = db.CreateCommand(SelectRetour + ou + """
 
             ORDER BY CASE r.statut WHEN 'brouillon' THEN 0 WHEN 'envoye' THEN 1 ELSE 2 END, r.cree_le DESC
-            LIMIT $1
+            LIMIT $6 OFFSET $7
             """);
-        cmd.Parameters.AddWithValue(limite);
-        return await LireRetours(cmd, ct);
+        ParametresFiltre(cmd, filtre);
+        cmd.Parameters.AddWithValue(page.Taille);
+        cmd.Parameters.AddWithValue(page.Decalage);
+        return new Page<RetourResume>(await LireRetours(cmd, ct), await CompterAsync("retour_fournisseur r" + ou, filtre, ct), page.Page, page.Taille);
     }
 
     private async Task<IReadOnlyList<RetourResume>> LireRetours(NpgsqlCommand cmd, CancellationToken ct)
@@ -518,6 +578,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
             cmd.Parameters.AddWithValue(montant);
             if (await cmd.ExecuteScalarAsync(ct) is not long fournisseurId)
                 throw new RegleMetierException("Ce retour a changé entre-temps : rechargez la liste.");
+            await ReleveGrossiste.ContexteAsync(cnx, tx, ReleveGrossiste.Avoir, null, $"Avoir reçu sur le retour n° {retourId}", ct);
             await Executer(cnx, tx, "UPDATE fournisseur SET solde = solde - $2 WHERE id = $1", ct, fournisseurId, montant);
         }
         await tx.CommitAsync(ct);
@@ -626,6 +687,25 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     }
 
     // ---- Outils -------------------------------------------------------------
+
+    /// <summary>Nombre total de lignes d'une table du logiciel (nom fixé dans le code, jamais saisi) : total d'une liste paginée sans filtre.</summary>
+    /// <summary>Les cinq critères de <see cref="FiltreAchats"/>, dans l'ordre $1 à $5 ; un critère absent vaut NULL et ne filtre pas.</summary>
+    private static void ParametresFiltre(NpgsqlCommand cmd, FiltreAchats? f)
+    {
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f?.FournisseurId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f?.Statut ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f?.Du ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f?.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f?.Recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+    }
+
+    /// <summary>Nombre de lignes qui répondent au filtre : <paramref name="tablesEtFiltre"/> porte les tables et le même WHERE que la liste.</summary>
+    private async Task<int> CompterAsync(string tablesEtFiltre, FiltreAchats? filtre, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand($"SELECT count(*)::int FROM {tablesEtFiltre}");
+        ParametresFiltre(cmd, filtre);
+        return (int)(await cmd.ExecuteScalarAsync(ct))!;
+    }
 
     private static async Task<IReadOnlyList<T>> Lister<T>(NpgsqlCommand cmd, Func<NpgsqlDataReader, T> lire, CancellationToken ct)
     {

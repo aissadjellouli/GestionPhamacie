@@ -19,7 +19,10 @@ public sealed class DonneesRapportSql(NpgsqlDataSource db) : IDonneesRapport
         decimal ca = 0, tiersPayant = 0, annule = 0;
         await using (var cmd = db.CreateCommand("""
             SELECT count(*) FILTER (WHERE statut = 'validee')::int,
-                   COALESCE(SUM(montant_total) FILTER (WHERE statut = 'validee'), 0),
+                   COALESCE(SUM(montant_total) FILTER (WHERE statut = 'validee'), 0)
+                       -- Retours clients du jour : déduits du chiffre du jour où ils sont enregistrés (comme dans les rapports)
+                       - (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc JOIN vente vr ON vr.id = rc.vente_id AND vr.statut = 'validee'
+                          WHERE rc.cree_le >= $1 AND rc.cree_le < $2),
                    COALESCE(SUM(part_organisme) FILTER (WHERE statut = 'validee'), 0),
                    count(*) FILTER (WHERE statut = 'annulee')::int,
                    COALESCE(SUM(montant_total) FILTER (WHERE statut = 'annulee'), 0)

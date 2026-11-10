@@ -142,6 +142,23 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<int?> AjouterBoiteAsync(long ligneId, int compteMax, long utilisateurId, CancellationToken ct = default)
+    {
+        // Incrément fait par la base : deux scans simultanés du même lot comptent deux boîtes
+        await using var cmd = db.CreateCommand("""
+            UPDATE ligne_inventaire li
+            SET compte = COALESCE(li.compte, 0) + 1, theorique = l.quantite_disponible,
+                compte_par = $2, compte_le = now(), statut = 'compte'
+            FROM lot l
+            WHERE li.id = $1 AND l.id = li.lot_id AND COALESCE(li.compte, 0) < $3
+            RETURNING li.compte
+            """);
+        cmd.Parameters.AddWithValue(ligneId);
+        cmd.Parameters.AddWithValue(utilisateurId);
+        cmd.Parameters.AddWithValue(compteMax);
+        return await cmd.ExecuteScalarAsync(ct) is int compte ? compte : null;
+    }
+
     public async Task<long?> LotParCodeAsync(string code, CancellationToken ct = default)
     {
         // Étiquette interne de boîte ou code interne du lot

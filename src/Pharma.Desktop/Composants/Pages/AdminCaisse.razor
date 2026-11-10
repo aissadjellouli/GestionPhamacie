@@ -51,6 +51,16 @@
                 <h2 id="t-journal">Journal des actions sensibles</h2>
                 <span class="pastille info">Non modifiable</span>
             </div>
+            <div class="achats-ligne" style="align-items: flex-end">
+                <div class="champ" style="flex: 0 0 160px"><label for="j-du">Du</label><input id="j-du" type="date" @bind="journalDu" @bind:after="() => ChargerJournalAsync(1)" /></div>
+                <div class="champ" style="flex: 0 0 160px"><label for="j-au">Au</label><input id="j-au" type="date" @bind="journalAu" @bind:after="() => ChargerJournalAsync(1)" /></div>
+                <div class="champ" style="flex: 1 1 220px"><label for="j-employe">Employé (nom ou identifiant)</label><input id="j-employe" type="search" @bind="journalEmploye" @bind:after="() => ChargerJournalAsync(1)" /></div>
+                @if (journalDu is not null || journalAu is not null || !string.IsNullOrWhiteSpace(journalEmploye))
+                {
+                    <button type="button" class="btn" @onclick="EffacerFiltresJournalAsync">Tout afficher</button>
+                }
+            </div>
+            @if (erreurJournal is not null) { <div class="erreur" role="alert">@erreurJournal</div> }
             <div class="tableau-cadre">
                 <table class="tableau" style="min-width: 720px">
                     <thead>
@@ -61,16 +71,17 @@
                         {
                             <tr>
                                 <td style="white-space: nowrap">@Libelles.DateHeureLocale(j.Date)</td>
-                                <td style="white-space: nowrap">@j.Employe</td>
+                                <td style="white-space: nowrap"><LienContact Type="employe" Id="j.EmployeId" Nom="@j.Employe" /></td>
                                 <td>@Libelles.ActionJournal(j.Action)</td>
                                 <td style="white-space: pre-line">@Libelles.DetailJournal(j.Action, j.Details)</td>
-                                <td>@(j.AutorisePar ?? "—")</td>
+                                <td><LienContact Type="employe" Id="j.AutoriseParId" Nom="@(j.AutorisePar ?? "—")" /></td>
                             </tr>
                         }
-                        @if (journal.Count == 0) { <tr><td colspan="5" class="vide">Aucune action sensible enregistrée.</td></tr> }
+                        @if (journal.Count == 0) { <tr><td colspan="5" class="vide">Aucune action sensible pour ces filtres.</td></tr> }
                     </tbody>
                 </table>
             </div>
+            <Pagination Total="journalTotal" Numero="journalPage" Taille="journalTaille" Libelle="Pages du journal" OnChange="p => ChargerJournalAsync(p.Numero, p.Taille)" />
         </section>
     </div>
 </div>
@@ -87,11 +98,46 @@
 
     private Saisie? parametres;
     private List<EntreeJournalDto> journal = [];
+    // Journal paginé et filtré : période et employé
+    private int journalTotal, journalPage = 1, journalTaille = Pagination.TailleParDefaut;
+    private DateOnly? journalDu, journalAu;
+    private string? journalEmploye, erreurJournal;
+
+    private async Task ChargerJournalAsync(int page, int? taille = null)
+    {
+        journalTaille = taille ?? journalTaille;
+        var (p, e) = await Api.JournalAsync(journalDu, journalAu, journalEmploye, page, journalTaille);
+        erreurJournal = e;
+        if (p is null) return;
+        // Page au-delà de la fin (filtre resserré) : retour à la première
+        if (p.Lignes.Count == 0 && page > 1) { await ChargerJournalAsync(1); return; }
+        (journal, journalTotal, journalPage) = (p.Lignes.ToList(), p.Total, p.Numero);
+    }
+
+    private Task EffacerFiltresJournalAsync()
+    {
+        (journalDu, journalAu, journalEmploye) = (null, null, null);
+        return ChargerJournalAsync(1);
+    }
     private string? erreur, message;
     private bool enCours;
 
+    // Arrivée depuis la fiche contact d'un employé : journal filtré sur lui
+    [SupplyParameterFromQuery(Name = "employe")] public string? Employe { get; set; }
+    private string? employeApplique;
+    private bool initialise;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!initialise || Employe == employeApplique) return;
+        (journalEmploye, employeApplique) = (Employe, Employe);
+        await ChargerJournalAsync(1);
+    }
+
     protected override async Task OnInitializedAsync()
     {
+        (journalEmploye, employeApplique) = (Employe, Employe);
+        initialise = true;
         var (p, err) = await Api.ParametresCaisseAsync();
         erreur = err;
         if (p is not null)
@@ -100,7 +146,7 @@
                 ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
                 SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel"
             };
-        (journal, _) = await Api.JournalAsync();
+        await ChargerJournalAsync(1);
     }
 
     private void BasculerDeconnexion(ChangeEventArgs e)
@@ -119,6 +165,6 @@
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";
-        (journal, _) = await Api.JournalAsync();
+        await ChargerJournalAsync(1);
     }
 }

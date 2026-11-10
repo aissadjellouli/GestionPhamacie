@@ -2,7 +2,7 @@
 
 16 écrans, données fictives. Ouvrir [index.html](index.html) dans un navigateur : les pages sont autonomes et fonctionnent hors ligne (la police Inter se charge depuis Google Fonts si internet est disponible, sinon une police système la remplace).
 
-Ce sont des instantanés statiques : les filtres, cases à cocher et boutons ne réagissent pas. La version interactive et commentable est l’aperçu en ligne partagé dans Claude.
+Ce sont des instantanés statiques : les filtres, cases à cocher et boutons ne réagissent pas. La version interactive et commentable est l’aperçu en ligne partagé avec l’équipe.
 
 | Écran | Fichier |
 | --- | --- |

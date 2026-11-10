@@ -70,6 +70,23 @@
             }
         }
 
+        <div class="filtres-liste" role="search" aria-label="Filtrer les bons de commande">
+            <div class="champ" style="flex: 1 1 200px"><label for="fc-grossiste">Grossiste</label>
+                <select id="fc-grossiste" @bind="fFournisseur" @bind:after="PremierePageAsync">
+                    <option value="0">Tous</option>
+                    @foreach (var g in fournisseurs) { <option value="@g.Id">@g.RaisonSociale</option> }
+                </select>
+            </div>
+            <div class="champ" style="flex: 0 0 190px"><label for="fc-statut">Statut</label>
+                <select id="fc-statut" @bind="fStatut" @bind:after="PremierePageAsync">
+                    <option value="">Tous</option>
+                    @foreach (var s in StatutsCommande) { <option value="@s">@Libelles.StatutCommande(s)</option> }
+                </select>
+            </div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fc-du">Du</label><input id="fc-du" type="date" @bind="fDu" @bind:after="PremierePageAsync" /></div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fc-au">Au</label><input id="fc-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
+            @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
+        </div>
         <section class="tableau-cadre" aria-label="Bons de commande">
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Bon</th><th scope="col">Grossiste</th><th scope="col">Date</th><th scope="col">Montant HT</th><th scope="col">Statut</th></tr></thead>
@@ -78,7 +95,7 @@
                     {
                         <tr class="ligne-cliquable @(detail?.Entete.Id == c.Id ? "choisie" : null)" @onclick="() => OuvrirAsync(c.Id)">
                             <td><button type="button" class="lien" @onclick="() => OuvrirAsync(c.Id)" @onclick:stopPropagation="true">@c.Numero</button><br /><span class="detail">@c.NombreLignes ligne(s)</span></td>
-                            <td>@c.Fournisseur</td>
+                            <td><LienContact Type="grossiste" Id="c.FournisseurId" Nom="@c.Fournisseur" /></td>
                             <td>@Libelles.DateLocale(c.Date)</td>
                             <td>@Libelles.Dinars(c.MontantHt, 2)</td>
                             <td><span class="pastille @Libelles.ClasseStatutCommande(c.Statut)">@Libelles.StatutCommande(c.Statut)</span></td>
@@ -86,11 +103,12 @@
                     }
                     @if (commandes.Count == 0)
                     {
-                        <tr><td colspan="5" class="vide">Aucun bon de commande.</td></tr>
+                        <tr><td colspan="5" class="vide">@(FiltreActif ? "Aucun bon de commande pour ces filtres." : "Aucun bon de commande.")</td></tr>
                     }
                 </tbody>
             </table>
         </section>
+        <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des bons de commande" OnChange="p => AllerPageAsync(p.Numero, p.Taille)" />
     </div>
 
     <aside class="panneau" aria-label="Détail du bon">
@@ -105,7 +123,7 @@
                 <h2>Bon @detail.Entete.Numero</h2>
                 <span class="pastille @Libelles.ClasseStatutCommande(detail.Entete.Statut)">@Libelles.StatutCommande(detail.Entete.Statut)</span>
             </div>
-            <p class="detail" style="margin: 0">@detail.Entete.Fournisseur · @Libelles.DateLocale(detail.Entete.Date)</p>
+            <p class="detail" style="margin: 0"><LienContact Type="grossiste" Id="detail.Entete.FournisseurId" Nom="@detail.Entete.Fournisseur" /> · @Libelles.DateLocale(detail.Entete.Date)</p>
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Produit</th><th scope="col">Qté</th><th scope="col">Prix HT</th>@if (!brouillon){<th scope="col">Reçu</th>}</tr></thead>
                 <tbody>
@@ -159,6 +177,17 @@
     [Parameter] public long? ProduitAAjouter { get; set; }
     [Parameter] public long? CommandeOuverte { get; set; }
     [Parameter] public string? NomProduit { get; set; }
+    /// <summary>Liste des bons filtrée sur ce grossiste (depuis sa fiche contact).</summary>
+    [Parameter] public long? Grossiste { get; set; }
+    private long? grossisteApplique;
+    private bool initialise;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!initialise || Grossiste == grossisteApplique) return;
+        (fFournisseur, grossisteApplique) = (Grossiste ?? 0, Grossiste);
+        await PremierePageAsync();
+    }
 
     private sealed class LigneEdition(LigneCommandeAchatDto l)
     {
@@ -171,6 +200,17 @@
 
     private List<FournisseurDto> fournisseurs = [];
     private List<CommandeAchatDto> commandes = [];
+    private int total, page = 1, taille = Pagination.TailleParDefaut;
+    private Task AllerPageAsync(int numero, int nouvelleTaille) { (page, taille) = (numero, nouvelleTaille); return RechargerAsync(); }
+
+    // Filtres de la liste des bons : appliqués par le serveur, le total et les pages les suivent
+    private static readonly string[] StatutsCommande = ["brouillon", "envoyee", "recue_partielle", "recue", "annulee"];
+    private long fFournisseur;
+    private string fStatut = "";
+    private DateOnly? fDu, fAu;
+    private bool FiltreActif => fFournisseur > 0 || fStatut != "" || fDu is not null || fAu is not null;
+    private Task PremierePageAsync() { page = 1; return RechargerAsync(); }
+    private Task EffacerFiltresAsync() { (fFournisseur, fStatut, fDu, fAu) = (0, "", null, null); return PremierePageAsync(); }
     private List<SuggestionCommandeDto> suggestions = [];
     private CommandeAchatDetailDto? detail;
     private List<LigneEdition> lignesEdition = [];
@@ -194,6 +234,7 @@
     {
         (fournisseurs, erreur) = await Api.FournisseursAsync();
         fournisseurId = fournisseurs.FirstOrDefault()?.Id ?? 0;
+        (fFournisseur, grossisteApplique, initialise) = (Grossiste ?? 0, Grossiste, true);
         await RechargerAsync();
         if (PeutCommander) (suggestions, _) = await Api.SuggestionsCommandeAsync();
 
@@ -227,7 +268,9 @@
     private async Task RechargerAsync()
     {
         string? e;
-        (commandes, e) = await Api.CommandesAchatAsync();
+        (var p, e) = await Api.CommandesAchatAsync(page, taille, fFournisseur > 0 ? fFournisseur : null, fStatut, fDu, fAu);
+        if (p is { Lignes.Count: 0 } && page > 1) { page--; await RechargerAsync(); return; }
+        if (p is not null) (commandes, total, page) = (p.Lignes.ToList(), p.Total, p.Numero);
         erreur ??= e;
     }
 

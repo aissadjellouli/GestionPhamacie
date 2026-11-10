@@ -86,6 +86,25 @@ public static class Libelles
 
     // ---- Achats -----------------------------------------------------------
 
+    /// <summary>Fiche contact du destinataire d'une facture (patient, entreprise ou organisme) : type et identifiant.</summary>
+    public static (string Type, long? Id) ContactFacture(string destinataire, long? patientId, long? clientId, long? organismeId) => destinataire switch
+    {
+        "patient" => ("patient", patientId), "entreprise" => ("client", clientId), "organisme" => ("organisme", organismeId), _ => ("", null)
+    };
+
+    /// <summary>Fiche contact du tiers d'une ligne du suivi des dettes, selon sa catégorie (v_suivi_dettes, 039).</summary>
+    public static string ContactDette(string categorie) => categorie switch
+    {
+        "patient" or "facture_patient" => "patient", "facture_entreprise" => "client",
+        "facture_organisme" or "bordereau" => "organisme", "grossiste" or "effet" => "grossiste", _ => ""
+    };
+
+    /// <summary>Type de tiers d'une fiche contact.</summary>
+    public static string TypeContact(string type) => type switch
+    {
+        "patient" => "Patient", "grossiste" => "Grossiste", "organisme" => "Organisme", "client" => "Entreprise cliente", "employe" => "Employé", _ => type
+    };
+
     public static string StatutCommande(string s) => s switch
     {
         "brouillon" => "Brouillon", "envoyee" => "Envoyée", "recue_partielle" => "Reçue en partie",

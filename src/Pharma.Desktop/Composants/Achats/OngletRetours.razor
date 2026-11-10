@@ -91,6 +91,23 @@
     }
 </section>
 
+<div class="filtres-liste" role="search" aria-label="Filtrer les retours">
+            <div class="champ" style="flex: 1 1 200px"><label for="ft-grossiste">Grossiste</label>
+                <select id="ft-grossiste" @bind="fFournisseur" @bind:after="PremierePageAsync">
+                    <option value="0">Tous</option>
+                    @foreach (var g in grossistesFiltre) { <option value="@g.Id">@g.RaisonSociale</option> }
+                </select>
+            </div>
+            <div class="champ" style="flex: 0 0 190px"><label for="ft-statut">Statut</label>
+                <select id="ft-statut" @bind="fStatut" @bind:after="PremierePageAsync">
+                    <option value="">Tous</option>
+                    @foreach (var s in StatutsRetour) { <option value="@s">@Libelles.StatutRetour(s)</option> }
+                </select>
+            </div>
+            <div class="champ" style="flex: 0 0 160px"><label for="ft-du">Du</label><input id="ft-du" type="date" @bind="fDu" @bind:after="PremierePageAsync" /></div>
+            <div class="champ" style="flex: 0 0 160px"><label for="ft-au">Au</label><input id="ft-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
+            @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
+</div>
 <section class="tableau-cadre" aria-label="Retours fournisseurs">
     <table class="tableau" style="min-width: 900px">
         <thead><tr><th scope="col">Retour</th><th scope="col">Grossiste</th><th scope="col">Lots</th><th scope="col">Montant</th><th scope="col">Statut</th><th scope="col">Suivi</th></tr></thead>
@@ -99,7 +116,7 @@
             {
                 <tr>
                     <td><span class="nom">@r.Numero</span><br /><span class="detail">@Libelles.MotifRetour(r.Motif) · @Libelles.DateLocale(r.CreeLe)</span></td>
-                    <td>@r.Fournisseur</td>
+                    <td><LienContact Type="grossiste" Id="r.FournisseurId" Nom="@r.Fournisseur" /></td>
                     <td>@foreach (var l in r.Lignes){<span>@l.Produit · lot @l.NumeroLot × @l.Quantite</span><br />}</td>
                     <td>attendu @Libelles.Dinars(r.MontantAttendu, 2)@if (r.MontantAvoir is { } a){<br /><strong>avoir @Libelles.Dinars(a, 2)</strong>}</td>
                     <td><span class="pastille @Libelles.ClasseStatutRetour(r.Statut)">@Libelles.StatutRetour(r.Statut)</span>@if (r.EnvoyeLe is { } e){<br /><span class="detail">envoyé le @Libelles.DateLocale(e)</span>}</td>
@@ -124,11 +141,12 @@
             }
             @if (retours.Count == 0)
             {
-                <tr><td colspan="6" class="vide">Aucun retour fournisseur.</td></tr>
+                <tr><td colspan="6" class="vide">@(FiltreActif ? "Aucun retour pour ces filtres." : "Aucun retour fournisseur.")</td></tr>
             }
         </tbody>
     </table>
 </section>
+<Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des retours" OnChange="p => AllerPageAsync(p.Numero, p.Taille)" />
 
 @code {
     [Parameter] public long? LotId { get; set; }
@@ -146,6 +164,18 @@
     }
 
     private List<RetourDto> retours = [];
+    private int total, page = 1, taille = Pagination.TailleParDefaut;
+
+    // Filtres de la liste des retours : appliqués par le serveur, le total et les pages les suivent
+    private static readonly string[] StatutsRetour = ["brouillon", "envoye", "avoir_recu", "refuse"];
+    private List<FournisseurDto> grossistesFiltre = [];
+    private long fFournisseur;
+    private string fStatut = "";
+    private DateOnly? fDu, fAu;
+    private bool FiltreActif => fFournisseur > 0 || fStatut != "" || fDu is not null || fAu is not null;
+    private Task PremierePageAsync() { page = 1; return RechargerAsync(); }
+    private Task EffacerFiltresAsync() { (fFournisseur, fStatut, fDu, fAu) = (0, "", null, null); return PremierePageAsync(); }
+    private Task AllerPageAsync(int numero, int nouvelleTaille) { (page, taille) = (numero, nouvelleTaille); return RechargerAsync(); }
     private readonly List<Ligne> lignes = [];
     private List<LotRetournableDto> proposes = [];
     private List<ProduitDto> trouves = [];
@@ -164,6 +194,7 @@
     {
         if (Motif is not null && Libelles.MotifsRetour.Any(m => m.Code == Motif)) motif = Motif;
         await RechargerAsync();
+        (grossistesFiltre, _) = await Api.FournisseursAsync();
         // Arrivée depuis une alerte (un lot) ou un rappel de lot (tous les lots de ce numéro)
         if (LotId is { } id)
         {
@@ -177,7 +208,9 @@
     private async Task RechargerAsync()
     {
         string? e;
-        (retours, e) = await Api.RetoursAsync();
+        (var p, e) = await Api.RetoursAsync(page, taille, fFournisseur > 0 ? fFournisseur : null, fStatut, fDu, fAu);
+        if (p is { Lignes.Count: 0 } && page > 1) { page--; await RechargerAsync(); return; }
+        if (p is not null) (retours, total, page) = (p.Lignes.ToList(), p.Total, p.Numero);
         erreur ??= e;
     }
 

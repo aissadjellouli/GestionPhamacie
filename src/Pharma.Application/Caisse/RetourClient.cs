@@ -19,8 +19,12 @@ public sealed record LigneRetourDemandee(long LigneVenteId, int Quantite, string
 
 public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quantite, DestinationRetour Destination, decimal Montant, IReadOnlyList<long> Boites);
 
+/// <summary>
+/// Montant : part payée par le patient pour les boîtes rendues. Vente à crédit : ReductionDette en est la part retirée de la dette,
+/// le reste (déjà remboursé par le patient) lui est rendu en espèces depuis la caisse ouverte du poste.
+/// </summary>
 public sealed record RetourAEcrire(long VenteId, string Numero, string Motif, long UtilisateurId, long ValidePar, string? Mode, decimal Montant,
-    long? SessionCaisseId, string Poste, IReadOnlyList<LigneRetourAEcrire> Lignes);
+    long? SessionCaisseId, string Poste, IReadOnlyList<LigneRetourAEcrire> Lignes, decimal ReductionDette = 0, long? PatientDetteId = null);
 
 public interface IRetoursClient
 {
@@ -28,7 +32,9 @@ public interface IRetoursClient
     Task EnregistrerAsync(RetourAEcrire r, CancellationToken ct = default);
 }
 
-public sealed record ResultatRetour(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar);
+/// <summary>DetteDiminuee : part du retour retirée de la dette du patient (vente à crédit, ou dette soldée à la demande du caissier).</summary>
+public sealed record ResultatRetour(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar,
+    decimal DetteDiminuee = 0);
 
 public sealed class LireVenteRetournable(IRetoursClient retours)
 {
@@ -39,13 +45,14 @@ public sealed class LireVenteRetournable(IRetoursClient retours)
 /// <summary>
 /// Retour de médicaments par le patient, à l'appréciation du pharmacien (droit « caisse.retour_especes ») ou validé sur place
 /// par le code d'un employé qui l'a. Chaque produit est remis en stock sur son lot, ou mis à détruire. L'argent rendu sort de
-/// la caisse ouverte du poste ; vente à crédit : la dette du patient diminue.
+/// la caisse ouverte du poste ; vente à crédit : la dette du patient diminue, et ce qu'il a déjà remboursé lui est rendu en espèces.
 /// </summary>
 public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCaisse sessions, IPermissionService droits,
-    VerificationCodeComptoir codes, IJournal journal)
+    VerificationCodeComptoir codes, IJournal journal, Patients.IPatients? patients = null)
 {
     public async Task<ResultatRetour> ExecuterAsync(long venteId, string? motif, IReadOnlyList<LigneRetourDemandee> demandees, long utilisateurId,
-        string? poste, string? validateurIdentifiant, string? validateurCode, CancellationToken ct = default)
+        string? poste, string? validateurIdentifiant, string? validateurCode, bool solderDette = false, long? patientDetteId = null,
+        CancellationToken ct = default)
     {
         var nomPoste = PosteCaisse.Exiger(poste);
         var texte = RegleAnnulation.Motif(motif);
@@ -100,22 +107,39 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         }
 
         // Part payée par le patient pour les boîtes rendues : rendue, ou retirée de sa dette pour une vente à crédit
+        // (ce que le patient a déjà remboursé lui est rendu en espèces, comme pour une annulation)
         var montant = lignes.Sum(l => l.Montant);
+        // Vente payée (espèces, carte, chèque) à un patient qui doit de l'argent par ailleurs : le caissier peut choisir de
+        // retirer le remboursement de cette dette (solderDette) ; seul le surplus est alors rendu.
+        // Vente sans patient : s'il s'est nommé au retour (patientDetteId), c'est sa dette, relue ici, qui est diminuée.
+        var dette = v.SoldeCreditPatient;
+        long? patientDette = null;
+        if (solderDette && v.Mode != "credit" && patientDetteId is { } pid)
+        {
+            if (v.Patient is not null) throw new RegleMetierException("Cette vente a déjà un patient : c’est sa dette qui peut être soldée.");
+            var patient = (patients is null ? null : await patients.TrouverAsync(pid, ct)) ?? throw new RegleMetierException("Patient introuvable.");
+            (dette, patientDette) = (patient.SoldeCredit, pid);
+        }
+        var reductionDette = v.Mode == "credit" || solderDette ? Math.Min(Math.Max(dette, 0), montant) : 0;
+        var aRendre = montant - reductionDette;
         var session = await sessions.SessionDuPosteAsync(nomPoste, ct);
-        if (v.Mode == "especes" && montant > 0 && session is null)
+        if (v.Mode is "especes" or "credit" && aRendre > 0 && session is null)
             throw new RegleMetierException("Ouvrez la caisse du poste : l’argent rendu au patient doit en sortir.");
 
-        await retours.EnregistrerAsync(new RetourAEcrire(v.Id, v.Numero, texte, utilisateurId, validePar, v.Mode, montant, session?.Id, nomPoste, lignes), ct);
+        await retours.EnregistrerAsync(new RetourAEcrire(v.Id, v.Numero, texte, utilisateurId, validePar, v.Mode, montant, session?.Id, nomPoste, lignes,
+            reductionDette, reductionDette > 0 ? patientDette : null), ct);
         await journal.EcrireAsync(utilisateurId, "retour_client", "vente", v.Id,
             new Dictionary<string, object?>
             {
                 ["ticket"] = v.Numero, ["motif"] = texte, ["montant"] = montant, ["mode"] = v.Mode,
+                ["dette_diminuee"] = reductionDette, ["rendu"] = aRendre, ["dette_soldee_au_choix"] = solderDette && v.Mode != "credit" && reductionDette > 0,
+                ["patient_dette"] = reductionDette > 0 ? patientDette : null,
                 ["remis_en_stock"] = lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
                 ["a_detruire"] = lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite),
                 ["valide_par"] = validePar
             }, Permissions.CaisseRetourEspeces, ct);
-        return new ResultatRetour(v.Numero, v.Mode == "credit" ? 0 : montant, v.Mode,
+        return new ResultatRetour(v.Numero, aRendre, v.Mode == "credit" && aRendre > 0 ? "especes" : v.Mode,
             lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
-            lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite), nomValidateur);
+            lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite), nomValidateur, reductionDette);
     }
 }

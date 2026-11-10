@@ -41,8 +41,9 @@ internal sealed class UtilisateursEnMemoire : IUtilisateursAdmin
     public IReadOnlyList<DroitsRole>? Droits { get; private set; }
 
     public Task<EtatDroits> LireAsync(CancellationToken ct = default) => Task.FromResult(Etat);
-    public Task<long> CreerAsync(string n, string i, string h, long r, CancellationToken ct = default) { Cree = (n, i, h, r); return Task.FromResult(10L); }
-    public Task ModifierAsync(long id, string n, long r, bool a, string? h, CancellationToken ct = default) { Modifie = (id, r, a, h); return Task.CompletedTask; }
+    public (string? Telephone, string? Email) Coordonnees { get; private set; }
+    public Task<long> CreerAsync(string n, string i, string h, long r, string? t, string? e, CancellationToken ct = default) { Cree = (n, i, h, r); Coordonnees = (t, e); return Task.FromResult(10L); }
+    public Task ModifierAsync(long id, string n, long r, bool a, string? h, string? t, string? e, CancellationToken ct = default) { Modifie = (id, r, a, h); Coordonnees = (t, e); return Task.CompletedTask; }
     public Task EnregistrerDroitsAsync(IReadOnlyList<DroitsRole> d, CancellationToken ct = default) { Droits = d; return Task.CompletedTask; }
 }
 

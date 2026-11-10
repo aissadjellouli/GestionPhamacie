@@ -1,8 +1,51 @@
 <Solution>
   <Folder Name="/Documents/">
     <File Path="docs/a-faire.md" />
+    <File Path="docs/charte-graphique.md" />
   </Folder>
-  <Folder Name="/database/" />
+  <Folder Name="/database/">
+    <File Path="database/001_schema.sql" />
+    <File Path="database/002_alertes_stock.sql" />
+    <File Path="database/003_provenance.sql" />
+    <File Path="database/004_codes_barres_internes.sql" />
+    <File Path="database/005_seuils_peremption.sql" />
+    <File Path="database/006_droits_utilisateurs.sql" />
+    <File Path="database/007_tracabilite_boite.sql" />
+    <File Path="database/008_reprise_donnees.sql" />
+    <File Path="database/009_caisse.sql" />
+    <File Path="database/010_administration.sql" />
+    <File Path="database/011_ordonnance_scannee.sql" />
+    <File Path="database/012_achats.sql" />
+    <File Path="database/013_notifications.sql" />
+    <File Path="database/014_sauvegardes.sql" />
+    <File Path="database/015_catalogue.sql" />
+    <File Path="database/016_emplacements.sql" />
+    <File Path="database/017_inventaire.sql" />
+    <File Path="database/018_lot_unique.sql" />
+    <File Path="database/019_mobile.sql" />
+    <File Path="database/020_seuils_stock.sql" />
+    <File Path="database/021_prix_boite.sql" />
+    <File Path="database/022_caisse_partagee.sql" />
+    <File Path="database/023_nomenclature.sql" />
+    <File Path="database/024_registre_psychotropes.sql" />
+    <File Path="database/025_affichage.sql" />
+    <File Path="database/026_ventes_attente.sql" />
+    <File Path="database/027_annulation_vente.sql" />
+    <File Path="database/028_retour_client.sql" />
+    <File Path="database/029_reglements.sql" />
+    <File Path="database/030_tresorerie.sql" />
+    <File Path="database/031_facture_client.sql" />
+    <File Path="database/032_inventaire_complet.sql" />
+    <File Path="database/033_index_performance.sql" />
+    <File Path="database/034_nomenclature_absents.sql" />
+    <File Path="database/035_mot_de_passe_a_changer.sql" />
+    <File Path="database/036_solde_tresorerie_echeance.sql" />
+    <File Path="database/037_produit_a_verifier.sql" />
+    <File Path="database/038_releve_credit.sql" />
+    <File Path="database/039_suivi_dettes.sql" />
+    <File Path="database/040_facture_echeance.sql" />
+    <File Path="database/041_contacts.sql" />
+  </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
     <File Path="database/init/seed_referentiel.sql" />
@@ -12,7 +55,13 @@
     <File Path="database/data/900_donnees_demo.sql" />
     <File Path="database/data/901_complement_sintrom.sql" />
     <File Path="database/data/902_emplacements_demo.sql" />
+    <File Path="database/data/903_factures_demo.sql" />
     <File Path="database/data/NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx" />
+  </Folder>
+  <Folder Name="/scripts/">
+    <File Path="scripts/certificat_mobile.ps1" />
+    <File Path="scripts/initialiser_base_locale.ps1" />
+    <File Path="scripts/sauvegarde_pharmacie.ps1" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Pharma.Domain/Pharma.Domain.csproj" />

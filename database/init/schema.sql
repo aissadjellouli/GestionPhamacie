@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 035 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 041 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 035 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 041 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,8 +25,10 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict 9XH77KG8B6v59htLgCaGmoeu9kRmbcKuQ2TcsCNOph5QQoRNyIVgeEHeqhfipGh
+\restrict c3LwdC2wVkKuWvbzov9gJJYCdM14quT0UUHA3WnbuiVwb2r0PKkgi7dscdzKBLf
 
+-- Dumped from database version 18.6
+-- Dumped by pg_dump version 18.6
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -88,9 +90,12 @@ BEGIN
         JOIN import.produit_src s ON s.session_id = c.session_id AND s.ref_source = c.ref_source
         WHERE c.session_id = p_session AND c.methode = 'nouveau' AND c.produit_id IS NULL
     LOOP
-        INSERT INTO produit (code_barre, num_enregistrement, nom_commercial, dosage, forme, prix_public)
+        -- Sans n° d'enregistrement, la nomenclature ne peut pas proposer sa classe (un psychotrope serait repris
+        -- « libre ») : le produit est à vérifier par le titulaire, et non vendable d'ici là (037)
+        INSERT INTO produit (code_barre, num_enregistrement, nom_commercial, dosage, forme, prix_public, a_verifier)
         VALUES (NULLIF(btrim(r.code_barre), ''), NULLIF(btrim(r.num_enregistrement), ''),
-                r.nom, r.dosage, r.forme, COALESCE(import.nombre(r.prix_vente), 0))
+                r.nom, r.dosage, r.forme, COALESCE(import.nombre(r.prix_vente), 0),
+                NULLIF(btrim(r.num_enregistrement), '') IS NULL)
         RETURNING id INTO v_id;
         UPDATE import.correspondance_produit SET produit_id = v_id
         WHERE session_id = p_session AND ref_source = r.ref_source;
@@ -233,6 +238,32 @@ DECLARE
 BEGIN
     DELETE FROM import.anomalie WHERE session_id = p_session;
 
+    -- Nombres ambigus (« 12.500 ») : jamais devinés, à corriger dans l'export puis à recharger
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, a.entite, a.ref_source, 'bloquant',
+           format('%s : valeur ambiguë « %s » (douze mille cinq cents, ou douze et demi ?). Écrivez-la sans point de milliers (12500) ou avec une virgule décimale (12,5) dans le fichier, puis rechargez-le', a.champ, a.valeur)
+    FROM (SELECT 'stock' AS entite, st.ref_produit AS ref_source, 'Quantité en stock' AS champ, st.quantite AS valeur
+          FROM import.stock_src st WHERE st.session_id = p_session
+          UNION ALL SELECT 'produit', s.ref_source, 'Prix de vente', s.prix_vente FROM import.produit_src s WHERE s.session_id = p_session
+          UNION ALL SELECT 'produit', s.ref_source, 'Prix d''achat', s.prix_achat FROM import.produit_src s WHERE s.session_id = p_session
+          UNION ALL SELECT 'client', c.ref_source, 'Solde crédit de ' || c.nom, c.solde_credit FROM import.client_src c WHERE c.session_id = p_session
+          UNION ALL SELECT 'fournisseur', f.ref_source, 'Solde de ' || f.raison_sociale, f.solde FROM import.fournisseur_src f WHERE f.session_id = p_session) a
+    WHERE import.nombre_ambigu(a.valeur);
+
+    -- Produits à créer : même nom, dosage et forme qu'un produit du catalogue ou qu'un autre produit à créer
+    -- (la base refuse ce doublon : sans ce contrôle, le chargement échouerait sans explication)
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, 'produit', n.ref_source, 'bloquant',
+           format('« %s %s %s » à créer : un produit de même nom, dosage et forme existe déjà (catalogue ou autre ligne de l''export). Rapprochez-le de ce produit, ou distinguez son nom', n.nom, COALESCE(n.dosage, ''), COALESCE(n.forme, ''))
+    FROM (SELECT s.ref_source, s.nom, s.dosage, s.forme,
+                 count(*) OVER (PARTITION BY lower(s.nom), lower(COALESCE(s.dosage, '')), lower(COALESCE(s.forme, ''))) AS memes
+          FROM import.correspondance_produit c
+          JOIN import.produit_src s ON s.session_id = c.session_id AND s.ref_source = c.ref_source
+          WHERE c.session_id = p_session AND c.methode = 'nouveau' AND c.produit_id IS NULL) n
+    WHERE n.memes > 1
+       OR EXISTS (SELECT 1 FROM produit p WHERE lower(p.nom_commercial) = lower(n.nom)
+                  AND lower(COALESCE(p.dosage, '')) = lower(COALESCE(n.dosage, '')) AND lower(COALESCE(p.forme, '')) = lower(COALESCE(n.forme, '')));
+
     INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
     SELECT p_session, 'produit', s.ref_source, 'bloquant',
            format('« %s » sans correspondance : à rapprocher à la main ou à créer', s.nom)
@@ -252,6 +283,7 @@ BEGIN
            format('Quantité illisible ou négative : « %s »', st.quantite)
     FROM import.stock_src st
     WHERE st.session_id = p_session
+      AND NOT import.nombre_ambigu(st.quantite)
       AND (import.nombre(st.quantite) IS NULL OR import.nombre(st.quantite) < 0);
 
     INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
@@ -284,6 +316,7 @@ BEGIN
     FROM import.client_src c
     WHERE c.session_id = p_session
       AND c.solde_credit IS NOT NULL AND btrim(c.solde_credit) <> ''
+      AND NOT import.nombre_ambigu(c.solde_credit)
       AND import.nombre(c.solde_credit) IS NULL;
 
     INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
@@ -292,6 +325,7 @@ BEGIN
     FROM import.fournisseur_src f
     WHERE f.session_id = p_session
       AND f.solde IS NOT NULL AND btrim(f.solde) <> ''
+      AND NOT import.nombre_ambigu(f.solde)
       AND import.nombre(f.solde) IS NULL;
 
     SELECT count(*) INTO nb_bloquants
@@ -340,7 +374,11 @@ DECLARE
 BEGIN
     IF t IS NULL OR btrim(t) = '' THEN RETURN NULL; END IF;
     s := regexp_replace(t, '[\s\u00A0]|DA|DZD', '', 'gi');
-    IF s ~ '^-?\d{1,3}(\.\d{3})+,\d+$' THEN          -- 1.234,50
+    IF s ~ '^-?\d{1,3}\.\d{3}$' THEN                 -- 12.500 : ambigu, vérification manuelle (import.nombre_ambigu)
+        RETURN NULL;
+    ELSIF s ~ '^-?\d{1,3}(\.\d{3}){2,}$' THEN        -- 1.234.567 : points des milliers
+        s := replace(s, '.', '');
+    ELSIF s ~ '^-?\d{1,3}(\.\d{3})+,\d+$' THEN       -- 1.234,50
         s := replace(replace(s, '.', ''), ',', '.');
     ELSIF s ~ '^-?\d+,\d+$' THEN                     -- 1234,50
         s := replace(s, ',', '.');
@@ -349,6 +387,17 @@ BEGIN
 EXCEPTION WHEN others THEN
     RETURN NULL;
 END;
+$_$;
+
+
+--
+-- Name: nombre_ambigu(text); Type: FUNCTION; Schema: import; Owner: -
+--
+
+CREATE FUNCTION import.nombre_ambigu(t text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    AS $_$
+    SELECT t IS NOT NULL AND regexp_replace(t, '[\s\u00A0]|DA|DZD', '', 'gi') ~ '^-?\d{1,3}\.\d{3}$';
 $_$;
 
 
@@ -439,6 +488,21 @@ $$;
 
 
 --
+-- Name: credit_contexte(text, bigint, bigint, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.credit_contexte(p_type text, p_vente_id bigint, p_utilisateur_id bigint, p_poste text, p_reference text) RETURNS void
+    LANGUAGE sql
+    AS $$
+    SELECT set_config('pharma.credit_type', COALESCE(p_type, ''), true),
+           set_config('pharma.credit_vente', COALESCE(p_vente_id::text, ''), true),
+           set_config('pharma.credit_utilisateur', COALESCE(p_utilisateur_id::text, ''), true),
+           set_config('pharma.credit_poste', COALESCE(p_poste, ''), true),
+           set_config('pharma.credit_reference', COALESCE(p_reference, ''), true);
+$$;
+
+
+--
 -- Name: creer_boites_internes(bigint, integer, bigint, numeric); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -466,6 +530,19 @@ BEGIN
         RETURN NEXT;
     END LOOP;
 END;
+$$;
+
+
+--
+-- Name: dette_fournisseur_contexte(text, bigint, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.dette_fournisseur_contexte(p_type text, p_utilisateur_id bigint, p_reference text) RETURNS void
+    LANGUAGE sql
+    AS $$
+    SELECT set_config('pharma.dette_type', COALESCE(p_type, ''), true),
+           set_config('pharma.dette_utilisateur', COALESCE(p_utilisateur_id::text, ''), true),
+           set_config('pharma.dette_reference', COALESCE(p_reference, ''), true);
 $$;
 
 
@@ -833,6 +910,22 @@ $$;
 
 
 --
+-- Name: noter_credit_ouverture(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.noter_credit_ouverture() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.type = 'reprise' AND NEW.montant > 0 THEN
+        INSERT INTO credit_ouverture (patient_id, montant) VALUES (NEW.patient_id, NEW.montant)
+        ON CONFLICT (patient_id) DO UPDATE SET montant = credit_ouverture.montant + EXCLUDED.montant;
+    END IF;
+    RETURN NEW;
+END $$;
+
+
+--
 -- Name: numeroter_registre(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -873,6 +966,30 @@ CREATE FUNCTION public.prochain_numero_vente() RETURNS text
     AS $$
     SELECT 'T-' || lpad(nextval('seq_numero_vente')::text, 6, '0');
 $$;
+
+
+--
+-- Name: proteger_credit_mouvement(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.proteger_credit_mouvement() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Le relevé des dettes ne se modifie pas : corrigez par un nouveau mouvement';
+END $$;
+
+
+--
+-- Name: proteger_fournisseur_mouvement(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.proteger_fournisseur_mouvement() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Le relevé des dettes ne se modifie pas : corrigez par un nouveau mouvement';
+END $$;
 
 
 --
@@ -998,6 +1115,62 @@ CREATE FUNCTION public.sans_accent(t text) RETURNS text
 
 
 --
+-- Name: tracer_credit_patient(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracer_credit_patient() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_delta numeric(12,2);
+    v_type  text := NULLIF(current_setting('pharma.credit_type', true), '');
+BEGIN
+    v_delta := NEW.solde_credit - CASE WHEN TG_OP = 'INSERT' THEN 0 ELSE OLD.solde_credit END;
+    IF v_delta = 0 THEN
+        RETURN NEW;
+    END IF;
+    INSERT INTO credit_mouvement (patient_id, type, montant, solde_apres, vente_id, utilisateur_id, poste, reference)
+    VALUES (NEW.id,
+            -- Sans contexte : patient créé avec une dette (reprise de l'ancien logiciel), sinon correction hors logiciel
+            COALESCE(v_type, CASE WHEN TG_OP = 'INSERT' THEN 'reprise' ELSE 'correction' END),
+            v_delta, NEW.solde_credit,
+            NULLIF(current_setting('pharma.credit_vente', true), '')::bigint,
+            NULLIF(current_setting('pharma.credit_utilisateur', true), '')::bigint,
+            NULLIF(current_setting('pharma.credit_poste', true), ''),
+            NULLIF(current_setting('pharma.credit_reference', true), ''));
+    -- Le contexte ne vaut que pour un mouvement
+    PERFORM credit_contexte(NULL, NULL, NULL, NULL, NULL);
+    RETURN NEW;
+END $$;
+
+
+--
+-- Name: tracer_dette_fournisseur(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tracer_dette_fournisseur() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_delta numeric(12,2);
+BEGIN
+    v_delta := NEW.solde - CASE WHEN TG_OP = 'INSERT' THEN 0 ELSE OLD.solde END;
+    IF v_delta = 0 THEN
+        RETURN NEW;
+    END IF;
+    INSERT INTO fournisseur_mouvement (fournisseur_id, type, montant, solde_apres, utilisateur_id, reference)
+    VALUES (NEW.id,
+            -- Sans contexte : grossiste créé avec une dette (reprise), sinon correction hors logiciel
+            COALESCE(NULLIF(current_setting('pharma.dette_type', true), ''), CASE WHEN TG_OP = 'INSERT' THEN 'reprise' ELSE 'correction' END),
+            v_delta, NEW.solde,
+            NULLIF(current_setting('pharma.dette_utilisateur', true), '')::bigint,
+            NULLIF(current_setting('pharma.dette_reference', true), ''));
+    PERFORM dette_fournisseur_contexte(NULL, NULL, NULL);
+    RETURN NEW;
+END $$;
+
+
+--
 -- Name: vendre_boite(bigint, bigint, bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1083,11 +1256,14 @@ CREATE FUNCTION public.verifier_lot_vendable() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    d date;
+    l record;
 BEGIN
-    SELECT date_peremption INTO d FROM lot WHERE id = NEW.lot_id;
-    IF d <= current_date THEN
-        RAISE EXCEPTION 'Lot périmé depuis le %, vente interdite', to_char(d, 'DD/MM/YYYY');
+    SELECT date_peremption, bloque, motif_blocage INTO l FROM lot WHERE id = NEW.lot_id;
+    IF l.bloque THEN
+        RAISE EXCEPTION 'Lot bloqué (%), vente interdite', COALESCE(l.motif_blocage, 'sans motif');
+    END IF;
+    IF l.date_peremption <= current_date THEN
+        RAISE EXCEPTION 'Lot périmé depuis le %, vente interdite', to_char(l.date_peremption, 'DD/MM/YYYY');
     END IF;
     RETURN NEW;
 END;
@@ -1665,6 +1841,51 @@ ALTER TABLE public.compte_tresorerie ALTER COLUMN id ADD GENERATED ALWAYS AS IDE
 
 
 --
+-- Name: credit_mouvement; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.credit_mouvement (
+    id bigint NOT NULL,
+    patient_id bigint NOT NULL,
+    type text NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    solde_apres numeric(12,2) NOT NULL,
+    vente_id bigint,
+    utilisateur_id bigint,
+    poste text,
+    reference text,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT credit_mouvement_montant_check CHECK ((montant <> (0)::numeric)),
+    CONSTRAINT credit_mouvement_type_check CHECK ((type = ANY (ARRAY['ouverture'::text, 'reprise'::text, 'vente_credit'::text, 'remboursement'::text, 'retour'::text, 'annulation'::text, 'correction'::text])))
+);
+
+
+--
+-- Name: credit_mouvement_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.credit_mouvement ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.credit_mouvement_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: credit_ouverture; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.credit_ouverture (
+    patient_id bigint NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    CONSTRAINT credit_ouverture_montant_check CHECK ((montant >= (0)::numeric))
+);
+
+
+--
 -- Name: dci; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1790,6 +2011,8 @@ CREATE TABLE public.facture_client (
     commentaire text,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    date_echeance date,
+    CONSTRAINT ck_facture_echeance CHECK ((((type = 'facture'::text) AND (date_echeance IS NOT NULL) AND (date_echeance >= date_facture)) OR ((type = 'avoir'::text) AND (date_echeance IS NULL)))),
     CONSTRAINT facture_client_check CHECK (((destinataire <> 'patient'::text) OR (patient_id IS NOT NULL))),
     CONSTRAINT facture_client_check1 CHECK (((destinataire <> 'entreprise'::text) OR (client_id IS NOT NULL))),
     CONSTRAINT facture_client_check2 CHECK (((destinataire <> 'organisme'::text) OR (organisme_id IS NOT NULL))),
@@ -1904,6 +2127,38 @@ CREATE TABLE public.fournisseur (
 
 ALTER TABLE public.fournisseur ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.fournisseur_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: fournisseur_mouvement; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fournisseur_mouvement (
+    id bigint NOT NULL,
+    fournisseur_id bigint NOT NULL,
+    type text NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    solde_apres numeric(12,2) NOT NULL,
+    utilisateur_id bigint,
+    reference text,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT fournisseur_mouvement_montant_check CHECK ((montant <> (0)::numeric)),
+    CONSTRAINT fournisseur_mouvement_type_check CHECK ((type = ANY (ARRAY['ouverture'::text, 'reprise'::text, 'reception'::text, 'reglement'::text, 'avoir'::text, 'correction'::text])))
+);
+
+
+--
+-- Name: fournisseur_mouvement_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.fournisseur_mouvement ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.fournisseur_mouvement_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -2453,7 +2708,9 @@ CREATE TABLE public.organisme (
     nom text NOT NULL,
     adresse text,
     nif text,
-    actif boolean DEFAULT true NOT NULL
+    actif boolean DEFAULT true NOT NULL,
+    telephone text,
+    email text
 );
 
 
@@ -2567,6 +2824,8 @@ CREATE TABLE public.parametre_caisse (
     seuil_ecart numeric(12,2) DEFAULT 500 NOT NULL,
     deconnexion_minutes integer DEFAULT 0 NOT NULL,
     versement_cloture text DEFAULT 'manuel'::text NOT NULL,
+    delai_alerte_dette_jours integer DEFAULT 30 NOT NULL,
+    CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
     CONSTRAINT ck_versement_cloture CHECK ((versement_cloture = ANY (ARRAY['manuel'::text, 'automatique'::text]))),
     CONSTRAINT parametre_caisse_deconnexion_minutes_check CHECK ((deconnexion_minutes >= 0)),
     CONSTRAINT parametre_caisse_fond_caisse_defaut_check CHECK ((fond_caisse_defaut >= (0)::numeric)),
@@ -2736,6 +2995,7 @@ CREATE TABLE public.produit (
     jours_rouge integer,
     emplacement_id bigint,
     reserve_id bigint,
+    a_verifier boolean DEFAULT false NOT NULL,
     CONSTRAINT ck_seuils_produit CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
     CONSTRAINT produit_classe_check CHECK ((classe = ANY (ARRAY['libre'::text, 'liste_i'::text, 'liste_ii'::text, 'psychotrope'::text, 'stupefiant'::text]))),
     CONSTRAINT produit_jours_orange_check CHECK ((jours_orange > 0)),
@@ -3224,6 +3484,8 @@ CREATE TABLE public.utilisateur (
     code_comptoir_bloque_jusqu timestamp with time zone,
     affichage text DEFAULT 'auto'::text NOT NULL,
     doit_changer_mot_de_passe boolean DEFAULT false NOT NULL,
+    telephone text,
+    email text,
     CONSTRAINT ck_utilisateur_affichage CHECK ((affichage = ANY (ARRAY['auto'::text, 'clair'::text, 'sombre'::text])))
 );
 
@@ -3428,6 +3690,51 @@ CREATE VIEW public.v_cheque_a_remettre AS
 
 
 --
+-- Name: v_credit_accorde; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_credit_accorde AS
+ SELECT v.id AS vente_id,
+    v.patient_id,
+    v.numero,
+    v.date_vente,
+    (x.montant - COALESCE(( SELECT sum(rc.montant_rembourse) AS sum
+           FROM public.retour_client rc
+          WHERE (rc.vente_id = v.id)), (0)::numeric)) AS montant
+   FROM (public.vente v
+     JOIN LATERAL ( SELECT sum(p.montant) AS montant
+           FROM public.paiement p
+          WHERE ((p.vente_id = v.id) AND (p.mode = 'credit'::text))) x ON ((x.montant > (0)::numeric)))
+  WHERE ((v.statut = 'validee'::text) AND (v.patient_id IS NOT NULL));
+
+
+--
+-- Name: v_vente_credit; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_vente_credit AS
+ SELECT vente_id,
+    patient_id,
+    numero,
+    date_vente,
+    montant,
+    LEAST(GREATEST((regle_total - ((ouverture + cumul) - montant)), (0)::numeric), montant) AS regle,
+    (montant - LEAST(GREATEST((regle_total - ((ouverture + cumul) - montant)), (0)::numeric), montant)) AS reste
+   FROM ( SELECT a.vente_id,
+            a.patient_id,
+            a.numero,
+            a.date_vente,
+            a.montant,
+            COALESCE(o.montant, (0)::numeric) AS ouverture,
+            sum(a.montant) OVER (PARTITION BY a.patient_id ORDER BY a.date_vente, a.vente_id) AS cumul,
+            GREATEST(((COALESCE(o.montant, (0)::numeric) + sum(a.montant) OVER (PARTITION BY a.patient_id)) - p.solde_credit), (0)::numeric) AS regle_total
+           FROM ((public.v_credit_accorde a
+             JOIN public.patient p ON ((p.id = a.patient_id)))
+             LEFT JOIN public.credit_ouverture o ON ((o.patient_id = a.patient_id)))
+          WHERE (a.montant > (0)::numeric)) t;
+
+
+--
 -- Name: v_facture_client; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -3468,11 +3775,15 @@ CREATE VIEW public.v_facture_client AS
           WHERE (r.facture_id = f.id)), (0)::numeric) AS regle,
         CASE
             WHEN ((f.type = 'avoir'::text) OR (f.statut = 'remplacee'::text)) THEN (0)::numeric
-            ELSE GREATEST((((f.montant_ttc - f.deja_paye) - COALESCE(( SELECT sum(a.montant_ttc) AS sum
+            ELSE GREATEST(((((f.montant_ttc - f.deja_paye) - COALESCE(( SELECT sum(a.montant_ttc) AS sum
                FROM public.facture_client a
               WHERE ((a.facture_origine_id = f.id) AND (a.type = 'avoir'::text))), (0)::numeric)) - COALESCE(( SELECT sum(r.montant) AS sum
                FROM public.reglement_facture_client r
-              WHERE (r.facture_id = f.id)), (0)::numeric)), (0)::numeric)
+              WHERE (r.facture_id = f.id)), (0)::numeric)) - COALESCE(( SELECT sum(c.regle) AS sum
+               FROM public.v_vente_credit c
+              WHERE (c.vente_id IN ( SELECT fl.vente_id
+                       FROM public.facture_client_ligne fl
+                      WHERE ((fl.facture_id = f.id) AND (fl.part = 'patient'::text) AND (fl.vente_id IS NOT NULL))))), (0)::numeric)), (0)::numeric)
         END AS reste,
     u.nom_complet AS employe,
     ( SELECT x.numero
@@ -3689,6 +4000,7 @@ CREATE VIEW public.v_produit_a_verifier AS
     n.situation,
         CASE
             WHEN ((COALESCE(sd.classe, n.classe_proposee) = ANY (ARRAY['psychotrope'::text, 'stupefiant'::text])) AND (p.classe <> ALL (ARRAY['psychotrope'::text, 'stupefiant'::text]))) THEN 'classe'::text
+            WHEN p.a_verifier THEN 'repris'::text
             WHEN (n.situation IS NULL) THEN 'absent'::text
             ELSE 'situation'::text
         END AS motif
@@ -3705,7 +4017,7 @@ CREATE VIEW public.v_produit_a_verifier AS
           WHERE (v.num_enregistrement = p.num_enregistrement)
           ORDER BY (v.situation = 'en_vigueur'::text) DESC
          LIMIT 1) n ON (true))
-  WHERE (p.actif AND (((COALESCE(sd.classe, n.classe_proposee) = ANY (ARRAY['psychotrope'::text, 'stupefiant'::text])) AND (p.classe <> ALL (ARRAY['psychotrope'::text, 'stupefiant'::text]))) OR (n.situation = ANY (ARRAY['retire'::text, 'non_renouvele'::text])) OR ((n.situation IS NULL) AND (NULLIF(TRIM(BOTH FROM p.num_enregistrement), ''::text) IS NOT NULL) AND (EXISTS ( SELECT 1
+  WHERE (p.actif AND (((COALESCE(sd.classe, n.classe_proposee) = ANY (ARRAY['psychotrope'::text, 'stupefiant'::text])) AND (p.classe <> ALL (ARRAY['psychotrope'::text, 'stupefiant'::text]))) OR p.a_verifier OR (n.situation = ANY (ARRAY['retire'::text, 'non_renouvele'::text])) OR ((n.situation IS NULL) AND (NULLIF(TRIM(BOTH FROM p.num_enregistrement), ''::text) IS NOT NULL) AND (EXISTS ( SELECT 1
            FROM public.nomenclature_produit)))));
 
 
@@ -3949,7 +4261,7 @@ CREATE VIEW public.v_solde_tresorerie AS
                 CASE
                     WHEN (g.moyen = 'effet'::text) THEN g.echeance
                     ELSE g.date_reglement
-                END >= c.date_initiale))), (0)::numeric)) -
+                END >= c.date_initiale) AND ((g.moyen <> 'effet'::text) OR (g.echeance <= CURRENT_DATE)))), (0)::numeric)) -
         CASE
             WHEN recoit_carte THEN (COALESCE(( SELECT sum(annulation_vente.montant_rembourse) AS sum
                FROM public.annulation_vente
@@ -3978,6 +4290,120 @@ CREATE VIEW public.v_stock_par_fournisseur AS
      JOIN public.fournisseur f ON ((f.id = l.fournisseur_id)))
   WHERE (l.quantite_disponible > 0)
   GROUP BY l.produit_id, p.nom_commercial, l.fournisseur_id, f.raison_sociale;
+
+
+--
+-- Name: v_suivi_dettes; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_suivi_dettes AS
+ SELECT 'creance'::text AS sens,
+    'patient'::text AS categorie,
+    c.patient_id AS tiers_id,
+    TRIM(BOTH FROM concat_ws(' '::text, p.nom, p.prenom)) AS tiers,
+    ('Vente à crédit '::text || c.numero) AS libelle,
+    (c.date_vente)::date AS date_reference,
+    NULL::date AS echeance,
+    c.reste AS montant,
+    false AS rejetee
+   FROM (public.v_vente_credit c
+     JOIN public.patient p ON ((p.id = c.patient_id)))
+  WHERE (c.reste > (0)::numeric)
+UNION ALL
+ SELECT 'creance'::text AS sens,
+    'patient'::text AS categorie,
+    p.id AS tiers_id,
+    TRIM(BOTH FROM concat_ws(' '::text, p.nom, p.prenom)) AS tiers,
+    'Dette antérieure (ancien logiciel ou mise en place du relevé)'::text AS libelle,
+    (COALESCE(( SELECT min(m.cree_le) AS min
+           FROM public.credit_mouvement m
+          WHERE (m.patient_id = p.id)), now()))::date AS date_reference,
+    NULL::date AS echeance,
+    (p.solde_credit - COALESCE(( SELECT sum(c.reste) AS sum
+           FROM public.v_vente_credit c
+          WHERE (c.patient_id = p.id)), (0)::numeric)) AS montant,
+    false AS rejetee
+   FROM public.patient p
+  WHERE ((p.solde_credit - COALESCE(( SELECT sum(c.reste) AS sum
+           FROM public.v_vente_credit c
+          WHERE (c.patient_id = p.id)), (0)::numeric)) > (0)::numeric)
+UNION ALL
+ SELECT 'creance'::text AS sens,
+        CASE f.destinataire
+            WHEN 'organisme'::text THEN 'facture_organisme'::text
+            WHEN 'entreprise'::text THEN 'facture_entreprise'::text
+            ELSE 'facture_patient'::text
+        END AS categorie,
+    COALESCE(f.organisme_id, f.client_id, f.patient_id) AS tiers_id,
+    f.destinataire_nom AS tiers,
+    ('Facture '::text || f.numero) AS libelle,
+    f.date_facture AS date_reference,
+    fc.date_echeance AS echeance,
+    f.reste AS montant,
+    (f.statut = 'rejetee'::text) AS rejetee
+   FROM (public.v_facture_client f
+     JOIN public.facture_client fc ON ((fc.id = f.id)))
+  WHERE ((f.type = 'facture'::text) AND (f.statut <> 'remplacee'::text) AND (NOT f.hors_suivi) AND (f.reste > (0)::numeric))
+UNION ALL
+ SELECT 'creance'::text AS sens,
+    'bordereau'::text AS categorie,
+    b.organisme_id AS tiers_id,
+    o.nom AS tiers,
+    ('Bordereau '::text || b.numero) AS libelle,
+    COALESCE(b.date_envoi, b.periode_fin) AS date_reference,
+    NULL::date AS echeance,
+    (b.montant_total - COALESCE(( SELECT sum(m.montant) AS sum
+           FROM public.mouvement_tresorerie m
+          WHERE ((m.bordereau_id = b.id) AND (m.sens = 'entree'::text))), (0)::numeric)) AS montant,
+    (b.statut = 'rejet_partiel'::text) AS rejetee
+   FROM (public.bordereau b
+     JOIN public.organisme o ON ((o.id = b.organisme_id)))
+  WHERE ((b.statut = ANY (ARRAY['envoye'::text, 'rejet_partiel'::text])) AND ((b.montant_total - COALESCE(( SELECT sum(m.montant) AS sum
+           FROM public.mouvement_tresorerie m
+          WHERE ((m.bordereau_id = b.id) AND (m.sens = 'entree'::text))), (0)::numeric)) > (0)::numeric))
+UNION ALL
+ SELECT 'dette'::text AS sens,
+    'grossiste'::text AS categorie,
+    ff.fournisseur_id AS tiers_id,
+    ff.fournisseur AS tiers,
+    COALESCE(('Facture '::text || ff.numero_facture), ('BL '::text || ff.numero_bl), 'Réception'::text) AS libelle,
+    (ff.date_reception)::date AS date_reference,
+    NULL::date AS echeance,
+    ff.reste AS montant,
+    false AS rejetee
+   FROM public.v_facture_fournisseur ff
+  WHERE (ff.reste > (0)::numeric)
+UNION ALL
+ SELECT 'dette'::text AS sens,
+    'grossiste'::text AS categorie,
+    f.id AS tiers_id,
+    f.raison_sociale AS tiers,
+    'Ancien solde (hors factures du logiciel)'::text AS libelle,
+    (COALESCE(( SELECT min(m.cree_le) AS min
+           FROM public.fournisseur_mouvement m
+          WHERE (m.fournisseur_id = f.id)), now()))::date AS date_reference,
+    NULL::date AS echeance,
+    (f.solde - COALESCE(( SELECT sum(ff.reste) AS sum
+           FROM public.v_facture_fournisseur ff
+          WHERE ((ff.fournisseur_id = f.id) AND (ff.reste > (0)::numeric))), (0)::numeric)) AS montant,
+    false AS rejetee
+   FROM public.fournisseur f
+  WHERE ((f.solde - COALESCE(( SELECT sum(ff.reste) AS sum
+           FROM public.v_facture_fournisseur ff
+          WHERE ((ff.fournisseur_id = f.id) AND (ff.reste > (0)::numeric))), (0)::numeric)) > (0)::numeric)
+UNION ALL
+ SELECT 'dette'::text AS sens,
+    'effet'::text AS categorie,
+    g.fournisseur_id AS tiers_id,
+    f.raison_sociale AS tiers,
+    (('Effet '::text || COALESCE(g.reference, ''::text)) || COALESCE(((' ('::text || g.banque) || ')'::text), ''::text)) AS libelle,
+    g.date_reglement AS date_reference,
+    g.echeance,
+    g.montant,
+    false AS rejetee
+   FROM (public.reglement_fournisseur g
+     JOIN public.fournisseur f ON ((f.id = g.fournisseur_id)))
+  WHERE ((g.moyen = 'effet'::text) AND (g.echeance >= CURRENT_DATE));
 
 
 --
@@ -4195,6 +4621,22 @@ ALTER TABLE ONLY public.compte_tresorerie
 
 
 --
+-- Name: credit_mouvement credit_mouvement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_mouvement
+    ADD CONSTRAINT credit_mouvement_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: credit_ouverture credit_ouverture_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_ouverture
+    ADD CONSTRAINT credit_ouverture_pkey PRIMARY KEY (patient_id);
+
+
+--
 -- Name: dci dci_nom_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4272,6 +4714,14 @@ ALTER TABLE ONLY public.facture_client_version
 
 ALTER TABLE ONLY public.facture_compteur
     ADD CONSTRAINT facture_compteur_pkey PRIMARY KEY (type, annee);
+
+
+--
+-- Name: fournisseur_mouvement fournisseur_mouvement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fournisseur_mouvement
+    ADD CONSTRAINT fournisseur_mouvement_pkey PRIMARY KEY (id);
 
 
 --
@@ -4818,6 +5268,20 @@ CREATE INDEX idx_boite_reception ON public.boite USING btree (reception_id);
 
 
 --
+-- Name: idx_credit_mouvement_patient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_credit_mouvement_patient ON public.credit_mouvement USING btree (patient_id, id);
+
+
+--
+-- Name: idx_credit_mouvement_vente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_credit_mouvement_vente ON public.credit_mouvement USING btree (vente_id) WHERE (vente_id IS NOT NULL);
+
+
+--
 -- Name: idx_dci_nom_sans_accent; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4846,6 +5310,13 @@ CREATE INDEX idx_facture_client_date ON public.facture_client USING btree (date_
 
 
 --
+-- Name: idx_facture_client_echeance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_facture_client_echeance ON public.facture_client USING btree (date_echeance) WHERE (type = 'facture'::text);
+
+
+--
 -- Name: idx_facture_ligne_facture; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4871,6 +5342,13 @@ CREATE INDEX idx_facture_ligne_vente ON public.facture_client_ligne USING btree 
 --
 
 CREATE INDEX idx_facture_origine ON public.facture_client USING btree (facture_origine_id) WHERE (facture_origine_id IS NOT NULL);
+
+
+--
+-- Name: idx_fournisseur_mouvement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fournisseur_mouvement ON public.fournisseur_mouvement USING btree (fournisseur_id, id);
 
 
 --
@@ -5433,6 +5911,34 @@ CREATE TRIGGER trg_boite_reception BEFORE INSERT ON public.boite FOR EACH ROW EX
 
 
 --
+-- Name: credit_mouvement trg_credit_mouvement_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_credit_mouvement_immuable BEFORE DELETE OR UPDATE ON public.credit_mouvement FOR EACH ROW EXECUTE FUNCTION public.proteger_credit_mouvement();
+
+
+--
+-- Name: credit_mouvement trg_credit_ouverture; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_credit_ouverture AFTER INSERT ON public.credit_mouvement FOR EACH ROW EXECUTE FUNCTION public.noter_credit_ouverture();
+
+
+--
+-- Name: fournisseur trg_fournisseur_dette; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_fournisseur_dette AFTER INSERT OR UPDATE OF solde ON public.fournisseur FOR EACH ROW EXECUTE FUNCTION public.tracer_dette_fournisseur();
+
+
+--
+-- Name: fournisseur_mouvement trg_fournisseur_mouvement_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_fournisseur_mouvement_immuable BEFORE DELETE OR UPDATE ON public.fournisseur_mouvement FOR EACH ROW EXECUTE FUNCTION public.proteger_fournisseur_mouvement();
+
+
+--
 -- Name: utilisateur trg_garder_un_titulaire; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5486,6 +5992,13 @@ CREATE TRIGGER trg_message_destinataire BEFORE INSERT ON public.message_sortant 
 --
 
 CREATE TRIGGER trg_mouvement_registre AFTER INSERT ON public.mouvement_stock FOR EACH ROW EXECUTE FUNCTION public.inscrire_mouvement_registre();
+
+
+--
+-- Name: patient trg_patient_credit; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_patient_credit AFTER INSERT OR UPDATE OF solde_credit ON public.patient FOR EACH ROW EXECUTE FUNCTION public.tracer_credit_patient();
 
 
 --
@@ -5800,6 +6313,38 @@ ALTER TABLE ONLY public.comptage_caisse
 
 
 --
+-- Name: credit_mouvement credit_mouvement_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_mouvement
+    ADD CONSTRAINT credit_mouvement_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: credit_mouvement credit_mouvement_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_mouvement
+    ADD CONSTRAINT credit_mouvement_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: credit_mouvement credit_mouvement_vente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_mouvement
+    ADD CONSTRAINT credit_mouvement_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
+
+
+--
+-- Name: credit_ouverture credit_ouverture_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_ouverture
+    ADD CONSTRAINT credit_ouverture_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
 -- Name: facture_client facture_client_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5893,6 +6438,22 @@ ALTER TABLE ONLY public.facture_client_version
 
 ALTER TABLE ONLY public.facture_client_version
     ADD CONSTRAINT facture_client_version_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: fournisseur_mouvement fournisseur_mouvement_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fournisseur_mouvement
+    ADD CONSTRAINT fournisseur_mouvement_fournisseur_id_fkey FOREIGN KEY (fournisseur_id) REFERENCES public.fournisseur(id);
+
+
+--
+-- Name: fournisseur_mouvement fournisseur_mouvement_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fournisseur_mouvement
+    ADD CONSTRAINT fournisseur_mouvement_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
 
 
 --
@@ -6611,5 +7172,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9XH77KG8B6v59htLgCaGmoeu9kRmbcKuQ2TcsCNOph5QQoRNyIVgeEHeqhfipGh
+\unrestrict c3LwdC2wVkKuWvbzov9gJJYCdM14quT0UUHA3WnbuiVwb2r0PKkgi7dscdzKBLf
 

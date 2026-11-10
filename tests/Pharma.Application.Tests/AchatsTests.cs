@@ -42,7 +42,7 @@ internal sealed class AchatsEnMemoire : IAchats
     }
 
     public Task<IReadOnlyList<Fournisseur>> FournisseursAsync(CancellationToken ct = default) => throw new NotSupportedException();
-    public Task<IReadOnlyList<CommandeResume>> CommandesAsync(int limite, CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<Pharma.Application.Commun.Page<CommandeResume>> CommandesAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<SuggestionCommande>> SuggestionsAsync(CancellationToken ct = default) => throw new NotSupportedException();
     public List<Pharma.Domain.Stock.LotExistant> MemeNumero { get; } = [];
     public Task<IReadOnlyList<Pharma.Domain.Stock.LotExistant>> LotsMemeNumeroAsync(long produitId, long fournisseurId, string numeroLot, CancellationToken ct = default) =>
@@ -53,10 +53,10 @@ internal sealed class AchatsEnMemoire : IAchats
     public Task ModifierLigneAsync(long commandeId, long ligneId, int quantite, decimal prixHt, CancellationToken ct = default) => throw new NotSupportedException();
     public Task SupprimerLigneAsync(long commandeId, long ligneId, CancellationToken ct = default) => throw new NotSupportedException();
     public Task ChangerStatutCommandeAsync(long commandeId, string statut, CancellationToken ct = default) => throw new NotSupportedException();
-    public Task<IReadOnlyList<ReceptionResume>> ReceptionsAsync(int limite, CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<Pharma.Application.Commun.Page<ReceptionResume>> ReceptionsAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<long>> LotsEnStockAsync(long produitId, string? numeroLot, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<RetourResume?> RetourAsync(long id, CancellationToken ct = default) => throw new NotSupportedException();
-    public Task<IReadOnlyList<RetourResume>> RetoursAsync(int limite, CancellationToken ct = default) => throw new NotSupportedException();
+    public Task<Pharma.Application.Commun.Page<RetourResume>> RetoursAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
     public Task MarquerEnvoyeAsync(long retourId, CancellationToken ct = default) => throw new NotSupportedException();
     public Task EnregistrerAvoirAsync(long retourId, decimal montant, CancellationToken ct = default) => throw new NotSupportedException();
     public Task RefuserRetourAsync(long retourId, long utilisateurId, string commentaire, CancellationToken ct = default) => throw new NotSupportedException();

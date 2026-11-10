@@ -99,10 +99,13 @@ public static partial class RegleDestinataire
     }
 }
 
-/// <summary>Mise en forme des SMS : texte court, sans accents (jeu de caractères GSM), une seule page de préférence.</summary>
+/// <summary>
+/// Mise en forme des SMS : texte court, sans accents (jeu de caractères GSM), une seule page. Le modem envoie en mode
+/// texte (AT+CMGF=1), qui ne concatène pas : au-delà de 160 caractères le message serait refusé ou tronqué.
+/// </summary>
 public static class TexteSms
 {
-    public const int LongueurMax = 300;   // deux SMS concaténés au plus
+    public const int LongueurMax = 160;   // un seul SMS
 
     public static string Preparer(string texte)
     {

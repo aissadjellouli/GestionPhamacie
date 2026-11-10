@@ -30,7 +30,7 @@ public sealed record DernierAchat(decimal PrixAchatHt, long FournisseurId);
 
 public sealed record ReceptionResume(
     long Id, string Fournisseur, string? NumeroBl, string? NumeroFacture, string? NumeroCommande,
-    DateTime Date, int NombreLots, int NombreBoites, decimal MontantTtc);
+    DateTime Date, int NombreLots, int NombreBoites, decimal MontantTtc, long? FournisseurId = null);
 
 /// <summary>Lot reçu : nouveau ou complété (même lot, même grossiste), avec les étiquettes internes créées pour ses boîtes sans Data Matrix.</summary>
 public sealed record LotRecu(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int Etiquettes, bool LotExistant = false);
@@ -67,6 +67,17 @@ public sealed record LotAEtiqueter(long LotId, string Produit, string NumeroLot,
 
 public sealed record EtiquetteBoite(string Produit, string NumeroLot, DateOnly DatePeremption, decimal PrixPublic, string Fournisseur, string Code, string? Emplacement = null);
 
+/// <summary>
+/// Filtre des listes d'achats (bons de commande, réceptions, retours) : grossiste, statut, période, recherche
+/// (commandes : n° du bon ; réceptions : n° de BL, de facture ou de bon ; retours : n° ou motif). Un critère absent ne filtre pas.
+/// </summary>
+public sealed record FiltreAchats(long? FournisseurId = null, string? Statut = null, DateOnly? Du = null, DateOnly? Au = null, string? Recherche = null)
+{
+    public static FiltreAchats Lire(long? fournisseurId, string? statut, DateOnly? du, DateOnly? au, string? recherche) =>
+        new(fournisseurId is > 0 ? fournisseurId : null, string.IsNullOrWhiteSpace(statut) ? null : statut.Trim(), du, au,
+            string.IsNullOrWhiteSpace(recherche) ? null : recherche.Trim());
+}
+
 // ---- Ports ------------------------------------------------------------------
 
 public interface IAchats
@@ -74,7 +85,7 @@ public interface IAchats
     Task<IReadOnlyList<Fournisseur>> FournisseursAsync(CancellationToken ct = default);
     Task<Fournisseur?> FournisseurAsync(long id, CancellationToken ct = default);
 
-    Task<IReadOnlyList<CommandeResume>> CommandesAsync(int limite, CancellationToken ct = default);
+    Task<Page<CommandeResume>> CommandesAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default);
     Task<CommandeDetail?> CommandeAsync(long id, CancellationToken ct = default);
     Task<IReadOnlyList<SuggestionCommande>> SuggestionsAsync(CancellationToken ct = default);
     Task<DernierAchat?> DernierAchatAsync(long produitId, long fournisseurId, CancellationToken ct = default);
@@ -93,7 +104,7 @@ public interface IAchats
     Task<IReadOnlyDictionary<long, decimal>> TauxTvaAsync(IEnumerable<long> produitIds, CancellationToken ct = default);
     /// <summary>Réception, lots, boîtes sérialisées, mouvements, quantités reçues et dette du grossiste : une seule transaction.</summary>
     Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception reception, CancellationToken ct = default);
-    Task<IReadOnlyList<ReceptionResume>> ReceptionsAsync(int limite, CancellationToken ct = default);
+    Task<Page<ReceptionResume>> ReceptionsAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default);
     /// <summary>Lots du même produit, même n° (normalisé) et même grossiste, toutes dates de péremption.</summary>
     Task<IReadOnlyList<LotExistant>> LotsMemeNumeroAsync(long produitId, long fournisseurId, string numeroLot, CancellationToken ct = default);
 
@@ -103,7 +114,7 @@ public interface IAchats
     /// <summary>Retour en brouillon : le stock du lot et les boîtes désignées sortent tout de suite (mis de côté).</summary>
     Task<long> CreerRetourAsync(NouveauRetour retour, CancellationToken ct = default);
     Task<RetourResume?> RetourAsync(long id, CancellationToken ct = default);
-    Task<IReadOnlyList<RetourResume>> RetoursAsync(int limite, CancellationToken ct = default);
+    Task<Page<RetourResume>> RetoursAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default);
     Task MarquerEnvoyeAsync(long retourId, CancellationToken ct = default);
     /// <summary>Avoir reçu : enregistré sur le retour et déduit de la dette du grossiste.</summary>
     Task EnregistrerAvoirAsync(long retourId, decimal montant, CancellationToken ct = default);
@@ -138,7 +149,7 @@ public sealed class ListerFournisseurs(IAchats achats)
 
 public sealed class ListerCommandes(IAchats achats)
 {
-    public Task<IReadOnlyList<CommandeResume>> ExecuterAsync(CancellationToken ct = default) => achats.CommandesAsync(100, ct);
+    public Task<Page<CommandeResume>> ExecuterAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => achats.CommandesAsync(page, filtre, ct);
 }
 
 public sealed class ObtenirCommande(IAchats achats)
@@ -296,7 +307,7 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
 
 public sealed class ListerReceptions(IAchats achats)
 {
-    public Task<IReadOnlyList<ReceptionResume>> ExecuterAsync(CancellationToken ct = default) => achats.ReceptionsAsync(100, ct);
+    public Task<Page<ReceptionResume>> ExecuterAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => achats.ReceptionsAsync(page, filtre, ct);
 }
 
 // ---- Cas d'usage : retours fournisseurs ------------------------------------
@@ -320,7 +331,7 @@ public sealed class ListerLotsRetournables(IAchats achats)
 
 public sealed class ListerRetours(IAchats achats)
 {
-    public Task<IReadOnlyList<RetourResume>> ExecuterAsync(CancellationToken ct = default) => achats.RetoursAsync(100, ct);
+    public Task<Page<RetourResume>> ExecuterAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => achats.RetoursAsync(page, filtre, ct);
 }
 
 /// <summary>

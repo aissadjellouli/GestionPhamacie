@@ -1,5 +1,6 @@
 using Npgsql;
 using NpgsqlTypes;
+using Pharma.Application.Commun;
 using Pharma.Application.Achats;
 using Pharma.Domain.Achats;
 using Pharma.Domain.Commun;
@@ -52,7 +53,7 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
 
         var reglements = new List<ReglementPasse>();
         await using (var cmd = db.CreateCommand("""
-            SELECT g.id, g.date_reglement, g.montant, g.moyen, g.reference, g.echeance, g.part_tiroir, u.nom_complet
+            SELECT g.id, g.date_reglement, g.montant, g.moyen, g.reference, g.echeance, g.part_tiroir, u.nom_complet, g.utilisateur_id
             FROM reglement_fournisseur g JOIN utilisateur u ON u.id = g.utilisateur_id
             WHERE g.fournisseur_id = $1 ORDER BY g.date_reglement DESC, g.id DESC LIMIT 20
             """))
@@ -61,9 +62,33 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
             await using var r = await cmd.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct))
                 reglements.Add(new ReglementPasse(r.GetInt64(0), DateOnly.FromDateTime(r.GetDateTime(1)), r.GetDecimal(2), r.GetString(3),
-                    r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : DateOnly.FromDateTime(r.GetDateTime(5)), r.GetDecimal(6), r.GetString(7)));
+                    r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : DateOnly.FromDateTime(r.GetDateTime(5)), r.GetDecimal(6), r.GetString(7), r.GetInt64(8)));
         }
-        return new SituationGrossiste(fournisseurId, nom, solde, factures, reglements);
+
+        // Relevé de la dette (039) : première page des mouvements, du plus récent au plus ancien
+        var mouvements = await MouvementsAsync(fournisseurId, new DemandePage(), null, ct);
+        return new SituationGrossiste(fournisseurId, nom, solde, factures, reglements, mouvements.Lignes, mouvements.Total);
+    }
+
+    public async Task<Page<MouvementGrossiste>> MouvementsAsync(long fournisseurId, DemandePage page, FiltreReleve? filtre = null, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand($"""
+            SELECT m.cree_le, m.type, m.montant, m.solde_apres, u.nom_complet, m.reference, {Lecture.PaginationSql.Total}, m.utilisateur_id
+            FROM fournisseur_mouvement m LEFT JOIN utilisateur u ON u.id = m.utilisateur_id
+            WHERE m.fournisseur_id = $1
+              AND ($2::date IS NULL OR m.cree_le >= $2::date)
+              AND ($3::date IS NULL OR m.cree_le < $3::date + 1)
+              AND ($4::text IS NULL OR m.type = $4)
+            ORDER BY m.id DESC
+            {Lecture.PaginationSql.Limite(5)}
+            """);
+        cmd.Parameters.AddWithValue(fournisseurId);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre?.Du ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre?.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre?.Type ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        Lecture.PaginationSql.Parametres(cmd, page);
+        return await Lecture.PaginationSql.LireAsync(cmd, page, 6, r => new MouvementGrossiste(r.GetDateTime(0), r.GetString(1), r.GetDecimal(2),
+            r.GetDecimal(3), r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(7) ? null : r.GetInt64(7)), ct);
     }
 
     public async Task<long> EnregistrerAsync(ReglementAEcrire g, CancellationToken ct = default)
@@ -116,6 +141,8 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
             cmd.Parameters.AddWithValue(montant);
             await cmd.ExecuteNonQueryAsync(ct);
         }
+        await ReleveGrossiste.ContexteAsync(cx, tx, ReleveGrossiste.Reglement, g.UtilisateurId,
+            $"Règlement n° {id} ({g.Moyen}{(g.Reference is null ? "" : " " + g.Reference)})", ct);
         await using (var cmd = new NpgsqlCommand("UPDATE fournisseur SET solde = solde - $2 WHERE id = $1", cx, tx))
         {
             cmd.Parameters.AddWithValue(g.FournisseurId);

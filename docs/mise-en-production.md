@@ -47,7 +47,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `035`. |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `040`. |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -80,7 +80,7 @@ Le dossier `database/init/` contient trois fichiers :
   Le serveur a besoin du runtime ASP.NET Core 10, sauf si la publication est autonome.
 - [ ] **3.2** Configurer les réglages propres à la pharmacie, par variables d'environnement **système** (jamais dans le dépôt) :
   - `ConnectionStrings__Pharmacie=Host=localhost;Port=5432;Database=<base>;Username=pharma_app;Password=<mot de passe de l'étape 1.2>` ;
-  - `Jwt__Cle` : une clé aléatoire de **64 caractères minimum**, propre à la pharmacie. La valeur d'exemple d'`appsettings.json` ne doit jamais rester ;
+  - `Jwt__Cle` : une clé aléatoire de **64 caractères minimum**, propre à la pharmacie. La valeur d'exemple d'`appsettings.json` ne doit jamais rester : hors poste de développement, l'API refuse de démarrer avec elle ou avec une clé plus courte ;
   - `Chifa__DossierExport` : le dossier d'export de Chifa sur ce PC ;
   - `Ordonnances__Dossier` : le dossier des scans d'ordonnances (par défaut `C:\ProgramData\PharmaOfficine\Ordonnances`) ;
   - `Urls` : `http://0.0.0.0:5080` par défaut.

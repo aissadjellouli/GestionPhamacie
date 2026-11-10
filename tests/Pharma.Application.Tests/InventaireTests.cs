@@ -28,6 +28,13 @@ internal sealed class InventairesEnMemoire : IInventaires
     public Task<long> CreerAsync(string rayon, long u, CancellationToken ct = default) => Task.FromResult(5L);
     public Task<InventaireDetail?> DetailAsync(long id, CancellationToken ct = default) => Task.FromResult<InventaireDetail?>(id == Detail.Id ? Detail : null);
     public Task EnregistrerComptageAsync(long ligneId, int compte, DateOnly? d, long u, CancellationToken ct = default) { Comptages.Add((ligneId, compte)); return Task.CompletedTask; }
+    public Task<int?> AjouterBoiteAsync(long ligneId, int max, long u, CancellationToken ct = default)
+    {
+        var compte = (Comptages.LastOrDefault(c => c.Ligne == ligneId) is { Ligne: > 0 } dernier ? dernier.Compte : Detail.Lignes.First(l => l.Id == ligneId).Compte ?? 0) + 1;
+        if (compte > max) return Task.FromResult<int?>(null);
+        Comptages.Add((ligneId, compte));
+        return Task.FromResult<int?>(compte);
+    }
     public Task<long?> LotParCodeAsync(string code, CancellationToken ct = default) => Task.FromResult(LotScanne);
     public Task TerminerAsync(long id, IReadOnlyList<DecisionLigne> decisions, long u, CancellationToken ct = default) { Decisions = decisions; return Task.CompletedTask; }
     public Task AnnulerAsync(long id, CancellationToken ct = default) => Task.CompletedTask;

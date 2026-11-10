@@ -16,6 +16,9 @@ public sealed record Totaux(decimal Ht, decimal Tva, decimal Ttc);
 
 public static class RegleFacture
 {
+    /// <summary>Échéance proposée par défaut : date d'établissement plus ce nombre de jours.</summary>
+    public const int DelaiEcheanceJours = 30;
+
     public static Destinataire Lire(string? code) => code switch
     {
         "patient" => Destinataire.Patient,
@@ -39,7 +42,7 @@ public static class RegleFacture
 
     /// <summary>
     /// Lignes d'une facture à partir de ventes : une ligne par produit (part concernée, quantité nette) ;
-    /// pour la part patient, la remise de chaque vente devient une ligne négative.
+    /// pour la part patient, la remise de chaque vente devient une ligne négative par taux de TVA.
     /// </summary>
     public static IReadOnlyList<LigneFacture> DepuisVentes(Destinataire d, IEnumerable<LigneVendue> lignes)
     {
@@ -55,10 +58,31 @@ public static class RegleFacture
                     decimal.Round(montant / l.Quantite, 2), l.TauxTva, montant));
             }
             var remise = vente.First().RemiseVente;
-            if (part == "patient" && remise > 0 && resultat.Any(r => r.VenteId == vente.Key.VenteId))
-                resultat.Add(new LigneFacture(vente.Key.VenteId, null, part, $"Remise (vente {vente.Key.NumeroVente})", 1, -remise, 0, -remise));
+            if (part == "patient" && remise > 0)
+                resultat.AddRange(Remises(vente.Key.VenteId, vente.Key.NumeroVente, remise, resultat.Where(r => r.VenteId == vente.Key.VenteId).ToList()));
         }
         return resultat;
+    }
+
+    /// <summary>
+    /// La remise d'une vente porte la TVA des produits remisés : elle est répartie par taux de TVA, au prorata des montants
+    /// facturés (une ligne négative par taux), sinon la TVA de la facture ne baisserait pas avec la remise. Le dernier
+    /// taux reçoit le reste : la somme des lignes est exactement la remise.
+    /// </summary>
+    private static IEnumerable<LigneFacture> Remises(long venteId, string numeroVente, decimal remise, IReadOnlyList<LigneFacture> lignesVente)
+    {
+        var parTaux = lignesVente.GroupBy(l => l.TauxTva).Select(g => (Taux: g.Key, Montant: g.Sum(l => l.MontantTtc))).OrderBy(t => t.Taux).ToList();
+        var total = parTaux.Sum(t => t.Montant);
+        if (total <= 0) yield break;
+        var reste = remise;
+        for (var i = 0; i < parTaux.Count; i++)
+        {
+            var montant = i == parTaux.Count - 1 ? reste : decimal.Round(remise * parTaux[i].Montant / total, 2);
+            reste -= montant;
+            if (montant == 0) continue;
+            var libelle = parTaux.Count == 1 ? $"Remise (vente {numeroVente})" : $"Remise (vente {numeroVente}, TVA {parTaux[i].Taux:0.##} %)";
+            yield return new LigneFacture(venteId, null, "patient", libelle, 1, -montant, parTaux[i].Taux, -montant);
+        }
     }
 
     /// <summary>Ligne saisie à la main : désignation, quantité et prix positifs, TVA 0 à 100 %.</summary>

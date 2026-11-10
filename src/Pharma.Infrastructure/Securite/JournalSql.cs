@@ -45,6 +45,29 @@ public sealed class JournalSql(NpgsqlDataSource db) : IJournal, IJournalLecture
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)permissionCode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
     }
 
+    public async Task<Page<EntreeJournal>> PageAsync(FiltreJournal filtre, DemandePage page, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand($"""
+            SELECT j.cree_le, COALESCE(u.nom_complet, '—'), j.action, j.details::text, a.nom_complet, j.permission_code,
+                   {Lecture.PaginationSql.Total}, j.utilisateur_id, j.autorise_par
+            FROM journal_audit j
+            LEFT JOIN utilisateur u ON u.id = j.utilisateur_id
+            LEFT JOIN utilisateur a ON a.id = j.autorise_par
+            WHERE ($1::date IS NULL OR j.cree_le >= $1::date)
+              AND ($2::date IS NULL OR j.cree_le < $2::date + 1)
+              AND ($3::text IS NULL OR u.nom_complet ILIKE '%' || $3 || '%' OR u.identifiant ILIKE '%' || $3 || '%')
+            ORDER BY j.cree_le DESC, j.id DESC
+            {Lecture.PaginationSql.Limite(4)}
+            """);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Du ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Employe ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        Lecture.PaginationSql.Parametres(cmd, page);
+        return await Lecture.PaginationSql.LireAsync(cmd, page, 6, r => new EntreeJournal(r.GetDateTime(0), r.GetString(1), r.GetString(2),
+            r.IsDBNull(3) ? null : r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5),
+            r.IsDBNull(7) ? null : r.GetInt64(7), r.IsDBNull(8) ? null : r.GetInt64(8)), ct);
+    }
+
     public async Task<IReadOnlyList<EntreeJournal>> DernieresAsync(int nombre, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""

@@ -1,0 +1,20 @@
+@inject FichesContact Fiches
+
+@* Nom d'un tiers (patient, grossiste, organisme, entreprise cliente, employé) : un clic ouvre sa fiche contact.
+   Sans identifiant (tiers inconnu, vente anonyme), le nom reste du texte simple. *@
+@if (Id is > 0)
+{
+    <button type="button" class="lien-contact" title="@($"Coordonnées de {Nom}")" aria-haspopup="dialog"
+            @onclick="() => Fiches.Ouvrir(Type, Id.Value, Nom)" @onclick:stopPropagation="true">@Nom</button>
+}
+else
+{
+    <span>@Nom</span>
+}
+
+@code {
+    /// <summary>patient, grossiste, organisme, client ou employe.</summary>
+    [Parameter, EditorRequired] public string Type { get; set; } = "";
+    [Parameter] public long? Id { get; set; }
+    [Parameter] public string Nom { get; set; } = "";
+}

@@ -25,6 +25,15 @@ internal static class FacturesEndpoints
                 CancellationToken ct) =>
             Results.Ok((await c.ListerAsync(new FiltreFactures(q, destinataire, suivi, du, au), user.UtilisateurId(), ct)).Select(VersDto)));
 
+        // Liste paginée, avec les totaux de toutes les factures qui répondent aux filtres
+        f.MapGet("/page", async (string? q, string? destinataire, string? suivi, DateOnly? du, DateOnly? au, int? page, int? taille, ConsulterFactures c,
+                ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var l = await c.PageAsync(new FiltreFactures(q, destinataire, suivi, du, au), Pharma.Application.Commun.DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
+                return Results.Ok(new FacturesPageDto(new PageDto<FactureResumeDto>(l.Page.Lignes.Select(VersDto).ToList(), l.Page.Total, l.Page.Numero, l.Page.Taille),
+                    l.TotalTtc, l.TotalReste));
+            });
+
         f.MapGet("/{id:long}", async (long id, int? version, ConsulterFactures c, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok(VersDto(await c.DetailAsync(id, version, user.UtilisateurId(), ct))));
 
@@ -82,24 +91,24 @@ internal static class FacturesEndpoints
 
         // Organismes (tiers payant et factures) : lecture pour qui facture, modification par le titulaire
         api.MapGet("/admin/organismes", async (IFactures factures, CancellationToken ct) =>
-                Results.Ok((await factures.OrganismesAsync(ct)).Select(o => new OrganismeFicheDto(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif))))
+                Results.Ok((await factures.OrganismesAsync(ct)).Select(o => new OrganismeFicheDto(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email))))
            .ExigerPermission(Permissions.AdminParametres);
 
         api.MapPost("/admin/organismes", async (OrganismeFicheDto o, Facturation fa, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok(new IdentifiantDto(await fa.EnregistrerOrganismeAsync(new OrganismeFiche(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif),
+                Results.Ok(new IdentifiantDto(await fa.EnregistrerOrganismeAsync(new OrganismeFiche(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email),
                     user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.AdminParametres);
     }
 
     private static DemandeFacture VersDemande(DemandeFactureDto r) => new(r.Destinataire, r.PatientId, r.ClientId, r.OrganismeId, r.Date, r.Du, r.Au,
-        r.Ventes ?? [], (r.Libres ?? []).Select(l => new LigneLibre(l.Designation, l.Quantite, l.PrixTtc, l.TauxTva)).ToList(), r.Commentaire);
+        r.Ventes ?? [], (r.Libres ?? []).Select(l => new LigneLibre(l.Designation, l.Quantite, l.PrixTtc, l.TauxTva)).ToList(), r.Commentaire, r.Echeance);
 
     private static FactureResumeDto VersDto(FactureResume r) => new(r.Id, r.Type, r.Numero, r.Date, r.Destinataire, r.DestinataireNom, r.Ttc, r.DejaPaye,
         r.Avoirs, r.Regle, r.Reste, r.Statut, r.Version, r.HorsSuivi, r.MotifHorsSuivi, r.RemplaceNumero, r.RemplaceeParNumero, r.OrigineNumero,
-        r.MotifRejet, r.OrganismeId);
+        r.MotifRejet, r.OrganismeId, r.Echeance, r.PatientId, r.ClientId);
 
     private static FactureDetailDto VersDto(FactureDetail d) => new(VersDto(d.Resume), d.PatientId, d.ClientId, d.DestinataireInfos, d.Du, d.Au, d.Ht, d.Tva,
         d.Commentaire, d.Motif, d.Employe,
         d.Lignes.Select(l => new LigneFactureDto(l.VenteId, l.LigneVenteId, l.Part, l.Designation, l.Quantite, l.PrixUnitaireTtc, l.TauxTva, l.MontantTtc)).ToList(),
-        d.Versions);
+        d.Versions, d.EmployeId);
 }

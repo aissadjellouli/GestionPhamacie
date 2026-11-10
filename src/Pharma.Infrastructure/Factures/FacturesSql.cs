@@ -125,8 +125,8 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO facture_client (type, numero, date_facture, destinataire, patient_id, client_id, organisme_id, destinataire_nom, destinataire_infos,
                                         periode_du, periode_au, montant_ht, montant_tva, montant_ttc, deja_paye, remplace_id, facture_origine_id, motif,
-                                        commentaire, utilisateur_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id
+                                        commentaire, utilisateur_id, date_echeance)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id
             """, cx, tx))
         {
             cmd.Parameters.AddWithValue(f.Type);
@@ -149,6 +149,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
             cmd.Parameters.Add(Texte(f.Motif));
             cmd.Parameters.Add(Texte(f.Commentaire));
             cmd.Parameters.AddWithValue(f.UtilisateurId);
+            cmd.Parameters.Add(Date(f.Echeance));   // date d'échéance (040) ; null pour un avoir
             id = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
         await EcrireLignes(cx, tx, id, f.Lignes, ct);
@@ -213,41 +214,87 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
     private const string SelectResume = """
         SELECT id, type, numero, date_facture, destinataire, destinataire_nom, montant_ttc, deja_paye, avoirs, regle, reste, statut, version,
                hors_suivi, motif_hors_suivi, remplace_numero, remplacee_par_numero, origine_numero, motif_rejet, organisme_id,
-               patient_id, client_id, destinataire_infos, periode_du, periode_au, montant_ht, montant_tva, commentaire, motif, employe
+               patient_id, client_id, destinataire_infos, periode_du, periode_au, montant_ht, montant_tva, commentaire, motif, employe,
+               -- Échéance lue dans la table : la vue garde les colonnes de 031 pour rester rejouable (040)
+               (SELECT fe.date_echeance FROM facture_client fe WHERE fe.id = v_facture_client.id) AS date_echeance,
+               utilisateur_id
         FROM v_facture_client
         """;
 
-    public async Task<IReadOnlyList<FactureResume>> ListerAsync(FiltreFactures filtre, CancellationToken ct = default)
+    /// <summary>Filtres de la liste (paramètres $1 à $5 : recherche, destinataire, suivi, du, au).</summary>
+    private const string OuFiltres = """
+        WHERE ($1::text IS NULL OR numero ILIKE '%' || $1 || '%' OR destinataire_nom ILIKE '%' || $1 || '%')
+          AND ($2::text IS NULL OR destinataire = $2)
+          AND ($3::text IS NULL
+               OR ($3 = 'a_encaisser' AND type = 'facture' AND statut <> 'remplacee' AND NOT hors_suivi AND reste > 0)
+               OR ($3 = 'echues' AND type = 'facture' AND statut <> 'remplacee' AND NOT hors_suivi AND reste > 0
+                   AND (SELECT fe.date_echeance FROM facture_client fe WHERE fe.id = v_facture_client.id) < CURRENT_DATE)
+               OR ($3 = 'soldees' AND type = 'facture' AND statut <> 'remplacee' AND reste = 0)
+               OR ($3 = 'rejetees' AND statut = 'rejetee')
+               OR ($3 = 'hors_suivi' AND hors_suivi)
+               OR ($3 = 'avoirs' AND type = 'avoir'))
+          AND ($4::date IS NULL OR date_facture >= $4)
+          AND ($5::date IS NULL OR date_facture <= $5)
+        """;
+
+    private static void Filtres(NpgsqlCommand cmd, FiltreFactures filtre)
     {
-        await using var cmd = db.CreateCommand($"""
-            {SelectResume}
-            WHERE ($1::text IS NULL OR numero ILIKE '%' || $1 || '%' OR destinataire_nom ILIKE '%' || $1 || '%')
-              AND ($2::text IS NULL OR destinataire = $2)
-              AND ($3::text IS NULL
-                   OR ($3 = 'a_encaisser' AND type = 'facture' AND statut <> 'remplacee' AND NOT hors_suivi AND reste > 0)
-                   OR ($3 = 'rejetees' AND statut = 'rejetee')
-                   OR ($3 = 'hors_suivi' AND hors_suivi)
-                   OR ($3 = 'avoirs' AND type = 'avoir'))
-              AND ($4::date IS NULL OR date_facture >= $4)
-              AND ($5::date IS NULL OR date_facture <= $5)
-            ORDER BY date_facture DESC, id DESC
-            LIMIT 300
-            """);
         cmd.Parameters.Add(Texte(string.IsNullOrWhiteSpace(filtre.Recherche) ? null : filtre.Recherche.Trim()));
         cmd.Parameters.Add(Texte(filtre.Destinataire));
         cmd.Parameters.Add(Texte(filtre.Suivi));
         cmd.Parameters.Add(Date(filtre.Du));
         cmd.Parameters.Add(Date(filtre.Au));
+    }
+
+    /// <summary>Liste sans pagination, pour les traitements (factures à encaisser de la trésorerie) : 300 lignes au plus.</summary>
+    public async Task<IReadOnlyList<FactureResume>> ListerAsync(FiltreFactures filtre, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand($"""
+            {SelectResume}
+            {OuFiltres}
+            ORDER BY date_facture DESC, id DESC
+            LIMIT 300
+            """);
+        Filtres(cmd, filtre);
         var liste = new List<FactureResume>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct)) liste.Add(Resume(r));
         return liste;
     }
 
+    /// <summary>Une page de la liste, et les totaux de toutes les factures qui répondent aux filtres (pas seulement la page).</summary>
+    public async Task<ListeFactures> PageAsync(FiltreFactures filtre, Pharma.Application.Commun.DemandePage page, CancellationToken ct = default)
+    {
+        Pharma.Application.Commun.Page<FactureResume> resultat;
+        await using (var cmd = db.CreateCommand($"""
+            {SelectResume.Replace("FROM v_facture_client", ", " + Lecture.PaginationSql.Total + " FROM v_facture_client")}
+            {OuFiltres}
+            ORDER BY date_facture DESC, id DESC
+            {Lecture.PaginationSql.Limite(6)}
+            """))
+        {
+            Filtres(cmd, filtre);
+            Lecture.PaginationSql.Parametres(cmd, page);
+            resultat = await Lecture.PaginationSql.LireAsync(cmd, page, 32, Resume, ct);
+        }
+
+        await using var totaux = db.CreateCommand($"""
+            SELECT COALESCE(SUM(montant_ttc) FILTER (WHERE type = 'facture' AND statut <> 'remplacee'), 0),
+                   COALESCE(SUM(reste) FILTER (WHERE type = 'facture' AND statut <> 'remplacee' AND NOT hors_suivi), 0)
+            FROM v_facture_client
+            {OuFiltres}
+            """);
+        Filtres(totaux, filtre);
+        await using var r = await totaux.ExecuteReaderAsync(ct);
+        await r.ReadAsync(ct);
+        return new ListeFactures(resultat, r.GetDecimal(0), r.GetDecimal(1));
+    }
+
     private static FactureResume Resume(NpgsqlDataReader r) => new(
         r.GetInt64(0), r.GetString(1), r.GetString(2), DateOnly.FromDateTime(r.GetDateTime(3)), r.GetString(4), r.GetString(5), r.GetDecimal(6),
         r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetString(11), r.GetInt32(12), r.GetBoolean(13), Txt(r, 14),
-        Txt(r, 15), Txt(r, 16), Txt(r, 17), Txt(r, 18), Nl(r, 19));
+        Txt(r, 15), Txt(r, 16), Txt(r, 17), Txt(r, 18), Nl(r, 19), r.IsDBNull(30) ? null : DateOnly.FromDateTime(r.GetDateTime(30)),
+        Nl(r, 20), Nl(r, 21));
 
     public async Task<FactureDetail?> DetailAsync(long id, int? version, CancellationToken ct = default)
     {
@@ -258,7 +305,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
             await using var r = await cmd.ExecuteReaderAsync(ct);
             if (!await r.ReadAsync(ct)) return null;
             detail = new FactureDetail(Resume(r), Nl(r, 20), Nl(r, 21), Txt(r, 22), D(r, 23), D(r, 24), r.GetDecimal(25), r.GetDecimal(26),
-                Txt(r, 27), Txt(r, 28), r.GetString(29), [], []);
+                Txt(r, 27), Txt(r, 28), r.GetString(29), [], [], Nl(r, 31));
         }
 
         var versions = new List<int>();
@@ -288,6 +335,8 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
                 {
                     Version = v, Statut = "rejetee", Ttc = c.GetProperty("montant_ttc").GetDecimal(), DejaPaye = c.GetProperty("deja_paye").GetDecimal(),
                     Date = DateOnly.Parse(c.GetProperty("date_facture").GetString()!), MotifRejet = c.TryGetProperty("motif_rejet", out var m) ? m.GetString() : null
+                    ,
+                    Echeance = c.TryGetProperty("date_echeance", out var ech) && ech.ValueKind == JsonValueKind.String ? DateOnly.Parse(ech.GetString()!) : detail.Resume.Echeance
                 },
                 Ht = c.GetProperty("montant_ht").GetDecimal(), Tva = c.GetProperty("montant_tva").GetDecimal(),
                 Commentaire = c.TryGetProperty("commentaire", out var cm) ? cm.GetString() : null, Lignes = lignesV, Versions = versions
@@ -326,7 +375,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO facture_client_version (facture_id, version, contenu, motif, utilisateur_id)
             SELECT f.id, f.version,
-                   jsonb_build_object('date_facture', f.date_facture, 'montant_ht', f.montant_ht, 'montant_tva', f.montant_tva, 'montant_ttc', f.montant_ttc,
+                   jsonb_build_object('date_facture', f.date_facture, 'date_echeance', f.date_echeance, 'montant_ht', f.montant_ht, 'montant_tva', f.montant_tva, 'montant_ttc', f.montant_ttc,
                                       'deja_paye', f.deja_paye, 'commentaire', f.commentaire, 'motif_rejet', f.motif_rejet,
                                       'lignes', COALESCE((SELECT jsonb_agg(to_jsonb(l) ORDER BY l.ordre) FROM facture_client_ligne l WHERE l.facture_id = f.id), '[]'::jsonb)),
                    COALESCE($2, f.motif_rejet), $3
@@ -346,7 +395,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         await EcrireLignes(cx, tx, id, f.Lignes, ct);
         await using (var cmd = new NpgsqlCommand("""
             UPDATE facture_client SET date_facture = $2, periode_du = $3, periode_au = $4, montant_ht = $5, montant_tva = $6, montant_ttc = $7,
-                   deja_paye = $8, commentaire = $9, version = version + 1, statut = 'emise', motif_rejet = NULL
+                   deja_paye = $8, commentaire = $9, date_echeance = $10, version = version + 1, statut = 'emise', motif_rejet = NULL
             WHERE id = $1
             """, cx, tx))
         {
@@ -359,6 +408,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
             cmd.Parameters.AddWithValue(f.Totaux.Ttc);
             cmd.Parameters.AddWithValue(f.DejaPaye);
             cmd.Parameters.Add(Texte(f.Commentaire));
+            cmd.Parameters.Add(Date(f.Echeance));
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
@@ -405,24 +455,26 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
 
     public async Task<IReadOnlyList<OrganismeFiche>> OrganismesAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT id, code, nom, adresse, nif, actif FROM organisme ORDER BY NOT actif, code");
+        await using var cmd = db.CreateCommand("SELECT id, code, nom, adresse, nif, actif, telephone, email FROM organisme ORDER BY NOT actif, code");
         var liste = new List<OrganismeFiche>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        while (await r.ReadAsync(ct)) liste.Add(new OrganismeFiche(r.GetInt64(0), r.GetString(1), r.GetString(2), Txt(r, 3), Txt(r, 4), r.GetBoolean(5)));
+        while (await r.ReadAsync(ct)) liste.Add(new OrganismeFiche(r.GetInt64(0), r.GetString(1), r.GetString(2), Txt(r, 3), Txt(r, 4), r.GetBoolean(5), Txt(r, 6), Txt(r, 7)));
         return liste;
     }
 
     public async Task<long> EnregistrerOrganismeAsync(OrganismeFiche o, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(o.Id is null
-            ? "INSERT INTO organisme (code, nom, adresse, nif, actif) VALUES ($2, $3, $4, $5, $6) RETURNING id"
-            : "UPDATE organisme SET code = $2, nom = $3, adresse = $4, nif = $5, actif = $6 WHERE id = $1 RETURNING id");
+            ? "INSERT INTO organisme (code, nom, adresse, nif, actif, telephone, email) VALUES ($2, $3, $4, $5, $6, $7, $8) RETURNING id"
+            : "UPDATE organisme SET code = $2, nom = $3, adresse = $4, nif = $5, actif = $6, telephone = $7, email = $8 WHERE id = $1 RETURNING id");
         cmd.Parameters.Add(Long(o.Id));
         cmd.Parameters.AddWithValue(o.Code);
         cmd.Parameters.AddWithValue(o.Nom);
         cmd.Parameters.Add(Texte(o.Adresse));
         cmd.Parameters.Add(Texte(o.Nif));
         cmd.Parameters.AddWithValue(o.Actif);
+        cmd.Parameters.Add(Texte(o.Telephone));
+        cmd.Parameters.Add(Texte(o.Email));
         try { return (long)(await cmd.ExecuteScalarAsync(ct))!; }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {

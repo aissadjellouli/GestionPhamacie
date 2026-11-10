@@ -17,6 +17,8 @@ public class Produit
     /// <summary>Seuil d'alerte saisi (boîtes) ; null : seuil automatique.</summary>
     public int? StockMinimum { get; init; }
     public bool Actif { get; init; } = true;
+    /// <summary>Repris de l'ancien logiciel sans n° d'enregistrement : classe à confirmer par le titulaire, non vendable d'ici là (037).</summary>
+    public bool AVerifier { get; init; }
 
     /// <summary>Psychotropes et stupéfiants : inscription au registre obligatoire.</summary>
     public bool EstSousRegistre =>

@@ -260,7 +260,7 @@
                                     <div class="panier-produit">
                                         <span>@l.Nom</span>
                                         <span>Lot servi @lot.NumeroLot · exp. @Libelles.Date(lot.DatePeremption) ·
-                                            @if (l.LotConseilleServi) { <span class="fefo">lot conseillé (péremption proche)</span> } else if (l.BoiteScannee) { <span class="fefo">boîte scannée</span> } else { <span class="fefo">premier à expirer (FEFO)</span> }
+                                            @if (l.LotConseilleServi) { <span class="fefo">lot conseillé (péremption proche)</span> } else if (l.BoiteScannee) { <span class="fefo">boîte scannée</span> } else if (lignes.FirstOrDefault(x => x.ProduitId == l.ProduitId && x.Lot is not null && !x.BoiteScannee) != l) { <span class="fefo">lot suivant (FEFO), le précédent ne suffit pas</span> } else { <span class="fefo">premier à expirer (FEFO)</span> }
                                         </span>
                                         <span class="stock-restant @(StockApresVente(l) == 0 ? "epuise" : null)">
                                             Stock : @l.StockProduit boîte(s) · reste @StockApresVente(l) après cette vente
@@ -285,7 +285,7 @@
                                     @if (l.QuantiteDemandee > l.Quantite)
                                     {
                                         <div class="manque">
-                                            <span class="alerte-rupture">Stock insuffisant : @l.QuantiteDemandee demandée(s), @l.Quantite disponible(s) dans ce lot.</span>
+                                            <span class="alerte-rupture">Stock insuffisant : il manque @(l.QuantiteDemandee - l.Quantite) boîte(s), aucun autre lot vendable de ce produit.</span>
                                             @foreach (var alt in l.Alternatives.Take(1))
                                             {
                                                 <div class="alternative">
@@ -355,9 +355,9 @@
                     {
                         <div class="choix">
                             <div>
-                                <strong>@patient.Nom @patient.Prenom</strong><br />
+                                <strong><LienContact Type="patient" Id="patient.Id" Nom="@($"{patient.Nom} {patient.Prenom}".Trim())" /></strong><br />
                                 <span class="detail">
-                                    @(patient.NumAssure is null ? "sans n° d’assuré" : $"Assuré {patient.NumAssure}")@(patient.Organisme is null ? "" : $" · {patient.Organisme}")
+                                    @(patient.NumAssure is null ? "sans n° d’assuré" : $"Assuré {patient.NumAssure}")@if (patient.Organisme is { } org) { <text> · </text><LienContact Type="organisme" Id="patient.OrganismeId" Nom="@org" /> }
                                     · crédit @Libelles.Dinars(patient.SoldeCredit) / plafond @Libelles.Dinars(patient.PlafondCredit)
                                 </span>
                             </div>
@@ -525,7 +525,7 @@
 
 @if (creditOuvert)
 {
-    <PanneauCredit OnFerme="() => creditOuvert = false" OnEncaisse="ChargerEtatAsync" />
+    <PanneauCredit PatientId="creditPatientId" OnFerme="() => (creditOuvert, creditPatientId) = (false, null)" OnEncaisse="ChargerEtatAsync" />
 }
 
 @if (annulationOuverte)
@@ -668,6 +668,17 @@
         : patient is null ? "Choisissez le patient à qui la vente est accordée"
         : null;
 
+    // Arrivée depuis une fiche contact (« Relevé de dette ») : règlement de crédit ouvert sur le patient
+    [SupplyParameterFromQuery(Name = "credit")] public long? Credit { get; set; }
+    private long? creditPatientId, creditDemande;
+
+    protected override void OnParametersSet()
+    {
+        if (Credit == creditDemande) return;
+        creditDemande = Credit;
+        if (Credit is > 0) (creditOuvert, creditPatientId) = (true, Credit);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         (organismes, _) = await Api.OrganismesAsync();
@@ -743,30 +754,57 @@
         (texte, suggestions, erreur, bandeau, venteFaite) = ("", [], null, null, null);
         quantite = Math.Max(1, quantite);
 
-        var existante = lignes.FirstOrDefault(l => l.ProduitId == produitId && l.Lot is not null);
-        if (existante is not null)
+        // Lignes du produit déjà au panier (une par lot) : on y ajoute d'abord, dans la limite de chaque lot.
+        // Ce qui n'avait pas pu être servi (QuantiteDemandee) est repris avec la nouvelle quantité.
+        var duProduit = lignes.Where(l => l.ProduitId == produitId && l.Lot is not null).ToList();
+        var reste = quantite + duProduit.Sum(l => Math.Max(l.QuantiteDemandee - l.Quantite, 0));
+        foreach (var l in duProduit)
         {
-            existante.QuantiteDemandee = Math.Max(existante.QuantiteDemandee, existante.Quantite) + quantite;
-            existante.Quantite = Math.Min(existante.QuantiteDemandee, existante.Lot!.Quantite);
-            await ProposerEquivalentSiManqueAsync(existante);
-            await RecalculerAsync();
-            return;
+            var place = Math.Min(Math.Max(l.Lot!.Quantite - l.Quantite, 0), reste);
+            l.Quantite += place;
+            l.QuantiteDemandee = l.Quantite;
+            reste -= place;
         }
 
-        var reponse = await Api.LotFefoAsync(produitId);
-        if (reponse.Erreur is not null) { erreur = reponse.Erreur; return; }
-
-        var ligne = new LignePanier
+        // Le reste est pris sur les lots suivants dans l'ordre FEFO : une ligne par lot
+        var derniere = duProduit.LastOrDefault();
+        while (reste > 0)
         {
-            ProduitId = produitId, Nom = nom, Prix = prix, Lot = reponse.Lot, Ecartes = reponse.Ecartes, StockProduit = reponse.Lot?.StockProduit ?? 0,
-            QuantiteDemandee = quantite,
-            Quantite = reponse.Lot is { } lot ? Math.Min(quantite, lot.Quantite) : quantite
-        };
-        // Toujours un équivalent quand le produit manque (rupture ou stock du lot insuffisant)
-        if (reponse.Lot is null) ligne.Alternatives = (await Api.AlternativesAsync(produitId)).Item1;
-        else await ProposerEquivalentSiManqueAsync(ligne);
-        lignes.Add(ligne);
-        bandeau = Expliquer(reponse);
+            var reponse = await Api.LotFefoAsync(produitId, lignes.Where(l => l.ProduitId == produitId && l.Lot is not null).Select(l => l.Lot!.LotId));
+            if (reponse.Erreur is not null) { erreur = reponse.Erreur; break; }
+            if (reponse.Lot is not { } lot)
+            {
+                if (derniere is not null) break;   // plus d'autre lot vendable : le manque est signalé sur la dernière ligne
+                // Rupture complète : la ligne est gardée sans lot, avec les équivalents
+                derniere = new LignePanier
+                {
+                    ProduitId = produitId, Nom = nom, Prix = prix, Ecartes = reponse.Ecartes, QuantiteDemandee = reste, Quantite = reste,
+                    Alternatives = (await Api.AlternativesAsync(produitId)).Item1
+                };
+                lignes.Add(derniere);
+                bandeau = Expliquer(reponse);
+                reste = 0;
+                break;
+            }
+            var prise = Math.Min(reste, lot.Quantite);
+            if (prise <= 0) break;   // lot annoncé vide : on n'insiste pas
+            var premiere = derniere is null;
+            derniere = new LignePanier
+            {
+                ProduitId = produitId, Nom = nom, Prix = prix, Lot = lot, Ecartes = reponse.Ecartes, StockProduit = lot.StockProduit,
+                QuantiteDemandee = prise, Quantite = prise
+            };
+            lignes.Add(derniere);
+            if (premiere) bandeau = Expliquer(reponse);
+            reste -= prise;
+        }
+
+        // Tous les lots vendables sont épuisés : toujours un équivalent quand le produit manque
+        if (reste > 0 && derniere is not null)
+        {
+            derniere.QuantiteDemandee = derniere.Quantite + reste;
+            await ProposerEquivalentSiManqueAsync(derniere);
+        }
         await RecalculerAsync();
     }
 

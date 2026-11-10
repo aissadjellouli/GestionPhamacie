@@ -11,7 +11,7 @@
             @foreach (var f in fournisseurs)
             {
                 <tr>
-                    <td class="nom">@f.RaisonSociale</td>
+                    <td class="nom"><LienContact Type="grossiste" Id="f.Id" Nom="@f.RaisonSociale" /></td>
                     <td>@(f.Telephone ?? "—")</td>
                     <td>@Libelles.Dinars(f.Solde, 2)</td>
                     <td>@(f.DelaiRepriseJours is { } j ? $"{j} jours avant péremption" : "non renseigné")</td>

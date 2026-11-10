@@ -102,7 +102,7 @@
                 {
                     <label class="case">
                         <input type="checkbox" checked="@chequesChoisis.Contains(q.PaiementId)" @onchange="ev => Cocher(q.PaiementId, ev)" />
-                        <span>@Libelles.Dinars(q.Montant, 2) · @q.Origine@(q.Patient is { } p ? $" · {p}" : "") <span class="detail">(@Libelles.DateHeureLocale(q.Date))</span></span>
+                        <span>@Libelles.Dinars(q.Montant, 2) · @q.Origine@if (q.Patient is { } p) { <text> · </text><LienContact Type="patient" Id="q.PatientId" Nom="@p" /> } <span class="detail">(@Libelles.DateHeureLocale(q.Date))</span></span>
                     </label>
                 }
                 <div class="achats-ligne" style="align-items: flex-end">
@@ -181,7 +181,8 @@
                     @foreach (var f in FacturesProposees)
                     {
                         <label class="case"><input type="checkbox" checked="@facturesChoisies.Contains(f.Id)" @onchange="e => CocherFacture(f, e)" />
-                            <span>@f.Numero · @f.DestinataireNom · reste @Libelles.Dinars(f.Reste, 2)</span></label>
+                            @{ var cf = Libelles.ContactFacture(f.Destinataire, f.PatientId, f.ClientId, f.OrganismeId); }
+                            <span>@f.Numero · <LienContact Type="@cf.Type" Id="cf.Id" Nom="@f.DestinataireNom" /> · reste @Libelles.Dinars(f.Reste, 2)</span></label>
                     }
                 </fieldset>
             }

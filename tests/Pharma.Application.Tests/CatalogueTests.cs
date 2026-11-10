@@ -33,6 +33,18 @@ public class CatalogueTests
     }
 
     [Fact]
+    public async Task Lot_deja_au_panier_exclu_le_suivant_en_fefo_est_servi()
+    {
+        var cas = new ObtenirLotFefo(
+            new LotsEnMemoire(NouveauLot(1, "PREMIER", 30), NouveauLot(2, "SUIVANT", 200)),
+            new HorlogeFixe(Aujourdhui));
+
+        Assert.Equal("PREMIER", (await cas.ExecuterAsync(produitId: 1)).Lot!.NumeroLot);
+        Assert.Equal("SUIVANT", (await cas.ExecuterAsync(produitId: 1, lotsExclus: [1])).Lot!.NumeroLot);
+        Assert.Null((await cas.ExecuterAsync(produitId: 1, lotsExclus: [1, 2])).Lot);
+    }
+
+    [Fact]
     public async Task Aucun_lot_vendable_mais_le_perime_est_explique()
     {
         var cas = new ObtenirLotFefo(

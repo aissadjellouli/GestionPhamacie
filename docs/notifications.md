@@ -56,7 +56,7 @@ Table `message_sortant` : canal, destinataire, objet, corps, statut (`en_attente
 
 ## SMS par modem GSM
 
-Commandes AT en mode texte (`AT+CMGF=1`, `AT+CSCS="GSM"`, `AT+CMGS`) sur le port série, à 115 200 bauds, un envoi à la fois. Les textes sont convertis sans accents (jeu de caractères GSM) et limités à 300 caractères (deux SMS). Il faut un modem USB ou série avec une carte SIM active, sans code PIN, ou avec le code PIN déjà saisi.
+Commandes AT en mode texte (`AT+CMGF=1`, `AT+CSCS="GSM"`, `AT+CMGS`) sur le port série, à 115 200 bauds, un envoi à la fois. Les textes sont convertis sans accents (jeu de caractères GSM) et limités à 160 caractères (un seul SMS : le mode texte ne concatène pas). Il faut un modem USB ou série avec une carte SIM active, sans code PIN, ou avec le code PIN déjà saisi.
 
 ## Confidentialité
 

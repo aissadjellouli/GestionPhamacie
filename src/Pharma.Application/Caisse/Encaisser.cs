@@ -95,6 +95,9 @@ public sealed class Encaisser(
 
         if (commande.Ordonnance is { } o)
         {
+            // Une ordonnance est toujours rattachée à un patient (ordonnance.patient_id obligatoire)
+            if (commande.PatientId is null)
+                throw new RegleMetierException("Ordonnance : choisissez le patient à qui elle est prescrite.");
             if (vente.ContientSousRegistre && o.MedecinId is null)
                 throw new RegleMetierException("Psychotrope ou stupéfiant : indiquez le médecin prescripteur.");
             if (o.JetonScan is { } jeton && !scans.Existe(jeton))
@@ -158,6 +161,10 @@ public sealed class Encaisser(
         {
             if (!produits.TryGetValue(ligne.ProduitId, out var produit) || !produit.Actif)
                 throw new RegleMetierException("Un produit du panier n’existe plus ou n’est plus actif.");
+            // Repris de l'ancien logiciel sans n° d'enregistrement : sa classe (psychotrope ?) n'a pas été confirmée
+            if (produit.AVerifier)
+                throw new RegleMetierException(
+                    $"{produit.NomCommercial} : produit repris de l’ancien logiciel, à vérifier par le titulaire avant la vente (Administration, Nomenclature nationale, « Produits à vérifier »).");
             if (!lots.TryGetValue(ligne.LotId, out var lot))
                 throw new RegleMetierException($"{produit.NomCommercial} : lot introuvable, rescannez la boîte.");
             vente.AjouterProduit(produit, lot, ligne.Quantite, aujourdhui);

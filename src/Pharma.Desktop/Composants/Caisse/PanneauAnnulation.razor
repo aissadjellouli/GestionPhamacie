@@ -49,7 +49,7 @@
             {
                 var v = choisie;
                 <div class="carte">
-                    <strong>@v.Numero</strong> · @Libelles.DateHeureLocale(v.Date) · vendu par @v.Vendeur@(v.Patient is { } p ? $" · {p}" : "")
+                    <strong>@v.Numero</strong> · @Libelles.DateHeureLocale(v.Date) · vendu par <LienContact Type="employe" Id="v.VendeurId" Nom="@v.Vendeur" />@if (v.Patient is { } p) { <text> · </text><LienContact Type="patient" Id="v.PatientId" Nom="@p" /> }
                     <ul style="margin: 8px 0">
                         @foreach (var l in v.Lignes) { <li>@l.Quantite × @l.Produit · @Libelles.Dinars(l.Montant, 2)</li> }
                     </ul>
@@ -141,8 +141,49 @@
                     }
                     @ChampMotif
                     @if (ValidationRequise) { @ChampValidation }
+                    @if (VenteSansPatient && ARendre is > 0)
+                    {
+                        @* Vente sans patient : rappel au vendeur. Si le patient accepte de se nommer, le logiciel vérifie sa dette *@
+                        <div class="info-bandeau" role="note">
+                            <strong>Vente sans patient identifié.</strong> Avant de rendre l’argent, demandez au patient s’il a un crédit en cours à la pharmacie.
+                            S’il accepte de donner son nom ou son téléphone, recherchez-le : le logiciel vérifie sa dette.
+                            <div style="display: flex; gap: 8px; margin-top: 8px">
+                                <input type="search" aria-label="Nom ou téléphone du patient" placeholder="Nom ou téléphone du patient" @bind="rechercheDette" @bind:event="oninput" @onkeydown="ToucheRechercheDette" style="flex: 1" />
+                                <button type="button" class="btn" disabled="@enCours" @onclick="ChercherPatientDetteAsync">Vérifier sa dette</button>
+                            </div>
+                            @if (patientDette is { } pd)
+                            {
+                                <p style="margin: 8px 0 0"><strong>@pd.Nom @pd.Prenom</strong>@(pd.Telephone is { } t ? $" · {t}" : "") :
+                                    @(pd.SoldeCredit > 0 ? $"doit {Libelles.Dinars(pd.SoldeCredit, 2)}" : "aucune dette").
+                                    <button type="button" class="lien" @onclick="() => (patientDette, solderDette) = (null, null)">Changer</button></p>
+                            }
+                            else if (rechercheDetteFaite)
+                            {
+                                @if (patientsTrouves.Count == 0) { <p style="margin: 8px 0 0">Aucun patient de ce nom dans le logiciel : aucune dette connue.</p> }
+                                @foreach (var trouve in patientsTrouves)
+                                {
+                                    <div style="margin-top: 6px">
+                                        <button type="button" class="lien" @onclick="() => (patientDette, solderDette) = (trouve, null)">@trouve.Nom @trouve.Prenom</button>
+                                        <span class="detail">@trouve.Telephone · @(trouve.SoldeCredit > 0 ? $"doit {Libelles.Dinars(trouve.SoldeCredit, 2)}" : "aucune dette")</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                    @if (DetteAProposer && ARendre is { } aRendre)
+                    {
+                        var dette = DetteConnue;
+                        var deduit = Math.Min(dette, aRendre);
+                        <fieldset class="conflit-lot" role="radiogroup" aria-label="Remboursement et dette du patient">
+                            <legend><strong>Ce patient doit @Libelles.Dinars(dette, 2).</strong> Que faire des @Libelles.Dinars(aRendre, 2) du retour ?</legend>
+                            <label class="case"><input type="radio" name="solder-dette" checked="@(solderDette == true)" @onchange="() => solderDette = true" />
+                                <span>Les déduire de sa dette : dette ramenée à @Libelles.Dinars(dette - deduit, 2)@(aRendre > deduit ? $", et {Libelles.Dinars(aRendre - deduit, 2)} rendus au patient" : ", rien à rendre")</span></label>
+                            <label class="case"><input type="radio" name="solder-dette" checked="@(solderDette == false)" @onchange="() => solderDette = false" />
+                                <span>Rendre @Libelles.Dinars(aRendre, 2) au patient : sa dette reste de @Libelles.Dinars(dette, 2)</span></label>
+                        </fieldset>
+                    }
                     <button type="button" class="btn btn-danger" disabled="@(enCours || ARendre is null)" @onclick="EnregistrerRetourAsync">
-                        Enregistrer le retour@(ARendre is > 0 && v.Mode != "credit" ? $" et rendre {Libelles.Dinars(ARendre.Value, 2)}" : "")
+                        Enregistrer le retour@(ARenduAffiche is > 0 ? $" et rendre {Libelles.Dinars(ARenduAffiche.Value, 2)}" : "")
                     </button>
                 }
             }
@@ -187,6 +228,32 @@
             : Math.Round(Math.Round(s.Ligne.MontantPatient * s.Rendue / s.Ligne.QuantiteVendue, 2, MidpointRounding.AwayFromZero) * RatioPaye, 2, MidpointRounding.AwayFromZero));
 
     private decimal RatioPaye => retour?.Lignes.Sum(l => l.MontantPatient) is > 0 and var brut ? Math.Min(retour.Vente.PartPatient / brut, 1m) : 1m;
+
+    /// <summary>Le patient de la vente doit de l'argent par ailleurs : le caissier choisit de déduire le remboursement de sa dette, ou de le rendre.</summary>
+    private bool? solderDette;
+    // Vente sans patient : patient qui s'est nommé au retour, pour vérifier sa dette
+    private PatientDto? patientDette;
+    private string? rechercheDette;
+    private List<PatientDto> patientsTrouves = [];
+    private bool rechercheDetteFaite;
+    private bool VenteSansPatient => retour is { Vente: { Mode: not "credit", Patient: null } };
+    private decimal DetteConnue => retour is null ? 0 : VenteSansPatient ? patientDette?.SoldeCredit ?? 0 : retour.Vente.SoldeCreditPatient;
+
+    private async Task ToucheRechercheDette(KeyboardEventArgs e) { if (e.Key == "Enter") await ChercherPatientDetteAsync(); }
+
+    private async Task ChercherPatientDetteAsync()
+    {
+        (erreur, patientDette, solderDette) = (null, null, null);
+        if ((rechercheDette?.Trim().Length ?? 0) < 2) { erreur = "Tapez au moins 2 caractères du nom ou du téléphone du patient."; return; }
+        string? e;
+        (patientsTrouves, e) = await Api.RechercherPatientsAsync(rechercheDette!.Trim());
+        if (e is not null) { erreur = e; return; }
+        rechercheDetteFaite = true;
+    }
+    private bool DetteAProposer => retour is { Vente.Mode: not "credit" } && DetteConnue > 0 && ARendre is > 0;
+    /// <summary>Argent rendu au patient, affiché sur le bouton : rien pour une vente à crédit (c'est le serveur qui calcule), le surplus si la dette est soldée.</summary>
+    private decimal? ARenduAffiche => ARendre is not { } a || retour is null || retour.Vente.Mode == "credit" ? null
+        : DetteAProposer && solderDette == true ? Math.Max(a - DetteConnue, 0) : a;
 
     private RenderFragment ChampMotif => __builder =>
     {
@@ -259,6 +326,7 @@
         var (r, e) = await Api.VenteRetournableAsync(choisie!.Id);
         if (e is not null) { (erreur, mode) = (e, null); return; }
         retour = r;
+        (solderDette, patientDette, rechercheDette, patientsTrouves, rechercheDetteFaite) = (null, null, null, [], false);
         saisies = r!.Lignes.Select(l => new SaisieRetour(l)).ToList();
         await ChargerValidateursAsync();
     }
@@ -295,13 +363,16 @@
         var lignes = saisies.Where(s => s.Rendue > 0)
             .Select(s => new LigneRetourClientDto(s.Ligne.LigneVenteId, s.Rendue, s.Destination, s.Ligne.Boites.Count > 0 ? s.Boites.ToList() : null)).ToList();
         if (lignes.Count == 0) { erreur = "Indiquez au moins un produit rendu."; return; }
+        if (DetteAProposer && solderDette is null) { erreur = "Ce patient doit de l’argent : choisissez de déduire le remboursement de sa dette, ou de le rendre."; return; }
         enCours = true;
-        var (r, e) = await Api.RetourClientAsync(choisie.Id, new RetourClientRequete(motif, lignes, ValidationRequise ? validateur : null, ValidationRequise ? code : null));
+        var (r, e) = await Api.RetourClientAsync(choisie.Id, new RetourClientRequete(motif, lignes, ValidationRequise ? validateur : null, ValidationRequise ? code : null,
+            DetteAProposer && solderDette == true, DetteAProposer && solderDette == true ? patientDette?.Id : null));
         (enCours, code) = (false, null);
         if (e is not null) { erreur = e; return; }
         message = $"Retour enregistré sur la vente {r!.Numero}{(r.ValidePar is { } p ? $", validé par {p}" : "")} : "
                   + $"{r.RemisEnStock} boîte(s) remise(s) en stock, {r.ADetruire} à détruire."
-                  + (r.ARendre > 0 ? $" À rendre au patient : {Libelles.Dinars(r.ARendre, 2)} ({Libelles.ModePaiement(r.Mode)})." : r.Mode == "credit" ? " Crédit du patient diminué d’autant." : "");
+                  + (r.DetteDiminuee > 0 ? $" Dette du patient diminuée de {Libelles.Dinars(r.DetteDiminuee, 2)}." : "")
+                  + (r.ARendre > 0 ? $" À rendre au patient : {Libelles.Dinars(r.ARendre, 2)} ({Libelles.ModePaiement(r.Mode)})." : r.DetteDiminuee > 0 ? " Rien à rendre." : "");
         await OnAnnulee.InvokeAsync();
     }
 }

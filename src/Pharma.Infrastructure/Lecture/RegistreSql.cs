@@ -15,7 +15,7 @@ public sealed class RegistreSql(NpgsqlDataSource db) : IRegistrePsychotropes
         await using var cmd = db.CreateCommand("""
             SELECT numero, cree_le, produit_id, produit, numero_lot, type_mouvement, entree, sortie, solde_produit, solde_lot,
                    NULLIF(patient, ''), medecin, ordonnance, fournisseur, reference,
-                   porteur_nom, porteur_adresse, porteur_piece, employe
+                   porteur_nom, porteur_adresse, porteur_piece, employe, patient_id
             FROM v_registre_psychotrope
             WHERE cree_le >= $1 AND cree_le < $2 AND ($3::bigint IS NULL OR produit_id = $3)
             ORDER BY numero
@@ -29,7 +29,7 @@ public sealed class RegistreSql(NpgsqlDataSource db) : IRegistrePsychotropes
         int? N(int i) => r.IsDBNull(i) ? null : r.GetInt32(i);
         while (await r.ReadAsync(ct))
             liste.Add(new LigneRegistre(r.GetInt64(0), r.GetDateTime(1), r.GetInt64(2), r.GetString(3), r.GetString(4), r.GetString(5),
-                N(6), N(7), N(8), r.GetInt32(9), S(10), S(11), S(12), S(13), S(14), S(15), S(16), S(17), r.GetString(18)));
+                N(6), N(7), N(8), r.GetInt32(9), S(10), S(11), S(12), S(13), S(14), S(15), S(16), S(17), r.GetString(18), r.IsDBNull(19) ? null : r.GetInt64(19)));
         return liste;
     }
 

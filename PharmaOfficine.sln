@@ -28,15 +28,60 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}"
 	ProjectSection(SolutionItems) = preProject
 		docs\a-faire.md = docs\a-faire.md
+		docs\charte-graphique.md = docs\charte-graphique.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{386EBD72-0D5B-4454-978E-2D35C00026D8}"
+	ProjectSection(SolutionItems) = preProject
+		database\001_schema.sql = database\001_schema.sql
+		database\002_alertes_stock.sql = database\002_alertes_stock.sql
+		database\003_provenance.sql = database\003_provenance.sql
+		database\004_codes_barres_internes.sql = database\004_codes_barres_internes.sql
+		database\005_seuils_peremption.sql = database\005_seuils_peremption.sql
+		database\006_droits_utilisateurs.sql = database\006_droits_utilisateurs.sql
+		database\007_tracabilite_boite.sql = database\007_tracabilite_boite.sql
+		database\008_reprise_donnees.sql = database\008_reprise_donnees.sql
+		database\009_caisse.sql = database\009_caisse.sql
+		database\010_administration.sql = database\010_administration.sql
+		database\011_ordonnance_scannee.sql = database\011_ordonnance_scannee.sql
+		database\012_achats.sql = database\012_achats.sql
+		database\013_notifications.sql = database\013_notifications.sql
+		database\014_sauvegardes.sql = database\014_sauvegardes.sql
+		database\015_catalogue.sql = database\015_catalogue.sql
+		database\016_emplacements.sql = database\016_emplacements.sql
+		database\017_inventaire.sql = database\017_inventaire.sql
+		database\018_lot_unique.sql = database\018_lot_unique.sql
+		database\019_mobile.sql = database\019_mobile.sql
+		database\020_seuils_stock.sql = database\020_seuils_stock.sql
+		database\021_prix_boite.sql = database\021_prix_boite.sql
+		database\022_caisse_partagee.sql = database\022_caisse_partagee.sql
+		database\023_nomenclature.sql = database\023_nomenclature.sql
+		database\024_registre_psychotropes.sql = database\024_registre_psychotropes.sql
+		database\025_affichage.sql = database\025_affichage.sql
+		database\026_ventes_attente.sql = database\026_ventes_attente.sql
+		database\027_annulation_vente.sql = database\027_annulation_vente.sql
+		database\028_retour_client.sql = database\028_retour_client.sql
+		database\029_reglements.sql = database\029_reglements.sql
+		database\030_tresorerie.sql = database\030_tresorerie.sql
+		database\031_facture_client.sql = database\031_facture_client.sql
+		database\032_inventaire_complet.sql = database\032_inventaire_complet.sql
+		database\033_index_performance.sql = database\033_index_performance.sql
+		database\034_nomenclature_absents.sql = database\034_nomenclature_absents.sql
+		database\035_mot_de_passe_a_changer.sql = database\035_mot_de_passe_a_changer.sql
+		database\036_solde_tresorerie_echeance.sql = database\036_solde_tresorerie_echeance.sql
+		database\037_produit_a_verifier.sql = database\037_produit_a_verifier.sql
+		database\038_releve_credit.sql = database\038_releve_credit.sql
+		database\039_suivi_dettes.sql = database\039_suivi_dettes.sql
+		database\040_facture_echeance.sql = database\040_facture_echeance.sql
+		database\041_contacts.sql = database\041_contacts.sql
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"
 	ProjectSection(SolutionItems) = preProject
 		database\data\900_donnees_demo.sql = database\data\900_donnees_demo.sql
 		database\data\901_complement_sintrom.sql = database\data\901_complement_sintrom.sql
 		database\data\902_emplacements_demo.sql = database\data\902_emplacements_demo.sql
+		database\data\903_factures_demo.sql = database\data\903_factures_demo.sql
 		database\data\NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx = database\data\NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx
 	EndProjectSection
 EndProject
@@ -45,6 +90,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{F7EF4CD7-5
 		database\init\schema.sql = database\init\schema.sql
 		database\init\seed_referentiel.sql = database\init\seed_referentiel.sql
 		database\init\clean.sql = database\init\clean.sql
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{5C0D6A1E-7B2F-4E83-9A14-3D5E6F708192}"
+	ProjectSection(SolutionItems) = preProject
+		scripts\certificat_mobile.ps1 = scripts\certificat_mobile.ps1
+		scripts\initialiser_base_locale.ps1 = scripts\initialiser_base_locale.ps1
+		scripts\sauvegarde_pharmacie.ps1 = scripts\sauvegarde_pharmacie.ps1
 	EndProjectSection
 EndProject
 Global

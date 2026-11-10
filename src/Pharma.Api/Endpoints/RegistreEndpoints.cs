@@ -23,7 +23,7 @@ internal static class RegistreEndpoints
                 return Results.Ok(new RegistreDto(r.Du, r.Au, r.Produit,
                     r.Lignes.Select(l => new LigneRegistreDto(l.Numero, l.Date, l.ProduitId, l.Produit, l.NumeroLot, l.Type,
                         RegistreCsv.Libelle(l.Type), l.Entree, l.Sortie, l.SoldeProduit, l.SoldeLot, l.Patient, l.Medecin,
-                        l.Ordonnance, l.Fournisseur, l.Reference, l.PorteurNom, l.PorteurAdresse, l.PorteurPiece, l.Employe)).ToList(),
+                        l.Ordonnance, l.Fournisseur, l.Reference, l.PorteurNom, l.PorteurAdresse, l.PorteurPiece, l.Employe, l.PatientId)).ToList(),
                     r.Balance.Select(b => new BalanceMensuelleDto(b.ProduitId, b.Produit, b.Annee, b.Mois, b.Entrees, b.Sorties, b.SoldeFin)).ToList(),
                     r.NomsMasques));
             });

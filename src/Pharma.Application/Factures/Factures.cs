@@ -14,25 +14,30 @@ public sealed record LigneLibre(string Designation, decimal Quantite, decimal Pr
 
 /// <summary>Contenu demandé : ventes entières (toutes leurs lignes de la part concernée) et lignes libres.</summary>
 public sealed record DemandeFacture(string Destinataire, long? PatientId, long? ClientId, long? OrganismeId, DateOnly? Date, DateOnly? Du, DateOnly? Au,
-    IReadOnlyList<long> Ventes, IReadOnlyList<LigneLibre> Libres, string? Commentaire);
+    IReadOnlyList<long> Ventes, IReadOnlyList<LigneLibre> Libres, string? Commentaire, DateOnly? Echeance = null);
 
 public sealed record FactureAEcrire(string Type, Destinataire Destinataire, long? PatientId, long? ClientId, long? OrganismeId, string DestinataireNom,
     string? DestinataireInfos, DateOnly Date, DateOnly? Du, DateOnly? Au, Totaux Totaux, decimal DejaPaye, IReadOnlyList<LigneFacture> Lignes,
-    long? FactureOrigineId, string? Motif, string? Commentaire, long UtilisateurId);
+    long? FactureOrigineId, string? Motif, string? Commentaire, long UtilisateurId, DateOnly? Echeance = null);
 
 public sealed record FactureResume(long Id, string Type, string Numero, DateOnly Date, string Destinataire, string DestinataireNom, decimal Ttc,
     decimal DejaPaye, decimal Avoirs, decimal Regle, decimal Reste, string Statut, int Version, bool HorsSuivi, string? MotifHorsSuivi,
-    string? RemplaceNumero, string? RemplaceeParNumero, string? OrigineNumero, string? MotifRejet, long? OrganismeId);
+    string? RemplaceNumero, string? RemplaceeParNumero, string? OrigineNumero, string? MotifRejet, long? OrganismeId, DateOnly? Echeance = null,
+    long? PatientId = null, long? ClientId = null);
 
 public sealed record FactureDetail(FactureResume Resume, long? PatientId, long? ClientId, string? DestinataireInfos, DateOnly? Du, DateOnly? Au,
-    decimal Ht, decimal Tva, string? Commentaire, string? Motif, string Employe, IReadOnlyList<LigneFacture> Lignes, IReadOnlyList<int> Versions);
+    decimal Ht, decimal Tva, string? Commentaire, string? Motif, string Employe, IReadOnlyList<LigneFacture> Lignes, IReadOnlyList<int> Versions,
+    long? EmployeId = null);
 
 public sealed record FiltreFactures(string? Recherche, string? Destinataire, string? Suivi, DateOnly? Du, DateOnly? Au);
+
+/// <summary>Page de factures ; TotalTtc et TotalReste portent sur toutes les factures qui répondent aux filtres, toutes pages confondues.</summary>
+public sealed record ListeFactures(Page<FactureResume> Page, decimal TotalTtc, decimal TotalReste);
 
 public sealed record ClientFacture(long? Id, string RaisonSociale, string? Adresse, string? Telephone, string? Nif, string? Rc, string? Nis,
     string? ArticleImposition, bool Actif);
 
-public sealed record OrganismeFiche(long? Id, string Code, string Nom, string? Adresse, string? Nif, bool Actif);
+public sealed record OrganismeFiche(long? Id, string Code, string Nom, string? Adresse, string? Nif, bool Actif, string? Telephone = null, string? Email = null);
 
 public interface IFactures
 {
@@ -46,6 +51,7 @@ public interface IFactures
     /// <summary>Numéro attribué sans trou ; remplaceId : l'ancienne facture passe « remplacée » dans la même transaction.</summary>
     Task<(long Id, string Numero)> EmettreAsync(FactureAEcrire f, long? remplaceId, CancellationToken ct = default);
     Task<IReadOnlyList<FactureResume>> ListerAsync(FiltreFactures filtre, CancellationToken ct = default);
+    Task<ListeFactures> PageAsync(FiltreFactures filtre, DemandePage page, CancellationToken ct = default);
     /// <summary>Version null : la version en vigueur ; sinon une version précédente (correction après rejet).</summary>
     Task<FactureDetail?> DetailAsync(long id, int? version, CancellationToken ct = default);
     Task RejeterAsync(long id, string motif, CancellationToken ct = default);
@@ -79,6 +85,12 @@ public sealed class ConsulterFactures(IFactures factures, IPermissionService dro
     {
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "consulter les factures", ct);
         return await factures.ListerAsync(filtre, ct);
+    }
+
+    public async Task<ListeFactures> PageAsync(FiltreFactures filtre, DemandePage page, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "consulter les factures", ct);
+        return await factures.PageAsync(filtre, page, ct);
     }
 
     public async Task<FactureDetail> DetailAsync(long id, int? version, long utilisateurId, CancellationToken ct = default)
@@ -187,7 +199,8 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
         await droits.ExigerTitulaireAsync(utilisateurId, "gérer les organismes", ct);
         if (string.IsNullOrWhiteSpace(o.Code) || string.IsNullOrWhiteSpace(o.Nom)) throw new RegleMetierException("Indiquez le sigle et le nom de l’organisme.");
         static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-        var id = await factures.EnregistrerOrganismeAsync(o with { Code = o.Code.Trim().ToUpperInvariant(), Nom = o.Nom.Trim(), Adresse = N(o.Adresse), Nif = N(o.Nif) }, ct);
+        var id = await factures.EnregistrerOrganismeAsync(o with { Code = o.Code.Trim().ToUpperInvariant(), Nom = o.Nom.Trim(), Adresse = N(o.Adresse), Nif = N(o.Nif),
+            Telephone = Contacts.RegleContact.Telephone(o.Telephone), Email = Contacts.RegleContact.Email(o.Email) }, ct);
         await journal.EcrireAsync(utilisateurId, o.Id is null ? "organisme_cree" : "organisme_modifie", "organisme", id,
             new Dictionary<string, object?> { ["code"] = o.Code, ["nom"] = o.Nom, ["actif"] = o.Actif }, null, ct);
         return id;
@@ -230,9 +243,12 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
         var date = d.Date ?? horloge.Aujourdhui;
         if (date > horloge.Aujourdhui) throw new RegleMetierException("La date de la facture ne peut pas être dans le futur.");
         if (d.Du is { } du && d.Au is { } au && au < du) throw new RegleMetierException("La période facturée est inversée.");
+        // Date d'échéance : celle saisie, sinon la date d'établissement plus le délai habituel ; jamais avant l'établissement
+        var echeance = d.Echeance ?? date.AddDays(RegleFacture.DelaiEcheanceJours);
+        if (echeance < date) throw new RegleMetierException("La date d’échéance ne peut pas précéder la date d’établissement de la facture.");
         return new FactureAEcrire("facture", dest, dest == Destinataire.Patient ? idDest : null, dest == Destinataire.Entreprise ? idDest : null,
             dest == Destinataire.Organisme ? idDest : null, nom, infos, date, d.Du, d.Au, RegleFacture.Calculer(lignes), dejaPaye, lignes, null, null,
-            string.IsNullOrWhiteSpace(d.Commentaire) ? null : d.Commentaire.Trim(), utilisateurId);
+            string.IsNullOrWhiteSpace(d.Commentaire) ? null : d.Commentaire.Trim(), utilisateurId, echeance);
     }
 
     private Task Journaliser(long utilisateurId, string action, long id, string numero, FactureAEcrire f, string? remplace = null) =>

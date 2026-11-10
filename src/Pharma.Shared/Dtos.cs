@@ -114,7 +114,7 @@ public sealed record ReleveDto(ClotureDto Cloture, long NouvelleSessionId);
 /// <summary>VersementCloture : manuel ou automatique (argent des caisses clôturées vers le coffre).</summary>
 public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel");
 
-public sealed record EntreeJournalDto(DateTime Date, string Employe, string Action, string? Details, string? AutorisePar);
+public sealed record EntreeJournalDto(DateTime Date, string Employe, string Action, string? Details, string? AutorisePar, long? EmployeId = null, long? AutoriseParId = null);
 
 // ---- Patients, médecins, organismes -------------------------------------------
 
@@ -141,13 +141,14 @@ public sealed record EnregistrementSeuilsDto(int AlertesMisesAJour);
 // ---- Administration : utilisateurs et droits -------------------------------------
 
 public sealed record UtilisateurAdminDto(
-    long Id, string NomComplet, string Identifiant, long RoleId, string Role, bool RoleSysteme, bool Actif, DateTime? DerniereConnexion, bool CodeComptoir = false);
+    long Id, string NomComplet, string Identifiant, long RoleId, string Role, bool RoleSysteme, bool Actif, DateTime? DerniereConnexion, bool CodeComptoir = false,
+    string? Telephone = null, string? Email = null);
 public sealed record RoleAdminDto(long Id, string Code, string Nom, bool Systeme, decimal RemiseMaxPct, IReadOnlyList<string> Permissions);
 public sealed record PermissionAdminDto(string Code, string Module, string Libelle, bool Sensible);
 public sealed record EtatDroitsDto(IReadOnlyList<UtilisateurAdminDto> Utilisateurs, IReadOnlyList<RoleAdminDto> Roles, IReadOnlyList<PermissionAdminDto> Permissions);
-public sealed record NouvelUtilisateurDto(string NomComplet, string Identifiant, string MotDePasse, long RoleId);
+public sealed record NouvelUtilisateurDto(string NomComplet, string Identifiant, string MotDePasse, long RoleId, string? Telephone = null, string? Email = null);
 /// <summary>MotDePasse vide : inchangé.</summary>
-public sealed record ModificationUtilisateurDto(string NomComplet, long RoleId, bool Actif, string? MotDePasse);
+public sealed record ModificationUtilisateurDto(string NomComplet, long RoleId, bool Actif, string? MotDePasse, string? Telephone = null, string? Email = null);
 public sealed record DroitsRoleDto(long RoleId, decimal RemiseMaxPct, IReadOnlyList<string> Permissions);
 
 // ---- Administration : pharmacie ----------------------------------------------------
@@ -200,7 +201,7 @@ public sealed record ReceptionEnregistreeDto(long ReceptionId, decimal MontantTt
 
 public sealed record ReceptionResumeDto(
     long Id, string Fournisseur, string? NumeroBl, string? NumeroFacture, string? NumeroCommande,
-    DateTime Date, int NombreLots, int NombreBoites, decimal MontantTtc);
+    DateTime Date, int NombreLots, int NombreBoites, decimal MontantTtc, long? FournisseurId = null);
 
 public sealed record DataMatrixRequete(string Code);
 public sealed record BoiteLueDto(string Gtin, string? NumeroLot, DateOnly? Peremption, string? NumeroSerie, long? ProduitId, string? Produit);
@@ -335,17 +336,25 @@ public sealed record ConflitReceptionDto(int Index, string Type, string Message,
 
 // ---- Rapports ---------------------------------------------------------------------
 
-public sealed record SyntheseVentesDto(int NombreVentes, decimal ChiffreAffaires, decimal PartOrganismes, decimal CreditsAccordes, decimal Remises, int Annulations);
+/// <summary>ChiffreAffaires : net des retours clients de la période (Retours, MontantRetours).</summary>
+public sealed record SyntheseVentesDto(int NombreVentes, decimal ChiffreAffaires, decimal PartOrganismes, decimal CreditsAccordes, decimal Remises, int Annulations,
+    int Retours = 0, decimal MontantRetours = 0);
 /// <summary>Taux en % ; null si le chiffre d'affaires HT est nul.</summary>
 public sealed record MargeBruteDto(decimal ChiffreAffairesHt, decimal CoutAchat, decimal Montant, decimal? Taux);
 public sealed record VentesJourDto(DateOnly Date, int NombreVentes, decimal ChiffreAffaires);
 public sealed record ProduitVenduDto(string Produit, int Quantite, decimal ChiffreAffaires);
+/// <summary>
+/// Retour client lié à la période : enregistré pendant la période (DeduitDansLaPeriode : son montant diminue le chiffre de la période),
+/// ou portant sur une vente de la période et enregistré un autre jour (pour information, sans effet sur le chiffre de la période).
+/// </summary>
+public sealed record RetourRapportDto(string Ticket, DateTime DateVente, string Vendeur, DateTime DateRetour, string Poste, string Employe,
+    string Produits, decimal Montant, decimal DetteDiminuee, bool DeduitDansLaPeriode, long? VendeurId = null, long? EmployeId = null);
 public sealed record ClotureRapportDto(string Employe, string Poste, DateTime OuverteLe, DateTime? FermeeLe,
-    decimal? Attendu, decimal? Compte, decimal? Ecart, int Annulations, int Remises);
+    decimal? Attendu, decimal? Compte, decimal? Ecart, int Annulations, int Remises, int Retours = 0, long? EmployeId = null);
 /// <summary>Periode : jour, semaine ou mois. Marge : null sans le droit « rapports.marges ».</summary>
 public sealed record RapportActiviteDto(string Periode, DateOnly Du, DateOnly Au, string Libelle, SyntheseVentesDto Synthese, MargeBruteDto? Marge,
     IReadOnlyList<VentesJourDto> ParJour, IReadOnlyList<ProduitVenduDto> TopProduits, IReadOnlyList<ClotureRapportDto> Clotures, bool EcartsVisibles,
-    bool ParSemaine = false);
+    bool ParSemaine = false, IReadOnlyList<RetourRapportDto>? Retours = null);
 
 // ---- Reprise de données (titulaire) ------------------------------------------------
 
@@ -398,7 +407,7 @@ public sealed record LigneRegistreDto(
     long Numero, DateTime Date, long ProduitId, string Produit, string NumeroLot, string Type, string Operation,
     int? Entree, int? Sortie, int? SoldeProduit, int SoldeLot,
     string? Patient, string? Medecin, string? Ordonnance, string? Fournisseur, string? Reference,
-    string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe);
+    string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe, long? PatientId = null);
 
 public sealed record ProduitRegistreDto(long Id, string Nom);
 
@@ -445,7 +454,7 @@ public sealed record LigneVenteAnnulableDto(string Produit, int Quantite, decima
 public sealed record VenteAnnulableDto(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulableDto> Lignes,
-    decimal ARendreAnnulation = 0, string? FactureNumero = null);
+    decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null);
 
 /// <summary>Validateur* : identifiant et code comptoir du pharmacien ou de l'assistant (vente ancienne).</summary>
 public sealed record AnnulationVenteRequete(string? Motif, string? ValidateurIdentifiant, string? ValidateurCode);
@@ -464,9 +473,14 @@ public sealed record VenteRetournableDto(VenteAnnulableDto Vente, IReadOnlyList<
 /// <summary>Destination : stock (remis en stock sur son lot) ou destruction ; Boites : n° des boîtes identifiées rendues.</summary>
 public sealed record LigneRetourClientDto(long LigneVenteId, int Quantite, string Destination, IReadOnlyList<long>? Boites);
 
-public sealed record RetourClientRequete(string? Motif, IReadOnlyList<LigneRetourClientDto> Lignes, string? ValidateurIdentifiant, string? ValidateurCode);
+/// <summary>
+/// SolderDette : le patient doit de l'argent et le caissier a choisi de retirer le remboursement de sa dette (le surplus est rendu).
+/// PatientDetteId : vente sans patient, le patient s'est nommé au retour et c'est sa dette qui est diminuée.
+/// </summary>
+public sealed record RetourClientRequete(string? Motif, IReadOnlyList<LigneRetourClientDto> Lignes, string? ValidateurIdentifiant, string? ValidateurCode,
+    bool SolderDette = false, long? PatientDetteId = null);
 
-public sealed record RetourClientDto(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar);
+public sealed record RetourClientDto(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar, decimal DetteDiminuee = 0);
 
 // ---- Règlements des grossistes -------------------------------------------------------
 
@@ -475,9 +489,14 @@ public sealed record GrossisteAReglementDto(long Id, string Nom, decimal Solde, 
 public sealed record FactureFournisseurDto(long ReceptionId, string? NumeroFacture, string? NumeroBl, DateTime Date, decimal Montant, decimal Regle, decimal Reste);
 
 /// <summary>Moyen : especes, cheque, virement ou effet.</summary>
-public sealed record ReglementPasseDto(long Id, DateOnly Date, decimal Montant, string Moyen, string? Reference, DateOnly? Echeance, decimal PartTiroir, string Employe);
+public sealed record ReglementPasseDto(long Id, DateOnly Date, decimal Montant, string Moyen, string? Reference, DateOnly? Echeance, decimal PartTiroir, string Employe,
+    long? EmployeId = null);
 
-public sealed record SituationGrossisteDto(long Id, string Nom, decimal Solde, IReadOnlyList<FactureFournisseurDto> Factures, IReadOnlyList<ReglementPasseDto> Reglements);
+/// <summary>Ligne du relevé de la dette envers un grossiste ; Montant positif : la dette augmente, négatif : elle diminue.</summary>
+public sealed record MouvementGrossisteDto(DateTime Date, string Type, decimal Montant, decimal SoldeApres, string? Employe, string? Reference, long? EmployeId = null);
+
+public sealed record SituationGrossisteDto(long Id, string Nom, decimal Solde, IReadOnlyList<FactureFournisseurDto> Factures, IReadOnlyList<ReglementPasseDto> Reglements,
+    IReadOnlyList<MouvementGrossisteDto>? Mouvements = null, int MouvementsTotal = 0);
 
 public sealed record ImputationDto(long ReceptionId, decimal Montant);
 
@@ -489,14 +508,53 @@ public sealed record ReglementRequete(DateOnly? Date, decimal Montant, string Mo
 
 public sealed record PatientEnCreditDto(long Id, string Nom, string? Telephone, decimal Solde, decimal Plafond, DateTime? DerniereVente);
 
-public sealed record VenteACreditDto(string Numero, DateTime Date, decimal Montant);
+public sealed record VenteACreditDto(string Numero, DateTime Date, decimal Montant, decimal Regle = 0, decimal Reste = 0);
 
-public sealed record SituationCreditDto(PatientEnCreditDto Patient, IReadOnlyList<VenteACreditDto> Ventes);
+/// <summary>Ligne du relevé de dette ; Montant positif : la dette augmente, négatif : elle diminue.</summary>
+public sealed record MouvementCreditDto(DateTime Date, string Type, decimal Montant, decimal SoldeApres, string? Vente, string? Employe, string? Poste, string? Reference,
+    long? EmployeId = null);
+
+public sealed record SituationCreditDto(PatientEnCreditDto Patient, IReadOnlyList<VenteACreditDto> Ventes, IReadOnlyList<MouvementCreditDto>? Mouvements = null,
+    decimal DetteReprise = 0, int MouvementsTotal = 0);
 
 /// <summary>Mode : especes, carte ou cheque.</summary>
 public sealed record ReglementCreditRequete(decimal Montant, string Mode);
+
+/// <summary>Correction de la dette par le titulaire : nouvelle dette et motif obligatoire.</summary>
+public sealed record CorrectionCreditRequete(decimal NouvelleDette, string? Motif);
 
 public sealed record RecuCreditDto(long Numero, string Patient, decimal Montant, string Mode, decimal ResteDu);
 
 /// <summary>Employé actif qui détient un droit ; CodeComptoir : peut reprendre la vente au comptoir par son code.</summary>
 public sealed record DetenteurDroitDto(string NomComplet, bool CodeComptoir);
+
+// ---- Dettes et créances de tous les tiers ----------------------------------------------
+
+/// <summary>
+/// Somme due. Sens : creance (due à la pharmacie) ou dette (due par elle). Categorie : patient, facture_patient, facture_entreprise,
+/// facture_organisme, bordereau, grossiste, effet. Tranche : 0-30, 31-60 ou 61+ jours. EnAlerte : au-delà du délai, rejetée, ou effet à payer sous peu.
+/// </summary>
+public sealed record LigneSuiviDto(string Sens, string Categorie, string Tiers, string Libelle, DateOnly Depuis, DateOnly? Echeance, decimal Montant,
+    bool Rejetee, int Jours, string Tranche, bool EnAlerte, long? TiersId = null);
+
+public sealed record TotalTrancheDto(string Sens, string Tranche, int Nombre, decimal Montant);
+
+public sealed record AlerteDetteDto(string Sens, string Categorie, int Nombre, decimal Montant, string Message);
+
+public sealed record SuiviDettesDto(int DelaiJours, DateOnly Jour, decimal TotalCreances, decimal TotalDettes, IReadOnlyList<LigneSuiviDto> Lignes,
+    IReadOnlyList<TotalTrancheDto> Tranches, IReadOnlyList<AlerteDetteDto> Alertes);
+
+public sealed record DelaiAlerteDettesRequete(int Jours);
+
+// ---- Fiche contact d'un tiers --------------------------------------------------------------
+
+/// <summary>Genre : « telephone », « email » (lien d'appel ou de courrier), « montant_du » (somme due mise en avant), sinon texte.</summary>
+public sealed record InfoContactDto(string Libelle, string Valeur, string? Genre);
+/// <summary>Type : patient, grossiste, organisme, client ou employe. CoordonneesMasquees : coordonnées d'un employé réservées à lui et au titulaire.</summary>
+public sealed record FicheContactDto(string Type, long Id, string Nom, string Precision, bool Actif, IReadOnlyList<InfoContactDto> Coordonnees,
+    IReadOnlyList<InfoContactDto> Situation, bool CoordonneesMasquees);
+
+// ---- Pagination commune aux listes ---------------------------------------------------------
+
+/// <summary>Une page de résultats : Total compte toutes les lignes qui répondent aux filtres, pas seulement celles de la page.</summary>
+public sealed record PageDto<T>(IReadOnlyList<T> Lignes, int Total, int Numero, int Taille);

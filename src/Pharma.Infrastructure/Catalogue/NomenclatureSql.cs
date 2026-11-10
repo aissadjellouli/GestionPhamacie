@@ -142,14 +142,40 @@ public sealed class NomenclatureSql(NpgsqlDataSource db) : INomenclature
         return liste;
     }
 
-    public async Task<string?> ChangerClasseAsync(long produitId, string classe, CancellationToken ct = default)
+    public async Task<string?> ChangerClasseAsync(long produitId, string classe, long utilisateurId, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
-            UPDATE produit p SET classe = $2 FROM (SELECT classe FROM produit WHERE id = $1 FOR UPDATE) avant
+        await using var cx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cx.BeginTransactionAsync(ct);
+        string? ancienne;
+        await using (var cmd = new NpgsqlCommand("""
+            UPDATE produit p SET classe = $2, a_verifier = false FROM (SELECT classe FROM produit WHERE id = $1 FOR UPDATE) avant
             WHERE p.id = $1 RETURNING avant.classe
-            """);
-        cmd.Parameters.AddWithValue(produitId);
-        cmd.Parameters.AddWithValue(classe);
-        return (string?)await cmd.ExecuteScalarAsync(ct);
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(produitId);
+            cmd.Parameters.AddWithValue(classe);
+            ancienne = (string?)await cmd.ExecuteScalarAsync(ct);
+        }
+        if (ancienne is null) return null;
+
+        // Le produit entre sous registre (psychotrope, stupéfiant) avec du stock : solde d'ouverture par lot, comme au
+        // démarrage du registre (024), sinon la première délivrance donnerait un solde négatif. Une seule fois par produit.
+        if (classe is "psychotrope" or "stupefiant")
+        {
+            await using var cmd = new NpgsqlCommand("""
+                INSERT INTO registre_psychotrope (lot_id, type_mouvement, quantite, solde_apres, utilisateur_id, reference)
+                SELECT l.id, 'ouverture', l.quantite_disponible, l.quantite_disponible, $2, 'Solde d''ouverture : produit classé sous registre'
+                FROM lot l
+                WHERE l.produit_id = $1 AND l.quantite_disponible > 0
+                  AND NOT EXISTS (SELECT 1 FROM registre_psychotrope r JOIN lot l2 ON l2.id = r.lot_id
+                                  WHERE l2.produit_id = $1 AND r.type_mouvement = 'ouverture')
+                ORDER BY l.id
+                """, cx, tx);
+            cmd.Parameters.AddWithValue(produitId);
+            cmd.Parameters.AddWithValue(utilisateurId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        return ancienne;
     }
 }

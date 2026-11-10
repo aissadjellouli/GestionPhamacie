@@ -26,26 +26,30 @@ internal static class InventaireCompletEndpoints
          .ExigerPermission(Permissions.StockConsulter);
 
         g.MapPost("", async (CommencerCampagneRequete r, GererInventaireComplet gerer, ClaimsPrincipal user, CancellationToken ct) =>
-            Results.Ok(new IdentifiantDto(await gerer.CommencerAsync(r.Mode, user.UtilisateurId(), ct))));
+            Results.Ok(new IdentifiantDto(await gerer.CommencerAsync(r.Mode, user.UtilisateurId(), ct))))
+         .ExigerTitulaire();
 
         g.MapPost("/{id:long}/cloture", async (long id, CloturerCampagneRequete r, GererInventaireComplet gerer, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await gerer.CloturerAsync(id, r.Commentaire, user.UtilisateurId(), ct);
                 return Results.NoContent();
-            });
+            })
+         .ExigerTitulaire();
 
         g.MapPost("/{id:long}/annulation", async (long id, GererInventaireComplet gerer, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await gerer.AnnulerAsync(id, user.UtilisateurId(), ct);
                 return Results.NoContent();
-            });
+            })
+         .ExigerTitulaire();
 
         g.MapGet("/{id:long}/etat", async (long id, GererInventaireComplet gerer, IDocumentsInventaire pdf, IPharmacie pharmacie, ClaimsPrincipal user,
                 CancellationToken ct) =>
             {
                 var (contenu, nom) = await gerer.EtatPdfAsync(id, pdf, (await pharmacie.LireAsync(ct)).Nom, user.UtilisateurId(), ct);
                 return Results.File(contenu, "application/pdf", nom);
-            });
+            })
+         .ExigerTitulaire();
     }
 
     private static CampagneInventaireDto VersDto(CampagneInventaire c) => new(c.Id, c.Mode, c.Statut, c.CommenceLe, c.CommencePar, c.ClotureLe, c.CloturePar,

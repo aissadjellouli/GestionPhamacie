@@ -49,11 +49,13 @@ internal static class RapportsEndpoints
     {
         var s = r.Synthese;
         return new(r.Periode.Type.ToString().ToLowerInvariant(), r.Periode.Du, r.Periode.Au, r.Periode.Libelle,
-            new SyntheseVentesDto(s.NombreVentes, s.ChiffreAffaires, s.PartOrganismes, s.CreditsAccordes, s.Remises, s.Annulations),
+            new SyntheseVentesDto(s.NombreVentes, s.ChiffreAffaires, s.PartOrganismes, s.CreditsAccordes, s.Remises, s.Annulations, s.Retours, s.MontantRetours),
             r.Marge is { } m ? new MargeBruteDto(m.ChiffreAffairesHt, m.CoutAchat, m.Montant, m.Taux) : null,
             r.ParJour.Select(j => new VentesJourDto(j.Date, j.NombreVentes, j.ChiffreAffaires)).ToList(),
             r.TopProduits.Select(p => new ProduitVenduDto(p.Produit, p.Quantite, p.ChiffreAffaires)).ToList(),
-            r.Clotures.Select(c => new ClotureRapportDto(c.Employe, c.Poste, c.OuverteLe, c.FermeeLe, c.Attendu, c.Compte, c.Ecart, c.Annulations, c.Remises)).ToList(),
-            r.EcartsVisibles, r.Periode.ParSemaine);
+            r.Clotures.Select(c => new ClotureRapportDto(c.Employe, c.Poste, c.OuverteLe, c.FermeeLe, c.Attendu, c.Compte, c.Ecart, c.Annulations, c.Remises, c.Retours, c.EmployeId)).ToList(),
+            r.EcartsVisibles, r.Periode.ParSemaine,
+            (r.Retours ?? []).Select(x => new RetourRapportDto(x.Ticket, x.DateVente, x.Vendeur, x.DateRetour, x.Poste, x.Employe, x.Produits, x.Montant,
+                x.DetteDiminuee, x.DeduitDansLaPeriode, x.VendeurId, x.EmployeId)).ToList());
     }
 }

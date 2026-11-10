@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Pharma.Api.Securite;
+using Pharma.Application.Commun;
 using Pharma.Application.Administration;
 using Pharma.Application.Caisse;
 using Pharma.Domain.Securite;
@@ -28,9 +29,13 @@ internal static class AdminEndpoints
             })
            .ExigerPermission(Permissions.AdminParametres);
 
-        admin.MapGet("/journal", async (ConsulterJournal consulter, CancellationToken ct) =>
-                Results.Ok((await consulter.ExecuterAsync(ct)).Select(e =>
-                    new EntreeJournalDto(e.Date, e.Employe, e.Action, e.DetailsJson, e.AutorisePar))))
+        // Journal paginé, filtré par période et par employé
+        admin.MapGet("/journal", async (DateOnly? du, DateOnly? au, string? employe, int? page, int? taille, ConsulterJournal consulter, CancellationToken ct) =>
+            {
+                var p = await consulter.PageAsync(du, au, employe, DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<EntreeJournalDto>(
+                    p.Lignes.Select(e => new EntreeJournalDto(e.Date, e.Employe, e.Action, e.DetailsJson, e.AutorisePar, e.EmployeId, e.AutoriseParId)).ToList(), p.Total, p.Numero, p.Taille));
+            })
            .ExigerPermission(Permissions.AdminParametres);
 
         // ---- Alertes et seuils ----
@@ -66,7 +71,7 @@ internal static class AdminEndpoints
             {
                 var e = await obtenir.ExecuterAsync(ct);
                 return Results.Ok(new EtatDroitsDto(
-                    e.Utilisateurs.Select(u => new UtilisateurAdminDto(u.Id, u.NomComplet, u.Identifiant, u.RoleId, u.Role, u.RoleSysteme, u.Actif, u.DerniereConnexion, u.CodeComptoir)).ToList(),
+                    e.Utilisateurs.Select(u => new UtilisateurAdminDto(u.Id, u.NomComplet, u.Identifiant, u.RoleId, u.Role, u.RoleSysteme, u.Actif, u.DerniereConnexion, u.CodeComptoir, u.Telephone, u.Email)).ToList(),
                     e.Roles.Select(r => new RoleAdminDto(r.Id, r.Code, r.Nom, r.Systeme, r.RemiseMaxPct, r.Permissions)).ToList(),
                     e.Permissions.Select(p => new PermissionAdminDto(p.Code, p.Module, p.Libelle, p.Sensible)).ToList()));
             })
@@ -80,12 +85,12 @@ internal static class AdminEndpoints
            .ExigerPermission(Permissions.AdminUtilisateurs);
 
         admin.MapPost("/utilisateurs", async (NouvelUtilisateurDto req, CreerUtilisateur creer, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok(new IdentifiantDto(await creer.ExecuterAsync(req.NomComplet, req.Identifiant, req.MotDePasse, req.RoleId, user.UtilisateurId(), ct))))
+                Results.Ok(new IdentifiantDto(await creer.ExecuterAsync(req.NomComplet, req.Identifiant, req.MotDePasse, req.RoleId, user.UtilisateurId(), req.Telephone, req.Email, ct))))
            .ExigerPermission(Permissions.AdminUtilisateurs);
 
         admin.MapPut("/utilisateurs/{id:long}", async (long id, ModificationUtilisateurDto req, ModifierUtilisateur modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await modifier.ExecuterAsync(id, req.NomComplet, req.RoleId, req.Actif, req.MotDePasse, user.UtilisateurId(), ct);
+                await modifier.ExecuterAsync(id, req.NomComplet, req.RoleId, req.Actif, req.MotDePasse, user.UtilisateurId(), req.Telephone, req.Email, ct);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.AdminUtilisateurs);

@@ -11,6 +11,8 @@ internal sealed class ReglementsEnMemoire(SituationGrossiste s) : IReglementsFou
     public Task<IReadOnlyList<GrossisteAReglement>> GrossistesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<GrossisteAReglement>>([]);
     public Task<SituationGrossiste?> SituationAsync(long id, CancellationToken ct = default) => Task.FromResult<SituationGrossiste?>(s);
     public Task<long> EnregistrerAsync(ReglementAEcrire r, CancellationToken ct = default) { Ecrit = r; return Task.FromResult(1L); }
+    public Task<Pharma.Application.Commun.Page<MouvementGrossiste>> MouvementsAsync(long id, Pharma.Application.Commun.DemandePage page, Pharma.Application.Commun.FiltreReleve? filtre = null, CancellationToken ct = default) =>
+        Task.FromResult(new Pharma.Application.Commun.Page<MouvementGrossiste>([], 0, page.Page, page.Taille));
 }
 
 internal sealed class CreditsEnMemoire(decimal solde) : ICreditsClients
@@ -20,6 +22,10 @@ internal sealed class CreditsEnMemoire(decimal solde) : ICreditsClients
     public Task<SituationCredit?> SituationAsync(long id, CancellationToken ct = default) =>
         Task.FromResult<SituationCredit?>(new SituationCredit(new PatientEnCredit(id, "Patient fictif", null, solde, 5000, null), []));
     public Task<long> EncaisserAsync(long p, decimal m, string mode, long s, long u, CancellationToken ct = default) { Encaisse = (m, mode, s); return Task.FromResult(7L); }
+    public Task<Pharma.Application.Commun.Page<MouvementCredit>> MouvementsAsync(long p, Pharma.Application.Commun.DemandePage page, Pharma.Application.Commun.FiltreReleve? filtre = null, CancellationToken ct = default) =>
+        Task.FromResult(new Pharma.Application.Commun.Page<MouvementCredit>([], 0, page.Page, page.Taille));
+    public (decimal Avant, decimal Apres, string Motif)? Correction { get; private set; }
+    public Task CorrigerAsync(long p, decimal avant, decimal apres, string motif, long u, string? poste, CancellationToken ct = default) { Correction = (avant, apres, motif); return Task.CompletedTask; }
 }
 
 public class ReglementsTests

@@ -21,11 +21,12 @@ public interface ILotsLecture
 /// <summary>Lot à servir en caisse : règle FEFO du domaine (ni périmé, ni bloqué, ni épuisé).</summary>
 public sealed class ObtenirLotFefo(ILotsLecture lots, IHorloge horloge)
 {
-    public async Task<ResultatLotFefo> ExecuterAsync(long produitId, CancellationToken ct = default)
+    /// <param name="lotsExclus">Lots déjà au panier du poste : le lot renvoyé est le suivant dans l'ordre FEFO (vente de plus de boîtes que n'en contient le premier lot).</param>
+    public async Task<ResultatLotFefo> ExecuterAsync(long produitId, IReadOnlyCollection<long>? lotsExclus = null, CancellationToken ct = default)
     {
         var aujourdhui = horloge.Aujourdhui;
         var enStock = await lots.LotsEnStockAsync(produitId, ct);
-        var lot = Lot.Fefo(enStock, aujourdhui);
+        var lot = Lot.Fefo(lotsExclus is { Count: > 0 } ? enStock.Where(l => !lotsExclus.Contains(l.Id)).ToList() : enStock, aujourdhui);
 
         var ecartes = enStock
             .Select(l => (Lot: l, Raison: l.RaisonNonVendable(aujourdhui)))

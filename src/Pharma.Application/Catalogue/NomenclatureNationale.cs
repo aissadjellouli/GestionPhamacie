@@ -35,7 +35,7 @@ public interface INomenclature
     Task<IReadOnlyList<MedicamentNomenclature>> RechercherAsync(string texte, int limite, CancellationToken ct = default);
     Task<IReadOnlyList<ProduitAVerifier>> AVerifierAsync(CancellationToken ct = default);
     /// <summary>Nouvelle classe d'un produit ; renvoie l'ancienne (null si produit introuvable).</summary>
-    Task<string?> ChangerClasseAsync(long produitId, string classe, CancellationToken ct = default);
+    Task<string?> ChangerClasseAsync(long produitId, string classe, long utilisateurId, CancellationToken ct = default);
 }
 
 /// <summary>Import du fichier Excel de la nomenclature (titulaire), inscrit au journal.</summary>
@@ -93,7 +93,7 @@ public sealed class AppliquerClasseNomenclature(INomenclature nomenclature, IPer
         ClasseReglementaire c;
         try { c = CodesMetier.ClasseDepuisCode(classe ?? ""); }
         catch (ArgumentException) { throw new RegleMetierException($"Classe inconnue : {classe}."); }
-        var ancienne = await nomenclature.ChangerClasseAsync(produitId, c.Code(), ct)
+        var ancienne = await nomenclature.ChangerClasseAsync(produitId, c.Code(), utilisateurId, ct)
                        ?? throw new RegleMetierException("Produit introuvable.");
         await journal.EcrireAsync(utilisateurId, "classe_produit", "produit", produitId,
             new Dictionary<string, object?> { ["ancienne"] = ancienne, ["nouvelle"] = c.Code(), ["source"] = "nomenclature" }, null, ct);

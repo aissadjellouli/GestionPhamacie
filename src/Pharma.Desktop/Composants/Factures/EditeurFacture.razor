@@ -146,7 +146,8 @@
     <div><button type="button" class="btn" @onclick="() => libres.Add(new())">Ajouter une ligne libre</button></div>
 
     <div class="achats-ligne">
-        <div class="champ" style="flex: 0 0 170px"><label for="f-date">Date de la facture</label><input id="f-date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="dateFacture" /></div>
+        <div class="champ" style="flex: 0 0 170px"><label for="f-date">Date d’établissement</label><input id="f-date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="dateFacture" @bind:after="SuivreEcheance" /></div>
+        <div class="champ" style="flex: 0 0 170px"><label for="f-echeance">Date d’échéance</label><input id="f-echeance" type="date" min="@dateFacture.ToString("yyyy-MM-dd")" @bind="dateEcheance" @bind:after="() => echeanceSaisie = true" /></div>
         <div class="champ" style="flex: 1 1 260px"><label for="f-com">Commentaire imprimé</label><input id="f-com" type="text" maxlength="300" @bind="commentaire" /></div>
         @if (Mode == "correction")
         {
@@ -198,6 +199,11 @@
     private string? recherchePatient, rechercheVente, commentaire, motif, erreur;
     private DateOnly du = new(DateTime.Today.Year, DateTime.Today.Month, 1), au = DateOnly.FromDateTime(DateTime.Today);
     private DateOnly dateFacture = DateOnly.FromDateTime(DateTime.Today);
+    // Échéance : 30 jours après l'établissement tant que l'utilisateur ne l'a pas saisie lui-même
+    private const int DelaiEcheanceJours = 30;
+    private DateOnly dateEcheance = DateOnly.FromDateTime(DateTime.Today).AddDays(DelaiEcheanceJours);
+    private bool echeanceSaisie;
+    private void SuivreEcheance() { if (!echeanceSaisie || dateEcheance < dateFacture) dateEcheance = dateFacture.AddDays(DelaiEcheanceJours); }
     private List<VenteAffichee> candidates = [];
     private readonly HashSet<long> ventes = [];
     /// <summary>Ventes de la facture d'origine : disponibles bien que déjà facturées (par elle).</summary>
@@ -291,7 +297,7 @@
         (enCours, erreur) = (true, null);
         var demande = new DemandeFactureDto(destinataire, patient?.Id ?? Origine?.PatientId, clientId > 0 ? clientId : null, organismeId > 0 ? organismeId : null,
             dateFacture, ventes.Count > 0 ? du : null, ventes.Count > 0 ? au : null, ventes.ToList(),
-            libres.Select(l => new LigneLibreDto(l.Designation, l.Quantite, l.Prix, l.Tva)).ToList(), commentaire, motif);
+            libres.Select(l => new LigneLibreDto(l.Designation, l.Quantite, l.Prix, l.Tva)).ToList(), commentaire, motif, dateEcheance);
         (long Id, string Numero)? resultat = null;
         switch (Mode)
         {

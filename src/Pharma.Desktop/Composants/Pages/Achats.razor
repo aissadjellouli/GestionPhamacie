@@ -21,7 +21,7 @@
     @switch (onglet)
     {
         case "commandes":
-            <OngletCommandes ProduitAAjouter="Produit" NomProduit="@Nom" CommandeOuverte="Commande" />
+            <OngletCommandes ProduitAAjouter="Produit" NomProduit="@Nom" CommandeOuverte="Commande" Grossiste="Grossiste" />
             break;
         case "receptions":
             <OngletReceptions CommandeId="Commande" />
@@ -33,7 +33,7 @@
             <OngletEtiquettes LotId="Lot" />
             break;
         case "reglements":
-            <OngletReglements />
+            <OngletReglements Grossiste="Grossiste" />
             break;
         default:
             <OngletGrossistes />
@@ -49,6 +49,7 @@
     [SupplyParameterFromQuery(Name = "lot")] public long? Lot { get; set; }
     [SupplyParameterFromQuery(Name = "numeroLot")] public string? NumeroLot { get; set; }
     [SupplyParameterFromQuery(Name = "motif")] public string? Motif { get; set; }
+    [SupplyParameterFromQuery(Name = "grossiste")] public long? Grossiste { get; set; }
 
     private string onglet = "commandes";
 

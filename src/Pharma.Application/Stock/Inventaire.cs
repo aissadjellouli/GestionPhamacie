@@ -37,6 +37,11 @@ public interface IInventaires
     Task<InventaireDetail?> DetailAsync(long id, CancellationToken ct = default);
     /// <summary>Enregistre le comptage et relève le stock théorique du lot à cet instant.</summary>
     Task EnregistrerComptageAsync(long ligneId, int compte, DateOnly? dateVerifiee, long utilisateurId, CancellationToken ct = default);
+    /// <summary>
+    /// Une boîte scannée de plus sur la ligne, ajoutée en base de façon atomique (deux téléphones qui scannent le même lot
+    /// au même instant comptent chacun leur boîte). Renvoie le nouveau compte, ou null si le maximum est atteint.
+    /// </summary>
+    Task<int?> AjouterBoiteAsync(long ligneId, int compteMax, long utilisateurId, CancellationToken ct = default);
     /// <summary>Lot désigné par une étiquette interne, un code de lot ou un Data Matrix (GTIN et lot) ; null sinon.</summary>
     Task<long?> LotParCodeAsync(string code, CancellationToken ct = default);
     /// <summary>Écarts, ajustements sous les seuils, dates vérifiées et fin de l'inventaire, en une transaction.</summary>
@@ -121,9 +126,9 @@ public sealed class ScannerBoiteInventaire(IInventaires inventaires, IPermission
                     ?? throw new RegleMetierException("Ce code ne désigne pas un lot précis : saisissez la quantité à la main.");
         var ligne = d.Lignes.FirstOrDefault(l => l.LotId == lotId)
                     ?? throw new RegleMetierException($"Cette boîte n’appartient pas au rayon {d.Rayon} : rangez-la à sa place.");
-        var compte = (ligne.Compte ?? 0) + 1;
-        RegleInventaire.VerifierComptage(compte);
-        await inventaires.EnregistrerComptageAsync(ligne.Id, compte, null, utilisateurId, ct);
+        // Le compte lu ci-dessus peut déjà être dépassé par un autre scan : l'ajout se fait en base, pas à partir de cette lecture
+        var compte = await inventaires.AjouterBoiteAsync(ligne.Id, RegleInventaire.QuantiteMax, utilisateurId, ct)
+                     ?? throw new RegleMetierException($"Quantité comptée entre 0 et {RegleInventaire.QuantiteMax}.");
         return (ligne.Id, ligne.Produit, ligne.NumeroLot, compte);
     }
 }

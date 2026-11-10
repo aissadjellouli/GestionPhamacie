@@ -14,6 +14,7 @@ public static class DependencyInjection
     /// <summary>Cas d'usage. Les ports qu'ils utilisent sont fournis par l'Infrastructure et l'Api.</summary>
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        services.AddSingleton<EssaisConnexion>();
         services.AddScoped<SeConnecter>();
         services.AddScoped<ChangerMonMotDePasse>();
         services.AddScoped<RechercherProduits>();
@@ -98,6 +99,11 @@ public static class DependencyInjection
         services.AddScoped<Achats.EnregistrerReglement>();
         services.AddScoped<Caisse.ConsulterCredits>();
         services.AddScoped<Caisse.EncaisserReglementCredit>();
+        services.AddScoped<Caisse.ImprimerReleveCredit>();
+        services.AddScoped<Caisse.CorrigerDetteCredit>();
+        services.AddScoped<Suivi.ObtenirSuiviDettes>();
+        services.AddScoped<Contacts.ConsulterContact>();
+        services.AddScoped<Suivi.ModifierDelaiAlerteDettes>();
         services.AddScoped<Tresorerie.ConsulterTresorerie>();
         services.AddScoped<Tresorerie.EnregistrerCompteTresorerie>();
         services.AddScoped<Tresorerie.SaisirMouvementTresorerie>();

@@ -120,6 +120,21 @@ else
                                 <td>@(l.Series.Count > 0 ? $"{l.Series.Count} scannée(s)" : "—")</td>
                                 <td><button type="button" class="btn btn-icone" aria-label="Retirer @l.Nom" title="Retirer" @onclick="() => RetirerLigneAsync(l)">×</button></td>
                             </tr>
+                            @if (l.QuantiteMobile is { } qm && l.QuantiteSaisie is { } qs)
+                            {
+                                <tr class="ligne-conflit">
+                                    <td colspan="7">
+                                        <div class="conflit-lot" role="alert">
+                                            <span>Cette ligne était déjà saisie (@qs boîte(s)) et le mobile en a scanné @qm pour le même lot. Quelle quantité retenir ?</span>
+                                            <div class="choix-conflit">
+                                                <button type="button" class="btn" @onclick="() => ChoisirQuantite(l, qs)">La saisie : @qs</button>
+                                                <button type="button" class="btn" @onclick="() => ChoisirQuantite(l, qm)">Le mobile : @qm</button>
+                                                <button type="button" class="btn" @onclick="() => ChoisirQuantite(l, qs + qm)">Additionner : @(qs + qm)</button>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
                             @foreach (var c in l.Conflits)
                             {
                                 <tr class="ligne-conflit">
@@ -173,6 +188,18 @@ else
     </section>
 }
 
+<div class="filtres-liste" role="search" aria-label="Filtrer les réceptions">
+            <div class="champ" style="flex: 1 1 200px"><label for="fr-grossiste">Grossiste</label>
+                <select id="fr-grossiste" @bind="fFournisseur" @bind:after="PremierePageAsync">
+                    <option value="0">Tous</option>
+                    @foreach (var g in fournisseurs) { <option value="@g.Id">@g.RaisonSociale</option> }
+                </select>
+            </div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fr-du">Du</label><input id="fr-du" type="date" @bind="fDu" @bind:after="PremierePageAsync" /></div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fr-au">Au</label><input id="fr-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
+            <div class="champ" style="flex: 1 1 220px"><label for="fr-q">N° de BL, de facture ou de bon</label><input id="fr-q" type="search" @bind="fRecherche" @bind:after="PremierePageAsync" /></div>
+            @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
+</div>
 <section class="tableau-cadre" aria-label="Dernières réceptions">
     <table class="tableau" style="min-width: 0">
         <thead><tr><th scope="col">Date</th><th scope="col">Grossiste</th><th scope="col">BL</th><th scope="col">Commande</th><th scope="col">Lots</th><th scope="col">Boîtes</th><th scope="col">Montant TTC</th><th scope="col"></th></tr></thead>
@@ -181,7 +208,7 @@ else
             {
                 <tr>
                     <td>@Libelles.DateHeureLocale(r.Date)</td>
-                    <td>@r.Fournisseur</td>
+                    <td><LienContact Type="grossiste" Id="r.FournisseurId" Nom="@r.Fournisseur" /></td>
                     <td>@(r.NumeroBl ?? "—")@if (r.NumeroFacture is not null){<br /><span class="detail">facture @r.NumeroFacture</span>}</td>
                     <td>@(r.NumeroCommande ?? "sans")</td>
                     <td>@r.NombreLots</td>
@@ -192,11 +219,12 @@ else
             }
             @if (historique.Count == 0)
             {
-                <tr><td colspan="8" class="vide">Aucune réception.</td></tr>
+                <tr><td colspan="8" class="vide">@(FiltreActif ? "Aucune réception pour ces filtres." : "Aucune réception.")</td></tr>
             }
         </tbody>
     </table>
 </section>
+<Pagination Total="totalReceptions" Numero="pageReceptions" Taille="tailleReceptions" Libelle="Pages des réceptions" OnChange="p => ChargerReceptionsAsync(p.Numero, p.Taille)" />
 
 @code {
     [Parameter] public long? CommandeId { get; set; }
@@ -212,6 +240,12 @@ else
         public int? Commandee { get; init; }
         public string? Gtin { get; set; }
         public List<string> Series { get; } = [];
+        /// <summary>Boîtes scannées sur le poste dont le Data Matrix ne porte pas de numéro de série : comptées une à une.</summary>
+        public int SansSerie { get; set; }
+        /// <summary>Import du mobile sur une ligne déjà saisie : les deux quantités attendent le choix de l'utilisateur.</summary>
+        public int? QuantiteSaisie { get; set; }
+        public int? QuantiteMobile { get; set; }
+        public bool ChoixQuantiteManquant => QuantiteMobile is not null;
         /// <summary>Scans du mobile repris dans cette ligne (remis en attente si la ligne est retirée ou la réception abandonnée).</summary>
         public List<long> ScansMobile { get; } = [];
         /// <summary>Conflits signalés par le serveur (date différente, lot bloqué) et choix de l'utilisateur.</summary>
@@ -227,6 +261,23 @@ else
     private List<FournisseurDto> fournisseurs = [];
     private List<CommandeAchatDto> commandes = [];
     private List<ReceptionResumeDto> historique = [];
+    private int totalReceptions, pageReceptions = 1, tailleReceptions = Pagination.TailleParDefaut;
+
+    // Filtres de la liste des réceptions : appliqués par le serveur, le total et les pages les suivent
+    private long fFournisseur;
+    private DateOnly? fDu, fAu;
+    private string? fRecherche;
+    private bool FiltreActif => fFournisseur > 0 || fDu is not null || fAu is not null || !string.IsNullOrWhiteSpace(fRecherche);
+    private Task PremierePageAsync() => ChargerReceptionsAsync(1);
+    private Task EffacerFiltresAsync() { (fFournisseur, fDu, fAu, fRecherche) = (0, null, null, null); return PremierePageAsync(); }
+
+    private async Task ChargerReceptionsAsync(int numero, int? taille = null)
+    {
+        tailleReceptions = taille ?? tailleReceptions;
+        var (p, _) = await Api.ReceptionsAsync(numero, tailleReceptions, fFournisseur > 0 ? fFournisseur : null, fDu, fAu, fRecherche);
+        if (p is null) return;
+        (historique, totalReceptions, pageReceptions) = (p.Lignes.ToList(), p.Total, p.Numero);
+    }
     private readonly List<Ligne> lignes = [];
     private long fournisseurId, commandeId;
     private string? numeroBl, numeroFacture, scan, infoScan, erreur;
@@ -238,9 +289,10 @@ else
     protected override async Task OnInitializedAsync()
     {
         (fournisseurs, erreur) = await Api.FournisseursAsync();
-        (commandes, _) = await Api.CommandesAchatAsync();
+        // Commandes à recevoir : les commandes en cours sont en tête de liste (200 au plus)
+        commandes = (await Api.CommandesAchatAsync(1, 200)).Item1?.Lignes.ToList() ?? [];
         commandes = commandes.Where(c => c.Statut is "envoyee" or "recue_partielle").ToList();
-        (historique, _) = await Api.ReceptionsAsync();
+        await ChargerReceptionsAsync(1);
         await CompterScansMobileAsync();
         if (CommandeId is { } cid && commandes.FirstOrDefault(c => c.Id == cid) is { } c)
         {
@@ -286,6 +338,13 @@ else
         erreur = $"{l.Nom} : corrigez la date de péremption lue sur la boîte, puis validez.";
     }
 
+    /// <summary>Import du mobile sur une ligne déjà saisie : quantité retenue par l'utilisateur (jamais moins que les boîtes à n° de série).</summary>
+    private static void ChoisirQuantite(Ligne l, int quantite)
+    {
+        l.Quantite = Math.Max(quantite, l.Series.Count);
+        (l.QuantiteSaisie, l.QuantiteMobile) = (null, null);
+    }
+
     private async Task RetirerLigneAsync(Ligne l)
     {
         lignes.Remove(l);
@@ -308,10 +367,12 @@ else
     {
         var (importees, e) = await Api.ImporterScansMobileAsync();
         if (e is not null) { erreur = e; return; }
+        var aTrancher = 0;
         foreach (var s in importees!)
         {
             var ligne = lignes.FirstOrDefault(l => l.ProduitId == s.ProduitId && string.Equals(l.NumeroLot, s.NumeroLot ?? "", StringComparison.OrdinalIgnoreCase)
                                                    && (s.Peremption is null || l.Peremption == s.Peremption));
+            var existante = ligne is not null;
             if (ligne is null)
             {
                 ligne = new Ligne { ProduitId = s.ProduitId, Nom = s.Produit, NumeroLot = s.NumeroLot ?? "", Peremption = s.Peremption, Gtin = s.Gtin };
@@ -319,9 +380,18 @@ else
             }
             foreach (var serie in s.Series.Where(x => !ligne.Series.Contains(x))) ligne.Series.Add(serie);
             ligne.ScansMobile.AddRange(s.ScanIds ?? []);
-            ligne.Quantite = Math.Max(ligne.Quantite + s.Quantite, ligne.Series.Count);
+            if (existante && ligne.Quantite > 0)
+            {
+                // Ligne déjà saisie : les mêmes boîtes ont peut-être été comptées deux fois. L'utilisateur tranche (ChoisirQuantite)
+                ligne.QuantiteSaisie ??= ligne.Quantite;
+                ligne.QuantiteMobile = (ligne.QuantiteMobile ?? 0) + s.Quantite;
+                aTrancher++;
+            }
+            else
+                ligne.Quantite = Math.Max(ligne.Quantite + s.Quantite, ligne.Series.Count);
         }
-        infoScan = $"{importees.Sum(s => s.Quantite)} boîte(s) importée(s) du mobile : vérifiez les lots, les dates et les prix, puis validez.";
+        infoScan = $"{importees.Sum(s => s.Quantite)} boîte(s) importée(s) du mobile : vérifiez les lots, les dates et les prix, puis validez."
+                   + (aTrancher > 0 ? " Des lignes étaient déjà saisies : choisissez leur quantité (en orange sous la ligne)." : "");
         scansMobile = 0;
     }
 
@@ -363,7 +433,13 @@ else
             ligne.Series.Add(serie);
             ligne.Quantite = Math.Max(ligne.Quantite, ligne.Series.Count);
         }
-        infoScan = $"{b.Produit} · lot {b.NumeroLot ?? "?"} · boîte {b.NumeroSerie ?? "sans série"} ({ligne.Series.Count} scannée(s)).";
+        else
+        {
+            // Pas de numéro de série dans le code : la boîte est comptée, sinon la ligne resterait à 0 et serait ignorée à la validation
+            ligne.SansSerie++;
+            ligne.Quantite = Math.Max(ligne.Quantite, ligne.Series.Count + ligne.SansSerie);
+        }
+        infoScan = $"{b.Produit} · lot {b.NumeroLot ?? "?"} · boîte {b.NumeroSerie ?? "sans série"} ({ligne.Series.Count + ligne.SansSerie} scannée(s)).";
     }
 
     // Champs obligatoires en rouge après un premier essai de validation
@@ -381,6 +457,11 @@ else
         {
             erreur = "Indiquez le numéro du bon de livraison.";
             await champBl.FocusAsync();
+            return;
+        }
+        if (lignes.FirstOrDefault(l => l.ChoixQuantiteManquant) is { } aChoisir)
+        {
+            erreur = $"{aChoisir.Nom} : choisissez la quantité à retenir (saisie, mobile ou les deux additionnées) avant de valider.";
             return;
         }
         if (aEnvoyer.FirstOrDefault(l => string.IsNullOrWhiteSpace(l.NumeroLot)) is { } sansLot) { erreur = $"{sansLot.Nom} : indiquez le numéro de lot."; return; }
@@ -406,7 +487,7 @@ else
             var (r, e) = await Api.ReceptionnerAsync(Requete());
             if (e is not null) { erreur = e; return; }
             resultat = r;
-            (historique, _) = await Api.ReceptionsAsync();
+            await ChargerReceptionsAsync(1);
         }
         finally { enCours = false; }
         // Étiquettes créées avec la réception : impression tout de suite

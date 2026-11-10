@@ -23,7 +23,16 @@ internal static class ReglementsEndpoints
                 var s = await consulter.SituationAsync(id, user.UtilisateurId(), ct);
                 return Results.Ok(new SituationGrossisteDto(s.Id, s.Nom, s.Solde,
                     s.Factures.Select(f => new FactureFournisseurDto(f.ReceptionId, f.NumeroFacture, f.NumeroBl, f.Date, f.Montant, f.Regle, f.Reste)).ToList(),
-                    s.Reglements.Select(r => new ReglementPasseDto(r.Id, r.Date, r.Montant, r.Moyen, r.Reference, r.Echeance, r.PartTiroir, r.Employe)).ToList()));
+                    s.Reglements.Select(r => new ReglementPasseDto(r.Id, r.Date, r.Montant, r.Moyen, r.Reference, r.Echeance, r.PartTiroir, r.Employe, r.EmployeId)).ToList(),
+                    (s.Mouvements ?? []).Select(m => new MouvementGrossisteDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Employe, m.Reference, m.EmployeId)).ToList(), s.MouvementsTotal));
+            });
+
+        // Relevé de la dette envers un grossiste, paginé
+        grossistes.MapGet("/{id:long}/mouvements", async (long id, DateOnly? du, DateOnly? au, string? type, int? page, int? taille, ConsulterReglements consulter, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await consulter.MouvementsAsync(id, Pharma.Application.Commun.DemandePage.Lire(page, taille), Pharma.Application.Commun.FiltreReleve.Lire(du, au, type), user.UtilisateurId(), ct);
+                return Results.Ok(new PageDto<MouvementGrossisteDto>(
+                    p.Lignes.Select(m => new MouvementGrossisteDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Employe, m.Reference, m.EmployeId)).ToList(), p.Total, p.Numero, p.Taille));
             });
 
         grossistes.MapPost("/{id:long}", async (long id, ReglementRequete req, EnregistrerReglement enregistrer, ClaimsPrincipal user,
@@ -40,8 +49,36 @@ internal static class ReglementsEndpoints
         credits.MapGet("/{patientId:long}", async (long patientId, ConsulterCredits consulter, CancellationToken ct) =>
             {
                 var s = await consulter.SituationAsync(patientId, ct);
-                return Results.Ok(new SituationCreditDto(VersDto(s.Patient), s.Ventes.Select(v => new VenteACreditDto(v.Numero, v.Date, v.Montant)).ToList()));
+                return Results.Ok(new SituationCreditDto(VersDto(s.Patient),
+                    s.Ventes.Select(v => new VenteACreditDto(v.Numero, v.Date, v.Montant, v.Regle, v.Reste)).ToList(),
+                    (s.Mouvements ?? []).Select(m => new MouvementCreditDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Vente, m.Employe, m.Poste, m.Reference, m.EmployeId)).ToList(),
+                    s.DetteReprise, s.MouvementsTotal));
             });
+
+        // Relevé de dette paginé (mouvements plus anciens que la première page de la fiche)
+        credits.MapGet("/{patientId:long}/mouvements", async (long patientId, DateOnly? du, DateOnly? au, string? type, int? page, int? taille, ConsulterCredits consulter, CancellationToken ct) =>
+            {
+                var p = await consulter.MouvementsAsync(patientId, Pharma.Application.Commun.DemandePage.Lire(page, taille), Pharma.Application.Commun.FiltreReleve.Lire(du, au, type), ct);
+                return Results.Ok(new PageDto<MouvementCreditDto>(
+                    p.Lignes.Select(m => new MouvementCreditDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Vente, m.Employe, m.Poste, m.Reference, m.EmployeId)).ToList(),
+                    p.Total, p.Numero, p.Taille));
+            });
+
+        // Relevé de la dette à remettre au patient
+        credits.MapGet("/{patientId:long}/releve", async (long patientId, ImprimerReleveCredit imprimer, CancellationToken ct) =>
+            {
+                var (contenu, nom) = await imprimer.ExecuterAsync(patientId, ct);
+                return Results.File(contenu, "application/pdf", nom);
+            });
+
+        // Correction de la dette par le titulaire, avec motif : inscrite au relevé et au journal
+        credits.MapPost("/{patientId:long}/correction", async (long patientId, CorrectionCreditRequete req, CorrigerDetteCredit corriger,
+                ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
+            {
+                await corriger.ExecuterAsync(patientId, req.NouvelleDette, req.Motif, user.UtilisateurId(), requete.Poste(), ct);
+                return Results.NoContent();
+            })
+           .ExigerTitulaire();
 
         credits.MapPost("/{patientId:long}/reglement", async (long patientId, ReglementCreditRequete req, EncaisserReglementCredit encaisser,
                 ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>

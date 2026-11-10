@@ -15,7 +15,7 @@ public sealed record CompteTresorerie(long Id, string Type, string Nom, string? 
 public sealed record MouvementTresorerie(DateOnly Date, string Sens, decimal Montant, string Nature, string? Categorie, string Libelle,
     string? Reference, string? Employe, string Origine);
 
-public sealed record ChequeARemettre(long PaiementId, DateTime Date, decimal Montant, string Origine, string? Patient);
+public sealed record ChequeARemettre(long PaiementId, DateTime Date, decimal Montant, string Origine, string? Patient, long? PatientId = null);
 
 /// <summary>Caisse clôturée dont l'argent n'est pas encore au coffre ; Propose = compté moins le fond par défaut.</summary>
 public sealed record CaisseAVerser(long SessionId, string Poste, DateTime FermeeLe, string OuvertePar, decimal Compte, decimal Propose);

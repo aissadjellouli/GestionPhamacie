@@ -54,6 +54,10 @@
                 <span class="tuile-libelle">Chiffre d’affaires</span>
                 <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.ChiffreAffaires)</span>
                 <span class="tuile-pied">@r.Synthese.NombreVentes vente(s) · remises @Libelles.Dinars(r.Synthese.Remises)</span>
+                @if (r.Synthese.Retours > 0)
+                {
+                    <span class="tuile-pied" title="Un retour client diminue le chiffre du jour où il est enregistré">dont @r.Synthese.Retours retour(s) client : − @Libelles.Dinars(r.Synthese.MontantRetours, 2)</span>
+                }
             </div>
             <div class="tuile">
                 <span class="tuile-libelle">Part Chifa à recevoir</span>
@@ -150,14 +154,14 @@
                             @if (r.EcartsVisibles) { <th scope="col">Attendu</th> }
                             <th scope="col">Compté</th>
                             @if (r.EcartsVisibles) { <th scope="col">Écart</th> }
-                            <th scope="col">Annulations</th><th scope="col">Remises</th>
+                            <th scope="col">Annulations</th><th scope="col">Remises</th><th scope="col">Retours</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var c in r.Clotures)
                         {
                             <tr>
-                                <td class="nom">@c.Employe<br /><span class="detail">@c.Poste</span></td>
+                                <td class="nom"><LienContact Type="employe" Id="c.EmployeId" Nom="@c.Employe" /><br /><span class="detail">@c.Poste</span></td>
                                 <td>@Libelles.DateHeureLocale(c.OuverteLe)<br /><span class="detail">clôturée @(c.FermeeLe is { } f ? Libelles.DateHeureLocale(f) : "—")</span></td>
                                 @if (r.EcartsVisibles) { <td>@Libelles.Dinars(c.Attendu ?? 0)</td> }
                                 <td>@Libelles.Dinars(c.Compte ?? 0)</td>
@@ -167,11 +171,12 @@
                                 }
                                 <td>@c.Annulations</td>
                                 <td>@c.Remises</td>
+                                <td>@c.Retours</td>
                             </tr>
                         }
                         @if (r.Clotures.Count == 0)
                         {
-                            <tr><td colspan="@(r.EcartsVisibles ? 7 : 5)" class="vide">Aucune clôture de caisse sur la période.</td></tr>
+                            <tr><td colspan="@(r.EcartsVisibles ? 8 : 6)" class="vide">Aucune clôture de caisse sur la période.</td></tr>
                         }
                     </tbody>
                 </table>
@@ -182,7 +187,35 @@
             }
         </section>
 
-        <p class="detail">
+        @if (r.Retours is { Count: > 0 } retours)
+        {
+            <section class="panneau" aria-labelledby="t-retours">
+                <h2 id="t-retours">Retours clients</h2>
+                <p class="detail" style="margin: 0 0 8px">Un retour diminue le chiffre du jour où il est enregistré. La recette du jour de la vente ne change pas : le retour y figure pour information.</p>
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 760px">
+                        <thead><tr><th scope="col">Vente</th><th scope="col">Produits rendus</th><th scope="col">Retour</th><th scope="col">Montant</th><th scope="col">Effet sur le chiffre</th></tr></thead>
+                        <tbody>
+                            @foreach (var x in retours)
+                            {
+                                <tr>
+                                    <td class="nom">@x.Ticket<br /><span class="detail">@Libelles.DateHeureLocale(x.DateVente) · vendu par <LienContact Type="employe" Id="x.VendeurId" Nom="@x.Vendeur" /></span></td>
+                                    <td>@x.Produits</td>
+                                    <td>@Libelles.DateHeureLocale(x.DateRetour)<br /><span class="detail">@x.Poste · enregistré par <LienContact Type="employe" Id="x.EmployeId" Nom="@x.Employe" /></span></td>
+                                    <td><strong>− @Libelles.Dinars(x.Montant, 2)</strong>@if (x.DetteDiminuee > 0){<br /><span class="detail">dont @Libelles.Dinars(x.DetteDiminuee, 2) déduits de la dette du patient</span>}</td>
+                                    <td>
+                                        @if (x.DeduitDansLaPeriode) { <span class="pastille attention">Déduit sur cette période</span> }
+                                        else { <span class="pastille info" title="La recette de cette période ne change pas">Déduit le @Libelles.DateLocale(x.DateRetour), pas sur cette période</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+
+        <p class="pied-page">
             Ventes validées seulement, remises déduites. Marge brute : chiffre d’affaires hors TVA moins le coût d’achat HT des boîtes vendues,
             au prix réel de chaque boîte identifiée, sinon au prix de son lot.
         </p>

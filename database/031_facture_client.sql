@@ -135,7 +135,12 @@ CREATE TABLE IF NOT EXISTS reglement_facture_client (
 
 -- Suivi : reste à encaisser (factures émises ou rejetées ; une facture remplacée ne compte plus)
 CREATE OR REPLACE VIEW v_facture_client AS
-SELECT f.*,
+-- Colonnes de la table nommées une à une (et non f.*) : une colonne ajoutée plus tard à facture_client
+-- ne change pas celles de la vue, qui reste ainsi rejouable (date_echeance, 040, se lit dans la table)
+SELECT f.id, f.type, f.numero, f.date_facture, f.destinataire, f.patient_id, f.client_id, f.organisme_id, f.destinataire_nom,
+       f.destinataire_infos, f.periode_du, f.periode_au, f.montant_ht, f.montant_tva, f.montant_ttc, f.deja_paye, f.statut, f.version,
+       f.motif_rejet, f.remplace_id, f.remplacee_par, f.facture_origine_id, f.motif, f.hors_suivi, f.motif_hors_suivi, f.commentaire,
+       f.utilisateur_id, f.cree_le,
        COALESCE((SELECT SUM(a.montant_ttc) FROM facture_client a WHERE a.facture_origine_id = f.id AND a.type = 'avoir'), 0) AS avoirs,
        COALESCE((SELECT SUM(r.montant) FROM reglement_facture_client r WHERE r.facture_id = f.id), 0) AS regle,
        CASE WHEN f.type = 'avoir' OR f.statut = 'remplacee' THEN 0

@@ -69,6 +69,10 @@
                                             {
                                                 <span class="pastille urgent">@Libelles.Classe(p.ClasseProposee)</span>
                                             }
+                                            else if (p.Motif == "repris")
+                                            {
+                                                <span class="pastille urgent" title="Créé par la reprise des données, sans n° d’enregistrement : la nomenclature ne peut pas proposer sa classe">Repris, vente bloquée</span>
+                                            }
                                             else if (p.Motif == "absent")
                                             {
                                                 <span class="pastille attention" title="Le n° d’enregistrement du produit n’est pas dans la nomenclature chargée">Absent de la nomenclature</span>
@@ -82,6 +86,16 @@
                                             @if (p.Motif == "classe" && p.ClasseProposee is { } proposee)
                                             {
                                                 <button type="button" class="btn" disabled="@enCours" @onclick="() => AppliquerAsync(p, proposee)">Classer « @Libelles.Classe(proposee) »</button>
+                                            }
+                                            else if (p.Motif == "repris")
+                                            {
+                                                <span class="detail">Vérifiez la boîte, puis confirmez sa classe pour autoriser la vente :</span>
+                                                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px">
+                                                    @foreach (var classe in ClassesReglementaires)
+                                                    {
+                                                        <button type="button" class="btn" disabled="@enCours" @onclick="() => AppliquerAsync(p, classe)">@Libelles.Classe(classe)</button>
+                                                    }
+                                                </div>
                                             }
                                             else if (p.Motif == "absent")
                                             {
@@ -107,6 +121,7 @@
     private EtatNomenclatureDto? etat;
     private string? erreur, message;
     private bool enCours;
+    private static readonly string[] ClassesReglementaires = ["libre", "liste_i", "liste_ii", "psychotrope", "stupefiant"];
 
     protected override async Task OnInitializedAsync() => await ChargerAsync();
 
@@ -124,8 +139,10 @@
         if (chemin is null) return;
         enCours = true;
         StateHasChanged();
-        var (v, e) = await Api.ImporterNomenclatureAsync(chemin);
-        enCours = false;
+        VersionNomenclatureDto? v;
+        string? e;
+        try { (v, e) = await Api.ImporterNomenclatureAsync(chemin); }
+        finally { enCours = false; }
         if (e is not null) { erreur = e; return; }
         message = $"« {v!.Libelle} » importée : {v.EnVigueur:N0} médicaments en vigueur, {v.NonRenouveles:N0} non renouvelés, {v.Retraits:N0} retirés.";
         await ChargerAsync();
@@ -138,7 +155,9 @@
         enCours = false;
         if (erreur is null)
         {
-            message = $"{p.Nom} classé « {Libelles.Classe(classe)} » : ordonnance et registre exigés à la vente.";
+            message = Libelles.EstSousRegistre(classe)
+                ? $"{p.Nom} classé « {Libelles.Classe(classe)} » : ordonnance et registre exigés à la vente."
+                : $"{p.Nom} classé « {Libelles.Classe(classe)} » : le produit peut être vendu.";
             await ChargerAsync();
         }
     }

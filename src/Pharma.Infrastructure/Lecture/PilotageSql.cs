@@ -11,12 +11,17 @@ public sealed class PilotageSql(NpgsqlDataSource db) : IPilotage
         decimal ca, organismes, credits, caHier;
         int ventes;
         await using (var cmd = db.CreateCommand("""
-            SELECT COALESCE(sum(montant_total) FILTER (WHERE date_vente::date = current_date), 0),
+            SELECT COALESCE(sum(montant_total) FILTER (WHERE date_vente::date = current_date), 0)
+                       -- Retours clients du jour : ils diminuent le chiffre du jour où ils sont enregistrés (comme dans les rapports)
+                       - (SELECT COALESCE(sum(rc.montant_rembourse), 0) FROM retour_client rc JOIN vente vr ON vr.id = rc.vente_id AND vr.statut = 'validee'
+                          WHERE rc.cree_le >= current_date AND rc.cree_le < current_date + 1),
                    count(*) FILTER (WHERE date_vente::date = current_date)::int,
                    COALESCE(sum(part_organisme) FILTER (WHERE date_vente::date = current_date), 0),
                    COALESCE((SELECT sum(p.montant) FROM paiement p JOIN vente v ON v.id = p.vente_id
                              WHERE p.mode = 'credit' AND v.statut = 'validee' AND v.date_vente >= current_date AND v.date_vente < current_date + 1), 0),
                    COALESCE(sum(montant_total) FILTER (WHERE date_vente::date = current_date - 1), 0)
+                       - (SELECT COALESCE(sum(rc.montant_rembourse), 0) FROM retour_client rc JOIN vente vr ON vr.id = rc.vente_id AND vr.statut = 'validee'
+                          WHERE rc.cree_le >= current_date - 1 AND rc.cree_le < current_date)
             FROM vente WHERE statut = 'validee' AND date_vente >= current_date - 1
             """))
         await using (var r = await cmd.ExecuteReaderAsync(ct))

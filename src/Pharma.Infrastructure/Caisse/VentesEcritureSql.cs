@@ -20,6 +20,16 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
 
+        // La caisse doit être encore ouverte, et le rester jusqu'à la fin de la transaction : le verrou partagé fait
+        // attendre une clôture simultanée (SessionsCaisseSql.CloturerAsync), qui relit ensuite les espèces attendues
+        if (v.SessionCaisseId is { } sessionId)
+        {
+            await using var cmd = new NpgsqlCommand("SELECT 1 FROM session_caisse WHERE id = $1 AND fermee_le IS NULL FOR SHARE", cx, tx);
+            cmd.Parameters.AddWithValue(sessionId);
+            if (await cmd.ExecuteScalarAsync(ct) is null)
+                throw new RegleMetierException("La caisse de ce poste vient d’être clôturée : rouvrez-la avant d’encaisser.");
+        }
+
         var numero = (string)(await Scalaire(cx, tx, "SELECT prochain_numero_vente()", ct))!;
 
         // 1. Ordonnance (obligatoire pour un psychotrope)
@@ -158,6 +168,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
         // 5. Crédit : la dette du patient augmente
         if (a.CreditAccorde)
         {
+            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.VenteCredit, venteId, v.UtilisateurId, null, $"Vente {numero}", ct, v.SessionCaisseId);
             await using var cmd = new NpgsqlCommand(
                 "UPDATE patient SET solde_credit = solde_credit + $2 WHERE id = $1", cx, tx);
             cmd.Parameters.AddWithValue(v.PatientId!.Value);

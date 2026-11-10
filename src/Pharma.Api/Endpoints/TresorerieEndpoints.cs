@@ -31,7 +31,7 @@ internal static class TresorerieEndpoints
             {
                 var a = await c.AVerserAsync(user.UtilisateurId(), ct);
                 return Results.Ok(new AVerserDto(
-                    a.Cheques.Select(x => new ChequeARemettreDto(x.PaiementId, x.Date, x.Montant, x.Origine, x.Patient)).ToList(),
+                    a.Cheques.Select(x => new ChequeARemettreDto(x.PaiementId, x.Date, x.Montant, x.Origine, x.Patient, x.PatientId)).ToList(),
                     a.Caisses.Select(x => new CaisseAVerserDto(x.SessionId, x.Poste, x.FermeeLe, x.OuvertePar, x.Compte, x.Propose)).ToList(),
                     a.Bordereaux.Select(x => new BordereauEnvoyeDto(x.Id, x.OrganismeId, x.Organisme, x.Numero, x.Montant)).ToList()));
             });

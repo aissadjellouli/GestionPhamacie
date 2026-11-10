@@ -132,6 +132,14 @@ public class OrdonnanceTests
             Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null, "../../windows/win.ini", null)), 5, "Caisse 1"));
 
     [Fact]
+    public async Task Ordonnance_sans_patient_refusee()
+    {
+        var sansPatient = Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null)) with { PatientId = null };
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => Encaisser(new ScansEnMemoire()).ExecuterAsync(sansPatient, 5, "Caisse 1"));
+        Assert.Contains("patient", ex.Message);
+    }
+
+    [Fact]
     public async Task Prescription_datee_du_futur_refusee() =>
         await Assert.ThrowsAsync<RegleMetierException>(() => Encaisser(new ScansEnMemoire()).ExecuterAsync(
             Commande(2, 20, new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui.AddDays(1), null)), 5, "Caisse 1"));

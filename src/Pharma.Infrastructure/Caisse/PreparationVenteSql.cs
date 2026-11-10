@@ -13,7 +13,7 @@ public sealed class PreparationVenteSql(NpgsqlDataSource db) : IPreparationVente
     public async Task<IReadOnlyDictionary<long, Produit>> ProduitsAsync(IEnumerable<long> ids, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT id, nom_commercial, prix_public, tarif_reference, remboursable, classe, actif, code_barre
+            SELECT id, nom_commercial, prix_public, tarif_reference, remboursable, classe, actif, code_barre, a_verifier
             FROM produit WHERE id = ANY($1)
             """);
         cmd.Parameters.AddWithValue(ids.ToArray());
@@ -25,7 +25,7 @@ public sealed class PreparationVenteSql(NpgsqlDataSource db) : IPreparationVente
                 Id = r.GetInt64(0), NomCommercial = r.GetString(1), PrixPublic = r.GetDecimal(2),
                 TarifReference = r.IsDBNull(3) ? null : r.GetDecimal(3), Remboursable = r.GetBoolean(4),
                 Classe = CodesMetier.ClasseDepuisCode(r.GetString(5)), Actif = r.GetBoolean(6),
-                CodeBarre = r.IsDBNull(7) ? null : r.GetString(7)
+                CodeBarre = r.IsDBNull(7) ? null : r.GetString(7), AVerifier = r.GetBoolean(8)
             };
         return produits;
     }

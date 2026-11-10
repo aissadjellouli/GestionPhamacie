@@ -15,7 +15,7 @@
     {
         <section class="carte" aria-labelledby="t-etiq" style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px">
             <div style="flex: 999 1 320px; display: flex; flex-direction: column; gap: 8px">
-                <h2 id="t-etiq" style="font-size: 15px; font-weight: 600">Étiquetage du stock : @etiquetage.Pourcentage % des boîtes ont une identité</h2>
+                <h2 id="t-etiq">Étiquetage du stock : @etiquetage.Pourcentage % des boîtes ont une identité</h2>
                 <div class="progression" role="progressbar" aria-valuenow="@etiquetage.Pourcentage" aria-valuemin="0" aria-valuemax="100" aria-label="Boîtes identifiées">
                     <div style="width: @(etiquetage.Pourcentage)%"></div>
                 </div>
@@ -102,7 +102,7 @@
 
                 @if (!etape2)
                 {
-                    <button type="button" class="btn btn-danger" style="height: 48px; font-size: 15px" @onclick="Preparer">
+                    <button type="button" class="btn btn-danger" @onclick="Preparer">
                         Bloquer le lot et lister les patients
                     </button>
                 }

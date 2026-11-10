@@ -59,21 +59,38 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
     public async Task<decimal> VentesEspecesAsync(long sessionId, CancellationToken ct = default)
     {
         // Espèces encaissées, moins l'argent rendu depuis cette caisse : vente annulée (027), retour client (028), complément pris pour payer un grossiste (029), argent porté au coffre pendant la journée (030) ; les remboursements de crédit (paiements sans vente) y sont comptés
-        await using var cmd = db.CreateCommand("""
-            SELECT COALESCE((SELECT SUM(montant) FROM paiement WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
-                 - COALESCE((SELECT SUM(montant_rembourse) FROM annulation_vente WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
-                 - COALESCE((SELECT SUM(montant_rembourse) FROM retour_client WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
-                 - COALESCE((SELECT SUM(part_tiroir) FROM reglement_fournisseur WHERE session_caisse_id = $1), 0)
-                 - COALESCE((SELECT SUM(montant) FROM mouvement_tresorerie WHERE session_caisse_id = $1 AND pendant_session), 0)
-            """);
+        await using var cmd = db.CreateCommand(SqlVentesEspeces);
         cmd.Parameters.AddWithValue(sessionId);
         return (decimal)(await cmd.ExecuteScalarAsync(ct))!;
     }
+
+    private const string SqlVentesEspeces = """
+        SELECT COALESCE((SELECT SUM(montant) FROM paiement WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
+             - COALESCE((SELECT SUM(montant_rembourse) FROM annulation_vente WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
+             - COALESCE((SELECT SUM(montant_rembourse) FROM retour_client WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
+             - COALESCE((SELECT SUM(part_tiroir) FROM reglement_fournisseur WHERE session_caisse_id = $1), 0)
+             - COALESCE((SELECT SUM(montant) FROM mouvement_tresorerie WHERE session_caisse_id = $1 AND pendant_session), 0)
+        """;
 
     public async Task CloturerAsync(long sessionId, Comptage comptage, ResultatCloture resultat, CancellationToken ct = default)
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+
+        // Session verrouillée : une vente en cours d'enregistrement (VentesEcritureSql) se termine d'abord, les suivantes
+        // sont refusées. L'attendu est alors relu : s'il a changé depuis le calcul de la clôture, elle est à relancer.
+        await using (var verrou = new NpgsqlCommand("SELECT 1 FROM session_caisse WHERE id = $1 AND fermee_le IS NULL FOR UPDATE", cx, tx))
+        {
+            verrou.Parameters.AddWithValue(sessionId);
+            if (await verrou.ExecuteScalarAsync(ct) is null)
+                throw new RegleMetierException("Cette session de caisse est déjà clôturée.");
+        }
+        await using (var relecture = new NpgsqlCommand(SqlVentesEspeces, cx, tx))
+        {
+            relecture.Parameters.AddWithValue(sessionId);
+            if ((decimal)(await relecture.ExecuteScalarAsync(ct))! != resultat.VentesEspeces)
+                throw new RegleMetierException("Une opération vient d’être enregistrée sur cette caisse pendant la clôture : relancez la clôture.");
+        }
 
         foreach (var l in comptage.Lignes)
         {

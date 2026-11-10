@@ -114,7 +114,9 @@ CREATE TRIGGER trg_registre_sans_doublon BEFORE INSERT ON registre_psychotrope
     FOR EACH ROW EXECUTE FUNCTION eviter_doublon_registre();
 
 -- Solde d'ouverture : stock actuel de chaque lot sous registre, une fois par produit,
--- au nom du pharmacien titulaire (responsable du registre)
+-- au nom du pharmacien titulaire (responsable du registre). Seulement pour un produit qui
+-- n'a encore AUCUNE ligne au registre : au rejeu du script, un produit ajouté depuis (ses
+-- entrées et sorties sont déjà inscrites) ne reçoit pas d'ouverture au milieu de son registre.
 INSERT INTO registre_psychotrope (lot_id, type_mouvement, quantite, solde_apres, utilisateur_id, reference)
 SELECT l.id, 'ouverture', l.quantite_disponible, l.quantite_disponible, t.id, 'Solde d''ouverture du registre informatisé'
 FROM lot l
@@ -124,7 +126,7 @@ CROSS JOIN LATERAL (SELECT u.id FROM utilisateur u JOIN role r ON r.id = u.role_
 WHERE p.classe IN ('psychotrope', 'stupefiant')
   AND l.quantite_disponible > 0
   AND NOT EXISTS (SELECT 1 FROM registre_psychotrope r JOIN lot l2 ON l2.id = r.lot_id
-                  WHERE l2.produit_id = p.id AND r.type_mouvement = 'ouverture');
+                  WHERE l2.produit_id = p.id);
 
 -- Lecture : numéro d'ordre, entrées, sorties, solde par produit (à partir de l'ouverture) et par lot
 CREATE OR REPLACE VIEW v_registre_psychotrope AS

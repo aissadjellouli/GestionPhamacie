@@ -139,12 +139,21 @@ public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail em
         if (aEnvoyer.Count == 0) return new BilanEnvoi(0, 0);
 
         var reglages = await depot.ReglagesAsync(ct);
+        // Mot de passe SMTP illisible (base restaurée sur un autre PC) : seuls les e-mails échouent, les SMS partent
         ConnexionSmtp? connexion = null;
+        string? erreurSmtp = null;
         if (reglages.SmtpConfigure)
         {
-            var chiffre = await depot.MotDePasseChiffreAsync(ct);
-            connexion = new ConnexionSmtp(reglages.SmtpServeur!, reglages.SmtpPort, reglages.SmtpTls, reglages.SmtpExpediteur!,
-                reglages.SmtpIdentifiant, chiffre is null ? null : secrets.Dechiffrer(chiffre));
+            try
+            {
+                var chiffre = await depot.MotDePasseChiffreAsync(ct);
+                connexion = new ConnexionSmtp(reglages.SmtpServeur!, reglages.SmtpPort, reglages.SmtpTls, reglages.SmtpExpediteur!,
+                    reglages.SmtpIdentifiant, chiffre is null ? null : secrets.Dechiffrer(chiffre));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                erreurSmtp = ex.Message;
+            }
         }
 
         int envoyes = 0, echecs = 0;
@@ -154,7 +163,7 @@ public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail em
             {
                 if (m.Canal == CanalNotification.Email)
                 {
-                    if (connexion is null) throw new InvalidOperationException("Serveur SMTP non configuré.");
+                    if (connexion is null) throw new InvalidOperationException(erreurSmtp ?? "Serveur SMTP non configuré.");
                     await email.EnvoyerAsync(connexion, m.Adresse, m.Objet ?? "Pharma Officine", m.Corps, m.CorpsHtml, ct);
                 }
                 else

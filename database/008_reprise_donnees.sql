@@ -96,6 +96,13 @@ CREATE TABLE IF NOT EXISTS import.anomalie (
 -- ---------------------------------------------------------------------
 -- 3. Conversions tolérantes (formats algériens et français courants)
 -- ---------------------------------------------------------------------
+-- « 12.500 » : douze mille cinq cents (point des milliers) ou douze et demi (point décimal) ? La valeur n'est pas
+-- devinée : import.nombre renvoie NULL et import.controler la signale, à corriger dans le fichier d'export.
+CREATE OR REPLACE FUNCTION import.nombre_ambigu(t text) RETURNS boolean
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT t IS NOT NULL AND regexp_replace(t, '[\s\u00A0]|DA|DZD', '', 'gi') ~ '^-?\d{1,3}\.\d{3}$';
+$$;
+
 CREATE OR REPLACE FUNCTION import.nombre(t text) RETURNS numeric
 LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE
@@ -103,7 +110,11 @@ DECLARE
 BEGIN
     IF t IS NULL OR btrim(t) = '' THEN RETURN NULL; END IF;
     s := regexp_replace(t, '[\s\u00A0]|DA|DZD', '', 'gi');
-    IF s ~ '^-?\d{1,3}(\.\d{3})+,\d+$' THEN          -- 1.234,50
+    IF s ~ '^-?\d{1,3}\.\d{3}$' THEN                 -- 12.500 : ambigu, vérification manuelle (import.nombre_ambigu)
+        RETURN NULL;
+    ELSIF s ~ '^-?\d{1,3}(\.\d{3}){2,}$' THEN        -- 1.234.567 : points des milliers
+        s := replace(s, '.', '');
+    ELSIF s ~ '^-?\d{1,3}(\.\d{3})+,\d+$' THEN       -- 1.234,50
         s := replace(replace(s, '.', ''), ',', '.');
     ELSIF s ~ '^-?\d+,\d+$' THEN                     -- 1234,50
         s := replace(s, ',', '.');
@@ -189,6 +200,32 @@ DECLARE
 BEGIN
     DELETE FROM import.anomalie WHERE session_id = p_session;
 
+    -- Nombres ambigus (« 12.500 ») : jamais devinés, à corriger dans l'export puis à recharger
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, a.entite, a.ref_source, 'bloquant',
+           format('%s : valeur ambiguë « %s » (douze mille cinq cents, ou douze et demi ?). Écrivez-la sans point de milliers (12500) ou avec une virgule décimale (12,5) dans le fichier, puis rechargez-le', a.champ, a.valeur)
+    FROM (SELECT 'stock' AS entite, st.ref_produit AS ref_source, 'Quantité en stock' AS champ, st.quantite AS valeur
+          FROM import.stock_src st WHERE st.session_id = p_session
+          UNION ALL SELECT 'produit', s.ref_source, 'Prix de vente', s.prix_vente FROM import.produit_src s WHERE s.session_id = p_session
+          UNION ALL SELECT 'produit', s.ref_source, 'Prix d''achat', s.prix_achat FROM import.produit_src s WHERE s.session_id = p_session
+          UNION ALL SELECT 'client', c.ref_source, 'Solde crédit de ' || c.nom, c.solde_credit FROM import.client_src c WHERE c.session_id = p_session
+          UNION ALL SELECT 'fournisseur', f.ref_source, 'Solde de ' || f.raison_sociale, f.solde FROM import.fournisseur_src f WHERE f.session_id = p_session) a
+    WHERE import.nombre_ambigu(a.valeur);
+
+    -- Produits à créer : même nom, dosage et forme qu'un produit du catalogue ou qu'un autre produit à créer
+    -- (la base refuse ce doublon : sans ce contrôle, le chargement échouerait sans explication)
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, 'produit', n.ref_source, 'bloquant',
+           format('« %s %s %s » à créer : un produit de même nom, dosage et forme existe déjà (catalogue ou autre ligne de l''export). Rapprochez-le de ce produit, ou distinguez son nom', n.nom, COALESCE(n.dosage, ''), COALESCE(n.forme, ''))
+    FROM (SELECT s.ref_source, s.nom, s.dosage, s.forme,
+                 count(*) OVER (PARTITION BY lower(s.nom), lower(COALESCE(s.dosage, '')), lower(COALESCE(s.forme, ''))) AS memes
+          FROM import.correspondance_produit c
+          JOIN import.produit_src s ON s.session_id = c.session_id AND s.ref_source = c.ref_source
+          WHERE c.session_id = p_session AND c.methode = 'nouveau' AND c.produit_id IS NULL) n
+    WHERE n.memes > 1
+       OR EXISTS (SELECT 1 FROM produit p WHERE lower(p.nom_commercial) = lower(n.nom)
+                  AND lower(COALESCE(p.dosage, '')) = lower(COALESCE(n.dosage, '')) AND lower(COALESCE(p.forme, '')) = lower(COALESCE(n.forme, '')));
+
     INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
     SELECT p_session, 'produit', s.ref_source, 'bloquant',
            format('« %s » sans correspondance : à rapprocher à la main ou à créer', s.nom)
@@ -208,6 +245,7 @@ BEGIN
            format('Quantité illisible ou négative : « %s »', st.quantite)
     FROM import.stock_src st
     WHERE st.session_id = p_session
+      AND NOT import.nombre_ambigu(st.quantite)
       AND (import.nombre(st.quantite) IS NULL OR import.nombre(st.quantite) < 0);
 
     INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
@@ -240,6 +278,7 @@ BEGIN
     FROM import.client_src c
     WHERE c.session_id = p_session
       AND c.solde_credit IS NOT NULL AND btrim(c.solde_credit) <> ''
+      AND NOT import.nombre_ambigu(c.solde_credit)
       AND import.nombre(c.solde_credit) IS NULL;
 
     INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
@@ -248,6 +287,7 @@ BEGIN
     FROM import.fournisseur_src f
     WHERE f.session_id = p_session
       AND f.solde IS NOT NULL AND btrim(f.solde) <> ''
+      AND NOT import.nombre_ambigu(f.solde)
       AND import.nombre(f.solde) IS NULL;
 
     SELECT count(*) INTO nb_bloquants
@@ -281,9 +321,12 @@ BEGIN
         JOIN import.produit_src s ON s.session_id = c.session_id AND s.ref_source = c.ref_source
         WHERE c.session_id = p_session AND c.methode = 'nouveau' AND c.produit_id IS NULL
     LOOP
-        INSERT INTO produit (code_barre, num_enregistrement, nom_commercial, dosage, forme, prix_public)
+        -- Sans n° d'enregistrement, la nomenclature ne peut pas proposer sa classe (un psychotrope serait repris
+        -- « libre ») : le produit est à vérifier par le titulaire, et non vendable d'ici là (037)
+        INSERT INTO produit (code_barre, num_enregistrement, nom_commercial, dosage, forme, prix_public, a_verifier)
         VALUES (NULLIF(btrim(r.code_barre), ''), NULLIF(btrim(r.num_enregistrement), ''),
-                r.nom, r.dosage, r.forme, COALESCE(import.nombre(r.prix_vente), 0))
+                r.nom, r.dosage, r.forme, COALESCE(import.nombre(r.prix_vente), 0),
+                NULLIF(btrim(r.num_enregistrement), '') IS NULL)
         RETURNING id INTO v_id;
         UPDATE import.correspondance_produit SET produit_id = v_id
         WHERE session_id = p_session AND ref_source = r.ref_source;

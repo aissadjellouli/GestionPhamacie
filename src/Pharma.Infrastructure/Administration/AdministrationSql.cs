@@ -99,14 +99,15 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
     {
         var utilisateurs = new List<UtilisateurAdmin>();
         await using (var cmd = db.CreateCommand("""
-            SELECT u.id, u.nom_complet, u.identifiant, r.id, r.nom, r.systeme, u.actif, u.derniere_connexion, u.pin_hash IS NOT NULL
+            SELECT u.id, u.nom_complet, u.identifiant, r.id, r.nom, r.systeme, u.actif, u.derniere_connexion, u.pin_hash IS NOT NULL, u.telephone, u.email
             FROM utilisateur u JOIN role r ON r.id = u.role_id
             ORDER BY r.systeme DESC, u.actif DESC, u.nom_complet
             """))
         await using (var r = await cmd.ExecuteReaderAsync(ct))
             while (await r.ReadAsync(ct))
                 utilisateurs.Add(new UtilisateurAdmin(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetInt64(3), r.GetString(4),
-                    r.GetBoolean(5), r.GetBoolean(6), r.IsDBNull(7) ? null : r.GetDateTime(7), r.GetBoolean(8)));
+                    r.GetBoolean(5), r.GetBoolean(6), r.IsDBNull(7) ? null : r.GetDateTime(7), r.GetBoolean(8),
+                    r.IsDBNull(9) ? null : r.GetString(9), r.IsDBNull(10) ? null : r.GetString(10)));
 
         var roles = new List<RoleAdmin>();
         await using (var cmd = db.CreateCommand("""
@@ -128,15 +129,17 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
         return new EtatDroits(utilisateurs, roles, permissions);
     }
 
-    public async Task<long> CreerAsync(string nomComplet, string identifiant, string hash, long roleId, CancellationToken ct = default)
+    public async Task<long> CreerAsync(string nomComplet, string identifiant, string hash, long roleId, string? telephone, string? email, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            INSERT INTO utilisateur (nom_complet, identifiant, mot_de_passe_hash, role_id) VALUES ($1, $2, $3, $4) RETURNING id
+            INSERT INTO utilisateur (nom_complet, identifiant, mot_de_passe_hash, role_id, telephone, email) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
             """);
         cmd.Parameters.AddWithValue(nomComplet);
         cmd.Parameters.AddWithValue(identifiant);
         cmd.Parameters.AddWithValue(hash);
         cmd.Parameters.AddWithValue(roleId);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)telephone ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)email ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         try
         {
             return (long)(await cmd.ExecuteScalarAsync(ct))!;
@@ -147,11 +150,11 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
         }
     }
 
-    public async Task ModifierAsync(long id, string nomComplet, long roleId, bool actif, string? nouveauHash, CancellationToken ct = default)
+    public async Task ModifierAsync(long id, string nomComplet, long roleId, bool actif, string? nouveauHash, string? telephone, string? email, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
             UPDATE utilisateur
-            SET nom_complet = $2, role_id = $3, actif = $4, mot_de_passe_hash = COALESCE($5, mot_de_passe_hash)
+            SET nom_complet = $2, role_id = $3, actif = $4, mot_de_passe_hash = COALESCE($5, mot_de_passe_hash), telephone = $6, email = $7
             WHERE id = $1
             """);
         cmd.Parameters.AddWithValue(id);
@@ -159,6 +162,8 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
         cmd.Parameters.AddWithValue(roleId);
         cmd.Parameters.AddWithValue(actif);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)nouveauHash ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)telephone ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)email ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

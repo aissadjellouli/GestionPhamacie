@@ -29,9 +29,10 @@ internal static class CatalogueEndpoints
         api.MapGet("/dci", async (string? q, RechercherDci rechercher, CancellationToken ct) => Results.Ok(await rechercher.ExecuterAsync(q, ct)))
            .ExigerPermission(Permissions.CatalogueCreer);
 
-        api.MapGet("/produits/{id:long}/lot-fefo", async (long id, ObtenirLotFefo obtenir, CancellationToken ct) =>
+        // exclure : lots déjà au panier du poste (le lot suivant dans l'ordre FEFO est alors proposé)
+        api.MapGet("/produits/{id:long}/lot-fefo", async (long id, long[]? exclure, ObtenirLotFefo obtenir, CancellationToken ct) =>
             {
-                var resultat = await obtenir.ExecuterAsync(id, ct);
+                var resultat = await obtenir.ExecuterAsync(id, exclure, ct);
                 return resultat.Lot is { } lot
                     ? Results.Ok(lot.VersDto(resultat.Ecartes))
                     : Results.NotFound(new AucunLotDto(

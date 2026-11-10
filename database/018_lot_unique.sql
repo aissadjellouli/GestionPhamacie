@@ -26,15 +26,19 @@ CREATE OR REPLACE TRIGGER trg_lot_numero
     BEFORE INSERT OR UPDATE OF numero_lot ON lot
     FOR EACH ROW EXECUTE FUNCTION normaliser_numero_lot();
 
--- Lots existants : s'arrête avec un message clair si la normalisation créerait un doublon
+-- Lots existants : s'arrête avec un message clair si la normalisation créerait un doublon.
+-- Au rejeu sur une base à jour, 021 autorise le même n° de lot à des dates de péremption
+-- différentes (lot séparé) : ces lots ne sont pas des doublons, la date entre dans la clé.
 DO $$
 DECLARE
     doublons text;
 BEGIN
     SELECT string_agg(format('produit %s, grossiste %s, lot %s', produit_id, fournisseur_id, n), ' ; ')
     INTO doublons
-    FROM (SELECT produit_id, fournisseur_id, upper(btrim(numero_lot)) AS n
-          FROM lot GROUP BY 1, 2, 3 HAVING count(*) > 1) d;
+    FROM (SELECT produit_id, fournisseur_id, upper(btrim(numero_lot)) AS n,
+                 CASE WHEN EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ux_lot_fournisseur_date')
+                      THEN date_peremption END AS d
+          FROM lot GROUP BY 1, 2, 3, 4 HAVING count(*) > 1) d;
     IF doublons IS NOT NULL THEN
         RAISE EXCEPTION 'Lots en double à regrouper avant ce script : %', doublons;
     END IF;
@@ -48,7 +52,8 @@ UPDATE lot SET numero_lot = upper(btrim(numero_lot)) WHERE numero_lot <> upper(b
 ALTER TABLE lot DROP CONSTRAINT IF EXISTS ux_lot_reception;
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ux_lot_fournisseur') THEN
+    -- 021 remplace cette contrainte par ux_lot_fournisseur_date : au rejeu, elle n'est pas rétablie
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('ux_lot_fournisseur', 'ux_lot_fournisseur_date')) THEN
         ALTER TABLE lot ADD CONSTRAINT ux_lot_fournisseur UNIQUE (produit_id, fournisseur_id, numero_lot);
     END IF;
 END $$;

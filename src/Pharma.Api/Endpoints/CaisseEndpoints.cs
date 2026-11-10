@@ -99,7 +99,7 @@ internal static class CaisseEndpoints
                 Results.Ok((await rechercher.ExecuterAsync(numero, requete.Poste(), ct)).Select(v => new VenteAnnulableDto(
                     v.Id, v.Numero, v.Date, v.Vendeur, v.Patient, v.Total, v.PartPatient, v.PartOrganisme, v.Mode, v.Statut,
                     v.CaisseOuverte, v.DansUnBordereau, v.Lignes.Select(l => new LigneVenteAnnulableDto(l.Produit, l.Quantite, l.Montant)).ToList(),
-                    ARendre(v), v.FactureNumero))))
+                    ARendre(v), v.FactureNumero, v.SoldeCreditPatient, v.VendeurId, v.PatientId))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         // Vente récente : le caissier annule ; vente ancienne : validation sur place par le code d'un employé habilité
@@ -119,7 +119,7 @@ internal static class CaisseEndpoints
                 return Results.Ok(new VenteRetournableDto(
                     new VenteAnnulableDto(v.Id, v.Numero, v.Date, v.Vendeur, v.Patient, v.Total, v.PartPatient, v.PartOrganisme, v.Mode, v.Statut,
                         v.CaisseOuverte, v.DansUnBordereau, v.Lignes.Select(l => new LigneVenteAnnulableDto(l.Produit, l.Quantite, l.Montant)).ToList(),
-                        ARendre(v), v.FactureNumero),
+                        ARendre(v), v.FactureNumero, v.SoldeCreditPatient, v.VendeurId, v.PatientId),
                     r.Lignes.Select(l => new LigneRetournableDto(l.LigneVenteId, l.Produit, l.NumeroLot, l.QuantiteVendue, l.DejaRendue, l.MontantPatient,
                         l.Boites.Select(b => new BoiteVendueDto(b.Id, b.NumeroSerie)).ToList())).ToList()));
             })
@@ -130,8 +130,8 @@ internal static class CaisseEndpoints
             {
                 var r = await enregistrer.ExecuterAsync(id, req.Motif,
                     req.Lignes.Select(l => new LigneRetourDemandee(l.LigneVenteId, l.Quantite, l.Destination, l.Boites)).ToList(),
-                    user.UtilisateurId(), requete.Poste(), req.ValidateurIdentifiant, req.ValidateurCode, ct);
-                return Results.Ok(new RetourClientDto(r.Numero, r.ARendre, r.Mode, r.RemisEnStock, r.ADetruire, r.ValidePar));
+                    user.UtilisateurId(), requete.Poste(), req.ValidateurIdentifiant, req.ValidateurCode, req.SolderDette, req.PatientDetteId, ct);
+                return Results.Ok(new RetourClientDto(r.Numero, r.ARendre, r.Mode, r.RemisEnStock, r.ADetruire, r.ValidePar, r.DetteDiminuee));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 

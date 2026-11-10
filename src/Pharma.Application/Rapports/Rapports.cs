@@ -11,8 +11,13 @@ namespace Pharma.Application.Rapports;
 
 // ---- Modèles -------------------------------------------------------------------
 
-/// <summary>Ventes validées de la période (montants TTC, remises déduites) ; Annulations : ventes annulées.</summary>
-public sealed record SyntheseVentes(int NombreVentes, decimal ChiffreAffaires, decimal PartOrganismes, decimal CreditsAccordes, decimal Remises, int Annulations);
+/// <summary>
+/// Ventes validées de la période (montants TTC, remises déduites) ; Annulations : ventes annulées.
+/// ChiffreAffaires est net des retours clients enregistrés pendant la période (Retours, MontantRetours) : un retour
+/// diminue le chiffre du jour où la caisse a repris les boîtes, pas celui du jour de la vente.
+/// </summary>
+public sealed record SyntheseVentes(int NombreVentes, decimal ChiffreAffaires, decimal PartOrganismes, decimal CreditsAccordes, decimal Remises, int Annulations,
+    int Retours = 0, decimal MontantRetours = 0);
 
 /// <summary>
 /// Marge brute : chiffre d'affaires hors TVA (remises déduites) moins le coût d'achat HT des boîtes vendues,
@@ -29,11 +34,21 @@ public sealed record ProduitVendu(string Produit, int Quantite, decimal ChiffreA
 
 /// <summary>Session de caisse clôturée. Attendu et Ecart : null sans le droit de voir les écarts.</summary>
 public sealed record ClotureRapport(string Employe, string Poste, DateTime OuverteLe, DateTime? FermeeLe,
-    decimal? Attendu, decimal? Compte, decimal? Ecart, int Annulations, int Remises);
+    decimal? Attendu, decimal? Compte, decimal? Ecart, int Annulations, int Remises, int Retours = 0, long? EmployeId = null);
+
+/// <summary>
+/// Retour client lié à la période. DeduitDansLaPeriode : enregistré pendant la période, son montant diminue le chiffre de la période.
+/// Sinon il porte sur une vente de la période mais a été enregistré un autre jour : il figure pour information, la recette du jour
+/// de la vente ne change pas. Vendeur : employé de la vente ; Employe et Poste : ceux du retour. DetteDiminuee : part du montant
+/// retirée de la dette du patient au lieu d'être rendue.
+/// </summary>
+public sealed record RetourRapport(string Ticket, DateTime DateVente, string Vendeur, DateTime DateRetour, string Poste, string Employe,
+    string Produits, decimal Montant, decimal DetteDiminuee, bool DeduitDansLaPeriode, long? VendeurId = null, long? EmployeId = null);
 
 /// <summary>Marge : null sans le droit « rapports.marges ». EcartsVisibles : droit « caisse.voir_ecart ».</summary>
 public sealed record RapportActivite(PeriodeRapport Periode, SyntheseVentes Synthese, MargeBrute? Marge,
-    IReadOnlyList<VentesJour> ParJour, IReadOnlyList<ProduitVendu> TopProduits, IReadOnlyList<ClotureRapport> Clotures, bool EcartsVisibles);
+    IReadOnlyList<VentesJour> ParJour, IReadOnlyList<ProduitVendu> TopProduits, IReadOnlyList<ClotureRapport> Clotures, bool EcartsVisibles,
+    IReadOnlyList<RetourRapport>? Retours = null);
 
 public interface IRapports
 {
@@ -44,6 +59,8 @@ public interface IRapports
     Task<MargeBrute> MargeAsync(DateOnly du, DateOnly au, CancellationToken ct = default);
     /// <summary>Sessions clôturées pendant la période.</summary>
     Task<IReadOnlyList<ClotureRapport>> CloturesAsync(DateOnly du, DateOnly au, CancellationToken ct = default);
+    /// <summary>Retours enregistrés pendant la période, et retours (enregistrés un autre jour) sur les ventes de la période.</summary>
+    Task<IReadOnlyList<RetourRapport>> RetoursAsync(DateOnly du, DateOnly au, CancellationToken ct = default);
 }
 
 public interface IDocumentsRapports
@@ -75,7 +92,7 @@ public sealed class ObtenirRapport(IRapports rapports, IPermissionService droits
             voirMarge ? await rapports.MargeAsync(p.Du, p.Au, ct) : null,
             ParSemaine(p, await rapports.ParJourAsync(p.Du, p.Au, ct)),
             await rapports.TopProduitsAsync(p.Du, p.Au, NombreTopProduits, ct),
-            clotures, voirEcarts);
+            clotures, voirEcarts, await rapports.RetoursAsync(p.Du, p.Au, ct));
     }
 
     /// <summary>Longue période : une barre par semaine (datée du lundi) au lieu d'une par jour.</summary>
@@ -120,7 +137,9 @@ public static class RapportCsv
         L("Rapport d'activité", r.Periode.Libelle);
         L();
         L("Synthèse", "Montant (DA)");
-        L("Chiffre d'affaires TTC", r.Synthese.ChiffreAffaires);
+        L("Chiffre d'affaires TTC (retours déduits)", r.Synthese.ChiffreAffaires);
+        L("Retours clients de la période (nombre)", r.Synthese.Retours);
+        L("Retours clients de la période (montant déduit)", r.Synthese.MontantRetours);
         L("Nombre de ventes", r.Synthese.NombreVentes);
         L("Part organismes (Chifa) à recevoir", r.Synthese.PartOrganismes);
         L("Crédits clients accordés", r.Synthese.CreditsAccordes);
@@ -140,10 +159,21 @@ public static class RapportCsv
         L("Produit", "Boîtes vendues", "Chiffre d'affaires (DA)");
         foreach (var p in r.TopProduits) L(p.Produit, p.Quantite, p.ChiffreAffaires);
         L();
-        L("Employé", "Poste", "Ouverture", "Clôture", "Attendu", "Compté", "Écart", "Annulations", "Remises");
+        L("Employé", "Poste", "Ouverture", "Clôture", "Attendu", "Compté", "Écart", "Annulations", "Remises", "Retours");
         foreach (var c in r.Clotures)
             L(c.Employe, c.Poste, c.OuverteLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr), c.FermeeLe?.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr),
-              c.Attendu, c.Compte, c.Ecart, c.Annulations, c.Remises);
+              c.Attendu, c.Compte, c.Ecart, c.Annulations, c.Remises, c.Retours);
+
+        if (r.Retours is { Count: > 0 } retours)
+        {
+            L();
+            L("Retours clients", "Vente du", "Vendeur", "Retour le", "Poste du retour", "Retour enregistré par", "Produits rendus", "Montant (DA)",
+              "Dont déduit de la dette du patient (DA)", "Chiffre diminué");
+            foreach (var x in retours)
+                L(x.Ticket, x.DateVente.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr), x.Vendeur, x.DateRetour.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr),
+                  x.Poste, x.Employe, x.Produits, x.Montant, x.DetteDiminuee,
+                  x.DeduitDansLaPeriode ? "déduit sur cette période" : $"déduit le {x.DateRetour.ToLocalTime().ToString("dd/MM/yyyy", Fr)}, pas sur cette période");
+        }
 
         return [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(sb.ToString())];
     }

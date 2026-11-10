@@ -43,10 +43,14 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
     public async Task<AVerser> AVerserAsync(CancellationToken ct = default)
     {
         var cheques = new List<ChequeARemettre>();
-        await using (var cmd = db.CreateCommand("SELECT paiement_id, cree_le, montant, origine, patient FROM v_cheque_a_remettre ORDER BY cree_le"))
+        await using (var cmd = db.CreateCommand("""
+            SELECT c.paiement_id, c.cree_le, c.montant, c.origine, c.patient, COALESCE(v.patient_id, p.patient_id)
+            FROM v_cheque_a_remettre c JOIN paiement p ON p.id = c.paiement_id LEFT JOIN vente v ON v.id = p.vente_id
+            ORDER BY c.cree_le
+            """))
         await using (var r = await cmd.ExecuteReaderAsync(ct))
             while (await r.ReadAsync(ct))
-                cheques.Add(new ChequeARemettre(r.GetInt64(0), r.GetDateTime(1), r.GetDecimal(2), r.GetString(3), Txt(r, 4)));
+                cheques.Add(new ChequeARemettre(r.GetInt64(0), r.GetDateTime(1), r.GetDecimal(2), r.GetString(3), Txt(r, 4), r.IsDBNull(5) ? null : r.GetInt64(5)));
 
         var caisses = new List<CaisseAVerser>();
         await using (var cmd = db.CreateCommand("SELECT session_caisse_id, poste, fermee_le, ouverte_par, compte, propose FROM v_caisse_a_verser ORDER BY fermee_le"))

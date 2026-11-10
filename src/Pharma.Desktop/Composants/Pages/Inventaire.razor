@@ -182,7 +182,7 @@
                 </div>
                 @if (aEtiqueter.Count > 0)
                 {
-                    <h3 style="font-size: 15px; margin: 8px 0 0">Boîtes sans étiquette dans ce rayon (@aEtiqueter.Sum(l => l.BoitesSansIdentite))</h3>
+                    <h3 style="margin: 8px 0 0">Boîtes sans étiquette dans ce rayon (@aEtiqueter.Sum(l => l.BoitesSansIdentite))</h3>
                     <p class="detail" style="margin: 0">Profitez du passage dans le rayon : imprimez et collez une étiquette sur chaque boîte, elle sera reliée à son lot et à son grossiste.</p>
                     <EtiquetagerLots Lots="@aEtiqueter" />
                 }
@@ -260,6 +260,7 @@
     private async Task CommencerAsync() => await Executer(async () =>
     {
         var (id, e) = await Api.CommencerInventaireAsync(rayonChoisi!);
+        if (e is null) datesLues.Clear();
         if (e is not null) return e;
         return await OuvrirAsync(id!.Id);
     });
@@ -307,7 +308,8 @@
         // Dates lues sur les boîtes mais pas encore envoyées (saisies sans changer la quantité)
         foreach (var (ligneId, date) in datesLues.Where(d => d.Value is not null))
         {
-            var l = inventaire!.Lignes.First(x => x.Id == ligneId);
+            // Ligne absente de ce comptage (saisie restée d'un comptage précédent) : ignorée
+            if (inventaire!.Lignes.FirstOrDefault(x => x.Id == ligneId) is not { } l) continue;
             if (l.DateVerifiee != date && l.Compte is { } c)
                 if (await Api.CompterLotAsync(inventaire.Id, ligneId, c, date) is { } err) return err;
         }
@@ -326,6 +328,7 @@
         var e = await Api.AnnulerInventaireAsync(inventaire!.Id);
         if (e is not null) return e;
         (inventaire, message) = (null, "Comptage abandonné : rien n’a été modifié dans le stock.");
+        datesLues.Clear();   // dates lues sur les boîtes du comptage abandonné : elles ne valent pas pour le suivant
         await ChargerAsync();
         return null;
     });

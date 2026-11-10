@@ -18,6 +18,8 @@
             <div class="champ" style="flex: 1 1 260px"><label for="o-nom" class="requis">Nom</label><input id="o-nom" type="text" @bind="e.Nom" /></div>
             <div class="champ" style="flex: 1 1 220px"><label for="o-adr">Adresse</label><input id="o-adr" type="text" @bind="e.Adresse" /></div>
             <div class="champ" style="flex: 0 0 180px"><label for="o-nif">NIF</label><input id="o-nif" type="text" @bind="e.Nif" /></div>
+            <div class="champ" style="flex: 0 0 180px"><label for="o-tel">Téléphone</label><input id="o-tel" type="tel" maxlength="30" @bind="e.Telephone" /></div>
+            <div class="champ" style="flex: 1 1 220px"><label for="o-mail">E-mail</label><input id="o-mail" type="email" maxlength="120" @bind="e.Email" /></div>
         </div>
         <label class="case"><input type="checkbox" @bind="e.Actif" /><span>Actif (proposé à la caisse)</span></label>
         <div class="filtres">
@@ -27,12 +29,12 @@
     }
     <div class="tableau-cadre">
         <table class="tableau">
-            <thead><tr><th scope="col">Sigle</th><th scope="col">Nom</th><th scope="col">Adresse</th><th scope="col">NIF</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+            <thead><tr><th scope="col">Sigle</th><th scope="col">Nom</th><th scope="col">Adresse</th><th scope="col">Téléphone</th><th scope="col">NIF</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
             <tbody>
                 @foreach (var o in organismes)
                 {
                     <tr>
-                        <td><strong>@o.Code</strong></td><td>@o.Nom</td><td>@(o.Adresse ?? "—")</td><td>@(o.Nif ?? "—")</td>
+                        <td><strong>@o.Code</strong></td><td><LienContact Type="organisme" Id="o.Id" Nom="@o.Nom" /></td><td>@(o.Adresse ?? "—")</td><td>@(o.Telephone ?? "—")</td><td>@(o.Nif ?? "—")</td>
                         <td>@(o.Actif ? "Actif" : "Inactif")</td>
                         <td><button type="button" class="lien-bouton" @onclick="() => Modifier(o)">Modifier</button></td>
                     </tr>
@@ -50,6 +52,8 @@
         public string Nom { get; set; } = "";
         public string? Adresse { get; set; }
         public string? Nif { get; set; }
+        public string? Telephone { get; set; }
+        public string? Email { get; set; }
         public bool Actif { get; set; } = true;
     }
 
@@ -61,13 +65,13 @@
     protected override async Task OnInitializedAsync() => (organismes, erreur) = await Api.OrganismesFichesAsync();
 
     private void Modifier(OrganismeFicheDto o) =>
-        edition = new Edition { Id = o.Id, Code = o.Code, Nom = o.Nom, Adresse = o.Adresse, Nif = o.Nif, Actif = o.Actif };
+        edition = new Edition { Id = o.Id, Code = o.Code, Nom = o.Nom, Adresse = o.Adresse, Nif = o.Nif, Actif = o.Actif, Telephone = o.Telephone, Email = o.Email };
 
     private async Task EnregistrerAsync()
     {
         if (edition is not { } e) return;
         (enCours, erreur, message) = (true, null, null);
-        var (_, err) = await Api.EnregistrerOrganismeAsync(new OrganismeFicheDto(e.Id, e.Code, e.Nom, e.Adresse, e.Nif, e.Actif));
+        var (_, err) = await Api.EnregistrerOrganismeAsync(new OrganismeFicheDto(e.Id, e.Code, e.Nom, e.Adresse, e.Nif, e.Actif, e.Telephone, e.Email));
         enCours = false;
         if (err is not null) { erreur = err; return; }
         message = $"Organisme « {e.Code} » enregistré.";

@@ -15,6 +15,9 @@ var builder = WebApplication.CreateBuilder(args);
 // HTTPS pour le scanner mobile (caméra du téléphone) : fichier écrit par scripts/certificat_mobile.ps1
 builder.Configuration.AddJsonFile("appsettings.Https.json", optional: true, reloadOnChange: false);
 
+// Clé de signature des jetons : la valeur d'exemple n'est tolérée que sur un poste de développement
+JetonService.VerifierCle(builder.Configuration, builder.Environment.IsDevelopment());
+
 // Exécution en service Windows sur le PC serveur de l'officine
 builder.Host.UseWindowsService(o => o.ServiceName = "PharmaOfficine API");
 

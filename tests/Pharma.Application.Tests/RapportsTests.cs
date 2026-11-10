@@ -20,6 +20,9 @@ internal sealed class RapportsEnMemoire : IRapports
     public Task<MargeBrute> MargeAsync(DateOnly du, DateOnly au, CancellationToken ct = default) => Task.FromResult(new MargeBrute(15000, 11000));
     public Task<IReadOnlyList<ClotureRapport>> CloturesAsync(DateOnly du, DateOnly au, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<ClotureRapport>>([new("Caissier", "Poste 1", DateTime.UtcNow.AddHours(-8), DateTime.UtcNow, 42300, 41800, -500, 1, 0)]);
+    public Task<IReadOnlyList<RetourRapport>> RetoursAsync(DateOnly du, DateOnly au, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<RetourRapport>>([new("T-000020", new DateTime(2026, 11, 9, 10, 0, 0, DateTimeKind.Utc), "Vendeur", new DateTime(2026, 11, 12, 9, 0, 0, DateTimeKind.Utc),
+            "Caisse 2", "Assistante", "Sirop fictif × 1", 500, 300, false)]);
 }
 
 public class RapportsTests
@@ -56,7 +59,7 @@ public class RapportsTests
         var octets = RapportCsv.Ecrire(r);
         Assert.Equal(Encoding.UTF8.GetPreamble(), octets[..3]);                // BOM : accents corrects dans Excel
         var texte = Encoding.UTF8.GetString(octets[3..]);
-        Assert.Contains("Chiffre d'affaires TTC;15400,50", texte);              // virgule décimale, séparateur ;
+        Assert.Contains("Chiffre d'affaires TTC (retours déduits);15400,50", texte);            // virgule décimale, séparateur ;
         Assert.Contains("Marge brute;4000,00", texte);
         Assert.Contains("\"'=HYPERLINK(\"\"x\"\")\";3;840,00", texte);            // formule neutralisée
         Assert.DoesNotContain(";-500", texte);                                  // écart non visible sans le droit

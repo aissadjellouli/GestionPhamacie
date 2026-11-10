@@ -75,7 +75,7 @@
                                     <td class="nombre"><strong>@(l.SoldeProduit?.ToString() ?? "—")</strong></td>
                                     <td class="nombre">@l.SoldeLot</td>
                                     <td>
-                                        @l.Patient
+                                        <LienContact Type="patient" Id="l.PatientId" Nom="@(l.Patient ?? "")" />
                                         @if (l.PorteurNom is not null)
                                         {
                                             <br /><span class="detail">Porteur : @l.PorteurNom, @l.PorteurAdresse, pièce @l.PorteurPiece</span>

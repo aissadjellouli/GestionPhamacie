@@ -16,7 +16,7 @@ internal sealed class NomenclatureEnMemoire : INomenclature
     public Task<IReadOnlyList<MedicamentNomenclature>> RechercherAsync(string t, int l, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<MedicamentNomenclature>>([]);
     public Task<IReadOnlyList<ProduitAVerifier>> AVerifierAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ProduitAVerifier>>([]);
-    public Task<string?> ChangerClasseAsync(long p, string c, CancellationToken ct = default)
+    public Task<string?> ChangerClasseAsync(long p, string c, long u, CancellationToken ct = default)
     {
         Changement = (p, c);
         return Task.FromResult<string?>(p == 7 ? "liste_i" : null);

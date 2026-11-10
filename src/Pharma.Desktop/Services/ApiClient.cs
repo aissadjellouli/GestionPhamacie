@@ -83,6 +83,18 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
 {
     private const string Injoignable = "Serveur de la pharmacie injoignable : vérifiez que le PC serveur est allumé.";
 
+    /// <summary>Échecs attendus d'un appel : serveur injoignable, délai dépassé, réponse illisible, fichier local inaccessible.</summary>
+    private static bool EstEchecAppel(Exception ex) =>
+        ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException;
+
+    private static string MessageEchec(Exception ex) => ex switch
+    {
+        TaskCanceledException => "Le serveur met trop de temps à répondre : l’opération continue peut-être sur le serveur. Attendez un instant, puis rechargez l’écran avant de recommencer.",
+        System.Text.Json.JsonException => "Réponse du serveur illisible : le poste et le serveur n’ont peut-être pas la même version du logiciel.",
+        IOException or UnauthorizedAccessException => $"Fichier inaccessible : {ex.Message}",
+        _ => Injoignable
+    };
+
     public async Task<string?> ConnecterAsync(string identifiant, string motDePasse)
     {
         try
@@ -93,9 +105,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
             await ChargerDroitsAsync();
             return null;
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (EstEchecAppel(ex))
         {
-            return Injoignable;
+            return MessageEchec(ex);
         }
     }
 
@@ -120,9 +132,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
             await ChargerDroitsAsync();
             return null;
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (EstEchecAppel(ex))
         {
-            return Injoignable;
+            return MessageEchec(ex);
         }
     }
 
@@ -175,6 +187,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
         GetAsync<List<LigneVenteSourceDto>>($"api/factures/candidates?destinataire={destinataire}&du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}"
             + (patientId is { } p ? $"&patientId={p}" : "") + (organismeId is { } o ? $"&organismeId={o}" : "")
             + (string.IsNullOrWhiteSpace(q) ? "" : $"&q={Uri.EscapeDataString(q.Trim())}"), []);
+    public Task<(FacturesPageDto?, string?)> FacturesPageAsync(string? q, string? destinataire, string? suivi, DateOnly? du, DateOnly? au, int page, int taille) =>
+        GetAsync<FacturesPageDto?>("api/factures/page?" + Requete(("q", q?.Trim()), ("destinataire", destinataire), ("suivi", suivi), ("du", du), ("au", au),
+            ("page", page), ("taille", taille)), null);
     public Task<(List<FactureResumeDto>, string?)> FacturesAsync(string? q, string? destinataire, string? suivi, DateOnly? du, DateOnly? au) =>
         GetAsync<List<FactureResumeDto>>("api/factures?" + string.Join("&", new[]
         {
@@ -202,6 +217,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public Task<(IdentifiantDto?, string?)> EnregistrerOrganismeAsync(OrganismeFicheDto o) => PostAsync<OrganismeFicheDto, IdentifiantDto>("api/admin/organismes", o);
 
     // ---- Trésorerie ----
+    public Task<(SuiviDettesDto?, string?)> SuiviDettesAsync() => GetAsync<SuiviDettesDto?>("api/suivi-dettes", null);
+    public async Task<string?> DelaiAlerteDettesAsync(int jours) =>
+        (await EnvoyerCorpsAsync<DelaiAlerteDettesRequete, object>(HttpMethod.Put, "api/suivi-dettes/delai", new(jours))).Item2;
     public Task<(List<CompteTresorerieDto>, string?)> ComptesTresorerieAsync() => GetAsync<List<CompteTresorerieDto>>("api/tresorerie/comptes", []);
     public Task<(List<MouvementTresorerieDto>, string?)> MouvementsTresorerieAsync(long compteId, DateOnly du, DateOnly au) =>
         GetAsync<List<MouvementTresorerieDto>>($"api/tresorerie/comptes/{compteId}/mouvements?du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}", []);
@@ -230,6 +248,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public Task<(List<PatientEnCreditDto>, string?)> PatientsEnCreditAsync(string? recherche) =>
         GetAsync<List<PatientEnCreditDto>>($"api/caisse/credits{(string.IsNullOrWhiteSpace(recherche) ? "" : $"?q={Uri.EscapeDataString(recherche.Trim())}")}", []);
     public Task<(SituationCreditDto?, string?)> SituationCreditAsync(long patientId) => GetAsync<SituationCreditDto?>($"api/caisse/credits/{patientId}", null);
+    public Task<(PageDto<MouvementCreditDto>?, string?)> MouvementsCreditAsync(long patientId, int page, int taille, DateOnly? du = null, DateOnly? au = null, string? type = null) =>
+        GetAsync<PageDto<MouvementCreditDto>?>($"api/caisse/credits/{patientId}/mouvements?" + Requete(("du", du), ("au", au), ("type", type), ("page", page), ("taille", taille)), null);
+    public Task<(PageDto<MouvementGrossisteDto>?, string?)> MouvementsGrossisteAsync(long fournisseurId, int page, int taille, DateOnly? du = null, DateOnly? au = null, string? type = null) =>
+        GetAsync<PageDto<MouvementGrossisteDto>?>($"api/achats/reglements/{fournisseurId}/mouvements?" + Requete(("du", du), ("au", au), ("type", type), ("page", page), ("taille", taille)), null);
+    public Task<(byte[]?, string?, string?)> ReleveCreditAsync(long patientId) => FichierAsync(HttpMethod.Get, $"api/caisse/credits/{patientId}/releve", "releve_credit.pdf");
+    public async Task<string?> CorrigerCreditAsync(long patientId, decimal nouvelleDette, string? motif) =>
+        (await PostAsync<CorrectionCreditRequete, object>($"api/caisse/credits/{patientId}/correction", new(nouvelleDette, motif))).Item2;
     public Task<(RecuCreditDto?, string?)> ReglerCreditAsync(long patientId, ReglementCreditRequete r) =>
         PostAsync<ReglementCreditRequete, RecuCreditDto>($"api/caisse/credits/{patientId}/reglement", r);
 
@@ -251,7 +276,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
             if (!rep.IsSuccessStatusCode) return (null, await MessageAsync(rep));
             return (await rep.Content.ReadAsStringAsync(), null);
         }
-        catch (HttpRequestException) { return (null, Injoignable); }
+        catch (Exception ex) when (EstEchecAppel(ex)) { return (null, MessageEchec(ex)); }
     }
 
     public async Task<string?> SupprimerVenteEnAttenteAsync(long id) =>
@@ -291,7 +316,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
             if (!rep.IsSuccessStatusCode) return (null, await MessageAsync(rep));
             return (await rep.Content.ReadFromJsonAsync<VersionNomenclatureDto>(), null);
         }
-        catch (HttpRequestException) { return (null, Injoignable); }
+        catch (Exception ex) when (EstEchecAppel(ex)) { return (null, MessageEchec(ex)); }
         catch (IOException e) { return (null, $"Fichier illisible : {e.Message}"); }
     }
 
@@ -348,9 +373,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
                       ?? $"cloture_{sessionId}.pdf";
             return (await rep.Content.ReadAsByteArrayAsync(), nom, null);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (EstEchecAppel(ex))
         {
-            return (null, null, Injoignable);
+            return (null, null, MessageEchec(ex));
         }
     }
 
@@ -372,9 +397,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
             if (!rep.IsSuccessStatusCode) return (null, await MessageAsync(rep));
             return ((await rep.Content.ReadFromJsonAsync<ScanOrdonnanceDto>())!.Jeton, null);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (EstEchecAppel(ex))
         {
-            return (null, Injoignable);
+            return (null, MessageEchec(ex));
         }
     }
 
@@ -462,7 +487,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
         (await EnvoyerCorpsAsync<ReglagesSauvegardeDto, object>(HttpMethod.Put, "api/admin/sauvegardes/reglages", r)).Item2;
     public Task<(ResultatSauvegardeDto?, string?)> LancerSauvegardeAsync() => PostAsync<object, ResultatSauvegardeDto>("api/admin/sauvegardes/lancer", new());
 
-    public Task<(List<EntreeJournalDto>, string?)> JournalAsync() => GetAsync<List<EntreeJournalDto>>("api/admin/journal", []);
+    /// <summary>Paramètres de pagination et filtres facultatifs d'une liste, en chaîne de requête.</summary>
+    private static string Requete(params (string Nom, object? Valeur)[] parametres) =>
+        string.Join("&", parametres.Where(p => p.Valeur is not null && p.Valeur as string != "")
+            .Select(p => $"{p.Nom}={Uri.EscapeDataString(p.Valeur switch { DateOnly d => d.ToString("yyyy-MM-dd"), var v => Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)! })}"));
+
+    public Task<(PageDto<EntreeJournalDto>?, string?)> JournalAsync(DateOnly? du, DateOnly? au, string? employe, int page, int taille) =>
+        GetAsync<PageDto<EntreeJournalDto>?>("api/admin/journal?" + Requete(("du", du), ("au", au), ("employe", employe?.Trim()), ("page", page), ("taille", taille)), null);
 
     // ---- Alertes, stock, traçabilité -------------------------------------------
 
@@ -530,11 +561,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     /// <summary>Boîte scannée : null si le code ne désigne pas de lot (code-barres du fabricant).</summary>
     public Task<(BoiteCaisseDto?, string?)> BoiteCaisseAsync(string code) => PostAsync<CodeRequete, BoiteCaisseDto>("api/caisse/boite", new(code));
 
-    public async Task<ReponseLotFefo> LotFefoAsync(long produitId)
+    /// <param name="lotsExclus">Lots déjà au panier : le serveur renvoie le lot suivant dans l'ordre FEFO.</param>
+    public async Task<ReponseLotFefo> LotFefoAsync(long produitId, IEnumerable<long>? lotsExclus = null)
     {
         try
         {
-            using var rep = await EnvoyerAsync($"api/produits/{produitId}/lot-fefo");
+            var exclus = string.Join("&", (lotsExclus ?? []).Select(id => $"exclure={id}"));
+            using var rep = await EnvoyerAsync($"api/produits/{produitId}/lot-fefo{(exclus.Length > 0 ? "?" + exclus : "")}");
             if (rep.StatusCode == HttpStatusCode.Unauthorized) return new(null, [], SessionExpiree());
             if (rep.StatusCode == HttpStatusCode.NotFound)
             {
@@ -545,16 +578,22 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
             var lot = (await rep.Content.ReadFromJsonAsync<LotFefoDto>())!;
             return new(lot, lot.Ecartes, null);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (EstEchecAppel(ex))
         {
-            return new(null, [], Injoignable);
+            return new(null, [], MessageEchec(ex));
         }
     }
 
     // ---- Achats ------------------------------------------------------------------
 
+    /// <summary>Fiche contact d'un tiers : type patient, grossiste, organisme, client ou employe.</summary>
+    public Task<(FicheContactDto?, string?)> ContactAsync(string type, long id) => GetAsync<FicheContactDto?>($"api/contacts/{type}/{id}", null);
+
     public Task<(List<FournisseurDto>, string?)> FournisseursAsync() => GetAsync<List<FournisseurDto>>("api/achats/fournisseurs", []);
-    public Task<(List<CommandeAchatDto>, string?)> CommandesAchatAsync() => GetAsync<List<CommandeAchatDto>>("api/achats/commandes", []);
+    public Task<(PageDto<CommandeAchatDto>?, string?)> CommandesAchatAsync(int page = 1, int taille = 10, long? fournisseurId = null, string? statut = null,
+        DateOnly? du = null, DateOnly? au = null) =>
+        GetAsync<PageDto<CommandeAchatDto>?>("api/achats/commandes?" + Requete(("fournisseurId", fournisseurId), ("statut", statut), ("du", du), ("au", au),
+            ("page", page), ("taille", taille)), null);
     public Task<(CommandeAchatDetailDto?, string?)> CommandeAchatAsync(long id) => GetAsync<CommandeAchatDetailDto?>($"api/achats/commandes/{id}", null);
     public Task<(List<SuggestionCommandeDto>, string?)> SuggestionsCommandeAsync() => GetAsync<List<SuggestionCommandeDto>>("api/achats/suggestions", []);
 
@@ -568,14 +607,20 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public Task<(byte[]?, string?, string?)> BonCommandeAsync(long id) => FichierAsync(HttpMethod.Get, $"api/achats/commandes/{id}/pdf", $"commande_{id}.pdf");
     public async Task<string?> AnnulerCommandeAsync(long id) => (await PostAsync<object, object>($"api/achats/commandes/{id}/annuler", new())).Item2;
 
-    public Task<(List<ReceptionResumeDto>, string?)> ReceptionsAsync() => GetAsync<List<ReceptionResumeDto>>("api/achats/receptions", []);
+    public Task<(PageDto<ReceptionResumeDto>?, string?)> ReceptionsAsync(int page = 1, int taille = 10, long? fournisseurId = null, DateOnly? du = null,
+        DateOnly? au = null, string? q = null) =>
+        GetAsync<PageDto<ReceptionResumeDto>?>("api/achats/receptions?" + Requete(("fournisseurId", fournisseurId), ("du", du), ("au", au), ("q", q?.Trim()),
+            ("page", page), ("taille", taille)), null);
     public Task<(BoiteLueDto?, string?)> LireDataMatrixAsync(string code) => PostAsync<DataMatrixRequete, BoiteLueDto>("api/achats/datamatrix", new(code));
     public Task<(List<ConflitReceptionDto>?, string?)> ConflitsReceptionAsync(ReceptionRequete reception) =>
         PostAsync<ReceptionRequete, List<ConflitReceptionDto>>("api/achats/receptions/conflits", reception);
     public Task<(ReceptionEnregistreeDto?, string?)> ReceptionnerAsync(ReceptionRequete reception) =>
         PostAsync<ReceptionRequete, ReceptionEnregistreeDto>("api/achats/receptions", reception);
 
-    public Task<(List<RetourDto>, string?)> RetoursAsync() => GetAsync<List<RetourDto>>("api/achats/retours", []);
+    public Task<(PageDto<RetourDto>?, string?)> RetoursAsync(int page = 1, int taille = 10, long? fournisseurId = null, string? statut = null,
+        DateOnly? du = null, DateOnly? au = null) =>
+        GetAsync<PageDto<RetourDto>?>("api/achats/retours?" + Requete(("fournisseurId", fournisseurId), ("statut", statut), ("du", du), ("au", au),
+            ("page", page), ("taille", taille)), null);
     public Task<(List<LotRetournableDto>, string?)> LotsRetournablesAsync(long produitId, string? numeroLot) =>
         GetAsync<List<LotRetournableDto>>($"api/achats/lots?produitId={produitId}" + (numeroLot is null ? "" : "&numeroLot=" + Uri.EscapeDataString(numeroLot)), []);
     public Task<(LotRetournableDto?, string?)> LotRetournableAsync(long lotId) => GetAsync<LotRetournableDto?>($"api/achats/lots/{lotId}/retour", null);
@@ -635,9 +680,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
                       ?? rep.Content.Headers.ContentDisposition?.FileName?.Trim('"') ?? nomParDefaut;
             return (await rep.Content.ReadAsByteArrayAsync(), nom, null);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (EstEchecAppel(ex))
         {
-            return (null, null, Injoignable);
+            return (null, null, MessageEchec(ex));
         }
     }
 
@@ -650,9 +695,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
             if (!rep.IsSuccessStatusCode) return (defaut, await MessageAsync(rep));
             return ((await rep.Content.ReadFromJsonAsync<T>())!, null);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (EstEchecAppel(ex))
         {
-            return (defaut, Injoignable);
+            return (defaut, MessageEchec(ex));
         }
     }
 
@@ -672,9 +717,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
             if (rep.StatusCode == HttpStatusCode.NoContent) return (default, null);
             return (await rep.Content.ReadFromJsonAsync<TRep>(), null);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (EstEchecAppel(ex))
         {
-            return (default, Injoignable);
+            return (default, MessageEchec(ex));
         }
     }
 

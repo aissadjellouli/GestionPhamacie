@@ -30,6 +30,7 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `data/900_donnees_demo.sql` | Données fictives (développement et tests seulement) |
 | `data/901_complement_sintrom.sql` | Complément fictif : Sintrom 4 mg (acénocoumarol) et un lot en stock, pour tester les ordonnances manuscrites ; ignoré sans données de démonstration |
 | `data/902_emplacements_demo.sql` | Emplacements fictifs (rayons A à E, réfrigérateur F-01, armoire des psychotropes P-01, réserve R-01 et R-02) et rangement des produits de démonstration , et un lot « date à vérifier » (AM55) pour tester l'inventaire |
+| `data/903_factures_demo.sql` | Factures clients fictives, une par état du suivi : à encaisser récente, à encaisser ancienne (alerte), avec avoir partiel, rejetée par l'organisme, réglée en partie par un versement en banque, soldée, retirée du suivi. Lignes libres : aucune vente n'est modifiée |
 
 | `022_caisse_partagee.sql` | Une caisse ouverte par poste (`ux_session_poste_ouverte` remplace `ux_session_ouverte` par employé) ; `session_caisse.releve_de` (relève) ; code comptoir dans `utilisateur.pin_hash` (prévu en 006) avec `code_comptoir_essais` et `code_comptoir_bloque_jusqu`. S'arrête si un poste a déjà deux caisses ouvertes |
 
@@ -58,14 +59,20 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `034_nomenclature_absents.sql` | `v_produit_a_verifier` : signale aussi (motif `absent`) un produit dont le n° d’enregistrement n’est plus dans la nomenclature chargée ; rien n’est modifié automatiquement |
 
 | `035_mot_de_passe_a_changer.sql` | `utilisateur.doit_changer_mot_de_passe` : mot de passe provisoire (compte titulaire de la mise en production) à changer à la première connexion ; aucun droit avant |
+| `036_solde_tresorerie_echeance.sql` | `v_solde_tresorerie` : un effet remis à un grossiste ne diminue le solde de la banque qu'une fois son échéance atteinte (avant : dès sa saisie, même à échéance future). |
+| `037_produit_a_verifier.sql` | `produit.a_verifier` : produit créé par la reprise sans n° d'enregistrement, non vendable tant que le titulaire n'a pas confirmé sa classe (Administration, Nomenclature) ; `v_produit_a_verifier` le signale (motif `repris`). `import.charger` (008) pose l'indicateur : **rejouer 008 après ce script** sur une base installée. |
+| `038_releve_credit.sql` | Relevé de la dette des patients : `credit_mouvement` (une ligne par mouvement de `patient.solde_credit`, écrite par le déclencheur `trg_patient_credit` ; contexte posé par `credit_contexte()` ; non modifiable), `credit_ouverture` (dette antérieure aux ventes du logiciel), vues `v_credit_accorde` et `v_vente_credit` (réglé et reste dû par vente à crédit, dettes les plus anciennes soldées d'abord) ; `v_facture_client` : le reste à encaisser retire ce qui est réglé sur les ventes à crédit facturées (colonne `credit_regle`). |
+| `039_suivi_dettes.sql` | Suivi des dettes et créances de tous les tiers : `fournisseur_mouvement` (relevé de la dette envers chaque grossiste, écrit par le déclencheur `trg_fournisseur_dette`, contexte posé par `dette_fournisseur_contexte()`, non modifiable) ; `parametre_caisse.delai_alerte_dette_jours` (ancienneté signalée, 30 jours par défaut) ; vue `v_suivi_dettes` (une ligne par somme due : patients, factures clients, bordereaux d'organismes, factures de grossistes, effets à échéance) |
+| `040_facture_echeance.sql` | Factures clients : `facture_client.date_echeance` (date d'échéance, obligatoire pour une facture, jamais avant la date d'établissement `date_facture` ; pas d'échéance pour un avoir ; factures existantes : établissement + 30 jours) ; `v_suivi_dettes` porte l'échéance des factures (une facture est en retard quand son échéance est dépassée). `v_facture_client` n'est pas modifiée : l'échéance se lit dans la table |
+| `041_contacts.sql` | Coordonnées : `utilisateur.telephone` et `utilisateur.email` (employé, saisis dans « Utilisateurs et droits ») ; `organisme.telephone` et `organisme.email` (saisis dans « Factures › Organismes »). Colonnes facultatives, affichées dans la fiche contact |
 
-Pour une nouvelle évolution : ajouter un script `036_...sql`, puis régénérer `init/schema.sql` (et compléter `init/seed_referentiel.sql` s’il ajoute des données de référence).
+Pour une nouvelle évolution : ajouter un script `041_...sql` idempotent, et dans la même modification régénérer `init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges --no-comments` d'une base où tous les scripts ont été rejoués dans l'ordre) et compléter `init/seed_referentiel.sql` s'il ajoute des données de référence. Les scripts se rejouent **tous, dans l'ordre** : rejouer un ancien script seul peut ramener une fonction ou une vue à une version antérieure. Dans une vue, nommer les colonnes une à une (pas de `table.*`) et ne jamais ajouter de colonne à une vue définie par un script antérieur : le rejeu de l'ancien script échouerait.
 
 ### Installation neuve : `database/init/`
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 035, vérifié) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 041, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

@@ -35,5 +35,7 @@ public static class PharmaEndpoints
         api.MapFactures();
         api.MapInventaireComplet();
         api.MapPilotage();
+        api.MapSuiviDettes();
+        api.MapContacts();
     }
 }

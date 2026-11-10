@@ -42,7 +42,14 @@ CREATE TABLE IF NOT EXISTS session_caisse (
     ecart               numeric(12,2),
     CHECK ((fermee_le IS NULL) = (montant_compte IS NULL))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS ux_session_ouverte ON session_caisse (utilisateur_id) WHERE fermee_le IS NULL;
+-- Une caisse ouverte par employé, jusqu'à 022 (une caisse par poste, partagée) : au rejeu sur une base à jour,
+-- l'index par employé n'est pas recréé (il refuserait deux caisses ouvertes par le même employé sur deux postes).
+DO $$
+BEGIN
+    IF to_regclass('public.ux_session_poste_ouverte') IS NULL THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_session_ouverte ON session_caisse (utilisateur_id) WHERE fermee_le IS NULL;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_session_caisse_date ON session_caisse (ouverte_le);
 
 -- Une session clôturée ne se modifie plus

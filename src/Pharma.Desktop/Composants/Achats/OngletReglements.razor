@@ -30,7 +30,7 @@
         }
         else
         {
-            <h2 id="t-reglement">@s.Nom · dette @Libelles.Dinars(s.Solde, 2)</h2>
+            <h2 id="t-reglement"><LienContact Type="grossiste" Id="s.Id" Nom="@s.Nom" /> · dette @Libelles.Dinars(s.Solde, 2)</h2>
             @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
             @if (message is not null) { <div class="succes" role="status">@message</div> }
 
@@ -140,12 +140,54 @@
                                     <td class="nombre">@Libelles.Dinars(r.Montant, 2)@(r.PartTiroir > 0 ? $" (dont tiroir {Libelles.Dinars(r.PartTiroir, 2)})" : "")</td>
                                     <td>@Moyen(r.Moyen)@(r.Echeance is { } e ? $" · échéance {e:dd/MM/yyyy}" : "")</td>
                                     <td>@(r.Reference ?? "—")</td>
-                                    <td>@r.Employe</td>
+                                    <td><LienContact Type="employe" Id="r.EmployeId" Nom="@r.Employe" /></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
+            }
+
+            @if (releveTotal > 0)
+            {
+                <details style="margin-top: 8px">
+                    <summary>Relevé de la dette envers ce grossiste (@releveTotal mouvement(s))</summary>
+                    <div class="filtres-liste" role="search" aria-label="Filtrer le relevé" style="margin-top: 8px">
+                            <div class="champ" style="flex: 1 1 220px"><label for="rg-grossiste">Grossiste</label>
+                                <select id="rg-grossiste" value="@s.Id" @onchange="ChangerGrossisteReleveAsync">
+                                    @foreach (var g in grossistes ?? []) { <option value="@g.Id" selected="@(g.Id == s.Id)">@g.Nom · dette @Libelles.Dinars(g.Solde, 2)</option> }
+                                </select>
+                            </div>
+                            <div class="champ" style="flex: 0 0 230px"><label for="rg-type">Mouvement</label>
+                                <select id="rg-type" @bind="releveType" @bind:after="FiltrerReleveAsync">
+                                    <option value="">Tous</option>
+                                    @foreach (var (valeur, libelle) in TypesMouvement) { <option value="@valeur">@libelle</option> }
+                                </select>
+                            </div>
+                            <div class="champ" style="flex: 0 0 160px"><label for="rg-type-du">Du</label><input id="rg-type-du" type="date" @bind="releveDu" @bind:after="FiltrerReleveAsync" /></div>
+                            <div class="champ" style="flex: 0 0 160px"><label for="rg-type-au">Au</label><input id="rg-type-au" type="date" @bind="releveAu" @bind:after="FiltrerReleveAsync" /></div>
+                            @if (FiltreReleveActif) { <button type="button" class="btn" @onclick="EffacerFiltresReleveAsync">Tout afficher</button> }
+                    </div>
+                    <div class="tableau-cadre" style="margin-top: 8px">
+                        <table class="tableau">
+                            <thead><tr><th scope="col">Date</th><th scope="col">Mouvement</th><th scope="col" class="nombre">Montant</th><th scope="col" class="nombre">Dette après</th><th scope="col">Par</th></tr></thead>
+                            <tbody>
+                                @foreach (var m in mouvements)
+                                {
+                                    <tr>
+                                        <td>@Libelles.DateHeureLocale(m.Date)</td>
+                                        <td>@LibelleMouvement(m.Type)@if (m.Reference is { } reference && reference != LibelleMouvement(m.Type)) { <br /><span class="detail">@reference</span> }</td>
+                                        <td class="nombre"><strong>@(m.Montant > 0 ? "+" : "−") @Libelles.Dinars(Math.Abs(m.Montant), 2)</strong></td>
+                                        <td class="nombre">@Libelles.Dinars(m.SoldeApres, 2)</td>
+                                        <td><LienContact Type="employe" Id="m.EmployeId" Nom="@(m.Employe ?? "—")" /></td>
+                                    </tr>
+                                }
+                                @if (mouvements.Count == 0) { <tr><td colspan="5" class="vide">Aucun mouvement pour ces filtres.</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                    <Pagination Total="mouvementsTotal" Numero="mouvementsPage" Taille="mouvementsTaille" Libelle="Pages du relevé" OnChange="p => ChargerMouvementsAsync(p.Numero, p.Taille)" />
+                </details>
             }
         }
     </section>
@@ -156,6 +198,39 @@
     private List<CompteBancaireDto> banques = [];
     private long compteId;
     private SituationGrossisteDto? situation;
+    // Relevé de dette paginé : la fiche apporte la première page, les suivantes sont chargées à la demande
+    private List<MouvementGrossisteDto> mouvements = [];
+    private int mouvementsTotal, mouvementsPage = 1, mouvementsTaille = Pagination.TailleParDefaut;
+
+    // Filtres du relevé : appliqués par le serveur ; changer de tiers garde la période et le type choisis
+    private int releveTotal;
+    private DateOnly? releveDu, releveAu;
+    private string releveType = "";
+    private bool FiltreReleveActif => releveDu is not null || releveAu is not null || releveType != "";
+    private Task FiltrerReleveAsync() => ChargerMouvementsAsync(1, mouvementsTaille);
+    private Task EffacerFiltresReleveAsync() { (releveDu, releveAu, releveType) = (null, null, ""); return FiltrerReleveAsync(); }
+    private static readonly (string, string)[] TypesMouvement =
+    [
+        ("reception", "Réception (facture)"), ("reglement", "Règlement"), ("avoir", "Avoir sur un retour"), ("correction", "Correction hors logiciel"),
+        ("reprise", "Dette reprise de l’ancien logiciel"), ("ouverture", "Dette à la mise en place du relevé")
+    ];
+
+    /// <summary>Choix du grossiste depuis le filtre du relevé : on change de grossiste sans quitter le relevé.</summary>
+    private Task ChangerGrossisteReleveAsync(ChangeEventArgs e) =>
+        long.TryParse(e.Value?.ToString(), out var id) && id != situation?.Id ? ChoisirAsync(id) : Task.CompletedTask;
+
+    private async Task ChargerMouvementsAsync(int numero, int taille)
+    {
+        if (situation is null) return;
+        var (p, e) = await Api.MouvementsGrossisteAsync(situation.Id, numero, taille, releveDu, releveAu, releveType);
+        if (e is not null) { erreur = e; return; }
+        (mouvements, mouvementsTotal, mouvementsPage, mouvementsTaille) = (p!.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+    private static string LibelleMouvement(string type) => type switch
+    {
+        "ouverture" => "Dette à la mise en place du relevé", "reprise" => "Dette reprise de l’ancien logiciel", "reception" => "Réception (facture)",
+        "reglement" => "Règlement", "avoir" => "Avoir sur un retour", _ => "Correction hors logiciel"
+    };
     private readonly Dictionary<long, decimal> imputations = [];
     private DateOnly date = DateOnly.FromDateTime(DateTime.Today);
     private DateOnly? echeance;
@@ -170,11 +245,26 @@
 
     private static string Moyen(string m) => m switch { "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", _ => "Effet" };
 
+    /// <summary>Grossiste ouvert directement (depuis sa fiche contact).</summary>
+    [Parameter] public long? Grossiste { get; set; }
+    private long? grossisteApplique;
+    private bool initialise;
+
     protected override async Task OnInitializedAsync()
     {
         await ChargerAsync();
         (banques, _) = await Api.BanquesReglementAsync();
         compteId = banques.FirstOrDefault(b => b.RecoitCarte)?.Id ?? banques.FirstOrDefault()?.Id ?? 0;
+        grossisteApplique = Grossiste;
+        if (Grossiste is > 0) await ChoisirAsync(Grossiste.Value);
+        initialise = true;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!initialise || Grossiste == grossisteApplique) return;
+        grossisteApplique = Grossiste;
+        if (Grossiste is > 0) await ChoisirAsync(Grossiste.Value);
     }
 
     private async Task ChargerAsync()
@@ -190,6 +280,10 @@
         var (s, e) = await Api.SituationGrossisteAsync(id);
         if (e is not null) { erreur = e; return; }
         situation = s;
+        (mouvements, mouvementsTotal, mouvementsPage) = (s?.Mouvements?.ToList() ?? [], s?.MouvementsTotal ?? 0, 1);
+        releveTotal = s?.MouvementsTotal ?? 0;
+        // La fiche apporte la première page sans filtre : rechargée avec les filtres et la taille de page en cours
+        if (FiltreReleveActif || mouvementsTaille != Pagination.TailleParDefaut) await ChargerMouvementsAsync(1, mouvementsTaille);
         imputations.Clear();
         (montant, partTiroir, avecTiroir, reference, banque, commentaire, echeance, controle) = (s!.Solde > 0 ? s.Solde : 0, 0, false, null, null, null, null, false);
     }

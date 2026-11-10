@@ -46,14 +46,103 @@
         else
         {
             <div class="carte">
-                <strong>@s.Patient.Nom</strong>@(s.Patient.Telephone is { } t ? $" · {t}" : "")
+                <strong><LienContact Type="patient" Id="s.Patient.Id" Nom="@s.Patient.Nom" /></strong>@(s.Patient.Telephone is { } t ? $" · {t}" : "")
                 · doit <strong class="montant-du">@Libelles.Dinars(s.Patient.Solde, 2)</strong>@(s.Patient.Plafond > 0 ? $" (plafond {Libelles.Dinars(s.Patient.Plafond)})" : "")
                 <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => situation = null">Changer de patient</button>
+                @if (s.DetteReprise > 0)
+                {
+                    <p class="detail" style="margin: 8px 0 0">Dette d’avant les ventes à crédit du logiciel : @Libelles.Dinars(s.DetteReprise, 2) à l’origine, soldée en premier par les règlements.</p>
+                }
                 @if (s.Ventes.Count > 0)
                 {
-                    <ul style="margin: 8px 0 0">
-                        @foreach (var v in s.Ventes) { <li>@v.Numero · @Libelles.DateHeureLocale(v.Date) · @Libelles.Dinars(v.Montant, 2) en crédit</li> }
-                    </ul>
+                    <div class="tableau-cadre" style="margin-top: 8px">
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col">Vente à crédit</th><th scope="col">Montant</th><th scope="col">Réglé</th><th scope="col">Reste dû</th></tr></thead>
+                            <tbody>
+                                @foreach (var v in s.Ventes)
+                                {
+                                    <tr>
+                                        <td class="nom">@v.Numero<br /><span class="detail">@Libelles.DateHeureLocale(v.Date)</span></td>
+                                        <td>@Libelles.Dinars(v.Montant, 2)</td>
+                                        <td>@Libelles.Dinars(v.Regle, 2)</td>
+                                        <td>@if (v.Reste > 0) { <strong class="montant-du">@Libelles.Dinars(v.Reste, 2)</strong> } else { <span class="pastille ok">Soldée</span> }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="detail" style="margin: 4px 0 0">Les règlements soldent les dettes les plus anciennes d’abord.</p>
+                }
+                @if (releveTotal > 0)
+                {
+                    <details style="margin-top: 8px">
+                        <summary>Relevé de la dette (@releveTotal mouvement(s))</summary>
+                        <div class="filtres-liste" role="search" aria-label="Filtrer le relevé" style="margin-top: 8px">
+                            <div class="champ" style="flex: 1 1 220px"><label for="rp-patient">Patient (nom ou téléphone)</label>
+                                <input id="rp-patient" type="search" placeholder="@s.Patient.Nom" @bind="recherchePatientReleve" @bind:event="oninput" @bind:after="ChercherPatientReleveAsync" />
+                            </div>
+                            <div class="champ" style="flex: 0 0 230px"><label for="rp-type">Mouvement</label>
+                                <select id="rp-type" @bind="releveType" @bind:after="FiltrerReleveAsync">
+                                    <option value="">Tous</option>
+                                    @foreach (var (valeur, libelle) in TypesMouvement) { <option value="@valeur">@libelle</option> }
+                                </select>
+                            </div>
+                            <div class="champ" style="flex: 0 0 160px"><label for="rp-type-du">Du</label><input id="rp-type-du" type="date" @bind="releveDu" @bind:after="FiltrerReleveAsync" /></div>
+                            <div class="champ" style="flex: 0 0 160px"><label for="rp-type-au">Au</label><input id="rp-type-au" type="date" @bind="releveAu" @bind:after="FiltrerReleveAsync" /></div>
+                            @if (FiltreReleveActif) { <button type="button" class="btn" @onclick="EffacerFiltresReleveAsync">Tout afficher</button> }
+                        </div>
+                        @if (patientsReleve.Count > 0)
+                        {
+                            <div class="liste-ventes" style="margin-top: 8px">
+                                @foreach (var p in patientsReleve)
+                                {
+                                    <button type="button" class="ligne-vente" @onclick="() => ChangerPatientReleveAsync(p.Id)">
+                                        <span><strong>@p.Nom</strong>@(p.Telephone is { } tel ? $" · {tel}" : "")</span>
+                                        <span class="@(p.Solde > 0 ? "montant-du" : null)">@Libelles.Dinars(p.Solde, 2)</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                        else if (patientCherche)
+                        {
+                            <p class="detail" style="margin: 8px 0 0">Aucun patient avec un relevé pour cette recherche.</p>
+                        }
+                        <div class="tableau-cadre" style="margin-top: 8px">
+                            <table class="tableau" style="min-width: 0">
+                                <thead><tr><th scope="col">Date</th><th scope="col">Mouvement</th><th scope="col">Montant</th><th scope="col">Dette après</th><th scope="col">Par</th></tr></thead>
+                                <tbody>
+                                    @foreach (var m in mouvements)
+                                    {
+                                        <tr>
+                                            <td>@Libelles.DateHeureLocale(m.Date)</td>
+                                            <td>@LibelleMouvement(m.Type, m.Employe)@if (m.Vente is { } ticket) { <span class="detail"> · @ticket</span> }@if (m.Reference is { } reference && reference != LibelleMouvement(m.Type, m.Employe)) { <br /><span class="detail">@reference</span> }</td>
+                                            <td class="@(m.Montant > 0 ? "texte-urgent" : null)"><strong>@(m.Montant > 0 ? "+" : "−") @Libelles.Dinars(Math.Abs(m.Montant), 2)</strong></td>
+                                            <td>@Libelles.Dinars(m.SoldeApres, 2)</td>
+                                            <td><LienContact Type="employe" Id="m.EmployeId" Nom="@(m.Employe ?? "—")" />@if (m.Poste is { } poste) { <br /><span class="detail">@poste</span> }</td>
+                                        </tr>
+                                    }
+                                    @if (mouvements.Count == 0) { <tr><td colspan="5" class="vide">Aucun mouvement pour ces filtres.</td></tr> }
+                                </tbody>
+                            </table>
+                        </div>
+                        <Pagination Total="mouvementsTotal" Numero="mouvementsPage" Taille="mouvementsTaille" Libelle="Pages du relevé" OnChange="p => ChargerMouvementsAsync(p.Numero, p.Taille)" />
+                    </details>
+                }
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+                    <button type="button" class="btn" disabled="@enCours" @onclick="ImprimerReleveAsync">Imprimer le relevé (PDF)</button>
+                    @if (Session.A("role.titulaire"))
+                    {
+                        <button type="button" class="btn" @onclick="() => correction = !correction">Corriger la dette…</button>
+                    }
+                </div>
+                @if (correction)
+                {
+                    <div class="achats-ligne" style="align-items: flex-end; margin-top: 8px">
+                        <div class="champ" style="flex: 0 0 180px"><label for="c-nouvelle" class="requis">Nouvelle dette (DA)</label><input id="c-nouvelle" type="number" min="0" step="0.01" @bind="nouvelleDette" /></div>
+                        <div class="champ" style="flex: 1 1 260px"><label for="c-motif" class="requis">Motif de la correction</label><input id="c-motif" type="text" maxlength="300" @bind="motifCorrection" /></div>
+                        <button type="button" class="btn btn-danger" disabled="@enCours" @onclick="CorrigerAsync">Enregistrer la correction</button>
+                    </div>
+                    <p class="detail" style="margin: 4px 0 0">Réservé au titulaire. La correction est inscrite au relevé et au journal, avec votre nom et le motif.</p>
                 }
             </div>
             @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -75,6 +164,15 @@
 </div>
 
 @code {
+    private static string LibelleMouvement(string type, string? employe) => type switch
+    {
+        "ouverture" => "Dette à la mise en place du relevé", "reprise" => "Dette reprise de l’ancien logiciel", "vente_credit" => "Vente à crédit",
+        "remboursement" => "Règlement du patient", "retour" => "Retour de produits", "annulation" => "Vente annulée",
+        _ => employe is null ? "Correction hors logiciel" : "Correction par le titulaire"
+    };
+
+    /// <summary>Patient à ouvrir directement (depuis sa fiche contact) ; sinon la liste des patients en crédit.</summary>
+    [Parameter] public long? PatientId { get; set; }
     [Parameter] public EventCallback OnFerme { get; set; }
     /// <summary>Prévient la caisse qu'un règlement est entré (attendu de caisse).</summary>
     [Parameter] public EventCallback OnEncaisse { get; set; }
@@ -86,10 +184,93 @@
     private List<PatientEnCreditDto> patients = [];
     private SituationCreditDto? situation;
     private RecuCreditDto? recu;
+    // Relevé de dette paginé : la fiche apporte la première page, les suivantes sont chargées à la demande
+    private List<MouvementCreditDto> mouvements = [];
+    private int mouvementsTotal, mouvementsPage = 1, mouvementsTaille = Pagination.TailleParDefaut;
+
+    // Filtres du relevé : appliqués par le serveur ; changer de tiers garde la période et le type choisis
+    private int releveTotal;
+    private DateOnly? releveDu, releveAu;
+    private string releveType = "";
+    private bool FiltreReleveActif => releveDu is not null || releveAu is not null || releveType != "";
+    private Task FiltrerReleveAsync() => ChargerMouvementsAsync(1, mouvementsTaille);
+    private Task EffacerFiltresReleveAsync() { (releveDu, releveAu, releveType) = (null, null, ""); return FiltrerReleveAsync(); }
+    private static readonly (string, string)[] TypesMouvement =
+    [
+        ("vente_credit", "Vente à crédit"), ("remboursement", "Règlement du patient"), ("retour", "Retour de produits"), ("annulation", "Vente annulée"),
+        ("correction", "Correction"), ("reprise", "Dette reprise de l’ancien logiciel"), ("ouverture", "Dette à la mise en place du relevé")
+    ];
+
+    // Choix du patient depuis le filtre du relevé : on change de patient sans quitter le relevé
+    private string? recherchePatientReleve;
+    private List<PatientEnCreditDto> patientsReleve = [];
+    private bool patientCherche;
+    private int requetePatientReleve;
+
+    private async Task ChercherPatientReleveAsync()
+    {
+        var n = ++requetePatientReleve;
+        await Task.Delay(TimeSpan.FromMilliseconds(250));
+        if (n != requetePatientReleve) return;
+        if (string.IsNullOrWhiteSpace(recherchePatientReleve)) { (patientsReleve, patientCherche) = ([], false); return; }
+        var (liste, _) = await Api.PatientsEnCreditAsync(recherchePatientReleve);
+        if (n != requetePatientReleve) return;
+        (patientsReleve, patientCherche) = (liste.Where(p => p.Id != situation?.Patient.Id).Take(6).ToList(), true);
+    }
+
+    private async Task ChangerPatientReleveAsync(long id)
+    {
+        requetePatientReleve++;
+        (recherchePatientReleve, patientsReleve, patientCherche) = (null, [], false);
+        await ChoisirAsync(id);
+    }
+
+    private async Task ChargerMouvementsAsync(int numero, int taille)
+    {
+        if (situation is null) return;
+        var (p, e) = await Api.MouvementsCreditAsync(situation.Patient.Id, numero, taille, releveDu, releveAu, releveType);
+        if (e is not null) { erreur = e; return; }
+        (mouvements, mouvementsTotal, mouvementsPage, mouvementsTaille) = (p!.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    private bool correction;
+    private decimal nouvelleDette;
+    private string? motifCorrection;
+
+    private async Task ImprimerReleveAsync()
+    {
+        if (situation is null) return;
+        (enCours, erreur) = (true, null);
+        try
+        {
+            var (contenu, nom, e) = await Api.ReleveCreditAsync(situation.Patient.Id);
+            if (e is not null) { erreur = e; return; }
+            Documents.Ouvrir(Documents.Enregistrer("Credits", nom!, contenu!));
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { erreur = $"Relevé non enregistré : {ex.Message}"; }
+        finally { enCours = false; }
+    }
+
+    private async Task CorrigerAsync()
+    {
+        if (situation is null) return;
+        (enCours, erreur) = (true, null);
+        try
+        {
+            if (await Api.CorrigerCreditAsync(situation.Patient.Id, nouvelleDette, motifCorrection) is { } e) { erreur = e; return; }
+            (correction, motifCorrection) = (false, null);
+            await ChoisirAsync(situation.Patient.Id);
+        }
+        finally { enCours = false; }
+    }
     private bool charge, enCours, impressionOk;
     private int requete;
 
-    protected override Task OnInitializedAsync() => RechercherAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        if (PatientId is > 0) await ChoisirAsync(PatientId.Value);
+        await RechercherAsync();
+    }
 
     private async Task RechercherApresSaisieAsync()
     {
@@ -111,6 +292,11 @@
         var (s, e) = await Api.SituationCreditAsync(id);
         (situation, erreur) = (s, e);
         montant = s?.Patient.Solde ?? 0;
+        (nouvelleDette, correction) = (s?.Patient.Solde ?? 0, false);
+        (mouvements, mouvementsTotal, mouvementsPage) = (s?.Mouvements?.ToList() ?? [], s?.MouvementsTotal ?? 0, 1);
+        releveTotal = s?.MouvementsTotal ?? 0;
+        // La fiche apporte la première page sans filtre : rechargée avec les filtres et la taille de page en cours
+        if (s is not null && (FiltreReleveActif || mouvementsTaille != Pagination.TailleParDefaut)) await ChargerMouvementsAsync(1, mouvementsTaille);
     }
 
     private async Task EncaisserAsync()

@@ -54,7 +54,7 @@
                             @foreach (var f in grossistes)
                             {
                                 <tr>
-                                    <td class="nom">@f.Nom</td>
+                                    <td class="nom"><LienContact Type="grossiste" Id="f.Id" Nom="@f.Nom" /></td>
                                     <td><input type="number" min="1" style="width: 140px" aria-label="Délai de reprise, @f.Nom" placeholder="à renseigner" @bind="f.DelaiRepriseJours" /></td>
                                     <td><input type="number" min="1" style="width: 120px" aria-label="Alerte orange, @f.Nom" placeholder="@($"{g.JoursOrange} (général)")" @bind="f.JoursOrange" /></td>
                                     <td><input type="number" min="1" style="width: 120px" aria-label="Alerte rouge, @f.Nom" placeholder="@($"{g.JoursRouge} (général)")" @bind="f.JoursRouge" /></td>

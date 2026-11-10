@@ -17,7 +17,8 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id),
                COALESCE(pa.solde_credit, 0),
                (SELECT fc.numero FROM facture_client_ligne fl JOIN facture_client fc ON fc.id = fl.facture_id
-                WHERE fl.vente_id = v.id AND fc.type = 'facture' AND fc.statut IN ('emise', 'rejetee') ORDER BY fc.id LIMIT 1)
+                WHERE fl.vente_id = v.id AND fc.type = 'facture' AND fc.statut IN ('emise', 'rejetee') ORDER BY fc.id LIMIT 1),
+               v.utilisateur_id, v.patient_id
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient pa ON pa.id = v.patient_id
@@ -48,7 +49,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                 ventes.Add((r.GetInt64(0), new VenteAnnulable(r.GetInt64(0), r.GetString(1), r.GetDateTime(2), r.GetString(3),
                     r.IsDBNull(4) ? null : r.GetString(4), r.GetDecimal(5), r.GetDecimal(6), r.GetDecimal(7),
                     r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9), r.GetBoolean(10), r.GetBoolean(11), [],
-                    r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14))));
+                    r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16))));
         if (ventes.Count == 0) return [];
 
         var lignes = new Dictionary<long, List<LigneVenteAnnulable>>();
@@ -140,6 +141,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         // 4. Vente à crédit : la dette diminue de ce qui reste dû (calculé avant) ; si elle a bougé entre-temps, on refuse
         if (a.ReductionDette > 0 && patientId is { } patient)
         {
+            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Annulation, a.VenteId, a.UtilisateurId, a.Poste, $"{reference} : {a.Motif}", ct);
             await using var cmd = new NpgsqlCommand("UPDATE patient SET solde_credit = solde_credit - $2 WHERE id = $1 AND solde_credit >= $2", cx, tx);
             cmd.Parameters.AddWithValue(patient);
             cmd.Parameters.AddWithValue(a.ReductionDette);

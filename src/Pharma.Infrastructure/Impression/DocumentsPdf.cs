@@ -10,7 +10,7 @@ namespace Pharma.Infrastructure.Impression;
 
 /// <summary>Documents PDF produits avec PDFsharp-MigraDoc (licence MIT), polices Windows du serveur.</summary>
 public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.IDocumentsRapports, Pharma.Application.Stock.IDocumentsRegistre,
-    Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire
+    Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire, Pharma.Application.Caisse.IDocumentsCredit
 {
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
 
@@ -81,7 +81,8 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
 
         SousTitre(section, "Synthèse");
         var synthese = Tableau(section, 11.5, 5);
-        Ligne(synthese, "Chiffre d’affaires TTC (remises déduites)", Da(r.Synthese.ChiffreAffaires), gras: true);
+        Ligne(synthese, "Chiffre d’affaires TTC (remises et retours déduits)", Da(r.Synthese.ChiffreAffaires), gras: true);
+        Ligne(synthese, $"Dont retours clients de la période ({r.Synthese.Retours.ToString(Fr)})", "- " + Da(r.Synthese.MontantRetours));
         Ligne(synthese, "Nombre de ventes", r.Synthese.NombreVentes.ToString(Fr));
         Ligne(synthese, "Part organismes (Chifa) à recevoir", Da(r.Synthese.PartOrganismes));
         Ligne(synthese, "Crédits clients accordés", Da(r.Synthese.CreditsAccordes));
@@ -125,7 +126,30 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         }
         if (r.Clotures.Count == 0) Ligne(clo, "Aucune clôture sur la période", "");
 
-        var note = section.AddParagraph("Ventes validées seulement. Marge brute : chiffre d’affaires HT moins le coût d’achat HT, au prix réel de chaque boîte identifiée, sinon au prix de son lot.");
+        if (r.Retours is { Count: > 0 } retours)
+        {
+            SousTitre(section, "Retours clients");
+            var ret = Tableau(section, 3.2, 4.8, 4, 2.3, 2.2);
+            Entete(ret, "Vente", "Produits rendus", "Retour", "Montant", "Chiffre diminué");
+            foreach (var x in retours)
+            {
+                var row = ret.AddRow();
+                row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
+                // Une information par paragraphe dans la cellule : ticket, date et vendeur de la vente ; date, poste et employé du retour
+                string[][] cellules =
+                [
+                    [x.Ticket, Quand(x.DateVente), x.Vendeur],
+                    [x.Produits],
+                    [Quand(x.DateRetour), x.Poste, x.Employe],
+                    x.DetteDiminuee > 0 ? ["- " + Da(x.Montant), $"dont dette : {Da(x.DetteDiminuee)}"] : ["- " + Da(x.Montant)],
+                    [x.DeduitDansLaPeriode ? "sur cette période" : $"le {x.DateRetour.ToLocalTime().ToString("dd/MM/yyyy", Fr)}, pas sur cette période"]
+                ];
+                for (var i = 0; i < cellules.Length; i++)
+                    foreach (var texte in cellules[i]) row.Cells[i].AddParagraph(texte);
+            }
+        }
+
+        var note = section.AddParagraph("Ventes validées seulement. Un retour client diminue le chiffre du jour où il est enregistré. Marge brute : chiffre d’affaires HT moins le coût d’achat HT, au prix réel de chaque boîte identifiée, sinon au prix de son lot.");
         note.Format.SpaceBefore = Unit.FromPoint(12);
         note.Format.Font.Size = 8;
         note.Format.Font.Color = Color.FromRgb(0x47, 0x54, 0x67);
@@ -133,6 +157,54 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
     }
 
     private static string Quand(DateTime? d) => d?.ToLocalTime().ToString("dd/MM HH:mm", Fr) ?? "—";
+
+    // ---- Relevé de la dette d'un patient -------------------------------------
+
+    public byte[] ReleveCredit(Pharma.Application.Caisse.SituationCredit s, string? pharmacie)
+    {
+        var doc = NouveauDocument("Relevé de crédit", pharmacie);
+        var section = doc.LastSection;
+        Titre(section, $"Relevé de crédit · {s.Patient.Nom}");
+
+        var synthese = Tableau(section, 11.5, 5);
+        Ligne(synthese, $"Reste dû au {DateTime.Now.ToString("dd/MM/yyyy", Fr)}", Da(s.Patient.Solde), gras: true);
+        if (s.DetteReprise > 0) Ligne(synthese, "Dette d’avant les ventes à crédit du logiciel, à l’origine (soldée en premier)", Da(s.DetteReprise));
+        if (s.Patient.Telephone is { } tel) Ligne(synthese, "Téléphone", tel);
+
+        SousTitre(section, "Ventes à crédit");
+        var ventes = Tableau(section, 4, 4, 3, 3, 2.5);
+        Entete(ventes, "Ticket", "Date", "Montant", "Réglé", "Reste dû");
+        foreach (var v in s.Ventes.OrderBy(v => v.Date))
+        {
+            var row = ventes.AddRow();
+            row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
+            string[] cellules = [v.Numero, Quand(v.Date), Da(v.Montant), Da(v.Regle), v.Reste > 0 ? Da(v.Reste) : "soldée"];
+            for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+        }
+        if (s.Ventes.Count == 0) Ligne(ventes, "Aucune vente à crédit", "");
+
+        SousTitre(section, "Mouvements de la dette");
+        var mouvements = Tableau(section, 3, 6.5, 3.5, 3.5);
+        Entete(mouvements, "Date", "Mouvement", "Montant", "Dette après");
+        foreach (var m in (s.Mouvements ?? []).OrderBy(m => m.Date))
+        {
+            var row = mouvements.AddRow();
+            row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
+            var libelle = m.Type switch
+            {
+                "ouverture" => "Dette à la mise en place du relevé", "reprise" => "Dette reprise de l’ancien logiciel", "vente_credit" => "Vente à crédit",
+                "remboursement" => "Règlement", "retour" => "Retour de produits", "annulation" => "Vente annulée",
+                _ => m.Employe is null ? "Correction hors logiciel" : "Correction par le titulaire"
+            };
+            string[] cellules = [Quand(m.Date), m.Vente is null ? libelle : $"{libelle} · {m.Vente}", (m.Montant > 0 ? "+ " : "- ") + Da(Math.Abs(m.Montant)), Da(m.SoldeApres)];
+            for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+        }
+
+        var note = section.AddParagraph("Les règlements soldent les dettes les plus anciennes d’abord.");
+        note.Format.SpaceBefore = Unit.FromPoint(12);
+        note.Format.Font.Size = 8;
+        return Rendre(doc);
+    }
 
     // ---- Registre des psychotropes -----------------------------------------
 
@@ -271,7 +343,8 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         foreach (var x in (f.DestinataireInfos ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries)) { dest.AddLineBreak(); dest.AddText(x); }
 
         Titre(section, $"{(avoir ? "AVOIR" : "FACTURE")} N° {r.Numero}{(r.Version > 1 ? $" (version {r.Version})" : "")}");
-        var info = section.AddParagraph($"Date : {r.Date.ToString("dd/MM/yyyy", Fr)}"
+        var info = section.AddParagraph($"Date d’établissement : {r.Date.ToString("dd/MM/yyyy", Fr)}"
+            + (r.Echeance is { } echeance ? $" · date d’échéance : {echeance.ToString("dd/MM/yyyy", Fr)}" : "")
             + (f.Du is { } du && f.Au is { } au ? $" · période du {du.ToString("dd/MM/yyyy", Fr)} au {au.ToString("dd/MM/yyyy", Fr)}" : "")
             + (r.OrigineNumero is { } o ? $" · sur la facture {o}" : "")
             + (r.RemplaceNumero is { } rem ? $" · remplace la facture {rem}" : ""));
