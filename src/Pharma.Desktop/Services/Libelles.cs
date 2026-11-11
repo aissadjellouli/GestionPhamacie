@@ -258,13 +258,20 @@ public static class Libelles
         "reprise_chargement" => "Reprise de données chargée",
         "reprise_extraction" => "Reprise de données extraite",
         "retour_client" => "Retour client",
-        "donnee" => "Donnée (échantillon ou don)",
         "transfert_tresorerie" => "Transfert entre comptes",
         "vente_annulee" => "Vente annulée",
         "vente_produit_bloque" => "Vente d’un produit bloqué",
         "vente_sans_ordonnance" => "Vente sans ordonnance (liste I ou II)",
         "versement_caisse_coffre" => "Versement de caisse au coffre",
-        "sortie_stock" => "Sortie de stock (périmé ou cassé)",
+        "sortie_stock" => "Sortie de stock (périmé, cassé ou don)",
+        "produit_sensible" => "Produit marqué sensible",
+        "produit_non_sensible" => "Produit retiré des sensibles",
+        "comptage_reception" => "Livraison comptée (réception à l’aveugle)",
+        "comptage_annule" => "Comptage de livraison annulé",
+        "comptage_facture" => "Facture conforme au comptage",
+        "ecart_reception" => "Écart entre comptage et facture",
+        "ecart_reception_valide" => "Écart de réception validé",
+        "ecart_reception_recompter" => "Livraison à recompter",
         "grossiste_cree" => "Grossiste créé",
         "grossiste_modifie" => "Grossiste modifié",
         "produit_modifie" => "Produit modifié",
@@ -288,6 +295,7 @@ public static class Libelles
         ["achats.commander"] = "Passer une commande",
         ["achats.receptionner"] = "Réceptionner une livraison",
         ["achats.retour_fournisseur"] = "Faire un retour fournisseur",
+        ["achats.valider_ecart"] = "Valider un écart entre le comptage et la facture d’une livraison",
         ["admin.parametres"] = "Modifier les paramètres",
         ["admin.sauvegardes"] = "Gérer les sauvegardes",
         ["admin.utilisateurs"] = "Gérer les utilisateurs et les droits",
@@ -442,7 +450,8 @@ public static class Libelles
     private static readonly Dictionary<string, string> ValeursCodees = new()
     {
         ["especes"] = "espèces", ["cheque"] = "chèque", ["carte"] = "carte", ["virement"] = "virement", ["effet"] = "effet", ["credit"] = "crédit",
-        ["perime"] = "périmé", ["casse"] = "cassé", ["peremption_proche"] = "péremption proche", ["erreur_livraison"] = "erreur de livraison"
+        ["perime"] = "périmé", ["casse"] = "cassé", ["echantillon"] = "échantillon ou don", ["peremption_proche"] = "péremption proche",
+        ["erreur_livraison"] = "erreur de livraison"
     };
 
     /// <summary>Clés entières du journal dont la forme mot à mot serait fausse.</summary>
@@ -484,6 +493,7 @@ public static class Libelles
         "detruite" => "Détruite",
         "retour_client" => "Retour client",
         "donnee" => "Donnée (échantillon ou don)",
+        "manquante" => "Manquante à la réception (à réclamer)",
         _ => statut
     };
 
@@ -492,11 +502,13 @@ public static class Libelles
         "reception" => "Réception",
         "vente" => "Vente",
         "retour_client" => "Retour client",
-        "donnee" => "Donnée (échantillon ou don)",
         "retour_fournisseur" => "Retour fournisseur",
         "destruction" => "Destruction",
         "blocage" => "Blocage",
         "correction" => "Correction",
+        "inventaire" => "Vue à l’inventaire",
+        "echantillon" => "Échantillon ou don",
+        "manquant_reception" => "Manquante à la réception",
         _ => type
     };
 }

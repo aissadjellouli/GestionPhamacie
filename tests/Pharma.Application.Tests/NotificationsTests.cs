@@ -68,6 +68,18 @@ public class NotificationsApplicationTests
 
     private static readonly DateTime Maintenant = new(2026, 11, 8, 20, 0, 0, DateTimeKind.Utc);
 
+    [Fact]
+    public void Email_d_alerte_objet_en_gras_en_tete_texte_echappe()
+    {
+        var m = NotificationService.Construire(new ContenuNotification(TypeNotification.Surveillance, "URGENT : anomalie de surveillance",
+            "Écart <BL 12>\nligne 2\n\nDétail dans le logiciel.", null, null), [Dest(1, true, TypeNotification.Surveillance)], false).Single();
+        Assert.StartsWith("<div", m.CorpsHtml);
+        Assert.Contains("<strong>URGENT : anomalie de surveillance</strong>", m.CorpsHtml);
+        Assert.Contains("Écart &lt;BL 12&gt;<br />ligne 2</p>", m.CorpsHtml);
+        Assert.Equal(2, m.CorpsHtml!.Split("<p style=\"margin: 0 0 10px\">").Length - 1);
+        Assert.Equal("Écart <BL 12>\nligne 2\n\nDétail dans le logiciel.", m.Corps);   // texte brut inchangé
+    }
+
     private static MessageEnFile Message(long id, CanalNotification canal, int tentatives = 0) =>
         new(id, canal, "Titulaire", canal == CanalNotification.Email ? "t@p.dz" : "0661000000", TypeNotification.EcartCaisse,
             "Objet", "Corps", null, "en_attente", tentatives, Maintenant, null, Maintenant.AddMinutes(-30), null);

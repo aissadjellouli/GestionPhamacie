@@ -65,6 +65,13 @@ public static class DependencyInjection
         services.AddScoped<Achats.ImprimerCommande>();
         services.AddScoped<Achats.AnnulerCommande>();
         services.AddScoped<Achats.Receptionner>();
+        services.AddScoped<Achats.ModeReception>();
+        services.AddScoped<Achats.CompterLivraison>();
+        services.AddScoped<Achats.ListerComptagesReception>();
+        services.AddScoped<Achats.ObtenirComptageReception>();
+        services.AddScoped<Achats.AnnulerComptage>();
+        services.AddScoped<Achats.FacturerComptage>();
+        services.AddScoped<Achats.DeciderEcartReception>();
         services.AddScoped<Achats.ListerReceptions>();
         services.AddScoped<Achats.ChercherDocumentReception>();
         services.AddScoped<Achats.LireInfosAchat>();

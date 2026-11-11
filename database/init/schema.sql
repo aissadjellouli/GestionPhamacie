@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 056 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 057 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 056 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 057 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict rVCSmdqLz1pw35O4ZEgGzwPXGKWEeAT3DOnl6b7IGbmob9y63dKL8Thbw1eaq1a
+\restrict EsrujM3J6dhocp7FnXj7CyqNgRCq8CJjSEiD4WedgKNYgZZbiukvVcgamiMnESQ
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -925,6 +925,7 @@ BEGIN
         WHEN 'destruction'           THEN 'destruction'
         WHEN 'casse'                 THEN 'casse'
         WHEN 'ajustement_inventaire' THEN CASE WHEN NEW.quantite < 0 THEN 'ecart_moins' ELSE 'ecart_plus' END
+        WHEN 'manquant_reception'    THEN 'ecart_moins'
     END;
     IF v_type IS NULL THEN
         RAISE EXCEPTION 'Type de mouvement % non prévu au registre des psychotropes', NEW.type;
@@ -1557,6 +1558,78 @@ $$;
 
 
 --
+-- Name: surveillance_candidats_achats(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.surveillance_candidats_achats(p_jour date) RETURNS TABLE(o_type text, o_niveau text, o_utilisateur_id bigint, o_jour date, o_cle text, o_message text, o_notification text, o_valeur numeric)
+    LANGUAGE sql STABLE
+    AS $$
+    WITH p AS (SELECT * FROM parametre_surveillance WHERE id = 1),
+    -- Écart entre le comptage et la facture, constaté ce jour : l'anomalie nomme celui qui a compté
+    ecarts AS (
+        SELECT c.*, f.raison_sociale, uc.nom_complet AS compteur, uf.nom_complet AS factureur
+        FROM comptage_reception c
+        JOIN fournisseur f ON f.id = c.fournisseur_id
+        JOIN utilisateur uc ON uc.id = c.compte_par
+        JOIN utilisateur uf ON uf.id = c.facture_par
+        WHERE c.ecarts IS NOT NULL AND c.facture_le >= p_jour AND c.facture_le < p_jour + 1
+    ),
+    -- Même personne au comptage et à la saisie de la facture
+    meme AS (
+        SELECT c.compte_par AS utilisateur_id, count(*)::int AS n, string_agg(c.numero_bl, ', ' ORDER BY c.id) AS bls
+        FROM comptage_reception c
+        WHERE c.facture_par = c.compte_par AND c.facture_le >= p_jour AND c.facture_le < p_jour + 1
+        GROUP BY c.compte_par
+    ),
+    -- Retour envoyé sans avoir au-delà du délai
+    sans_avoir AS (
+        SELECT r.*, f.raison_sociale, (p_jour - r.envoye_le::date) AS jours
+        FROM retour_fournisseur r JOIN fournisseur f ON f.id = r.fournisseur_id, p
+        WHERE r.statut = 'envoye' AND r.envoye_le IS NOT NULL AND r.envoye_le::date <= p_jour - p.jours_avoir_retour
+    ),
+    -- Avoir reçu ce jour, inférieur au montant attendu
+    incomplets AS (
+        SELECT r.*, f.raison_sociale
+        FROM retour_fournisseur r JOIN fournisseur f ON f.id = r.fournisseur_id
+        WHERE r.statut = 'avoir_recu' AND r.avoir_recu_le >= p_jour AND r.avoir_recu_le < p_jour + 1
+          AND r.montant_attendu IS NOT NULL AND COALESCE(r.montant_avoir, 0) < r.montant_attendu - 0.01
+    )
+    SELECT 'ecart_reception', CASE WHEN e.boites_manquantes > 0 THEN 'urgent' ELSE 'attention' END, e.compte_par, e.facture_le::date,
+           'comptage:' || e.id,
+           format('Livraison BL %s de %s : écart entre le comptage de %s et la facture saisie par %s : %s boîte(s) manquante(s) (%s DA facturés), %s boîte(s) en trop. Réception bloquée jusqu''à validation (Achats, Réceptions).',
+                  e.numero_bl, e.raison_sociale, e.compteur, e.factureur, e.boites_manquantes,
+                  to_char(e.valeur_manquante, 'FM999G999G990D00'), e.boites_en_trop),
+           format('Ecart de reception BL %s (%s) : %s boite(s) manquante(s), %s en trop, comptage de %s.', e.numero_bl, e.raison_sociale,
+                  e.boites_manquantes, e.boites_en_trop, e.compteur),
+           e.valeur_manquante
+    FROM ecarts e
+    UNION ALL
+    SELECT 'reception_meme_personne', 'attention', m.utilisateur_id, p_jour, '',
+           format('%s a compté les boîtes puis saisi la facture de %s livraison(s) le %s (BL %s) : la réception à l''aveugle demande deux personnes.',
+                  u.nom_complet, m.n, to_char(p_jour, 'DD/MM/YYYY'), m.bls),
+           format('%s : comptage et facture de %s livraison(s) faits seul le %s.', u.nom_complet, m.n, to_char(p_jour, 'DD/MM')),
+           m.n
+    FROM meme m JOIN utilisateur u ON u.id = m.utilisateur_id
+    UNION ALL
+    SELECT 'retour_sans_avoir', CASE WHEN s.jours >= 2 * p.jours_avoir_retour THEN 'urgent' ELSE 'attention' END,
+           s.utilisateur_id, s.envoye_le::date, 'retour:' || s.id,
+           format('Retour %s envoyé à %s le %s (%s DA attendus) : avoir toujours pas reçu après %s jours. Relancez le grossiste.',
+                  s.numero, s.raison_sociale, to_char(s.envoye_le, 'DD/MM/YYYY'), to_char(COALESCE(s.montant_attendu, 0), 'FM999G999G990D00'), s.jours),
+           format('Retour %s (%s) sans avoir depuis %s jours.', s.numero, s.raison_sociale, s.jours),
+           s.montant_attendu
+    FROM sans_avoir s, p
+    UNION ALL
+    SELECT 'avoir_incomplet', 'attention', i.utilisateur_id, i.avoir_recu_le::date, 'retour:' || i.id,
+           format('Retour %s à %s : avoir de %s DA pour %s DA attendus (%s DA manquants).', i.numero, i.raison_sociale,
+                  to_char(COALESCE(i.montant_avoir, 0), 'FM999G999G990D00'), to_char(i.montant_attendu, 'FM999G999G990D00'),
+                  to_char(i.montant_attendu - COALESCE(i.montant_avoir, 0), 'FM999G999G990D00')),
+           format('Avoir incomplet pour le retour %s (%s).', i.numero, i.raison_sociale),
+           i.montant_attendu - COALESCE(i.montant_avoir, 0)
+    FROM incomplets i;
+$$;
+
+
+--
 -- Name: surveiller(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1568,7 +1641,7 @@ DECLARE
     v_id     bigint;
     v_ancien text;
 BEGIN
-    FOR c IN SELECT * FROM surveillance_candidats(p_jour) LOOP
+    FOR c IN SELECT * FROM surveillance_candidats(p_jour) UNION ALL SELECT * FROM surveillance_candidats_achats(p_jour) LOOP
         v_id := NULL;
         SELECT a.id, a.niveau INTO v_id, v_ancien FROM alerte_surveillance a
         WHERE a.type = c.o_type AND COALESCE(a.utilisateur_id, 0) = COALESCE(c.o_utilisateur_id, 0) AND a.jour = c.o_jour AND a.cle = c.o_cle;
@@ -2066,7 +2139,7 @@ CREATE TABLE public.alerte_surveillance (
     traitee_le timestamp with time zone,
     CONSTRAINT alerte_surveillance_niveau_check CHECK ((niveau = ANY (ARRAY['attention'::text, 'urgent'::text]))),
     CONSTRAINT alerte_surveillance_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'traitee'::text]))),
-    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text])))
+    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text, 'ecart_reception'::text, 'reception_meme_personne'::text, 'retour_sans_avoir'::text, 'avoir_incomplet'::text])))
 );
 
 
@@ -2137,7 +2210,7 @@ CREATE TABLE public.boite (
     reception_id bigint NOT NULL,
     prix_achat_ht numeric(12,2) NOT NULL,
     CONSTRAINT boite_prix_achat_ht_check CHECK ((prix_achat_ht >= (0)::numeric)),
-    CONSTRAINT boite_statut_check CHECK ((statut = ANY (ARRAY['en_stock'::text, 'vendue'::text, 'retournee_fournisseur'::text, 'detruite'::text, 'retour_client'::text, 'donnee'::text]))),
+    CONSTRAINT boite_statut_check CHECK ((statut = ANY (ARRAY['en_stock'::text, 'vendue'::text, 'retournee_fournisseur'::text, 'detruite'::text, 'retour_client'::text, 'donnee'::text, 'manquante'::text]))),
     CONSTRAINT ck_boite_identifiant CHECK ((((gtin IS NOT NULL) AND (numero_serie IS NOT NULL)) OR (code_etiquette IS NOT NULL)))
 );
 
@@ -2158,7 +2231,7 @@ CREATE TABLE public.boite_evenement (
     commentaire text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     inventaire_id bigint,
-    CONSTRAINT boite_evenement_type_check CHECK ((type = ANY (ARRAY['reception'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'destruction'::text, 'blocage'::text, 'correction'::text, 'inventaire'::text, 'echantillon'::text])))
+    CONSTRAINT boite_evenement_type_check CHECK ((type = ANY (ARRAY['reception'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'destruction'::text, 'blocage'::text, 'correction'::text, 'inventaire'::text, 'echantillon'::text, 'manquant_reception'::text])))
 );
 
 
@@ -2364,6 +2437,80 @@ CREATE TABLE public.comptage_caisse (
     CONSTRAINT comptage_caisse_coupure_check CHECK ((coupure = ANY (ARRAY['b2000'::text, 'b1000'::text, 'b500'::text, 'b200'::text, 'p100'::text, 'autres'::text]))),
     CONSTRAINT comptage_caisse_montant_check CHECK ((montant >= (0)::numeric)),
     CONSTRAINT comptage_caisse_nombre_check CHECK ((nombre >= 0))
+);
+
+
+--
+-- Name: comptage_reception; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.comptage_reception (
+    id bigint NOT NULL,
+    fournisseur_id bigint NOT NULL,
+    numero_bl text NOT NULL,
+    statut text DEFAULT 'compte'::text NOT NULL,
+    compte_par bigint NOT NULL,
+    compte_le timestamp with time zone DEFAULT now() NOT NULL,
+    facture_par bigint,
+    facture_le timestamp with time zone,
+    saisie jsonb,
+    ecarts jsonb,
+    boites_manquantes integer DEFAULT 0 NOT NULL,
+    boites_en_trop integer DEFAULT 0 NOT NULL,
+    valeur_manquante numeric(12,2) DEFAULT 0 NOT NULL,
+    decide_par bigint,
+    decide_le timestamp with time zone,
+    reception_id bigint,
+    CONSTRAINT comptage_reception_boites_en_trop_check CHECK ((boites_en_trop >= 0)),
+    CONSTRAINT comptage_reception_boites_manquantes_check CHECK ((boites_manquantes >= 0)),
+    CONSTRAINT comptage_reception_statut_check CHECK ((statut = ANY (ARRAY['compte'::text, 'ecart'::text, 'receptionne'::text, 'a_recompter'::text, 'annule'::text]))),
+    CONSTRAINT comptage_reception_valeur_manquante_check CHECK ((valeur_manquante >= (0)::numeric))
+);
+
+
+--
+-- Name: comptage_reception_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.comptage_reception ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.comptage_reception_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: comptage_reception_ligne; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.comptage_reception_ligne (
+    id bigint NOT NULL,
+    comptage_id bigint NOT NULL,
+    produit_id bigint NOT NULL,
+    numero_lot text NOT NULL,
+    date_peremption date NOT NULL,
+    gtin text,
+    quantite integer NOT NULL,
+    numeros_serie text[] DEFAULT '{}'::text[] NOT NULL,
+    scans_mobile bigint[] DEFAULT '{}'::bigint[] NOT NULL,
+    CONSTRAINT comptage_reception_ligne_quantite_check CHECK (((quantite >= 1) AND (quantite <= 10000)))
+);
+
+
+--
+-- Name: comptage_reception_ligne_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.comptage_reception_ligne ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.comptage_reception_ligne_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -3135,7 +3282,7 @@ CREATE TABLE public.mouvement_stock (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     reception_id bigint,
     prix_achat_ht numeric(12,2),
-    CONSTRAINT mouvement_stock_type_check CHECK ((type = ANY (ARRAY['entree'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'perime'::text, 'casse'::text, 'ajustement_inventaire'::text, 'destruction'::text, 'echantillon'::text])))
+    CONSTRAINT mouvement_stock_type_check CHECK ((type = ANY (ARRAY['entree'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'perime'::text, 'casse'::text, 'ajustement_inventaire'::text, 'destruction'::text, 'echantillon'::text, 'manquant_reception'::text])))
 );
 
 
@@ -3525,6 +3672,9 @@ CREATE TABLE public.parametre_surveillance (
     seuil_casses integer DEFAULT 3 NOT NULL,
     seuil_echantillons integer DEFAULT 3 NOT NULL,
     jours_comptage_sensibles integer DEFAULT 7 NOT NULL,
+    reception_aveugle boolean DEFAULT true NOT NULL,
+    jours_avoir_retour integer DEFAULT 30 NOT NULL,
+    CONSTRAINT ck_parametre_surveillance_achats CHECK (((jours_avoir_retour >= 1) AND (jours_avoir_retour <= 365))),
     CONSTRAINT ck_parametre_surveillance_horaires CHECK (((heure_ouverture IS NULL) = (heure_fermeture IS NULL))),
     CONSTRAINT ck_parametre_surveillance_stock CHECK (((seuil_ajustements >= 1) AND (seuil_casses >= 1) AND (seuil_echantillons >= 1) AND ((jours_comptage_sensibles >= 1) AND (jours_comptage_sensibles <= 90)))),
     CONSTRAINT parametre_surveillance_id_check CHECK ((id = 1)),
@@ -5363,6 +5513,22 @@ ALTER TABLE ONLY public.comptage_caisse
 
 
 --
+-- Name: comptage_reception_ligne comptage_reception_ligne_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception_ligne
+    ADD CONSTRAINT comptage_reception_ligne_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: comptage_reception comptage_reception_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception
+    ADD CONSTRAINT comptage_reception_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: compte_tresorerie compte_tresorerie_nom_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6505,6 +6671,20 @@ CREATE INDEX idx_vente_session ON public.vente USING btree (session_caisse_id);
 
 
 --
+-- Name: ix_comptage_reception_ligne; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_comptage_reception_ligne ON public.comptage_reception_ligne USING btree (comptage_id);
+
+
+--
+-- Name: ix_comptage_reception_statut; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_comptage_reception_statut ON public.comptage_reception USING btree (statut);
+
+
+--
 -- Name: ix_evenement_caisse_employe; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7186,6 +7366,62 @@ ALTER TABLE ONLY public.commande_fournisseur
 
 ALTER TABLE ONLY public.comptage_caisse
     ADD CONSTRAINT comptage_caisse_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.session_caisse(id);
+
+
+--
+-- Name: comptage_reception comptage_reception_compte_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception
+    ADD CONSTRAINT comptage_reception_compte_par_fkey FOREIGN KEY (compte_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: comptage_reception comptage_reception_decide_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception
+    ADD CONSTRAINT comptage_reception_decide_par_fkey FOREIGN KEY (decide_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: comptage_reception comptage_reception_facture_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception
+    ADD CONSTRAINT comptage_reception_facture_par_fkey FOREIGN KEY (facture_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: comptage_reception comptage_reception_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception
+    ADD CONSTRAINT comptage_reception_fournisseur_id_fkey FOREIGN KEY (fournisseur_id) REFERENCES public.fournisseur(id);
+
+
+--
+-- Name: comptage_reception_ligne comptage_reception_ligne_comptage_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception_ligne
+    ADD CONSTRAINT comptage_reception_ligne_comptage_id_fkey FOREIGN KEY (comptage_id) REFERENCES public.comptage_reception(id) ON DELETE CASCADE;
+
+
+--
+-- Name: comptage_reception_ligne comptage_reception_ligne_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception_ligne
+    ADD CONSTRAINT comptage_reception_ligne_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
+-- Name: comptage_reception comptage_reception_reception_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_reception
+    ADD CONSTRAINT comptage_reception_reception_id_fkey FOREIGN KEY (reception_id) REFERENCES public.reception(id);
 
 
 --
@@ -8120,5 +8356,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict rVCSmdqLz1pw35O4ZEgGzwPXGKWEeAT3DOnl6b7IGbmob9y63dKL8Thbw1eaq1a
+\unrestrict EsrujM3J6dhocp7FnXj7CyqNgRCq8CJjSEiD4WedgKNYgZZbiukvVcgamiMnESQ
 

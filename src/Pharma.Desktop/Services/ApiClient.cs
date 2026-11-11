@@ -762,6 +762,18 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(ReceptionEnregistreeDto?, string?)> ReceptionnerAsync(ReceptionRequete reception) =>
         PostAsync<ReceptionRequete, ReceptionEnregistreeDto>("api/achats/receptions", reception);
 
+    // ---- Réception à l'aveugle : comptage, facture comparée, écarts ----
+    public async Task<bool> ReceptionAveugleAsync() => (await GetAsync<ModeReceptionDto?>("api/achats/receptions/mode", null)).Item1?.Aveugle ?? false;
+    public Task<(IdentifiantDto?, string?)> CompterLivraisonAsync(CompterLivraisonRequete r) =>
+        PostAsync<CompterLivraisonRequete, IdentifiantDto>("api/achats/receptions/comptages", r);
+    public Task<(List<ComptageResumeDto>, string?)> ComptagesReceptionAsync() => GetAsync<List<ComptageResumeDto>>("api/achats/receptions/comptages", []);
+    public Task<(ComptageAFacturerDto?, string?)> ComptageAFacturerAsync(long id) => GetAsync<ComptageAFacturerDto?>($"api/achats/receptions/comptages/{id}", null);
+    public Task<(ResultatFacturationDto?, string?)> FacturerComptageAsync(long id, ReceptionRequete reception) =>
+        PostAsync<ReceptionRequete, ResultatFacturationDto>($"api/achats/receptions/comptages/{id}/facturer", reception);
+    public async Task<string?> AnnulerComptageAsync(long id) => (await PostAsync<object, object>($"api/achats/receptions/comptages/{id}/annuler", new())).Item2;
+    public Task<(ReceptionEnregistreeDto?, string?)> DeciderEcartReceptionAsync(long id, bool valider) =>
+        PostAsync<DecisionEcartReceptionRequete, ReceptionEnregistreeDto>($"api/achats/receptions/comptages/{id}/decision", new(valider));
+
     public Task<(PageDto<RetourDto>?, string?)> RetoursAsync(int page = 1, int taille = 10, long? fournisseurId = null, string? statut = null,
         DateOnly? du = null, DateOnly? au = null) =>
         GetAsync<PageDto<RetourDto>?>("api/achats/retours?" + Requete(("fournisseurId", fournisseurId), ("statut", statut), ("du", du), ("au", au),

@@ -38,14 +38,15 @@ internal static class SurveillanceEndpoints
             {
                 var p = await regler.LireAsync(user.UtilisateurId(), ct);
                 return Results.Ok(new ParametresSurveillanceDto(p.SeuilLignesRetirees, p.SeuilTiroir, p.SeuilAttentesAbandonnees, p.SeuilRemises,
-                    p.SeuilRemisesPatient, p.HeureOuverture, p.HeureFermeture, p.SeuilAjustements, p.SeuilCasses, p.SeuilEchantillons, p.JoursComptageSensibles));
+                    p.SeuilRemisesPatient, p.HeureOuverture, p.HeureFermeture, p.SeuilAjustements, p.SeuilCasses, p.SeuilEchantillons, p.JoursComptageSensibles,
+                    p.ReceptionAveugle, p.JoursAvoirRetour));
             });
 
         surveillance.MapPut("/parametres", async (ParametresSurveillanceDto req, ReglerSurveillance regler, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await regler.EnregistrerAsync(new ParametresSurveillance(req.SeuilLignesRetirees, req.SeuilTiroir, req.SeuilAttentesAbandonnees,
                     req.SeuilRemises, req.SeuilRemisesPatient, req.HeureOuverture, req.HeureFermeture, req.SeuilAjustements, req.SeuilCasses,
-                    req.SeuilEchantillons, req.JoursComptageSensibles), user.UtilisateurId(), ct);
+                    req.SeuilEchantillons, req.JoursComptageSensibles, req.ReceptionAveugle, req.JoursAvoirRetour), user.UtilisateurId(), ct);
                 return Results.NoContent();
             });
 

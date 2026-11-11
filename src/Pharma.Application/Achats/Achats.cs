@@ -316,9 +316,22 @@ public sealed record SaisieReception(
 /// La dette du grossiste augmente du net à payer : HT moins les remises, plus la TVA du catalogue, plus le timbre (044).
 /// Le SHP de chaque ligne, s'il n'est pas saisi, suit la liste du produit (RegleShp).
 /// </summary>
-public sealed class Receptionner(IAchats achats, IPermissionService droits, IHorloge horloge, IJournal journal, VerificationCodeComptoir? codesComptoir = null)
+public sealed class Receptionner(IAchats achats, IPermissionService droits, IHorloge horloge, IJournal journal, VerificationCodeComptoir? codesComptoir = null,
+    ModeReception? mode = null)
 {
     public async Task<ReceptionEnregistree> ExecuterAsync(SaisieReception s, long utilisateurId, CancellationToken ct = default)
+    {
+        // Réception à l'aveugle : la livraison est d'abord comptée, la facture se saisit ensuite sur ce comptage
+        if (mode is not null && await mode.AveugleAsync(ct))
+            throw new RegleMetierException("Réception à l’aveugle : comptez d’abord les boîtes (« Compter une livraison »), la facture se saisit ensuite sur ce comptage.");
+        return await EntrerAsync(s, utilisateurId, ct);
+    }
+
+    /// <summary>Livraison comptée puis facturée (FacturerComptage, DeciderEcartReception) : lignes déjà rapprochées du comptage.</summary>
+    public Task<ReceptionEnregistree> ExecuterDepuisComptageAsync(SaisieReception s, long utilisateurId, CancellationToken ct = default) =>
+        EntrerAsync(s, utilisateurId, ct);
+
+    private async Task<ReceptionEnregistree> EntrerAsync(SaisieReception s, long utilisateurId, CancellationToken ct)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "réceptionner une livraison", ct);
         if (await achats.FournisseurAsync(s.FournisseurId, ct) is not { } grossiste)
@@ -514,7 +527,8 @@ public sealed class PreparerRetour(IAchats achats, IPermissionService droits, IJ
 }
 
 /// <summary>Suivi d'un retour : envoi (bon de retour PDF), avoir reçu, ou annulation / refus avec remise en stock.</summary>
-public sealed class SuivreRetour(IAchats achats, IPermissionService droits, IDocumentsAchats documents, Administration.IPharmacie pharmacie, IJournal journal)
+public sealed class SuivreRetour(IAchats achats, IPermissionService droits, IDocumentsAchats documents, Administration.IPharmacie pharmacie, IJournal journal,
+    Surveillance.Surveiller? surveillance = null)
 {
     public async Task<DocumentGenere> EnvoyerAsync(long retourId, long utilisateurId, CancellationToken ct = default)
     {
@@ -531,6 +545,8 @@ public sealed class SuivreRetour(IAchats achats, IPermissionService droits, IDoc
         var r = await Charger(retourId, utilisateurId, StatutRetour.AvoirRecu, ct);
         await achats.EnregistrerAvoirAsync(retourId, montant, ct);
         await Journaliser(utilisateurId, "avoir_recu", r, montant, ct);
+        // Avoir inférieur au montant attendu : anomalie au titulaire
+        if (surveillance is not null && montant < r.MontantAttendu) await surveillance.ExecuterAsync(ct);
     }
 
     public async Task RefuserAsync(long retourId, string? motif, long utilisateurId, CancellationToken ct = default)

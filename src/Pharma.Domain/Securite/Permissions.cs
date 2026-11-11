@@ -30,6 +30,8 @@ public static class Permissions
     public const string TresorerieGerer = "tresorerie.gerer";
     public const string FacturesGerer = "factures.gerer";
     public const string AchatsRetourFournisseur = "achats.retour_fournisseur";
+    /// <summary>Valider un écart entre le comptage (réception à l'aveugle) et la facture d'une livraison.</summary>
+    public const string AchatsValiderEcart = "achats.valider_ecart";
     public const string ChifaImporter = "chifa.importer";
     public const string ChifaBordereaux = "chifa.bordereaux";
     public const string RapportsVentes = "rapports.ventes";

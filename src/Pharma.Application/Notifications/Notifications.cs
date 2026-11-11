@@ -119,11 +119,24 @@ public sealed class NotificationService(INotificationsDepot depot) : INotificati
         foreach (var d in destinataires)
         {
             if (d.Recoit(c.Type, CanalNotification.Email))
-                liste.Add(new NouveauMessage(CanalNotification.Email, d.Id, d.Adresse(CanalNotification.Email), c.Type, c.Objet, c.TexteEmail, c.HtmlEmail));
+                liste.Add(new NouveauMessage(CanalNotification.Email, d.Id, d.Adresse(CanalNotification.Email), c.Type, c.Objet, c.TexteEmail,
+                    c.HtmlEmail ?? HtmlAlerte(c.Objet, c.TexteEmail)));
             if (smsActifs && c.TexteSms is not null && d.Recoit(c.Type, CanalNotification.Sms))
                 liste.Add(new NouveauMessage(CanalNotification.Sms, d.Id, d.Adresse(CanalNotification.Sms), c.Type, null, TexteSms.Preparer(c.TexteSms), null));
         }
         return liste;
+    }
+
+    /// <summary>E-mail d'alerte : l'objet de l'alerte en gras en tête, puis le texte (paragraphes et retours à la ligne gardés).</summary>
+    public static string HtmlAlerte(string objet, string texte)
+    {
+        // Caractères spéciaux du HTML seulement : les accents restent lisibles (e-mail en UTF-8)
+        static string E(string s) => s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
+        var paragraphes = texte.Replace("\r\n", "\n").Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => $"<p style=\"margin: 0 0 10px\">{string.Join("<br />", p.Split('\n').Select(E))}</p>");
+        return "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.5; color: #1f2937\">"
+               + $"<p style=\"margin: 0 0 14px; font-size: 16px\"><strong>{E(objet)}</strong></p>"
+               + string.Concat(paragraphes) + "</div>";
     }
 }
 
@@ -292,7 +305,7 @@ public interface IAlertesTitulaire
     Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default);
     /// <summary>Ancien lot délaissé au profit d'un lot plus récent (le message nomme le vendeur) : inventaire du produit à faire.</summary>
     Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default);
-    /// <summary>Anomalie de caisse (surveillance) : texte court, employé et chiffres, aucune donnée de patient.</summary>
+    /// <summary>Anomalie de surveillance (caisse, stock, réception, retours) : texte court, employé et chiffres, aucune donnée de patient.</summary>
     Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default);
 }
 
@@ -330,7 +343,7 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
     public async Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default)
     {
         var r = await depot.ReglagesAsync(ct);
-        var objet = urgent ? "URGENT : anomalie de caisse" : "Anomalie de caisse";
+        var objet = urgent ? "URGENT : anomalie de surveillance" : "Anomalie de surveillance";
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Surveillance, objet,
             $"{message}\n\nDétail dans le logiciel : Surveillance (titulaire).", null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
     }

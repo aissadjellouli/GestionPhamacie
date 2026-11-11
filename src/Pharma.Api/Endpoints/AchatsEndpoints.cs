@@ -183,6 +183,54 @@ internal static class AchatsEndpoints
             })
            .ExigerPermission(Permissions.AchatsReceptionner);
 
+
+        // ---- Réception à l'aveugle (057) : comptage sans voir le BL, puis facture saisie et comparée ----
+        achats.MapGet("/receptions/mode", async (ModeReception mode, CancellationToken ct) => Results.Ok(new ModeReceptionDto(await mode.AveugleAsync(ct))))
+           .ExigerPermission(Lecture);
+
+        achats.MapPost("/receptions/comptages", async (CompterLivraisonRequete req, CompterLivraison compter, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new IdentifiantDto(await compter.ExecuterAsync(req.FournisseurId, req.NumeroBl,
+                    req.Lignes.Select(l => new LigneComptee(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.Gtin, l.NumerosSerie)).ToList(),
+                    req.ScansMobile, user.UtilisateurId(), ct))))
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        achats.MapGet("/receptions/comptages", async (ListerComptagesReception lister, CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(ct)).Select(c => new ComptageResumeDto(c.Id, c.FournisseurId, c.Fournisseur, c.NumeroBl, c.Statut,
+                    c.Compteur, c.CompteLe, c.Factureur, c.FactureLe, c.Lignes.Count, c.Ecarts.Select(VersDto).ToList(),
+                    c.BoitesManquantes, c.BoitesEnTrop, c.ValeurManquante)).ToList()))
+           .ExigerPermission(Permissions.AchatsReceptionner, Permissions.AchatsValiderEcart);
+
+        achats.MapGet("/receptions/comptages/{id:long}", async (long id, ObtenirComptageReception obtenir, CancellationToken ct) =>
+            {
+                var c = await obtenir.ExecuterAsync(id, ct);
+                return Results.Ok(new ComptageAFacturerDto(c.Id, c.FournisseurId, c.NumeroBl, c.Compteur,
+                    c.Lignes.Select(l => new LotAFacturerDto(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Gtin)).ToList()));
+            })
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        achats.MapPost("/receptions/comptages/{id:long}/facturer", async (long id, ReceptionRequete req, FacturerComptage facturer, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                var r = await facturer.ExecuterAsync(id, VersSaisie(req), user.UtilisateurId(), ct);
+                return Results.Ok(new ResultatFacturationDto(r.Reception is { } rec ? VersDto(rec) : null, r.Ecarts.Select(VersDto).ToList()));
+            })
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        achats.MapPost("/receptions/comptages/{id:long}/annuler", async (long id, AnnulerComptage annuler, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await annuler.ExecuterAsync(id, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        achats.MapPost("/receptions/comptages/{id:long}/decision", async (long id, DecisionEcartReceptionRequete req, DeciderEcartReception decider,
+                ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var r = await decider.ExecuterAsync(id, req.Valider, user.UtilisateurId(), ct);
+                return r is null ? Results.NoContent() : Results.Ok(VersDto(r));
+            })
+           .ExigerPermission(Permissions.AchatsValiderEcart);
+
         achats.MapPost("/etiquettes", async (EtiquettesRequete req, ImprimerEtiquettes imprimer, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 var e = await imprimer.ExecuterAsync(req.LotId, req.Nombre, user.UtilisateurId(), ct);
@@ -209,4 +257,15 @@ internal static class AchatsEndpoints
     private static RetourDto VersDto(RetourResume r) =>
         new(r.Id, r.Numero, r.FournisseurId, r.Fournisseur, r.Motif, r.Statut, r.CreeLe, r.EnvoyeLe, r.AvoirRecuLe,
             r.MontantAttendu, r.MontantAvoir, r.Lignes.Select(l => new LigneRetourDto(l.Produit, l.NumeroLot, l.Quantite)).ToList());
+
+    private static SaisieReception VersSaisie(ReceptionRequete req) => new(req.FournisseurId, req.CommandeId, req.NumeroBl, req.NumeroFacture,
+        req.Lignes.Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
+            l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp,
+            l.Ug, l.UgCoutReparti, l.RemplacerPrixCatalogue)).ToList(), req.Timbre,
+        req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null);
+
+    private static ReceptionEnregistreeDto VersDto(ReceptionEnregistree r) => new(r.ReceptionId, r.MontantTtc,
+        r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList());
+
+    private static EcartComptageDto VersDto(EcartComptage e) => new(e.ProduitId, e.Nom, e.NumeroLot, e.Facture, e.Compte);
 }

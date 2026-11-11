@@ -61,6 +61,7 @@
     <File Path="database/054_surveillance_caisse.sql" />
     <File Path="database/055_surveillance_stock.sql" />
     <File Path="database/056_droit_don.sql" />
+    <File Path="database/057_reception_aveugle.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

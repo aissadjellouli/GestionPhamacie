@@ -29,7 +29,8 @@ public sealed record AlerteSurveillance(long Id, string Type, string Niveau, lon
 /// <summary>Seuils par employé et par jour ; horaires d'ouverture (null : ventes hors horaires non contrôlées).</summary>
 public sealed record ParametresSurveillance(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,
     int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture,
-    int SeuilAjustements = 5, int SeuilCasses = 3, int SeuilEchantillons = 3, int JoursComptageSensibles = 7);
+    int SeuilAjustements = 5, int SeuilCasses = 3, int SeuilEchantillons = 3, int JoursComptageSensibles = 7,
+    bool ReceptionAveugle = true, int JoursAvoirRetour = 30);
 
 // ---- Port -------------------------------------------------------------------
 
@@ -127,6 +128,8 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
             throw new RegleMetierException("Chaque seuil doit être d’au moins 1.");
         if (p.JoursComptageSensibles is < 1 or > 90)
             throw new RegleMetierException("Comptage des produits sensibles : tous les 1 à 90 jours.", "jours_sensibles");
+        if (p.JoursAvoirRetour is < 1 or > 365)
+            throw new RegleMetierException("Retour sans avoir : délai de 1 à 365 jours.", "jours_avoir");
         if ((p.HeureOuverture is null) != (p.HeureFermeture is null))
             throw new RegleMetierException("Horaires : renseignez l’ouverture et la fermeture, ou aucune des deux (pas de contrôle).", "heure_ouverture");
         if (p.HeureOuverture is { } o && p.HeureFermeture is { } f && o >= f)
@@ -138,6 +141,7 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
                 ["lignes_retirees"] = p.SeuilLignesRetirees, ["tiroir"] = p.SeuilTiroir, ["attentes"] = p.SeuilAttentesAbandonnees,
                 ["remises"] = p.SeuilRemises, ["remises_patient"] = p.SeuilRemisesPatient, ["ajustements"] = p.SeuilAjustements,
                 ["casses"] = p.SeuilCasses, ["echantillons"] = p.SeuilEchantillons, ["comptage_sensibles_jours"] = p.JoursComptageSensibles,
+                ["reception_aveugle"] = p.ReceptionAveugle, ["avoir_retour_jours"] = p.JoursAvoirRetour,
                 ["horaires"] = p.HeureOuverture is { } a ? $"{a:HH\\:mm}-{p.HeureFermeture:HH\\:mm}" : null
             }, null, ct);
     }

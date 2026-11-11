@@ -37,7 +37,8 @@ internal sealed class AchatsEnMemoire : IAchats
     public Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception reception, CancellationToken ct = default)
     {
         ReceptionRecue = reception;
-        return Task.FromResult(new ReceptionEnregistree(1, reception.MontantTtc, []));
+        return Task.FromResult(new ReceptionEnregistree(1, reception.MontantTtc,
+            reception.Lignes.Select((l, i) => new LotRecu(100 + i, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, 0)).ToList()));
     }
     public Task<LotRetournable?> LotRetournableAsync(long lotId, CancellationToken ct = default) => Task.FromResult(Lots.GetValueOrDefault(lotId));
     public Task<long> CreerRetourAsync(NouveauRetour retour, CancellationToken ct = default)

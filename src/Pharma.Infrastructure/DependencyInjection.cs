@@ -116,6 +116,7 @@ public static class DependencyInjection
         services.AddScoped<ITracabiliteLecture, TracabiliteLecture>();
         services.AddSingleton<CodesInternesLot>();
         services.AddScoped<Application.Achats.IAchats, Achats.AchatsSql>();
+        services.AddScoped<Application.Achats.IComptagesReception, Achats.ComptagesReceptionSql>();
         services.AddSingleton<Application.Achats.IDocumentsAchats, DocumentsAchats>();
         services.AddScoped<Application.Notifications.INotificationsDepot, Notifications.NotificationsSql>();
         services.AddScoped<Application.Notifications.IDonneesRapport, Notifications.DonneesRapportSql>();

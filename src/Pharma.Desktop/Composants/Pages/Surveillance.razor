@@ -89,7 +89,10 @@
                     <div class="champ"><label for="sv-casses">Boîtes déclarées cassées</label><input id="sv-casses" type="number" min="1" @bind="r.SeuilCasses" /></div>
                     <div class="champ"><label for="sv-echant">Boîtes données en échantillon</label><input id="sv-echant" type="number" min="1" @bind="r.SeuilEchantillons" /></div>
                     <div class="champ"><label for="sv-sensibles">Comptage des produits sensibles (tous les … jours)</label><input id="sv-sensibles" data-champ="jours_sensibles" type="number" min="1" max="90" @bind="r.JoursComptageSensibles" /></div>
+                    <div class="champ"><label for="sv-avoir">Retour fournisseur sans avoir (après … jours)</label><input id="sv-avoir" data-champ="jours_avoir" type="number" min="1" max="365" @bind="r.JoursAvoirRetour" /></div>
                 </div>
+                <label class="case" style="display: flex; gap: 8px; align-items: center"><input type="checkbox" @bind="r.ReceptionAveugle" />
+                    Réception à l’aveugle : les boîtes sont comptées sans voir le bon de livraison, puis la facture est saisie et comparée (un écart bloque la réception jusqu’à votre validation).</label>
                 <div>
                     <h2 id="t-horaires">Horaires d’ouverture</h2>
                     <p class="sous-titre">Une vente encaissée en dehors crée une anomalie urgente. Laissez vide pour ne pas contrôler (pharmacie de garde, horaires variables).</p>
@@ -151,6 +154,8 @@
         public int SeuilCasses { get; set; }
         public int SeuilEchantillons { get; set; }
         public int JoursComptageSensibles { get; set; }
+        public bool ReceptionAveugle { get; set; }
+        public int JoursAvoirRetour { get; set; }
     }
 
     private List<AlerteSurveillanceDto> anomalies = [];
@@ -172,6 +177,10 @@
         "echantillons" => "Échantillons et gratuités",
         "boites_fantomes" => "Boîtes fantômes",
         "sensibles_en_retard" => "Comptage des produits sensibles en retard",
+        "ecart_reception" => "Écart entre comptage et facture",
+        "reception_meme_personne" => "Comptage et facture par la même personne",
+        "retour_sans_avoir" => "Retour fournisseur sans avoir",
+        "avoir_incomplet" => "Avoir incomplet",
         _ => type
     };
 
@@ -186,7 +195,7 @@
                 SeuilLignesRetirees = p.SeuilLignesRetirees, SeuilTiroir = p.SeuilTiroir, SeuilAttentesAbandonnees = p.SeuilAttentesAbandonnees,
                 SeuilRemises = p.SeuilRemises, SeuilRemisesPatient = p.SeuilRemisesPatient, HeureOuverture = p.HeureOuverture, HeureFermeture = p.HeureFermeture,
                 SeuilAjustements = p.SeuilAjustements, SeuilCasses = p.SeuilCasses, SeuilEchantillons = p.SeuilEchantillons,
-                JoursComptageSensibles = p.JoursComptageSensibles
+                JoursComptageSensibles = p.JoursComptageSensibles, ReceptionAveugle = p.ReceptionAveugle, JoursAvoirRetour = p.JoursAvoirRetour
             };
         erreur ??= e;
     }
@@ -244,7 +253,7 @@
         enCours = true;
         erreur = await Api.EnregistrerParametresSurveillanceAsync(new ParametresSurveillanceDto(r.SeuilLignesRetirees, r.SeuilTiroir,
             r.SeuilAttentesAbandonnees, r.SeuilRemises, r.SeuilRemisesPatient, r.HeureOuverture, r.HeureFermeture, r.SeuilAjustements, r.SeuilCasses,
-            r.SeuilEchantillons, r.JoursComptageSensibles));
+            r.SeuilEchantillons, r.JoursComptageSensibles, r.ReceptionAveugle, r.JoursAvoirRetour));
         enCours = false;
         message = erreur is null ? "Réglages de surveillance enregistrés." : null;
     }

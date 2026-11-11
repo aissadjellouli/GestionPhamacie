@@ -612,6 +612,22 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **La réception (lots, boîtes, mouvements, quantités reçues et dette du grossiste) est enregistrée en une seule fois** : tout ou rien. — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Chaque réception est inscrite au journal** (BL, nombre de lots, HT, remise, TVA, timbre, net à payer, SHP, UG). — `src/Pharma.Application/Achats/Achats.cs`
 
+### Réception à l'aveugle (comptage, puis facture)
+- **Réception en deux étapes quand le réglage « Réception à l'aveugle » est actif (actif par défaut)** : la saisie directe d'une livraison est alors refusée. — `src/Pharma.Application/Achats/Achats.cs`, `database/057_reception_aveugle.sql`
+- **Étape 1, comptage : les boîtes du carton sont comptées (scan Data Matrix, saisie ou scans du mobile) sans voir le bon de livraison, ni prix ni bon de commande.** Droit `achats.receptionner` ; grossiste actif ; BL, lot et péremption contrôlés comme une réception ; un même lot une seule fois. Inscrit au journal (`comptage_reception`). — `src/Pharma.Application/Achats/ComptageReception.cs`, `src/Pharma.Domain/Achats/RegleComptageReception.cs`
+- **Un comptage dont la facture n'est pas encore saisie peut être annulé** (droit `achats.receptionner`, journal `comptage_annule`). — `src/Pharma.Application/Achats/ComptageReception.cs`
+- **Étape 2, facture : les lots comptés (produit, lot, péremption) sont repris sans le nombre de boîtes comptées ; on saisit la facture (boîtes facturées UG comprises, prix).** Le BL et le grossiste sont ceux du comptage ; la facture d'un comptage ne se saisit qu'une fois. — `src/Pharma.Application/Achats/ComptageReception.cs`, `src/Pharma.Api/Endpoints/AchatsEndpoints.cs`
+- **Comparaison lot par lot (produit et n° de lot, sans tenir compte des majuscules ni des espaces)** : un lot compté laissé à 0 ou absent de la facture compte comme non facturé. — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
+- **Sans écart, la livraison entre en stock comme une réception ordinaire**, avec les Data Matrix du comptage. — `src/Pharma.Application/Achats/ComptageReception.cs`
+- **Avec écart, rien n'entre en stock : la réception est bloquée** ; la facture est gardée telle que saisie, sans jamais garder de code comptoir ; anomalie et alerte au titulaire. — `src/Pharma.Application/Achats/ComptageReception.cs`
+- **L'écart est décidé par le titulaire ou un employé qui a le droit `achats.valider_ecart`** (titulaire et assistant par défaut, attribuable à un vendeur) : « Valider » ou « Faire recompter » (nouveau comptage, puis facture à ressaisir). — `src/Pharma.Application/Achats/ComptageReception.cs`
+- **Écart validé : le stock prend les boîtes comptées, la dette du grossiste suit la facture.** — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
+- **Boîtes facturées absentes du carton : entrées puis aussitôt sorties du stock** (boîte « manquante », mouvement `manquant_reception`, « à réclamer au grossiste ») ; les boîtes sans Data Matrix les plus chères sortent d'abord ; pour un psychotrope, le registre inscrit un écart en moins. — `src/Pharma.Infrastructure/Achats/ComptagesReceptionSql.cs`, `database/057_reception_aveugle.sql`
+- **Boîtes en trop (comptées, non facturées) : entrées comme unités gratuites à 0 DA** ; un lot compté absent de la facture entre entièrement à 0 DA. — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
+- **Celui qui valide l'écart réceptionne** : il lui faut aussi `achats.receptionner`, et `produits.bloquer` si la livraison contient un produit bloqué à l'achat. — `src/Pharma.Application/Achats/ComptageReception.cs`
+- **Écart validé ou renvoyé au recomptage par un autre que le titulaire : le titulaire est prévenu** (e-mail, SMS selon ses réglages ; urgent s'il manque des boîtes). — `src/Pharma.Application/Achats/ComptageReception.cs`
+- **Une boîte « manquante » ne peut être ni vendue ni remboursée.** — `src/Pharma.Application/Caisse/RechercherVenteParBoite.cs`
+
 ### Lots à la réception
 - **Un lot = produit + n° de lot + grossiste + date de péremption** (unicité en base). Un même n° reçu de deux grossistes donne deux lots distincts. — `database/021_prix_boite.sql`, `database/003_provenance.sql`
 - **Le même lot relivré par le même grossiste avec la même date complète le lot existant** (pas de nouveau lot). Un lot unique repris avec une date « à vérifier » est aussi complété et prend la date saisie. — `src/Pharma.Domain/Stock/RegleLot.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
@@ -669,6 +685,9 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Un retour annulé ou refusé remet le stock et les boîtes identifiées en stock**, avec une trace dans l'historique de chaque boîte. — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Chaque étape d'un retour est inscrite au journal** (préparé, envoyé, avoir reçu, refusé). — `src/Pharma.Application/Achats/Achats.cs`
 
+- **Retour envoyé sans avoir après 30 jours (délai réglable, 1 à 365) : anomalie au titulaire**, rattachée à qui a préparé le retour ; urgente au double du délai. — `database/057_reception_aveugle.sql`
+- **Avoir reçu inférieur au montant attendu (de plus d'un centime) : anomalie au titulaire.** — `database/057_reception_aveugle.sql`, `src/Pharma.Application/Achats/Achats.cs`
+
 ### Dette envers les grossistes et relevé
 - **La dette d'un grossiste augmente du net à payer de chaque réception et diminue de chaque règlement et de chaque avoir de retour.** — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `src/Pharma.Infrastructure/Achats/ReglementsFournisseursSql.cs`
 - **Chaque changement de la dette est écrit automatiquement dans le relevé du grossiste** (ouverture, reprise, réception, règlement, avoir, correction), avec le solde après. Un changement fait hors logiciel apparaît comme « correction ». — `database/039_suivi_dettes.sql`
@@ -696,6 +715,8 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Préparer, émettre, consulter, rejeter, corriger, remplacer une facture, émettre un avoir, gérer le suivi et les clients facturés demandent le droit `factures.gerer`** (donné au titulaire, qui l'accorde à qui il veut). — `src/Pharma.Application/Factures/Factures.cs`, `database/031_facture_client.sql`
 - **Créer ou modifier un organisme (CNAS, CASNOS, militaires…) est réservé au titulaire**, car les organismes servent aussi au tiers payant. — `src/Pharma.Application/Factures/Factures.cs`
 - **Rejeter, corriger ou remplacer une facture déjà payée en entier est réservé au titulaire.** — `src/Pharma.Application/Factures/Factures.cs`
+
+- **Un e-mail d'alerte commence par l'objet de l'alerte en gras**, suivi du texte (paragraphes gardés) ; une version texte seule accompagne toujours la version mise en forme. Le rapport quotidien garde sa propre mise en page. — `src/Pharma.Application/Notifications/Notifications.cs`
 
 ### Destinataires
 - **Une facture va à un patient, à une entreprise (client facturé) ou à un organisme.** — `src/Pharma.Domain/Factures/RegleFacture.cs`, `database/031_facture_client.sql`
@@ -842,7 +863,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 
 ### Droits par défaut
 
-Valeurs posées à la première installation ; le titulaire peut ensuite les changer (sauf pour le rôle titulaire). 32 droits au total.
+Valeurs posées à la première installation ; le titulaire peut ensuite les changer (sauf pour le rôle titulaire). 33 droits au total.
 
 | Droit | Libellé | Titulaire | Assistant | Vendeur | Stagiaire |
 | --- | --- | :-: | :-: | :-: | :-: |
@@ -869,6 +890,7 @@ Valeurs posées à la première installation ; le titulaire peut ensuite les cha
 | `achats.receptionner` | Réceptionner une livraison | ✔ | ✔ | ✔ | – |
 | `achats.regler` | Régler les factures des grossistes | ✔ | ✔ | – | – |
 | `achats.retour_fournisseur` | Faire un retour fournisseur | ✔ | ✔ | – | – |
+| `achats.valider_ecart` | Valider un écart entre le comptage et la facture d'une livraison | ✔ | ✔ | – | – |
 | `tresorerie.gerer` | Gérer la trésorerie (coffre, banques, dépenses) | ✔ | – | – | – |
 | `factures.gerer` | Émettre et gérer les factures clients | ✔ | – | – | – |
 | `chifa.importer` | Importer les factures Chifa | ✔ | ✔ | ✔ | – |
@@ -1157,7 +1179,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 
 ### Déclenchement du calcul des anomalies
 - **Le calcul porte toujours sur la journée en cours** (date du jour du serveur). — `src/Pharma.Application/Surveillance/Surveillance.cs`
-- **Le calcul est relancé après** : chaque vente encaissée, chaque événement de caisse (ligne retirée, tiroir, attente abandonnée), chaque fin d'inventaire, chaque écart d'inventaire validé, chaque déclaration de casse ou d'échantillon (pas pour un périmé). — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `src/Pharma.Application/Stock/Inventaire.cs`, `src/Pharma.Application/Stock/SortieStock.cs`
+- **Le calcul est relancé après** : chaque vente encaissée, chaque événement de caisse (ligne retirée, tiroir, attente abandonnée), chaque fin d'inventaire, chaque écart d'inventaire validé, chaque déclaration de casse ou d'échantillon (pas pour un périmé), chaque facture saisie sur un comptage (avec ou sans écart), chaque avoir inférieur au montant attendu. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `src/Pharma.Application/Stock/Inventaire.cs`, `src/Pharma.Application/Stock/SortieStock.cs`
 - **Le calcul ne bloque jamais la vente ni l'opération** : elle est déjà enregistrée ; une erreur de surveillance est ignorée. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les journées et les horaires sont ceux de l'heure du serveur PostgreSQL** : son fuseau doit être réglé sur l'heure de la pharmacie. — `database/054_surveillance_caisse.sql`
 - **Il n'y a pas de calcul planifié** : constaté, le calcul n'est lancé que par les opérations ci-dessus (à confirmer : aucun appel planifié trouvé). — `src/Pharma.Application/Surveillance/Surveillance.cs`
@@ -1177,10 +1199,14 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 | Échantillons (`echantillons`) | Boîtes sorties en échantillon ou gratuité, par employé et par jour | 3 boîtes | à partir de 6 | `seuil_echantillons` (≥ 1) |
 | Boîtes fantômes (`boites_fantomes`) | Inventaire terminé ce jour : boîtes identifiées en stock, d'un lot scanné, jamais scannées pendant ce comptage | aucun seuil : dès 1 boîte | à partir de 3 boîtes (valeur fixe, non réglable) | aucun |
 | Produits sensibles en retard (`sensibles_en_retard`) | Comptage « Produits sensibles » jamais fait ou plus ancien que la fréquence réglée | 7 jours | jamais (toujours « attention ») | `jours_comptage_sensibles` (1 à 90) |
+| Écart de réception (`ecart_reception`) | Facture saisie ce jour qui ne correspond pas au comptage (rattachée à celui qui a compté) | aucun seuil : dès 1 boîte | s'il manque des boîtes | `reception_aveugle` |
+| Comptage et facture par la même personne (`reception_meme_personne`) | Livraisons comptées puis facturées par le même employé, par jour | aucun seuil : dès 1 livraison | jamais | `reception_aveugle` |
+| Retour sans avoir (`retour_sans_avoir`) | Retour fournisseur « envoyé » sans avoir depuis le délai réglé | 30 jours | à partir de 60 jours (2 × délai) | `jours_avoir_retour` (1 à 365) |
+| Avoir incomplet (`avoir_incomplet`) | Avoir reçu ce jour inférieur au montant attendu | dès 0,01 DA | jamais | aucun |
 
 ### Règles communes des anomalies
 - **Deux niveaux existent : « attention » et « urgent ».** — `database/054_surveillance_caisse.sql`
-- **Une anomalie à seuil devient « urgente » quand la valeur atteint le double du seuil** (sauf hors horaires, boîtes fantômes et produits sensibles, voir le tableau). — `database/055_surveillance_stock.sql`
+- **Une anomalie à seuil devient « urgente » quand la valeur atteint le double du seuil** (sauf hors horaires, boîtes fantômes, produits sensibles et anomalies des achats, voir le tableau). — `database/055_surveillance_stock.sql`
 - **Le seuil est atteint dès que la valeur est égale au seuil** (comparaison « supérieur ou égal »). — `database/055_surveillance_stock.sql`
 - **Une seule anomalie par type, par employé, par jour** (et par patient, par inventaire ou par date de dernier comptage selon le type). — `database/054_surveillance_caisse.sql`
 - **Une anomalie existante est mise à jour avec les chiffres du jour** (message, valeur, niveau) à chaque nouveau calcul. — `database/054_surveillance_caisse.sql`
@@ -1209,7 +1235,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 ### Notification des anomalies
 - **Chaque nouvelle anomalie est notifiée au titulaire** (e-mail, et SMS selon le réglage). — `src/Pharma.Application/Surveillance/Surveillance.cs`, `src/Pharma.Application/Notifications/Notifications.cs`
 - **Une anomalie déjà connue est notifiée une seconde fois quand elle passe de « attention » à « urgent ».** — `database/054_surveillance_caisse.sql`
-- **L'objet du message est « URGENT : anomalie de caisse » ou « Anomalie de caisse »** ; le message renvoie à l'écran Surveillance du titulaire. — `src/Pharma.Application/Notifications/Notifications.cs`
+- **L'objet du message est « URGENT : anomalie de surveillance » ou « Anomalie de surveillance »** (caisse, stock, réception, retours) ; le message renvoie à l'écran Surveillance du titulaire. — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Le SMS de surveillance n'est envoyé que si le réglage SMS des lots bloqués est activé.** — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Le texte notifié ne contient aucune donnée de patient** (le nom du patient n'apparaît que dans l'écran Surveillance). — `database/055_surveillance_stock.sql`
 - **Les destinataires sont ceux abonnés au type « surveillance »** ; à l'installation, ce type a été ajouté aux destinataires déjà abonnés au type « lot délaissé ». — `database/054_surveillance_caisse.sql`
@@ -1221,9 +1247,11 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Une anomalie déjà traitée ne peut pas être traitée à nouveau** (« introuvable ou déjà traitée »). — `src/Pharma.Infrastructure/Surveillance/SurveillanceSql.cs`
 
 ### Réglages de la surveillance
-- **Valeurs par défaut** : lignes retirées 5, tiroir 3, attentes abandonnées 3, remises 5, remises au même patient 3, ajustements 5, casses 3, échantillons 3, comptage des produits sensibles tous les 7 jours, horaires vides. — `database/054_surveillance_caisse.sql`, `database/055_surveillance_stock.sql`
+- **Valeurs par défaut** : lignes retirées 5, tiroir 3, attentes abandonnées 3, remises 5, remises au même patient 3, ajustements 5, casses 3, échantillons 3, comptage des produits sensibles tous les 7 jours, horaires vides, réception à l'aveugle active, retour sans avoir après 30 jours. — `database/054_surveillance_caisse.sql`, `database/055_surveillance_stock.sql`
 - **Chaque seuil doit valoir au moins 1.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **La fréquence du comptage des produits sensibles va de 1 à 90 jours.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **Le délai d'un retour sans avoir va de 1 à 365 jours.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **La réception à l'aveugle se désactive dans les réglages (petite équipe)** : la réception redevient une saisie directe en une étape. — `src/Pharma.Application/Achats/Achats.cs`
 - **Les horaires se renseignent ensemble (ouverture et fermeture) ou pas du tout** ; vides, les ventes hors horaires ne sont pas contrôlées. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **L'heure d'ouverture doit précéder l'heure de fermeture** (une plage passant minuit n'est donc pas possible). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les seuils s'appliquent par employé et par jour** (par patient sur 30 jours pour les remises au même patient). — `database/054_surveillance_caisse.sql`

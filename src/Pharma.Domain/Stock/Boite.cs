@@ -8,7 +8,9 @@ public enum StatutBoite
     Detruite,
     RetourClient,
     /// <summary>Donnée : échantillon, gratuité ou don à un nécessiteux.</summary>
-    Donnee
+    Donnee,
+    /// <summary>Facturée mais absente du carton à la réception à l'aveugle : à réclamer au grossiste.</summary>
+    Manquante
 }
 
 /// <summary>Une boîte identifiée : Data Matrix (GTIN + série) ou étiquette interne.</summary>

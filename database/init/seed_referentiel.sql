@@ -19,7 +19,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 056 (vérifié : permissions, rôles,
+-- Valeurs identiques à celles posées par les scripts 001 à 057 (vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
@@ -82,6 +82,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('achats.receptionner', 'Achats', 'Réceptionner une livraison', false),
     ('achats.regler', 'Achats', 'Régler les factures des grossistes', true),
     ('achats.retour_fournisseur', 'Achats', 'Faire un retour fournisseur', false),
+    ('achats.valider_ecart', 'Achats', 'Valider un écart entre le comptage et la facture d''une livraison', true),
     ('admin.parametres', 'Administration', 'Modifier les paramètres', true),
     ('admin.sauvegardes', 'Administration', 'Gérer les sauvegardes', true),
     ('admin.utilisateurs', 'Administration', 'Gérer les utilisateurs et les droits', true),
@@ -121,6 +122,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'achats.receptionner'),
     ('titulaire', 'achats.regler'),
     ('titulaire', 'achats.retour_fournisseur'),
+    ('titulaire', 'achats.valider_ecart'),
     ('titulaire', 'admin.parametres'),
     ('titulaire', 'admin.sauvegardes'),
     ('titulaire', 'admin.utilisateurs'),
@@ -153,6 +155,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'achats.receptionner'),
     ('assistant', 'achats.regler'),
     ('assistant', 'achats.retour_fournisseur'),
+    ('assistant', 'achats.valider_ecart'),
     ('assistant', 'caisse.annuler_vente'),
     ('assistant', 'caisse.ouvrir_tiroir'),
     ('assistant', 'caisse.remise'),

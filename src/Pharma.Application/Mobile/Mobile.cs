@@ -112,7 +112,8 @@ public sealed class IdentifierCode(IMobile mobile, IPermissionService droits, IH
     private static string LibelleStatutBoite(string s) => s switch
     {
         "vendue" => "vendue", "retournee_fournisseur" => "retournée au grossiste", "detruite" => "détruite",
-        "retour_client" => "retour client", "donnee" => "donnée (échantillon ou don)", _ => s
+        "retour_client" => "retour client", "donnee" => "donnée (échantillon ou don)",
+        "manquante" => "manquante à la réception", _ => s
     };
 }
 

@@ -90,6 +90,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{38
 		database\054_surveillance_caisse.sql = database\054_surveillance_caisse.sql
 		database\055_surveillance_stock.sql = database\055_surveillance_stock.sql
 		database\056_droit_don.sql = database\056_droit_don.sql
+		database\057_reception_aveugle.sql = database\057_reception_aveugle.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"

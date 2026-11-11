@@ -675,6 +675,22 @@ public sealed record AlerteSurveillanceDto(long Id, string Type, string Niveau, 
     decimal? Valeur, string Statut, DateTime MiseAJourLe, string? TraiteePar, DateTime? TraiteeLe, string? ActionPrise);
 public sealed record ParametresSurveillanceDto(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,
     int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture,
-    int SeuilAjustements = 5, int SeuilCasses = 3, int SeuilEchantillons = 3, int JoursComptageSensibles = 7);
+    int SeuilAjustements = 5, int SeuilCasses = 3, int SeuilEchantillons = 3, int JoursComptageSensibles = 7,
+    bool ReceptionAveugle = true, int JoursAvoirRetour = 30);
 public sealed record ProduitSensibleDto(long ProduitId, string Nom, int Stock);
 public sealed record MarquerSensibleRequete(bool Sensible);
+
+// ---- Réception à l'aveugle : comptage, facture comparée, écarts ----
+public sealed record ModeReceptionDto(bool Aveugle);
+public sealed record LigneCompteeDto(long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, int Quantite,
+    string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null);
+public sealed record CompterLivraisonRequete(long FournisseurId, string? NumeroBl, IReadOnlyList<LigneCompteeDto> Lignes, IReadOnlyList<long>? ScansMobile = null);
+public sealed record EcartComptageDto(long ProduitId, string Nom, string NumeroLot, int Facture, int Compte);
+/// <summary>Comptage en cours : jamais le nombre de boîtes comptées (la facture se saisit sans le voir) ; écarts une fois la facture saisie.</summary>
+public sealed record ComptageResumeDto(long Id, long FournisseurId, string Fournisseur, string NumeroBl, string Statut, string Compteur, DateTime CompteLe,
+    string? Factureur, DateTime? FactureLe, int NombreLots, IReadOnlyList<EcartComptageDto> Ecarts, int BoitesManquantes, int BoitesEnTrop, decimal ValeurManquante);
+/// <summary>Lot compté, à compléter avec la facture (quantité facturée, prix) : sans le nombre de boîtes comptées.</summary>
+public sealed record LotAFacturerDto(long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, string? Gtin);
+public sealed record ComptageAFacturerDto(long Id, long FournisseurId, string NumeroBl, string Compteur, IReadOnlyList<LotAFacturerDto> Lots);
+public sealed record ResultatFacturationDto(ReceptionEnregistreeDto? Reception, IReadOnlyList<EcartComptageDto> Ecarts);
+public sealed record DecisionEcartReceptionRequete(bool Valider);
