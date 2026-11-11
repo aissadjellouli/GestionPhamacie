@@ -697,3 +697,13 @@ public sealed record LotAFacturerDto(long ProduitId, string Nom, string NumeroLo
 public sealed record ComptageAFacturerDto(long Id, long FournisseurId, string NumeroBl, string Compteur, IReadOnlyList<LotAFacturerDto> Lots);
 public sealed record ResultatFacturationDto(ReceptionEnregistreeDto? Reception, IReadOnlyList<EcartComptageDto> Ecarts);
 public sealed record DecisionEcartReceptionRequete(bool Valider);
+
+// ---- Écarts dans le temps et risques par employé (titulaire) ----
+public sealed record JourEcartsDto(DateOnly Jour, decimal Ecart, decimal Manque, decimal PerteStock, int BoitesAjustees, decimal ValeurFantomes,
+    int Anomalies, int Urgentes, IReadOnlyList<string> Employes, IReadOnlyList<string> Postes);
+public sealed record RisqueEmployeDto(long UtilisateurId, string Nom, bool Actif, int JoursPresent, int JoursAvecPerte, decimal PerteEnPresence,
+    decimal MoyennePresent, decimal MoyenneAbsent, bool Signale, decimal ManqueCaisse, int Clotures, int Anomalies, int Urgentes, int Annulations,
+    int RetoursClients, int Remises, decimal Credits, int AutorisationsDemandees, int AutorisationsDonnees, int Casses, int Echantillons, int BoitesAjustees);
+/// <summary>JoursPerteMin et Facteur : règle du signalement (au moins JoursPerteMin jours de perte en sa présence, perte moyenne présent ≥ Facteur × absent).</summary>
+public sealed record TableauRisquesDto(DateOnly Du, DateOnly Au, IReadOnlyList<JourEcartsDto> Jours, IReadOnlyList<RisqueEmployeDto> Employes,
+    int JoursPerteMin, decimal Facteur, int JoursAbsentMin = 3);

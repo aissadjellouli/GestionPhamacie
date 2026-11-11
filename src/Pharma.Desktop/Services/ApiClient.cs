@@ -603,6 +603,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(TableauInventaireDto?, string?)> TableauInventaireAsync() => GetAsync<TableauInventaireDto?>("api/inventaires", null);
     public Task<(IdentifiantDto?, string?)> CommencerInventaireAsync(string rayon) => PostAsync<CommencerInventaireRequete, IdentifiantDto>("api/inventaires", new(rayon));
     /// <summary>Inventaire d'un produit (tous ses lots), depuis l'alerte « ancien lot délaissé » : titulaire seul.</summary>
+    // ---- Écarts dans le temps et risques par employé (titulaire) ----
+    public Task<(TableauRisquesDto?, string?)> RisquesAsync(DateOnly? du, DateOnly? au) =>
+        GetAsync<TableauRisquesDto?>("api/surveillance/risques?" + Requete(("du", du), ("au", au)), null);
+
     // ---- Produits sensibles (titulaire) et leur comptage ----
     public Task<(IdentifiantDto?, string?)> CommencerInventaireSensiblesAsync() => PostAsync<object, IdentifiantDto>("api/inventaires/sensibles", new());
     public Task<(List<ProduitSensibleDto>, string?)> ProduitsSensiblesAsync() => GetAsync<List<ProduitSensibleDto>>("api/surveillance/sensibles", []);

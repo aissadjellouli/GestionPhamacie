@@ -65,5 +65,21 @@ internal static class SurveillanceEndpoints
                 await gerer.MarquerAsync(produitId, req.Sensible, user.UtilisateurId(), ct);
                 return Results.NoContent();
             });
+
+        // Écarts dans le temps (par jour, poste, employés présents) et risques par employé
+        surveillance.MapGet("/risques", async (DateOnly? du, DateOnly? au, ObtenirTableauRisques obtenir, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var t = await obtenir.ExecuterAsync(du, au, user.UtilisateurId(), ct);
+                var noms = t.Noms;
+                return Results.Ok(new TableauRisquesDto(t.Du, t.Au,
+                    t.Jours.Select(j => new JourEcartsDto(j.Jour, j.Ecart, j.Manque, j.PerteStock, j.BoitesAjustees, j.ValeurFantomes, j.Anomalies,
+                        j.Urgentes, j.Presents.Select(id => noms.GetValueOrDefault(id, $"Employé {id}")).Order().ToList(), j.Postes)).ToList(),
+                    t.Employes.Select(e => new RisqueEmployeDto(e.Activite.UtilisateurId, e.Activite.Nom, e.Activite.Actif, e.Presence.JoursPresent,
+                        e.Presence.JoursAvecPerte, e.Presence.PerteEnPresence, e.Presence.MoyennePresent, e.Presence.MoyenneAbsent, e.Presence.Signale,
+                        e.Activite.ManqueCaisse, e.Activite.Clotures, e.Activite.Anomalies, e.Activite.Urgentes, e.Activite.Annulations,
+                        e.Activite.RetoursClients, e.Activite.Remises, e.Activite.Credits, e.Activite.AutorisationsDemandees, e.Activite.AutorisationsDonnees,
+                        e.Activite.Casses, e.Activite.Echantillons, e.Activite.BoitesAjustees)).ToList(),
+                    Pharma.Domain.Rapports.RegleRisques.JoursPerteMin, Pharma.Domain.Rapports.RegleRisques.Facteur, Pharma.Domain.Rapports.RegleRisques.JoursAbsentMin));
+            });
     }
 }

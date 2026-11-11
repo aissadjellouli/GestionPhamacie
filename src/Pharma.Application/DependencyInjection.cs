@@ -192,6 +192,7 @@ public static class DependencyInjection
         services.AddScoped<Surveillance.TraiterSurveillance>();
         services.AddScoped<Surveillance.ReglerSurveillance>();
         services.AddScoped<Surveillance.GererProduitsSensibles>();
+        services.AddScoped<Surveillance.ObtenirTableauRisques>();
         services.AddScoped<ObtenirInventaire>();
         services.AddScoped<CompterLot>();
         services.AddScoped<ScannerBoiteInventaire>();

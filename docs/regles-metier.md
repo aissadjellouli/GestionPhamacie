@@ -1282,6 +1282,17 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Un produit sous registre (psychotrope) n'est jamais donné en échantillon.** — `src/Pharma.Application/Stock/SortieStock.cs`
 - **Un échantillon exige d'indiquer à qui et pourquoi ; une casse exige d'indiquer ce qui s'est passé (200 caractères au plus).** — `src/Pharma.Application/Stock/SortieStock.cs`
 
+### Écarts et risques par employé
+- **Écran réservé au titulaire** (« Écarts et risques par employé », depuis Surveillance) ; période choisie, 30 derniers jours par défaut, 366 jours au plus, période inversée refusée. — `src/Pharma.Application/Surveillance/Risques.cs`
+- **Perte d'un jour = manque de caisse (somme des écarts négatifs des clôtures du jour) + boîtes manquantes ajustées en inventaire ce jour-là, au prix d'achat.** Les boîtes fantômes et les anomalies du jour sont affichées à part. — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
+- **Un employé est « présent » un jour s'il s'est connecté, a vendu, a ouvert une caisse ou a fait une action inscrite au journal ce jour-là** ; les postes du jour sont ceux de ses connexions, ventes et caisses. — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
+- **Seules les journées avec activité, perte ou anomalie sont prises en compte** (une journée sans rien, pharmacie fermée, est omise). — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
+- **Pour chaque employé : jours présent, jours de perte en sa présence, perte totale et moyenne les jours où il est là, perte moyenne les jours où il n'est pas là.** — `src/Pharma.Domain/Rapports/RegleRisques.cs`
+- **Un employé est signalé quand il y a eu au moins 3 jours de perte en sa présence, au moins 3 jours sans lui pour comparer, et que sa perte moyenne de présence atteint 2 fois celle des jours d'absence** ; un employé présent tous les jours n'est jamais signalé. Un signalement est un indice, pas une preuve. — `src/Pharma.Domain/Rapports/RegleRisques.cs`
+- **Employés listés : les comptes actifs et ceux présents sur la période** ; signalés en tête, puis par perte décroissante en leur présence. — `src/Pharma.Application/Surveillance/Risques.cs`, `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
+- **Indicateurs par employé sur la période** : manque à ses propres clôtures, anomalies (dont urgentes), annulations et retours clients, ventes avec remise, crédits accordés, autorisations par code demandées et données, boîtes cassées, données (échantillons) et ajustées en moins. — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
+- **Une perte d'inventaire apparaît le jour du comptage, pas le jour de la disparition** (à lire en tendance sur la période). — `src/Pharma.Desktop/Composants/Pages/Risques.razor`
+
 ## Rapports
 
 ### Accès et droits

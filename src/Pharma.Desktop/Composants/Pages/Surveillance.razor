@@ -8,7 +8,10 @@
             <h1>Surveillance de la caisse</h1>
             <p class="sous-titre">Ce qui ne laisse pas de vente ou sort de l’ordinaire, par employé et par jour. Visible du titulaire seul ; les anomalies ne sont jamais supprimées.</p>
         </div>
-        <button type="button" class="btn" disabled="@enCours" @onclick="ChargerAsync">Actualiser</button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <a href="surveillance/risques" class="btn">Écarts et risques par employé</a>
+            <button type="button" class="btn" disabled="@enCours" @onclick="ChargerAsync">Actualiser</button>
+        </div>
     </div>
 
     @if (!Session.A("role.titulaire"))
