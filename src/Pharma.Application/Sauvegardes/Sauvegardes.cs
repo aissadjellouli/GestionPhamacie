@@ -49,6 +49,11 @@ public interface IStockageSauvegarde
     int CopierDocuments(string source, string destination, string exclure);
     /// <summary>Supprime les documents du dossier (sauf « exclure ») modifiés avant la date ; renvoie leur nombre.</summary>
     int SupprimerDocumentsAvant(string dossier, DateTime limite, string exclure);
+    /// <summary>
+    /// Restauration de la GED : recopie les documents de la source (disque externe) qui manquent à la destination ou y sont plus anciens ;
+    /// rien n'est supprimé, un document plus récent à la destination est gardé. Renvoie le nombre de documents recopiés.
+    /// </summary>
+    int RestaurerDocuments(string source, string destination);
 }
 
 public sealed record ResultatSauvegarde(string Statut, string? Fichier, long? TailleOctets, string Message);
@@ -182,7 +187,7 @@ public sealed class ObtenirSauvegardes(ISauvegardesDepot depot)
         (await depot.ReglagesAsync(ct), await depot.JournalAsync(30, ct));
 }
 
-public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal journal)
+public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal journal, SuperAdmin.ICompteSuperAdmin? superAdmin = null)
 {
     public async Task ExecuterAsync(bool actif, string? dossier, TimeOnly heure, int conservation, long utilisateurId, CancellationToken ct = default,
         int? retentionGedJours = null, int? nettoyageGedAnnees = null)
@@ -195,6 +200,13 @@ public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal
         if (retentionGedJours is < 1 or > 365) throw new RegleMetierException("Copie dans la GED : entre 1 et 365 jours (vide : réglage du serveur).", "retention_ged");
         if (nettoyageGedAnnees is < 1 or > 100) throw new RegleMetierException("Nettoyage de la GED : entre 1 et 100 ans (vide : jamais).", "nettoyage_ged");
         await depot.EnregistrerReglagesAsync(actif, d, heure, conservation, retentionGedJours, nettoyageGedAnnees, ct);
+        // Copie avec le compte du super admin : la restauration retrouve le disque externe même si la base est détruite
+        try
+        {
+            if (d is not null && superAdmin?.Lire() is { } compte && compte.DossierSauvegardes != d)
+                superAdmin.Enregistrer(compte with { DossierSauvegardes = d });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or PlatformNotSupportedException) { }
         await journal.EcrireAsync(utilisateurId, "reglages_sauvegarde", "parametre_sauvegarde", 1,
             new Dictionary<string, object?> { ["actif"] = actif, ["dossier"] = d, ["heure"] = heure.ToString("HH:mm"), ["conservation"] = conservation,
                 ["retention_ged_jours"] = retentionGedJours, ["nettoyage_ged_annees"] = nettoyageGedAnnees },

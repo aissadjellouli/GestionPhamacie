@@ -106,6 +106,8 @@ public static class DependencyInjection
             sp.GetService<Notifications.INotificationsDepot>()));
         services.AddScoped<SuperAdmin.DemanderValidationSuperAdmin>();
         services.AddScoped<SuperAdmin.CreerCompteSuperAdmin>();
+        services.AddScoped<SuperAdmin.ListerRestaurations>();
+        services.AddSingleton<SuperAdmin.RestaurationsSuperAdmin>();
         services.AddScoped<Caisse.RechercherVenteAnnulable>();
         services.AddScoped<Caisse.RechercherVenteParBoite>();
         services.AddScoped<Ged.DeposerDocumentGed>();

@@ -124,6 +124,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(CompteSuperAdminDto?, string?)> CompteSuperAdminAsync() => GetAsync<CompteSuperAdminDto?>("api/super-admin/compte", null);
 
+    // ---- Restauration (super admin ; chaque restauration validée par code) ----
+    public Task<(ChoixRestaurationDto?, string?)> ChoixRestaurationAsync() => GetAsync<ChoixRestaurationDto?>("api/super-admin/restauration", null);
+    public Task<(EtatRestaurationDto?, string?)> EtatRestaurationAsync() => GetAsync<EtatRestaurationDto?>("api/super-admin/restauration/etat", null);
+    public Task<(EtatRestaurationDto?, string?)> RestaurerBaseAsync(string fichier) =>
+        PostAsync<RestaurationBaseRequete, EtatRestaurationDto>("api/super-admin/restauration/base", new(fichier));
+    public Task<(EtatRestaurationDto?, string?)> RestaurerGedAsync() => PostAsync<object, EtatRestaurationDto>("api/super-admin/restauration/ged", new());
+
     // Code saisi : joint à la requête suivante seulement (en-tête X-Pharma-Validation), puis oublié
     private string? validationEnAttente;
 

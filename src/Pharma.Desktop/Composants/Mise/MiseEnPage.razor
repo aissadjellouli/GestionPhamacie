@@ -19,6 +19,7 @@
         {
             @* Super admin : ses seuls écrans ; aucun écran des employés *@
             <nav class="nav" aria-label="Navigation du super admin">
+                <a href="admin/restauration" class="@Actif("admin/restauration")" aria-current="@Courant("admin/restauration")">Restauration</a>
                 <a href="admin/reprise" class="@Actif("admin/reprise")" aria-current="@Courant("admin/reprise")">Reprise de données</a>
             </nav>
             <div class="utilisateur">
@@ -192,7 +193,7 @@
         .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))
     ];
     private string? messageAcces;
-    private static readonly string[] EcransSuperAdmin = ["admin/reprise"];
+    private static readonly string[] EcransSuperAdmin = ["admin/restauration", "admin/reprise"];
 
     private bool VerifierAcces()
     {

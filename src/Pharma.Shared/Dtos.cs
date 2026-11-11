@@ -648,3 +648,12 @@ public sealed record CoordonneesContactDto(string? Telephone, string? Email, str
 
 /// <summary>Une page de résultats : Total compte toutes les lignes qui répondent aux filtres, pas seulement celles de la page.</summary>
 public sealed record PageDto<T>(IReadOnlyList<T> Lignes, int Total, int Numero, int Taille);
+
+// ---- Restauration (super admin) ----
+public sealed record SauvegardeDisponibleDto(string Fichier, string Emplacement, DateTime Date, long Taille);
+/// <summary>Base en service, disque externe des sauvegardes (branché ?), copie de la GED, sauvegardes restaurables (plus récente d'abord).</summary>
+public sealed record ChoixRestaurationDto(string NomBase, bool BaseExiste, string? DossierExterne, bool DisqueBranche, string? SourceGed,
+    List<SauvegardeDisponibleDto> Sauvegardes);
+public sealed record RestaurationBaseRequete(string Fichier);
+/// <summary>Restauration en cours ou dernière terminée : type (base, ged), étapes, résultat ou erreur.</summary>
+public sealed record EtatRestaurationDto(bool EnCours, string? Type, DateTime? Debut, DateTime? Fin, List<string> Etapes, string? Resultat, string? Erreur);

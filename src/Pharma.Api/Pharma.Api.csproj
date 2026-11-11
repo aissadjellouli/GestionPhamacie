@@ -8,6 +8,10 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Scripts de la base livrés avec l'API : une sauvegarde restaurée est mise à la version du logiciel -->
+    <None Include="..\..\database\0*.sql" Link="database\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Pharma.Application\Pharma.Application.csproj" />
     <ProjectReference Include="..\Pharma.Infrastructure\Pharma.Infrastructure.csproj" />
     <ProjectReference Include="..\Pharma.Shared\Pharma.Shared.csproj" />

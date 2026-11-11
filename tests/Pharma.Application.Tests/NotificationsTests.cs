@@ -277,6 +277,7 @@ internal sealed class StockageFactice(bool disque = true, bool panne = false) : 
     public int CopierDocuments(string source, string destination, string exclure) { CopiesGed.Add((source, destination, exclure)); return 3; }
     public List<(string Dossier, DateTime Limite)> Nettoyages { get; } = [];
     public int SupprimerDocumentsAvant(string dossier, DateTime limite, string exclure) { Nettoyages.Add((dossier, limite)); return 1; }
+    public int RestaurerDocuments(string source, string destination) => 0;
 }
 
 internal sealed class AlertesTitulaireEspion : IAlertesTitulaire

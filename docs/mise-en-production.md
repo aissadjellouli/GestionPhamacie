@@ -36,9 +36,11 @@ Conventions :
 - [ ] **1.1** Installer PostgreSQL 18, avec ses outils `psql` et `pg_dump`. Noter le mot de passe du super-utilisateur `postgres` et le garder en lieu sûr : il ne sert qu'à l'installation.
 - [ ] **1.2** Créer le compte de l'application et la base, avec un mot de passe **propre à la pharmacie**, jamais celui de démonstration :
   ```powershell
-  & psql -h localhost -U postgres -d postgres -c "CREATE ROLE pharma_app LOGIN PASSWORD '<mot de passe fort>'"
+  & psql -h localhost -U postgres -d postgres -c "CREATE ROLE pharma_app LOGIN PASSWORD '<mot de passe fort>' CREATEDB"
   & psql -h localhost -U postgres -d postgres -c "CREATE DATABASE <base> OWNER pharma_app ENCODING 'UTF8' TEMPLATE template0"
   ```
+  `CREATEDB` permet au super admin de restaurer une sauvegarde depuis l'application : une base neuve est créée, puis prend le nom de la
+  base en service, qui est gardée sous un autre nom. Compte déjà créé sans ce droit : `ALTER ROLE pharma_app CREATEDB`.
 - [ ] **1.3** N'ouvrir le port 5432 du pare-feu **qu'aux postes de la pharmacie**, et seulement si un outil y accède directement. L'application, elle, passe par l'API.
 
 ## Étape 2 — Base de données : création et référentiel (`database/init/`)
@@ -236,6 +238,21 @@ Les sauvegardes utiles sont sur le **disque externe** : la copie de la base dans
 
 - Base : `pharmacie_AAAAMMJJ_HHMMSS.dump` dans le dossier réglé dans Administration › Sauvegardes (les 14 dernières par défaut).
 - GED : sous-dossier `GED` de ce même dossier (documents nouveaux et modifiés copiés à chaque sauvegarde ; rien n'y est supprimé).
+
+**Depuis l'application (super admin, étape 3.6)** : sur un poste, « Connexion super admin », écran **Restauration**. L'API doit tourner
+sur le PC serveur ; la base, elle, peut être détruite (le compte du super admin et le dossier des sauvegardes sont gardés hors de la base).
+- **Base** : choisir la sauvegarde (disque externe ou `GED\Sauvegardes`, la plus récente en haut), puis valider : avertissement, mot de
+  passe, code reçu par SMS (e-mail en secours). Le serveur, en tâche de fond, met les postes en attente, fait une copie de sécurité de la
+  base actuelle (`GED\Sauvegardes\pharmacie_avant_restauration_….dump`, proposée ensuite dans la liste pour revenir en arrière ;
+  jamais supprimée par le nettoyage automatique, à supprimer à la main quand elle n’est plus utile), restaure
+  la sauvegarde dans une base neuve, la **met à la version du logiciel** (scripts `0xx` livrés avec l'API, rejoués), puis lui donne le nom
+  de la base en service, qui est **gardée** sous le nom `<base>_avant_restauration_AAAAMMJJ_HHMM`. L'écran suit les étapes. Un échec avant
+  l'échange laisse la base en service intacte. Il faut le droit `CREATEDB` du compte `pharma_app` (étape 1.2).
+- **GED** : « Recopier les documents de la GED » : les documents du disque externe absents ou plus anciens au serveur sont recopiés ; rien
+  n'est supprimé, un document plus récent au serveur est gardé.
+- La restauration est inscrite au journal de la base restaurée (titulaire comme auteur, identifiant du super admin et canal du code).
+
+**Sans l'application** (API hors service, PC serveur remplacé) : script PowerShell, ci-dessous.
 
 1. PC serveur remplacé : installer PostgreSQL (étape 1) et recréer le compte `pharma_app` ; ne pas lancer `init/schema.sql`, la sauvegarde contient toute la structure.
 2. Arrêter le service : `sc.exe stop "PharmaOfficine API"`.

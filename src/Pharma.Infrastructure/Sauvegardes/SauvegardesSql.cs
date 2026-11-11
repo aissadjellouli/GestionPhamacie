@@ -154,6 +154,33 @@ public sealed class StockagePgDump(string chaineConnexion, string? cheminPgDump)
         return copies;
     }
 
+    public int RestaurerDocuments(string source, string destination)
+    {
+        if (!Directory.Exists(source)) return 0;
+        var copies = 0;
+        foreach (var f in Documents(source, exclure: TypesGedSauvegardes))
+        {
+            var cible = Path.Combine(destination, Path.GetRelativePath(source, f));
+            var info = new FileInfo(f);
+            // Document présent au serveur et aussi récent (ou plus) : gardé tel quel
+            if (File.Exists(cible) && new FileInfo(cible).LastWriteTimeUtc >= info.LastWriteTimeUtc) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(cible)!);
+            try
+            {
+                var temporaire = cible + ".partiel";
+                File.Copy(f, temporaire, overwrite: true);
+                File.SetLastWriteTimeUtc(temporaire, info.LastWriteTimeUtc);
+                File.Move(temporaire, cible, overwrite: true);
+                copies++;
+            }
+            catch (IOException) { /* document ouvert au serveur : gardé tel quel */ }
+        }
+        return copies;
+    }
+
+    // Copie des sauvegardes de la base dans la GED : jamais recopiée depuis le disque externe (les sauvegardes y sont déjà)
+    private const string TypesGedSauvegardes = Application.Ged.TypesGed.Sauvegardes;
+
     public int SupprimerDocumentsAvant(string dossier, DateTime limite, string exclure)
     {
         if (!Directory.Exists(dossier)) return 0;
@@ -173,11 +200,14 @@ public sealed class StockagePgDump(string chaineConnexion, string? cheminPgDump)
             .ToList();
     }
 
+    /// <summary>Copies de sécurité faites avant une restauration : jamais supprimées automatiquement (seul moyen de revenir en arrière).</summary>
+    public const string PrefixeAvantRestauration = "pharmacie_avant_restauration_";
+
     public int SupprimerAvant(string dossier, DateTime limite)
     {
         var supprimes = 0;
         foreach (var f in Sauvegardes(dossier))
-            if (File.GetLastWriteTime(f) < limite)
+            if (File.GetLastWriteTime(f) < limite && !Path.GetFileName(f).StartsWith(PrefixeAvantRestauration, StringComparison.OrdinalIgnoreCase))
                 try { File.Delete(f); supprimes++; } catch (IOException) { } catch (UnauthorizedAccessException) { }
         return supprimes;
     }

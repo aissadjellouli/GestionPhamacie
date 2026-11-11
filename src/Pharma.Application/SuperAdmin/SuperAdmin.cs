@@ -22,7 +22,9 @@ public sealed record CopieEnvoi(string? ModemPort, string? SmtpServeur, int Smtp
 }
 
 /// <summary>Compte du super admin : hors de la base, dans un fichier chiffré du PC serveur. Téléphone et e-mail obligatoires.</summary>
-public sealed record CompteSuperAdmin(string Identifiant, string MotDePasseHash, string Telephone, string Email, CopieEnvoi? Envoi = null);
+/// <param name="DossierSauvegardes">Copie du dossier des sauvegardes (disque externe) : la restauration le retrouve même base détruite.</param>
+public sealed record CompteSuperAdmin(string Identifiant, string MotDePasseHash, string Telephone, string Email, CopieEnvoi? Envoi = null,
+    string? DossierSauvegardes = null);
 
 /// <summary>Demande de validation envoyée : où le code est parti (numéro ou adresse masqués) et jusqu'à quand il vaut.</summary>
 public sealed record DemandeValidation(Guid Id, string Canal, string Destinataire, DateTime ExpireLe);
@@ -54,6 +56,8 @@ public static class ActionsSuperAdmin
     public const string RepriseCharger = "reprise.charger";
     public const string RepriseAnnuler = "reprise.annuler";
     public const string ChangerTelephone = "compte.telephone";
+    public const string RestaurerBase = "restauration.base";
+    public const string RestaurerGed = "restauration.ged";
 
     /// <summary>Libellé de l'action, repris dans l'avertissement, le SMS et le journal.</summary>
     public static readonly IReadOnlyDictionary<string, string> Libelles = new Dictionary<string, string>
@@ -61,7 +65,9 @@ public static class ActionsSuperAdmin
         [RepriseExtraire] = "extraire les donnees de l'ancien logiciel",
         [RepriseCharger] = "charger la reprise dans la base",
         [RepriseAnnuler] = "annuler la reprise",
-        [ChangerTelephone] = "changer le telephone du super admin"
+        [ChangerTelephone] = "changer le telephone du super admin",
+        [RestaurerBase] = "restaurer la base de donnees",
+        [RestaurerGed] = "restaurer les documents de la GED"
     };
 
     /// <summary>Marque ajoutée aux droits du poste pour afficher les écrans du super admin.</summary>
@@ -178,8 +184,9 @@ public sealed class ValidationsSuperAdmin(IHorloge? horloge = null)
 // ---- Envoi du code -----------------------------------------------------------
 
 /// <summary>
-/// Envoie le code au super admin : SMS par le modem GSM, sinon e-mail. Les réglages sont lus en base (et recopiés dans le
-/// fichier du compte) ; base inaccessible : la copie du fichier sert.
+/// Envoie le code au super admin : SMS par le modem GSM, sinon e-mail. Essai avec les réglages de la base, puis, en cas d'échec ou
+/// de base inaccessible, avec la copie gardée dans le fichier du compte. La copie n'est remplacée par les réglages de la base
+/// qu'après un envoi réussi avec eux : une base restaurée avec des réglages périmés ne l'écrase pas.
 /// </summary>
 public sealed class EnvoiCodeSuperAdmin(
     ICompteSuperAdmin comptes, IEnvoiSms sms, IEnvoiEmail email, IProtectionSecret secrets, INotificationsDepot? depot = null,
@@ -187,10 +194,38 @@ public sealed class EnvoiCodeSuperAdmin(
 {
     public async Task<(string Canal, string Destinataire)> EnvoyerAsync(CompteSuperAdmin compte, string? numero, string texte, CancellationToken ct = default)
     {
-        var envoi = await ReglagesAsync(compte, ct);
-        var telephone = numero ?? compte.Telephone;
+        var enBase = await ReglagesBaseAsync(compte, ct);
+        var essais = new List<(CopieEnvoi Reglages, string Origine)>();
+        if (enBase is not null) essais.Add((enBase, "réglages de la base"));
+        if (compte.Envoi is not null && compte.Envoi != enBase) essais.Add((compte.Envoi, "copie du compte"));
+
         var erreurs = new List<string>();
-        if (!string.IsNullOrWhiteSpace(envoi?.ModemPort))
+        foreach (var (reglages, origine) in essais)
+        {
+            var avant = erreurs.Count;
+            if (await EssayerAsync(reglages, compte, numero, texte, erreurs, ct) is { } envoye)
+            {
+                // Réglages de la base vérifiés par cet envoi : ils deviennent la copie du compte
+                if (ReferenceEquals(reglages, enBase) && reglages != compte.Envoi)
+                    try { if (comptes.Lire() is { } c) comptes.Enregistrer(c with { Envoi = reglages }); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                return envoye;
+            }
+            if (essais.Count > 1)
+                for (var i = avant; i < erreurs.Count; i++) erreurs[i] = $"{erreurs[i]} [{origine}]";
+        }
+        if (essais.Count == 0) erreurs.Add("ni modem GSM ni serveur e-mail réglés");
+
+        throw new RegleMetierException($"Code non envoyé ({string.Join(" ; ", erreurs)}). Vérifiez le modem GSM et le serveur e-mail " +
+                                       "(Administration › Notifications au titulaire), ou restaurez depuis le PC serveur (scripts\\restaurer_pharmacie.ps1).");
+    }
+
+    /// <summary>SMS, puis e-mail ; null si aucun n'est parti (erreurs ajoutées à la liste).</summary>
+    private async Task<(string Canal, string Destinataire)?> EssayerAsync(CopieEnvoi envoi, CompteSuperAdmin compte, string? numero, string texte,
+        List<string> erreurs, CancellationToken ct)
+    {
+        var telephone = numero ?? compte.Telephone;
+        if (!string.IsNullOrWhiteSpace(envoi.ModemPort))
         {
             try
             {
@@ -206,7 +241,7 @@ public sealed class EnvoiCodeSuperAdmin(
         else erreurs.Add("SMS : modem GSM non configuré");
 
         // Changement de téléphone : le code du nouveau numéro ne peut pas partir par e-mail (il doit prouver le numéro)
-        if (numero is null && envoi is { SmtpConfigure: true })
+        if (numero is null && envoi.SmtpConfigure)
         {
             try
             {
@@ -220,30 +255,25 @@ public sealed class EnvoiCodeSuperAdmin(
             }
         }
         else if (numero is null) erreurs.Add("e-mail : serveur SMTP non configuré");
-
-        throw new RegleMetierException($"Code non envoyé ({string.Join(" ; ", erreurs)}). Vérifiez le modem GSM et le serveur e-mail " +
-                                       "(Administration › Notifications au titulaire), ou restaurez depuis le PC serveur (scripts\\restaurer_pharmacie.ps1).");
+        return null;
     }
 
-    /// <summary>Réglages en base si elle répond (copie du fichier mise à jour), sinon la copie du fichier.</summary>
-    private async Task<CopieEnvoi?> ReglagesAsync(CompteSuperAdmin compte, CancellationToken ct)
+    /// <summary>Réglages lus en base ; null si elle ne répond pas (détruite, en cours de restauration…).</summary>
+    private async Task<CopieEnvoi?> ReglagesBaseAsync(CompteSuperAdmin compte, CancellationToken ct)
     {
-        if (depot is null) return compte.Envoi;
+        if (depot is null) return null;
         try
         {
             var r = await depot.ReglagesAsync(ct);
             string? motDePasse = null;
             if (r.MotDePasseEnregistre && await depot.MotDePasseChiffreAsync(ct) is { } chiffre)
-                try { motDePasse = secrets.Dechiffrer(chiffre); } catch (InvalidOperationException) { motDePasse = compte.Envoi?.SmtpMotDePasse; }
-            var copie = new CopieEnvoi(r.ModemPort, r.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur, r.SmtpIdentifiant, motDePasse);
-            if (copie != compte.Envoi)
-                try { comptes.Enregistrer(compte with { Envoi = copie }); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-            return copie;
+                try { motDePasse = secrets.Dechiffrer(chiffre); } catch (InvalidOperationException) { motDePasse = null; }
+            return new CopieEnvoi(r.ModemPort, r.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur, r.SmtpIdentifiant, motDePasse);
         }
         catch (Exception e) when (e is not OperationCanceledException and not RegleMetierException)
         {
             signaler?.Invoke($"Code super admin : base inaccessible ({e.Message}), réglages d'envoi du fichier du compte");
-            return compte.Envoi;
+            return null;
         }
     }
 
@@ -328,7 +358,7 @@ public sealed class CreerCompteSuperAdmin(ICompteSuperAdmin comptes, Administrat
     {
         Verifier(identifiant, motDePasse, confirmation, telephone, email);
         var compte = new CompteSuperAdmin(identifiant.Trim(), hacheur.Hacher(motDePasse),
-            RegleDestinataire.NormaliserTelephone(telephone), email.Trim(), comptes.Lire()?.Envoi);
+            RegleDestinataire.NormaliserTelephone(telephone), email.Trim(), comptes.Lire()?.Envoi, comptes.Lire()?.DossierSauvegardes);
         comptes.Enregistrer(compte);
         return compte;
     }

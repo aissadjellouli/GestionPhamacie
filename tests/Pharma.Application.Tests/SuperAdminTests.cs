@@ -20,6 +20,18 @@ internal sealed class HorlogeReglable(DateTime maintenant) : IHorloge
     public DateOnly Aujourdhui => DateOnly.FromDateTime(MaintenantUtc);
 }
 
+/// <summary>E-mail qui échoue pour les serveurs donnés (ex. ancien serveur d'essai arrêté), et note les serveurs utilisés.</summary>
+internal sealed class EmailParServeur(params string[] enPanne) : IEnvoiEmail
+{
+    public List<string> Serveurs { get; } = [];
+    public Task EnvoyerAsync(ConnexionSmtp c, string adresse, string objet, string texte, string? html, CancellationToken ct = default)
+    {
+        if (enPanne.Contains(c.Serveur)) throw new IOException("Connexion refusée");
+        Serveurs.Add(c.Serveur);
+        return Task.CompletedTask;
+    }
+}
+
 internal sealed class SmsEnPanne : IEnvoiSms
 {
     public Task EnvoyerAsync(string port, string numero, string texte, CancellationToken ct = default) => throw new IOException("Modem débranché");
@@ -144,6 +156,33 @@ public class SuperAdminTests
         var envoi = new EnvoiCodeSuperAdmin(comptes, new SmsEspion(), new EmailEspion(), new SecretsFactices(), new NotificationsEnMemoire());
         await envoi.EnvoyerAsync(comptes.Compte!, null, "code 123456");
         Assert.Equal(("COM3", "smtp.pharmacie.dz", "mot-de-passe"), (comptes.Compte!.Envoi!.ModemPort, comptes.Compte.Envoi.SmtpServeur, comptes.Compte.Envoi.SmtpMotDePasse));
+    }
+
+    [Fact]
+    public async Task Base_restauree_aux_reglages_perimes_le_code_part_avec_la_copie_qui_reste_intacte()
+    {
+        // Base restaurée : ancien serveur e-mail d'essai, injoignable ; la copie du compte a les bons réglages
+        var depot = new NotificationsEnMemoire { Reglages = new("127.0.0.1", 2525, false, "alertes@essai.dz", null, false, null, new TimeOnly(21, 0), null, null, true, true) };
+        var bonne = new CopieEnvoi(null, "smtp.gmail.com", 587, true, "pharmacie@gmail.com", "pharmacie@gmail.com", "secret");
+        var comptes = new CompteSuperAdminEnMemoire(Compte(bonne));
+        var email = new EmailParServeur("127.0.0.1");
+        var envoi = new EnvoiCodeSuperAdmin(comptes, new SmsEspion(), email, new SecretsFactices(), depot);
+
+        var (canal, _) = await envoi.EnvoyerAsync(comptes.Compte!, null, "code 123456");
+
+        Assert.Equal("e-mail", canal);
+        Assert.Equal(["smtp.gmail.com"], email.Serveurs);
+        Assert.Equal(bonne, comptes.Compte!.Envoi);   // jamais écrasée par les réglages périmés
+    }
+
+    [Fact]
+    public async Task Copie_mise_a_jour_seulement_apres_un_envoi_reussi_avec_les_reglages_de_la_base()
+    {
+        var depot = new NotificationsEnMemoire { Reglages = new("smtp.nouveau.dz", 587, true, "a@nouveau.dz", null, false, null, new TimeOnly(21, 0), null, null, true, true) };
+        var ancienne = new CopieEnvoi(null, "smtp.ancien.dz", 587, true, "a@ancien.dz", null, null);
+        var comptes = new CompteSuperAdminEnMemoire(Compte(ancienne));
+        await new EnvoiCodeSuperAdmin(comptes, new SmsEspion(), new EmailParServeur(), new SecretsFactices(), depot).EnvoyerAsync(comptes.Compte!, null, "code 1");
+        Assert.Equal("smtp.nouveau.dz", comptes.Compte!.Envoi!.SmtpServeur);
     }
 
     [Fact]

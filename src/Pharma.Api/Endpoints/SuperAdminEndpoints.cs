@@ -40,5 +40,25 @@ internal static class SuperAdminEndpoints
             journaux.CreateLogger("Pharma.SuperAdmin").LogWarning("Super admin : code demandé pour {Action}, envoyé par {Canal} au {Destinataire}", req.Action, d.Canal, d.Destinataire);
             return Results.Ok(new DemandeValidationDto(d.Id, d.Canal, d.Destinataire, d.ExpireLe));
         });
+
+        // ---- Restauration : sauvegardes proposées, puis restauration en tâche de fond (le poste suit les étapes) ----
+        super.MapGet("/restauration", async (ListerRestaurations lister, CancellationToken ct) =>
+        {
+            var c = await lister.ExecuterAsync(ct);
+            return Results.Ok(new ChoixRestaurationDto(c.NomBase, c.BaseExiste, c.DossierExterne, c.DisqueBranche, c.SourceGed,
+                c.Sauvegardes.Select(s => new SauvegardeDisponibleDto(s.Fichier, s.Emplacement, s.Date, s.Taille)).ToList()));
+        });
+
+        super.MapGet("/restauration/etat", (RestaurationsSuperAdmin restaurations) => Results.Ok(VersDto(restaurations.Etat)));
+
+        super.MapPost("/restauration/base", async (RestaurationBaseRequete req, RestaurationsSuperAdmin restaurations, SuperAdminCourant courant, CancellationToken ct) =>
+                Results.Ok(VersDto(await restaurations.RestaurerBaseAsync(req.Fichier, courant, ct))))
+            .ValidationSuperAdmin(ActionsSuperAdmin.RestaurerBase);
+
+        super.MapPost("/restauration/ged", async (RestaurationsSuperAdmin restaurations, SuperAdminCourant courant, CancellationToken ct) =>
+                Results.Ok(VersDto(await restaurations.RestaurerGedAsync(courant, ct))))
+            .ValidationSuperAdmin(ActionsSuperAdmin.RestaurerGed);
     }
+
+    private static EtatRestaurationDto VersDto(EtatRestauration e) => new(e.EnCours, e.Type, e.Debut, e.Fin, e.Etapes.ToList(), e.Resultat, e.Erreur);
 }

@@ -76,6 +76,8 @@ try {
             Invoke-Psql $SuperUser $superPwd "postgres" @("-c", "CREATE ROLE $AppUser LOGIN PASSWORD '$AppPassword'")
             Write-Host "Rôle $AppUser créé"
         }
+        # Restauration par le super admin depuis l'application : base neuve créée puis renommée (droit CREATEDB, sans être super-utilisateur)
+        Invoke-Psql $SuperUser $superPwd "postgres" @("-c", "ALTER ROLE $AppUser CREATEDB")
     }
 
     foreach ($base in $Bases) {

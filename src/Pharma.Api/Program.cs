@@ -135,6 +135,20 @@ app.UseStaticFiles(new StaticFileOptions
     OnPrepareResponse = c => c.Context.Response.Headers.CacheControl = "no-cache"
 });
 
+// Restauration de la base en cours (super admin) : les postes sont mis en attente, seules les routes du super admin répondent
+app.Use(async (ctx, suite) =>
+{
+    var chemin = ctx.Request.Path;
+    if (chemin.StartsWithSegments("/api") && !chemin.StartsWithSegments("/api/super-admin") && !chemin.StartsWithSegments("/api/sante")
+        && ctx.RequestServices.GetRequiredService<Pharma.Application.SuperAdmin.RestaurationsSuperAdmin>().BaseEnCours)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await ctx.Response.WriteAsJsonAsync(new ErreurDto("Restauration de la base en cours par le super admin : patientez quelques minutes, puis reconnectez-vous."));
+        return;
+    }
+    await suite();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapPharmaEndpoints();

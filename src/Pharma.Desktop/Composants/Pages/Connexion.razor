@@ -132,7 +132,7 @@
         erreur = await Api.ConnecterSuperAdminAsync(identifiant, motDePasse);
         enCours = false;
         motDePasse = "";
-        if (erreur is null) Nav.NavigateTo("admin/reprise");
+        if (erreur is null) Nav.NavigateTo("admin/restauration");
     }
 
     private async Task SeConnecterParCodeAsync()
