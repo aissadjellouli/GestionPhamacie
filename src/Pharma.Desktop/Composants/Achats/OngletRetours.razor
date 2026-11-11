@@ -282,8 +282,10 @@
     {
         var (pdf, nom, e) = await Api.EnvoyerRetourAsync(r.Id);
         if (e is not null) return e;
-        Documents.Ouvrir(Documents.Enregistrer("Retours", nom!, pdf!));
-        message = $"Retour {r.Numero} envoyé : bon de retour enregistré dans Documents\\Pharma Officine\\Retours.";
+        var doc = await Documents.RangerAsync(Api, "Retours", nom!, pdf!);
+        Documents.Ouvrir(doc.CheminLocal);
+        message = $"Retour {r.Numero} envoyé : bon de retour rangé ({doc.Emplacement}).";
+        if (doc.Erreur is not null) message += " " + doc.Erreur;
         await RechargerAsync();
         return null;
     });
@@ -311,8 +313,9 @@
     {
         var (pdf, nom, e) = await Api.BonRetourAsync(r.Id);
         if (e is not null) return e;
-        Documents.Ouvrir(Documents.Enregistrer("Retours", nom!, pdf!));
-        return null;
+        var doc = await Documents.RangerAsync(Api, "Retours", nom!, pdf!);
+        Documents.Ouvrir(doc.CheminLocal);
+        return doc.Erreur;
     });
 
     private async Task Executer(Func<Task<string?>> action)

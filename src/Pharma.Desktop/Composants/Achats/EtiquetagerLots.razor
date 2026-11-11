@@ -67,11 +67,12 @@
             if (err is not null) { erreur = err; return; }
             imprimees[l.LotId] = imprimees.GetValueOrDefault(l.LotId) + e!.Codes.Count;
             nombres.Remove(l.LotId);
-            var chemin = Documents.Enregistrer("Etiquettes", $"etiquettes_{l.NumeroLot}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf", Convert.FromBase64String(e.PdfBase64));
+            var doc = await Documents.RangerAsync(Api, "Etiquettes", $"etiquettes_{l.NumeroLot}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf", Convert.FromBase64String(e.PdfBase64));
+            erreur = doc.Erreur;
             message = $"{e.Codes.Count} étiquette(s) créée(s) pour le lot {l.NumeroLot} ({e.Codes[0]} à {e.Codes[^1]}).";
             if (Imprimante.EstConfiguree)
                 message += await Imprimante.EnvoyerAsync(e.Zpl) is { } echec ? $" {echec}" : " Envoyées à l’imprimante thermique.";
-            Documents.Ouvrir(chemin);
+            Documents.Ouvrir(doc.CheminLocal);
         }
         finally { enCours = false; }
     }

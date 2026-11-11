@@ -108,7 +108,7 @@
     {
         var (contenu, nom, e) = await Api.EtatInventaireAsync(id);
         if (e is not null) { erreur = e; return; }
-        try { Documents.Ouvrir(Documents.Enregistrer("Inventaires", nom!, contenu!)); }
+        try { var doc = await Documents.RangerAsync(Api, "Inventaires", nom!, contenu!); Documents.Ouvrir(doc.CheminLocal); erreur = doc.Erreur; }
         catch (Exception ex) { erreur = $"État impossible à ouvrir : {ex.Message}"; }
     }
 }

@@ -33,7 +33,14 @@
                     <div class="champ" style="flex: 0 0 150px"><label for="s-heure">Heure</label><input id="s-heure" type="time" @bind="r.Heure" /></div>
                     <div class="champ" style="flex: 0 0 200px"><label for="s-garde">Sauvegardes conservées</label><input id="s-garde" data-champ="conservation" type="number" min="1" max="365" @bind="r.Conservation" /></div>
                 </div>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 260px"><label for="s-ged-jours">Copie de la base dans la GED : gardée (jours)</label>
+                        <input id="s-ged-jours" data-champ="retention_ged" type="number" min="1" max="365" placeholder="@($"{retentionParDefaut} (réglage du serveur)")" @bind="r.RetentionGedJours" /></div>
+                    <div class="champ" style="flex: 1 1 260px"><label for="s-ged-ans">Nettoyage de la GED : documents de plus de (années)</label>
+                        <input id="s-ged-ans" data-champ="nettoyage_ged" type="number" min="1" max="100" placeholder="jamais (la GED est gardée)" @bind="r.NettoyageGedAnnees" /></div>
+                </div>
                 <label class="case"><input type="checkbox" @bind="r.Actif" /><span>Sauvegarde automatique chaque jour</span></label>
+                <p class="detail" style="margin: 0">Chaque sauvegarde copie la base sur le disque externe et dans la GED du serveur@(dossierGed is { } dg ? $" ({dg}\\Sauvegardes)" : ""), et les documents de la GED (ordonnances, factures, rapports…) sur le disque externe, dans son dossier GED.</p>
                 <p class="detail" style="margin: 0">Format pg_dump (restauration avec pg_restore). Dernière sauvegarde automatique : @(derniere is { } d ? Libelles.Date(d) : "jamais").</p>
             </section>
         }
@@ -66,7 +73,11 @@
         public string? Dossier { get; set; }
         public TimeOnly Heure { get; set; } = new(22, 0);
         public int Conservation { get; set; } = 14;
+        public int? RetentionGedJours { get; set; }
+        public int? NettoyageGedAnnees { get; set; }
     }
+    private int retentionParDefaut = 7;
+    private string? dossierGed;
 
     private Reglages? r;
     private DateOnly? derniere;
@@ -80,7 +91,9 @@
     {
         var (etat, e) = await Api.SauvegardesAsync();
         if (e is not null) { erreur = e; return; }
-        r = new Reglages { Actif = etat!.Reglages.Actif, Dossier = etat.Reglages.Dossier, Heure = etat.Reglages.Heure, Conservation = etat.Reglages.Conservation };
+        r = new Reglages { Actif = etat!.Reglages.Actif, Dossier = etat.Reglages.Dossier, Heure = etat.Reglages.Heure, Conservation = etat.Reglages.Conservation,
+            RetentionGedJours = etat.Reglages.RetentionGedJours, NettoyageGedAnnees = etat.Reglages.NettoyageGedAnnees };
+        (retentionParDefaut, dossierGed) = (etat.Reglages.RetentionGedParDefaut, etat.Reglages.DossierGed);
         derniere = etat.Reglages.DerniereExecution;
         (baseSauvegardee, serveurBase) = (etat.Base, etat.Serveur);
         journal = etat.Journal.ToList();
@@ -102,7 +115,7 @@
         }
         await Executer(async () =>
         {
-            var e = await Api.ModifierReglagesSauvegardeAsync(new ReglagesSauvegardeDto(r!.Actif, r.Dossier, r.Heure, r.Conservation, null));
+            var e = await Api.ModifierReglagesSauvegardeAsync(new ReglagesSauvegardeDto(r!.Actif, r.Dossier, r.Heure, r.Conservation, null, r.RetentionGedJours, 7, r.NettoyageGedAnnees));
             if (e is not null) return e;
             message = "Réglages enregistrés.";
             controleEnregistrer = false;

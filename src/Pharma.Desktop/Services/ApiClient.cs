@@ -156,6 +156,23 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         GetAsync<VentesParBoiteDto?>($"api/caisse/ventes/par-boite?code={Uri.EscapeDataString(code.Trim())}&jours={jours}"
             + (patientId is { } p ? $"&patientId={p}" : "") + (string.IsNullOrWhiteSpace(lot) ? "" : $"&lot={Uri.EscapeDataString(lot.Trim())}"), null);
 
+    /// <summary>Document du poste rangé dans la GED du serveur ; renvoie son chemin « Type\nom » dans la GED.</summary>
+    public async Task<(string?, string?)> DeposerGedAsync(string type, string nomFichier, byte[] contenu)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"api/ged/{Uri.EscapeDataString(type)}") { Content = new ByteArrayContent(contenu) };
+            req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            req.Headers.Add("X-Nom-Fichier", Uri.EscapeDataString(nomFichier));
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
+            using var rep = await http.SendAsync(req);
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree());
+            if (!rep.IsSuccessStatusCode) return (null, await MessageAsync(rep));
+            return ((await rep.Content.ReadFromJsonAsync<DocumentGedDto>())?.Chemin, null);
+        }
+        catch (Exception ex) when (EstEchecAppel(ex)) { return (null, MessageEchec(ex)); }
+    }
+
     public Task<(List<VenteAnnulableDto>, string?)> VentesAnnulablesAsync(string? numero) =>
         GetAsync<List<VenteAnnulableDto>>($"api/caisse/ventes{(string.IsNullOrWhiteSpace(numero) ? "" : $"?numero={Uri.EscapeDataString(numero.Trim())}")}", []);
 

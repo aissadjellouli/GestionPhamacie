@@ -97,6 +97,7 @@ public static class DependencyInjection
         services.AddScoped<Securite.AutorisationCourante>();
         services.AddScoped<Caisse.RechercherVenteAnnulable>();
         services.AddScoped<Caisse.RechercherVenteParBoite>();
+        services.AddScoped<Ged.DeposerDocumentGed>();
         services.AddScoped<Caisse.AnnulerVente>();
         services.AddScoped<Securite.ListerValidateurs>();
         services.AddScoped<Caisse.LireVenteRetournable>();

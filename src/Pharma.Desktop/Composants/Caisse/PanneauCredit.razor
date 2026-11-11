@@ -245,7 +245,9 @@
         {
             var (contenu, nom, e) = await Api.ReleveCreditAsync(situation.Patient.Id);
             if (e is not null) { erreur = e; return; }
-            Documents.Ouvrir(Documents.Enregistrer("Credits", nom!, contenu!));
+            var doc = await Documents.RangerAsync(Api, "Credits", nom!, contenu!);
+            Documents.Ouvrir(doc.CheminLocal);
+            erreur = doc.Erreur;
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { erreur = $"Relevé non enregistré : {ex.Message}"; }
         finally { enCours = false; }

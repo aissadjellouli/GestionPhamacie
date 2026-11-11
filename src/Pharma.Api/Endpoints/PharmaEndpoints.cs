@@ -39,5 +39,6 @@ public static class PharmaEndpoints
         api.MapContacts();
         api.MapRetoursEssai();
         api.MapEtatPoste();
+        api.MapGed();
     }
 }

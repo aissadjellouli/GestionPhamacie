@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 049 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 050 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 049 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 050 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict 50FrFVYOdhWhhu05OlHUF4lC4r9nHrE9GZCvh9BdcsCJX7dYnZenzNXhIgsQze7
+\restrict RdiQ380goVekaxbIV1a4QAsJNfCjg65Nwao2HP8B0cUkvHu8paCknO1d8rvBIbc
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3050,6 +3050,10 @@ CREATE TABLE public.parametre_sauvegarde (
     heure time without time zone DEFAULT '22:00:00'::time without time zone NOT NULL,
     conservation integer DEFAULT 14 NOT NULL,
     derniere_execution date,
+    retention_ged_jours integer,
+    nettoyage_ged_annees integer,
+    CONSTRAINT ck_sauvegarde_nettoyage_ged CHECK (((nettoyage_ged_annees IS NULL) OR ((nettoyage_ged_annees >= 1) AND (nettoyage_ged_annees <= 100)))),
+    CONSTRAINT ck_sauvegarde_retention_ged CHECK (((retention_ged_jours IS NULL) OR ((retention_ged_jours >= 1) AND (retention_ged_jours <= 365)))),
     CONSTRAINT parametre_sauvegarde_conservation_check CHECK (((conservation >= 1) AND (conservation <= 365))),
     CONSTRAINT parametre_sauvegarde_id_check CHECK ((id = 1))
 );
@@ -7529,5 +7533,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 50FrFVYOdhWhhu05OlHUF4lC4r9nHrE9GZCvh9BdcsCJX7dYnZenzNXhIgsQze7
+\unrestrict RdiQ380goVekaxbIV1a4QAsJNfCjg65Nwao2HP8B0cUkvHu8paCknO1d8rvBIbc
 

@@ -289,9 +289,9 @@
         {
             var (contenu, nom, e) = await Api.ExporterRapportAsync(periode, reference, du, au, format);
             if (e is not null) { erreur = e; return; }
-            var chemin = Documents.Enregistrer("Rapports", nom!, contenu!);
-            message = $"Rapport enregistré : {chemin}";
-            Documents.Ouvrir(chemin);
+            var doc = await Documents.RangerAsync(Api, "Rapports", nom!, contenu!);
+            (message, erreur) = ($"Rapport rangé : {doc.Emplacement}", doc.Erreur);
+            Documents.Ouvrir(doc.CheminLocal);
         }
         finally { enCours = false; }
     }

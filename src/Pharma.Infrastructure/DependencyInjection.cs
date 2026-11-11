@@ -24,7 +24,9 @@ using Pharma.Infrastructure.Tracabilite;
 
 namespace Pharma.Infrastructure;
 
-public sealed record InfrastructureOptions(string ChaineConnexion, string DossierExportChifa, string DossierOrdonnances, string? CheminPgDump = null);
+/// <summary>DossierArchiveChifa : copie des fichiers Chifa lus (GED\Chifa).</summary>
+public sealed record InfrastructureOptions(string ChaineConnexion, string DossierExportChifa, string DossierOrdonnances, string? CheminPgDump = null,
+    string? DossierArchiveChifa = null);
 
 public static class DependencyInjection
 {
@@ -118,10 +120,11 @@ public static class DependencyInjection
         services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();
         services.AddSingleton<Application.Notifications.IEnvoiSms, Notifications.EnvoiSmsModemGsm>();
         services.AddScoped<Application.Sauvegardes.ISauvegardesDepot, Sauvegardes.SauvegardesSql>();
+        services.AddSingleton<Application.Ged.IGed, Ged.GedFichiers>();
         services.AddSingleton<Application.Sauvegardes.IStockageSauvegarde>(new Sauvegardes.StockagePgDump(options.ChaineConnexion, options.CheminPgDump));
         services.AddSingleton<IChifaConnecteur>(sp => new ChifaFichiersConnecteur(
             options.DossierExportChifa,
-            sp.GetRequiredService<ILogger<ChifaFichiersConnecteur>>()));
+            sp.GetRequiredService<ILogger<ChifaFichiersConnecteur>>(), options.DossierArchiveChifa));
 
         return services;
     }

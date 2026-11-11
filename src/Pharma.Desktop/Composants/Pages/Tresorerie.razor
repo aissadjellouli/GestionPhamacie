@@ -283,6 +283,34 @@
     private IEnumerable<CompteTresorerieDto> Actifs => comptes.Where(c => c.Actif);
     private IEnumerable<CompteTresorerieDto> Banques => comptes.Where(c => c.Actif && c.Type == "banque");
 
+    /// <summary>Depuis « Dettes et créances » : facture client (n°) ou bordereau d'organisme (n°) à régler.</summary>
+    [SupplyParameterFromQuery(Name = "facture")] public string? Facture { get; set; }
+    [SupplyParameterFromQuery(Name = "bordereau")] public string? Bordereau { get; set; }
+
+    /// <summary>Saisie préparée : versement de l'organisme ou encaissement divers, facture cochée, montant et libellé proposés.</summary>
+    private void PreparerReglement()
+    {
+        if (Facture is { Length: > 0 } numero)
+        {
+            if (facturesOuvertes.FirstOrDefault(f => f.Numero == numero) is not { } f)
+            {
+                erreur = $"Facture {numero} : déjà réglée, ou réservée aux employés qui gèrent les factures.";
+                return;
+            }
+            (nature, organismeId) = f.Destinataire == "organisme" && f.OrganismeId is { } o ? ("versement_organisme", o) : ("encaissement", 0L);
+            facturesChoisies.Clear();
+            facturesChoisies.Add(f.Id);
+            (montant, libelle) = (f.Reste, $"Règlement de la facture {f.Numero}");
+        }
+        else if (Bordereau is { Length: > 0 } nb)
+        {
+            if ((aVerser?.Bordereaux ?? []).FirstOrDefault(b => b.Numero == nb) is not { } b) { erreur = $"Bordereau {nb} : déjà réglé ou introuvable."; return; }
+            (nature, organismeId, bordereauId, montant, libelle) = ("versement_organisme", b.OrganismeId, b.Id, b.Montant, $"Versement du bordereau {b.Numero}");
+        }
+        else return;
+        message = "Règlement préparé depuis « Dettes et créances » : vérifiez le compte, le montant et la référence, puis enregistrez.";
+    }
+
     protected override async Task OnInitializedAsync()
     {
         // Listes indépendantes chargées en même temps
@@ -293,7 +321,22 @@
         (organismes, _) = await org;
         await charge;
         compteVu = comptes.FirstOrDefault()?.Id ?? 0;
+        (initialise, reglementPrepare) = (true, (Facture, Bordereau));
+        PreparerReglement();
         await ChargerMouvementsAsync();
+    }
+
+    // Écran gardé quand seule l'adresse change (autre facture depuis « Dettes et créances ») : la saisie suit le nouveau lien
+    private bool initialise;
+    private (string?, string?) reglementPrepare;
+
+    protected override void OnParametersSet()
+    {
+        if (!initialise || reglementPrepare == (Facture, Bordereau)) return;
+        reglementPrepare = (Facture, Bordereau);
+        (erreur, message, organismeId, bordereauId, montant, libelle, reference) = (null, null, 0, 0, 0, null, null);
+        facturesChoisies.Clear();
+        PreparerReglement();
     }
 
     private async Task ChargerAsync()

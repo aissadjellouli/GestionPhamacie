@@ -642,11 +642,12 @@ else
         {
             var (e, err) = await Api.EtiquettesReceptionAsync(receptionId);
             if (err is not null) { (infoEtiquettes, erreur) = (null, err); return; }
-            var chemin = Documents.Enregistrer("Etiquettes", $"etiquettes_reception_{receptionId}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf", Convert.FromBase64String(e!.PdfBase64));
+            var doc = await Documents.RangerAsync(Api, "Etiquettes", $"etiquettes_reception_{receptionId}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf", Convert.FromBase64String(e!.PdfBase64));
+            erreur = doc.Erreur;
             infoEtiquettes = $"{e.Codes.Count} étiquette(s) ({e.Codes[0]} à {e.Codes[^1]}) : planche PDF ouverte.";
             if (Imprimante.EstConfiguree)
                 infoEtiquettes += await Imprimante.EnvoyerAsync(e.Zpl) is { } echec ? $" {echec}" : " Envoyées à l’imprimante thermique.";
-            Documents.Ouvrir(chemin);
+            Documents.Ouvrir(doc.CheminLocal);
         }
         finally { impression = false; }
     }

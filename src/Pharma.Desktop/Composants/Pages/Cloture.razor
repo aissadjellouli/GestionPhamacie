@@ -110,7 +110,7 @@
                 @if (fichier is not null)
                 {
                     <div class="succes" role="status">
-                        Rapport enregistré : @fichier
+                        Rapport rangé : @(emplacement ?? fichier)
                         <button type="button" class="lien-bouton" @onclick="() => Documents.Ouvrir(fichier)">Ouvrir</button>
                     </div>
                 }
@@ -138,7 +138,7 @@
     private EtatCaisseDto? etat;
     private readonly Dictionary<string, decimal> saisies = Coupures.ToDictionary(c => c.Code, _ => 0m);
     private ClotureDto? resultat;
-    private string? erreur, fichier;
+    private string? erreur, fichier, emplacement;
     private bool enCours;
 
     private decimal TotalCompte => Coupures.Sum(c => saisies[c.Code] * c.Valeur);
@@ -180,7 +180,8 @@
         if (err is not null) { erreur = err; return; }
         try
         {
-            fichier = Documents.Enregistrer("Clotures", nom!, contenu!);
+            var doc = await Documents.RangerAsync(Api, "Clotures", nom!, contenu!);
+            (fichier, emplacement, erreur) = (doc.CheminLocal, doc.Emplacement, doc.Erreur);
             Documents.Ouvrir(fichier);
         }
         catch (Exception ex) { erreur = $"Rapport impossible à ouvrir : {ex.Message}"; }

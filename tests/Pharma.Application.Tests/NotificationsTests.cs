@@ -234,7 +234,13 @@ internal sealed class SauvegardesEnMemoire : ISauvegardesDepot
     public ReglagesSauvegarde Reglages { get; set; } = new(true, @"E:\Sauvegardes", new TimeOnly(22, 0), 2, null);
     public List<NouvelleEntreeSauvegarde> Journal { get; } = [];
     public Task<ReglagesSauvegarde> ReglagesAsync(CancellationToken ct = default) => Task.FromResult(Reglages);
-    public Task EnregistrerReglagesAsync(bool actif, string? dossier, TimeOnly heure, int conservation, CancellationToken ct = default) => Task.CompletedTask;
+    public Task EnregistrerReglagesAsync(bool actif, string? dossier, TimeOnly heure, int conservation, int? retentionGedJours, int? nettoyageGedAnnees,
+        CancellationToken ct = default)
+    {
+        Reglages = Reglages with { Actif = actif, Dossier = dossier, Heure = heure, Conservation = conservation, RetentionGedJours = retentionGedJours,
+            NettoyageGedAnnees = nettoyageGedAnnees };
+        return Task.CompletedTask;
+    }
     public Task NoterExecutionAsync(DateOnly jour, CancellationToken ct = default) { Reglages = Reglages with { DerniereExecution = jour }; return Task.CompletedTask; }
     public Task<long> JournaliserAsync(NouvelleEntreeSauvegarde e, CancellationToken ct = default) { Journal.Add(e); return Task.FromResult((long)Journal.Count); }
     public Task<IReadOnlyList<EntreeSauvegarde>> JournalAsync(int limite, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<EntreeSauvegarde>>([]);
@@ -253,6 +259,14 @@ internal sealed class StockageFactice(bool disque = true, bool panne = false) : 
     }
     public IReadOnlyList<string> Sauvegardes(string dossier) => Fichiers.ToList();
     public void Supprimer(string fichier) { Fichiers.Remove(fichier); Supprimes.Add(fichier); }
+    public List<(string Source, string Destination)> Copies { get; } = [];
+    public void Copier(string source, string destination) => Copies.Add((source, destination));
+    public List<(string Dossier, DateTime Limite)> Purges { get; } = [];
+    public int SupprimerAvant(string dossier, DateTime limite) { Purges.Add((dossier, limite)); return 0; }
+    public List<(string Source, string Destination, string Exclu)> CopiesGed { get; } = [];
+    public int CopierDocuments(string source, string destination, string exclure) { CopiesGed.Add((source, destination, exclure)); return 3; }
+    public List<(string Dossier, DateTime Limite)> Nettoyages { get; } = [];
+    public int SupprimerDocumentsAvant(string dossier, DateTime limite, string exclure) { Nettoyages.Add((dossier, limite)); return 1; }
 }
 
 internal sealed class AlertesTitulaireEspion : IAlertesTitulaire
@@ -300,6 +314,58 @@ public class SauvegardesTests
         Assert.EndsWith("pharmacie_20261108_220500.dump", r.Fichier);
         Assert.Equal([@"E:\Sauvegardes\pharmacie_20261105.dump"], stockage.Supprimes);   // conservation : 2 fichiers
         Assert.Empty(alertes.Sauvegardes);
+    }
+
+    [Fact]
+    public async Task Copie_dans_la_GED_gardee_le_nombre_de_jours_regle()
+    {
+        var ged = new Pharma.Application.Ged.ReglagesGed(@"C:\GED", 7);
+        var stockage = new StockageFactice();
+        var depot = new SauvegardesEnMemoire();
+        var r = await new LancerSauvegarde(depot, stockage, new AlertesTitulaireEspion(), new HorlogeFixe(new DateOnly(2026, 11, 8)), ged)
+            .ExecuterAsync(true, null, Soir);
+        Assert.Equal("reussie", r.Statut);
+        Assert.Equal(@"C:\GED\Sauvegardes\pharmacie_20261108_220500.dump", stockage.Copies.Single().Destination);
+        Assert.Equal((@"C:\GED\Sauvegardes", Soir.AddDays(-7)), stockage.Purges.Single());   // réglage du serveur : 7 jours
+
+        // Documents de la GED copiés sur le disque externe avec la base ; GED jamais nettoyée sans réglage
+        Assert.Equal((@"C:\GED", @"E:\Sauvegardes\GED", "Sauvegardes"), stockage.CopiesGed.Single());
+        Assert.Empty(stockage.Nettoyages);
+
+        // Réglage du titulaire (Administration) : il l'emporte sur celui du serveur
+        depot.Reglages = depot.Reglages with { RetentionGedJours = 30 };
+        await new LancerSauvegarde(depot, stockage, new AlertesTitulaireEspion(), new HorlogeFixe(new DateOnly(2026, 11, 8)), ged).ExecuterAsync(true, null, Soir);
+        Assert.Equal(Soir.AddDays(-30), stockage.Purges[^1].Limite);
+
+        // Nettoyage réglé à 10 ans : documents de la GED de plus de 10 ans supprimés
+        depot.Reglages = depot.Reglages with { NettoyageGedAnnees = 10 };
+        var r3 = await new LancerSauvegarde(depot, stockage, new AlertesTitulaireEspion(), new HorlogeFixe(new DateOnly(2026, 11, 8)), ged).ExecuterAsync(true, null, Soir);
+        Assert.Equal((@"C:\GED", Soir.AddYears(-10)), stockage.Nettoyages.Single());
+        Assert.Contains("Nettoyage de la GED", r3.Message);
+    }
+
+    [Fact]
+    public async Task Disque_externe_absent_copie_de_secours_dans_la_GED()
+    {
+        var stockage = new StockageFactice(disque: false);
+        var r = await new LancerSauvegarde(new SauvegardesEnMemoire(), stockage, new AlertesTitulaireEspion(), new HorlogeFixe(new DateOnly(2026, 11, 8)),
+            new Pharma.Application.Ged.ReglagesGed(@"C:\GED")).ExecuterAsync(true, null, Soir);
+        Assert.Equal("disque_absent", r.Statut);
+        Assert.Contains(@"C:\GED\Sauvegardes\pharmacie_20261108_220500.dump", stockage.Fichiers);
+        Assert.Contains("Copie de secours", r.Message);
+    }
+
+    [Fact]
+    public async Task Duree_de_la_copie_GED_entre_1_et_365_jours()
+    {
+        var depot = new SauvegardesEnMemoire();
+        var modifier = new ModifierReglagesSauvegarde(depot, new JournalEspion());
+        await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() =>
+            modifier.ExecuterAsync(true, @"E:\Sauvegardes", new TimeOnly(22, 0), 2, 1, default, 0));
+        await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() =>
+            modifier.ExecuterAsync(true, @"E:\Sauvegardes", new TimeOnly(22, 0), 2, 1, default, 7, 0));
+        await modifier.ExecuterAsync(true, @"E:\Sauvegardes", new TimeOnly(22, 0), 2, 1, default, 15);
+        Assert.Equal(15, depot.Reglages.RetentionGedJours);
     }
 
     [Fact]

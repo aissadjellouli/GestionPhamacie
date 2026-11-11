@@ -22,13 +22,43 @@ JetonService.VerifierCle(builder.Configuration, builder.Environment.IsDevelopmen
 // Exécution en service Windows sur le PC serveur de l'officine
 builder.Host.UseWindowsService(o => o.ServiceName = "PharmaOfficine API");
 
+// Journal du serveur en fichiers (un par jour, taille et durée de conservation réglables : section « Journaux »)
+var optionsJournal = builder.Configuration.GetSection("Journaux").Get<Pharma.Api.Journalisation.OptionsJournalFichier>()
+                     ?? new Pharma.Api.Journalisation.OptionsJournalFichier();
+builder.Logging.AddProvider(new Pharma.Api.Journalisation.JournalFichierProvider(optionsJournal));
+
+// GED : un dossier du serveur pour tous les documents (réglage Ged:Dossier). Les ordonnances y vont par défaut, et celles de
+// l'ancien dossier par défaut y sont déplacées au démarrage (sans rien écraser). Chifa : les fichiers sont lus dans le dossier
+// d'export du logiciel de la CNAS (Chifa:DossierExport) et archivés dans GED\Chifa
+var dossierPharma = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine");
+var ged = new Pharma.Application.Ged.ReglagesGed(
+    builder.Configuration["Ged:Dossier"] is { Length: > 0 } g ? g : Path.Combine(dossierPharma, "GED"),
+    builder.Configuration.GetValue("Ged:RetentionSauvegardesJours", 7));
+var dossierOrdonnances = builder.Configuration["Ordonnances:Dossier"] is { Length: > 0 } o ? o : ged.Dossier(Pharma.Application.Ged.TypesGed.Ordonnances);
+var dossierChifa = builder.Configuration["Chifa:DossierExport"] is { Length: > 0 } c ? c : ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa);
+// Chaque dossier à part : un dossier réglé ailleurs et introuvable (ex. Chifa sur un disque absent) n'empêche pas les autres
+foreach (var d in new[] { dossierOrdonnances, ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa), ged.Dossier(Pharma.Application.Ged.TypesGed.Sauvegardes) })
+    try { Directory.CreateDirectory(d); }
+    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Console.WriteLine($"GED : dossier {d} inaccessible ({e.Message})"); }
+try
+{
+    var deplaces = Pharma.Infrastructure.Ged.GedFichiers.Deplacer(Path.Combine(dossierPharma, "Ordonnances"), dossierOrdonnances);
+    if (deplaces > 0) Console.WriteLine($"GED : {deplaces} ordonnance(s) déplacée(s) dans {dossierOrdonnances}");
+}
+catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+{
+    Console.WriteLine($"GED : ordonnances non déplacées dans {dossierOrdonnances} ({e.Message})");
+}
+builder.Services.AddSingleton(ged);
+
 // Composition : cas d'usage, adaptateurs, services propres à l'hôte
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(new InfrastructureOptions(
     builder.Configuration.GetConnectionString("Pharmacie") ?? "",
-    builder.Configuration["Chifa:DossierExport"] ?? "",
-    builder.Configuration["Ordonnances:Dossier"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Ordonnances"),
-    builder.Configuration["Sauvegardes:PgDump"]));
+    dossierChifa,
+    dossierOrdonnances,
+    builder.Configuration["Sauvegardes:PgDump"],
+    ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa)));
 builder.Services.AddSingleton<IGenerateurJeton, JetonService>();
 // Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
 builder.Services.AddHttpContextAccessor();

@@ -94,7 +94,7 @@
             {
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 760px">
-                        <thead><tr><th scope="col">Tiers</th><th scope="col">Pièce</th><th scope="col">Depuis</th><th scope="col">Ancienneté</th><th scope="col">Montant</th><th scope="col">État</th></tr></thead>
+                        <thead><tr><th scope="col">Tiers</th><th scope="col">Pièce</th><th scope="col">Depuis</th><th scope="col">Ancienneté</th><th scope="col">Montant</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Régler</span></th></tr></thead>
                         <tbody>
                             @foreach (var l in lignes)
                             {
@@ -109,6 +109,19 @@
                                         @if (l.EnAlerte && !l.Rejetee) { <span class="pastille @(l.Sens == "dette" ? "urgent" : "attention")">@(l.Categorie == "effet" ? "À payer sous peu" : l.Categorie.StartsWith("facture_", StringComparison.Ordinal) ? "Échue" : "En retard")</span> }
                                         @if (!l.EnAlerte) { <span class="pastille ok">Dans le délai</span> }
                                     </td>
+                                    <td>
+                                        @if (Reglement(l) is { } rg)
+                                        {
+                                            @if (rg.Droit is null || Session.A(rg.Droit))
+                                            {
+                                                <a class="btn" href="@rg.Lien" data-champ="regler">@(l.Sens == "dette" ? "Payer" : "Encaisser")</a>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="btn" disabled title="@($"Droit « {Libelles.Droit(rg.Droit)} » nécessaire")">@(l.Sens == "dette" ? "Payer" : "Encaisser")</button>
+                                            }
+                                        }
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -119,8 +132,8 @@
         </section>
 
         <p class="pied-page">
-            Le détail et les mouvements de chaque tiers sont dans son écran : « Règlement d’un crédit » à la caisse pour un patient (relevé de dette),
-            « Factures » pour les factures clients, « Achats, Règlements » pour un grossiste (relevé de dette), « Trésorerie » pour les versements des organismes.
+            « Encaisser » ou « Payer » ouvre l’écran où la somme se règle, déjà rempli : « Règlement d’un crédit » à la caisse pour un patient,
+            « Trésorerie » pour une facture client ou un bordereau d’organisme, « Achats, Règlements » pour un grossiste ou un effet.
         </p>
     }
 </div>
@@ -162,6 +175,22 @@
         }
         finally { enCours = false; }
         await ChargerAsync();
+    }
+
+    /// <summary>Écran où la ligne se règle, et droit qu'il demande (null : aucun lien, ex. dette antérieure sans pièce).</summary>
+    private static (string Lien, string? Droit)? Reglement(LigneSuiviDto l)
+    {
+        static string? Numero(string libelle, string prefixe) =>
+            libelle.StartsWith(prefixe, StringComparison.Ordinal) ? libelle[prefixe.Length..].Trim() : null;
+        return l.Categorie switch
+        {
+            "patient" when l.TiersId is { } p => ($"caisse?credit={p}", "caisse.vendre"),
+            _ when l.Categorie.StartsWith("facture_", StringComparison.Ordinal) && Numero(l.Libelle, "Facture ") is { } f =>
+                ($"tresorerie?facture={Uri.EscapeDataString(f)}", "tresorerie.gerer"),
+            "bordereau" when Numero(l.Libelle, "Bordereau ") is { } b => ($"tresorerie?bordereau={Uri.EscapeDataString(b)}", "tresorerie.gerer"),
+            "grossiste" or "effet" when l.TiersId is { } g => ($"achats?onglet=reglements&grossiste={g}", "achats.regler"),
+            _ => null
+        };
     }
 
     private static IEnumerable<LigneSuiviDto> Lignes(SuiviDettesDto s, string? code) => code switch

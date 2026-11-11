@@ -295,7 +295,12 @@ public sealed record NombreDto(int Nombre);
 
 // ---- Sauvegardes ------------------------------------------------------------
 
-public sealed record ReglagesSauvegardeDto(bool Actif, string? Dossier, TimeOnly Heure, int Conservation, DateOnly? DerniereExecution);
+/// <summary>RetentionGedJours : jours de conservation de la copie dans la GED (null : réglage du serveur, 7 jours par défaut).</summary>
+public sealed record ReglagesSauvegardeDto(bool Actif, string? Dossier, TimeOnly Heure, int Conservation, DateOnly? DerniereExecution,
+    int? RetentionGedJours = null, int RetentionGedParDefaut = 7, int? NettoyageGedAnnees = null, string? DossierGed = null);
+
+/// <summary>Document rangé dans la GED du serveur : chemin « Type\nom » sous le dossier de la GED.</summary>
+public sealed record DocumentGedDto(string Chemin);
 
 /// <summary>Statut : reussie, echouee ou disque_absent.</summary>
 public sealed record EntreeSauvegardeDto(

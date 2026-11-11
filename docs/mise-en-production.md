@@ -47,7 +47,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `049`. |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `050`. |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -81,8 +81,20 @@ Le dossier `database/init/` contient trois fichiers :
 - [ ] **3.2** Configurer les réglages propres à la pharmacie, par variables d'environnement **système** (jamais dans le dépôt) :
   - `ConnectionStrings__Pharmacie=Host=localhost;Port=5432;Database=<base>;Username=pharma_app;Password=<mot de passe de l'étape 1.2>` ;
   - `Jwt__Cle` : une clé aléatoire de **64 caractères minimum**, propre à la pharmacie. La valeur d'exemple d'`appsettings.json` ne doit jamais rester : hors poste de développement, l'API refuse de démarrer avec elle ou avec une clé plus courte ;
-  - `Chifa__DossierExport` : le dossier d'export de Chifa sur ce PC ;
-  - `Ordonnances__Dossier` : le dossier des scans d'ordonnances (par défaut `C:\ProgramData\PharmaOfficine\Ordonnances`) ;
+  - `Ged__Dossier` : la GED, dossier unique de tous les documents (par défaut `C:\ProgramData\PharmaOfficine\GED`) :
+    `Ordonnances` (scans), `Chifa` (copie des fichiers Chifa lus), `Sauvegardes` (copie de la base), et les documents produits
+    par les postes, un sous-dossier par type (`Factures`, `Rapports`, `Clotures`, `Registre`, `Commandes`, `Retours`, `Etiquettes`,
+    `Inventaires`, `Credits`). Les postes envoient leurs documents au serveur. Les documents de la GED sont gardés ; un nettoyage
+    au-delà d'un nombre d'années se règle dans Administration › Sauvegardes (vide : jamais) ;
+  - `Ged__RetentionSauvegardesJours` : jours de conservation de la copie de la base dans `GED\Sauvegardes` (7 par défaut,
+    modifiable aussi dans Administration › Sauvegardes) ;
+  - `Chifa__DossierExport` : le dossier d'export de Chifa_Officine sur ce PC (les fichiers y sont lus, puis archivés dans `GED\Chifa`) ;
+  - `Ordonnances__Dossier` : à ne régler que pour sortir les scans d'ordonnances de la GED (par défaut `GED\Ordonnances` ; l'ancien
+    dossier `C:\ProgramData\PharmaOfficine\Ordonnances` est vidé dans la GED au démarrage) ;
+  - journal du serveur, un fichier texte par jour (`pharma-api-AAAAMMJJ.log`, puis `_2`, `_3`… au-delà de la taille maximale) :
+    `Journaux__Dossier` (par défaut `C:\ProgramData\PharmaOfficine\Journaux`), `Journaux__TailleMaxMo` (50 par défaut, par fichier),
+    `Journaux__RetentionMois` (3 par défaut : les fichiers plus anciens sont supprimés au démarrage puis chaque jour),
+    `Journaux__Niveau` (`Information` par défaut, `Warning` pour ne garder que les avertissements et erreurs) ;
   - `Urls` : `http://0.0.0.0:5080` par défaut.
 - [ ] **3.3** Installer l'API comme service Windows, démarré automatiquement (nom attendu : « PharmaOfficine API ») :
   ```powershell
@@ -130,7 +142,9 @@ Le dossier `database/init/` contient trois fichiers :
 
 ## Étape 8 — Sauvegardes (avant toute vraie donnée)
 
-- [ ] **8.1** Administration › Sauvegardes : régler le dossier et la rétention, puis lancer une première sauvegarde.
+- [ ] **8.1** Administration › Sauvegardes : régler le dossier et la rétention, puis lancer une première sauvegarde. Chaque sauvegarde
+  copie la base sur le disque externe et dans `GED\Sauvegardes` (gardée 7 jours par défaut), et les documents de la GED sur le disque
+  externe, dans son sous-dossier `GED` (nouveaux et modifiés seulement). Disque absent : la copie de la base dans la GED est faite quand même.
 - [ ] **8.2** Planifier `scripts\sauvegarde_pharmacie.ps1` chaque soir dans le Planificateur de tâches. Garder deux disques externes en rotation.
 - [ ] **8.3** **Tester une restauration** sur une base de test, avant la mise en service puis chaque mois.
 

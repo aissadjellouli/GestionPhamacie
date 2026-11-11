@@ -206,6 +206,8 @@
 
     private async void SurSession()
     {
+        // Documents de l'ancien dossier du poste (ou restés au poste, serveur injoignable) : envoyés à la GED du serveur
+        if (Session.EstConnecte && !Session.DoitChangerMotDePasse) _ = Documents.MigrerAsync(Api);
         await CompterUrgentesAsync();
         await InvokeAsync(async () => { await AppliquerAffichageAsync(); StateHasChanged(); });
     }

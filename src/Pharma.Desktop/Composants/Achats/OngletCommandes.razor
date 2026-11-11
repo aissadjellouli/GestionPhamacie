@@ -332,8 +332,10 @@
     {
         var (pdf, nom, e) = await Api.EmettreCommandeAsync(detail!.Entete.Id);
         if (e is not null) return e;
-        Documents.Ouvrir(Documents.Enregistrer("Commandes", nom!, pdf!));
-        message = $"Bon {detail.Entete.Numero} émis : PDF enregistré dans Documents\\Pharma Officine\\Commandes, à transmettre au grossiste.";
+        var doc = await Documents.RangerAsync(Api, "Commandes", nom!, pdf!);
+        Documents.Ouvrir(doc.CheminLocal);
+        message = $"Bon {detail.Entete.Numero} émis : PDF rangé ({doc.Emplacement}), à transmettre au grossiste.";
+        if (doc.Erreur is not null) message += " " + doc.Erreur;
         await RechargerAsync();
         await OuvrirAsync(detail.Entete.Id);
         return null;
@@ -343,8 +345,9 @@
     {
         var (pdf, nom, e) = await Api.BonCommandeAsync(detail!.Entete.Id);
         if (e is not null) return e;
-        Documents.Ouvrir(Documents.Enregistrer("Commandes", nom!, pdf!));
-        return null;
+        var doc = await Documents.RangerAsync(Api, "Commandes", nom!, pdf!);
+        Documents.Ouvrir(doc.CheminLocal);
+        return doc.Erreur;
     });
 
     private async Task AnnulerAsync() => await Executer(async () =>

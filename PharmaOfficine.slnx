@@ -53,6 +53,7 @@
     <File Path="database/047_recette_corrections.sql" />
     <File Path="database/048_reprise_corrections.sql" />
     <File Path="database/049_vente_sans_ordonnance.sql" />
+    <File Path="database/050_ged.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
