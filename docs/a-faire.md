@@ -63,6 +63,9 @@ Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livr�
 
 ## Livré récemment
 
+- [x] Scripts de la base séparés en deux usages : `database/migration/` (scripts numérotés, mise à jour d'une base en service) et `database/init/` (création d'une base neuve à la mise en production) ; outils limités aux migrations `0NN_*.sql`.
+- [x] Script 062 : vues `v_etat_stock`, `v_risque_peremption` et `v_mouvement_tresorerie` sans colonne figée ; une base neuve (`init/`) et une base mise à jour par les migrations ont exactement la même structure (vérifié sur une ancienne sauvegarde rejouée).
+- [x] Vidéos exclues de git (tous formats), ni commitées ni rattachées à la solution.
 - [x] Pertes et dons : section « Sorties de stock sans vente » des rapports (boîtes et valeur d'achat HT, par employé, par produit, en détail ; PDF et CSV), carte « Pertes et dons » du pilotage mobile, tuile « Marge après pertes et dons » avec la TVA à reverser réglée par motif (script 061).
 - [x] Volet Chifa scanné à la caisse : vente reprise en tiers payant CNAS sans ressaisie, code produit Chifa associé une fois, volet repris une seule fois (script 060).
 - [x] Part de l'organisme arrondie au centime ; PA TTC et PV HT affichés à la réception, prix public HT sur la fiche produit.
