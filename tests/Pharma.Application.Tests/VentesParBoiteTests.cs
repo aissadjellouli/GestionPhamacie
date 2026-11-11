@@ -18,6 +18,8 @@ internal sealed class VentesParBoiteEnMemoire : IVentesParBoite
         return Task.FromResult<IReadOnlyList<VenteAnnulable>>([]);
     }
     public Task<string?> NomProduitAsync(long produitId, CancellationToken ct = default) => Task.FromResult<string?>("Sintrom 4 mg cp");
+    public bool Rendue { get; set; }
+    public Task<bool> DejaRendueAsync(long boiteId, CancellationToken ct = default) => Task.FromResult(Rendue);
 }
 
 public class VentesParBoiteTests
@@ -66,8 +68,10 @@ public class VentesParBoiteTests
     [Fact]
     public async Task Boite_deja_rendue_refusee()
     {
-        var (cas, codes, _) = Monter();
-        codes.Codes[Etiquette] = new CodeResolu(7, 70, "boite", "retour_client", 500);
+        // Une boîte rendue revient « en stock » (ou « détruite ») : c'est son historique qui dit qu'elle a déjà été rendue
+        var (cas, codes, ventes) = Monter();
+        codes.Codes[Etiquette] = new CodeResolu(7, 70, "boite", "en_stock", 500);
+        ventes.Rendue = true;
         var e = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(Etiquette, null, null, null));
         Assert.Contains("déjà été rendue", e.Message);
     }

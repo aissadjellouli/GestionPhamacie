@@ -165,6 +165,8 @@
 @code {
     /// <summary>Lot à sortir du stock, proposé depuis l'alerte « Retirer du stock ».</summary>
     [SupplyParameterFromQuery(Name = "sortie")] public long? Sortie { get; set; }
+    /// <summary>Produit à ranger, proposé depuis l'alerte « Mettre en avant » (stock dormant).</summary>
+    [SupplyParameterFromQuery(Name = "ranger")] public long? Ranger { get; set; }
 
     private EtatStockDto? etat;
     private string? erreur;
@@ -216,6 +218,12 @@
         var lieux = Api.EmplacementsAsync();
         (etat, erreur) = await stock;
         (emplacements, _) = await lieux;
+        // Depuis l'alerte : le produit est cherché et son rangement ouvert
+        if (Ranger is { } id && etat?.Lignes.FirstOrDefault(l => l.ProduitId == id) is { } ligne)
+        {
+            (recherche, filtre, rayon) = (ligne.NomCommercial, "tous", "");
+            OuvrirRangement(ligne);
+        }
     }
 
     // Liste filtrée gardée tant que le stock, la recherche, le filtre et le rayon ne changent pas

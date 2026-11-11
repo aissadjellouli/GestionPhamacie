@@ -143,8 +143,16 @@
 
     private decimal TotalCompte => Coupures.Sum(c => saisies[c.Code] * c.Valeur);
 
-    protected override async Task OnInitializedAsync()
+    // Relève ou clôture affichée : Blazor garde l'écran quand seule l'adresse change (?releve=true ou non) ;
+    // on repart alors d'un comptage vierge et de l'état de caisse à jour (sinon le résultat précédent restait affiché)
+    private bool? releveAffichee;
+
+    protected override async Task OnParametersSetAsync()
     {
+        if (releveAffichee == Releve) return;
+        releveAffichee = Releve;
+        (resultat, nouvelleSession, fichier, erreur) = (null, null, null, null);
+        foreach (var c in Coupures) saisies[c.Code] = 0;
         (etat, erreur) = await Api.EtatCaisseAsync();
     }
 

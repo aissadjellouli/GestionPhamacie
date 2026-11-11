@@ -10,6 +10,7 @@ using Pharma.Domain.Commun;
 using Pharma.Infrastructure;
 using Pharma.Shared;
 
+Console.OutputEncoding = System.Text.Encoding.UTF8;
 var builder = WebApplication.CreateBuilder(args);
 
 // HTTPS pour le scanner mobile (caméra du téléphone) : fichier écrit par scripts/certificat_mobile.ps1
@@ -34,6 +35,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Pharma.Infrastructure.Securite.PermissionService>();
 builder.Services.AddScoped<Pharma.Api.Securite.AutorisationParCode>();
 builder.Services.AddScoped<IPermissionService, PermissionsComptoir>();
+builder.Services.AddScoped(sp => new Pharma.Application.Securite.ListerValidateurs(
+    sp.GetRequiredService<Pharma.Application.Securite.ICodesComptoir>(), sp.GetRequiredService<Pharma.Infrastructure.Securite.PermissionService>()));
 builder.Services.AddHostedService<AlertesQuotidiennes>();
 builder.Services.AddHostedService<EnvoiNotifications>();
 builder.Services.AddHostedService<SauvegardesAutomatiques>();

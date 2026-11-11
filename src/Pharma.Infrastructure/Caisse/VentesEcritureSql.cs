@@ -12,7 +12,7 @@ namespace Pharma.Infrastructure.Caisse;
 /// Enregistre une vente en une transaction. Les déclencheurs restent le filet de sécurité :
 /// lot périmé ou bloqué (verifier_lot_vendable), patient obligatoire (verifier_tracabilite_vente).
 /// </summary>
-public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
+public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Securite.AutorisationCourante? autorisation = null) : IVentesEcriture
 {
     public async Task<(long Id, string Numero)> EnregistrerAsync(VenteAEnregistrer a, CancellationToken ct = default)
     {
@@ -206,11 +206,11 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
         if (v.RemisePct > 0)
             await JournalSql.EcrireAsync(cx, tx, v.UtilisateurId, "remise", "vente", venteId,
                 new Dictionary<string, object?> { ["ticket"] = numero, ["pourcentage"] = v.RemisePct, ["montant"] = v.MontantRemise },
-                Permissions.CaisseRemise, ct);
+                Permissions.CaisseRemise, ct, autorisation?.AutoriseParId);
         if (a.ProduitsSousRegistre.Count > 0 && v.Lignes.Any(l => a.ProduitsSousRegistre.Contains(l.ProduitId)))
             await JournalSql.EcrireAsync(cx, tx, v.UtilisateurId, "delivrance_psychotrope", "vente", venteId,
                 new Dictionary<string, object?> { ["ticket"] = numero, ["ordonnance_id"] = ordonnanceId },
-                Permissions.PsychotropesDelivrer, ct);
+                Permissions.PsychotropesDelivrer, ct, autorisation?.AutoriseParId);
 
         await tx.CommitAsync(ct);
         return (venteId, numero);

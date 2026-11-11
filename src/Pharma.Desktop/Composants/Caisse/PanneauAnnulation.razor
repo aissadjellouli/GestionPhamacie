@@ -177,7 +177,7 @@
                                     else
                                     {
                                         <fieldset class="boites-retour">
-                                            <legend>Boîtes rendues (n° de série)</legend>
+                                            <legend>Boîtes rendues (n° de série ou étiquette)</legend>
                                             @foreach (var b in l.Boites)
                                             {
                                                 <label class="case"><input type="checkbox" checked="@s.Boites.Contains(b.Id)" @onchange="e => BasculerBoite(s, b.Id, e)" /><span>@b.NumeroSerie</span></label>

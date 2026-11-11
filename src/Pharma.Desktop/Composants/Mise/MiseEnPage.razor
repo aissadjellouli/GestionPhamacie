@@ -187,7 +187,9 @@
         if (!Session.EstConnecte || EstPageConnexion) return true;
         var (chemin, droits) = EcransReserves.FirstOrDefault(e => Chemin == e.Chemin || Chemin.StartsWith(e.Chemin + "/", StringComparison.Ordinal));
         if (chemin is null || droits.Any(Session.A)) return true;
-        messageAcces = $"Écran réservé : le droit « {string.Join(" » ou « ", droits.Select(Libelles.Droit))} » est nécessaire. Demandez-le au titulaire.";
+        messageAcces = droits.All(d => d == "role.titulaire")
+            ? "Écran réservé au pharmacien titulaire."
+            : $"Écran réservé : le droit « {string.Join(" » ou « ", droits.Select(Libelles.Droit))} » est nécessaire. Demandez-le au titulaire.";
         Nav.NavigateTo("", replace: true);
         return false;
     }

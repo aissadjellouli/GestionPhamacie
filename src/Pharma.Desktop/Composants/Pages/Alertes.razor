@@ -177,6 +177,8 @@
             $"achats?onglet=commandes&produit={a.ProduitId}&nom={Uri.EscapeDataString(a.Produit)}",
         "peremption" or "risque_ecoulement" when a.LotId is { } lot && Session.A("achats.retour_fournisseur") =>
             $"achats?onglet=retours&lot={lot}&motif=peremption_proche",
+        // Produit qui ne se vend plus : le ranger plus en vue (emplacement de vente au comptoir)
+        "dormant" when Session.A("stock.ajuster") => $"stock?ranger={a.ProduitId}",
         _ => null
     };
 
@@ -185,7 +187,8 @@
         "rupture" or "stock_critique" => "Droit « achats.commander » nécessaire",
         "peremption" or "risque_ecoulement" => "Droit « achats.retour_fournisseur » nécessaire",
         "perime" => "Droit « stock.declarer_perime » nécessaire",
-        _ => "Bientôt disponible"
+        "dormant" => "Droit « stock.ajuster » nécessaire",
+        _ => "Aucune action pour cette alerte"
     };
 
     private List<AlerteDto>? alertes;

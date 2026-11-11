@@ -1,5 +1,6 @@
 @page "/factures"
 @inject ApiClient Api
+@inject SessionPoste Session
 
 <div class="page">
     <div class="titre-page">
@@ -175,7 +176,8 @@
                     {
                         <button type="button" class="btn" disabled="@enCours" @onclick="LeverRejetAsync">Lever le rejet</button>
                     }
-                    @if (r.Statut == "rejetee" && r.Reste > 0)
+                    @* Payée en entier (soldée) : correction et remplacement réservés au titulaire *@
+                    @if (r.Statut == "rejetee" && (r.Reste > 0 || Session.A("role.titulaire")))
                     {
                         <button type="button" class="btn btn-principal" @onclick="() => Editer(Correction, d)">Corriger (même numéro)</button>
                         <button type="button" class="btn" @onclick="() => Editer(Remplacement, d)">Remplacer par une nouvelle facture</button>

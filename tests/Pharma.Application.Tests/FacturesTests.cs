@@ -101,6 +101,31 @@ public class FacturesTests
     }
 
     [Fact]
+    public async Task Facture_soldee_rejet_correction_et_remplacement_reserves_au_titulaire()
+    {
+        static FactureDetail Soldee(string statut) { var d = Detail(statut); return d with { Resume = d.Resume with { Reste = 0 } }; }
+        var f = new FacturesEnMemoire { Detail = Soldee("emise") };
+        var titulaire = new Facturation(f, new DroitsFactices("factures.gerer") { Titulaire = true }, new HorlogeFixe(new DateOnly(2026, 11, 9)), new JournalEspion());
+
+        // Payée en entier : l'employé qui gère les factures ne peut pas la rejeter, le titulaire oui
+        await Assert.ThrowsAsync<DroitRefuseException>(() => Cas(f).RejeterAsync(101, "Quantité erronée", 5));
+        await titulaire.RejeterAsync(101, "Quantité erronée", 5);
+
+        // Rejetée et soldée : correction et remplacement par le titulaire seulement
+        f.Detail = Soldee("rejetee");
+        await Assert.ThrowsAsync<DroitRefuseException>(() => Cas(f).RemplacerAsync(101, Demande("organisme", organisme: 1, ventes: 1), 5));
+        await Assert.ThrowsAsync<DroitRefuseException>(() => Cas(f).CorrigerAsync(101, Demande("organisme", organisme: 1, ventes: 1), "Quantité", 5));
+        await titulaire.RemplacerAsync(101, Demande("organisme", organisme: 1, ventes: 1), 5);
+        Assert.Equal(101L, f.Remplacee);
+
+        // Pas encore payée : l'employé rejette et corrige comme avant
+        f.Detail = Detail("emise");
+        await Cas(f).RejeterAsync(101, "Taux erroné", 5);
+        f.Detail = Detail("rejetee");
+        await Cas(f).CorrigerAsync(101, Demande("organisme", organisme: 1, ventes: 1), "Taux", 5);
+    }
+
+    [Fact]
     public async Task Retrait_du_suivi_demande_un_motif()
     {
         var f = new FacturesEnMemoire { Detail = Detail("emise") };

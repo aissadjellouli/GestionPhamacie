@@ -153,16 +153,9 @@ internal static class CaisseEndpoints
            .ExigerPermission(Permissions.CaisseVendre);
 
         // Qui peut autoriser sur place une action refusée faute de droit (droit donné, ou « role.titulaire »)
-        api.MapGet("/auth/valideurs", async (string? permission, Pharma.Application.Securite.ICodesComptoir codes,
-                Pharma.Infrastructure.Securite.PermissionService droits, CancellationToken ct) =>
-            {
-                var liste = new List<VendeurComptoirDto>();
-                foreach (var c in await codes.AvecCodeAsync(ct))
-                    if (permission is null or Pharma.Application.Securite.PermissionServiceExtensions.MarqueTitulaire
-                            ? await droits.EstTitulaireAsync(c.Id, ct) : await droits.APermissionAsync(c.Id, permission, ct))
-                        liste.Add(new VendeurComptoirDto(c.Identifiant, c.NomComplet));
-                return Results.Ok(liste.OrderBy(v => v.NomComplet).ToList());
-            })
+        api.MapGet("/auth/valideurs", async (string? permission, Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(permission ?? Pharma.Application.Securite.PermissionServiceExtensions.MarqueTitulaire, ct))
+                    .Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet)).ToList()))
            .RequireAuthorization();
 
         // Qui peut valider un produit bloqué (à la vente ou à l'achat) avec son code comptoir

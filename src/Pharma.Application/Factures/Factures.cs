@@ -153,6 +153,9 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "enregistrer le rejet d’une facture", ct);
         var f = await Detail(id, ct);
         RegleFacture.VerifierRejet(f.Resume.Type, f.Resume.Statut, motif);
+        // Facture déjà payée en entier : seul le titulaire peut la remettre en cause
+        if (f.Resume.Type == "facture" && f.Resume.Reste <= 0)
+            await droits.ExigerTitulaireAsync(utilisateurId, "rejeter une facture déjà payée en entier", ct);
         await factures.RejeterAsync(id, motif!.Trim(), ct);
         await journal.EcrireAsync(utilisateurId, "facture_rejetee", "facture_client", id,
             new Dictionary<string, object?> { ["numero"] = f.Resume.Numero, ["motif"] = motif }, Permissions.FacturesGerer, ct);
@@ -170,12 +173,19 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
             Permissions.FacturesGerer, ct);
     }
 
+    /// <summary>Seule une facture rejetée se corrige ou se remplace ; payée en entier (soldée), seulement par le titulaire.</summary>
+    private async Task VerifierRepriseAsync(FactureDetail ancienne, long utilisateurId, string action, CancellationToken ct)
+    {
+        RegleFacture.VerifierReprise(ancienne.Resume.Statut);
+        if (ancienne.Resume.Reste <= 0) await droits.ExigerTitulaireAsync(utilisateurId, action, ct);
+    }
+
     /// <summary>Correction sur place après rejet : même numéro, version + 1 ; la version précédente reste consultable et imprimable.</summary>
     public async Task CorrigerAsync(long id, DemandeFacture demande, string? motif, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "corriger une facture rejetée", ct);
         var ancienne = await Detail(id, ct);
-        RegleFacture.VerifierReprise(ancienne.Resume.Statut, ancienne.Resume.Reste);
+        await VerifierRepriseAsync(ancienne, utilisateurId, "corriger une facture rejetée déjà payée en entier", ct);
         var f = await PreparerAsync(MemeDestinataire(demande, ancienne), sauf: id, utilisateurId, ct);
         await factures.CorrigerAsync(id, f, string.IsNullOrWhiteSpace(motif) ? null : motif.Trim(), ct);
         await Journaliser(utilisateurId, "facture_corrigee", id, ancienne.Resume.Numero, f);
@@ -186,7 +196,7 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
     {
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "remplacer une facture rejetée", ct);
         var ancienne = await Detail(id, ct);
-        RegleFacture.VerifierReprise(ancienne.Resume.Statut, ancienne.Resume.Reste);
+        await VerifierRepriseAsync(ancienne, utilisateurId, "remplacer une facture rejetée déjà payée en entier", ct);
         var f = await PreparerAsync(MemeDestinataire(demande, ancienne), sauf: id, utilisateurId, ct);
         var r = await factures.EmettreAsync(f, id, ct);
         await Journaliser(utilisateurId, "facture_remplacee", r.Id, r.Numero, f, ancienne.Resume.Numero);

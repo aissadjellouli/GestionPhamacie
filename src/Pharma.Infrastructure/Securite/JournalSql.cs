@@ -26,13 +26,14 @@ public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.
     /// <summary>Même insertion, dans la transaction d'une autre écriture.</summary>
     internal static async Task EcrireAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long utilisateurId, string action,
         string? tableCible, long? enregistrementId, IReadOnlyDictionary<string, object?> details, string? permissionCode,
-        CancellationToken ct)
+        CancellationToken ct, long? autorisePar = null)
     {
         await using var cmd = new NpgsqlCommand("""
-            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details, permission_code)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details, permission_code, autorise_par)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             """, cx, tx);
         AjouterParametres(cmd, utilisateurId, action, tableCible, enregistrementId, details, permissionCode);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)(autorisePar is { } a && a != utilisateurId ? a : null) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

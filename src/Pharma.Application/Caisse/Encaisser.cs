@@ -140,7 +140,7 @@ public sealed class Encaisser(
         // Liste I ou II sans ordonnance : droit « vendre sans ordonnance », sinon autorisation par le code d'un employé qui l'a.
         // Psychotrope ou stupéfiant : l'ordonnance reste obligatoire pour tous (contrôlé ci-dessus)
         var sansOrdonnance = produits.Values.Where(p => p.EstSurOrdonnance).Select(p => p.NomCommercial).ToList();
-        if (commande.Ordonnance is not null) sansOrdonnance.Clear();
+        if (commande.Ordonnance is { } ord && (ord.MedecinId is not null || ord.JetonScan is not null)) sansOrdonnance.Clear();
         if (sansOrdonnance.Count > 0)
             await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendreSansOrdonnance, "vendre sans ordonnance un médicament de liste I ou II", ct);
 

@@ -213,6 +213,15 @@ public class CaisseApplicationTests
     }
 
     [Fact]
+    public async Task Liste_I_ordonnance_vide_sans_medecin_ni_scan_ne_compte_pas()
+    {
+        var vide = new OrdonnanceSaisie(null, CatalogueEnMemoire.Aujourdhui, null);
+        await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion())
+                .ExecuterAsync(Commande(9, 90, patientId: 3, ordonnance: vide), 5, "Caisse 1"));
+    }
+
+    [Fact]
     public async Task Liste_I_avec_ordonnance_vendue_sans_le_droit()
     {
         var ventes = new VentesEspion();

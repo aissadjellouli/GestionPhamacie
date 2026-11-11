@@ -120,14 +120,24 @@ internal static class LecteurCsv
         if (choix == "windows-1252") return (ansi, "ANSI Windows-1252 (choisi)");
         if (debut is [0xEF, 0xBB, 0xBF, ..]) return (utf8, "UTF-8");
         if (debut is [0xFF, 0xFE, ..]) return (System.Text.Encoding.Unicode, "UTF-16");
-        // Fin de l'échantillon : un caractère multi-octets peut y être coupé
-        var echantillon = complet ? debut : debut[..Math.Max(debut.Length - 3, 0)];
+        // Fin de l'échantillon : un caractère multi-octets peut y être coupé ; on s'arrête avant lui
+        var echantillon = complet ? debut : debut[..FinDeCaractere(debut)];
         try
         {
             new UTF8Encoding(false, true).GetString(echantillon);
             return echantillon.Any(o => o >= 0x80) ? (utf8, "UTF-8") : (utf8, "ASCII");
         }
         catch (DecoderFallbackException) { return (ansi, "ANSI Windows-1252"); }
+    }
+
+    /// <summary>Longueur de l'échantillon sans un éventuel caractère UTF-8 incomplet à la fin.</summary>
+    internal static int FinDeCaractere(byte[] o)
+    {
+        var i = o.Length - 1;
+        for (var suite = 0; i >= 0 && suite < 3 && (o[i] & 0xC0) == 0x80; suite++) i--;   // octets de continuation
+        if (i < 0 || o[i] < 0xC0) return o.Length;                                        // fin sur un caractère complet
+        var attendu = o[i] >= 0xF0 ? 4 : o[i] >= 0xE0 ? 3 : 2;
+        return o.Length - i < attendu ? i : o.Length;
     }
 
     /// <summary>Séparateur le plus fréquent de la ligne d'en-tête (hors guillemets) ; virgule par défaut.</summary>

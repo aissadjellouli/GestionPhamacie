@@ -83,5 +83,9 @@ public class DetectionRepriseTests
         var p = DetectionReprise.Proposer([articles, lots]).ToDictionary(x => x.Cible);
         Assert.Equal("CLASSE", p[CibleReprise.Produits].Colonnes["classe"]);
         Assert.Equal("PRIX_ACHAT", p[CibleReprise.Stock].Colonnes["prix_achat"]);
+
+        // « PRIX » seul (prix de vente le plus souvent) n'est pas pris pour le prix d'achat du lot
+        var stockPrix = new TableSource("STOCK_LOTS", 10, [C("CODE_ART", "A001"), C("QTE", "3"), C("PRIX", "850")]);
+        Assert.Null(DetectionReprise.ProposerPour(CibleReprise.Stock, [stockPrix]).Colonnes["prix_achat"]);
     }
 }

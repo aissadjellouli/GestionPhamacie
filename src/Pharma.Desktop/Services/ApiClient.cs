@@ -792,6 +792,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     private async Task<HttpResponseMessage> EnvoyerAutoriseAsync(Func<HttpRequestMessage> creer, bool proposer = true)
     {
         (string Identifiant, string Code)? accord = null;
+        // Droits présentés au valideur : le serveur n'accorde que ceux-là (jamais d'autres contrôles de la même opération)
+        var droits = new List<string>();
         for (var essai = 0; ; essai++)
         {
             var req = creer();
@@ -800,6 +802,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             {
                 req.Headers.Add("X-Pharma-Autorise-Par", Uri.EscapeDataString(a.Identifiant));
                 req.Headers.Add("X-Pharma-Autorise-Code", a.Code);
+                req.Headers.Add("X-Pharma-Autorise-Droits", string.Join(",", droits));
             }
             var rep = await http.SendAsync(req);
             if (rep.StatusCode != HttpStatusCode.Forbidden || autorisations is null || !proposer || essai >= 3) return rep;
@@ -809,6 +812,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             if (!autorisable) return Garder();
             accord = await autorisations.DemanderAsync(message, permission);
             if (accord is null) return Garder();
+            var demande = permission ?? "role.titulaire";
+            if (!droits.Contains(demande)) droits.Add(demande);
             rep.Dispose();
         }
     }

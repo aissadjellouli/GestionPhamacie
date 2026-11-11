@@ -49,7 +49,7 @@ public static partial class DetectionReprise
             new("date_peremption", "Péremption", false, NatureValeur.Date, "peremption", "perem", "date_exp", "dateexp", "exp", "expiration", "ddp", "dlu", "dpe"),
             new("fournisseur_ref", "Grossiste", false, NatureValeur.Identifiant, "fournisseur", "frs", "codefrs", "code_frs", "grossiste", "idfournisseur", "fourn"),
             // Prix d'achat de ce lot ; sans lui, celui du produit
-            new("prix_achat", "Prix d'achat du lot", false, NatureValeur.Nombre, "pa", "prix_achat", "prixachat", "pachat", "cout", "pamp", "prix")
+            new("prix_achat", "Prix d'achat du lot", false, NatureValeur.Nombre, "pa", "prix_achat", "prixachat", "pachat", "cout", "pamp")
         ],
         [CibleReprise.Fournisseurs] =
         [

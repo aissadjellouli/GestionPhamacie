@@ -10,14 +10,18 @@ namespace Pharma.Api.Securite;
 /// Autorisation sur place : une action refusée faute de droit peut être rejouée avec le code comptoir d'un employé qui a ce droit
 /// (en-têtes X-Pharma-Autorise-Par et X-Pharma-Autorise-Code). Le code est vérifié une seule fois par requête (essais comptés,
 /// blocage après plusieurs erreurs) ; l'action est inscrite au journal avec « autorisé par ». Désactivable par le titulaire.
+/// Seuls les droits nommés dans X-Pharma-Autorise-Droits (ceux que le valideur a acceptés au poste) sont accordés : un code saisi
+/// pour vendre sans ordonnance n'autorise pas, dans la même opération, un dépassement du plafond de crédit.
 /// </summary>
 public sealed class AutorisationParCode(IHttpContextAccessor http, VerificationCodeComptoir codes, ISessionsCaisse sessions,
     PermissionService droits, AutorisationCourante courante, IJournal journal)
 {
     public const string EnTeteIdentifiant = "X-Pharma-Autorise-Par";
     public const string EnTeteCode = "X-Pharma-Autorise-Code";
+    public const string EnTeteDroits = "X-Pharma-Autorise-Droits";
 
-    private bool verifie, journalise;
+    private bool verifie;
+    private readonly HashSet<string> journalises = [];
     private CompteComptoir? valideur;
 
     /// <summary>Message du dernier échec (code faux, code bloqué, autorisation désactivée), à montrer au poste.</summary>
@@ -42,18 +46,24 @@ public sealed class AutorisationParCode(IHttpContextAccessor http, VerificationC
         return valideur;
     }
 
+    private HashSet<string> DroitsDemandes() =>
+        (http.HttpContext?.Request.Headers[EnTeteDroits].ToString() ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
+
     /// <summary>Le valideur de la requête a-t-il ce droit ? (null : marque du titulaire)</summary>
     public async Task<bool> AutoriseAsync(long utilisateurId, string? permission, CancellationToken ct)
     {
+        var droit = permission ?? PermissionServiceExtensions.MarqueTitulaire;
+        // Droit non demandé au valideur : refusé (le poste le lui présentera s'il le faut)
+        if (!DroitsDemandes().Contains(droit)) return false;
         if (await ValideurAsync(ct) is not { } v || v.Id == utilisateurId) return false;
         var ok = permission is null || permission == PermissionServiceExtensions.MarqueTitulaire
             ? await droits.EstTitulaireAsync(v.Id, ct)
             : await droits.APermissionAsync(v.Id, permission, ct);
         if (!ok) { Erreur ??= $"{v.NomComplet} n’a pas ce droit : choisissez un employé qui l’a."; return false; }
         (courante.AutoriseParId, courante.AutoriseParNom) = (v.Id, v.NomComplet);
-        if (!journalise)
+        if (journalises.Add(droit))
         {
-            journalise = true;
             await journal.EcrireAsync(utilisateurId, "autorisation_code", null, null,
                 new Dictionary<string, object?> { ["droit"] = permission ?? "titulaire", ["action"] = http.HttpContext?.Request.Path.Value, ["autorise_par"] = v.NomComplet },
                 permission, ct);

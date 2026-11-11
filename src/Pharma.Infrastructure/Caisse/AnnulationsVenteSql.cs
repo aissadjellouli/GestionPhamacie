@@ -72,6 +72,16 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         return await LireAsync(cmd, ct);
     }
 
+    public async Task<bool> DejaRendueAsync(long boiteId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT type = 'retour_client' FROM boite_evenement
+            WHERE boite_id = $1 AND type IN ('vente', 'retour_client') ORDER BY id DESC LIMIT 1
+            """);
+        cmd.Parameters.AddWithValue(boiteId);
+        return await cmd.ExecuteScalarAsync(ct) is true;
+    }
+
     public async Task<string?> NomProduitAsync(long produitId, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("SELECT nom_commercial FROM produit WHERE id = $1");
@@ -117,7 +127,8 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
 
     public async Task<int> AnnulationsSessionAsync(long sessionCaisseId, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT count(*)::int FROM vente WHERE session_caisse_id = $1 AND statut = 'annulee'");
+        // Annulations faites depuis cette caisse (la vente annulée peut venir d'une caisse plus ancienne)
+        await using var cmd = db.CreateCommand("SELECT count(*)::int FROM annulation_vente WHERE session_caisse_id = $1");
         cmd.Parameters.AddWithValue(sessionCaisseId);
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }

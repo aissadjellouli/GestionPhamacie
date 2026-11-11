@@ -81,7 +81,7 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             {
                 boites = (d.Boites ?? []).Distinct().ToList();
                 if (boites.Count != d.Quantite || boites.Any(b => l.Boites.All(x => x.Id != b)))
-                    throw new RegleMetierException($"{l.Produit} : cochez les {d.Quantite} boîte(s) rendue(s) parmi celles vendues (n° de série).");
+                    throw new RegleMetierException($"{l.Produit} : cochez les {d.Quantite} boîte(s) rendue(s) parmi celles vendues (n° de série ou étiquette).");
             }
             lignes.Add(new LigneRetourAEcrire(l.LigneVenteId, l.LotId, d.Quantite, destination,
                 RegleRetour.MontantPaye(l.MontantPatient, l.QuantiteVendue, d.Quantite, v.PartPatient, brutPatient), boites));

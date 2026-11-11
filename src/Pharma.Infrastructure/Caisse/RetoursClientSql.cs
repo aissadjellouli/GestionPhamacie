@@ -31,8 +31,10 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         // Boîtes identifiées encore chez le patient
         var boites = new Dictionary<long, List<BoiteVendue>>();
         await using (var cmd = db.CreateCommand("""
-            SELECT b.ligne_vente_id, b.id, b.numero_serie FROM boite b JOIN ligne_vente l ON l.id = b.ligne_vente_id
-            WHERE l.vente_id = $1 AND b.statut = 'vendue' ORDER BY b.numero_serie
+            -- Boîte identifiée par son n° de série (Data Matrix) ou par l'étiquette de la pharmacie (pas de n° de série)
+            SELECT b.ligne_vente_id, b.id, COALESCE(b.numero_serie, b.code_etiquette, 'boîte ' || b.id) AS repere
+            FROM boite b JOIN ligne_vente l ON l.id = b.ligne_vente_id
+            WHERE l.vente_id = $1 AND b.statut = 'vendue' ORDER BY repere
             """))
         {
             cmd.Parameters.AddWithValue(venteId);
