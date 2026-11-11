@@ -47,11 +47,11 @@ public sealed class VentesEnAttenteSql(NpgsqlDataSource db) : IVentesEnAttente
         return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
-    public async Task<bool> SupprimerAsync(long id, string poste, CancellationToken ct = default)
+    public async Task<decimal?> SupprimerAsync(long id, string poste, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("DELETE FROM panier_attente WHERE id = $1 AND poste = $2");
+        await using var cmd = db.CreateCommand("DELETE FROM panier_attente WHERE id = $1 AND poste = $2 RETURNING COALESCE(total, 0)");
         cmd.Parameters.AddWithValue(id);
         cmd.Parameters.AddWithValue(poste);
-        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+        return await cmd.ExecuteScalarAsync(ct) as decimal?;
     }
 }

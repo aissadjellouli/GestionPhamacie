@@ -664,3 +664,11 @@ public sealed record ChoixRestaurationDto(string NomBase, bool BaseExiste, strin
 public sealed record RestaurationBaseRequete(string Fichier);
 /// <summary>Restauration en cours ou dernière terminée : type (base, ged), étapes, résultat ou erreur.</summary>
 public sealed record EtatRestaurationDto(bool EnCours, string? Type, DateTime? Debut, DateTime? Fin, List<string> Etapes, string? Resultat, string? Erreur);
+
+// ---- Surveillance de la caisse (titulaire) ----
+/// <summary>Signalé par le poste : ligne_retiree (produit, lot, boîtes, montant) ou tiroir_ouvert.</summary>
+public sealed record EvenementCaisseRequete(string Type, long? ProduitId = null, long? LotId = null, int? Quantite = null, decimal? Montant = null);
+public sealed record AlerteSurveillanceDto(long Id, string Type, string Niveau, long? UtilisateurId, string? Employe, DateOnly Jour, string Message,
+    decimal? Valeur, string Statut, DateTime MiseAJourLe, string? TraiteePar, DateTime? TraiteeLe, string? ActionPrise);
+public sealed record ParametresSurveillanceDto(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,
+    int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture);

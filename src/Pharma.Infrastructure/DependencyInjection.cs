@@ -73,6 +73,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Alertes.IIndicateursAlertes, Alertes.IndicateursAlertesSql>();
         services.AddScoped<IMoteurAlertes, MoteurAlertesSql>();
         services.AddScoped<Application.Alertes.IAlertesLotsDelaisses, Lecture.AlertesLotsDelaissesSql>();
+        services.AddScoped<Application.Surveillance.ISurveillance, Surveillance.SurveillanceSql>();
         services.AddScoped<IAlertesEcriture, AlertesEcriture>();
         services.AddScoped<IRappelLot, RappelLotSql>();
         services.AddScoped<JournalSql>();

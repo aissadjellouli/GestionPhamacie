@@ -177,6 +177,12 @@ public static class DependencyInjection
         services.AddScoped<ObtenirTableauInventaire>();
         services.AddScoped<CommencerInventaire>();
         services.AddScoped<CommencerInventaireProduit>();
+        // Surveillance de la caisse (titulaire)
+        services.AddScoped<Surveillance.Surveiller>();
+        services.AddScoped<Surveillance.SignalerEvenementCaisse>();
+        services.AddScoped<Surveillance.ListerSurveillance>();
+        services.AddScoped<Surveillance.TraiterSurveillance>();
+        services.AddScoped<Surveillance.ReglerSurveillance>();
         services.AddScoped<ObtenirInventaire>();
         services.AddScoped<CompterLot>();
         services.AddScoped<ScannerBoiteInventaire>();

@@ -71,7 +71,8 @@ public sealed class Encaisser(
     ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, Ordonnances.IStockageOrdonnances scans,
     IDetenteursDroit? detenteurs = null, Stock.ICampagnesInventaire? campagnes = null,
     VerificationCodeComptoir? codesComptoir = null, IJournal? journal = null,
-    Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null)
+    Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null,
+    Surveillance.Surveiller? surveillance = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
@@ -214,6 +215,8 @@ public sealed class Encaisser(
                 Permissions.CaisseVendreSansOrdonnance, ct);
 
         await AlerterLotsDelaissesAsync(vente);
+        // Surveillance de la caisse : ventes hors horaires, remises en série (anomalies notifiées au titulaire)
+        if (surveillance is not null) await surveillance.ExecuterAsync(CancellationToken.None);
 
         return new VenteEncaissee(id, numero, vente.MontantTotal, vente.PartOrganisme, vente.PartPatient,
             reglement.Mode, reglement.Rendu);

@@ -89,9 +89,9 @@ internal static class CaisseEndpoints
                 Results.Content(await gerer.ReprendreAsync(id, requete.Poste(), ct), "application/json"))
            .ExigerPermission(Permissions.CaisseVendre);
 
-        caisse.MapDelete("/attente/{id:long}", async (long id, GererVentesEnAttente gerer, HttpRequest requete, CancellationToken ct) =>
+        caisse.MapDelete("/attente/{id:long}", async (long id, GererVentesEnAttente gerer, HttpRequest requete, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await gerer.SupprimerAsync(id, requete.Poste(), ct);
+                await gerer.SupprimerAsync(id, requete.Poste(), user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.CaisseVendre);

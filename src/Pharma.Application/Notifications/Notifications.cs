@@ -292,6 +292,8 @@ public interface IAlertesTitulaire
     Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default);
     /// <summary>Ancien lot délaissé au profit d'un lot plus récent (le message nomme le vendeur) : inventaire du produit à faire.</summary>
     Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default);
+    /// <summary>Anomalie de caisse (surveillance) : texte court, employé et chiffres, aucune donnée de patient.</summary>
+    Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default);
 }
 
 public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationService notifications) : IAlertesTitulaire
@@ -325,6 +327,14 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
     /// Ancien lot délaissé : message calculé en base (produit, lots, vendeurs et nombres de boîtes, aucune donnée de patient).
     /// SMS avec le réglage des SMS de lot (court, sans accents : TexteSms le prépare).
     /// </summary>
+    public async Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default)
+    {
+        var r = await depot.ReglagesAsync(ct);
+        var objet = urgent ? "URGENT : anomalie de caisse" : "Anomalie de caisse";
+        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Surveillance, objet,
+            $"{message}\n\nDétail dans le logiciel : Surveillance (titulaire).", null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
+    }
+
     public async Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default)
     {
         var r = await depot.ReglagesAsync(ct);

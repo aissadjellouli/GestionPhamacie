@@ -22,8 +22,8 @@ internal sealed class AttenteEnMemoire : IVentesEnAttente
         Paniers.Remove(p);
         return Task.FromResult<string?>(p.Contenu);
     }
-    public Task<bool> SupprimerAsync(long id, string poste, CancellationToken ct = default) =>
-        Task.FromResult(Paniers.RemoveAll(x => x.Id == id && x.Poste == poste) > 0);
+    public Task<decimal?> SupprimerAsync(long id, string poste, CancellationToken ct = default) =>
+        Task.FromResult(Paniers.RemoveAll(x => x.Id == id && x.Poste == poste) > 0 ? (decimal?)1250m : null);
 }
 
 public class VentesEnAttenteTests

@@ -292,6 +292,8 @@ internal sealed class AlertesTitulaireEspion : IAlertesTitulaire
     public Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default) { Annulations.Add((poste, annulations)); return Task.CompletedTask; }
     public List<(string Message, bool Urgent)> LotsDelaisses { get; } = [];
     public Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default) { LotsDelaisses.Add((message, urgent)); return Task.CompletedTask; }
+    public List<(string Message, bool Urgent)> Surveillances { get; } = [];
+    public Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default) { Surveillances.Add((message, urgent)); return Task.CompletedTask; }
 }
 
 public class SauvegardesTests

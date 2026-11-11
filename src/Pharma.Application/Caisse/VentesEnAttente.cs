@@ -11,11 +11,12 @@ public interface IVentesEnAttente
     Task<long> EnregistrerAsync(string poste, long utilisateurId, string libelle, int lignes, decimal total, string contenu, CancellationToken ct = default);
     /// <summary>Contenu du panier, retiré de l'attente ; null s'il n'existe pas sur ce poste (déjà repris).</summary>
     Task<string?> ReprendreAsync(long id, string poste, CancellationToken ct = default);
-    Task<bool> SupprimerAsync(long id, string poste, CancellationToken ct = default);
+    /// <summary>Abandon : total du panier supprimé, ou null s'il n'existe plus sur ce poste.</summary>
+    Task<decimal?> SupprimerAsync(long id, string poste, CancellationToken ct = default);
 }
 
 /// <summary>Mettre de côté, reprendre ou abandonner une vente du poste (droit caisse.vendre).</summary>
-public sealed class GererVentesEnAttente(IVentesEnAttente attente)
+public sealed class GererVentesEnAttente(IVentesEnAttente attente, Surveillance.ISurveillance? surveillance = null, Surveillance.Surveiller? surveiller = null)
 {
     public const int MaxParPoste = 20;
     public const int TailleMax = 200_000;
@@ -39,9 +40,16 @@ public sealed class GererVentesEnAttente(IVentesEnAttente attente)
         await attente.ReprendreAsync(id, PosteCaisse.Exiger(poste), ct)
         ?? throw new RegleMetierException("Cette vente en attente n’existe plus (déjà reprise par un collègue ?).");
 
-    public async Task SupprimerAsync(long id, string? poste, CancellationToken ct = default)
+    /// <summary>Abandon d'une vente en attente : inscrit pour la surveillance de la caisse (qui, quand, montant).</summary>
+    public async Task SupprimerAsync(long id, string? poste, long utilisateurId = 0, CancellationToken ct = default)
     {
-        if (!await attente.SupprimerAsync(id, PosteCaisse.Exiger(poste), ct))
-            throw new RegleMetierException("Cette vente en attente n’existe plus.");
+        var p = PosteCaisse.Exiger(poste);
+        var total = await attente.SupprimerAsync(id, p, ct) ?? throw new RegleMetierException("Cette vente en attente n’existe plus.");
+        if (surveillance is not null && utilisateurId > 0)
+        {
+            await surveillance.EnregistrerAsync(new Surveillance.EvenementCaisse(Surveillance.TypesEvenementCaisse.AttenteAbandonnee, utilisateurId, p, null,
+                Montant: total, Detail: $"vente en attente n° {id}"), ct);
+            if (surveiller is not null) await surveiller.ExecuterAsync(ct);
+        }
     }
 }

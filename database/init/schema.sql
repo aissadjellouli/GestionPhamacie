@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 053 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 054 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 053 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 054 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict KMCyIAUAa9tijtVNUWfV8VL58DwyNtVKuyum9L6aonuoNGpg0pOkRUbQoQD6Xid
+\restrict RaOBfYKWat5buzofHyKwPWwLm1a86V3cHO9xG1SQwZ09dUzX4JdjO7bHC6Y1LGq
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1387,6 +1387,134 @@ $$;
 
 
 --
+-- Name: surveillance_candidats(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.surveillance_candidats(p_jour date) RETURNS TABLE(o_type text, o_niveau text, o_utilisateur_id bigint, o_jour date, o_cle text, o_message text, o_notification text, o_valeur numeric)
+    LANGUAGE sql STABLE
+    AS $$
+    WITH p AS (SELECT * FROM parametre_surveillance WHERE id = 1),
+    ev AS (
+        SELECT e.* FROM evenement_caisse e
+        WHERE e.cree_le >= p_jour AND e.cree_le < p_jour + 1
+    ),
+    ventes AS (
+        SELECT v.* FROM vente v
+        WHERE v.statut = 'validee' AND v.date_vente >= p_jour AND v.date_vente < p_jour + 1
+    ),
+    -- Boîtes retirées du panier avant le paiement
+    retraits AS (
+        SELECT ev.utilisateur_id, sum(COALESCE(ev.quantite, 1))::int AS boites, sum(COALESCE(ev.montant, 0)) AS montant, count(*) AS lignes
+        FROM ev WHERE ev.type = 'ligne_retiree' GROUP BY ev.utilisateur_id
+    ),
+    tiroirs AS (
+        SELECT ev.utilisateur_id, count(*)::int AS n FROM ev WHERE ev.type = 'tiroir_ouvert' GROUP BY ev.utilisateur_id
+    ),
+    attentes AS (
+        SELECT ev.utilisateur_id, count(*)::int AS n, sum(COALESCE(ev.montant, 0)) AS montant
+        FROM ev WHERE ev.type = 'attente_abandonnee' GROUP BY ev.utilisateur_id
+    ),
+    hors AS (
+        SELECT v.utilisateur_id, count(*)::int AS n, sum(v.montant_total) AS montant,
+               min(v.date_vente)::time(0) AS premiere, max(v.date_vente)::time(0) AS derniere
+        FROM ventes v, p
+        WHERE p.heure_ouverture IS NOT NULL
+          AND (v.date_vente::time < p.heure_ouverture OR v.date_vente::time >= p.heure_fermeture)
+        GROUP BY v.utilisateur_id
+    ),
+    remises AS (
+        SELECT v.utilisateur_id, count(*)::int AS n, sum(v.montant_remise) AS montant
+        FROM ventes v WHERE v.remise_pct > 0 GROUP BY v.utilisateur_id
+    ),
+    -- Remises au même patient sur les 30 jours qui précèdent (une anomalie par patient et par mois)
+    remises_patient AS (
+        SELECT v.patient_id, count(*)::int AS n, sum(v.montant_remise) AS montant,
+               string_agg(DISTINCT u.nom_complet, ', ') AS vendeurs
+        FROM vente v JOIN utilisateur u ON u.id = v.utilisateur_id
+        WHERE v.statut = 'validee' AND v.remise_pct > 0 AND v.patient_id IS NOT NULL
+          AND v.date_vente >= p_jour - 29 AND v.date_vente < p_jour + 1
+        GROUP BY v.patient_id
+    )
+    SELECT 'lignes_retirees', CASE WHEN r.boites >= 2 * p.seuil_lignes_retirees THEN 'urgent' ELSE 'attention' END,
+           r.utilisateur_id, p_jour, '',
+           format('%s a retiré du panier %s boîte(s) (%s ligne(s), %s DA) avant le paiement le %s.', u.nom_complet, r.boites, r.lignes,
+                  to_char(r.montant, 'FM999G999G990D00'), to_char(p_jour, 'DD/MM/YYYY')),
+           format('%s : %s boite(s) retiree(s) du panier avant paiement le %s.', u.nom_complet, r.boites, to_char(p_jour, 'DD/MM')),
+           r.montant
+    FROM retraits r JOIN utilisateur u ON u.id = r.utilisateur_id, p WHERE r.boites >= p.seuil_lignes_retirees
+    UNION ALL
+    SELECT 'tiroir', CASE WHEN t.n >= 2 * p.seuil_tiroir THEN 'urgent' ELSE 'attention' END, t.utilisateur_id, p_jour, '',
+           format('%s a ouvert le tiroir-caisse sans vente %s fois le %s.', u.nom_complet, t.n, to_char(p_jour, 'DD/MM/YYYY')),
+           format('%s : tiroir ouvert sans vente %s fois le %s.', u.nom_complet, t.n, to_char(p_jour, 'DD/MM')),
+           t.n
+    FROM tiroirs t JOIN utilisateur u ON u.id = t.utilisateur_id, p WHERE t.n >= p.seuil_tiroir
+    UNION ALL
+    SELECT 'attentes_abandonnees', CASE WHEN a.n >= 2 * p.seuil_attentes_abandonnees THEN 'urgent' ELSE 'attention' END, a.utilisateur_id, p_jour, '',
+           format('%s a abandonné %s vente(s) en attente (%s DA) le %s.', u.nom_complet, a.n, to_char(a.montant, 'FM999G999G990D00'), to_char(p_jour, 'DD/MM/YYYY')),
+           format('%s : %s vente(s) en attente abandonnee(s) le %s.', u.nom_complet, a.n, to_char(p_jour, 'DD/MM')),
+           a.montant
+    FROM attentes a JOIN utilisateur u ON u.id = a.utilisateur_id, p WHERE a.n >= p.seuil_attentes_abandonnees
+    UNION ALL
+    SELECT 'hors_horaires', 'urgent', h.utilisateur_id, p_jour, '',
+           format('%s a encaissé %s vente(s) (%s DA) hors des horaires d''ouverture le %s (de %s à %s).', u.nom_complet, h.n,
+                  to_char(h.montant, 'FM999G999G990D00'), to_char(p_jour, 'DD/MM/YYYY'), h.premiere, h.derniere),
+           format('%s : %s vente(s) hors horaires le %s.', u.nom_complet, h.n, to_char(p_jour, 'DD/MM')),
+           h.montant
+    FROM hors h JOIN utilisateur u ON u.id = h.utilisateur_id
+    UNION ALL
+    SELECT 'remises', CASE WHEN r.n >= 2 * p.seuil_remises THEN 'urgent' ELSE 'attention' END, r.utilisateur_id, p_jour, '',
+           format('%s a accordé une remise sur %s vente(s) (%s DA de remise) le %s.', u.nom_complet, r.n, to_char(r.montant, 'FM999G999G990D00'), to_char(p_jour, 'DD/MM/YYYY')),
+           format('%s : remise sur %s vente(s) le %s.', u.nom_complet, r.n, to_char(p_jour, 'DD/MM')),
+           r.montant
+    FROM remises r JOIN utilisateur u ON u.id = r.utilisateur_id, p WHERE r.n >= p.seuil_remises
+    UNION ALL
+    SELECT 'remises_patient', CASE WHEN rp.n >= 2 * p.seuil_remises_patient THEN 'urgent' ELSE 'attention' END, NULL::bigint,
+           date_trunc('month', p_jour)::date, 'patient:' || rp.patient_id,
+           format('%s %s : %s vente(s) avec remise en 30 jours (%s DA de remise), accordées par %s.',
+                  pt.nom, COALESCE(pt.prenom, ''), rp.n, to_char(rp.montant, 'FM999G999G990D00'), rp.vendeurs),
+           format('Remises repetees au meme patient : %s ventes en 30 jours (detail dans Surveillance).', rp.n),
+           rp.montant
+    FROM remises_patient rp JOIN patient pt ON pt.id = rp.patient_id, p WHERE rp.n >= p.seuil_remises_patient;
+$$;
+
+
+--
+-- Name: surveiller(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.surveiller(p_jour date) RETURNS TABLE(o_id bigint, o_niveau text, o_notification text)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    c        record;
+    v_id     bigint;
+    v_ancien text;
+BEGIN
+    FOR c IN SELECT * FROM surveillance_candidats(p_jour) LOOP
+        v_id := NULL;
+        SELECT a.id, a.niveau INTO v_id, v_ancien FROM alerte_surveillance a
+        WHERE a.type = c.o_type AND COALESCE(a.utilisateur_id, 0) = COALESCE(c.o_utilisateur_id, 0) AND a.jour = c.o_jour AND a.cle = c.o_cle;
+        IF v_id IS NULL THEN
+            INSERT INTO alerte_surveillance (type, niveau, utilisateur_id, jour, cle, message, valeur)
+            VALUES (c.o_type, c.o_niveau, c.o_utilisateur_id, c.o_jour, c.o_cle, c.o_message, c.o_valeur)
+            RETURNING id INTO v_id;
+            o_id := v_id; o_niveau := c.o_niveau; o_notification := c.o_notification;
+            RETURN NEXT;
+        ELSE
+            -- Une anomalie traitée reste traitée ; son message suit les chiffres du jour
+            UPDATE alerte_surveillance SET message = c.o_message, valeur = c.o_valeur, niveau = c.o_niveau, mise_a_jour_le = now()
+            WHERE id = v_id;
+            IF v_ancien <> c.o_niveau AND c.o_niveau = 'urgent' THEN
+                o_id := v_id; o_niveau := c.o_niveau; o_notification := c.o_notification;
+                RETURN NEXT;
+            END IF;
+        END IF;
+    END LOOP;
+END;
+$$;
+
+
+--
 -- Name: tracer_credit_patient(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1840,6 +1968,45 @@ ALTER TABLE public.alerte ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: alerte_surveillance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alerte_surveillance (
+    id bigint NOT NULL,
+    type text NOT NULL,
+    niveau text NOT NULL,
+    utilisateur_id bigint,
+    jour date NOT NULL,
+    cle text DEFAULT ''::text NOT NULL,
+    message text NOT NULL,
+    valeur numeric(12,2),
+    statut text DEFAULT 'nouvelle'::text NOT NULL,
+    action_prise text,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    mise_a_jour_le timestamp with time zone DEFAULT now() NOT NULL,
+    traitee_par bigint,
+    traitee_le timestamp with time zone,
+    CONSTRAINT alerte_surveillance_niveau_check CHECK ((niveau = ANY (ARRAY['attention'::text, 'urgent'::text]))),
+    CONSTRAINT alerte_surveillance_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'traitee'::text]))),
+    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text])))
+);
+
+
+--
+-- Name: alerte_surveillance_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.alerte_surveillance ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.alerte_surveillance_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: annulation_vente; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2241,7 +2408,7 @@ CREATE TABLE public.destinataire_notification (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT destinataire_notification_check CHECK (((NOT canal_email) OR (email IS NOT NULL))),
     CONSTRAINT destinataire_notification_check1 CHECK (((NOT canal_sms) OR (telephone IS NOT NULL))),
-    CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text]))
+    CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text]))
 );
 
 
@@ -2285,6 +2452,40 @@ CREATE TABLE public.emplacement (
 
 ALTER TABLE public.emplacement ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.emplacement_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: evenement_caisse; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.evenement_caisse (
+    id bigint NOT NULL,
+    type text NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    poste text,
+    session_caisse_id bigint,
+    produit_id bigint,
+    lot_id bigint,
+    quantite integer,
+    montant numeric(12,2),
+    detail text,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_evenement_caisse_type CHECK ((type = ANY (ARRAY['ligne_retiree'::text, 'tiroir_ouvert'::text, 'attente_abandonnee'::text])))
+);
+
+
+--
+-- Name: evenement_caisse_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.evenement_caisse ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.evenement_caisse_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -2823,7 +3024,7 @@ CREATE TABLE public.message_sortant (
     envoye_le timestamp with time zone,
     CONSTRAINT message_sortant_canal_check CHECK ((canal = ANY (ARRAY['email'::text, 'sms'::text]))),
     CONSTRAINT message_sortant_statut_check CHECK ((statut = ANY (ARRAY['en_attente'::text, 'envoye'::text, 'echec'::text]))),
-    CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'test'::text])))
+    CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'test'::text])))
 );
 
 
@@ -3225,6 +3426,29 @@ CREATE TABLE public.parametre_sauvegarde (
     CONSTRAINT ck_sauvegarde_retention_ged CHECK (((retention_ged_jours IS NULL) OR ((retention_ged_jours >= 1) AND (retention_ged_jours <= 365)))),
     CONSTRAINT parametre_sauvegarde_conservation_check CHECK (((conservation >= 1) AND (conservation <= 365))),
     CONSTRAINT parametre_sauvegarde_id_check CHECK ((id = 1))
+);
+
+
+--
+-- Name: parametre_surveillance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_surveillance (
+    id integer DEFAULT 1 NOT NULL,
+    seuil_lignes_retirees integer DEFAULT 5 NOT NULL,
+    seuil_tiroir integer DEFAULT 3 NOT NULL,
+    seuil_attentes_abandonnees integer DEFAULT 3 NOT NULL,
+    seuil_remises integer DEFAULT 5 NOT NULL,
+    seuil_remises_patient integer DEFAULT 3 NOT NULL,
+    heure_ouverture time without time zone,
+    heure_fermeture time without time zone,
+    CONSTRAINT ck_parametre_surveillance_horaires CHECK (((heure_ouverture IS NULL) = (heure_fermeture IS NULL))),
+    CONSTRAINT parametre_surveillance_id_check CHECK ((id = 1)),
+    CONSTRAINT parametre_surveillance_seuil_attentes_abandonnees_check CHECK ((seuil_attentes_abandonnees >= 1)),
+    CONSTRAINT parametre_surveillance_seuil_lignes_retirees_check CHECK ((seuil_lignes_retirees >= 1)),
+    CONSTRAINT parametre_surveillance_seuil_remises_check CHECK ((seuil_remises >= 1)),
+    CONSTRAINT parametre_surveillance_seuil_remises_patient_check CHECK ((seuil_remises_patient >= 1)),
+    CONSTRAINT parametre_surveillance_seuil_tiroir_check CHECK ((seuil_tiroir >= 1))
 );
 
 
@@ -4918,6 +5142,14 @@ ALTER TABLE ONLY public.alerte
 
 
 --
+-- Name: alerte_surveillance alerte_surveillance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alerte_surveillance
+    ADD CONSTRAINT alerte_surveillance_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: annulation_vente annulation_vente_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5115,6 +5347,14 @@ ALTER TABLE ONLY public.emplacement
 
 ALTER TABLE ONLY public.emplacement
     ADD CONSTRAINT emplacement_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: evenement_caisse evenement_caisse_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evenement_caisse
+    ADD CONSTRAINT evenement_caisse_pkey PRIMARY KEY (id);
 
 
 --
@@ -5387,6 +5627,14 @@ ALTER TABLE ONLY public.parametre_notification
 
 ALTER TABLE ONLY public.parametre_sauvegarde
     ADD CONSTRAINT parametre_sauvegarde_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: parametre_surveillance parametre_surveillance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_surveillance
+    ADD CONSTRAINT parametre_surveillance_pkey PRIMARY KEY (id);
 
 
 --
@@ -6172,10 +6420,24 @@ CREATE INDEX idx_vente_session ON public.vente USING btree (session_caisse_id);
 
 
 --
+-- Name: ix_evenement_caisse_employe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_evenement_caisse_employe ON public.evenement_caisse USING btree (utilisateur_id, cree_le);
+
+
+--
 -- Name: ux_alerte_ouverte; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX ux_alerte_ouverte ON public.alerte USING btree (type, produit_id, COALESCE(lot_id, (0)::bigint)) WHERE (statut = ANY (ARRAY['nouvelle'::text, 'vue'::text, 'reportee'::text]));
+
+
+--
+-- Name: ux_alerte_surveillance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_alerte_surveillance ON public.alerte_surveillance USING btree (type, COALESCE(utilisateur_id, (0)::bigint), jour, cle);
 
 
 --
@@ -6635,6 +6897,22 @@ ALTER TABLE ONLY public.alerte
 
 
 --
+-- Name: alerte_surveillance alerte_surveillance_traitee_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alerte_surveillance
+    ADD CONSTRAINT alerte_surveillance_traitee_par_fkey FOREIGN KEY (traitee_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: alerte_surveillance alerte_surveillance_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alerte_surveillance
+    ADD CONSTRAINT alerte_surveillance_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: alerte alerte_traitee_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6840,6 +7118,38 @@ ALTER TABLE ONLY public.credit_mouvement
 
 ALTER TABLE ONLY public.credit_ouverture
     ADD CONSTRAINT credit_ouverture_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: evenement_caisse evenement_caisse_lot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evenement_caisse
+    ADD CONSTRAINT evenement_caisse_lot_id_fkey FOREIGN KEY (lot_id) REFERENCES public.lot(id);
+
+
+--
+-- Name: evenement_caisse evenement_caisse_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evenement_caisse
+    ADD CONSTRAINT evenement_caisse_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
+-- Name: evenement_caisse evenement_caisse_session_caisse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evenement_caisse
+    ADD CONSTRAINT evenement_caisse_session_caisse_id_fkey FOREIGN KEY (session_caisse_id) REFERENCES public.session_caisse(id);
+
+
+--
+-- Name: evenement_caisse evenement_caisse_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.evenement_caisse
+    ADD CONSTRAINT evenement_caisse_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
 
 
 --
@@ -7710,5 +8020,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict KMCyIAUAa9tijtVNUWfV8VL58DwyNtVKuyum9L6aonuoNGpg0pOkRUbQoQD6Xid
+\unrestrict RaOBfYKWat5buzofHyKwPWwLm1a86V3cHO9xG1SQwZ09dUzX4JdjO7bHC6Y1LGq
 

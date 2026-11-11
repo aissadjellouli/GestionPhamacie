@@ -19,7 +19,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 053 (vérifié : permissions, rôles,
+-- Valeurs identiques à celles posées par les scripts 001 à 054 (vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
@@ -36,6 +36,7 @@ INSERT INTO parametre_caisse DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 INSERT INTO parametre_notification DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 INSERT INTO parametre_sauvegarde DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 INSERT INTO parametre_inventaire DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
+INSERT INTO parametre_surveillance DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------
 -- 2. Organismes payeurs (les autres, ex. militaires, s'ajoutent dans Administration › Pharmacie)

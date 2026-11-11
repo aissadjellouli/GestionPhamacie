@@ -1,0 +1,180 @@
+@page "/surveillance"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Surveillance de la caisse</h1>
+            <p class="sous-titre">Ce qui ne laisse pas de vente ou sort de l’ordinaire, par employé et par jour. Visible du titulaire seul ; les anomalies ne sont jamais supprimées.</p>
+        </div>
+        <button type="button" class="btn" disabled="@enCours" @onclick="ChargerAsync">Actualiser</button>
+    </div>
+
+    @if (!Session.A("role.titulaire"))
+    {
+        <div class="erreur" role="alert">Écran réservé au pharmacien titulaire.</div>
+    }
+    else
+    {
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        <div class="filtres" role="tablist" aria-label="Anomalies">
+            <button type="button" role="tab" class="puce" aria-selected="@(!traitees ? "true" : "false")" aria-pressed="@(!traitees ? "true" : "false")" @onclick="() => BasculerAsync(false)">À examiner</button>
+            <button type="button" role="tab" class="puce" aria-selected="@(traitees ? "true" : "false")" aria-pressed="@(traitees ? "true" : "false")" @onclick="() => BasculerAsync(true)">Traitées</button>
+        </div>
+
+        @if (anomalies.Count == 0)
+        {
+            <div class="carte vide">@(traitees ? "Aucune anomalie traitée." : "Aucune anomalie à examiner.")</div>
+        }
+        else
+        {
+            <section class="liste" aria-label="Anomalies">
+                @foreach (var a in anomalies)
+                {
+                    <article class="carte alerte">
+                        <div class="alerte-corps">
+                            <div class="alerte-entete">
+                                <span class="pastille @(a.Niveau == "urgent" ? "urgent" : "attention")">@(a.Niveau == "urgent" ? "Urgent" : "À examiner")</span>
+                                <span class="etiquette-type">@Libelle(a.Type)</span>
+                            </div>
+                            <h2 class="alerte-titre">@(a.Employe ?? "Patient") · @a.Jour.ToString("dd/MM/yyyy")</h2>
+                            <p class="alerte-detail">@a.Message</p>
+                            @if (a.TraiteeLe is { } le)
+                            {
+                                <p class="alerte-detail" style="margin: 0">Traitée le @Libelles.DateHeureLocale(le) par @a.TraiteePar@(a.ActionPrise is { } ap ? $" : {ap}" : "")</p>
+                            }
+                        </div>
+                        @if (!traitees)
+                        {
+                            @if (enEdition == a.Id)
+                            {
+                                <div class="actions" style="flex-direction: column; align-items: stretch">
+                                    <label for="@($"action-{a.Id}")">Ce qui a été fait (facultatif)</label>
+                                    <input id="@($"action-{a.Id}")" type="text" maxlength="300" @bind="actionPrise" placeholder="Ex. entretien avec l’employé, inventaire fait, erreur de saisie" />
+                                    <div style="display: flex; gap: 8px">
+                                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => TraiterAsync(a)">Confirmer</button>
+                                        <button type="button" class="btn" disabled="@enCours" @onclick="() => enEdition = null">Annuler</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="actions">
+                                    <button type="button" class="btn" @onclick="() => (enEdition, actionPrise) = (a.Id, null)">Traitée</button>
+                                </div>
+                            }
+                        }
+                    </article>
+                }
+            </section>
+        }
+
+        @if (reglages is { } r)
+        {
+            <section class="panneau" aria-labelledby="t-reglages">
+                <div>
+                    <h2 id="t-reglages">Seuils (par employé et par jour)</h2>
+                    <p class="sous-titre">Au-delà, une anomalie est créée et vous êtes prévenu par SMS ou e-mail (Administration, Notifications au titulaire). Le double d’un seuil la rend urgente.</p>
+                </div>
+                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
+                    <div class="champ"><label for="sv-retraits">Boîtes retirées du panier avant paiement</label><input id="sv-retraits" type="number" min="1" @bind="r.SeuilLignesRetirees" /></div>
+                    <div class="champ"><label for="sv-tiroir">Tiroir ouvert sans vente</label><input id="sv-tiroir" type="number" min="1" @bind="r.SeuilTiroir" /></div>
+                    <div class="champ"><label for="sv-attente">Ventes en attente abandonnées</label><input id="sv-attente" type="number" min="1" @bind="r.SeuilAttentesAbandonnees" /></div>
+                    <div class="champ"><label for="sv-remises">Ventes avec remise</label><input id="sv-remises" type="number" min="1" @bind="r.SeuilRemises" /></div>
+                    <div class="champ"><label for="sv-remises-p">Remises au même patient (30 jours)</label><input id="sv-remises-p" type="number" min="1" @bind="r.SeuilRemisesPatient" /></div>
+                </div>
+                <div>
+                    <h2 id="t-horaires">Horaires d’ouverture</h2>
+                    <p class="sous-titre">Une vente encaissée en dehors crée une anomalie urgente. Laissez vide pour ne pas contrôler (pharmacie de garde, horaires variables).</p>
+                </div>
+                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))">
+                    <div class="champ"><label for="sv-ouverture">Ouverture</label><input id="sv-ouverture" data-champ="heure_ouverture" type="time" @bind="r.HeureOuverture" /></div>
+                    <div class="champ"><label for="sv-fermeture">Fermeture</label><input id="sv-fermeture" type="time" @bind="r.HeureFermeture" /></div>
+                </div>
+                <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer les réglages</button></div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private sealed class Reglages
+    {
+        public int SeuilLignesRetirees { get; set; }
+        public int SeuilTiroir { get; set; }
+        public int SeuilAttentesAbandonnees { get; set; }
+        public int SeuilRemises { get; set; }
+        public int SeuilRemisesPatient { get; set; }
+        public TimeOnly? HeureOuverture { get; set; }
+        public TimeOnly? HeureFermeture { get; set; }
+    }
+
+    private List<AlerteSurveillanceDto> anomalies = [];
+    private Reglages? reglages;
+    private bool traitees, enCours;
+    private long? enEdition;
+    private string? actionPrise, erreur, message;
+
+    private static string Libelle(string type) => type switch
+    {
+        "lignes_retirees" => "Boîtes retirées du panier",
+        "tiroir" => "Tiroir sans vente",
+        "attentes_abandonnees" => "Ventes en attente abandonnées",
+        "hors_horaires" => "Ventes hors horaires",
+        "remises" => "Remises en série",
+        "remises_patient" => "Remises au même patient",
+        _ => type
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.A("role.titulaire")) return;
+        await ChargerAsync();
+        var (p, e) = await Api.ParametresSurveillanceAsync();
+        if (p is not null)
+            reglages = new Reglages
+            {
+                SeuilLignesRetirees = p.SeuilLignesRetirees, SeuilTiroir = p.SeuilTiroir, SeuilAttentesAbandonnees = p.SeuilAttentesAbandonnees,
+                SeuilRemises = p.SeuilRemises, SeuilRemisesPatient = p.SeuilRemisesPatient, HeureOuverture = p.HeureOuverture, HeureFermeture = p.HeureFermeture
+            };
+        erreur ??= e;
+    }
+
+    private async Task ChargerAsync()
+    {
+        enCours = true;
+        (anomalies, erreur) = await Api.SurveillanceAsync(traitees);
+        enCours = false;
+    }
+
+    private async Task BasculerAsync(bool versTraitees)
+    {
+        (traitees, enEdition, message) = (versTraitees, null, null);
+        await ChargerAsync();
+    }
+
+    private async Task TraiterAsync(AlerteSurveillanceDto a)
+    {
+        enCours = true;
+        erreur = await Api.TraiterSurveillanceAsync(a.Id, actionPrise);
+        enCours = false;
+        if (erreur is null)
+        {
+            (enEdition, message) = (null, $"Anomalie du {a.Jour:dd/MM/yyyy} traitée.");
+            await ChargerAsync();
+        }
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        var r = reglages!;
+        enCours = true;
+        erreur = await Api.EnregistrerParametresSurveillanceAsync(new ParametresSurveillanceDto(r.SeuilLignesRetirees, r.SeuilTiroir,
+            r.SeuilAttentesAbandonnees, r.SeuilRemises, r.SeuilRemisesPatient, r.HeureOuverture, r.HeureFermeture));
+        enCours = false;
+        message = erreur is null ? "Réglages de surveillance enregistrés." : null;
+    }
+}

@@ -65,6 +65,10 @@
                     <a href="tresorerie" class="@Actif("tresorerie")" aria-current="@Courant("tresorerie")">Trésorerie</a>
                     <a href="dettes" class="@Actif("dettes")" aria-current="@Courant("dettes")">Dettes et créances</a>
                 }
+                @if (Session.A("role.titulaire"))
+                {
+                    <a href="surveillance" class="@Actif("surveillance")" aria-current="@Courant("surveillance")">Surveillance</a>
+                }
                 @if (PremiereRubriqueAdmin is { } lienAdmin)
                 {
                     <a href="@lienAdmin" class="@ActifPrefixe("admin")" aria-current="@(Chemin.StartsWith("admin") ? "page" : null)">Administration</a>
@@ -188,7 +192,7 @@
     // Écrans réservés à un droit (comme le menu) : sans ce droit, retour à l'accueil avec le droit nécessaire
     private static readonly (string Chemin, string[] Droits)[] EcransReserves =
     [
-        ("rapports", ["rapports.ventes"]), ("factures", ["factures.gerer"]), ("tresorerie", ["tresorerie.gerer"]), ("dettes", ["tresorerie.gerer"]),
+        ("rapports", ["rapports.ventes"]), ("surveillance", ["role.titulaire"]), ("factures", ["factures.gerer"]), ("tresorerie", ["tresorerie.gerer"]), ("dettes", ["tresorerie.gerer"]),
         ("achats", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]), ("stock/registre", ["psychotropes.registre"]),
         .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))
     ];

@@ -587,7 +587,15 @@
                 <button type="button" class="btn" @onclick="() => OuvrirAnnulation(null)">Annulation ou retour</button>
                 <button type="button" class="btn" @onclick="() => creditOuvert = true">Règlement d’un crédit</button>
                 <a href="cloture" class="btn">Clôturer la caisse</a>
-                <button type="button" class="btn" disabled title="Tiroir-caisse : matériel à définir">Ouvrir le tiroir</button>
+                @if (Session.A("caisse.ouvrir_tiroir"))
+                {
+                    <button type="button" class="btn" title="Ouverture sans vente, enregistrée pour le titulaire (tiroir-caisse : matériel à brancher)" @onclick="OuvrirTiroirAsync">Ouvrir le tiroir</button>
+                }
+                else
+                {
+                    <button type="button" class="btn" disabled title="Droit « Ouvrir le tiroir sans vente » nécessaire">Ouvrir le tiroir</button>
+                }
+                @if (messageTiroir is not null) { <span class="detail" role="status">@messageTiroir</span> }
             </aside>
         </div>
     }
@@ -1160,6 +1168,7 @@
     private async Task RetirerAsync(LignePanier l)
     {
         lignes.Remove(l);
+        SignalerRetrait(l, l.Quantite);
         await RecalculerAsync();
     }
 
@@ -1169,7 +1178,27 @@
         l.Quantite += delta;
         l.QuantiteDemandee = l.Quantite;   // réglage manuel : le caissier a tranché
         if (l.Quantite <= 0) lignes.Remove(l);
+        if (delta < 0) SignalerRetrait(l, -delta);
         await RecalculerAsync();
+    }
+
+    /// <summary>
+    /// Boîtes retirées du panier avant le paiement : signalées au serveur pour la surveillance de la caisse (titulaire). Sans attendre la
+    /// réponse : la caisse ne doit pas ralentir ; un échec n'empêche pas de continuer la vente.
+    /// </summary>
+    private void SignalerRetrait(LignePanier l, int boites)
+    {
+        if (l.Lot is null || boites <= 0) return;
+        _ = Api.SignalerCaisseAsync(new EvenementCaisseRequete("ligne_retiree", l.ProduitId, l.Lot.LotId, boites, l.Prix * boites));
+    }
+
+    // Tiroir ouvert sans vente : enregistré (droit « caisse.ouvrir_tiroir ») ; l'ouverture du tiroir lui-même dépend du matériel
+    private string? messageTiroir;
+
+    private async Task OuvrirTiroirAsync()
+    {
+        var e = await Api.SignalerCaisseAsync(new EvenementCaisseRequete("tiroir_ouvert"));
+        messageTiroir = e ?? $"Ouverture du tiroir sans vente enregistrée à {DateTime.Now:HH:mm}.";
     }
 
     /// <summary>Explique au comptoir pourquoi un lot a été écarté et lequel est servi à la place.</summary>

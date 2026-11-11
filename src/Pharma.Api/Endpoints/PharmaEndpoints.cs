@@ -29,6 +29,7 @@ public static class PharmaEndpoints
         api.MapMobile();
         api.MapRapports();
         api.MapReprise();
+        api.MapSurveillance();
         api.MapNomenclature();
         api.MapRegistre();
         api.MapReglements();

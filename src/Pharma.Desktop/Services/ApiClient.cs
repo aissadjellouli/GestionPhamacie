@@ -602,6 +602,17 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(TableauInventaireDto?, string?)> TableauInventaireAsync() => GetAsync<TableauInventaireDto?>("api/inventaires", null);
     public Task<(IdentifiantDto?, string?)> CommencerInventaireAsync(string rayon) => PostAsync<CommencerInventaireRequete, IdentifiantDto>("api/inventaires", new(rayon));
     /// <summary>Inventaire d'un produit (tous ses lots), depuis l'alerte « ancien lot délaissé » : titulaire seul.</summary>
+    // ---- Surveillance de la caisse ----
+    /// <summary>Ligne retirée du panier ou tiroir ouvert : signalé au serveur (surveillance du titulaire).</summary>
+    public async Task<string?> SignalerCaisseAsync(EvenementCaisseRequete e) => (await PostAsync<EvenementCaisseRequete, object>("api/caisse/evenements", e)).Item2;
+    public Task<(List<AlerteSurveillanceDto>, string?)> SurveillanceAsync(bool traitees) =>
+        GetAsync<List<AlerteSurveillanceDto>>($"api/surveillance?traitees={(traitees ? "true" : "false")}", []);
+    public async Task<string?> TraiterSurveillanceAsync(long id, string? action) =>
+        (await PostAsync<TraiterAlerteRequete, object>($"api/surveillance/{id}/traiter", new(action))).Item2;
+    public Task<(ParametresSurveillanceDto?, string?)> ParametresSurveillanceAsync() => GetAsync<ParametresSurveillanceDto?>("api/surveillance/parametres", null);
+    public async Task<string?> EnregistrerParametresSurveillanceAsync(ParametresSurveillanceDto p) =>
+        (await EnvoyerCorpsAsync<ParametresSurveillanceDto, object>(HttpMethod.Put, "api/surveillance/parametres", p)).Item2;
+
     public Task<(IdentifiantDto?, string?)> CommencerInventaireProduitAsync(long produitId) =>
         PostAsync<object, IdentifiantDto>($"api/inventaires/produit/{produitId}", new());
     public Task<(InventaireDto?, string?)> InventaireAsync(long id) => GetAsync<InventaireDto?>($"api/inventaires/{id}", null);

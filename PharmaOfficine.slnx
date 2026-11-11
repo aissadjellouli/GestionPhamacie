@@ -57,6 +57,7 @@
     <File Path="database/051_rappel_lot_deja_bloque.sql" />
     <File Path="database/052_reprise_super_admin.sql" />
     <File Path="database/053_lot_delaisse.sql" />
+    <File Path="database/054_surveillance_caisse.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
