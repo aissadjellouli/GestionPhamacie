@@ -40,6 +40,11 @@ Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livr�
 - [ ] **Qui imprime les volets** : Chifa_Officine, ou un logiciel privé relié à Chifa ? (question de l'agrément CNAS)
 - [ ] **QR des factures de grossistes** : sur 3 grossistes, ils ne portent que le n° de facture (`26/F-015695`, `FA.26-327890ZZ1ZZ1`, `26/FA076277`) ; vérifier si d'autres grossistes y mettent les lignes (produits, lots, prix).
 
+## À confirmer avec le comptable
+
+- [ ] **TVA sur les pertes et dons** (script 061, Rapports › « TVA à reverser sur les pertes et dons ») : pour quels motifs la TVA d'achat déjà déduite doit-elle être reversée ? Boîtes périmées détruites (avec ou sans procès-verbal), casses, dons et échantillons. Le réglage est à « non » pour les trois motifs tant que la règle n'est pas confirmée ; le titulaire l'active motif par motif.
+- [ ] **Base de calcul** : le logiciel prend le prix d'achat HT retenu le jour de la sortie × le taux de TVA de la fiche produit. Aujourd'hui tous les produits des bases d'essai sont à 0 % : vérifier les taux de la parapharmacie dans le catalogue réel.
+
 ## À vérifier sur le terrain
 
 - [ ] **Chifa : éviter la double saisie** (Chifa_Officine est un programme Windows installé sur chaque poste de caisse) :

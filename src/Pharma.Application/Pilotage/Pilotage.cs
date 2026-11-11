@@ -10,11 +10,17 @@ public sealed record AlerteResume(string Type, string Niveau, string Message);
 
 public sealed record SoldeCompte(string Nom, decimal Solde);
 
+/// <summary>Boîtes sorties du stock sans vente (périmés, casses, dons et échantillons) et leur valeur d'achat HT.</summary>
+public sealed record PertesEtDons(int Perimes, int Casses, int Dons, decimal Valeur)
+{
+    public int Boites => Perimes + Casses + Dons;
+}
+
 /// <summary>Tableau de bord du titulaire (téléphone) : journée, caisses, alertes, décisions en attente, argent.</summary>
 public sealed record TableauPilotage(DateTime GenereLe, decimal ChiffreAffaires, int NombreVentes, decimal PartOrganismes, decimal CreditsAccordes,
     decimal ChiffreAffairesHier, IReadOnlyList<CaisseOuverte> Caisses, IReadOnlyList<ClotureDuJour> Clotures, int AlertesUrgentes,
     IReadOnlyList<AlerteResume> Alertes, int EcartsInventaire, IReadOnlyList<SoldeCompte> Comptes, decimal FacturesAEncaisser,
-    string? InventaireComplet);
+    string? InventaireComplet, PertesEtDons? SortiesJour = null, PertesEtDons? SortiesMois = null);
 
 public interface IPilotage
 {

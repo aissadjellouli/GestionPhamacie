@@ -1,3 +1,4 @@
+| `061_tva_sorties.sql` | TVA à reverser sur les pertes et dons : table `parametre_rapport` (une ligne : `tva_reversee_perime`, `tva_reversee_casse`, `tva_reversee_don`, « non » par défaut), réglée par le titulaire selon l'avis de son comptable ; les rapports en tirent la marge après pertes et dons. |
 # Base de données
 
 PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, exécutés dans l’ordre des numéros. EF Core lit et écrit les données mais ne crée pas le schéma.
@@ -112,7 +113,7 @@ Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dan
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 060, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 061, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

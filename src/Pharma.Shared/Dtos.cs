@@ -432,7 +432,21 @@ public sealed record ClotureRapportDto(string Employe, string Poste, DateTime Ou
 /// <summary>Periode : jour, semaine ou mois. Marge : null sans le droit « rapports.marges ».</summary>
 public sealed record RapportActiviteDto(string Periode, DateOnly Du, DateOnly Au, string Libelle, SyntheseVentesDto Synthese, MargeBruteDto? Marge,
     IReadOnlyList<VentesJourDto> ParJour, IReadOnlyList<ProduitVenduDto> TopProduits, IReadOnlyList<ClotureRapportDto> Clotures, bool EcartsVisibles,
-    bool ParSemaine = false, IReadOnlyList<RetourRapportDto>? Retours = null);
+    bool ParSemaine = false, IReadOnlyList<RetourRapportDto>? Retours = null, SortiesRapportDto? Sorties = null,
+    TvaSortiesDto? Tva = null, MargeApresSortiesDto? ApresSorties = null);
+
+/// <summary>TVA d'achat à reverser selon le motif de la sortie sans vente (réglage du titulaire).</summary>
+public sealed record TvaSortiesDto(bool Perime, bool Casse, bool Don);
+/// <summary>Marge brute - valeur d'achat HT des pertes et dons - TVA à reverser (droit de voir les marges).</summary>
+public sealed record MargeApresSortiesDto(decimal MargeBrute, decimal PertesHt, decimal TvaAReverser, decimal Montant);
+
+/// <summary>Boîte(s) sortie(s) du stock sans vente : Motif « perime », « casse » ou « echantillon ». Valeur : coût d'achat HT, null sans le droit de voir les marges.</summary>
+public sealed record SortieSansVenteDto(DateTime Date, string Motif, string Produit, string Lot, int Quantite, decimal? Valeur, string Employe,
+    string? Reference, long? EmployeId = null, decimal? TvaAchat = null);
+public sealed record TotalSortiesDto(string Cle, int Perimes, int Casses, int Dons, int Boites, decimal? Valeur);
+/// <summary>Sorties de stock sans vente de la période : total, par employé, par produit et détail.</summary>
+public sealed record SortiesRapportDto(TotalSortiesDto Total, IReadOnlyList<TotalSortiesDto> ParEmploye, IReadOnlyList<TotalSortiesDto> ParProduit,
+    IReadOnlyList<SortieSansVenteDto> Detail);
 
 // ---- Reprise de données (titulaire) ------------------------------------------------
 

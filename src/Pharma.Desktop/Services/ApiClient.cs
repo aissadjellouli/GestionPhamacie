@@ -635,6 +635,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> DeciderEcartAsync(long ligneId, bool valider) => (await PostAsync<DecisionEcartRequete, object>($"api/inventaires/ecarts/{ligneId}", new(valider))).Item2;
     public async Task<string?> ParametresInventaireAsync(ParametresInventaireDto p) =>
         (await EnvoyerCorpsAsync<ParametresInventaireDto, object>(HttpMethod.Put, "api/inventaires/parametres", p)).Item2;
+    /// <summary>TVA d'achat à reverser par motif de sortie sans vente (titulaire).</summary>
+    public async Task<string?> TvaSortiesAsync(TvaSortiesDto t) =>
+        (await EnvoyerCorpsAsync<TvaSortiesDto, object>(HttpMethod.Put, "api/rapports/tva-sorties", t)).Item2;
 
     public Task<(List<EmplacementDto>, string?)> EmplacementsAsync() => GetAsync<List<EmplacementDto>>("api/emplacements", []);
     public Task<(IdentifiantDto?, string?)> EnregistrerEmplacementAsync(long? id, SaisieEmplacementDto e) => id is null

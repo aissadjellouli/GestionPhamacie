@@ -99,6 +99,12 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             Ligne(synthese, "Chiffre d’affaires HT", Da(m.ChiffreAffairesHt));
             Ligne(synthese, "Coût d’achat HT des boîtes vendues", Da(m.CoutAchat));
             Ligne(synthese, "Marge brute", $"{Da(m.Montant)}{(m.Taux is { } t ? $" ({t.ToString("0.0", Fr)} %)" : "")}", gras: true);
+            if (r.ApresSorties is { } a)
+            {
+                Ligne(synthese, "Pertes et dons au prix d’achat HT", "- " + Da(a.PertesHt));
+                Ligne(synthese, "TVA à reverser sur les pertes et dons", "- " + Da(a.TvaAReverser));
+                Ligne(synthese, "Marge après pertes et dons", Da(a.Montant), gras: true);
+            }
         }
 
         if (r.ParJour.Count > 1)
@@ -155,7 +161,52 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             }
         }
 
-        var note = section.AddParagraph("Ventes validées seulement. Un retour client diminue le chiffre du jour où il est enregistré. Marge brute : chiffre d’affaires HT moins le coût d’achat HT, au prix réel de chaque boîte identifiée, sinon au prix de son lot.");
+        if (r.Sorties is { Count: > 0 } sorties)
+        {
+            // Pertes et dons : boîtes sorties sans vente, en valeur d'achat HT si l'employé voit les marges
+            var avecValeur = sorties.All(s => s.Valeur is not null);
+            void Totaux(string titre, IEnumerable<Application.Rapports.TotalSorties> totaux)
+            {
+                SousTitre(section, titre);
+                var t = avecValeur ? Tableau(section, 6.5, 2.3, 2.3, 2.6, 2.8) : Tableau(section, 8, 2.8, 2.8, 2.9);
+                if (avecValeur) Entete(t, "", "Périmés", "Casses", "Dons", "Valeur HT");
+                else Entete(t, "", "Périmés", "Casses", "Dons");
+                foreach (var x in totaux)
+                {
+                    var row = t.AddRow();
+                    row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
+                    var cellules = avecValeur
+                        ? new[] { x.Cle, x.Perimes.ToString(Fr), x.Casses.ToString(Fr), x.Dons.ToString(Fr), Da(x.Valeur ?? 0) }
+                        : new[] { x.Cle, x.Perimes.ToString(Fr), x.Casses.ToString(Fr), x.Dons.ToString(Fr) };
+                    for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+                }
+            }
+            Totaux("Sorties de stock sans vente (pertes et dons)",
+                [Application.Rapports.SortiesRapport.Total("Total de la période", sorties), .. Application.Rapports.SortiesRapport.ParEmploye(sorties)]);
+            Totaux("Sorties par produit", Application.Rapports.SortiesRapport.ParProduit(sorties));
+
+            SousTitre(section, "Détail des sorties");
+            var det = Tableau(section, 2.4, 4.6, 2.4, 1.2, 2.2, 3.7);
+            Entete(det, "Date", "Produit et lot", "Motif", "Boîtes", avecValeur ? "Valeur HT" : "", "Employé et raison");
+            foreach (var s in sorties)
+            {
+                var row = det.AddRow();
+                row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
+                string[][] cellules =
+                [
+                    [Quand(s.Date)],
+                    [s.Produit, "lot " + s.Lot],
+                    [Application.Rapports.SortiesRapport.Libelle(s.Motif)],
+                    [s.Quantite.ToString(Fr)],
+                    [s.Valeur is { } v ? Da(v) : ""],
+                    string.IsNullOrWhiteSpace(s.Reference) ? [s.Employe] : [s.Employe, s.Reference]
+                ];
+                for (var i = 0; i < cellules.Length; i++)
+                    foreach (var texte in cellules[i]) row.Cells[i].AddParagraph(texte);
+            }
+        }
+
+        var note = section.AddParagraph("Ventes validées seulement. Un retour client diminue le chiffre du jour où il est enregistré. Sorties sans vente : boîtes périmées, cassées, données ou remises en échantillon, au prix d’achat HT retenu le jour de la sortie ; elles ne sont pas des mouvements d’argent. Marge brute : chiffre d’affaires HT moins le coût d’achat HT, au prix réel de chaque boîte identifiée, sinon au prix de son lot.");
         note.Format.SpaceBefore = Unit.FromPoint(12);
         note.Format.Font.Size = 8;
         note.Format.Font.Color = Color.FromRgb(0x47, 0x54, 0x67);

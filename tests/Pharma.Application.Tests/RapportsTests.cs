@@ -23,6 +23,14 @@ internal sealed class RapportsEnMemoire : IRapports
     public Task<IReadOnlyList<RetourRapport>> RetoursAsync(DateOnly du, DateOnly au, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<RetourRapport>>([new("T-000020", new DateTime(2026, 11, 9, 10, 0, 0, DateTimeKind.Utc), "Vendeur", new DateTime(2026, 11, 12, 9, 0, 0, DateTimeKind.Utc),
             "Caisse 2", "Assistante", "Sirop fictif × 1", 500, 300, false)]);
+    public Task<IReadOnlyList<SortieSansVente>> SortiesAsync(DateOnly du, DateOnly au, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<SortieSansVente>>([
+            new(new DateTime(2026, 11, 9, 11, 0, 0, DateTimeKind.Utc), "echantillon", "Crème fictive", "L1", 2, 300, "Vendeur", "=Dr X, échantillon", null, 57),
+            new(new DateTime(2026, 11, 9, 10, 0, 0, DateTimeKind.Utc), "perime", "Sirop fictif", "L2", 3, 450.5m, "Assistante", null, null, 0),
+            new(new DateTime(2026, 11, 9, 9, 0, 0, DateTimeKind.Utc), "casse", "Crème fictive", "L1", 1, 150, "Vendeur", "flacon tombé", null, 28.5m)]);
+    public TvaSorties Tva { get; set; } = new(false, false, false);
+    public Task<TvaSorties> TvaSortiesAsync(CancellationToken ct = default) => Task.FromResult(Tva);
+    public Task ModifierTvaSortiesAsync(TvaSorties tva, CancellationToken ct = default) { Tva = tva; return Task.CompletedTask; }
 }
 
 public class RapportsTests
@@ -81,5 +89,81 @@ public class RapportParSemaineTests
         Assert.Equal(2, s.Count);
         Assert.Equal((new DateOnly(2026, 6, 3), 3, 300m), (s[0].Date, s[0].NombreVentes, s[0].ChiffreAffaires));
         Assert.Equal(new DateOnly(2026, 6, 8), s[1].Date);
+    }
+}
+
+public class SortiesRapportTests
+{
+    [Fact]
+    public async Task Valeur_des_pertes_et_dons_masquee_sans_droit_marges()
+    {
+        var r = await new ObtenirRapport(new RapportsEnMemoire(), new DroitsFactices("rapports.ventes")).ExecuterAsync(TypePeriode.Jour, new DateOnly(2026, 11, 9), 2);
+        Assert.Equal(3, r.Sorties!.Count);
+        Assert.All(r.Sorties, s => Assert.Null(s.Valeur));
+        Assert.Null(SortiesRapport.Total("Total", r.Sorties).Valeur);
+    }
+
+    [Fact]
+    public async Task Totaux_par_motif_employe_et_produit()
+    {
+        var r = await new ObtenirRapport(new RapportsEnMemoire(), new DroitsFactices("rapports.ventes", "rapports.marges")).ExecuterAsync(TypePeriode.Jour, new DateOnly(2026, 11, 9), 1);
+        var total = SortiesRapport.Total("Total", r.Sorties!);
+        Assert.Equal((3, 1, 2, 6, 900.5m), (total.Perimes, total.Casses, total.Dons, total.Boites, total.Valeur!.Value));
+        var parEmploye = SortiesRapport.ParEmploye(r.Sorties!);
+        Assert.Equal(["Assistante", "Vendeur"], parEmploye.Select(t => t.Cle));      // plus forte valeur d'abord (450,50 contre 450)
+        Assert.Equal((0, 1, 2, 450m), (parEmploye[1].Perimes, parEmploye[1].Casses, parEmploye[1].Dons, parEmploye[1].Valeur!.Value));
+        var parProduit = SortiesRapport.ParProduit(r.Sorties!);
+        Assert.Equal((3, 450m), (parProduit.Single(t => t.Cle == "Crème fictive").Boites, parProduit.Single(t => t.Cle == "Crème fictive").Valeur!.Value));
+    }
+
+    [Fact]
+    public async Task Csv_contient_les_sorties_sans_formule_executable()
+    {
+        var r = await new ObtenirRapport(new RapportsEnMemoire(), new DroitsFactices("rapports.ventes", "rapports.marges")).ExecuterAsync(TypePeriode.Jour, new DateOnly(2026, 11, 9), 1);
+        var texte = Encoding.UTF8.GetString(RapportCsv.Ecrire(r));
+        Assert.Contains("Sorties de stock sans vente;", texte);
+        Assert.Contains("Total;3;1;2;900,50", texte);
+        Assert.Contains("Don ou échantillon;Crème fictive;L1;2;300,00;57,00;non;Vendeur;'=Dr X, échantillon", texte);
+    }
+}
+
+public class MargeApresSortiesTests
+{
+    [Fact]
+    public async Task Sans_tva_reglee_seule_la_valeur_des_pertes_et_dons_est_retiree()
+    {
+        var r = await new ObtenirRapport(new RapportsEnMemoire(), new DroitsFactices("rapports.ventes", "rapports.marges")).ExecuterAsync(TypePeriode.Jour, new DateOnly(2026, 11, 9), 1);
+        // Marge brute 4 000 - pertes et dons 900,50 - TVA 0
+        Assert.Equal((4000m, 900.5m, 0m, 3099.5m), (r.ApresSorties!.MargeBrute, r.ApresSorties.PertesHt, r.ApresSorties.TvaAReverser, r.ApresSorties.Montant));
+    }
+
+    [Fact]
+    public async Task Tva_retiree_seulement_pour_les_motifs_regles()
+    {
+        var depot = new RapportsEnMemoire { Tva = new TvaSorties(Perime: false, Casse: true, Don: true) };
+        var r = await new ObtenirRapport(depot, new DroitsFactices("rapports.ventes", "rapports.marges")).ExecuterAsync(TypePeriode.Jour, new DateOnly(2026, 11, 9), 1);
+        Assert.Equal((85.5m, 3014m), (r.ApresSorties!.TvaAReverser, r.ApresSorties.Montant));   // don 57 + casse 28,50
+    }
+
+    [Fact]
+    public async Task Sans_droit_marges_ni_marge_apres_sorties_ni_tva()
+    {
+        var r = await new ObtenirRapport(new RapportsEnMemoire(), new DroitsFactices("rapports.ventes")).ExecuterAsync(TypePeriode.Jour, new DateOnly(2026, 11, 9), 2);
+        Assert.Null(r.ApresSorties);
+        Assert.All(r.Sorties!, s => Assert.Null(s.TvaAchat));
+    }
+
+    [Fact]
+    public async Task Reglage_de_la_tva_reserve_au_titulaire_et_journalise()
+    {
+        var depot = new RapportsEnMemoire();
+        var journal = new JournalEspion();
+        await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            new ModifierTvaSorties(depot, new DroitsFactices("rapports.ventes", "rapports.marges"), journal).ExecuterAsync(new TvaSorties(true, true, true), 2));
+        Assert.Equal(new TvaSorties(false, false, false), depot.Tva);
+
+        await new ModifierTvaSorties(depot, new DroitsFactices() { Titulaire = true }, journal).ExecuterAsync(new TvaSorties(false, false, true), 1);
+        Assert.Equal(new TvaSorties(false, false, true), depot.Tva);
+        Assert.Equal(["tva_sorties"], journal.Actions);
     }
 }

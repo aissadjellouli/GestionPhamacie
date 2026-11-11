@@ -190,6 +190,51 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
         return liste;
     }
 
+    public async Task<IReadOnlyList<SortieSansVente>> SortiesAsync(DateOnly du, DateOnly au, CancellationToken ct = default)
+    {
+        // Périmés, casses et dons : mouvements négatifs écrits par la sortie de stock ; le prix d'achat est fixé à l'écriture du mouvement
+        await using var cmd = Commande("""
+            SELECT m.cree_le, m.type, p.nom_commercial, lo.numero_lot, abs(m.quantite),
+                   ROUND(abs(m.quantite) * COALESCE(m.prix_achat_ht, lo.prix_achat_ht), 2),
+                   COALESCE(u.nom_complet, '—'), m.reference, u.id,
+                   ROUND(abs(m.quantite) * COALESCE(m.prix_achat_ht, lo.prix_achat_ht) * p.taux_tva / 100, 2)
+            FROM mouvement_stock m
+            JOIN lot lo ON lo.id = m.lot_id
+            JOIN produit p ON p.id = lo.produit_id
+            LEFT JOIN utilisateur u ON u.id = m.utilisateur_id
+            WHERE m.type IN ('perime', 'casse', 'echantillon')
+              AND m.cree_le >= $1::date AND m.cree_le < ($2::date + 1)
+            ORDER BY m.cree_le DESC, m.id DESC
+            """, du, au);
+        var liste = new List<SortieSansVente>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            liste.Add(new SortieSansVente(r.GetDateTime(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetInt32(4), r.GetDecimal(5),
+                r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.IsDBNull(8) ? null : r.GetInt64(8), r.GetDecimal(9)));
+        return liste;
+    }
+
+    public async Task<TvaSorties> TvaSortiesAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT tva_reversee_perime, tva_reversee_casse, tva_reversee_don FROM parametre_rapport WHERE id = 1");
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        // Sans ligne de réglage : aucune TVA reversée (valeur par défaut du script 061)
+        return await r.ReadAsync(ct) ? new TvaSorties(r.GetBoolean(0), r.GetBoolean(1), r.GetBoolean(2)) : new TvaSorties(false, false, false);
+    }
+
+    public async Task ModifierTvaSortiesAsync(TvaSorties tva, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            INSERT INTO parametre_rapport (id, tva_reversee_perime, tva_reversee_casse, tva_reversee_don) VALUES (1, $1, $2, $3)
+            ON CONFLICT (id) DO UPDATE SET tva_reversee_perime = EXCLUDED.tva_reversee_perime,
+                tva_reversee_casse = EXCLUDED.tva_reversee_casse, tva_reversee_don = EXCLUDED.tva_reversee_don
+            """);
+        cmd.Parameters.AddWithValue(tva.Perime);
+        cmd.Parameters.AddWithValue(tva.Casse);
+        cmd.Parameters.AddWithValue(tva.Don);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private NpgsqlCommand Commande(string sql, DateOnly du, DateOnly au)
     {
         var cmd = db.CreateCommand(sql);

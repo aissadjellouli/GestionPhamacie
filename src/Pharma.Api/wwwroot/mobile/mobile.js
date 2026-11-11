@@ -421,6 +421,7 @@ async function afficherPilotage() {
         el("p", { class: "detail" }, `${t.nombreVentes} vente(s)`,
           evolution === null ? "" : ` · ${evolution >= 0 ? "+" : ""}${evolution} % par rapport à hier (${dinars(t.chiffreAffairesHier)})`),
         el("p", { class: "detail" }, `Part organismes à recevoir : ${dinars(t.partOrganismes)} · crédits accordés : ${dinars(t.creditsAccordes)}`)),
+      blocPertesEtDons(t.sortiesJour, t.sortiesMois),
       el("div", { class: "carte" },
         el("h2", {}, `Caisses ouvertes (${t.caisses.length})`),
         t.caisses.length === 0 ? el("p", { class: "detail" }, "Aucune caisse ouverte.") : null,
@@ -443,6 +444,18 @@ async function afficherPilotage() {
   } catch (err) {
     zone.replaceChildren(el("p", { class: "statut erreur", role: "alert" }, err.message));
   }
+}
+
+// Boîtes sorties sans vente (périmés, casses, dons) : valeur au prix d'achat HT ; le détail est dans les rapports du poste
+function blocPertesEtDons(jour, mois) {
+  if (!jour || !mois) return null;
+  const ligne = (titre, s) => el("p", {}, `${titre} : `, el("strong", {}, dinars(s.valeur)),
+    el("br"), el("span", { class: "detail" }, `${s.perimes} périmée(s) · ${s.casses} cassée(s) · ${s.dons} donnée(s) ou en échantillon`));
+  return el("div", { class: "carte" },
+    el("h2", {}, "Pertes et dons"),
+    ligne("Aujourd’hui", jour),
+    ligne("Ce mois-ci", mois),
+    el("p", { class: "detail" }, "Au prix d’achat HT. Détail par employé et par produit : Rapports, sur le poste."));
 }
 
 function blocEcarts(ecarts) {

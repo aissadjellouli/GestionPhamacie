@@ -90,7 +90,31 @@ public sealed class PilotageSql(NpgsqlDataSource db) : IPilotage
             """))
             inventaire = await cmd.ExecuteScalarAsync(ct) as string;
 
+        // Pertes et dons du jour et du mois (même calcul que la section « Sorties de stock sans vente » des rapports)
+        PertesEtDons jour, mois;
+        await using (var cmd = db.CreateCommand("""
+            WITH s AS (
+                SELECT m.cree_le, m.type, abs(m.quantite) AS q, abs(m.quantite) * COALESCE(m.prix_achat_ht, lo.prix_achat_ht) AS valeur
+                FROM mouvement_stock m JOIN lot lo ON lo.id = m.lot_id
+                WHERE m.type IN ('perime', 'casse', 'echantillon') AND m.cree_le >= date_trunc('month', current_date))
+            SELECT COALESCE(sum(q) FILTER (WHERE type = 'perime' AND cree_le >= current_date), 0)::int,
+                   COALESCE(sum(q) FILTER (WHERE type = 'casse' AND cree_le >= current_date), 0)::int,
+                   COALESCE(sum(q) FILTER (WHERE type = 'echantillon' AND cree_le >= current_date), 0)::int,
+                   COALESCE(ROUND(sum(valeur) FILTER (WHERE cree_le >= current_date), 2), 0),
+                   COALESCE(sum(q) FILTER (WHERE type = 'perime'), 0)::int,
+                   COALESCE(sum(q) FILTER (WHERE type = 'casse'), 0)::int,
+                   COALESCE(sum(q) FILTER (WHERE type = 'echantillon'), 0)::int,
+                   COALESCE(ROUND(sum(valeur), 2), 0)
+            FROM s
+            """))
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            await r.ReadAsync(ct);
+            jour = new PertesEtDons(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetDecimal(3));
+            mois = new PertesEtDons(r.GetInt32(4), r.GetInt32(5), r.GetInt32(6), r.GetDecimal(7));
+        }
+
         return new TableauPilotage(DateTime.UtcNow, ca, ventes, organismes, credits, caHier, caisses, clotures, urgentes, alertes, ecarts, comptes,
-            aEncaisser, inventaire);
+            aEncaisser, inventaire, jour, mois);
     }
 }

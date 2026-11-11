@@ -203,6 +203,7 @@ public static class DependencyInjection
         services.AddScoped<AnnulerInventaire>();
         services.AddScoped<DeciderEcartInventaire>();
         services.AddScoped<ModifierParametresInventaire>();
+        services.AddScoped<Rapports.ModifierTvaSorties>();
         services.AddScoped<RechercherDci>();
         services.AddScoped<Notifications.INotificationService, Notifications.NotificationService>();
         services.AddScoped<Notifications.IAlertesTitulaire, Notifications.AlertesTitulaire>();

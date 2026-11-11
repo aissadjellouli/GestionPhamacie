@@ -137,6 +137,7 @@
     <File Path="database/058_surveillance_comptes.sql" />
     <File Path="database/059_corrections_surveillance.sql" />
     <File Path="database/060_volet_chifa.sql" />
+    <File Path="database/061_tva_sorties.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

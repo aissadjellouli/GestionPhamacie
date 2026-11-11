@@ -28,6 +28,14 @@ internal static class RapportsEndpoints
                 return Results.File(contenu, f == FormatExport.Pdf ? "application/pdf" : "text/csv; charset=utf-8", nom);
             })
            .ExigerPermission(Permissions.RapportsVentes);
+
+        // TVA d'achat à reverser par motif de sortie sans vente (titulaire)
+        rapports.MapPut("/tva-sorties", async (TvaSortiesDto req, ModifierTvaSorties modifier, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await modifier.ExecuterAsync(new TvaSorties(req.Perime, req.Casse, req.Don), user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerTitulaire();
     }
 
     private static PeriodeRapport Periode(string? periode, DateOnly? date, DateOnly? du, DateOnly? au)
@@ -57,6 +65,18 @@ internal static class RapportsEndpoints
             r.Clotures.Select(c => new ClotureRapportDto(c.Employe, c.Poste, c.OuverteLe, c.FermeeLe, c.Attendu, c.Compte, c.Ecart, c.Annulations, c.Remises, c.Retours, c.EmployeId)).ToList(),
             r.EcartsVisibles, r.Periode.ParSemaine,
             (r.Retours ?? []).Select(x => new RetourRapportDto(x.Ticket, x.DateVente, x.Vendeur, x.DateRetour, x.Poste, x.Employe, x.Produits, x.Montant,
-                x.DetteDiminuee, x.DeduitDansLaPeriode, x.VendeurId, x.EmployeId)).ToList());
+                x.DetteDiminuee, x.DeduitDansLaPeriode, x.VendeurId, x.EmployeId)).ToList(),
+            r.Sorties is { Count: > 0 } sorties ? VersDto(sorties) : null,
+            r.Tva is { } t ? new TvaSortiesDto(t.Perime, t.Casse, t.Don) : null,
+            r.ApresSorties is { } a ? new MargeApresSortiesDto(a.MargeBrute, a.PertesHt, a.TvaAReverser, a.Montant) : null);
+    }
+
+    private static SortiesRapportDto VersDto(IReadOnlyList<SortieSansVente> sorties)
+    {
+        static TotalSortiesDto T(TotalSorties t) => new(t.Cle, t.Perimes, t.Casses, t.Dons, t.Boites, t.Valeur);
+        return new(T(SortiesRapport.Total("Total", sorties)),
+            SortiesRapport.ParEmploye(sorties).Select(T).ToList(),
+            SortiesRapport.ParProduit(sorties).Select(T).ToList(),
+            sorties.Select(s => new SortieSansVenteDto(s.Date, s.Motif, s.Produit, s.Lot, s.Quantite, s.Valeur, s.Employe, s.Reference, s.EmployeId, s.TvaAchat)).ToList());
     }
 }

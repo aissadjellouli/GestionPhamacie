@@ -85,6 +85,23 @@
                     <span class="tuile-pied">@(m.Taux is { } t ? $"{t:0.0} % du CA HT" : "pas de vente") · coût @Libelles.Dinars(m.CoutAchat)</span>
                 </div>
             }
+            @if (r.Sorties is { } so)
+            {
+                <div class="tuile">
+                    <span class="tuile-libelle">Pertes et dons</span>
+                    <span class="tuile-valeur">@(so.Total.Valeur is { } vs ? Libelles.Dinars(vs) : $"{so.Total.Boites} boîte(s)")</span>
+                    <span class="tuile-pied">@so.Total.Perimes périmée(s) · @so.Total.Casses cassée(s) · @so.Total.Dons donnée(s)@(so.Total.Valeur is null ? "" : " · au prix d’achat HT")</span>
+                </div>
+            }
+            @if (r.ApresSorties is { } a)
+            {
+                <div class="tuile" title="Marge brute moins la valeur d’achat HT des boîtes périmées, cassées ou données, moins la TVA à reverser sur ces boîtes">
+                    <span class="tuile-libelle">Marge après pertes et dons</span>
+                    <span class="tuile-valeur">@Libelles.Dinars(a.Montant)</span>
+                    <span class="tuile-pied">marge brute @Libelles.Dinars(a.MargeBrute) − pertes et dons @Libelles.Dinars(a.PertesHt, 2)</span>
+                    <span class="tuile-pied">− TVA à reverser @Libelles.Dinars(a.TvaAReverser, 2)@(r.Tva is { Perime: false, Casse: false, Don: false } ? " (aucun motif réglé)" : "")</span>
+                </div>
+            }
         </div>
 
         <div class="rapport-colonnes">
@@ -223,9 +240,87 @@
             </section>
         }
 
+        @if (r.Sorties is { } sorties)
+        {
+            var valeur = sorties.Total.Valeur is not null;
+            <section class="panneau" aria-labelledby="t-sorties">
+                <h2 id="t-sorties">Sorties de stock sans vente</h2>
+                <p class="detail" style="margin: 0 0 8px">Boîtes périmées, cassées, données ou remises en échantillon pendant la période@(valeur ? ", au prix d’achat HT retenu le jour de la sortie" : "").
+                    Ce ne sont pas des mouvements d’argent : elles n’apparaissent pas en trésorerie.</p>
+                <div class="rapport-colonnes">
+                    @foreach (var (id, titre, totaux) in new[] { ("t-sorties-employes", "Par employé", sorties.ParEmploye), ("t-sorties-produits", "Par produit", sorties.ParProduit) })
+                    {
+                        <div>
+                            <h3 id="@id">@titre</h3>
+                            <div class="tableau-cadre">
+                                <table class="tableau" style="min-width: 0" aria-labelledby="@id">
+                                    <thead><tr><th scope="col">@(titre == "Par employé" ? "Employé" : "Produit")</th><th scope="col">Périmés</th><th scope="col">Casses</th><th scope="col">Dons</th>@if (valeur) { <th scope="col">Valeur HT</th> }</tr></thead>
+                                    <tbody>
+                                        @foreach (var t in totaux)
+                                        {
+                                            <tr><td class="nom">@t.Cle</td><td>@t.Perimes</td><td>@t.Casses</td><td>@t.Dons</td>@if (valeur) { <td>@Libelles.Dinars(t.Valeur ?? 0, 2)</td> }</tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <h3 id="t-sorties-detail">Détail</h3>
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 760px" aria-labelledby="t-sorties-detail">
+                        <thead><tr><th scope="col">Date</th><th scope="col">Produit</th><th scope="col">Motif</th><th scope="col">Boîtes</th>@if (valeur) { <th scope="col">Valeur HT</th> }<th scope="col">Employé et raison</th></tr></thead>
+                        <tbody>
+                            @foreach (var s in sorties.Detail)
+                            {
+                                <tr>
+                                    <td>@Libelles.DateHeureLocale(s.Date)</td>
+                                    <td class="nom">@s.Produit<br /><span class="detail">lot @s.Lot</span></td>
+                                    <td><span class="pastille @(s.Motif == "echantillon" ? "info" : "attention")">@MotifSortie(s.Motif)</span></td>
+                                    <td>@s.Quantite</td>
+                                    @if (valeur) { <td>@Libelles.Dinars(s.Valeur ?? 0, 2)</td> }
+                                    <td><LienContact Type="employe" Id="s.EmployeId" Nom="@s.Employe" />@if (!string.IsNullOrWhiteSpace(s.Reference)) {<br /><span class="detail">@s.Reference</span>}</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (!valeur)
+                {
+                    <p class="detail" style="margin: 0">La valeur d’achat est réservée au droit « Voir les prix d’achat et les marges ».</p>
+                }
+            </section>
+        }
+
+        @if (r.ApresSorties is not null && r.Tva is not null)
+        {
+            var titulaire = Session.A("role.titulaire");
+            <section class="panneau" aria-labelledby="t-tva-sorties">
+                <h2 id="t-tva-sorties">TVA à reverser sur les pertes et dons</h2>
+                <p class="detail" style="margin: 0 0 8px">
+                    Pour chaque motif, la TVA payée à l’achat de la boîte est-elle à reverser ? Réglez-le selon l’avis de votre comptable.
+                    Elle est alors retirée de la marge après pertes et dons (prix d’achat HT × taux de TVA du produit ; 0 pour un produit sans TVA).
+                </p>
+                <div class="filtres" role="group" aria-label="Motifs dont la TVA est reversée">
+                    <label class="case"><input type="checkbox" checked="@tvaPerime" disabled="@(!titulaire || enCours)" @onchange="e => tvaPerime = (bool)e.Value!" /><span>Périmés détruits</span></label>
+                    <label class="case"><input type="checkbox" checked="@tvaCasse" disabled="@(!titulaire || enCours)" @onchange="e => tvaCasse = (bool)e.Value!" /><span>Casses</span></label>
+                    <label class="case"><input type="checkbox" checked="@tvaDon" disabled="@(!titulaire || enCours)" @onchange="e => tvaDon = (bool)e.Value!" /><span>Dons et échantillons</span></label>
+                    @if (titulaire)
+                    {
+                        <button type="button" class="btn" disabled="@(enCours || (tvaPerime, tvaCasse, tvaDon) == (r.Tva.Perime, r.Tva.Casse, r.Tva.Don))" @onclick="EnregistrerTvaAsync">Enregistrer</button>
+                    }
+                </div>
+                @if (!titulaire)
+                {
+                    <p class="detail" style="margin: 0">Réglage réservé au titulaire.</p>
+                }
+            </section>
+        }
+
         <p class="pied-page">
             Ventes validées seulement, remises déduites. Marge brute : chiffre d’affaires hors TVA moins le coût d’achat HT des boîtes vendues,
-            au prix réel de chaque boîte identifiée, sinon au prix de son lot.
+            au prix réel de chaque boîte identifiée, sinon au prix de son lot. Marge après pertes et dons : marge brute moins la valeur d’achat HT
+            des boîtes périmées, cassées ou données, moins la TVA à reverser sur ces boîtes selon le réglage ci-dessus.
         </p>
     }
 </div>
@@ -253,10 +348,25 @@
         {
             var (r, e) = await Api.RapportAsync(periode, reference, du, au);
             // Dates refusées (fin avant début, futur, plus d'un an) : le message s'affiche, le rapport précédent reste
-            if (r is not null) rapport = r;
+            if (r is not null)
+            {
+                rapport = r;
+                if (r.Tva is { } t) (tvaPerime, tvaCasse, tvaDon) = (t.Perime, t.Casse, t.Don);
+            }
             erreur = e;
         }
         finally { enCours = false; }
+    }
+
+    private bool tvaPerime, tvaCasse, tvaDon;
+
+    private async Task EnregistrerTvaAsync()
+    {
+        message = null;
+        var e = await Api.TvaSortiesAsync(new TvaSortiesDto(tvaPerime, tvaCasse, tvaDon));
+        if (e is not null) { erreur = e; return; }
+        await ChargerAsync();
+        message = "Réglage de la TVA à reverser enregistré : la marge après pertes et dons est recalculée.";
     }
 
     private Task ChoisirAsync(string code) { (periode, message) = (code, null); return ChargerAsync(); }
@@ -306,5 +416,6 @@
     private static string Pourcent(decimal valeur, decimal max) =>
         (max <= 0 ? 0 : Math.Round(valeur / max * 100, 1)).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
 
+    private static string MotifSortie(string motif) => motif switch { "perime" => "Périmé", "casse" => "Casse", "echantillon" => "Don ou échantillon", _ => motif };
     private static string Signe(decimal n) => n > 0 ? $"+{Libelles.Dinars(n)}" : Libelles.Dinars(n);
 }

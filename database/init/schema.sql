@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 060 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 061 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 060 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 061 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict 1bbtkxe9eSZngxGfcphHKuvHWEfUJ733DJU5qEyJzA4zWV1qmVHN7q8V5glUeEq
+\restrict sVav3b6asIevcbKKB3qoGnakzai6XhNRKzpdLIKVktbjodbhEyntCzAa380dx20
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3827,6 +3827,19 @@ CREATE TABLE public.parametre_notification (
 
 
 --
+-- Name: parametre_rapport; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_rapport (
+    id integer DEFAULT 1 NOT NULL,
+    tva_reversee_perime boolean DEFAULT false NOT NULL,
+    tva_reversee_casse boolean DEFAULT false NOT NULL,
+    tva_reversee_don boolean DEFAULT false NOT NULL,
+    CONSTRAINT parametre_rapport_id_check CHECK ((id = 1))
+);
+
+
+--
 -- Name: parametre_sauvegarde; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6091,6 +6104,14 @@ ALTER TABLE ONLY public.parametre_inventaire
 
 ALTER TABLE ONLY public.parametre_notification
     ADD CONSTRAINT parametre_notification_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: parametre_rapport parametre_rapport_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_rapport
+    ADD CONSTRAINT parametre_rapport_pkey PRIMARY KEY (id);
 
 
 --
@@ -8623,5 +8644,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 1bbtkxe9eSZngxGfcphHKuvHWEfUJ733DJU5qEyJzA4zWV1qmVHN7q8V5glUeEq
+\unrestrict sVav3b6asIevcbKKB3qoGnakzai6XhNRKzpdLIKVktbjodbhEyntCzAa380dx20
 
