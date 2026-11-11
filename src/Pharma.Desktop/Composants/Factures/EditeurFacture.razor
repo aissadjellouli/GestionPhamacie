@@ -50,7 +50,7 @@
         <div class="achats-ligne" style="align-items: flex-end">
             <div class="champ" style="flex: 1 1 260px">
                 <label for="f-client">Client</label>
-                <select id="f-client" @bind="clientId"><option value="0">— choisir —</option>@foreach (var c in clients.Where(c => c.Actif)) { <option value="@c.Id">@c.RaisonSociale</option> }</select>
+                <select id="f-client" @bind="clientId" @bind:after="SuivreEcheance"><option value="0">— choisir —</option>@foreach (var c in clients.Where(c => c.Actif)) { <option value="@c.Id">@c.RaisonSociale</option> }</select>
             </div>
             <button type="button" class="btn" @onclick="() => nouveauClient = new()">Nouveau client</button>
         </div>
@@ -62,6 +62,7 @@
                     <div class="champ" style="flex: 1 1 240px"><label for="nc-adr">Adresse</label><input id="nc-adr" type="text" @bind="nc.Adresse" /></div>
                     <div class="champ" style="flex: 0 0 160px"><label for="nc-tel">Téléphone</label><input id="nc-tel" data-champ="telephone" type="tel" @bind="nc.Telephone" /></div>
                     <div class="champ" style="flex: 1 1 220px"><label for="nc-mail">E-mail</label><input id="nc-mail" data-champ="email" type="email" maxlength="120" @bind="nc.Email" /></div>
+                    <div class="champ" style="flex: 0 0 170px"><label for="nc-delai">Délai de paiement (jours)</label><input id="nc-delai" data-champ="delai_paiement" type="number" min="1" max="365" @bind="nc.DelaiPaiementJours" /></div>
                 </div>
                 <div class="achats-ligne">
                     <div class="champ" style="flex: 1 1 140px"><label for="nc-rc">RC</label><input id="nc-rc" type="text" @bind="nc.Rc" /></div>
@@ -80,7 +81,7 @@
     {
         <div class="champ" style="max-width: 360px">
             <label for="f-org">Organisme</label>
-            <select id="f-org" @bind="organismeId" @bind:after="() => candidates = []"><option value="0">— choisir —</option>@foreach (var o in organismes) { <option value="@o.Id">@o.Code · @o.Nom</option> }</select>
+            <select id="f-org" @bind="organismeId" @bind:after="() => { candidates = []; SuivreEcheance(); }"><option value="0">— choisir —</option>@foreach (var o in organismes) { <option value="@o.Id">@o.Code · @o.Nom</option> }</select>
         </div>
     }
 
@@ -188,6 +189,7 @@
         public string? Rc { get; set; }
         public string? Nis { get; set; }
         public string? Ai { get; set; }
+        public int DelaiPaiementJours { get; set; } = 30;
     }
 
     private static readonly (string, string)[] Destinataires = [("patient", "Patient"), ("entreprise", "Entreprise"), ("organisme", "Organisme")];
@@ -201,9 +203,15 @@
     private string? recherchePatient, rechercheVente, commentaire, motif, erreur;
     private DateOnly du = new(DateTime.Today.Year, DateTime.Today.Month, 1), au = DateOnly.FromDateTime(DateTime.Today);
     private DateOnly dateFacture = DateOnly.FromDateTime(DateTime.Today);
-    // Échéance : 30 jours après l'établissement tant que l'utilisateur ne l'a pas saisie lui-même
-    private const int DelaiEcheanceJours = 30;
-    private DateOnly dateEcheance = DateOnly.FromDateTime(DateTime.Today).AddDays(DelaiEcheanceJours);
+    // Échéance : délai de paiement du destinataire (organisme ou client, 30 jours pour un patient) après l'établissement,
+    // tant que l'utilisateur ne l'a pas saisie lui-même
+    private int DelaiEcheanceJours => destinataire switch
+    {
+        "organisme" => organismes.FirstOrDefault(o => o.Id == organismeId)?.DelaiPaiementJours ?? 30,
+        "entreprise" => clients.FirstOrDefault(c => c.Id == clientId)?.DelaiPaiementJours ?? 30,
+        _ => 30
+    };
+    private DateOnly dateEcheance = DateOnly.FromDateTime(DateTime.Today).AddDays(30);
     private bool echeanceSaisie;
     private void SuivreEcheance() { if (!echeanceSaisie || dateEcheance < dateFacture) dateEcheance = dateFacture.AddDays(DelaiEcheanceJours); }
     private List<VenteAffichee> candidates = [];
@@ -248,6 +256,7 @@
     private void ChangerDestinataire(string code)
     {
         destinataire = code;
+        SuivreEcheance();
         (candidates, charge) = ([], false);
         ventes.Clear();
     }
@@ -261,10 +270,11 @@
     private async Task CreerClientAsync()
     {
         if (nouveauClient is not { } c) return;
-        var (id, e) = await Api.EnregistrerClientFactureAsync(new ClientFactureDto(null, c.RaisonSociale, c.Adresse, c.Telephone, c.Nif, c.Rc, c.Nis, c.Ai, true, c.Email));
+        var (id, e) = await Api.EnregistrerClientFactureAsync(new ClientFactureDto(null, c.RaisonSociale, c.Adresse, c.Telephone, c.Nif, c.Rc, c.Nis, c.Ai, true, c.Email, c.DelaiPaiementJours));
         if (e is not null) { erreur = e; return; }
         (clients, _) = await Api.ClientsFactureAsync();
         (clientId, nouveauClient, erreur) = (id!.Id, null, null);
+        SuivreEcheance();
     }
 
     private Task ChercherVentesAsync() => ChercherVentesAsync(Origine?.PatientId);

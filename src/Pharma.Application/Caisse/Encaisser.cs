@@ -25,11 +25,13 @@ public sealed record CommandeVente(
     IReadOnlyList<LigneCommande> Lignes,
     bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
     long? PatientId, OrdonnanceSaisie? Ordonnance,
-    decimal RemisePct, ModePaiement Mode, decimal? MontantRecu);
+    decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null);
 
+/// <summary>PrixLignes : prix de vente d'une boîte (PPA du lot + SHP), dans l'ordre des lignes envoyées.</summary>
 public sealed record ApercuVente(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
-    decimal MontantTotal, bool OrdonnanceRequise);
+    decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
+    IReadOnlyList<string>? ProduitsBloques = null);
 
 public sealed record VenteEncaissee(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
@@ -58,16 +60,24 @@ public interface IVentesEcriture
 public sealed class Encaisser(
     IPreparationVente preparation, IPatients patients, IVentesEcriture ventes,
     ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, Ordonnances.IStockageOrdonnances scans,
-    IDetenteursDroit? detenteurs = null, Stock.ICampagnesInventaire? campagnes = null)
+    IDetenteursDroit? detenteurs = null, Stock.ICampagnesInventaire? campagnes = null,
+    VerificationCodeComptoir? codesComptoir = null, IJournal? journal = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
     {
-        var (vente, _) = await ConstruireAsync(commande, utilisateurId, sessionId: null, ct);
+        var (vente, produits) = await ConstruireAsync(commande, utilisateurId, sessionId: null, ct);
         return new ApercuVente(
             vente.MontantTotal + vente.MontantRemise, vente.PartOrganisme, vente.MontantRemise,
-            vente.PartPatient, vente.MontantTotal, vente.ContientSousRegistre);
+            vente.PartPatient, vente.MontantTotal, vente.ContientSousRegistre,
+            vente.Lignes.Select(l => l.PrixUnitaire).ToList(), vente.Lignes.Sum(l => l.Shp * l.Quantite),
+            vente.Lignes.Where(l => produits.TryGetValue(l.ProduitId, out var p) && p.EstMedicament).Sum(l => l.PrixUnitaire * l.Quantite),
+            Bloques(produits));
     }
+
+    /// <summary>Produits du panier bloqués à la vente, avec leur motif (à faire valider par une personne habilitée).</summary>
+    private static List<string> Bloques(IReadOnlyDictionary<long, Produit> produits) =>
+        produits.Values.Where(p => p.BloqueVente).Select(p => p.MotifBlocage is { } m ? $"{p.NomCommercial} ({m})" : p.NomCommercial).ToList();
 
     /// <summary>Nomme les employés qui peuvent délivrer : l'un d'eux reprend la vente (Changer d'utilisateur, par son code).</summary>
     private async Task<string> MessagePsychotropeAsync(CancellationToken ct)
@@ -92,6 +102,9 @@ public sealed class Encaisser(
             throw new DroitRefuseException(Permissions.PsychotropesDelivrer, "délivrer un psychotrope", await MessagePsychotropeAsync(ct));
         if (commande.RemisePct > 0)
             await droits.ExigerAsync(utilisateurId, Permissions.CaisseRemise, "accorder une remise", ct);
+        // Produit bloqué à la vente : validé par l'employé s'il en a le droit, sinon par le code d'un pharmacien ou assistant
+        var bloques = Bloques(produits);
+        var validePar = await Catalogue.AutorisationBlocage.ExigerAsync(droits, codesComptoir, utilisateurId, commande.Blocage, poste, "à la vente", bloques, ct);
 
         if (commande.Ordonnance is { } o)
         {
@@ -133,6 +146,11 @@ public sealed class Encaisser(
         var (id, numero) = await ventes.EnregistrerAsync(
             new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit), ct);
 
+        if (validePar is { } vp && journal is not null)
+            await journal.EcrireAsync(utilisateurId, "vente_produit_bloque", "vente", id,
+                new Dictionary<string, object?> { ["ticket"] = numero, ["produits"] = bloques, ["valide_par"] = vp.Id, ["validateur"] = vp.NomComplet },
+                Permissions.ProduitsBloquer, ct);
+
         return new VenteEncaissee(id, numero, vente.MontantTotal, vente.PartOrganisme, vente.PartPatient,
             reglement.Mode, reglement.Rendu);
     }
@@ -167,8 +185,12 @@ public sealed class Encaisser(
                     $"{produit.NomCommercial} : produit repris de l’ancien logiciel, à vérifier par le titulaire avant la vente (Administration, Nomenclature nationale, « Produits à vérifier »).");
             if (!lots.TryGetValue(ligne.LotId, out var lot))
                 throw new RegleMetierException($"{produit.NomCommercial} : lot introuvable, rescannez la boîte.");
-            vente.AjouterProduit(produit, lot, ligne.Quantite, aujourdhui);
+            vente.AjouterProduit(produit, lot, ligne.Quantite, aujourdhui, autoriserBloque: true);   // blocage contrôlé à l'encaissement
         }
+
+        // Tiers payant : reste à charge fixé par le caissier, au lieu du taux de prise en charge
+        if (c.TiersPayant && c.ResteACharge is { } reste)
+            vente.SaisirResteACharge(reste);
 
         if (c.RemisePct > 0)
             vente.AppliquerRemise(c.RemisePct, await droits.RemiseMaxAsync(utilisateurId, ct));

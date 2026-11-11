@@ -4,8 +4,9 @@ namespace Pharma.Domain.Stock;
 public sealed record LotComptoir(long Id, string NumeroLot, DateOnly DatePeremption, string Niveau);
 
 /// <summary>
-/// Premier périmé, premier sorti : la boîte scannée est servie telle quelle, mais si un autre lot du même produit
-/// périme avant elle et que sa péremption est proche, le caissier est prévenu pour servir ce lot d'abord.
+/// Premier périmé, premier sorti : la boîte scannée est servie telle quelle, mais si un autre lot du même produit périme
+/// avant elle, le caissier est prévenu pour servir ce lot d'abord : alerte rouge si ce lot est proche de sa péremption
+/// (seuils rouge ou orange), orange sinon.
 /// </summary>
 public static class RegleFefo
 {
@@ -14,9 +15,13 @@ public static class RegleFefo
 
     public static string? Avertir(LotComptoir scanne, LotComptoir? premier)
     {
-        if (premier is null || premier.Id == scanne.Id || premier.DatePeremption >= scanne.DatePeremption || !EstProche(premier.Niveau))
+        if (premier is null || premier.Id == scanne.Id || premier.DatePeremption >= scanne.DatePeremption)
             return null;
-        return $"Boîte plus récente : le lot {premier.NumeroLot} périme le {premier.DatePeremption:dd/MM/yyyy} (péremption proche), " +
-               $"celle-ci le {scanne.DatePeremption:dd/MM/yyyy}. Servez d’abord une boîte du lot {premier.NumeroLot}.";
+        return $"Boîte plus récente : le lot {premier.NumeroLot} périme le {premier.DatePeremption:dd/MM/yyyy}" +
+               (EstProche(premier.Niveau) ? " (péremption proche)" : "") +
+               $", celle-ci le {scanne.DatePeremption:dd/MM/yyyy}. Servez d’abord une boîte du lot {premier.NumeroLot}.";
     }
+
+    /// <summary>Couleur de l'alerte : rouge si le lot à servir d'abord est proche de sa péremption, orange sinon.</summary>
+    public static string Couleur(LotComptoir premier) => EstProche(premier.Niveau) ? "rouge" : "orange";
 }

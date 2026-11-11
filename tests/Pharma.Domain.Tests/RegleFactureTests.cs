@@ -66,6 +66,11 @@ public class RegleFactureTests
     [Fact]
     public void Rejet_correction_avoir_et_suivi_controles()
     {
+        // Levée du rejet : facture rejetée seulement, motif obligatoire
+        RegleFacture.VerifierLeveeRejet("facture", "rejetee", "Organisme revenu sur son rejet");
+        Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierLeveeRejet("facture", "emise", "x"));
+        Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierLeveeRejet("avoir", "rejetee", "x"));
+        Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierLeveeRejet("facture", "rejetee", " "));
         Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierRejet("facture", "emise", " "));
         Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierRejet("facture", "rejetee", "Erreur de taux"));
         Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierReprise("emise"));

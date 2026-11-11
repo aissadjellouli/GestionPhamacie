@@ -1,0 +1,159 @@
+@page "/guide"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Guide de l'essai : ce qu'il faut essayer, écran par écran, et formulaire de retours (inscrits au journal des actions).
+   Le titulaire voit tous les retours et peut les copier pour les transmettre. *@
+<div class="page">
+    <div class="titre-page">
+        <div>
+            <h1>Guide et retours</h1>
+            <p class="sous-titre">Ce qu’il faut essayer pendant l’essai, et vos remarques : un problème, une idée, une question</p>
+        </div>
+    </div>
+
+    <div class="colonnes">
+        <section class="panneau colonne-principale" aria-labelledby="t-guide">
+            <h2 id="t-guide">À essayer</h2>
+            <p class="detail" style="margin: 0">
+                Base de démonstration : produits, patients, grossistes et factures sont fictifs. Comptes : <strong>titulaire</strong>, <strong>assistant</strong>
+                et <strong>vendeur</strong>, mot de passe <strong>demo</strong>. Rien de ce que vous faites ici ne touche une vraie pharmacie.
+            </p>
+            @foreach (var (titre, etapes) in Parcours)
+            {
+                <details class="carte">
+                    <summary><strong>@titre</strong></summary>
+                    <ol style="margin: 8px 0 0; padding-left: 20px">
+                        @foreach (var e in etapes) { <li>@e</li> }
+                    </ol>
+                </details>
+            }
+        </section>
+
+        <section class="panneau colonne-laterale" aria-labelledby="t-retour">
+            <h2 id="t-retour">Votre remarque</h2>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+            <div class="champ">
+                <label for="re-ecran">Écran concerné</label>
+                <select id="re-ecran" @bind="ecran">
+                    @foreach (var e in Ecrans) { <option value="@e">@e</option> }
+                </select>
+            </div>
+            <fieldset class="champ" style="border: 0; padding: 0; margin: 0" data-champ="genre_retour">
+                <legend class="etiquette-champ requis">Genre</legend>
+                <div class="filtres" role="radiogroup">
+                    @foreach (var (code, libelle) in GenresAffiches)
+                    {
+                        <button type="button" role="radio" class="puce" aria-checked="@(genre == code ? "true" : "false")" aria-pressed="@(genre == code ? "true" : "false")"
+                                @onclick="() => genre = code">@libelle</button>
+                    }
+                </div>
+            </fieldset>
+            <div class="champ">
+                <label for="re-texte" class="requis">Remarque</label>
+                <textarea id="re-texte" data-champ="texte_retour" rows="6" maxlength="4000" placeholder="Ce que vous avez fait, ce qui s’est passé, ce que vous attendiez" @bind="texte"></textarea>
+            </div>
+            <div class="filtres">
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnvoyerAsync">Enregistrer la remarque</button>
+            </div>
+
+            <h2 style="margin-top: 12px">Remarques enregistrées (@retours.Count)</h2>
+            <p class="detail" style="margin: 0">Le titulaire voit les remarques de tous ; les autres employés voient les leurs.</p>
+            @if (retours.Count > 0)
+            {
+                <div class="filtres">
+                    <button type="button" class="btn" @onclick="Copier">Copier les remarques (pour les envoyer)</button>
+                    @if (copie is not null) { <span class="detail" role="status">@copie</span> }
+                </div>
+                <ul class="liste-simple" style="display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none">
+                    @foreach (var r in retours)
+                    {
+                        <li class="carte">
+                            <span class="detail">@Libelles.DateHeureLocale(r.Date) · @r.Employe · @r.Ecran · <span class="pastille @(r.Genre == "probleme" ? "urgent" : "info")">@LibelleGenre(r.Genre)</span></span>
+                            <p style="margin: 4px 0 0; white-space: pre-wrap">@r.Texte</p>
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="vide" style="margin: 0">Aucune remarque pour l’instant.</p>
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private static readonly string[] Ecrans =
+        ["Général", "Caisse", "Stock", "Achats : commandes", "Achats : réceptions", "Achats : règlements", "Factures", "Trésorerie", "Dettes et créances",
+         "Rapports", "Alertes", "Registre des psychotropes", "Administration", "Impression (ticket, étiquettes)", "Scanner mobile"];
+
+    private static readonly (string Code, string Libelle)[] GenresAffiches = [("probleme", "Problème"), ("suggestion", "Suggestion"), ("question", "Question")];
+    private static string LibelleGenre(string g) => GenresAffiches.FirstOrDefault(x => x.Code == g).Libelle ?? g;
+
+    /// <summary>Parcours à essayer, dans l'ordre d'une journée à l'officine.</summary>
+    private static readonly (string, string[])[] Parcours =
+    [
+        ("1. Ouvrir la caisse et vendre", [
+            "Caisse : ouvrez la caisse du poste avec le fond de caisse proposé.",
+            "Cherchez « paracétamol », ajoutez-le ; scannez une étiquette si vous avez une douchette.",
+            "Encaissez en espèces avec un montant reçu : vérifiez le rendu et imprimez le ticket."]),
+        ("2. Tiers payant (CNAS, CASNOS)", [
+            "Choisissez « Tiers payant », un patient fictif assuré et le taux 80 % ou 100 %.",
+            "Saisissez un reste à charge à la main : la part de l’organisme devient la différence.",
+            "Vérifiez le SHP ajouté au prix des médicaments listés, et les totaux médicaments / autres produits."]),
+        ("3. Crédit et règlement", [
+            "Vendez à crédit à un patient fictif, puis réglez une partie de sa dette (lien « Relevé de dette »).",
+            "Ouvrez la fiche du patient (clic sur son nom) et modifiez son plafond de crédit."]),
+        ("4. Réception d’une livraison", [
+            "Achats › Réceptions : choisissez un grossiste, ajoutez un produit, saisissez lot, péremption, prix HT, remise, PPA.",
+            "Indiquez des unités gratuites (UG) et choisissez « UG à 0 DA » ou « Coût réparti ».",
+            "Comparez le pied de page avec une vraie facture : total HT, remise, TVA, timbre, net à payer, SHP."]),
+        ("5. Factures et organismes", [
+            "Factures : établissez une facture pour un organisme à partir de ventes en tiers payant.",
+            "Rejetez-la avec un motif, puis levez le rejet ou corrigez-la."]),
+        ("6. Fin de journée", [
+            "Clôturez la caisse en comptant le tiroir ; consultez le rapport de clôture.",
+            "Rapports : chiffre d’affaires du jour, médicaments et autres produits, SHP.",
+            "Alertes : péremptions à 30, 60 et 180 jours, règlements grossistes à préparer."]),
+    ];
+
+    private List<RetourEssaiDto> retours = [];
+    private string ecran = "Général";
+    private string genre = "probleme";
+    private string? texte, erreur, message, copie;
+    private bool enCours;
+
+    protected override async Task OnInitializedAsync() => await ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        var (liste, e) = await Api.RetoursEssaiAsync();
+        (retours, erreur) = (liste, e);
+    }
+
+    private async Task EnvoyerAsync()
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var e = await Api.EnvoyerRetourEssaiAsync(new NouveauRetourEssaiDto(ecran, genre, texte));
+            if (e is not null) { erreur = e; return; }
+            (texte, message) = (null, "Remarque enregistrée. Merci !");
+            await ChargerAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    private void Copier()
+    {
+        var lignes = retours.Select(r => $"[{Libelles.DateHeureLocale(r.Date)}] {r.Employe} · {r.Ecran} · {LibelleGenre(r.Genre)}{Environment.NewLine}{r.Texte}");
+        try
+        {
+            System.Windows.Clipboard.SetText(string.Join(Environment.NewLine + Environment.NewLine, lignes));
+            copie = $"{retours.Count} remarque(s) copiée(s) : collez-les dans un e-mail ou un message.";
+        }
+        catch (System.Runtime.InteropServices.ExternalException) { copie = "Copie impossible : le presse-papiers est occupé, réessayez."; }
+    }
+}

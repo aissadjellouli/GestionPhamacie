@@ -83,7 +83,7 @@ public sealed record ErreurDto(string Message, string? Champ = null);
 public sealed record EtatCaisseDto(
     long? SessionId, DateTime? OuverteLe, decimal? FondCaisse, string? Poste,
     bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes,
-    bool PeutVoirEcart, decimal? VentesEspeces, string? OuvertePar = null, bool ConnexionParCode = false);
+    bool PeutVoirEcart, decimal? VentesEspeces, string? OuvertePar = null, bool ConnexionParCode = false, decimal PlafondCreditDefaut = 0);
 
 public sealed record OuvrirCaisseRequete(string? Poste, decimal? FondCaisse);
 
@@ -97,11 +97,16 @@ public sealed record OrdonnanceDto(long? MedecinId, DateOnly DatePrescription, s
 /// <summary>Mode : especes, carte, cheque ou credit.</summary>
 public sealed record CommandeVenteDto(
     IReadOnlyList<LigneCommandeDto> Lignes, bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
-    long? PatientId, OrdonnanceDto? Ordonnance, decimal RemisePct, string Mode, decimal? MontantRecu);
+    long? PatientId, OrdonnanceDto? Ordonnance, decimal RemisePct, string Mode, decimal? MontantRecu, decimal? ResteACharge = null,
+    ValidationBlocageDto? Blocage = null);
+
+/// <summary>Accord pour un produit bloqué : confirmé par l'employé habilité, sinon validé par le code comptoir d'un habilité.</summary>
+public sealed record ValidationBlocageDto(bool Accepte, string? ValidateurIdentifiant = null, string? ValidateurCode = null);
 
 public sealed record ApercuVenteDto(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
-    decimal MontantTotal, bool OrdonnanceRequise);
+    decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
+    IReadOnlyList<string>? ProduitsBloques = null);
 
 public sealed record VenteEncaisseeDto(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
@@ -118,7 +123,8 @@ public sealed record ClotureDto(
 public sealed record ReleveDto(ClotureDto Cloture, long NouvelleSessionId);
 
 /// <summary>VersementCloture : manuel ou automatique (argent des caisses clôturées vers le coffre).</summary>
-public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel");
+public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel",
+    decimal PlafondCreditDefaut = 0);
 
 public sealed record EntreeJournalDto(DateTime Date, string Employe, string Action, string? Details, string? AutorisePar, long? EmployeId = null, long? AutoriseParId = null);
 
@@ -128,10 +134,14 @@ public sealed record PatientDto(
     long Id, string Nom, string? Prenom, string? Telephone, string? NumAssure,
     long? OrganismeId, string? Organisme, decimal PlafondCredit, decimal SoldeCredit);
 
+/// <summary>Fiche complète d'un patient (SoldeCredit en lecture seule).</summary>
+public sealed record FichePatientDto(long Id, string Nom, string? Prenom, DateOnly? DateNaissance, string? Telephone, string? Email, string? NumAssure,
+    long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0);
+
 public sealed record NouveauPatientDto(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
 public sealed record MedecinDto(long Id, string Nom, string? Specialite);
 public sealed record NouveauMedecinDto(string Nom, string? Specialite);
-public sealed record OrganismeDto(long Id, string Code, string Nom);
+public sealed record OrganismeDto(long Id, string Code, string Nom, int DelaiPaiementJours = 30);
 public sealed record IdentifiantDto(long Id);
 
 // ---- Administration : seuils ----------------------------------------------------
@@ -199,13 +209,16 @@ public sealed record ModificationLigneCommandeRequete(int Quantite, decimal Prix
 public sealed record LigneReceptionDto(
     long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, int Quantite, decimal PrixAchatHt,
     string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null, bool LotSepare = false, bool EntrerBloque = false,
-    decimal RemisePct = 0, decimal? Ppa = null, decimal? Shp = null);
+    decimal RemisePct = 0, decimal? Ppa = null, decimal? Shp = null,
+    int Ug = 0, bool UgCoutReparti = false, bool RemplacerPrixCatalogue = false);
 
 public sealed record ReceptionRequete(
-    long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionDto> Lignes, decimal Timbre = 0);
+    long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionDto> Lignes, decimal Timbre = 0,
+    ValidationBlocageDto? Blocage = null);
 
 /// <summary>Liste du médicament, prix public du catalogue, TVA et SHP proposé par boîte.</summary>
-public sealed record InfoAchatProduitDto(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite);
+public sealed record InfoAchatProduitDto(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite,
+    bool BloqueAchat = false, string? MotifBlocage = null);
 
 public sealed record LotRecuDto(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int Etiquettes, bool LotExistant);
 public sealed record ReceptionEnregistreeDto(long ReceptionId, decimal MontantTtc, IReadOnlyList<LotRecuDto> Lots);
@@ -291,7 +304,20 @@ public sealed record ResultatSauvegardeDto(string Statut, string? Fichier, long?
 public sealed record NouveauProduitDto(
     string? NomCommercial, string? Dci, string? Dosage, string? Forme, decimal PrixPublic, string Classe,
     string? CodeBarre, decimal? TarifReference, bool Remboursable, decimal TauxTva, int? StockMinimum,
-    string? NumEnregistrement = null);
+    string? NumEnregistrement = null, string Categorie = "medicament", string? ListePsychotrope = null);
+
+/// <summary>Catégorie de produits (045) ; Medicament : comptée dans les totaux « médicaments ».</summary>
+/// <summary>Remarque laissée pendant l'essai (page « Guide et retours ») ; Genre : probleme, suggestion ou question.</summary>
+public sealed record RetourEssaiDto(DateTime Date, string Employe, string Ecran, string Genre, string Texte);
+public sealed record NouveauRetourEssaiDto(string? Ecran, string? Genre, string? Texte);
+
+/// <summary>Blocage d'un produit à l'achat et/ou à la vente (046).</summary>
+public sealed record BlocageProduitDto(long ProduitId, string Nom, bool BloqueAchat, bool BloqueVente, string? Motif);
+public sealed record BlocageProduitRequete(bool BloqueAchat, bool BloqueVente, string? Motif);
+
+public sealed record CategorieProduitDto(string Code, string Libelle, bool Medicament);
+public sealed record ClassementProduitDto(long ProduitId, string Nom, string Classe, string Categorie, string? ListePsychotrope);
+public sealed record ClassementProduitRequete(string? Categorie, string? ListePsychotrope);
 
 // ---- Emplacements ---------------------------------------------------------------
 
@@ -340,7 +366,7 @@ public sealed record IdsRequete(IReadOnlyList<long> Ids);
 
 /// <summary>Boîte scannée en caisse : son lot est servi ; LotConseille périme avant elle (péremption proche).</summary>
 public sealed record BoiteCaisseDto(long ProduitId, string Produit, decimal PrixPublic, int StockProduit,
-    LotFefoDto Lot, LotFefoDto? LotConseille, string? Avertissement, string? Emplacement = null);
+    LotFefoDto Lot, LotFefoDto? LotConseille, string? Avertissement, string? Emplacement = null, string? CouleurAvertissement = null);
 
 /// <summary>Seuil d'alerte de stock d'un produit : SeuilManuel (saisi) remplace SeuilAuto ; null = automatique.</summary>
 public sealed record SeuilStockDto(long ProduitId, string Nom, int Stock, decimal VentesParJour, int SeuilAuto, int? SeuilManuel, int SeuilApplique, string Statut);
@@ -353,7 +379,7 @@ public sealed record ConflitReceptionDto(int Index, string Type, string Message,
 
 /// <summary>ChiffreAffaires : net des retours clients de la période (Retours, MontantRetours).</summary>
 public sealed record SyntheseVentesDto(int NombreVentes, decimal ChiffreAffaires, decimal PartOrganismes, decimal CreditsAccordes, decimal Remises, int Annulations,
-    int Retours = 0, decimal MontantRetours = 0);
+    int Retours = 0, decimal MontantRetours = 0, decimal VentesMedicaments = 0, decimal VentesAutres = 0, decimal Shp = 0);
 /// <summary>Taux en % ; null si le chiffre d'affaires HT est nul.</summary>
 public sealed record MargeBruteDto(decimal ChiffreAffairesHt, decimal CoutAchat, decimal Montant, decimal? Taux);
 public sealed record VentesJourDto(DateOnly Date, int NombreVentes, decimal ChiffreAffaires);
@@ -433,7 +459,7 @@ public sealed record RegistreDto(DateOnly Du, DateOnly Au, string? Produit, IRea
 
 // ---- Ticket de caisse ------------------------------------------------------------
 
-public sealed record LigneTicketDto(string Produit, int Quantite, decimal PrixUnitaire, decimal Montant, decimal PartOrganisme);
+public sealed record LigneTicketDto(string Produit, int Quantite, decimal PrixUnitaire, decimal Montant, decimal PartOrganisme, decimal Shp = 0, bool Medicament = true);
 
 /// <summary>Mode : especes, carte, cheque ou credit ; Statut : validee ou annulee.</summary>
 public sealed record TicketDto(
@@ -575,7 +601,7 @@ public sealed record InfoContactDto(string Libelle, string Valeur, string? Genre
 public sealed record FicheContactDto(string Type, long Id, string Nom, string Precision, bool Actif, IReadOnlyList<InfoContactDto> Coordonnees,
     IReadOnlyList<InfoContactDto> Situation, bool CoordonneesMasquees, CoordonneesContactDto? Saisie = null, bool Modifiable = false);
 /// <summary>Coordonnées modifiables depuis la fiche contact (adresse : grossiste et entreprise seulement).</summary>
-public sealed record CoordonneesContactDto(string? Telephone, string? Email, string? Adresse);
+public sealed record CoordonneesContactDto(string? Telephone, string? Email, string? Adresse, int? DelaiPaiementJours = null);
 
 // ---- Pagination commune aux listes ---------------------------------------------------------
 

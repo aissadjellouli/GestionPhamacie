@@ -21,7 +21,7 @@ internal static class CaisseEndpoints
                 if (b is null) return Results.NoContent();
                 LotFefoDto Lot(LotCaisse l) => new(l.LotId, l.NumeroLot, l.DatePeremption, l.Quantite, l.Fournisseur, [], b.StockProduit);
                 return Results.Ok(new BoiteCaisseDto(b.ProduitId, b.Produit, b.PrixPublic, b.StockProduit, Lot(b.Lot),
-                    b.LotConseille is null ? null : Lot(b.LotConseille), b.Avertissement, b.Emplacement));
+                    b.LotConseille is null ? null : Lot(b.LotConseille), b.Avertissement, b.Emplacement, b.CouleurAvertissement));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -31,7 +31,7 @@ internal static class CaisseEndpoints
                 var e = await obtenir.ExecuterAsync(user.UtilisateurId(), requete.Poste(), ct);
                 return Results.Ok(new EtatCaisseDto(e.SessionId, e.OuverteLe, e.FondCaisse, e.Poste,
                     e.Parametres.ComptageAveugle, e.Parametres.FondCaisseDefaut, e.Parametres.SeuilEcart,
-                    e.Parametres.DeconnexionMinutes, e.PeutVoirEcart, e.VentesEspecesVisibles, e.OuvertePar, user.ParCodeComptoir()));
+                    e.Parametres.DeconnexionMinutes, e.PeutVoirEcart, e.VentesEspecesVisibles, e.OuvertePar, user.ParCodeComptoir(), e.Parametres.PlafondCreditDefaut));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -42,7 +42,8 @@ internal static class CaisseEndpoints
         caisse.MapPost("/calculer", async (CommandeVenteDto req, Encaisser encaisser, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 var a = await encaisser.CalculerAsync(VersCommande(req), user.UtilisateurId(), ct);
-                return Results.Ok(new ApercuVenteDto(a.MontantBrut, a.PartOrganisme, a.MontantRemise, a.PartPatient, a.MontantTotal, a.OrdonnanceRequise));
+                return Results.Ok(new ApercuVenteDto(a.MontantBrut, a.PartOrganisme, a.MontantRemise, a.PartPatient, a.MontantTotal, a.OrdonnanceRequise,
+                    a.PrixLignes, a.Shp, a.TotalMedicaments, a.ProduitsBloques));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -68,7 +69,7 @@ internal static class CaisseEndpoints
             {
                 var t = await obtenir.ExecuterAsync(id, ct);
                 return Results.Ok(new TicketDto(t.Numero, t.Date, t.Vendeur, t.Poste, t.Statut, t.Organisme, t.TauxTiersPayant,
-                    t.Lignes.Select(l => new LigneTicketDto(l.Produit, l.Quantite, l.PrixUnitaire, l.Montant, l.PartOrganisme)).ToList(),
+                    t.Lignes.Select(l => new LigneTicketDto(l.Produit, l.Quantite, l.PrixUnitaire, l.Montant, l.PartOrganisme, l.Shp, l.Medicament)).ToList(),
                     t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif));
             })
            .ExigerPermission(Permissions.CaisseVendre);
@@ -144,6 +145,11 @@ internal static class CaisseEndpoints
                 Results.Ok((await detenteurs.ListerAsync(Permissions.PsychotropesDelivrer, ct)).Select(d => new DetenteurDroitDto(d.NomComplet, d.CodeComptoir))))
            .ExigerPermission(Permissions.CaisseVendre);
 
+        // Qui peut valider un produit bloqué (à la vente ou à l'achat) avec son code comptoir
+        api.MapGet("/produits/validateurs-blocage", async (Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(Permissions.ProduitsBloquer, ct)).Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet))))
+           .RequireAuthorization();
+
         caisse.MapGet("/validateurs-annulation", async (Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(Permissions.CaisseAnnulerVente, ct)).Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet))))
            .ExigerPermission(Permissions.CaisseVendre);
@@ -181,6 +187,7 @@ internal static class CaisseEndpoints
             d.TiersPayant, d.OrganismeId, d.TauxTiersPayant, d.PatientId,
             d.Ordonnance is { } o ? new OrdonnanceSaisie(o.MedecinId, o.DatePrescription, o.Numero, o.JetonScan, o.TexteReconnu,
                 o.PorteurNom is null && o.PorteurAdresse is null && o.PorteurPiece is null ? null : new PorteurOrdonnance(o.PorteurNom, o.PorteurAdresse, o.PorteurPiece)) : null,
-            d.RemisePct, mode, d.MontantRecu);
+            d.RemisePct, mode, d.MontantRecu, d.ResteACharge,
+            d.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null);
     }
 }

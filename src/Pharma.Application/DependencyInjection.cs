@@ -107,7 +107,10 @@ public static class DependencyInjection
         services.AddScoped<Caisse.CorrigerDetteCredit>();
         services.AddScoped<Suivi.ObtenirSuiviDettes>();
         services.AddScoped<Contacts.ConsulterContact>();
+        services.AddScoped<Patients.ModifierPatient>();
+        services.AddScoped<Patients.LireFichePatient>();
         services.AddScoped<Contacts.ModifierCoordonneesContact>();
+        services.AddScoped<Essai.RetoursEssai>();
         services.AddScoped<Suivi.ModifierDelaiAlerteDettes>();
         services.AddScoped<Tresorerie.ConsulterTresorerie>();
         services.AddScoped<Tresorerie.EnregistrerCompteTresorerie>();
@@ -140,6 +143,11 @@ public static class DependencyInjection
         services.AddScoped<Mobile.RemettreScansEnAttente>();
         services.AddScoped<Achats.LireDataMatrix>();
         services.AddScoped<CreerProduit>();
+        services.AddScoped<ListerCategoriesProduits>();
+        services.AddScoped<LireClassementProduit>();
+        services.AddScoped<ModifierClassementProduit>();
+        services.AddScoped<LireBlocageProduit>();
+        services.AddScoped<ModifierBlocageProduit>();
         services.AddScoped<ListerEmplacements>();
         services.AddScoped<EnregistrerEmplacement>();
         services.AddScoped<RangerProduit>();

@@ -1,0 +1,65 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Produit bloqué au panier ou dans une réception : passe seulement avec la validation d'une personne qui a le droit
+   « produits.bloquer ». L'employé habilité confirme lui-même ; sinon le pharmacien ou l'assistant choisit son nom et tape son code comptoir. *@
+@if (Produits.Count > 0)
+{
+    <div class="avertissement-fefo rouge" role="alert" data-champ="produit_bloque">
+        <span>Produit bloqué @Operation : @string.Join(", ", Produits).</span>
+        @if (Session.A("produits.bloquer"))
+        {
+            <label class="case"><input type="checkbox" checked="@Accord.Accepte" @onchange="e => Changer(() => Accord.Accepte = e.Value is true)" />
+                <span>Je valide @(Operation == "à la vente" ? "la vente" : "la réception") de ce produit bloqué</span></label>
+        }
+        else
+        {
+            <span class="detail">Le pharmacien ou l’assistant doit valider avec son code comptoir.</span>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 2 1 200px">
+                    <label for="vb-valideur-@Id" class="requis">Validé par</label>
+                    <select id="vb-valideur-@Id" value="@Accord.Validateur" @onchange="e => Changer(() => Accord.Validateur = e.Value as string)">
+                        <option value="">Choisir…</option>
+                        @foreach (var v in validateurs) { <option value="@v.Identifiant">@v.NomComplet</option> }
+                    </select>
+                </div>
+                <div class="champ" style="flex: 1 1 130px">
+                    <label for="vb-code-@Id" class="requis">Son code comptoir</label>
+                    <input id="vb-code-@Id" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"
+                           onbeforeinput="@CodeComptoirSaisie.FiltreChiffres" value="@Accord.Code"
+                           @oninput="e => Changer(() => Accord.Code = e.Value as string)" />
+                </div>
+            </div>
+            @if (validateurs.Count == 0)
+            {
+                <span class="detail">Aucun pharmacien ou assistant n’a encore choisi de code comptoir (« Mon code comptoir », en haut de l’écran).</span>
+            }
+        }
+    </div>
+}
+
+@code {
+    /// <summary>Produits bloqués (nom et motif).</summary>
+    [Parameter] public IReadOnlyList<string> Produits { get; set; } = [];
+    /// <summary>« à la vente » ou « à l’achat ».</summary>
+    [Parameter] public string Operation { get; set; } = "à la vente";
+    [Parameter] public string Id { get; set; } = "vb";
+    [Parameter, EditorRequired] public AccordBlocage Accord { get; set; } = new();
+    [Parameter] public EventCallback OnChange { get; set; }
+
+    private List<VendeurComptoirDto> validateurs = [];
+    private bool charges;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (charges || Produits.Count == 0 || Session.A("produits.bloquer")) return;
+        charges = true;
+        (validateurs, _) = await Api.ValidateursBlocageAsync();
+    }
+
+    private async Task Changer(Action modification)
+    {
+        modification();
+        await OnChange.InvokeAsync();
+    }
+}

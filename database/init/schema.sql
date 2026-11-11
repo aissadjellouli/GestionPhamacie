@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 044 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 046 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 044 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 046 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict 005pMfdPUlqv0DjXTYNPnhtpD8479CEeraP6q6FQ01NZ2dahqKgfACefDHigdG0
+\restrict GXoJ3tnDSPyH0MHYKphKnkIyUNzH8dJHH5NyqAFQKd1OgCq6U9boyQI7wS8BcnA
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -48,6 +48,8 @@ SET row_security = off;
 
 CREATE SCHEMA import;
 
+
+--
 
 --
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
@@ -1760,6 +1762,19 @@ CREATE TABLE public.campagne_inventaire_ligne (
 
 
 --
+-- Name: categorie_produit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.categorie_produit (
+    code text NOT NULL,
+    libelle text NOT NULL,
+    medicament boolean DEFAULT false NOT NULL,
+    ordre integer DEFAULT 0 NOT NULL,
+    actif boolean DEFAULT true NOT NULL
+);
+
+
+--
 -- Name: client_facture; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1774,7 +1789,9 @@ CREATE TABLE public.client_facture (
     article_imposition text,
     actif boolean DEFAULT true NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    email text
+    email text,
+    delai_paiement_jours integer DEFAULT 30 NOT NULL,
+    CONSTRAINT ck_client_facture_delai_paiement CHECK (((delai_paiement_jours >= 1) AND (delai_paiement_jours <= 365)))
 );
 
 
@@ -2429,6 +2446,8 @@ CREATE TABLE public.ligne_vente (
     taux_remboursement numeric(5,2) DEFAULT 0 NOT NULL,
     montant_organisme numeric(12,2) DEFAULT 0 NOT NULL,
     montant_patient numeric(12,2) DEFAULT 0 NOT NULL,
+    shp numeric(8,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_ligne_vente_shp CHECK ((shp >= (0)::numeric)),
     CONSTRAINT ligne_vente_quantite_check CHECK ((quantite > 0)),
     CONSTRAINT ligne_vente_taux_remboursement_check CHECK (((taux_remboursement >= (0)::numeric) AND (taux_remboursement <= (100)::numeric)))
 );
@@ -2466,6 +2485,8 @@ CREATE TABLE public.lot (
     bloque boolean DEFAULT false NOT NULL,
     motif_blocage text,
     date_a_verifier boolean DEFAULT false NOT NULL,
+    ppa numeric(12,2),
+    CONSTRAINT ck_lot_ppa CHECK (((ppa IS NULL) OR (ppa >= (0)::numeric))),
     CONSTRAINT lot_quantite_disponible_check CHECK ((quantite_disponible >= 0))
 );
 
@@ -2742,7 +2763,9 @@ CREATE TABLE public.organisme (
     nif text,
     actif boolean DEFAULT true NOT NULL,
     telephone text,
-    email text
+    email text,
+    delai_paiement_jours integer DEFAULT 30 NOT NULL,
+    CONSTRAINT ck_organisme_delai_paiement CHECK (((delai_paiement_jours >= 1) AND (delai_paiement_jours <= 365)))
 );
 
 
@@ -2857,7 +2880,9 @@ CREATE TABLE public.parametre_caisse (
     deconnexion_minutes integer DEFAULT 0 NOT NULL,
     versement_cloture text DEFAULT 'manuel'::text NOT NULL,
     delai_alerte_dette_jours integer DEFAULT 30 NOT NULL,
+    plafond_credit_defaut numeric(12,2) DEFAULT 0 NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
+    CONSTRAINT ck_plafond_credit_defaut CHECK ((plafond_credit_defaut >= (0)::numeric)),
     CONSTRAINT ck_versement_cloture CHECK ((versement_cloture = ANY (ARRAY['manuel'::text, 'automatique'::text]))),
     CONSTRAINT parametre_caisse_deconnexion_minutes_check CHECK ((deconnexion_minutes >= 0)),
     CONSTRAINT parametre_caisse_fond_caisse_defaut_check CHECK ((fond_caisse_defaut >= (0)::numeric)),
@@ -3029,6 +3054,12 @@ CREATE TABLE public.produit (
     emplacement_id bigint,
     reserve_id bigint,
     a_verifier boolean DEFAULT false NOT NULL,
+    liste_psychotrope text,
+    categorie text DEFAULT 'medicament'::text NOT NULL,
+    bloque_achat boolean DEFAULT false NOT NULL,
+    bloque_vente boolean DEFAULT false NOT NULL,
+    motif_blocage text,
+    CONSTRAINT ck_produit_liste_psychotrope CHECK (((liste_psychotrope IS NULL) OR (liste_psychotrope = ANY (ARRAY['liste_i'::text, 'liste_ii'::text])))),
     CONSTRAINT ck_seuils_produit CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
     CONSTRAINT produit_classe_check CHECK ((classe = ANY (ARRAY['libre'::text, 'liste_i'::text, 'liste_ii'::text, 'psychotrope'::text, 'stupefiant'::text]))),
     CONSTRAINT produit_jours_orange_check CHECK ((jours_orange > 0)),
@@ -3106,10 +3137,13 @@ CREATE TABLE public.reception_ligne (
     ppa numeric(12,2),
     shp numeric(8,2) DEFAULT 0 NOT NULL,
     taux_tva numeric(5,2) DEFAULT 0 NOT NULL,
+    ug integer DEFAULT 0 NOT NULL,
+    ug_cout text DEFAULT 'zero'::text NOT NULL,
+    prix_catalogue_remplace boolean DEFAULT false NOT NULL,
+    CONSTRAINT ck_reception_ligne_quantites CHECK (((quantite >= 0) AND (ug >= 0) AND ((quantite + ug) > 0) AND (ug_cout = ANY (ARRAY['zero'::text, 'reparti'::text])))),
     CONSTRAINT reception_ligne_ppa_check CHECK (((ppa IS NULL) OR (ppa >= (0)::numeric))),
     CONSTRAINT reception_ligne_prix_achat_ht_check CHECK ((prix_achat_ht >= (0)::numeric)),
     CONSTRAINT reception_ligne_prix_net_ht_check CHECK ((prix_net_ht >= (0)::numeric)),
-    CONSTRAINT reception_ligne_quantite_check CHECK ((quantite > 0)),
     CONSTRAINT reception_ligne_remise_pct_check CHECK (((remise_pct >= (0)::numeric) AND (remise_pct <= (100)::numeric))),
     CONSTRAINT reception_ligne_shp_check CHECK ((shp >= (0)::numeric))
 );
@@ -3610,6 +3644,7 @@ CREATE TABLE public.vente (
     remise_pct numeric(5,2) DEFAULT 0 NOT NULL,
     montant_remise numeric(12,2) DEFAULT 0 NOT NULL,
     taux_tiers_payant numeric(5,2),
+    reste_saisi boolean DEFAULT false NOT NULL,
     CONSTRAINT vente_check CHECK (((type = 'libre'::text) OR ((organisme_id IS NOT NULL) AND (patient_id IS NOT NULL)))),
     CONSTRAINT vente_montant_remise_check CHECK ((montant_remise >= (0)::numeric)),
     CONSTRAINT vente_remise_pct_check CHECK (((remise_pct >= (0)::numeric) AND (remise_pct <= (100)::numeric))),
@@ -4652,6 +4687,14 @@ ALTER TABLE ONLY public.campagne_inventaire_ligne
 
 ALTER TABLE ONLY public.campagne_inventaire
     ADD CONSTRAINT campagne_inventaire_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: categorie_produit categorie_produit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.categorie_produit
+    ADD CONSTRAINT categorie_produit_pkey PRIMARY KEY (code);
 
 
 --
@@ -6574,6 +6617,14 @@ ALTER TABLE ONLY public.facture_client_version
 
 
 --
+-- Name: produit fk_produit_categorie; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.produit
+    ADD CONSTRAINT fk_produit_categorie FOREIGN KEY (categorie) REFERENCES public.categorie_produit(code);
+
+
+--
 -- Name: fournisseur_mouvement fournisseur_mouvement_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7329,5 +7380,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 005pMfdPUlqv0DjXTYNPnhtpD8479CEeraP6q6FQ01NZ2dahqKgfACefDHigdG0
+\unrestrict GXoJ3tnDSPyH0MHYKphKnkIyUNzH8dJHH5NyqAFQKd1OgCq6U9boyQI7wS8BcnA
 

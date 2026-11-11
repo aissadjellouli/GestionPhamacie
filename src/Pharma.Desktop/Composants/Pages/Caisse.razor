@@ -268,7 +268,7 @@
                                     </div>
                                     @if (l.AvertissementFefo is not null && l.LotConseille is { } conseille)
                                     {
-                                        <div class="avertissement-fefo" role="alert">
+                                        <div class="avertissement-fefo @l.CouleurFefo" role="alert">
                                             <span>@l.AvertissementFefo</span>
                                             <span class="detail">Lot @conseille.NumeroLot : @conseille.Quantite boîte(s) en stock@(l.EmplacementConseille is { } empl ? $" · rangé {empl}" : "") · fournisseur @conseille.Fournisseur</span>
                                             <div style="display: flex; gap: 8px; flex-wrap: wrap">
@@ -282,7 +282,7 @@
                                         <span>× @l.Quantite</span>
                                         <button type="button" class="btn btn-icone" aria-label="Ajouter une boîte" disabled="@(l.Quantite >= lot.Quantite)" @onclick="() => ChangerAsync(l, +1)">+</button>
                                     </div>
-                                    <span class="montant">@Libelles.Dinars(l.Prix * l.Quantite)</span>
+                                    <span class="montant">@Libelles.Dinars(l.Prix * l.Quantite, 2)</span>
                                     @if (l.QuantiteDemandee > l.Quantite)
                                     {
                                         <div class="manque">
@@ -346,7 +346,17 @@
                                 <button type="button" class="puce" aria-pressed="@(taux == 100 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(100)">100 %</button>
                             </div>
                         </div>
+                        <div class="champ" style="flex: 1 1 180px">
+                            <label for="reste-saisi">Reste à charge du patient (DA)</label>
+                            <input id="reste-saisi" data-champ="reste_a_charge" type="number" min="0" step="0.01" placeholder="Selon le taux"
+                                   @bind="resteSaisi" @bind:after="RecalculerAsync" />
+                        </div>
                     </div>
+                    <p class="detail" style="margin: 0">
+                        @(resteSaisi is null
+                            ? "Laissez le reste à charge vide pour appliquer le taux de prise en charge."
+                            : "Reste à charge saisi : le taux n’est pas appliqué, la part de l’organisme est la différence. Videz la case pour revenir au taux.")
+                    </p>
                 }
 
                 <!-- Patient -->
@@ -469,9 +479,18 @@
                     </div>
                 }
 
+                <ValidationProduitBloque Produits="@(apercu?.ProduitsBloques ?? [])" Operation="à la vente" Id="caisse" Accord="accordBlocage" OnChange="StateHasChanged" />
                 <div class="separateur"></div>
                 @if (erreurCalcul is not null) { <div class="erreur" role="alert">@erreurCalcul</div> }
                 <div class="ligne-total"><span>Total</span><span>@Libelles.Dinars(apercu?.MontantBrut ?? 0, 2)</span></div>
+                @if (apercu is { } ap && ap.MontantBrut - ap.TotalMedicaments > 0)
+                {
+                    <div class="ligne-total detail"><span>Médicaments · autres produits</span><span>@Libelles.Dinars(ap.TotalMedicaments, 2) · @Libelles.Dinars(ap.MontantBrut - ap.TotalMedicaments, 2)</span></div>
+                }
+                @if ((apercu?.Shp ?? 0) > 0)
+                {
+                    <div class="ligne-total detail"><span>dont SHP (honoraire du pharmacien)</span><span>@Libelles.Dinars(apercu!.Shp, 2)</span></div>
+                }
                 @if (tiersPayant)
                 {
                     <div class="ligne-total"><span>Part @(organismes.FirstOrDefault(o => o.Id == organismeId)?.Code ?? "organisme")</span><span>@Libelles.Dinars(apercu?.PartOrganisme ?? 0, 2)</span></div>
@@ -540,7 +559,10 @@
     {
         public required long ProduitId { get; init; }
         public required string Nom { get; init; }
-        public required decimal Prix { get; init; }
+        /// <summary>Prix d'une boîte : celui calculé par le serveur (PPA du lot + SHP) dès le premier calcul.</summary>
+        public required decimal Prix { get; set; }
+        /// <summary>Alerte de lot plus ancien : rouge (lot proche de sa péremption) ou orange.</summary>
+        public string? CouleurFefo { get; set; }
         public LotFefoDto? Lot { get; set; }
         /// <summary>Boîtes vendables du produit, tous lots (pour afficher le stock restant).</summary>
         public int StockProduit { get; set; }
@@ -603,6 +625,8 @@
     private bool tiersPayant;
     private long organismeId;
     private int taux = 80;
+    /// <summary>Tiers payant : reste à charge fixé par le caissier (null : selon le taux).</summary>
+    private decimal? resteSaisi;
     private PatientDto? patient;
     private string patientTexte = "";
     private List<PatientDto> patients = [];
@@ -641,7 +665,12 @@
         : PatientObligatoire && patient is null ? "Choisissez le patient"
         : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
         : PorteurIncomplet ? "Porteur de l’ordonnance : nom, adresse et pièce d’identité obligatoires"
+        : apercu?.ProduitsBloques is { Count: > 0 } && !accordBlocage.Complet(Session.A("produits.bloquer"))
+            ? "Produit bloqué à la vente : validation du pharmacien ou de l’assistant nécessaire"
         : null;
+
+    /// <summary>Produit bloqué à la vente au panier : validation d'une personne habilitée (son code comptoir si ce n'est pas l'employé).</summary>
+    private readonly AccordBlocage accordBlocage = new();
 
     // Psychotrope au panier sans le droit de le délivrer : on nomme ceux qui peuvent reprendre la vente
     private bool PsychotropeInterdit => apercu?.OrdonnanceRequise == true && !Session.A("psychotropes.delivrer");
@@ -822,6 +851,7 @@
             if (existante.Quantite < existante.Lot!.Quantite) existante.Quantite++;
             existante.QuantiteDemandee = existante.Quantite;
             existante.StockProduit = b.StockProduit;
+            existante.CouleurFefo ??= b.CouleurAvertissement;
             existante.AvertissementFefo ??= b.Avertissement;
             existante.LotConseille ??= b.LotConseille;
             existante.EmplacementConseille ??= b.Emplacement;
@@ -831,7 +861,8 @@
             lignes.Add(new LignePanier
             {
                 ProduitId = b.ProduitId, Nom = b.Produit, Prix = b.PrixPublic, Lot = b.Lot, StockProduit = b.StockProduit,
-                BoiteScannee = true, AvertissementFefo = b.Avertissement, LotConseille = b.LotConseille, EmplacementConseille = b.Emplacement
+                BoiteScannee = true, AvertissementFefo = b.Avertissement, LotConseille = b.LotConseille, EmplacementConseille = b.Emplacement,
+                CouleurFefo = b.CouleurAvertissement
             });
         }
         await RecalculerAsync();
@@ -1128,7 +1159,8 @@
 
     private void OuvrirNouveauPatient()
     {
-        np = new NouveauPatientSaisie { Nom = patientTexte.Trim(), OrganismeId = tiersPayant ? organismeId : 0 };
+        // Plafond de crédit proposé : réglé par le titulaire (Administration › Caisse), 0 par défaut
+        np = new NouveauPatientSaisie { Nom = patientTexte.Trim(), OrganismeId = tiersPayant ? organismeId : 0, Plafond = etat?.PlafondCreditDefaut ?? 0 };
         nouveauPatient = true;
         controlePatient = false;
     }
@@ -1184,7 +1216,8 @@
                 jetonScan, texteReconnu,
                 PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null)
             : null,
-        remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null);
+        remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null, tiersPayant ? resteSaisi : null,
+        accordBlocage.VersDto(Session.A("produits.bloquer")));
 
     /// <summary>Les totaux viennent du serveur : mêmes règles que l'encaissement (tiers payant, remise).</summary>
     private async Task RecalculerAsync()
@@ -1194,6 +1227,12 @@
         var (resultat, err) = await Api.CalculerVenteAsync(Commande("especes"));
         if (numero != requeteCalcul) return;
         (apercu, erreurCalcul) = (resultat, err);
+        // Prix de chaque boîte calculé par le serveur : PPA du lot (ou prix du catalogue) plus le SHP
+        if (resultat?.PrixLignes is { } prix)
+        {
+            var avecLot = lignes.Where(l => l.Lot is not null).ToList();
+            for (var i = 0; i < avecLot.Count && i < prix.Count; i++) avecLot[i].Prix = prix[i];
+        }
         // Afficheur client : lignes du panier et part à payer par le patient
         Afficheur.Panier(lignes.Where(l => l.Lot is not null).Select(l => (l.Nom, l.Quantite, l.Prix * l.Quantite)).ToList(), apercu?.PartPatient ?? 0);
     }
@@ -1305,7 +1344,8 @@
     {
         lignes.Clear();
         (apercu, bandeau, erreur, montantRecu, remisePct) = (null, null, null, null, 0);
-        (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode) = (null, null, "", null, false, "especes");
+        (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
+        accordBlocage.Effacer();
         (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
         lectureAjouts.Clear();
         (motifSaisieManuelle, lectureSansResultat) = (null, null);

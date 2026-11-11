@@ -6,7 +6,7 @@ namespace Pharma.Domain.Catalogue;
 public sealed record FicheProduit(
     string NomCommercial, string Dci, string Dosage, string Forme, decimal PrixPublic, ClasseReglementaire Classe,
     string? CodeBarre, decimal? TarifReference, bool Remboursable, decimal TauxTva, int? StockMinimum,
-    string? NumEnregistrement = null);
+    string? NumEnregistrement = null, string Categorie = "medicament", string? ListePsychotrope = null);
 
 public static class RegleProduit
 {
@@ -40,6 +40,10 @@ public static class RegleProduit
         }
 
         var num = string.IsNullOrWhiteSpace(f.NumEnregistrement) ? null : f.NumEnregistrement.Trim();
-        return f with { NomCommercial = nom, Dci = dci, Dosage = dosage, Forme = forme, CodeBarre = code, NumEnregistrement = num };
+        var liste = f.Classe == ClasseReglementaire.Psychotrope && !string.IsNullOrWhiteSpace(f.ListePsychotrope) ? f.ListePsychotrope.Trim() : null;
+        if (liste is not (null or "liste_i" or "liste_ii")) throw new RegleMetierException("Liste d'un psychotrope : liste I ou liste II.", "liste_psychotrope");
+        var categorie = string.IsNullOrWhiteSpace(f.Categorie) ? "medicament" : f.Categorie.Trim();
+        return f with { NomCommercial = nom, Dci = dci, Dosage = dosage, Forme = forme, CodeBarre = code, NumEnregistrement = num,
+            Categorie = categorie, ListePsychotrope = liste };
     }
 }

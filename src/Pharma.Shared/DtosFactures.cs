@@ -24,7 +24,7 @@ public sealed record LigneFactureDto(long? VenteId, long? LigneVenteId, string P
 
 public sealed record FactureDetailDto(FactureResumeDto Resume, long? PatientId, long? ClientId, string? DestinataireInfos, DateOnly? Du, DateOnly? Au,
     decimal Ht, decimal Tva, string? Commentaire, string? Motif, string Employe, IReadOnlyList<LigneFactureDto> Lignes, IReadOnlyList<int> Versions,
-    long? EmployeId = null);
+    long? EmployeId = null, decimal RegleParDette = 0);
 
 public sealed record MotifRequete(string? Motif);
 public sealed record AvoirClientRequete(decimal Montant, string? Motif);
@@ -34,9 +34,10 @@ public sealed record SuiviRequete(bool HorsSuivi, string? Motif);
 public sealed record EvenementFactureDto(DateTime Date, string Libelle, string? Detail, string? Employe, long? EmployeId, decimal? Montant);
 
 public sealed record ClientFactureDto(long? Id, string RaisonSociale, string? Adresse, string? Telephone, string? Nif, string? Rc, string? Nis,
-    string? ArticleImposition, bool Actif, string? Email = null);
+    string? ArticleImposition, bool Actif, string? Email = null, int DelaiPaiementJours = 30);
 
-public sealed record OrganismeFicheDto(long? Id, string Code, string Nom, string? Adresse, string? Nif, bool Actif, string? Telephone = null, string? Email = null);
+public sealed record OrganismeFicheDto(long? Id, string Code, string Nom, string? Adresse, string? Nif, bool Actif, string? Telephone = null, string? Email = null,
+    int DelaiPaiementJours = 30);
 
 // ---- Inventaire complet -----------------------------------------------------------------
 

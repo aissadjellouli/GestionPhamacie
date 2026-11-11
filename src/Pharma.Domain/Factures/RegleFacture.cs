@@ -122,6 +122,19 @@ public static class RegleFacture
     }
 
     /// <summary>Correction sur place ou remplacement : seulement après un rejet.</summary>
+    /// <summary>L'organisme revient sur son rejet (ou l'a levé) : la facture redevient émise, le rejet reste dans son historique.</summary>
+    /// <summary>Délai de paiement d'un organisme ou d'un client : de 1 à 365 jours.</summary>
+    public static void VerifierDelaiPaiement(int jours)
+    {
+        if (jours is < 1 or > 365) throw new RegleMetierException("Le délai de paiement doit être compris entre 1 et 365 jours.", "delai_paiement");
+    }
+
+    public static void VerifierLeveeRejet(string type, string statut, string? motif)
+    {
+        if (type != "facture" || statut != "rejetee") throw new RegleMetierException("Seule une facture rejetée peut voir son rejet levé.");
+        if (string.IsNullOrWhiteSpace(motif)) throw new RegleMetierException("Indiquez pourquoi le rejet est levé (il est inscrit à l'historique).", "motif");
+    }
+
     public static void VerifierReprise(string statut)
     {
         if (statut != "rejetee") throw new RegleMetierException("Seule une facture rejetée peut être corrigée ou remplacée.");

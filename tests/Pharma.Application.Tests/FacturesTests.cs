@@ -23,6 +23,8 @@ internal sealed class FacturesEnMemoire : IFactures
     public Task<IReadOnlyList<LigneVenteSource>> LignesDesVentesAsync(IReadOnlyList<long> ventes, string part, long? sauf, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<LigneVenteSource>>(Lignes.Where(l => ventes.Contains(l.Ligne.VenteId)).ToList());
     public Task<decimal> PayeAuComptoirAsync(IReadOnlyList<long> ventes, CancellationToken ct = default) => Task.FromResult(100m);
+    public int Delai { get; set; } = 30;
+    public Task<int> DelaiPaiementAsync(Destinataire d, long id, CancellationToken ct = default) => Task.FromResult(d == Destinataire.Patient ? 30 : Delai);
     public Task<(string Nom, string? Infos)?> DestinataireAsync(Destinataire d, long id, CancellationToken ct = default) =>
         Task.FromResult<(string, string?)?>(("Destinataire fictif", null));
     public Task<(long Id, string Numero)> EmettreAsync(FactureAEcrire f, long? remplaceId, CancellationToken ct = default)
@@ -37,6 +39,7 @@ internal sealed class FacturesEnMemoire : IFactures
     public Task<FactureDetail?> DetailAsync(long id, int? v, CancellationToken ct = default) => Task.FromResult(Detail);
     public Task<IReadOnlyList<EvenementFacture>> HistoriqueAsync(long id, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<EvenementFacture>>([]);
     public Task RejeterAsync(long id, string motif, CancellationToken ct = default) => Task.CompletedTask;
+    public Task LeverRejetAsync(long id, CancellationToken ct = default) => Task.CompletedTask;
     public Task CorrigerAsync(long id, FactureAEcrire f, string? motif, CancellationToken ct = default) { Emises.Add(f); return Task.CompletedTask; }
     public Task HorsSuiviAsync(long id, bool h, string? m, CancellationToken ct = default) { Suivi = (id, h, m); return Task.CompletedTask; }
     public Task<IReadOnlyList<ClientFacture>> ClientsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ClientFacture>>([]);

@@ -154,10 +154,10 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
     public async Task<ParametresCaisse> ParametresAsync(CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(
-            "SELECT comptage_aveugle, fond_caisse_defaut, seuil_ecart, deconnexion_minutes, versement_cloture FROM parametre_caisse WHERE id = 1");
+            "SELECT comptage_aveugle, fond_caisse_defaut, seuil_ecart, deconnexion_minutes, versement_cloture, plafond_credit_defaut FROM parametre_caisse WHERE id = 1");
         await using var r = await cmd.ExecuteReaderAsync(ct);
         return await r.ReadAsync(ct)
-            ? new ParametresCaisse(r.GetBoolean(0), r.GetDecimal(1), r.GetDecimal(2), r.GetInt32(3), r.GetString(4))
+            ? new ParametresCaisse(r.GetBoolean(0), r.GetDecimal(1), r.GetDecimal(2), r.GetInt32(3), r.GetString(4), r.GetDecimal(5))
             : new ParametresCaisse(true, 0, 0, 0);
     }
 
@@ -165,7 +165,8 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
     {
         await using var cmd = db.CreateCommand("""
             UPDATE parametre_caisse
-            SET comptage_aveugle = $1, fond_caisse_defaut = $2, seuil_ecart = $3, deconnexion_minutes = $4, versement_cloture = $5
+            SET comptage_aveugle = $1, fond_caisse_defaut = $2, seuil_ecart = $3, deconnexion_minutes = $4, versement_cloture = $5,
+                plafond_credit_defaut = $6
             WHERE id = 1
             """);
         cmd.Parameters.AddWithValue(p.ComptageAveugle);
@@ -173,6 +174,7 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
         cmd.Parameters.AddWithValue(p.SeuilEcart);
         cmd.Parameters.AddWithValue(p.DeconnexionMinutes);
         cmd.Parameters.AddWithValue(p.VersementCloture);
+        cmd.Parameters.AddWithValue(p.PlafondCreditDefaut);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

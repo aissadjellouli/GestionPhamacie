@@ -90,6 +90,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 FROM ({AchatsDuProduit("e.produit_id")}) a JOIN fournisseur f ON f.id = a.fournisseur_id
                 ORDER BY a.date_reception DESC, a.ordre DESC LIMIT 1) d ON true
             WHERE e.statut IN ('rupture', 'critique')
+              AND NOT EXISTS (SELECT 1 FROM produit pb WHERE pb.id = e.produit_id AND pb.bloque_achat)   -- bloqué à l'achat (046)
             ORDER BY CASE e.statut WHEN 'rupture' THEN 0 ELSE 1 END, e.nom_commercial
             """);
         return await Lister(cmd, r => new SuggestionCommande(
@@ -243,10 +244,11 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
 
     public async Task<IReadOnlyList<InfoAchatProduit>> InfosAchatAsync(IEnumerable<long> produitIds, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT id, classe, prix_public, taux_tva FROM produit WHERE id = ANY($1)");
+        await using var cmd = db.CreateCommand(
+            "SELECT id, classe, prix_public, taux_tva, liste_psychotrope, bloque_achat, motif_blocage FROM produit WHERE id = ANY($1)");
         cmd.Parameters.AddWithValue(produitIds.ToArray());
         return await Lister(cmd, r => new InfoAchatProduit(r.GetInt64(0), r.GetString(1), r.GetDecimal(2), r.GetDecimal(3),
-            Pharma.Domain.Achats.RegleShp.ParBoite(r.GetString(1))), ct);
+            Pharma.Domain.Achats.RegleShp.ParBoite(r.GetString(1), Texte(r, 4)), r.GetBoolean(5), Texte(r, 6)), ct);
     }
 
     public async Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception n, CancellationToken ct = default)
@@ -303,50 +305,65 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 // Pas de moyenne : chaque boîte garde le prix de sa livraison, le lot garde celui de sa première livraison
                 lotId = e.Id;
                 await Executer(cnx, tx, """
-                    UPDATE lot SET quantite_disponible = quantite_disponible + $2, date_peremption = $3, date_a_verifier = false
+                    UPDATE lot SET quantite_disponible = quantite_disponible + $2, date_peremption = $3, date_a_verifier = false,
+                                   ppa = COALESCE($4, ppa)
                     WHERE id = $1
-                    """, ct, lotId, l.Quantite, l.DatePeremption);
+                    """, ct, lotId, l.Quantite, l.DatePeremption, (object?)l.Ppa ?? DBNull.Value);
             }
             else
             {
                 await using var cmd = new NpgsqlCommand("""
                     INSERT INTO lot (produit_id, ligne_commande_id, numero_lot, date_peremption, quantite_disponible,
-                                     prix_achat_ht, reception_id, fournisseur_id, bloque, motif_blocage)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+                                     prix_achat_ht, reception_id, fournisseur_id, bloque, motif_blocage, ppa)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
                     """, cnx, tx);
                 cmd.Parameters.AddWithValue(l.ProduitId);
                 cmd.Parameters.Add(Nul(ligneCommandeId, NpgsqlDbType.Bigint));
                 cmd.Parameters.AddWithValue(numero);
                 cmd.Parameters.AddWithValue(l.DatePeremption);
                 cmd.Parameters.AddWithValue(l.Quantite);
-                cmd.Parameters.AddWithValue(l.PrixNetHt);
+                cmd.Parameters.AddWithValue(l.CoutBoite);
                 cmd.Parameters.AddWithValue(receptionId);
                 cmd.Parameters.AddWithValue(n.FournisseurId);
                 cmd.Parameters.AddWithValue(decision.NouveauBloque);
                 cmd.Parameters.Add(Nul(decision.NouveauBloque ? "Même n° de lot qu'un lot rappelé : entré bloqué à la réception" : null, NpgsqlDbType.Text));
+                cmd.Parameters.Add(Nul(l.Ppa, NpgsqlDbType.Numeric));
                 lotId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
-            await Executer(cnx, tx, """
-                INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id, reception_id, prix_achat_ht)
-                VALUES ($1, 'entree', $2, $3, $4, $5, $6)
-                """, ct, lotId, l.Quantite, $"BL {n.NumeroBl}", n.UtilisateurId, receptionId, l.PrixNetHt);
+            // Entrée en stock : boîtes facturées au coût, unités gratuites à 0 DA (ou toutes au coût réparti)
+            foreach (var (qte, cout, libelle) in l.UgCoutReparti || l.Ug == 0
+                         ? [(l.Quantite, l.CoutBoite, $"BL {n.NumeroBl}")]
+                         : new[] { (l.Facturees, l.PrixNetHt, $"BL {n.NumeroBl}"), (l.Ug, 0m, $"BL {n.NumeroBl} (UG)") })
+                if (qte > 0)
+                    await Executer(cnx, tx, """
+                        INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id, reception_id, prix_achat_ht)
+                        VALUES ($1, 'entree', $2, $3, $4, $5, $6)
+                        """, ct, lotId, qte, libelle, n.UtilisateurId, receptionId, cout);
+
+            // PPA facturé qui remplace le prix public du catalogue (droit vérifié par le cas d'usage)
+            if (l.RemplacerPrixCatalogue && l.Ppa is { } nouveauPrix)
+                await Executer(cnx, tx, "UPDATE produit SET prix_public = $2 WHERE id = $1", ct, l.ProduitId, nouveauPrix);
 
             // Ligne telle qu'écrite sur la facture du grossiste (044) : prix avant remise, remise, PPA, SHP, TVA
             await using (var lr = new NpgsqlCommand("""
-                INSERT INTO reception_ligne (reception_id, lot_id, produit_id, quantite, prix_achat_ht, remise_pct, prix_net_ht, ppa, shp, taux_tva)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                INSERT INTO reception_ligne (reception_id, lot_id, produit_id, quantite, prix_achat_ht, remise_pct, prix_net_ht, ppa, shp, taux_tva,
+                                             ug, ug_cout, prix_catalogue_remplace)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 """, cnx, tx))
             {
                 lr.Parameters.AddWithValue(receptionId);
                 lr.Parameters.AddWithValue(lotId);
                 lr.Parameters.AddWithValue(l.ProduitId);
-                lr.Parameters.AddWithValue(l.Quantite);
+                lr.Parameters.AddWithValue(l.Facturees);
                 lr.Parameters.AddWithValue(l.PrixAchatHt);
                 lr.Parameters.AddWithValue(l.RemisePct);
                 lr.Parameters.AddWithValue(l.PrixNetHt);
                 lr.Parameters.Add(Nul(l.Ppa, NpgsqlDbType.Numeric));
                 lr.Parameters.AddWithValue(l.Shp ?? 0m);
                 lr.Parameters.AddWithValue(n.TauxTva.GetValueOrDefault(l.ProduitId));
+                lr.Parameters.AddWithValue(l.Ug);
+                lr.Parameters.AddWithValue(l.UgCoutReparti ? "reparti" : "zero");
+                lr.Parameters.AddWithValue(l.RemplacerPrixCatalogue);
                 await lr.ExecuteNonQueryAsync(ct);
             }
 
@@ -370,12 +387,13 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 else
                     throw new RegleMetierException($"{l.Nom} : n° de série scanné deux fois ({string.Join(", ", enDouble)}).");
             }
+            var rang = 0;   // rang de la boîte dans la ligne : avec UG à 0 DA, les dernières sont les gratuites
             foreach (var serie in l.NumerosSerie ?? [])
             {
                 try
                 {
                     await Executer(cnx, tx, "INSERT INTO boite (lot_id, gtin, numero_serie, reception_id, prix_achat_ht) VALUES ($1, $2, $3, $4, $5)",
-                        ct, lotId, l.Gtin!, serie, receptionId, l.PrixNetHt);
+                        ct, lotId, l.Gtin!, serie, receptionId, l.CoutBoiteRang(rang++));
                 }
                 catch (PostgresException doublon) when (doublon.SqlState == PostgresErrorCodes.UniqueViolation)
                 {
@@ -388,7 +406,14 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
             // Les autres reçoivent chacune une étiquette interne, dans la même transaction : aucune boîte n'entre sans identité
             var aEtiqueter = l.Quantite - (l.NumerosSerie?.Count ?? 0);
             if (aEtiqueter > 0)
-                await Executer(cnx, tx, "SELECT count(*) FROM creer_boites_internes($1, $2, $3, $4)", ct, lotId, aEtiqueter, receptionId, l.PrixNetHt);
+            {
+                // Boîtes payées puis gratuites, chacune à son coût
+                var payees = Math.Clamp(l.UgCoutReparti ? aEtiqueter : l.Facturees - rang, 0, aEtiqueter);
+                if (payees > 0)
+                    await Executer(cnx, tx, "SELECT count(*) FROM creer_boites_internes($1, $2, $3, $4)", ct, lotId, payees, receptionId, l.CoutBoite);
+                if (aEtiqueter - payees > 0)
+                    await Executer(cnx, tx, "SELECT count(*) FROM creer_boites_internes($1, $2, $3, $4)", ct, lotId, aEtiqueter - payees, receptionId, 0m);
+            }
 
             if (ligneCommandeId is { } id)
                 await Executer(cnx, tx, "UPDATE ligne_commande SET qte_recue = qte_recue + $2 WHERE id = $1", ct, id, l.Quantite);

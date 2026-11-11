@@ -384,7 +384,15 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         Total("Total HT", Da(f.Ht));
         Total("TVA", Da(f.Tva));
         Total(avoir ? "Montant de l’avoir TTC" : "Total TTC", Da(r.Ttc), gras: true);
-        if (r.DejaPaye > 0) { Total("Déjà payé au comptoir", Da(r.DejaPaye)); Total("Net à payer", Da(Math.Max(r.Ttc - r.DejaPaye, 0)), gras: true); }
+        if (!avoir && (r.DejaPaye > 0 || f.RegleParDette > 0 || r.Regle > 0 || r.Avoirs > 0))
+        {
+            // Ce qui a déjà été payé, puis le reste à payer (même calcul que l'écran des factures)
+            if (r.DejaPaye > 0) Total("Déjà payé au comptoir", Da(r.DejaPaye));
+            if (f.RegleParDette > 0) Total("Déjà réglé sur la dette du patient", Da(f.RegleParDette));
+            if (r.Regle > 0) Total("Règlements reçus", Da(r.Regle));
+            if (r.Avoirs > 0) Total("Avoirs", "− " + Da(r.Avoirs));
+            Total("Reste à payer", Da(r.Reste), gras: true);
+        }
 
         var lettres = section.AddParagraph($"Arrêté{(avoir ? " le présent avoir" : "e la présente facture")} à la somme de : "
             + Pharma.Domain.Factures.MontantEnLettres.Dinars(r.Ttc) + " toutes taxes comprises.");

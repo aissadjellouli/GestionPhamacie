@@ -3,7 +3,8 @@ using Pharma.Domain.Commun;
 
 namespace Pharma.Application.Caisse;
 
-public sealed record LigneTicket(string Produit, int Quantite, decimal PrixUnitaire, decimal Montant, decimal PartOrganisme);
+/// <summary>Shp : par boîte, compris dans PrixUnitaire ; Medicament : catégorie comptée dans « médicaments ».</summary>
+public sealed record LigneTicket(string Produit, int Quantite, decimal PrixUnitaire, decimal Montant, decimal PartOrganisme, decimal Shp = 0, bool Medicament = true);
 
 /// <summary>Contenu du ticket de caisse ; le poste le met en page et l'imprime.</summary>
 public sealed record TicketVente(

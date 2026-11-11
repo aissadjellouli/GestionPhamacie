@@ -49,6 +49,9 @@ public static class DependencyInjection
         services.AddScoped<IComptesLecture, ComptesLecture>();
         services.AddScoped<ICatalogueLecture, CatalogueLecture>();
         services.AddScoped<ICatalogueEcriture, CatalogueEcritureSql>();
+        services.AddScoped<IClassementProduits, ClassementProduitsSql>();
+        services.AddScoped<IBlocageProduits, BlocageProduitsSql>();
+        services.AddScoped<Pharma.Application.Essai.IRetoursEssai, Securite.RetoursEssaiSql>();
         services.AddScoped<IEmplacements, EmplacementsSql>();
         services.AddScoped<IInventaires, InventairesSql>();
         services.AddScoped<Pharma.Application.Mobile.IMobile, MobileSql>();

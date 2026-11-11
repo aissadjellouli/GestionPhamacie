@@ -131,6 +131,15 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
             Montant($"  {l.Quantite} × {Da(l.PrixUnitaire)}", l.Montant);
         }
         Separateur();
+        // Médicaments et autres produits (parapharmacie…), SHP compris dans les prix
+        var autres = t.Lignes.Where(l => !l.Medicament).Sum(l => l.Montant);
+        if (autres > 0)
+        {
+            Montant("T. médicaments", t.Lignes.Where(l => l.Medicament).Sum(l => l.Montant));
+            Montant("T. autres produits", autres);
+        }
+        var shp = t.Lignes.Sum(l => l.Shp * l.Quantite);
+        if (shp > 0) Montant("dont SHP", shp);
         if (t.Remise > 0 || t.PartOrganisme > 0) Montant("Total", t.MontantBrut);
         if (t.Remise > 0) Montant("Remise", -t.Remise);
         if (t.PartOrganisme > 0)

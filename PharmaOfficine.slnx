@@ -48,6 +48,8 @@
     <File Path="database/042_email_tiers.sql" />
     <File Path="database/043_historique_factures.sql" />
     <File Path="database/044_reception_detaillee.sql" />
+    <File Path="database/045_prix_lot_ug_categories.sql" />
+    <File Path="database/046_blocage_produit.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

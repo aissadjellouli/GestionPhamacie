@@ -51,13 +51,23 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
                    (SELECT COALESCE(SUM(p.montant), 0) FROM paiement p JOIN vente v ON v.id = p.vente_id
                     WHERE p.mode = 'credit' AND v.statut = 'validee' AND {Periode}),
                    (SELECT count(*) FROM {RetoursPeriode} AND EXISTS (SELECT 1 FROM retour_client_ligne rl WHERE rl.retour_id = rc.id))::int,
-                   (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM {RetoursPeriode})
+                   (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM {RetoursPeriode}),
+                   (SELECT COALESCE(SUM(l.prix_unitaire * l.quantite) FILTER (WHERE COALESCE(cat.medicament, true)), 0)
+                    FROM ligne_vente l JOIN vente v ON v.id = l.vente_id JOIN produit p ON p.id = l.produit_id
+                    LEFT JOIN categorie_produit cat ON cat.code = p.categorie
+                    WHERE v.statut = 'validee' AND {Periode}),
+                   (SELECT COALESCE(SUM(l.prix_unitaire * l.quantite) FILTER (WHERE NOT COALESCE(cat.medicament, true)), 0)
+                    FROM ligne_vente l JOIN vente v ON v.id = l.vente_id JOIN produit p ON p.id = l.produit_id
+                    LEFT JOIN categorie_produit cat ON cat.code = p.categorie
+                    WHERE v.statut = 'validee' AND {Periode}),
+                   (SELECT COALESCE(SUM(l.shp * l.quantite), 0) FROM ligne_vente l JOIN vente v ON v.id = l.vente_id
+                    WHERE v.statut = 'validee' AND {Periode})
             FROM vente v WHERE {Periode}
             """, du, au);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
         return new SyntheseVentes(r.GetInt32(0), r.GetDecimal(1), r.GetDecimal(2), r.GetDecimal(5), r.GetDecimal(3), r.GetInt32(4),
-            r.GetInt32(6), r.GetDecimal(7));
+            r.GetInt32(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10));
     }
 
     public async Task<IReadOnlyList<VentesJour>> ParJourAsync(DateOnly du, DateOnly au, CancellationToken ct = default)

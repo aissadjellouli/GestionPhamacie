@@ -44,7 +44,8 @@ public sealed record NouvelleReception(
     decimal MontantTtc, long UtilisateurId, TotauxFactureAchat? Totaux = null);
 
 /// <summary>Ce qu'il faut savoir d'un produit pour lire la facture du grossiste : liste (SHP), prix public du catalogue, TVA.</summary>
-public sealed record InfoAchatProduit(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite);
+public sealed record InfoAchatProduit(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite,
+    bool BloqueAchat = false, string? MotifBlocage = null);
 
 /// <summary>Lot vu pour un retour : provenance, stock, boîtes identifiées encore en stock.</summary>
 public sealed record LotRetournable(
@@ -180,6 +181,9 @@ public sealed class AjouterACommande(IAchats achats, IPermissionService droits)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsCommander, "passer une commande", ct);
         var nom = await achats.NomProduitAsync(produitId, ct) ?? throw new RegleMetierException("Produit introuvable.");
+        if ((await achats.InfosAchatAsync([produitId], ct)).FirstOrDefault() is { BloqueAchat: true } bloque)
+            throw new RegleMetierException($"{nom} : produit bloqué à l’achat{(bloque.MotifBlocage is { } m ? $" ({m})" : "")}. "
+                + "Faites-le débloquer pour le commander ; une livraison peut être réceptionnée avec la validation du pharmacien ou de l’assistant.");
         if (await achats.FournisseurAsync(fournisseurId, ct) is null)
             throw new RegleMetierException("Grossiste introuvable.", "grossiste");
         var prix = prixHt ?? (await achats.DernierAchatAsync(produitId, fournisseurId, ct))?.PrixAchatHt
@@ -261,7 +265,8 @@ public sealed class AnnulerCommande(IAchats achats, IPermissionService droits, I
 // ---- Cas d'usage : réception -----------------------------------------------
 
 public sealed record SaisieReception(
-    long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionSaisie> Lignes, decimal Timbre = 0);
+    long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionSaisie> Lignes, decimal Timbre = 0,
+    Catalogue.ValidationBlocage? Blocage = null);
 
 /// <summary>
 /// Entrée en stock d'une livraison : un lot par ligne (le même lot déjà livré par ce grossiste est complété),
@@ -269,7 +274,7 @@ public sealed record SaisieReception(
 /// La dette du grossiste augmente du net à payer : HT moins les remises, plus la TVA du catalogue, plus le timbre (044).
 /// Le SHP de chaque ligne, s'il n'est pas saisi, suit la liste du produit (RegleShp).
 /// </summary>
-public sealed class Receptionner(IAchats achats, IPermissionService droits, IHorloge horloge, IJournal journal)
+public sealed class Receptionner(IAchats achats, IPermissionService droits, IHorloge horloge, IJournal journal, VerificationCodeComptoir? codesComptoir = null)
 {
     public async Task<ReceptionEnregistree> ExecuterAsync(SaisieReception s, long utilisateurId, CancellationToken ct = default)
     {
@@ -306,9 +311,16 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
             lignes[i] = lignes[i] with { Nom = await achats.NomProduitAsync(lignes[i].ProduitId, ct) ?? lignes[i].Nom };
         // SHP non saisi : selon la liste du produit
         var infos = (await achats.InfosAchatAsync(lignes.Select(l => l.ProduitId).Distinct(), ct)).ToDictionary(i => i.ProduitId);
+        // Produit bloqué à l'achat : réceptionné seulement avec la validation d'une personne habilitée
+        var bloques = lignes.Where(l => infos.TryGetValue(l.ProduitId, out var i) && i.BloqueAchat)
+            .Select(l => infos[l.ProduitId].MotifBlocage is { } m ? $"{l.Nom} ({m})" : l.Nom).Distinct().ToList();
+        var validePar = await Catalogue.AutorisationBlocage.ExigerAsync(droits, codesComptoir, utilisateurId, s.Blocage, null, "à l’achat", bloques, ct);
         for (var i = 0; i < lignes.Count; i++)
             if (lignes[i].Shp is null)
                 lignes[i] = lignes[i] with { Shp = infos.TryGetValue(lignes[i].ProduitId, out var info) ? info.ShpParBoite : 0 };
+        // PPA facturé qui remplace le prix public du catalogue : droit de modifier un prix de vente
+        if (lignes.Any(l => l.RemplacerPrixCatalogue))
+            await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "remplacer le prix public du catalogue", ct);
         var totaux = RegleFactureAchat.Totaux(lignes, tva, s.Timbre);
         var ttc = totaux.NetAPayer;
 
@@ -319,8 +331,18 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
             new Dictionary<string, object?>
             {
                 ["bl"] = s.NumeroBl, ["lots"] = r.Lots.Count, ["montant_ht"] = totaux.MontantHt, ["remise"] = totaux.Remise,
-                ["tva"] = totaux.Tva, ["timbre"] = totaux.Timbre, ["montant_ttc"] = ttc, ["shp"] = totaux.ShpTotal
+                ["tva"] = totaux.Tva, ["timbre"] = totaux.Timbre, ["montant_ttc"] = ttc, ["shp"] = totaux.ShpTotal,
+                ["ug"] = lignes.Sum(l => l.Ug)
             }, Permissions.AchatsReceptionner, ct);
+        if (validePar is { } vp)
+            await journal.EcrireAsync(utilisateurId, "reception_produit_bloque", "reception", r.ReceptionId,
+                new Dictionary<string, object?> { ["bl"] = s.NumeroBl, ["produits"] = bloques, ["valide_par"] = vp.Id, ["validateur"] = vp.NomComplet },
+                Permissions.ProduitsBloquer, ct);
+        foreach (var l in lignes.Where(l => l.RemplacerPrixCatalogue))
+            if (infos.TryGetValue(l.ProduitId, out var info) && info.PrixPublic != l.Ppa)
+                await journal.EcrireAsync(utilisateurId, "prix_modifie", "produit", l.ProduitId,
+                    new Dictionary<string, object?> { ["produit"] = l.Nom, ["avant"] = info.PrixPublic, ["apres"] = l.Ppa, ["source"] = $"réception BL {s.NumeroBl}" },
+                    Permissions.PrixModifier, ct);
         return r;
     }
 }

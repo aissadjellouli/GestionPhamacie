@@ -54,6 +54,14 @@
                 <span class="tuile-libelle">Chiffre d’affaires</span>
                 <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.ChiffreAffaires)</span>
                 <span class="tuile-pied">@r.Synthese.NombreVentes vente(s) · remises @Libelles.Dinars(r.Synthese.Remises)</span>
+                @if (r.Synthese.VentesAutres > 0)
+                {
+                    <span class="tuile-pied">médicaments @Libelles.Dinars(r.Synthese.VentesMedicaments) · autres produits @Libelles.Dinars(r.Synthese.VentesAutres)</span>
+                }
+                @if (r.Synthese.Shp > 0)
+                {
+                    <span class="tuile-pied">dont SHP @Libelles.Dinars(r.Synthese.Shp, 2)</span>
+                }
                 @if (r.Synthese.Retours > 0)
                 {
                     <span class="tuile-pied" title="Un retour client diminue le chiffre du jour où il est enregistré">dont @r.Synthese.Retours retour(s) client : − @Libelles.Dinars(r.Synthese.MontantRetours, 2)</span>

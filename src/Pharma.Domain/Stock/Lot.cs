@@ -16,6 +16,8 @@ public class Lot
     public DateOnly DatePeremption { get; init; }
     public int QuantiteDisponible { get; init; }
     public decimal PrixAchatHt { get; init; }
+    /// <summary>Prix public facturé du lot (vignette) ; null : prix public du catalogue.</summary>
+    public decimal? Ppa { get; init; }
     public bool Bloque { get; init; }
     public string? MotifBlocage { get; init; }
     public bool DateAVerifier { get; init; }

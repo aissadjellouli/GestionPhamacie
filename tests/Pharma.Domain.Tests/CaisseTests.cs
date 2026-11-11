@@ -12,8 +12,9 @@ public class CaisseTests
 
     private static Produit Amoxicilline => new()
     {
+        // Hors liste ici pour garder des prix ronds (sans SHP) ; le SHP est vérifié par les tests « Prix_de_vente_… »
         Id = 2, NomCommercial = "Amoxicilline 1 g", PrixPublic = 350m, TarifReference = 300m, Remboursable = true,
-        Classe = ClasseReglementaire.ListeI
+        Classe = ClasseReglementaire.Libre
     };
 
     private static Produit Alprazolam => new()
@@ -26,6 +27,54 @@ public class CaisseTests
         Id = p.Id * 10, ProduitId = p.Id, NumeroLot = "L" + p.Id, QuantiteDisponible = quantite,
         DatePeremption = Aujourdhui.AddDays(joursRestants), Bloque = bloque
     };
+
+    [Fact]
+    public void Prix_de_vente_PPA_du_lot_plus_SHP_selon_la_liste()
+    {
+        var produit = new Produit { Id = 3, NomCommercial = "P", PrixPublic = 350m, Classe = ClasseReglementaire.ListeI };
+        var lotSansPpa = LotDe(produit);
+        var lotAvecPpa = new Lot { Id = 31, ProduitId = 3, NumeroLot = "L31", QuantiteDisponible = 5, DatePeremption = Aujourdhui.AddDays(200), Ppa = 360m };
+        Assert.Equal(352.50m, PrixVente.Unitaire(produit, lotSansPpa));   // prix du catalogue + SHP liste I
+        Assert.Equal(362.50m, PrixVente.Unitaire(produit, lotAvecPpa));   // PPA du lot + SHP
+        var v = new Vente();
+        var l = v.AjouterProduit(produit, lotAvecPpa, 2, Aujourdhui);
+        Assert.Equal((362.50m, 2.50m, 725m), (l.PrixUnitaire, l.Shp, v.MontantTotal));
+        var psy = new Produit { Id = 4, PrixPublic = 100m, Classe = ClasseReglementaire.Psychotrope, ListePsychotrope = "liste_ii" };
+        Assert.Equal(101.50m, PrixVente.Unitaire(psy, LotDe(psy)));
+    }
+
+    [Fact]
+    public void Reste_a_charge_saisi_le_taux_est_ignore_et_la_part_organisme_repartie()
+    {
+        var v = new Vente { Type = TypeVente.TiersPayant, TauxTiersPayant = null, PatientId = 1, OrganismeId = 1 };
+        var autre = new Produit { Id = 5, NomCommercial = "B", PrixPublic = 300m, Remboursable = false };
+        v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 1, Aujourdhui);   // 350
+        v.AjouterProduit(autre, LotDe(autre), 1, Aujourdhui);                 // 300, non remboursable
+        v.SaisirResteACharge(150m);
+        Assert.Equal((150m, 500m, 650m), (v.PartPatient, v.PartOrganisme, v.MontantTotal));
+        Assert.Equal(500m, v.Lignes.Sum(l => l.MontantOrganisme));
+        Assert.Equal(269.23m, v.Lignes[0].MontantOrganisme);                  // 500 × 350 / 650
+        v.VerifierAvantEncaissement(ordonnanceSaisie: false);                  // taux non exigé quand le reste est saisi
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(351)]
+    public void Reste_a_charge_hors_bornes_refuse(decimal reste)
+    {
+        var v = new Vente { Type = TypeVente.TiersPayant, TauxTiersPayant = 80 };
+        v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 1, Aujourdhui);
+        Assert.Throws<RegleMetierException>(() => v.SaisirResteACharge(reste));
+        Assert.Throws<RegleMetierException>(() => new Vente().SaisirResteACharge(0));   // vente libre
+    }
+
+    [Fact]
+    public void Produit_bloque_a_la_vente_refuse_avec_son_motif()
+    {
+        var bloque = new Produit { Id = 9, NomCommercial = "Bloqué", PrixPublic = 100m, BloqueVente = true, MotifBlocage = "rappel du fabricant" };
+        var ex = Assert.Throws<RegleMetierException>(() => new Vente().AjouterProduit(bloque, LotDe(bloque), 1, Aujourdhui));
+        Assert.Contains("rappel du fabricant", ex.Message);
+    }
 
     [Fact]
     public void Vente_libre_le_patient_paie_tout()

@@ -27,9 +27,11 @@ internal sealed class AchatsEnMemoire : IAchats
         return Task.CompletedTask;
     }
     public Task<CommandeDetail?> CommandeAsync(long id, CancellationToken ct = default) => Task.FromResult(Commande?.Entete.Id == id ? Commande : null);
+    /// <summary>Produits bloqués à l'achat.</summary>
+    public HashSet<long> BloquesAchat { get; } = [];
     public Task<IReadOnlyList<InfoAchatProduit>> InfosAchatAsync(IEnumerable<long> produitIds, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<InfoAchatProduit>>(produitIds.Select(id => new InfoAchatProduit(id, id == 2 ? "liste_ii" : "liste_i", 100, 0,
-            id == 2 ? Pharma.Domain.Achats.RegleShp.ListeII : Pharma.Domain.Achats.RegleShp.ListeI)).ToList());
+            id == 2 ? Pharma.Domain.Achats.RegleShp.ListeII : Pharma.Domain.Achats.RegleShp.ListeI, BloquesAchat.Contains(id), BloquesAchat.Contains(id) ? "litige" : null)).ToList());
     public Task<IReadOnlyDictionary<long, decimal>> TauxTvaAsync(IEnumerable<long> produitIds, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<long, decimal>>(produitIds.Where(p => p != 99).ToDictionary(p => p, p => p == 2 ? 19m : 0m));
     public Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception reception, CancellationToken ct = default)
@@ -174,6 +176,41 @@ public class AchatsApplicationTests
         Assert.Equal(Pharma.Domain.Achats.RegleShp.ListeI, r.Lignes[0].Shp); // SHP proposé selon la liste
         Assert.Equal(0.75m, r.Lignes[1].Shp);                            // SHP saisi gardé
         Assert.Equal(26.50m, r.Totaux.ShpTotal);                         // 10 × 2,50 + 2 × 0,75, hors net à payer
+    }
+
+    [Fact]
+    public async Task Remplacer_le_prix_du_catalogue_exige_le_droit_de_modifier_un_prix()
+    {
+        var achats = new AchatsEnMemoire();
+        var ligne = new LigneReceptionSaisie(1, "x", "L1", Aujourdhui.AddYears(1), 12, 100m, Ppa: 130m, Ug: 2, RemplacerPrixCatalogue: true);
+        await Assert.ThrowsAnyAsync<Exception>(() => Reception(achats).ExecuterAsync(new SaisieReception(1, null, "BL-11", null, [ligne]), 5));
+        Assert.Null(achats.ReceptionRecue);
+        var journal = new JournalEspion();
+        await new Receptionner(achats, new DroitsFactices("achats.receptionner", "prix.modifier"), new HorlogeFixe(Aujourdhui), journal)
+            .ExecuterAsync(new SaisieReception(1, null, "BL-11", null, [ligne]), 5);
+        Assert.Equal(1000m, achats.ReceptionRecue!.MontantTtc);           // 10 boîtes facturées, 2 UG
+        Assert.Contains("prix_modifie", journal.Actions);                 // 100 (catalogue de la doublure) → 130
+    }
+
+    [Fact]
+    public async Task Produit_bloque_a_l_achat_ni_commande_ni_reception()
+    {
+        var achats = new AchatsEnMemoire();
+        achats.BloquesAchat.Add(1);
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => Reception(achats).ExecuterAsync(new SaisieReception(1, null, "BL-12", null,
+            [new LigneReceptionSaisie(1, "x", "L1", Aujourdhui.AddYears(1), 1, 10m)]), 5));
+        Assert.Contains("bloqué à l’achat", ex.Message);
+        Assert.Null(achats.ReceptionRecue);
+        await Assert.ThrowsAsync<RegleMetierException>(() =>
+            new AjouterACommande(achats, new DroitsFactices("achats.commander")).ExecuterAsync(1, 1, 5, 10m, 5));
+
+        // Validée par une personne habilitée : réceptionnée et inscrite au journal
+        var journal = new JournalEspion();
+        await new Receptionner(achats, new DroitsFactices("achats.receptionner", "produits.bloquer"), new HorlogeFixe(Aujourdhui), journal)
+            .ExecuterAsync(new SaisieReception(1, null, "BL-12", null, [new LigneReceptionSaisie(1, "x", "L1", Aujourdhui.AddYears(1), 1, 10m)],
+                Blocage: new Pharma.Application.Catalogue.ValidationBlocage(true)), 5);
+        Assert.NotNull(achats.ReceptionRecue);
+        Assert.Contains("reception_produit_bloque", journal.Actions);
     }
 
     [Fact]

@@ -9,14 +9,61 @@ public sealed record PatientResume(
 
 public sealed record NouveauPatient(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
 
+/// <summary>Fiche complète d'un patient, telle qu'on la modifie (SoldeCredit en lecture : la dette ne se modifie pas ici).</summary>
+public sealed record FichePatient(long Id, string Nom, string? Prenom, DateOnly? DateNaissance, string? Telephone, string? Email, string? NumAssure,
+    long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0);
+
 public sealed record Medecin(long Id, string Nom, string? Specialite);
-public sealed record Organisme(long Id, string Code, string Nom);
+public sealed record Organisme(long Id, string Code, string Nom, int DelaiPaiementJours = 30);
 
 public interface IPatients
 {
     Task<IReadOnlyList<PatientResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default);
     Task<Patient?> TrouverAsync(long id, CancellationToken ct = default);
     Task<long> CreerAsync(NouveauPatient patient, CancellationToken ct = default);
+    Task<FichePatient?> FicheAsync(long id, CancellationToken ct = default);
+    /// <summary>Remplace l'identité, les coordonnées, l'organisme, la case « chronique » et le plafond (pas la dette). Faux si absent.</summary>
+    Task<bool> ModifierAsync(FichePatient fiche, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Modification de la fiche d'un patient (droit de vendre, comme sa création à la caisse). Chaque champ changé est inscrit au
+/// journal, avec l'ancienne et la nouvelle valeur. Un téléphone repris hors format reste accepté tant qu'on n'y touche pas.
+/// </summary>
+public sealed class ModifierPatient(IPatients patients, Commun.IJournal journal, Commun.IHorloge horloge)
+{
+    public async Task ExecuterAsync(FichePatient saisie, long utilisateurId, CancellationToken ct = default)
+    {
+        var actuelle = await patients.FicheAsync(saisie.Id, ct) ?? throw new RegleMetierException("Patient introuvable.");
+        if (string.IsNullOrWhiteSpace(saisie.Nom)) throw new RegleMetierException("Le nom du patient est obligatoire.", "nom_patient");
+        if (saisie.PlafondCredit < 0) throw new RegleMetierException("Le plafond de crédit ne peut pas être négatif.", "plafond");
+        if (saisie.DateNaissance is { } dn && dn > horloge.Aujourdhui)
+            throw new RegleMetierException("La date de naissance ne peut pas être dans le futur.", "date_naissance");
+        static string? Net(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        var tel = Net(saisie.Telephone) is { } t && t != actuelle.Telephone?.Trim() ? Contacts.RegleContact.Telephone(t) : Net(saisie.Telephone);
+        var fiche = saisie with
+        {
+            Nom = saisie.Nom.Trim(), Prenom = Net(saisie.Prenom), Telephone = tel, Email = Contacts.RegleContact.Email(saisie.Email),
+            NumAssure = Net(saisie.NumAssure), OrganismeId = saisie.OrganismeId is > 0 ? saisie.OrganismeId : null, SoldeCredit = actuelle.SoldeCredit
+        };
+        if (!await patients.ModifierAsync(fiche, ct)) throw new RegleMetierException("Patient introuvable.");
+
+        var changes = new Dictionary<string, object?>();
+        void Comparer(string nom, object? avant, object? apres) { if (!Equals(avant, apres)) changes[nom] = new { avant, apres }; }
+        Comparer("nom", actuelle.Nom, fiche.Nom); Comparer("prenom", actuelle.Prenom, fiche.Prenom);
+        Comparer("date_naissance", actuelle.DateNaissance, fiche.DateNaissance); Comparer("telephone", actuelle.Telephone, fiche.Telephone);
+        Comparer("email", actuelle.Email, fiche.Email); Comparer("num_assure", actuelle.NumAssure, fiche.NumAssure);
+        Comparer("organisme_id", actuelle.OrganismeId, fiche.OrganismeId); Comparer("chronique", actuelle.Chronique, fiche.Chronique);
+        Comparer("plafond_credit", actuelle.PlafondCredit, fiche.PlafondCredit);
+        if (changes.Count > 0)
+            await journal.EcrireAsync(utilisateurId, "patient_modifie", "patient", fiche.Id, changes, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);
+    }
+}
+
+public sealed class LireFichePatient(IPatients patients)
+{
+    public async Task<FichePatient> ExecuterAsync(long id, CancellationToken ct = default) =>
+        await patients.FicheAsync(id, ct) ?? throw new RegleMetierException("Patient introuvable.");
 }
 
 public interface IMedecins

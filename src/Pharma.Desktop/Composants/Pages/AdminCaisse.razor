@@ -32,6 +32,10 @@
                 <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
                     <div class="champ"><label for="fond">Fond de caisse (DA)</label><input id="fond" data-champ="fond_caisse" type="number" min="0" @bind="parametres.FondCaisseDefaut" /></div>
                     <div class="champ"><label for="seuil">Alerte si écart supérieur à (DA)</label><input id="seuil" type="number" min="0" @bind="parametres.SeuilEcart" /></div>
+                    <div class="champ" title="Proposé à la création d’un patient ; 0 : pas de crédit tant qu’il n’est pas accordé">
+                        <label for="plafond-defaut">Plafond de crédit d’un nouveau patient (DA)</label>
+                        <input id="plafond-defaut" data-champ="plafond_defaut" type="number" min="0" @bind="parametres.PlafondCreditDefaut" />
+                    </div>
                     <div class="champ" title="L’annulation de vente n’est pas encore disponible">
                         <label for="annul">Alerte au-delà de N annulations par session</label><input id="annul" type="number" disabled />
                     </div>
@@ -94,6 +98,7 @@
         public decimal SeuilEcart { get; set; }
         public int DeconnexionMinutes { get; set; }
         public string VersementCloture { get; set; } = "manuel";
+        public decimal PlafondCreditDefaut { get; set; }
     }
 
     private Saisie? parametres;
@@ -144,7 +149,7 @@
             parametres = new Saisie
             {
                 ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
-                SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel"
+                SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut
             };
         await ChargerJournalAsync(1);
     }
@@ -161,7 +166,7 @@
         enCours = true;
         message = null;
         erreur = await Api.ModifierParametresCaisseAsync(new ParametresCaisseDto(
-            parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture));
+            parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture, parametres.PlafondCreditDefaut));
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";

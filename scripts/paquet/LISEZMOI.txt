@@ -1,0 +1,31 @@
+PHARMA OFFICINE - ESSAI
+=======================
+
+Ce dossier permet d'essayer Pharma Officine sur un PC Windows, avec des données de démonstration
+fictives (produits, patients, grossistes, factures). Rien n'est envoyé sur Internet.
+
+1. AVANT DE COMMENCER
+   - Windows 10 ou 11.
+   - PostgreSQL 16 ou plus récent, installé sur ce PC (www.postgresql.org/download/windows).
+     Pendant son installation, notez le mot de passe du compte « postgres ».
+
+2. INSTALLER (une seule fois)
+   - Clic droit sur installer.ps1 > « Exécuter avec PowerShell »,
+     ou dans PowerShell, depuis ce dossier :
+       powershell -ExecutionPolicy Bypass -File .\installer.ps1
+   - Saisissez le mot de passe du compte « postgres ».
+   - Le script crée la base « pharmacie_essai » et la configuration. Il ne touche à aucune autre base.
+   - Pour repartir de zéro plus tard : .\installer.ps1 -Recreer (efface la base d'essai).
+
+3. LANCER
+   - Double-cliquez sur demarrer.cmd. Une fenêtre « serveur » s'ouvre (réduite) : ne la fermez pas
+     pendant l'essai. Le poste de travail s'ouvre ensuite.
+   - Comptes : titulaire, assistant ou vendeur ; mot de passe : demo.
+
+4. ESSAYER ET DONNER SON AVIS
+   - En haut à droite : « Guide et retours ». Vous y trouvez ce qu'il faut essayer, écran par écran,
+     et un formulaire pour noter chaque problème, idée ou question.
+   - À la fin, « Copier les remarques » : collez-les dans un e-mail ou un message.
+
+5. ARRÊTER
+   - Fermez le poste de travail, puis la fenêtre « serveur ».

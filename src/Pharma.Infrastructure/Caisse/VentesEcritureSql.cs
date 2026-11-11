@@ -55,8 +55,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO vente (numero, utilisateur_id, patient_id, ordonnance_id, type, organisme_id,
                                montant_total, part_organisme, part_patient, statut, session_caisse_id,
-                               remise_pct, montant_remise, taux_tiers_payant)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'en_cours', $10, $11, $12, $13)
+                               remise_pct, montant_remise, taux_tiers_payant, reste_saisi)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'en_cours', $10, $11, $12, $13, $14)
             RETURNING id
             """, cx, tx))
         {
@@ -73,6 +73,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
             cmd.Parameters.AddWithValue(v.RemisePct);
             cmd.Parameters.AddWithValue(v.MontantRemise);
             cmd.Parameters.Add(Valeur(v.TauxTiersPayant, NpgsqlDbType.Numeric));
+            cmd.Parameters.AddWithValue(v.ResteSaisi is not null);
             venteId = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
 
@@ -82,8 +83,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
             long ligneId;
             await using (var cmd = new NpgsqlCommand("""
                 INSERT INTO ligne_vente (vente_id, produit_id, lot_id, quantite, prix_unitaire,
-                                         base_remboursement, taux_remboursement, montant_organisme, montant_patient)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
+                                         base_remboursement, taux_remboursement, montant_organisme, montant_patient, shp)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
                 """, cx, tx))
             {
                 cmd.Parameters.AddWithValue(venteId);
@@ -95,6 +96,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
                 cmd.Parameters.AddWithValue(l.TauxRemboursement);
                 cmd.Parameters.AddWithValue(l.MontantOrganisme);
                 cmd.Parameters.AddWithValue(l.MontantPatient);
+                cmd.Parameters.AddWithValue(l.Shp);
                 ligneId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
 

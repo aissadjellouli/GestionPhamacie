@@ -205,6 +205,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public Task<(FactureEmiseDto?, string?)> EmettreFactureAsync(DemandeFactureDto d) => PostAsync<DemandeFactureDto, FactureEmiseDto>("api/factures", d);
     public async Task<string?> RejeterFactureAsync(long id, string? motif) =>
         (await EnvoyerCorpsAsync<MotifRequete, object>(HttpMethod.Post, $"api/factures/{id}/rejet", new(motif))).Item2;
+    public async Task<string?> LeverRejetFactureAsync(long id, string? motif) =>
+        (await EnvoyerCorpsAsync<MotifRequete, object>(HttpMethod.Post, $"api/factures/{id}/lever-rejet", new(motif))).Item2;
     public async Task<string?> CorrigerFactureAsync(long id, DemandeFactureDto d) =>
         (await EnvoyerCorpsAsync<DemandeFactureDto, object>(HttpMethod.Post, $"api/factures/{id}/correction", d)).Item2;
     public Task<(FactureEmiseDto?, string?)> RemplacerFactureAsync(long id, DemandeFactureDto d) =>
@@ -419,6 +421,22 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public Task<(IdentifiantDto?, string?)> CreerMedecinAsync(NouveauMedecinDto medecin) =>
         PostAsync<NouveauMedecinDto, IdentifiantDto>("api/medecins", medecin);
 
+    public Task<(FichePatientDto?, string?)> FichePatientAsync(long id) => GetAsync<FichePatientDto?>($"api/patients/{id}/fiche", null);
+    public async Task<string?> ModifierPatientAsync(FichePatientDto f) =>
+        (await EnvoyerCorpsAsync<FichePatientDto, object>(HttpMethod.Put, $"api/patients/{f.Id}", f)).Item2;
+    public Task<(List<VendeurComptoirDto>, string?)> ValidateursBlocageAsync() =>
+        GetAsync<List<VendeurComptoirDto>>("api/produits/validateurs-blocage", []);
+    public Task<(List<BlocageProduitDto>, string?)> ProduitsBloquesAsync() => GetAsync<List<BlocageProduitDto>>("api/produits/bloques", []);
+    public Task<(BlocageProduitDto?, string?)> BlocageProduitAsync(long produitId) => GetAsync<BlocageProduitDto?>($"api/produits/{produitId}/blocage", null);
+    public async Task<string?> ModifierBlocageProduitAsync(long produitId, BlocageProduitRequete r) =>
+        (await EnvoyerCorpsAsync<BlocageProduitRequete, object>(HttpMethod.Put, $"api/produits/{produitId}/blocage", r)).Item2;
+    public Task<(List<RetourEssaiDto>, string?)> RetoursEssaiAsync() => GetAsync<List<RetourEssaiDto>>("api/retours-essai", []);
+    public async Task<string?> EnvoyerRetourEssaiAsync(NouveauRetourEssaiDto d) =>
+        (await EnvoyerCorpsAsync<NouveauRetourEssaiDto, object>(HttpMethod.Post, "api/retours-essai", d)).Item2;
+    public Task<(List<CategorieProduitDto>, string?)> CategoriesProduitsAsync() => GetAsync<List<CategorieProduitDto>>("api/categories-produits", []);
+    public Task<(ClassementProduitDto?, string?)> ClassementProduitAsync(long produitId) => GetAsync<ClassementProduitDto?>($"api/produits/{produitId}/classement", null);
+    public async Task<string?> ModifierClassementProduitAsync(long produitId, string categorie, string? listePsychotrope) =>
+        (await EnvoyerCorpsAsync<ClassementProduitRequete, object>(HttpMethod.Put, $"api/produits/{produitId}/classement", new(categorie, listePsychotrope))).Item2;
     public Task<(List<OrganismeDto>, string?)> OrganismesAsync() => GetAsync<List<OrganismeDto>>("api/organismes", []);
 
     // ---- Administration -------------------------------------------------------

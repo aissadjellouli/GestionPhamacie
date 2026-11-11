@@ -303,6 +303,8 @@ select, .panneau input[type="date"] { height: 44px; padding: 0 10px; border-radi
 .stock-restant.epuise { color: var(--urgent); font-weight: 600; }
 .avertissement-fefo { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 8px;
   background: var(--avert-fond); border: 1px solid var(--avert-bord); color: var(--attention); font-weight: 500; }
+/* Lot plus ancien proche de sa péremption : alerte rouge */
+.avertissement-fefo.rouge { background: var(--urgent-fond); border-color: var(--alerte-bord); color: var(--urgent); }
 /* Champ obligatoire manquant (après un essai de validation) */
 input.champ-invalide, select.champ-invalide { border-color: var(--urgent-vif); background: var(--urgent-fond); box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.15); }
 .message-champ { font-size: 13px; color: var(--urgent); font-weight: 500; }

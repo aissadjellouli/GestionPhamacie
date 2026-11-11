@@ -75,12 +75,13 @@ public class ControleBoiteCaisseTests
     }
 
     [Fact]
-    public async Task Pas_d_avertissement_si_le_lot_plus_ancien_n_est_pas_proche()
+    public async Task Lot_plus_ancien_pas_proche_alerte_orange()
     {
         var m = new MobileEnMemoire();
         m.Lots.Add(new(71, "SIN-OLD", MobileEnMemoire.Aujourdhui.AddDays(300), false, 3, false, null, "Grossiste A", "ok"));
         var b = await Cas(m).ExecuterAsync(MobileEnMemoire.DataMatrix, 3);
-        Assert.Null(b!.Avertissement);
+        Assert.Contains("SIN-OLD", b!.Avertissement);
+        Assert.Equal("orange", b.CouleurAvertissement);
     }
 
     [Fact]

@@ -7,12 +7,16 @@ public class RegleFefoTests
     private static readonly LotComptoir Recent = new(2, "B2", new DateOnly(2028, 6, 30), "ok");
 
     [Theory]
-    [InlineData("rouge", true)]
-    [InlineData("orange", true)]
-    [InlineData("ok", false)]                     // périme avant, mais pas « proche » : pas d'avertissement
-    [InlineData("risque_ecoulement", false)]
-    public void Avertit_si_un_lot_qui_perime_avant_est_proche(string niveau, bool attendu) =>
-        Assert.Equal(attendu, RegleFefo.Avertir(Recent, new(1, "A1", new DateOnly(2027, 1, 15), niveau)) is not null);
+    [InlineData("rouge", "rouge")]
+    [InlineData("orange", "rouge")]
+    [InlineData("ok", "orange")]                  // périme avant sans être proche : alerte orange
+    [InlineData("risque_ecoulement", "orange")]
+    public void Avertit_toujours_rouge_si_le_lot_plus_ancien_est_proche_orange_sinon(string niveau, string couleur)
+    {
+        var ancien = new LotComptoir(1, "A1", new DateOnly(2027, 1, 15), niveau);
+        Assert.NotNull(RegleFefo.Avertir(Recent, ancien));
+        Assert.Equal(couleur, RegleFefo.Couleur(ancien));
+    }
 
     [Fact]
     public void Pas_d_avertissement_pour_le_premier_lot_lui_meme_ou_un_lot_plus_recent()

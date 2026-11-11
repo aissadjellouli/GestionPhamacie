@@ -116,22 +116,43 @@ else
         @if (lignes.Count > 0)
         {
             <div class="tableau-cadre">
-                <table class="tableau" style="min-width: 1100px">
-                    <thead><tr><th scope="col">Produit</th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">N° de lot</span></th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">Péremption</span></th><th scope="col">Boîtes reçues</th><th scope="col">Prix HT</th><th scope="col">Remise %</th><th scope="col">PPA</th><th scope="col">SHP</th><th scope="col">Marge</th><th scope="col">Data Matrix</th><th scope="col"></th></tr></thead>
+                <table class="tableau" style="min-width: 1200px">
+                    <thead><tr><th scope="col">Produit</th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">N° de lot</span></th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">Péremption</span></th><th scope="col">Boîtes reçues</th><th scope="col" title="Unités gratuites, comprises dans les boîtes reçues">UG</th><th scope="col">Prix HT</th><th scope="col">Remise %</th><th scope="col">PPA</th><th scope="col">SHP</th><th scope="col">Marge</th><th scope="col">Data Matrix</th><th scope="col"></th></tr></thead>
                     <tbody>
                         @foreach (var l in lignes)
                         {
                             <tr>
                                 <td><span class="nom">@l.Nom</span>@if (l.Commandee is { } q){<br /><span class="detail">commandé : @q</span>}
+                                    @if (l.Info is { BloqueAchat: true } infoBloque)
+                                    {
+                                        <br /><span class="pastille urgent">Bloqué à l’achat@(infoBloque.MotifBlocage is { } mb ? $" : {mb}" : "")</span>
+                                    }
                                     @if (l.EcartPpa is { } prixCatalogue)
                                     {
                                         <br /><span class="texte-attention">PPA facturé @Libelles.Dinars(l.Ppa!.Value, 2) ≠ prix public du catalogue @Libelles.Dinars(prixCatalogue, 2)</span>
+                                        <br /><select class="selection" style="font-size: 12px; margin-top: 4px" aria-label="Prix de vente de @l.Nom" @bind="l.RemplacerPrixCatalogue">
+                                            <option value="False">Garder ce PPA sur le lot (vendu à ce prix)</option>
+                                            @if (Session.A("prix.modifier"))
+                                            {
+                                                <option value="True">Remplacer le prix du catalogue par ce PPA</option>
+                                            }
+                                        </select>
                                     }</td>
                                 <td><input type="text" style="width: 120px" aria-label="Numéro de lot de @l.Nom" @bind="l.NumeroLot" @bind:event="oninput" @bind:after="l.Reinitialiser"
                                            class="@(LotInvalide(l) ? "champ-invalide" : null)" aria-invalid="@(LotInvalide(l) ? "true" : "false")" /></td>
                                 <td><input type="date" aria-label="Péremption de @l.Nom" @bind="l.Peremption" @bind:after="l.Reinitialiser"
                                            class="@(DateInvalide(l) ? "champ-invalide" : null)" aria-invalid="@(DateInvalide(l) ? "true" : "false")" /></td>
-                                <td><input type="number" min="0" style="width: 80px" aria-label="Boîtes reçues de @l.Nom" @bind="l.Quantite" /></td>
+                                <td><input type="number" min="0" style="width: 80px" aria-label="Boîtes reçues de @l.Nom (UG comprises)" @bind="l.Quantite" /></td>
+                                <td>
+                                    <input type="number" min="0" style="width: 60px" aria-label="Unités gratuites de @l.Nom" @bind="l.Ug" />
+                                    @if (l.Ug > 0)
+                                    {
+                                        <select class="selection" style="display: block; margin-top: 4px; font-size: 12px" aria-label="Coût des unités gratuites de @l.Nom" @bind="l.UgCoutReparti">
+                                            <option value="False">UG à 0 DA</option>
+                                            <option value="True">Coût réparti</option>
+                                        </select>
+                                    }
+                                </td>
                                 <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="Prix HT de @l.Nom (avant remise)" @bind="l.Prix" /></td>
                                 <td><input type="number" min="0" max="100" step="0.01" style="width: 70px" aria-label="Remise en % de @l.Nom" @bind="l.RemisePct" /></td>
                                 <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="PPA facturé de @l.Nom" @bind="l.Ppa" /></td>
@@ -143,7 +164,7 @@ else
                             @if (l.QuantiteMobile is { } qm && l.QuantiteSaisie is { } qs)
                             {
                                 <tr class="ligne-conflit">
-                                    <td colspan="11">
+                                    <td colspan="12">
                                         <div class="conflit-lot" role="alert">
                                             <span>Cette ligne était déjà saisie (@qs boîte(s)) et le mobile en a scanné @qm pour le même lot. Quelle quantité retenir ?</span>
                                             <div class="choix-conflit">
@@ -158,7 +179,7 @@ else
                             @foreach (var c in l.Conflits)
                             {
                                 <tr class="ligne-conflit">
-                                    <td colspan="11">
+                                    <td colspan="12">
                                         <div class="conflit-lot" role="alert">
                                             <span>@c.Message</span>
                                             @if (c.Type == "date_differente")
@@ -212,7 +233,8 @@ else
                     <dt>Total SHP</dt><dd>@Libelles.Dinars(t.Shp, 2)</dd>
                 </dl>
             </div>
-            <p class="detail" style="margin: 0">Saisissez chaque ligne comme sur la facture : prix HT avant remise et remise en % ; le coût du stock est le prix net de remise. Le net à payer fait la dette du grossiste (TVA du catalogue). Le SHP, proposé selon la liste du produit, et le PPA sont indiqués à part : ils ne sont pas dus au grossiste. Une ligne à 0 boîte (non livrée) est ignorée.</p>
+            <p class="detail" style="margin: 0">Saisissez chaque ligne comme sur la facture : prix HT avant remise et remise en % ; le coût du stock est le prix net de remise. UG : unités gratuites comprises dans les boîtes reçues, à 0 DA ou au coût réparti (montant facturé ÷ boîtes reçues). Un PPA facturé différent du catalogue est gardé sur le lot : la caisse vend ce lot à ce prix. Le net à payer fait la dette du grossiste (TVA du catalogue). Le SHP, proposé selon la liste du produit, et le PPA sont indiqués à part : ils ne sont pas dus au grossiste. Une ligne à 0 boîte (non livrée) est ignorée.</p>
+            <ValidationProduitBloque Produits="ProduitsBloques" Operation="à l’achat" Id="rec" Accord="accordBlocage" />
             <div style="display: flex; gap: 8px">
                 <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">Valider la réception</button>
                 <button type="button" class="btn" disabled="@enCours" @onclick="Nouvelle">Abandonner</button>
@@ -271,6 +293,11 @@ else
         public int Quantite { get; set; }
         public decimal Prix { get; set; }
         public decimal RemisePct { get; set; }
+        /// <summary>Unités gratuites, comprises dans Quantite (boîtes reçues).</summary>
+        public int Ug { get; set; }
+        public bool UgCoutReparti { get; set; }
+        public bool RemplacerPrixCatalogue { get; set; }
+        public int Facturees => Math.Max(Quantite - Ug, 0);
         public decimal? Ppa { get; set; }
         public decimal? Shp { get; set; }
         /// <summary>Liste du produit, prix public du catalogue, TVA et SHP proposé (chargés à l'ajout de la ligne).</summary>
@@ -350,6 +377,11 @@ else
         return DocumentSaisiAsync();
     }
 
+    // ---- Produits bloqués à l'achat : réceptionnés seulement avec la validation d'une personne habilitée ----
+    private readonly AccordBlocage accordBlocage = new();
+    private List<string> ProduitsBloques => lignes.Where(l => l.Quantite > 0 && l.Info is { BloqueAchat: true })
+        .Select(l => l.Info!.MotifBlocage is { } m ? $"{l.Nom} ({m})" : l.Nom).Distinct().ToList();
+
     // ---- Pied de facture, calculé comme sur les factures des grossistes (RegleFactureAchat côté serveur) ----
     private decimal timbre;
 
@@ -359,10 +391,11 @@ else
         {
             var actives = lignes.Where(l => l.Quantite > 0).ToList();
             static decimal A(decimal v) => Math.Round(v, 2, MidpointRounding.AwayFromZero);
-            var ht = actives.Sum(l => A(l.Quantite * l.Prix));
-            var remise = A(actives.Sum(l => l.Quantite * l.Prix * l.RemisePct / 100m));
-            var tva = A(actives.Sum(l => l.Quantite * l.Prix * (1 - l.RemisePct / 100m) * (l.Info?.TauxTva ?? 0) / 100m));
-            return (ht, remise, tva, A(actives.Sum(l => l.Quantite * (l.Ppa ?? 0))), A(actives.Sum(l => l.Quantite * (l.Shp ?? 0))));
+            // Boîtes facturées seulement : les unités gratuites ne sont pas facturées
+            var ht = actives.Sum(l => A(l.Facturees * l.Prix));
+            var remise = A(actives.Sum(l => l.Facturees * l.Prix * l.RemisePct / 100m));
+            var tva = A(actives.Sum(l => l.Facturees * l.Prix * (1 - l.RemisePct / 100m) * (l.Info?.TauxTva ?? 0) / 100m));
+            return (ht, remise, tva, A(actives.Sum(l => l.Facturees * (l.Ppa ?? 0))), A(actives.Sum(l => l.Facturees * (l.Shp ?? 0))));
         }
     }
 
@@ -562,12 +595,19 @@ else
         }
         if (aEnvoyer.FirstOrDefault(l => string.IsNullOrWhiteSpace(l.NumeroLot)) is { } sansLot) { erreur = $"{sansLot.Nom} : indiquez le numéro de lot."; return; }
         if (aEnvoyer.FirstOrDefault(l => l.Peremption is null) is { } sansDate) { erreur = $"{sansDate.Nom} : indiquez la date de péremption."; return; }
+        if (ProduitsBloques.Count > 0 && !accordBlocage.Complet(Session.A("produits.bloquer")))
+        {
+            erreur = Api.SignalerChamp("produit_bloque", "Produit bloqué à l’achat : faites valider la réception par le pharmacien ou l’assistant.");
+            return;
+        }
         enCours = true;
         try
         {
             ReceptionRequete Requete() => new(fournisseurId, commandeId == 0 ? null : commandeId, numeroBl, numeroFacture,
                 aEnvoyer.Select(l => new LigneReceptionDto(l.ProduitId, l.Nom, l.NumeroLot, l.Peremption!.Value, l.Quantite, l.Prix,
-                    l.Gtin, l.Series.Count > 0 ? l.Series : null, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp)).ToList(), timbre);
+                    l.Gtin, l.Series.Count > 0 ? l.Series : null, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp,
+                    l.Ug, l.UgCoutReparti, l.EcartPpa is not null && l.RemplacerPrixCatalogue)).ToList(), timbre,
+                accordBlocage.VersDto(Session.A("produits.bloquer")));
 
             // Date différente d'un lot en stock ou lot bloqué : l'utilisateur choisit sur la ligne avant d'entrer en stock
             var (conflits, ec) = await Api.ConflitsReceptionAsync(Requete());
@@ -618,6 +658,7 @@ else
         lignes.Clear();
         (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
         (dejaRecues, timbre) = ([], 0);
+        accordBlocage.Effacer();
         controle = false;
         await RemettreScansAsync(aRemettre);
         Nav.NavigateTo("achats?onglet=receptions");

@@ -19,6 +19,18 @@ public class Produit
     public bool Actif { get; init; } = true;
     /// <summary>Repris de l'ancien logiciel sans n° d'enregistrement : classe à confirmer par le titulaire, non vendable d'ici là (037).</summary>
     public bool AVerifier { get; init; }
+    /// <summary>Liste I ou II d'un psychotrope (liste_i, liste_ii), pour son SHP ; null : à renseigner.</summary>
+    public string? ListePsychotrope { get; init; }
+    /// <summary>Catégorie (categorie_produit) : médicament, dermo-cosmétique, hygiène…</summary>
+    public string Categorie { get; init; } = "medicament";
+    /// <summary>Catégorie comptée dans les totaux « médicaments » (sinon « autres produits »).</summary>
+    public bool EstMedicament { get; init; } = true;
+    /// <summary>Bloqué à la vente par le titulaire ou l'assistant (046) ; MotifBlocage : la raison.</summary>
+    public bool BloqueVente { get; init; }
+    public string? MotifBlocage { get; init; }
+
+    /// <summary>Supplément d'honoraire du pharmacien, par boîte, selon la liste du produit.</summary>
+    public decimal ShpParBoite => Achats.RegleShp.ParBoite(Classe, ListePsychotrope);
 
     /// <summary>Psychotropes et stupéfiants : inscription au registre obligatoire.</summary>
     public bool EstSousRegistre =>

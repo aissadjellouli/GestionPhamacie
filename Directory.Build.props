@@ -7,5 +7,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <Company>[Nom de la société]</Company>
     <Product>Pharma Officine</Product>
+    <!-- Version : année.mois de la livraison (troisième chiffre : correctif du mois, 0 sinon) -->
+    <Version>2026.11.0</Version>
   </PropertyGroup>
 </Project>

@@ -5,16 +5,27 @@ namespace Pharma.Domain.Achats;
 public sealed record LigneCommandeSaisie(long ProduitId, string Nom, int Quantite, decimal PrixAchatHt);
 
 /// <summary>
-/// Une ligne de livraison : un lot d'un produit, avec ses boîtes sérialisées éventuelles (Data Matrix). PrixAchatHt : prix
-/// unitaire HT avant remise, comme sur la facture ; RemisePct : remise de la ligne ; Ppa : prix public facturé ; Shp : supplément
-/// d'honoraire par boîte (null : selon la liste du produit, RegleShp). Le coût du stock est le prix net de remise (PrixNetHt).
+/// Une ligne de livraison : un lot d'un produit, avec ses boîtes sérialisées éventuelles (Data Matrix). Quantite : boîtes reçues,
+/// unités gratuites (Ug) comprises ; Facturees = Quantite − Ug. PrixAchatHt : prix unitaire HT avant remise, comme sur la facture ;
+/// RemisePct : remise de la ligne ; Ppa : prix public facturé (gardé sur le lot ; RemplacerPrixCatalogue : remplace aussi le prix
+/// public du produit) ; Shp : supplément d'honoraire par boîte (null : selon la liste du produit, RegleShp).
+/// Coût d'une boîte : prix net de remise ; UG à 0 DA, ou, si UgCoutReparti, montant facturé ÷ toutes les boîtes reçues.
 /// </summary>
 public sealed record LigneReceptionSaisie(
     long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, int Quantite, decimal PrixAchatHt,
     string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null, bool LotSepare = false, bool EntrerBloque = false,
-    decimal RemisePct = 0, decimal? Ppa = null, decimal? Shp = null)
+    decimal RemisePct = 0, decimal? Ppa = null, decimal? Shp = null,
+    int Ug = 0, bool UgCoutReparti = false, bool RemplacerPrixCatalogue = false)
 {
     public decimal PrixNetHt => RegleFactureAchat.PrixNet(PrixAchatHt, RemisePct);
+    /// <summary>Boîtes facturées (reçues moins les unités gratuites).</summary>
+    public int Facturees => Quantite - Ug;
+    /// <summary>Coût d'une boîte facturée ; avec UG au coût réparti, coût de chaque boîte reçue.</summary>
+    public decimal CoutBoite => UgCoutReparti && Ug > 0 && Quantite > 0
+        ? Math.Round(PrixNetHt * Facturees / Quantite, 2, MidpointRounding.AwayFromZero)
+        : PrixNetHt;
+    /// <summary>Coût de la boîte de rang i (0 = première) : avec UG à 0 DA, les dernières boîtes sont les gratuites.</summary>
+    public decimal CoutBoiteRang(int i) => !UgCoutReparti && i >= Facturees ? 0m : CoutBoite;
 }
 
 public static class RegleAchats

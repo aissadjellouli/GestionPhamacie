@@ -33,7 +33,7 @@ public sealed record FicheContact(string Type, long Id, string Nom, string Preci
     CoordonneesContact? Saisie = null, bool Modifiable = false);
 
 /// <summary>Coordonnées modifiables depuis la fiche contact. Adresse : grossiste et entreprise seulement (un patient n'en a pas).</summary>
-public sealed record CoordonneesContact(string? Telephone, string? Email, string? Adresse);
+public sealed record CoordonneesContact(string? Telephone, string? Email, string? Adresse, int? DelaiPaiementJours = null);
 
 public interface IContacts
 {
@@ -87,7 +87,8 @@ public sealed class ModifierCoordonneesContact(IContacts contacts, IPermissionSe
         [TypesContact.Patient] = "patient", [TypesContact.Grossiste] = "fournisseur", [TypesContact.Client] = "client_facture"
     };
 
-    public async Task ExecuterAsync(string? type, long id, string? telephone, string? email, string? adresse, long utilisateurId, CancellationToken ct = default)
+    public async Task ExecuterAsync(string? type, long id, string? telephone, string? email, string? adresse, long utilisateurId, CancellationToken ct = default,
+        int? delaiPaiementJours = null)
     {
         type = type?.Trim().ToLowerInvariant();
         if (type is null || Droit(type) is not { } droit)
@@ -100,9 +101,15 @@ public sealed class ModifierCoordonneesContact(IContacts contacts, IPermissionSe
         var c = new CoordonneesContact(tel, RegleContact.Email(email),
             type == TypesContact.Patient || string.IsNullOrWhiteSpace(adresse) ? null : adresse.Trim());
         if (c.Adresse is { Length: > 300 }) throw new RegleMetierException("L'adresse est trop longue (300 caractères au plus).", "adresse");
+        // Délai de paiement : entreprise cliente seulement (échéance proposée de ses factures)
+        if (type == TypesContact.Client && delaiPaiementJours is { } delai)
+        {
+            Pharma.Domain.Factures.RegleFacture.VerifierDelaiPaiement(delai);
+            c = c with { DelaiPaiementJours = delai };
+        }
         if (!await contacts.ModifierCoordonneesAsync(type, id, c, ct)) throw new RegleMetierException("Ce contact n'existe plus.");
         await journal.EcrireAsync(utilisateurId, "coordonnees_modifiees", Tables[type], id,
-            new Dictionary<string, object?> { ["type"] = type, ["telephone"] = c.Telephone, ["email"] = c.Email, ["adresse"] = c.Adresse }, droit, ct);
+            new Dictionary<string, object?> { ["type"] = type, ["telephone"] = c.Telephone, ["email"] = c.Email, ["adresse"] = c.Adresse, ["delai_paiement_jours"] = c.DelaiPaiementJours }, droit, ct);
     }
 }
 

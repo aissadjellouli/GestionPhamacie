@@ -44,8 +44,8 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
 
         await using var cmd = new NpgsqlCommand("""
             INSERT INTO produit (code_barre, nom_commercial, dci_id, dosage, forme, prix_public, tarif_reference,
-                                 remboursable, taux_tva, classe, stock_minimum, num_enregistrement)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id
+                                 remboursable, taux_tva, classe, stock_minimum, num_enregistrement, categorie, liste_psychotrope)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id
             """, cnx, tx);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.CodeBarre ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(f.NomCommercial);
@@ -59,8 +59,14 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
         cmd.Parameters.AddWithValue(f.Classe.Code());
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.StockMinimum ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.NumEnregistrement ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.AddWithValue(f.Categorie);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.ListePsychotrope ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         long id;
         try { id = (long)(await cmd.ExecuteScalarAsync(ct))!; }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.ForeignKeyViolation && e.ConstraintName == "fk_produit_categorie")
+        {
+            throw new Pharma.Domain.Commun.RegleMetierException("Catégorie inconnue : choisissez-en une de la liste.", "categorie");
+        }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation && e.ConstraintName?.Contains("num_enregistrement") == true)
         {
             throw new Pharma.Domain.Commun.RegleMetierException($"Le n° d'enregistrement {f.NumEnregistrement} est déjà celui d'un produit du catalogue.");

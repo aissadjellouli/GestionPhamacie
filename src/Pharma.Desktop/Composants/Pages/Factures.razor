@@ -114,8 +114,11 @@
                         <tr><th scope="row" colspan="4">Total TTC</th><td class="nombre"><strong>@Libelles.Dinars(r.Ttc, 2)</strong></td></tr>
                         @if (r.Type == "facture")
                         {
-                            <tr><th scope="row" colspan="4">Payé au comptoir · réglé · avoirs</th><td class="nombre">@Libelles.Dinars(r.DejaPaye, 2) · @Libelles.Dinars(r.Regle, 2) · @Libelles.Dinars(r.Avoirs, 2)</td></tr>
-                            <tr><th scope="row" colspan="4">Reste à encaisser</th><td class="nombre"><strong>@Libelles.Dinars(r.Reste, 2)</strong></td></tr>
+                            @if (r.DejaPaye > 0) { <tr><th scope="row" colspan="4">Déjà payé au comptoir</th><td class="nombre">@Libelles.Dinars(r.DejaPaye, 2)</td></tr> }
+                            @if (d.RegleParDette > 0) { <tr><th scope="row" colspan="4">Déjà réglé par le patient sur sa dette (ventes à crédit)</th><td class="nombre">@Libelles.Dinars(d.RegleParDette, 2)</td></tr> }
+                            @if (r.Regle > 0) { <tr><th scope="row" colspan="4">Règlements de la facture</th><td class="nombre">@Libelles.Dinars(r.Regle, 2)</td></tr> }
+                            @if (r.Avoirs > 0) { <tr><th scope="row" colspan="4">Avoirs</th><td class="nombre">− @Libelles.Dinars(r.Avoirs, 2)</td></tr> }
+                            <tr><th scope="row" colspan="4">Reste à payer</th><td class="nombre"><strong>@Libelles.Dinars(r.Reste, 2)</strong></td></tr>
                         }
                     </tfoot>
                 </table>
@@ -157,7 +160,7 @@
             {
                 <h3 class="sous-titre-panneau">Actions</h3>
                 <div class="achats-ligne" style="align-items: flex-end">
-                    <div class="champ" style="flex: 1 1 260px"><label for="a-motif">Motif (rejet, avoir, retrait du suivi)</label><input id="a-motif" data-champ="motif" type="text" maxlength="300" @bind="motifAction" /></div>
+                    <div class="champ" style="flex: 1 1 260px"><label for="a-motif">Motif (rejet, levée du rejet, avoir, retrait du suivi)</label><input id="a-motif" data-champ="motif" type="text" maxlength="300" @bind="motifAction" /></div>
                     @if (r.Statut != "remplacee")
                     {
                         <div class="champ" style="flex: 0 0 150px"><label for="a-avoir">Montant de l’avoir</label><input id="a-avoir" data-champ="montant_avoir" type="number" min="0.01" step="0.01" @bind="montantAvoir" /></div>
@@ -167,6 +170,10 @@
                     @if (r.Statut == "emise")
                     {
                         <button type="button" class="btn" disabled="@enCours" @onclick="RejeterAsync">Enregistrer un rejet</button>
+                    }
+                    @if (r.Statut == "rejetee")
+                    {
+                        <button type="button" class="btn" disabled="@enCours" @onclick="LeverRejetAsync">Lever le rejet</button>
                     }
                     @if (r.Statut == "rejetee" && r.Reste > 0)
                     {
@@ -297,6 +304,7 @@
         catch (Exception ex) { erreur = $"Facture impossible à ouvrir : {ex.Message}"; }
     }
 
+    private Task LeverRejetAsync() => Agir(() => Api.LeverRejetFactureAsync(detail!.Resume.Id, motifAction), "Rejet levé : la facture est de nouveau émise.");
     private Task RejeterAsync() => Agir(() => Api.RejeterFactureAsync(detail!.Resume.Id, motifAction), "Rejet enregistré : corrigez la facture ou remplacez-la.");
 
     private Task AvoirAsync() => Agir(async () => (await Api.AvoirFactureAsync(detail!.Resume.Id, montantAvoir, motifAction)).Item2, "Avoir émis.");

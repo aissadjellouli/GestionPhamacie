@@ -61,6 +61,12 @@ internal static class FacturesEndpoints
                 return Results.NoContent();
             });
 
+        f.MapPost("/{id:long}/lever-rejet", async (long id, MotifRequete r, Facturation fa, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await fa.LeverRejetAsync(id, r.Motif, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            });
+
         f.MapPost("/{id:long}/correction", async (long id, DemandeFactureDto r, Facturation fa, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await fa.CorrigerAsync(id, VersDemande(r), r.Motif, user.UtilisateurId(), ct);
@@ -87,19 +93,19 @@ internal static class FacturesEndpoints
 
         f.MapGet("/clients", async (ConsulterFactures c, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok((await c.ClientsAsync(user.UtilisateurId(), ct)).Select(x =>
-                new ClientFactureDto(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif, x.Email))));
+                new ClientFactureDto(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif, x.Email, x.DelaiPaiementJours))));
 
         f.MapPost("/clients", async (ClientFactureDto x, Facturation fa, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok(new IdentifiantDto(await fa.EnregistrerClientAsync(
-                new ClientFacture(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif, x.Email), user.UtilisateurId(), ct))));
+                new ClientFacture(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif, x.Email, x.DelaiPaiementJours), user.UtilisateurId(), ct))));
 
         // Organismes (tiers payant et factures) : lecture pour qui facture, modification par le titulaire
         api.MapGet("/admin/organismes", async (IFactures factures, CancellationToken ct) =>
-                Results.Ok((await factures.OrganismesAsync(ct)).Select(o => new OrganismeFicheDto(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email))))
+                Results.Ok((await factures.OrganismesAsync(ct)).Select(o => new OrganismeFicheDto(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email, o.DelaiPaiementJours))))
            .ExigerPermission(Permissions.AdminParametres);
 
         api.MapPost("/admin/organismes", async (OrganismeFicheDto o, Facturation fa, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok(new IdentifiantDto(await fa.EnregistrerOrganismeAsync(new OrganismeFiche(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email),
+                Results.Ok(new IdentifiantDto(await fa.EnregistrerOrganismeAsync(new OrganismeFiche(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email, o.DelaiPaiementJours),
                     user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.AdminParametres);
     }
@@ -114,5 +120,5 @@ internal static class FacturesEndpoints
     private static FactureDetailDto VersDto(FactureDetail d) => new(VersDto(d.Resume), d.PatientId, d.ClientId, d.DestinataireInfos, d.Du, d.Au, d.Ht, d.Tva,
         d.Commentaire, d.Motif, d.Employe,
         d.Lignes.Select(l => new LigneFactureDto(l.VenteId, l.LigneVenteId, l.Part, l.Designation, l.Quantite, l.PrixUnitaireTtc, l.TauxTva, l.MontantTtc)).ToList(),
-        d.Versions, d.EmployeId);
+        d.Versions, d.EmployeId, d.RegleParDette);
 }

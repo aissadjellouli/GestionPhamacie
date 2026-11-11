@@ -92,7 +92,9 @@ internal static class AchatsEndpoints
             {
                 var r = await receptionner.ExecuterAsync(new SaisieReception(req.FournisseurId, req.CommandeId, req.NumeroBl, req.NumeroFacture,
                     req.Lignes.Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
-                        l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp)).ToList(), req.Timbre),
+                        l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp,
+                        l.Ug, l.UgCoutReparti, l.RemplacerPrixCatalogue)).ToList(), req.Timbre,
+                    req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null),
                     user.UtilisateurId(), ct);
                 return Results.Ok(new ReceptionEnregistreeDto(r.ReceptionId, r.MontantTtc,
                     r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList()));
@@ -104,7 +106,7 @@ internal static class AchatsEndpoints
             {
                 var liste = (ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => long.TryParse(x, out var v) ? v : 0).Where(v => v > 0);
                 return Results.Ok((await lire.ExecuterAsync(liste, ct))
-                    .Select(i => new InfoAchatProduitDto(i.ProduitId, i.Classe, i.PrixPublic, i.TauxTva, i.ShpParBoite)).ToList());
+                    .Select(i => new InfoAchatProduitDto(i.ProduitId, i.Classe, i.PrixPublic, i.TauxTva, i.ShpParBoite, i.BloqueAchat, i.MotifBlocage)).ToList());
             })
            .ExigerPermission(Permissions.AchatsReceptionner);
 

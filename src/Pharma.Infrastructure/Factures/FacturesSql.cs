@@ -308,12 +308,13 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
                 WHERE f.id = $1
                 UNION ALL
                 SELECT j.cree_le,
-                       CASE j.action WHEN 'facture_rejetee' THEN 'Rejetée' WHEN 'facture_corrigee' THEN 'Corrigée (nouvelle version, l''ancienne est archivée)'
+                       CASE j.action WHEN 'facture_rejetee' THEN 'Rejetée' WHEN 'facture_rejet_leve' THEN 'Rejet levé'
+                                     WHEN 'facture_corrigee' THEN 'Corrigée (nouvelle version, l''ancienne est archivée)'
                                      WHEN 'facture_hors_suivi' THEN 'Retirée du suivi de trésorerie' ELSE 'Remise dans le suivi de trésorerie' END,
                        j.details->>'motif', u.nom_complet, j.utilisateur_id, NULL
                 FROM journal_audit j LEFT JOIN utilisateur u ON u.id = j.utilisateur_id
                 WHERE j.table_cible = 'facture_client' AND j.enregistrement_id = $1
-                  AND j.action IN ('facture_rejetee', 'facture_corrigee', 'facture_hors_suivi', 'facture_remise_en_suivi')
+                  AND j.action IN ('facture_rejetee', 'facture_rejet_leve', 'facture_corrigee', 'facture_hors_suivi', 'facture_remise_en_suivi')
                 UNION ALL
                 SELECT n.cree_le, 'Remplacée par ' || n.numero, NULL, u.nom_complet, n.utilisateur_id, n.montant_ttc
                 FROM facture_client n LEFT JOIN utilisateur u ON u.id = n.utilisateur_id WHERE n.remplace_id = $1
@@ -347,6 +348,16 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
             if (!await r.ReadAsync(ct)) return null;
             detail = new FactureDetail(Resume(r), Nl(r, 20), Nl(r, 21), Txt(r, 22), D(r, 23), D(r, 24), r.GetDecimal(25), r.GetDecimal(26),
                 Txt(r, 27), Txt(r, 28), r.GetString(29), [], [], Nl(r, 31));
+        }
+
+        // Ventes à crédit de la facture (part du patient) réglées depuis par le patient sur sa dette : même calcul que v_facture_client
+        await using (var cmd = db.CreateCommand("""
+            SELECT COALESCE(sum(c.regle), 0) FROM v_vente_credit c
+            WHERE c.vente_id IN (SELECT fl.vente_id FROM facture_client_ligne fl WHERE fl.facture_id = $1 AND fl.part = 'patient' AND fl.vente_id IS NOT NULL)
+            """))
+        {
+            cmd.Parameters.AddWithValue(id);
+            detail = detail with { RegleParDette = (decimal)(await cmd.ExecuteScalarAsync(ct))! };
         }
 
         var versions = new List<int>();
@@ -404,6 +415,13 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         cmd.Parameters.AddWithValue(id);
         cmd.Parameters.AddWithValue(motif);
         if (await cmd.ExecuteNonQueryAsync(ct) == 0) throw new RegleMetierException("La facture n’est plus « émise » : rechargez-la.");
+    }
+
+    public async Task LeverRejetAsync(long id, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("UPDATE facture_client SET statut = 'emise', motif_rejet = NULL WHERE id = $1 AND statut = 'rejetee' AND type = 'facture'");
+        cmd.Parameters.AddWithValue(id);
+        if (await cmd.ExecuteNonQueryAsync(ct) == 0) throw new RegleMetierException("La facture n’est plus « rejetée » : rechargez-la.");
     }
 
     public async Task CorrigerAsync(long id, FactureAEcrire f, string? motif, CancellationToken ct = default)
@@ -464,23 +482,34 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task<int> DelaiPaiementAsync(Destinataire d, long id, CancellationToken ct = default)
+    {
+        if (d == Destinataire.Patient) return RegleFacture.DelaiEcheanceJours;
+        await using var cmd = db.CreateCommand(d == Destinataire.Entreprise
+            ? "SELECT delai_paiement_jours FROM client_facture WHERE id = $1"
+            : "SELECT delai_paiement_jours FROM organisme WHERE id = $1");
+        cmd.Parameters.AddWithValue(id);
+        return await cmd.ExecuteScalarAsync(ct) is int jours ? jours : RegleFacture.DelaiEcheanceJours;
+    }
+
     public async Task<IReadOnlyList<ClientFacture>> ClientsAsync(CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(
-            "SELECT id, raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif, email FROM client_facture ORDER BY NOT actif, raison_sociale");
+            "SELECT id, raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif, email, delai_paiement_jours FROM client_facture ORDER BY NOT actif, raison_sociale");
         var liste = new List<ClientFacture>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
-            liste.Add(new ClientFacture(r.GetInt64(0), r.GetString(1), Txt(r, 2), Txt(r, 3), Txt(r, 4), Txt(r, 5), Txt(r, 6), Txt(r, 7), r.GetBoolean(8), Txt(r, 9)));
+            liste.Add(new ClientFacture(r.GetInt64(0), r.GetString(1), Txt(r, 2), Txt(r, 3), Txt(r, 4), Txt(r, 5), Txt(r, 6), Txt(r, 7), r.GetBoolean(8), Txt(r, 9), r.GetInt32(10)));
         return liste;
     }
 
     public async Task<long> EnregistrerClientAsync(ClientFacture c, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(c.Id is null
-            ? "INSERT INTO client_facture (raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif, email) VALUES ($2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id"
+            ? "INSERT INTO client_facture (raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif, email, delai_paiement_jours) VALUES ($2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
             : """
-              UPDATE client_facture SET raison_sociale = $2, adresse = $3, telephone = $4, nif = $5, rc = $6, nis = $7, article_imposition = $8, actif = $9, email = $10
+              UPDATE client_facture SET raison_sociale = $2, adresse = $3, telephone = $4, nif = $5, rc = $6, nis = $7, article_imposition = $8, actif = $9, email = $10,
+                                        delai_paiement_jours = $11
               WHERE id = $1 RETURNING id
               """);
         cmd.Parameters.Add(Long(c.Id));
@@ -488,6 +517,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         foreach (var v in new[] { c.Adresse, c.Telephone, c.Nif, c.Rc, c.Nis, c.ArticleImposition }) cmd.Parameters.Add(Texte(v));
         cmd.Parameters.AddWithValue(c.Actif);
         cmd.Parameters.Add(Texte(c.Email));
+        cmd.Parameters.AddWithValue(c.DelaiPaiementJours);
         try { return (long)(await cmd.ExecuteScalarAsync(ct))!; }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {
@@ -497,18 +527,19 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
 
     public async Task<IReadOnlyList<OrganismeFiche>> OrganismesAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT id, code, nom, adresse, nif, actif, telephone, email FROM organisme ORDER BY NOT actif, code");
+        await using var cmd = db.CreateCommand("SELECT id, code, nom, adresse, nif, actif, telephone, email, delai_paiement_jours FROM organisme ORDER BY NOT actif, code");
         var liste = new List<OrganismeFiche>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        while (await r.ReadAsync(ct)) liste.Add(new OrganismeFiche(r.GetInt64(0), r.GetString(1), r.GetString(2), Txt(r, 3), Txt(r, 4), r.GetBoolean(5), Txt(r, 6), Txt(r, 7)));
+        while (await r.ReadAsync(ct))
+            liste.Add(new OrganismeFiche(r.GetInt64(0), r.GetString(1), r.GetString(2), Txt(r, 3), Txt(r, 4), r.GetBoolean(5), Txt(r, 6), Txt(r, 7), r.GetInt32(8)));
         return liste;
     }
 
     public async Task<long> EnregistrerOrganismeAsync(OrganismeFiche o, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(o.Id is null
-            ? "INSERT INTO organisme (code, nom, adresse, nif, actif, telephone, email) VALUES ($2, $3, $4, $5, $6, $7, $8) RETURNING id"
-            : "UPDATE organisme SET code = $2, nom = $3, adresse = $4, nif = $5, actif = $6, telephone = $7, email = $8 WHERE id = $1 RETURNING id");
+            ? "INSERT INTO organisme (code, nom, adresse, nif, actif, telephone, email, delai_paiement_jours) VALUES ($2, $3, $4, $5, $6, $7, $8, $9) RETURNING id"
+            : "UPDATE organisme SET code = $2, nom = $3, adresse = $4, nif = $5, actif = $6, telephone = $7, email = $8, delai_paiement_jours = $9 WHERE id = $1 RETURNING id");
         cmd.Parameters.Add(Long(o.Id));
         cmd.Parameters.AddWithValue(o.Code);
         cmd.Parameters.AddWithValue(o.Nom);
@@ -517,6 +548,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         cmd.Parameters.AddWithValue(o.Actif);
         cmd.Parameters.Add(Texte(o.Telephone));
         cmd.Parameters.Add(Texte(o.Email));
+        cmd.Parameters.AddWithValue(o.DelaiPaiementJours);
         try { return (long)(await cmd.ExecuteScalarAsync(ct))!; }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {

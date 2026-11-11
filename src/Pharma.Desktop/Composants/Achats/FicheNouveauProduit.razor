@@ -77,6 +77,21 @@
                 <option value="psychotrope">Psychotrope</option><option value="stupefiant">Stupéfiant</option>
             </select>
         </div>
+        @if (classe == "psychotrope")
+        {
+            <div class="champ" style="flex: 1 1 180px">
+                <label for="p-liste">Liste du psychotrope (SHP)</label>
+                <select id="p-liste" data-champ="liste_psychotrope" @bind="listePsychotrope">
+                    <option value="">À indiquer (SHP 0)</option><option value="liste_i">Liste I (2,50 DA)</option><option value="liste_ii">Liste II (1,50 DA)</option>
+                </select>
+            </div>
+        }
+        <div class="champ" style="flex: 1 1 200px">
+            <label for="p-cat">Catégorie</label>
+            <select id="p-cat" data-champ="categorie" @bind="categorie">
+                @foreach (var cat in categories) { <option value="@cat.Code">@cat.Libelle</option> }
+            </select>
+        </div>
     </div>
     <div class="achats-ligne">
         <div class="champ" style="flex: 1 1 180px"><label for="p-cb">Code-barres (facultatif)</label><input id="p-cb" data-champ="code_barre" type="text" inputmode="numeric" @bind="codeBarre" /></div>
@@ -102,6 +117,9 @@
     private int? stockMin;
     private bool remboursable;
     private string classe = "libre";
+    private string categorie = "medicament";
+    private string listePsychotrope = "";
+    private List<CategorieProduitDto> categories = [new("medicament", "Médicament", true)];
     private List<string> dcis = [];
     private bool enCours;
     private string? erreur;
@@ -117,7 +135,11 @@
     private bool PrixManque => controle && prix <= 0;
     private bool TarifManque => controle && remboursable && tarif is null;
 
-    protected override void OnInitialized() => (codeBarre, nom) = (CodeBarreInitial, NomInitial);
+    protected override async Task OnInitializedAsync()
+    {
+        (codeBarre, nom) = (CodeBarreInitial, NomInitial);
+        if ((await Api.CategoriesProduitsAsync()) is ({ Count: > 0 } liste, null)) categories = liste;
+    }
 
     // Nomenclature nationale : la fiche est remplie depuis le médicament choisi
     private string? recherche;
@@ -173,7 +195,7 @@
         try
         {
             var (r, e) = await Api.CreerProduitAsync(new NouveauProduitDto(nom, dci, dosage, forme, prix, classe, codeBarre, tarif, remboursable, tva, stockMin,
-                choisi?.NumEnregistrement));
+                choisi?.NumEnregistrement, categorie, string.IsNullOrEmpty(listePsychotrope) ? null : listePsychotrope));
             if (e is not null) { erreur = e; return; }
             controle = false;
             await OnCree.InvokeAsync((r!.Id, nom!.Trim()));

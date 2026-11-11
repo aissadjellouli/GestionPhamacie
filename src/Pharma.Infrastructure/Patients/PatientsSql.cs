@@ -48,6 +48,39 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         };
     }
 
+    public async Task<FichePatient?> FicheAsync(long id, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT id, nom, prenom, date_naissance, telephone, email, num_assure, organisme_id, est_chronique, plafond_credit, solde_credit
+            FROM patient WHERE id = $1
+            """);
+        cmd.Parameters.AddWithValue(id);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return null;
+        return new FichePatient(r.GetInt64(0), r.GetString(1), Texte(r, 2), r.IsDBNull(3) ? null : r.GetFieldValue<DateOnly>(3), Texte(r, 4),
+            Texte(r, 5), Texte(r, 6), r.IsDBNull(7) ? null : r.GetInt64(7), r.GetBoolean(8), r.GetDecimal(9), r.GetDecimal(10));
+    }
+
+    public async Task<bool> ModifierAsync(FichePatient f, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            UPDATE patient SET nom = $2, prenom = $3, date_naissance = $4, telephone = $5, email = $6, num_assure = $7,
+                               organisme_id = $8, est_chronique = $9, plafond_credit = $10
+            WHERE id = $1
+            """);
+        cmd.Parameters.AddWithValue(f.Id);
+        cmd.Parameters.AddWithValue(f.Nom);
+        cmd.Parameters.Add(Nullable(f.Prenom, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(f.DateNaissance, NpgsqlDbType.Date));
+        cmd.Parameters.Add(Nullable(f.Telephone, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(f.Email, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(f.NumAssure, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(f.OrganismeId, NpgsqlDbType.Bigint));
+        cmd.Parameters.AddWithValue(f.Chronique);
+        cmd.Parameters.AddWithValue(f.PlafondCredit);
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
     public async Task<long> CreerAsync(NouveauPatient p, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
@@ -88,10 +121,10 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
 
     public async Task<IReadOnlyList<Organisme>> ListerAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT id, code, nom FROM organisme WHERE actif ORDER BY code");
+        await using var cmd = db.CreateCommand("SELECT id, code, nom, delai_paiement_jours FROM organisme WHERE actif ORDER BY code");
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<Organisme>();
-        while (await r.ReadAsync(ct)) liste.Add(new Organisme(r.GetInt64(0), r.GetString(1), r.GetString(2)));
+        while (await r.ReadAsync(ct)) liste.Add(new Organisme(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetInt32(3)));
         return liste;
     }
 

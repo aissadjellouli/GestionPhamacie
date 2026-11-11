@@ -64,6 +64,27 @@ public class RegleFactureAchatTests
     [InlineData("libre", 0)]
     public void SHP_selon_la_liste(string classe, decimal attendu) => Assert.Equal(attendu, RegleShp.ParBoite(classe));
 
+    [Theory]
+    [InlineData("liste_i", 2.50)]
+    [InlineData("liste_ii", 1.50)]
+    [InlineData(null, 0)]                       // liste à renseigner sur la fiche
+    public void SHP_d_un_psychotrope_selon_sa_liste(string? liste, decimal attendu) =>
+        Assert.Equal(attendu, RegleShp.ParBoite("psychotrope", liste));
+
+    [Fact]
+    public void Unites_gratuites_a_zero_ou_au_cout_reparti_et_hors_facture()
+    {
+        // 12 boîtes reçues dont 2 UG, 100 DA HT : facture de 10 boîtes
+        var zero = new LigneReceptionSaisie(1, "P", "L", Exp, 12, 100m, Ug: 2);
+        Assert.Equal((10, 100m, 100m, 0m), (zero.Facturees, zero.CoutBoite, zero.CoutBoiteRang(9), zero.CoutBoiteRang(10)));
+        var reparti = zero with { UgCoutReparti = true };
+        Assert.Equal((83.33m, 83.33m), (reparti.CoutBoite, reparti.CoutBoiteRang(11)));   // 1 000 ÷ 12
+        var t = RegleFactureAchat.Totaux([zero], new Dictionary<long, decimal>(), 0);
+        Assert.Equal((1000m, 1000m), (t.MontantHt, t.NetAPayer));
+        Assert.Throws<RegleMetierException>(() => RegleFactureAchat.Verifier([zero with { Ug = 13 }], 0));
+        Assert.Throws<RegleMetierException>(() => RegleFactureAchat.Verifier([zero with { RemplacerPrixCatalogue = true }], 0));   // sans PPA
+    }
+
     [Fact]
     public void Remise_timbre_PPA_et_SHP_controles()
     {

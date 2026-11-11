@@ -15,13 +15,48 @@ internal static class CatalogueEndpoints
            .ExigerPermission(Permissions.StockConsulter);
 
         // Création d'un produit absent du catalogue (fiche Stock ou réception)
+        // Catégories de produits et classement d'un produit (catégorie, liste d'un psychotrope pour son SHP)
+        api.MapGet("/categories-produits", async (ListerCategoriesProduits lister, CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(ct)).Select(c => new CategorieProduitDto(c.Code, c.Libelle, c.Medicament)).ToList()))
+           .RequireAuthorization();
+        api.MapGet("/produits/{id:long}/classement", async (long id, LireClassementProduit lire, CancellationToken ct) =>
+            {
+                var c = await lire.ExecuterAsync(id, ct);
+                return Results.Ok(new ClassementProduitDto(c.ProduitId, c.Nom, c.Classe, c.Categorie, c.ListePsychotrope));
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+        api.MapPut("/produits/{id:long}/classement", async (long id, ClassementProduitRequete req, ModifierClassementProduit modifier, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await modifier.ExecuterAsync(id, req.Categorie, req.ListePsychotrope, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+
+        // Blocage d'un produit à l'achat et/ou à la vente
+        api.MapGet("/produits/bloques", async (LireBlocageProduit lire, CancellationToken ct) =>
+                Results.Ok((await lire.BloquesAsync(ct)).Select(b => new BlocageProduitDto(b.ProduitId, b.Nom, b.BloqueAchat, b.BloqueVente, b.Motif)).ToList()))
+           .ExigerPermission(Permissions.StockConsulter);
+        api.MapGet("/produits/{id:long}/blocage", async (long id, LireBlocageProduit lire, CancellationToken ct) =>
+            {
+                var b = await lire.ExecuterAsync(id, ct);
+                return Results.Ok(new BlocageProduitDto(b.ProduitId, b.Nom, b.BloqueAchat, b.BloqueVente, b.Motif));
+            })
+           .ExigerPermission(Permissions.ProduitsBloquer);
+        api.MapPut("/produits/{id:long}/blocage", async (long id, BlocageProduitRequete req, ModifierBlocageProduit modifier, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await modifier.ExecuterAsync(id, req.BloqueAchat, req.BloqueVente, req.Motif, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.ProduitsBloquer);
+
         api.MapPost("/produits", async (NouveauProduitDto d, CreerProduit creer, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 Pharma.Domain.Catalogue.ClasseReglementaire classe;
                 try { classe = Pharma.Domain.Commun.CodesMetier.ClasseDepuisCode(d.Classe); }
                 catch (ArgumentException) { throw new Pharma.Domain.Commun.RegleMetierException("Classe réglementaire inconnue."); }
                 var id = await creer.ExecuterAsync(new Pharma.Domain.Catalogue.FicheProduit(d.NomCommercial ?? "", d.Dci ?? "", d.Dosage ?? "", d.Forme ?? "",
-                    d.PrixPublic, classe, d.CodeBarre, d.TarifReference, d.Remboursable, d.TauxTva, d.StockMinimum, d.NumEnregistrement), user.UtilisateurId(), ct);
+                    d.PrixPublic, classe, d.CodeBarre, d.TarifReference, d.Remboursable, d.TauxTva, d.StockMinimum, d.NumEnregistrement,
+                    d.Categorie, d.ListePsychotrope), user.UtilisateurId(), ct);
                 return Results.Ok(new IdentifiantDto(id));
             })
            .ExigerPermission(Permissions.CatalogueCreer);

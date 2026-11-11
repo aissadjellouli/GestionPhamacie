@@ -77,6 +77,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{38
 		database\042_email_tiers.sql = database\042_email_tiers.sql
 		database\043_historique_factures.sql = database\043_historique_factures.sql
 		database\044_reception_detaillee.sql = database\044_reception_detaillee.sql
+		database\045_prix_lot_ug_categories.sql = database\045_prix_lot_ug_categories.sql
+		database\046_blocage_produit.sql = database\046_blocage_produit.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"

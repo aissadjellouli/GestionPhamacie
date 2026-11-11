@@ -33,7 +33,8 @@ public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionServic
             new Dictionary<string, object?>
             {
                 ["nom"] = f.NomCommercial, ["dci"] = f.Dci, ["dosage"] = f.Dosage, ["forme"] = f.Forme,
-                ["prix_public"] = f.PrixPublic, ["classe"] = f.Classe.Code(), ["code_barre"] = f.CodeBarre
+                ["prix_public"] = f.PrixPublic, ["classe"] = f.Classe.Code(), ["code_barre"] = f.CodeBarre,
+                ["categorie"] = f.Categorie, ["liste_psychotrope"] = f.ListePsychotrope
             }, Permissions.CatalogueCreer, ct);
         return id;
     }

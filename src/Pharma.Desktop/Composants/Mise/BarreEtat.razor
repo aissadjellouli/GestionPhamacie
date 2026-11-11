@@ -37,7 +37,9 @@
 
 @code {
     private static readonly System.Globalization.CultureInfo Fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
-    private static readonly string Version = typeof(BarreEtat).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "?";
+    // Année.mois de la livraison, plus le correctif du mois s'il y en a un (2026.11, 2026.11.1…)
+    private static readonly string Version = typeof(BarreEtat).Assembly.GetName().Version is { } v
+        ? (v.Build > 0 ? $"{v.Major}.{v.Minor:00}.{v.Build}" : $"{v.Major}.{v.Minor:00}") : "?";
 
     private bool? serveurJoignable;
     private EtatPosteDto? etat;

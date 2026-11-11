@@ -1,0 +1,92 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Produits bloqués à l'achat (ni commande, ni réception) et/ou à la vente (refusés en caisse).
+   Liste visible avec le stock ; blocage et déblocage avec le droit « produits.bloquer » (titulaire et assistant par défaut). *@
+
+<section class="panneau" aria-labelledby="t-blocage">
+    <div>
+        <h2 id="t-blocage">Produits bloqués</h2>
+        <p class="sous-titre">Un produit bloqué à l’achat ne peut plus être commandé ni réceptionné ; bloqué à la vente, la caisse refuse de le vendre.</p>
+    </div>
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+    @if (Session.A("produits.bloquer"))
+    {
+        <div class="achats-ligne">
+            <ChoixProduit Id="bl-produit" Libelle="Bloquer ou débloquer un produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => courant = null" />
+        </div>
+        @if (courant is { } c)
+        {
+            <div class="carte" style="display: flex; flex-direction: column; gap: 10px">
+                <strong>@c.Nom</strong>
+                <div class="filtres">
+                    <label class="case"><input type="checkbox" @bind="achat" /><span>Bloqué à l’achat</span></label>
+                    <label class="case"><input type="checkbox" @bind="vente" /><span>Bloqué à la vente</span></label>
+                </div>
+                <div class="champ">
+                    <label for="bl-motif" class="@(achat || vente ? "requis" : null)">Motif</label>
+                    <input id="bl-motif" data-champ="motif_blocage" type="text" maxlength="300" placeholder="Rappel de lot, litige avec le grossiste, arrêt de commercialisation…" @bind="motif" />
+                </div>
+                <div class="filtres">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
+                </div>
+            </div>
+        }
+    }
+
+    <div class="tableau-cadre">
+        <table class="tableau" style="min-width: 0">
+            <thead><tr><th scope="col">Produit</th><th scope="col">Achat</th><th scope="col">Vente</th><th scope="col">Motif</th></tr></thead>
+            <tbody>
+                @foreach (var b in bloques)
+                {
+                    <tr>
+                        <td class="nom">@b.Nom</td>
+                        <td>@(b.BloqueAchat ? "bloqué" : "—")</td>
+                        <td>@(b.BloqueVente ? "bloqué" : "—")</td>
+                        <td>@(b.Motif ?? "—")</td>
+                    </tr>
+                }
+                @if (bloques.Count == 0)
+                {
+                    <tr><td colspan="4" class="vide">Aucun produit bloqué.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private List<BlocageProduitDto> bloques = [];
+    private BlocageProduitDto? courant;
+    private bool achat, vente, enCours;
+    private string? motif, erreur, message;
+
+    protected override async Task OnInitializedAsync() => (bloques, erreur) = await Api.ProduitsBloquesAsync();
+
+    private async Task ChoisirAsync(ProduitDto p)
+    {
+        (erreur, message) = (null, null);
+        var (b, e) = await Api.BlocageProduitAsync(p.Id);
+        (courant, erreur) = (b, e);
+        if (b is not null) (achat, vente, motif) = (b.BloqueAchat, b.BloqueVente, b.Motif);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (courant is null) return;
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var e = await Api.ModifierBlocageProduitAsync(courant.ProduitId, new BlocageProduitRequete(achat, vente, motif));
+            if (e is not null) { erreur = e; return; }
+            message = !achat && !vente ? $"« {courant.Nom} » débloqué."
+                : $"« {courant.Nom} » bloqué {(achat && vente ? "à l’achat et à la vente" : achat ? "à l’achat" : "à la vente")}.";
+            courant = null;
+            (bloques, erreur) = await Api.ProduitsBloquesAsync();
+        }
+        finally { enCours = false; }
+    }
+}

@@ -45,6 +45,48 @@ internal sealed class PatientsEnMemoire(params Patient[] liste) : IPatients
     public Task<IReadOnlyList<PatientResume>> RechercherAsync(string t, int l, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<PatientResume>>([]);
     public Task<Patient?> TrouverAsync(long id, CancellationToken ct = default) => Task.FromResult(liste.FirstOrDefault(p => p.Id == id));
     public Task<long> CreerAsync(NouveauPatient p, CancellationToken ct = default) => Task.FromResult(99L);
+    public FichePatient? Fiche { get; set; }
+    public FichePatient? Modifiee { get; private set; }
+    public Task<FichePatient?> FicheAsync(long id, CancellationToken ct = default) => Task.FromResult(Fiche?.Id == id ? Fiche : null);
+    public Task<bool> ModifierAsync(FichePatient f, CancellationToken ct = default) { Modifiee = f; return Task.FromResult(Fiche?.Id == f.Id); }
+}
+
+public class ModifierPatientTests
+{
+    private static readonly DateOnly Aujourdhui = new(2026, 11, 10);
+    private static FichePatient Fiche() => new(7, "Benali", "Karim", null, "0550 12 34 56", null, "123", 1, false, 5000, 1200);
+
+    [Fact]
+    public async Task Modification_enregistree_et_journalisee_champ_par_champ_sans_toucher_a_la_dette()
+    {
+        var patients = new PatientsEnMemoire { Fiche = Fiche() };
+        var journal = new JournalEspion();
+        await new ModifierPatient(patients, journal, new HorlogeFixe(Aujourdhui))
+            .ExecuterAsync(Fiche() with { Nom = " Benali-Saïd ", PlafondCredit = 8000, SoldeCredit = 0, OrganismeId = 0 }, 3);
+        var m = patients.Modifiee!;
+        Assert.Equal(("Benali-Saïd", 8000m, 1200m, (long?)null), (m.Nom, m.PlafondCredit, m.SoldeCredit, m.OrganismeId));
+        Assert.Equal("0550 12 34 56", m.Telephone);   // téléphone inchangé : gardé tel quel
+        Assert.Equal(["patient_modifie"], journal.Actions);
+        Assert.Equal(["nom", "organisme_id", "plafond_credit"], journal.Details[0].Keys.Order());
+    }
+
+    [Theory]
+    [InlineData(" ", 0, 0, "nom_patient")]
+    [InlineData("X", -1, 0, "plafond")]
+    [InlineData("X", 0, 1, "date_naissance")]
+    public async Task Saisie_refusee(string nom, decimal plafond, int joursNaissance, string champ)
+    {
+        var patients = new PatientsEnMemoire { Fiche = Fiche() };
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => new ModifierPatient(patients, new JournalEspion(), new HorlogeFixe(Aujourdhui))
+            .ExecuterAsync(Fiche() with { Nom = nom, PlafondCredit = plafond, DateNaissance = joursNaissance > 0 ? Aujourdhui.AddDays(joursNaissance) : null }, 3));
+        Assert.Equal(champ, ex.Champ);
+        Assert.Null(patients.Modifiee);
+    }
+
+    [Fact]
+    public async Task Patient_inconnu_refuse() =>
+        await Assert.ThrowsAsync<RegleMetierException>(() => new ModifierPatient(new PatientsEnMemoire(), new JournalEspion(), new HorlogeFixe(Aujourdhui))
+            .ExecuterAsync(Fiche(), 3));
 }
 
 internal sealed class VentesEspion : IVentesEcriture
@@ -85,9 +127,11 @@ internal sealed class SessionsEnMemoire : ISessionsCaisse
 internal sealed class JournalEspion : IJournal
 {
     public List<string> Actions { get; } = [];
+    public List<IReadOnlyDictionary<string, object?>> Details { get; } = [];
     public Task EcrireAsync(long u, string action, string? t, long? id, IReadOnlyDictionary<string, object?> d, string? p, CancellationToken ct = default)
     {
         Actions.Add(action);
+        Details.Add(d);
         return Task.CompletedTask;
     }
 }

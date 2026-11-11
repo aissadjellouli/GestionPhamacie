@@ -93,7 +93,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
     private async Task<FicheContact?> OrganismeAsync(long id, CancellationToken ct)
     {
         FicheContact fiche;
-        await using (var cmd = db.CreateCommand("SELECT nom, code, telephone, email, adresse, nif, actif FROM organisme WHERE id = $1"))
+        await using (var cmd = db.CreateCommand("SELECT nom, code, telephone, email, adresse, nif, actif, delai_paiement_jours FROM organisme WHERE id = $1"))
         {
             cmd.Parameters.AddWithValue(id);
             await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -103,6 +103,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             Ajouter(coord, "E-mail", T(r, 3), "email");
             Ajouter(coord, "Adresse", T(r, 4));
             Ajouter(coord, "NIF", T(r, 5));
+            Ajouter(coord, "Délai de paiement", $"{r.GetInt32(7)} jours");
             fiche = new FicheContact(TypesContact.Organisme, id, r.GetString(0), $"Organisme · {r.GetString(1)}", r.GetBoolean(6), coord, []);
         }
         return fiche with { Situation = await FacturesAsync("f.organisme_id = $1", id, ct) };
@@ -111,7 +112,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
     private async Task<FicheContact?> ClientAsync(long id, CancellationToken ct)
     {
         FicheContact fiche;
-        await using (var cmd = db.CreateCommand("SELECT raison_sociale, telephone, adresse, nif, rc, nis, article_imposition, actif, email FROM client_facture WHERE id = $1"))
+        await using (var cmd = db.CreateCommand("SELECT raison_sociale, telephone, adresse, nif, rc, nis, article_imposition, actif, email, delai_paiement_jours FROM client_facture WHERE id = $1"))
         {
             cmd.Parameters.AddWithValue(id);
             await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -124,8 +125,9 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             Ajouter(coord, "RC", T(r, 4));
             Ajouter(coord, "NIS", T(r, 5));
             Ajouter(coord, "Article d'imposition", T(r, 6));
+            Ajouter(coord, "Délai de paiement", $"{r.GetInt32(9)} jours");
             fiche = new FicheContact(TypesContact.Client, id, r.GetString(0), "Entreprise cliente", r.GetBoolean(7), coord, [],
-                Saisie: new CoordonneesContact(T(r, 1), T(r, 8), T(r, 2)));
+                Saisie: new CoordonneesContact(T(r, 1), T(r, 8), T(r, 2), r.GetInt32(9)));
         }
         return fiche with { Situation = await FacturesAsync("f.client_id = $1", id, ct) };
     }
@@ -168,7 +170,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
         {
             TypesContact.Patient => "UPDATE patient SET telephone = $2, email = $3 WHERE id = $1",
             TypesContact.Grossiste => "UPDATE fournisseur SET telephone = $2, email = $3, adresse = $4 WHERE id = $1",
-            TypesContact.Client => "UPDATE client_facture SET telephone = $2, email = $3, adresse = $4 WHERE id = $1",
+            TypesContact.Client => "UPDATE client_facture SET telephone = $2, email = $3, adresse = $4, delai_paiement_jours = COALESCE($5, delai_paiement_jours) WHERE id = $1",
             _ => throw new ArgumentOutOfRangeException(nameof(type))
         };
         await using var cmd = db.CreateCommand(sql);
@@ -177,6 +179,8 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)c.Email ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
         if (type != TypesContact.Patient)
             cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)c.Adresse ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        if (type == TypesContact.Client)
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)c.DelaiPaiementJours ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer });
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 

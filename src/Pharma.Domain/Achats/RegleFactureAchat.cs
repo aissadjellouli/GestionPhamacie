@@ -6,18 +6,27 @@ namespace Pharma.Domain.Achats;
 /// Supplément d'honoraire du pharmacien (SHP), par boîte, selon la liste du médicament (décret exécutif 98-44 du 1er février 1998,
 /// tel que cité par les publications professionnelles ; montants retrouvés sur les factures des grossistes) :
 /// liste I (ex-tableaux A et B) 2,50 DA, liste II (ex-tableau C) 1,50 DA, hors liste 0.
-/// Les stupéfiants relèvent de l'ex-tableau B, donc de la liste I. Psychotropes : 2,50 DA par défaut, à confirmer ; le montant
-/// reste modifiable sur chaque ligne de réception, comme il est imprimé sur la facture.
+/// Les stupéfiants relèvent de l'ex-tableau B, donc de la liste I. Un psychotrope suit la liste (I ou II) indiquée sur sa fiche ;
+/// non renseignée : 0 jusqu'à ce qu'elle le soit. Le montant reste modifiable sur chaque ligne de réception.
 /// </summary>
 public static class RegleShp
 {
     public const decimal ListeI = 2.50m;
     public const decimal ListeII = 1.50m;
 
-    public static decimal ParBoite(string? classe) => classe switch
+    public static decimal ParBoite(string? classe, string? listePsychotrope = null) => classe switch
     {
-        "liste_i" or "stupefiant" or "psychotrope" => ListeI,
+        "liste_i" or "stupefiant" => ListeI,
         "liste_ii" => ListeII,
+        "psychotrope" => listePsychotrope switch { "liste_i" => ListeI, "liste_ii" => ListeII, _ => 0m },
+        _ => 0m
+    };
+
+    public static decimal ParBoite(Catalogue.ClasseReglementaire classe, string? listePsychotrope) => classe switch
+    {
+        Catalogue.ClasseReglementaire.ListeI or Catalogue.ClasseReglementaire.Stupefiant => ListeI,
+        Catalogue.ClasseReglementaire.ListeII => ListeII,
+        Catalogue.ClasseReglementaire.Psychotrope => ParBoite("psychotrope", listePsychotrope),
         _ => 0m
     };
 }
@@ -45,11 +54,12 @@ public static class RegleFactureAchat
 
     public static TotauxFactureAchat Totaux(IReadOnlyList<LigneReceptionSaisie> lignes, IReadOnlyDictionary<long, decimal> tauxTva, decimal timbre)
     {
-        var ht = lignes.Sum(l => Arrondi(l.Quantite * l.PrixAchatHt));
-        var remise = Arrondi(lignes.Sum(l => l.Quantite * l.PrixAchatHt * l.RemisePct / 100m));
-        var tva = Arrondi(lignes.Sum(l => l.Quantite * l.PrixAchatHt * (1 - l.RemisePct / 100m) * tauxTva.GetValueOrDefault(l.ProduitId) / 100m));
-        var shp = Arrondi(lignes.Sum(l => l.Quantite * (l.Shp ?? 0)));
-        var ppa = Arrondi(lignes.Sum(l => l.Quantite * (l.Ppa ?? 0)));
+        // Montants de la facture : boîtes facturées seulement (les unités gratuites ne sont pas facturées)
+        var ht = lignes.Sum(l => Arrondi(l.Facturees * l.PrixAchatHt));
+        var remise = Arrondi(lignes.Sum(l => l.Facturees * l.PrixAchatHt * l.RemisePct / 100m));
+        var tva = Arrondi(lignes.Sum(l => l.Facturees * l.PrixAchatHt * (1 - l.RemisePct / 100m) * tauxTva.GetValueOrDefault(l.ProduitId) / 100m));
+        var shp = Arrondi(lignes.Sum(l => l.Facturees * (l.Shp ?? 0)));
+        var ppa = Arrondi(lignes.Sum(l => l.Facturees * (l.Ppa ?? 0)));
         return new TotauxFactureAchat(ht, remise, ht - remise, tva, timbre, ht - remise + tva + timbre, shp, ppa);
     }
 
@@ -61,6 +71,10 @@ public static class RegleFactureAchat
             if (l.RemisePct is < 0 or > 100) throw new RegleMetierException($"{l.Nom} : la remise doit être comprise entre 0 et 100 %.");
             if (l.Ppa is < 0) throw new RegleMetierException($"{l.Nom} : le PPA ne peut pas être négatif.");
             if (l.Shp is < 0) throw new RegleMetierException($"{l.Nom} : le SHP ne peut pas être négatif.");
+            if (l.Ug < 0 || l.Ug > l.Quantite)
+                throw new RegleMetierException($"{l.Nom} : les unités gratuites (UG) sont comprises entre 0 et le nombre de boîtes reçues ({l.Quantite}).");
+            if (l.RemplacerPrixCatalogue && l.Ppa is not > 0)
+                throw new RegleMetierException($"{l.Nom} : indiquez le PPA facturé pour remplacer le prix du catalogue.");
         }
     }
 }

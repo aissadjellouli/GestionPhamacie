@@ -11,15 +11,16 @@
 --   * rôles (titulaire, assistant, vendeur, stagiaire), droits et droits
 --     de départ de chaque rôle ;
 --   * organismes CNAS et CASNOS ; substances surveillées (arrêté du
---     11 août 2021) ; coffre de la trésorerie ;
+--     11 août 2021) ; coffre de la trésorerie ; catégories de produits
+--     (médicament, dermo-cosmétique, hygiène…) ;
 --   * compte « titulaire » avec le mot de passe provisoire « Provisoire-2026 » :
 --     changement obligatoire à la première connexion (rien d'autre n'est
 --     possible avant).
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 044 (vérifié : permissions, rôles,
--- droits de départ, substances, organismes, coffre). Règle : tout script numéroté qui ajoute
+-- Valeurs identiques à celles posées par les scripts 001 à 046 (vérifié : permissions, rôles,
+-- droits de départ, substances, organismes, coffre, catégories de produits). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
 
@@ -42,6 +43,18 @@ INSERT INTO parametre_inventaire DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 INSERT INTO organisme (code, nom) VALUES
     ('CNAS',   'Caisse nationale des assurances sociales des travailleurs salariés'),
     ('CASNOS', 'Caisse nationale de sécurité sociale des non-salariés')
+ON CONFLICT (code) DO NOTHING;
+
+-- Catégories de produits (045) : « médicament » ou autre produit, pour les totaux de la caisse et des rapports
+INSERT INTO categorie_produit (code, libelle, medicament, ordre) VALUES
+    ('medicament',  'Médicament', true, 10),
+    ('dermo_cosmetique', 'Dermo-cosmétique', false, 20),
+    ('hygiene', 'Hygiène', false, 30),
+    ('bebe_maman', 'Bébé et maman', false, 40),
+    ('complement_alimentaire', 'Compléments alimentaires et diététique', false, 50),
+    ('phyto_aroma', 'Phytothérapie et aromathérapie', false, 60),
+    ('materiel_medical', 'Matériel médical et orthopédie', false, 70),
+    ('paramedical', 'Paramédical (pansements, accessoires de soin)', false, 80)
 ON CONFLICT (code) DO NOTHING;
 
 -- ---------------------------------------------------------------------
@@ -89,6 +102,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('rapports.ventes', 'Rapports', 'Voir les rapports de ventes', false),
     ('catalogue.creer', 'Stock', 'Créer un produit au catalogue', true),
     ('prix.modifier', 'Stock', 'Modifier un prix de vente', true),
+    ('produits.bloquer', 'Stock', 'Bloquer un produit à l''achat ou à la vente', true),
     ('stock.ajuster', 'Stock', 'Corriger le stock (inventaire)', true),
     ('stock.consulter', 'Stock', 'Consulter le stock', false),
     ('stock.declarer_perime', 'Stock', 'Déclarer un produit périmé ou cassé', true),
@@ -115,6 +129,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'caisse.vendre'),
     ('titulaire', 'caisse.voir_ecart'),
     ('titulaire', 'catalogue.creer'),
+    ('titulaire', 'produits.bloquer'),
     ('titulaire', 'chifa.bordereaux'),
     ('titulaire', 'chifa.importer'),
     ('titulaire', 'credit.accorder'),
@@ -140,6 +155,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'caisse.supprimer_ligne'),
     ('assistant', 'caisse.vendre'),
     ('assistant', 'catalogue.creer'),
+    ('assistant', 'produits.bloquer'),
     ('assistant', 'chifa.bordereaux'),
     ('assistant', 'chifa.importer'),
     ('assistant', 'credit.accorder'),

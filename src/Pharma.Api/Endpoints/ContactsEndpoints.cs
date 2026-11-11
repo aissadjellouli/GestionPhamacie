@@ -17,7 +17,7 @@ internal static class ContactsEndpoints
                 return Results.Ok(new FicheContactDto(f.Type, f.Id, f.Nom, f.Precision, f.Actif,
                     f.Coordonnees.Select(i => new InfoContactDto(i.Libelle, i.Valeur, i.Genre)).ToList(),
                     f.Situation.Select(i => new InfoContactDto(i.Libelle, i.Valeur, i.Genre)).ToList(), f.CoordonneesMasquees,
-                    f.Saisie is { } s ? new CoordonneesContactDto(s.Telephone, s.Email, s.Adresse) : null, f.Modifiable));
+                    f.Saisie is { } s ? new CoordonneesContactDto(s.Telephone, s.Email, s.Adresse, s.DelaiPaiementJours) : null, f.Modifiable));
             })
            .RequireAuthorization();
 
@@ -25,7 +25,7 @@ internal static class ContactsEndpoints
         api.MapPut("/contacts/{type}/{id:long}/coordonnees", async (string type, long id, CoordonneesContactDto req, ModifierCoordonneesContact modifier,
                 ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await modifier.ExecuterAsync(type, id, req.Telephone, req.Email, req.Adresse, user.UtilisateurId(), ct);
+                await modifier.ExecuterAsync(type, id, req.Telephone, req.Email, req.Adresse, user.UtilisateurId(), ct, req.DelaiPaiementJours);
                 return Results.NoContent();
             })
            .RequireAuthorization();
