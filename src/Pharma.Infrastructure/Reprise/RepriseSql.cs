@@ -14,8 +14,8 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
     private static readonly IReadOnlyDictionary<CibleReprise, (string Table, string[] Colonnes, string[] Requises)> Transit =
         new Dictionary<CibleReprise, (string, string[], string[])>
         {
-            [CibleReprise.Produits] = ("import.produit_src", ["ref_source", "code_barre", "num_enregistrement", "nom", "dosage", "forme", "prix_vente", "prix_achat"], ["ref_source", "nom"]),
-            [CibleReprise.Stock] = ("import.stock_src", ["ref_produit", "numero_lot", "date_peremption", "quantite", "fournisseur_ref"], ["ref_produit"]),
+            [CibleReprise.Produits] = ("import.produit_src", ["ref_source", "code_barre", "num_enregistrement", "nom", "dosage", "forme", "prix_vente", "prix_achat", "classe"], ["ref_source", "nom"]),
+            [CibleReprise.Stock] = ("import.stock_src", ["ref_produit", "numero_lot", "date_peremption", "quantite", "fournisseur_ref", "prix_achat"], ["ref_produit"]),
             [CibleReprise.Fournisseurs] = ("import.fournisseur_src", ["ref_source", "raison_sociale", "telephone", "solde"], ["ref_source", "raison_sociale"]),
             [CibleReprise.Clients] = ("import.client_src", ["ref_source", "nom", "prenom", "telephone", "num_assure", "solde_credit"], ["ref_source", "nom"])
         };

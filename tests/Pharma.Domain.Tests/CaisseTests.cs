@@ -77,6 +77,17 @@ public class CaisseTests
     }
 
     [Fact]
+    public void Remise_hors_SHP()
+    {
+        // 352,50 dont 2,50 de SHP : 10 % de remise sur 350 seulement
+        var produit = new Produit { Id = 3, NomCommercial = "P", PrixPublic = 350m, Classe = ClasseReglementaire.ListeI };
+        var v = new Vente();
+        v.AjouterProduit(produit, LotDe(produit), 1, Aujourdhui);
+        v.AppliquerRemise(10, 20);
+        Assert.Equal((35m, 317.50m), (v.MontantRemise, v.PartPatient));
+    }
+
+    [Fact]
     public void Vente_libre_le_patient_paie_tout()
     {
         var v = new Vente();

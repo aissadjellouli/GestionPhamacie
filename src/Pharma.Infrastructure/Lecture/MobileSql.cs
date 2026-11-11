@@ -11,14 +11,16 @@ public sealed class MobileSql(NpgsqlDataSource db) : IMobile
     {
         await using var cmd = db.CreateCommand("""
             SELECT c.produit_id, c.lot_id, c.source,
-                   (SELECT b.statut FROM boite b WHERE b.code_etiquette = $1)
+                   (SELECT b.statut FROM boite b WHERE b.code_etiquette = $1),
+                   (SELECT b.id FROM boite b WHERE b.code_etiquette = $1)
             FROM rechercher_par_code($1) c LIMIT 1
             """);
         cmd.Parameters.AddWithValue(code);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         var type = r.GetString(2) switch { "etiquette_boite" => "boite", "code_interne" => "lot", _ => "produit" };
-        return new CodeResolu(r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), type, r.IsDBNull(3) ? null : r.GetString(3));
+        return new CodeResolu(r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), type, r.IsDBNull(3) ? null : r.GetString(3),
+            type == "boite" && !r.IsDBNull(4) ? r.GetInt64(4) : null);
     }
 
     public async Task<CodeResolu?> ResoudreDataMatrixAsync(string gtin, string? numeroLot, string? numeroSerie, CancellationToken ct = default)
@@ -32,7 +34,8 @@ public sealed class MobileSql(NpgsqlDataSource db) : IMobile
                    COALESCE((SELECT b.lot_id FROM boite b WHERE b.gtin = $1 AND b.numero_serie = $3),
                             (SELECT l.id FROM lot l WHERE l.produit_id = p.id AND l.numero_lot = $2
                              ORDER BY l.quantite_disponible DESC, l.id LIMIT 1)),
-                   (SELECT b.statut FROM boite b WHERE b.gtin = $1 AND b.numero_serie = $3)
+                   (SELECT b.statut FROM boite b WHERE b.gtin = $1 AND b.numero_serie = $3),
+                   (SELECT b.id FROM boite b WHERE b.gtin = $1 AND b.numero_serie = $3)
             FROM p
             """);
         cmd.Parameters.AddWithValue(gtin);
@@ -42,7 +45,8 @@ public sealed class MobileSql(NpgsqlDataSource db) : IMobile
         if (!await r.ReadAsync(ct)) return null;
         var statut = r.IsDBNull(2) ? null : r.GetString(2);
         long? lot = r.IsDBNull(1) ? null : r.GetInt64(1);
-        return new CodeResolu(r.GetInt64(0), lot, statut is not null ? "boite" : lot is not null ? "lot" : "produit", statut);
+        return new CodeResolu(r.GetInt64(0), lot, statut is not null ? "boite" : lot is not null ? "lot" : "produit", statut,
+            r.IsDBNull(3) ? null : r.GetInt64(3));
     }
 
     public async Task<FicheProduit?> FicheAsync(long produitId, CancellationToken ct = default)

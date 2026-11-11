@@ -41,6 +41,25 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
             while (await r.ReadAsync(ct))
                 lignes.Add(new LigneTicket(r.GetString(0), r.GetInt32(1), r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), r.GetBoolean(6)));
         }
-        return t with { Lignes = lignes };
+        // Retours clients déjà enregistrés sur cette vente : rappelés sur le ticket réimprimé
+        var retours = new List<string>();
+        await using (var cmd = db.CreateCommand("""
+            SELECT rc.cree_le, string_agg(p.nom_commercial || ' × ' || rl.quantite, ', ' ORDER BY rl.id), rc.montant_rembourse
+            FROM retour_client rc
+            JOIN retour_client_ligne rl ON rl.retour_id = rc.id
+            JOIN ligne_vente l ON l.id = rl.ligne_vente_id
+            JOIN produit p ON p.id = l.produit_id
+            JOIN vente v ON v.id = rc.vente_id
+            WHERE v.numero = $1
+            GROUP BY rc.id, rc.cree_le, rc.montant_rembourse
+            ORDER BY rc.cree_le
+            """))
+        {
+            cmd.Parameters.AddWithValue(t.Numero);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+                retours.Add($"Retour du {r.GetDateTime(0).ToLocalTime():dd/MM/yyyy HH:mm} : {r.GetString(1)} · rendu {r.GetDecimal(2):N2} DA");
+        }
+        return t with { Lignes = lignes, Retours = retours };
     }
 }

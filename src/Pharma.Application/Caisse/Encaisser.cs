@@ -9,7 +9,8 @@ using Pharma.Domain.Ventes;
 
 namespace Pharma.Application.Caisse;
 
-public sealed record LigneCommande(long ProduitId, long LotId, int Quantite);
+/// <summary>Boites : boîtes identifiées scannées pour cette ligne (étiquette interne ou n° de série), au plus la quantité.</summary>
+public sealed record LigneCommande(long ProduitId, long LotId, int Quantite, IReadOnlyList<long>? Boites = null);
 /// <summary>
 /// Ordonnance présentée au comptoir : saisie pour un psychotrope (médecin obligatoire) ou scannée
 /// (image conservée sur le serveur, désignée par son jeton).
@@ -31,16 +32,17 @@ public sealed record CommandeVente(
 public sealed record ApercuVente(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
     decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
-    IReadOnlyList<string>? ProduitsBloques = null);
+    IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false);
 
 public sealed record VenteEncaissee(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
     ModePaiement Mode, decimal Rendu);
 
 /// <summary>Ce que l'adaptateur enregistre en une transaction.</summary>
+/// <summary>BoitesParLot : boîtes identifiées vendues, rattachées à la ligne de leur lot (pour les retrouver au remboursement).</summary>
 public sealed record VenteAEnregistrer(
     Vente Vente, Reglement Reglement, OrdonnanceSaisie? Ordonnance,
-    IReadOnlySet<long> ProduitsSousRegistre, bool CreditAccorde);
+    IReadOnlySet<long> ProduitsSousRegistre, bool CreditAccorde, IReadOnlyDictionary<long, IReadOnlyList<long>>? BoitesParLot = null);
 
 public interface IPreparationVente
 {
@@ -72,7 +74,21 @@ public sealed class Encaisser(
             vente.PartPatient, vente.MontantTotal, vente.ContientSousRegistre,
             vente.Lignes.Select(l => l.PrixUnitaire).ToList(), vente.Lignes.Sum(l => l.Shp * l.Quantite),
             vente.Lignes.Where(l => produits.TryGetValue(l.ProduitId, out var p) && p.EstMedicament).Sum(l => l.PrixUnitaire * l.Quantite),
-            Bloques(produits));
+            Bloques(produits), vente.ContientSurOrdonnance);
+    }
+
+    /// <summary>Boîtes identifiées par lot : jamais deux fois la même, au plus autant que de boîtes vendues du lot.</summary>
+    private static Dictionary<long, IReadOnlyList<long>>? BoitesParLot(CommandeVente commande)
+    {
+        var parLot = commande.Lignes.Where(l => l.Boites is { Count: > 0 }).GroupBy(l => l.LotId).ToDictionary(
+            g => g.Key, g => (IReadOnlyList<long>)g.SelectMany(l => l.Boites!).ToList());
+        foreach (var (lot, boites) in parLot)
+        {
+            if (boites.Distinct().Count() != boites.Count) throw new RegleMetierException("Une même boîte a été scannée deux fois.");
+            if (boites.Count > commande.Lignes.Where(l => l.LotId == lot).Sum(l => l.Quantite))
+                throw new RegleMetierException("Plus de boîtes scannées que de boîtes vendues sur une ligne : corrigez la quantité.");
+        }
+        return parLot.Count == 0 ? null : parLot;
     }
 
     /// <summary>Produits du panier bloqués à la vente, avec leur motif (à faire valider par une personne habilitée).</summary>
@@ -121,6 +137,12 @@ public sealed class Encaisser(
             commande = commande with { Ordonnance = o with { Porteur = vente.ContientSousRegistre && o.Porteur is { } p ? VerifierPorteur(p) : null } };
         }
         vente.VerifierAvantEncaissement(commande.Ordonnance is not null);
+        // Liste I ou II sans ordonnance : droit « vendre sans ordonnance », sinon autorisation par le code d'un employé qui l'a.
+        // Psychotrope ou stupéfiant : l'ordonnance reste obligatoire pour tous (contrôlé ci-dessus)
+        var sansOrdonnance = produits.Values.Where(p => p.EstSurOrdonnance).Select(p => p.NomCommercial).ToList();
+        if (commande.Ordonnance is not null) sansOrdonnance.Clear();
+        if (sansOrdonnance.Count > 0)
+            await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendreSansOrdonnance, "vendre sans ordonnance un médicament de liste I ou II", ct);
 
         Reglement reglement;
         var credit = false;
@@ -131,6 +153,10 @@ public sealed class Encaisser(
             if (patient is null)
                 throw new RegleMetierException("Crédit : choisissez le patient à qui la vente est accordée.");
             var depasser = await droits.APermissionAsync(utilisateurId, Permissions.CreditDepasserPlafond, ct);
+            // Au-delà du plafond : droit « dépasser le plafond », que le code d'un employé habilité peut accorder sur place
+            if (vente.PartPatient > 0 && !depasser && patient.SoldeCredit + vente.PartPatient > patient.PlafondCredit)
+                throw new DroitRefuseException(Permissions.CreditDepasserPlafond, "dépasser le plafond de crédit",
+                    $"Plafond de crédit dépassé : {patient.SoldeCredit + vente.PartPatient:N2} DA pour un plafond de {patient.PlafondCredit:N2} DA.");
             if (vente.PartPatient > 0)
             {
                 patient.AccorderCredit(vente.PartPatient, depasser);   // refuse au-delà du plafond sans le droit
@@ -144,12 +170,17 @@ public sealed class Encaisser(
         vente.Valider();
         var sousRegistre = produits.Values.Where(p => p.EstSousRegistre).Select(p => p.Id).ToHashSet();
         var (id, numero) = await ventes.EnregistrerAsync(
-            new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit), ct);
+            new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit, BoitesParLot(commande)), ct);
 
         if (validePar is { } vp && journal is not null)
             await journal.EcrireAsync(utilisateurId, "vente_produit_bloque", "vente", id,
                 new Dictionary<string, object?> { ["ticket"] = numero, ["produits"] = bloques, ["valide_par"] = vp.Id, ["validateur"] = vp.NomComplet },
                 Permissions.ProduitsBloquer, ct);
+
+        if (sansOrdonnance.Count > 0 && journal is not null)
+            await journal.EcrireAsync(utilisateurId, "vente_sans_ordonnance", "vente", id,
+                new Dictionary<string, object?> { ["ticket"] = numero, ["produits"] = sansOrdonnance },
+                Permissions.CaisseVendreSansOrdonnance, ct);
 
         return new VenteEncaissee(id, numero, vente.MontantTotal, vente.PartOrganisme, vente.PartPatient,
             reglement.Mode, reglement.Rendu);

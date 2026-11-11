@@ -15,6 +15,19 @@ public static class PermissionExtensions
 
     /// <summary>Une seule des permissions suffit (lecture commune à plusieurs droits).</summary>
     /// <summary>Réservé au pharmacien titulaire (rôle système), quel que soit le réglage des droits.</summary>
+    /// <summary>
+    /// Refus de droit : message clair et, si le titulaire l'a permis, proposition d'autorisation sur place par le code comptoir d'un
+    /// employé qui a ce droit (le poste rejoue la demande avec ce code). Code faux : le motif est rendu, la proposition reste ouverte.
+    /// </summary>
+    public static async Task<IResult> RefusAsync(HttpContext http, string permission, string message)
+    {
+        var autorisation = http.RequestServices.GetRequiredService<AutorisationParCode>();
+        var active = await autorisation.ActiveeAsync(http.RequestAborted);
+        var texte = autorisation.Demandee && autorisation.Erreur is { } erreur ? erreur
+            : active ? $"{message} Un employé qui a ce droit peut autoriser l’action avec son code comptoir." : message;
+        return Results.Json(new Pharma.Shared.ErreurDto(texte, null, active, permission), statusCode: StatusCodes.Status403Forbidden);
+    }
+
     // Mot de passe provisoire : tout est refusé tant qu'il n'est pas changé (POST /api/auth/mot-de-passe)
     private static IResult MotDePasseAChanger() => Results.Problem(title: "Mot de passe à changer",
         detail: "Choisissez d’abord votre mot de passe personnel (mot de passe provisoire de la mise en service).", statusCode: StatusCodes.Status403Forbidden);
@@ -30,7 +43,8 @@ public static class PermissionExtensions
             if (http.User.MotDePasseAChanger()) return MotDePasseAChanger();
             var droits = http.RequestServices.GetRequiredService<IPermissionService>();
             if (!await droits.EstTitulaireAsync(utilisateurId, http.RequestAborted))
-                return Results.Problem(title: "Action non autorisée", detail: http.User.ParCodeComptoir() ? CodeComptoirSeulement : "Réservé au pharmacien titulaire.", statusCode: StatusCodes.Status403Forbidden);
+                return await RefusAsync(http, PermissionServiceExtensions.MarqueTitulaire,
+                    http.User.ParCodeComptoir() ? CodeComptoirSeulement : "Réservé au pharmacien titulaire.");
             return await next(ctx);
         });
         return builder;
@@ -53,12 +67,10 @@ public static class PermissionExtensions
             foreach (var p in permissionsAcceptees)
                 if (autorise = await permissions.APermissionAsync(utilisateurId, p, http.RequestAborted)) break;
             if (!autorise)
-                return http.User.ParCodeComptoir() && !permissionsAcceptees.Any(Pharma.Domain.Securite.CodeComptoir.Autorise)
-                    ? Results.Problem(title: "Action non autorisée", detail: CodeComptoirSeulement, statusCode: StatusCodes.Status403Forbidden)
-                    : Results.Problem(
-                    title: "Action non autorisée",
-                    detail: $"Le droit « {string.Join(" » ou « ", permissionsAcceptees)} » est nécessaire. Le code du titulaire peut l'autoriser.",
-                    statusCode: StatusCodes.Status403Forbidden);
+                return await RefusAsync(http, permissionsAcceptees[0],
+                    http.User.ParCodeComptoir() && !permissionsAcceptees.Any(Pharma.Domain.Securite.CodeComptoir.Autorise)
+                        ? CodeComptoirSeulement
+                        : $"Le droit « {string.Join(" » ou « ", permissionsAcceptees)} » est nécessaire.");
 
             return await next(ctx);
         });

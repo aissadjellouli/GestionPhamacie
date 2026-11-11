@@ -35,4 +35,7 @@ public class Produit
     /// <summary>Psychotropes et stupéfiants : inscription au registre obligatoire.</summary>
     public bool EstSousRegistre =>
         Classe is ClasseReglementaire.Psychotrope or ClasseReglementaire.Stupefiant;
+
+    /// <summary>Médicament de liste I ou II : vendu sur ordonnance, sauf par un employé qui a le droit de le vendre sans.</summary>
+    public bool EstSurOrdonnance => Classe is ClasseReglementaire.ListeI or ClasseReglementaire.ListeII;
 }

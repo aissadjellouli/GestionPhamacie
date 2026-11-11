@@ -1,0 +1,93 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Modification d'un produit du catalogue (droit de créer un produit ; le prix public demande le droit de modifier un prix).
+   La classe réglementaire se confirme dans Administration › Nomenclature. *@
+@if (Session.A("catalogue.creer"))
+{
+    <section class="panneau" aria-labelledby="t-modif-produit">
+        <div>
+            <h2 id="t-modif-produit">Modifier un produit</h2>
+            <p class="sous-titre">Nom, DCI, dosage, forme, code-barres, prix, TVA, remboursement ; un produit désactivé n’est plus proposé à la vente ni aux commandes.</p>
+        </div>
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+        <div class="achats-ligne">
+            <ChoixProduit Id="mp-produit" Libelle="Produit (désactivés compris)" InclureInactifs="true" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => fiche = null" />
+        </div>
+        @if (fiche is { } f)
+        {
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 2 1 240px"><label for="mp-nom" class="requis">Nom commercial</label><input id="mp-nom" data-champ="nom_commercial" type="text" maxlength="120" @bind="f.NomCommercial" /></div>
+                <div class="champ" style="flex: 1 1 180px"><label for="mp-dci">DCI</label><input id="mp-dci" type="text" @bind="f.Dci" /></div>
+                <div class="champ" style="flex: 0 1 130px"><label for="mp-dosage">Dosage</label><input id="mp-dosage" type="text" @bind="f.Dosage" /></div>
+                <div class="champ" style="flex: 0 1 150px"><label for="mp-forme">Forme</label><input id="mp-forme" type="text" @bind="f.Forme" /></div>
+            </div>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 1 1 170px"><label for="mp-cb">Code-barres</label><input id="mp-cb" data-champ="code_barre" type="text" inputmode="numeric" @bind="f.CodeBarre" /></div>
+                <div class="champ" style="flex: 0 1 150px" title="@(Session.A("prix.modifier") ? null : "Droit « modifier un prix de vente » nécessaire")">
+                    <label for="mp-prix" class="requis">Prix public (DA)</label>
+                    <input id="mp-prix" data-champ="prix_public" type="number" min="0" step="0.01" disabled="@(!Session.A("prix.modifier"))" @bind="f.PrixPublic" />
+                </div>
+                <div class="champ" style="flex: 0 1 160px"><label for="mp-tarif" class="@(f.Remboursable ? "requis" : null)">Tarif de référence (DA)</label><input id="mp-tarif" data-champ="tarif_reference" type="number" min="0" step="0.01" @bind="f.TarifReference" /></div>
+                <div class="champ" style="flex: 0 1 100px"><label for="mp-tva">TVA (%)</label><input id="mp-tva" data-champ="tva" type="number" min="0" max="100" step="0.01" @bind="f.TauxTva" /></div>
+                <label class="case" style="align-self: center"><input type="checkbox" @bind="f.Remboursable" /><span>Remboursable</span></label>
+                <label class="case" style="align-self: center"><input type="checkbox" @bind="f.Actif" /><span>Actif</span></label>
+            </div>
+            <p class="detail" style="margin: 0">Classe : @Libelles.Classe(f.Classe) (se confirme dans Administration › Nomenclature).</p>
+            <div class="filtres">
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
+                <button type="button" class="btn" @onclick="() => fiche = null">Annuler</button>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private sealed class Fiche
+    {
+        public long Id { get; init; }
+        public string NomCommercial { get; set; } = "";
+        public string? Dci { get; set; }
+        public string? Dosage { get; set; }
+        public string? Forme { get; set; }
+        public string? CodeBarre { get; set; }
+        public decimal PrixPublic { get; set; }
+        public decimal? TarifReference { get; set; }
+        public bool Remboursable { get; set; }
+        public decimal TauxTva { get; set; }
+        public bool Actif { get; set; } = true;
+        public string Classe { get; init; } = "libre";
+    }
+
+    private Fiche? fiche;
+    private string? erreur, message;
+    private bool enCours;
+
+    private async Task ChoisirAsync(ProduitDto p)
+    {
+        (erreur, message) = (null, null);
+        var (f, e) = await Api.FicheProduitAsync(p.Id);
+        erreur = e;
+        fiche = f is null ? null : new Fiche
+        {
+            Id = f.Id, NomCommercial = f.NomCommercial, Dci = f.Dci, Dosage = f.Dosage, Forme = f.Forme, CodeBarre = f.CodeBarre, PrixPublic = f.PrixPublic,
+            TarifReference = f.TarifReference, Remboursable = f.Remboursable, TauxTva = f.TauxTva, Actif = f.Actif, Classe = f.Classe
+        };
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (fiche is not { } f) return;
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var e = await Api.ModifierProduitAsync(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic,
+                f.TarifReference, f.Remboursable, f.TauxTva, f.Actif, f.Classe));
+            if (e is not null) { erreur = e; return; }
+            message = $"« {f.NomCommercial.Trim()} » enregistré.";
+            fiche = null;
+        }
+        finally { enCours = false; }
+    }
+}

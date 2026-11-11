@@ -101,8 +101,14 @@ public class RetourClientTests
         var endette = vente with { Vente = vente.Vente with { Patient = "Patient Fictif", SoldeCreditPatient = 200 } };
         LigneRetourDemandee[] l = [new(1, 3, "stock", null)];
 
+        // Sans l'accord du client : refusé
+        var (sansAccord, _) = Monter(endette);
+        var e = await Assert.ThrowsAsync<RegleMetierException>(() => sansAccord.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true));
+        Assert.Equal("accord_client", e.Champ);
+
         var (solder, stock) = Monter(endette);
-        var r = await solder.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true);
+        var r = await solder.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true, accordClient: true);
+        Assert.True(stock.Ecrit!.AccordClient);
         Assert.Equal((150m, 200m, "especes"), (r.ARendre, r.DetteDiminuee, r.Mode));   // dette soldée, surplus rendu
         Assert.Equal((350m, 200m), (stock.Ecrit!.Montant, stock.Ecrit.ReductionDette));
 
@@ -119,15 +125,37 @@ public class RetourClientTests
 
         // Dette de 1000 DA : les 350 DA du retour en sont déduits, rien ne sort de la caisse (même fermée)
         var (cas, stock) = Monter(Vente(), new SessionsEnMemoire { Ouverte = null }, patients);
-        var r = await cas.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true, patientDetteId: 3);
+        var r = await cas.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true, patientDetteId: 3, accordClient: true);
         Assert.Equal((0m, 350m), (r.ARendre, r.DetteDiminuee));
         Assert.Equal((350m, 3L), (stock.Ecrit!.ReductionDette, stock.Ecrit.PatientDetteId));
 
         // Patient inconnu, ou vente qui a déjà son patient : refusé
         var (inconnu, _) = Monter(Vente(), null, patients);
-        await Assert.ThrowsAsync<RegleMetierException>(() => inconnu.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true, patientDetteId: 99));
+        await Assert.ThrowsAsync<RegleMetierException>(() => inconnu.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true, patientDetteId: 99, accordClient: true));
         var nommee = Vente();
         var (dejaNommee, _) = Monter(nommee with { Vente = nommee.Vente with { Patient = "Autre Patient" } }, null, patients);
-        await Assert.ThrowsAsync<RegleMetierException>(() => dejaNommee.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true, patientDetteId: 3));
+        await Assert.ThrowsAsync<RegleMetierException>(() => dejaNommee.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true, patientDetteId: 3, accordClient: true));
+    }
+
+    [Fact]
+    public async Task Vendeur_sans_le_droit_valide_seul_un_retour_entierement_deduit_de_la_dette_avec_l_accord_du_client()
+    {
+        var vente = Vente();
+        var endette = vente with { Vente = vente.Vente with { Patient = "Patient Fictif", SoldeCreditPatient = 1000 } };
+        LigneRetourDemandee[] l = [new(1, 3, "stock", null)];
+
+        // Employé 5 : pas le droit de rembourser. Tout est déduit (dette 1000 DA, retour 350 DA) : aucun code demandé
+        var (cas, stock) = Monter(endette);
+        var r = await cas.ExecuterAsync(20, "Erreur", l, 5, "Caisse 1", null, null, solderDette: true, accordClient: true);
+        Assert.Equal((0m, 350m, (string?)null), (r.ARendre, r.DetteDiminuee, r.ValidePar));
+        Assert.Equal(5L, stock.Ecrit!.ValidePar);
+
+        // Rendu en espèces : la validation reste demandée
+        var (rendre, _) = Monter(endette);
+        await Assert.ThrowsAsync<RegleMetierException>(() => rendre.ExecuterAsync(20, "Erreur", l, 5, "Caisse 1", null, null, solderDette: false));
+        // Dette plus petite que le retour : une partie est rendue en espèces, validation demandée
+        var petite = vente with { Vente = vente.Vente with { Patient = "Patient Fictif", SoldeCreditPatient = 100 } };
+        var (surplus, _) = Monter(petite);
+        await Assert.ThrowsAsync<RegleMetierException>(() => surplus.ExecuterAsync(20, "Erreur", l, 5, "Caisse 1", null, null, solderDette: true, accordClient: true));
     }
 }

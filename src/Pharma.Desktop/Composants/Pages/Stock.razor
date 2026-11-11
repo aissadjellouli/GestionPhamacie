@@ -157,10 +157,15 @@
         </section>
     }
 
+    <ModificationProduit />
+    <SortieStock LotInitial="Sortie" />
     <BlocageProduits />
 </div>
 
 @code {
+    /// <summary>Lot à sortir du stock, proposé depuis l'alerte « Retirer du stock ».</summary>
+    [SupplyParameterFromQuery(Name = "sortie")] public long? Sortie { get; set; }
+
     private EtatStockDto? etat;
     private string? erreur;
     private string recherche = "";

@@ -263,6 +263,8 @@ internal sealed class AlertesTitulaireEspion : IAlertesTitulaire
     public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default) { Sauvegardes.Add((disqueAbsent, detail)); return Task.CompletedTask; }
     public List<(string Rayon, int Lignes)> Inventaires { get; } = [];
     public Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default) { Inventaires.Add((rayon, lignes)); return Task.CompletedTask; }
+    public List<(string Poste, int Nombre)> Annulations { get; } = [];
+    public Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default) { Annulations.Add((poste, annulations)); return Task.CompletedTask; }
 }
 
 public class SauvegardesTests

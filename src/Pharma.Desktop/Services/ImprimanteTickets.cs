@@ -147,6 +147,11 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         Montant("À PAYER", t.PartPatient, gras: true);
         if (t.Mode is { } mode) P($"Réglé : {Mode(mode)}");
         if (rendu is > 0) Montant("Rendu", rendu.Value);
+        if (t.Retours is { Count: > 0 } retours)
+        {
+            Separateur();
+            foreach (var ret in retours) P(ret);
+        }
         Separateur();
         P("Merci de votre visite.", alignement: TextAlignment.Center);
         return doc;

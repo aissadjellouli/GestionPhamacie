@@ -1,0 +1,72 @@
+@implements IDisposable
+@inject DemandesAutorisation Demandes
+@inject ApiClient Api
+
+@* « Faire autoriser » : action refusée faute de droit ; un employé qui a ce droit l'autorise avec son code comptoir.
+   L'action est alors rejouée et inscrite au journal avec son nom (« autorisé par »). *@
+@if (Demandes.EnCours is { } d)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-autorisation">
+        <section class="panneau" style="max-width: 520px; width: 100%">
+            <h2 id="t-autorisation">Faire autoriser</h2>
+            <div class="bandeau-attention" role="note">@d.Message</div>
+            <div class="champ">
+                <label for="au-valideur" class="requis">Autorisé par</label>
+                <select id="au-valideur" data-champ="valideur" @bind="valideur">
+                    <option value="">Choisir…</option>
+                    @foreach (var v in valideurs) { <option value="@v.Identifiant">@v.NomComplet</option> }
+                </select>
+            </div>
+            <div class="champ">
+                <label for="au-code" class="requis">Son code comptoir</label>
+                <input id="au-code" data-champ="code_autorisation" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"
+                       onbeforeinput="@CodeComptoirSaisie.FiltreChiffres" @bind="code" @bind:event="oninput" @onkeydown="ToucheAsync" />
+            </div>
+            @if (valideurs.Count == 0 && charge)
+            {
+                <p class="detail" style="margin: 0">Aucun employé qui a ce droit n’a encore choisi de code comptoir (« Mon code comptoir », en haut de l’écran).</p>
+            }
+            <div class="filtres">
+                <button type="button" class="btn btn-principal" disabled="@(string.IsNullOrEmpty(valideur) || CodeComptoirSaisie.Erreur(code, nouveauCode: false) is not null)"
+                        @onclick="Autoriser">Autoriser</button>
+                <button type="button" class="btn" @onclick="() => Demandes.Repondre(null)">Annuler</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private List<VendeurComptoirDto> valideurs = [];
+    private string? valideur, code;
+    private bool charge;
+    private DemandesAutorisation.Demande? chargee;
+
+    protected override void OnInitialized() => Demandes.Changee += Rafraichir;
+    public void Dispose() => Demandes.Changee -= Rafraichir;
+
+    private void Rafraichir() => _ = InvokeAsync(async () =>
+    {
+        if (Demandes.EnCours is { } d && !ReferenceEquals(d, chargee))
+        {
+            (chargee, code, charge) = (d, null, false);
+            StateHasChanged();
+            (valideurs, _) = await Api.ValideursAsync(d.Permission);
+            valideur = valideurs.Count == 1 ? valideurs[0].Identifiant : valideur;
+            charge = true;
+        }
+        StateHasChanged();
+    });
+
+    private void Autoriser()
+    {
+        if (string.IsNullOrEmpty(valideur) || code is null) return;
+        Demandes.Repondre((valideur, code));
+        code = null;
+    }
+
+    private Task ToucheAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") Autoriser();
+        return Task.CompletedTask;
+    }
+}

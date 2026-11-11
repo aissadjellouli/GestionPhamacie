@@ -29,4 +29,15 @@ public class RemboursementsTests
     [InlineData("credit", 470, 200, 470, 270, 0)]       // retour déjà déduit de la dette
     public void Annulation_rend_le_reste_et_diminue_la_dette(string mode, decimal part, decimal deja, decimal solde, decimal reduction, decimal aRendre) =>
         Assert.Equal((reduction, aRendre), RegleAnnulation.Remboursement(mode, part, deja, solde));
+
+    [Theory]
+    [InlineData(470, 0, 1500, 470, 0)]       // dette plus grande : tout déduit, rien à rendre
+    [InlineData(470, 0, 200, 200, 270)]      // dette plus petite : soldée, le surplus rendu
+    [InlineData(470, 235, 1500, 235, 0)]     // un retour a déjà rendu la moitié : seul le reste est déduit
+    [InlineData(470, 0, 0, 0, 470)]          // pas de dette : tout est rendu
+    public void Annulation_d_une_vente_payee_deduite_de_la_dette_au_choix(decimal part, decimal deja, decimal solde, decimal reduction, decimal aRendre)
+    {
+        Assert.Equal((reduction, aRendre), RegleAnnulation.Remboursement("especes", part, deja, solde, solderDette: true));
+        Assert.Equal((0m, part - deja), RegleAnnulation.Remboursement("especes", part, deja, solde));   // sans le choix : tout est rendu
+    }
 }

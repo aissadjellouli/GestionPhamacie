@@ -37,7 +37,9 @@ public static partial class DetectionReprise
             new("dosage", "Dosage", false, NatureValeur.Texte, "dosage", "dose"),
             new("forme", "Forme", false, NatureValeur.Texte, "forme", "presentation", "galenique"),
             new("prix_vente", "Prix de vente", false, NatureValeur.Nombre, "pv", "prix_vente", "prixvente", "ppa", "prix_public", "prixpublic", "pu", "prix"),
-            new("prix_achat", "Prix d'achat", false, NatureValeur.Nombre, "pa", "prix_achat", "prixachat", "pachat", "cout", "pamp")
+            new("prix_achat", "Prix d'achat", false, NatureValeur.Nombre, "pa", "prix_achat", "prixachat", "pachat", "cout", "pamp"),
+            // Psychotrope, liste I ou II, libre : appliquée au chargement si elle est plus stricte que celle de la nomenclature
+            new("classe", "Classe réglementaire", false, NatureValeur.Texte, "classe", "tableau", "liste", "psycho", "categorie", "reglementation", "toxique")
         ],
         [CibleReprise.Stock] =
         [
@@ -45,7 +47,9 @@ public static partial class DetectionReprise
             new("quantite", "Quantité", true, NatureValeur.Nombre, "qte", "quantite", "stock", "qty", "quantity", "qt", "nb"),
             new("numero_lot", "N° de lot", false, NatureValeur.Texte, "lot", "nlot", "n_lot", "num_lot", "numlot", "nolot", "batch"),
             new("date_peremption", "Péremption", false, NatureValeur.Date, "peremption", "perem", "date_exp", "dateexp", "exp", "expiration", "ddp", "dlu", "dpe"),
-            new("fournisseur_ref", "Grossiste", false, NatureValeur.Identifiant, "fournisseur", "frs", "codefrs", "code_frs", "grossiste", "idfournisseur", "fourn")
+            new("fournisseur_ref", "Grossiste", false, NatureValeur.Identifiant, "fournisseur", "frs", "codefrs", "code_frs", "grossiste", "idfournisseur", "fourn"),
+            // Prix d'achat de ce lot ; sans lui, celui du produit
+            new("prix_achat", "Prix d'achat du lot", false, NatureValeur.Nombre, "pa", "prix_achat", "prixachat", "pachat", "cout", "pamp", "prix")
         ],
         [CibleReprise.Fournisseurs] =
         [

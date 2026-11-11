@@ -289,6 +289,7 @@ public interface IAlertesTitulaire
     Task LotBloqueAsync(string produit, string numeroLot, int boitesEnStock, int boitesVendues, CancellationToken ct = default);
     Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default);
     Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default);
+    Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default);
 }
 
 public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationService notifications) : IAlertesTitulaire
@@ -325,6 +326,13 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Sauvegarde, objet,
             $"{objet}. {detail}", null, r.SmsSauvegarde ? $"{objet}. {detail}" : null), ct);
     }
+
+    /// <summary>Annulations de vente au-delà du seuil sur une même session de caisse (envoyé avec les alertes d'écart de caisse).</summary>
+    public async Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default) =>
+        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
+            $"{annulations} ventes annulées sur la caisse {poste}",
+            $"{annulations} ventes ont été annulées sur la caisse « {poste} » depuis son ouverture (seuil d’alerte : {seuil}). Le détail est dans le journal des actions.",
+            null, $"{annulations} ventes annulees sur la caisse {poste} (seuil {seuil})."), ct);
 
     /// <summary>Écarts d'inventaire au-delà des seuils : le titulaire doit les valider (Stock, Inventaire).</summary>
     public async Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default)

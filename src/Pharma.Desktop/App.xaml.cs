@@ -35,6 +35,7 @@ public partial class App : Application
         services.AddSingleton<SessionPoste>();
         services.AddSingleton<ApiClient>();
         services.AddSingleton<FichesContact>();
+        services.AddSingleton<DemandesAutorisation>();
 
         // Dernier filet : une erreur imprévue hors d'un écran est notée et signalée, sans arrêter le poste en pleine vente
         DispatcherUnhandledException += (_, args) =>

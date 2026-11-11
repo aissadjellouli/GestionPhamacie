@@ -21,7 +21,7 @@ internal sealed class CreditsEnMemoire(decimal solde) : ICreditsClients
     public Task<IReadOnlyList<PatientEnCredit>> AvecCreditAsync(string? r, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<PatientEnCredit>>([]);
     public Task<SituationCredit?> SituationAsync(long id, CancellationToken ct = default) =>
         Task.FromResult<SituationCredit?>(new SituationCredit(new PatientEnCredit(id, "Patient fictif", null, solde, 5000, null), []));
-    public Task<long> EncaisserAsync(long p, decimal m, string mode, long s, long u, CancellationToken ct = default) { Encaisse = (m, mode, s); return Task.FromResult(7L); }
+    public Task<string> EncaisserAsync(long p, decimal m, string mode, long s, long u, CancellationToken ct = default) { Encaisse = (m, mode, s); return Task.FromResult("RC-000007"); }
     public Task<Pharma.Application.Commun.Page<MouvementCredit>> MouvementsAsync(long p, Pharma.Application.Commun.DemandePage page, Pharma.Application.Commun.FiltreReleve? filtre = null, CancellationToken ct = default) =>
         Task.FromResult(new Pharma.Application.Commun.Page<MouvementCredit>([], 0, page.Page, page.Taille));
     public (decimal Avant, decimal Apres, string Motif)? Correction { get; private set; }
@@ -70,7 +70,7 @@ public class ReglementsTests
     {
         var stock = new CreditsEnMemoire(210);
         var recu = await new EncaisserReglementCredit(stock, new SessionsEnMemoire(), new JournalEspion()).ExecuterAsync(3, 200, "especes", 5, "Caisse 1");
-        Assert.Equal((7L, 10m), (recu.Numero, recu.ResteDu));
+        Assert.Equal(("RC-000007", 10m), (recu.Numero, recu.ResteDu));
         Assert.Equal((200m, "especes", 1L), stock.Encaisse);
         await Assert.ThrowsAsync<RegleMetierException>(() =>
             new EncaisserReglementCredit(new CreditsEnMemoire(210), new SessionsEnMemoire { Ouverte = null }, new JournalEspion()).ExecuterAsync(3, 100, "especes", 5, "Caisse 1"));

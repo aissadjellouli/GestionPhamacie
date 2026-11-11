@@ -6,7 +6,7 @@ using Pharma.Domain.Commun;
 namespace Pharma.Infrastructure.Caisse;
 
 /// <summary>Annulation d'une vente (027_annulation_vente.sql) : tout en une transaction.</summary>
-public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
+public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente, IVentesParBoite
 {
     private const string Select = """
         SELECT v.id, v.numero, v.date_vente, u.nom_complet, NULLIF(trim(concat_ws(' ', pa.nom, pa.prenom)), ''),
@@ -41,6 +41,44 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         return await LireAsync(cmd, ct);
     }
 
+    public async Task<long?> VenteDeLaBoiteAsync(long boiteId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT l.vente_id FROM boite b JOIN ligne_vente l ON l.id = b.ligne_vente_id JOIN vente v ON v.id = l.vente_id
+            WHERE b.id = $1 AND b.statut = 'vendue' AND v.statut = 'validee'
+            """);
+        cmd.Parameters.AddWithValue(boiteId);
+        return await cmd.ExecuteScalarAsync(ct) is long id ? id : null;
+    }
+
+    public async Task<IReadOnlyList<VenteAnnulable>> ParProduitAsync(long produitId, long? lotId, string? numeroLot, DateOnly depuis, long? patientId,
+        CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand($"""
+            {Select}
+            WHERE v.statut = 'validee' AND v.date_vente >= $2::date
+              AND (($5::bigint IS NULL AND v.patient_id IS NULL) OR v.patient_id = $5)
+              AND EXISTS (SELECT 1 FROM ligne_vente l JOIN lot lo ON lo.id = l.lot_id
+                          WHERE l.vente_id = v.id AND l.produit_id = $1
+                            AND ($3::bigint IS NULL OR l.lot_id = $3) AND ($4::text IS NULL OR lo.numero_lot = $4)
+                            AND l.quantite > COALESCE((SELECT SUM(r.quantite) FROM retour_client_ligne r WHERE r.ligne_vente_id = l.id), 0))
+            ORDER BY v.date_vente DESC LIMIT 50
+            """);
+        cmd.Parameters.AddWithValue(produitId);
+        cmd.Parameters.AddWithValue(depuis);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)lotId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)numeroLot ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)patientId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        return await LireAsync(cmd, ct);
+    }
+
+    public async Task<string?> NomProduitAsync(long produitId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT nom_commercial FROM produit WHERE id = $1");
+        cmd.Parameters.AddWithValue(produitId);
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
     private async Task<IReadOnlyList<VenteAnnulable>> LireAsync(NpgsqlCommand cmd, CancellationToken ct)
     {
         var ventes = new List<(long Id, VenteAnnulable V)>();
@@ -54,8 +92,9 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
 
         var lignes = new Dictionary<long, List<LigneVenteAnnulable>>();
         await using (var c = db.CreateCommand("""
-            SELECT l.vente_id, p.nom_commercial, l.quantite, l.prix_unitaire * l.quantite
-            FROM ligne_vente l JOIN produit p ON p.id = l.produit_id WHERE l.vente_id = ANY($1) ORDER BY l.id
+            SELECT l.vente_id, p.nom_commercial, l.quantite, l.prix_unitaire * l.quantite, lo.numero_lot
+            FROM ligne_vente l JOIN produit p ON p.id = l.produit_id JOIN lot lo ON lo.id = l.lot_id
+            WHERE l.vente_id = ANY($1) ORDER BY l.id
             """))
         {
             c.Parameters.AddWithValue(ventes.Select(v => v.Id).ToArray());
@@ -63,7 +102,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
             while (await r.ReadAsync(ct))
             {
                 if (!lignes.TryGetValue(r.GetInt64(0), out var l)) lignes[r.GetInt64(0)] = l = [];
-                l.Add(new LigneVenteAnnulable(r.GetString(1), r.GetInt32(2), r.GetDecimal(3)));
+                l.Add(new LigneVenteAnnulable(r.GetString(1), r.GetInt32(2), r.GetDecimal(3), r.GetString(4)));
             }
         }
         return ventes.Select(v => v.V with { Lignes = lignes.GetValueOrDefault(v.Id) ?? [] }).ToList();
@@ -75,6 +114,13 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         FROM ligne_vente l WHERE l.vente_id = $1 GROUP BY l.lot_id
         HAVING SUM(l.quantite - COALESCE((SELECT SUM(r.quantite) FROM retour_client_ligne r WHERE r.ligne_vente_id = l.id), 0)) > 0
         """;
+
+    public async Task<int> AnnulationsSessionAsync(long sessionCaisseId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT count(*)::int FROM vente WHERE session_caisse_id = $1 AND statut = 'annulee'");
+        cmd.Parameters.AddWithValue(sessionCaisseId);
+        return (int)(await cmd.ExecuteScalarAsync(ct))!;
+    }
 
     public async Task AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default)
     {
@@ -138,10 +184,11 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
-        // 4. Vente à crédit : la dette diminue de ce qui reste dû (calculé avant) ; si elle a bougé entre-temps, on refuse
-        if (a.ReductionDette > 0 && patientId is { } patient)
+        // 4. Dette diminuée (vente à crédit, ou remboursement retiré de la dette au choix du caissier) ; si elle a bougé entre-temps, on refuse
+        if (a.ReductionDette > 0 && (a.PatientDetteId ?? patientId) is { } patient)
         {
-            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Annulation, a.VenteId, a.UtilisateurId, a.Poste, $"{reference} : {a.Motif}", ct);
+            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Annulation, a.VenteId, a.UtilisateurId, a.Poste,
+                $"{reference} : {a.Motif}{(a.AccordClient ? " (déduit de la dette avec l’accord du client)" : "")}", ct);
             await using var cmd = new NpgsqlCommand("UPDATE patient SET solde_credit = solde_credit - $2 WHERE id = $1 AND solde_credit >= $2", cx, tx);
             cmd.Parameters.AddWithValue(patient);
             cmd.Parameters.AddWithValue(a.ReductionDette);

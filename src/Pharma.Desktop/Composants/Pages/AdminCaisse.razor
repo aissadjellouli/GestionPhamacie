@@ -22,7 +22,8 @@
                 <h2 id="t-regles">Règles</h2>
                 <label class="case"><input type="checkbox" @bind="parametres.ComptageAveugle" /><span>Clôture en comptage aveugle obligatoire</span></label>
                 <p class="detail" style="margin: 0">Ticket imprimé pour chaque vente : se règle pour chaque poste dans <a href="admin/imprimantes">Imprimantes et étiquettes</a>.</p>
-                <label class="case inactif" title="Bientôt disponible"><input type="checkbox" disabled /><span>Code du titulaire pour une action sensible non autorisée</span></label>
+                <label class="case" title="Une action refusée faute de droit peut être autorisée sur place par le code comptoir d’un employé qui a ce droit (inscrit au journal)">
+                    <input type="checkbox" @bind="parametres.AutorisationParCode" /><span>Une action non autorisée peut être autorisée par le code comptoir d’un employé qui a le droit</span></label>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
                     <label class="case"><input type="checkbox" checked="@(parametres.DeconnexionMinutes > 0)" @onchange="BasculerDeconnexion" /><span>Déconnexion automatique du poste après</span></label>
                     <input type="number" min="1" max="240" style="width: 90px" aria-label="Minutes d’inactivité" data-champ="deconnexion"
@@ -36,8 +37,9 @@
                         <label for="plafond-defaut">Plafond de crédit d’un nouveau patient (DA)</label>
                         <input id="plafond-defaut" data-champ="plafond_defaut" type="number" min="0" @bind="parametres.PlafondCreditDefaut" />
                     </div>
-                    <div class="champ" title="L’annulation de vente n’est pas encore disponible">
-                        <label for="annul">Alerte au-delà de N annulations par session</label><input id="annul" type="number" disabled />
+                    <div class="champ" title="0 : pas d’alerte. Au-delà, le titulaire est prévenu (journal et notification).">
+                        <label for="annul">Alerte au-delà de N annulations par session</label>
+                        <input id="annul" data-champ="seuil_annulations" type="number" min="0" max="100" @bind="parametres.SeuilAnnulations" />
                     </div>
                 </div>
                 <fieldset class="champ" style="border: 0; padding: 0; margin: 0">
@@ -99,6 +101,8 @@
         public int DeconnexionMinutes { get; set; }
         public string VersementCloture { get; set; } = "manuel";
         public decimal PlafondCreditDefaut { get; set; }
+        public int SeuilAnnulations { get; set; }
+        public bool AutorisationParCode { get; set; } = true;
     }
 
     private Saisie? parametres;
@@ -149,7 +153,8 @@
             parametres = new Saisie
             {
                 ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
-                SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut
+                SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut,
+                SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode
             };
         await ChargerJournalAsync(1);
     }
@@ -166,7 +171,8 @@
         enCours = true;
         message = null;
         erreur = await Api.ModifierParametresCaisseAsync(new ParametresCaisseDto(
-            parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture, parametres.PlafondCreditDefaut));
+            parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture, parametres.PlafondCreditDefaut,
+            parametres.SeuilAnnulations, parametres.AutorisationParCode));
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";

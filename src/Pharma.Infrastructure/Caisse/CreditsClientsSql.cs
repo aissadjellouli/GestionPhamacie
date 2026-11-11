@@ -90,7 +90,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
             r.GetDateTime(0), r.GetString(1), r.GetDecimal(2), r.GetDecimal(3), S(r, 4), S(r, 5), S(r, 6), S(r, 7), r.IsDBNull(9) ? null : r.GetInt64(9)), ct);
     }
 
-    public async Task<long> EncaisserAsync(long patientId, decimal montant, string mode, long sessionCaisseId, long utilisateurId, CancellationToken ct = default)
+    public async Task<string> EncaisserAsync(long patientId, decimal montant, string mode, long sessionCaisseId, long utilisateurId, CancellationToken ct = default)
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
@@ -103,9 +103,10 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
             cmd.Parameters.AddWithValue(montant);
             if (await cmd.ExecuteNonQueryAsync(ct) == 0) throw new RegleMetierException("La dette du patient vient de changer : rechargez sa situation.");
         }
-        long id;
+        string id;
         await using (var cmd = new NpgsqlCommand("""
-            INSERT INTO paiement (patient_id, mode, montant, utilisateur_id, session_caisse_id) VALUES ($1, $2, $3, $4, $5) RETURNING id
+            INSERT INTO paiement (patient_id, mode, montant, utilisateur_id, session_caisse_id, numero_recu)
+            VALUES ($1, $2, $3, $4, $5, 'RC-' || lpad(nextval('seq_numero_recu')::text, 6, '0')) RETURNING numero_recu
             """, cx, tx))
         {
             cmd.Parameters.AddWithValue(patientId);
@@ -113,7 +114,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
             cmd.Parameters.AddWithValue(montant);
             cmd.Parameters.AddWithValue(utilisateurId);
             cmd.Parameters.AddWithValue(sessionCaisseId);
-            id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+            id = (string)(await cmd.ExecuteScalarAsync(ct))!;
         }
         await tx.CommitAsync(ct);
         return id;

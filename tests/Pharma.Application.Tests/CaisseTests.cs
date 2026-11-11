@@ -26,12 +26,14 @@ internal sealed class CatalogueEnMemoire : IPreparationVente
 
     public static readonly Produit Amoxicilline = new() { Id = 2, NomCommercial = "Amoxicilline", PrixPublic = 350, Remboursable = true, TarifReference = 350 };
     public static readonly Produit Alprazolam = new() { Id = 7, NomCommercial = "Alprazolam", PrixPublic = 190, Classe = ClasseReglementaire.Psychotrope };
+    public static readonly Produit Sintrom = new() { Id = 9, NomCommercial = "Sintrom", PrixPublic = 280, Classe = ClasseReglementaire.ListeI };
 
-    private readonly Dictionary<long, Produit> produits = new() { [2] = Amoxicilline, [7] = Alprazolam };
+    private readonly Dictionary<long, Produit> produits = new() { [2] = Amoxicilline, [7] = Alprazolam, [9] = Sintrom };
     private readonly Dictionary<long, Lot> lots = new()
     {
         [20] = new Lot { Id = 20, ProduitId = 2, NumeroLot = "B1182", QuantiteDisponible = 20, DatePeremption = Aujourdhui.AddDays(140) },
-        [70] = new Lot { Id = 70, ProduitId = 7, NumeroLot = "AL25", QuantiteDisponible = 14, DatePeremption = Aujourdhui.AddDays(330) }
+        [70] = new Lot { Id = 70, ProduitId = 7, NumeroLot = "AL25", QuantiteDisponible = 14, DatePeremption = Aujourdhui.AddDays(330) },
+        [90] = new Lot { Id = 90, ProduitId = 9, NumeroLot = "SI40", QuantiteDisponible = 30, DatePeremption = Aujourdhui.AddDays(400) }
     };
 
     public Task<IReadOnlyDictionary<long, Produit>> ProduitsAsync(IEnumerable<long> ids, CancellationToken ct = default) =>
@@ -203,6 +205,63 @@ public class CaisseApplicationTests
     }
 
     [Fact]
+    public async Task Liste_I_sans_ordonnance_refusee_sans_le_droit_de_vendre_sans_ordonnance()
+    {
+        var e = await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(9, 90), 5, "Caisse 1"));
+        Assert.Equal("caisse.vendre_sans_ordonnance", e.Permission);
+    }
+
+    [Fact]
+    public async Task Liste_I_avec_ordonnance_vendue_sans_le_droit()
+    {
+        var ventes = new VentesEspion();
+        var ordonnance = new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, null);
+        await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes)
+            .ExecuterAsync(Commande(9, 90, patientId: 3, ordonnance: ordonnance), 5, "Caisse 1");
+        Assert.Equal(ordonnance, ventes.Recu!.Ordonnance);
+    }
+
+    [Fact]
+    public async Task Liste_I_sans_ordonnance_vendue_avec_le_droit_et_inscrite_au_journal()
+    {
+        var journal = new JournalEspion();
+        var cas = new Encaisser(new CatalogueEnMemoire(), new PatientsEnMemoire(), new VentesEspion(), new SessionsEnMemoire(),
+            new DroitsFactices("caisse.vendre", "caisse.vendre_sans_ordonnance"), new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire(),
+            journal: journal);
+        await cas.ExecuterAsync(Commande(9, 90), 5, "Caisse 1");
+        Assert.Contains("vente_sans_ordonnance", journal.Actions);
+    }
+
+    [Fact]
+    public async Task Psychotrope_jamais_sans_ordonnance_meme_avec_le_droit_de_vendre_sans_ordonnance() =>
+        await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "psychotropes.delivrer", "caisse.vendre_sans_ordonnance"), new VentesEspion())
+                .ExecuterAsync(Commande(7, 70, patientId: 3), 5, "Caisse 1"));
+
+    [Fact]
+    public async Task Apercu_signale_un_medicament_de_liste()
+    {
+        var a = await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion()).CalculerAsync(Commande(9, 90), 5);
+        Assert.Equal((true, false), (a.SurOrdonnance, a.OrdonnanceRequise));
+    }
+
+    [Fact]
+    public async Task Boites_identifiees_scannees_rattachees_a_la_vente()
+    {
+        var ventes = new VentesEspion();
+        var cas = Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes);
+        CommandeVente Avec(int qte, params long[] boites) =>
+            new([new LigneCommande(2, 20, qte, boites)], false, null, null, null, null, 0, ModePaiement.Especes, null);
+
+        await cas.ExecuterAsync(Avec(2, 100, 101), 5, "Caisse 1");
+        Assert.Equal([100L, 101L], ventes.Recu!.BoitesParLot![20]);
+        // Même boîte deux fois, ou plus de boîtes que de boîtes vendues : refusé
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(Avec(2, 100, 100), 5, "Caisse 1"));
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(Avec(1, 100, 101), 5, "Caisse 1"));
+    }
+
+    [Fact]
     public async Task Remise_sans_le_droit_refusee() =>
         await Assert.ThrowsAsync<DroitRefuseException>(() =>
             Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20, remise: 5), 5, "Caisse 1"));
@@ -219,9 +278,12 @@ public class CaisseApplicationTests
         var patient = new Patient { Id = 3, Nom = "Fictif", PlafondCredit = 1000, SoldeCredit = 800 };
         var commande = Commande(2, 20, mode: ModePaiement.Credit, patientId: 3);   // 350 DA : 1 150 > 1 000
 
-        await Assert.ThrowsAsync<RegleMetierException>(() =>
+        // Refus de droit (« dépasser le plafond ») : un employé habilité peut l'autoriser sur place avec son code
+        var refus = await Assert.ThrowsAsync<DroitRefuseException>(() =>
             Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "credit.accorder"), new VentesEspion(), patient)
                 .ExecuterAsync(commande, 5, "Caisse 1"));
+        Assert.Equal("credit.depasser_plafond", refus.Permission);
+        Assert.StartsWith("Plafond de crédit dépassé", refus.Message);
 
         var ventes = new VentesEspion();
         var patient2 = new Patient { Id = 3, Nom = "Fictif", PlafondCredit = 1000, SoldeCredit = 800 };

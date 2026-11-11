@@ -12,6 +12,8 @@ namespace Pharma.Infrastructure.Reprise;
 /// <summary>
 /// Ancienne base lue par ODBC (pilotes installés sur le PC serveur), en lecture seule : uniquement des SELECT,
 /// construits avec des noms de tables et de colonnes relus dans la structure de la base (aucun texte saisi n'est exécuté).
+/// Dossier de fichiers CSV : lu par <see cref="LecteurCsv"/> (tout en texte, encodage et séparateur détectés), même si la
+/// chaîne désigne le pilote texte de Windows.
 /// </summary>
 public sealed class SourceOdbc : ISourceReprise
 {
@@ -69,10 +71,9 @@ public sealed class SourceOdbc : ISourceReprise
                         ? new SourceDisponible($"Tables dBase (DBF) : {rep}", $"Driver={{{d}}};DefaultDir={rep};", "fichier", null, d, rep)
                         : new SourceDisponible($"Tables dBase (DBF) : {rep}", null, "fichier", "Pilote ODBC dBase absent du PC serveur");
                     break;
-                case ".csv" or ".txt" when vus.Add("txt|" + rep):
-                    if (Pilote("Text Driver") is { } t)
-                        yield return new SourceDisponible($"Fichiers texte (CSV) : {rep}", $"Driver={{{t}}};Dbq={rep};Extensions=asc,csv,tab,txt;", "fichier",
-                            "Exports CSV : séparateur virgule par défaut", t, rep);
+                case ".csv" or ".txt" or ".tab" when vus.Add("txt|" + rep):
+                    yield return new SourceDisponible($"Fichiers texte (CSV) : {rep}", $"Driver={{{LecteurCsv.Moteur}}};Dbq={rep};", "fichier",
+                        "Exports CSV : lus comme du texte ; encodage (UTF-8 ou ANSI) et séparateur détectés", LecteurCsv.Moteur, rep);
                     break;
                 case ".xls" or ".xlsx":
                     if (Pilote("Excel Driver") is { } x)
@@ -97,7 +98,7 @@ public sealed class SourceOdbc : ISourceReprise
         }
     }
 
-    public IReadOnlyList<string> Pilotes() => PilotesInstalles().OrderBy(p => p).ToList();
+    public IReadOnlyList<string> Pilotes() => PilotesInstalles().Append(LecteurCsv.Moteur).OrderBy(p => p).ToList();
 
     private static List<string> PilotesInstalles()
     {
@@ -110,12 +111,14 @@ public sealed class SourceOdbc : ISourceReprise
 
     public async Task<InfoSource> TesterAsync(string chaineConnexion, CancellationToken ct = default)
     {
+        if (LecteurCsv.EstCsv(chaineConnexion, out var csv)) return LecteurCsv.Info(csv);
         await using var cnx = await Ouvrir(chaineConnexion, ct);
         return new InfoSource(cnx.Driver, string.IsNullOrEmpty(cnx.ServerVersion) ? null : cnx.ServerVersion, 0);
     }
 
     public async Task<IReadOnlyList<TableSource>> ScannerAsync(string chaineConnexion, int exemples, CancellationToken ct = default)
     {
+        if (LecteurCsv.EstCsv(chaineConnexion, out var csv)) return LecteurCsv.Scanner(csv, exemples);
         await using var cnx = await Ouvrir(chaineConnexion, ct);
         var resultat = new List<TableSource>();
         foreach (var table in NomsDeTables(cnx).Take(TablesMax))
@@ -142,6 +145,15 @@ public sealed class SourceOdbc : ISourceReprise
     public async IAsyncEnumerable<string?[]> LireAsync(string chaineConnexion, string table, IReadOnlyList<string> colonnes,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        if (LecteurCsv.EstCsv(chaineConnexion, out var csv))
+        {
+            foreach (var l in LecteurCsv.Lire(csv, table, colonnes))
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return l;
+            }
+            yield break;
+        }
         await using var cnx = await Ouvrir(chaineConnexion, ct);
         var vraieTable = NomsDeTables(cnx).FirstOrDefault(t => string.Equals(t, table, StringComparison.OrdinalIgnoreCase))
             ?? throw new RegleMetierException($"Table « {table} » introuvable dans l’ancienne base.");

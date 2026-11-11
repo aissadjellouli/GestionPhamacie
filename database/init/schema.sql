@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 046 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 049 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 046 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 049 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict GXoJ3tnDSPyH0MHYKphKnkIyUNzH8dJHH5NyqAFQKd1OgCq6U9boyQI7wS8BcnA
+\restrict 50FrFVYOdhWhhu05OlHUF4lC4r9nHrE9GZCvh9BdcsCJX7dYnZenzNXhIgsQze7
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -48,8 +48,6 @@ SET row_security = off;
 
 CREATE SCHEMA import;
 
-
---
 
 --
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
@@ -76,6 +74,9 @@ DECLARE
     v_reprise  bigint;
     v_id       bigint;
     v_ref      text := 'REPRISE-' || p_session;
+    v_nomencl  text;
+    v_ancien   text;
+    v_classe   text;
     r          record;
 BEGIN
     IF (SELECT statut FROM import.session WHERE id = p_session) <> 'en_cours' THEN
@@ -85,19 +86,22 @@ BEGIN
         RAISE EXCEPTION 'Anomalies bloquantes restantes : chargement refusé';
     END IF;
 
-    -- Produits absents du catalogue, créés à la demande du pharmacien
+    -- Produits absents du catalogue, créés à la demande du pharmacien. Classe : la plus stricte entre la nomenclature
+    -- et l'ancien logiciel. Absent de la nomenclature : à vérifier par le titulaire, non vendable d'ici là (037)
     FOR r IN
         SELECT s.*
         FROM import.correspondance_produit c
         JOIN import.produit_src s ON s.session_id = c.session_id AND s.ref_source = c.ref_source
         WHERE c.session_id = p_session AND c.methode = 'nouveau' AND c.produit_id IS NULL
     LOOP
-        -- Sans n° d'enregistrement, la nomenclature ne peut pas proposer sa classe (un psychotrope serait repris
-        -- « libre ») : le produit est à vérifier par le titulaire, et non vendable d'ici là (037)
-        INSERT INTO produit (code_barre, num_enregistrement, nom_commercial, dosage, forme, prix_public, a_verifier)
+        v_nomencl := import.classe_nomenclature(r.num_enregistrement);
+        v_ancien  := import.classe_src(r.classe);
+        v_classe  := CASE WHEN COALESCE(import.rang_classe(v_ancien), -1) > COALESCE(import.rang_classe(v_nomencl), -1)
+                          THEN v_ancien ELSE COALESCE(v_nomencl, 'libre') END;
+        INSERT INTO produit (code_barre, num_enregistrement, nom_commercial, dosage, forme, prix_public, classe, a_verifier)
         VALUES (NULLIF(btrim(r.code_barre), ''), NULLIF(btrim(r.num_enregistrement), ''),
                 r.nom, r.dosage, r.forme, COALESCE(import.nombre(r.prix_vente), 0),
-                NULLIF(btrim(r.num_enregistrement), '') IS NULL)
+                v_classe, v_nomencl IS NULL)
         RETURNING id INTO v_id;
         UPDATE import.correspondance_produit SET produit_id = v_id
         WHERE session_id = p_session AND ref_source = r.ref_source;
@@ -112,9 +116,15 @@ BEGIN
         WHERE session_id = p_session AND ref_source = r.ref_source;
     END LOOP;
 
-    -- Grossiste fictif pour le stock dont la provenance est inconnue
-    INSERT INTO fournisseur (raison_sociale) VALUES ('Reprise de stock (ancien logiciel)')
-    RETURNING id INTO v_reprise;
+    -- Grossiste fictif, seulement pour du stock dont la provenance est inconnue
+    IF EXISTS (SELECT 1
+               FROM import.stock_src st
+               LEFT JOIN import.fournisseur_src fs
+                      ON fs.session_id = st.session_id AND fs.ref_source = st.fournisseur_ref
+               WHERE st.session_id = p_session AND import.nombre(st.quantite) > 0 AND fs.fournisseur_id IS NULL) THEN
+        INSERT INTO fournisseur (raison_sociale) VALUES ('Reprise de stock (ancien logiciel)')
+        RETURNING id INTO v_reprise;
+    END IF;
 
     -- Une réception de reprise par grossiste
     DROP TABLE IF EXISTS _rec;
@@ -133,33 +143,35 @@ BEGIN
         INSERT INTO _rec VALUES (r.fid, v_id);
     END LOOP;
 
-    -- Lots (date inconnue : provisoirement à un an, et signalée à vérifier)
+    -- Lots : un par produit, grossiste, n° de lot et date (date inconnue : provisoirement à un an, et signalée à vérifier).
+    -- Prix d'achat : celui du lot, sinon celui du produit ; moyenne pondérée si plusieurs lignes forment le même lot
     INSERT INTO lot (produit_id, reception_id, fournisseur_id, numero_lot,
                      date_peremption, quantite_disponible, prix_achat_ht, date_a_verifier)
     SELECT c.produit_id, rc.reception_id, rc.fournisseur_id, x.lot_reprise,
-           COALESCE(MIN(x.dte), current_date + 365),
+           COALESCE(x.dte, current_date + 365),
            SUM(x.qte)::int,
-           MAX(COALESCE(import.nombre(ps.prix_achat), 0)),
-           bool_or(x.dte IS NULL)
+           round(SUM(x.qte * x.pa) / SUM(x.qte), 2),
+           x.dte IS NULL
     FROM (
         SELECT st.*,
                import.nombre(st.quantite)        AS qte,
                import.date_src(st.date_peremption) AS dte,
+               COALESCE(import.nombre(st.prix_achat), import.nombre(ps.prix_achat), 0) AS pa,
                upper(COALESCE(NULLIF(btrim(st.numero_lot), ''),
                         'REPRISE-' || COALESCE(to_char(import.date_src(st.date_peremption), 'YYYYMM'), 'ND')))
                                                  AS lot_reprise   -- normalisé comme à la réception (018)
         FROM import.stock_src st
+        JOIN import.produit_src ps
+             ON ps.session_id = st.session_id AND ps.ref_source = st.ref_produit
         WHERE st.session_id = p_session
     ) x
     JOIN import.correspondance_produit c
          ON c.session_id = x.session_id AND c.ref_source = x.ref_produit
-    JOIN import.produit_src ps
-         ON ps.session_id = x.session_id AND ps.ref_source = x.ref_produit
     LEFT JOIN import.fournisseur_src fs
          ON fs.session_id = x.session_id AND fs.ref_source = x.fournisseur_ref
     JOIN _rec rc ON rc.fournisseur_id = COALESCE(fs.fournisseur_id, v_reprise)
     WHERE x.qte > 0
-    GROUP BY c.produit_id, rc.reception_id, rc.fournisseur_id, x.lot_reprise;
+    GROUP BY c.produit_id, rc.reception_id, rc.fournisseur_id, x.lot_reprise, x.dte;
 
     -- Mouvements d'entrée pour la traçabilité
     INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id, reception_id, prix_achat_ht)
@@ -190,6 +202,40 @@ $$;
 
 
 --
+-- Name: classe_nomenclature(text); Type: FUNCTION; Schema: import; Owner: -
+--
+
+CREATE FUNCTION import.classe_nomenclature(p_num text) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT v.classe_proposee
+    FROM v_nomenclature v
+    WHERE v.num_enregistrement = NULLIF(btrim(p_num), '')
+    ORDER BY (v.situation = 'en_vigueur') DESC
+    LIMIT 1;
+$$;
+
+
+--
+-- Name: classe_src(text); Type: FUNCTION; Schema: import; Owner: -
+--
+
+CREATE FUNCTION import.classe_src(t text) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT CASE
+        WHEN v = '' THEN NULL
+        WHEN v ~ '\mSTUP' OR v ~ '\mTABLEAU\s*B\M' THEN 'stupefiant'
+        WHEN v ~ '\mPSY' THEN 'psychotrope'
+        WHEN v ~ '\mLISTE?\s*(II|2)\M' OR v ~ '\mTABLEAU\s*C\M' THEN 'liste_ii'
+        WHEN v ~ '\mLISTE?\s*(I|1)\M' OR v ~ '\mTABLEAU\s*A\M' THEN 'liste_i'
+        WHEN v ~ '\m(LIBRE|NON LISTE|HORS LISTE|AUCUNE|NEANT|OTC)\M' THEN 'libre'
+    END
+    FROM (SELECT btrim(regexp_replace(majuscule_sans_accent(COALESCE(t, '')), '[_.-]+', ' ', 'g')) AS v) x;
+$$;
+
+
+--
 -- Name: controle_apres_chargement(bigint); Type: FUNCTION; Schema: import; Owner: -
 --
 
@@ -198,7 +244,7 @@ CREATE FUNCTION import.controle_apres_chargement(p_session bigint) RETURNS TABLE
     AS $$
     SELECT t.indicateur, t.ancien, t.nouveau, t.nouveau - t.ancien
     FROM (
-        SELECT 'Unités en stock'::text AS indicateur,
+        SELECT 1 AS ordre, 'Unités en stock'::text AS indicateur,
                (SELECT COALESCE(SUM(import.nombre(st.quantite)), 0)
                 FROM import.stock_src st
                 WHERE st.session_id = p_session AND import.nombre(st.quantite) > 0) AS ancien,
@@ -206,25 +252,36 @@ CREATE FUNCTION import.controle_apres_chargement(p_session bigint) RETURNS TABLE
                 FROM lot l JOIN reception r ON r.id = l.reception_id
                 WHERE r.numero_bl = 'REPRISE-' || p_session) AS nouveau
         UNION ALL
-        SELECT 'Crédits clients (DA)',
+        SELECT 2, 'Valeur du stock au prix d''achat (DA)',
+               (SELECT COALESCE(round(SUM(import.nombre(st.quantite)
+                                          * COALESCE(import.nombre(st.prix_achat), import.nombre(ps.prix_achat), 0)), 2), 0)
+                FROM import.stock_src st
+                JOIN import.produit_src ps ON ps.session_id = st.session_id AND ps.ref_source = st.ref_produit
+                WHERE st.session_id = p_session AND import.nombre(st.quantite) > 0),
+               (SELECT COALESCE(SUM(l.quantite_disponible * l.prix_achat_ht), 0)
+                FROM lot l JOIN reception r ON r.id = l.reception_id
+                WHERE r.numero_bl = 'REPRISE-' || p_session)
+        UNION ALL
+        SELECT 3, 'Crédits clients (DA)',
                (SELECT COALESCE(SUM(import.nombre(c.solde_credit)), 0)
                 FROM import.client_src c WHERE c.session_id = p_session),
                (SELECT COALESCE(SUM(pt.solde_credit), 0)
                 FROM patient pt JOIN import.client_src c ON c.patient_id = pt.id
                 WHERE c.session_id = p_session)
         UNION ALL
-        SELECT 'Dettes grossistes (DA)',
+        SELECT 4, 'Dettes grossistes (DA)',
                (SELECT COALESCE(SUM(import.nombre(f.solde)), 0)
                 FROM import.fournisseur_src f WHERE f.session_id = p_session),
                (SELECT COALESCE(SUM(fo.solde), 0)
                 FROM fournisseur fo JOIN import.fournisseur_src f ON f.fournisseur_id = fo.id
                 WHERE f.session_id = p_session)
         UNION ALL
-        SELECT 'Nombre de clients',
+        SELECT 5, 'Nombre de clients',
                (SELECT count(*) FROM import.client_src c WHERE c.session_id = p_session),
                (SELECT count(*) FROM import.client_src c
                 WHERE c.session_id = p_session AND c.patient_id IS NOT NULL)
-    ) t;
+    ) t
+    ORDER BY t.ordre;
 $$;
 
 
@@ -248,6 +305,7 @@ BEGIN
           FROM import.stock_src st WHERE st.session_id = p_session
           UNION ALL SELECT 'produit', s.ref_source, 'Prix de vente', s.prix_vente FROM import.produit_src s WHERE s.session_id = p_session
           UNION ALL SELECT 'produit', s.ref_source, 'Prix d''achat', s.prix_achat FROM import.produit_src s WHERE s.session_id = p_session
+          UNION ALL SELECT 'stock', st.ref_produit, 'Prix d''achat du lot', st.prix_achat FROM import.stock_src st WHERE st.session_id = p_session
           UNION ALL SELECT 'client', c.ref_source, 'Solde crédit de ' || c.nom, c.solde_credit FROM import.client_src c WHERE c.session_id = p_session
           UNION ALL SELECT 'fournisseur', f.ref_source, 'Solde de ' || f.raison_sociale, f.solde FROM import.fournisseur_src f WHERE f.session_id = p_session) a
     WHERE import.nombre_ambigu(a.valeur);
@@ -330,6 +388,40 @@ BEGIN
       AND NOT import.nombre_ambigu(f.solde)
       AND import.nombre(f.solde) IS NULL;
 
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, 'stock', st.ref_produit, 'bloquant',
+           format('Prix d''achat du lot illisible ou négatif : « %s »', st.prix_achat)
+    FROM import.stock_src st
+    WHERE st.session_id = p_session
+      AND st.prix_achat IS NOT NULL AND btrim(st.prix_achat) <> ''
+      AND NOT import.nombre_ambigu(st.prix_achat)
+      AND (import.nombre(st.prix_achat) IS NULL OR import.nombre(st.prix_achat) < 0);
+
+    -- Classe réglementaire de l'ancien logiciel non reconnue : la nomenclature décide, sinon le produit sera à vérifier
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, 'produit', s.ref_source, 'avertissement',
+           format('« %s » : classe « %s » non reconnue (attendu : libre, liste I, liste II, psychotrope, stupéfiant). Classe de la nomenclature appliquée, sinon produit à vérifier', s.nom, s.classe)
+    FROM import.produit_src s
+    WHERE s.session_id = p_session
+      AND s.classe IS NOT NULL AND btrim(s.classe) <> ''
+      AND import.classe_src(s.classe) IS NULL;
+
+    -- Produits à créer sans classe connue de la nomenclature : créés « à vérifier », non vendables avant confirmation
+    IF NOT EXISTS (SELECT 1 FROM v_nomenclature) THEN
+        INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+        VALUES (p_session, 'produit', NULL, 'avertissement',
+                'Nomenclature nationale non importée : tous les produits créés seront à vérifier avant la vente. Importez-la d''abord (Administration › Nomenclature nationale), puis relancez la reprise');
+    ELSE
+        INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+        SELECT p_session, 'produit', NULL, 'avertissement',
+               format('%s produit(s) à créer absent(s) de la nomenclature nationale ou sans n° d''enregistrement : créés « à vérifier », non vendables avant que le titulaire confirme leur classe', count(*))
+        FROM import.correspondance_produit c
+        JOIN import.produit_src s ON s.session_id = c.session_id AND s.ref_source = c.ref_source
+        WHERE c.session_id = p_session AND c.methode = 'nouveau' AND c.produit_id IS NULL
+          AND import.classe_nomenclature(s.num_enregistrement) IS NULL
+        HAVING count(*) > 0;
+    END IF;
+
     SELECT count(*) INTO nb_bloquants
     FROM import.anomalie WHERE session_id = p_session AND gravite = 'bloquant';
     RETURN nb_bloquants;
@@ -401,6 +493,17 @@ CREATE FUNCTION import.nombre_ambigu(t text) RETURNS boolean
     AS $_$
     SELECT t IS NOT NULL AND regexp_replace(t, '[\s\u00A0]|DA|DZD', '', 'gi') ~ '^-?\d{1,3}\.\d{3}$';
 $_$;
+
+
+--
+-- Name: rang_classe(text); Type: FUNCTION; Schema: import; Owner: -
+--
+
+CREATE FUNCTION import.rang_classe(c text) RETURNS integer
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT CASE c WHEN 'stupefiant' THEN 4 WHEN 'psychotrope' THEN 3 WHEN 'liste_i' THEN 2 WHEN 'liste_ii' THEN 1 WHEN 'libre' THEN 0 END;
+$$;
 
 
 --
@@ -1472,7 +1575,8 @@ CREATE TABLE import.produit_src (
     dosage text,
     forme text,
     prix_vente text,
-    prix_achat text
+    prix_achat text,
+    classe text
 );
 
 
@@ -1515,7 +1619,8 @@ CREATE TABLE import.stock_src (
     numero_lot text,
     date_peremption text,
     quantite text,
-    fournisseur_ref text
+    fournisseur_ref text,
+    prix_achat text
 );
 
 
@@ -2163,6 +2268,7 @@ CREATE TABLE public.fournisseur (
     jours_rouge integer,
     delai_reprise_jours integer,
     email text,
+    actif boolean DEFAULT true NOT NULL,
     CONSTRAINT ck_seuils_fournisseur CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
     CONSTRAINT fournisseur_delai_reprise_jours_check CHECK ((delai_reprise_jours > 0)),
     CONSTRAINT fournisseur_jours_orange_check CHECK ((jours_orange > 0)),
@@ -2796,6 +2902,7 @@ CREATE TABLE public.paiement (
     utilisateur_id bigint,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     session_caisse_id bigint,
+    numero_recu text,
     CONSTRAINT paiement_check CHECK (((vente_id IS NOT NULL) OR (patient_id IS NOT NULL))),
     CONSTRAINT paiement_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text, 'remboursement_credit'::text]))),
     CONSTRAINT paiement_montant_check CHECK ((montant > (0)::numeric))
@@ -2881,8 +2988,11 @@ CREATE TABLE public.parametre_caisse (
     versement_cloture text DEFAULT 'manuel'::text NOT NULL,
     delai_alerte_dette_jours integer DEFAULT 30 NOT NULL,
     plafond_credit_defaut numeric(12,2) DEFAULT 0 NOT NULL,
+    seuil_annulations integer DEFAULT 0 NOT NULL,
+    autorisation_par_code boolean DEFAULT true NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
     CONSTRAINT ck_plafond_credit_defaut CHECK ((plafond_credit_defaut >= (0)::numeric)),
+    CONSTRAINT ck_seuil_annulations CHECK (((seuil_annulations >= 0) AND (seuil_annulations <= 100))),
     CONSTRAINT ck_versement_cloture CHECK ((versement_cloture = ANY (ARRAY['manuel'::text, 'automatique'::text]))),
     CONSTRAINT parametre_caisse_deconnexion_minutes_check CHECK ((deconnexion_minutes >= 0)),
     CONSTRAINT parametre_caisse_fond_caisse_defaut_check CHECK ((fond_caisse_defaut >= (0)::numeric)),
@@ -3255,6 +3365,7 @@ CREATE TABLE public.reglement_fournisseur (
     commentaire text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     compte_id bigint,
+    numero text,
     CONSTRAINT reglement_fournisseur_check CHECK ((part_tiroir <= montant)),
     CONSTRAINT reglement_fournisseur_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (session_caisse_id IS NOT NULL)))),
     CONSTRAINT reglement_fournisseur_check2 CHECK (((moyen <> 'effet'::text) OR (echeance IS NOT NULL))),
@@ -3505,6 +3616,30 @@ CREATE SEQUENCE public.seq_code_interne
 --
 
 CREATE SEQUENCE public.seq_numero_commande
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: seq_numero_recu; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.seq_numero_recu
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: seq_numero_reglement_fournisseur; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.seq_numero_reglement_fournisseur
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -5892,6 +6027,13 @@ CREATE UNIQUE INDEX ux_ordonnance_chemin_scan ON public.ordonnance USING btree (
 
 
 --
+-- Name: ux_paiement_numero_recu; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_paiement_numero_recu ON public.paiement USING btree (numero_recu) WHERE (numero_recu IS NOT NULL);
+
+
+--
 -- Name: ux_produit_nom_dosage_forme; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5903,6 +6045,13 @@ CREATE UNIQUE INDEX ux_produit_nom_dosage_forme ON public.produit USING btree (l
 --
 
 CREATE UNIQUE INDEX ux_registre_numero_ordre ON public.registre_psychotrope USING btree (numero_ordre);
+
+
+--
+-- Name: ux_reglement_fournisseur_numero; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_reglement_fournisseur_numero ON public.reglement_fournisseur USING btree (numero) WHERE (numero IS NOT NULL);
 
 
 --
@@ -7380,5 +7529,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict GXoJ3tnDSPyH0MHYKphKnkIyUNzH8dJHH5NyqAFQKd1OgCq6U9boyQI7wS8BcnA
+\unrestrict 50FrFVYOdhWhhu05OlHUF4lC4r9nHrE9GZCvh9BdcsCJX7dYnZenzNXhIgsQze7
 

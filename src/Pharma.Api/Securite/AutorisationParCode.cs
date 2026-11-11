@@ -1,0 +1,63 @@
+using Pharma.Application.Caisse;
+using Pharma.Application.Commun;
+using Pharma.Application.Securite;
+using Pharma.Domain.Commun;
+using Pharma.Infrastructure.Securite;
+
+namespace Pharma.Api.Securite;
+
+/// <summary>
+/// Autorisation sur place : une action refusée faute de droit peut être rejouée avec le code comptoir d'un employé qui a ce droit
+/// (en-têtes X-Pharma-Autorise-Par et X-Pharma-Autorise-Code). Le code est vérifié une seule fois par requête (essais comptés,
+/// blocage après plusieurs erreurs) ; l'action est inscrite au journal avec « autorisé par ». Désactivable par le titulaire.
+/// </summary>
+public sealed class AutorisationParCode(IHttpContextAccessor http, VerificationCodeComptoir codes, ISessionsCaisse sessions,
+    PermissionService droits, AutorisationCourante courante, IJournal journal)
+{
+    public const string EnTeteIdentifiant = "X-Pharma-Autorise-Par";
+    public const string EnTeteCode = "X-Pharma-Autorise-Code";
+
+    private bool verifie, journalise;
+    private CompteComptoir? valideur;
+
+    /// <summary>Message du dernier échec (code faux, code bloqué, autorisation désactivée), à montrer au poste.</summary>
+    public string? Erreur { get; private set; }
+
+    /// <summary>Vrai si la requête porte une demande d'autorisation (en-têtes présents).</summary>
+    public bool Demandee => http.HttpContext?.Request.Headers.ContainsKey(EnTeteIdentifiant) == true;
+
+    public async Task<bool> ActiveeAsync(CancellationToken ct) => (await sessions.ParametresAsync(ct)).AutorisationParCode;
+
+    private async Task<CompteComptoir?> ValideurAsync(CancellationToken ct)
+    {
+        if (verifie) return valideur;
+        verifie = true;
+        var requete = http.HttpContext?.Request;
+        if (requete is null || !Demandee) return null;
+        if (!await ActiveeAsync(ct)) { Erreur = "L’autorisation par code est désactivée (Administration › Caisse)."; return null; }
+        var identifiant = Uri.UnescapeDataString(requete.Headers[EnTeteIdentifiant].ToString());
+        var code = requete.Headers[EnTeteCode].ToString();
+        try { valideur = await codes.VerifierAsync(identifiant, code, requete.Poste(), ct); }
+        catch (RegleMetierException e) { Erreur = e.Message; }
+        return valideur;
+    }
+
+    /// <summary>Le valideur de la requête a-t-il ce droit ? (null : marque du titulaire)</summary>
+    public async Task<bool> AutoriseAsync(long utilisateurId, string? permission, CancellationToken ct)
+    {
+        if (await ValideurAsync(ct) is not { } v || v.Id == utilisateurId) return false;
+        var ok = permission is null || permission == PermissionServiceExtensions.MarqueTitulaire
+            ? await droits.EstTitulaireAsync(v.Id, ct)
+            : await droits.APermissionAsync(v.Id, permission, ct);
+        if (!ok) { Erreur ??= $"{v.NomComplet} n’a pas ce droit : choisissez un employé qui l’a."; return false; }
+        (courante.AutoriseParId, courante.AutoriseParNom) = (v.Id, v.NomComplet);
+        if (!journalise)
+        {
+            journalise = true;
+            await journal.EcrireAsync(utilisateurId, "autorisation_code", null, null,
+                new Dictionary<string, object?> { ["droit"] = permission ?? "titulaire", ["action"] = http.HttpContext?.Request.Path.Value, ["autorise_par"] = v.NomComplet },
+                permission, ct);
+        }
+        return true;
+    }
+}

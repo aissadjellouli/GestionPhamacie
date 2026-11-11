@@ -91,6 +91,8 @@ internal static class FacturesEndpoints
                 return Results.NoContent();
             });
 
+        f.MapGet("/mentions-manquantes", async (MentionsFacture mentions, CancellationToken ct) => Results.Ok(await mentions.ManquantesAsync(ct)));
+
         f.MapGet("/clients", async (ConsulterFactures c, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok((await c.ClientsAsync(user.UtilisateurId(), ct)).Select(x =>
                 new ClientFactureDto(x.Id, x.RaisonSociale, x.Adresse, x.Telephone, x.Nif, x.Rc, x.Nis, x.ArticleImposition, x.Actif, x.Email, x.DelaiPaiementJours))));

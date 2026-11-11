@@ -104,6 +104,17 @@
                             {
                                 <button type="button" class="btn" @onclick="() => ParcourirEmplacement(famille)">Parcourir…</button>
                             }
+                            @if (ChaineOdbc.EstCsv(pilote))
+                            {
+                                <div class="champ" style="flex: 1 1 220px">
+                                    <label for="rp-encodage">Encodage des fichiers</label>
+                                    <select id="rp-encodage" class="selection" @bind="encodage" @bind:after="Recalculer">
+                                        <option value="auto">Détecté automatiquement</option>
+                                        <option value="utf-8">UTF-8</option>
+                                        <option value="windows-1252">ANSI (Windows-1252)</option>
+                                    </select>
+                                </div>
+                            }
                             @if (famille == ChaineOdbc.Famille.Serveur)
                             {
                                 <div class="champ" style="flex: 1 1 200px">
@@ -404,7 +415,10 @@
 
     private const string MasqueMotDePasse = "Pwd=••••••";
 
-    private string ChaineCalculee() => ChaineOdbc.Construire(pilote, dsn, emplacement, baseDeDonnees, utilisateur, motDePasse);
+    // Fichiers CSV : encodage détecté par le serveur, ou imposé si les accents sont mal lus
+    private string encodage = "auto";
+
+    private string ChaineCalculee() => ChaineOdbc.Construire(pilote, dsn, emplacement, baseDeDonnees, utilisateur, motDePasse, encodage);
 
     /// <summary>Chaîne envoyée au serveur : calculée, ou saisie dans « Avancé » (le mot de passe masqué y est remis).</summary>
     private string ChaineEffective() => chaineModifiee && !string.IsNullOrWhiteSpace(chaineSaisie)
@@ -422,7 +436,7 @@
 
     private void ChoisirSource(SourceRepriseDto s)
     {
-        (chaineModifiee, baseDeDonnees) = (false, null);
+        (chaineModifiee, baseDeDonnees, encodage) = (false, null, "auto");
         if (s.Dsn is not null) (pilote, dsn, emplacement) = (ChaineOdbc.SourceDeclaree, s.Dsn, null);
         else (pilote, dsn, emplacement) = (s.Pilote, null, s.Emplacement);
         // Pilote non listé (cas rare) : on garde la chaîne proposée telle quelle

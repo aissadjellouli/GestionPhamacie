@@ -51,6 +51,9 @@ public static class DependencyInjection
         services.AddScoped<ICatalogueEcriture, CatalogueEcritureSql>();
         services.AddScoped<IClassementProduits, ClassementProduitsSql>();
         services.AddScoped<IBlocageProduits, BlocageProduitsSql>();
+        services.AddScoped<Pharma.Application.Stock.ISortiesStock, SortiesStockSql>();
+        services.AddScoped<Pharma.Application.Achats.IGrossistes, Achats.GrossistesSql>();
+        services.AddScoped<IProduitsModification, ProduitsModificationSql>();
         services.AddScoped<Pharma.Application.Essai.IRetoursEssai, Securite.RetoursEssaiSql>();
         services.AddScoped<IEmplacements, EmplacementsSql>();
         services.AddScoped<IInventaires, InventairesSql>();
@@ -91,6 +94,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Securite.IPreferencesAffichage, Securite.PreferencesAffichageSql>();
         services.AddScoped<Pharma.Application.Caisse.IVentesEnAttente, Caisse.VentesEnAttenteSql>();
         services.AddScoped<Pharma.Application.Caisse.IAnnulationsVente, Caisse.AnnulationsVenteSql>();
+        services.AddScoped<Pharma.Application.Caisse.IVentesParBoite, Caisse.AnnulationsVenteSql>();
         services.AddScoped<Pharma.Application.Caisse.IRetoursClient, Caisse.RetoursClientSql>();
         services.AddScoped<Pharma.Application.Caisse.ICreditsClients, Caisse.CreditsClientsSql>();
         services.AddScoped<Pharma.Application.Suivi.ISuiviDettes, Suivi.SuiviDettesSql>();

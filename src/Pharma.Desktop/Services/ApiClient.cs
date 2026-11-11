@@ -79,7 +79,7 @@ public sealed class SessionPoste
 public sealed record ReponseLotFefo(LotFefoDto? Lot, IReadOnlyList<LotEcarteDto> Ecartes, string? Erreur);
 
 /// <summary>Appels à l'API locale. Chaque méthode renvoie le résultat ou un message d'erreur lisible.</summary>
-public sealed class ApiClient(HttpClient http, SessionPoste session)
+public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAutorisation? autorisations = null)
 {
     private const string Injoignable = "Serveur de la pharmacie injoignable : vérifiez que le PC serveur est allumé.";
 
@@ -151,6 +151,11 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
         PostAsync<ClotureRequete, ReleveDto>("api/caisse/releve", new(saisies));
 
     // ---- Annulation d'une vente ----
+    /// <summary>Remboursement sans ticket : ventes retrouvées par la boîte rapportée (sans patient, ou de ce patient).</summary>
+    public Task<(VentesParBoiteDto?, string?)> VentesParBoiteAsync(string code, int jours, long? patientId, string? lot) =>
+        GetAsync<VentesParBoiteDto?>($"api/caisse/ventes/par-boite?code={Uri.EscapeDataString(code.Trim())}&jours={jours}"
+            + (patientId is { } p ? $"&patientId={p}" : "") + (string.IsNullOrWhiteSpace(lot) ? "" : $"&lot={Uri.EscapeDataString(lot.Trim())}"), null);
+
     public Task<(List<VenteAnnulableDto>, string?)> VentesAnnulablesAsync(string? numero) =>
         GetAsync<List<VenteAnnulableDto>>($"api/caisse/ventes{(string.IsNullOrWhiteSpace(numero) ? "" : $"?numero={Uri.EscapeDataString(numero.Trim())}")}", []);
 
@@ -426,10 +431,19 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
         (await EnvoyerCorpsAsync<FichePatientDto, object>(HttpMethod.Put, $"api/patients/{f.Id}", f)).Item2;
     public Task<(List<VendeurComptoirDto>, string?)> ValidateursBlocageAsync() =>
         GetAsync<List<VendeurComptoirDto>>("api/produits/validateurs-blocage", []);
+    public Task<(FicheProduitModifiableDto?, string?)> FicheProduitAsync(long id) => GetAsync<FicheProduitModifiableDto?>($"api/produits/{id}/fiche", null);
+    public async Task<string?> ModifierProduitAsync(FicheProduitModifiableDto f) =>
+        (await EnvoyerCorpsAsync<FicheProduitModifiableDto, object>(HttpMethod.Put, $"api/produits/{f.Id}", f)).Item2;
+    public Task<(List<LotEnStockDto>, string?)> LotsEnStockAsync(long produitId) => GetAsync<List<LotEnStockDto>>($"api/stock/produits/{produitId}/lots", []);
+    public Task<(LotEnStockDto?, string?)> LotEnStockAsync(long lotId) => GetAsync<LotEnStockDto?>($"api/stock/lots/{lotId}", null);
+    public Task<(NombreDto?, string?)> SortirDuStockAsync(SortieStockRequete r) => PostAsync<SortieStockRequete, NombreDto>("api/stock/sorties", r);
+    public Task<(List<VendeurComptoirDto>, string?)> ValideursAsync(string? permission) =>
+        GetAsync<List<VendeurComptoirDto>>($"api/auth/valideurs{(permission is null ? "" : "?permission=" + Uri.EscapeDataString(permission))}", []);
     public Task<(List<BlocageProduitDto>, string?)> ProduitsBloquesAsync() => GetAsync<List<BlocageProduitDto>>("api/produits/bloques", []);
     public Task<(BlocageProduitDto?, string?)> BlocageProduitAsync(long produitId) => GetAsync<BlocageProduitDto?>($"api/produits/{produitId}/blocage", null);
     public async Task<string?> ModifierBlocageProduitAsync(long produitId, BlocageProduitRequete r) =>
         (await EnvoyerCorpsAsync<BlocageProduitRequete, object>(HttpMethod.Put, $"api/produits/{produitId}/blocage", r)).Item2;
+    public Task<(List<string>, string?)> MentionsFactureManquantesAsync() => GetAsync<List<string>>("api/factures/mentions-manquantes", []);
     public Task<(List<RetourEssaiDto>, string?)> RetoursEssaiAsync() => GetAsync<List<RetourEssaiDto>>("api/retours-essai", []);
     public async Task<string?> EnvoyerRetourEssaiAsync(NouveauRetourEssaiDto d) =>
         (await EnvoyerCorpsAsync<NouveauRetourEssaiDto, object>(HttpMethod.Post, "api/retours-essai", d)).Item2;
@@ -437,6 +451,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public Task<(ClassementProduitDto?, string?)> ClassementProduitAsync(long produitId) => GetAsync<ClassementProduitDto?>($"api/produits/{produitId}/classement", null);
     public async Task<string?> ModifierClassementProduitAsync(long produitId, string categorie, string? listePsychotrope) =>
         (await EnvoyerCorpsAsync<ClassementProduitRequete, object>(HttpMethod.Put, $"api/produits/{produitId}/classement", new(categorie, listePsychotrope))).Item2;
+    public async Task<string?> ModifierMedecinAsync(long id, string nom, string? specialite) =>
+        (await EnvoyerCorpsAsync<NouveauMedecinDto, object>(HttpMethod.Put, $"api/medecins/{id}", new(nom, specialite))).Item2;
     public Task<(List<OrganismeDto>, string?)> OrganismesAsync() => GetAsync<List<OrganismeDto>>("api/organismes", []);
 
     // ---- Administration -------------------------------------------------------
@@ -521,8 +537,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public Task<(IndicateursAlertesDto?, string?)> IndicateursAlertesAsync() => GetAsync<IndicateursAlertesDto?>("api/alertes/indicateurs", null);
     public Task<(CompteDto?, string?)> AlertesUrgentesAsync() => GetAsync<CompteDto?>("api/alertes/urgentes", null);
 
-    public Task<(List<ProduitDto>, string?)> RechercherProduitsAsync(string q) =>
-        GetAsync<List<ProduitDto>>($"api/produits?q={Uri.EscapeDataString(q)}", []);
+    public Task<(List<ProduitDto>, string?)> RechercherProduitsAsync(string q, bool inclureInactifs = false) =>
+        GetAsync<List<ProduitDto>>($"api/produits?q={Uri.EscapeDataString(q)}{(inclureInactifs ? "&inactifs=true" : "")}", []);
 
     // ---- Inventaire tournant ----
     public Task<(TableauInventaireDto?, string?)> TableauInventaireAsync() => GetAsync<TableauInventaireDto?>("api/inventaires", null);
@@ -629,6 +645,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     public async Task<string?> ModifierCoordonneesContactAsync(string type, long id, CoordonneesContactDto c) =>
         (await EnvoyerCorpsAsync<CoordonneesContactDto, object>(HttpMethod.Put, $"api/contacts/{type}/{id}/coordonnees", c)).Item2;
 
+    public Task<(IdentifiantDto?, string?)> EnregistrerGrossisteAsync(FicheGrossisteDto f) => PostAsync<FicheGrossisteDto, IdentifiantDto>("api/achats/fournisseurs", f);
     public Task<(List<FournisseurDto>, string?)> FournisseursAsync() => GetAsync<List<FournisseurDto>>("api/achats/fournisseurs", []);
     public Task<(PageDto<CommandeAchatDto>?, string?)> CommandesAchatAsync(int page = 1, int taille = 10, long? fournisseurId = null, string? statut = null,
         DateOnly? du = null, DateOnly? au = null) =>
@@ -717,9 +734,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     {
         try
         {
-            using var req = new HttpRequestMessage(methode, url);
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
-            using var rep = await http.SendAsync(req);
+            using var rep = await EnvoyerAutoriseAsync(() => new HttpRequestMessage(methode, url), proposer: methode != HttpMethod.Get);
             if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, null, SessionExpiree());
             if (!rep.IsSuccessStatusCode) return (null, null, await MessageAsync(rep));
             var nom = rep.Content.Headers.ContentDisposition?.FileNameStar
@@ -755,9 +770,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
     {
         try
         {
-            using var req = new HttpRequestMessage(methode, url) { Content = JsonContent.Create(corps) };
-            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
-            using var rep = await http.SendAsync(req);
+            using var rep = await EnvoyerAutoriseAsync(() => new HttpRequestMessage(methode, url) { Content = JsonContent.Create(corps) });
             if (rep.StatusCode == HttpStatusCode.Unauthorized) return (default, SessionExpiree());
             if (!rep.IsSuccessStatusCode) return (default, await MessageAsync(rep));
             if (rep.StatusCode == HttpStatusCode.NoContent) return (default, null);
@@ -769,11 +782,48 @@ public sealed class ApiClient(HttpClient http, SessionPoste session)
         }
     }
 
-    private Task<HttpResponseMessage> EnvoyerAsync(string url)
+    // Lecture : pas de fenêtre « Faire autoriser » (un écran interdit est refusé par la mise en page, pas par une demande de code)
+    private Task<HttpResponseMessage> EnvoyerAsync(string url) => EnvoyerAutoriseAsync(() => new HttpRequestMessage(HttpMethod.Get, url), proposer: false);
+
+    /// <summary>
+    /// Envoie la requête ; si le serveur la refuse faute de droit en proposant l'autorisation sur place, la fenêtre « Faire autoriser »
+    /// demande l'employé habilité et son code, puis la requête est rejouée avec ce code (nouvel essai si le code est faux).
+    /// </summary>
+    private async Task<HttpResponseMessage> EnvoyerAutoriseAsync(Func<HttpRequestMessage> creer, bool proposer = true)
     {
-        var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
-        return http.SendAsync(req);
+        (string Identifiant, string Code)? accord = null;
+        for (var essai = 0; ; essai++)
+        {
+            var req = creer();
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
+            if (accord is { } a)
+            {
+                req.Headers.Add("X-Pharma-Autorise-Par", Uri.EscapeDataString(a.Identifiant));
+                req.Headers.Add("X-Pharma-Autorise-Code", a.Code);
+            }
+            var rep = await http.SendAsync(req);
+            if (rep.StatusCode != HttpStatusCode.Forbidden || autorisations is null || !proposer || essai >= 3) return rep;
+            var corps = await rep.Content.ReadAsStringAsync();
+            var (message, autorisable, permission) = LireRefus(corps);
+            HttpResponseMessage Garder() { var n = new HttpResponseMessage(rep.StatusCode) { Content = new StringContent(corps, System.Text.Encoding.UTF8, "application/json") }; rep.Dispose(); return n; }
+            if (!autorisable) return Garder();
+            accord = await autorisations.DemanderAsync(message, permission);
+            if (accord is null) return Garder();
+            rep.Dispose();
+        }
+    }
+
+    private static (string Message, bool Autorisable, string? Permission) LireRefus(string corps)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(corps);
+            var racine = doc.RootElement;
+            string? Texte(string nom) => racine.TryGetProperty(nom, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() : null;
+            var autorisable = racine.TryGetProperty("autorisable", out var a) && a.ValueKind == System.Text.Json.JsonValueKind.True;
+            return (Texte("message") ?? Texte("detail") ?? "Action non autorisée.", autorisable, Texte("permission"));
+        }
+        catch (System.Text.Json.JsonException) { return ("Action non autorisée.", false, null); }
     }
 
     private string SessionExpiree()

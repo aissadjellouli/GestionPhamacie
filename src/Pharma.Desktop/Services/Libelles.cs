@@ -224,10 +224,56 @@ public static class Libelles
         "seuils_inventaire" => "Seuils d’inventaire",
         "seuil_stock" => "Seuil de stock d’un produit",
         "peremption_verifiee" => "Date de péremption confirmée",
+        "avoir_emis" => "Avoir émis",
+        "classe_produit" => "Classe de produit confirmée",
+        "code_comptoir" => "Code comptoir choisi",
+        "code_comptoir_bloque" => "Code comptoir bloqué",
+        "compte_tresorerie_cree" => "Compte de trésorerie créé",
+        "compte_tresorerie_modifie" => "Compte de trésorerie modifié",
+        "connexion_bloquee" => "Connexion bloquée",
+        "correction_credit" => "Dette d’un patient corrigée",
+        "delai_alerte_dettes" => "Délai d’alerte des dettes",
+        "facture_corrigee" => "Facture corrigée",
+        "facture_emise" => "Facture émise",
+        "facture_hors_suivi" => "Facture retirée du suivi",
+        "facture_rejetee" => "Facture rejetée",
+        "facture_remise_en_suivi" => "Facture remise dans le suivi",
+        "facture_remplacee" => "Facture remplacée",
+        "inventaire_complet_annule" => "Inventaire complet annulé",
+        "inventaire_complet_cloture" => "Inventaire complet clôturé",
+        "inventaire_complet_commence" => "Inventaire complet commencé",
+        "mot_de_passe_change" => "Mot de passe changé",
+        "mouvement_tresorerie" => "Mouvement de trésorerie",
+        "nomenclature_importee" => "Nomenclature importée",
+        "organisme_cree" => "Organisme créé",
+        "organisme_modifie" => "Organisme modifié",
+        "reception_produit_bloque" => "Réception d’un produit bloqué",
+        "reglement_credit" => "Règlement d’un crédit",
+        "reglement_grossiste" => "Règlement d’un grossiste",
+        "releve_caisse" => "Relève de caisse",
+        "remise_cheques" => "Remise de chèques en banque",
+        "reprise_chargement" => "Reprise de données chargée",
+        "reprise_extraction" => "Reprise de données extraite",
+        "retour_client" => "Retour client",
+        "transfert_tresorerie" => "Transfert entre comptes",
+        "vente_annulee" => "Vente annulée",
+        "vente_produit_bloque" => "Vente d’un produit bloqué",
+        "vente_sans_ordonnance" => "Vente sans ordonnance (liste I ou II)",
+        "versement_caisse_coffre" => "Versement de caisse au coffre",
+        "sortie_stock" => "Sortie de stock (périmé ou cassé)",
+        "grossiste_cree" => "Grossiste créé",
+        "grossiste_modifie" => "Grossiste modifié",
+        "produit_modifie" => "Produit modifié",
+        "medecin_modifie" => "Médecin modifié",
+        "autorisation_code" => "Action autorisée par code",
+        "annulations_excessives" => "Annulations au-delà du seuil",
         _ => Humaniser(action)
     };
 
     /// <summary>Libellés des droits, pour un journal lisible (le code reste affiché s'il est inconnu).</summary>
+    /// <summary>Libellé d'un droit (ou « pharmacien titulaire » pour la marque du rôle).</summary>
+    public static string Droit(string code) => code == "role.titulaire" ? "pharmacien titulaire" : LibellesDroits.GetValueOrDefault(code, code);
+
     private static readonly Dictionary<string, string> LibellesDroits = new()
     {
         ["achats.commander"] = "Passer une commande",
@@ -239,6 +285,10 @@ public static class Libelles
         ["caisse.annuler_vente"] = "Annuler une vente validée",
         ["caisse.ouvrir_tiroir"] = "Ouvrir le tiroir sans vente",
         ["caisse.remise"] = "Accorder une remise",
+        ["caisse.vendre_sans_ordonnance"] = "Vendre sans ordonnance un médicament de liste I ou II",
+        ["achats.regler"] = "Régler les grossistes",
+        ["tresorerie.gerer"] = "Gérer la trésorerie",
+        ["factures.gerer"] = "Émettre et gérer les factures clients",
         ["caisse.retour_especes"] = "Rembourser un retour en espèces",
         ["caisse.supprimer_ligne"] = "Supprimer une ligne après scan",
         ["caisse.vendre"] = "Encaisser une vente",
@@ -370,18 +420,49 @@ public static class Libelles
         System.Text.Json.JsonValueKind.True => "oui",
         System.Text.Json.JsonValueKind.False => "non",
         System.Text.Json.JsonValueKind.Null => "—",
-        System.Text.Json.JsonValueKind.String => LibellesDroits.GetValueOrDefault(v.GetString()!, v.GetString()!),
+        System.Text.Json.JsonValueKind.String => LibellesDroits.TryGetValue(v.GetString()!, out var droit) ? droit
+            : ValeursCodees.GetValueOrDefault(v.GetString()!, v.GetString()!),
         System.Text.Json.JsonValueKind.Array => v.GetArrayLength() == 0 ? "aucun" : string.Join(", ", v.EnumerateArray().Select(Valeur)),
         System.Text.Json.JsonValueKind.Object => Generique(v),
         _ => v.ToString()
     };
 
     /// <summary>« jours_orange » devient « Jours orange ».</summary>
+    /// <summary>Codes enregistrés tels quels dans le journal (moyens de paiement, motifs) : remis en français.</summary>
+    private static readonly Dictionary<string, string> ValeursCodees = new()
+    {
+        ["especes"] = "espèces", ["cheque"] = "chèque", ["carte"] = "carte", ["virement"] = "virement", ["effet"] = "effet", ["credit"] = "crédit",
+        ["perime"] = "périmé", ["casse"] = "cassé", ["peremption_proche"] = "péremption proche", ["erreur_livraison"] = "erreur de livraison"
+    };
+
+    /// <summary>Clés entières du journal dont la forme mot à mot serait fausse.</summary>
+    private static readonly Dictionary<string, string> ClesJournal = new()
+    {
+        ["reste_du"] = "Reste dû", ["autorise_par"] = "Autorisé par", ["valide_par"] = "Validé par", ["deja_rendu"] = "Déjà rendu",
+        ["part_tiroir"] = "Part du tiroir", ["mode_remboursement"] = "Mode de remboursement", ["dette_diminuee"] = "Dette diminuée"
+    };
+
     private static string Humaniser(string code)
     {
-        var s = code.Replace('_', ' ').Replace('.', ' ').Trim();
+        if (ClesJournal.TryGetValue(code, out var cle)) return cle;
+        var s = string.Join(' ', code.Replace('_', ' ').Replace('.', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(m => Accents.TryGetValue(m, out var a) ? a : m));
         return s.Length == 0 ? code : char.ToUpper(s[0]) + s[1..];
     }
+
+    /// <summary>Mots des codes techniques (sans accents) remis en français dans le journal.</summary>
+    private static readonly Dictionary<string, string> Accents = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["premiere"] = "première", ["echeance"] = "échéance", ["numero"] = "numéro", ["ecart"] = "écart", ["emise"] = "émise",
+        ["regle"] = "réglé", ["reglement"] = "règlement", ["periode"] = "période", ["peremption"] = "péremption", ["prenom"] = "prénom",
+        ["telephone"] = "téléphone", ["delai"] = "délai", ["categorie"] = "catégorie", ["quantite"] = "quantité", ["rembourse"] = "remboursé",
+        ["reduction"] = "réduction", ["especes"] = "espèces", ["cheque"] = "chèque", ["reception"] = "réception", ["releve"] = "relevé",
+        ["cree"] = "créé", ["modifie"] = "modifié", ["valide"] = "validé", ["deja"] = "déjà", ["rendu"] = "rendu", ["libelle"] = "libellé",
+        ["frequence"] = "fréquence", ["deconnexion"] = "déconnexion", ["controle"] = "contrôle", ["ancienne"] = "ancienne", ["diminuee"] = "diminuée",
+        ["reference"] = "référence", ["apres"] = "après", ["autorise"] = "autorisé", ["recu"] = "reçu", ["detruites"] = "détruites",
+        ["boites"] = "boîtes", ["seuil"] = "seuil", ["delivrance"] = "délivrance", ["medecin"] = "médecin", ["specialite"] = "spécialité",
+        ["entree"] = "entrée", ["reglees"] = "réglées", ["reglee"] = "réglée", ["cle"] = "clé", ["etat"] = "état", ["etagere"] = "étagère"
+    };
 
     // ---- Traçabilité ------------------------------------------------------
 

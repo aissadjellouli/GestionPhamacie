@@ -78,6 +78,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
         }
 
         // 3. Lignes, stock, mouvements, registre
+        var boitesRattachees = new HashSet<long>();
         foreach (var l in v.Lignes)
         {
             long ligneId;
@@ -99,6 +100,22 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db) : IVentesEcriture
                 cmd.Parameters.AddWithValue(l.Shp);
                 ligneId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
+
+            // Boîtes identifiées de ce lot : rattachées à la ligne (statut « vendue »), pour retrouver la vente au remboursement
+            if (a.BoitesParLot?.GetValueOrDefault(l.LotId) is { Count: > 0 } boites)
+                foreach (var boite in boites.Except(boitesRattachees).Take(l.Quantite).ToList())
+                {
+                    await using var cmd = new NpgsqlCommand("SELECT vendre_boite($1, $2, $3)", cx, tx);
+                    cmd.Parameters.AddWithValue(boite);
+                    cmd.Parameters.AddWithValue(ligneId);
+                    cmd.Parameters.AddWithValue(v.UtilisateurId);
+                    try { await cmd.ExecuteNonQueryAsync(ct); }
+                    catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.RaiseException)
+                    {
+                        throw new RegleMetierException($"Boîte scannée : {e.MessageText}");
+                    }
+                    boitesRattachees.Add(boite);
+                }
 
             int resteLot;
             await using (var cmd = new NpgsqlCommand("""

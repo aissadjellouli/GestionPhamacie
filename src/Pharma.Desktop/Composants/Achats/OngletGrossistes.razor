@@ -1,31 +1,96 @@
 @inject ApiClient Api
+@inject SessionPoste Session
 
-@if (erreur is not null)
+@* Grossistes : liste, dette, et fiche (création, modification, désactivation) avec le droit de commander. *@
+@if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+@if (message is not null) { <div class="succes" role="status">@message</div> }
+@if (Session.A("achats.commander"))
 {
-    <div class="erreur" role="alert">@erreur</div>
+    <div><button type="button" class="btn" @onclick="() => fiche = new Fiche()">Ajouter un grossiste</button></div>
+}
+@if (fiche is { } f)
+{
+    <section class="panneau" aria-labelledby="t-fiche-grossiste">
+        <h2 id="t-fiche-grossiste">@(f.Id is null ? "Nouveau grossiste" : $"Modifier « {f.RaisonSociale} »")</h2>
+        <div class="achats-ligne">
+            <div class="champ" style="flex: 2 1 260px"><label for="g-rs" class="requis">Raison sociale</label><input id="g-rs" data-champ="raison_sociale" type="text" maxlength="120" @bind="f.RaisonSociale" /></div>
+            <div class="champ" style="flex: 1 1 160px"><label for="g-tel">Téléphone</label><input id="g-tel" data-champ="telephone" type="tel" maxlength="30" @bind="f.Telephone" /></div>
+            <div class="champ" style="flex: 1 1 220px"><label for="g-mail">E-mail</label><input id="g-mail" data-champ="email" type="email" maxlength="120" @bind="f.Email" /></div>
+        </div>
+        <div class="achats-ligne">
+            <div class="champ" style="flex: 2 1 260px"><label for="g-adr">Adresse</label><input id="g-adr" type="text" maxlength="300" @bind="f.Adresse" /></div>
+            <div class="champ" style="flex: 1 1 150px"><label for="g-nif">NIF</label><input id="g-nif" type="text" @bind="f.Nif" /></div>
+            <div class="champ" style="flex: 1 1 150px"><label for="g-rc">RC</label><input id="g-rc" type="text" @bind="f.Rc" /></div>
+            <div class="champ" style="flex: 0 1 200px"><label for="g-delai">Reprise avant péremption (jours)</label><input id="g-delai" data-champ="delai_reprise" type="number" min="1" max="365" @bind="f.DelaiRepriseJours" /></div>
+        </div>
+        <label class="case"><input type="checkbox" @bind="f.Actif" /><span>Actif (proposé aux commandes et aux réceptions)</span></label>
+        <div class="filtres">
+            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">@(f.Id is null ? "Créer" : "Enregistrer")</button>
+            <button type="button" class="btn" @onclick="() => fiche = null">Annuler</button>
+        </div>
+    </section>
 }
 <section class="tableau-cadre" aria-label="Grossistes">
     <table class="tableau" style="min-width: 0">
-        <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">E-mail</th><th scope="col">Dette (solde)</th><th scope="col">Délai de reprise</th></tr></thead>
+        <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">E-mail</th><th scope="col">Dette (solde)</th><th scope="col">Délai de reprise</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
         <tbody>
-            @foreach (var f in fournisseurs)
+            @foreach (var g in fournisseurs)
             {
                 <tr>
-                    <td class="nom"><LienContact Type="grossiste" Id="f.Id" Nom="@f.RaisonSociale" /></td>
-                    <td>@(f.Telephone ?? "—")</td>
-                    <td>@if (f.Email is { } mail) { @mail } else { <span class="pastille attention">à compléter</span> }</td>
-                    <td>@Libelles.Dinars(f.Solde, 2)</td>
-                    <td>@(f.DelaiRepriseJours is { } j ? $"{j} jours avant péremption" : "non renseigné")</td>
+                    <td class="nom"><LienContact Type="grossiste" Id="g.Id" Nom="@g.RaisonSociale" /></td>
+                    <td>@(g.Telephone ?? "—")</td>
+                    <td>@if (g.Email is { } mail) { @mail } else { <span class="pastille attention">à compléter</span> }</td>
+                    <td>@Libelles.Dinars(g.Solde, 2)</td>
+                    <td>@(g.DelaiRepriseJours is { } j ? $"{j} jours avant péremption" : "non renseigné")</td>
+                    <td>@(g.Actif ? "Actif" : "Désactivé")</td>
+                    <td>@if (Session.A("achats.commander")) { <button type="button" class="lien-bouton" @onclick="() => Modifier(g)">Modifier</button> }</td>
                 </tr>
             }
         </tbody>
     </table>
 </section>
-<p class="detail" style="margin: 0">La dette augmente du montant TTC de chaque réception et diminue de chaque avoir et de chaque règlement. Pour compléter le téléphone, l’e-mail ou l’adresse d’un grossiste, ouvrez sa fiche en cliquant sur son nom.</p>
+<p class="detail" style="margin: 0">La dette augmente du montant de chaque réception et diminue de chaque avoir et de chaque règlement. Un grossiste désactivé n’est plus proposé aux commandes ni aux réceptions ; son historique est conservé.</p>
 
 @code {
+    private sealed class Fiche
+    {
+        public long? Id { get; init; }
+        public string RaisonSociale { get; set; } = "";
+        public string? Telephone { get; set; }
+        public string? Email { get; set; }
+        public string? Adresse { get; set; }
+        public string? Nif { get; set; }
+        public string? Rc { get; set; }
+        public int? DelaiRepriseJours { get; set; }
+        public bool Actif { get; set; } = true;
+    }
+
     private List<FournisseurDto> fournisseurs = [];
-    private string? erreur;
+    private Fiche? fiche;
+    private string? erreur, message;
+    private bool enCours;
 
     protected override async Task OnInitializedAsync() => (fournisseurs, erreur) = await Api.FournisseursAsync();
+
+    private void Modifier(FournisseurDto g) => (fiche, message) = (new Fiche
+    {
+        Id = g.Id, RaisonSociale = g.RaisonSociale, Telephone = g.Telephone, Email = g.Email, Adresse = g.Adresse, Nif = g.Nif, Rc = g.Rc,
+        DelaiRepriseJours = g.DelaiRepriseJours, Actif = g.Actif
+    }, null);
+
+    private async Task EnregistrerAsync()
+    {
+        if (fiche is not { } f) return;
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var (_, e) = await Api.EnregistrerGrossisteAsync(new FicheGrossisteDto(f.Id, f.RaisonSociale, f.Telephone, f.Email, f.Adresse, f.Nif, f.Rc,
+                f.DelaiRepriseJours, f.Actif));
+            if (e is not null) { erreur = e; return; }
+            message = $"Grossiste « {f.RaisonSociale.Trim()} » enregistré.";
+            fiche = null;
+            (fournisseurs, erreur) = await Api.FournisseursAsync();
+        }
+        finally { enCours = false; }
+    }
 }

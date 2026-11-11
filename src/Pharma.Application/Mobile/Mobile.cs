@@ -22,7 +22,8 @@ public sealed record FicheProduit(
 public sealed record FicheCode(string Type, FicheProduit Produit, long? LotId, string? StatutBoite, IReadOnlyList<string> Alertes);
 
 /// <summary>Résolution d'un code : produit, lot éventuel et statut de la boîte quand le code désigne une boîte.</summary>
-public sealed record CodeResolu(long ProduitId, long? LotId, string Type, string? StatutBoite);
+/// <summary>BoiteId : boîte identifiée (étiquette interne ou n° de série du Data Matrix).</summary>
+public sealed record CodeResolu(long ProduitId, long? LotId, string Type, string? StatutBoite, long? BoiteId = null);
 
 public sealed record LotAConfirmer(long Id, string Produit, string NumeroLot, bool DateAVerifier);
 

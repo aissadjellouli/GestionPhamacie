@@ -24,7 +24,8 @@ public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quant
 /// le reste (déjà remboursé par le patient) lui est rendu en espèces depuis la caisse ouverte du poste.
 /// </summary>
 public sealed record RetourAEcrire(long VenteId, string Numero, string Motif, long UtilisateurId, long ValidePar, string? Mode, decimal Montant,
-    long? SessionCaisseId, string Poste, IReadOnlyList<LigneRetourAEcrire> Lignes, decimal ReductionDette = 0, long? PatientDetteId = null);
+    long? SessionCaisseId, string Poste, IReadOnlyList<LigneRetourAEcrire> Lignes, decimal ReductionDette = 0, long? PatientDetteId = null,
+    bool AccordClient = false);
 
 public interface IRetoursClient
 {
@@ -46,13 +47,15 @@ public sealed class LireVenteRetournable(IRetoursClient retours)
 /// Retour de médicaments par le patient, à l'appréciation du pharmacien (droit « caisse.retour_especes ») ou validé sur place
 /// par le code d'un employé qui l'a. Chaque produit est remis en stock sur son lot, ou mis à détruire. L'argent rendu sort de
 /// la caisse ouverte du poste ; vente à crédit : la dette du patient diminue, et ce qu'il a déjà remboursé lui est rendu en espèces.
+/// Remboursement d'une vente payée entièrement retiré de la dette, avec l'accord du client : rien ne sort de la caisse, le
+/// caissier valide seul.
 /// </summary>
 public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCaisse sessions, IPermissionService droits,
     VerificationCodeComptoir codes, IJournal journal, Patients.IPatients? patients = null)
 {
     public async Task<ResultatRetour> ExecuterAsync(long venteId, string? motif, IReadOnlyList<LigneRetourDemandee> demandees, long utilisateurId,
         string? poste, string? validateurIdentifiant, string? validateurCode, bool solderDette = false, long? patientDetteId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default, bool accordClient = false)
     {
         var nomPoste = PosteCaisse.Exiger(poste);
         var texte = RegleAnnulation.Motif(motif);
@@ -93,24 +96,11 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             lignes[^1] = lignes[^1] with { Montant = Math.Max(lignes[^1].Montant + ecart, 0) };
         }
 
-        // Le pharmacien décide : droit de l'employé, sinon validation sur place
-        long validePar = utilisateurId;
-        string? nomValidateur = null;
-        if (!await droits.APermissionAsync(utilisateurId, Permissions.CaisseRetourEspeces, ct))
-        {
-            if (string.IsNullOrWhiteSpace(validateurIdentifiant))
-                throw new RegleMetierException("Le retour d’un produit est décidé par le pharmacien ou l’assistant : il doit valider avec son code.");
-            var validateur = await codes.VerifierAsync(validateurIdentifiant, validateurCode, nomPoste, ct);
-            if (!await droits.APermissionAsync(validateur.Id, Permissions.CaisseRetourEspeces, ct))
-                throw new DroitRefuseException(Permissions.CaisseRetourEspeces, "valider le retour d’un produit");
-            (validePar, nomValidateur) = (validateur.Id, validateur.NomComplet);
-        }
-
         // Part payée par le patient pour les boîtes rendues : rendue, ou retirée de sa dette pour une vente à crédit
         // (ce que le patient a déjà remboursé lui est rendu en espèces, comme pour une annulation)
         var montant = lignes.Sum(l => l.Montant);
-        // Vente payée (espèces, carte, chèque) à un patient qui doit de l'argent par ailleurs : le caissier peut choisir de
-        // retirer le remboursement de cette dette (solderDette) ; seul le surplus est alors rendu.
+        // Vente payée (espèces, carte, chèque) à un patient qui doit de l'argent par ailleurs : avec l'accord du client, le
+        // remboursement est retiré de cette dette (solderDette) ; seul le surplus est alors rendu.
         // Vente sans patient : s'il s'est nommé au retour (patientDetteId), c'est sa dette, relue ici, qui est diminuée.
         var dette = v.SoldeCreditPatient;
         long? patientDette = null;
@@ -122,18 +112,36 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         }
         var reductionDette = v.Mode == "credit" || solderDette ? Math.Min(Math.Max(dette, 0), montant) : 0;
         var aRendre = montant - reductionDette;
+        var deduitAuChoix = solderDette && v.Mode != "credit" && reductionDette > 0;
+        if (deduitAuChoix && !accordClient) throw RegleAnnulation.AccordClientManquant();
+
+        // Le pharmacien décide : droit de l'employé, sinon validation sur place. Tout déduit de la dette avec l'accord du
+        // client (rien ne sort de la caisse) : le caissier valide seul
+        long validePar = utilisateurId;
+        string? nomValidateur = null;
+        var sansArgentRendu = deduitAuChoix && aRendre == 0;
+        if (!sansArgentRendu && !await droits.APermissionAsync(utilisateurId, Permissions.CaisseRetourEspeces, ct))
+        {
+            if (string.IsNullOrWhiteSpace(validateurIdentifiant))
+                throw new RegleMetierException("Le retour d’un produit est décidé par le pharmacien ou l’assistant : il doit valider avec son code.");
+            var validateur = await codes.VerifierAsync(validateurIdentifiant, validateurCode, nomPoste, ct);
+            if (!await droits.APermissionAsync(validateur.Id, Permissions.CaisseRetourEspeces, ct))
+                throw new DroitRefuseException(Permissions.CaisseRetourEspeces, "valider le retour d’un produit");
+            (validePar, nomValidateur) = (validateur.Id, validateur.NomComplet);
+        }
+
         var session = await sessions.SessionDuPosteAsync(nomPoste, ct);
         if (v.Mode is "especes" or "credit" && aRendre > 0 && session is null)
             throw new RegleMetierException("Ouvrez la caisse du poste : l’argent rendu au patient doit en sortir.");
 
         await retours.EnregistrerAsync(new RetourAEcrire(v.Id, v.Numero, texte, utilisateurId, validePar, v.Mode, montant, session?.Id, nomPoste, lignes,
-            reductionDette, reductionDette > 0 ? patientDette : null), ct);
+            reductionDette, reductionDette > 0 ? patientDette : null, deduitAuChoix), ct);
         await journal.EcrireAsync(utilisateurId, "retour_client", "vente", v.Id,
             new Dictionary<string, object?>
             {
                 ["ticket"] = v.Numero, ["motif"] = texte, ["montant"] = montant, ["mode"] = v.Mode,
                 ["dette_diminuee"] = reductionDette, ["rendu"] = aRendre, ["dette_soldee_au_choix"] = solderDette && v.Mode != "credit" && reductionDette > 0,
-                ["patient_dette"] = reductionDette > 0 ? patientDette : null,
+                ["patient_dette"] = reductionDette > 0 ? patientDette : null, ["accord_client"] = deduitAuChoix ? true : null,
                 ["remis_en_stock"] = lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
                 ["a_detruire"] = lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite),
                 ["valide_par"] = validePar

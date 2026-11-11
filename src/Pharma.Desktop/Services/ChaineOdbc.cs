@@ -15,14 +15,19 @@ public static class ChaineOdbc
     {
         var p = pilote ?? "";
         bool A(string s) => p.Contains(s, StringComparison.OrdinalIgnoreCase);
-        if (A("Text Driver") || A("dBASE")) return Famille.Dossier;
+        if (A("Text Driver") || A("dBASE") || A("CSV")) return Famille.Dossier;
         if (A("Access Driver") || A("Excel Driver")) return Famille.Fichier;
         if (A("Firebird")) return Famille.Firebird;
         if (A("SQLite")) return Famille.Sqlite;
         return Famille.Serveur;     // SQL Server, MySQL, MariaDB, PostgreSQL, HFSQL C/S… : serveur et base
     }
 
-    public static string Construire(string? pilote, string? dsn, string? emplacement, string? baseDeDonnees, string? utilisateur, string? motDePasse)
+    /// <summary>Fichiers CSV (pilote texte ou lecteur intégré) : l'encodage des fichiers peut être imposé.</summary>
+    public static bool EstCsv(string? pilote) => FamilleDe(pilote) == Famille.Dossier && !(pilote ?? "").Contains("dBASE", StringComparison.OrdinalIgnoreCase);
+
+    /// <param name="encodage">Fichiers CSV : auto (détecté par le serveur), utf-8 ou windows-1252.</param>
+    public static string Construire(string? pilote, string? dsn, string? emplacement, string? baseDeDonnees, string? utilisateur, string? motDePasse,
+        string? encodage = null)
     {
         var morceaux = new List<string>();
         void Ajouter(string cle, string? valeur) { if (!string.IsNullOrWhiteSpace(valeur)) morceaux.Add($"{cle}={Echapper(valeur.Trim())}"); }
@@ -40,7 +45,12 @@ public static class ChaineOdbc
                 case Famille.Fichier: Ajouter("Dbq", emplacement); break;
                 case Famille.Dossier:
                     if (pilote.Contains("dBASE", StringComparison.OrdinalIgnoreCase)) Ajouter("DefaultDir", emplacement);
-                    else { Ajouter("Dbq", emplacement); morceaux.Add("Extensions=asc,csv,tab,txt"); }
+                    else
+                    {
+                        Ajouter("Dbq", emplacement);
+                        if (!pilote.Contains("CSV", StringComparison.OrdinalIgnoreCase)) morceaux.Add("Extensions=asc,csv,tab,txt");
+                        if (encodage is "utf-8" or "windows-1252") Ajouter("Encodage", encodage);
+                    }
                     break;
                 case Famille.Firebird: Ajouter("Dbname", emplacement); break;
                 case Famille.Sqlite: Ajouter("Database", emplacement); break;

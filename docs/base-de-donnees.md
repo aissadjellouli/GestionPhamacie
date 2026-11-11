@@ -70,6 +70,9 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `044_reception_detaillee.sql` | Réception détaillée comme la facture du grossiste : `reception` (montant HT avant remise, remise, TVA, timbre, total SHP ; `montant_ttc` = net à payer) et `reception_ligne` (prix HT avant remise, remise %, prix net = coût du stock, PPA facturé, SHP par boîte, TVA) |
 | `045_prix_lot_ug_categories.sql` | Prix de vente par lot (`lot.ppa`, prix de la vignette) et SHP à la caisse (`ligne_vente.shp`, compris dans le prix) ; liste I/II d'un psychotrope pour son SHP (`produit.liste_psychotrope`) ; reste à charge saisi en tiers payant (`vente.reste_saisi`) ; unités gratuites à la réception (`reception_ligne.ug`, coût `zero` ou `reparti`, `prix_catalogue_remplace`) ; catégories de produits (`categorie_produit`, `produit.categorie`) pour les totaux médicaments / autres produits ; plafond de crédit proposé (`parametre_caisse.plafond_credit_defaut`) ; délai de paiement des organismes et des clients (`delai_paiement_jours`) |
 | `046_blocage_produit.sql` | Blocage d'un produit à l'achat (`produit.bloque_achat` : ni commande, ni réception, ni suggestion) et/ou à la vente (`produit.bloque_vente` : refusé en caisse), avec son motif ; droit `produits.bloquer` (titulaire et assistant) |
+| `047_recette_corrections.sql` | Corrections de la recette : numéros suivis des reçus de crédit (`paiement.numero_recu`, RC-000001) et des règlements aux grossistes (`reglement_fournisseur.numero`, RG-000001) ; alerte au-delà de N annulations par session (`parametre_caisse.seuil_annulations`) ; autorisation sur place par code comptoir (`parametre_caisse.autorisation_par_code`) ; grossiste désactivable (`fournisseur.actif`) |
+| `048_reprise_corrections.sql` | Reprise de données : classe réglementaire facultative de l'ancien logiciel (`import.produit_src.classe`) ; classe des produits créés = la plus stricte entre la nomenclature et l'ancien logiciel, produit absent de la nomenclature créé « à vérifier » ; prix d'achat par lot (`import.stock_src.prix_achat`) et contrôle de la valeur du stock ; lots de même n° et de dates différentes gardés séparés ; grossiste fictif seulement si nécessaire. |
+| `049_vente_sans_ordonnance.sql` | Droit « Vendre sans ordonnance un médicament de liste I ou II » (`caisse.vendre_sans_ordonnance`) : titulaire et assistant par défaut, réglable dans la matrice des droits ; sans lui, la caisse demande le médecin prescripteur ou l'autorisation par code. Psychotropes et stupéfiants : ordonnance toujours obligatoire. |
 
 ### Règle permanente : tout script est répliqué dans `init/`
 
@@ -98,7 +101,7 @@ Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dan
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 046, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 049, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

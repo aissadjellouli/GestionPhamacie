@@ -70,6 +70,7 @@ public interface IMedecins
 {
     Task<IReadOnlyList<Medecin>> RechercherAsync(string texte, int limite, CancellationToken ct = default);
     Task<long> CreerAsync(string nom, string? specialite, CancellationToken ct = default);
+    Task<bool> ModifierAsync(long id, string nom, string? specialite, CancellationToken ct = default);
 }
 
 public interface IOrganismes
@@ -113,6 +114,19 @@ public sealed class RechercherMedecins(IMedecins medecins)
     {
         var t = texte?.Trim() ?? "";
         return t.Length < 2 ? Task.FromResult<IReadOnlyList<Medecin>>([]) : medecins.RechercherAsync(t, 20, ct);
+    }
+}
+
+/// <summary>Correction du nom ou de la spécialité d'un médecin prescripteur (droit de vendre, comme sa création à la caisse).</summary>
+public sealed class ModifierMedecin(IMedecins medecins, Commun.IJournal journal)
+{
+    public async Task ExecuterAsync(long id, string? nom, string? specialite, long utilisateurId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(nom)) throw new RegleMetierException("Le nom du médecin est obligatoire.", "nom_medecin");
+        var s = string.IsNullOrWhiteSpace(specialite) ? null : specialite.Trim();
+        if (!await medecins.ModifierAsync(id, nom.Trim(), s, ct)) throw new RegleMetierException("Médecin introuvable.");
+        await journal.EcrireAsync(utilisateurId, "medecin_modifie", "medecin", id,
+            new Dictionary<string, object?> { ["nom"] = nom.Trim(), ["specialite"] = s }, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);
     }
 }
 

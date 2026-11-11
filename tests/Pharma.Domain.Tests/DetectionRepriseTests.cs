@@ -72,4 +72,16 @@ public class DetectionRepriseTests
         Assert.Equal(1234.5m, DetectionReprise.LireNombre("1 234,50"));
         Assert.Equal("prix_d_achat_ht", DetectionReprise.Normaliser("Prix d'achat HT"));
     }
+
+    [Fact]
+    public void Classe_du_produit_et_prix_d_achat_du_lot_reconnus()
+    {
+        var articles = new TableSource("ARTICLES", 10,
+            [C("CODE_ART", "A001", "A002"), C("DESIGNATION", "LYRICA 150MG", "DOLIPRANE 500MG"), C("CLASSE", "Psychotrope", "Libre")]);
+        var lots = new TableSource("STOCK_LOTS", 10,
+            [C("CODE_ART", "A001", "A002"), C("N_LOT", "L1", "L2"), C("QTE", "3", "40"), C("PRIX_ACHAT", "612,50", "80")]);
+        var p = DetectionReprise.Proposer([articles, lots]).ToDictionary(x => x.Cible);
+        Assert.Equal("CLASSE", p[CibleReprise.Produits].Colonnes["classe"]);
+        Assert.Equal("PRIX_ACHAT", p[CibleReprise.Stock].Colonnes["prix_achat"]);
+    }
 }

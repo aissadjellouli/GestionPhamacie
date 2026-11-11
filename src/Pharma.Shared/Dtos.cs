@@ -76,7 +76,8 @@ public sealed record ParcoursBoiteDto(
     IReadOnlyList<EtapeParcoursDto> Etapes, long ProduitId);
 
 /// <summary>Refus renvoyé au poste. Champ : champ de saisie en cause (data-champ côté poste), ou null.</summary>
-public sealed record ErreurDto(string Message, string? Champ = null);
+/// <summary>Autorisable : refus de droit que le code comptoir d'un employé habilité peut lever (Permission : le droit, ou « role.titulaire »).</summary>
+public sealed record ErreurDto(string Message, string? Champ = null, bool Autorisable = false, string? Permission = null);
 
 // ---- Caisse -----------------------------------------------------------------
 
@@ -87,7 +88,8 @@ public sealed record EtatCaisseDto(
 
 public sealed record OuvrirCaisseRequete(string? Poste, decimal? FondCaisse);
 
-public sealed record LigneCommandeDto(long ProduitId, long LotId, int Quantite);
+/// <summary>Boites : boîtes identifiées scannées (étiquette interne ou n° de série), rattachées à la vente.</summary>
+public sealed record LigneCommandeDto(long ProduitId, long LotId, int Quantite, IReadOnlyList<long>? Boites = null);
 /// <summary>Médecin obligatoire pour un psychotrope ; JetonScan : image envoyée par POST api/ordonnances/scans.</summary>
 /// <summary>Porteur* : à remplir quand le porteur de l'ordonnance n'est pas le patient (psychotrope).</summary>
 public sealed record OrdonnanceDto(long? MedecinId, DateOnly DatePrescription, string? Numero,
@@ -103,10 +105,11 @@ public sealed record CommandeVenteDto(
 /// <summary>Accord pour un produit bloqué : confirmé par l'employé habilité, sinon validé par le code comptoir d'un habilité.</summary>
 public sealed record ValidationBlocageDto(bool Accepte, string? ValidateurIdentifiant = null, string? ValidateurCode = null);
 
+/// <summary>SurOrdonnance : le panier contient un médicament de liste I ou II (ordonnance, ou droit de le vendre sans).</summary>
 public sealed record ApercuVenteDto(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
     decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
-    IReadOnlyList<string>? ProduitsBloques = null);
+    IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false);
 
 public sealed record VenteEncaisseeDto(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
@@ -124,7 +127,7 @@ public sealed record ReleveDto(ClotureDto Cloture, long NouvelleSessionId);
 
 /// <summary>VersementCloture : manuel ou automatique (argent des caisses clôturées vers le coffre).</summary>
 public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel",
-    decimal PlafondCreditDefaut = 0);
+    decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true);
 
 public sealed record EntreeJournalDto(DateTime Date, string Employe, string Action, string? Details, string? AutorisePar, long? EmployeId = null, long? AutoriseParId = null);
 
@@ -188,7 +191,11 @@ public sealed record ScanOrdonnanceDto(string Jeton);
 
 // ---- Achats -----------------------------------------------------------------
 
-public sealed record FournisseurDto(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours, string? Email = null);
+public sealed record FournisseurDto(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours, string? Email = null,
+    string? Adresse = null, string? Nif = null, string? Rc = null, bool Actif = true);
+/// <summary>Grossiste créé (Id null) ou modifié.</summary>
+public sealed record FicheGrossisteDto(long? Id, string? RaisonSociale, string? Telephone, string? Email, string? Adresse, string? Nif, string? Rc,
+    int? DelaiRepriseJours, bool Actif = true);
 
 /// <summary>Statut : brouillon, envoyee, recue_partielle, recue ou annulee.</summary>
 public sealed record CommandeAchatDto(
@@ -311,6 +318,15 @@ public sealed record NouveauProduitDto(
 public sealed record RetourEssaiDto(DateTime Date, string Employe, string Ecran, string Genre, string Texte);
 public sealed record NouveauRetourEssaiDto(string? Ecran, string? Genre, string? Texte);
 
+/// <summary>Fiche modifiable d'un produit (Classe en lecture seule).</summary>
+public sealed record FicheProduitModifiableDto(long Id, string NomCommercial, string? Dci, string? Dosage, string? Forme, string? CodeBarre,
+    decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre");
+
+/// <summary>Lot en stock proposé à la sortie (périmé ou cassé).</summary>
+public sealed record LotEnStockDto(long LotId, long ProduitId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, bool Bloque, bool SousRegistre);
+/// <summary>Motif : perime ou casse.</summary>
+public sealed record SortieStockRequete(long LotId, int Quantite, string? Motif, string? Commentaire);
+
 /// <summary>Blocage d'un produit à l'achat et/ou à la vente (046).</summary>
 public sealed record BlocageProduitDto(long ProduitId, string Nom, bool BloqueAchat, bool BloqueVente, string? Motif);
 public sealed record BlocageProduitRequete(bool BloqueAchat, bool BloqueVente, string? Motif);
@@ -366,7 +382,8 @@ public sealed record IdsRequete(IReadOnlyList<long> Ids);
 
 /// <summary>Boîte scannée en caisse : son lot est servi ; LotConseille périme avant elle (péremption proche).</summary>
 public sealed record BoiteCaisseDto(long ProduitId, string Produit, decimal PrixPublic, int StockProduit,
-    LotFefoDto Lot, LotFefoDto? LotConseille, string? Avertissement, string? Emplacement = null, string? CouleurAvertissement = null);
+    LotFefoDto Lot, LotFefoDto? LotConseille, string? Avertissement, string? Emplacement = null, string? CouleurAvertissement = null,
+    long? BoiteId = null);
 
 /// <summary>Seuil d'alerte de stock d'un produit : SeuilManuel (saisi) remplace SeuilAuto ; null = automatique.</summary>
 public sealed record SeuilStockDto(long ProduitId, string Nom, int Stock, decimal VentesParJour, int SeuilAuto, int? SeuilManuel, int SeuilApplique, string Statut);
@@ -466,7 +483,7 @@ public sealed record TicketDto(
     string Numero, DateTime Date, string Vendeur, string? Poste, string Statut,
     string? Organisme, decimal? TauxTiersPayant, IReadOnlyList<LigneTicketDto> Lignes,
     decimal MontantBrut, decimal Remise, decimal PartOrganisme, decimal PartPatient, string? Mode,
-    string? Pharmacie, string? Adresse, string? Telephone, string? Nif);
+    string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null);
 
 // ---- Affichage (clair, sombre, automatique) --------------------------------------
 
@@ -489,18 +506,24 @@ public sealed record PanierAttenteDto(
 
 // ---- Annulation d'une vente ------------------------------------------------------
 
-public sealed record LigneVenteAnnulableDto(string Produit, int Quantite, decimal Montant);
+public sealed record LigneVenteAnnulableDto(string Produit, int Quantite, decimal Montant, string? Lot = null);
+
+/// <summary>Ventes trouvées en scannant la boîte rapportée (Exacte : la boîte désigne sa vente).</summary>
+public sealed record VentesParBoiteDto(bool Exacte, string Produit, string? Lot, string? Note, IReadOnlyList<VenteAnnulableDto> Ventes);
 
 /// <summary>CaisseOuverte : vente récente (le caissier peut l'annuler seul) ; sinon validation du pharmacien ou de l'assistant.</summary>
+/// <summary>DetteEffaceeAnnulation : vente à crédit, dette de cette vente effacée par l'annulation.</summary>
 public sealed record VenteAnnulableDto(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulableDto> Lignes,
-    decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null);
+    decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null, decimal DetteEffaceeAnnulation = 0);
 
 /// <summary>Validateur* : identifiant et code comptoir du pharmacien ou de l'assistant (vente ancienne).</summary>
-public sealed record AnnulationVenteRequete(string? Motif, string? ValidateurIdentifiant, string? ValidateurCode);
+/// <summary>SolderDette : l'argent à rendre est retiré de la dette du patient (PatientDetteId : patient nommé, pour une vente sans patient).</summary>
+public sealed record AnnulationVenteRequete(string? Motif, string? ValidateurIdentifiant, string? ValidateurCode, bool SolderDette = false, long? PatientDetteId = null,
+    bool AccordClient = false);
 
-public sealed record AnnulationVenteDto(string Numero, decimal ARendre, string? Mode, string? ValidePar);
+public sealed record AnnulationVenteDto(string Numero, decimal ARendre, string? Mode, string? ValidePar, decimal DetteDiminuee = 0);
 
 // ---- Retour client ----------------------------------------------------------------
 
@@ -519,7 +542,7 @@ public sealed record LigneRetourClientDto(long LigneVenteId, int Quantite, strin
 /// PatientDetteId : vente sans patient, le patient s'est nommé au retour et c'est sa dette qui est diminuée.
 /// </summary>
 public sealed record RetourClientRequete(string? Motif, IReadOnlyList<LigneRetourClientDto> Lignes, string? ValidateurIdentifiant, string? ValidateurCode,
-    bool SolderDette = false, long? PatientDetteId = null);
+    bool SolderDette = false, long? PatientDetteId = null, bool AccordClient = false);
 
 public sealed record RetourClientDto(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar, decimal DetteDiminuee = 0);
 
@@ -564,7 +587,7 @@ public sealed record ReglementCreditRequete(decimal Montant, string Mode);
 /// <summary>Correction de la dette par le titulaire : nouvelle dette et motif obligatoire.</summary>
 public sealed record CorrectionCreditRequete(decimal NouvelleDette, string? Motif);
 
-public sealed record RecuCreditDto(long Numero, string Patient, decimal Montant, string Mode, decimal ResteDu);
+public sealed record RecuCreditDto(string Numero, string Patient, decimal Montant, string Mode, decimal ResteDu);
 
 /// <summary>Employé actif qui détient un droit ; CodeComptoir : peut reprendre la vente au comptoir par son code.</summary>
 public sealed record DetenteurDroitDto(string NomComplet, bool CodeComptoir);

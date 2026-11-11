@@ -13,9 +13,11 @@ internal sealed class AnnulationsEnMemoire(VenteAnnulable vente) : IAnnulationsV
     public Task<IReadOnlyList<VenteAnnulable>> DernieresAsync(long s, int l, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<VenteAnnulable>>([vente]);
     public Task AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default) { Ecrite = a; return Task.CompletedTask; }
+    public int Annulations { get; set; }
+    public Task<int> AnnulationsSessionAsync(long s, CancellationToken ct = default) => Task.FromResult(Annulations);
 }
 
-public class AnnulationTests
+public partial class AnnulationTests
 {
     // Crédit : par défaut la dette couvre encore toute la vente (rien n'a été remboursé)
     private static VenteAnnulable Vente(bool caisseOuverte, string mode = "especes", decimal dejaRendu = 0, decimal? solde = null, string? facture = null) =>
@@ -123,4 +125,40 @@ internal sealed class DroitsParEmploye(Dictionary<long, string[]> droits) : IPer
     public Task<IReadOnlyList<string>> ListerAsync(long u, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<string>>(droits.GetValueOrDefault(u, []));
     public Task<decimal> RemiseMaxAsync(long u, CancellationToken ct = default) => Task.FromResult(0m);
     public Task<bool> EstTitulaireAsync(long u, CancellationToken ct = default) => Task.FromResult(false);
+
+}
+
+public partial class AnnulationTests
+{
+    [Fact]
+    public async Task Vente_payee_annulee_le_remboursement_deduit_de_la_dette_du_patient()
+    {
+        // Patient fictif qui doit 1 500 DA : les 470 DA de la vente sont retirés de sa dette, rien n'est rendu
+        var (cas, stock, journal) = Monter(Vente(caisseOuverte: true, solde: 1500));
+        var e = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(12, "Erreur de produit", 5, "Caisse 1", null, null, solderDette: true));
+        Assert.Equal("accord_client", e.Champ);   // jamais sans l'accord du client
+        var r = await cas.ExecuterAsync(12, "Erreur de produit", 5, "Caisse 1", null, null, solderDette: true, accordClient: true);
+        Assert.Equal((0m, 470m), (r.ARendre, r.DetteDiminuee));
+        Assert.True(stock.Ecrite!.AccordClient);
+        Assert.Equal((470m, 0m, (long?)null), (stock.Ecrite!.ReductionDette, stock.Ecrite.MontantRembourse, stock.Ecrite.PatientDetteId));
+        Assert.Equal(true, journal.Details.Last()["dette_soldee_au_choix"]);
+    }
+
+    [Fact]
+    public async Task Vente_sans_patient_annulee_la_dette_du_patient_nomme_est_diminuee()
+    {
+        var v = Vente(caisseOuverte: true) with { Patient = null };
+        var stock = new AnnulationsEnMemoire(v);
+        var journal = new JournalEspion();
+        var cas = new AnnulerVente(stock, new SessionsEnMemoire(), new DroitsParEmploye(new() { [5] = ["caisse.vendre"] }),
+            new VerificationCodeComptoir(new CodesEnMemoire(), new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal), journal,
+            patients: new PatientsEnMemoire(new Pharma.Domain.Ventes.Patient { Id = 7, Nom = "Nommé", PlafondCredit = 5000, SoldeCredit = 300 }));
+        var r = await cas.ExecuterAsync(12, "Erreur de produit", 5, "Caisse 1", null, null, solderDette: true, patientDetteId: 7, accordClient: true);
+        Assert.Equal((170m, 300m, (long?)7), (r.ARendre, r.DetteDiminuee, stock.Ecrite!.PatientDetteId));
+        // Sans le choix : tout est rendu, la dette ne bouge pas
+        var r2 = await new AnnulerVente(new AnnulationsEnMemoire(v), new SessionsEnMemoire(), new DroitsParEmploye(new() { [5] = ["caisse.vendre"] }),
+            new VerificationCodeComptoir(new CodesEnMemoire(), new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal), journal)
+            .ExecuterAsync(12, "Erreur de produit", 5, "Caisse 1", null, null);
+        Assert.Equal((470m, 0m), (r2.ARendre, r2.DetteDiminuee));
+    }
 }

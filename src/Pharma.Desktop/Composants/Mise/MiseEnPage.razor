@@ -93,7 +93,10 @@
     {
         @* Erreur imprévue dans un écran : elle s'affiche ici au lieu d'arrêter le poste ; le reste du logiciel reste utilisable *@
         <ErrorBoundary @ref="garde">
-            <ChildContent>@Body</ChildContent>
+            <ChildContent>
+                @if (messageAcces is not null) { <div class="bandeau-attention" role="alert" style="margin: 16px 24px 0">@messageAcces</div> }
+                @Body
+            </ChildContent>
             <ErrorContent Context="exception">
                 <div class="erreur" role="alert">
                     <p style="margin: 0 0 8px"><strong>Cet écran a rencontré une erreur imprévue.</strong> Ce qui était déjà enregistré sur le serveur le reste : rechargez l’écran et vérifiez avant de recommencer.</p>
@@ -103,6 +106,7 @@
             </ErrorContent>
         </ErrorBoundary>
         <FenetreContact />
+        <FenetreAutorisation />
         <SignalementChamps />
     }
     else
@@ -169,10 +173,31 @@
 
     private ErrorBoundary? garde;
 
+    // Écrans réservés à un droit (comme le menu) : sans ce droit, retour à l'accueil avec le droit nécessaire
+    private static readonly (string Chemin, string[] Droits)[] EcransReserves =
+    [
+        ("rapports", ["rapports.ventes"]), ("factures", ["factures.gerer"]), ("tresorerie", ["tresorerie.gerer"]), ("dettes", ["tresorerie.gerer"]),
+        ("achats", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]), ("stock/registre", ["psychotropes.registre"]),
+        .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))
+    ];
+    private string? messageAcces;
+
+    private bool VerifierAcces()
+    {
+        if (!Session.EstConnecte || EstPageConnexion) return true;
+        var (chemin, droits) = EcransReserves.FirstOrDefault(e => Chemin == e.Chemin || Chemin.StartsWith(e.Chemin + "/", StringComparison.Ordinal));
+        if (chemin is null || droits.Any(Session.A)) return true;
+        messageAcces = $"Écran réservé : le droit « {string.Join(" » ou « ", droits.Select(Libelles.Droit))} » est nécessaire. Demandez-le au titulaire.";
+        Nav.NavigateTo("", replace: true);
+        return false;
+    }
+
     private async void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         // Changer d'écran efface l'erreur affichée par le précédent
         garde?.Recover();
+        var refuse = !VerifierAcces();
+        if (!refuse && Chemin.Length > 0) messageAcces = null;
         await CompterUrgentesAsync();
         await InvokeAsync(StateHasChanged);
     }

@@ -121,7 +121,7 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         // Vente à crédit : la dette diminue de ce qui reste dû (calculé avant) ; si elle a bougé entre-temps, on refuse
         if (a.ReductionDette > 0)
         {
-            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Retour, a.VenteId, a.UtilisateurId, a.Poste, $"Retour client {a.Numero} : {a.Motif}", ct);
+            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Retour, a.VenteId, a.UtilisateurId, a.Poste, $"Retour client {a.Numero} : {a.Motif}{(a.AccordClient ? " (déduit de la dette avec l’accord du client)" : "")}", ct);
             await using var cmd = new NpgsqlCommand("""
                 UPDATE patient SET solde_credit = solde_credit - $2
                 WHERE id = COALESCE($3, (SELECT patient_id FROM vente WHERE id = $1)) AND solde_credit >= $2

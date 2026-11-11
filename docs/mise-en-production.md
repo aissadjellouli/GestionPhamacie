@@ -47,7 +47,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `046`. |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `049`. |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -140,12 +140,14 @@ L'ancienne base n'est jamais modifiée : on travaille sur une copie, ce qui rend
 
 - [ ] **9.1** **Transit** : Administration › Reprise de données (titulaire). L'assistant se connecte à l'ancienne base par ODBC, en lecture seule.
   - Sources possibles : Access, dBase, CSV, Excel, Firebird, SQLite, HFSQL par son pilote ODBC, ou une connexion saisie champ par champ.
+  - Fichiers CSV : lus par Pharma Officine sans pilote ODBC, chaque valeur comme du texte ; encodage (UTF-8 ou ANSI) et séparateur (virgule, point-virgule, tabulation) détectés. Si les accents sont mal affichés dans les exemples, imposer l'encodage dans « Encodage des fichiers ».
+  - Importer la nomenclature nationale **avant** la reprise (étape 7.5) : elle donne la classe réglementaire (psychotrope…) des produits créés. Un produit absent de la nomenclature est créé « à vérifier » et refusé en caisse jusqu'à la confirmation de sa classe par le titulaire.
   - L'assistant propose la correspondance des tables et des colonnes, à confirmer, puis copie les données dans le schéma `import`.
   - Les mots de passe ne sont ni extraits ni enregistrés.
 - [ ] **9.2** **Rapprochement** des produits : par code-barres, n° d'enregistrement, puis nom approché à confirmer.
 - [ ] **9.3** **Contrôles** : toute anomalie bloquante empêche le chargement.
-- [ ] **9.4** **Chargement**, en une transaction. Un lot sans date de péremption devient « date à vérifier ».
-- [ ] **9.5** **Vérification** des totaux, avec un rapport signé par le pharmacien.
+- [ ] **9.4** **Chargement**, en une transaction. Un lot sans date de péremption devient « date à vérifier ». Le prix d'achat de chaque lot est repris s'il est dans l'export, sinon celui du produit.
+- [ ] **9.5** **Vérification** des totaux (unités, valeur du stock au prix d'achat, crédits clients, dettes grossistes, nombre de clients), avec un rapport signé par le pharmacien.
 
 ## Étape 10 — Options
 

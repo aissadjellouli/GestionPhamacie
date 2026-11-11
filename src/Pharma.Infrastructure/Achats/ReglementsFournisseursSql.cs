@@ -113,10 +113,12 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
         }
 
         long id;
+        string numero;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO reglement_fournisseur (fournisseur_id, date_reglement, montant, moyen, reference, banque, echeance, part_tiroir,
-                                               session_caisse_id, utilisateur_id, commentaire, compte_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id
+                                               session_caisse_id, utilisateur_id, commentaire, compte_id, numero)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'RG-' || lpad(nextval('seq_numero_reglement_fournisseur')::text, 6, '0'))
+            RETURNING id, numero
             """, cx, tx))
         {
             cmd.Parameters.AddWithValue(g.FournisseurId);
@@ -131,7 +133,9 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
             cmd.Parameters.AddWithValue(g.UtilisateurId);
             cmd.Parameters.Add(Texte(g.Commentaire));
             cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)g.CompteId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
-            id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+            await using var lu = await cmd.ExecuteReaderAsync(ct);
+            await lu.ReadAsync(ct);
+            (id, numero) = (lu.GetInt64(0), lu.GetString(1));
         }
         foreach (var (receptionId, montant) in g.Imputations)
         {
@@ -142,7 +146,7 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await ReleveGrossiste.ContexteAsync(cx, tx, ReleveGrossiste.Reglement, g.UtilisateurId,
-            $"Règlement n° {id} ({g.Moyen}{(g.Reference is null ? "" : " " + g.Reference)})", ct);
+            $"Règlement {numero} ({MoyenEnClair(g.Moyen.Code())}{(g.Reference is null ? "" : " " + g.Reference)})", ct);
         await using (var cmd = new NpgsqlCommand("UPDATE fournisseur SET solde = solde - $2 WHERE id = $1", cx, tx))
         {
             cmd.Parameters.AddWithValue(g.FournisseurId);
@@ -154,4 +158,10 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
     }
 
     private static NpgsqlParameter Texte(string? v) => new() { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text };
+
+    /// <summary>Moyen de règlement tel qu'il s'écrit dans le relevé du grossiste.</summary>
+    private static string MoyenEnClair(string code) => code switch
+    {
+        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", "effet" => "Effet", _ => code
+    };
 }

@@ -316,7 +316,7 @@
     {
         if (recu is null) return;
         enCours = true;
-        var t = new TicketDto($"R-{recu.Numero:000000}", DateTime.UtcNow, Session.NomComplet ?? "", null, "validee", null, null,
+        var t = new TicketDto(recu.Numero, DateTime.UtcNow, Session.NomComplet ?? "", null, "validee", null, null,
             [new LigneTicketDto($"Règlement de crédit (reste dû {Libelles.Dinars(recu.ResteDu, 2)})", 1, recu.Montant, recu.Montant, 0)],
             recu.Montant, 0, 0, recu.Montant, recu.Mode, Session.NomPharmacie, null, null, null);
         var e = await Tickets.ImprimerAsync(t);

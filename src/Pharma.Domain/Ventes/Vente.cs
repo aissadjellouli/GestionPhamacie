@@ -28,6 +28,7 @@ public class Vente
 {
     private readonly List<LigneVente> _lignes = [];
     private bool _sousRegistre;
+    private bool _surOrdonnance;
 
     public long Id { get; init; }
     public string Numero { get; init; } = "";
@@ -56,6 +57,8 @@ public class Vente
 
     /// <summary>Vrai si la vente contient un psychotrope ou un stupéfiant (registre, ordonnance).</summary>
     public bool ContientSousRegistre => _sousRegistre;
+    /// <summary>Le panier contient un médicament de liste I ou II.</summary>
+    public bool ContientSurOrdonnance => _surOrdonnance;
 
     public void AjouterLigne(LigneVente ligne)
     {
@@ -94,6 +97,7 @@ public class Vente
             ligne.SansTiersPayant();
 
         _sousRegistre |= produit.EstSousRegistre;
+        _surOrdonnance |= produit.EstSurOrdonnance;
         _lignes.Add(ligne);
         RecalculerTotaux();
         return ligne;
@@ -142,7 +146,9 @@ public class Vente
         }
         PartOrganisme = _lignes.Sum(l => l.MontantOrganisme);
         var partPatientBrute = brut - PartOrganisme;
-        MontantRemise = Math.Round(partPatientBrute * RemisePct / 100m, 2, MidpointRounding.AwayFromZero);
+        // La remise ne porte pas sur le SHP (honoraire du pharmacien) : base = part du patient moins le SHP qu'il paie
+        var shpPatient = Math.Min(_lignes.Sum(l => l.Shp * l.Quantite), Math.Max(partPatientBrute, 0));
+        MontantRemise = Math.Round((partPatientBrute - shpPatient) * RemisePct / 100m, 2, MidpointRounding.AwayFromZero);
         PartPatient = partPatientBrute - MontantRemise;
         MontantTotal = brut - MontantRemise;
     }

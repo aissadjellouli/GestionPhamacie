@@ -20,8 +20,14 @@ internal static class AchatsEndpoints
         var achats = api.MapGroup("/achats");
 
         achats.MapGet("/fournisseurs", async (ListerFournisseurs lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(f => new FournisseurDto(f.Id, f.RaisonSociale, f.Telephone, f.Solde, f.DelaiRepriseJours, f.Email))))
+                Results.Ok((await lister.ExecuterAsync(ct)).Select(f => new FournisseurDto(f.Id, f.RaisonSociale, f.Telephone, f.Solde, f.DelaiRepriseJours, f.Email,
+                    f.Adresse, f.Nif, f.Rc, f.Actif))))
            .ExigerPermission(Lecture);
+
+        achats.MapPost("/fournisseurs", async (FicheGrossisteDto d, EnregistrerGrossiste enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new IdentifiantDto(await enregistrer.ExecuterAsync(new FicheGrossiste(d.Id, d.RaisonSociale ?? "", d.Telephone, d.Email, d.Adresse,
+                    d.Nif, d.Rc, d.DelaiRepriseJours, d.Actif), user.UtilisateurId(), ct))))
+           .ExigerPermission(Permissions.AchatsCommander);
 
         // ---- Commandes ----
         achats.MapGet("/commandes", async (long? fournisseurId, string? statut, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerCommandes lister, CancellationToken ct) =>

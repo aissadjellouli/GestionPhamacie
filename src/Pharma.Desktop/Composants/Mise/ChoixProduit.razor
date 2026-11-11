@@ -42,6 +42,8 @@
     [Parameter] public string? Style { get; set; }
     /// <summary>Champ obligatoire : astérisque sur le libellé (facultatif, non par défaut).</summary>
     [Parameter] public bool Requis { get; set; }
+    /// <summary>Propose aussi les produits désactivés (fiche produit : pour les réactiver).</summary>
+    [Parameter] public bool InclureInactifs { get; set; }
     /// <summary>Champ obligatoire manquant : bordure rouge (facultatif, non par défaut).</summary>
     [Parameter] public bool Invalide { get; set; }
     [Parameter] public EventCallback<ProduitDto> OnChoisi { get; set; }
@@ -81,7 +83,7 @@
 
     private async Task RechercherMaintenantAsync(int n)
     {
-        var (trouves, _) = await Api.RechercherProduitsAsync(texte.Trim());
+        var (trouves, _) = await Api.RechercherProduitsAsync(texte.Trim(), InclureInactifs);
         if (n != requete) return;
         (resultats, chargement) = (trouves, false);
         actif = resultats.Count > 0 ? 0 : -1;

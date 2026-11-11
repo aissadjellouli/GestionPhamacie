@@ -94,7 +94,9 @@ public static class DependencyInjection
         services.AddScoped<Securite.LireAffichage>();
         services.AddScoped<Caisse.GererVentesEnAttente>();
         services.AddScoped<Securite.VerificationCodeComptoir>();
+        services.AddScoped<Securite.AutorisationCourante>();
         services.AddScoped<Caisse.RechercherVenteAnnulable>();
+        services.AddScoped<Caisse.RechercherVenteParBoite>();
         services.AddScoped<Caisse.AnnulerVente>();
         services.AddScoped<Securite.ListerValidateurs>();
         services.AddScoped<Caisse.LireVenteRetournable>();
@@ -111,6 +113,13 @@ public static class DependencyInjection
         services.AddScoped<Patients.LireFichePatient>();
         services.AddScoped<Contacts.ModifierCoordonneesContact>();
         services.AddScoped<Essai.RetoursEssai>();
+        services.AddScoped<Factures.MentionsFacture>();
+        services.AddScoped<Stock.ListerLotsEnStock>();
+        services.AddScoped<Stock.DeclarerSortieStock>();
+        services.AddScoped<Achats.EnregistrerGrossiste>();
+        services.AddScoped<LireFicheProduit>();
+        services.AddScoped<ModifierProduit>();
+        services.AddScoped<Patients.ModifierMedecin>();
         services.AddScoped<Suivi.ModifierDelaiAlerteDettes>();
         services.AddScoped<Tresorerie.ConsulterTresorerie>();
         services.AddScoped<Tresorerie.EnregistrerCompteTresorerie>();

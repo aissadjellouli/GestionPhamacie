@@ -1,0 +1,99 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Boîtes périmées ou cassées retirées du stock et détruites (droit « déclarer un produit périmé ou cassé »).
+   Ouvert depuis l'alerte « Retirer du stock » d'un lot périmé (lot choisi d'avance). *@
+@if (Session.A("stock.declarer_perime"))
+{
+    <section class="panneau" aria-labelledby="t-sortie">
+        <div>
+            <h2 id="t-sortie">Sortir du stock (périmé ou cassé)</h2>
+            <p class="sous-titre">Les boîtes sortent du stock et sont détruites ; pour un psychotrope, le registre est tenu automatiquement.</p>
+        </div>
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+        <div class="achats-ligne">
+            <ChoixProduit Id="so-produit" Libelle="Produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => (lots, lot) = ([], null)" />
+        </div>
+        @if (lots.Count > 0)
+        {
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 2 1 260px">
+                    <label for="so-lot" class="requis">Lot</label>
+                    <select id="so-lot" data-champ="lot_sortie" @bind="lotId">
+                        @foreach (var l in lots)
+                        {
+                            <option value="@l.LotId">@l.NumeroLot · exp. @Libelles.Date(l.DatePeremption) · @l.Quantite boîte(s)@(l.Bloque ? " · bloqué" : "")@(l.DatePeremption <= DateOnly.FromDateTime(DateTime.Today) ? " · périmé" : "")</option>
+                        }
+                    </select>
+                </div>
+                <div class="champ" style="flex: 0 1 120px">
+                    <label for="so-qte" class="requis">Boîtes</label>
+                    <input id="so-qte" data-champ="quantite_sortie" type="number" min="1" @bind="quantite" />
+                </div>
+                <div class="champ" style="flex: 0 1 160px">
+                    <label for="so-motif" class="requis">Motif</label>
+                    <select id="so-motif" data-champ="motif_sortie" @bind="motif">
+                        <option value="perime">Périmé</option>
+                        <option value="casse">Cassé ou abîmé</option>
+                    </select>
+                </div>
+                <div class="champ" style="flex: 2 1 220px">
+                    <label for="so-com" class="@(motif == "casse" ? "requis" : null)">Commentaire</label>
+                    <input id="so-com" data-champ="commentaire_sortie" type="text" maxlength="200" @bind="commentaire" />
+                </div>
+                <button type="button" class="btn btn-danger" style="align-self: flex-end" disabled="@enCours" @onclick="SortirAsync">Sortir du stock</button>
+            </div>
+        }
+    </section>
+}
+
+@code {
+    /// <summary>Lot à proposer d'avance (alerte « Retirer du stock »).</summary>
+    [Parameter] public long? LotInitial { get; set; }
+
+    private List<LotEnStockDto> lots = [];
+    private LotEnStockDto? lot;
+    private long lotId;
+    private int quantite = 1;
+    private string motif = "perime";
+    private string? commentaire, erreur, message;
+    private bool enCours;
+    private long? lotCharge;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (LotInitial is not { } id || id == lotCharge || !Session.A("stock.declarer_perime")) return;
+        lotCharge = id;
+        var (l, e) = await Api.LotEnStockAsync(id);
+        if (l is null) { erreur = e; return; }
+        await ChargerLotsAsync(l.ProduitId);
+        (lotId, quantite) = (l.LotId, l.Quantite);
+    }
+
+    private Task ChoisirAsync(ProduitDto p) => ChargerLotsAsync(p.Id);
+
+    private async Task ChargerLotsAsync(long produitId)
+    {
+        (erreur, message) = (null, null);
+        (lots, erreur) = await Api.LotsEnStockAsync(produitId);
+        lotId = lots.FirstOrDefault()?.LotId ?? 0;
+        quantite = 1;
+    }
+
+    private async Task SortirAsync()
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var choisi = lots.FirstOrDefault(l => l.LotId == lotId);
+            var (n, e) = await Api.SortirDuStockAsync(new SortieStockRequete(lotId, quantite, motif, commentaire));
+            if (e is not null) { erreur = e; return; }
+            var texte = $"{quantite} boîte(s) du lot {choisi?.NumeroLot} sorties du stock ({(motif == "perime" ? "périmé" : "cassé")}).";
+            commentaire = null;
+            if (choisi is not null) await ChargerLotsAsync(choisi.ProduitId);
+            message = texte;
+        }
+        finally { enCours = false; }
+    }
+}

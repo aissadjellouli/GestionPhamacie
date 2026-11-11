@@ -9,7 +9,48 @@ namespace Pharma.Application.Achats;
 
 // ---- Modèles ----------------------------------------------------------------
 
-public sealed record Fournisseur(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours, string? Email = null);
+public sealed record Fournisseur(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours, string? Email = null,
+    string? Adresse = null, string? Nif = null, string? Rc = null, bool Actif = true);
+
+/// <summary>Fiche d'un grossiste, telle qu'on la crée ou la modifie (Id null : création).</summary>
+public sealed record FicheGrossiste(long? Id, string RaisonSociale, string? Telephone, string? Email, string? Adresse, string? Nif, string? Rc,
+    int? DelaiRepriseJours, bool Actif);
+
+public interface IGrossistes
+{
+    Task<long> EnregistrerAsync(FicheGrossiste f, CancellationToken ct = default);
+    Task<bool> RaisonSocialeExisteAsync(string raisonSociale, long? sauf, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Création et modification d'un grossiste (droit de commander) : raison sociale, coordonnées, NIF, RC, délai de reprise des
+/// produits proches de la péremption ; désactivé, il n'est plus proposé aux commandes ni aux réceptions. Inscrit au journal.
+/// </summary>
+public sealed class EnregistrerGrossiste(IGrossistes grossistes, IPermissionService droits, IJournal journal)
+{
+    public async Task<long> ExecuterAsync(FicheGrossiste f, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.AchatsCommander, "gérer les grossistes", ct);
+        if (string.IsNullOrWhiteSpace(f.RaisonSociale)) throw new RegleMetierException("Indiquez la raison sociale du grossiste.", "raison_sociale");
+        if (f.DelaiRepriseJours is < 1 or > 365) throw new RegleMetierException("Le délai de reprise doit être compris entre 1 et 365 jours.", "delai_reprise");
+        static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        var fiche = f with
+        {
+            RaisonSociale = f.RaisonSociale.Trim(), Telephone = Contacts.RegleContact.Telephone(f.Telephone), Email = Contacts.RegleContact.Email(f.Email),
+            Adresse = N(f.Adresse), Nif = N(f.Nif), Rc = N(f.Rc)
+        };
+        if (await grossistes.RaisonSocialeExisteAsync(fiche.RaisonSociale, f.Id, ct))
+            throw new RegleMetierException($"Un grossiste « {fiche.RaisonSociale} » existe déjà.", "raison_sociale");
+        var id = await grossistes.EnregistrerAsync(fiche, ct);
+        await journal.EcrireAsync(utilisateurId, f.Id is null ? "grossiste_cree" : "grossiste_modifie", "fournisseur", id,
+            new Dictionary<string, object?>
+            {
+                ["raison_sociale"] = fiche.RaisonSociale, ["telephone"] = fiche.Telephone, ["email"] = fiche.Email, ["nif"] = fiche.Nif,
+                ["delai_reprise_jours"] = fiche.DelaiRepriseJours, ["actif"] = fiche.Actif
+            }, Permissions.AchatsCommander, ct);
+        return id;
+    }
+}
 
 /// <summary>Statuts de la base : brouillon, envoyee, recue_partielle, recue, annulee.</summary>
 public sealed record CommandeResume(
@@ -184,8 +225,9 @@ public sealed class AjouterACommande(IAchats achats, IPermissionService droits)
         if ((await achats.InfosAchatAsync([produitId], ct)).FirstOrDefault() is { BloqueAchat: true } bloque)
             throw new RegleMetierException($"{nom} : produit bloqué à l’achat{(bloque.MotifBlocage is { } m ? $" ({m})" : "")}. "
                 + "Faites-le débloquer pour le commander ; une livraison peut être réceptionnée avec la validation du pharmacien ou de l’assistant.");
-        if (await achats.FournisseurAsync(fournisseurId, ct) is null)
+        if (await achats.FournisseurAsync(fournisseurId, ct) is not { } grossiste)
             throw new RegleMetierException("Grossiste introuvable.", "grossiste");
+        if (!grossiste.Actif) throw new RegleMetierException($"{grossiste.RaisonSociale} est désactivé : réactivez-le dans l’onglet Grossistes.", "grossiste");
         var prix = prixHt ?? (await achats.DernierAchatAsync(produitId, fournisseurId, ct))?.PrixAchatHt
             ?? throw new RegleMetierException($"{nom} : aucun achat précédent, saisissez le prix d’achat.");
         RegleAchats.VerifierCommande([new LigneCommandeSaisie(produitId, nom, quantite, prix)]);
@@ -279,8 +321,9 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
     public async Task<ReceptionEnregistree> ExecuterAsync(SaisieReception s, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "réceptionner une livraison", ct);
-        if (await achats.FournisseurAsync(s.FournisseurId, ct) is null)
+        if (await achats.FournisseurAsync(s.FournisseurId, ct) is not { } grossiste)
             throw new RegleMetierException("Grossiste introuvable.", "grossiste");
+        if (!grossiste.Actif) throw new RegleMetierException($"{grossiste.RaisonSociale} est désactivé : réactivez-le dans l’onglet Grossistes.", "grossiste");
 
         var lignes = s.Lignes.Select(l => l with
         {

@@ -192,7 +192,7 @@
                             <span class="vente-attente">
                                 <button type="button" class="lien-bouton" disabled="@enCours" @onclick="() => ReprendreAsync(v)"
                                         title="@($"Mise en attente à {v.CreeLe.ToLocalTime():HH:mm} par {v.Employe}")">
-                                    ▶ @v.Libelle · @v.Lignes produit(s) · @Libelles.Dinars(v.Total)
+                                    ▶ @v.Libelle · @v.Lignes produit(s) · @Libelles.Dinars(v.Total, 2)
                                 </button>
                                 @if (aAbandonner == v.Id)
                                 {
@@ -418,12 +418,26 @@
                     <div class="erreur" role="alert">@MessagePsychotrope</div>
                 }
 
-                <!-- Ordonnance : scannée, ou obligatoire pour un psychotrope -->
-                @if (apercu?.OrdonnanceRequise == true || jetonScan is not null)
+                <!-- Ordonnance : scannée, obligatoire pour un psychotrope, ou attendue pour un médicament de liste I ou II -->
+                @if (SansOrdonnanceListe)
+                {
+                    <div class="info-bandeau" role="note" data-champ="sans_ordonnance">
+                        @if (Session.A("caisse.vendre_sans_ordonnance"))
+                        {
+                            <text>Médicament de liste I ou II sans ordonnance : vente permise par votre droit, inscrite au journal. Indiquez le médecin si le patient a une ordonnance.</text>
+                        }
+                        else
+                        {
+                            <text>Médicament de liste I ou II : indiquez le médecin prescripteur. Sans ordonnance, un pharmacien ou un assistant devra autoriser la vente avec son code à l’encaissement.</text>
+                        }
+                    </div>
+                }
+                @if (apercu?.OrdonnanceRequise == true || apercu?.SurOrdonnance == true || jetonScan is not null)
                 {
                     <div class="champ recherche">
                         <span class="etiquette-champ @(apercu?.OrdonnanceRequise == true ? "requis" : null)">
-                            @(apercu?.OrdonnanceRequise == true ? "Ordonnance (psychotrope : médecin obligatoire)" : "Ordonnance scannée (médecin facultatif)")
+                            @(apercu?.OrdonnanceRequise == true ? "Ordonnance (psychotrope : médecin obligatoire)"
+                              : jetonScan is not null ? "Ordonnance scannée (médecin facultatif)" : "Ordonnance (liste I ou II : médecin prescripteur)")
                         </span>
                         @if (medecin is not null)
                         {
@@ -474,7 +488,7 @@
                 @if (Session.A("caisse.remise"))
                 {
                     <div class="champ">
-                        <label for="remise">Remise sur la part du patient (%)</label>
+                        <label for="remise">Remise sur la part du patient, hors SHP (%)</label>
                         <input id="remise" type="number" min="0" max="100" step="1" @bind="remisePct" @bind:after="RecalculerAsync" />
                     </div>
                 }
@@ -530,7 +544,11 @@
                         @onclick="@(() => EncaisserAsync("credit"))">
                     Mettre en crédit
                 </button>
-                @if (lignes.Count > 0 && patient is null && Session.A("credit.accorder"))
+                @if (lignes.Count > 0 && patient is not null && !Session.A("credit.accorder"))
+                {
+                    <span class="sous-titre" style="font-size: 13px">Crédit : l’autorisation d’un employé qui a ce droit sera demandée (son code comptoir).</span>
+                }
+                @if (lignes.Count > 0 && patient is null)
                 {
                     <span class="sous-titre" style="font-size: 13px">Pour mettre en crédit, choisissez d’abord le patient.</span>
                 }
@@ -570,6 +588,8 @@
         public bool BoiteScannee { get; init; }
         /// <summary>Le caissier a pris une boîte du lot conseillé à la place de la boîte scannée.</summary>
         public bool LotConseilleServi { get; set; }
+        /// <summary>Boîtes identifiées scannées (étiquette interne, n° de série) : rattachées à la vente pour le remboursement.</summary>
+        public List<long> Boites { get; } = [];
         public string? AvertissementFefo { get; set; }
         public LotFefoDto? LotConseille { get; set; }
         /// <summary>Où trouver une boîte du lot conseillé (emplacement ou réserve du produit).</summary>
@@ -654,7 +674,11 @@
     private bool lectureEnCours, cameraOuverte, imageAgrandie;
 
     // Une vente sur ordonnance exige le patient (réglage par défaut de la base : « patient obligatoire : ordonnance »)
-    private bool PatientObligatoire => tiersPayant || apercu?.OrdonnanceRequise == true || jetonScan is not null;
+    private bool PatientObligatoire => tiersPayant || apercu?.OrdonnanceRequise == true || jetonScan is not null
+        || (apercu?.SurOrdonnance == true && medecin is not null);   // ordonnance de liste I ou II : rattachée au patient
+
+    /// <summary>Liste I ou II sans ordonnance saisie (ni psychotrope, déjà soumis à l'ordonnance obligatoire).</summary>
+    private bool SansOrdonnanceListe => apercu is { SurOrdonnance: true, OrdonnanceRequise: false } && medecin is null && jetonScan is null;
     private decimal Rendu => montantRecu is { } r && apercu is { } a && r > a.PartPatient ? r - a.PartPatient : 0;
 
     private string? RaisonBlocage =>
@@ -697,8 +721,7 @@
 
     /// <summary>Le crédit est rattaché à un patient (sa dette augmente) et demande le droit « credit.accorder ».</summary>
     private string? RaisonBlocageCredit =>
-        !Session.A("credit.accorder") ? "Droit « credit.accorder » nécessaire"
-        : !PeutEncaisser ? RaisonBlocage ?? "Encaissement en cours"
+        !PeutEncaisser ? RaisonBlocage ?? "Encaissement en cours"
         : patient is null ? "Choisissez le patient à qui la vente est accordée"
         : null;
 
@@ -845,9 +868,15 @@
     private async Task AjouterBoiteAsync(BoiteCaisseDto b)
     {
         (texte, suggestions, erreur, bandeau, venteFaite) = ("", [], null, null, null);
+        if (b.BoiteId is { } dejaVue && lignes.Any(l => l.Boites.Contains(dejaVue)))
+        {
+            erreur = $"{b.Produit} : cette boîte est déjà au panier (même étiquette scannée deux fois).";
+            return;
+        }
         var existante = lignes.FirstOrDefault(l => l.ProduitId == b.ProduitId && l.Lot?.LotId == b.Lot.LotId);
         if (existante is not null)
         {
+            if (b.BoiteId is { } id) existante.Boites.Add(id);
             if (existante.Quantite < existante.Lot!.Quantite) existante.Quantite++;
             existante.QuantiteDemandee = existante.Quantite;
             existante.StockProduit = b.StockProduit;
@@ -858,12 +887,14 @@
         }
         else
         {
-            lignes.Add(new LignePanier
+            var ligne = new LignePanier
             {
                 ProduitId = b.ProduitId, Nom = b.Produit, Prix = b.PrixPublic, Lot = b.Lot, StockProduit = b.StockProduit,
                 BoiteScannee = true, AvertissementFefo = b.Avertissement, LotConseille = b.LotConseille, EmplacementConseille = b.Emplacement,
                 CouleurFefo = b.CouleurAvertissement
-            });
+            };
+            if (b.BoiteId is { } id) ligne.Boites.Add(id);
+            lignes.Add(ligne);
         }
         await RecalculerAsync();
     }
@@ -873,8 +904,9 @@
     {
         if (l.LotConseille is not { } conseille) return;
         var autre = lignes.FirstOrDefault(x => x != l && x.ProduitId == l.ProduitId && x.Lot?.LotId == conseille.LotId);
+        // La boîte scannée reste en rayon : elle n'est plus rattachée à la vente
         if (autre is not null) { autre.Quantite = Math.Min(autre.Quantite + l.Quantite, conseille.Quantite); lignes.Remove(l); }
-        else { l.Lot = conseille; l.Quantite = Math.Min(l.Quantite, conseille.Quantite); }
+        else { l.Lot = conseille; l.Quantite = Math.Min(l.Quantite, conseille.Quantite); l.Boites.Clear(); }
         (l.AvertissementFefo, l.LotConseille, l.LotConseilleServi) = (null, null, true);
         await RecalculerAsync();
     }
@@ -1208,10 +1240,11 @@
     }
 
     private CommandeVenteDto Commande(string modePaiement) => new(
-        lignes.Where(l => l.Lot is not null).Select(l => new LigneCommandeDto(l.ProduitId, l.Lot!.LotId, l.Quantite)).ToList(),
+        lignes.Where(l => l.Lot is not null).Select(l => new LigneCommandeDto(l.ProduitId, l.Lot!.LotId, l.Quantite,
+            l.Boites.Count > 0 ? l.Boites.Take(l.Quantite).ToList() : null)).ToList(),
         tiersPayant, tiersPayant ? organismeId : null, tiersPayant ? taux : null,
         patient?.Id,
-        jetonScan is not null || (apercu?.OrdonnanceRequise == true && medecin is not null)
+        jetonScan is not null || ((apercu?.OrdonnanceRequise == true || apercu?.SurOrdonnance == true) && medecin is not null)
             ? new OrdonnanceDto(medecin?.Id, datePrescription, string.IsNullOrWhiteSpace(numeroOrdonnance) ? null : numeroOrdonnance.Trim(),
                 jetonScan, texteReconnu,
                 PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null)

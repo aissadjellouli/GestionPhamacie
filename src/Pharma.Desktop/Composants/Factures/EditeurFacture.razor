@@ -8,6 +8,13 @@
         <button type="button" class="btn" @onclick="OnFerme">Fermer</button>
     </div>
     @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (mentionsManquantes.Count > 0)
+    {
+        <div class="bandeau-attention" role="note">
+            Mentions de la pharmacie absentes de la facture : @string.Join(", ", mentionsManquantes).
+            Complétez-les dans Administration › Langue et pharmacie : elles sont obligatoires sur une facture.
+        </div>
+    }
 
     <!-- Destinataire -->
     <div class="filtres" role="radiogroup" aria-label="Destinataire">
@@ -194,6 +201,7 @@
 
     private static readonly (string, string)[] Destinataires = [("patient", "Patient"), ("entreprise", "Entreprise"), ("organisme", "Organisme")];
     private string destinataire = "patient";
+    private List<string> mentionsManquantes = [];
     private PatientDto? patient;
     private List<PatientDto> patients = [];
     private List<ClientFactureDto> clients = [];
@@ -240,6 +248,12 @@
         (organismes, _) = await Api.OrganismesAsync();
         if (Origine is { } o)
         {
+            // Correction : même facture, sa date d'établissement et son échéance restent celles d'origine (modifiables)
+            if (Mode == "correction")
+            {
+                dateFacture = o.Resume.Date;
+                if (o.Resume.Echeance is { } ech) (dateEcheance, echeanceSaisie) = (ech, true);
+            }
             destinataire = o.Resume.Destinataire;
             organismeId = o.Resume.OrganismeId ?? 0;
             clientId = o.ClientId ?? 0;
@@ -251,6 +265,10 @@
             // Période élargie aux ventes déjà facturées, pour les retrouver dans la liste
             await ChercherVentesAsync(o.PatientId);
         }
+        // Remplacement : nouvelle facture du jour, échéance selon le délai du destinataire (liste chargée ci-dessus)
+        SuivreEcheance();
+        // Mentions de la pharmacie imprimées sur la facture (adresse, NIF, RC…) : avertir si elles manquent
+        (mentionsManquantes, _) = await Api.MentionsFactureManquantesAsync();
     }
 
     private void ChangerDestinataire(string code)

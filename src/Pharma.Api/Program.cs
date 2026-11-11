@@ -32,6 +32,7 @@ builder.Services.AddSingleton<IGenerateurJeton, JetonService>();
 // Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Pharma.Infrastructure.Securite.PermissionService>();
+builder.Services.AddScoped<Pharma.Api.Securite.AutorisationParCode>();
 builder.Services.AddScoped<IPermissionService, PermissionsComptoir>();
 builder.Services.AddHostedService<AlertesQuotidiennes>();
 builder.Services.AddHostedService<EnvoiNotifications>();
@@ -66,6 +67,22 @@ app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
     ctx.Response.StatusCode = code;
     await ctx.Response.WriteAsJsonAsync(new ErreurDto(message, (ex as RegleMetierException)?.Champ));
 }));
+
+// Requête mal formée (paramètre manquant ou illisible) : refus clair, noté comme simple information au journal du serveur,
+// et non comme une panne (il ne remonte plus jusqu'au gestionnaire d'erreurs ci-dessus)
+app.Use(async (ctx, suite) =>
+{
+    try { await suite(); }
+    catch (BadHttpRequestException b) when (!ctx.Response.HasStarted)
+    {
+        var nom = System.Text.RegularExpressions.Regex.Match(b.Message, @"parameter ""(?:\S+ )?(\w+)""") is { Success: true } m ? m.Groups[1].Value : null;
+        var message = nom is null ? "Requête invalide : données mal formées." : $"Requête invalide : le paramètre « {nom} » est manquant ou mal formé.";
+        ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus")
+            .LogInformation("{Chemin} refusé (requête mal formée) : {Message}", ctx.Request.Path, b.Message);
+        ctx.Response.StatusCode = b.StatusCode;
+        await ctx.Response.WriteAsJsonAsync(new ErreurDto(message));
+    }
+});
 
 // Page du scanner mobile (wwwroot/mobile) : fichiers statiques, sans données
 app.Use((ctx, suite) =>

@@ -17,13 +17,15 @@ internal static class AdminEndpoints
         admin.MapGet("/caisse", async (ObtenirParametresCaisse obtenir, CancellationToken ct) =>
             {
                 var p = await obtenir.ExecuterAsync(ct);
-                return Results.Ok(new ParametresCaisseDto(p.ComptageAveugle, p.FondCaisseDefaut, p.SeuilEcart, p.DeconnexionMinutes, p.VersementCloture, p.PlafondCreditDefaut));
+                return Results.Ok(new ParametresCaisseDto(p.ComptageAveugle, p.FondCaisseDefaut, p.SeuilEcart, p.DeconnexionMinutes, p.VersementCloture, p.PlafondCreditDefaut,
+                    p.SeuilAnnulations, p.AutorisationParCode));
             })
            .ExigerPermission(Permissions.AdminParametres);
 
         admin.MapPut("/caisse", async (ParametresCaisseDto req, ModifierParametresCaisse modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await modifier.ExecuterAsync(new ParametresCaisse(req.ComptageAveugle, req.FondCaisseDefaut, req.SeuilEcart, req.DeconnexionMinutes, req.VersementCloture ?? "manuel", req.PlafondCreditDefaut),
+                await modifier.ExecuterAsync(new ParametresCaisse(req.ComptageAveugle, req.FondCaisseDefaut, req.SeuilEcart, req.DeconnexionMinutes, req.VersementCloture ?? "manuel", req.PlafondCreditDefaut,
+                    req.SeuilAnnulations, req.AutorisationParCode),
                     user.UtilisateurId(), ct);
                 return Results.NoContent();
             })

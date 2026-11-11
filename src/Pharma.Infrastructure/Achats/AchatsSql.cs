@@ -14,20 +14,21 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     public async Task<IReadOnlyList<Fournisseur>> FournisseursAsync(CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(
-            "SELECT id, raison_sociale, telephone, solde, delai_reprise_jours, email FROM fournisseur ORDER BY raison_sociale");
+            "SELECT id, raison_sociale, telephone, solde, delai_reprise_jours, email, adresse, nif, rc, actif FROM fournisseur ORDER BY NOT actif, raison_sociale");
         return await Lister(cmd, LireFournisseur, ct);
     }
 
     public async Task<Fournisseur?> FournisseurAsync(long id, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(
-            "SELECT id, raison_sociale, telephone, solde, delai_reprise_jours, email FROM fournisseur WHERE id = $1");
+            "SELECT id, raison_sociale, telephone, solde, delai_reprise_jours, email, adresse, nif, rc, actif FROM fournisseur WHERE id = $1");
         cmd.Parameters.AddWithValue(id);
         return (await Lister(cmd, LireFournisseur, ct)).FirstOrDefault();
     }
 
     private static Fournisseur LireFournisseur(NpgsqlDataReader r) =>
-        new(r.GetInt64(0), r.GetString(1), Texte(r, 2), r.GetDecimal(3), r.IsDBNull(4) ? null : r.GetInt32(4), Texte(r, 5));
+        new(r.GetInt64(0), r.GetString(1), Texte(r, 2), r.GetDecimal(3), r.IsDBNull(4) ? null : r.GetInt32(4), Texte(r, 5),
+            Texte(r, 6), Texte(r, 7), Texte(r, 8), r.GetBoolean(9));
 
     // ---- Commandes ----------------------------------------------------------
 

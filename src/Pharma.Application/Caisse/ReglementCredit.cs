@@ -31,12 +31,13 @@ public interface ICreditsClients
     /// <summary>Une page du relevé de dette, du mouvement le plus récent au plus ancien.</summary>
     Task<Page<MouvementCredit>> MouvementsAsync(long patientId, DemandePage page, FiltreReleve? filtre = null, CancellationToken ct = default);
     /// <summary>Paiement du patient (sans vente) dans la caisse, dette diminuée ; renvoie le n° du reçu.</summary>
-    Task<long> EncaisserAsync(long patientId, decimal montant, string mode, long sessionCaisseId, long utilisateurId, CancellationToken ct = default);
+    /// <summary>Renvoie le numéro du reçu (RC-000001).</summary>
+    Task<string> EncaisserAsync(long patientId, decimal montant, string mode, long sessionCaisseId, long utilisateurId, CancellationToken ct = default);
     /// <summary>Remplace la dette (attendue : celle lue avant, sinon refus) ; le relevé inscrit une « correction » avec son motif.</summary>
     Task CorrigerAsync(long patientId, decimal detteAttendue, decimal nouvelleDette, string motif, long utilisateurId, string? poste, CancellationToken ct = default);
 }
 
-public sealed record RecuCredit(long Numero, string Patient, decimal Montant, string Mode, decimal ResteDu);
+public sealed record RecuCredit(string Numero, string Patient, decimal Montant, string Mode, decimal ResteDu);
 
 /// <summary>Crédits clients au comptoir (droit caisse.vendre) : liste, situation, remboursement.</summary>
 public sealed class ConsulterCredits(ICreditsClients credits)

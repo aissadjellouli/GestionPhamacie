@@ -10,8 +10,8 @@ internal static class CatalogueEndpoints
 {
     public static void MapCatalogue(this RouteGroupBuilder api)
     {
-        api.MapGet("/produits", async (string q, int? limite, RechercherProduits rechercher, CancellationToken ct) =>
-                Results.Ok((await rechercher.ExecuterAsync(q, limite, ct)).Select(p => p.VersDto())))
+        api.MapGet("/produits", async (string q, int? limite, bool? inactifs, RechercherProduits rechercher, CancellationToken ct) =>
+                Results.Ok((await rechercher.ExecuterAsync(q, limite, ct, inactifs == true)).Select(p => p.VersDto())))
            .ExigerPermission(Permissions.StockConsulter);
 
         // Création d'un produit absent du catalogue (fiche Stock ou réception)
@@ -31,6 +31,33 @@ internal static class CatalogueEndpoints
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.CatalogueCreer);
+
+        // Fiche d'un produit : lecture et modification (droit de créer un produit ; prix : droit de modifier un prix)
+        api.MapGet("/produits/{id:long}/fiche", async (long id, LireFicheProduit lire, CancellationToken ct) =>
+            {
+                var f = await lire.ExecuterAsync(id, ct);
+                return Results.Ok(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic, f.TarifReference,
+                    f.Remboursable, f.TauxTva, f.Actif, f.Classe));
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+        api.MapPut("/produits/{id:long}", async (long id, FicheProduitModifiableDto d, ModifierProduit modifier, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await modifier.ExecuterAsync(new FicheProduitModifiable(id, d.NomCommercial, d.Dci, d.Dosage, d.Forme, d.CodeBarre, d.PrixPublic,
+                    d.TarifReference, d.Remboursable, d.TauxTva, d.Actif), user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+
+        // Sortie de stock : boîtes périmées ou cassées
+        api.MapGet("/stock/produits/{produitId:long}/lots", async (long produitId, Pharma.Application.Stock.ListerLotsEnStock lister, CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(produitId, ct)).Select(VersDto).ToList()))
+           .ExigerPermission(Permissions.StockConsulter);
+        api.MapGet("/stock/lots/{lotId:long}", async (long lotId, Pharma.Application.Stock.ISortiesStock sorties, CancellationToken ct) =>
+                await sorties.LotAsync(lotId, ct) is { } l ? Results.Ok(VersDto(l)) : Results.NotFound(new ErreurDto("Lot introuvable.")))
+           .ExigerPermission(Permissions.StockConsulter);
+        api.MapPost("/stock/sorties", async (SortieStockRequete req, Pharma.Application.Stock.DeclarerSortieStock declarer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new NombreDto(await declarer.ExecuterAsync(req.LotId, req.Quantite, req.Motif, req.Commentaire, user.UtilisateurId(), ct))))
+           .ExigerPermission(Permissions.StockDeclarerPerime);
 
         // Blocage d'un produit à l'achat et/ou à la vente
         api.MapGet("/produits/bloques", async (LireBlocageProduit lire, CancellationToken ct) =>
@@ -80,4 +107,7 @@ internal static class CatalogueEndpoints
                 Results.Ok((await lister.ExecuterAsync(id, ct)).Select(a => a.VersDto())))
            .ExigerPermission(Permissions.CaisseVendre);
     }
+
+    private static LotEnStockDto VersDto(Pharma.Application.Stock.LotEnStock l) =>
+        new(l.LotId, l.ProduitId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Bloque, l.SousRegistre);
 }

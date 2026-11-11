@@ -81,6 +81,15 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 
+    async Task<bool> IMedecins.ModifierAsync(long id, string nom, string? specialite, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("UPDATE medecin SET nom = $2, specialite = $3 WHERE id = $1");
+        cmd.Parameters.AddWithValue(id);
+        cmd.Parameters.AddWithValue(nom);
+        cmd.Parameters.Add(Nullable(specialite, NpgsqlDbType.Text));
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
     public async Task<long> CreerAsync(NouveauPatient p, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""

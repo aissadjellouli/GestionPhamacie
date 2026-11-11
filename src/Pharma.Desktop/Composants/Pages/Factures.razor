@@ -56,7 +56,7 @@
                         @{ var cf = Libelles.ContactFacture(f.Destinataire, f.PatientId, f.ClientId, f.OrganismeId); }
                         <td><LienContact Type="@cf.Type" Id="cf.Id" Nom="@f.DestinataireNom" /><br /><span class="detail">@Destinataire(f.Destinataire)</span></td>
                         <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(f.Ttc, 2)</td>
-                        <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(f.DejaPaye + f.Regle + f.Avoirs, 2)</td>
+                        <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(f.Type == "avoir" || f.Statut == "remplacee" ? f.DejaPaye + f.Regle + f.Avoirs : f.Ttc - f.Reste, 2)</td>
                         <td class="nombre" style="white-space: nowrap">@(f.Type == "avoir" ? "—" : Libelles.Dinars(f.Reste, 2))</td>
                         <td>@Etat(f)</td>
                         <td><button type="button" class="lien-bouton" @onclick="() => OuvrirAsync(f.Id)">Ouvrir</button></td>

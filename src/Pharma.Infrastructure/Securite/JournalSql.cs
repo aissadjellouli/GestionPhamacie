@@ -6,7 +6,7 @@ using Pharma.Application.Commun;
 namespace Pharma.Infrastructure.Securite;
 
 /// <summary>Écriture et lecture de journal_audit (non modifiable, déclencheur trg_journal_immuable).</summary>
-public sealed class JournalSql(NpgsqlDataSource db) : IJournal, IJournalLecture
+public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.AutorisationCourante? autorisation = null) : IJournal, IJournalLecture
 {
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -14,10 +14,12 @@ public sealed class JournalSql(NpgsqlDataSource db) : IJournal, IJournalLecture
         IReadOnlyDictionary<string, object?> details, string? permissionCode, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details, permission_code)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details, permission_code, autorise_par)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             """);
         AjouterParametres(cmd, utilisateurId, action, tableCible, enregistrementId, details, permissionCode);
+        var autorisePar = autorisation?.AutoriseParId is { } a && a != utilisateurId ? a : (long?)null;
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)autorisePar ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

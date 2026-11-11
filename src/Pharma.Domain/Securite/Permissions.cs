@@ -10,6 +10,8 @@ public static class Permissions
     public const string CaisseRetourEspeces = "caisse.retour_especes";
     public const string CaisseOuvrirTiroir = "caisse.ouvrir_tiroir";
     public const string CaisseVoirEcart = "caisse.voir_ecart";
+    /// <summary>Vendre sans ordonnance un médicament de liste I ou II (jamais un psychotrope ni un stupéfiant).</summary>
+    public const string CaisseVendreSansOrdonnance = "caisse.vendre_sans_ordonnance";
     public const string CreditAccorder = "credit.accorder";
     public const string CreditDepasserPlafond = "credit.depasser_plafond";
     public const string PsychotropesDelivrer = "psychotropes.delivrer";

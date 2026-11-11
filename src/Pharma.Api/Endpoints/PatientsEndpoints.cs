@@ -44,6 +44,13 @@ internal static class PatientsEndpoints
                 Results.Ok(new IdentifiantDto(await creer.ExecuterAsync(req.Nom, req.Specialite, ct))))
            .ExigerPermission(Permissions.CaisseVendre);
 
+        api.MapPut("/medecins/{id:long}", async (long id, NouveauMedecinDto req, ModifierMedecin modifier, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await modifier.ExecuterAsync(id, req.Nom, req.Specialite, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
         api.MapGet("/organismes", async (ListerOrganismes lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(ct)).Select(o => new OrganismeDto(o.Id, o.Code, o.Nom, o.DelaiPaiementJours))))
            .ExigerPermission(Permissions.CaisseVendre);

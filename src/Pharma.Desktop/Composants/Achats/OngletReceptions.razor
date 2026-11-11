@@ -42,7 +42,7 @@ else
                 <label for="r-gros" class="requis">Grossiste</label>
                 <select data-champ="grossiste" id="r-gros" @bind="fournisseurId" @bind:after="ChoisirFournisseurAsync" disabled="@(lignes.Count > 0)">
                     <option value="0">Choisir…</option>
-                    @foreach (var f in fournisseurs)
+                    @foreach (var f in fournisseurs.Where(x => x.Actif || x.Id == fournisseurId))
                     {
                         <option value="@f.Id">@f.RaisonSociale</option>
                     }

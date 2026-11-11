@@ -21,7 +21,7 @@
                     <div class="champ" style="flex: 1 1 200px">
                         <label for="c-gros" class="requis">Grossiste</label>
                         <select id="c-gros" data-champ="grossiste" @ref="champGrossiste" @bind="fournisseurId" class="@Obligatoire.Classe(GrossisteManque)" aria-invalid="@Obligatoire.Aria(GrossisteManque)">
-                            @foreach (var f in fournisseurs)
+                            @foreach (var f in fournisseurs.Where(x => x.Actif || x.Id == fournisseurId))
                             {
                                 <option value="@f.Id">@f.RaisonSociale</option>
                             }

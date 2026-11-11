@@ -50,6 +50,9 @@
     <File Path="database/044_reception_detaillee.sql" />
     <File Path="database/045_prix_lot_ug_categories.sql" />
     <File Path="database/046_blocage_produit.sql" />
+    <File Path="database/047_recette_corrections.sql" />
+    <File Path="database/048_reprise_corrections.sql" />
+    <File Path="database/049_vente_sans_ordonnance.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

@@ -389,7 +389,7 @@
             var e = await action();
             if (e is null) { (montant, libelle, reference, bordereauId) = (0, null, null, 0); facturesChoisies.Clear(); }
             return e;
-        }, $"{Types.First(t => t.Item1 == nature).Item2} de {Libelles.Dinars(m, 2)} enregistré(e).");
+        }, $"{Types.First(t => t.Item1 == nature).Item2} de {Libelles.Dinars(m, 2)} : {(nature == "depense" ? "enregistrée" : "enregistré")}.");
     }
 
     private async Task Executer(Func<Task<string?>> action, string succes)

@@ -6,7 +6,7 @@ using Pharma.Domain.Ventes;
 
 namespace Pharma.Application.Caisse;
 
-public sealed record LigneVenteAnnulable(string Produit, int Quantite, decimal Montant);
+public sealed record LigneVenteAnnulable(string Produit, int Quantite, decimal Montant, string? Lot = null);
 
 /// <summary>Vente vue pour l'annulation. CaisseOuverte : la caisse où elle a été encaissée n'est pas clôturée (vente récente).</summary>
 public sealed record VenteAnnulable(
@@ -20,7 +20,7 @@ public sealed record VenteAnnulable(
 /// </summary>
 public sealed record AnnulationAEcrire(
     long VenteId, string Motif, long UtilisateurId, long? ValidePar, bool Ancienne, string? Mode, decimal MontantRembourse,
-    long? SessionCaisseId, string Poste, decimal ReductionDette = 0);
+    long? SessionCaisseId, string Poste, decimal ReductionDette = 0, long? PatientDetteId = null, bool AccordClient = false);
 
 public interface IAnnulationsVente
 {
@@ -28,9 +28,11 @@ public interface IAnnulationsVente
     /// <summary>Dernières ventes encaissées sur la caisse ouverte du poste (les plus récentes d'abord).</summary>
     Task<IReadOnlyList<VenteAnnulable>> DernieresAsync(long sessionCaisseId, int limite, CancellationToken ct = default);
     Task AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default);
+    /// <summary>Ventes de la session de caisse annulées (pour l'alerte au-delà du seuil).</summary>
+    Task<int> AnnulationsSessionAsync(long sessionCaisseId, CancellationToken ct = default);
 }
 
-public sealed record ResultatAnnulation(string Numero, decimal ARendre, string? Mode, string? ValidePar);
+public sealed record ResultatAnnulation(string Numero, decimal ARendre, string? Mode, string? ValidePar, decimal DetteDiminuee = 0);
 
 /// <summary>Recherche d'une vente à annuler : par n° de ticket, ou les dernières ventes de la caisse du poste.</summary>
 public sealed class RechercherVenteAnnulable(IAnnulationsVente annulations, ISessionsCaisse sessions)
@@ -52,10 +54,11 @@ public sealed class RechercherVenteAnnulable(IAnnulationsVente annulations, ISes
 /// ouverte du poste ; la clôture d'une caisse passée n'est jamais modifiée.
 /// </summary>
 public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse sessions, IPermissionService droits,
-    VerificationCodeComptoir codes, IJournal journal)
+    VerificationCodeComptoir codes, IJournal journal, Notifications.IAlertesTitulaire? alertes = null, Patients.IPatients? patients = null)
 {
     public async Task<ResultatAnnulation> ExecuterAsync(long venteId, string? motif, long utilisateurId, string? poste,
-        string? validateurIdentifiant, string? validateurCode, CancellationToken ct = default)
+        string? validateurIdentifiant, string? validateurCode, CancellationToken ct = default, bool solderDette = false, long? patientDetteId = null,
+        bool accordClient = false)
     {
         var nomPoste = PosteCaisse.Exiger(poste);
         var texte = RegleAnnulation.Motif(motif);
@@ -80,20 +83,45 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
         // L'argent rendu sort de la caisse ouverte du poste qui annule
         var session = await sessions.SessionDuPosteAsync(nomPoste, ct);
         // Déjà rendu par des retours : non rendu une seconde fois. Crédit : dette diminuée de ce qui reste dû, le reste rendu en espèces.
-        var (reductionDette, rembourse) = RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, v.SoldeCreditPatient);
+        // Vente payée à un patient qui doit de l'argent : au choix du caissier, l'argent à rendre est retiré de sa dette.
+        // Vente sans patient : s'il s'est nommé à l'annulation (patientDetteId), c'est sa dette, relue ici, qui est diminuée.
+        var dette = v.SoldeCreditPatient;
+        long? patientDette = null;
+        if (solderDette && v.Mode != "credit" && patientDetteId is { } pid)
+        {
+            if (v.Patient is not null) throw new RegleMetierException("Cette vente a déjà un patient : c’est sa dette qui peut être soldée.");
+            var patient = (patients is null ? null : await patients.TrouverAsync(pid, ct)) ?? throw new RegleMetierException("Patient introuvable.");
+            (dette, patientDette) = (patient.SoldeCredit, pid);
+        }
+        var solder = solderDette && v.Mode != "credit";
+        var (reductionDette, rembourse) = RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, dette, solder);
+        // Déduire de la dette une vente payée : jamais sans l'accord du client
+        if (solder && reductionDette > 0 && !accordClient) throw RegleAnnulation.AccordClientManquant();
         var modeRemboursement = v.Mode == "credit" ? (rembourse > 0 ? "especes" : "credit") : v.Mode;
         if (modeRemboursement == "especes" && rembourse > 0 && session is null)
             throw new RegleMetierException("Ouvrez la caisse du poste : l’argent rendu au patient doit en sortir.");
 
         await annulations.AnnulerAsync(new AnnulationAEcrire(v.Id, texte, utilisateurId, validePar, !v.CaisseOuverte, modeRemboursement, rembourse,
-            session?.Id, nomPoste, reductionDette), ct);
+            session?.Id, nomPoste, reductionDette, patientDette, solder && reductionDette > 0), ct);
         await journal.EcrireAsync(utilisateurId, "vente_annulee", "vente", v.Id,
             new Dictionary<string, object?>
             {
                 ["ticket"] = v.Numero, ["motif"] = texte, ["montant"] = v.Total, ["rembourse"] = rembourse, ["mode"] = v.Mode,
                 ["mode_remboursement"] = modeRemboursement, ["deja_rendu"] = v.DejaRendu, ["dette_diminuee"] = reductionDette,
-                ["ancienne"] = !v.CaisseOuverte, ["valide_par"] = validePar
+                ["ancienne"] = !v.CaisseOuverte, ["valide_par"] = validePar,
+                ["dette_soldee_au_choix"] = solder && reductionDette > 0, ["patient_dette"] = reductionDette > 0 ? patientDette : null,
+                ["accord_client"] = solder && reductionDette > 0 ? true : null
             }, validePar is null ? null : Permissions.CaisseAnnulerVente, ct);
-        return new ResultatAnnulation(v.Numero, rembourse, modeRemboursement, nomValidateur);
+
+        // Au-delà du seuil réglé par le titulaire : journal et notification, une fois quand le seuil est franchi
+        if (session is not null && (await sessions.ParametresAsync(ct)).SeuilAnnulations is var seuil and > 0
+            && await annulations.AnnulationsSessionAsync(session.Id, ct) is var nombre && nombre == seuil + 1)
+        {
+            await journal.EcrireAsync(utilisateurId, "annulations_excessives", "session_caisse", session.Id,
+                new Dictionary<string, object?> { ["poste"] = nomPoste, ["annulations"] = nombre, ["seuil"] = seuil }, null, ct);
+            if (alertes is not null)
+                try { await alertes.AnnulationsAsync(nomPoste, nombre, seuil, ct); } catch (Exception) { /* la notification ne bloque pas l'annulation */ }
+        }
+        return new ResultatAnnulation(v.Numero, rembourse, modeRemboursement, nomValidateur, reductionDette);
     }
 }

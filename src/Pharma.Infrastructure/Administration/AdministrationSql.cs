@@ -132,7 +132,8 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
     public async Task<long> CreerAsync(string nomComplet, string identifiant, string hash, long roleId, string? telephone, string? email, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            INSERT INTO utilisateur (nom_complet, identifiant, mot_de_passe_hash, role_id, telephone, email) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            INSERT INTO utilisateur (nom_complet, identifiant, mot_de_passe_hash, role_id, telephone, email, doit_changer_mot_de_passe)
+            VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id
             """);
         cmd.Parameters.AddWithValue(nomComplet);
         cmd.Parameters.AddWithValue(identifiant);
@@ -154,7 +155,8 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
     {
         await using var cmd = db.CreateCommand("""
             UPDATE utilisateur
-            SET nom_complet = $2, role_id = $3, actif = $4, mot_de_passe_hash = COALESCE($5, mot_de_passe_hash), telephone = $6, email = $7
+            SET nom_complet = $2, role_id = $3, actif = $4, mot_de_passe_hash = COALESCE($5, mot_de_passe_hash), telephone = $6, email = $7,
+                doit_changer_mot_de_passe = doit_changer_mot_de_passe OR $5 IS NOT NULL
             WHERE id = $1
             """);
         cmd.Parameters.AddWithValue(id);

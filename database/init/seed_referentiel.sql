@@ -19,7 +19,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 046 (vérifié : permissions, rôles,
+-- Valeurs identiques à celles posées par les scripts 001 à 049 (vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
@@ -90,6 +90,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('caisse.retour_especes', 'Caisse', 'Rembourser un retour en espèces', true),
     ('caisse.supprimer_ligne', 'Caisse', 'Supprimer une ligne après scan', true),
     ('caisse.vendre', 'Caisse', 'Encaisser une vente', false),
+    ('caisse.vendre_sans_ordonnance', 'Caisse', 'Vendre sans ordonnance un médicament de liste I ou II', true),
     ('caisse.voir_ecart', 'Caisse', 'Voir le montant attendu et les écarts', true),
     ('chifa.bordereaux', 'Chifa', 'Gérer les bordereaux et rejets', false),
     ('chifa.importer', 'Chifa', 'Importer les factures Chifa', false),
@@ -127,6 +128,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'caisse.retour_especes'),
     ('titulaire', 'caisse.supprimer_ligne'),
     ('titulaire', 'caisse.vendre'),
+    ('titulaire', 'caisse.vendre_sans_ordonnance'),
     ('titulaire', 'caisse.voir_ecart'),
     ('titulaire', 'catalogue.creer'),
     ('titulaire', 'produits.bloquer'),
@@ -154,6 +156,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'caisse.retour_especes'),
     ('assistant', 'caisse.supprimer_ligne'),
     ('assistant', 'caisse.vendre'),
+    ('assistant', 'caisse.vendre_sans_ordonnance'),
     ('assistant', 'catalogue.creer'),
     ('assistant', 'produits.bloquer'),
     ('assistant', 'chifa.bordereaux'),

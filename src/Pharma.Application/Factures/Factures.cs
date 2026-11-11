@@ -80,6 +80,19 @@ public interface IDocumentsFactures
     byte[] Facture(FactureDetail f, Administration.IdentitePharmacie pharmacie);
 }
 
+/// <summary>Mentions de la pharmacie imprimées sur ses factures (adresse, NIF, RC, NIS, AI) qui ne sont pas renseignées.</summary>
+public sealed class MentionsFacture(Administration.IPharmacie pharmacie)
+{
+    public async Task<IReadOnlyList<string>> ManquantesAsync(CancellationToken ct = default)
+    {
+        var p = await pharmacie.LireAsync(ct);
+        var manquantes = new List<string>();
+        void Si(string? valeur, string libelle) { if (string.IsNullOrWhiteSpace(valeur)) manquantes.Add(libelle); }
+        Si(p.Adresse, "adresse"); Si(p.Nif, "NIF"); Si(p.Rc, "RC"); Si(p.Nis, "NIS"); Si(p.ArticleImposition, "article d’imposition");
+        return manquantes;
+    }
+}
+
 public sealed class ConsulterFactures(IFactures factures, IPermissionService droits)
 {
     public async Task<IReadOnlyList<LigneVenteSource>> CandidatesAsync(string? destinataire, long? patientId, long? organismeId, DateOnly du, DateOnly au,

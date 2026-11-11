@@ -172,6 +172,7 @@
     /// <summary>Lien vers les Achats pour les actions disponibles, selon les droits de l'employé.</summary>
     private string? LienAction(AlerteDto a) => a.Type switch
     {
+        "perime" when a.LotId is { } lotPerime && Session.A("stock.declarer_perime") => $"stock?sortie={lotPerime}",
         "rupture" or "stock_critique" when Session.A("achats.commander") =>
             $"achats?onglet=commandes&produit={a.ProduitId}&nom={Uri.EscapeDataString(a.Produit)}",
         "peremption" or "risque_ecoulement" when a.LotId is { } lot && Session.A("achats.retour_fournisseur") =>
@@ -183,6 +184,7 @@
     {
         "rupture" or "stock_critique" => "Droit « achats.commander » nécessaire",
         "peremption" or "risque_ecoulement" => "Droit « achats.retour_fournisseur » nécessaire",
+        "perime" => "Droit « stock.declarer_perime » nécessaire",
         _ => "Bientôt disponible"
     };
 
