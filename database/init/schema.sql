@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 054 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 056 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 054 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 056 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict RaOBfYKWat5buzofHyKwPWwLm1a86V3cHO9xG1SQwZ09dUzX4JdjO7bHC6Y1LGq
+\restrict rVCSmdqLz1pw35O4ZEgGzwPXGKWEeAT3DOnl6b7IGbmob9y63dKL8Thbw1eaq1a
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1435,6 +1435,51 @@ CREATE FUNCTION public.surveillance_candidats(p_jour date) RETURNS TABLE(o_type 
           AND v.date_vente >= p_jour - 29 AND v.date_vente < p_jour + 1
         GROUP BY v.patient_id
     )
+    ,
+    -- Inventaire : boîtes manquantes ajustées (stock diminué), par employé qui a terminé ou validé
+    ajustements AS (
+        SELECT m.utilisateur_id, sum(-m.quantite)::int AS boites, sum(-m.quantite * l.prix_achat_ht) AS valeur
+        FROM mouvement_stock m JOIN lot l ON l.id = m.lot_id
+        WHERE m.type = 'ajustement_inventaire' AND m.quantite < 0 AND m.cree_le >= p_jour AND m.cree_le < p_jour + 1
+        GROUP BY m.utilisateur_id
+    ),
+    -- Boîtes déclarées cassées, et sorties en échantillon ou gratuité
+    sorties AS (
+        SELECT m.utilisateur_id, m.type, sum(-m.quantite)::int AS boites, sum(-m.quantite * l.prix_achat_ht) AS valeur
+        FROM mouvement_stock m JOIN lot l ON l.id = m.lot_id
+        WHERE m.type IN ('casse', 'echantillon') AND m.cree_le >= p_jour AND m.cree_le < p_jour + 1
+        GROUP BY m.utilisateur_id, m.type
+    ),
+    -- Boîtes fantômes : inventaire terminé ce jour, lot dont au moins une boîte a été scannée, boîtes du lot en stock
+    -- (entrées avant le comptage) jamais scannées pendant cet inventaire
+    inv AS (
+        SELECT i.id, i.rayon, i.commence_le FROM inventaire i
+        WHERE i.statut = 'termine' AND i.termine_le >= p_jour AND i.termine_le < p_jour + 1
+    ),
+    lots_scannes AS (
+        SELECT DISTINCT e.inventaire_id, b.lot_id
+        FROM boite_evenement e JOIN boite b ON b.id = e.boite_id
+        WHERE e.type = 'inventaire' AND e.inventaire_id IN (SELECT id FROM inv)
+    ),
+    fantomes AS (
+        SELECT ls.inventaire_id, b.lot_id, count(*)::int AS n
+        FROM lots_scannes ls
+        JOIN inv ON inv.id = ls.inventaire_id
+        JOIN boite b ON b.lot_id = ls.lot_id AND b.statut = 'en_stock' AND b.scannee_le < inv.commence_le
+        WHERE NOT EXISTS (SELECT 1 FROM boite_evenement e WHERE e.boite_id = b.id AND e.type = 'inventaire' AND e.inventaire_id = ls.inventaire_id)
+        GROUP BY ls.inventaire_id, b.lot_id
+    ),
+    fantomes_inv AS (
+        SELECT f.inventaire_id, sum(f.n)::int AS n, sum(f.n * l.prix_achat_ht) AS valeur,
+               string_agg(format('%s lot %s (%s)', pr.nom_commercial, l.numero_lot, f.n), ', ' ORDER BY f.n DESC) AS detail
+        FROM fantomes f JOIN lot l ON l.id = f.lot_id JOIN produit pr ON pr.id = l.produit_id
+        GROUP BY f.inventaire_id
+    ),
+    -- Produits sensibles : dernier comptage dépassé
+    sensibles AS (
+        SELECT (SELECT max(i.termine_le) FROM inventaire i WHERE i.rayon = 'Produits sensibles' AND i.statut = 'termine') AS dernier,
+               (SELECT count(*) FROM produit pr WHERE pr.sensible AND pr.actif) AS produits
+    )
     SELECT 'lignes_retirees', CASE WHEN r.boites >= 2 * p.seuil_lignes_retirees THEN 'urgent' ELSE 'attention' END,
            r.utilisateur_id, p_jour, '',
            format('%s a retiré du panier %s boîte(s) (%s ligne(s), %s DA) avant le paiement le %s.', u.nom_complet, r.boites, r.lignes,
@@ -1474,7 +1519,40 @@ CREATE FUNCTION public.surveillance_candidats(p_jour date) RETURNS TABLE(o_type 
                   pt.nom, COALESCE(pt.prenom, ''), rp.n, to_char(rp.montant, 'FM999G999G990D00'), rp.vendeurs),
            format('Remises repetees au meme patient : %s ventes en 30 jours (detail dans Surveillance).', rp.n),
            rp.montant
-    FROM remises_patient rp JOIN patient pt ON pt.id = rp.patient_id, p WHERE rp.n >= p.seuil_remises_patient;
+    FROM remises_patient rp JOIN patient pt ON pt.id = rp.patient_id, p WHERE rp.n >= p.seuil_remises_patient
+    UNION ALL
+    SELECT 'ajustements', CASE WHEN a.boites >= 2 * p.seuil_ajustements THEN 'urgent' ELSE 'attention' END, a.utilisateur_id, p_jour, '',
+           format('Inventaires terminés ou validés par %s le %s : %s boîte(s) manquante(s) ajustée(s) (%s DA au prix d''achat).', u.nom_complet,
+                  to_char(p_jour, 'DD/MM/YYYY'), a.boites, to_char(a.valeur, 'FM999G999G990D00')),
+           format('%s : %s boite(s) manquante(s) ajustee(s) en inventaire le %s.', u.nom_complet, a.boites, to_char(p_jour, 'DD/MM')),
+           a.valeur
+    FROM ajustements a JOIN utilisateur u ON u.id = a.utilisateur_id, p WHERE a.boites >= p.seuil_ajustements
+    UNION ALL
+    SELECT CASE s.type WHEN 'casse' THEN 'casses' ELSE 'echantillons' END,
+           CASE WHEN s.boites >= 2 * CASE s.type WHEN 'casse' THEN p.seuil_casses ELSE p.seuil_echantillons END THEN 'urgent' ELSE 'attention' END,
+           s.utilisateur_id, p_jour, '',
+           format('%s a déclaré %s boîte(s) %s le %s (%s DA au prix d''achat).', u.nom_complet, s.boites,
+                  CASE s.type WHEN 'casse' THEN 'cassée(s)' ELSE 'sortie(s) en échantillon ou gratuité' END,
+                  to_char(p_jour, 'DD/MM/YYYY'), to_char(s.valeur, 'FM999G999G990D00')),
+           format('%s : %s boite(s) %s le %s.', u.nom_complet, s.boites, CASE s.type WHEN 'casse' THEN 'cassee(s)' ELSE 'en echantillon' END, to_char(p_jour, 'DD/MM')),
+           s.valeur
+    FROM sorties s JOIN utilisateur u ON u.id = s.utilisateur_id, p
+    WHERE s.boites >= CASE s.type WHEN 'casse' THEN p.seuil_casses ELSE p.seuil_echantillons END
+    UNION ALL
+    SELECT 'boites_fantomes', CASE WHEN fi.n >= 3 THEN 'urgent' ELSE 'attention' END, NULL::bigint, p_jour, 'inventaire:' || fi.inventaire_id,
+           format('Inventaire « %s » : %s boîte(s) identifiée(s) en stock non retrouvée(s) au comptage : %s. Elles ont peut-être quitté la pharmacie : recherchez-les, puis faites leur sortie.',
+                  inv.rayon, fi.n, fi.detail),
+           format('Inventaire %s : %s boite(s) identifiee(s) non retrouvee(s) au comptage.', inv.rayon, fi.n),
+           fi.valeur
+    FROM fantomes_inv fi JOIN inv ON inv.id = fi.inventaire_id
+    UNION ALL
+    SELECT 'sensibles_en_retard', 'attention', NULL::bigint, COALESCE(se.dernier::date, DATE '2000-01-01'), 'sensibles',
+           format('Comptage des produits sensibles (%s produit(s)) %s : à faire dans Stock, Inventaire, « Produits sensibles ».', se.produits,
+                  CASE WHEN se.dernier IS NULL THEN 'jamais fait' ELSE 'pas fait depuis le ' || to_char(se.dernier, 'DD/MM/YYYY') END),
+           'Comptage des produits sensibles en retard.',
+           NULL::numeric
+    FROM sensibles se, p
+    WHERE se.produits > 0 AND (se.dernier IS NULL OR se.dernier < p_jour - p.jours_comptage_sensibles + 1);
 $$;
 
 
@@ -1988,7 +2066,7 @@ CREATE TABLE public.alerte_surveillance (
     traitee_le timestamp with time zone,
     CONSTRAINT alerte_surveillance_niveau_check CHECK ((niveau = ANY (ARRAY['attention'::text, 'urgent'::text]))),
     CONSTRAINT alerte_surveillance_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'traitee'::text]))),
-    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text])))
+    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text])))
 );
 
 
@@ -2059,7 +2137,7 @@ CREATE TABLE public.boite (
     reception_id bigint NOT NULL,
     prix_achat_ht numeric(12,2) NOT NULL,
     CONSTRAINT boite_prix_achat_ht_check CHECK ((prix_achat_ht >= (0)::numeric)),
-    CONSTRAINT boite_statut_check CHECK ((statut = ANY (ARRAY['en_stock'::text, 'vendue'::text, 'retournee_fournisseur'::text, 'detruite'::text, 'retour_client'::text]))),
+    CONSTRAINT boite_statut_check CHECK ((statut = ANY (ARRAY['en_stock'::text, 'vendue'::text, 'retournee_fournisseur'::text, 'detruite'::text, 'retour_client'::text, 'donnee'::text]))),
     CONSTRAINT ck_boite_identifiant CHECK ((((gtin IS NOT NULL) AND (numero_serie IS NOT NULL)) OR (code_etiquette IS NOT NULL)))
 );
 
@@ -2079,7 +2157,8 @@ CREATE TABLE public.boite_evenement (
     utilisateur_id bigint,
     commentaire text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT boite_evenement_type_check CHECK ((type = ANY (ARRAY['reception'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'destruction'::text, 'blocage'::text, 'correction'::text])))
+    inventaire_id bigint,
+    CONSTRAINT boite_evenement_type_check CHECK ((type = ANY (ARRAY['reception'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'destruction'::text, 'blocage'::text, 'correction'::text, 'inventaire'::text, 'echantillon'::text])))
 );
 
 
@@ -3056,7 +3135,7 @@ CREATE TABLE public.mouvement_stock (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     reception_id bigint,
     prix_achat_ht numeric(12,2),
-    CONSTRAINT mouvement_stock_type_check CHECK ((type = ANY (ARRAY['entree'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'perime'::text, 'casse'::text, 'ajustement_inventaire'::text, 'destruction'::text])))
+    CONSTRAINT mouvement_stock_type_check CHECK ((type = ANY (ARRAY['entree'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'perime'::text, 'casse'::text, 'ajustement_inventaire'::text, 'destruction'::text, 'echantillon'::text])))
 );
 
 
@@ -3442,7 +3521,12 @@ CREATE TABLE public.parametre_surveillance (
     seuil_remises_patient integer DEFAULT 3 NOT NULL,
     heure_ouverture time without time zone,
     heure_fermeture time without time zone,
+    seuil_ajustements integer DEFAULT 5 NOT NULL,
+    seuil_casses integer DEFAULT 3 NOT NULL,
+    seuil_echantillons integer DEFAULT 3 NOT NULL,
+    jours_comptage_sensibles integer DEFAULT 7 NOT NULL,
     CONSTRAINT ck_parametre_surveillance_horaires CHECK (((heure_ouverture IS NULL) = (heure_fermeture IS NULL))),
+    CONSTRAINT ck_parametre_surveillance_stock CHECK (((seuil_ajustements >= 1) AND (seuil_casses >= 1) AND (seuil_echantillons >= 1) AND ((jours_comptage_sensibles >= 1) AND (jours_comptage_sensibles <= 90)))),
     CONSTRAINT parametre_surveillance_id_check CHECK ((id = 1)),
     CONSTRAINT parametre_surveillance_seuil_attentes_abandonnees_check CHECK ((seuil_attentes_abandonnees >= 1)),
     CONSTRAINT parametre_surveillance_seuil_lignes_retirees_check CHECK ((seuil_lignes_retirees >= 1)),
@@ -3566,6 +3650,7 @@ CREATE TABLE public.produit (
     bloque_achat boolean DEFAULT false NOT NULL,
     bloque_vente boolean DEFAULT false NOT NULL,
     motif_blocage text,
+    sensible boolean DEFAULT false NOT NULL,
     CONSTRAINT ck_produit_liste_psychotrope CHECK (((liste_psychotrope IS NULL) OR (liste_psychotrope = ANY (ARRAY['liste_i'::text, 'liste_ii'::text])))),
     CONSTRAINT ck_seuils_produit CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
     CONSTRAINT produit_classe_check CHECK ((classe = ANY (ARRAY['libre'::text, 'liste_i'::text, 'liste_ii'::text, 'psychotrope'::text, 'stupefiant'::text]))),
@@ -6441,6 +6526,13 @@ CREATE UNIQUE INDEX ux_alerte_surveillance ON public.alerte_surveillance USING b
 
 
 --
+-- Name: ux_boite_vue_inventaire; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_boite_vue_inventaire ON public.boite_evenement USING btree (boite_id, inventaire_id) WHERE (type = 'inventaire'::text);
+
+
+--
 -- Name: ux_campagne_en_cours; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6958,6 +7050,14 @@ ALTER TABLE ONLY public.annulation_vente
 
 ALTER TABLE ONLY public.boite_evenement
     ADD CONSTRAINT boite_evenement_boite_id_fkey FOREIGN KEY (boite_id) REFERENCES public.boite(id);
+
+
+--
+-- Name: boite_evenement boite_evenement_inventaire_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.boite_evenement
+    ADD CONSTRAINT boite_evenement_inventaire_id_fkey FOREIGN KEY (inventaire_id) REFERENCES public.inventaire(id);
 
 
 --
@@ -8020,5 +8120,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict RaOBfYKWat5buzofHyKwPWwLm1a86V3cHO9xG1SQwZ09dUzX4JdjO7bHC6Y1LGq
+\unrestrict rVCSmdqLz1pw35O4ZEgGzwPXGKWEeAT3DOnl6b7IGbmob9y63dKL8Thbw1eaq1a
 

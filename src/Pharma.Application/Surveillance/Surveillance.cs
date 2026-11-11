@@ -28,7 +28,8 @@ public sealed record AlerteSurveillance(long Id, string Type, string Niveau, lon
 
 /// <summary>Seuils par employé et par jour ; horaires d'ouverture (null : ventes hors horaires non contrôlées).</summary>
 public sealed record ParametresSurveillance(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,
-    int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture);
+    int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture,
+    int SeuilAjustements = 5, int SeuilCasses = 3, int SeuilEchantillons = 3, int JoursComptageSensibles = 7);
 
 // ---- Port -------------------------------------------------------------------
 
@@ -41,6 +42,9 @@ public interface ISurveillance
     Task<bool> TraiterAsync(long id, string? actionPrise, long utilisateurId, CancellationToken ct = default);
     Task<ParametresSurveillance> ParametresAsync(CancellationToken ct = default);
     Task EnregistrerParametresAsync(ParametresSurveillance p, CancellationToken ct = default);
+    Task<IReadOnlyList<ProduitSensible>> SensiblesAsync(CancellationToken ct = default);
+    /// <summary>Marque ou démarque un produit sensible ; nom du produit, ou null s'il n'existe pas.</summary>
+    Task<string?> MarquerSensibleAsync(long produitId, bool sensible, CancellationToken ct = default);
 }
 
 // ---- Cas d'usage --------------------------------------------------------------
@@ -118,8 +122,11 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
     public async Task EnregistrerAsync(ParametresSurveillance p, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "régler la surveillance de la caisse", ct);
-        if (p.SeuilLignesRetirees < 1 || p.SeuilTiroir < 1 || p.SeuilAttentesAbandonnees < 1 || p.SeuilRemises < 1 || p.SeuilRemisesPatient < 1)
+        if (p.SeuilLignesRetirees < 1 || p.SeuilTiroir < 1 || p.SeuilAttentesAbandonnees < 1 || p.SeuilRemises < 1 || p.SeuilRemisesPatient < 1
+            || p.SeuilAjustements < 1 || p.SeuilCasses < 1 || p.SeuilEchantillons < 1)
             throw new RegleMetierException("Chaque seuil doit être d’au moins 1.");
+        if (p.JoursComptageSensibles is < 1 or > 90)
+            throw new RegleMetierException("Comptage des produits sensibles : tous les 1 à 90 jours.", "jours_sensibles");
         if ((p.HeureOuverture is null) != (p.HeureFermeture is null))
             throw new RegleMetierException("Horaires : renseignez l’ouverture et la fermeture, ou aucune des deux (pas de contrôle).", "heure_ouverture");
         if (p.HeureOuverture is { } o && p.HeureFermeture is { } f && o >= f)
@@ -129,8 +136,29 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
             new Dictionary<string, object?>
             {
                 ["lignes_retirees"] = p.SeuilLignesRetirees, ["tiroir"] = p.SeuilTiroir, ["attentes"] = p.SeuilAttentesAbandonnees,
-                ["remises"] = p.SeuilRemises, ["remises_patient"] = p.SeuilRemisesPatient,
+                ["remises"] = p.SeuilRemises, ["remises_patient"] = p.SeuilRemisesPatient, ["ajustements"] = p.SeuilAjustements,
+                ["casses"] = p.SeuilCasses, ["echantillons"] = p.SeuilEchantillons, ["comptage_sensibles_jours"] = p.JoursComptageSensibles,
                 ["horaires"] = p.HeureOuverture is { } a ? $"{a:HH\\:mm}-{p.HeureFermeture:HH\\:mm}" : null
             }, null, ct);
+    }
+}
+
+/// <summary>Produit sensible (cher, très demandé, souvent volé) : compté à part et régulièrement (inventaire « Produits sensibles »).</summary>
+public sealed record ProduitSensible(long ProduitId, string Nom, int Stock);
+
+public sealed class GererProduitsSensibles(ISurveillance surveillance, IPermissionService droits, IJournal journal)
+{
+    public async Task<IReadOnlyList<ProduitSensible>> ListerAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(utilisateurId, "consulter les produits sensibles", ct);
+        return await surveillance.SensiblesAsync(ct);
+    }
+
+    public async Task MarquerAsync(long produitId, bool sensible, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(utilisateurId, "choisir les produits sensibles", ct);
+        var nom = await surveillance.MarquerSensibleAsync(produitId, sensible, ct) ?? throw new RegleMetierException("Produit introuvable.");
+        await journal.EcrireAsync(utilisateurId, sensible ? "produit_sensible" : "produit_non_sensible", "produit", produitId,
+            new Dictionary<string, object?> { ["produit"] = nom }, null, ct);
     }
 }

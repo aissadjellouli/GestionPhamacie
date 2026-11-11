@@ -29,6 +29,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{
 	ProjectSection(SolutionItems) = preProject
 		docs\a-faire.md = docs\a-faire.md
 		docs\charte-graphique.md = docs\charte-graphique.md
+		docs\regles-metier.md = docs\regles-metier.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{386EBD72-0D5B-4454-978E-2D35C00026D8}"
@@ -87,6 +88,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{38
 		database\052_reprise_super_admin.sql = database\052_reprise_super_admin.sql
 		database\053_lot_delaisse.sql = database\053_lot_delaisse.sql
 		database\054_surveillance_caisse.sql = database\054_surveillance_caisse.sql
+		database\055_surveillance_stock.sql = database\055_surveillance_stock.sql
+		database\056_droit_don.sql = database\056_droit_don.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"

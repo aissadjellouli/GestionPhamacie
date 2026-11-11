@@ -374,7 +374,10 @@ public sealed record LigneInventaireDto(
 public sealed record InventaireDto(long Id, string Rayon, string Statut, DateTime CommenceLe, string CommencePar, DateTime? TermineLe, IReadOnlyList<LigneInventaireDto> Lignes);
 public sealed record InventaireResumeDto(long Id, string Rayon, string Statut, DateTime CommenceLe, string CommencePar, DateTime? TermineLe, int Lignes, int Ecarts, int AValider, decimal ValeurEcarts);
 public sealed record EcartAValiderDto(long LigneId, long InventaireId, string Rayon, string Produit, string NumeroLot, int Theorique, int Compte, int Ecart, decimal ValeurEcart, string ComptePar, DateTime CompteLe);
-public sealed record TableauInventaireDto(IReadOnlyList<RayonInventaireDto> Rayons, string? RayonPropose, ParametresInventaireDto Parametres, IReadOnlyList<EcartAValiderDto> EcartsAValider, IReadOnlyList<InventaireResumeDto> Historique);
+public sealed record TableauInventaireDto(IReadOnlyList<RayonInventaireDto> Rayons, string? RayonPropose, ParametresInventaireDto Parametres, IReadOnlyList<EcartAValiderDto> EcartsAValider, IReadOnlyList<InventaireResumeDto> Historique,
+    EtatSensiblesDto? Sensibles = null);
+/// <summary>Produits sensibles : nombre, fin du dernier comptage, comptage en cours.</summary>
+public sealed record EtatSensiblesDto(int Produits, DateTime? Dernier, long? EnCoursId);
 
 public sealed record CommencerInventaireRequete(string Rayon);
 public sealed record ComptageRequete(int Compte, DateOnly? DateVerifiee);
@@ -671,4 +674,7 @@ public sealed record EvenementCaisseRequete(string Type, long? ProduitId = null,
 public sealed record AlerteSurveillanceDto(long Id, string Type, string Niveau, long? UtilisateurId, string? Employe, DateOnly Jour, string Message,
     decimal? Valeur, string Statut, DateTime MiseAJourLe, string? TraiteePar, DateTime? TraiteeLe, string? ActionPrise);
 public sealed record ParametresSurveillanceDto(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,
-    int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture);
+    int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture,
+    int SeuilAjustements = 5, int SeuilCasses = 3, int SeuilEchantillons = 3, int JoursComptageSensibles = 7);
+public sealed record ProduitSensibleDto(long ProduitId, string Nom, int Stock);
+public sealed record MarquerSensibleRequete(bool Sensible);

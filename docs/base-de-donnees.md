@@ -78,6 +78,8 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `052_reprise_super_admin.sql` | Reprise de données par le super admin : `import.session.lance_par` (extraction), `charge_le` et `charge_par` (chargement définitif). Les données chargées restent attribuées au titulaire ; la validation par code est inscrite au journal. |
 | `053_lot_delaisse.sql` | Ancien lot délaissé : `ligne_vente.raison_lot` (lot plus récent servi : péremption vérifiée, introuvable, abîmée, demande du client), `situation_lot(lot)`, `lots_delaisses(produit)` et `alerter_lots_delaisses(produits)` ; seuils `parametre_alerte.seuil_lot_delaisse` (un vendeur, 5) et `seuil_lot_delaisse_collectif` (plusieurs vendeurs, 10, alerte rouge) ; alerte et notification `lot_delaisse` réservées au titulaire, ajoutées à `generer_alertes` ; `inventaire.produit_id` (inventaire d'un produit). |
 | `054_surveillance_caisse.sql` | Surveillance de la caisse (titulaire seul) : `evenement_caisse` (ligne retirée du panier, tiroir ouvert sans vente, vente en attente abandonnée), `parametre_surveillance` (seuils par employé et par jour, horaires d’ouverture, vides : pas de contrôle), `alerte_surveillance` (anomalies par employé et par jour, ou par patient pour les remises répétées ; closes par le titulaire, jamais supprimées), `surveillance_candidats(jour)` et `surveiller(jour)` ; notification `surveillance`. |
+| `055_surveillance_stock.sql` | Surveillance du stock : boîte vue à l’inventaire (`boite_evenement` type `inventaire`, `inventaire_id`, une seule fois par inventaire), boîtes fantômes, `produit.sensible` et comptage « Produits sensibles » (`jours_comptage_sensibles`, 7), échantillons et gratuités (mouvement `echantillon`, boîte `donnee`), seuils `seuil_ajustements` (5), `seuil_casses` (3), `seuil_echantillons` (3) ; `surveillance_candidats` remplacée (anomalies ajustements, casses, echantillons, boites_fantomes, sensibles_en_retard). |
+| `056_droit_don.sql` | Droit `stock.donner` (« Donner un échantillon ou une gratuité (don à un nécessiteux) »), titulaire et assistant par défaut, à donner à un vendeur dans la matrice des droits ; posé à la première exécution seulement. |
 
 ### Règle permanente : tout script est répliqué dans `init/`
 
@@ -106,7 +108,7 @@ Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dan
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 054, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 056, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

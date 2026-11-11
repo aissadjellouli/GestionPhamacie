@@ -183,21 +183,90 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<int?> AjouterBoiteAsync(long ligneId, int compteMax, long utilisateurId, CancellationToken ct = default)
+    public async Task<int?> AjouterBoiteAsync(long ligneId, int compteMax, long utilisateurId, long? boiteId = null, CancellationToken ct = default)
     {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        // Boîte identifiée : vue à cet inventaire (boîtes fantômes), une seule fois (index ux_boite_vue_inventaire)
+        if (boiteId is { } b)
+        {
+            await using var vue = new NpgsqlCommand("""
+                INSERT INTO boite_evenement (boite_id, type, utilisateur_id, inventaire_id, commentaire)
+                SELECT $1, 'inventaire', $2, li.inventaire_id, 'Vue à l''inventaire' FROM ligne_inventaire li WHERE li.id = $3
+                ON CONFLICT DO NOTHING
+                """, cnx, tx);
+            vue.Parameters.AddWithValue(b);
+            vue.Parameters.AddWithValue(utilisateurId);
+            vue.Parameters.AddWithValue(ligneId);
+            if (await vue.ExecuteNonQueryAsync(ct) == 0)
+                throw new RegleMetierException("Cette boîte a déjà été comptée dans cet inventaire : passez à la suivante.");
+        }
         // Incrément fait par la base : deux scans simultanés du même lot comptent deux boîtes
-        await using var cmd = db.CreateCommand("""
+        await using var cmd = new NpgsqlCommand("""
             UPDATE ligne_inventaire li
             SET compte = COALESCE(li.compte, 0) + 1, theorique = l.quantite_disponible,
                 compte_par = $2, compte_le = now(), statut = 'compte'
             FROM lot l
             WHERE li.id = $1 AND l.id = li.lot_id AND COALESCE(li.compte, 0) < $3
             RETURNING li.compte
-            """);
+            """, cnx, tx);
         cmd.Parameters.AddWithValue(ligneId);
         cmd.Parameters.AddWithValue(utilisateurId);
         cmd.Parameters.AddWithValue(compteMax);
-        return await cmd.ExecuteScalarAsync(ct) is int compte ? compte : null;
+        if (await cmd.ExecuteScalarAsync(ct) is not int compte) return null;   // maximum atteint : la boîte n'est pas notée vue
+        await tx.CommitAsync(ct);
+        return compte;
+    }
+
+    public async Task<long?> BoiteParCodeAsync(string code, CancellationToken ct = default)
+    {
+        // Étiquette interne de la boîte, sinon n° de série du Data Matrix (GTIN, lot, série)
+        await using (var cmd = db.CreateCommand("SELECT id FROM boite WHERE code_etiquette = $1"))
+        {
+            cmd.Parameters.AddWithValue(code);
+            if (await cmd.ExecuteScalarAsync(ct) is long id) return id;
+        }
+        if (!Gs1DataMatrix.TryParse(code, out var dm) || dm?.NumeroSerie is null) return null;
+        await using var serie = db.CreateCommand("SELECT id FROM boite WHERE numero_serie = $1 LIMIT 1");
+        serie.Parameters.AddWithValue(dm.NumeroSerie);
+        return await serie.ExecuteScalarAsync(ct) as long?;
+    }
+
+    public async Task<EtatSensibles> EtatSensiblesAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT (SELECT count(*) FROM produit WHERE sensible AND actif)::int,
+                   (SELECT max(termine_le) FROM inventaire WHERE rayon = $1 AND statut = 'termine'),
+                   (SELECT id FROM inventaire WHERE rayon = $1 AND statut = 'en_cours' ORDER BY id DESC LIMIT 1)
+            """);
+        cmd.Parameters.AddWithValue(CommencerInventaireSensibles.Rayon);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        await r.ReadAsync(ct);
+        return new EtatSensibles(r.GetInt32(0), r.IsDBNull(1) ? null : r.GetDateTime(1), r.IsDBNull(2) ? null : r.GetInt64(2));
+    }
+
+    public async Task<long?> CreerSensiblesAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        if ((await EtatSensiblesAsync(ct)).EnCoursId is { } enCours) return enCours;
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        long id;
+        await using (var cmd = new NpgsqlCommand("INSERT INTO inventaire (rayon, commence_par) VALUES ($1, $2) RETURNING id", cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(CommencerInventaireSensibles.Rayon);
+            cmd.Parameters.AddWithValue(utilisateurId);
+            id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        await using (var cmd = new NpgsqlCommand("""
+            INSERT INTO ligne_inventaire (inventaire_id, lot_id)
+            SELECT $1, l.id FROM lot l JOIN produit p ON p.id = l.produit_id WHERE p.sensible AND p.actif AND l.quantite_disponible > 0
+            """, cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(id);
+            if (await cmd.ExecuteNonQueryAsync(ct) == 0) return null;   // rien à compter : la transaction est abandonnée
+        }
+        await tx.CommitAsync(ct);
+        return id;
     }
 
     public async Task<long?> LotParCodeAsync(string code, CancellationToken ct = default)

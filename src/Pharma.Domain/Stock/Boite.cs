@@ -6,7 +6,9 @@ public enum StatutBoite
     Vendue,
     RetourneeFournisseur,
     Detruite,
-    RetourClient
+    RetourClient,
+    /// <summary>Donnée : échantillon, gratuité ou don à un nécessiteux.</summary>
+    Donnee
 }
 
 /// <summary>Une boîte identifiée : Data Matrix (GTIN + série) ou étiquette interne.</summary>

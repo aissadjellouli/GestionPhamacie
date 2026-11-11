@@ -19,6 +19,8 @@ public static class Permissions
     public const string StockConsulter = "stock.consulter";
     public const string StockAjuster = "stock.ajuster";
     public const string StockDeclarerPerime = "stock.declarer_perime";
+    /// <summary>Donner un échantillon ou une gratuité (don à un nécessiteux) ; jamais un produit sous registre.</summary>
+    public const string StockDonner = "stock.donner";
     public const string PrixModifier = "prix.modifier";
     public const string ProduitsBloquer = "produits.bloquer";
     public const string CatalogueCreer = "catalogue.creer";

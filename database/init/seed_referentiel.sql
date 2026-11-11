@@ -19,7 +19,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 054 (vérifié : permissions, rôles,
+-- Valeurs identiques à celles posées par les scripts 001 à 056 (vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
@@ -108,6 +108,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('stock.ajuster', 'Stock', 'Corriger le stock (inventaire)', true),
     ('stock.consulter', 'Stock', 'Consulter le stock', false),
     ('stock.declarer_perime', 'Stock', 'Déclarer un produit périmé ou cassé', true),
+    ('stock.donner', 'Stock', 'Donner un échantillon ou une gratuité (don à un nécessiteux)', true),
     ('tresorerie.gerer', 'Trésorerie', 'Gérer la trésorerie (coffre, banques, dépenses)', true)
 
 ON CONFLICT (code) DO NOTHING;
@@ -146,6 +147,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'stock.ajuster'),
     ('titulaire', 'stock.consulter'),
     ('titulaire', 'stock.declarer_perime'),
+    ('titulaire', 'stock.donner'),
     ('titulaire', 'tresorerie.gerer'),
     ('assistant', 'achats.commander'),
     ('assistant', 'achats.receptionner'),
@@ -170,6 +172,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'stock.ajuster'),
     ('assistant', 'stock.consulter'),
     ('assistant', 'stock.declarer_perime'),
+    ('assistant', 'stock.donner'),
     ('vendeur', 'achats.receptionner'),
     ('vendeur', 'caisse.vendre'),
     ('vendeur', 'chifa.importer'),

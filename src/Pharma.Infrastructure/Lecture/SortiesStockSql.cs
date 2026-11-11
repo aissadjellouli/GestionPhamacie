@@ -64,14 +64,15 @@ public sealed class SortiesStockSql(NpgsqlDataSource db) : ISortiesStock
                 SELECT id FROM boite WHERE lot_id = $1 AND statut = 'en_stock' ORDER BY id LIMIT $2 FOR UPDATE),
             evenements AS (
                 INSERT INTO boite_evenement (boite_id, type, utilisateur_id, commentaire)
-                SELECT id, 'destruction', $3, $4 FROM choisies)
-            UPDATE boite SET statut = 'detruite' WHERE id IN (SELECT id FROM choisies)
+                SELECT id, CASE WHEN $5 = 'echantillon' THEN 'echantillon' ELSE 'destruction' END, $3, $4 FROM choisies)
+            UPDATE boite SET statut = CASE WHEN $5 = 'echantillon' THEN 'donnee' ELSE 'detruite' END WHERE id IN (SELECT id FROM choisies)
             """, cx, tx))
         {
             boites.Parameters.AddWithValue(s.LotId);
             boites.Parameters.AddWithValue(s.Quantite);
             boites.Parameters.AddWithValue(s.UtilisateurId);
             boites.Parameters.AddWithValue(s.Reference);
+            boites.Parameters.AddWithValue(s.Motif);
             detruites = await boites.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);

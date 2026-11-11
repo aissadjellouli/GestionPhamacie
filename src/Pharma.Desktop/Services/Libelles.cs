@@ -258,6 +258,7 @@ public static class Libelles
         "reprise_chargement" => "Reprise de données chargée",
         "reprise_extraction" => "Reprise de données extraite",
         "retour_client" => "Retour client",
+        "donnee" => "Donnée (échantillon ou don)",
         "transfert_tresorerie" => "Transfert entre comptes",
         "vente_annulee" => "Vente annulée",
         "vente_produit_bloque" => "Vente d’un produit bloqué",
@@ -314,7 +315,8 @@ public static class Libelles
         ["rapports.ventes"] = "Voir les rapports de ventes",
         ["stock.ajuster"] = "Corriger le stock (inventaire)",
         ["stock.consulter"] = "Consulter le stock",
-        ["stock.declarer_perime"] = "Déclarer un produit périmé ou cassé"
+        ["stock.declarer_perime"] = "Déclarer un produit périmé ou cassé",
+        ["stock.donner"] = "Donner un échantillon ou une gratuité (don à un nécessiteux)"
     };
 
     /// <summary>Détail d'une action du journal en phrase lisible, sans accolades ni guillemets.</summary>
@@ -481,6 +483,7 @@ public static class Libelles
         "retournee_fournisseur" => "Retournée au fournisseur",
         "detruite" => "Détruite",
         "retour_client" => "Retour client",
+        "donnee" => "Donnée (échantillon ou don)",
         _ => statut
     };
 
@@ -489,6 +492,7 @@ public static class Libelles
         "reception" => "Réception",
         "vente" => "Vente",
         "retour_client" => "Retour client",
+        "donnee" => "Donnée (échantillon ou don)",
         "retour_fournisseur" => "Retour fournisseur",
         "destruction" => "Destruction",
         "blocage" => "Blocage",

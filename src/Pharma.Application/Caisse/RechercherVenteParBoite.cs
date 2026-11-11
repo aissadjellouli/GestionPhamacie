@@ -62,8 +62,8 @@ public sealed class RechercherVenteParBoite(IMobile codes, IVentesParBoite vente
                     return new VentesParBoite(true, produit, null, null, v is null ? [] : [v]);
                 case "en_stock" or "detruite" or "retour_client" when await ventes.DejaRendueAsync(boite, ct):
                     throw new RegleMetierException("Cette boîte a déjà été rendue par un patient : elle ne peut pas être remboursée une seconde fois.", "code_boite");
-                case "detruite" or "retournee_fournisseur":
-                    throw new RegleMetierException("Cette boîte est sortie du stock (détruite ou rendue au grossiste) : elle ne peut pas être remboursée.", "code_boite");
+                case "detruite" or "retournee_fournisseur" or "donnee":
+                    throw new RegleMetierException("Cette boîte est sortie du stock (détruite, rendue au grossiste ou donnée) : elle ne peut pas être remboursée.", "code_boite");
             }
             // Boîte encore « en stock » : vendue avant que la caisse ne retienne les boîtes, ou vendue sans être scannée
             note = "Boîte non rattachée à une vente : recherche par produit et lot.";

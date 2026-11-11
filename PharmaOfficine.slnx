@@ -2,6 +2,7 @@
   <Folder Name="/Documents/">
     <File Path="docs/a-faire.md" />
     <File Path="docs/charte-graphique.md" />
+    <File Path="docs/regles-metier.md" />
   </Folder>
   <Folder Name="/database/">
     <File Path="database/001_schema.sql" />
@@ -58,6 +59,8 @@
     <File Path="database/052_reprise_super_admin.sql" />
     <File Path="database/053_lot_delaisse.sql" />
     <File Path="database/054_surveillance_caisse.sql" />
+    <File Path="database/055_surveillance_stock.sql" />
+    <File Path="database/056_droit_don.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

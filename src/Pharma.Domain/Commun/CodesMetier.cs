@@ -24,7 +24,8 @@ public static class CodesMetier
         [StatutBoite.Vendue] = "vendue",
         [StatutBoite.RetourneeFournisseur] = "retournee_fournisseur",
         [StatutBoite.Detruite] = "detruite",
-        [StatutBoite.RetourClient] = "retour_client"
+        [StatutBoite.RetourClient] = "retour_client",
+        [StatutBoite.Donnee] = "donnee"
     };
 
     private static readonly Dictionary<TypeVente, string> TypesVente = new()

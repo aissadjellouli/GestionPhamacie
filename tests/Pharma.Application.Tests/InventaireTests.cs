@@ -29,10 +29,21 @@ internal sealed class InventairesEnMemoire : IInventaires
     public Task<long?> CreerProduitAsync(long produitId, long u, CancellationToken ct = default) => Task.FromResult<long?>(produitId == 0 ? null : 8L);
     public Task<InventaireDetail?> DetailAsync(long id, CancellationToken ct = default) => Task.FromResult<InventaireDetail?>(id == Detail.Id ? Detail : null);
     public Task EnregistrerComptageAsync(long ligneId, int compte, DateOnly? d, long u, CancellationToken ct = default) { Comptages.Add((ligneId, compte)); return Task.CompletedTask; }
-    public Task<int?> AjouterBoiteAsync(long ligneId, int max, long u, CancellationToken ct = default)
+    /// <summary>Boîtes identifiées vues : une même boîte refusée la deuxième fois.</summary>
+    public List<long> BoitesVues { get; } = [];
+    public long? BoiteScannee { get; set; }
+    public Task<long?> BoiteParCodeAsync(string code, CancellationToken ct = default) => Task.FromResult(BoiteScannee);
+    public Task<EtatSensibles> EtatSensiblesAsync(CancellationToken ct = default) => Task.FromResult(new EtatSensibles(2, null, null));
+    public Task<long?> CreerSensiblesAsync(long u, CancellationToken ct = default) => Task.FromResult<long?>(12L);
+    public Task<int?> AjouterBoiteAsync(long ligneId, int max, long u, long? boiteId = null, CancellationToken ct = default)
     {
         var compte = (Comptages.LastOrDefault(c => c.Ligne == ligneId) is { Ligne: > 0 } dernier ? dernier.Compte : Detail.Lignes.First(l => l.Id == ligneId).Compte ?? 0) + 1;
         if (compte > max) return Task.FromResult<int?>(null);
+        if (boiteId is { } b)
+        {
+            if (BoitesVues.Contains(b)) throw new RegleMetierException("Cette boîte a déjà été comptée dans cet inventaire.");
+            BoitesVues.Add(b);
+        }
         Comptages.Add((ligneId, compte));
         return Task.FromResult<int?>(compte);
     }

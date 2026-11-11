@@ -76,26 +76,51 @@ public sealed class SurveillanceSql(NpgsqlDataSource db) : ISurveillance
     public async Task<ParametresSurveillance> ParametresAsync(CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT seuil_lignes_retirees, seuil_tiroir, seuil_attentes_abandonnees, seuil_remises, seuil_remises_patient, heure_ouverture, heure_fermeture
+            SELECT seuil_lignes_retirees, seuil_tiroir, seuil_attentes_abandonnees, seuil_remises, seuil_remises_patient, heure_ouverture, heure_fermeture,
+                   seuil_ajustements, seuil_casses, seuil_echantillons, jours_comptage_sensibles
             FROM parametre_surveillance WHERE id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) throw new InvalidOperationException("Réglages de surveillance absents : exécutez database/054_surveillance_caisse.sql.");
         return new ParametresSurveillance(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4),
-            r.IsDBNull(5) ? null : TimeOnly.FromTimeSpan(r.GetTimeSpan(5)), r.IsDBNull(6) ? null : TimeOnly.FromTimeSpan(r.GetTimeSpan(6)));
+            r.IsDBNull(5) ? null : TimeOnly.FromTimeSpan(r.GetTimeSpan(5)), r.IsDBNull(6) ? null : TimeOnly.FromTimeSpan(r.GetTimeSpan(6)),
+            r.GetInt32(7), r.GetInt32(8), r.GetInt32(9), r.GetInt32(10));
     }
 
     public async Task EnregistrerParametresAsync(ParametresSurveillance p, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
             UPDATE parametre_surveillance SET seuil_lignes_retirees = $1, seuil_tiroir = $2, seuil_attentes_abandonnees = $3, seuil_remises = $4,
-                   seuil_remises_patient = $5, heure_ouverture = $6, heure_fermeture = $7
+                   seuil_remises_patient = $5, heure_ouverture = $6, heure_fermeture = $7, seuil_ajustements = $8, seuil_casses = $9,
+                   seuil_echantillons = $10, jours_comptage_sensibles = $11
             WHERE id = 1
             """);
         foreach (var v in new[] { p.SeuilLignesRetirees, p.SeuilTiroir, p.SeuilAttentesAbandonnees, p.SeuilRemises, p.SeuilRemisesPatient })
             cmd.Parameters.AddWithValue(v);
         cmd.Parameters.Add(Valeur(p.HeureOuverture, NpgsqlDbType.Time));
         cmd.Parameters.Add(Valeur(p.HeureFermeture, NpgsqlDbType.Time));
+        foreach (var v in new[] { p.SeuilAjustements, p.SeuilCasses, p.SeuilEchantillons, p.JoursComptageSensibles })
+            cmd.Parameters.AddWithValue(v);
         await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<ProduitSensible>> SensiblesAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT p.id, p.nom_commercial, COALESCE((SELECT sum(l.quantite_disponible) FROM lot l WHERE l.produit_id = p.id), 0)::int
+            FROM produit p WHERE p.sensible ORDER BY p.nom_commercial
+            """);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var liste = new List<ProduitSensible>();
+        while (await r.ReadAsync(ct)) liste.Add(new ProduitSensible(r.GetInt64(0), r.GetString(1), r.GetInt32(2)));
+        return liste;
+    }
+
+    public async Task<string?> MarquerSensibleAsync(long produitId, bool sensible, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("UPDATE produit SET sensible = $2 WHERE id = $1 RETURNING nom_commercial");
+        cmd.Parameters.AddWithValue(produitId);
+        cmd.Parameters.AddWithValue(sensible);
+        return await cmd.ExecuteScalarAsync(ct) as string;
     }
 }

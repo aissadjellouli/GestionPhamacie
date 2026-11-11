@@ -21,12 +21,18 @@ internal static class InventaireEndpoints
                     t.Propose?.Rayon, new ParametresInventaireDto(t.Parametres.SeuilBoites, t.Parametres.SeuilMontant),
                     t.EcartsAValider.Select(VersDto).ToList(),
                     t.Historique.Select(h => new InventaireResumeDto(h.Id, h.Rayon, h.Statut, h.CommenceLe, h.CommencePar, h.TermineLe,
-                        h.Lignes, h.Ecarts, h.AValider, h.ValeurEcarts)).ToList()));
+                        h.Lignes, h.Ecarts, h.AValider, h.ValeurEcarts)).ToList(),
+                    t.Sensibles is { } s ? new EtatSensiblesDto(s.Produits, s.Dernier, s.EnCoursId) : null));
             })
            .ExigerPermission(Permissions.StockConsulter);
 
         inv.MapPost("", async (CommencerInventaireRequete req, CommencerInventaire commencer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await commencer.ExecuterAsync(req.Rayon, user.UtilisateurId(), ct))))
+           .ExigerPermission(Permissions.StockAjuster);
+
+        // Comptage des produits sensibles (choisis par le titulaire)
+        inv.MapPost("/sensibles", async (CommencerInventaireSensibles commencer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new IdentifiantDto(await commencer.ExecuterAsync(user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.StockAjuster);
 
         // Inventaire d'un produit, depuis l'alerte « ancien lot délaissé » (titulaire seul)

@@ -46,7 +46,10 @@ public interface IInventaires
     /// Une boîte scannée de plus sur la ligne, ajoutée en base de façon atomique (deux téléphones qui scannent le même lot
     /// au même instant comptent chacun leur boîte). Renvoie le nouveau compte, ou null si le maximum est atteint.
     /// </summary>
-    Task<int?> AjouterBoiteAsync(long ligneId, int compteMax, long utilisateurId, CancellationToken ct = default);
+    /// <param name="boiteId">Boîte identifiée scannée : notée vue à cet inventaire ; déjà comptée dans cet inventaire : refus.</param>
+    Task<int?> AjouterBoiteAsync(long ligneId, int compteMax, long utilisateurId, long? boiteId = null, CancellationToken ct = default);
+    /// <summary>Boîte identifiée désignée par le code (étiquette interne ou n° de série du Data Matrix), sinon null.</summary>
+    Task<long?> BoiteParCodeAsync(string code, CancellationToken ct = default);
     /// <summary>Lot désigné par une étiquette interne, un code de lot ou un Data Matrix (GTIN et lot) ; null sinon.</summary>
     Task<long?> LotParCodeAsync(string code, CancellationToken ct = default);
     /// <summary>Écarts, ajustements sous les seuils, dates vérifiées et fin de l'inventaire, en une transaction.</summary>
@@ -56,11 +59,18 @@ public interface IInventaires
     /// <summary>Valider applique l'ajustement au stock actuel ; refuser laisse le stock (recompter).</summary>
     Task DeciderAsync(long ligneId, bool valider, long utilisateurId, CancellationToken ct = default);
     Task<IReadOnlyList<InventaireResume>> HistoriqueAsync(int limite, CancellationToken ct = default);
+    /// <summary>Produits sensibles : nombre, dernier comptage terminé, comptage en cours.</summary>
+    Task<EtatSensibles> EtatSensiblesAsync(CancellationToken ct = default);
+    /// <summary>Inventaire « Produits sensibles » (lots en stock des produits sensibles) ; celui en cours s'il existe ; null si rien à compter.</summary>
+    Task<long?> CreerSensiblesAsync(long utilisateurId, CancellationToken ct = default);
 }
 
 public sealed record TableauInventaire(
     IReadOnlyList<RayonInventaire> Rayons, RayonInventaire? Propose, ParametresInventaire Parametres,
-    IReadOnlyList<EcartAValider> EcartsAValider, IReadOnlyList<InventaireResume> Historique);
+    IReadOnlyList<EcartAValider> EcartsAValider, IReadOnlyList<InventaireResume> Historique, EtatSensibles? Sensibles = null);
+
+/// <summary>Produits sensibles : comptage à part, régulier (réglage de la Surveillance). Dernier : fin du dernier comptage.</summary>
+public sealed record EtatSensibles(int Produits, DateTime? Dernier, long? EnCoursId);
 
 public sealed class ObtenirTableauInventaire(IInventaires inventaires)
 {
@@ -68,7 +78,7 @@ public sealed class ObtenirTableauInventaire(IInventaires inventaires)
     {
         var rayons = await inventaires.RayonsAsync(ct);
         return new TableauInventaire(rayons, RegleInventaire.Proposer(rayons), await inventaires.ParametresAsync(ct),
-            await inventaires.EcartsAValiderAsync(ct), await inventaires.HistoriqueAsync(20, ct));
+            await inventaires.EcartsAValiderAsync(ct), await inventaires.HistoriqueAsync(20, ct), await inventaires.EtatSensiblesAsync(ct));
     }
 }
 
@@ -90,6 +100,19 @@ public sealed class CommencerInventaire(IInventaires inventaires, IPermissionSer
 /// Inventaire d'un produit, demandé par l'alerte « ancien lot délaissé » (titulaire seul) : comptage à l'aveugle de tous ses lots,
 /// écarts validés comme pour un rayon.
 /// </summary>
+/// <summary>Comptage des produits sensibles (choisis par le titulaire) : tous leurs lots en stock, à l'aveugle comme un rayon.</summary>
+public sealed class CommencerInventaireSensibles(IInventaires inventaires, IPermissionService droits)
+{
+    public const string Rayon = "Produits sensibles";
+
+    public async Task<long> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.StockAjuster, "faire un inventaire", ct);
+        return await inventaires.CreerSensiblesAsync(utilisateurId, ct)
+               ?? throw new RegleMetierException("Aucun produit sensible en stock : rien à compter (le titulaire les choisit dans Surveillance).");
+    }
+}
+
 public sealed class CommencerInventaireProduit(IInventaires inventaires, IPermissionService droits)
 {
     public async Task<long> ExecuterAsync(long produitId, long utilisateurId, CancellationToken ct = default)
@@ -146,7 +169,9 @@ public sealed class ScannerBoiteInventaire(IInventaires inventaires, IPermission
         var ligne = d.Lignes.FirstOrDefault(l => l.LotId == lotId)
                     ?? throw new RegleMetierException($"Cette boîte n’appartient pas au rayon {d.Rayon} : rangez-la à sa place.");
         // Le compte lu ci-dessus peut déjà être dépassé par un autre scan : l'ajout se fait en base, pas à partir de cette lecture
-        var compte = await inventaires.AjouterBoiteAsync(ligne.Id, RegleInventaire.QuantiteMax, utilisateurId, ct)
+        // Boîte identifiée : notée vue à cet inventaire (boîtes fantômes), et jamais comptée deux fois
+        var boite = await inventaires.BoiteParCodeAsync(code.Trim(), ct);
+        var compte = await inventaires.AjouterBoiteAsync(ligne.Id, RegleInventaire.QuantiteMax, utilisateurId, boite, ct)
                      ?? throw new RegleMetierException($"Quantité comptée entre 0 et {RegleInventaire.QuantiteMax}.");
         return (ligne.Id, ligne.Produit, ligne.NumeroLot, compte);
     }
@@ -158,7 +183,8 @@ public sealed record BilanInventaire(int Lignes, int Conformes, int Ajustes, int
 /// Fin du comptage : chaque écart est ajusté tout de suite s'il reste sous les seuils, sinon il attend le titulaire,
 /// prévenu par SMS ou e-mail.
 /// </summary>
-public sealed class TerminerInventaire(IInventaires inventaires, IPermissionService droits, IJournal journal, IAlertesTitulaire? alertes = null)
+public sealed class TerminerInventaire(IInventaires inventaires, IPermissionService droits, IJournal journal, IAlertesTitulaire? alertes = null,
+    Surveillance.Surveiller? surveillance = null)
 {
     public async Task<BilanInventaire> ExecuterAsync(long id, long utilisateurId, CancellationToken ct = default)
     {
@@ -194,6 +220,8 @@ public sealed class TerminerInventaire(IInventaires inventaires, IPermissionServ
             try { await alertes.EcartsInventaireAsync(d.Rayon, aValider.Count, aValider.Sum(x => x.Ecart), aValider.Sum(x => x.ValeurEcart), ct); }
             catch (Exception ex) when (ex is not OperationCanceledException) { }
         }
+        // Surveillance : boîtes fantômes, boîtes manquantes ajustées (anomalies notifiées au titulaire)
+        if (surveillance is not null) await surveillance.ExecuterAsync(ct);
         return bilan;
     }
 }
@@ -209,7 +237,7 @@ public sealed class AnnulerInventaire(IInventaires inventaires, IPermissionServi
 }
 
 /// <summary>Écart au-delà des seuils : validé (stock ajusté) ou refusé (à recompter) par le titulaire seulement.</summary>
-public sealed class DeciderEcartInventaire(IInventaires inventaires, IPermissionService droits, IJournal journal)
+public sealed class DeciderEcartInventaire(IInventaires inventaires, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null)
 {
     public async Task ExecuterAsync(long ligneId, bool valider, long utilisateurId, CancellationToken ct = default)
     {
@@ -223,6 +251,7 @@ public sealed class DeciderEcartInventaire(IInventaires inventaires, IPermission
                 ["rayon"] = ecart.Rayon, ["produit"] = ecart.Produit, ["lot"] = ecart.NumeroLot,
                 ["theorique"] = ecart.Theorique, ["compte"] = ecart.Compte, ["ecart"] = ecart.Ecart, ["valeur"] = ecart.ValeurEcart
             }, Permissions.StockAjuster, ct);
+        if (valider && surveillance is not null) await surveillance.ExecuterAsync(ct);
     }
 }
 

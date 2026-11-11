@@ -38,13 +38,25 @@ internal static class SurveillanceEndpoints
             {
                 var p = await regler.LireAsync(user.UtilisateurId(), ct);
                 return Results.Ok(new ParametresSurveillanceDto(p.SeuilLignesRetirees, p.SeuilTiroir, p.SeuilAttentesAbandonnees, p.SeuilRemises,
-                    p.SeuilRemisesPatient, p.HeureOuverture, p.HeureFermeture));
+                    p.SeuilRemisesPatient, p.HeureOuverture, p.HeureFermeture, p.SeuilAjustements, p.SeuilCasses, p.SeuilEchantillons, p.JoursComptageSensibles));
             });
 
         surveillance.MapPut("/parametres", async (ParametresSurveillanceDto req, ReglerSurveillance regler, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await regler.EnregistrerAsync(new ParametresSurveillance(req.SeuilLignesRetirees, req.SeuilTiroir, req.SeuilAttentesAbandonnees,
-                    req.SeuilRemises, req.SeuilRemisesPatient, req.HeureOuverture, req.HeureFermeture), user.UtilisateurId(), ct);
+                    req.SeuilRemises, req.SeuilRemisesPatient, req.HeureOuverture, req.HeureFermeture, req.SeuilAjustements, req.SeuilCasses,
+                    req.SeuilEchantillons, req.JoursComptageSensibles), user.UtilisateurId(), ct);
+                return Results.NoContent();
+            });
+
+        // Produits sensibles : comptés à part et régulièrement
+        surveillance.MapGet("/sensibles", async (GererProduitsSensibles gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            Results.Ok((await gerer.ListerAsync(user.UtilisateurId(), ct)).Select(p => new ProduitSensibleDto(p.ProduitId, p.Nom, p.Stock))));
+
+        surveillance.MapPut("/sensibles/{produitId:long}", async (long produitId, MarquerSensibleRequete req, GererProduitsSensibles gerer,
+                ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await gerer.MarquerAsync(produitId, req.Sensible, user.UtilisateurId(), ct);
                 return Results.NoContent();
             });
     }

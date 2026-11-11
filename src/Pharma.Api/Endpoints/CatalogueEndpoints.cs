@@ -57,7 +57,7 @@ internal static class CatalogueEndpoints
            .ExigerPermission(Permissions.StockConsulter);
         api.MapPost("/stock/sorties", async (SortieStockRequete req, Pharma.Application.Stock.DeclarerSortieStock declarer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new NombreDto(await declarer.ExecuterAsync(req.LotId, req.Quantite, req.Motif, req.Commentaire, user.UtilisateurId(), ct))))
-           .ExigerPermission(Permissions.StockDeclarerPerime);
+           .ExigerPermission(Permissions.StockDeclarerPerime, Permissions.StockDonner);
 
         // Blocage d'un produit à l'achat et/ou à la vente
         api.MapGet("/produits/bloques", async (LireBlocageProduit lire, CancellationToken ct) =>

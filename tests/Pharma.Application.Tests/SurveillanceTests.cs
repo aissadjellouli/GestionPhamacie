@@ -23,6 +23,16 @@ internal sealed class SurveillanceEnMemoire(params AnomalieNouvelle[] nouvelles)
     public Task<bool> TraiterAsync(long id, string? action, long u, CancellationToken ct = default) { Traitees.Add((id, action)); return Task.FromResult(true); }
     public Task<ParametresSurveillance> ParametresAsync(CancellationToken ct = default) => Task.FromResult(Parametres);
     public Task EnregistrerParametresAsync(ParametresSurveillance p, CancellationToken ct = default) { Parametres = p; return Task.CompletedTask; }
+    public Dictionary<long, string> Produits { get; } = new() { [18] = "CREME MAINS" };
+    public HashSet<long> Sensibles { get; } = [];
+    public Task<IReadOnlyList<ProduitSensible>> SensiblesAsync(CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ProduitSensible>>(Sensibles.Select(id => new ProduitSensible(id, Produits[id], 9)).ToList());
+    public Task<string?> MarquerSensibleAsync(long produitId, bool sensible, CancellationToken ct = default)
+    {
+        if (!Produits.TryGetValue(produitId, out var nom)) return Task.FromResult<string?>(null);
+        if (sensible) Sensibles.Add(produitId); else Sensibles.Remove(produitId);
+        return Task.FromResult<string?>(nom);
+    }
 }
 
 public class SurveillanceTests

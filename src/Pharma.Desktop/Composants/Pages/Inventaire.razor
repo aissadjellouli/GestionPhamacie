@@ -61,6 +61,26 @@
         @if (inventaire is null)
         {
             <PanneauInventaireComplet OnCompter="CompterRayonAsync" />
+            @if (tableau.Sensibles is { Produits: > 0 } sens)
+            {
+                @* Produits sensibles (choisis par le titulaire dans Surveillance) : comptés à part, régulièrement *@
+                <section class="panneau" aria-labelledby="t-sensibles">
+                    <h2 id="t-sensibles">Produits sensibles</h2>
+                    <p style="margin: 0">@sens.Produits produit(s) sensible(s) · dernier comptage : @(sens.Dernier is { } d ? Libelles.DateHeureLocale(d) : "jamais")</p>
+                    <div>
+                        @if (Session.A("stock.ajuster"))
+                        {
+                            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CompterSensiblesAsync">
+                                @(sens.EnCoursId is not null ? "Reprendre le comptage des produits sensibles" : "Compter les produits sensibles")
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn" disabled title="Droit « stock.ajuster » nécessaire">Compter les produits sensibles</button>
+                        }
+                    </div>
+                </section>
+            }
             <section class="panneau" aria-labelledby="t-jour">
                 <h2 id="t-jour">Rayon à compter</h2>
                 @if (tableau.Rayons.Count == 0)
@@ -262,6 +282,12 @@
         rayonChoisi ??= tableau!.RayonPropose ?? tableau.Rayons.FirstOrDefault()?.Rayon;
         (seuilBoites, seuilMontant) = (tableau!.Parametres.SeuilBoites, tableau.Parametres.SeuilMontant);
     }
+
+    private async Task CompterSensiblesAsync() => await Executer(async () =>
+    {
+        var (id, e) = await Api.CommencerInventaireSensiblesAsync();
+        return e ?? await OuvrirAsync(id!.Id);
+    });
 
     private async Task CompterRayonAsync(string rayon)
     {
