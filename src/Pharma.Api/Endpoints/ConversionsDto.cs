@@ -42,7 +42,8 @@ internal static class ConversionsDto
 
     public static RappelLotDto VersDto(this ResultatRappel r) =>
         new(r.Produit, r.NumeroLot, r.LotsBloques, r.BoitesEnStock, r.BoitesVendues, r.PatientsAContacter, r.VentesAnonymes,
-            r.Ventes.Select(v => new VenteARappelerDto(v.Patient, v.Telephone, v.DateVente, v.Ticket, v.Boites, v.Anonyme)).ToList(), r.Emplacements);
+            r.Ventes.Select(v => new VenteARappelerDto(v.Patient, v.Telephone, v.DateVente, v.Ticket, v.Boites, v.Anonyme)).ToList(), r.Emplacements,
+            r.LotsNonBloques, r.RappeleLe, r.Motif);
 
     public static ParcoursBoiteDto VersDto(this ParcoursBoite p) =>
         new(p.BoiteId, p.Identifiant, p.Produit, p.NumeroLot, p.DatePeremption,

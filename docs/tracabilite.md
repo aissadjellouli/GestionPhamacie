@@ -25,4 +25,8 @@ Les ventes en tiers payant se font dans Chifa_Officine. Pour garder le lien boî
 
 ## Rappel de lot
 
-`rappel_lot(produit, numéro de lot, motif, utilisateur)` bloque le lot chez tous les grossistes, inscrit le blocage des boîtes en stock et renvoie la liste des patients à contacter, y compris pour les ventes faites avant l’étiquetage par boîte. Parcours d’une boîte : vue `v_parcours_boite`, API `GET /api/tracabilite/boites/{code}`.
+`rappel_lot(produit, numéro de lot, motif, utilisateur)` bloque le lot chez tous les grossistes, inscrit le blocage des boîtes en stock et renvoie la liste des patients à contacter, y compris pour les ventes faites avant l’étiquetage par boîte (fonction `ventes_lot`).
+
+Un lot déjà bloqué n’est pas rebloqué (script 051) : le rappel ne bloque que les lots encore vendables de ce numéro (ex. nouvelle livraison chez un autre grossiste), en gardant le motif du premier blocage. Un lot bloqué chez tous les grossistes est refusé au rappel (« déjà rappelé »), sans inscription au journal ni alerte au titulaire ; l’écran Traçabilité l’indique dès la saisie du produit et du lot (date et motif du premier rappel) et propose « Voir les patients concernés », avec l’export de la liste et la préparation du retour fournisseur. Consultation : API `GET /api/tracabilite/rappels?produit=…&lot=…`, même droit que le rappel, sans rien modifier.
+
+Parcours d’une boîte : vue `v_parcours_boite`, API `GET /api/tracabilite/boites/{code}`.

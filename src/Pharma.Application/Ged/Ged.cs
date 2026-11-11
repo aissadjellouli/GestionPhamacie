@@ -31,7 +31,10 @@ public static class TypesGed
 
 public interface IGed
 {
-    /// <summary>Range le document dans le dossier de son type, sans jamais écraser un fichier (nom suivi de « (2) »…) ; renvoie « Type\nom ».</summary>
+    /// <summary>
+    /// Range le document dans le dossier de son type, sous son nom ; renvoie « Type\nom ». Même nom et même contenu : rien n'est ajouté.
+    /// Même nom, contenu différent : la version en place passe, datée, dans le sous-dossier « Versions ». Rien n'est jamais écrasé.
+    /// </summary>
     Task<string> DeposerAsync(string type, string nomFichier, byte[] contenu, CancellationToken ct = default);
 }
 

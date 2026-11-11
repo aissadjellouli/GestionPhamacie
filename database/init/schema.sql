@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 050 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 051 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 050 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 051 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -1185,29 +1185,19 @@ CREATE FUNCTION public.rappel_lot(p_produit_id bigint, p_numero_lot text, p_moti
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    -- Bloquer le lot chez tous les grossistes
-    UPDATE lot SET bloque = true, motif_blocage = p_motif
-    WHERE produit_id = p_produit_id AND numero_lot = p_numero_lot;
-
+    -- Bloquer le lot chez tous les grossistes où il est encore vendable,
+    -- et tracer le blocage des boîtes en stock de ces lots
+    WITH bloques AS (
+        UPDATE lot SET bloque = true, motif_blocage = p_motif
+        WHERE produit_id = p_produit_id AND numero_lot = p_numero_lot AND NOT bloque
+        RETURNING id
+    )
     INSERT INTO boite_evenement (boite_id, type, utilisateur_id, commentaire)
     SELECT b.id, 'blocage', p_utilisateur_id, p_motif
-    FROM boite b JOIN lot l ON l.id = b.lot_id
-    WHERE l.produit_id = p_produit_id AND l.numero_lot = p_numero_lot
-      AND b.statut = 'en_stock';
+    FROM boite b JOIN bloques l ON l.id = b.lot_id
+    WHERE b.statut = 'en_stock';
 
-    -- Ventes du lot : aussi celles d'avant l'étiquetage par boîte
-    RETURN QUERY
-    SELECT COALESCE(NULLIF(btrim(COALESCE(pt.nom, '') || ' ' || COALESCE(pt.prenom, '')), ''),
-                    'Vente anonyme'),
-           pt.telephone, v.date_vente, v.numero, SUM(lv.quantite)::bigint
-    FROM ligne_vente lv
-    JOIN vente v     ON v.id = lv.vente_id
-    JOIN lot l       ON l.id = lv.lot_id
-    LEFT JOIN patient pt ON pt.id = v.patient_id
-    WHERE l.produit_id = p_produit_id AND l.numero_lot = p_numero_lot
-      AND v.statut = 'validee'
-    GROUP BY pt.nom, pt.prenom, pt.telephone, v.date_vente, v.numero
-    ORDER BY v.date_vente DESC;
+    RETURN QUERY SELECT * FROM ventes_lot(p_produit_id, p_numero_lot);
 END;
 $$;
 
@@ -1337,6 +1327,28 @@ BEGIN
     INSERT INTO boite_evenement (boite_id, type, ligne_vente_id, patient_id, utilisateur_id)
     VALUES (p_boite_id, 'vente', p_ligne_vente_id, lv.patient_id, p_utilisateur_id);
 END;
+$$;
+
+
+--
+-- Name: ventes_lot(bigint, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ventes_lot(p_produit_id bigint, p_numero_lot text) RETURNS TABLE(o_patient text, o_telephone text, o_date_vente timestamp with time zone, o_ticket text, o_boites bigint)
+    LANGUAGE sql STABLE
+    AS $$
+    -- Aussi les ventes d'avant l'étiquetage par boîte
+    SELECT COALESCE(NULLIF(btrim(COALESCE(pt.nom, '') || ' ' || COALESCE(pt.prenom, '')), ''),
+                    'Vente anonyme'),
+           pt.telephone, v.date_vente, v.numero, SUM(lv.quantite)::bigint
+    FROM ligne_vente lv
+    JOIN vente v     ON v.id = lv.vente_id
+    JOIN lot l       ON l.id = lv.lot_id
+    LEFT JOIN patient pt ON pt.id = v.patient_id
+    WHERE l.produit_id = p_produit_id AND l.numero_lot = p_numero_lot
+      AND v.statut = 'validee'
+    GROUP BY pt.nom, pt.prenom, pt.telephone, v.date_vente, v.numero
+    ORDER BY v.date_vente DESC;
 $$;
 
 

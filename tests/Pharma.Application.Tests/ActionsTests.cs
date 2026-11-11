@@ -33,6 +33,12 @@ internal sealed class RappelFactice(ResultatRappel? resultat) : IRappelLot
         (LotRecu, MotifRecu) = (numeroLot, motif);
         return Task.FromResult(resultat);
     }
+
+    public Task<ResultatRappel?> ConsulterAsync(long produitId, string numeroLot, CancellationToken ct = default)
+    {
+        LotRecu = numeroLot;
+        return Task.FromResult(resultat);
+    }
 }
 
 public class ActionsTests
@@ -115,5 +121,40 @@ public class ActionsTests
         Assert.Equal(4, r.BoitesVendues);
         Assert.Equal(1, r.PatientsAContacter);
         Assert.Equal(1, r.VentesAnonymes);
+    }
+
+    [Fact]
+    public async Task Rappel_d_un_lot_deja_bloque_partout_refuse()
+    {
+        // LotsBloques = 0 : le dépôt n'a rien bloqué ni écrit, tout était déjà bloqué
+        var rappel = new RappelFactice(new ResultatRappel("Insuline", "G7710", LotsBloques: 0, BoitesEnStock: 3, []));
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => new RappelerLot(rappel).ExecuterAsync(9, "G7710", "rappel labo", 1));
+        Assert.Contains("déjà rappelé", ex.Message);
+        Assert.Contains("G7710", ex.Message);
+    }
+
+    [Fact]
+    public async Task Consultation_d_un_lot_rappele_sans_motif()
+    {
+        var resultat = new ResultatRappel("Insuline", "G7710", LotsBloques: 2, BoitesEnStock: 3,
+            [new VenteARappeler("Patient A", "0550", DateTime.UtcNow, "T-1", 1, Anonyme: false)],
+            LotsNonBloques: 0, RappeleLe: DateTime.UtcNow, Motif: "rappel labo");
+        var rappel = new RappelFactice(resultat);
+
+        var r = await new ConsulterRappelLot(rappel).ExecuterAsync(9, " G7710 ");
+
+        Assert.Equal("G7710", rappel.LotRecu);
+        Assert.True(r.ToutBloque);
+        Assert.Equal(1, r.PatientsAContacter);
+        Assert.False((resultat with { LotsNonBloques = 1 }).ToutBloque);   // livraison encore vendable : le rappel reste possible
+    }
+
+    [Theory]
+    [InlineData(0, "G7710")]
+    [InlineData(9, " ")]
+    public async Task Consultation_incomplete_ou_lot_inconnu_refusee(long produitId, string lot)
+    {
+        await Assert.ThrowsAsync<RegleMetierException>(() => new ConsulterRappelLot(new RappelFactice(null)).ExecuterAsync(produitId, lot));
+        await Assert.ThrowsAsync<RegleMetierException>(() => new ConsulterRappelLot(new RappelFactice(null)).ExecuterAsync(9, "INCONNU"));
     }
 }

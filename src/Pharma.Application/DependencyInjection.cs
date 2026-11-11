@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<ReporterAlerte>();
         services.AddScoped<TraiterAlerte>();
         services.AddScoped<RappelerLot>();
+        services.AddScoped<ConsulterRappelLot>();
         services.AddScoped<ListerMesPermissions>();
         services.AddScoped<Encaisser>();
         services.AddScoped<ObtenirEtatCaisse>();

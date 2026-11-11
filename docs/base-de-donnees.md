@@ -74,6 +74,7 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `048_reprise_corrections.sql` | Reprise de données : classe réglementaire facultative de l'ancien logiciel (`import.produit_src.classe`) ; classe des produits créés = la plus stricte entre la nomenclature et l'ancien logiciel, produit absent de la nomenclature créé « à vérifier » ; prix d'achat par lot (`import.stock_src.prix_achat`) et contrôle de la valeur du stock ; lots de même n° et de dates différentes gardés séparés ; grossiste fictif seulement si nécessaire. |
 | `049_vente_sans_ordonnance.sql` | Droit « Vendre sans ordonnance un médicament de liste I ou II » (`caisse.vendre_sans_ordonnance`) : titulaire et assistant par défaut, réglable dans la matrice des droits ; sans lui, la caisse demande le médecin prescripteur ou l'autorisation par code. Psychotropes et stupéfiants : ordonnance toujours obligatoire. |
 | `050_ged.sql` | GED et sauvegardes : durée de conservation de la copie de la base dans la GED (`parametre_sauvegarde.retention_ged_jours`, 7 jours par défaut) et nettoyage des documents de la GED au-delà d'un nombre d'années (`nettoyage_ged_annees`, vide : jamais). |
+| `051_rappel_lot_deja_bloque.sql` | Rappel de lot : `ventes_lot(produit, lot)` liste les ventes du lot (consultation d'un lot déjà rappelé) ; `rappel_lot` ne bloque plus que les lots encore vendables de ce numéro (motif du premier blocage gardé, pas de second événement de blocage). |
 
 ### Règle permanente : tout script est répliqué dans `init/`
 
@@ -102,7 +103,7 @@ Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dan
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 050, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 051, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

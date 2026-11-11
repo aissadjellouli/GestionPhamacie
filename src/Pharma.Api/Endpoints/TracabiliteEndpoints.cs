@@ -19,6 +19,11 @@ internal static class TracabiliteEndpoints
                 Results.Ok((await rappeler.ExecuterAsync(req.ProduitId, req.NumeroLot, req.Motif, user.UtilisateurId(), ct)).VersDto()))
            .ExigerPermission(Permissions.StockDeclarerPerime);
 
+        // État d'un lot et patients concernés, sans rien bloquer (lot déjà rappelé) : même droit que le rappel
+        api.MapGet("/tracabilite/rappels", async (long produit, string? lot, ConsulterRappelLot consulter, CancellationToken ct) =>
+                Results.Ok((await consulter.ExecuterAsync(produit, lot, ct)).VersDto()))
+           .ExigerPermission(Permissions.StockDeclarerPerime);
+
         api.MapGet("/tracabilite/boites/{code}", async (string code, ConsulterParcoursBoite consulter, CancellationToken ct) =>
                 await consulter.ExecuterAsync(code, ct) is { } parcours
                     ? Results.Ok(parcours.VersDto())

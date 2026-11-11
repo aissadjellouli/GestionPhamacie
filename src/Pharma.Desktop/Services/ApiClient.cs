@@ -611,6 +611,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(RappelLotDto?, string?)> RappelerLotAsync(long produitId, string numeroLot, string motif) =>
         PostAsync<RappelLotRequete, RappelLotDto>("api/tracabilite/rappels", new(produitId, numeroLot, motif));
 
+    /// <summary>État d'un lot (déjà bloqué ou non) et patients concernés, sans rien bloquer.</summary>
+    public Task<(RappelLotDto?, string?)> ConsulterRappelLotAsync(long produitId, string numeroLot) =>
+        GetAsync<RappelLotDto?>($"api/tracabilite/rappels?produit={produitId}&lot={Uri.EscapeDataString(numeroLot.Trim())}", null);
+
     /// <summary>Le 404 n'est pas une erreur ici : il signifie « aucun lot vendable » et liste les lots écartés.</summary>
     /// <summary>Boîte scannée : null si le code ne désigne pas de lot (code-barres du fabricant).</summary>
     public Task<(BoiteCaisseDto?, string?)> BoiteCaisseAsync(string code) => PostAsync<CodeRequete, BoiteCaisseDto>("api/caisse/boite", new(code));

@@ -88,8 +88,14 @@
             </div>
             @* Résultat des actions faites dans la fenêtre (rejet, avoir, suivi) : affiché ici, la liste est masquée derrière *@
             @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
-            @if (message is not null) { <div class="succes" role="status">@message</div> }
-            @{ var cd = Libelles.ContactFacture(r.Destinataire, d.PatientId, d.ClientId, r.OrganismeId); }
+            @if (message is not null)
+            {
+                <div class="succes" role="status" data-champ="confirmation">
+                    @message
+                    @if (pdfOuvert is { } pdf) { <button type="button" class="lien-bouton" @onclick="() => Documents.Ouvrir(pdf)">Ouvrir de nouveau</button> }
+                </div>
+            }
+            @{ var cd =Libelles.ContactFacture(r.Destinataire, d.PatientId, d.ClientId, r.OrganismeId); }
             <p style="margin: 0"><strong><LienContact Type="@cd.Type" Id="cd.Id" Nom="@r.DestinataireNom" /></strong> · @Destinataire(r.Destinataire) · établie le @r.Date.ToString("dd/MM/yyyy")@(r.Echeance is { } ech ? $" · échéance le {ech:dd/MM/yyyy}" : "") · par <LienContact Type="employe" Id="d.EmployeId" Nom="@d.Employe" /></p>
             @if (d.DestinataireInfos is { } inf) { <p class="detail" style="margin: 0; white-space: pre-line">@inf</p> }
             <p style="margin: 0">@Etat(r)</p>
@@ -257,7 +263,10 @@
         (historique, _) = await Api.HistoriqueFactureAsync(id);
     }
 
-    private void FermerDetail() => (detail, erreur, message) = (null, null, null);
+    private void FermerDetail() => (detail, erreur, message, pdfOuvert) = (null, null, null, null);
+
+    /// <summary>Copie locale du dernier PDF ouvert (bouton « Ouvrir » du message de confirmation).</summary>
+    private string? pdfOuvert;
 
     // Fenêtre de la facture : Échap la ferme ; un clic à côté aussi, sauf si un motif ou un montant est en cours de saisie
     private ElementReference fenetre;
@@ -279,7 +288,7 @@
     {
         // Correction ou remplacement : la fenêtre de la facture se ferme, l'éditeur prend sa place dans la page
         detail = null;
-        (mode, origine, erreur, message) = (m, d, null, null);
+        (mode, origine, erreur, message, pdfOuvert) = (m, d, null, null, null);
         cleEditeur++;
     }
 
@@ -301,8 +310,18 @@
     {
         var version = versionVue is { } v && v != d.Resume.Version ? v : (int?)null;
         var (contenu, nom, e) = await Api.FacturePdfAsync(d.Resume.Id, d.Resume.Numero, version);
+        (erreur, message, pdfOuvert) = (null, null, null);
         if (e is not null) { erreur = e; return; }
-        try { var doc = await Documents.RangerAsync(Api, "Factures", nom!, contenu!); Documents.Ouvrir(doc.CheminLocal); erreur = doc.Erreur; }
+        try
+        {
+            var doc = await Documents.RangerAsync(Api, "Factures", nom!, contenu!);
+            Documents.Ouvrir(doc.CheminLocal);
+            // Confirmation visible : la visionneuse PDF peut s'ouvrir derrière le logiciel
+            (pdfOuvert, erreur) = (doc.CheminLocal, doc.Erreur);
+            message = doc.CheminGed is not null
+                ? $"Facture {d.Resume.Numero}{(version is { } n ? $" (version {n})" : "")} enregistrée dans la GED ({doc.CheminGed}) et ouverte."
+                : $"Facture {d.Resume.Numero} ouverte.";
+        }
         catch (Exception ex) { erreur = $"Facture impossible à ouvrir : {ex.Message}"; }
     }
 
@@ -320,7 +339,7 @@
 
     private async Task Agir(Func<Task<string?>> action, string succes)
     {
-        (enCours, erreur, message) = (true, null, null);
+        (enCours, erreur, message, pdfOuvert) = (true, null, null, null);
         var e = await action();
         enCours = false;
         if (e is not null) { erreur = e; return; }

@@ -54,6 +54,7 @@
     <File Path="database/048_reprise_corrections.sql" />
     <File Path="database/049_vente_sans_ordonnance.sql" />
     <File Path="database/050_ged.sql" />
+    <File Path="database/051_rappel_lot_deja_bloque.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

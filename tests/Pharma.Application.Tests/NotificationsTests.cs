@@ -192,6 +192,16 @@ public class NotificationsApplicationTests
     }
 
     [Fact]
+    public async Task Lot_deja_bloque_aucune_nouvelle_alerte()
+    {
+        var depot = new NotificationsEnMemoire { Destinataires = { Dest(1, true, TypeNotification.LotBloque) } };
+        var rappel = new RappelFactice(new ResultatRappel("Insuline glargine", "G7710", 0, 9, []));
+        await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => new RappelerLot(rappel, new AlertesTitulaire(depot, new NotificationService(depot)))
+            .ExecuterAsync(9, "G7710", "rappel labo", 1));
+        Assert.Empty(depot.Ajoutes);
+    }
+
+    [Fact]
     public async Task Ecart_de_caisse_sms_seulement_au_dela_du_seuil()
     {
         var depot = new NotificationsEnMemoire { Destinataires = { Dest(1, true, TypeNotification.EcartCaisse) } };

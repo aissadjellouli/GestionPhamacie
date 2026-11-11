@@ -83,6 +83,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{38
 		database\048_reprise_corrections.sql = database\048_reprise_corrections.sql
 		database\049_vente_sans_ordonnance.sql = database\049_vente_sans_ordonnance.sql
 		database\050_ged.sql = database\050_ged.sql
+		database\051_rappel_lot_deja_bloque.sql = database\051_rappel_lot_deja_bloque.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"

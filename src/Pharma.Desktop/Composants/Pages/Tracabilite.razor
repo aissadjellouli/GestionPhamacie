@@ -85,7 +85,7 @@
                             @foreach (var p in suggestions)
                             {
                                 <li>
-                                    <button type="button" @onclick="() => ChoisirProduit(p.Id, p.NomCommercial)">
+                                    <button type="button" @onclick="() => ChoisirProduitAsync(p.Id, p.NomCommercial)">
                                         <span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage</span></span>
                                     </button>
                                 </li>
@@ -93,15 +93,29 @@
                         </ul>
                     }
                 </div>
-                <div class="champ"><label for="r-lot" class="requis">Numéro de lot</label><input id="r-lot" data-champ="lot_rappel" type="text" @ref="champLot" @bind="numeroLot" @bind:event="oninput" disabled="@etape2"
+                <div class="champ"><label for="r-lot" class="requis">Numéro de lot</label><input id="r-lot" data-champ="lot_rappel" type="text" @ref="champLot" @bind="numeroLot" @bind:event="oninput" @bind:after="LotModifie" @onblur="VerifierLotAsync" disabled="@etape2"
                     class="@Obligatoire.Classe(LotManquant)" aria-invalid="@Obligatoire.Aria(LotManquant)" /></div>
-                <div class="champ"><label for="r-motif" class="requis">Motif</label><input id="r-motif" data-champ="motif_rappel" type="text" @ref="champMotif" @bind="motif" @bind:event="oninput" disabled="@etape2"
+                <div class="champ"><label for="r-motif" class="requis">Motif</label><input id="r-motif" data-champ="motif_rappel" type="text" @ref="champMotif" @bind="motif" @bind:event="oninput" disabled="@(etape2 || DejaRappele is not null)"
                     class="@Obligatoire.Classe(MotifManquant)" aria-invalid="@Obligatoire.Aria(MotifManquant)" placeholder="Ex. rappel du laboratoire, suspicion de contrefaçon" /></div>
 
                 @if (erreurRappel is not null) { <div class="erreur" role="alert">@erreurRappel</div> }
 
-                @if (!etape2)
+                @if (DejaRappele is { } deja)
                 {
+                    <div class="confirmation-rappel" role="status" data-champ="lot_deja_rappele">
+                        <strong>@TitreDejaRappele(deja)</strong>
+                        <span>Il est bloqué chez tous les grossistes : rien n’est à rebloquer.@(deja.Motif is { } m ? $" Motif : {m}." : "")</span>
+                    </div>
+                    <button type="button" class="btn btn-principal" @onclick="VoirPatients">Voir les patients concernés</button>
+                }
+                else if (!etape2)
+                {
+                    @if (etatLot is { LotsBloques: > 0, LotsNonBloques: > 0 } partiel)
+                    {
+                        <span class="sous-titre" style="font-size: 13px">
+                            Lot déjà bloqué pour une partie des livraisons : le rappel bloquera @(partiel.LotsNonBloques == 1 ? "le lot encore vendable" : $"les {partiel.LotsNonBloques} lots encore vendables").
+                        </span>
+                    }
                     <button type="button" class="btn btn-danger" @onclick="Preparer">
                         Bloquer le lot et lister les patients
                     </button>
@@ -121,7 +135,15 @@
             else
             {
                 <div class="confirmation-rappel" role="status">
-                    <strong>Lot @rappel.NumeroLot bloqué chez tous les grossistes</strong>
+                    @if (consultation)
+                    {
+                        <strong>@TitreDejaRappele(rappel) : bloqué chez tous les grossistes</strong>
+                        @if (rappel.Motif is { } m) { <span>Motif : @m</span> }
+                    }
+                    else
+                    {
+                        <strong>Lot @rappel.NumeroLot bloqué chez tous les grossistes</strong>
+                    }
                     <span>@ResumeRappel(rappel)</span>
                     @if (rappel.Emplacements is not null)
                     {
@@ -183,6 +205,11 @@
     private string? erreurRappel;
     private RappelLotDto? rappel;
     private string? fichierExporte;
+    /// <summary>État du lot saisi (null : pas encore vérifié, ou lot inconnu).</summary>
+    private RappelLotDto? etatLot;
+    /// <summary>Liste affichée par consultation d'un lot déjà rappelé (rien n'a été bloqué).</summary>
+    private bool consultation;
+    private RappelLotDto? DejaRappele => etatLot is { ToutBloque: true } e ? e : null;
 
     private sealed record Etape(string Titre, string? Detail);
 
@@ -198,24 +225,47 @@
         // Le rappel se prépare souvent depuis la boîte scannée
         if (parcours is not null && rappel is null && !etape2)
         {
-            ChoisirProduit(parcours.ProduitId, parcours.Produit);
             numeroLot = parcours.NumeroLot;
+            await ChoisirProduitAsync(parcours.ProduitId, parcours.Produit);
         }
     }
 
     private async Task RechercherProduitAsync()
     {
         produitId = 0;
+        etatLot = null;
         var numero = ++requete;
         if (produitTexte.Trim().Length < 2) { suggestions = []; return; }
         var (trouves, _) = await Api.RechercherProduitsAsync(produitTexte);
         if (numero == requete) suggestions = trouves;
     }
 
-    private void ChoisirProduit(long id, string nom)
+    private async Task ChoisirProduitAsync(long id, string nom)
     {
         (produitId, produitNom, produitTexte, suggestions) = (id, nom, nom, []);
+        await VerifierLotAsync();
     }
+
+    private void LotModifie() => etatLot = null;
+
+    /// <summary>Lot déjà rappelé ? Vérifié dès que le produit et le numéro sont connus, sans rien bloquer.</summary>
+    private async Task VerifierLotAsync()
+    {
+        etatLot = null;
+        if (produitId <= 0 || string.IsNullOrWhiteSpace(numeroLot)) return;
+        var (lot, verifie) = (numeroLot, produitId);
+        var (etat, _) = await Api.ConsulterRappelLotAsync(produitId, numeroLot);
+        if (lot == numeroLot && verifie == produitId) etatLot = etat;   // saisie changée pendant l'appel : réponse ignorée
+    }
+
+    private void VoirPatients()
+    {
+        if (DejaRappele is not { } deja) return;
+        (rappel, consultation, fichierExporte, erreurRappel) = (deja, true, null, null);
+    }
+
+    private static string TitreDejaRappele(RappelLotDto r) =>
+        $"Lot {r.NumeroLot} déjà rappelé{(r.RappeleLe is { } le ? $" le {Libelles.DateLocale(le)}" : "")}";
 
     // Champs obligatoires du rappel : produit choisi dans la liste, numéro de lot, motif
     private bool controleRappel;
@@ -227,6 +277,12 @@
     private async Task Preparer()
     {
         controleRappel = true;
+        // Lot déjà rappelé : pas de motif ni de blocage, la consultation est proposée
+        if (!ProduitManquant && !LotManquant)
+        {
+            await VerifierLotAsync();
+            if (DejaRappele is not null) { (erreurRappel, controleRappel) = (null, false); return; }
+        }
         erreurRappel = ProduitManquant ? "Choisissez le produit dans la liste proposée."
             : LotManquant ? "Indiquez le numéro de lot rappelé."
             : MotifManquant ? "Indiquez le motif du rappel (il est inscrit au journal)."
@@ -243,6 +299,9 @@
         (rappel, erreurRappel) = await Api.RappelerLotAsync(produitId, numeroLot.Trim(), motif.Trim());
         enCours = false;
         etape2 = false;
+        consultation = false;
+        // Rappelé entre-temps depuis un autre poste : la consultation remplace le blocage
+        if (rappel is null) await VerifierLotAsync();
         if (rappel is not null && parcours is not null && parcours.NumeroLot == rappel.NumeroLot)
             (parcours, erreur) = await Api.ParcoursBoiteAsync(code);   // affiche « Lot bloqué » et l'étape de blocage
     }
@@ -256,7 +315,7 @@
 
     private void NouveauRappel()
     {
-        (rappel, fichierExporte, erreurRappel, etape2, controleRappel) = (null, null, null, false, false);
+        (rappel, fichierExporte, erreurRappel, etape2, controleRappel, etatLot, consultation) = (null, null, null, false, false, null, false);
         (produitTexte, produitId, produitNom, numeroLot, motif) = ("", 0, "", "", "");
     }
 

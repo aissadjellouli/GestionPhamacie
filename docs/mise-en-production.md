@@ -47,7 +47,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `050`. |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `051`. |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -84,7 +84,9 @@ Le dossier `database/init/` contient trois fichiers :
   - `Ged__Dossier` : la GED, dossier unique de tous les documents (par défaut `C:\ProgramData\PharmaOfficine\GED`) :
     `Ordonnances` (scans), `Chifa` (copie des fichiers Chifa lus), `Sauvegardes` (copie de la base), et les documents produits
     par les postes, un sous-dossier par type (`Factures`, `Rapports`, `Clotures`, `Registre`, `Commandes`, `Retours`, `Etiquettes`,
-    `Inventaires`, `Credits`). Les postes envoient leurs documents au serveur. Les documents de la GED sont gardés ; un nettoyage
+    `Inventaires`, `Credits`). Les postes envoient leurs documents au serveur. Un document réexporté à l'identique n'est pas
+    ajouté ; s'il a changé, la dernière version garde le nom simple et la précédente passe, datée, dans le sous-dossier `Versions`
+    du type (ex. `Factures\Versions\F-2026-0021 2026-11-11 14h47.pdf`). Les documents de la GED sont gardés ; un nettoyage
     au-delà d'un nombre d'années se règle dans Administration › Sauvegardes (vide : jamais) ;
   - `Ged__RetentionSauvegardesJours` : jours de conservation de la copie de la base dans `GED\Sauvegardes` (7 par défaut,
     modifiable aussi dans Administration › Sauvegardes) ;

@@ -65,7 +65,12 @@ public sealed record RappelLotRequete(long ProduitId, string NumeroLot, string M
 public sealed record VenteARappelerDto(string Patient, string? Telephone, DateTime DateVente, string Ticket, int Boites, bool Anonyme);
 public sealed record RappelLotDto(
     string Produit, string NumeroLot, int LotsBloques, int BoitesEnStock, int BoitesVendues,
-    int PatientsAContacter, int VentesAnonymes, IReadOnlyList<VenteARappelerDto> Ventes, string? Emplacements = null);
+    int PatientsAContacter, int VentesAnonymes, IReadOnlyList<VenteARappelerDto> Ventes, string? Emplacements = null,
+    int LotsNonBloques = 0, DateTime? RappeleLe = null, string? Motif = null)
+{
+    /// <summary>Lot bloqué chez tous les grossistes : rien à rebloquer, consultation seulement.</summary>
+    public bool ToutBloque => LotsBloques > 0 && LotsNonBloques == 0;
+}
 
 public sealed record EtapeParcoursDto(string Type, DateTime Date, string? Commentaire);
 
