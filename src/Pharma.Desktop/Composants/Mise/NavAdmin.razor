@@ -1,6 +1,8 @@
 @inject SessionPoste Session
 
 @* Menu latéral de l'administration : chaque rubrique selon le droit de l'employé *@
+@if (!Session.SuperAdmin)
+{
 <nav class="admin-nav" aria-label="Rubriques d’administration">
     @foreach (var r in Rubriques)
     {
@@ -10,7 +12,7 @@
         }
         else if (!Session.A(r.Permission!))
         {
-            <span class="nav-inactif" aria-disabled="true" title="@(r.Permission == "role.titulaire" ? "Réservé au pharmacien titulaire" : $"Droit « {r.Permission} » nécessaire")">@r.Libelle</span>
+            <span class="nav-inactif" aria-disabled="true" title="@(r.Permission switch { "role.titulaire" => "Réservé au pharmacien titulaire", "role.super_admin" => "Réservé au super admin (connexion super admin)", _ => $"Droit « {r.Permission} » nécessaire" })">@r.Libelle</span>
         }
         else
         {
@@ -18,6 +20,7 @@
         }
     }
 </nav>
+}
 
 @code {
     /// <summary>Lien de la rubrique affichée (ex. « admin/seuils »).</summary>
@@ -35,7 +38,7 @@
         ("admin/pharmacie", "admin.parametres"),
         ("admin/notifications", "role.titulaire"),
         ("admin/sauvegardes", "admin.sauvegardes"),
-        ("admin/reprise", "role.titulaire"),
+        ("admin/reprise", "role.super_admin"),
         ("admin/nomenclature", "role.titulaire")
     ];
 
@@ -48,7 +51,7 @@
         new("Imprimantes et étiquettes", "admin/imprimantes", "admin.parametres"),
         new("Sauvegardes", "admin/sauvegardes", "admin.sauvegardes"),
         new("Notifications au titulaire", "admin/notifications", "role.titulaire"),
-        new("Reprise de données", "admin/reprise", "role.titulaire"),
+        new("Reprise de données", "admin/reprise", "role.super_admin"),
         new("Nomenclature nationale", "admin/nomenclature", "role.titulaire"),
         new("Langue et pharmacie", "admin/pharmacie", "admin.parametres")
     ];

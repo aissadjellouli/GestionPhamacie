@@ -82,6 +82,25 @@ public static partial class RegleDestinataire
     public static string NormaliserTelephone(string telephone) =>
         new string(telephone.Where(c => char.IsAsciiDigit(c) || c == '+').ToArray());
 
+    /// <summary>Numéro de mobile algérien valide (après normalisation).</summary>
+    public static bool EstMobile(string? telephone) => telephone is not null && FormatMobile().IsMatch(NormaliserTelephone(telephone));
+
+    public static bool EstEmail(string? email) => email is not null && FormatEmail().IsMatch(email.Trim());
+
+    /// <summary>« 0661234512 » devient « 06•••••512 » : le numéro n'est jamais affiché en entier.</summary>
+    public static string MasquerTelephone(string telephone)
+    {
+        var t = NormaliserTelephone(telephone);
+        return t.Length <= 5 ? new string('•', t.Length) : t[..2] + new string('•', t.Length - 5) + t[^3..];
+    }
+
+    /// <summary>« titulaire@exemple.dz » devient « t•••@exemple.dz ».</summary>
+    public static string MasquerEmail(string email)
+    {
+        var at = email.IndexOf('@');
+        return at <= 1 ? "•••" + email[Math.Max(at, 0)..] : email[0] + "•••" + email[at..];
+    }
+
     public static void Verifier(string? nom, string? email, string? telephone, bool canalEmail, bool canalSms, IReadOnlyCollection<TypeNotification> types)
     {
         if (string.IsNullOrWhiteSpace(nom))

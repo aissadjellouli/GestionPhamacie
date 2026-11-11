@@ -10,7 +10,7 @@
         <p class="sous-titre">Chaque employé se connecte avec son propre identifiant.</p>
     </div>
 
-    @if (caisseOuverte)
+    @if (caisseOuverte && !superAdmin)
     {
         <div class="onglets-connexion" role="tablist" aria-label="Mode de connexion">
             <button type="button" role="tab" aria-selected="@(parCode ? "true" : "false")" class="@(parCode ? "actif" : null)" @onclick="() => Basculer(true)">Code comptoir</button>
@@ -18,7 +18,27 @@
         </div>
     }
 
-    @if (parCode)
+    @if (superAdmin)
+    {
+        <form class="carte" @onsubmit="SeConnecterSuperAdminAsync">
+            <h2 style="margin: 0">Super admin</h2>
+            <p class="sous-titre" style="margin: 0">Restauration et reprise de données seulement. Chaque action demande en plus un code reçu sur le téléphone du super admin.</p>
+            <div class="champ">
+                <label for="sa-identifiant" class="requis">Identifiant</label>
+                <input id="sa-identifiant" type="text" autocomplete="username" autofocus @bind="identifiant" @bind:event="oninput"
+                       class="@Obligatoire.Classe(IdentifiantManque)" aria-invalid="@Obligatoire.Aria(IdentifiantManque)" />
+            </div>
+            <div class="champ">
+                <label for="sa-mdp" class="requis">Mot de passe</label>
+                <input id="sa-mdp" type="password" autocomplete="current-password" @bind="motDePasse" @bind:event="oninput"
+                       class="@Obligatoire.Classe(MotDePasseManque)" aria-invalid="@Obligatoire.Aria(MotDePasseManque)" />
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            <button class="btn btn-principal" type="submit" disabled="@enCours">Se connecter</button>
+            <button type="button" class="lien-bouton" @onclick="() => BasculerSuperAdmin(false)">Retour à la connexion des employés</button>
+        </form>
+    }
+    else if (parCode)
     {
         <form class="carte" @onsubmit="SeConnecterParCodeAsync">
             <p class="sous-titre" style="margin: 0">La caisse du poste reste ouverte : tapez votre identifiant et votre code.</p>
@@ -57,6 +77,11 @@
             <button class="btn btn-principal" type="submit" disabled="@enCours">Se connecter</button>
         </form>
     }
+
+    @if (!superAdmin)
+    {
+        <button type="button" class="lien-bouton" style="align-self: center; font-size: 13px" @onclick="() => BasculerSuperAdmin(true)">Connexion super admin</button>
+    }
 </div>
 
 @code {
@@ -88,6 +113,26 @@
     private void Basculer(bool versCode)
     {
         (parCode, erreur, controle) = (versCode, null, false);
+    }
+
+    // Compte super admin (restauration, reprise de données) : formulaire à part
+    private bool superAdmin;
+
+    private void BasculerSuperAdmin(bool versSuperAdmin)
+    {
+        (superAdmin, erreur, controle, motDePasse) = (versSuperAdmin, null, false, "");
+        if (!versSuperAdmin) parCode = caisseOuverte;
+    }
+
+    private async Task SeConnecterSuperAdminAsync()
+    {
+        controle = true;
+        if (IdentifiantManque || MotDePasseManque) { erreur = "Saisissez l’identifiant et le mot de passe du super admin."; return; }
+        enCours = true;
+        erreur = await Api.ConnecterSuperAdminAsync(identifiant, motDePasse);
+        enCours = false;
+        motDePasse = "";
+        if (erreur is null) Nav.NavigateTo("admin/reprise");
     }
 
     private async Task SeConnecterParCodeAsync()

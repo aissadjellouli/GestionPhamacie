@@ -441,7 +441,15 @@ public sealed record ScanRepriseDto(string Pilote, string? Version, IReadOnlyLis
 public sealed record CorrespondanceTableDto(string Cible, string Table, IReadOnlyDictionary<string, string> Colonnes);
 public sealed record ExtractionRepriseRequete(string ChaineConnexion, string Logiciel, IReadOnlyList<CorrespondanceTableDto> Correspondances);
 public sealed record ExtractionRepriseDto(long SessionId, IReadOnlyDictionary<string, int> Lignes, int Doublons, int Bloquants);
-public sealed record SessionRepriseDto(long Id, string Logiciel, DateTime Debut, string Statut);
+/// <summary>LancePar : qui a lancé l'extraction ; ChargeLe, ChargePar : chargement définitif (date et auteur).</summary>
+public sealed record SessionRepriseDto(long Id, string Logiciel, DateTime Debut, string Statut, string? LancePar = null, DateTime? ChargeLe = null, string? ChargePar = null);
+
+// ---- Super admin ----
+/// <summary>Avant une action sensible : action prévue et mot de passe ressaisi ; un code part sur le téléphone du super admin.</summary>
+public sealed record ValidationSuperAdminRequete(string Action, string MotDePasse);
+/// <summary>Code envoyé : par quel canal, à quel destinataire (masqué), jusqu'à quand.</summary>
+public sealed record DemandeValidationDto(Guid Id, string Canal, string Destinataire, DateTime ExpireLe);
+public sealed record CompteSuperAdminDto(string Identifiant, string Telephone, string Email);
 public sealed record ProduitAConfirmerDto(string RefSource, string Nom, string? Dosage, string? CodeBarre, long? ProduitPropose, string? NomPropose, decimal? Score);
 public sealed record AnomalieRepriseDto(string Entite, string? RefSource, string Gravite, string Message);
 public sealed record VerificationRepriseDto(string Indicateur, decimal Ancien, decimal Nouveau, decimal Ecart);

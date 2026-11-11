@@ -15,7 +15,18 @@
                 <span class="marque-poste">@SousTitre</span>
             </div>
         </div>
-        @if (Session.EstConnecte)
+        @if (Session.EstConnecte && Session.SuperAdmin)
+        {
+            @* Super admin : ses seuls écrans ; aucun écran des employés *@
+            <nav class="nav" aria-label="Navigation du super admin">
+                <a href="admin/reprise" class="@Actif("admin/reprise")" aria-current="@Courant("admin/reprise")">Reprise de données</a>
+            </nav>
+            <div class="utilisateur">
+                <span>Connecté : @Session.NomComplet</span>
+                <button type="button" class="lien-bouton" @onclick="SeDeconnecter">Se déconnecter</button>
+            </div>
+        }
+        else if (Session.EstConnecte)
         {
             <nav class="nav" aria-label="Navigation principale">
                 <a href="caisse" class="@Actif("caisse", "cloture")" aria-current="@Courant("caisse", "cloture")">Caisse</a>
@@ -144,7 +155,7 @@
 
     private async Task CompterUrgentesAsync()
     {
-        if (!Session.EstConnecte) { urgentes = 0; return; }
+        if (!Session.EstConnecte || Session.SuperAdmin) { urgentes = 0; return; }
         var (compte, erreur) = await Api.AlertesUrgentesAsync();
         urgentes = erreur is null ? compte?.Nombre ?? 0 : 0;
     }
@@ -181,14 +192,24 @@
         .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))
     ];
     private string? messageAcces;
+    private static readonly string[] EcransSuperAdmin = ["admin/reprise"];
 
     private bool VerifierAcces()
     {
         if (!Session.EstConnecte || EstPageConnexion) return true;
+        // Super admin : seulement ses écrans
+        if (Session.SuperAdmin)
+        {
+            if (EcransSuperAdmin.Contains(Chemin)) return true;
+            Nav.NavigateTo(EcransSuperAdmin[0], replace: true);
+            return false;
+        }
         var (chemin, droits) = EcransReserves.FirstOrDefault(e => Chemin == e.Chemin || Chemin.StartsWith(e.Chemin + "/", StringComparison.Ordinal));
         if (chemin is null || droits.Any(Session.A)) return true;
         messageAcces = droits.All(d => d == "role.titulaire")
             ? "Écran réservé au pharmacien titulaire."
+            : droits.All(d => d == "role.super_admin")
+            ? "Écran réservé au super admin (bouton « Connexion super admin » de l’écran de connexion)."
             : $"Écran réservé : le droit « {string.Join(" » ou « ", droits.Select(Libelles.Droit))} » est nécessaire. Demandez-le au titulaire.";
         Nav.NavigateTo("", replace: true);
         return false;
@@ -207,7 +228,7 @@
     private async void SurSession()
     {
         // Documents de l'ancien dossier du poste (ou restés au poste, serveur injoignable) : envoyés à la GED du serveur
-        if (Session.EstConnecte && !Session.DoitChangerMotDePasse) _ = Documents.MigrerAsync(Api);
+        if (Session.EstConnecte && !Session.DoitChangerMotDePasse && !Session.SuperAdmin) _ = Documents.MigrerAsync(Api);
         await CompterUrgentesAsync();
         await InvokeAsync(async () => { await AppliquerAffichageAsync(); StateHasChanged(); });
     }

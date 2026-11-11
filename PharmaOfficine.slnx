@@ -55,6 +55,7 @@
     <File Path="database/049_vente_sans_ordonnance.sql" />
     <File Path="database/050_ged.sql" />
     <File Path="database/051_rappel_lot_deja_bloque.sql" />
+    <File Path="database/052_reprise_super_admin.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -71,6 +72,7 @@
   <Folder Name="/scripts/">
     <File Path="scripts/certificat_mobile.ps1" />
     <File Path="scripts/initialiser_base_locale.ps1" />
+    <File Path="scripts/restaurer_pharmacie.ps1" />
     <File Path="scripts/sauvegarde_pharmacie.ps1" />
   </Folder>
   <Folder Name="/src/">

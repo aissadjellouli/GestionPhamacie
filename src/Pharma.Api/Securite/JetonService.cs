@@ -30,6 +30,14 @@ public sealed class JetonService(IConfiguration config) : IGenerateurJeton
                 + $"avec une clé aléatoire d'au moins {LongueurMinCle} caractères, propre à la pharmacie (docs/mise-en-production.md).");
     }
 
+    /// <summary>Durée de la session du super admin : courte, chaque action demande en plus un code.</summary>
+    public static readonly TimeSpan DureeSuperAdmin = TimeSpan.FromHours(1);
+
+    /// <summary>Jeton du super admin : aucun employé (identifiant 0), revendication super_admin.</summary>
+    public (string Jeton, DateTime ExpireLe) CreerSuperAdmin(string identifiant) =>
+        Signer([new(ClaimTypes.NameIdentifier, "0"), new(ClaimTypes.Name, $"Super admin ({identifiant})"), new(SuperAdminSecurite.Revendication, identifiant)],
+            DateTime.UtcNow.Add(DureeSuperAdmin));
+
     public (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false)
     {
         var expire = DateTime.UtcNow.AddHours(config.GetValue("Jwt:DureeHeures", 12));
@@ -42,6 +50,11 @@ public sealed class JetonService(IConfiguration config) : IGenerateurJeton
         if (comptoir) revendications.Add(new Claim(CodeComptoir.Revendication, CodeComptoir.Portee));
         // Mot de passe provisoire : aucun droit tant qu'il n'est pas changé (PermissionsComptoir, PermissionFilter)
         if (motDePasseAChanger) revendications.Add(new Claim(RegleMotDePasse.Revendication, RegleMotDePasse.AChanger));
+        return Signer(revendications, expire);
+    }
+
+    private (string Jeton, DateTime ExpireLe) Signer(List<Claim> revendications, DateTime expire)
+    {
         var descripteur = new SecurityTokenDescriptor
         {
             Issuer = config["Jwt:Emetteur"],

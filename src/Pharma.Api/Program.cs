@@ -58,8 +58,10 @@ builder.Services.AddInfrastructure(new InfrastructureOptions(
     dossierChifa,
     dossierOrdonnances,
     builder.Configuration["Sauvegardes:PgDump"],
-    ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa)));
-builder.Services.AddSingleton<IGenerateurJeton, JetonService>();
+    ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa),
+    builder.Configuration["SuperAdmin:Fichier"]));
+builder.Services.AddSingleton<JetonService>();
+builder.Services.AddSingleton<IGenerateurJeton>(sp => sp.GetRequiredService<JetonService>());
 // Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Pharma.Infrastructure.Securite.PermissionService>();
@@ -84,6 +86,10 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+// Création ou modification du compte super admin sur le PC serveur : Pharma.Api.exe --super-admin (le serveur ne démarre pas)
+if (args.Contains(ConsoleSuperAdmin.Argument))
+    return await ConsoleSuperAdmin.ExecuterAsync(app.Services);
 
 // Règles métier et refus de la base (déclencheurs) renvoyés au poste avec un message clair
 app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
@@ -134,5 +140,6 @@ app.UseAuthorization();
 app.MapPharmaEndpoints();
 
 app.Run();
+return 0;
 
 public partial class Program;

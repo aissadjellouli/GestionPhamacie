@@ -11,6 +11,7 @@ public static class PharmaEndpoints
         // Toutes les routes : refus prévus (règle métier, droit) renvoyés au poste sans être traités comme des pannes
         var racine = app.MapGroup("").GererErreursMetier();
         racine.MapAuth();
+        racine.MapSuperAdmin();
 
         var api = racine.MapGroup("/api");
         api.MapCatalogue();

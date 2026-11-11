@@ -25,8 +25,9 @@ using Pharma.Infrastructure.Tracabilite;
 namespace Pharma.Infrastructure;
 
 /// <summary>DossierArchiveChifa : copie des fichiers Chifa lus (GED\Chifa).</summary>
+/// <param name="FichierSuperAdmin">Fichier chiffré du compte super admin (vide : C:\ProgramData\PharmaOfficine\super-admin.dat).</param>
 public sealed record InfrastructureOptions(string ChaineConnexion, string DossierExportChifa, string DossierOrdonnances, string? CheminPgDump = null,
-    string? DossierArchiveChifa = null);
+    string? DossierArchiveChifa = null, string? FichierSuperAdmin = null);
 
 public static class DependencyInjection
 {
@@ -119,6 +120,11 @@ public static class DependencyInjection
         services.AddSingleton<Application.Notifications.IProtectionSecret, Notifications.ProtectionDpapi>();
         services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();
         services.AddSingleton<Application.Notifications.IEnvoiSms, Notifications.EnvoiSmsModemGsm>();
+        services.AddSingleton<Application.SuperAdmin.ICompteSuperAdmin>(new Securite.CompteSuperAdminFichier(
+            string.IsNullOrWhiteSpace(options.FichierSuperAdmin)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "super-admin.dat")
+                : options.FichierSuperAdmin));
+        services.AddScoped<Application.SuperAdmin.ITitulaireLecture, Securite.TitulaireLecture>();
         services.AddScoped<Application.Sauvegardes.ISauvegardesDepot, Sauvegardes.SauvegardesSql>();
         services.AddSingleton<Application.Ged.IGed, Ged.GedFichiers>();
         services.AddSingleton<Application.Sauvegardes.IStockageSauvegarde>(new Sauvegardes.StockagePgDump(options.ChaineConnexion, options.CheminPgDump));

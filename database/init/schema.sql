@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 051 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 052 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 051 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 052 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -1602,6 +1602,9 @@ CREATE TABLE import.session (
     debut timestamp with time zone DEFAULT now() NOT NULL,
     statut text DEFAULT 'en_cours'::text NOT NULL,
     notes text,
+    lance_par text,
+    charge_le timestamp with time zone,
+    charge_par text,
     CONSTRAINT session_statut_check CHECK ((statut = ANY (ARRAY['en_cours'::text, 'charge'::text, 'annule'::text])))
 );
 

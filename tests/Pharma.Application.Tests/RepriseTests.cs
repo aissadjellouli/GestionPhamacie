@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Pharma.Application.Commun;
 using Pharma.Application.Reprise;
+using Pharma.Application.SuperAdmin;
 using Pharma.Domain.Commun;
 using Pharma.Domain.Reprise;
 
@@ -30,7 +31,9 @@ internal sealed class SourceRepriseFactice : ISourceReprise
 internal sealed class RepriseEnMemoire : IRepriseImport
 {
     public List<(CibleReprise Cible, IReadOnlyList<string> Champs, int Lignes)> Inserts { get; } = [];
-    public Task<long> CreerSessionAsync(string logiciel, CancellationToken ct = default) => Task.FromResult(7L);
+    public string? LancePar { get; private set; }
+    public (long Utilisateur, string Par)? Charge { get; private set; }
+    public Task<long> CreerSessionAsync(string logiciel, string lancePar, CancellationToken ct = default) { LancePar = lancePar; return Task.FromResult(7L); }
     public async Task<(int Inserees, int Doublons)> InsererAsync(long session, CibleReprise cible, IReadOnlyList<string> champs, IAsyncEnumerable<string?[]> lignes, CancellationToken ct = default)
     {
         var n = 0;
@@ -41,20 +44,28 @@ internal sealed class RepriseEnMemoire : IRepriseImport
     public Task<int> RapprocherEtControlerAsync(long session, CancellationToken ct = default) => Task.FromResult(3);
     public Task<int> ControlerAsync(long session, CancellationToken ct = default) => Task.FromResult(0);
     public Task<IReadOnlyList<SessionReprise>> SessionsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<SessionReprise>>([]);
-    public Task<EtatReprise?> EtatAsync(long session, CancellationToken ct = default) => Task.FromResult<EtatReprise?>(null);
+    // Après chargement : état minimal (relu par ChargerReprise pour le journal)
+    public Task<EtatReprise?> EtatAsync(long session, CancellationToken ct = default) => Task.FromResult(Charge is { } c
+        ? new EtatReprise(new SessionReprise(session, "Ancien 3.2", DateTime.UtcNow, "charge", LancePar, DateTime.UtcNow, c.Par), new Dictionary<string, int>(), new Dictionary<string, int>(), [], [], [])
+        : null);
     public Task DeciderAsync(long session, string refSource, DecisionProduit decision, long? produitId, CancellationToken ct = default) => Task.CompletedTask;
-    public Task ChargerAsync(long session, long utilisateurId, CancellationToken ct = default) => Task.CompletedTask;
+    public Task ChargerAsync(long session, long utilisateurId, string chargePar, CancellationToken ct = default) { Charge = (utilisateurId, chargePar); return Task.CompletedTask; }
     public Task AnnulerAsync(long session, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 public class RepriseTests
 {
-    private static DroitsFactices Titulaire() => new() { Titulaire = true };
+    /// <summary>Super admin connecté, avec la validation par code de l'action donnée (ou sans validation).</summary>
+    private static SuperAdminCourant SuperAdmin(string? validee = null) => new()
+    {
+        Identifiant = "admin.pharma",
+        Validation = validee is null ? null : new ValidationAcceptee(validee, "SMS", "06•••••512")
+    };
 
     [Fact]
     public async Task Scan_masque_les_donnees_des_patients_mais_propose_sur_les_vraies_valeurs()
     {
-        var r = await new ScannerSourceReprise(new SourceRepriseFactice(), Titulaire()).ExecuterAsync("DSN=Ancien;", 1);
+        var r = await new ScannerSourceReprise(new SourceRepriseFactice(), SuperAdmin()).ExecuterAsync("DSN=Ancien;", 1);
         var clients = r.Tables.Single(t => t.Nom == "CLIENTS");
         Assert.Equal([ScannerSourceReprise.Masque], clients.Colonnes.Single(c => c.Nom == "NOM").Exemples);
         Assert.Equal([ScannerSourceReprise.Masque], clients.Colonnes.Single(c => c.Nom == "TEL").Exemples);
@@ -63,20 +74,25 @@ public class RepriseTests
     }
 
     [Fact]
-    public async Task Reserve_au_titulaire()
+    public async Task Reserve_au_super_admin_et_action_validee_par_code()
     {
+        // Employé (même titulaire) : pas de super admin connecté
         await Assert.ThrowsAsync<DroitRefuseException>(() =>
-            new ScannerSourceReprise(new SourceRepriseFactice(), new DroitsFactices("admin.parametres")).ExecuterAsync("DSN=Ancien;", 2));
+            new ScannerSourceReprise(new SourceRepriseFactice(), new SuperAdminCourant()).ExecuterAsync("DSN=Ancien;", 2));
+        // Super admin sans code validé, ou code validé pour une autre action
+        var import = new RepriseEnMemoire();
         await Assert.ThrowsAsync<DroitRefuseException>(() =>
-            new ExtraireReprise(new SourceRepriseFactice(), new RepriseEnMemoire(), new DroitsFactices("admin.parametres"), new JournalEspion())
-                .ExecuterAsync("DSN=Ancien;", "Ancien 3.2", [], 2));
+            new ExtraireReprise(new SourceRepriseFactice(), import, SuperAdmin(), new JournalEspion()).ExecuterAsync("DSN=Ancien;", "Ancien 3.2", [], 2));
+        await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            new ChargerReprise(import, SuperAdmin(ActionsSuperAdmin.RepriseExtraire), new JournalEspion()).ExecuterAsync(7, 2));
+        Assert.Null(import.Charge);
     }
 
     [Fact]
     public async Task Extraction_lit_les_colonnes_choisies_et_journalise()
     {
         var (source, import, journal) = (new SourceRepriseFactice(), new RepriseEnMemoire(), new JournalEspion());
-        var r = await new ExtraireReprise(source, import, Titulaire(), journal).ExecuterAsync("DSN=Ancien;", "Ancien 3.2",
+        var r = await new ExtraireReprise(source, import, SuperAdmin(ActionsSuperAdmin.RepriseExtraire), journal).ExecuterAsync("DSN=Ancien;", "Ancien 3.2",
             [new(CibleReprise.Produits, "ARTICLES", new Dictionary<string, string> { ["ref_source"] = "CODE_ART", ["nom"] = "DESIGNATION", ["code_barre"] = "CB" })], 1);
 
         Assert.Equal((7L, 1, 3), (r.SessionId, r.Lignes[CibleReprise.Produits], r.Bloquants));
@@ -84,12 +100,26 @@ public class RepriseTests
         Assert.Equal(["CODE_ART", "DESIGNATION", "CB"], source.Lectures[0].Colonnes);
         Assert.Equal(["ref_source", "nom", "code_barre"], import.Inserts[0].Champs);
         Assert.Equal(["reprise_extraction"], journal.Actions);
+        Assert.Equal("super admin admin.pharma", import.LancePar);
+        Assert.Equal("admin.pharma", journal.Details[0]["super_admin"]);
+        Assert.Equal("code envoyé par SMS au 06•••••512", journal.Details[0]["validation"]);
+    }
+
+    [Fact]
+    public async Task Chargement_attribue_au_titulaire_et_trace_le_super_admin()
+    {
+        var (import, journal) = (new RepriseEnMemoire(), new JournalEspion());
+        await new ChargerReprise(import, SuperAdmin(ActionsSuperAdmin.RepriseCharger), journal).ExecuterAsync(7, utilisateurId: 1);
+
+        Assert.Equal((1L, "super admin admin.pharma"), import.Charge);   // 1 : identifiant du titulaire passé par l'API
+        Assert.Equal(["reprise_chargement"], journal.Actions);
+        Assert.Equal("admin.pharma", journal.Details[0]["super_admin"]);
     }
 
     [Fact]
     public async Task Extraction_refusee_sans_produits_ou_sans_colonne_obligatoire()
     {
-        var cas = new ExtraireReprise(new SourceRepriseFactice(), new RepriseEnMemoire(), Titulaire(), new JournalEspion());
+        var cas = new ExtraireReprise(new SourceRepriseFactice(), new RepriseEnMemoire(), SuperAdmin(ActionsSuperAdmin.RepriseExtraire), new JournalEspion());
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync("DSN=Ancien;", "Ancien", [], 1));
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync("DSN=Ancien;", "Ancien",
             [new(CibleReprise.Produits, "ARTICLES", new Dictionary<string, string> { ["ref_source"] = "CODE_ART" })], 1));

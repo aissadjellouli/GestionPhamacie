@@ -19,8 +19,8 @@ public sealed class PermissionsComptoir(PermissionService droits, IHttpContextAc
         autorisation is not null && !MotDePasseAChanger && EstUtilisateurCourant(utilisateurId) && await autorisation.AutoriseAsync(utilisateurId, permission, ct);
 
     private bool ParCode => http.HttpContext?.User.ParCodeComptoir() == true;
-    // Mot de passe provisoire pas encore changé : aucun droit
-    private bool MotDePasseAChanger => http.HttpContext?.User.MotDePasseAChanger() == true;
+    // Mot de passe provisoire pas encore changé, ou super admin (aucun droit d'employé) : aucun droit
+    private bool MotDePasseAChanger => http.HttpContext?.User is { } u && (u.MotDePasseAChanger() || u.EstSuperAdmin());
 
     public async Task<bool> APermissionAsync(long utilisateurId, string permission, CancellationToken ct = default) =>
         (!MotDePasseAChanger && (!ParCode || CodeComptoir.Autorise(permission)) && await droits.APermissionAsync(utilisateurId, permission, ct))

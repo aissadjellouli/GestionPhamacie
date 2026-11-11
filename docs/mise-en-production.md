@@ -47,7 +47,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `051`. |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `052`. |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -105,6 +105,18 @@ Le dossier `database/init/` contient trois fichiers :
   ```
 - [ ] **3.4** Ouvrir le port 5080 du pare-feu Windows aux postes de la pharmacie.
 - [ ] **3.5** Vérifier : `http://<serveur>:5080/api/auth/comptoir` répond depuis un poste.
+- [ ] **3.6** **Compte super admin** (reprise de données, et plus tard restauration), sur le PC serveur, dans une invite de commandes
+  administrateur :
+  ```powershell
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --super-admin
+  ```
+  - identifiant, mot de passe (12 caractères au moins), **téléphone mobile obligatoire** et **e-mail obligatoire** (secours si le SMS ne part pas) ;
+  - le compte est rangé hors de la base, chiffré pour ce PC : `C:\ProgramData\PharmaOfficine\super-admin.dat` (réglage `SuperAdmin__Fichier`) ;
+    il fonctionne donc même si la base est détruite ; il est illisible sur un autre PC ;
+  - un code est envoyé par SMS au numéro saisi pour le vérifier (modem GSM de l'étape 7.7 ; sans modem, le compte peut être créé sans vérification) ;
+  - relancer la même commande pour changer le mot de passe, le téléphone ou l'e-mail : mot de passe actuel, code envoyé au téléphone actuel,
+    puis code reçu par SMS sur le nouveau numéro ;
+  - téléphone et e-mail perdus : un administrateur du PC serveur supprime `super-admin.dat`, puis recrée le compte.
 
 ## Étape 4 — Postes (un par caisse)
 
@@ -148,13 +160,22 @@ Le dossier `database/init/` contient trois fichiers :
   copie la base sur le disque externe et dans `GED\Sauvegardes` (gardée 7 jours par défaut), et les documents de la GED sur le disque
   externe, dans son sous-dossier `GED` (nouveaux et modifiés seulement). Disque absent : la copie de la base dans la GED est faite quand même.
 - [ ] **8.2** Planifier `scripts\sauvegarde_pharmacie.ps1` chaque soir dans le Planificateur de tâches. Garder deux disques externes en rotation.
-- [ ] **8.3** **Tester une restauration** sur une base de test, avant la mise en service puis chaque mois.
+- [ ] **8.3** **Tester une restauration** dans une base d'essai, avant la mise en service puis chaque mois, sans toucher à la base
+  en service : `.\scripts\restaurer_pharmacie.ps1 -Sauvegardes "E:\…" -Base pharmacie_essai -SansGed`, contrôler le résumé affiché
+  (nombre de ventes, date de la dernière), puis supprimer la base d'essai. Voir « Restauration » en fin de document.
 
 ## Étape 9 — Reprise des données de l'ancien logiciel (si besoin)
 
 L'ancienne base n'est jamais modifiée : on travaille sur une copie, ce qui rend le retour arrière simple.
 
-- [ ] **9.1** **Transit** : Administration › Reprise de données (titulaire). L'assistant se connecte à l'ancienne base par ODBC, en lecture seule.
+- [ ] **9.0** **Super admin** (étape 3.6) : sur l'écran de connexion, « Connexion super admin ». Ce compte ne voit que la reprise de données
+  (aucun écran des employés), et se déconnecte après 10 minutes sans activité. L'**extraction**, le **chargement** et l'**abandon** d'une reprise
+  demandent chacun : un avertissement, le mot de passe ressaisi, puis le **code à 6 chiffres reçu par SMS** (par e-mail si le SMS ne part pas),
+  valable 5 minutes, à usage unique ; 3 codes faux bloquent les validations 15 minutes.
+  - Les données chargées (réception de reprise, stock, registre des psychotropes) sont attribuées au **pharmacien titulaire** ; la liste des
+    reprises montre la date de l'extraction, la **date de l'import** et qui l'a lancé, et le journal garde l'identifiant du super admin et le
+    canal du code (numéro ou adresse masqués).
+- [ ] **9.1** **Transit** : Administration › Reprise de données (super admin). L'assistant se connecte à l'ancienne base par ODBC, en lecture seule.
   - Sources possibles : Access, dBase, CSV, Excel, Firebird, SQLite, HFSQL par son pilote ODBC, ou une connexion saisie champ par champ.
   - Fichiers CSV : lus par Pharma Officine sans pilote ODBC, chaque valeur comme du texte ; encodage (UTF-8 ou ANSI) et séparateur (virgule, point-virgule, tabulation) détectés. Si les accents sont mal affichés dans les exemples, imposer l'encodage dans « Encodage des fichiers ».
   - Importer la nomenclature nationale **avant** la reprise (étape 7.5) : elle donne la classe réglementaire (psychotrope…) des produits créés. Un produit absent de la nomenclature est créé « à vérifier » et refusé en caisse jusqu'à la confirmation de sa classe par le titulaire.
@@ -208,3 +229,28 @@ L'ancienne base n'est jamais modifiée : on travaille sur une copie, ce qui rend
 5. Nouvelle nomenclature du ministère : la réimporter dans Administration › Nomenclature. L'import remplace l'ancienne liste sans toucher au catalogue.
 
 Côté développement, à chaque nouveau script `0xx`, il faut régénérer `database/init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges` d'une base construite par les scripts) et compléter `seed_referentiel.sql` s'il ajoute des données de référence (un nouveau droit, par exemple).
+
+## Restauration (base ou GED détruite)
+
+Les sauvegardes utiles sont sur le **disque externe** : la copie de la base dans `GED\Sauvegardes` est sur le même PC et disparaît avec lui.
+
+- Base : `pharmacie_AAAAMMJJ_HHMMSS.dump` dans le dossier réglé dans Administration › Sauvegardes (les 14 dernières par défaut).
+- GED : sous-dossier `GED` de ce même dossier (documents nouveaux et modifiés copiés à chaque sauvegarde ; rien n'y est supprimé).
+
+1. PC serveur remplacé : installer PostgreSQL (étape 1) et recréer le compte `pharma_app` ; ne pas lancer `init/schema.sql`, la sauvegarde contient toute la structure.
+2. Arrêter le service : `sc.exe stop "PharmaOfficine API"`.
+3. Lancer, dans PowerShell sur le PC serveur (le mot de passe de `postgres` est demandé) :
+   ```powershell
+   .\scripts\restaurer_pharmacie.ps1 -Sauvegardes "E:\Sauvegardes\Pharmacie"
+   ```
+   - la dernière sauvegarde est vérifiée (`pg_restore --list`) puis restaurée ; une sauvegarde illisible est refusée : en choisir une plus ancienne avec `-Fichier` ;
+   - une base existante du même nom n'est jamais supprimée : le script s'arrête, ou, avec `-Remplacer`, la renomme `pharmacie_avant_restauration_AAAAMMJJ_HHMM` ;
+   - la GED est recopiée dans `C:\ProgramData\PharmaOfficine\GED` sans rien supprimer, en gardant un document plus récent déjà présent ;
+   - `-SansGed` ou `-SansBase` pour ne restaurer que l'une des deux.
+4. Sauvegarde plus ancienne que la version du logiciel : appliquer les scripts `database/0xx_*.sql` plus récents (voir « Mises à jour du logiciel »).
+5. Redémarrer le service. Les documents restés sur les postes (« A envoyer ») repartent dans la GED à la connexion suivante.
+6. Ressaisir les opérations faites depuis la sauvegarde (en général la journée) ; sur un nouveau PC, ressaisir le mot de passe des
+   notifications (chiffré pour le PC d'origine, voir [notifications.md](notifications.md)).
+
+La copie de la GED sur le disque externe n'a qu'un exemplaire par document : un document abîmé sur le serveur remplace sa copie à la
+sauvegarde suivante. Garder deux disques externes en rotation (étape 8.2).

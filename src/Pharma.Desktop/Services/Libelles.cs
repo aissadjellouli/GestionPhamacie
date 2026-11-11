@@ -272,7 +272,12 @@ public static class Libelles
 
     /// <summary>Libellés des droits, pour un journal lisible (le code reste affiché s'il est inconnu).</summary>
     /// <summary>Libellé d'un droit (ou « pharmacien titulaire » pour la marque du rôle).</summary>
-    public static string Droit(string code) => code == "role.titulaire" ? "pharmacien titulaire" : LibellesDroits.GetValueOrDefault(code, code);
+    public static string Droit(string code) => code switch
+    {
+        "role.titulaire" => "pharmacien titulaire",
+        "role.super_admin" => "super admin",
+        _ => LibellesDroits.GetValueOrDefault(code, code)
+    };
 
     private static readonly Dictionary<string, string> LibellesDroits = new()
     {

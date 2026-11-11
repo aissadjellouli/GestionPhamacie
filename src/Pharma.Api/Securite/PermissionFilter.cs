@@ -32,6 +32,10 @@ public static class PermissionExtensions
     private static IResult MotDePasseAChanger() => Results.Problem(title: "Mot de passe à changer",
         detail: "Choisissez d’abord votre mot de passe personnel (mot de passe provisoire de la mise en service).", statusCode: StatusCodes.Status403Forbidden);
 
+    // Super admin : seulement la restauration et la reprise de données, jamais les écrans des employés
+    private static IResult SuperAdminRefuse() => Results.Json(
+        new Pharma.Shared.ErreurDto("Le compte super admin ne donne accès qu’à la restauration et à la reprise de données."), statusCode: StatusCodes.Status403Forbidden);
+
     public static TBuilder ExigerTitulaire<TBuilder>(this TBuilder builder) where TBuilder : IEndpointConventionBuilder
     {
         builder.RequireAuthorization();
@@ -41,6 +45,7 @@ public static class PermissionExtensions
             if (!long.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out var utilisateurId))
                 return Results.Unauthorized();
             if (http.User.MotDePasseAChanger()) return MotDePasseAChanger();
+            if (http.User.EstSuperAdmin()) return SuperAdminRefuse();
             var droits = http.RequestServices.GetRequiredService<IPermissionService>();
             if (!await droits.EstTitulaireAsync(utilisateurId, http.RequestAborted))
                 return await RefusAsync(http, PermissionServiceExtensions.MarqueTitulaire,
@@ -62,6 +67,7 @@ public static class PermissionExtensions
                 return Results.Unauthorized();
 
             if (http.User.MotDePasseAChanger()) return MotDePasseAChanger();
+            if (http.User.EstSuperAdmin()) return SuperAdminRefuse();
             var permissions = http.RequestServices.GetRequiredService<IPermissionService>();
             var autorise = false;
             foreach (var p in permissionsAcceptees)

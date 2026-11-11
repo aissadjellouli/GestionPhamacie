@@ -13,9 +13,9 @@
             </div>
         </div>
 
-        @if (!Session.A("role.titulaire"))
+        @if (!Session.SuperAdmin)
         {
-            <div class="erreur" role="alert">Réservé au pharmacien titulaire.</div>
+            <div class="erreur" role="alert">Réservé au super admin : déconnectez-vous, puis « Connexion super admin » sur l’écran de connexion.</div>
         }
         else
         {
@@ -155,13 +155,15 @@
                 {
                     <section class="tableau-cadre" aria-label="Reprises précédentes">
                         <table class="tableau" style="min-width: 0">
-                            <thead><tr><th scope="col">N°</th><th scope="col">Ancien logiciel</th><th scope="col">Début</th><th scope="col">État</th><th scope="col"></th></tr></thead>
+                            <thead><tr><th scope="col">N°</th><th scope="col">Ancien logiciel</th><th scope="col">Extraction</th><th scope="col">État</th><th scope="col">Import réalisé</th><th scope="col"></th></tr></thead>
                             <tbody>
                                 @foreach (var s in sessions)
                                 {
                                     <tr>
-                                        <td>@s.Id</td><td>@s.Logiciel</td><td>@Libelles.DateHeureLocale(s.Debut)</td>
+                                        <td>@s.Id</td><td>@s.Logiciel</td>
+                                        <td>@Libelles.DateHeureLocale(s.Debut)@if (s.LancePar is { } lp) { <span class="detail"> · @lp</span> }</td>
                                         <td><span class="pastille @(s.Statut == "charge" ? "ok" : s.Statut == "en_cours" ? "attention" : "info")">@LibelleStatut(s.Statut)</span></td>
+                                        <td>@(s.ChargeLe is { } cl ? Libelles.DateHeureLocale(cl) : "—")@if (s.ChargePar is { } cp) { <span class="detail"> · @cp</span> }</td>
                                         <td><button type="button" class="lien" @onclick="() => OuvrirSessionAsync(s.Id)">Ouvrir</button></td>
                                     </tr>
                                 }
@@ -253,6 +255,13 @@
                 var bloquants = et.Anomalies.Count(a => a.Gravite == "bloquant");
                 <section class="panneau" aria-labelledby="t-session">
                     <h2 id="t-session">Reprise n° @et.Session.Id · @et.Session.Logiciel · <span class="pastille @(et.Session.Statut == "charge" ? "ok" : "attention")">@LibelleStatut(et.Session.Statut)</span></h2>
+                    <p class="detail" style="margin: 0">
+                        Extraction le @Libelles.DateHeureLocale(et.Session.Debut)@(et.Session.LancePar is { } lp ? $" par {lp}" : "")
+                        @if (et.Session.ChargeLe is { } cl)
+                        {
+                            <text> · <strong>import réalisé le @Libelles.DateHeureLocale(cl)@(et.Session.ChargePar is { } cp ? $" par {cp}" : "")</strong> (données attribuées au pharmacien titulaire)</text>
+                        }
+                    </p>
                     <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
                         @foreach (var (cle, lib) in new[] { ("produits", "Produits"), ("stock", "Lignes de stock"), ("grossistes", "Grossistes"), ("clients", "Clients") })
                         {
@@ -343,13 +352,13 @@
                             @if (confirmerChargement)
                             {
                                 <span class="texte-urgent" style="align-self: center"><strong>Confirmez : le chargement est définitif.</strong></span>
-                                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ChargerAsync">Confirmer le chargement</button>
+                                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="DemanderChargement">Confirmer le chargement</button>
                                 <button type="button" class="btn" @onclick="() => confirmerChargement = false">Annuler</button>
                             }
                             else
                             {
                                 <button type="button" class="btn btn-principal" disabled="@(enCours || bloquants > 0)" @onclick="() => confirmerChargement = true">Charger dans Pharma Officine</button>
-                                <button type="button" class="btn" disabled="@enCours" @onclick="AbandonnerAsync">Abandonner cette reprise</button>
+                                <button type="button" class="btn" disabled="@enCours" @onclick="DemanderAbandon">Abandonner cette reprise</button>
                             }
                         </div>
                     </section>
@@ -379,7 +388,12 @@
     </div>
 </div>
 
+<FenetreValidationSuperAdmin Demande="validation" Fermee="() => validation = null" />
+
 @code {
+    // Action sensible en attente de validation (avertissement, mot de passe, code reçu)
+    private FenetreValidationSuperAdmin.DemandeSuperAdmin? validation;
+
     private static readonly (int, string)[] Etapes = [(1, "Source"), (2, "Correspondance"), (3, "Rapprochement et contrôles"), (4, "Chargement"), (5, "Vérification")];
     private static readonly (string Code, string Libelle)[] Cibles =
         [("produits", "Produits"), ("stock", "Stock par lot"), ("fournisseurs", "Grossistes et dettes"), ("clients", "Clients et crédits")];
@@ -405,7 +419,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (!Session.A("role.titulaire")) return;
+        if (!Session.SuperAdmin) return;
         (sessions, _) = await Api.SessionsRepriseAsync();
         (pilotes, _) = await Api.PilotesOdbcAsync();
         await ChercherAsync(silencieux: true);
@@ -529,18 +543,30 @@
         if (incomplete.Key is not null) { erreur = $"{Cibles.First(c => c.Code == incomplete.Key).Libelle} : choisissez les colonnes marquées d’un astérisque."; return; }
         if (correspondances["produits"].Table is null) { erreur = "La table des produits est indispensable."; return; }
 
-        await Executer(async () =>
-        {
-            var liste = correspondances.Where(kv => kv.Value.Table is not null)
-                .Select(kv => new CorrespondanceTableDto(kv.Key, kv.Value.Table!, kv.Value.Colonnes.Where(c => c.Value is not null).ToDictionary(c => c.Key, c => c.Value!)))
-                .ToList();
-            var (r, e) = await Api.ExtraireRepriseAsync(new ExtractionRepriseRequete(chaine!, logiciel!, liste));
-            if (e is not null) return e;
-            message = $"Extraction terminée : {string.Join(", ", r!.Lignes.Select(kv => $"{kv.Value} {kv.Key}"))}"
-                      + (r.Doublons > 0 ? $" ({r.Doublons} ligne(s) en double ignorée(s))" : "") + $". {r.Bloquants} anomalie(s) bloquante(s).";
-            (chaine, motDePasse, chaineSaisie, chaineModifiee) = (null, null, null, false);   // le mot de passe n'est plus gardé
-            return await ChargerEtatAsync(r.SessionId);
-        });
+        erreur = null;
+        validation = new("reprise.extraire", "Extraire les données de l’ancien logiciel",
+            $"Les tables choisies de « {logiciel} » vont être copiées dans les tables de transit de la base (l’ancienne base n’est pas modifiée). " +
+            "Rien n’entre encore dans le stock ni les fichiers : le chargement définitif sera validé à part.",
+            () => LancerAsync(async () =>
+            {
+                var liste = correspondances.Where(kv => kv.Value.Table is not null)
+                    .Select(kv => new CorrespondanceTableDto(kv.Key, kv.Value.Table!, kv.Value.Colonnes.Where(c => c.Value is not null).ToDictionary(c => c.Key, c => c.Value!)))
+                    .ToList();
+                var (r, e) = await Api.ExtraireRepriseAsync(new ExtractionRepriseRequete(chaine!, logiciel!, liste));
+                if (e is not null) return e;
+                message = $"Extraction terminée : {string.Join(", ", r!.Lignes.Select(kv => $"{kv.Value} {kv.Key}"))}"
+                          + (r.Doublons > 0 ? $" ({r.Doublons} ligne(s) en double ignorée(s))" : "") + $". {r.Bloquants} anomalie(s) bloquante(s).";
+                (chaine, motDePasse, chaineSaisie, chaineModifiee) = (null, null, null, false);   // le mot de passe n'est plus gardé
+                return await ChargerEtatAsync(r.SessionId);
+            }));
+    }
+
+    /// <summary>Action validée par code : erreur rendue à la fenêtre de validation (qui reste ouverte), sinon fermée.</summary>
+    private async Task<string?> LancerAsync(Func<Task<string?>> action)
+    {
+        enCours = true;
+        try { return await action(); }
+        finally { enCours = false; }
     }
 
     private async Task OuvrirSessionAsync(long id) => await Executer(() => ChargerEtatAsync(id));
@@ -565,27 +591,36 @@
         });
     }
 
-    private async Task ChargerAsync()
+    private void DemanderChargement()
     {
-        await Executer(async () =>
-        {
-            var (e, err) = await Api.ChargerRepriseAsync(etat!.Session.Id);
-            confirmerChargement = false;
-            if (err is not null) return err;
-            (etat, etape, message) = (e, 5, "Reprise chargée. Comparez les totaux ci-dessous.");
-            return null;
-        });
+        var et = etat!;
+        validation = new("reprise.charger", $"Charger la reprise n° {et.Session.Id} ({et.Session.Logiciel})",
+            $"Chargement DÉFINITIF dans la base : {et.Lignes.GetValueOrDefault("produits")} produit(s), {et.Lignes.GetValueOrDefault("stock")} ligne(s) de stock, " +
+            $"{et.Lignes.GetValueOrDefault("grossistes")} grossiste(s), {et.Lignes.GetValueOrDefault("clients")} client(s) et leurs crédits. " +
+            "Les entrées (stock, registre des psychotropes) seront attribuées au pharmacien titulaire ; le journal gardera que vous les avez chargées. " +
+            "Faites une sauvegarde de la base avant.",
+            () => LancerAsync(async () =>
+            {
+                var (e, err) = await Api.ChargerRepriseAsync(et.Session.Id);
+                if (err is not null) return err;
+                confirmerChargement = false;
+                (etat, etape, message) = (e, 5, "Reprise chargée. Comparez les totaux ci-dessous.");
+                return null;
+            }));
     }
 
-    private async Task AbandonnerAsync()
+    private void DemanderAbandon()
     {
-        await Executer(async () =>
-        {
-            var e = await Api.AnnulerRepriseAsync(etat!.Session.Id);
-            if (e is not null) return e;
-            message = "Reprise abandonnée : rien n’a été chargé.";
-            return await ChargerEtatAsync(etat.Session.Id);
-        });
+        var id = etat!.Session.Id;
+        validation = new("reprise.annuler", $"Abandonner la reprise n° {id}",
+            "Les données extraites de cette reprise ne pourront plus être chargées : il faudra refaire l’extraction. Rien n’a été chargé dans la base.",
+            () => LancerAsync(async () =>
+            {
+                var e = await Api.AnnulerRepriseAsync(id);
+                if (e is not null) return e;
+                message = "Reprise abandonnée : rien n’a été chargé.";
+                return await ChargerEtatAsync(id);
+            }));
     }
 
     private async Task RetourAsync()

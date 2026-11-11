@@ -35,9 +35,12 @@ public sealed class SessionPoste
     /// <summary>Mot de passe provisoire : seul l'écran de changement est ouvert (le serveur refuse tout le reste).</summary>
     public bool DoitChangerMotDePasse { get; private set; }
 
-    public void Ouvrir(ConnexionReponse r, bool parCode = false)
+    /// <summary>Compte super admin : seulement la reprise de données (et la restauration), chaque action validée par un code.</summary>
+    public bool SuperAdmin { get; private set; }
+
+    public void Ouvrir(ConnexionReponse r, bool parCode = false, bool superAdmin = false)
     {
-        (Jeton, NomComplet, ExpireLe, MotifDeconnexion, ParCode, DoitChangerMotDePasse) = (r.Jeton, r.NomComplet, r.ExpireLe, null, parCode, r.DoitChangerMotDePasse);
+        (Jeton, NomComplet, ExpireLe, MotifDeconnexion, ParCode, DoitChangerMotDePasse, SuperAdmin) = (r.Jeton, r.NomComplet, r.ExpireLe, null, parCode, r.DoitChangerMotDePasse, superAdmin);
         Changee?.Invoke();
     }
 
@@ -69,7 +72,7 @@ public sealed class SessionPoste
     public void Fermer(string? motif = null)
     {
         Affichage = "auto";
-        (Jeton, NomComplet, MotifDeconnexion, ParCode) = (null, null, motif, false);
+        (Jeton, NomComplet, MotifDeconnexion, ParCode, SuperAdmin) = (null, null, motif, false, false);
         Permissions = new HashSet<string>();
         Changee?.Invoke();
     }
@@ -94,6 +97,37 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         IOException or UnauthorizedAccessException => $"Fichier inaccessible : {ex.Message}",
         _ => Injoignable
     };
+
+    /// <summary>Déconnexion automatique du super admin après 10 minutes sans activité.</summary>
+    public const int DeconnexionSuperAdminMinutes = 10;
+
+    /// <summary>Connexion du super admin (compte du serveur, hors de la base) : seuls ses écrans sont ouverts.</summary>
+    public async Task<string?> ConnecterSuperAdminAsync(string identifiant, string motDePasse)
+    {
+        try
+        {
+            var rep = await http.PostAsJsonAsync("api/super-admin/connexion", new ConnexionRequete(identifiant, motDePasse));
+            if (!rep.IsSuccessStatusCode) return await MessageAsync(rep);
+            session.Ouvrir((await rep.Content.ReadFromJsonAsync<ConnexionReponse>())!, superAdmin: true);
+            session.DefinirDroits(["role.super_admin"], DeconnexionSuperAdminMinutes);
+            return null;
+        }
+        catch (Exception ex) when (EstEchecAppel(ex))
+        {
+            return MessageEchec(ex);
+        }
+    }
+
+    /// <summary>Mot de passe ressaisi : le serveur envoie un code au téléphone du super admin (e-mail en secours).</summary>
+    public Task<(DemandeValidationDto?, string?)> DemanderValidationSuperAdminAsync(string action, string motDePasse) =>
+        PostAsync<ValidationSuperAdminRequete, DemandeValidationDto>("api/super-admin/validations", new(action, motDePasse));
+
+    public Task<(CompteSuperAdminDto?, string?)> CompteSuperAdminAsync() => GetAsync<CompteSuperAdminDto?>("api/super-admin/compte", null);
+
+    // Code saisi : joint à la requête suivante seulement (en-tête X-Pharma-Validation), puis oublié
+    private string? validationEnAttente;
+
+    public void ValiderProchaineAction(Guid demande, string code) => validationEnAttente = $"{demande}:{code.Trim()}";
 
     public async Task<string?> ConnecterAsync(string identifiant, string motDePasse)
     {
@@ -713,7 +747,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(byte[]?, string?, string?)> EnvoyerRetourAsync(long id) => FichierAsync(HttpMethod.Post, $"api/achats/retours/{id}/envoyer", $"retour_{id}.pdf");
     public Task<(byte[]?, string?, string?)> BonRetourAsync(long id) => FichierAsync(HttpMethod.Get, $"api/achats/retours/{id}/pdf", $"retour_{id}.pdf");
 
-    // ---- Reprise de données (titulaire) ----
+    // ---- Reprise de données (super admin ; extraction, chargement et annulation validés par code) ----
     public Task<(List<SourceRepriseDto>?, string?)> SourcesRepriseAsync(string? dossier) =>
         PostAsync<DossierRepriseRequete, List<SourceRepriseDto>>("api/admin/reprise/sources", new(dossier));
     public Task<(List<string>, string?)> PilotesOdbcAsync() => GetAsync<List<string>>("api/admin/reprise/pilotes", []);
@@ -815,10 +849,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         (string Identifiant, string Code)? accord = null;
         // Droits présentés au valideur : le serveur n'accorde que ceux-là (jamais d'autres contrôles de la même opération)
         var droits = new List<string>();
+        var validation = validationEnAttente;
+        validationEnAttente = null;
         for (var essai = 0; ; essai++)
         {
             var req = creer();
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
+            if (validation is not null) req.Headers.Add("X-Pharma-Validation", validation);
             if (accord is { } a)
             {
                 req.Headers.Add("X-Pharma-Autorise-Par", Uri.EscapeDataString(a.Identifiant));

@@ -357,7 +357,8 @@ public sealed class ObtenirReglagesNotification(INotificationsDepot depot, IPerm
     }
 }
 
-public sealed partial class ModifierReglagesNotification(INotificationsDepot depot, IProtectionSecret secrets, IJournal journal, IPermissionService droits)
+public sealed partial class ModifierReglagesNotification(INotificationsDepot depot, IProtectionSecret secrets, IJournal journal, IPermissionService droits,
+    SuperAdmin.EnvoiCodeSuperAdmin? copieSuperAdmin = null)
 {
     [System.Text.RegularExpressions.GeneratedRegex(@"^COM\d{1,3}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
     private static partial System.Text.RegularExpressions.Regex FormatPort();
@@ -381,6 +382,9 @@ public sealed partial class ModifierReglagesNotification(INotificationsDepot dep
         var changer = m.NouveauMotDePasse is not null;
         var chiffre = string.IsNullOrEmpty(m.NouveauMotDePasse) ? null : secrets.Chiffrer(m.NouveauMotDePasse);
         await depot.EnregistrerReglagesAsync(r, changer, chiffre, ct);
+        // Copie pour le code du super admin (envoyé même si la base est détruite) ; un échec n'empêche pas l'enregistrement
+        try { copieSuperAdmin?.Recopier(r with { NouveauMotDePasse = m.NouveauMotDePasse }); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or PlatformNotSupportedException) { }
         await journal.EcrireAsync(utilisateurId, "reglages_notification", "parametre_notification", 1,
             new Dictionary<string, object?> { ["smtp"] = r.SmtpServeur, ["modem"] = r.ModemPort, ["mot_de_passe_modifie"] = changer },
             Domain.Securite.Permissions.AdminParametres, ct);

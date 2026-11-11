@@ -1,0 +1,100 @@
+@inject ApiClient Api
+
+@* Action sensible du super admin : avertissement, mot de passe ressaisi, puis code reçu par SMS (e-mail en secours).
+   Le serveur vérifie le code avant l'action ; code faux : la fenêtre reste ouverte (3 codes faux bloquent 15 minutes). *@
+@if (Demande is { } d)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-validation-sa">
+        <section class="panneau" style="max-width: 560px; width: 100%">
+            <h2 id="t-validation-sa">@d.Titre</h2>
+            <div class="bandeau-attention" role="note">@d.Avertissement</div>
+
+            @if (envoi is null)
+            {
+                <div class="champ">
+                    <label for="sa-mdp" class="requis">Mot de passe du super admin</label>
+                    <input id="sa-mdp" data-champ="mot_de_passe_validation" type="password" autocomplete="current-password" @ref="champMotDePasse"
+                           @bind="motDePasse" @bind:event="oninput" @onkeydown="ToucheMotDePasseAsync" />
+                </div>
+                @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+                <div class="filtres">
+                    <button type="button" class="btn btn-principal" disabled="@(enCours || string.IsNullOrEmpty(motDePasse))" @onclick="EnvoyerCodeAsync">Envoyer le code</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="Fermer">Annuler</button>
+                </div>
+            }
+            else
+            {
+                <p style="margin: 0">Code envoyé par <strong>@envoi.Canal</strong> au <strong>@envoi.Destinataire</strong>, valable jusqu’à @envoi.ExpireLe.ToLocalTime().ToString("HH:mm").</p>
+                <div class="champ">
+                    <label for="sa-code" class="requis">Code reçu</label>
+                    <input id="sa-code" data-champ="code_validation" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" @ref="champCode"
+                           onbeforeinput="@CodeComptoirSaisie.FiltreChiffres" @bind="code" @bind:event="oninput" @onkeydown="ToucheCodeAsync" />
+                </div>
+                @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+                <div class="filtres">
+                    <button type="button" class="btn btn-danger" disabled="@(enCours || code?.Length != 6)" @onclick="ValiderAsync">Valider et lancer</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="() => (envoi, code, erreur) = (null, null, null)">Demander un autre code</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="Fermer">Annuler</button>
+                </div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    /// <summary>Action à valider : code de l'action (serveur), titre, avertissement, et l'action à lancer une fois le code saisi.</summary>
+    public sealed record DemandeSuperAdmin(string Action, string Titre, string Avertissement, Func<Task<string?>> Lancer);
+
+    [Parameter] public DemandeSuperAdmin? Demande { get; set; }
+    /// <summary>Fenêtre fermée (annulée, ou action lancée sans erreur).</summary>
+    [Parameter] public EventCallback Fermee { get; set; }
+
+    private DemandeValidationDto? envoi;
+    private string? motDePasse, code, erreur;
+    private bool enCours;
+    private ElementReference champMotDePasse, champCode;
+    private DemandeSuperAdmin? affichee;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Demande, affichee)) return;
+        (affichee, envoi, motDePasse, code, erreur) = (Demande, null, null, null, null);
+    }
+
+    private async Task EnvoyerCodeAsync()
+    {
+        if (Demande is null || string.IsNullOrEmpty(motDePasse)) return;
+        (enCours, erreur) = (true, null);
+        try
+        {
+            var (d, e) = await Api.DemanderValidationSuperAdminAsync(Demande.Action, motDePasse);
+            motDePasse = null;   // jamais gardé
+            if (e is not null) { erreur = e; return; }
+            envoi = d;
+        }
+        finally { enCours = false; }
+    }
+
+    private async Task ValiderAsync()
+    {
+        if (Demande is null || envoi is null || code is not { Length: 6 }) return;
+        (enCours, erreur) = (true, null);
+        try
+        {
+            Api.ValiderProchaineAction(envoi.Id, code);
+            var e = await Demande.Lancer();
+            if (e is null) { await Fermer(); return; }
+            (erreur, code) = (e, null);
+        }
+        finally { enCours = false; }
+    }
+
+    private async Task Fermer()
+    {
+        (envoi, motDePasse, code, erreur) = (null, null, null, null);
+        await Fermee.InvokeAsync();
+    }
+
+    private async Task ToucheMotDePasseAsync(KeyboardEventArgs e) { if (e.Key == "Enter") await EnvoyerCodeAsync(); }
+    private async Task ToucheCodeAsync(KeyboardEventArgs e) { if (e.Key == "Enter") await ValiderAsync(); }
+}

@@ -96,6 +96,16 @@ public static class DependencyInjection
         services.AddScoped<Caisse.GererVentesEnAttente>();
         services.AddScoped<Securite.VerificationCodeComptoir>();
         services.AddScoped<Securite.AutorisationCourante>();
+        // Super admin : compte hors de la base, codes de validation en mémoire du serveur
+        services.AddSingleton<SuperAdmin.ValidationsSuperAdmin>();
+        services.AddScoped<SuperAdmin.SuperAdminCourant>();
+        services.AddScoped<SuperAdmin.SeConnecterSuperAdmin>();
+        services.AddScoped<SuperAdmin.EnvoiCodeSuperAdmin>(sp => new SuperAdmin.EnvoiCodeSuperAdmin(
+            sp.GetRequiredService<SuperAdmin.ICompteSuperAdmin>(), sp.GetRequiredService<Notifications.IEnvoiSms>(),
+            sp.GetRequiredService<Notifications.IEnvoiEmail>(), sp.GetRequiredService<Notifications.IProtectionSecret>(),
+            sp.GetService<Notifications.INotificationsDepot>()));
+        services.AddScoped<SuperAdmin.DemanderValidationSuperAdmin>();
+        services.AddScoped<SuperAdmin.CreerCompteSuperAdmin>();
         services.AddScoped<Caisse.RechercherVenteAnnulable>();
         services.AddScoped<Caisse.RechercherVenteParBoite>();
         services.AddScoped<Ged.DeposerDocumentGed>();

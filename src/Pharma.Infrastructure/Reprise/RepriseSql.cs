@@ -20,10 +20,11 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
             [CibleReprise.Clients] = ("import.client_src", ["ref_source", "nom", "prenom", "telephone", "num_assure", "solde_credit"], ["ref_source", "nom"])
         };
 
-    public async Task<long> CreerSessionAsync(string logiciel, CancellationToken ct = default)
+    public async Task<long> CreerSessionAsync(string logiciel, string lancePar, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("INSERT INTO import.session (logiciel_source) VALUES ($1) RETURNING id");
+        await using var cmd = db.CreateCommand("INSERT INTO import.session (logiciel_source, lance_par) VALUES ($1, $2) RETURNING id");
         cmd.Parameters.AddWithValue(logiciel);
+        cmd.Parameters.AddWithValue(lancePar);
         return (long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
@@ -85,22 +86,22 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
 
     public async Task<IReadOnlyList<SessionReprise>> SessionsAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT id, logiciel_source, debut, statut FROM import.session ORDER BY id DESC LIMIT 50");
+        await using var cmd = db.CreateCommand("SELECT id, logiciel_source, debut, statut, lance_par, charge_le, charge_par FROM import.session ORDER BY id DESC LIMIT 50");
         var liste = new List<SessionReprise>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        while (await r.ReadAsync(ct)) liste.Add(new SessionReprise(r.GetInt64(0), r.GetString(1), r.GetDateTime(2), r.GetString(3)));
+        while (await r.ReadAsync(ct)) liste.Add(LireSession(r));
         return liste;
     }
 
     public async Task<EtatReprise?> EtatAsync(long session, CancellationToken ct = default)
     {
         SessionReprise? s;
-        await using (var cmd = db.CreateCommand("SELECT id, logiciel_source, debut, statut FROM import.session WHERE id = $1"))
+        await using (var cmd = db.CreateCommand("SELECT id, logiciel_source, debut, statut, lance_par, charge_le, charge_par FROM import.session WHERE id = $1"))
         {
             cmd.Parameters.AddWithValue(session);
             await using var r = await cmd.ExecuteReaderAsync(ct);
             if (!await r.ReadAsync(ct)) return null;
-            s = new SessionReprise(r.GetInt64(0), r.GetString(1), r.GetDateTime(2), r.GetString(3));
+            s = LireSession(r);
         }
 
         var lignes = await Comptes("""
@@ -176,14 +177,30 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task ChargerAsync(long session, long utilisateurId, CancellationToken ct = default)
+    public async Task ChargerAsync(long session, long utilisateurId, string chargePar, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT import.charger($1, $2)");
-        cmd.CommandTimeout = 600;
-        cmd.Parameters.AddWithValue(session);
-        cmd.Parameters.AddWithValue(utilisateurId);
-        await cmd.ExecuteNonQueryAsync(ct);
+        // Chargement et date de chargement dans la même transaction
+        await using var cx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cx.BeginTransactionAsync(ct);
+        await using (var cmd = new NpgsqlCommand("SELECT import.charger($1, $2)", cx, tx))
+        {
+            cmd.CommandTimeout = 600;
+            cmd.Parameters.AddWithValue(session);
+            cmd.Parameters.AddWithValue(utilisateurId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await using (var cmd = new NpgsqlCommand("UPDATE import.session SET charge_le = now(), charge_par = $2 WHERE id = $1", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(session);
+            cmd.Parameters.AddWithValue(chargePar);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
     }
+
+    private static SessionReprise LireSession(NpgsqlDataReader r) => new(
+        r.GetInt64(0), r.GetString(1), r.GetDateTime(2), r.GetString(3),
+        r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetDateTime(5), r.IsDBNull(6) ? null : r.GetString(6));
 
     public async Task AnnulerAsync(long session, CancellationToken ct = default)
     {
