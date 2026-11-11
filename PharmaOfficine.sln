@@ -28,8 +28,84 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}"
 	ProjectSection(SolutionItems) = preProject
 		docs\a-faire.md = docs\a-faire.md
+		docs\acces-distant.md = docs\acces-distant.md
+		docs\architecture.md = docs\architecture.md
+		docs\base-de-donnees.md = docs\base-de-donnees.md
 		docs\charte-graphique.md = docs\charte-graphique.md
+		docs\chifa.md = docs\chifa.md
+		docs\feuille-de-route.md = docs\feuille-de-route.md
+		docs\fonctionnalites.md = docs\fonctionnalites.md
+		docs\mise-en-production.md = docs\mise-en-production.md
+		docs\notifications.md = docs\notifications.md
+		docs\poste-de-developpement.md = docs\poste-de-developpement.md
 		docs\regles-metier.md = docs\regles-metier.md
+		docs\scanner-mobile.md = docs\scanner-mobile.md
+		docs\securite-et-droits.md = docs\securite-et-droits.md
+		docs\tracabilite.md = docs\tracabilite.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "adr", "adr", "{35D7AF71-198B-4464-B00C-B4E49C87A256}"
+	ProjectSection(SolutionItems) = preProject
+		docs\adr\0001-architecture-locale.md = docs\adr\0001-architecture-locale.md
+		docs\adr\0002-schema-pilote-par-sql.md = docs\adr\0002-schema-pilote-par-sql.md
+		docs\adr\0003-blazor-hybrid-wpf.md = docs\adr\0003-blazor-hybrid-wpf.md
+		docs\adr\0004-clean-architecture.md = docs\adr\0004-clean-architecture.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "maquettes", "maquettes", "{E1DF76AA-DD72-4CD5-8AD0-81C6533C0213}"
+	ProjectSection(SolutionItems) = preProject
+		docs\maquettes\Achats.html = docs\maquettes\Achats.html
+		docs\maquettes\Admin.html = docs\maquettes\Admin.html
+		docs\maquettes\AdminCaisse.html = docs\maquettes\AdminCaisse.html
+		docs\maquettes\AdminImpression.html = docs\maquettes\AdminImpression.html
+		docs\maquettes\AdminLangue.html = docs\maquettes\AdminLangue.html
+		docs\maquettes\AdminReprise.html = docs\maquettes\AdminReprise.html
+		docs\maquettes\AdminSauvegardes.html = docs\maquettes\AdminSauvegardes.html
+		docs\maquettes\Caisse.html = docs\maquettes\Caisse.html
+		docs\maquettes\Chifa.html = docs\maquettes\Chifa.html
+		docs\maquettes\Cloture.html = docs\maquettes\Cloture.html
+		docs\maquettes\Droits.html = docs\maquettes\Droits.html
+		docs\maquettes\Main.html = docs\maquettes\Main.html
+		docs\maquettes\README.md = docs\maquettes\README.md
+		docs\maquettes\Rapports.html = docs\maquettes\Rapports.html
+		docs\maquettes\Reception.html = docs\maquettes\Reception.html
+		docs\maquettes\Stock.html = docs\maquettes\Stock.html
+		docs\maquettes\Tracabilite.html = docs\maquettes\Tracabilite.html
+		docs\maquettes\index.html = docs\maquettes\index.html
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "source", "source", "{DA96FB93-3AB9-4F60-8D17-2B0C79F7E87D}"
+	ProjectSection(SolutionItems) = preProject
+		docs\maquettes\source\Achats.dc.html = docs\maquettes\source\Achats.dc.html
+		docs\maquettes\source\Admin.dc.html = docs\maquettes\source\Admin.dc.html
+		docs\maquettes\source\AdminCaisse.dc.html = docs\maquettes\source\AdminCaisse.dc.html
+		docs\maquettes\source\AdminImpression.dc.html = docs\maquettes\source\AdminImpression.dc.html
+		docs\maquettes\source\AdminLangue.dc.html = docs\maquettes\source\AdminLangue.dc.html
+		docs\maquettes\source\AdminReprise.dc.html = docs\maquettes\source\AdminReprise.dc.html
+		docs\maquettes\source\AdminSauvegardes.dc.html = docs\maquettes\source\AdminSauvegardes.dc.html
+		docs\maquettes\source\Caisse.dc.html = docs\maquettes\source\Caisse.dc.html
+		docs\maquettes\source\Chifa.dc.html = docs\maquettes\source\Chifa.dc.html
+		docs\maquettes\source\Cloture.dc.html = docs\maquettes\source\Cloture.dc.html
+		docs\maquettes\source\Droits.dc.html = docs\maquettes\source\Droits.dc.html
+		docs\maquettes\source\Main.dc.html = docs\maquettes\source\Main.dc.html
+		docs\maquettes\source\Rapports.dc.html = docs\maquettes\source\Rapports.dc.html
+		docs\maquettes\source\Reception.dc.html = docs\maquettes\source\Reception.dc.html
+		docs\maquettes\source\Stock.dc.html = docs\maquettes\source\Stock.dc.html
+		docs\maquettes\source\Tracabilite.dc.html = docs\maquettes\source\Tracabilite.dc.html
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EXEMPLE", "EXEMPLE", "{0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1}"
+	ProjectSection(SolutionItems) = preProject
+		docs\EXEMPLE\WhatsApp Image 2025-11-27 at 12.41.09.jpeg = docs\EXEMPLE\WhatsApp Image 2025-11-27 at 12.41.09.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.14.09.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.14.09.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09 (1).jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09 (1).jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.10.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.10.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.11.07.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.11.07.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.10.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.10.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.16.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.16.jpeg
+		docs\EXEMPLE\chifa+.png = docs\EXEMPLE\chifa+.png
+		docs\EXEMPLE\xpertpharma.jpeg = docs\EXEMPLE\xpertpharma.jpeg
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{386EBD72-0D5B-4454-978E-2D35C00026D8}"
@@ -91,6 +167,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{38
 		database\055_surveillance_stock.sql = database\055_surveillance_stock.sql
 		database\056_droit_don.sql = database\056_droit_don.sql
 		database\057_reception_aveugle.sql = database\057_reception_aveugle.sql
+		database\058_surveillance_comptes.sql = database\058_surveillance_comptes.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"
@@ -164,6 +241,10 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{35D7AF71-198B-4464-B00C-B4E49C87A256} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
+		{E1DF76AA-DD72-4CD5-8AD0-81C6533C0213} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
+		{0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
+		{DA96FB93-3AB9-4F60-8D17-2B0C79F7E87D} = {E1DF76AA-DD72-4CD5-8AD0-81C6533C0213}
 		{A8314956-6467-45DE-90F5-6E180390EA5B} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{37188A88-124B-4C94-9543-9F8284DA8D73} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{FB519F12-139E-4EE0-AD20-830F3AC0D3F9} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}

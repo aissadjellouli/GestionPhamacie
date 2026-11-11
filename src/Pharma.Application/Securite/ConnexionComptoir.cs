@@ -58,7 +58,8 @@ public sealed class EffacerCodeComptoir(ICodesComptoir codes, IPermissionService
 /// Le jeton obtenu est limité au comptoir ; 5 codes faux bloquent le code quelques minutes.
 /// </summary>
 public sealed class SeConnecterParCode(ICodesComptoir codes, IVerificateurMotDePasse verificateur, IGenerateurJeton jetons,
-    ISessionsCaisse sessions, IPermissionService droits, IComptesLecture comptes, IHorloge horloge, IJournal journal)
+    ISessionsCaisse sessions, IPermissionService droits, IComptesLecture comptes, IHorloge horloge, IJournal journal,
+    Surveillance.Surveiller? surveillance = null)
 {
     public const string Refus = "Code incorrect.";
 
@@ -71,7 +72,9 @@ public sealed class SeConnecterParCode(ICodesComptoir codes, IVerificateurMotDeP
         var compte = await new VerificationCodeComptoir(codes, verificateur, horloge, journal).VerifierAsync(identifiant, code, poste, ct);
         if (!await droits.APermissionAsync(compte.Id, Permissions.CaisseVendre, ct))
             throw new DroitRefuseException(Permissions.CaisseVendre, "reprendre la caisse");
-        await comptes.NoterConnexionAsync(compte.Id, ct);
+        await comptes.NoterConnexionAsync(compte.Id, poste?.Trim(), "code", ct);
+        // Surveillance : même employé actif sur deux postes à la fois
+        if (surveillance is not null) await surveillance.ExecuterAsync(ct);
         var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet, comptoir: true);
         return new Session(jeton, compte.NomComplet, expire);
     }

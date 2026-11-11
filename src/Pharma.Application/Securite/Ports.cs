@@ -53,7 +53,8 @@ public interface IComptesLecture
     Task<Utilisateur?> TrouverActifAsync(string identifiant, CancellationToken ct = default);
 
     /// <summary>Date de dernière connexion (affichée dans l'administration des utilisateurs).</summary>
-    Task NoterConnexionAsync(long utilisateurId, CancellationToken ct = default);
+    /// <summary>Connexion réussie : dernière connexion, et trace du poste et de la méthode (mot_de_passe ou code) pour la surveillance.</summary>
+    Task NoterConnexionAsync(long utilisateurId, string? poste, string methode, CancellationToken ct = default);
 
     Task<Utilisateur?> ParIdAsync(long utilisateurId, CancellationToken ct = default);
 

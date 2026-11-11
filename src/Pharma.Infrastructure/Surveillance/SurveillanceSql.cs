@@ -77,14 +77,17 @@ public sealed class SurveillanceSql(NpgsqlDataSource db) : ISurveillance
     {
         await using var cmd = db.CreateCommand("""
             SELECT seuil_lignes_retirees, seuil_tiroir, seuil_attentes_abandonnees, seuil_remises, seuil_remises_patient, heure_ouverture, heure_fermeture,
-                   seuil_ajustements, seuil_casses, seuil_echantillons, jours_comptage_sensibles, reception_aveugle, jours_avoir_retour
+                   seuil_ajustements, seuil_casses, seuil_echantillons, jours_comptage_sensibles, reception_aveugle, jours_avoir_retour,
+                   seuil_credit_nouveau_patient, jours_patient_recent, seuil_credits_jour, jours_credit_sans_remboursement,
+                   seuil_autorisations_valideur, seuil_autorisations_employe, minutes_postes_simultanes, seuil_changements_poste, seuil_baisses_prix
             FROM parametre_surveillance WHERE id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) throw new InvalidOperationException("Réglages de surveillance absents : exécutez database/054_surveillance_caisse.sql.");
         return new ParametresSurveillance(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4),
             r.IsDBNull(5) ? null : TimeOnly.FromTimeSpan(r.GetTimeSpan(5)), r.IsDBNull(6) ? null : TimeOnly.FromTimeSpan(r.GetTimeSpan(6)),
-            r.GetInt32(7), r.GetInt32(8), r.GetInt32(9), r.GetInt32(10), r.GetBoolean(11), r.GetInt32(12));
+            r.GetInt32(7), r.GetInt32(8), r.GetInt32(9), r.GetInt32(10), r.GetBoolean(11), r.GetInt32(12),
+            r.GetDecimal(13), r.GetInt32(14), r.GetDecimal(15), r.GetInt32(16), r.GetInt32(17), r.GetInt32(18), r.GetInt32(19), r.GetInt32(20), r.GetInt32(21));
     }
 
     public async Task EnregistrerParametresAsync(ParametresSurveillance p, CancellationToken ct = default)
@@ -92,7 +95,10 @@ public sealed class SurveillanceSql(NpgsqlDataSource db) : ISurveillance
         await using var cmd = db.CreateCommand("""
             UPDATE parametre_surveillance SET seuil_lignes_retirees = $1, seuil_tiroir = $2, seuil_attentes_abandonnees = $3, seuil_remises = $4,
                    seuil_remises_patient = $5, heure_ouverture = $6, heure_fermeture = $7, seuil_ajustements = $8, seuil_casses = $9,
-                   seuil_echantillons = $10, jours_comptage_sensibles = $11, reception_aveugle = $12, jours_avoir_retour = $13
+                   seuil_echantillons = $10, jours_comptage_sensibles = $11, reception_aveugle = $12, jours_avoir_retour = $13,
+                   seuil_credit_nouveau_patient = $14, jours_patient_recent = $15, seuil_credits_jour = $16, jours_credit_sans_remboursement = $17,
+                   seuil_autorisations_valideur = $18, seuil_autorisations_employe = $19, minutes_postes_simultanes = $20, seuil_changements_poste = $21,
+                   seuil_baisses_prix = $22
             WHERE id = 1
             """);
         foreach (var v in new[] { p.SeuilLignesRetirees, p.SeuilTiroir, p.SeuilAttentesAbandonnees, p.SeuilRemises, p.SeuilRemisesPatient })
@@ -103,6 +109,12 @@ public sealed class SurveillanceSql(NpgsqlDataSource db) : ISurveillance
             cmd.Parameters.AddWithValue(v);
         cmd.Parameters.AddWithValue(p.ReceptionAveugle);
         cmd.Parameters.AddWithValue(p.JoursAvoirRetour);
+        cmd.Parameters.AddWithValue(p.SeuilCreditNouveauPatient);
+        cmd.Parameters.AddWithValue(p.JoursPatientRecent);
+        cmd.Parameters.AddWithValue(p.SeuilCreditsJour);
+        foreach (var v in new[] { p.JoursCreditSansRemboursement, p.SeuilAutorisationsValideur, p.SeuilAutorisationsEmploye, p.MinutesPostesSimultanes,
+                     p.SeuilChangementsPoste, p.SeuilBaissesPrix })
+            cmd.Parameters.AddWithValue(v);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

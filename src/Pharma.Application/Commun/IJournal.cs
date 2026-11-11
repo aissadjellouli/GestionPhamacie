@@ -10,8 +10,24 @@ public interface IJournal
 public sealed record EntreeJournal(
     DateTime Date, string Employe, string Action, string? DetailsJson, string? AutorisePar, string? Permission, long? EmployeId = null, long? AutoriseParId = null);
 
-/// <summary>Filtres du journal : période (dates incluses) et employé (partie du nom).</summary>
-public sealed record FiltreJournal(DateOnly? Du, DateOnly? Au, string? Employe);
+/// <summary>Filtres du journal : période (dates incluses), employé (partie du nom), catégorie d'actions (CategoriesJournal).</summary>
+public sealed record FiltreJournal(DateOnly? Du, DateOnly? Au, string? Employe, IReadOnlyList<string>? Actions = null);
+
+/// <summary>Catégories du journal : modifications (ancienne et nouvelle valeur) ; autorisations par code et blocages.</summary>
+public static class CategoriesJournal
+{
+    public static readonly IReadOnlyDictionary<string, string[]> Actions = new Dictionary<string, string[]>
+    {
+        ["modifications"] =
+        [
+            "prix_modifie", "produit_modifie", "produit_cree", "patient_cree", "patient_modifie", "coordonnees_modifiees", "utilisateur_cree",
+            "utilisateur_modifie", "droits_modifies", "code_comptoir", "pharmacie_modifiee", "parametres_caisse", "seuils_alerte", "seuil_stock",
+            "seuils_inventaire", "delai_alerte_dettes", "reglages_surveillance", "reglages_notification", "reglages_sauvegarde",
+            "destinataire_notification", "produit_bloque", "produit_debloque", "produit_sensible", "produit_non_sensible", "emplacement", "produit_range"
+        ],
+        ["autorisations"] = ["autorisation_code", "code_comptoir_bloque", "connexion_bloquee"]
+    };
+}
 
 public interface IJournalLecture
 {

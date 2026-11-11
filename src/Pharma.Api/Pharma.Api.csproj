@@ -8,8 +8,9 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Scripts de la base livrés avec l'API : une sauvegarde restaurée est mise à la version du logiciel -->
-    <None Include="..\..\database\0*.sql" Link="database\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Scripts de la base livrés avec l'API : une sauvegarde restaurée est mise à la version du logiciel.
+         Masqués dans l'Explorateur de solutions : ils s'éditent dans le dossier de solution « database » (racine). -->
+    <None Include="..\..\database\0*.sql" Link="database\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pharma.Application\Pharma.Application.csproj" />

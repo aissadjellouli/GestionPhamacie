@@ -52,10 +52,15 @@ public sealed class ComptesLecture(NpgsqlDataSource db) : IComptesLecture
         };
     }
 
-    public async Task NoterConnexionAsync(long utilisateurId, CancellationToken ct = default)
+    public async Task NoterConnexionAsync(long utilisateurId, string? poste, string methode, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("UPDATE utilisateur SET derniere_connexion = now() WHERE id = $1");
+        await using var cmd = db.CreateCommand("""
+            WITH maj AS (UPDATE utilisateur SET derniere_connexion = now() WHERE id = $1)
+            INSERT INTO connexion_employe (utilisateur_id, poste, methode) VALUES ($1, $2, $3)
+            """);
         cmd.Parameters.AddWithValue(utilisateurId);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)poste ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        cmd.Parameters.AddWithValue(methode);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

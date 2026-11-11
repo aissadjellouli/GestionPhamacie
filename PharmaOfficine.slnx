@@ -1,8 +1,76 @@
 <Solution>
   <Folder Name="/Documents/">
     <File Path="docs/a-faire.md" />
+    <File Path="docs/acces-distant.md" />
+    <File Path="docs/architecture.md" />
+    <File Path="docs/base-de-donnees.md" />
     <File Path="docs/charte-graphique.md" />
+    <File Path="docs/chifa.md" />
+    <File Path="docs/feuille-de-route.md" />
+    <File Path="docs/fonctionnalites.md" />
+    <File Path="docs/mise-en-production.md" />
+    <File Path="docs/notifications.md" />
+    <File Path="docs/poste-de-developpement.md" />
     <File Path="docs/regles-metier.md" />
+    <File Path="docs/scanner-mobile.md" />
+    <File Path="docs/securite-et-droits.md" />
+    <File Path="docs/tracabilite.md" />
+  </Folder>
+  <Folder Name="/Documents/adr/">
+    <File Path="docs/adr/0001-architecture-locale.md" />
+    <File Path="docs/adr/0002-schema-pilote-par-sql.md" />
+    <File Path="docs/adr/0003-blazor-hybrid-wpf.md" />
+    <File Path="docs/adr/0004-clean-architecture.md" />
+  </Folder>
+  <Folder Name="/Documents/EXEMPLE/">
+    <File Path="docs/EXEMPLE/WhatsApp Image 2025-11-27 at 12.41.09.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.14.09.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.09 (1).jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.09.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.10.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.11.07.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.23.10.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.23.16.jpeg" />
+    <File Path="docs/EXEMPLE/chifa+.png" />
+    <File Path="docs/EXEMPLE/xpertpharma.jpeg" />
+  </Folder>
+  <Folder Name="/Documents/maquettes/">
+    <File Path="docs/maquettes/Achats.html" />
+    <File Path="docs/maquettes/Admin.html" />
+    <File Path="docs/maquettes/AdminCaisse.html" />
+    <File Path="docs/maquettes/AdminImpression.html" />
+    <File Path="docs/maquettes/AdminLangue.html" />
+    <File Path="docs/maquettes/AdminReprise.html" />
+    <File Path="docs/maquettes/AdminSauvegardes.html" />
+    <File Path="docs/maquettes/Caisse.html" />
+    <File Path="docs/maquettes/Chifa.html" />
+    <File Path="docs/maquettes/Cloture.html" />
+    <File Path="docs/maquettes/Droits.html" />
+    <File Path="docs/maquettes/Main.html" />
+    <File Path="docs/maquettes/README.md" />
+    <File Path="docs/maquettes/Rapports.html" />
+    <File Path="docs/maquettes/Reception.html" />
+    <File Path="docs/maquettes/Stock.html" />
+    <File Path="docs/maquettes/Tracabilite.html" />
+    <File Path="docs/maquettes/index.html" />
+  </Folder>
+  <Folder Name="/Documents/maquettes/source/">
+    <File Path="docs/maquettes/source/Achats.dc.html" />
+    <File Path="docs/maquettes/source/Admin.dc.html" />
+    <File Path="docs/maquettes/source/AdminCaisse.dc.html" />
+    <File Path="docs/maquettes/source/AdminImpression.dc.html" />
+    <File Path="docs/maquettes/source/AdminLangue.dc.html" />
+    <File Path="docs/maquettes/source/AdminReprise.dc.html" />
+    <File Path="docs/maquettes/source/AdminSauvegardes.dc.html" />
+    <File Path="docs/maquettes/source/Caisse.dc.html" />
+    <File Path="docs/maquettes/source/Chifa.dc.html" />
+    <File Path="docs/maquettes/source/Cloture.dc.html" />
+    <File Path="docs/maquettes/source/Droits.dc.html" />
+    <File Path="docs/maquettes/source/Main.dc.html" />
+    <File Path="docs/maquettes/source/Rapports.dc.html" />
+    <File Path="docs/maquettes/source/Reception.dc.html" />
+    <File Path="docs/maquettes/source/Stock.dc.html" />
+    <File Path="docs/maquettes/source/Tracabilite.dc.html" />
   </Folder>
   <Folder Name="/database/">
     <File Path="database/001_schema.sql" />
@@ -62,6 +130,7 @@
     <File Path="database/055_surveillance_stock.sql" />
     <File Path="database/056_droit_don.sql" />
     <File Path="database/057_reception_aveugle.sql" />
+    <File Path="database/058_surveillance_comptes.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

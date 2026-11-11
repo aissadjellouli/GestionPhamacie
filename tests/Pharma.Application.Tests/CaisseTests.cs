@@ -51,7 +51,7 @@ internal sealed class PatientsEnMemoire(params Patient[] liste) : IPatients
 {
     public Task<IReadOnlyList<PatientResume>> RechercherAsync(string t, int l, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<PatientResume>>([]);
     public Task<Patient?> TrouverAsync(long id, CancellationToken ct = default) => Task.FromResult(liste.FirstOrDefault(p => p.Id == id));
-    public Task<long> CreerAsync(NouveauPatient p, CancellationToken ct = default) => Task.FromResult(99L);
+    public Task<long> CreerAsync(NouveauPatient p, long? creePar, CancellationToken ct = default) => Task.FromResult(99L);
     public FichePatient? Fiche { get; set; }
     public FichePatient? Modifiee { get; private set; }
     public Task<FichePatient?> FicheAsync(long id, CancellationToken ct = default) => Task.FromResult(Fiche?.Id == id ? Fiche : null);

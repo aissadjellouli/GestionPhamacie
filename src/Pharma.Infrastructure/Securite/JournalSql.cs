@@ -59,6 +59,7 @@ public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.
             WHERE ($1::date IS NULL OR j.cree_le >= $1::date)
               AND ($2::date IS NULL OR j.cree_le < $2::date + 1)
               AND ($3::text IS NULL OR u.nom_complet ILIKE '%' || $3 || '%' OR u.identifiant ILIKE '%' || $3 || '%')
+              AND ($6::text[] IS NULL OR j.action = ANY($6))
             ORDER BY j.cree_le DESC, j.id DESC
             {Lecture.PaginationSql.Limite(4)}
             """);
@@ -66,6 +67,7 @@ public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Employe ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         Lecture.PaginationSql.Parametres(cmd, page);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Actions?.ToArray() ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
         return await Lecture.PaginationSql.LireAsync(cmd, page, 6, r => new EntreeJournal(r.GetDateTime(0), r.GetString(1), r.GetString(2),
             r.IsDBNull(3) ? null : r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5),
             r.IsDBNull(7) ? null : r.GetInt64(7), r.IsDBNull(8) ? null : r.GetInt64(8)), ct);

@@ -28,7 +28,7 @@ public sealed class LireFicheProduit(IProduitsModification produits)
 /// Modification d'un produit (droit de créer un produit) ; changer le prix public demande en plus le droit de modifier un prix de
 /// vente. Un produit désactivé n'est plus proposé à la vente ni aux commandes. Chaque champ changé est inscrit au journal.
 /// </summary>
-public sealed class ModifierProduit(IProduitsModification produits, IPermissionService droits, IJournal journal)
+public sealed class ModifierProduit(IProduitsModification produits, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null)
 {
     public async Task ExecuterAsync(FicheProduitModifiable saisie, long utilisateurId, CancellationToken ct = default)
     {
@@ -68,5 +68,7 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
             await journal.EcrireAsync(utilisateurId, "prix_modifie", "produit", f.Id,
                 new Dictionary<string, object?> { ["produit"] = f.NomCommercial, ["avant"] = actuel.PrixPublic, ["apres"] = f.PrixPublic, ["source"] = "fiche produit" },
                 Permissions.PrixModifier, ct);
+        // Surveillance : baisse de prix par un autre que le titulaire
+        if (f.PrixPublic < actuel.PrixPublic && surveillance is not null) await surveillance.ExecuterAsync(ct);
     }
 }

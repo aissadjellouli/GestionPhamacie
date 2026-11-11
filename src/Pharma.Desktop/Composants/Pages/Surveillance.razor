@@ -90,6 +90,15 @@
                     <div class="champ"><label for="sv-echant">Boîtes données en échantillon</label><input id="sv-echant" type="number" min="1" @bind="r.SeuilEchantillons" /></div>
                     <div class="champ"><label for="sv-sensibles">Comptage des produits sensibles (tous les … jours)</label><input id="sv-sensibles" data-champ="jours_sensibles" type="number" min="1" max="90" @bind="r.JoursComptageSensibles" /></div>
                     <div class="champ"><label for="sv-avoir">Retour fournisseur sans avoir (après … jours)</label><input id="sv-avoir" data-champ="jours_avoir" type="number" min="1" max="365" @bind="r.JoursAvoirRetour" /></div>
+                    <div class="champ"><label for="sv-cr-nouveau">Dette d’un patient récent (DA)</label><input id="sv-cr-nouveau" data-champ="seuil_credit" type="number" min="1" step="100" @bind="r.SeuilCreditNouveauPatient" /></div>
+                    <div class="champ"><label for="sv-pat-recent">Patient récent (créé depuis … jours)</label><input id="sv-pat-recent" data-champ="jours_patient_recent" type="number" min="1" max="90" @bind="r.JoursPatientRecent" /></div>
+                    <div class="champ"><label for="sv-cr-jour">Crédits accordés par un employé dans la journée (DA)</label><input id="sv-cr-jour" type="number" min="1" step="100" @bind="r.SeuilCreditsJour" /></div>
+                    <div class="champ"><label for="sv-cr-jamais">Crédit jamais remboursé (après … jours)</label><input id="sv-cr-jamais" data-champ="jours_credit" type="number" min="1" max="365" @bind="r.JoursCreditSansRemboursement" /></div>
+                    <div class="champ"><label for="sv-aut-val">Autorisations par code données par un employé</label><input id="sv-aut-val" type="number" min="1" @bind="r.SeuilAutorisationsValideur" /></div>
+                    <div class="champ"><label for="sv-aut-emp">Autorisations par code demandées par un employé</label><input id="sv-aut-emp" type="number" min="1" @bind="r.SeuilAutorisationsEmploye" /></div>
+                    <div class="champ"><label for="sv-postes">Passages d’un poste à l’autre en moins de … minutes</label><input id="sv-postes" data-champ="minutes_postes" type="number" min="1" max="120" @bind="r.MinutesPostesSimultanes" /></div>
+                    <div class="champ"><label for="sv-postes-n">Nombre de ces passages dans la journée</label><input id="sv-postes-n" type="number" min="1" @bind="r.SeuilChangementsPoste" /></div>
+                    <div class="champ"><label for="sv-baisses">Baisses de prix (hors titulaire)</label><input id="sv-baisses" type="number" min="1" @bind="r.SeuilBaissesPrix" /></div>
                 </div>
                 <label class="case" style="display: flex; gap: 8px; align-items: center"><input type="checkbox" @bind="r.ReceptionAveugle" />
                     Réception à l’aveugle : les boîtes sont comptées sans voir le bon de livraison, puis la facture est saisie et comparée (un écart bloque la réception jusqu’à votre validation).</label>
@@ -156,6 +165,15 @@
         public int JoursComptageSensibles { get; set; }
         public bool ReceptionAveugle { get; set; }
         public int JoursAvoirRetour { get; set; }
+        public decimal SeuilCreditNouveauPatient { get; set; }
+        public int JoursPatientRecent { get; set; }
+        public decimal SeuilCreditsJour { get; set; }
+        public int JoursCreditSansRemboursement { get; set; }
+        public int SeuilAutorisationsValideur { get; set; }
+        public int SeuilAutorisationsEmploye { get; set; }
+        public int MinutesPostesSimultanes { get; set; }
+        public int SeuilChangementsPoste { get; set; }
+        public int SeuilBaissesPrix { get; set; }
     }
 
     private List<AlerteSurveillanceDto> anomalies = [];
@@ -181,6 +199,13 @@
         "reception_meme_personne" => "Comptage et facture par la même personne",
         "retour_sans_avoir" => "Retour fournisseur sans avoir",
         "avoir_incomplet" => "Avoir incomplet",
+        "credit_nouveau_patient" => "Patient récent avec une grosse dette",
+        "credits_employe" => "Crédits accordés par un employé",
+        "credit_sans_remboursement" => "Crédit jamais remboursé",
+        "autorisations_valideur" => "Autorisations par code (qui autorise)",
+        "autorisations_employe" => "Autorisations par code (qui en profite)",
+        "postes_simultanes" => "Employé sur deux postes à la fois",
+        "baisses_prix" => "Baisses de prix",
         _ => type
     };
 
@@ -195,7 +220,11 @@
                 SeuilLignesRetirees = p.SeuilLignesRetirees, SeuilTiroir = p.SeuilTiroir, SeuilAttentesAbandonnees = p.SeuilAttentesAbandonnees,
                 SeuilRemises = p.SeuilRemises, SeuilRemisesPatient = p.SeuilRemisesPatient, HeureOuverture = p.HeureOuverture, HeureFermeture = p.HeureFermeture,
                 SeuilAjustements = p.SeuilAjustements, SeuilCasses = p.SeuilCasses, SeuilEchantillons = p.SeuilEchantillons,
-                JoursComptageSensibles = p.JoursComptageSensibles, ReceptionAveugle = p.ReceptionAveugle, JoursAvoirRetour = p.JoursAvoirRetour
+                JoursComptageSensibles = p.JoursComptageSensibles, ReceptionAveugle = p.ReceptionAveugle, JoursAvoirRetour = p.JoursAvoirRetour,
+                SeuilCreditNouveauPatient = p.SeuilCreditNouveauPatient, JoursPatientRecent = p.JoursPatientRecent, SeuilCreditsJour = p.SeuilCreditsJour,
+                JoursCreditSansRemboursement = p.JoursCreditSansRemboursement, SeuilAutorisationsValideur = p.SeuilAutorisationsValideur,
+                SeuilAutorisationsEmploye = p.SeuilAutorisationsEmploye, MinutesPostesSimultanes = p.MinutesPostesSimultanes,
+                SeuilChangementsPoste = p.SeuilChangementsPoste, SeuilBaissesPrix = p.SeuilBaissesPrix
             };
         erreur ??= e;
     }
@@ -253,7 +282,9 @@
         enCours = true;
         erreur = await Api.EnregistrerParametresSurveillanceAsync(new ParametresSurveillanceDto(r.SeuilLignesRetirees, r.SeuilTiroir,
             r.SeuilAttentesAbandonnees, r.SeuilRemises, r.SeuilRemisesPatient, r.HeureOuverture, r.HeureFermeture, r.SeuilAjustements, r.SeuilCasses,
-            r.SeuilEchantillons, r.JoursComptageSensibles, r.ReceptionAveugle, r.JoursAvoirRetour));
+            r.SeuilEchantillons, r.JoursComptageSensibles, r.ReceptionAveugle, r.JoursAvoirRetour, r.SeuilCreditNouveauPatient, r.JoursPatientRecent,
+            r.SeuilCreditsJour, r.JoursCreditSansRemboursement, r.SeuilAutorisationsValideur, r.SeuilAutorisationsEmploye, r.MinutesPostesSimultanes,
+            r.SeuilChangementsPoste, r.SeuilBaissesPrix));
         enCours = false;
         message = erreur is null ? "Réglages de surveillance enregistrés." : null;
     }

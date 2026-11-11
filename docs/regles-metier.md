@@ -274,6 +274,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Créer, consulter et modifier un patient : droit `caisse.vendre`**. — `src/Pharma.Api/Endpoints/PatientsEndpoints.cs`
 - **La dette ne se modifie pas depuis la fiche patient**. — `src/Pharma.Application/Patients/Patients.cs`
 - **Chaque champ modifié est inscrit au journal avec l'ancienne et la nouvelle valeur** (`patient_modifie`). — `src/Pharma.Application/Patients/Patients.cs`
+- **La création d'un patient garde l'employé qui l'a créé et est inscrite au journal** (`patient_cree` : nom, plafond de crédit). Les patients antérieurs ou repris n'ont pas de créateur. — `src/Pharma.Application/Patients/Patients.cs`, `database/058_surveillance_comptes.sql`
 - **Recherche au comptoir à partir de 2 caractères** (nom, prénom, téléphone, n° d'assuré), 20 résultats au plus. — `src/Pharma.Application/Patients/Patients.cs`
 
 ### Médecins prescripteurs
@@ -939,6 +940,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le compteur d'erreurs repart de zéro après 15 minutes sans nouvel essai, après un blocage terminé, ou après une connexion réussie.** — `src/Pharma.Application/Securite/EssaisConnexion.cs`
 - **Le blocage d'un compte existant est inscrit au journal.** : action `connexion_bloquee`. — `src/Pharma.Application/Securite/SeConnecter.cs`
 - **Les compteurs d'erreurs sont gardés en mémoire du serveur : un redémarrage du serveur les remet à zéro.** — `src/Pharma.Application/Securite/EssaisConnexion.cs`
+- **Chaque connexion réussie est tracée avec le poste et la méthode (mot de passe ou code comptoir)** (table `connexion_employe`) ; elle relance le calcul des anomalies (employé sur deux postes à la fois). — `src/Pharma.Application/Securite/SeConnecter.cs`, `src/Pharma.Application/Securite/ConnexionComptoir.cs`, `database/058_surveillance_comptes.sql`
 
 ### Sessions et postes
 
@@ -1000,7 +1002,9 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 ### Journal des actions (consultation)
 
 - **Consulter le journal des actions demande le droit `admin.parametres`.** — `src/Pharma.Api/Endpoints/AdminEndpoints.cs`
-- **Le journal se filtre par période et par employé, du plus récent au plus ancien, par pages de 5 à 200 lignes (10 par défaut).** — `src/Pharma.Application/Commun/Pagination.cs`
+- **Le journal se filtre par période, par employé et par catégorie d'actions** : « Modifications » (prix, fiches produit et patient, comptes et droits, réglages) ou « Autorisations par code et blocages » ; une catégorie inconnue est refusée. Du plus récent au plus ancien, par pages de 5 à 200 lignes (10 par défaut). — `src/Pharma.Application/Commun/IJournal.cs`, `src/Pharma.Application/Caisse/Sessions.cs`, `src/Pharma.Application/Commun/Pagination.cs`
+- **Les modifications sont affichées « champ : ancienne valeur → nouvelle valeur ».** — `src/Pharma.Desktop/Services/Libelles.cs`
+- **Un compte modifié garde au journal son rôle et son état d'avant** (`role_avant`, `actif_avant`, et le nom s'il change). — `src/Pharma.Application/Administration/Utilisateurs.cs`
 - **Une période inversée est refusée.** — `src/Pharma.Application/Caisse/Sessions.cs`
 
 ## Journal et audit
@@ -1179,7 +1183,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 
 ### Déclenchement du calcul des anomalies
 - **Le calcul porte toujours sur la journée en cours** (date du jour du serveur). — `src/Pharma.Application/Surveillance/Surveillance.cs`
-- **Le calcul est relancé après** : chaque vente encaissée, chaque événement de caisse (ligne retirée, tiroir, attente abandonnée), chaque fin d'inventaire, chaque écart d'inventaire validé, chaque déclaration de casse ou d'échantillon (pas pour un périmé), chaque facture saisie sur un comptage (avec ou sans écart), chaque avoir inférieur au montant attendu. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `src/Pharma.Application/Stock/Inventaire.cs`, `src/Pharma.Application/Stock/SortieStock.cs`
+- **Le calcul est relancé après** : chaque vente encaissée, chaque événement de caisse (ligne retirée, tiroir, attente abandonnée), chaque fin d'inventaire, chaque écart d'inventaire validé, chaque déclaration de casse ou d'échantillon (pas pour un périmé), chaque facture saisie sur un comptage (avec ou sans écart), chaque avoir inférieur au montant attendu, chaque connexion réussie (mot de passe ou code), chaque baisse de prix depuis la fiche produit. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `src/Pharma.Application/Stock/Inventaire.cs`, `src/Pharma.Application/Stock/SortieStock.cs`
 - **Le calcul ne bloque jamais la vente ni l'opération** : elle est déjà enregistrée ; une erreur de surveillance est ignorée. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les journées et les horaires sont ceux de l'heure du serveur PostgreSQL** : son fuseau doit être réglé sur l'heure de la pharmacie. — `database/054_surveillance_caisse.sql`
 - **Il n'y a pas de calcul planifié** : constaté, le calcul n'est lancé que par les opérations ci-dessus (à confirmer : aucun appel planifié trouvé). — `src/Pharma.Application/Surveillance/Surveillance.cs`
@@ -1203,6 +1207,13 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 | Comptage et facture par la même personne (`reception_meme_personne`) | Livraisons comptées puis facturées par le même employé, par jour | aucun seuil : dès 1 livraison | jamais | `reception_aveugle` |
 | Retour sans avoir (`retour_sans_avoir`) | Retour fournisseur « envoyé » sans avoir depuis le délai réglé | 30 jours | à partir de 60 jours (2 × délai) | `jours_avoir_retour` (1 à 365) |
 | Avoir incomplet (`avoir_incomplet`) | Avoir reçu ce jour inférieur au montant attendu | dès 0,01 DA | jamais | aucun |
+| Patient récent avec une grosse dette (`credit_nouveau_patient`) | Patient créé depuis moins de 7 jours (réglable) dont la dette atteint le seuil, crédit accordé ce jour ; rattachée à qui l'a créé | 5 000 DA | à partir de 10 000 DA | `seuil_credit_nouveau_patient`, `jours_patient_recent` (1 à 90) |
+| Crédits accordés par un employé (`credits_employe`) | Montant des ventes à crédit accordées par un employé dans la journée | 20 000 DA | à partir de 40 000 DA | `seuil_credits_jour` (> 0) |
+| Crédit jamais remboursé (`credit_sans_remboursement`) | Patient endetté sans aucun remboursement depuis son premier crédit, au-delà du délai ; cite les employés qui ont accordé les crédits | 60 jours | jamais | `jours_credit_sans_remboursement` (1 à 365) |
+| Autorisations par code, qui autorise (`autorisations_valideur`) | Actions autorisées sur place par le code comptoir d'un employé, par jour | 10 | à partir de 20 | `seuil_autorisations_valideur` (≥ 1) |
+| Autorisations par code, qui en profite (`autorisations_employe`) | Autorisations sur place dont un employé a eu besoin, par jour (droits et valideurs cités) | 5 | à partir de 10 | `seuil_autorisations_employe` (≥ 1) |
+| Employé sur deux postes à la fois (`postes_simultanes`) | Passages d'un poste à l'autre (connexions et ventes) en moins de 10 minutes (réglable), par employé et par jour | 3 passages | à partir de 6 | `seuil_changements_poste` (≥ 1), `minutes_postes_simultanes` (1 à 120) |
+| Baisses de prix (`baisses_prix`) | Prix de vente baissés par un autre que le titulaire (fiche produit ou PPA de réception), par jour ; cite produit, ancien et nouveau prix | 1 | à partir de 2 | `seuil_baisses_prix` (≥ 1) |
 
 ### Règles communes des anomalies
 - **Deux niveaux existent : « attention » et « urgent ».** — `database/054_surveillance_caisse.sql`
@@ -1238,6 +1249,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **L'objet du message est « URGENT : anomalie de surveillance » ou « Anomalie de surveillance »** (caisse, stock, réception, retours) ; le message renvoie à l'écran Surveillance du titulaire. — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Le SMS de surveillance n'est envoyé que si le réglage SMS des lots bloqués est activé.** — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Le texte notifié ne contient aucune donnée de patient** (le nom du patient n'apparaît que dans l'écran Surveillance). — `database/055_surveillance_stock.sql`
+- **Crédits suspects : le nom du patient n'apparaît que dans l'écran Surveillance**, jamais dans l'e-mail ni le SMS. — `database/058_surveillance_comptes.sql`
 - **Les destinataires sont ceux abonnés au type « surveillance »** ; à l'installation, ce type a été ajouté aux destinataires déjà abonnés au type « lot délaissé ». — `database/054_surveillance_caisse.sql`
 
 ### Traitement des anomalies
@@ -1247,7 +1259,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Une anomalie déjà traitée ne peut pas être traitée à nouveau** (« introuvable ou déjà traitée »). — `src/Pharma.Infrastructure/Surveillance/SurveillanceSql.cs`
 
 ### Réglages de la surveillance
-- **Valeurs par défaut** : lignes retirées 5, tiroir 3, attentes abandonnées 3, remises 5, remises au même patient 3, ajustements 5, casses 3, échantillons 3, comptage des produits sensibles tous les 7 jours, horaires vides, réception à l'aveugle active, retour sans avoir après 30 jours. — `database/054_surveillance_caisse.sql`, `database/055_surveillance_stock.sql`
+- **Valeurs par défaut** : lignes retirées 5, tiroir 3, attentes abandonnées 3, remises 5, remises au même patient 3, ajustements 5, casses 3, échantillons 3, comptage des produits sensibles tous les 7 jours, horaires vides, réception à l'aveugle active, retour sans avoir après 30 jours, dette d'un patient récent 5 000 DA (patient de moins de 7 jours), crédits par employé 20 000 DA par jour, crédit jamais remboursé après 60 jours, autorisations par code 10 données et 5 demandées par jour, 3 passages d'un poste à l'autre en moins de 10 minutes, 1 baisse de prix. — `database/054_surveillance_caisse.sql`, `database/055_surveillance_stock.sql`
 - **Chaque seuil doit valoir au moins 1.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **La fréquence du comptage des produits sensibles va de 1 à 90 jours.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Le délai d'un retour sans avoir va de 1 à 365 jours.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
@@ -1255,7 +1267,8 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Les horaires se renseignent ensemble (ouverture et fermeture) ou pas du tout** ; vides, les ventes hors horaires ne sont pas contrôlées. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **L'heure d'ouverture doit précéder l'heure de fermeture** (une plage passant minuit n'est donc pas possible). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les seuils s'appliquent par employé et par jour** (par patient sur 30 jours pour les remises au même patient). — `database/054_surveillance_caisse.sql`
-- **Toute modification des réglages est inscrite au journal des actions** (action `reglages_surveillance`, avec toutes les valeurs). — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **Toute modification des réglages est inscrite au journal des actions** (action `reglages_surveillance`) : seulement les réglages changés, chacun avec l'ancienne et la nouvelle valeur ; rien n'est inscrit si rien ne change. — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **Les montants de crédit surveillés doivent être supérieurs à 0 ; patient récent de 1 à 90 jours ; crédit jamais remboursé de 1 à 365 jours ; postes simultanés de 1 à 120 minutes.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 
 ### Produits sensibles
 - **Un produit sensible est un produit cher, très demandé ou souvent volé, choisi par le titulaire** ; par défaut aucun produit ne l'est. — `database/055_surveillance_stock.sql`

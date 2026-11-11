@@ -61,7 +61,13 @@
                 <div class="champ" style="flex: 0 0 160px"><label for="j-du">Du</label><input id="j-du" type="date" @bind="journalDu" @bind:after="() => ChargerJournalAsync(1)" /></div>
                 <div class="champ" style="flex: 0 0 160px"><label for="j-au">Au</label><input id="j-au" type="date" @bind="journalAu" @bind:after="() => ChargerJournalAsync(1)" /></div>
                 <div class="champ" style="flex: 1 1 220px"><label for="j-employe">Employé (nom ou identifiant)</label><input id="j-employe" type="search" @bind="journalEmploye" @bind:after="() => ChargerJournalAsync(1)" /></div>
-                @if (journalDu is not null || journalAu is not null || !string.IsNullOrWhiteSpace(journalEmploye))
+                <div class="champ" style="flex: 0 0 260px"><label for="j-categorie">Actions</label>
+                    <select id="j-categorie" @bind="journalCategorie" @bind:after="() => ChargerJournalAsync(1)">
+                        <option value="">Toutes les actions</option>
+                        <option value="modifications">Modifications (prix, fiches, réglages, droits)</option>
+                        <option value="autorisations">Autorisations par code et blocages</option>
+                    </select></div>
+                @if (journalDu is not null || journalAu is not null || !string.IsNullOrWhiteSpace(journalEmploye) || journalCategorie != "")
                 {
                     <button type="button" class="btn" @onclick="EffacerFiltresJournalAsync">Tout afficher</button>
                 }
@@ -111,11 +117,12 @@
     private int journalTotal, journalPage = 1, journalTaille = Pagination.TailleParDefaut;
     private DateOnly? journalDu, journalAu;
     private string? journalEmploye, erreurJournal;
+    private string journalCategorie = "";
 
     private async Task ChargerJournalAsync(int page, int? taille = null)
     {
         journalTaille = taille ?? journalTaille;
-        var (p, e) = await Api.JournalAsync(journalDu, journalAu, journalEmploye, page, journalTaille);
+        var (p, e) = await Api.JournalAsync(journalDu, journalAu, journalEmploye, page, journalTaille, journalCategorie == "" ? null : journalCategorie);
         erreurJournal = e;
         if (p is null) return;
         // Page au-delà de la fin (filtre resserré) : retour à la première
@@ -125,7 +132,7 @@
 
     private Task EffacerFiltresJournalAsync()
     {
-        (journalDu, journalAu, journalEmploye) = (null, null, null);
+        (journalDu, journalAu, journalEmploye, journalCategorie) = (null, null, null, "");
         return ChargerJournalAsync(1);
     }
     private string? erreur, message;

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 057 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 058 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 057 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 058 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict EsrujM3J6dhocp7FnXj7CyqNgRCq8CJjSEiD4WedgKNYgZZbiukvVcgamiMnESQ
+\restrict C5ONDPymFlzogzLMVaVUhR4wolxOQAk0wQs2esxw7lYOVnCeF1hwmF2Hu5usRVk
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1630,6 +1630,136 @@ $$;
 
 
 --
+-- Name: surveillance_candidats_comptes(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.surveillance_candidats_comptes(p_jour date) RETURNS TABLE(o_type text, o_niveau text, o_utilisateur_id bigint, o_jour date, o_cle text, o_message text, o_notification text, o_valeur numeric)
+    LANGUAGE sql STABLE
+    AS $$
+    WITH p AS (SELECT * FROM parametre_surveillance WHERE id = 1),
+    -- Crédits accordés (ventes à crédit), par patient et par employé
+    credits AS (
+        SELECT m.patient_id, m.utilisateur_id, m.montant, m.cree_le FROM credit_mouvement m WHERE m.type = 'vente_credit'
+    ),
+    -- Patient récent dont la dette atteint le seuil, crédit accordé ce jour
+    nouveaux AS (
+        SELECT pt.id, pt.nom, pt.prenom, pt.solde_credit, pt.cree_le, pt.cree_par,
+               (SELECT string_agg(DISTINCT u.nom_complet, ', ') FROM credits c JOIN utilisateur u ON u.id = c.utilisateur_id WHERE c.patient_id = pt.id) AS vendeurs
+        FROM patient pt, p
+        WHERE pt.cree_le >= p_jour - p.jours_patient_recent + 1 AND pt.solde_credit >= p.seuil_credit_nouveau_patient
+          AND EXISTS (SELECT 1 FROM credits c WHERE c.patient_id = pt.id AND c.cree_le >= p_jour AND c.cree_le < p_jour + 1)
+    ),
+    -- Crédits accordés par un employé ce jour
+    par_employe AS (
+        SELECT c.utilisateur_id, count(*)::int AS n, sum(c.montant) AS montant, count(DISTINCT c.patient_id)::int AS patients
+        FROM credits c WHERE c.utilisateur_id IS NOT NULL AND c.cree_le >= p_jour AND c.cree_le < p_jour + 1
+        GROUP BY c.utilisateur_id
+    ),
+    -- Patient endetté qui n'a jamais rien remboursé depuis son premier crédit
+    jamais AS (
+        SELECT pt.id, pt.nom, pt.prenom, pt.solde_credit, min(c.cree_le) AS premier,
+               string_agg(DISTINCT u.nom_complet, ', ') AS vendeurs
+        FROM patient pt JOIN credits c ON c.patient_id = pt.id LEFT JOIN utilisateur u ON u.id = c.utilisateur_id, p
+        WHERE pt.solde_credit > 0
+          AND NOT EXISTS (SELECT 1 FROM credit_mouvement r WHERE r.patient_id = pt.id AND r.type = 'remboursement')
+        GROUP BY pt.id, pt.nom, pt.prenom, pt.solde_credit, p.jours_credit_sans_remboursement
+        HAVING min(c.cree_le)::date <= p_jour - p.jours_credit_sans_remboursement
+    ),
+    -- Autorisations sur place par code comptoir ce jour
+    autorisations AS (
+        SELECT j.utilisateur_id, j.autorise_par, j.details->>'droit' AS droit
+        FROM journal_audit j
+        WHERE j.action = 'autorisation_code' AND j.autorise_par IS NOT NULL AND j.cree_le >= p_jour AND j.cree_le < p_jour + 1
+    ),
+    par_valideur AS (
+        SELECT a.autorise_par AS utilisateur_id, count(*)::int AS n, string_agg(DISTINCT u.nom_complet, ', ') AS employes
+        FROM autorisations a JOIN utilisateur u ON u.id = a.utilisateur_id GROUP BY a.autorise_par
+    ),
+    par_beneficiaire AS (
+        SELECT a.utilisateur_id, count(*)::int AS n, string_agg(DISTINCT v.nom_complet, ', ') AS valideurs, string_agg(DISTINCT a.droit, ', ') AS droits
+        FROM autorisations a JOIN utilisateur v ON v.id = a.autorise_par GROUP BY a.utilisateur_id
+    ),
+    -- Activité par poste ce jour (connexions et ventes) : changements de poste rapprochés
+    activite AS (
+        SELECT c.utilisateur_id, c.poste, c.cree_le AS t FROM connexion_employe c
+        WHERE c.poste IS NOT NULL AND c.cree_le >= p_jour AND c.cree_le < p_jour + 1
+        UNION ALL
+        SELECT v.utilisateur_id, s.poste, v.date_vente FROM vente v JOIN session_caisse s ON s.id = v.session_caisse_id
+        WHERE v.date_vente >= p_jour AND v.date_vente < p_jour + 1
+    ),
+    suite AS (
+        SELECT a.utilisateur_id, a.poste, a.t,
+               lag(a.poste) OVER w AS poste_avant, lag(a.t) OVER w AS t_avant
+        FROM activite a WINDOW w AS (PARTITION BY a.utilisateur_id ORDER BY a.t)
+    ),
+    postes AS (
+        SELECT s.utilisateur_id, count(*)::int AS n, string_agg(DISTINCT s.poste_avant || ' / ' || s.poste, ', ') AS paires
+        FROM suite s, p
+        WHERE s.poste_avant IS NOT NULL AND s.poste_avant <> s.poste AND s.t - s.t_avant <= make_interval(mins => p.minutes_postes_simultanes)
+        GROUP BY s.utilisateur_id
+    ),
+    -- Baisses de prix par un autre que le titulaire
+    baisses AS (
+        SELECT j.utilisateur_id, count(*)::int AS n,
+               string_agg(format('%s : %s → %s DA', j.details->>'produit', j.details->>'avant', j.details->>'apres'), ', ' ORDER BY j.id) AS detail,
+               sum((j.details->>'avant')::numeric - (j.details->>'apres')::numeric) AS baisse
+        FROM journal_audit j JOIN utilisateur u ON u.id = j.utilisateur_id JOIN role r ON r.id = u.role_id
+        WHERE j.action = 'prix_modifie' AND j.cree_le >= p_jour AND j.cree_le < p_jour + 1 AND r.code <> 'titulaire'
+          AND (j.details->>'apres')::numeric < (j.details->>'avant')::numeric
+        GROUP BY j.utilisateur_id
+    )
+    SELECT 'credit_nouveau_patient', CASE WHEN n.solde_credit >= 2 * p.seuil_credit_nouveau_patient THEN 'urgent' ELSE 'attention' END,
+           n.cree_par, n.cree_le::date, 'patient:' || n.id,
+           format('%s %s, patient créé le %s%s : dette de %s DA dès ses premiers jours (crédits accordés par %s).', n.nom, COALESCE(n.prenom, ''),
+                  to_char(n.cree_le, 'DD/MM/YYYY'), COALESCE(' par ' || (SELECT nom_complet FROM utilisateur WHERE id = n.cree_par), ''),
+                  to_char(n.solde_credit, 'FM999G999G990D00'), COALESCE(n.vendeurs, '?')),
+           format('Patient cree recemment avec une dette de %s DA (detail dans Surveillance).', to_char(n.solde_credit, 'FM999G999G990')),
+           n.solde_credit
+    FROM nouveaux n, p
+    UNION ALL
+    SELECT 'credits_employe', CASE WHEN e.montant >= 2 * p.seuil_credits_jour THEN 'urgent' ELSE 'attention' END, e.utilisateur_id, p_jour, '',
+           format('%s a accordé %s vente(s) à crédit le %s à %s patient(s), pour %s DA.', u.nom_complet, e.n, to_char(p_jour, 'DD/MM/YYYY'),
+                  e.patients, to_char(e.montant, 'FM999G999G990D00')),
+           format('%s : %s DA de credits accordes le %s.', u.nom_complet, to_char(e.montant, 'FM999G999G990'), to_char(p_jour, 'DD/MM')),
+           e.montant
+    FROM par_employe e JOIN utilisateur u ON u.id = e.utilisateur_id, p WHERE e.montant >= p.seuil_credits_jour
+    UNION ALL
+    SELECT 'credit_sans_remboursement', 'attention', NULL::bigint, j.premier::date, 'patient:' || j.id,
+           format('%s %s doit %s DA et n''a jamais rien remboursé depuis son premier crédit du %s (crédits accordés par %s).',
+                  j.nom, COALESCE(j.prenom, ''), to_char(j.solde_credit, 'FM999G999G990D00'), to_char(j.premier, 'DD/MM/YYYY'), COALESCE(j.vendeurs, '?')),
+           format('Patient endette sans aucun remboursement depuis le %s (detail dans Surveillance).', to_char(j.premier, 'DD/MM/YYYY')),
+           j.solde_credit
+    FROM jamais j
+    UNION ALL
+    SELECT 'autorisations_valideur', CASE WHEN v.n >= 2 * p.seuil_autorisations_valideur THEN 'urgent' ELSE 'attention' END, v.utilisateur_id, p_jour, '',
+           format('%s a autorisé %s action(s) par son code comptoir le %s (pour %s).', u.nom_complet, v.n, to_char(p_jour, 'DD/MM/YYYY'), v.employes),
+           format('%s : %s autorisations par code comptoir le %s.', u.nom_complet, v.n, to_char(p_jour, 'DD/MM')),
+           v.n
+    FROM par_valideur v JOIN utilisateur u ON u.id = v.utilisateur_id, p WHERE v.n >= p.seuil_autorisations_valideur
+    UNION ALL
+    SELECT 'autorisations_employe', CASE WHEN b.n >= 2 * p.seuil_autorisations_employe THEN 'urgent' ELSE 'attention' END, b.utilisateur_id, p_jour, '',
+           format('%s a eu besoin de %s autorisation(s) par code comptoir le %s (droits : %s ; autorisé par %s).', u.nom_complet, b.n,
+                  to_char(p_jour, 'DD/MM/YYYY'), b.droits, b.valideurs),
+           format('%s : %s autorisations par code demandees le %s.', u.nom_complet, b.n, to_char(p_jour, 'DD/MM')),
+           b.n
+    FROM par_beneficiaire b JOIN utilisateur u ON u.id = b.utilisateur_id, p WHERE b.n >= p.seuil_autorisations_employe
+    UNION ALL
+    SELECT 'postes_simultanes', CASE WHEN s.n >= 2 * p.seuil_changements_poste THEN 'urgent' ELSE 'attention' END, s.utilisateur_id, p_jour, '',
+           format('%s a travaillé sur deux postes à la fois le %s : %s passage(s) d''un poste à l''autre en moins de %s minutes (%s). Son identifiant ou son code est peut-être utilisé par quelqu''un d''autre.',
+                  u.nom_complet, to_char(p_jour, 'DD/MM/YYYY'), s.n, p.minutes_postes_simultanes, s.paires),
+           format('%s : actif sur deux postes a la fois le %s.', u.nom_complet, to_char(p_jour, 'DD/MM')),
+           s.n
+    FROM postes s JOIN utilisateur u ON u.id = s.utilisateur_id, p WHERE s.n >= p.seuil_changements_poste
+    UNION ALL
+    SELECT 'baisses_prix', CASE WHEN b.n >= 2 * p.seuil_baisses_prix THEN 'urgent' ELSE 'attention' END, b.utilisateur_id, p_jour, '',
+           format('%s a baissé le prix de vente de %s produit(s) le %s : %s.', u.nom_complet, b.n, to_char(p_jour, 'DD/MM/YYYY'), b.detail),
+           format('%s : %s baisse(s) de prix le %s.', u.nom_complet, b.n, to_char(p_jour, 'DD/MM')),
+           b.baisse
+    FROM baisses b JOIN utilisateur u ON u.id = b.utilisateur_id, p WHERE b.n >= p.seuil_baisses_prix;
+$$;
+
+
+--
 -- Name: surveiller(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1641,7 +1771,9 @@ DECLARE
     v_id     bigint;
     v_ancien text;
 BEGIN
-    FOR c IN SELECT * FROM surveillance_candidats(p_jour) UNION ALL SELECT * FROM surveillance_candidats_achats(p_jour) LOOP
+    FOR c IN SELECT * FROM surveillance_candidats(p_jour)
+             UNION ALL SELECT * FROM surveillance_candidats_achats(p_jour)
+             UNION ALL SELECT * FROM surveillance_candidats_comptes(p_jour) LOOP
         v_id := NULL;
         SELECT a.id, a.niveau INTO v_id, v_ancien FROM alerte_surveillance a
         WHERE a.type = c.o_type AND COALESCE(a.utilisateur_id, 0) = COALESCE(c.o_utilisateur_id, 0) AND a.jour = c.o_jour AND a.cle = c.o_cle;
@@ -2139,7 +2271,7 @@ CREATE TABLE public.alerte_surveillance (
     traitee_le timestamp with time zone,
     CONSTRAINT alerte_surveillance_niveau_check CHECK ((niveau = ANY (ARRAY['attention'::text, 'urgent'::text]))),
     CONSTRAINT alerte_surveillance_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'traitee'::text]))),
-    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text, 'ecart_reception'::text, 'reception_meme_personne'::text, 'retour_sans_avoir'::text, 'avoir_incomplet'::text])))
+    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text, 'ecart_reception'::text, 'reception_meme_personne'::text, 'retour_sans_avoir'::text, 'avoir_incomplet'::text, 'credit_nouveau_patient'::text, 'credits_employe'::text, 'credit_sans_remboursement'::text, 'autorisations_valideur'::text, 'autorisations_employe'::text, 'postes_simultanes'::text, 'baisses_prix'::text])))
 );
 
 
@@ -2540,6 +2672,34 @@ CREATE TABLE public.compte_tresorerie (
 
 ALTER TABLE public.compte_tresorerie ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.compte_tresorerie_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: connexion_employe; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.connexion_employe (
+    id bigint NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    poste text,
+    methode text NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT connexion_employe_methode_check CHECK ((methode = ANY (ARRAY['mot_de_passe'::text, 'code'::text])))
+);
+
+
+--
+-- Name: connexion_employe_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.connexion_employe ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.connexion_employe_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -3674,7 +3834,17 @@ CREATE TABLE public.parametre_surveillance (
     jours_comptage_sensibles integer DEFAULT 7 NOT NULL,
     reception_aveugle boolean DEFAULT true NOT NULL,
     jours_avoir_retour integer DEFAULT 30 NOT NULL,
+    seuil_credit_nouveau_patient numeric(12,2) DEFAULT 5000 NOT NULL,
+    jours_patient_recent integer DEFAULT 7 NOT NULL,
+    seuil_credits_jour numeric(12,2) DEFAULT 20000 NOT NULL,
+    jours_credit_sans_remboursement integer DEFAULT 60 NOT NULL,
+    seuil_autorisations_valideur integer DEFAULT 10 NOT NULL,
+    seuil_autorisations_employe integer DEFAULT 5 NOT NULL,
+    minutes_postes_simultanes integer DEFAULT 10 NOT NULL,
+    seuil_changements_poste integer DEFAULT 3 NOT NULL,
+    seuil_baisses_prix integer DEFAULT 1 NOT NULL,
     CONSTRAINT ck_parametre_surveillance_achats CHECK (((jours_avoir_retour >= 1) AND (jours_avoir_retour <= 365))),
+    CONSTRAINT ck_parametre_surveillance_comptes CHECK (((seuil_credit_nouveau_patient > (0)::numeric) AND ((jours_patient_recent >= 1) AND (jours_patient_recent <= 90)) AND (seuil_credits_jour > (0)::numeric) AND ((jours_credit_sans_remboursement >= 1) AND (jours_credit_sans_remboursement <= 365)) AND (seuil_autorisations_valideur >= 1) AND (seuil_autorisations_employe >= 1) AND ((minutes_postes_simultanes >= 1) AND (minutes_postes_simultanes <= 120)) AND (seuil_changements_poste >= 1) AND (seuil_baisses_prix >= 1))),
     CONSTRAINT ck_parametre_surveillance_horaires CHECK (((heure_ouverture IS NULL) = (heure_fermeture IS NULL))),
     CONSTRAINT ck_parametre_surveillance_stock CHECK (((seuil_ajustements >= 1) AND (seuil_casses >= 1) AND (seuil_echantillons >= 1) AND ((jours_comptage_sensibles >= 1) AND (jours_comptage_sensibles <= 90)))),
     CONSTRAINT parametre_surveillance_id_check CHECK ((id = 1)),
@@ -3715,7 +3885,8 @@ CREATE TABLE public.patient (
     plafond_credit numeric(12,2) DEFAULT 0 NOT NULL,
     solde_credit numeric(12,2) DEFAULT 0 NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    email text
+    email text,
+    cree_par bigint
 );
 
 
@@ -5545,6 +5716,14 @@ ALTER TABLE ONLY public.compte_tresorerie
 
 
 --
+-- Name: connexion_employe connexion_employe_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connexion_employe
+    ADD CONSTRAINT connexion_employe_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: credit_mouvement credit_mouvement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6685,6 +6864,13 @@ CREATE INDEX ix_comptage_reception_statut ON public.comptage_reception USING btr
 
 
 --
+-- Name: ix_connexion_employe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_connexion_employe ON public.connexion_employe USING btree (utilisateur_id, cree_le);
+
+
+--
 -- Name: ix_evenement_caisse_employe; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7425,6 +7611,14 @@ ALTER TABLE ONLY public.comptage_reception
 
 
 --
+-- Name: connexion_employe connexion_employe_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connexion_employe
+    ADD CONSTRAINT connexion_employe_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: credit_mouvement credit_mouvement_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7945,6 +8139,14 @@ ALTER TABLE ONLY public.panier_attente
 
 
 --
+-- Name: patient patient_cree_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.patient
+    ADD CONSTRAINT patient_cree_par_fkey FOREIGN KEY (cree_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: patient patient_organisme_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8356,5 +8558,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict EsrujM3J6dhocp7FnXj7CyqNgRCq8CJjSEiD4WedgKNYgZZbiukvVcgamiMnESQ
+\unrestrict C5ONDPymFlzogzLMVaVUhR4wolxOQAk0wQs2esxw7lYOVnCeF1hwmF2Hu5usRVk
 

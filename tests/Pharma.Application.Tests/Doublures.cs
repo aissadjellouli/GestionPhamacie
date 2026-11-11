@@ -43,9 +43,11 @@ internal sealed class ComptesEnMemoire(params Utilisateur[] comptes) : IComptesL
 
     public List<long> Connexions { get; } = [];
 
-    public Task NoterConnexionAsync(long utilisateurId, CancellationToken ct = default)
+    public List<(long Id, string? Poste, string Methode)> ConnexionsDetail { get; } = [];
+    public Task NoterConnexionAsync(long utilisateurId, string? poste, string methode, CancellationToken ct = default)
     {
         Connexions.Add(utilisateurId);
+        ConnexionsDetail.Add((utilisateurId, poste, methode));
         return Task.CompletedTask;
     }
 }

@@ -39,14 +39,19 @@ internal static class SurveillanceEndpoints
                 var p = await regler.LireAsync(user.UtilisateurId(), ct);
                 return Results.Ok(new ParametresSurveillanceDto(p.SeuilLignesRetirees, p.SeuilTiroir, p.SeuilAttentesAbandonnees, p.SeuilRemises,
                     p.SeuilRemisesPatient, p.HeureOuverture, p.HeureFermeture, p.SeuilAjustements, p.SeuilCasses, p.SeuilEchantillons, p.JoursComptageSensibles,
-                    p.ReceptionAveugle, p.JoursAvoirRetour));
+                    p.ReceptionAveugle, p.JoursAvoirRetour, p.SeuilCreditNouveauPatient, p.JoursPatientRecent, p.SeuilCreditsJour,
+                    p.JoursCreditSansRemboursement, p.SeuilAutorisationsValideur, p.SeuilAutorisationsEmploye, p.MinutesPostesSimultanes,
+                    p.SeuilChangementsPoste, p.SeuilBaissesPrix));
             });
 
         surveillance.MapPut("/parametres", async (ParametresSurveillanceDto req, ReglerSurveillance regler, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await regler.EnregistrerAsync(new ParametresSurveillance(req.SeuilLignesRetirees, req.SeuilTiroir, req.SeuilAttentesAbandonnees,
                     req.SeuilRemises, req.SeuilRemisesPatient, req.HeureOuverture, req.HeureFermeture, req.SeuilAjustements, req.SeuilCasses,
-                    req.SeuilEchantillons, req.JoursComptageSensibles, req.ReceptionAveugle, req.JoursAvoirRetour), user.UtilisateurId(), ct);
+                    req.SeuilEchantillons, req.JoursComptageSensibles, req.ReceptionAveugle, req.JoursAvoirRetour,
+                    req.SeuilCreditNouveauPatient, req.JoursPatientRecent, req.SeuilCreditsJour, req.JoursCreditSansRemboursement,
+                    req.SeuilAutorisationsValideur, req.SeuilAutorisationsEmploye, req.MinutesPostesSimultanes, req.SeuilChangementsPoste,
+                    req.SeuilBaissesPrix), user.UtilisateurId(), ct);
                 return Results.NoContent();
             });
 

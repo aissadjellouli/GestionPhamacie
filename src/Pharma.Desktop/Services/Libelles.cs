@@ -200,6 +200,8 @@ public static class Libelles
         "utilisateur_modifie" => "Compte modifié",
         "coordonnees_modifiees" => "Coordonnées modifiées",
         "patient_modifie" => "Fiche patient modifiée",
+        "patient_cree" => "Patient créé",
+        "reglages_surveillance" => "Réglages de la surveillance",
         "retour_essai" => "Remarque d’essai",
         "produit_bloque" => "Produit bloqué",
         "produit_debloque" => "Produit débloqué",
@@ -350,8 +352,12 @@ public static class Libelles
                 "droits_modifies" => Droits(d),
                 "utilisateur_cree" => $"{T("nom")} ({T("identifiant")}), rôle {T("role")}",
                 "utilisateur_modifie" => $"{T("identifiant")} : rôle {T("role")}, {(B("actif") ? "compte actif" : "compte désactivé")}"
-                                         + (B("mot_de_passe_change") ? ", mot de passe changé" : ""),
-                "seuils_alerte" or "pharmacie_modifiee" => Differences(d),
+                                         + (B("mot_de_passe_change") ? ", mot de passe changé" : "")
+                                         + (d.TryGetProperty("role_avant", out var ra) && ra.GetString() is { } rav && rav != T("role") ? $" (avant : {rav})" : "")
+                                         + (d.TryGetProperty("actif_avant", out var aa) && aa.ValueKind != System.Text.Json.JsonValueKind.Undefined && (aa.ValueKind == System.Text.Json.JsonValueKind.True) != B("actif") ? (B("actif") ? " (réactivé)" : " (désactivé)") : ""),
+                "seuils_alerte" or "pharmacie_modifiee" or "reglages_surveillance" or "produit_modifie" or "patient_modifie" => Differences(d),
+                "prix_modifie" => $"{T("produit")} : {Dinars(N("avant"), 2)} → {Dinars(N("apres"), 2)}" + (T("source") is "—" ? "" : $" ({T("source")})"),
+                "patient_cree" => $"{T("patient")} · plafond de crédit {Dinars(N("plafond_credit"), 2)}",
                 "commande_emise" => $"Bon {T("numero")} · {Dinars(N("montant_ht"), 2)} HT",
                 "commande_annulee" => $"Bon {T("numero")}",
                 "reception" => $"BL {T("bl")} · {T("lots")} lot(s) · {Dinars(N("montant_ttc"), 2)} TTC",
@@ -405,7 +411,16 @@ public static class Libelles
     /// <summary>Réglages avant / après : seules les valeurs qui changent, « libellé : ancienne → nouvelle ».</summary>
     private static string Differences(System.Text.Json.JsonElement d)
     {
-        if (!d.TryGetProperty("avant", out var avant) || !d.TryGetProperty("apres", out var apres)) return Generique(d);
+        if (!d.TryGetProperty("avant", out var avant) || !d.TryGetProperty("apres", out var apres))
+        {
+            // Champ par champ : { "tiroir": { "avant": 3, "apres": 5 }, "produit": "…" } → « Tiroir : 3 → 5 »
+            static bool Paire(System.Text.Json.JsonElement v) => v.ValueKind == System.Text.Json.JsonValueKind.Object
+                && v.TryGetProperty("avant", out _) && v.TryGetProperty("apres", out _);
+            if (d.ValueKind != System.Text.Json.JsonValueKind.Object || !d.EnumerateObject().Any(p => Paire(p.Value))) return Generique(d);
+            return string.Join("\n", d.EnumerateObject().Where(p => p.Value.ValueKind != System.Text.Json.JsonValueKind.Null).Select(p => Paire(p.Value)
+                ? $"{Humaniser(p.Name)} : {Valeur(p.Value.GetProperty("avant"))} → {Valeur(p.Value.GetProperty("apres"))}"
+                : $"{Humaniser(p.Name)} : {Valeur(p.Value)}"));
+        }
         var (a, b) = (Aplatir(avant), Aplatir(apres));
         var changes = b.Where(kv => !a.TryGetValue(kv.Key, out var ancien) || ancien != kv.Value)
                        .Select(kv => $"{kv.Key} : {a.GetValueOrDefault(kv.Key, "—")} → {kv.Value}")

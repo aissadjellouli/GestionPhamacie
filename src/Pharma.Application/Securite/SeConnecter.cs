@@ -14,9 +14,9 @@ public sealed record Session(string Jeton, string NomComplet, DateTime ExpireLe,
 /// </summary>
 public sealed class SeConnecter(
     IComptesLecture comptes, IVerificateurMotDePasse verificateur, IGenerateurJeton jetons,
-    EssaisConnexion? essais = null, IHorloge? horloge = null, IJournal? journal = null)
+    EssaisConnexion? essais = null, IHorloge? horloge = null, IJournal? journal = null, Surveillance.Surveiller? surveillance = null)
 {
-    public async Task<Session?> ExecuterAsync(string identifiant, string motDePasse, CancellationToken ct = default)
+    public async Task<Session?> ExecuterAsync(string identifiant, string motDePasse, CancellationToken ct = default, string? poste = null)
     {
         if (string.IsNullOrWhiteSpace(identifiant) || string.IsNullOrEmpty(motDePasse))
             return null;
@@ -42,7 +42,9 @@ public sealed class SeConnecter(
         }
 
         essais?.NoterSucces(nom);
-        await comptes.NoterConnexionAsync(compte.Id, ct);
+        await comptes.NoterConnexionAsync(compte.Id, string.IsNullOrWhiteSpace(poste) ? null : poste.Trim(), "mot_de_passe", ct);
+        // Surveillance : même employé actif sur deux postes à la fois
+        if (surveillance is not null) await surveillance.ExecuterAsync(ct);
         var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet, motDePasseAChanger: compte.DoitChangerMotDePasse);
         return new Session(jeton, compte.NomComplet, expire, compte.DoitChangerMotDePasse);
     }

@@ -199,9 +199,13 @@ public sealed class ConsulterJournal(IJournalLecture journal)
     public Task<IReadOnlyList<EntreeJournal>> ExecuterAsync(CancellationToken ct = default) => journal.DernieresAsync(200, ct);
 
     /// <summary>Journal paginé et filtré (période, employé) : plus aucune action n'est hors d'atteinte au-delà des 200 dernières.</summary>
-    public Task<Page<EntreeJournal>> PageAsync(DateOnly? du, DateOnly? au, string? employe, DemandePage page, CancellationToken ct = default)
+    public Task<Page<EntreeJournal>> PageAsync(DateOnly? du, DateOnly? au, string? employe, DemandePage page, CancellationToken ct = default,
+        string? categorie = null)
     {
         if (du is { } d && au is { } a && a < d) throw new RegleMetierException("La période du journal est inversée.");
-        return journal.PageAsync(new FiltreJournal(du, au, string.IsNullOrWhiteSpace(employe) ? null : employe.Trim()), page, ct);
+        string[]? actions = null;
+        if (!string.IsNullOrWhiteSpace(categorie) && !CategoriesJournal.Actions.TryGetValue(categorie.Trim(), out actions))
+            throw new RegleMetierException("Catégorie du journal inconnue.");
+        return journal.PageAsync(new FiltreJournal(du, au, string.IsNullOrWhiteSpace(employe) ? null : employe.Trim(), actions), page, ct);
     }
 }

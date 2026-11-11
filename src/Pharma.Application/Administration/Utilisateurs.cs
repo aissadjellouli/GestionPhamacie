@@ -93,6 +93,9 @@ public sealed class ModifierUtilisateur(IUtilisateursAdmin admin, IHacheurMotDeP
             new Dictionary<string, object?>
             {
                 ["identifiant"] = cible.Identifiant, ["role"] = role.Nom, ["actif"] = actif,
+                // Journal des modifications : valeurs avant le changement
+                ["role_avant"] = cible.Role, ["actif_avant"] = cible.Actif,
+                ["nom"] = cible.NomComplet == nomComplet.Trim() ? null : new { avant = cible.NomComplet, apres = nomComplet.Trim() },
                 ["mot_de_passe_change"] = hash is not null,
                 ["coordonnees_changees"] = tel != cible.Telephone || mail != cible.Email
             }, Permissions.AdminUtilisateurs, ct);

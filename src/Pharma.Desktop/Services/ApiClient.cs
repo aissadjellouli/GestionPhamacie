@@ -586,8 +586,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         string.Join("&", parametres.Where(p => p.Valeur is not null && p.Valeur as string != "")
             .Select(p => $"{p.Nom}={Uri.EscapeDataString(p.Valeur switch { DateOnly d => d.ToString("yyyy-MM-dd"), var v => Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)! })}"));
 
-    public Task<(PageDto<EntreeJournalDto>?, string?)> JournalAsync(DateOnly? du, DateOnly? au, string? employe, int page, int taille) =>
-        GetAsync<PageDto<EntreeJournalDto>?>("api/admin/journal?" + Requete(("du", du), ("au", au), ("employe", employe?.Trim()), ("page", page), ("taille", taille)), null);
+    public Task<(PageDto<EntreeJournalDto>?, string?)> JournalAsync(DateOnly? du, DateOnly? au, string? employe, int page, int taille, string? categorie = null) =>
+        GetAsync<PageDto<EntreeJournalDto>?>("api/admin/journal?" + Requete(("du", du), ("au", au), ("employe", employe?.Trim()), ("categorie", categorie),
+            ("page", page), ("taille", taille)), null);
 
     // ---- Alertes, stock, traçabilité -------------------------------------------
 

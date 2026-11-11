@@ -32,9 +32,10 @@ internal static class AdminEndpoints
            .ExigerPermission(Permissions.AdminParametres);
 
         // Journal paginé, filtré par période et par employé
-        admin.MapGet("/journal", async (DateOnly? du, DateOnly? au, string? employe, int? page, int? taille, ConsulterJournal consulter, CancellationToken ct) =>
+        admin.MapGet("/journal", async (DateOnly? du, DateOnly? au, string? employe, string? categorie, int? page, int? taille, ConsulterJournal consulter,
+                CancellationToken ct) =>
             {
-                var p = await consulter.PageAsync(du, au, employe, DemandePage.Lire(page, taille), ct);
+                var p = await consulter.PageAsync(du, au, employe, DemandePage.Lire(page, taille), ct, categorie);
                 return Results.Ok(new PageDto<EntreeJournalDto>(
                     p.Lignes.Select(e => new EntreeJournalDto(e.Date, e.Employe, e.Action, e.DetailsJson, e.AutorisePar, e.EmployeId, e.AutoriseParId)).ToList(), p.Total, p.Numero, p.Taille));
             })

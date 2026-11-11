@@ -20,7 +20,8 @@ public interface IPatients
 {
     Task<IReadOnlyList<PatientResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default);
     Task<Patient?> TrouverAsync(long id, CancellationToken ct = default);
-    Task<long> CreerAsync(NouveauPatient patient, CancellationToken ct = default);
+    /// <param name="creePar">Employé qui crée le patient (surveillance des crédits).</param>
+    Task<long> CreerAsync(NouveauPatient patient, long? creePar, CancellationToken ct = default);
     Task<FichePatient?> FicheAsync(long id, CancellationToken ct = default);
     /// <summary>Remplace l'identité, les coordonnées, l'organisme, la case « chronique » et le plafond (pas la dette). Faux si absent.</summary>
     Task<bool> ModifierAsync(FichePatient fiche, CancellationToken ct = default);
@@ -90,21 +91,26 @@ public sealed class RechercherPatients(IPatients patients)
     }
 }
 
-/// <summary>Création rapide d'un patient depuis la caisse.</summary>
-public sealed class CreerPatient(IPatients patients)
+/// <summary>Création rapide d'un patient depuis la caisse : l'employé qui le crée est gardé et la création inscrite au journal.</summary>
+public sealed class CreerPatient(IPatients patients, Commun.IJournal? journal = null)
 {
-    public Task<long> ExecuterAsync(NouveauPatient p, CancellationToken ct = default)
+    public async Task<long> ExecuterAsync(NouveauPatient p, long? utilisateurId = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(p.Nom))
             throw new RegleMetierException("Le nom du patient est obligatoire.", "nom_patient");
         if (p.PlafondCredit < 0)
             throw new RegleMetierException("Le plafond de crédit ne peut pas être négatif.", "plafond");
         static string? Net(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-        return patients.CreerAsync(p with
+        var id = await patients.CreerAsync(p with
         {
             Nom = p.Nom.Trim(), Prenom = Net(p.Prenom), Telephone = Net(p.Telephone), NumAssure = Net(p.NumAssure),
             Email = Contacts.RegleContact.Email(p.Email)
-        }, ct);
+        }, utilisateurId, ct);
+        if (journal is not null && utilisateurId is { } u)
+            await journal.EcrireAsync(u, "patient_cree", "patient", id,
+                new Dictionary<string, object?> { ["patient"] = $"{p.Nom.Trim()} {Net(p.Prenom)}".Trim(), ["plafond_credit"] = p.PlafondCredit },
+                Domain.Securite.Permissions.CaisseVendre, ct);
+        return id;
     }
 }
 

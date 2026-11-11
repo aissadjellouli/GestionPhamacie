@@ -676,7 +676,10 @@ public sealed record AlerteSurveillanceDto(long Id, string Type, string Niveau, 
 public sealed record ParametresSurveillanceDto(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,
     int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture,
     int SeuilAjustements = 5, int SeuilCasses = 3, int SeuilEchantillons = 3, int JoursComptageSensibles = 7,
-    bool ReceptionAveugle = true, int JoursAvoirRetour = 30);
+    bool ReceptionAveugle = true, int JoursAvoirRetour = 30,
+    decimal SeuilCreditNouveauPatient = 5000, int JoursPatientRecent = 7, decimal SeuilCreditsJour = 20000, int JoursCreditSansRemboursement = 60,
+    int SeuilAutorisationsValideur = 10, int SeuilAutorisationsEmploye = 5, int MinutesPostesSimultanes = 10, int SeuilChangementsPoste = 3,
+    int SeuilBaissesPrix = 1);
 public sealed record ProduitSensibleDto(long ProduitId, string Nom, int Stock);
 public sealed record MarquerSensibleRequete(bool Sensible);
 

@@ -30,7 +30,10 @@ public sealed record AlerteSurveillance(long Id, string Type, string Niveau, lon
 public sealed record ParametresSurveillance(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,
     int SeuilRemisesPatient, TimeOnly? HeureOuverture, TimeOnly? HeureFermeture,
     int SeuilAjustements = 5, int SeuilCasses = 3, int SeuilEchantillons = 3, int JoursComptageSensibles = 7,
-    bool ReceptionAveugle = true, int JoursAvoirRetour = 30);
+    bool ReceptionAveugle = true, int JoursAvoirRetour = 30,
+    decimal SeuilCreditNouveauPatient = 5000, int JoursPatientRecent = 7, decimal SeuilCreditsJour = 20000, int JoursCreditSansRemboursement = 60,
+    int SeuilAutorisationsValideur = 10, int SeuilAutorisationsEmploye = 5, int MinutesPostesSimultanes = 10, int SeuilChangementsPoste = 3,
+    int SeuilBaissesPrix = 1);
 
 // ---- Port -------------------------------------------------------------------
 
@@ -124,27 +127,46 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "régler la surveillance de la caisse", ct);
         if (p.SeuilLignesRetirees < 1 || p.SeuilTiroir < 1 || p.SeuilAttentesAbandonnees < 1 || p.SeuilRemises < 1 || p.SeuilRemisesPatient < 1
-            || p.SeuilAjustements < 1 || p.SeuilCasses < 1 || p.SeuilEchantillons < 1)
+            || p.SeuilAjustements < 1 || p.SeuilCasses < 1 || p.SeuilEchantillons < 1 || p.SeuilAutorisationsValideur < 1
+            || p.SeuilAutorisationsEmploye < 1 || p.SeuilChangementsPoste < 1 || p.SeuilBaissesPrix < 1)
             throw new RegleMetierException("Chaque seuil doit être d’au moins 1.");
+        if (p.SeuilCreditNouveauPatient <= 0 || p.SeuilCreditsJour <= 0)
+            throw new RegleMetierException("Les montants de crédit surveillés doivent être supérieurs à 0.", "seuil_credit");
         if (p.JoursComptageSensibles is < 1 or > 90)
             throw new RegleMetierException("Comptage des produits sensibles : tous les 1 à 90 jours.", "jours_sensibles");
         if (p.JoursAvoirRetour is < 1 or > 365)
             throw new RegleMetierException("Retour sans avoir : délai de 1 à 365 jours.", "jours_avoir");
+        if (p.JoursPatientRecent is < 1 or > 90)
+            throw new RegleMetierException("Patient récent : de 1 à 90 jours.", "jours_patient_recent");
+        if (p.JoursCreditSansRemboursement is < 1 or > 365)
+            throw new RegleMetierException("Crédit jamais remboursé : délai de 1 à 365 jours.", "jours_credit");
+        if (p.MinutesPostesSimultanes is < 1 or > 120)
+            throw new RegleMetierException("Postes simultanés : de 1 à 120 minutes.", "minutes_postes");
         if ((p.HeureOuverture is null) != (p.HeureFermeture is null))
             throw new RegleMetierException("Horaires : renseignez l’ouverture et la fermeture, ou aucune des deux (pas de contrôle).", "heure_ouverture");
         if (p.HeureOuverture is { } o && p.HeureFermeture is { } f && o >= f)
             throw new RegleMetierException("Horaires : l’ouverture doit précéder la fermeture.", "heure_ouverture");
+        var avant = Valeurs(await surveillance.ParametresAsync(ct));
         await surveillance.EnregistrerParametresAsync(p, ct);
-        await journal.EcrireAsync(utilisateurId, "reglages_surveillance", "parametre_surveillance", 1,
-            new Dictionary<string, object?>
-            {
-                ["lignes_retirees"] = p.SeuilLignesRetirees, ["tiroir"] = p.SeuilTiroir, ["attentes"] = p.SeuilAttentesAbandonnees,
-                ["remises"] = p.SeuilRemises, ["remises_patient"] = p.SeuilRemisesPatient, ["ajustements"] = p.SeuilAjustements,
-                ["casses"] = p.SeuilCasses, ["echantillons"] = p.SeuilEchantillons, ["comptage_sensibles_jours"] = p.JoursComptageSensibles,
-                ["reception_aveugle"] = p.ReceptionAveugle, ["avoir_retour_jours"] = p.JoursAvoirRetour,
-                ["horaires"] = p.HeureOuverture is { } a ? $"{a:HH\\:mm}-{p.HeureFermeture:HH\\:mm}" : null
-            }, null, ct);
+        // Journal des modifications : chaque réglage changé, avec l'ancienne et la nouvelle valeur
+        var changes = Valeurs(p).Where(v => !Equals(avant.GetValueOrDefault(v.Key), v.Value))
+            .ToDictionary(v => v.Key, v => (object?)new { avant = avant.GetValueOrDefault(v.Key), apres = v.Value });
+        if (changes.Count > 0)
+            await journal.EcrireAsync(utilisateurId, "reglages_surveillance", "parametre_surveillance", 1, changes, null, ct);
     }
+
+    private static Dictionary<string, object?> Valeurs(ParametresSurveillance p) => new()
+    {
+        ["lignes_retirees"] = p.SeuilLignesRetirees, ["tiroir"] = p.SeuilTiroir, ["attentes"] = p.SeuilAttentesAbandonnees,
+        ["remises"] = p.SeuilRemises, ["remises_patient"] = p.SeuilRemisesPatient, ["ajustements"] = p.SeuilAjustements,
+        ["casses"] = p.SeuilCasses, ["echantillons"] = p.SeuilEchantillons, ["comptage_sensibles_jours"] = p.JoursComptageSensibles,
+        ["reception_aveugle"] = p.ReceptionAveugle, ["avoir_retour_jours"] = p.JoursAvoirRetour,
+        ["credit_nouveau_patient"] = p.SeuilCreditNouveauPatient, ["patient_recent_jours"] = p.JoursPatientRecent,
+        ["credits_jour"] = p.SeuilCreditsJour, ["credit_sans_remboursement_jours"] = p.JoursCreditSansRemboursement,
+        ["autorisations_valideur"] = p.SeuilAutorisationsValideur, ["autorisations_employe"] = p.SeuilAutorisationsEmploye,
+        ["postes_minutes"] = p.MinutesPostesSimultanes, ["changements_poste"] = p.SeuilChangementsPoste, ["baisses_prix"] = p.SeuilBaissesPrix,
+        ["horaires"] = p.HeureOuverture is { } a ? $"{a:HH\\:mm}-{p.HeureFermeture:HH\\:mm}" : null
+    };
 }
 
 /// <summary>Produit sensible (cher, très demandé, souvent volé) : compté à part et régulièrement (inventaire « Produits sensibles »).</summary>
