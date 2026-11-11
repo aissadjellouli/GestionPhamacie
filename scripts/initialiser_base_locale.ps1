@@ -1,7 +1,7 @@
 ﻿<#
 .SYNOPSIS
     Crée ou met à jour les bases PostgreSQL locales de développement et de test : applique tous les
-    scripts du dossier database/ dans l'ordre, puis les données de démonstration.
+    scripts numérotés du dossier database/migration dans l’ordre, puis les données de démonstration.
 
 .DESCRIPTION
     Les scripts SQL sont idempotents : les rejouer sur une base à jour ne change rien.
@@ -60,7 +60,8 @@ function Invoke-Psql([string]$utilisateur, [string]$motDePasse, [string]$base, [
     if ($LASTEXITCODE -ne 0) { throw "Échec psql ($base) : $($arguments -join ' ')" }
 }
 
-$scripts = Get-ChildItem (Join-Path $racine "database") -Filter "*.sql" | Sort-Object Name
+# Migrations seulement (0NN_*.sql de database\migration) : la création à la MEP (database\init) ne passe pas par ce script
+$scripts = Get-ChildItem (Join-Path $racine "database\migration") -Filter "0*.sql" | Where-Object { $_.Name -match "^0\d{2}_" } | Sort-Object Name
 # Fichiers qui remplissent la base (données fictives) : database\data
 $demo    = Get-ChildItem (Join-Path $racine "database\data") -Filter "*.sql" | Sort-Object Name
 

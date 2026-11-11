@@ -61,34 +61,34 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 
 ### Poste et caisse (session)
 - **Sans nom de poste, pas de caisse** : le poste doit être nommé (`PHARMA_POSTE`) pour ouvrir, encaisser, annuler, rembourser, mettre en attente. — `src/Pharma.Application/Caisse/Sessions.cs`
-- **Une seule caisse ouverte par poste (un tiroir)** : une seconde ouverture est refusée (« vendez dessus, ou faites une relève ») ; contrôlé aussi en base (index unique `ux_session_poste_ouverte`). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/022_caisse_partagee.sql`
-- **La caisse est partagée** : plusieurs employés vendent sur la caisse du poste ; chaque vente garde son vendeur, la caisse reste au nom de celui qui l'a ouverte. — `database/022_caisse_partagee.sql`
+- **Une seule caisse ouverte par poste (un tiroir)** : une seconde ouverture est refusée (« vendez dessus, ou faites une relève ») ; contrôlé aussi en base (index unique `ux_session_poste_ouverte`). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/022_caisse_partagee.sql`
+- **La caisse est partagée** : plusieurs employés vendent sur la caisse du poste ; chaque vente garde son vendeur, la caisse reste au nom de celui qui l'a ouverte. — `database/migration/022_caisse_partagee.sql`
 - **Ouvrir, clôturer et faire la relève demandent le droit de vendre** (`caisse.vendre`). — `src/Pharma.Api/Endpoints/CaisseEndpoints.cs`
-- **Fond de caisse jamais négatif** : s'il n'est pas saisi, le fond par défaut des paramètres est pris (5 000 DA à l'installation). — `src/Pharma.Domain/Caisse/SessionCaisse.cs`, `database/009_caisse.sql`
+- **Fond de caisse jamais négatif** : s'il n'est pas saisi, le fond par défaut des paramètres est pris (5 000 DA à l'installation). — `src/Pharma.Domain/Caisse/SessionCaisse.cs`, `database/migration/009_caisse.sql`
 - **On n'encaisse que sur une caisse ouverte** : « Ouvrez la caisse du poste avant d'encaisser » ; si la caisse est clôturée pendant l'encaissement, la vente est refusée. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
 - **Ventes suspendues pendant un inventaire complet « pharmacie fermée »** : elles reprennent à la clôture de l'inventaire. — `src/Pharma.Application/Stock/InventaireComplet.cs`
-- **Numéro de ticket suivi** : T-000001, T-000002…, jamais remis à zéro. — `database/009_caisse.sql`
+- **Numéro de ticket suivi** : T-000001, T-000002…, jamais remis à zéro. — `database/migration/009_caisse.sql`
 
 ### Clôture, comptage et relève
 - **Comptage par coupure** : billets de 2 000, 1 000, 500, 200 DA, pièces de 100 DA (nombres entiers), et « autres pièces » saisies en montant total ; aucune valeur négative. — `src/Pharma.Domain/Caisse/SessionCaisse.cs`
 - **Espèces attendues = fond de caisse + espèces nettes de la session** : espèces encaissées (ventes et remboursements de crédit en espèces) moins l'argent rendu en espèces (annulations, retours), moins le complément pris dans le tiroir pour payer un grossiste, moins l'argent porté au coffre pendant la session. — `src/Pharma.Infrastructure/Caisse/SessionsCaisseSql.cs`
-- **Écart = compté − attendu** ; au-delà du seuil d'écart (500 DA à l'installation), l'écart est inscrit au journal (`ecart_caisse`). — `src/Pharma.Domain/Caisse/SessionCaisse.cs`, `src/Pharma.Application/Caisse/Sessions.cs`, `database/009_caisse.sql`
+- **Écart = compté − attendu** ; au-delà du seuil d'écart (500 DA à l'installation), l'écart est inscrit au journal (`ecart_caisse`). — `src/Pharma.Domain/Caisse/SessionCaisse.cs`, `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/009_caisse.sql`
 - **Tout écart non nul est signalé au titulaire** (notification) ; un échec de notification n'annule pas la clôture. — `src/Pharma.Application/Caisse/Sessions.cs`
-- **Comptage aveugle (activé par défaut)** : l'attendu reste caché tant que la caisse n'est pas comptée. — `src/Pharma.Application/Caisse/Sessions.cs`, `database/009_caisse.sql`
+- **Comptage aveugle (activé par défaut)** : l'attendu reste caché tant que la caisse n'est pas comptée. — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/009_caisse.sql`
 - **Attendu et écart visibles seulement avec le droit `caisse.voir_ecart`** : sans ce droit, seul le total compté est montré (écran et rapport PDF). — `src/Pharma.Application/Caisse/Sessions.cs`
-- **Une caisse clôturée ne se modifie plus** : refus en base (déclencheur `trg_session_fermee`) ; une clôture déjà faite est refusée. — `database/009_caisse.sql`, `src/Pharma.Domain/Caisse/SessionCaisse.cs`
+- **Une caisse clôturée ne se modifie plus** : refus en base (déclencheur `trg_session_fermee`) ; une clôture déjà faite est refusée. — `database/migration/009_caisse.sql`, `src/Pharma.Domain/Caisse/SessionCaisse.cs`
 - **Clôture à relancer si une opération arrive pendant le comptage** : les espèces attendues sont relues ; si elles ont changé, la clôture est refusée. — `src/Pharma.Infrastructure/Caisse/SessionsCaisseSql.cs`
 - **Relève (changement d'équipe, facultative)** : la caisse est comptée et clôturée, puis une nouvelle s'ouvre aussitôt avec l'argent compté comme fond ; inscrite au journal (`releve_caisse`). — `src/Pharma.Application/Caisse/Sessions.cs`
 - **Rapport de clôture** : seulement pour une caisse clôturée ; accessible à celui qui l'a ouverte, à ceux qui y ont vendu, ou à qui a le droit `caisse.voir_ecart`. — `src/Pharma.Application/Caisse/Sessions.cs`
 
 ### Paramètres de caisse
 - **Réglés avec le droit `admin.parametres`**, chaque modification inscrite au journal (avant/après). — `src/Pharma.Api/Endpoints/AdminEndpoints.cs`, `src/Pharma.Application/Caisse/Sessions.cs`
-- **Fond par défaut et seuil d'écart ≥ 0** (défauts : 5 000 DA et 500 DA). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/009_caisse.sql`
-- **Seuil d'annulations entre 0 et 100** (0 = pas d'alerte, valeur par défaut 0). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/047_recette_corrections.sql`
-- **Plafond de crédit proposé à la création d'un patient ≥ 0** (0 par défaut). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/045_prix_lot_ug_categories.sql`
-- **Déconnexion automatique entre 0 (désactivée) et 240 minutes** (0 par défaut en base). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/009_caisse.sql`
-- **Versement des caisses au coffre : « manuel » (défaut) ou « automatique »**. — `src/Pharma.Application/Caisse/Sessions.cs`, `database/030_tresorerie.sql`
-- **Autorisation par code comptoir activée par défaut**, désactivable par le titulaire. — `database/047_recette_corrections.sql`, `src/Pharma.Api/Securite/AutorisationParCode.cs`
+- **Fond par défaut et seuil d'écart ≥ 0** (défauts : 5 000 DA et 500 DA). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/009_caisse.sql`
+- **Seuil d'annulations entre 0 et 100** (0 = pas d'alerte, valeur par défaut 0). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/047_recette_corrections.sql`
+- **Plafond de crédit proposé à la création d'un patient ≥ 0** (0 par défaut). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/045_prix_lot_ug_categories.sql`
+- **Déconnexion automatique entre 0 (désactivée) et 240 minutes** (0 par défaut en base). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/009_caisse.sql`
+- **Versement des caisses au coffre : « manuel » (défaut) ou « automatique »**. — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/030_tresorerie.sql`
+- **Autorisation par code comptoir activée par défaut**, désactivable par le titulaire. — `database/migration/047_recette_corrections.sql`, `src/Pharma.Api/Securite/AutorisationParCode.cs`
 
 ### Code comptoir et autorisation sur place
 - **Code comptoir de 4 à 6 chiffres**. — `src/Pharma.Domain/Securite/CodeComptoir.cs`
@@ -97,10 +97,10 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 
 ### Panier et produits vendus
 - **Panier vide : encaissement refusé**. — `src/Pharma.Domain/Ventes/Vente.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`
-- **Quantité d'au moins une boîte par ligne** (aussi en base : `quantite > 0`). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/001_schema.sql`
+- **Quantité d'au moins une boîte par ligne** (aussi en base : `quantite > 0`). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/001_schema.sql`
 - **Produit inexistant ou inactif : refusé**. — `src/Pharma.Application/Caisse/Encaisser.cs`
 - **Produit repris de l'ancien logiciel « à vérifier » : invendable** tant que le titulaire ne l'a pas vérifié (Nomenclature nationale, « Produits à vérifier »). — `src/Pharma.Application/Caisse/Encaisser.cs`
-- **Lot bloqué, périmé (péremption le jour même ou passée) ou épuisé : vente refusée** ; bloqué et périmé sont aussi refusés en base (déclencheur `verifier_lot_vendable`). — `src/Pharma.Domain/Stock/Lot.cs`, `database/007_tracabilite_boite.sql`
+- **Lot bloqué, périmé (péremption le jour même ou passée) ou épuisé : vente refusée** ; bloqué et périmé sont aussi refusés en base (déclencheur `verifier_lot_vendable`). — `src/Pharma.Domain/Stock/Lot.cs`, `database/migration/007_tracabilite_boite.sql`
 - **Pas plus de boîtes que le stock du lot** (lignes du même lot cumulées) ; si un autre poste vient de vendre la dernière boîte, l'encaissement est refusé (« Rescannez le produit »). — `src/Pharma.Domain/Ventes/Vente.cs`, `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
 - **Produit bloqué à la vente** : il faut une validation explicite, par l'employé s'il a le droit `produits.bloquer`, sinon par le code comptoir d'un employé qui l'a ; la vente est inscrite au journal (`vente_produit_bloque`, avec le validateur). — `src/Pharma.Application/Catalogue/BlocageProduit.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`
 - **Retirer une ligne ou des boîtes du panier est signalé à la surveillance** (boîtes, montant). — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
@@ -110,28 +110,28 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Code-barres du fabricant : le lot qui périme le premier est servi** ; une boîte identifiée (étiquette interne ou Data Matrix) sert son propre lot. — `src/Pharma.Application/Caisse/ControlerBoite.cs`
 - **Boîte scannée plus récente qu'un autre lot : le caissier est prévenu de servir d'abord l'autre lot** ; alerte rouge si cet autre lot est proche de sa péremption (seuils rouge/orange), orange sinon ; l'emplacement (comptoir ou réserve) est indiqué. — `src/Pharma.Domain/Stock/RegleFefo.cs`, `src/Pharma.Application/Caisse/ControlerBoite.cs`
 - **Boîte scannée déjà vendue, retournée ou détruite : refusée** ; lot bloqué (rappel) ou périmé : vente interdite. — `src/Pharma.Application/Caisse/ControlerBoite.cs`
-- **Lot plus récent servi alors qu'un lot plus ancien est en stock : raison obligatoire à l'encaissement** — « péremption plus proche » (seulement si le logiciel l'a vérifiée sur les dates : le lot servi périme avant tous les autres, dates non « à vérifier »), sinon au choix du vendeur : boîte de l'ancien lot introuvable, abîmée, ou demande du client. — `src/Pharma.Domain/Ventes/RaisonLot.cs`, `database/053_lot_delaisse.sql`
-- **« Péremption plus proche » refusée si le logiciel ne l'a pas vérifiée** ; une raison inconnue est refusée (aussi en base : `ck_ligne_vente_raison_lot`). — `src/Pharma.Domain/Ventes/RaisonLot.cs`, `database/053_lot_delaisse.sql`
-- **Ancien lot délaissé : alerte au titulaire** quand un même vendeur a vendu au moins 5 boîtes du lot récent (seuil par défaut), ou plusieurs vendeurs ensemble au moins 10 boîtes, hors raison « péremption » ; urgente dans le second cas, si une vente porte « introuvable » ou si l'ancien lot approche de sa péremption ; un échec de l'alerte n'annule pas la vente. — `database/053_lot_delaisse.sql`, `src/Pharma.Application/Caisse/Encaisser.cs`
+- **Lot plus récent servi alors qu'un lot plus ancien est en stock : raison obligatoire à l'encaissement** — « péremption plus proche » (seulement si le logiciel l'a vérifiée sur les dates : le lot servi périme avant tous les autres, dates non « à vérifier »), sinon au choix du vendeur : boîte de l'ancien lot introuvable, abîmée, ou demande du client. — `src/Pharma.Domain/Ventes/RaisonLot.cs`, `database/migration/053_lot_delaisse.sql`
+- **« Péremption plus proche » refusée si le logiciel ne l'a pas vérifiée** ; une raison inconnue est refusée (aussi en base : `ck_ligne_vente_raison_lot`). — `src/Pharma.Domain/Ventes/RaisonLot.cs`, `database/migration/053_lot_delaisse.sql`
+- **Ancien lot délaissé : alerte au titulaire** quand un même vendeur a vendu au moins 5 boîtes du lot récent (seuil par défaut), ou plusieurs vendeurs ensemble au moins 10 boîtes, hors raison « péremption » ; urgente dans le second cas, si une vente porte « introuvable » ou si l'ancien lot approche de sa péremption ; un échec de l'alerte n'annule pas la vente. — `database/migration/053_lot_delaisse.sql`, `src/Pharma.Application/Caisse/Encaisser.cs`
 
 ### Boîtes identifiées (traçabilité)
-- **Une même boîte ne peut être scannée deux fois, ni plus de boîtes que de boîtes vendues sur le lot**. — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/007_tracabilite_boite.sql`
-- **Une boîte vendue doit être en stock et appartenir au lot de la ligne** (sinon « contrefaçon ou double scan possible »). — `database/007_tracabilite_boite.sql`
-- **Scan de chaque boîte vendue obligatoire si le réglage l'impose** (désactivé par défaut, `parametre_tracabilite.boite_obligatoire`). — `database/007_tracabilite_boite.sql`
+- **Une même boîte ne peut être scannée deux fois, ni plus de boîtes que de boîtes vendues sur le lot**. — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/migration/007_tracabilite_boite.sql`
+- **Une boîte vendue doit être en stock et appartenir au lot de la ligne** (sinon « contrefaçon ou double scan possible »). — `database/migration/007_tracabilite_boite.sql`
+- **Scan de chaque boîte vendue obligatoire si le réglage l'impose** (désactivé par défaut, `parametre_tracabilite.boite_obligatoire`). — `database/migration/007_tracabilite_boite.sql`
 
 ### Prix et calcul de la vente
 - **Prix d'une boîte = PPA du lot (prix vignette), à défaut prix public du catalogue, plus le SHP par boîte**. — `src/Pharma.Domain/Ventes/Vente.cs`
-- **Les prix et le stock sont toujours recalculés par le serveur** (aperçu et encaissement), y compris à la reprise d'une vente en attente. — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/026_ventes_attente.sql`
+- **Les prix et le stock sont toujours recalculés par le serveur** (aperçu et encaissement), y compris à la reprise d'une vente en attente. — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/migration/026_ventes_attente.sql`
 
 ### Remise
 - **Remise en pourcentage sur la part du patient, hors SHP** (le SHP, honoraire du pharmacien, n'est jamais remisé) ; montant arrondi au centime. — `src/Pharma.Domain/Ventes/Vente.cs`
-- **Remise comprise entre 0 et 100 %** (aussi en base). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/009_caisse.sql`
+- **Remise comprise entre 0 et 100 %** (aussi en base). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/009_caisse.sql`
 - **Toute remise demande le droit `caisse.remise`** ; le champ remise n'est affiché qu'avec ce droit. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
-- **Remise plafonnée par le maximum du rôle** : à l'installation, titulaire 100 %, pharmacien assistant 10 %, vendeur 0 %, stagiaire 0 %. — `src/Pharma.Domain/Ventes/Vente.cs`, `database/006_droits_utilisateurs.sql`
+- **Remise plafonnée par le maximum du rôle** : à l'installation, titulaire 100 %, pharmacien assistant 10 %, vendeur 0 %, stagiaire 0 %. — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/006_droits_utilisateurs.sql`
 - **Chaque remise est inscrite au journal** (`remise` : ticket, pourcentage, montant). — `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
 
 ### Tiers payant (Chifa) au comptoir
-- **Tiers payant : l'assuré (patient) et l'organisme (CNAS, CASNOS) sont obligatoires** (aussi en base : contrainte sur `vente`). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/001_schema.sql`
+- **Tiers payant : l'assuré (patient) et l'organisme (CNAS, CASNOS) sont obligatoires** (aussi en base : contrainte sur `vente`). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/001_schema.sql`
 - **Taux de remboursement choisi au comptoir : 80 % ou 100 % (80 % par défaut à l'écran)** ; le serveur exige un taux supérieur à 0 et au plus 100 %, sauf si le reste à charge est saisi. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`, `src/Pharma.Domain/Ventes/Vente.cs`
 - **Part de l'organisme par ligne = base de remboursement (tarif de référence, plafonné au prix de vente) × quantité × taux, arrondie au centime** (comme les factures Chifa) ; le patient paie le reste. — `src/Pharma.Domain/Ventes/LigneVente.cs`
 - **Produit non remboursable ou sans tarif de référence : le patient paie tout**, même en tiers payant. — `src/Pharma.Domain/Ventes/Vente.cs`
@@ -154,37 +154,37 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Au plus 20 ventes en attente par poste**. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 - **Panier vide : rien à mettre en attente** ; panier trop volumineux (plus de 200 000 caractères) refusé. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 - **Libellé par défaut « Vente en attente », 80 caractères au plus** (au-delà, tronqué). — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
-- **Une vente en attente est gardée sur le serveur et peut être reprise par n'importe quel employé du poste** ; reprise, elle quitte l'attente (une seconde reprise est refusée). — `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `database/026_ventes_attente.sql`
+- **Une vente en attente est gardée sur le serveur et peut être reprise par n'importe quel employé du poste** ; reprise, elle quitte l'attente (une seconde reprise est refusée). — `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `database/migration/026_ventes_attente.sql`
 - **Une vente en attente abandonnée est enregistrée pour la surveillance** (qui, quand, montant) ; l'abandon exige toujours l'employé qui abandonne. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 
 ### Surveillance de la caisse (titulaire)
 - **Ouvrir le tiroir sans vente demande le droit `caisse.ouvrir_tiroir`** ; chaque ouverture est enregistrée et inscrite au journal ; le bouton est grisé sans ce droit. — `src/Pharma.Application/Surveillance/Surveillance.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
-- **Anomalies par employé et par jour, seuils par défaut** : 5 boîtes retirées du panier, 3 ouvertures du tiroir sans vente, 3 ventes en attente abandonnées, 5 ventes avec remise ; « urgente » à partir du double du seuil. — `database/054_surveillance_caisse.sql`
-- **Remises répétées à un même patient** : 3 ventes avec remise en 30 jours (défaut), urgente au double. — `database/054_surveillance_caisse.sql`
-- **Ventes hors horaires d'ouverture : anomalie urgente**, seulement si les horaires sont réglés (heure locale du serveur). — `database/054_surveillance_caisse.sql`
-- **Les anomalies ne sont visibles que du titulaire et ne sont jamais supprimées** (closes par « traitée »). — `database/054_surveillance_caisse.sql`
+- **Anomalies par employé et par jour, seuils par défaut** : 5 boîtes retirées du panier, 3 ouvertures du tiroir sans vente, 3 ventes en attente abandonnées, 5 ventes avec remise ; « urgente » à partir du double du seuil. — `database/migration/054_surveillance_caisse.sql`
+- **Remises répétées à un même patient** : 3 ventes avec remise en 30 jours (défaut), urgente au double. — `database/migration/054_surveillance_caisse.sql`
+- **Ventes hors horaires d'ouverture : anomalie urgente**, seulement si les horaires sont réglés (heure locale du serveur). — `database/migration/054_surveillance_caisse.sql`
+- **Les anomalies ne sont visibles que du titulaire et ne sont jamais supprimées** (closes par « traitée »). — `database/migration/054_surveillance_caisse.sql`
 
 ## Ordonnances et médicaments réglementés
 
 ### Ordonnance à la vente
-- **Une ordonnance est toujours rattachée à un patient** (aussi en base : `ordonnance.patient_id` obligatoire). — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/001_schema.sql`
+- **Une ordonnance est toujours rattachée à un patient** (aussi en base : `ordonnance.patient_id` obligatoire). — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/migration/001_schema.sql`
 - **La date de prescription ne peut pas être dans le futur**. — `src/Pharma.Application/Caisse/Encaisser.cs`
 - **Image d'ordonnance scannée introuvable sur le serveur : à rescanner**. — `src/Pharma.Application/Caisse/Encaisser.cs`
-- **Patient obligatoire selon le réglage de traçabilité** (par défaut « ordonnance » : dès qu'une ordonnance est rattachée ou qu'un psychotrope/stupéfiant est vendu) ; autres réglages : jamais, psychotrope, toujours. — `database/007_tracabilite_boite.sql`
+- **Patient obligatoire selon le réglage de traçabilité** (par défaut « ordonnance » : dès qu'une ordonnance est rattachée ou qu'un psychotrope/stupéfiant est vendu) ; autres réglages : jamais, psychotrope, toujours. — `database/migration/007_tracabilite_boite.sql`
 - **À l'écran, le patient est exigé en tiers payant, pour un psychotrope, une ordonnance scannée, ou un médicament de liste I/II avec médecin**. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 
 ### Vente sans ordonnance (liste I ou II)
 - **Médicament de liste I ou II sans ordonnance (ni médecin prescripteur ni ordonnance scannée) : droit `caisse.vendre_sans_ordonnance` exigé**, sinon autorisation par le code comptoir d'un employé qui l'a. — `src/Pharma.Application/Caisse/Encaisser.cs`
-- **Ce droit est donné au départ au titulaire et au pharmacien assistant** ; à attribuer au vendeur dans la matrice des droits. — `database/049_vente_sans_ordonnance.sql`
+- **Ce droit est donné au départ au titulaire et au pharmacien assistant** ; à attribuer au vendeur dans la matrice des droits. — `database/migration/049_vente_sans_ordonnance.sql`
 - **Chaque vente sans ordonnance est inscrite au journal** (`vente_sans_ordonnance` : ticket, produits). — `src/Pharma.Application/Caisse/Encaisser.cs`
-- **Ce droit ne s'applique jamais aux psychotropes et stupéfiants**. — `database/049_vente_sans_ordonnance.sql`, `src/Pharma.Domain/Securite/Permissions.cs`
+- **Ce droit ne s'applique jamais aux psychotropes et stupéfiants**. — `database/migration/049_vente_sans_ordonnance.sql`, `src/Pharma.Domain/Securite/Permissions.cs`
 
 ### Psychotropes et stupéfiants
 - **Délivrance réservée au droit `psychotropes.delivrer`** : sans ce droit, le message nomme les employés qui l'ont pour qu'ils reprennent la vente (« Changer d'utilisateur »). — `src/Pharma.Application/Caisse/Encaisser.cs`
 - **Ordonnance obligatoire pour tous, patient identifié et médecin prescripteur obligatoires**. — `src/Pharma.Domain/Ventes/Vente.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`
-- **Porteur de l'ordonnance autre que le patient : nom et prénom, adresse et pièce d'identité obligatoires** (200 caractères au plus chacun ; arrêté du 29 juin 2013, art. 7) ; contrôlé aussi en base. — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/024_registre_psychotropes.sql`
-- **Chaque vente est inscrite au registre des psychotropes (sortie) avec son ordonnance**, et au journal (`delivrance_psychotrope`). — `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`, `database/001_schema.sql`
-- **Le registre ne peut être ni modifié ni supprimé**. — `database/001_schema.sql`
+- **Porteur de l'ordonnance autre que le patient : nom et prénom, adresse et pièce d'identité obligatoires** (200 caractères au plus chacun ; arrêté du 29 juin 2013, art. 7) ; contrôlé aussi en base. — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/migration/024_registre_psychotropes.sql`
+- **Chaque vente est inscrite au registre des psychotropes (sortie) avec son ordonnance**, et au journal (`delivrance_psychotrope`). — `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`, `database/migration/001_schema.sql`
+- **Le registre ne peut être ni modifié ni supprimé**. — `database/migration/001_schema.sql`
 
 ### Ordonnance scannée et lecture automatique
 - **Image d'ordonnance : JPEG ou PNG (reconnu par le contenu du fichier), non vide, 10 Mo au plus**. — `src/Pharma.Application/Ordonnances/Ordonnances.cs`
@@ -196,13 +196,13 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 ## Annulations et retours
 
 ### Annulation d'une vente
-- **Motif obligatoire : 3 à 300 caractères** (aussi en base : au moins 3 caractères). — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `database/027_annulation_vente.sql`
+- **Motif obligatoire : 3 à 300 caractères** (aussi en base : au moins 3 caractères). — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `database/migration/027_annulation_vente.sql`
 - **Seule une vente encaissée peut être annulée** ; une vente déjà annulée est refusée (une seule annulation, même depuis deux postes). — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `src/Pharma.Infrastructure/Caisse/AnnulationsVenteSql.cs`
 - **Vente déjà placée sur un bordereau d'organisme : annulation refusée**, à traiter par la régularisation Chifa. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`
 - **Vente figurant sur une facture émise ou rejetée : annulation refusée** ; retirer d'abord la vente de la facture, ou faire un retour client. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `src/Pharma.Infrastructure/Caisse/AnnulationsVenteSql.cs`
 - **Pas de limite de durée pour annuler**. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`
 - **Vente récente (sa caisse est encore ouverte) : le caissier l'annule seul**. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`
-- **Vente ancienne (caisse clôturée) : droit `caisse.annuler_vente` de l'employé, sinon validation sur place par le code comptoir d'un employé qui l'a** ; en base, une annulation ancienne a toujours un validateur. — `src/Pharma.Application/Caisse/AnnulerVente.cs`, `database/027_annulation_vente.sql`
+- **Vente ancienne (caisse clôturée) : droit `caisse.annuler_vente` de l'employé, sinon validation sur place par le code comptoir d'un employé qui l'a** ; en base, une annulation ancienne a toujours un validateur. — `src/Pharma.Application/Caisse/AnnulerVente.cs`, `database/migration/027_annulation_vente.sql`
 - **Montant rendu = part payée par le patient moins ce qui a déjà été rendu par des retours**. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`
 - **Vente à crédit annulée : la dette diminue de ce qui reste dû ; ce que le patient a déjà remboursé lui est rendu en espèces**. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `src/Pharma.Application/Caisse/AnnulerVente.cs`
 - **Vente payée à un patient qui a une dette : le remboursement peut être retiré de sa dette, seulement avec l'accord du client** (case cochée) ; seul le surplus est rendu. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `src/Pharma.Application/Caisse/AnnulerVente.cs`
@@ -215,7 +215,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Recherche d'une vente à annuler : par n° de ticket, ou les 20 dernières ventes de la caisse ouverte du poste**. — `src/Pharma.Application/Caisse/AnnulerVente.cs`
 
 ### Retour de médicaments par le patient
-- **Motif obligatoire : 3 à 300 caractères**. — `src/Pharma.Application/Caisse/RetourClient.cs`, `database/028_retour_client.sql`
+- **Motif obligatoire : 3 à 300 caractères**. — `src/Pharma.Application/Caisse/RetourClient.cs`, `database/migration/028_retour_client.sql`
 - **Retour seulement sur une vente encaissée non annulée**. — `src/Pharma.Domain/Ventes/RegleRetour.cs`
 - **Pas de retour partiel sur une vente en tiers payant** (sur bordereau ou avec part organisme) : annuler la vente complète puis la refaire sans le produit rendu. — `src/Pharma.Domain/Ventes/RegleRetour.cs`
 - **Au moins un produit, chacun une seule fois, appartenant à la vente**. — `src/Pharma.Application/Caisse/RetourClient.cs`
@@ -228,7 +228,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Vente à crédit : la dette diminue ; ce que le patient a déjà remboursé lui est rendu en espèces**. — `src/Pharma.Application/Caisse/RetourClient.cs`
 - **Vente payée à un patient endetté : déduction de la dette seulement avec l'accord du client** ; vente sans patient : le client peut se nommer. — `src/Pharma.Application/Caisse/RetourClient.cs`
 - **Argent rendu (vente en espèces ou à crédit) : caisse ouverte du poste exigée**. — `src/Pharma.Application/Caisse/RetourClient.cs`
-- **Produit à détruire : il rentre puis sort du stock (mouvement « destruction »)** ; la boîte identifiée passe « détruite » ; pour un psychotrope, le registre inscrit le retour puis la destruction. — `src/Pharma.Infrastructure/Caisse/RetoursClientSql.cs`, `database/028_retour_client.sql`
+- **Produit à détruire : il rentre puis sort du stock (mouvement « destruction »)** ; la boîte identifiée passe « détruite » ; pour un psychotrope, le registre inscrit le retour puis la destruction. — `src/Pharma.Infrastructure/Caisse/RetoursClientSql.cs`, `database/migration/028_retour_client.sql`
 - **Chaque retour est inscrit au journal** (`retour_client` : motif, montant, rendu, dette diminuée, remis en stock, à détruire, validateur). — `src/Pharma.Application/Caisse/RetourClient.cs`
 
 ### Remboursement sans ticket (scan de la boîte rapportée)
@@ -244,15 +244,15 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Mettre une vente en crédit demande le droit `credit.accorder`** (sinon code comptoir d'un employé qui l'a). — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **Le crédit est toujours accordé à un patient choisi**. — `src/Pharma.Application/Caisse/Encaisser.cs`
 - **Dette + part du patient au-delà du plafond : droit `credit.depasser_plafond` exigé** (autorisable par code comptoir). — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Domain/Ventes/Patient.cs`
-- **Plafond d'un patient : 0 par défaut en base** ; à la création depuis la caisse, le plafond proposé est celui des paramètres (0 par défaut). — `database/001_schema.sql`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Plafond d'un patient : 0 par défaut en base** ; à la création depuis la caisse, le plafond proposé est celui des paramètres (0 par défaut). — `database/migration/001_schema.sql`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **Part du patient nulle (organisme qui paie tout) : la dette ne bouge pas**. — `src/Pharma.Application/Caisse/Encaisser.cs`
 
 ### Remboursement d'une dette au comptoir
 - **Caisse du poste ouverte exigée** : l'argent entre dans cette caisse. — `src/Pharma.Application/Caisse/ReglementCredit.cs`
 - **Mode : espèces, carte ou chèque ; montant supérieur à 0 ; le patient doit avoir une dette ; pas plus que ce qu'il doit**. — `src/Pharma.Domain/Ventes/RegleCredit.cs`
-- **Reçu numéroté RC-000001, RC-000002…** ; règlement inscrit au journal (`reglement_credit`, reste dû). — `src/Pharma.Infrastructure/Caisse/CreditsClientsSql.cs`, `database/047_recette_corrections.sql`, `src/Pharma.Application/Caisse/ReglementCredit.cs`
+- **Reçu numéroté RC-000001, RC-000002…** ; règlement inscrit au journal (`reglement_credit`, reste dû). — `src/Pharma.Infrastructure/Caisse/CreditsClientsSql.cs`, `database/migration/047_recette_corrections.sql`, `src/Pharma.Application/Caisse/ReglementCredit.cs`
 - **Refus si la dette a changé entre-temps** (deux postes ne peuvent pas encaisser deux fois). — `src/Pharma.Infrastructure/Caisse/CreditsClientsSql.cs`
-- **Les remboursements soldent d'abord la dette la plus ancienne** : dette reprise de l'ancien logiciel, puis ventes à crédit par date. — `database/038_releve_credit.sql`
+- **Les remboursements soldent d'abord la dette la plus ancienne** : dette reprise de l'ancien logiciel, puis ventes à crédit par date. — `database/migration/038_releve_credit.sql`
 - **Consultation des crédits, relevé et règlement : droit `caisse.vendre`** ; le relevé PDF imprimé porte tous les mouvements. — `src/Pharma.Api/Endpoints/ReglementsEndpoints.cs`, `src/Pharma.Application/Caisse/ReglementCredit.cs`
 
 ### Correction d'une dette
@@ -261,10 +261,10 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Inscrite au relevé (« correction ») et au journal, avec la dette avant et après**. — `src/Pharma.Application/Caisse/ReglementCredit.cs`
 
 ### Relevé de dette
-- **Chaque changement de dette est inscrit au relevé, même fait hors du logiciel** : ouverture, reprise, vente à crédit, remboursement, retour, annulation, correction ; sans précision, un changement est noté « correction ». — `database/038_releve_credit.sql`
-- **Le relevé ne se modifie pas et ne s'efface pas** : on corrige par un nouveau mouvement. — `database/038_releve_credit.sql`
-- **Patient créé avec une dette (reprise) : dette d'ouverture, soldée en premier**. — `database/038_releve_credit.sql`
-- **Dette ou créance signalée à partir de 30 jours d'ancienneté** (réglable de 1 à 365 jours). — `database/039_suivi_dettes.sql`
+- **Chaque changement de dette est inscrit au relevé, même fait hors du logiciel** : ouverture, reprise, vente à crédit, remboursement, retour, annulation, correction ; sans précision, un changement est noté « correction ». — `database/migration/038_releve_credit.sql`
+- **Le relevé ne se modifie pas et ne s'efface pas** : on corrige par un nouveau mouvement. — `database/migration/038_releve_credit.sql`
+- **Patient créé avec une dette (reprise) : dette d'ouverture, soldée en premier**. — `database/migration/038_releve_credit.sql`
+- **Dette ou créance signalée à partir de 30 jours d'ancienneté** (réglable de 1 à 365 jours). — `database/migration/039_suivi_dettes.sql`
 
 ## Patients, médecins et contacts
 
@@ -274,7 +274,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Créer, consulter et modifier un patient : droit `caisse.vendre`**. — `src/Pharma.Api/Endpoints/PatientsEndpoints.cs`
 - **La dette ne se modifie pas depuis la fiche patient**. — `src/Pharma.Application/Patients/Patients.cs`
 - **Chaque champ modifié est inscrit au journal avec l'ancienne et la nouvelle valeur** (`patient_modifie`). — `src/Pharma.Application/Patients/Patients.cs`
-- **La création d'un patient garde l'employé qui l'a créé et est inscrite au journal** (`patient_cree` : nom, plafond de crédit). Les patients antérieurs ou repris n'ont pas de créateur. — `src/Pharma.Application/Patients/Patients.cs`, `database/058_surveillance_comptes.sql`
+- **La création d'un patient garde l'employé qui l'a créé et est inscrite au journal** (`patient_cree` : nom, plafond de crédit). Les patients antérieurs ou repris n'ont pas de créateur. — `src/Pharma.Application/Patients/Patients.cs`, `database/migration/058_surveillance_comptes.sql`
 - **Recherche au comptoir à partir de 2 caractères** (nom, prénom, téléphone, n° d'assuré), 20 résultats au plus. — `src/Pharma.Application/Patients/Patients.cs`
 
 ### Médecins prescripteurs
@@ -349,7 +349,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 ### Sorties de stock : périmé, cassé, don
 - **La liste des lots d'un produit et la lecture d'un lot sont ouvertes à `stock.consulter`, `stock.donner` ou `stock.declarer_perime`** : un vendeur qui a seulement le droit de donner peut choisir le lot. — `src/Pharma.Api/Endpoints/CatalogueEndpoints.cs`
 - **Trois motifs de sortie seulement : périmé, cassé, échantillon/gratuité/don**. — `src/Pharma.Application/Stock/SortieStock.cs`
-- **Déclarer des boîtes périmées ou cassées exige le droit `stock.declarer_perime` ; un don (échantillon, gratuité, personne dans le besoin) exige le droit `stock.donner`** (accordé par défaut au titulaire et à l'assistant). — `src/Pharma.Application/Stock/SortieStock.cs`, `database/056_droit_don.sql`
+- **Déclarer des boîtes périmées ou cassées exige le droit `stock.declarer_perime` ; un don (échantillon, gratuité, personne dans le besoin) exige le droit `stock.donner`** (accordé par défaut au titulaire et à l'assistant). — `src/Pharma.Application/Stock/SortieStock.cs`, `database/migration/056_droit_don.sql`
 - **La quantité sortie va de 1 au stock du lot**. — `src/Pharma.Application/Stock/SortieStock.cs`
 - **Commentaire limité à 200 caractères ; obligatoire pour une casse (ce qui s'est passé) et pour un don (à qui et pourquoi)**. — `src/Pharma.Application/Stock/SortieStock.cs`
 - **Un produit sous registre (psychotrope, stupéfiant) n'est jamais donné en échantillon**. — `src/Pharma.Application/Stock/SortieStock.cs`
@@ -363,7 +363,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Une sortie sans vente n'est pas un mouvement d'argent : elle n'apparaît pas en trésorerie**. — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`
 - **Marge après pertes et dons = marge brute − valeur d'achat HT des boîtes sorties sans vente − TVA à reverser sur ces boîtes** ; tuile et lignes du PDF et du CSV, réservées au droit `rapports.marges`. — `src/Pharma.Application/Rapports/Rapports.cs`
 - **TVA à reverser sur une sortie = prix d'achat HT retenu le jour de la sortie × taux de TVA du produit** (0 pour un produit sans TVA), seulement pour les motifs réglés « oui » (périmé, casse, don ou échantillon). — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`, `src/Pharma.Application/Rapports/Rapports.cs`
-- **Le réglage par motif est « non » par défaut, modifiable par le titulaire seul et inscrit au journal** (`tva_sorties`, avec l'ancien réglage) ; règle fiscale à confirmer avec le comptable. — `database/061_tva_sorties.sql`, `src/Pharma.Application/Rapports/Rapports.cs`, `docs/a-faire.md`
+- **Le réglage par motif est « non » par défaut, modifiable par le titulaire seul et inscrit au journal** (`tva_sorties`, avec l'ancien réglage) ; règle fiscale à confirmer avec le comptable. — `database/migration/061_tva_sorties.sql`, `src/Pharma.Application/Rapports/Rapports.cs`, `docs/a-faire.md`
 
 ### Inventaire tournant (par rayon)
 - **Un lot n'est jamais dans deux inventaires en cours à la fois** (rayon, produit, produits sensibles) : il n'est pas ajouté à un second inventaire, sinon son écart serait ajusté deux fois ; un seul comptage « Produits sensibles » en cours, même lancé sur deux postes. — `src/Pharma.Infrastructure/Lecture/InventairesSql.cs`
@@ -485,13 +485,13 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Un produit repris de l'ancien logiciel sans n° d'enregistrement est « à vérifier » et ne peut pas être vendu** tant que le titulaire n'a pas confirmé sa classe. — `src/Pharma.Domain/Catalogue/Produit.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`
 
 ### Catégories
-- **Chaque produit a une catégorie de la liste** (médicament par défaut) : médicament, dermo-cosmétique, hygiène, bébé et maman, compléments alimentaires, phyto/aromathérapie, matériel médical, paramédical. — `database/045_prix_lot_ug_categories.sql`, contrainte `fk_produit_categorie`
+- **Chaque produit a une catégorie de la liste** (médicament par défaut) : médicament, dermo-cosmétique, hygiène, bébé et maman, compléments alimentaires, phyto/aromathérapie, matériel médical, paramédical. — `database/migration/045_prix_lot_ug_categories.sql`, contrainte `fk_produit_categorie`
 - **Seule la catégorie « médicament » compte dans les totaux « médicaments » de la caisse** ; les autres comptent en « autres produits ». — `src/Pharma.Application/Catalogue/ClassementProduit.cs`, table `categorie_produit`
 - **Changer la catégorie ou la liste d'un psychotrope exige le droit `catalogue.creer`** ; inscrit au journal (avant/après). — `src/Pharma.Application/Catalogue/ClassementProduit.cs`
 
 ### Blocage d'un produit
 - **Un produit peut être bloqué à l'achat (ni commande, ni réception), à la vente (refusé en caisse), ou les deux**. — `src/Pharma.Application/Catalogue/BlocageProduit.cs`
-- **Bloquer ou débloquer exige le droit `produits.bloquer`** (titulaire et assistant par défaut) ; motif obligatoire, 300 caractères au plus, effacé au déblocage ; inscrit au journal. — `src/Pharma.Application/Catalogue/BlocageProduit.cs`, `database/046_blocage_produit.sql`
+- **Bloquer ou débloquer exige le droit `produits.bloquer`** (titulaire et assistant par défaut) ; motif obligatoire, 300 caractères au plus, effacé au déblocage ; inscrit au journal. — `src/Pharma.Application/Catalogue/BlocageProduit.cs`, `database/migration/046_blocage_produit.sql`
 - **Un produit bloqué ne passe en caisse ou en réception qu'avec la validation d'une personne qui a le droit `produits.bloquer`** : l'employé lui-même s'il l'a, sinon le pharmacien ou l'assistant avec son code comptoir. — `src/Pharma.Application/Catalogue/BlocageProduit.cs`
 
 ### Équivalents et recherche
@@ -580,21 +580,21 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Les suggestions de commande, la création ou modification d'un grossiste et toute action sur un bon de commande demandent le droit `achats.commander`.** — `src/Pharma.Api/Endpoints/AchatsEndpoints.cs`, `src/Pharma.Application/Achats/Achats.cs`
 - **Réceptionner, analyser une livraison, chercher un n° de BL ou de facture déjà saisi, lire les infos d'achat et imprimer les étiquettes internes demandent le droit `achats.receptionner`.** La liste des lots à étiqueter accepte aussi `stock.consulter`. — `src/Pharma.Api/Endpoints/AchatsEndpoints.cs`
 - **Préparer, envoyer, solder (avoir) ou refuser un retour fournisseur demande le droit `achats.retour_fournisseur`.** — `src/Pharma.Application/Achats/Achats.cs`
-- **Consulter et enregistrer les règlements des grossistes demande le droit `achats.regler`** : à sa création, il est donné au titulaire et au pharmacien assistant. — `src/Pharma.Application/Achats/Reglements.cs`, `database/029_reglements.sql`
-- **Droits de départ (premier paramétrage)** : le pharmacien assistant reçoit tout sauf l'administration, `rapports.marges`, `caisse.voir_ecart` et `prix.modifier` ; le vendeur reçoit `achats.receptionner` et `chifa.importer` (et pas `achats.commander`) ; le titulaire reçoit tout. — `database/006_droits_utilisateurs.sql`
+- **Consulter et enregistrer les règlements des grossistes demande le droit `achats.regler`** : à sa création, il est donné au titulaire et au pharmacien assistant. — `src/Pharma.Application/Achats/Reglements.cs`, `database/migration/029_reglements.sql`
+- **Droits de départ (premier paramétrage)** : le pharmacien assistant reçoit tout sauf l'administration, `rapports.marges`, `caisse.voir_ecart` et `prix.modifier` ; le vendeur reçoit `achats.receptionner` et `chifa.importer` (et pas `achats.commander`) ; le titulaire reçoit tout. — `database/migration/006_droits_utilisateurs.sql`
 
 ### Grossistes
 - **La raison sociale est obligatoire, sans doublon** : deux grossistes ne peuvent pas avoir le même nom (la casse est ignorée). Droit `achats.commander`. — `src/Pharma.Application/Achats/Achats.cs`, `src/Pharma.Infrastructure/Achats/GrossistesSql.cs`
-- **Le délai de reprise des produits proches de la péremption, s'il est indiqué, va de 1 à 365 jours.** En base, il doit être supérieur à 0. — `src/Pharma.Application/Achats/Achats.cs`, `database/010_administration.sql`
+- **Le délai de reprise des produits proches de la péremption, s'il est indiqué, va de 1 à 365 jours.** En base, il doit être supérieur à 0. — `src/Pharma.Application/Achats/Achats.cs`, `database/migration/010_administration.sql`
 - **Le téléphone et l'adresse e-mail sont contrôlés** : un numéro ou un e-mail au format invalide est refusé. — `src/Pharma.Application/Contacts/Contacts.cs`
-- **Un grossiste désactivé n'est plus proposé** : on ne peut plus lui commander ni réceptionner sa livraison (« réactivez-le dans l'onglet Grossistes ») ; son historique est conservé. — `src/Pharma.Application/Achats/Achats.cs`, `database/047_recette_corrections.sql`
+- **Un grossiste désactivé n'est plus proposé** : on ne peut plus lui commander ni réceptionner sa livraison (« réactivez-le dans l'onglet Grossistes ») ; son historique est conservé. — `src/Pharma.Application/Achats/Achats.cs`, `database/migration/047_recette_corrections.sql`
 - **La dette d'un grossiste ne se modifie pas depuis sa fiche** : elle ne bouge qu'avec les réceptions, les avoirs et les règlements. — `src/Pharma.Infrastructure/Achats/GrossistesSql.cs`
 - **Chaque création ou modification de grossiste est inscrite au journal** (nom, téléphone, e-mail, NIF, délai de reprise, actif). — `src/Pharma.Application/Achats/Achats.cs`
-- **Les seuils de péremption (orange, rouge) propres à un grossiste priment sur le réglage général**, mais ceux du produit priment sur ceux du grossiste. Seuils > 0. — `database/021_prix_boite.sql`, `database/005_seuils_peremption.sql`
+- **Les seuils de péremption (orange, rouge) propres à un grossiste priment sur le réglage général**, mais ceux du produit priment sur ceux du grossiste. Seuils > 0. — `database/migration/021_prix_boite.sql`, `database/migration/005_seuils_peremption.sql`
 
 ### Bons de commande
-- **Un bon de commande est numéroté C-000001, C-000002…** (numéro unique). — `database/012_achats.sql`
-- **Statuts possibles : brouillon, envoyée, reçue partiellement, reçue, annulée.** — `database/001_schema.sql`
+- **Un bon de commande est numéroté C-000001, C-000002…** (numéro unique). — `database/migration/012_achats.sql`
+- **Statuts possibles : brouillon, envoyée, reçue partiellement, reçue, annulée.** — `database/migration/001_schema.sql`
 - **Un grossiste n'a qu'un seul brouillon à la fois** : ajouter un produit le complète, ou le crée s'il n'existe pas. — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Un produit bloqué à l'achat ne peut pas être commandé** (motif du blocage affiché). Il faut d'abord le débloquer. — `src/Pharma.Application/Achats/Achats.cs`
 - **Sans prix saisi, le dernier prix d'achat est repris** : celui de ce grossiste d'abord, sinon celui de n'importe quel grossiste ; sans achat précédent, le prix doit être saisi. — `src/Pharma.Application/Achats/Achats.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
@@ -605,7 +605,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Émettre un bon le fait passer de « brouillon » à « envoyée » et produit le bon de commande PDF** ; l'émission est inscrite au journal. — `src/Pharma.Application/Achats/Achats.cs`
 - **Un bon peut être réimprimé quel que soit son statut.** — `src/Pharma.Application/Achats/Achats.cs`
 - **On ne peut annuler qu'un bon « brouillon » ou « envoyée » dont rien n'a encore été reçu.** L'annulation est inscrite au journal. — `src/Pharma.Application/Achats/Achats.cs`
-- **Les suggestions de commande listent les produits en rupture ou en stock critique**, avec leur dernier prix et leur dernier grossiste ; les produits bloqués à l'achat en sont exclus. — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `database/046_blocage_produit.sql`
+- **Les suggestions de commande listent les produits en rupture ou en stock critique**, avec leur dernier prix et leur dernier grossiste ; les produits bloqués à l'achat en sont exclus. — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `database/migration/046_blocage_produit.sql`
 
 ### Réception d'une livraison
 - **Le n° de bon de livraison (BL) est obligatoire ; le n° de facture est facultatif.** — `src/Pharma.Domain/Achats/RegleAchats.cs`
@@ -624,7 +624,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Chaque réception est inscrite au journal** (BL, nombre de lots, HT, remise, TVA, timbre, net à payer, SHP, UG). — `src/Pharma.Application/Achats/Achats.cs`
 
 ### Réception à l'aveugle (comptage, puis facture)
-- **Réception en deux étapes quand le réglage « Réception à l'aveugle » est actif (actif par défaut)** : la saisie directe d'une livraison est alors refusée. — `src/Pharma.Application/Achats/Achats.cs`, `database/057_reception_aveugle.sql`
+- **Réception en deux étapes quand le réglage « Réception à l'aveugle » est actif (actif par défaut)** : la saisie directe d'une livraison est alors refusée. — `src/Pharma.Application/Achats/Achats.cs`, `database/migration/057_reception_aveugle.sql`
 - **Étape 1, comptage : les boîtes du carton sont comptées (scan Data Matrix, saisie ou scans du mobile) sans voir le bon de livraison, ni prix ni bon de commande.** Droit `achats.receptionner` ; grossiste actif ; BL, lot et péremption contrôlés comme une réception ; un même lot une seule fois. Inscrit au journal (`comptage_reception`). — `src/Pharma.Application/Achats/ComptageReception.cs`, `src/Pharma.Domain/Achats/RegleComptageReception.cs`
 - **Un même BL d'un même grossiste n'est compté qu'une fois à la fois** : un second comptage est refusé tant que le premier est à facturer, en écart ou à recompter (comparaison sans casse ni espaces).
 - **Annuler un comptage** : avant la facture, droit `achats.receptionner` ; en écart ou à recompter, seulement qui décide des écarts (`achats.valider_ecart`) ; rien n'entre en stock ; journal `comptage_annule`. — `src/Pharma.Application/Achats/ComptageReception.cs`
@@ -638,26 +638,26 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **« Faire recompter » : la livraison passe « à recompter » ; un nouveau comptage à l'aveugle (lots repris sans aucune quantité) est comparé à la facture déjà saisie, qui est gardée** ; l'écart recalculé (ou nul) attend de nouveau la décision. Journal `comptage_recompte`.
 - **Les livraisons comptées restent affichées et traitables même si la réception à l'aveugle est désactivée.** — `src/Pharma.Application/Achats/ComptageReception.cs`
 - **Écart validé : le stock prend les boîtes comptées, la dette du grossiste suit la facture.** L'entrée en stock, la sortie des boîtes manquantes et le rattachement du comptage forment une seule transaction (tout ou rien) ; s'il n'y a pas assez de boîtes sans Data Matrix pour sortir les manquantes, rien n'est enregistré. — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
-- **Boîtes facturées absentes du carton : entrées puis aussitôt sorties du stock** (boîte « manquante », mouvement `manquant_reception`, « à réclamer au grossiste ») ; les boîtes sans Data Matrix les plus chères sortent d'abord ; pour un psychotrope, le registre inscrit un écart en moins. — `src/Pharma.Infrastructure/Achats/ManquantsReception.cs`, `database/057_reception_aveugle.sql`
+- **Boîtes facturées absentes du carton : entrées puis aussitôt sorties du stock** (boîte « manquante », mouvement `manquant_reception`, « à réclamer au grossiste ») ; les boîtes sans Data Matrix les plus chères sortent d'abord ; pour un psychotrope, le registre inscrit un écart en moins. — `src/Pharma.Infrastructure/Achats/ManquantsReception.cs`, `database/migration/057_reception_aveugle.sql`
 - **Boîtes en trop (comptées, non facturées) : entrées comme unités gratuites à 0 DA** ; un lot compté absent de la facture entre entièrement à 0 DA. — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
 - **Celui qui valide l'écart réceptionne** : il lui faut aussi `achats.receptionner`, et `produits.bloquer` si la livraison contient un produit bloqué à l'achat. — `src/Pharma.Application/Achats/ComptageReception.cs`
 - **Écart validé ou renvoyé au recomptage par un autre que le titulaire : le titulaire est prévenu** (e-mail, SMS selon ses réglages ; urgent s'il manque des boîtes). — `src/Pharma.Application/Achats/ComptageReception.cs`
 - **Une boîte « manquante » ne peut être ni vendue ni remboursée.** — `src/Pharma.Application/Caisse/RechercherVenteParBoite.cs`
 
 ### Lots à la réception
-- **Un lot = produit + n° de lot + grossiste + date de péremption** (unicité en base). Un même n° reçu de deux grossistes donne deux lots distincts. — `database/021_prix_boite.sql`, `database/003_provenance.sql`
+- **Un lot = produit + n° de lot + grossiste + date de péremption** (unicité en base). Un même n° reçu de deux grossistes donne deux lots distincts. — `database/migration/021_prix_boite.sql`, `database/migration/003_provenance.sql`
 - **Le même lot relivré par le même grossiste avec la même date complète le lot existant** (pas de nouveau lot). Un lot unique repris avec une date « à vérifier » est aussi complété et prend la date saisie. — `src/Pharma.Domain/Stock/RegleLot.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Même n° de lot déjà en stock avec une autre date : la réception est refusée tant que l'utilisateur n'a pas choisi** de corriger la date ou de « Créer un lot séparé ». — `src/Pharma.Domain/Stock/RegleLot.cs`
 - **N° de lot bloqué (rappel) : refusé tant que l'utilisateur n'a pas choisi** de mettre les boîtes de côté ou de les « Entrer en stock bloqué » ; un nouveau lot entré ainsi est bloqué avec le motif « Même n° de lot qu'un lot rappelé ». — `src/Pharma.Domain/Stock/RegleLot.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Avant validation, le logiciel signale ligne par ligne ces deux conflits** (date différente, lot bloqué). — `src/Pharma.Application/Achats/Achats.cs`
-- **Le grossiste d'un lot est forcément celui de sa réception** (contrôle en base). — `database/003_provenance.sql`
+- **Le grossiste d'un lot est forcément celui de sa réception** (contrôle en base). — `database/migration/003_provenance.sql`
 
 ### Boîtes, Data Matrix et étiquettes internes
 - **Un Data Matrix non reconnu (GTIN introuvable) est refusé** ; le produit est retrouvé par son code-barres (GTIN-14 = EAN-13 précédé de 0). — `src/Pharma.Application/Achats/Achats.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Des n° de série scannés exigent le GTIN, ne peuvent pas dépasser le nombre de boîtes reçues et ne peuvent pas être scannés deux fois.** — `src/Pharma.Domain/Achats/RegleAchats.cs`
-- **Une boîte (GTIN + n° de série) n'entre qu'une fois dans le logiciel** : une boîte déjà enregistrée est refusée (« ce BL a peut-être déjà été saisi »). — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `database/003_provenance.sql`
-- **Aucune boîte n'entre sans identité** : chaque boîte sans Data Matrix reçoit une étiquette interne (code EAN-13 commençant par 20) dans la même opération. — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `database/021_prix_boite.sql`
-- **Impression d'étiquettes pour un lot : de 1 à 500 étiquettes, sans dépasser le nombre de boîtes encore sans identité.** — `src/Pharma.Application/Achats/Achats.cs`, `database/021_prix_boite.sql`
+- **Une boîte (GTIN + n° de série) n'entre qu'une fois dans le logiciel** : une boîte déjà enregistrée est refusée (« ce BL a peut-être déjà été saisi »). — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `database/migration/003_provenance.sql`
+- **Aucune boîte n'entre sans identité** : chaque boîte sans Data Matrix reçoit une étiquette interne (code EAN-13 commençant par 20) dans la même opération. — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `database/migration/021_prix_boite.sql`
+- **Impression d'étiquettes pour un lot : de 1 à 500 étiquettes, sans dépasser le nombre de boîtes encore sans identité.** — `src/Pharma.Application/Achats/Achats.cs`, `database/migration/021_prix_boite.sql`
 - **Les étiquettes d'une livraison peuvent être réimprimées pour ses boîtes encore en stock** (refus si aucune). — `src/Pharma.Application/Achats/Achats.cs`
 
 ### Facture d'achat : prix, remise, TVA, timbre
@@ -667,32 +667,32 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Prix net d'une boîte = prix HT × (1 − remise %), arrondi au centime** : c'est le coût de la boîte en stock. — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
 - **Seules les boîtes facturées comptent dans les montants de la facture** (boîtes reçues moins les UG). — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
 - **Totaux : HT = somme (facturées × prix HT) ; remise = somme des remises de ligne ; net HT = HT − remise ; TVA = calculée sur le net HT au taux du catalogue de chaque produit.** — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
-- **Net à payer au grossiste = net HT + TVA + timbre** : c'est ce montant qui s'ajoute à sa dette. — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`, `database/044_reception_detaillee.sql`
+- **Net à payer au grossiste = net HT + TVA + timbre** : c'est ce montant qui s'ajoute à sa dette. — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`, `database/migration/044_reception_detaillee.sql`
 - **Le SHP et le PPA sont indiqués à part et ne sont pas dus au grossiste.** — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
 - **Marge affichée (colonne « MGE ») = PPA ÷ prix d'achat − 1**, en %, seulement si PPA et prix sont connus. — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
-- **Chaque ligne est gardée telle qu'écrite sur la facture** (prix avant remise, remise, prix net, PPA, SHP, TVA, UG). Les réceptions plus anciennes n'ont que leur total. — `database/044_reception_detaillee.sql`
+- **Chaque ligne est gardée telle qu'écrite sur la facture** (prix avant remise, remise, prix net, PPA, SHP, TVA, UG). Les réceptions plus anciennes n'ont que leur total. — `database/migration/044_reception_detaillee.sql`
 
 ### SHP (supplément d'honoraire du pharmacien)
 - **SHP par boîte selon la liste du médicament : liste I et stupéfiants 2,50 DA ; liste II 1,50 DA ; hors liste 0.** — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
-- **Un psychotrope suit la liste (I ou II) indiquée sur sa fiche ; non renseignée, son SHP est 0.** — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`, `database/045_prix_lot_ug_categories.sql`
+- **Un psychotrope suit la liste (I ou II) indiquée sur sa fiche ; non renseignée, son SHP est 0.** — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`, `database/migration/045_prix_lot_ug_categories.sql`
 - **Le SHP non saisi sur une ligne de réception est proposé selon la liste du produit ; il reste modifiable.** — `src/Pharma.Application/Achats/Achats.cs`
 
 ### Unités gratuites (UG)
 - **Les UG sont comprises entre 0 et le nombre de boîtes reçues.** — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
-- **Coût des UG au choix sur chaque ligne : « à 0 DA »** (les boîtes gratuites entrent à 0, les payées au prix net) **ou « réparti »** (chaque boîte reçue coûte montant facturé ÷ toutes les boîtes, arrondi au centime). Par défaut : à 0 DA. — `src/Pharma.Domain/Achats/RegleAchats.cs`, `database/045_prix_lot_ug_categories.sql`
+- **Coût des UG au choix sur chaque ligne : « à 0 DA »** (les boîtes gratuites entrent à 0, les payées au prix net) **ou « réparti »** (chaque boîte reçue coûte montant facturé ÷ toutes les boîtes, arrondi au centime). Par défaut : à 0 DA. — `src/Pharma.Domain/Achats/RegleAchats.cs`, `database/migration/045_prix_lot_ug_categories.sql`
 - **Avec UG à 0 DA, les dernières boîtes de la ligne sont considérées comme les gratuites** (mouvement de stock séparé « (UG) »). — `src/Pharma.Domain/Achats/RegleAchats.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 
 ### Prix d'achat et prix public à la réception
-- **Chaque boîte garde le prix d'achat de sa livraison ; le lot garde le prix de sa première livraison** (pas de prix moyen), qui sert aux boîtes sans identité. — `database/021_prix_boite.sql`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
-- **Valeur d'un lot = prix réel de ses boîtes identifiées en stock + prix du lot pour les autres.** — `database/021_prix_boite.sql`
-- **Le PPA facturé est gardé sur le lot** ; la caisse vend la boîte au PPA de son lot, sinon au prix du catalogue. — `database/045_prix_lot_ug_categories.sql`
+- **Chaque boîte garde le prix d'achat de sa livraison ; le lot garde le prix de sa première livraison** (pas de prix moyen), qui sert aux boîtes sans identité. — `database/migration/021_prix_boite.sql`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
+- **Valeur d'un lot = prix réel de ses boîtes identifiées en stock + prix du lot pour les autres.** — `database/migration/021_prix_boite.sql`
+- **Le PPA facturé est gardé sur le lot** ; la caisse vend la boîte au PPA de son lot, sinon au prix du catalogue. — `database/migration/045_prix_lot_ug_categories.sql`
 - **Remplacer le prix public du catalogue par le PPA facturé exige le droit `prix.modifier` et un PPA > 0** ; le changement de prix est inscrit au journal (avant, après, BL). — `src/Pharma.Application/Achats/Achats.cs`, `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
 
 ### Retours fournisseurs
-- **Un retour est numéroté R-000001, R-000002…** — `database/012_achats.sql`
-- **Motifs possibles : péremption proche, périmé, défaut, erreur de livraison, rappel de lot.** — `src/Pharma.Domain/Achats/RegleAchats.cs`, `database/003_provenance.sql`
+- **Un retour est numéroté R-000001, R-000002…** — `database/migration/012_achats.sql`
+- **Motifs possibles : péremption proche, périmé, défaut, erreur de livraison, rappel de lot.** — `src/Pharma.Domain/Achats/RegleAchats.cs`, `database/migration/003_provenance.sql`
 - **Un retour contient au moins un lot, chaque lot une seule fois, et une quantité de 1 jusqu'au stock disponible du lot.** — `src/Pharma.Application/Achats/Achats.cs`, `src/Pharma.Domain/Achats/RegleAchats.cs`
-- **Une boîte ne repart que chez le grossiste qui l'a livrée** : des lots de grossistes différents exigent un retour par grossiste (contrôle aussi en base). — `src/Pharma.Application/Achats/Achats.cs`, `database/003_provenance.sql`
+- **Une boîte ne repart que chez le grossiste qui l'a livrée** : des lots de grossistes différents exigent un retour par grossiste (contrôle aussi en base). — `src/Pharma.Application/Achats/Achats.cs`, `database/migration/003_provenance.sql`
 - **Les boîtes identifiées doivent être scannées** : il faut scanner au moins (quantité à retourner − boîtes sans identité du lot), sans dépasser la quantité, sans scanner deux fois la même boîte, et seulement des boîtes en stock dans ce lot. — `src/Pharma.Application/Achats/Achats.cs`
 - **Le stock sort dès la préparation du retour (brouillon)** : les boîtes sont mises de côté. — `src/Pharma.Application/Achats/Achats.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Montant attendu de l'avoir = somme (quantité × prix d'achat HT du lot)**, arrondi au centime par lot ; le prix pris est la valeur unitaire réelle du lot. — `src/Pharma.Application/Achats/Achats.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
@@ -702,51 +702,51 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Un retour annulé ou refusé remet le stock et les boîtes identifiées en stock**, avec une trace dans l'historique de chaque boîte. — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Chaque étape d'un retour est inscrite au journal** (préparé, envoyé, avoir reçu, refusé). — `src/Pharma.Application/Achats/Achats.cs`
 
-- **Retour envoyé sans avoir après 30 jours (délai réglable, 1 à 365) : anomalie au titulaire**, rattachée à qui a préparé le retour ; urgente au double du délai. — `database/057_reception_aveugle.sql`
-- **Avoir reçu inférieur au montant attendu (de plus d'un centime) : anomalie au titulaire.** — `database/057_reception_aveugle.sql`, `src/Pharma.Application/Achats/Achats.cs`
+- **Retour envoyé sans avoir après 30 jours (délai réglable, 1 à 365) : anomalie au titulaire**, rattachée à qui a préparé le retour ; urgente au double du délai. — `database/migration/057_reception_aveugle.sql`
+- **Avoir reçu inférieur au montant attendu (de plus d'un centime) : anomalie au titulaire.** — `database/migration/057_reception_aveugle.sql`, `src/Pharma.Application/Achats/Achats.cs`
 
 ### Dette envers les grossistes et relevé
 - **La dette d'un grossiste augmente du net à payer de chaque réception et diminue de chaque règlement et de chaque avoir de retour.** — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `src/Pharma.Infrastructure/Achats/ReglementsFournisseursSql.cs`
-- **Chaque changement de la dette est écrit automatiquement dans le relevé du grossiste** (ouverture, reprise, réception, règlement, avoir, correction), avec le solde après. Un changement fait hors logiciel apparaît comme « correction ». — `database/039_suivi_dettes.sql`
-- **Le relevé de la dette ne se modifie pas et ne s'efface pas** : on corrige par un nouveau mouvement. — `database/039_suivi_dettes.sql`
-- **Facture d'un grossiste (réception) : reste à payer = net à payer − règlements imputés.** — `database/029_reglements.sql`
-- **La dette qui dépasse les factures encore ouvertes est présentée comme « ancien solde (hors factures du logiciel) ».** — `database/039_suivi_dettes.sql`
+- **Chaque changement de la dette est écrit automatiquement dans le relevé du grossiste** (ouverture, reprise, réception, règlement, avoir, correction), avec le solde après. Un changement fait hors logiciel apparaît comme « correction ». — `database/migration/039_suivi_dettes.sql`
+- **Le relevé de la dette ne se modifie pas et ne s'efface pas** : on corrige par un nouveau mouvement. — `database/migration/039_suivi_dettes.sql`
+- **Facture d'un grossiste (réception) : reste à payer = net à payer − règlements imputés.** — `database/migration/029_reglements.sql`
+- **La dette qui dépasse les factures encore ouvertes est présentée comme « ancien solde (hors factures du logiciel) ».** — `database/migration/039_suivi_dettes.sql`
 
 ### Règlements des grossistes
-- **Un règlement est numéroté RG-000001, RG-000002…** — `database/047_recette_corrections.sql`
-- **Moyens acceptés : espèces, chèque, virement, effet.** — `src/Pharma.Domain/Achats/RegleReglement.cs`, `database/029_reglements.sql`
+- **Un règlement est numéroté RG-000001, RG-000002…** — `database/migration/047_recette_corrections.sql`
+- **Moyens acceptés : espèces, chèque, virement, effet.** — `src/Pharma.Domain/Achats/RegleReglement.cs`, `database/migration/029_reglements.sql`
 - **Montant supérieur à 0, date jamais dans le futur (par défaut : aujourd'hui).** — `src/Pharma.Domain/Achats/RegleReglement.cs`
-- **Chèque, virement et effet exigent leur n° ou référence ; un effet exige sa date d'échéance.** — `src/Pharma.Domain/Achats/RegleReglement.cs`, `database/029_reglements.sql`
+- **Chèque, virement et effet exigent leur n° ou référence ; un effet exige sa date d'échéance.** — `src/Pharma.Domain/Achats/RegleReglement.cs`, `database/migration/029_reglements.sql`
 - **On ne peut pas régler plus que la dette envers le grossiste** (tolérance 0,005 DA ; dette négative comptée 0). — `src/Pharma.Application/Achats/Reglements.cs`
 - **Le règlement est imputé facture par facture** : aux factures choisies, sinon automatiquement aux plus anciennes d'abord ; le surplus éventuel réduit l'ancien solde, sans facture. — `src/Pharma.Domain/Achats/RegleReglement.cs`, `src/Pharma.Application/Achats/Reglements.cs`
 - **Chaque montant imputé est > 0, au plus le reste de sa facture, sur une facture de ce grossiste ; le total imputé ne dépasse pas le montant réglé.** — `src/Pharma.Domain/Achats/RegleReglement.cs`
-- **Espèces : l'argent sort du coffre ; un complément peut être pris dans le tiroir de la caisse ouverte du poste.** Seul ce complément diminue l'attendu de la caisse. — `src/Pharma.Application/Achats/Reglements.cs`, `database/029_reglements.sql`
+- **Espèces : l'argent sort du coffre ; un complément peut être pris dans le tiroir de la caisse ouverte du poste.** Seul ce complément diminue l'attendu de la caisse. — `src/Pharma.Application/Achats/Reglements.cs`, `database/migration/029_reglements.sql`
 - **Le complément pris dans le tiroir n'est permis qu'en espèces, n'est jamais négatif, ne dépasse pas le montant réglé et exige une caisse ouverte sur le poste.** — `src/Pharma.Domain/Achats/RegleReglement.cs`, `src/Pharma.Application/Achats/Reglements.cs`
-- **Chèque, virement ou effet : la banque choisie est débitée** (aucun compte rattaché à un paiement en espèces). — `src/Pharma.Application/Achats/Reglements.cs`, `database/030_tresorerie.sql`
+- **Chèque, virement ou effet : la banque choisie est débitée** (aucun compte rattaché à un paiement en espèces). — `src/Pharma.Application/Achats/Reglements.cs`, `database/migration/030_tresorerie.sql`
 - **Si la dette ou une facture change pendant la saisie (autre poste), le règlement est refusé** (« rechargez la situation »). — `src/Pharma.Infrastructure/Achats/ReglementsFournisseursSql.cs`
 - **Chaque règlement est inscrit au journal** (grossiste, montant, moyen, référence, part tiroir, nombre de factures). — `src/Pharma.Application/Achats/Reglements.cs`
 
 ## Factures clients
 
 ### Droits
-- **Préparer, émettre, consulter, rejeter, corriger, remplacer une facture, émettre un avoir, gérer le suivi et les clients facturés demandent le droit `factures.gerer`** (donné au titulaire, qui l'accorde à qui il veut). — `src/Pharma.Application/Factures/Factures.cs`, `database/031_facture_client.sql`
+- **Préparer, émettre, consulter, rejeter, corriger, remplacer une facture, émettre un avoir, gérer le suivi et les clients facturés demandent le droit `factures.gerer`** (donné au titulaire, qui l'accorde à qui il veut). — `src/Pharma.Application/Factures/Factures.cs`, `database/migration/031_facture_client.sql`
 - **Créer ou modifier un organisme (CNAS, CASNOS, militaires…) est réservé au titulaire**, car les organismes servent aussi au tiers payant. — `src/Pharma.Application/Factures/Factures.cs`
 - **Rejeter, corriger ou remplacer une facture déjà payée en entier est réservé au titulaire.** — `src/Pharma.Application/Factures/Factures.cs`
 
 - **Un e-mail d'alerte commence par l'objet de l'alerte en gras**, suivi du texte (paragraphes gardés) ; une version texte seule accompagne toujours la version mise en forme. Le rapport quotidien garde sa propre mise en page. — `src/Pharma.Application/Notifications/Notifications.cs`
 
 ### Destinataires
-- **Une facture va à un patient, à une entreprise (client facturé) ou à un organisme.** — `src/Pharma.Domain/Factures/RegleFacture.cs`, `database/031_facture_client.sql`
+- **Une facture va à un patient, à une entreprise (client facturé) ou à un organisme.** — `src/Pharma.Domain/Factures/RegleFacture.cs`, `database/migration/031_facture_client.sql`
 - **Le destinataire doit exister ; une entreprise ou un organisme inactif ne peut pas recevoir de facture.** — `src/Pharma.Application/Factures/Factures.cs`, `src/Pharma.Infrastructure/Factures/FacturesSql.cs`
-- **Le nom et les coordonnées du destinataire sont figés sur la facture à l'émission.** — `database/031_facture_client.sql`
+- **Le nom et les coordonnées du destinataire sont figés sur la facture à l'émission.** — `database/migration/031_facture_client.sql`
 - **Client facturé : raison sociale obligatoire et unique.** — `src/Pharma.Application/Factures/Factures.cs`, `src/Pharma.Infrastructure/Factures/FacturesSql.cs`
 - **Organisme : sigle et nom obligatoires ; sigle unique, mis en majuscules.** — `src/Pharma.Application/Factures/Factures.cs`, `src/Pharma.Infrastructure/Factures/FacturesSql.cs`
-- **Délai de paiement d'un client ou d'un organisme : de 1 à 365 jours, 30 jours par défaut.** — `src/Pharma.Domain/Factures/RegleFacture.cs`, `database/045_prix_lot_ug_categories.sql`
+- **Délai de paiement d'un client ou d'un organisme : de 1 à 365 jours, 30 jours par défaut.** — `src/Pharma.Domain/Factures/RegleFacture.cs`, `database/migration/045_prix_lot_ug_categories.sql`
 - **Les mentions de la pharmacie imprimées sur ses factures (adresse, NIF, RC, NIS, article d'imposition) manquantes sont signalées.** — `src/Pharma.Application/Factures/Factures.cs`
 
 ### Contenu et montants
 - **Une facture se compose de ventes entières et/ou de lignes libres ; elle n'est jamais vide et son total TTC est supérieur à 0.** — `src/Pharma.Domain/Factures/RegleFacture.cs`
-- **Seules les ventes validées sont facturables**, pour leur quantité nette des retours clients (montants au prorata). — `src/Pharma.Application/Factures/Factures.cs`, `database/031_facture_client.sql`
+- **Seules les ventes validées sont facturables**, pour leur quantité nette des retours clients (montants au prorata). — `src/Pharma.Application/Factures/Factures.cs`, `database/migration/031_facture_client.sql`
 - **Part facturée : l'organisme reçoit la part prise en charge ; le patient et l'entreprise reçoivent la part payée par le patient.** — `src/Pharma.Domain/Factures/RegleFacture.cs`
 - **Facture patient : toutes les ventes doivent être au nom de ce patient ; facture organisme : toutes prises en charge par cet organisme.** — `src/Pharma.Application/Factures/Factures.cs`
 - **Une vente n'est facturée qu'une fois par part** (patient / organisme), tant que la facture n'est pas remplacée ; une vente sans rien à facturer pour cette part est refusée. — `src/Pharma.Application/Factures/Factures.cs`, `src/Pharma.Infrastructure/Factures/FacturesSql.cs`
@@ -759,7 +759,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 
 ### Dates et numérotation
 - **Date d'établissement : jamais dans le futur (par défaut : aujourd'hui) ; période facturée jamais inversée.** — `src/Pharma.Application/Factures/Factures.cs`
-- **Échéance : celle saisie, sinon date d'établissement + délai de paiement du destinataire (patient : 30 jours) ; jamais avant l'établissement. Un avoir n'a pas d'échéance.** — `src/Pharma.Application/Factures/Factures.cs`, `database/040_facture_echeance.sql`
+- **Échéance : celle saisie, sinon date d'établissement + délai de paiement du destinataire (patient : 30 jours) ; jamais avant l'établissement. Un avoir n'a pas d'échéance.** — `src/Pharma.Application/Factures/Factures.cs`, `database/migration/040_facture_echeance.sql`
 - **Numéros sans trou, par année : F-2026-0001 pour les factures, AV-2026-0001 pour les avoirs**, attribués une émission à la fois. — `src/Pharma.Domain/Factures/RegleFacture.cs`, `src/Pharma.Infrastructure/Factures/FacturesSql.cs`
 
 ### Rejet, correction, remplacement
@@ -776,25 +776,25 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **L'avoir est daté du jour, au même destinataire ; son HT suit la proportion HT/TTC de la facture.** — `src/Pharma.Application/Factures/Factures.cs`
 
 ### Suivi et encaissement
-- **Reste à encaisser = TTC − déjà payé − avoirs − règlements reçus en trésorerie − règlements de crédit du patient sur les ventes facturées** (jamais négatif ; 0 pour un avoir ou une facture remplacée). — `database/038_releve_credit.sql`, `database/031_facture_client.sql`
+- **Reste à encaisser = TTC − déjà payé − avoirs − règlements reçus en trésorerie − règlements de crédit du patient sur les ventes facturées** (jamais négatif ; 0 pour un avoir ou une facture remplacée). — `database/migration/038_releve_credit.sql`, `database/migration/031_facture_client.sql`
 - **Le pharmacien peut retirer une facture du suivi de trésorerie (motif obligatoire) ou l'y remettre** ; elle reste valable et imprimable. Un avoir n'est pas suivi. — `src/Pharma.Application/Factures/Factures.cs`, `src/Pharma.Domain/Factures/RegleFacture.cs`
-- **Une facture est « échue » quand son échéance est dépassée et qu'il reste à encaisser.** — `src/Pharma.Infrastructure/Factures/FacturesSql.cs`, `database/040_facture_echeance.sql`
+- **Une facture est « échue » quand son échéance est dépassée et qu'il reste à encaisser.** — `src/Pharma.Infrastructure/Factures/FacturesSql.cs`, `database/migration/040_facture_echeance.sql`
 
 ### Historique protégé
-- **Aucune facture ni aucun avoir ne peut être supprimé**, même par une requête directe en base. — `database/043_historique_factures.sql`
-- **Une facture remplacée et ses lignes ne peuvent plus être modifiées ; une version archivée ne peut être ni modifiée ni supprimée.** — `database/043_historique_factures.sql`
+- **Aucune facture ni aucun avoir ne peut être supprimé**, même par une requête directe en base. — `database/migration/043_historique_factures.sql`
+- **Une facture remplacée et ses lignes ne peuvent plus être modifiées ; une version archivée ne peut être ni modifiée ni supprimée.** — `database/migration/043_historique_factures.sql`
 - **Chaque émission, rejet, levée de rejet, correction, remplacement, avoir, retrait ou remise en suivi est inscrit au journal.** — `src/Pharma.Application/Factures/Factures.cs`
 
 ## Trésorerie
 
 ### Droits
-- **Toute la trésorerie (consulter, comptes, mouvements, transferts, remises de chèques, versements de caisse) demande le droit `tresorerie.gerer`** (donné au titulaire, qui l'accorde à qui il veut). — `src/Pharma.Application/Tresorerie/Tresorerie.cs`, `database/030_tresorerie.sql`
+- **Toute la trésorerie (consulter, comptes, mouvements, transferts, remises de chèques, versements de caisse) demande le droit `tresorerie.gerer`** (donné au titulaire, qui l'accorde à qui il veut). — `src/Pharma.Application/Tresorerie/Tresorerie.cs`, `database/migration/030_tresorerie.sql`
 
 ### Comptes (coffre et banques)
-- **Il existe un seul coffre, créé d'office ; il reste actif et ne reçoit pas les paiements par carte.** — `database/030_tresorerie.sql`, `src/Pharma.Application/Tresorerie/Tresorerie.cs`
+- **Il existe un seul coffre, créé d'office ; il reste actif et ne reçoit pas les paiements par carte.** — `database/migration/030_tresorerie.sql`, `src/Pharma.Application/Tresorerie/Tresorerie.cs`
 - **Les banques sont déclarées avec un nom obligatoire et unique, un solde et une date de départ.** — `src/Pharma.Application/Tresorerie/Tresorerie.cs`, `src/Pharma.Infrastructure/Tresorerie/TresorerieSql.cs`
 - **Une seule banque reçoit les cartes** : en désigner une autre retire ce rôle à la précédente. Elle doit rester active. — `src/Pharma.Infrastructure/Tresorerie/TresorerieSql.cs`, `src/Pharma.Application/Tresorerie/Tresorerie.cs`
-- **Solde d'un compte = solde de départ + mouvements depuis la date de départ.** — `database/036_solde_tresorerie_echeance.sql`
+- **Solde d'un compte = solde de départ + mouvements depuis la date de départ.** — `database/migration/036_solde_tresorerie_echeance.sql`
 
 ### Mouvements saisis
 - **Trois types saisis à la main : dépense, encaissement divers, versement d'un organisme.** — `src/Pharma.Domain/Tresorerie/RegleTresorerie.cs`
@@ -812,20 +812,20 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Le montant ne dépasse pas le solde du compte de départ ; la date n'est pas antérieure au départ le plus récent des deux comptes.** — `src/Pharma.Application/Tresorerie/Tresorerie.cs`
 
 ### Chèques reçus
-- **Les chèques reçus (ventes validées, remboursements de crédit) restent « à remettre » jusqu'à leur remise en banque.** — `database/030_tresorerie.sql`
+- **Les chèques reçus (ventes validées, remboursements de crédit) restent « à remettre » jusqu'à leur remise en banque.** — `database/migration/030_tresorerie.sql`
 - **Une remise de chèques se fait sur un compte bancaire actif, avec au moins un chèque coché, à une date non future.** — `src/Pharma.Application/Tresorerie/Tresorerie.cs`
-- **Un chèque ne peut être remis qu'une fois** (refus si un autre poste vient de le remettre). — `src/Pharma.Infrastructure/Tresorerie/TresorerieSql.cs`, `database/030_tresorerie.sql`
+- **Un chèque ne peut être remis qu'une fois** (refus si un autre poste vient de le remettre). — `src/Pharma.Infrastructure/Tresorerie/TresorerieSql.cs`, `database/migration/030_tresorerie.sql`
 
 ### Argent des caisses vers le coffre
-- **Après clôture : au plus l'argent compté à la clôture, montant > 0, une seule fois par caisse.** Les relèves ne sont pas proposées. — `src/Pharma.Domain/Tresorerie/RegleTresorerie.cs`, `src/Pharma.Infrastructure/Tresorerie/TresorerieSql.cs`, `database/030_tresorerie.sql`
+- **Après clôture : au plus l'argent compté à la clôture, montant > 0, une seule fois par caisse.** Les relèves ne sont pas proposées. — `src/Pharma.Domain/Tresorerie/RegleTresorerie.cs`, `src/Pharma.Infrastructure/Tresorerie/TresorerieSql.cs`, `database/migration/030_tresorerie.sql`
 - **Pendant la journée : depuis la caisse ouverte du poste, montant > 0 et au plus fond de caisse + ventes en espèces** ; l'attendu de la caisse diminue d'autant. — `src/Pharma.Application/Tresorerie/Tresorerie.cs`
-- **Versement à la clôture « manuel » (par défaut) ou « automatique », réglé par le titulaire** ; en automatique, l'argent compté moins le fond de caisse par défaut part au coffre (jamais négatif). — `database/030_tresorerie.sql`, `src/Pharma.Domain/Tresorerie/RegleTresorerie.cs`
-- **Montant proposé pour une caisse clôturée = compté (ou attendu) moins le fond de caisse par défaut, jamais négatif.** — `database/030_tresorerie.sql`
+- **Versement à la clôture « manuel » (par défaut) ou « automatique », réglé par le titulaire** ; en automatique, l'argent compté moins le fond de caisse par défaut part au coffre (jamais négatif). — `database/migration/030_tresorerie.sql`, `src/Pharma.Domain/Tresorerie/RegleTresorerie.cs`
+- **Montant proposé pour une caisse clôturée = compté (ou attendu) moins le fond de caisse par défaut, jamais négatif.** — `database/migration/030_tresorerie.sql`
 
 ### Mouvements calculés automatiquement
-- **Paiements par carte du jour : entrée sur la banque « carte » ; remboursements par carte (annulations, retours) : sortie de cette banque.** — `database/030_tresorerie.sql`, `database/036_solde_tresorerie_echeance.sql`
-- **Règlements grossistes : espèces sortent du coffre (hors complément du tiroir) ; chèque et virement sortent de la banque choisie à la date du règlement.** — `database/030_tresorerie.sql`
-- **Un effet ne diminue le solde de la banque qu'à son échéance (échéance atteinte).** — `database/036_solde_tresorerie_echeance.sql`
+- **Paiements par carte du jour : entrée sur la banque « carte » ; remboursements par carte (annulations, retours) : sortie de cette banque.** — `database/migration/030_tresorerie.sql`, `database/migration/036_solde_tresorerie_echeance.sql`
+- **Règlements grossistes : espèces sortent du coffre (hors complément du tiroir) ; chèque et virement sortent de la banque choisie à la date du règlement.** — `database/migration/030_tresorerie.sql`
+- **Un effet ne diminue le solde de la banque qu'à son échéance (échéance atteinte).** — `database/migration/036_solde_tresorerie_echeance.sql`
 
 ## Chifa / CNAS et tiers payant
 
@@ -833,34 +833,34 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Le logiciel ne remplace pas Chifa_Officine : il lit seulement les fichiers exportés (factures signées), sans accès à la base de la CNAS.** — `docs/chifa.md`, `src/Pharma.Infrastructure/Chifa/ChifaFichiersConnecteur.cs`
 - **L'import des factures signées n'est pas encore opérationnel** : le format des fichiers n'est pas connu, la lecture s'arrête avec un message d'erreur. — `src/Pharma.Infrastructure/Chifa/ChifaFichiersConnecteur.cs`
 - **Les fichiers lus (modifiés depuis la date demandée) sont archivés dans la GED (GED\Chifa), sans rien écraser** ; un fichier déjà archivé de même taille n'est pas recopié. — `src/Pharma.Infrastructure/Chifa/ChifaFichiersConnecteur.cs`
-- **Les droits `chifa.importer` et `chifa.bordereaux` existent mais ne sont exigés par aucune fonction à ce jour (à confirmer).** — `src/Pharma.Domain/Securite/Permissions.cs`, `database/006_droits_utilisateurs.sql`
+- **Les droits `chifa.importer` et `chifa.bordereaux` existent mais ne sont exigés par aucune fonction à ce jour (à confirmer).** — `src/Pharma.Domain/Securite/Permissions.cs`, `database/migration/006_droits_utilisateurs.sql`
 
 ### Bordereaux
-- **Un bordereau a un numéro unique, un organisme, une période (fin ≥ début) et un statut : ouvert, envoyé, payé, rejet partiel.** — `database/001_schema.sql`
+- **Un bordereau a un numéro unique, un organisme, une période (fin ≥ début) et un statut : ouvert, envoyé, payé, rejet partiel.** — `database/migration/001_schema.sql`
 - **Aucune fonction du logiciel ne crée ni n'envoie de bordereau à ce jour (à confirmer)** ; seul son paiement est saisi en trésorerie. — `src/Pharma.Infrastructure/Tresorerie/TresorerieSql.cs`
 - **Un versement d'organisme peut solder un bordereau « envoyé » de cet organisme, en le marquant « payé » ou « rejet partiel »** (choix obligatoire). — `src/Pharma.Application/Tresorerie/Tresorerie.cs`, `src/Pharma.Infrastructure/Tresorerie/TresorerieSql.cs`
-- **Reste dû sur un bordereau = montant total − versements reçus ; un bordereau envoyé ou en rejet partiel non soldé est suivi comme créance.** — `database/040_facture_echeance.sql`
+- **Reste dû sur un bordereau = montant total − versements reçus ; un bordereau envoyé ou en rejet partiel non soldé est suivi comme créance.** — `database/migration/040_facture_echeance.sql`
 - **Une vente déjà sur un bordereau envoyé ne s'annule pas dans le logiciel** : elle passe par la régularisation Chifa. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`
 
 ### Tiers payant à la vente
-- **Vente en tiers payant : l'assuré et l'organisme (CNAS, CASNOS) sont obligatoires, ainsi qu'un taux de remboursement de 0 exclu à 100 %** (sauf reste à charge saisi). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/001_schema.sql`
+- **Vente en tiers payant : l'assuré et l'organisme (CNAS, CASNOS) sont obligatoires, ainsi qu'un taux de remboursement de 0 exclu à 100 %** (sauf reste à charge saisi). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/001_schema.sql`
 - **Part de l'organisme = min(tarif de référence, prix) × quantité × taux, arrondie au centime** (comme les factures Chifa : 1 160,82 DA × 80 % = 928,66 DA) ; seuls les produits remboursables avec tarif de référence sont pris en charge. — `src/Pharma.Domain/Ventes/LigneVente.cs`, `src/Pharma.Domain/Ventes/Vente.cs`
-- **Le caissier peut saisir le reste à charge du patient (de 0 au montant de la vente)** : la part de l'organisme est la différence, répartie au prorata des lignes ; le taux choisi n'est alors pas appliqué. — `src/Pharma.Domain/Ventes/Vente.cs`, `database/045_prix_lot_ug_categories.sql`
+- **Le caissier peut saisir le reste à charge du patient (de 0 au montant de la vente)** : la part de l'organisme est la différence, répartie au prorata des lignes ; le taux choisi n'est alors pas appliqué. — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/045_prix_lot_ug_categories.sql`
 - **Une vente en tiers payant n'accepte pas de retour partiel** : il faut annuler la vente complète puis la refaire. — `src/Pharma.Domain/Ventes/RegleRetour.cs`
-- **Organismes présents au départ : CNAS et CASNOS** ; le titulaire peut en ajouter. — `database/001_schema.sql`, `src/Pharma.Application/Factures/Factures.cs`
+- **Organismes présents au départ : CNAS et CASNOS** ; le titulaire peut en ajouter. — `database/migration/001_schema.sql`, `src/Pharma.Application/Factures/Factures.cs`
 
 ### Volet Chifa repris par son QR code
 - **Scanner le QR d'un volet Chifa à la caisse reprend la vente sans ressaisie** : tiers payant CNAS, assuré retrouvé par son n° (chiffres seuls, avec ou sans suffixe), produits reconnus ajoutés avec leurs quantités (lots servis comme d'habitude). Droit `caisse.vendre`. — `src/Pharma.Application/Caisse/VoletChifa.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **Format lu : n° de facture ; date ; n° d'assuré ; suffixe ; deux champs gardés tels quels ; seconde date ; puis une ligne « code, quantité, prix unitaire » par produit**. Tout autre contenu est refusé (« pas un QR de volet Chifa reconnu »). Format déduit d'un seul volet : à confirmer avec l'éditeur de Chifa. — `src/Pharma.Domain/Ventes/QrChifa.cs`, `docs/a-faire.md`
 - **Un QR scanné par une douchette réglée en QWERTY sur un poste AZERTY est relu** (comme les n° de BL). — `src/Pharma.Application/Caisse/VoletChifa.cs`
-- **Un code produit Chifa inconnu est associé une fois à un produit actif du catalogue, puis reconnu à chaque volet** ; l'association (ou sa modification) est inscrite au journal (`code_chifa_associe`). — `src/Pharma.Application/Caisse/VoletChifa.cs`, `database/060_volet_chifa.sql`
+- **Un code produit Chifa inconnu est associé une fois à un produit actif du catalogue, puis reconnu à chaque volet** ; l'association (ou sa modification) est inscrite au journal (`code_chifa_associe`). — `src/Pharma.Application/Caisse/VoletChifa.cs`, `database/migration/060_volet_chifa.sql`
 - **Un prix du volet différent du prix du catalogue est signalé** ; la vente reste au prix du lot servi. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
-- **Un volet n'est repris qu'une fois** (refus avec le n° de la vente qui l'a repris) ; une vente annulée libère son volet. **Un seul volet par vente** : un second scan du même volet, ou d'un autre volet, dans le même panier est refusé. — `database/060_volet_chifa.sql`, `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
+- **Un volet n'est repris qu'une fois** (refus avec le n° de la vente qui l'a repris) ; une vente annulée libère son volet. **Un seul volet par vente** : un second scan du même volet, ou d'un autre volet, dans le même panier est refusé. — `database/migration/060_volet_chifa.sql`, `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
 - **Un volet ne se reprend qu'en tiers payant** ; le serveur relit le QR à l'encaissement et garde sur la vente le n° de facture, la date et le QR brut. Une vente mise en attente garde son volet. — `src/Pharma.Application/Caisse/Encaisser.cs`
 
 ### Suivi des dettes et créances (achats, factures, organismes)
-- **Le suivi regroupe : factures clients à encaisser (rejetées comprises, hors factures remplacées ou retirées du suivi), bordereaux non payés, factures de grossistes à payer, ancien solde des grossistes, effets remis dont l'échéance n'est pas passée.** — `database/040_facture_echeance.sql`
-- **Une dette ou une créance est signalée au-delà d'une ancienneté réglable de 1 à 365 jours (30 par défaut).** — `database/039_suivi_dettes.sql`
+- **Le suivi regroupe : factures clients à encaisser (rejetées comprises, hors factures remplacées ou retirées du suivi), bordereaux non payés, factures de grossistes à payer, ancien solde des grossistes, effets remis dont l'échéance n'est pas passée.** — `database/migration/040_facture_echeance.sql`
+- **Une dette ou une créance est signalée au-delà d'une ancienneté réglable de 1 à 365 jours (30 par défaut).** — `database/migration/039_suivi_dettes.sql`
 
 ## Sécurité et droits
 
@@ -868,9 +868,9 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 
 - **Il existe quatre rôles de départ : Pharmacien titulaire, Pharmacien assistant, Vendeur, Stagiaire.** : codes `titulaire`, `assistant`, `vendeur`, `stagiaire`. — `database/init/seed_referentiel.sql`
 - **Le rôle titulaire est un rôle « système » : il a toujours tous les droits.** : la matrice des droits ne peut ni lui en retirer ni lui en ajouter. — `src/Pharma.Application/Administration/Utilisateurs.cs`
-- **La base refuse toute modification des droits du titulaire.** : déclencheur `trg_proteger_role_systeme` (« Les droits du titulaire ne peuvent pas être modifiés »). — `database/006_droits_utilisateurs.sql`
-- **La base refuse de modifier ou de supprimer le rôle titulaire lui-même.** : déclencheur `trg_role_systeme`. — `database/010_administration.sql`
-- **Il doit toujours rester au moins un titulaire actif.** : la base refuse de désactiver, de changer de rôle ou de supprimer le dernier titulaire actif (déclencheur `trg_garder_un_titulaire`). — `database/006_droits_utilisateurs.sql`
+- **La base refuse toute modification des droits du titulaire.** : déclencheur `trg_proteger_role_systeme` (« Les droits du titulaire ne peuvent pas être modifiés »). — `database/migration/006_droits_utilisateurs.sql`
+- **La base refuse de modifier ou de supprimer le rôle titulaire lui-même.** : déclencheur `trg_role_systeme`. — `database/migration/010_administration.sql`
+- **Il doit toujours rester au moins un titulaire actif.** : la base refuse de désactiver, de changer de rôle ou de supprimer le dernier titulaire actif (déclencheur `trg_garder_un_titulaire`). — `database/migration/006_droits_utilisateurs.sql`
 - **Chaque rôle a une remise maximale (en %) : titulaire 100 %, assistant 10 %, vendeur 0 %, stagiaire 0 %.** — `database/init/seed_referentiel.sql`
 - **La remise maximale d'un rôle doit être comprise entre 0 et 100 %.** — `src/Pharma.Application/Administration/Utilisateurs.cs`
 - **Les droits de départ ne sont posés qu'à la première installation (aucun compte encore créé).** : une réexécution du script ne touche jamais aux droits modifiés ensuite par le titulaire. — `database/init/seed_referentiel.sql`
@@ -882,10 +882,10 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Un droit inconnu du logiciel est refusé dans la matrice.** : « Permission inconnue ». — `src/Pharma.Application/Administration/Utilisateurs.cs`
 - **Chaque modification de la matrice est inscrite au journal, avec les droits ajoutés et retirés de chaque rôle.** : action `droits_modifies`. — `src/Pharma.Application/Administration/Utilisateurs.cs`
 - **Le droit est vérifié par le serveur, en base, à chaque demande.** : un droit retiré s'applique tout de suite (fonction SQL `a_permission`). — `src/Pharma.Infrastructure/Securite/PermissionService.cs`
-- **Un employé désactivé n'a plus aucun droit.** : `a_permission` ne retient que les comptes actifs. — `database/006_droits_utilisateurs.sql`
+- **Un employé désactivé n'a plus aucun droit.** : `a_permission` ne retient que les comptes actifs. — `database/migration/006_droits_utilisateurs.sql`
 - **Le poste grise ce que l'employé n'a pas le droit de faire, mais le serveur revérifie toujours.** — `src/Pharma.Api/Endpoints/AuthEndpoints.cs`
 - **Certaines actions sont réservées au pharmacien titulaire, quel que soit le réglage des droits.** : exemples dans le périmètre : notifications (réglages, destinataires, test, file), création ou modification d'un compte titulaire. — `src/Pharma.Application/Securite/Ports.cs`
-- **Chaque droit porte un indicateur « sensible » affiché dans l'administration.** : son effet au-delà de l'affichage n'est pas trouvé dans le code (à confirmer). — `database/006_droits_utilisateurs.sql`
+- **Chaque droit porte un indicateur « sensible » affiché dans l'administration.** : son effet au-delà de l'affichage n'est pas trouvé dans le code (à confirmer). — `database/migration/006_droits_utilisateurs.sql`
 
 ### Droits par défaut
 
@@ -965,7 +965,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le compteur d'erreurs repart de zéro après 15 minutes sans nouvel essai, après un blocage terminé, ou après une connexion réussie.** — `src/Pharma.Application/Securite/EssaisConnexion.cs`
 - **Le blocage d'un compte existant est inscrit au journal.** : action `connexion_bloquee`. — `src/Pharma.Application/Securite/SeConnecter.cs`
 - **Les compteurs d'erreurs sont gardés en mémoire du serveur : un redémarrage du serveur les remet à zéro.** — `src/Pharma.Application/Securite/EssaisConnexion.cs`
-- **Chaque connexion réussie est tracée avec le poste et la méthode (mot de passe ou code comptoir)** (table `connexion_employe`) ; elle relance le calcul des anomalies (employé sur deux postes à la fois). — `src/Pharma.Application/Securite/SeConnecter.cs`, `src/Pharma.Application/Securite/ConnexionComptoir.cs`, `database/058_surveillance_comptes.sql`
+- **Chaque connexion réussie est tracée avec le poste et la méthode (mot de passe ou code comptoir)** (table `connexion_employe`) ; elle relance le calcul des anomalies (employé sur deux postes à la fois). — `src/Pharma.Application/Securite/SeConnecter.cs`, `src/Pharma.Application/Securite/ConnexionComptoir.cs`, `database/migration/058_surveillance_comptes.sql`
 
 ### Sessions et postes
 
@@ -998,7 +998,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 
 - **Une action refusée faute de droit peut être autorisée sur place par le code comptoir d'un autre employé présent qui a ce droit.** — `src/Pharma.Api/Securite/AutorisationParCode.cs`
 - **Une action réservée au titulaire peut être autorisée sur place par le code comptoir d'un titulaire.** — `src/Pharma.Api/Securite/AutorisationParCode.cs`
-- **L'autorisation sur place est activée par défaut et peut être désactivée par le titulaire (Administration › Caisse).** : réglage `autorisation_par_code`, droit `admin.parametres`. — `database/047_recette_corrections.sql`
+- **L'autorisation sur place est activée par défaut et peut être désactivée par le titulaire (Administration › Caisse).** : réglage `autorisation_par_code`, droit `admin.parametres`. — `database/migration/047_recette_corrections.sql`
 - **Un employé ne peut pas s'autoriser lui-même avec son propre code.** — `src/Pharma.Api/Securite/AutorisationParCode.cs`
 - **Seuls les droits acceptés par le valideur au poste sont accordés.** : un code saisi pour vendre sans ordonnance n'autorise pas, dans la même opération, un dépassement du plafond de crédit. — `src/Pharma.Api/Securite/AutorisationParCode.cs`
 - **Le code du valideur est vérifié une seule fois par opération, avec les mêmes règles d'erreurs et de blocage que le code comptoir.** — `src/Pharma.Api/Securite/AutorisationParCode.cs`
@@ -1035,9 +1035,9 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 ## Journal et audit
 
 - **Les actions sensibles sont inscrites dans un journal : employé, action, date, détails, droit utilisé et « autorisé par ».** — `src/Pharma.Application/Commun/IJournal.cs`
-- **Le journal des actions ne peut être ni modifié ni supprimé.** : déclencheur `trg_journal_immuable`. — `database/006_droits_utilisateurs.sql`
+- **Le journal des actions ne peut être ni modifié ni supprimé.** : déclencheur `trg_journal_immuable`. — `database/migration/006_droits_utilisateurs.sql`
 - **« Autorisé par » n'est rempli que si la personne qui autorise est différente de celle qui agit.** — `src/Pharma.Infrastructure/Securite/JournalSql.cs`
-- **Le journal des sauvegardes ne peut être ni modifié ni supprimé.** : déclencheur `trg_journal_sauvegarde_immuable`. — `database/014_sauvegardes.sql`
+- **Le journal des sauvegardes ne peut être ni modifié ni supprimé.** : déclencheur `trg_journal_sauvegarde_immuable`. — `database/migration/014_sauvegardes.sql`
 - **Un refus pour règle métier ou droit manquant est renvoyé au poste avec un message clair, sans être traité comme une panne.** — `src/Pharma.Api/Securite/ErreursMetier.cs`
 
 ## Super administrateur (hors base)
@@ -1079,7 +1079,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 ### Sauvegardes
 
 - **Gérer les sauvegardes demande le droit `admin.sauvegardes`.** — `src/Pharma.Api/Endpoints/NotificationsEndpoints.cs`
-- **La sauvegarde automatique est désactivée par défaut ; elle se lance une fois par jour, après l'heure réglée (22:00 par défaut).** — `database/014_sauvegardes.sql`
+- **La sauvegarde automatique est désactivée par défaut ; elle se lance une fois par jour, après l'heure réglée (22:00 par défaut).** — `database/migration/014_sauvegardes.sql`
 - **On ne peut pas activer la sauvegarde sans avoir choisi un dossier (chemin complet, ex. E:\SauvegardesPharmacie).** — `src/Pharma.Application/Sauvegardes/Sauvegardes.cs`
 - **Une sauvegarde peut aussi être lancée à la main (« Sauvegarder maintenant »).** — `src/Pharma.Api/Endpoints/NotificationsEndpoints.cs`
 - **Le nombre de sauvegardes gardées sur le disque externe va de 1 à 365 (14 par défaut) ; les plus anciennes sont supprimées.** — `src/Pharma.Application/Sauvegardes/Sauvegardes.cs`
@@ -1128,15 +1128,15 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Les champs obligatoires doivent avoir leur colonne : identifiant et désignation du produit ; produit et quantité du stock ; identifiant et raison sociale du grossiste ; identifiant et nom du client.** — `src/Pharma.Domain/Reprise/DetectionReprise.cs`
 - **Le nom et la version de l'ancien logiciel sont obligatoires (rapport de reprise).** — `src/Pharma.Application/Reprise/Reprise.cs`
 - **Un produit sans correspondance sûre doit être confirmé, rapproché d'un autre produit, ou créé.** — `src/Pharma.Application/Reprise/Reprise.cs`
-- **Le chargement est refusé tant qu'il reste une anomalie bloquante.** : ex. nombre ambigu (« 12.500 »), quantité illisible ou négative, stock d'un produit absent, doublon de produit à créer, solde illisible. — `database/048_reprise_corrections.sql`
-- **Un nombre ambigu n'est jamais deviné : il faut le corriger dans le fichier source puis recharger.** — `database/048_reprise_corrections.sql`
-- **Un lot déjà périmé est importé et bloqué à la vente.** — `database/048_reprise_corrections.sql`
-- **Une date de péremption absente est signalée, à vérifier à l'inventaire de démarrage.** — `database/048_reprise_corrections.sql`
-- **Un produit créé absent de la nomenclature nationale est « à vérifier » et non vendable tant que le titulaire n'a pas confirmé sa classe.** — `database/048_reprise_corrections.sql`
-- **La classe réglementaire retenue est la plus stricte entre la nomenclature et l'ancien logiciel.** — `database/048_reprise_corrections.sql`
+- **Le chargement est refusé tant qu'il reste une anomalie bloquante.** : ex. nombre ambigu (« 12.500 »), quantité illisible ou négative, stock d'un produit absent, doublon de produit à créer, solde illisible. — `database/migration/048_reprise_corrections.sql`
+- **Un nombre ambigu n'est jamais deviné : il faut le corriger dans le fichier source puis recharger.** — `database/migration/048_reprise_corrections.sql`
+- **Un lot déjà périmé est importé et bloqué à la vente.** — `database/migration/048_reprise_corrections.sql`
+- **Une date de péremption absente est signalée, à vérifier à l'inventaire de démarrage.** — `database/migration/048_reprise_corrections.sql`
+- **Un produit créé absent de la nomenclature nationale est « à vérifier » et non vendable tant que le titulaire n'a pas confirmé sa classe.** — `database/migration/048_reprise_corrections.sql`
+- **La classe réglementaire retenue est la plus stricte entre la nomenclature et l'ancien logiciel.** — `database/migration/048_reprise_corrections.sql`
 - **Le chargement se fait en une seule fois (tout ou rien), puis les totaux sont comparés entre l'ancienne et la nouvelle base.** — `src/Pharma.Application/Reprise/Reprise.cs`
 - **Une reprise déjà chargée ou annulée ne peut plus être modifiée, chargée ni annulée.** — `src/Pharma.Application/Reprise/Reprise.cs`
-- **Les données chargées (stock, registre des psychotropes…) sont attribuées au pharmacien titulaire ; la reprise garde qui l'a lancée et quand.** — `database/052_reprise_super_admin.sql`
+- **Les données chargées (stock, registre des psychotropes…) sont attribuées au pharmacien titulaire ; la reprise garde qui l'a lancée et quand.** — `database/migration/052_reprise_super_admin.sql`
 - **Extraction, chargement et annulation sont inscrits au journal avec le super admin et le canal du code de validation.** : actions `reprise_extraction`, `reprise_chargement`, `reprise_annulation`. — `src/Pharma.Application/Reprise/Reprise.cs`
 
 ## Essai (retours du pharmacien)
@@ -1151,7 +1151,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 ### Accès et réglages
 
 - **Les notifications (réglages, destinataires, test, file des messages) sont réservées au pharmacien titulaire.** : aucun droit de la matrice ne suffit. — `src/Pharma.Application/Notifications/Notifications.cs`
-- **Deux canaux : e-mail par le serveur SMTP de la pharmacie, SMS par un modem GSM branché sur le serveur ; aucun service cloud.** — `database/013_notifications.sql`
+- **Deux canaux : e-mail par le serveur SMTP de la pharmacie, SMS par un modem GSM branché sur le serveur ; aucun service cloud.** — `database/migration/013_notifications.sql`
 - **Le mot de passe SMTP est chiffré, lisible seulement sur le PC serveur qui l'a enregistré, et n'est jamais renvoyé aux postes.** — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Serveur SMTP et adresse de l'expéditeur se renseignent ensemble ou pas du tout ; port SMTP entre 1 et 65535.** — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Le port du modem a la forme COMn (ex. COM3) ; vide, aucun SMS n'est envoyé.** — `src/Pharma.Application/Notifications/Notifications.cs`
@@ -1163,7 +1163,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le message de test est le seul qui part vers une adresse non vérifiée ; le titulaire marque ensuite le destinataire « vérifié ».** — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Changer l'e-mail ou le téléphone d'un destinataire retire sa vérification.** — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Un destinataire désactivé ne reçoit plus rien.** — `src/Pharma.Domain/Notifications/RegleNotifications.cs`
-- **La base refuse tout message vers un destinataire désactivé, non vérifié (sauf test) ou à une autre adresse que celle enregistrée.** : déclencheur `trg_message_destinataire`. — `database/013_notifications.sql`
+- **La base refuse tout message vers un destinataire désactivé, non vérifié (sauf test) ou à une autre adresse que celle enregistrée.** : déclencheur `trg_message_destinataire`. — `database/migration/013_notifications.sql`
 - **Un destinataire a un nom, au moins un canal, une adresse valide pour chaque canal choisi, et au moins un type de message.** : mobile algérien 05, 06, 07 + 8 chiffres, ou +213. — `src/Pharma.Domain/Notifications/RegleNotifications.cs`
 - **Chaque ajout ou modification de destinataire est inscrit au journal.** : action `destinataire_notification`. — `src/Pharma.Application/Notifications/Notifications.cs`
 
@@ -1195,8 +1195,8 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le rôle titulaire n'est pas reconnu pour une connexion par code comptoir, ni tant que le mot de passe doit être changé** : sauf autorisation « sur place » (mécanisme `AutoriseSurPlaceAsync`, détail à confirmer). — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 
 ### Événements de caisse (ce qui se passe au comptoir sans laisser de vente)
-- **Trois types d'événements sont enregistrés** : ligne retirée du panier (`ligne_retiree`), tiroir ouvert sans vente (`tiroir_ouvert`), vente en attente abandonnée (`attente_abandonnee`). Un panier non encaissé ni mis en attente, perdu en quittant l'écran de caisse, est signalé comme lignes retirées. — `database/054_surveillance_caisse.sql`
-- **Chaque événement garde l'employé, le poste, la caisse (session) du poste, et l'heure** ; selon le type : produit, lot, nombre de boîtes, montant, détail. — `database/054_surveillance_caisse.sql`
+- **Trois types d'événements sont enregistrés** : ligne retirée du panier (`ligne_retiree`), tiroir ouvert sans vente (`tiroir_ouvert`), vente en attente abandonnée (`attente_abandonnee`). Un panier non encaissé ni mis en attente, perdu en quittant l'écran de caisse, est signalé comme lignes retirées. — `database/migration/054_surveillance_caisse.sql`
+- **Chaque événement garde l'employé, le poste, la caisse (session) du poste, et l'heure** ; selon le type : produit, lot, nombre de boîtes, montant, détail. — `database/migration/054_surveillance_caisse.sql`
 - **Le poste ne peut signaler lui-même que deux types : ligne retirée et tiroir ouvert** : tout autre type est refusé (« Événement de caisse inconnu »). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Signaler un événement demande le droit `caisse.vendre`.** — `src/Pharma.Api/Endpoints/SurveillanceEndpoints.cs`
 - **Ouvrir le tiroir sans vente demande en plus le droit `caisse.ouvrir_tiroir`** : sans lui, l'ouverture est refusée. — `src/Pharma.Application/Surveillance/Surveillance.cs`
@@ -1210,7 +1210,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le calcul porte toujours sur la journée en cours, selon la date du serveur PostgreSQL** (celle à laquelle les ventes sont horodatées). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Le calcul est relancé après** : chaque vente encaissée, chaque événement de caisse (ligne retirée, tiroir, attente abandonnée), chaque fin d'inventaire, chaque écart d'inventaire validé, chaque déclaration de casse ou d'échantillon (pas pour un périmé), chaque facture saisie sur un comptage (avec ou sans écart), chaque avoir inférieur au montant attendu, chaque connexion réussie (mot de passe ou code), chaque baisse de prix depuis la fiche produit. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `src/Pharma.Application/Stock/Inventaire.cs`, `src/Pharma.Application/Stock/SortieStock.cs`
 - **Le calcul ne bloque jamais la vente ni l'opération** : elle est déjà enregistrée ; une erreur de surveillance est inscrite au journal du serveur. — `src/Pharma.Application/Surveillance/Surveillance.cs`
-- **Les journées et les horaires sont ceux de l'heure du serveur PostgreSQL** : son fuseau doit être réglé sur l'heure de la pharmacie. — `database/054_surveillance_caisse.sql`
+- **Les journées et les horaires sont ceux de l'heure du serveur PostgreSQL** : son fuseau doit être réglé sur l'heure de la pharmacie. — `database/migration/054_surveillance_caisse.sql`
 - **Le calcul est aussi lancé au démarrage du serveur puis toutes les heures**, même sans activité (retour sans avoir, crédit jamais remboursé, comptage des produits sensibles en retard). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 
 ### Types d'anomalies
@@ -1241,41 +1241,41 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 | Baisses de prix (`baisses_prix`) | Prix de vente baissés par un autre que le titulaire (fiche produit ou PPA de réception), par jour ; cite produit, ancien et nouveau prix | 1 | à partir de 2 | `seuil_baisses_prix` (≥ 1) |
 
 ### Règles communes des anomalies
-- **Deux niveaux existent : « attention » et « urgent ».** — `database/054_surveillance_caisse.sql`
-- **Une anomalie à seuil devient « urgente » quand la valeur atteint le double du seuil** (sauf hors horaires, boîtes fantômes, produits sensibles et anomalies des achats, voir le tableau). — `database/055_surveillance_stock.sql`
-- **Le seuil est atteint dès que la valeur est égale au seuil** (comparaison « supérieur ou égal »). — `database/055_surveillance_stock.sql`
-- **Une seule anomalie par type, par employé, par jour** (et par patient, par inventaire ou par date de dernier comptage selon le type). — `database/054_surveillance_caisse.sql`
-- **Une anomalie existante est mise à jour avec les chiffres du jour** (message, valeur, niveau) à chaque nouveau calcul. — `database/054_surveillance_caisse.sql`
-- **Une anomalie déjà traitée reste traitée** si ses chiffres augmentent, **sauf si elle devient urgente** : elle revient alors « à examiner » (le traitement précédent est gardé dans l'action prise). — `database/054_surveillance_caisse.sql`
-- **Une anomalie n'est jamais supprimée.** — `database/054_surveillance_caisse.sql`
-- **Les valeurs en dinars des casses, échantillons, ajustements et boîtes fantômes sont calculées au prix d'achat HT du lot.** — `database/055_surveillance_stock.sql`
+- **Deux niveaux existent : « attention » et « urgent ».** — `database/migration/054_surveillance_caisse.sql`
+- **Une anomalie à seuil devient « urgente » quand la valeur atteint le double du seuil** (sauf hors horaires, boîtes fantômes, produits sensibles et anomalies des achats, voir le tableau). — `database/migration/055_surveillance_stock.sql`
+- **Le seuil est atteint dès que la valeur est égale au seuil** (comparaison « supérieur ou égal »). — `database/migration/055_surveillance_stock.sql`
+- **Une seule anomalie par type, par employé, par jour** (et par patient, par inventaire ou par date de dernier comptage selon le type). — `database/migration/054_surveillance_caisse.sql`
+- **Une anomalie existante est mise à jour avec les chiffres du jour** (message, valeur, niveau) à chaque nouveau calcul. — `database/migration/054_surveillance_caisse.sql`
+- **Une anomalie déjà traitée reste traitée** si ses chiffres augmentent, **sauf si elle devient urgente** : elle revient alors « à examiner » (le traitement précédent est gardé dans l'action prise). — `database/migration/054_surveillance_caisse.sql`
+- **Une anomalie n'est jamais supprimée.** — `database/migration/054_surveillance_caisse.sql`
+- **Les valeurs en dinars des casses, échantillons, ajustements et boîtes fantômes sont calculées au prix d'achat HT du lot.** — `database/migration/055_surveillance_stock.sql`
 
 ### Détail par type
-- **Lignes retirées : le seuil compte les boîtes, pas les lignes** ; le message donne aussi le nombre de lignes et le montant retiré. — `database/055_surveillance_stock.sql`
-- **Attentes abandonnées : le message donne le montant total abandonné.** — `database/055_surveillance_stock.sql`
-- **Hors horaires : seules les ventes validées comptent** ; le message donne le nombre, le montant et l'heure de la première et de la dernière vente hors horaires. — `database/055_surveillance_stock.sql`
-- **Hors horaires : une vente à l'heure exacte de fermeture est hors horaires** ; une vente à l'heure exacte d'ouverture ne l'est pas. — `database/055_surveillance_stock.sql`
-- **Remises : seules les ventes validées avec un pourcentage de remise supérieur à 0 comptent.** — `database/055_surveillance_stock.sql`
-- **Remises au même patient : la période couvre le jour du calcul et les 29 jours précédents** (30 jours). — `database/055_surveillance_stock.sql`
-- **Remises au même patient : une seule anomalie par patient et par mois civil** (rattachée au 1er du mois), et pas de nouvelle anomalie si une autre a été créée pour ce patient dans les 30 jours (série à cheval sur deux mois) ; elle n'est rattachée à aucun employé et cite les vendeurs. — `database/055_surveillance_stock.sql`
-- **Ajustements : seuls les ajustements d'inventaire qui diminuent le stock comptent**, attribués à l'employé qui a terminé ou validé l'inventaire. — `database/055_surveillance_stock.sql`
-- **Boîtes fantômes : le contrôle porte sur les inventaires terminés le jour du calcul.** — `database/055_surveillance_stock.sql`
-- **Boîtes fantômes : seuls les lots comptés uniquement en scannant leurs boîtes identifiées sont contrôlés** (autant de boîtes vues que de boîtes comptées) ; un lot compté à la main, ou par un code qui ne désigne pas une boîte, n'a pas de boîtes fantômes. — `database/055_surveillance_stock.sql`
-- **Boîtes fantômes : seules les boîtes encore « en stock » et entrées avant le début du comptage sont concernées.** — `database/055_surveillance_stock.sql`
-- **Boîtes fantômes : une anomalie par inventaire**, rattachée à aucun employé, listant produit, lot et nombre de boîtes ; le message invite à les rechercher puis à faire leur sortie. — `database/055_surveillance_stock.sql`
-- **Une boîte n'est comptée qu'une fois par inventaire** ; une boîte se retrouve par son étiquette interne, ou par son GTIN et son n° de série ensemble. — `database/055_surveillance_stock.sql`
-- **Produits sensibles en retard : l'anomalie n'apparaît que s'il existe au moins un produit sensible actif.** — `database/055_surveillance_stock.sql`
-- **Produits sensibles en retard : retard si aucun comptage « Produits sensibles » n'a été terminé, ou si le dernier date de 7 jours ou plus (fréquence réglée)** : précisément, dernier comptage antérieur à (jour − fréquence + 1). — `database/055_surveillance_stock.sql`
-- **Produits sensibles en retard : une anomalie par date de dernier comptage** ; une fois traitée, elle ne réapparaît qu'après un nouveau comptage redevenu en retard (constat sur la clé de l'anomalie). — `database/055_surveillance_stock.sql`
+- **Lignes retirées : le seuil compte les boîtes, pas les lignes** ; le message donne aussi le nombre de lignes et le montant retiré. — `database/migration/055_surveillance_stock.sql`
+- **Attentes abandonnées : le message donne le montant total abandonné.** — `database/migration/055_surveillance_stock.sql`
+- **Hors horaires : seules les ventes validées comptent** ; le message donne le nombre, le montant et l'heure de la première et de la dernière vente hors horaires. — `database/migration/055_surveillance_stock.sql`
+- **Hors horaires : une vente à l'heure exacte de fermeture est hors horaires** ; une vente à l'heure exacte d'ouverture ne l'est pas. — `database/migration/055_surveillance_stock.sql`
+- **Remises : seules les ventes validées avec un pourcentage de remise supérieur à 0 comptent.** — `database/migration/055_surveillance_stock.sql`
+- **Remises au même patient : la période couvre le jour du calcul et les 29 jours précédents** (30 jours). — `database/migration/055_surveillance_stock.sql`
+- **Remises au même patient : une seule anomalie par patient et par mois civil** (rattachée au 1er du mois), et pas de nouvelle anomalie si une autre a été créée pour ce patient dans les 30 jours (série à cheval sur deux mois) ; elle n'est rattachée à aucun employé et cite les vendeurs. — `database/migration/055_surveillance_stock.sql`
+- **Ajustements : seuls les ajustements d'inventaire qui diminuent le stock comptent**, attribués à l'employé qui a terminé ou validé l'inventaire. — `database/migration/055_surveillance_stock.sql`
+- **Boîtes fantômes : le contrôle porte sur les inventaires terminés le jour du calcul.** — `database/migration/055_surveillance_stock.sql`
+- **Boîtes fantômes : seuls les lots comptés uniquement en scannant leurs boîtes identifiées sont contrôlés** (autant de boîtes vues que de boîtes comptées) ; un lot compté à la main, ou par un code qui ne désigne pas une boîte, n'a pas de boîtes fantômes. — `database/migration/055_surveillance_stock.sql`
+- **Boîtes fantômes : seules les boîtes encore « en stock » et entrées avant le début du comptage sont concernées.** — `database/migration/055_surveillance_stock.sql`
+- **Boîtes fantômes : une anomalie par inventaire**, rattachée à aucun employé, listant produit, lot et nombre de boîtes ; le message invite à les rechercher puis à faire leur sortie. — `database/migration/055_surveillance_stock.sql`
+- **Une boîte n'est comptée qu'une fois par inventaire** ; une boîte se retrouve par son étiquette interne, ou par son GTIN et son n° de série ensemble. — `database/migration/055_surveillance_stock.sql`
+- **Produits sensibles en retard : l'anomalie n'apparaît que s'il existe au moins un produit sensible actif.** — `database/migration/055_surveillance_stock.sql`
+- **Produits sensibles en retard : retard si aucun comptage « Produits sensibles » n'a été terminé, ou si le dernier date de 7 jours ou plus (fréquence réglée)** : précisément, dernier comptage antérieur à (jour − fréquence + 1). — `database/migration/055_surveillance_stock.sql`
+- **Produits sensibles en retard : une anomalie par date de dernier comptage** ; une fois traitée, elle ne réapparaît qu'après un nouveau comptage redevenu en retard (constat sur la clé de l'anomalie). — `database/migration/055_surveillance_stock.sql`
 
 ### Notification des anomalies
 - **Chaque nouvelle anomalie est notifiée au titulaire** (e-mail, et SMS selon le réglage). — `src/Pharma.Application/Surveillance/Surveillance.cs`, `src/Pharma.Application/Notifications/Notifications.cs`
-- **Une anomalie déjà connue est notifiée une seconde fois quand elle passe de « attention » à « urgent ».** — `database/054_surveillance_caisse.sql`
+- **Une anomalie déjà connue est notifiée une seconde fois quand elle passe de « attention » à « urgent ».** — `database/migration/054_surveillance_caisse.sql`
 - **L'objet du message est « URGENT : anomalie de surveillance » ou « Anomalie de surveillance »** (caisse, stock, réception, retours) ; le message renvoie à l'écran Surveillance du titulaire. — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Le SMS de surveillance n'est envoyé que si le réglage SMS des lots bloqués est activé.** — `src/Pharma.Application/Notifications/Notifications.cs`
-- **Le texte notifié ne contient aucune donnée de patient** (le nom du patient n'apparaît que dans l'écran Surveillance). — `database/055_surveillance_stock.sql`
-- **Crédits suspects : le nom du patient n'apparaît que dans l'écran Surveillance**, jamais dans l'e-mail ni le SMS. — `database/058_surveillance_comptes.sql`
-- **Les destinataires sont ceux abonnés au type « surveillance »** ; à l'installation, ce type a été ajouté aux destinataires déjà abonnés au type « lot délaissé ». — `database/054_surveillance_caisse.sql`
+- **Le texte notifié ne contient aucune donnée de patient** (le nom du patient n'apparaît que dans l'écran Surveillance). — `database/migration/055_surveillance_stock.sql`
+- **Crédits suspects : le nom du patient n'apparaît que dans l'écran Surveillance**, jamais dans l'e-mail ni le SMS. — `database/migration/058_surveillance_comptes.sql`
+- **Les destinataires sont ceux abonnés au type « surveillance »** ; à l'installation, ce type a été ajouté aux destinataires déjà abonnés au type « lot délaissé ». — `database/migration/054_surveillance_caisse.sql`
 
 ### Traitement des anomalies
 - **Les anomalies sont listées en deux vues : à traiter (500 au plus) et traitées (200 au plus).** — `src/Pharma.Application/Surveillance/Surveillance.cs`
@@ -1284,19 +1284,19 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Une anomalie déjà traitée ne peut pas être traitée à nouveau** (« introuvable ou déjà traitée »). — `src/Pharma.Infrastructure/Surveillance/SurveillanceSql.cs`
 
 ### Réglages de la surveillance
-- **Valeurs par défaut** : lignes retirées 5, tiroir 3, attentes abandonnées 3, remises 5, remises au même patient 3, ajustements 5, casses 3, échantillons 3, comptage des produits sensibles tous les 7 jours, horaires vides, réception à l'aveugle active, retour sans avoir après 30 jours, dette d'un patient récent 5 000 DA (patient de moins de 7 jours), crédits par employé 20 000 DA par jour, crédit jamais remboursé après 60 jours, autorisations par code 10 données et 5 demandées par jour, 3 passages d'un poste à l'autre en moins de 10 minutes, 1 baisse de prix. — `database/054_surveillance_caisse.sql`, `database/055_surveillance_stock.sql`
+- **Valeurs par défaut** : lignes retirées 5, tiroir 3, attentes abandonnées 3, remises 5, remises au même patient 3, ajustements 5, casses 3, échantillons 3, comptage des produits sensibles tous les 7 jours, horaires vides, réception à l'aveugle active, retour sans avoir après 30 jours, dette d'un patient récent 5 000 DA (patient de moins de 7 jours), crédits par employé 20 000 DA par jour, crédit jamais remboursé après 60 jours, autorisations par code 10 données et 5 demandées par jour, 3 passages d'un poste à l'autre en moins de 10 minutes, 1 baisse de prix. — `database/migration/054_surveillance_caisse.sql`, `database/migration/055_surveillance_stock.sql`
 - **Chaque seuil doit valoir au moins 1.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **La fréquence du comptage des produits sensibles va de 1 à 90 jours.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Le délai d'un retour sans avoir va de 1 à 365 jours.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **La réception à l'aveugle se désactive dans les réglages (petite équipe)** : la réception redevient une saisie directe en une étape. — `src/Pharma.Application/Achats/Achats.cs`
 - **Les horaires se renseignent ensemble (ouverture et fermeture) ou pas du tout** ; vides, les ventes hors horaires ne sont pas contrôlées. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **L'ouverture et la fermeture doivent être différentes ; une plage peut passer minuit** (08:00-00:30 : une vente entre 00:30 et 08:00 est hors horaires). — `src/Pharma.Application/Surveillance/Surveillance.cs`
-- **Les seuils s'appliquent par employé et par jour** (par patient sur 30 jours pour les remises au même patient). — `database/054_surveillance_caisse.sql`
+- **Les seuils s'appliquent par employé et par jour** (par patient sur 30 jours pour les remises au même patient). — `database/migration/054_surveillance_caisse.sql`
 - **Toute modification des réglages est inscrite au journal des actions** (action `reglages_surveillance`) : seulement les réglages changés, chacun avec l'ancienne et la nouvelle valeur ; rien n'est inscrit si rien ne change. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les montants de crédit surveillés doivent être supérieurs à 0 ; patient récent de 1 à 90 jours ; crédit jamais remboursé de 1 à 365 jours ; postes simultanés de 1 à 120 minutes.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 
 ### Produits sensibles
-- **Un produit sensible est un produit cher, très demandé ou souvent volé, choisi par le titulaire** ; par défaut aucun produit ne l'est. — `database/055_surveillance_stock.sql`
+- **Un produit sensible est un produit cher, très demandé ou souvent volé, choisi par le titulaire** ; par défaut aucun produit ne l'est. — `database/migration/055_surveillance_stock.sql`
 - **La liste des produits sensibles affiche leur stock** (somme des boîtes disponibles de leurs lots). — `src/Pharma.Infrastructure/Surveillance/SurveillanceSql.cs`
 - **Marquer ou démarquer un produit sensible est inscrit au journal des actions** (`produit_sensible` / `produit_non_sensible`). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Le comptage « Produits sensibles » demande le droit `stock.ajuster`** ; il porte sur tous les lots en stock des produits sensibles et se fait à l'aveugle. — `src/Pharma.Application/Stock/Inventaire.cs`
@@ -1396,21 +1396,21 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 
 ### Accès et réglage
 - **Consulter les dettes et créances demande le droit `tresorerie.gerer`.** — `src/Pharma.Application/Suivi/SuiviDettes.cs`
-- **Le délai d'alerte vaut 30 jours par défaut ; seul le titulaire le modifie, entre 1 et 365 jours.** — `src/Pharma.Application/Suivi/SuiviDettes.cs`, `database/039_suivi_dettes.sql`
+- **Le délai d'alerte vaut 30 jours par défaut ; seul le titulaire le modifie, entre 1 et 365 jours.** — `src/Pharma.Application/Suivi/SuiviDettes.cs`, `database/migration/039_suivi_dettes.sql`
 - **Le changement de délai est inscrit au journal (avant / après).** — `src/Pharma.Application/Suivi/SuiviDettes.cs`
 
 ### Sommes suivies
-- **Créances (dues à la pharmacie) : ventes à crédit non soldées, dette antérieure des patients, factures clients (patients, entreprises, organismes), bordereaux d'organismes envoyés non payés en entier.** — `database/039_suivi_dettes.sql`
-- **Dettes (dues par la pharmacie) : factures de grossistes non réglées, ancien solde des grossistes hors factures, effets remis dont l'échéance n'est pas passée.** — `database/039_suivi_dettes.sql`
-- **Les factures remplacées ou hors suivi ne sont pas suivies.** — `database/040_facture_echeance.sql`
+- **Créances (dues à la pharmacie) : ventes à crédit non soldées, dette antérieure des patients, factures clients (patients, entreprises, organismes), bordereaux d'organismes envoyés non payés en entier.** — `database/migration/039_suivi_dettes.sql`
+- **Dettes (dues par la pharmacie) : factures de grossistes non réglées, ancien solde des grossistes hors factures, effets remis dont l'échéance n'est pas passée.** — `database/migration/039_suivi_dettes.sql`
+- **Les factures remplacées ou hors suivi ne sont pas suivies.** — `database/migration/040_facture_echeance.sql`
 - **Une somme nulle ou négative est ignorée.** — `src/Pharma.Application/Suivi/SuiviDettes.cs`
-- **L'ancienneté se compte depuis la date de la vente, de la facture, de l'envoi du bordereau ou de la réception.** — `database/039_suivi_dettes.sql`
-- **Le relevé de la dette envers les grossistes ne se modifie pas : on corrige par un nouveau mouvement.** — `database/039_suivi_dettes.sql`
+- **L'ancienneté se compte depuis la date de la vente, de la facture, de l'envoi du bordereau ou de la réception.** — `database/migration/039_suivi_dettes.sql`
+- **Le relevé de la dette envers les grossistes ne se modifie pas : on corrige par un nouveau mouvement.** — `database/migration/039_suivi_dettes.sql`
 
 ### Échéancier et alertes
 - **Échéancier en trois tranches : 0-30 jours, 31-60 jours, plus de 60 jours** ; les effets n'y figurent pas. — `src/Pharma.Application/Suivi/SuiviDettes.cs`
 - **Une facture client est en alerte quand son échéance est dépassée ou qu'elle est rejetée.** — `src/Pharma.Application/Suivi/SuiviDettes.cs`
-- **Une facture client a toujours une échéance, jamais avant sa date ; les anciennes factures ont reçu date + 30 jours.** — `database/040_facture_echeance.sql`
+- **Une facture client a toujours une échéance, jamais avant sa date ; les anciennes factures ont reçu date + 30 jours.** — `database/migration/040_facture_echeance.sql`
 - **Un effet est en alerte quand son échéance arrive dans 7 jours ou moins.** — `src/Pharma.Application/Suivi/SuiviDettes.cs`
 - **Les autres sommes (patients, bordereaux, grossistes) sont en alerte au-delà du délai réglé** ; un bordereau rejeté en partie est toujours en alerte. — `src/Pharma.Application/Suivi/SuiviDettes.cs`
 - **Les alertes sont regroupées par catégorie de tiers, avec nombre et total.** — `src/Pharma.Application/Suivi/SuiviDettes.cs`

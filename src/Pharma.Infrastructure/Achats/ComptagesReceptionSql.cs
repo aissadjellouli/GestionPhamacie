@@ -6,7 +6,7 @@ using Pharma.Domain.Achats;
 
 namespace Pharma.Infrastructure.Achats;
 
-/// <summary>Réception à l'aveugle : comptages, facture en écart, boîtes manquantes (database/057_reception_aveugle.sql).</summary>
+/// <summary>Réception à l'aveugle : comptages, facture en écart, boîtes manquantes (database/migration/057_reception_aveugle.sql).</summary>
 public sealed class ComptagesReceptionSql(NpgsqlDataSource db) : IComptagesReception
 {
     private static NpgsqlParameter Valeur(object? v, NpgsqlDbType type) => new() { Value = v ?? DBNull.Value, NpgsqlDbType = type };

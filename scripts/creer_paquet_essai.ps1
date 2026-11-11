@@ -51,7 +51,7 @@ Remove-Item (Join-Path $Sortie "api\appsettings.Development.json") -ErrorAction 
 
 # Base : scripts numérotés (structure et référentiel), puis données fictives de démonstration
 $db = New-Item -ItemType Directory -Force (Join-Path $Sortie "database\data")
-Copy-Item (Join-Path $racine "database\0*.sql") (Join-Path $Sortie "database")
+Copy-Item (Join-Path $racine "database\migration\0*.sql") (Join-Path $Sortie "database")
 Copy-Item (Join-Path $racine "database\data\9*.sql") $db
 
 Copy-Item (Join-Path $PSScriptRoot "paquet\*") $Sortie

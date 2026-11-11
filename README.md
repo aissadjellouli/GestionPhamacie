@@ -15,8 +15,8 @@ Logiciel de gestion d’officine pour les pharmacies algériennes : caisse, stoc
 | `tests/Pharma.Domain.Tests` | Tests unitaires du domaine (xUnit) |
 | `tests/Pharma.Application.Tests` | Tests des cas d’usage, avec doublures |
 | `tests/Pharma.Architecture.Tests` | Sens des dépendances entre couches, mapping EF |
-| `database/` | Scripts SQL numérotés, source de vérité du schéma |
-| `database/init/` | Installation neuve : `schema.sql` (toute la structure), `seed_referentiel.sql` (référentiel de mise en production), `clean.sql` (remise à vierge) ; voir docs/mise-en-production.md |
+| `database/migration/` | **Migration** d'une base en service : scripts numérotés `0NN_*.sql` (source de vérité du schéma), rejoués dans l'ordre à chaque nouvelle version ; voir docs/base-de-donnees.md |
+| `database/init/` | **Création à la mise en production** d'une base neuve : `schema.sql` (toute la structure), `seed_referentiel.sql` (référentiel de départ), `clean.sql` (remise à vierge) ; voir docs/mise-en-production.md |
 | `database/data/` | Fichiers qui remplissent la base : données fictives (`9xx_*.sql`, développement et tests) et nomenclature nationale (Excel, à importer dans Administration › Nomenclature) |
 | `scripts/` | Initialisation de la base locale, sauvegarde quotidienne |
 | `docs/` | Documentation et maquettes |

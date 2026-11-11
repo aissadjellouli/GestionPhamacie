@@ -4,12 +4,12 @@ using System.Text.RegularExpressions;
 namespace Pharma.Architecture.Tests;
 
 /// <summary>
-/// Règle permanente (docs/base-de-donnees.md) : tout script numéroté database/0NN_*.sql est répliqué dans les scripts
+/// Règle permanente (docs/base-de-donnees.md) : tout script numéroté database/migration/0NN_*.sql est répliqué dans les scripts
 /// d'installation — la structure dans init/schema.sql, le référentiel dans init/seed_referentiel.sql — dans la même modification.
 /// </summary>
 public partial class ScriptsInitTests
 {
-    private static readonly string Base = Path.Combine(RacineDepot(), "database");
+    private static readonly string Base = Path.Combine(RacineDepot(), "database", "migration");
 
     /// <summary>Scripts numérotés, dans leur ordre d'exécution, commentaires SQL retirés.</summary>
     private static readonly (string Nom, int Numero, string Sql)[] Scripts = Directory.GetFiles(Base, "0*.sql")
@@ -19,8 +19,9 @@ public partial class ScriptsInitTests
         .OrderBy(s => s.Item2)
         .ToArray();
 
-    private static readonly string Schema = File.ReadAllText(Path.Combine(Base, "init", "schema.sql"));
-    private static readonly string Seed = File.ReadAllText(Path.Combine(Base, "init", "seed_referentiel.sql"));
+    private static readonly string Init = Path.Combine(RacineDepot(), "database", "init");
+    private static readonly string Schema = File.ReadAllText(Path.Combine(Init, "schema.sql"));
+    private static readonly string Seed = File.ReadAllText(Path.Combine(Init, "seed_referentiel.sql"));
 
     [Fact]
     public void Les_entetes_de_init_citent_le_dernier_script()

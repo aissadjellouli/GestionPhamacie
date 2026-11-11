@@ -8,7 +8,7 @@ namespace Pharma.Infrastructure.Sauvegardes;
 /// <summary>
 /// Restauration de la base depuis un fichier pg_dump (format personnalisé), avec le compte de l'application (droit CREATEDB) :
 /// 1. base neuve « …_restauree_AAAAMMJJ_HHMMSS » remplie par pg_restore ;
-/// 2. scripts database/0xx rejoués (sauvegarde ancienne mise à la version du logiciel), comme pour une mise à jour ;
+/// 2. scripts database/migration/0xx rejoués (sauvegarde ancienne mise à la version du logiciel), comme pour une mise à jour ;
 /// 3. la base en service est renommée « …_avant_restauration_AAAAMMJJ_HHMM » (jamais supprimée), puis la base neuve prend son nom.
 /// Un échec avant l'étape 3 ne touche pas la base en service (la base neuve, incomplète, est supprimée).
 /// </summary>

@@ -1,3 +1,4 @@
+| `062_vues_parametres_nommes.sql` | Vues `v_etat_stock` et `v_risque_peremption` : réglages lus par colonnes nommées au lieu de `SELECT * FROM parametre_alerte` (le `*` figé à la création faisait différer une base rejouée de `init/schema.sql`) ; `v_mouvement_tresorerie` : libellé nommé sur les deux lignes du `UNION`. Mêmes colonnes et mêmes résultats. Une base neuve (`init/`) et une base mise à jour (migrations) ont désormais exactement la même structure. |
 | `061_tva_sorties.sql` | TVA à reverser sur les pertes et dons : table `parametre_rapport` (une ligne : `tva_reversee_perime`, `tva_reversee_casse`, `tva_reversee_don`, « non » par défaut), réglée par le titulaire selon l'avis de son comptable ; les rapports en tirent la marge après pertes et dons. |
 # Base de données
 
@@ -86,7 +87,7 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `059_corrections_surveillance.sql` | Corrections de la surveillance : boîtes fantômes seulement pour un lot compté uniquement par scans de boîtes identifiées, remises au même patient sans seconde anomalie à cheval sur deux mois, horaires passant minuit, anomalie traitée redevenue urgente remise « à examiner » (`surveillance_candidats` et `surveiller` remplacées). |
 | `060_volet_chifa.sql` | Reprise d'une vente Chifa par le QR code du volet : table `chifa_code_produit` (code produit Chifa associé une fois à un produit), `vente.chifa_facture`, `chifa_date`, `chifa_qr` (volet repris, contenu brut), index unique `ux_vente_chifa_facture` (un volet repris une seule fois, sauf vente annulée). Format du QR à confirmer avec l'éditeur de Chifa. |
 
-### Règle permanente : tout script est répliqué dans `init/`
+### Règle permanente : toute migration est répliquée dans `init/`
 
 **Toute modification de la base passe par un script numéroté idempotent, et la même modification met à jour les scripts
 d'installation :**
@@ -109,11 +110,24 @@ une permission du logiciel (`Pharma.Domain.Securite.Permissions`) manque dans un
 
 Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dans la même modification régénérer `init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges --no-comments` d'une base où tous les scripts ont été rejoués dans l'ordre) et compléter `init/seed_referentiel.sql` s'il ajoute des données de référence. Les scripts se rejouent **tous, dans l'ordre** : rejouer un ancien script seul peut ramener une fonction ou une vue à une version antérieure. Dans une vue, nommer les colonnes une à une (pas de `table.*`) et ne jamais ajouter de colonne à une vue définie par un script antérieur : le rejeu de l'ancien script échouerait. **Une contrainte CHECK à liste de valeurs** (types, statuts) ne se recrée jamais sans garde : la recréer seulement si sa définition n'a pas encore la valeur apportée par le script (`DO $garde$ … IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = … AND pg_get_constraintdef(oid) LIKE '%''valeur''%') …`) ; sinon le rejeu complet (restauration d'une sauvegarde) échoue dès que la base contient une valeur ajoutée par un script plus récent.
 
-### Installation neuve : `database/init/`
+### Deux usages distincts : création à la mise en production, migration d'une base existante
+
+| Dossier | Quand | Ce qu'on lance |
+| --- | --- | --- |
+| `database/init/` | **Mise en production (MEP)** : création d'une base **neuve et vide** | `schema.sql` (toute la structure en une fois), puis `seed_referentiel.sql` (référentiel de départ) ; `clean.sql` seulement pour remettre une base à vierge |
+| `database/migration/` | **Migration** : mise à jour d'une base **déjà en service** (nouvelle version du logiciel, sauvegarde ancienne restaurée) | Les scripts numérotés `0NN_*.sql` **plus récents que la base**, dans l'ordre (tous sont idempotents) |
+
+On ne mélange pas les deux : une base neuve se crée avec `init/`, pas en rejouant les 0NN un à un ; une base en service ne
+reçoit jamais `schema.sql` (il s'arrête de lui-même si le schéma existe) ni `clean.sql` (il efface tout).
+Les outils qui rejouent les migrations (`scripts/initialiser_base_locale.ps1` pour les bases de développement, l'installateur
+du paquet d'essai, la restauration d'une sauvegarde dans l'API) ne prennent que les fichiers `0NN_*.sql` de `database/migration/`.
+L'API emporte ces scripts numérotés dans le sous-dossier `database` de son dossier d'installation.
+
+### Création à la mise en production : `database/init/`
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 061, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 062, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

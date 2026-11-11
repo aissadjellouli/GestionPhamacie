@@ -29,7 +29,7 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
     {
         await using var cmd = db.CreateCommand("SELECT seuil_boites, seuil_montant FROM parametre_inventaire WHERE id = 1");
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        if (!await r.ReadAsync(ct)) throw new InvalidOperationException("Réglages d'inventaire absents : exécutez database/017_inventaire.sql.");
+        if (!await r.ReadAsync(ct)) throw new InvalidOperationException("Réglages d'inventaire absents : exécutez database/migration/017_inventaire.sql.");
         return new ParametresInventaire(r.GetInt32(0), r.GetDecimal(1));
     }
 

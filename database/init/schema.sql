@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 061 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 062 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 061 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 062 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict sVav3b6asIevcbKKB3qoGnakzai6XhNRKzpdLIKVktbjodbhEyntCzAa380dx20
+\restrict rE4mumUy36zSY5wMkZczqMcL0SUBrjrpiLoQcrtcQITvxJfhumhzyVtrKicVZtt
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -4670,12 +4670,7 @@ CREATE VIEW public.v_consommation AS
 
 CREATE VIEW public.v_etat_stock AS
  WITH prm AS (
-         SELECT parametre_alerte.id,
-            parametre_alerte.jours_orange,
-            parametre_alerte.jours_rouge,
-            parametre_alerte.horizon_risque_jours,
-            parametre_alerte.fenetre_conso_jours,
-            parametre_alerte.delai_fournisseur_jours,
+         SELECT parametre_alerte.delai_fournisseur_jours,
             parametre_alerte.jours_securite,
             parametre_alerte.jours_cible_commande,
             parametre_alerte.jours_dormant,
@@ -5244,16 +5239,9 @@ CREATE VIEW public.v_valeur_lot AS
 
 CREATE VIEW public.v_risque_peremption AS
  WITH prm AS (
-         SELECT parametre_alerte.id,
-            parametre_alerte.jours_orange,
+         SELECT parametre_alerte.jours_orange,
             parametre_alerte.jours_rouge,
-            parametre_alerte.horizon_risque_jours,
-            parametre_alerte.fenetre_conso_jours,
-            parametre_alerte.delai_fournisseur_jours,
-            parametre_alerte.jours_securite,
-            parametre_alerte.jours_cible_commande,
-            parametre_alerte.jours_dormant,
-            parametre_alerte.jours_surstock
+            parametre_alerte.horizon_risque_jours
            FROM public.parametre_alerte
           WHERE (parametre_alerte.id = 1)
         ), lots AS (
@@ -7150,7 +7138,7 @@ UNION ALL
         UNION ALL
          SELECT retour_client.cree_le,
             retour_client.montant_rembourse,
-            'Remboursement carte (retour)'::text
+            'Remboursement carte (retour)'::text AS libelle
            FROM public.retour_client
           WHERE ((retour_client.mode = 'carte'::text) AND (retour_client.montant_rembourse > (0)::numeric))) x
      JOIN public.compte_tresorerie c ON (c.recoit_carte));
@@ -8644,5 +8632,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict sVav3b6asIevcbKKB3qoGnakzai6XhNRKzpdLIKVktbjodbhEyntCzAa380dx20
+\unrestrict rE4mumUy36zSY5wMkZczqMcL0SUBrjrpiLoQcrtcQITvxJfhumhzyVtrKicVZtt
 

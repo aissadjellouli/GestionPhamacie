@@ -12,7 +12,7 @@ public sealed class SauvegardesSql(NpgsqlDataSource db) : ISauvegardesDepot
         await using var cmd = db.CreateCommand("SELECT actif, dossier, heure, conservation, derniere_execution, retention_ged_jours, nettoyage_ged_annees FROM parametre_sauvegarde WHERE id = 1");
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct))
-            throw new InvalidOperationException("Réglages des sauvegardes absents : exécutez database/014_sauvegardes.sql.");
+            throw new InvalidOperationException("Réglages des sauvegardes absents : exécutez database/migration/014_sauvegardes.sql.");
         return new ReglagesSauvegarde(r.GetBoolean(0), r.IsDBNull(1) ? null : r.GetString(1), TimeOnly.FromTimeSpan(r.GetTimeSpan(2)),
             r.GetInt32(3), r.IsDBNull(4) ? null : r.GetFieldValue<DateOnly>(4), r.IsDBNull(5) ? null : r.GetInt32(5), r.IsDBNull(6) ? null : r.GetInt32(6));
     }

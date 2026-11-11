@@ -4,7 +4,7 @@ using Pharma.Application.Surveillance;
 
 namespace Pharma.Infrastructure.Surveillance;
 
-/// <summary>Événements de caisse, anomalies et réglages de la surveillance (database/054_surveillance_caisse.sql).</summary>
+/// <summary>Événements de caisse, anomalies et réglages de la surveillance (database/migration/054_surveillance_caisse.sql).</summary>
 public sealed class SurveillanceSql(NpgsqlDataSource db) : ISurveillance
 {
     private static NpgsqlParameter Valeur(object? v, NpgsqlDbType type) => new() { Value = v ?? DBNull.Value, NpgsqlDbType = type };
@@ -84,7 +84,7 @@ public sealed class SurveillanceSql(NpgsqlDataSource db) : ISurveillance
             FROM parametre_surveillance WHERE id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        if (!await r.ReadAsync(ct)) throw new InvalidOperationException("Réglages de surveillance absents : exécutez database/054_surveillance_caisse.sql.");
+        if (!await r.ReadAsync(ct)) throw new InvalidOperationException("Réglages de surveillance absents : exécutez database/migration/054_surveillance_caisse.sql.");
         return new ParametresSurveillance(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4),
             r.IsDBNull(5) ? null : TimeOnly.FromTimeSpan(r.GetTimeSpan(5)), r.IsDBNull(6) ? null : TimeOnly.FromTimeSpan(r.GetTimeSpan(6)),
             r.GetInt32(7), r.GetInt32(8), r.GetInt32(9), r.GetInt32(10), r.GetBoolean(11), r.GetInt32(12),

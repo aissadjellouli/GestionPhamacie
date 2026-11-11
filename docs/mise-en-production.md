@@ -45,11 +45,13 @@ Conventions :
 
 ## Étape 2 — Base de données : création et référentiel (`database/init/`)
 
+À la mise en production, la base est **créée** avec le dossier `database/init/`, et non par les migrations. Les migrations (`database/migration/0NN_*.sql`) servent ensuite à **mettre à jour** une base déjà en service (voir « Mises à jour du logiciel »).
+
 Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `061`. |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `062`. |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -223,7 +225,7 @@ L'ancienne base n'est jamais modifiée : on travaille sur une copie, ce qui rend
 
 1. Faire une sauvegarde de la base.
 2. Arrêter le service : `sc.exe stop "PharmaOfficine API"`.
-3. Appliquer **uniquement les nouveaux scripts** `database/0xx_*.sql`, dans l'ordre :
+3. Appliquer **uniquement les nouveaux scripts** `database/migration/0xx_*.sql`, dans l'ordre :
    - avec `psql -v ON_ERROR_STOP=1 -f`, hors transaction ;
    - ils sont réexécutables sans dégât ;
    - **ne jamais** relancer `init/schema.sql` ni `init/clean.sql` sur une base en service.
@@ -264,7 +266,7 @@ sur le PC serveur ; la base, elle, peut être détruite (le compte du super admi
    - une base existante du même nom n'est jamais supprimée : le script s'arrête, ou, avec `-Remplacer`, la renomme `pharmacie_avant_restauration_AAAAMMJJ_HHMM` ;
    - la GED est recopiée dans `C:\ProgramData\PharmaOfficine\GED` sans rien supprimer, en gardant un document plus récent déjà présent ;
    - `-SansGed` ou `-SansBase` pour ne restaurer que l'une des deux.
-4. Sauvegarde plus ancienne que la version du logiciel : appliquer les scripts `database/0xx_*.sql` plus récents (voir « Mises à jour du logiciel »).
+4. Sauvegarde plus ancienne que la version du logiciel : appliquer les scripts `database/migration/0xx_*.sql` plus récents (voir « Mises à jour du logiciel »).
 5. Redémarrer le service. Les documents restés sur les postes (« A envoyer ») repartent dans la GED à la connexion suivante.
 6. Ressaisir les opérations faites depuis la sauvegarde (en général la journée) ; sur un nouveau PC, ressaisir le mot de passe des
    notifications (chiffré pour le PC d'origine, voir [notifications.md](notifications.md)).

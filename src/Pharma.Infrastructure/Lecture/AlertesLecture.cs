@@ -44,7 +44,7 @@ public sealed class AlertesLecture(NpgsqlDataSource db) : IAlertesLecture
     }
 }
 
-/// <summary>Ancien lot délaissé : calcul après une vente (fonction SQL alerter_lots_delaisses, database/053_lot_delaisse.sql).</summary>
+/// <summary>Ancien lot délaissé : calcul après une vente (fonction SQL alerter_lots_delaisses, database/migration/053_lot_delaisse.sql).</summary>
 public sealed class AlertesLotsDelaissesSql(NpgsqlDataSource db) : IAlertesLotsDelaisses
 {
     public async Task<IReadOnlyList<AlerteLotDelaisse>> AlerterAsync(IReadOnlyCollection<long> produits, CancellationToken ct = default)

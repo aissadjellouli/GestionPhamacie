@@ -78,7 +78,7 @@ try {
     }
 
     # 2. Structure et référentiel (scripts idempotents, dans l'ordre), puis données de démonstration
-    foreach ($s in Get-ChildItem (Join-Path $ici "database") -Filter "*.sql" | Sort-Object Name) {
+    foreach ($s in Get-ChildItem (Join-Path $ici "database") -Filter "0*.sql" | Where-Object { $_.Name -match "^0\d{2}_" } | Sort-Object Name) {
         Write-Host "  $($s.Name)"
         Psql $compte $motDePasse $base @("-f", $s.FullName)
     }

@@ -3,7 +3,7 @@ using Pharma.Application.Caisse;
 
 namespace Pharma.Infrastructure.Caisse;
 
-/// <summary>Volets Chifa repris à la caisse : codes produits associés, patient de l'assuré, volet déjà repris (database/060_volet_chifa.sql).</summary>
+/// <summary>Volets Chifa repris à la caisse : codes produits associés, patient de l'assuré, volet déjà repris (database/migration/060_volet_chifa.sql).</summary>
 public sealed class VoletsChifaSql(NpgsqlDataSource db) : IVoletsChifa
 {
     public async Task<string?> VenteDuVoletAsync(string numeroFacture, CancellationToken ct = default)

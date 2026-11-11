@@ -131,7 +131,7 @@ public static class DependencyInjection
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "super-admin.dat")
                 : options.FichierSuperAdmin));
         services.AddScoped<Application.SuperAdmin.ITitulaireLecture, Securite.TitulaireLecture>();
-        // Restauration : scripts database/0xx livrés avec l'API (sous-dossier « database »)
+        // Restauration : scripts database/migration/0xx livrés avec l'API (sous-dossier « database »)
         services.AddScoped<Application.SuperAdmin.IRestaurationBase>(sp => new Sauvegardes.RestaurationPostgres(
             options.ChaineConnexion, options.CheminPgDump, Path.Combine(AppContext.BaseDirectory, "database"), sp.GetRequiredService<NpgsqlDataSource>()));
         services.AddScoped<Application.Sauvegardes.ISauvegardesDepot, Sauvegardes.SauvegardesSql>();

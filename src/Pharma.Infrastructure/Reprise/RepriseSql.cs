@@ -5,7 +5,7 @@ using Pharma.Domain.Reprise;
 
 namespace Pharma.Infrastructure.Reprise;
 
-/// <summary>Tables de transit et fonctions du schéma import (database/008_reprise_donnees.sql).</summary>
+/// <summary>Tables de transit et fonctions du schéma import (database/migration/008_reprise_donnees.sql).</summary>
 public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
 {
     private const int Paquet = 500;

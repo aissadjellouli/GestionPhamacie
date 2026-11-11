@@ -19,7 +19,7 @@ public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct))
-            throw new InvalidOperationException("Réglages des notifications absents : exécutez database/013_notifications.sql.");
+            throw new InvalidOperationException("Réglages des notifications absents : exécutez database/migration/013_notifications.sql.");
         return new ReglagesNotification(
             Texte(r, 0), r.GetInt32(1), r.GetBoolean(2), Texte(r, 3), Texte(r, 4), r.GetBoolean(5),
             Texte(r, 6), TimeOnly.FromTimeSpan(r.GetTimeSpan(7)), r.IsDBNull(8) ? null : r.GetFieldValue<DateOnly>(8),
