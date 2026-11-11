@@ -75,6 +75,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Alertes.IAlertesLotsDelaisses, Lecture.AlertesLotsDelaissesSql>();
         services.AddScoped<Application.Surveillance.ISurveillance, Surveillance.SurveillanceSql>();
         services.AddScoped<Application.Surveillance.IRisques, Surveillance.RisquesSql>();
+        services.AddScoped<Application.Caisse.IVoletsChifa, Caisse.VoletsChifaSql>();
         services.AddSingleton<Application.Commun.ITraceErreurs, Systeme.TraceErreurs>();
         services.AddScoped<IAlertesEcriture, AlertesEcriture>();
         services.AddScoped<IRappelLot, RappelLotSql>();

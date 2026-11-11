@@ -48,6 +48,20 @@ internal static class CaisseEndpoints
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
+        // Volet Chifa scanné : vente reprise sans ressaisie (format du QR à confirmer avec l'éditeur de Chifa)
+        caisse.MapPost("/volet-chifa", async (LireVoletChifaRequete req, LireVoletChifa lire, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await lire.ExecuterAsync(req.Texte, user.UtilisateurId(), ct);
+                return Results.Ok(new VoletChifaDto(v.Qr.NumeroFacture, v.Qr.DateFacture, v.Qr.AssureComplet, v.Qr.Champ5, v.Qr.Champ6, v.Qr.DateSecondaire,
+                    v.Qr.MontantOrdonnance, v.Lignes.Select(l => new LigneVoletChifaDto(l.Code, l.Quantite, l.PrixUnitaire, l.Produit?.Id, l.Produit?.Nom,
+                        l.Produit?.PrixPublic)).ToList(), v.PatientId, v.Patient, v.OrganismeId, v.Qr.Brut, v.PatientNumAssure));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        caisse.MapPost("/codes-chifa", async (AssocierCodeChifaRequete req, AssocierCodeChifa associer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new { Produit = await associer.ExecuterAsync(req.Code, req.ProduitId, user.UtilisateurId(), ct) }))
+           .ExigerPermission(Permissions.CaisseVendre);
+
         caisse.MapPost("/encaisser", async (CommandeVenteDto req, Encaisser encaisser, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
                 var v = await encaisser.ExecuterAsync(VersCommande(req), user.UtilisateurId(), requete.Poste(), ct);
@@ -209,6 +223,7 @@ internal static class CaisseEndpoints
             d.Ordonnance is { } o ? new OrdonnanceSaisie(o.MedecinId, o.DatePrescription, o.Numero, o.JetonScan, o.TexteReconnu,
                 o.PorteurNom is null && o.PorteurAdresse is null && o.PorteurPiece is null ? null : new PorteurOrdonnance(o.PorteurNom, o.PorteurAdresse, o.PorteurPiece)) : null,
             d.RemisePct, mode, d.MontantRecu, d.ResteACharge,
-            d.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null);
+            d.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null,
+            d.VoletChifa);
     }
 }

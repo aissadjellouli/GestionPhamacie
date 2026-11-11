@@ -133,7 +133,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 ### Tiers payant (Chifa) au comptoir
 - **Tiers payant : l'assuré (patient) et l'organisme (CNAS, CASNOS) sont obligatoires** (aussi en base : contrainte sur `vente`). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/001_schema.sql`
 - **Taux de remboursement choisi au comptoir : 80 % ou 100 % (80 % par défaut à l'écran)** ; le serveur exige un taux supérieur à 0 et au plus 100 %, sauf si le reste à charge est saisi. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`, `src/Pharma.Domain/Ventes/Vente.cs`
-- **Part de l'organisme par ligne = base de remboursement (tarif de référence, plafonné au prix de vente) × quantité × taux, arrondie au dinar inférieur** ; le patient paie le reste. — `src/Pharma.Domain/Ventes/LigneVente.cs`
+- **Part de l'organisme par ligne = base de remboursement (tarif de référence, plafonné au prix de vente) × quantité × taux, arrondie au centime** (comme les factures Chifa) ; le patient paie le reste. — `src/Pharma.Domain/Ventes/LigneVente.cs`
 - **Produit non remboursable ou sans tarif de référence : le patient paie tout**, même en tiers payant. — `src/Pharma.Domain/Ventes/Vente.cs`
 - **Reste à charge saisi par le caissier (tiers payant seulement)** : entre 0 et le montant de la vente ; la part de l'organisme est la différence, répartie sur les lignes au prorata (centime, l'écart d'arrondi sur la dernière ligne) ; le taux choisi est alors ignoré. — `src/Pharma.Domain/Ventes/Vente.cs`
 - **Organisme qui paie tout : aucun paiement n'est enregistré pour le patient**. — `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
@@ -455,6 +455,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **La recherche de DCI commence à 2 caractères (10 résultats au plus)**. — `src/Pharma.Application/Catalogue/CreerProduit.cs`
 
 ### Prix et remboursement
+- **La fiche produit affiche le prix public HT, pour information** : prix public ÷ (1 + TVA du produit), arrondi au centime. — `src/Pharma.Desktop/Composants/Mise/ModificationProduit.razor`
 - **Le prix public doit être supérieur à 0** (la base accepte 0 au minimum). — `src/Pharma.Domain/Catalogue/RegleProduit.cs`, `src/Pharma.Application/Catalogue/ModifierProduit.cs`, contrainte `produit_prix_public_check`
 - **Le tarif de référence, s'il est saisi, doit être supérieur à 0 ; un produit remboursable a obligatoirement un tarif de référence**. — `src/Pharma.Domain/Catalogue/RegleProduit.cs`
 - **Changer le prix public d'un produit exige en plus le droit `prix.modifier`** ; l'ancien et le nouveau prix sont inscrits au journal. — `src/Pharma.Application/Catalogue/ModifierProduit.cs`
@@ -653,6 +654,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Les étiquettes d'une livraison peuvent être réimprimées pour ses boîtes encore en stock** (refus si aucune). — `src/Pharma.Application/Achats/Achats.cs`
 
 ### Facture d'achat : prix, remise, TVA, timbre
+- **Chaque ligne de réception affiche le PA TTC et le PV HT, pour information** : PA TTC = prix HT net de remise × (1 + TVA du produit) ; PV HT = PPA facturé ÷ (1 + TVA du produit) ; arrondis au centime. Ils ne changent ni la dette ni le coût du stock. — `src/Pharma.Desktop/Composants/Achats/OngletReceptions.razor`
 - **Le prix d'achat saisi est le prix unitaire HT avant remise, comme sur la facture du grossiste.** — `src/Pharma.Domain/Achats/RegleAchats.cs`
 - **Remise de ligne de 0 à 100 % ; PPA, SHP et timbre jamais négatifs.** — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
 - **Prix net d'une boîte = prix HT × (1 − remise %), arrondi au centime** : c'est le coût de la boîte en stock. — `src/Pharma.Domain/Achats/RegleFactureAchat.cs`
@@ -835,10 +837,19 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 
 ### Tiers payant à la vente
 - **Vente en tiers payant : l'assuré et l'organisme (CNAS, CASNOS) sont obligatoires, ainsi qu'un taux de remboursement de 0 exclu à 100 %** (sauf reste à charge saisi). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/001_schema.sql`
-- **Part de l'organisme = min(tarif de référence, prix) × quantité × taux, arrondie au dinar inférieur** ; seuls les produits remboursables avec tarif de référence sont pris en charge. — `src/Pharma.Domain/Ventes/LigneVente.cs`, `src/Pharma.Domain/Ventes/Vente.cs`
+- **Part de l'organisme = min(tarif de référence, prix) × quantité × taux, arrondie au centime** (comme les factures Chifa : 1 160,82 DA × 80 % = 928,66 DA) ; seuls les produits remboursables avec tarif de référence sont pris en charge. — `src/Pharma.Domain/Ventes/LigneVente.cs`, `src/Pharma.Domain/Ventes/Vente.cs`
 - **Le caissier peut saisir le reste à charge du patient (de 0 au montant de la vente)** : la part de l'organisme est la différence, répartie au prorata des lignes ; le taux choisi n'est alors pas appliqué. — `src/Pharma.Domain/Ventes/Vente.cs`, `database/045_prix_lot_ug_categories.sql`
 - **Une vente en tiers payant n'accepte pas de retour partiel** : il faut annuler la vente complète puis la refaire. — `src/Pharma.Domain/Ventes/RegleRetour.cs`
 - **Organismes présents au départ : CNAS et CASNOS** ; le titulaire peut en ajouter. — `database/001_schema.sql`, `src/Pharma.Application/Factures/Factures.cs`
+
+### Volet Chifa repris par son QR code
+- **Scanner le QR d'un volet Chifa à la caisse reprend la vente sans ressaisie** : tiers payant CNAS, assuré retrouvé par son n° (chiffres seuls, avec ou sans suffixe), produits reconnus ajoutés avec leurs quantités (lots servis comme d'habitude). Droit `caisse.vendre`. — `src/Pharma.Application/Caisse/VoletChifa.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Format lu : n° de facture ; date ; n° d'assuré ; suffixe ; deux champs gardés tels quels ; seconde date ; puis une ligne « code, quantité, prix unitaire » par produit**. Tout autre contenu est refusé (« pas un QR de volet Chifa reconnu »). Format déduit d'un seul volet : à confirmer avec l'éditeur de Chifa. — `src/Pharma.Domain/Ventes/QrChifa.cs`, `docs/a-faire.md`
+- **Un QR scanné par une douchette réglée en QWERTY sur un poste AZERTY est relu** (comme les n° de BL). — `src/Pharma.Application/Caisse/VoletChifa.cs`
+- **Un code produit Chifa inconnu est associé une fois à un produit actif du catalogue, puis reconnu à chaque volet** ; l'association (ou sa modification) est inscrite au journal (`code_chifa_associe`). — `src/Pharma.Application/Caisse/VoletChifa.cs`, `database/060_volet_chifa.sql`
+- **Un prix du volet différent du prix du catalogue est signalé** ; la vente reste au prix du lot servi. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Un volet n'est repris qu'une fois** (refus avec le n° de la vente qui l'a repris) ; une vente annulée libère son volet. **Un seul volet par vente** : un second scan du même volet, ou d'un autre volet, dans le même panier est refusé. — `database/060_volet_chifa.sql`, `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
+- **Un volet ne se reprend qu'en tiers payant** ; le serveur relit le QR à l'encaissement et garde sur la vente le n° de facture, la date et le QR brut. Une vente mise en attente garde son volet. — `src/Pharma.Application/Caisse/Encaisser.cs`
 
 ### Suivi des dettes et créances (achats, factures, organismes)
 - **Le suivi regroupe : factures clients à encaisser (rejetées comprises, hors factures remplacées ou retirées du suivi), bordereaux non payés, factures de grossistes à payer, ancien solde des grossistes, effets remis dont l'échéance n'est pas passée.** — `database/040_facture_echeance.sql`

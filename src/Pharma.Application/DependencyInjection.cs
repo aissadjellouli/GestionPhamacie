@@ -31,6 +31,8 @@ public static class DependencyInjection
         services.AddScoped<ConsulterRappelLot>();
         services.AddScoped<ListerMesPermissions>();
         services.AddScoped<Encaisser>();
+        services.AddScoped<LireVoletChifa>();
+        services.AddScoped<AssocierCodeChifa>();
         services.AddScoped<ObtenirEtatCaisse>();
         services.AddScoped<OuvrirSessionCaisse>();
         services.AddScoped<CloturerSessionCaisse>();

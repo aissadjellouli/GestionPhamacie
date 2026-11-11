@@ -211,7 +211,7 @@
 
                 <div class="champ recherche">
                     <label for="scan">Scanner ou rechercher un produit (nom, DCI, code-barres)</label>
-                    <input id="scan" class="grand" type="search" placeholder="Ex. amoxicilline" autofocus autocomplete="off"
+                    <input id="scan" data-champ="volet_chifa" class="grand" type="search" placeholder="Ex. amoxicilline" autofocus autocomplete="off"
                            @bind="texte" @bind:event="oninput" @bind:after="RechercherApresSaisieAsync" @onkeydown="ToucheAsync" />
                     @if (suggestions.Count > 0)
                     {
@@ -233,6 +233,25 @@
                 </div>
 
                 @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+                @if (volet is not null)
+                {
+                    @* Volet Chifa scanné : vente reprise en tiers payant ; format du QR à confirmer avec l'éditeur de Chifa *@
+                    <div class="info-bandeau" role="status">
+                        <strong>Volet Chifa n° @volet.NumeroFacture du @Libelles.Date(volet.DateFacture)</strong> · assuré @volet.Assure
+                        · @(volet.Patient is { } nomPatient ? $"patient {nomPatient}" : "patient inconnu : créez-le avec ce n° d’assuré")
+                        · ordonnance @Libelles.Dinars(volet.MontantOrdonnance, 2)
+                        @foreach (var ec in ecartsVolet) { <br /><span>@ec</span> }
+                        <button type="button" class="lien-bouton" @onclick="RetirerVolet">Retirer le volet</button>
+                    </div>
+                }
+                @foreach (var c in codesAAssocier)
+                {
+                    <div class="bandeau-attention" role="status" data-champ="code_chifa" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end">
+                        <span style="flex: 1 1 260px">Code Chifa <strong>@c.Code</strong> (@c.Quantite boîte(s) à @Libelles.Dinars(c.PrixUnitaire, 2)) inconnu : choisissez le produit, il sera reconnu aux prochains volets.</span>
+                        <ChoixProduit Id="@($"chifa-{c.Code}")" Libelle="Produit du code Chifa" Style="flex: 1 1 280px" OnChoisi="p => AssocierCodeAsync(c, p)" />
+                    </div>
+                }
 
                 @if (bandeau is not null)
                 {
@@ -838,6 +857,13 @@
         if (e.Key != "Enter") return;
         // Étiquette interne ou Data Matrix : la boîte désigne son lot, servi tel quel (contrôle de péremption)
         var code = texte.Trim();
+        // QR d'un volet Chifa (champs séparés par « ; », ou scanné en clavier QWERTY sur un poste AZERTY)
+        if (code.Length >= 20 && (code.Contains(';') || code.Count(c => "&é\"'(-è_çà".Contains(c)) >= 5))
+        {
+            var (v, ev) = await Api.LireVoletChifaAsync(code);
+            if (v is not null) { (texte, suggestions) = ("", []); await ReprendreVoletAsync(v); return; }
+            if (code.Contains(';')) { (texte, suggestions, erreur) = ("", [], ev); return; }
+        }
         if (code.Length >= 8 && !code.Contains(' '))
         {
             var (boite, errBoite) = await Api.BoiteCaisseAsync(code);
@@ -1241,6 +1267,56 @@
         (patients, _) = await Api.RechercherPatientsAsync(patientTexte);
     }
 
+    // ---- Volet Chifa repris par son QR code ----
+    private VoletChifaDto? volet;
+    private string? voletBrut;
+    private List<LigneVoletChifaDto> codesAAssocier = [];
+    private List<string> ecartsVolet = [];
+
+    /// <summary>Volet scanné : tiers payant CNAS, assuré retrouvé, produits reconnus ajoutés avec leurs quantités ; écarts de prix signalés.</summary>
+    private async Task ReprendreVoletAsync(VoletChifaDto v)
+    {
+        // Un seul volet par vente : un second scan du même volet n'ajoute pas les produits une seconde fois
+        if (volet is { } deja)
+        {
+            erreur = deja.NumeroFacture == v.NumeroFacture
+                ? $"Le volet Chifa n° {v.NumeroFacture} est déjà dans ce panier."
+                : $"Un seul volet Chifa par vente : encaissez ou retirez d’abord le volet n° {deja.NumeroFacture}.";
+            return;
+        }
+        (volet, voletBrut, codesAAssocier, ecartsVolet) = (v, v.Brut, [], []);
+        tiersPayant = true;
+        if (v.PatientId is { } pid)
+        {
+            patientTexte = v.PatientNumAssure ?? v.Assure;   // la recherche compare le n° d'assuré à l'identique
+            (patients, _) = await Api.RechercherPatientsAsync(patientTexte);
+            if (patients.FirstOrDefault(x => x.Id == pid) is { } trouve) await ChoisirPatientAsync(trouve);
+            else (patients, patientTexte) = ([], "");
+        }
+        if (v.OrganismeId is { } org) organismeId = org;
+        foreach (var l in v.Lignes)
+        {
+            if (l.ProduitId is not { } id) { codesAAssocier.Add(l); continue; }
+            await AjouterAsync(id, l.Produit!, l.PrixCatalogue ?? l.PrixUnitaire, l.Quantite);
+            if (l.PrixCatalogue is { } pc && pc != l.PrixUnitaire)
+                ecartsVolet.Add($"{l.Produit} : {Libelles.Dinars(l.PrixUnitaire, 2)} sur le volet, {Libelles.Dinars(pc, 2)} au catalogue.");
+        }
+        await RecalculerAsync();
+    }
+
+    /// <summary>Code Chifa inconnu : associé au produit choisi (retenu pour les prochains volets), puis ajouté au panier.</summary>
+    private async Task AssocierCodeAsync(LigneVoletChifaDto c, ProduitDto p)
+    {
+        var e = await Api.AssocierCodeChifaAsync(c.Code, p.Id);
+        if (e is not null) { erreur = e; return; }
+        codesAAssocier.Remove(c);
+        await AjouterAsync(p.Id, p.NomCommercial, p.PrixPublic, c.Quantite);
+        if (p.PrixPublic != c.PrixUnitaire)
+            ecartsVolet.Add($"{p.NomCommercial} : {Libelles.Dinars(c.PrixUnitaire, 2)} sur le volet, {Libelles.Dinars(p.PrixPublic, 2)} au catalogue.");
+    }
+
+    private void RetirerVolet() => (volet, voletBrut, codesAAssocier, ecartsVolet) = (null, null, [], []);
+
     private async Task ChoisirPatientAsync(PatientDto p)
     {
         (patient, patients, patientTexte) = (p, [], "");
@@ -1315,7 +1391,7 @@
                 PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null)
             : null,
         remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null, tiersPayant ? resteSaisi : null,
-        accordBlocage.VersDto(Session.A("produits.bloquer")));
+        accordBlocage.VersDto(Session.A("produits.bloquer")), voletBrut);
 
     /// <summary>Les totaux viennent du serveur : mêmes règles que l'encaissement (tiers payant, remise).</summary>
     // Raison du lot servi quand un lot plus ancien est en stock (codes de Pharma.Domain.Ventes.RaisonLot)
@@ -1429,7 +1505,7 @@
         erreurAttente = null;
         var panier = new PanierAttenteDto(
             lignes.Select(l => new LignePanierAttenteDto(l.ProduitId, l.Nom, l.Prix, l.Lot, l.Quantite, l.BoiteScannee, l.StockProduit)).ToList(),
-            tiersPayant, organismeId, taux, patient, medecin, datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu);
+            tiersPayant, organismeId, taux, patient, medecin, datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu, voletBrut);
         var libelle = patient is { } p ? $"{p.Nom} {p.Prenom}".Trim() : $"Vente de {DateTime.Now:HH:mm}";
         var total = apercu?.MontantTotal ?? lignes.Sum(l => l.Prix * l.Quantite);
         var e = await Api.MettreEnAttenteAsync(new MiseEnAttenteRequete(libelle, lignes.Count, total,
@@ -1455,6 +1531,7 @@
         (tiersPayant, organismeId, taux, patient, medecin) = (p.TiersPayant, p.OrganismeId, p.Taux, p.Patient, p.Medecin);
         (datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu) = (p.DatePrescription, p.NumeroOrdonnance, p.RemisePct, p.JetonScan, p.TexteReconnu);
         if (medecin is not null) medecinTexte = medecin.Nom;
+        if (p.VoletChifa is { } brut && (await Api.LireVoletChifaAsync(brut)).Item1 is { } vr) (volet, voletBrut) = (vr, brut);
         await ChargerAttentesAsync();
         await RecalculerAsync();   // prix et parts recalculés par le serveur
     }
@@ -1472,6 +1549,7 @@
         lignes.Clear();
         (apercu, bandeau, erreur, montantRecu, remisePct) = (null, null, null, null, 0);
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
+        (volet, voletBrut, codesAAssocier, ecartsVolet) = (null, null, [], []);
         accordBlocage.Effacer();
         (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
         lectureAjouts.Clear();

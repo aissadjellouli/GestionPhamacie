@@ -105,7 +105,7 @@ public sealed record OrdonnanceDto(long? MedecinId, DateOnly DatePrescription, s
 public sealed record CommandeVenteDto(
     IReadOnlyList<LigneCommandeDto> Lignes, bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
     long? PatientId, OrdonnanceDto? Ordonnance, decimal RemisePct, string Mode, decimal? MontantRecu, decimal? ResteACharge = null,
-    ValidationBlocageDto? Blocage = null);
+    ValidationBlocageDto? Blocage = null, string? VoletChifa = null);
 
 /// <summary>Accord pour un produit bloqué : confirmé par l'employé habilité, sinon validé par le code comptoir d'un habilité.</summary>
 public sealed record ValidationBlocageDto(bool Accepte, string? ValidateurIdentifiant = null, string? ValidateurCode = null);
@@ -530,7 +530,8 @@ public sealed record LignePanierAttenteDto(long ProduitId, string Nom, decimal P
 /// <summary>Panier mis en attente par le poste : lignes et règlement en cours de saisie.</summary>
 public sealed record PanierAttenteDto(
     IReadOnlyList<LignePanierAttenteDto> Lignes, bool TiersPayant, long OrganismeId, int Taux, PatientDto? Patient,
-    MedecinDto? Medecin, DateOnly DatePrescription, string? NumeroOrdonnance, decimal RemisePct, string? JetonScan, string? TexteReconnu);
+    MedecinDto? Medecin, DateOnly DatePrescription, string? NumeroOrdonnance, decimal RemisePct, string? JetonScan, string? TexteReconnu,
+    string? VoletChifa = null);
 
 // ---- Annulation d'une vente ------------------------------------------------------
 
@@ -709,3 +710,12 @@ public sealed record RisqueEmployeDto(long UtilisateurId, string Nom, bool Actif
 /// <summary>JoursPerteMin et Facteur : règle du signalement (au moins JoursPerteMin jours de perte en sa présence, perte moyenne présent ≥ Facteur × absent).</summary>
 public sealed record TableauRisquesDto(DateOnly Du, DateOnly Au, IReadOnlyList<JourEcartsDto> Jours, IReadOnlyList<RisqueEmployeDto> Employes,
     int JoursPerteMin, decimal Facteur, int JoursAbsentMin = 3);
+
+// ---- Volet Chifa repris à la caisse par son QR code ----
+public sealed record LireVoletChifaRequete(string Texte);
+public sealed record LigneVoletChifaDto(string Code, int Quantite, decimal PrixUnitaire, long? ProduitId, string? Produit, decimal? PrixCatalogue);
+/// <summary>Brut : contenu du QR, renvoyé avec l'encaissement (relu par le serveur). Champ5, Champ6, DateSecondaire : sens à confirmer avec l'éditeur de Chifa.</summary>
+public sealed record VoletChifaDto(string NumeroFacture, DateOnly DateFacture, string Assure, string Champ5, string Champ6, DateOnly? DateSecondaire,
+    decimal MontantOrdonnance, IReadOnlyList<LigneVoletChifaDto> Lignes, long? PatientId, string? Patient, long? OrganismeId, string Brut,
+    string? PatientNumAssure = null);
+public sealed record AssocierCodeChifaRequete(string Code, long ProduitId);

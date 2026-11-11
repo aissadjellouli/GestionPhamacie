@@ -34,6 +34,10 @@
     <File Path="docs/EXEMPLE/chifa+.png" />
     <File Path="docs/EXEMPLE/xpertpharma.jpeg" />
   </Folder>
+  <Folder Name="/Documents/EXEMPLE/aid/">
+    <File Path="docs/EXEMPLE/aid/WhatsApp Image 2026-11-11 at 16.21.58 (1).jpeg" />
+    <File Path="docs/EXEMPLE/aid/WhatsApp Image 2026-11-11 at 16.21.58.jpeg" />
+  </Folder>
   <Folder Name="/Documents/maquettes/">
     <File Path="docs/maquettes/Achats.html" />
     <File Path="docs/maquettes/Admin.html" />
@@ -132,6 +136,7 @@
     <File Path="database/057_reception_aveugle.sql" />
     <File Path="database/058_surveillance_comptes.sql" />
     <File Path="database/059_corrections_surveillance.sql" />
+    <File Path="database/060_volet_chifa.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

@@ -5,6 +5,19 @@ namespace Pharma.Domain.Tests;
 
 public class VenteTests
 {
+    [Theory]
+    // Montants relevés sur de vraies factures Chifa (CNAS) : part officine au centime
+    [InlineData(386.94, 3, 80, 928.66)]   // 1 160,82 x 80 % = 928,656
+    [InlineData(156.48, 3, 100, 469.44)]
+    [InlineData(10.01, 1, 50, 5.01)]      // 5,005 : arrondi au centime supérieur à la moitié
+    public void Part_de_l_organisme_au_centime_comme_Chifa(decimal prix, int quantite, decimal taux, decimal attendu)
+    {
+        var ligne = new LigneVente { Quantite = quantite, PrixUnitaire = prix };
+        ligne.CalculerTiersPayant(baseRemboursement: prix, tauxPourcent: taux);
+        Assert.Equal(attendu, ligne.MontantOrganisme);
+        Assert.Equal(prix * quantite - attendu, ligne.MontantPatient);
+    }
+
     [Fact]
     public void Part_cnas_a_80_pour_cent()
     {

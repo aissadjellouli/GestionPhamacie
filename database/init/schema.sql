@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 059 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 060 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 059 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 060 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict CGbTyrZ7vdG4s948F7kpQdbeNCXaezPcyXDpvsRPpV9QVRWOMbyN435MSPjtBNa
+\restrict 1bbtkxe9eSZngxGfcphHKuvHWEfUJ733DJU5qEyJzA4zWV1qmVHN7q8V5glUeEq
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -2512,6 +2512,18 @@ CREATE TABLE public.categorie_produit (
 
 
 --
+-- Name: chifa_code_produit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chifa_code_produit (
+    code text NOT NULL,
+    produit_id bigint NOT NULL,
+    associe_par bigint,
+    associe_le timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: client_facture; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4602,6 +4614,9 @@ CREATE TABLE public.vente (
     montant_remise numeric(12,2) DEFAULT 0 NOT NULL,
     taux_tiers_payant numeric(5,2),
     reste_saisi boolean DEFAULT false NOT NULL,
+    chifa_facture text,
+    chifa_date date,
+    chifa_qr text,
     CONSTRAINT vente_check CHECK (((type = 'libre'::text) OR ((organisme_id IS NOT NULL) AND (patient_id IS NOT NULL)))),
     CONSTRAINT vente_montant_remise_check CHECK ((montant_remise >= (0)::numeric)),
     CONSTRAINT vente_remise_pct_check CHECK (((remise_pct >= (0)::numeric) AND (remise_pct <= (100)::numeric))),
@@ -5660,6 +5675,14 @@ ALTER TABLE ONLY public.campagne_inventaire
 
 ALTER TABLE ONLY public.categorie_produit
     ADD CONSTRAINT categorie_produit_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: chifa_code_produit chifa_code_produit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chifa_code_produit
+    ADD CONSTRAINT chifa_code_produit_pkey PRIMARY KEY (code);
 
 
 --
@@ -6995,6 +7018,13 @@ CREATE UNIQUE INDEX ux_une_banque_carte ON public.compte_tresorerie USING btree 
 
 
 --
+-- Name: ux_vente_chifa_facture; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_vente_chifa_facture ON public.vente USING btree (chifa_facture) WHERE ((chifa_facture IS NOT NULL) AND (statut <> 'annulee'::text));
+
+
+--
 -- Name: v_mouvement_tresorerie _RETURN; Type: RULE; Schema: public; Owner: -
 --
 
@@ -7547,6 +7577,22 @@ ALTER TABLE ONLY public.campagne_inventaire_ligne
 
 ALTER TABLE ONLY public.campagne_inventaire_ligne
     ADD CONSTRAINT campagne_inventaire_ligne_lot_id_fkey FOREIGN KEY (lot_id) REFERENCES public.lot(id);
+
+
+--
+-- Name: chifa_code_produit chifa_code_produit_associe_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chifa_code_produit
+    ADD CONSTRAINT chifa_code_produit_associe_par_fkey FOREIGN KEY (associe_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: chifa_code_produit chifa_code_produit_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chifa_code_produit
+    ADD CONSTRAINT chifa_code_produit_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
 
 
 --
@@ -8577,5 +8623,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict CGbTyrZ7vdG4s948F7kpQdbeNCXaezPcyXDpvsRPpV9QVRWOMbyN435MSPjtBNa
+\unrestrict 1bbtkxe9eSZngxGfcphHKuvHWEfUJ733DJU5qEyJzA4zWV1qmVHN7q8V5glUeEq
 

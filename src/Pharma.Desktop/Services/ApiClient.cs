@@ -767,6 +767,11 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(ReceptionEnregistreeDto?, string?)> ReceptionnerAsync(ReceptionRequete reception) =>
         PostAsync<ReceptionRequete, ReceptionEnregistreeDto>("api/achats/receptions", reception);
 
+    // ---- Volet Chifa repris par son QR code ----
+    public Task<(VoletChifaDto?, string?)> LireVoletChifaAsync(string texte) => PostAsync<LireVoletChifaRequete, VoletChifaDto>("api/caisse/volet-chifa", new(texte));
+    public async Task<string?> AssocierCodeChifaAsync(string code, long produitId) =>
+        (await PostAsync<AssocierCodeChifaRequete, object>("api/caisse/codes-chifa", new(code, produitId))).Item2;
+
     // ---- Réception à l'aveugle : comptage, facture comparée, écarts ----
     public async Task<bool> ReceptionAveugleAsync() => (await GetAsync<ModeReceptionDto?>("api/achats/receptions/mode", null)).Item1?.Aveugle ?? false;
     public Task<(IdentifiantDto?, string?)> CompterLivraisonAsync(CompterLivraisonRequete r) =>

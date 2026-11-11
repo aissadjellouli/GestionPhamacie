@@ -18,12 +18,12 @@ public class LigneVente
     public decimal MontantOrganisme { get; private set; }
     public decimal MontantPatient { get; private set; }
 
-    /// <summary>Part de l'organisme = base de remboursement x taux, arrondie au dinar inférieur.</summary>
+    /// <summary>Part de l'organisme = base de remboursement x taux, arrondie au centime (comme les factures Chifa : 1 160,82 x 80 % = 928,66).</summary>
     public void CalculerTiersPayant(decimal baseRemboursement, decimal tauxPourcent)
     {
         BaseRemboursement = baseRemboursement;
         TauxRemboursement = tauxPourcent;
-        var part = Math.Floor(Math.Min(baseRemboursement, PrixUnitaire) * Quantite * tauxPourcent / 100m);
+        var part = Math.Round(Math.Min(baseRemboursement, PrixUnitaire) * Quantite * tauxPourcent / 100m, 2, MidpointRounding.AwayFromZero);
         MontantOrganisme = part;
         MontantPatient = PrixUnitaire * Quantite - part;
     }

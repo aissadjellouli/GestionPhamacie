@@ -108,6 +108,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EXEMPLE", "EXEMPLE", "{0C0E
 		docs\EXEMPLE\xpertpharma.jpeg = docs\EXEMPLE\xpertpharma.jpeg
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "aid", "aid", "{6230CD90-B24B-45AC-86F9-2336EFECC80D}"
+	ProjectSection(SolutionItems) = preProject
+		docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58 (1).jpeg = docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58 (1).jpeg
+		docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58.jpeg = docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58.jpeg
+	EndProjectSection
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{386EBD72-0D5B-4454-978E-2D35C00026D8}"
 	ProjectSection(SolutionItems) = preProject
 		database\001_schema.sql = database\001_schema.sql
@@ -169,6 +175,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{38
 		database\057_reception_aveugle.sql = database\057_reception_aveugle.sql
 		database\058_surveillance_comptes.sql = database\058_surveillance_comptes.sql
 		database\059_corrections_surveillance.sql = database\059_corrections_surveillance.sql
+		database\060_volet_chifa.sql = database\060_volet_chifa.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "data", "data", "{FA6BA489-4AF9-4CBD-A777-F282E75E959F}"
@@ -242,6 +249,7 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{6230CD90-B24B-45AC-86F9-2336EFECC80D} = {0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1}
 		{35D7AF71-198B-4464-B00C-B4E49C87A256} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{E1DF76AA-DD72-4CD5-8AD0-81C6533C0213} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}

@@ -12,6 +12,14 @@ Nous ne remplaçons pas Chifa_Officine. La CNAS fournit ce logiciel aux pharmaci
 
 Le connecteur est `ChifaFichiersConnecteur` (dossier configuré dans `appsettings.json`, clé `Chifa:DossierExport`). **Le format des fichiers n’est pas encore connu** : il faut un exemple anonymisé fourni par la pharmacie pilote, ou les spécifications de la CNAS. Le connecteur reste isolé derrière `IChifaConnecteur` pour évoluer sans toucher au reste.
 
+## Volet Chifa et son QR code (constats du 11/11/2026)
+
+Relevé sur de vrais volets (dossier `docs/EXEMPLE/aid`) : n° d'assuré (12 chiffres et suffixe « /NN »), n° de bordereau, n° de facture, organisme, une ligne par produit (quantité, montant), nombre de vignettes, montant de l'ordonnance, montant officine, vignettes collées et un QR code. Les montants sont **au centime** ; la part officine vaut 80 %, 100 % ou un taux ramené au tarif de référence.
+
+Le QR d'un volet a été lu : `06930126;11/11/2026;690755003842;80;24;2;09/11/2026;07607,3,156.48;` = n° de facture ; date ; n° d'assuré ; suffixe « /80 » ; deux champs de sens inconnu ; une seconde date ; puis « code produit, quantité, prix unitaire ». Le n° de bordereau et le montant officine n'y figurent pas.
+
+**Usage dans le logiciel (script 060)** : scanné à la caisse, ce QR reprend la vente en tiers payant CNAS (assuré retrouvé, produits ajoutés avec leurs quantités, écarts de prix signalés) ; un code produit Chifa inconnu est associé une fois à un produit du catalogue, puis reconnu ; le volet (n° de facture, date, QR brut) est gardé sur la vente et ne peut être repris qu'une fois. **Format à confirmer avec l'éditeur de Chifa** : voir `docs/a-faire.md`.
+
 ## Démarche officielle à mener
 
 - Créer la société (registre de commerce, NIF).

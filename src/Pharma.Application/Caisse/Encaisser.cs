@@ -31,7 +31,8 @@ public sealed record CommandeVente(
     IReadOnlyList<LigneCommande> Lignes,
     bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
     long? PatientId, OrdonnanceSaisie? Ordonnance,
-    decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null);
+    decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null,
+    string? VoletChifa = null);
 
 /// <summary>PrixLignes : prix de vente d'une boîte (PPA du lot + SHP), dans l'ordre des lignes envoyées.</summary>
 public sealed record ApercuVente(
@@ -47,7 +48,8 @@ public sealed record VenteEncaissee(
 /// <summary>BoitesParLot : boîtes identifiées vendues, rattachées à la ligne de leur lot (pour les retrouver au remboursement).</summary>
 public sealed record VenteAEnregistrer(
     Vente Vente, Reglement Reglement, OrdonnanceSaisie? Ordonnance,
-    IReadOnlySet<long> ProduitsSousRegistre, bool CreditAccorde, IReadOnlyDictionary<long, IReadOnlyList<long>>? BoitesParLot = null);
+    IReadOnlySet<long> ProduitsSousRegistre, bool CreditAccorde, IReadOnlyDictionary<long, IReadOnlyList<long>>? BoitesParLot = null,
+    Pharma.Domain.Ventes.QrChifa? VoletChifa = null);
 
 public interface IPreparationVente
 {
@@ -143,6 +145,13 @@ public sealed class Encaisser(
 
         await Stock.VentesSuspendues.VerifierAsync(campagnes, ct);
         var (vente, produits) = await ConstruireAsync(commande, utilisateurId, session.Id, ct);
+        // Volet Chifa repris par son QR : relu par le serveur, en tiers payant, une seule fois (index unique en base)
+        Pharma.Domain.Ventes.QrChifa? volet = null;
+        if (!string.IsNullOrWhiteSpace(commande.VoletChifa))
+        {
+            volet = LectureVoletChifa.Lire(commande.VoletChifa) ?? throw new RegleMetierException("Le QR du volet Chifa n’est pas reconnu.", "volet_chifa");
+            if (!commande.TiersPayant) throw new RegleMetierException("Un volet Chifa se reprend en tiers payant.", "volet_chifa");
+        }
         // Lot plus récent servi alors qu'un lot plus ancien est en stock : raison obligatoire (ou péremption vérifiée, validée)
         await RaisonsAsync(commande, vente, produits, exiger: true, ct);
 
@@ -202,7 +211,7 @@ public sealed class Encaisser(
         vente.Valider();
         var sousRegistre = produits.Values.Where(p => p.EstSousRegistre).Select(p => p.Id).ToHashSet();
         var (id, numero) = await ventes.EnregistrerAsync(
-            new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit, BoitesParLot(commande)), ct);
+            new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit, BoitesParLot(commande), volet), ct);
 
         if (validePar is { } vp && journal is not null)
             await journal.EcrireAsync(utilisateurId, "vente_produit_bloque", "vente", id,

@@ -77,6 +77,21 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             venteId = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
 
+        // Volet Chifa repris : n° de facture, date et QR brut ; un même volet n'est repris qu'une fois (ux_vente_chifa_facture)
+        if (a.VoletChifa is { } volet)
+        {
+            await using var cmd = new NpgsqlCommand("UPDATE vente SET chifa_facture = $2, chifa_date = $3, chifa_qr = $4 WHERE id = $1", cx, tx);
+            cmd.Parameters.AddWithValue(venteId);
+            cmd.Parameters.AddWithValue(volet.NumeroFacture);
+            cmd.Parameters.AddWithValue(volet.DateFacture);
+            cmd.Parameters.AddWithValue(volet.Brut);
+            try { await cmd.ExecuteNonQueryAsync(ct); }
+            catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                throw new RegleMetierException($"Le volet Chifa n° {volet.NumeroFacture} vient d’être repris par une autre vente.", "volet_chifa");
+            }
+        }
+
         // 3. Lignes, stock, mouvements, registre
         var boitesRattachees = new HashSet<long>();
         foreach (var l in v.Lignes)

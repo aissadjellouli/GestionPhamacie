@@ -27,6 +27,19 @@ Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livr�
 - [ ] **Wasfa** : de quoi s'agit-il exactement (ordonnance préparée à l'avance ?), et qui l'envoie ?
 - Autres sujets V2 déjà notés : commandes intelligentes (Ramadan, classement ABC), fidélisation parapharmacie, messagerie interne.
 
+## À confirmer avec l'éditeur de Chifa (CNAS)
+
+- [ ] **QR code du volet Chifa** (reprise de la vente à la caisse, script 060) : le format a été déduit d'**un seul volet réel**, `06930126;11/11/2026;690755003842;80;24;2;09/11/2026;07607,3,156.48;`. À faire confirmer :
+  - le sens des champs 5 et 6 (`24`, `2`) et de la seconde date (`09/11/2026` : date de l'ordonnance ?) ;
+  - le suffixe du n° d'assuré (`80`, imprimé « /80 ») : rang de l'ayant droit ?
+  - le système de codes produits (`07607`) : code CNAS, nomenclature ? Une table officielle permettrait d'associer les produits sans le faire à la main ;
+  - le format d'un volet de plusieurs produits (séparateur entre les lignes) ;
+  - le taux de remboursement : absent du QR ; peut-il y figurer ?
+  - la présence éventuelle d'une signature ou d'un contrôle d'intégrité.
+- [ ] **Arrondi de la part de l'organisme** : passé au centime d'après les volets (1 160,82 × 80 % = 928,66) ; règle exacte à confirmer.
+- [ ] **Qui imprime les volets** : Chifa_Officine, ou un logiciel privé relié à Chifa ? (question de l'agrément CNAS)
+- [ ] **QR des factures de grossistes** : sur 3 grossistes, ils ne portent que le n° de facture (`26/F-015695`, `FA.26-327890ZZ1ZZ1`, `26/FA076277`) ; vérifier si d'autres grossistes y mettent les lignes (produits, lots, prix).
+
 ## À vérifier sur le terrain
 
 - [ ] **Chifa : éviter la double saisie** (Chifa_Officine est un programme Windows installé sur chaque poste de caisse) :

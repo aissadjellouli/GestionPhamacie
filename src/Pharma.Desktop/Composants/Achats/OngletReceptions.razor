@@ -230,12 +230,12 @@ else
         @if (lignes.Count > 0)
         {
             <div class="tableau-cadre">
-                <table class="tableau" style="min-width: @(Comptage ? "0" : "1200px")">
+                <table class="tableau" style="min-width: @(Comptage ? "0" : "1400px")">
                     <thead><tr><th scope="col">Produit</th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">N° de lot</span></th><th scope="col"><span class="etiquette-champ requis" style="font-size: inherit; color: inherit">Péremption</span></th>
                         <th scope="col">@(Comptage ? "Boîtes comptées" : aFacturer is not null ? "Boîtes facturées" : "Boîtes reçues")</th>
                         @if (!Comptage)
                         {
-                            <th scope="col" title="Unités gratuites, comprises dans les boîtes reçues">UG</th><th scope="col">Prix HT</th><th scope="col">Remise %</th><th scope="col">PPA</th><th scope="col">SHP</th><th scope="col">Marge</th>
+                            <th scope="col" title="Unités gratuites, comprises dans les boîtes reçues">UG</th><th scope="col">Prix HT</th><th scope="col">Remise %</th><th scope="col" title="Prix d'achat TTC d'une boîte : prix HT net de remise, TVA du produit comprise">PA TTC</th><th scope="col">PPA</th><th scope="col" title="Prix de vente HT : PPA hors TVA du produit">PV HT</th><th scope="col">SHP</th><th scope="col">Marge</th>
                         }
                         @if (aFacturer is null)
                         {
@@ -281,7 +281,9 @@ else
                                 </td>
                                 <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="Prix HT de @l.Nom (avant remise)" @bind="l.Prix" /></td>
                                 <td><input type="number" min="0" max="100" step="0.01" style="width: 70px" aria-label="Remise en % de @l.Nom" @bind="l.RemisePct" /></td>
+                                <td style="white-space: nowrap">@(l.PaTtc is { } pa ? Libelles.Dinars(pa, 2) : "—")</td>
                                 <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="PPA facturé de @l.Nom" @bind="l.Ppa" /></td>
+                                <td style="white-space: nowrap">@(l.PvHt is { } pv ? Libelles.Dinars(pv, 2) : "—")</td>
                                 <td><input type="number" min="0" step="0.01" style="width: 70px" aria-label="SHP par boîte de @l.Nom" title="@(l.Info is { } inf ? $"Proposé selon la liste du produit ({Libelles.Classe(inf.Classe)})" : null)" @bind="l.Shp" /></td>
                                 <td style="white-space: nowrap">@(l.MargePct is { } m ? $"{m:0.00} %" : "—")</td>
                                 }
@@ -294,7 +296,7 @@ else
                             @if (l.QuantiteMobile is { } qm && l.QuantiteSaisie is { } qs)
                             {
                                 <tr class="ligne-conflit">
-                                    <td colspan="12">
+                                    <td colspan="14">
                                         <div class="conflit-lot" role="alert">
                                             <span>Cette ligne était déjà saisie (@qs boîte(s)) et le mobile en a scanné @qm pour le même lot. Quelle quantité retenir ?</span>
                                             <div class="choix-conflit">
@@ -309,7 +311,7 @@ else
                             @foreach (var c in l.Conflits)
                             {
                                 <tr class="ligne-conflit">
-                                    <td colspan="12">
+                                    <td colspan="14">
                                         <div class="conflit-lot" role="alert">
                                             <span>@c.Message</span>
                                             @if (c.Type == "date_differente")
@@ -444,6 +446,10 @@ else
         public InfoAchatProduitDto? Info { get; set; }
         public bool InfoDemandee { get; set; }
         /// <summary>Marge sur le prix d'achat, comme la colonne « MGE » des factures : PPA ÷ prix HT − 1.</summary>
+        /// <summary>Prix d'achat TTC d'une boîte : prix HT net de remise, plus la TVA du produit (connue une fois les infos d'achat chargées).</summary>
+        public decimal? PaTtc => Info is { } i && Prix > 0 ? Math.Round(Prix * (1 - RemisePct / 100m) * (1 + i.TauxTva / 100m), 2, MidpointRounding.AwayFromZero) : null;
+        /// <summary>Prix de vente HT : PPA facturé hors TVA du produit.</summary>
+        public decimal? PvHt => Info is { } i && Ppa is > 0 ? Math.Round(Ppa.Value / (1 + i.TauxTva / 100m), 2, MidpointRounding.AwayFromZero) : null;
         public decimal? MargePct => Ppa is > 0 && Prix > 0 ? Math.Round((Ppa.Value / Prix - 1) * 100, 2, MidpointRounding.AwayFromZero) : null;
         /// <summary>Prix public du catalogue quand le PPA facturé en diffère (à vérifier : le prix de vente n'est pas changé).</summary>
         public decimal? EcartPpa => Ppa is > 0 && Info is { PrixPublic: > 0 } i && Math.Abs(i.PrixPublic - Ppa.Value) >= 0.01m ? i.PrixPublic : null;
