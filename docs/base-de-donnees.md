@@ -76,6 +76,7 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `050_ged.sql` | GED et sauvegardes : durée de conservation de la copie de la base dans la GED (`parametre_sauvegarde.retention_ged_jours`, 7 jours par défaut) et nettoyage des documents de la GED au-delà d'un nombre d'années (`nettoyage_ged_annees`, vide : jamais). |
 | `051_rappel_lot_deja_bloque.sql` | Rappel de lot : `ventes_lot(produit, lot)` liste les ventes du lot (consultation d'un lot déjà rappelé) ; `rappel_lot` ne bloque plus que les lots encore vendables de ce numéro (motif du premier blocage gardé, pas de second événement de blocage). |
 | `052_reprise_super_admin.sql` | Reprise de données par le super admin : `import.session.lance_par` (extraction), `charge_le` et `charge_par` (chargement définitif). Les données chargées restent attribuées au titulaire ; la validation par code est inscrite au journal. |
+| `053_lot_delaisse.sql` | Ancien lot délaissé : `ligne_vente.raison_lot` (lot plus récent servi : péremption vérifiée, introuvable, abîmée, demande du client), `situation_lot(lot)`, `lots_delaisses(produit)` et `alerter_lots_delaisses(produits)` ; seuils `parametre_alerte.seuil_lot_delaisse` (un vendeur, 5) et `seuil_lot_delaisse_collectif` (plusieurs vendeurs, 10, alerte rouge) ; alerte et notification `lot_delaisse` réservées au titulaire, ajoutées à `generer_alertes` ; `inventaire.produit_id` (inventaire d'un produit). |
 
 ### Règle permanente : tout script est répliqué dans `init/`
 
@@ -104,7 +105,7 @@ Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dan
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 052, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 053, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

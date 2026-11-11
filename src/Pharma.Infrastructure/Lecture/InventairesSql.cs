@@ -87,6 +87,47 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
         return id;
     }
 
+    public async Task<long?> CreerProduitAsync(long produitId, long utilisateurId, CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        // Un seul inventaire en cours par produit (verrou sur le produit pendant la création)
+        await using (var cmd = new NpgsqlCommand("SELECT 1 FROM produit WHERE id = $1 FOR UPDATE", cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(produitId);
+            if (await cmd.ExecuteScalarAsync(ct) is null) return null;
+        }
+        await using (var cmd = new NpgsqlCommand("SELECT id FROM inventaire WHERE produit_id = $1 AND statut = 'en_cours'", cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(produitId);
+            if (await cmd.ExecuteScalarAsync(ct) is long enCours) return enCours;
+        }
+        long id;
+        await using (var cmd = new NpgsqlCommand("""
+            INSERT INTO inventaire (rayon, commence_par, produit_id)
+            SELECT 'Produit : ' || nom_commercial, $2, id FROM produit WHERE id = $1
+            RETURNING id
+            """, cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(produitId);
+            cmd.Parameters.AddWithValue(utilisateurId);
+            id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        int lignes;
+        await using (var cmd = new NpgsqlCommand("""
+            INSERT INTO ligne_inventaire (inventaire_id, lot_id)
+            SELECT $1, l.id FROM lot l WHERE l.produit_id = $2 AND l.quantite_disponible > 0
+            """, cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(id);
+            cmd.Parameters.AddWithValue(produitId);
+            lignes = await cmd.ExecuteNonQueryAsync(ct);
+        }
+        if (lignes == 0) return null;   // rien à compter : la transaction est abandonnée
+        await tx.CommitAsync(ct);
+        return id;
+    }
+
     public async Task<InventaireDetail?> DetailAsync(long id, CancellationToken ct = default)
     {
         InventaireDetail? entete = null;

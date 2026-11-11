@@ -179,6 +179,8 @@
             $"achats?onglet=retours&lot={lot}&motif=peremption_proche",
         // Produit qui ne se vend plus : le ranger plus en vue (emplacement de vente au comptoir)
         "dormant" when Session.A("stock.ajuster") => $"stock?ranger={a.ProduitId}",
+        // Ancien lot délaissé (titulaire seul) : inventaire de tous les lots du produit
+        "lot_delaisse" when Session.A("role.titulaire") => $"inventaire?produit={a.ProduitId}",
         _ => null
     };
 
@@ -188,6 +190,7 @@
         "peremption" or "risque_ecoulement" => "Droit « achats.retour_fournisseur » nécessaire",
         "perime" => "Droit « stock.declarer_perime » nécessaire",
         "dormant" => "Droit « stock.ajuster » nécessaire",
+        "lot_delaisse" => "Réservé au pharmacien titulaire",
         _ => "Aucune action pour cette alerte"
     };
 

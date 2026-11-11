@@ -11,6 +11,8 @@ public class LigneVente
     public decimal PrixUnitaire { get; init; }
     /// <summary>SHP par boîte, compris dans PrixUnitaire.</summary>
     public decimal Shp { get; init; }
+    /// <summary>Lot plus récent servi alors qu'un lot plus ancien du produit est en stock : pourquoi (RaisonLot), sinon null.</summary>
+    public string? RaisonLot { get; set; }
     public decimal BaseRemboursement { get; private set; }
     public decimal TauxRemboursement { get; private set; }
     public decimal MontantOrganisme { get; private set; }

@@ -10,7 +10,12 @@ using Pharma.Domain.Ventes;
 namespace Pharma.Application.Caisse;
 
 /// <summary>Boites : boîtes identifiées scannées pour cette ligne (étiquette interne ou n° de série), au plus la quantité.</summary>
-public sealed record LigneCommande(long ProduitId, long LotId, int Quantite, IReadOnlyList<long>? Boites = null);
+/// <param name="RaisonLot">Lot plus récent servi alors qu'un lot plus ancien est en stock : raison choisie ou validée (Domain.Ventes.RaisonLot).</param>
+public sealed record LigneCommande(long ProduitId, long LotId, int Quantite, IReadOnlyList<long>? Boites = null, string? RaisonLot = null);
+
+/// <summary>Raison à demander pour le lot d'une ligne (Domain.Ventes.SituationLot) et lot plus ancien en stock.</summary>
+public sealed record SituationLotVente(long LotId, string Situation, string? NumeroLot = null, long? LotDelaisseId = null, string? LotDelaisse = null,
+    DateOnly? PeremptionDelaisse = null);
 /// <summary>
 /// Ordonnance présentée au comptoir : saisie pour un psychotrope (médecin obligatoire) ou scannée
 /// (image conservée sur le serveur, désignée par son jeton).
@@ -32,7 +37,7 @@ public sealed record CommandeVente(
 public sealed record ApercuVente(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
     decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
-    IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false);
+    IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false, IReadOnlyList<SituationLotVente>? Situations = null);
 
 public sealed record VenteEncaissee(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
@@ -48,6 +53,8 @@ public interface IPreparationVente
 {
     Task<IReadOnlyDictionary<long, Produit>> ProduitsAsync(IEnumerable<long> ids, CancellationToken ct = default);
     Task<IReadOnlyDictionary<long, Lot>> LotsAsync(IEnumerable<long> ids, CancellationToken ct = default);
+    /// <summary>Pour chaque lot : raison à demander si un lot plus ancien du produit est en stock (fonction SQL situation_lot).</summary>
+    Task<IReadOnlyDictionary<long, SituationLotVente>> SituationsAsync(IEnumerable<long> lotIds, CancellationToken ct = default);
 }
 
 public interface IVentesEcriture
@@ -63,18 +70,40 @@ public sealed class Encaisser(
     IPreparationVente preparation, IPatients patients, IVentesEcriture ventes,
     ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, Ordonnances.IStockageOrdonnances scans,
     IDetenteursDroit? detenteurs = null, Stock.ICampagnesInventaire? campagnes = null,
-    VerificationCodeComptoir? codesComptoir = null, IJournal? journal = null)
+    VerificationCodeComptoir? codesComptoir = null, IJournal? journal = null,
+    Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
     {
         var (vente, produits) = await ConstruireAsync(commande, utilisateurId, sessionId: null, ct);
+        var situations = await RaisonsAsync(commande, vente, produits, exiger: false, ct);
         return new ApercuVente(
             vente.MontantTotal + vente.MontantRemise, vente.PartOrganisme, vente.MontantRemise,
             vente.PartPatient, vente.MontantTotal, vente.ContientSousRegistre,
             vente.Lignes.Select(l => l.PrixUnitaire).ToList(), vente.Lignes.Sum(l => l.Shp * l.Quantite),
             vente.Lignes.Where(l => produits.TryGetValue(l.ProduitId, out var p) && p.EstMedicament).Sum(l => l.PrixUnitaire * l.Quantite),
-            Bloques(produits), vente.ContientSurOrdonnance);
+            Bloques(produits), vente.ContientSurOrdonnance,
+            commande.Lignes.Select(l => situations.GetValueOrDefault(l.LotId) ?? new SituationLotVente(l.LotId, SituationLot.Aucune)).ToList());
+    }
+
+    /// <summary>
+    /// Lot plus récent servi alors qu'un lot plus ancien est en stock : raison choisie par le vendeur, ou « péremption plus proche »
+    /// vérifiée par le logiciel et validée par le vendeur. Exigée à l'encaissement (exiger) ; reportée sur les lignes de la vente.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<long, SituationLotVente>> RaisonsAsync(CommandeVente c, Vente vente,
+        IReadOnlyDictionary<long, Produit> produits, bool exiger, CancellationToken ct)
+    {
+        var situations = await preparation.SituationsAsync(c.Lignes.Select(l => l.LotId).Distinct(), ct);
+        foreach (var ligne in vente.Lignes)
+        {
+            if (situations.GetValueOrDefault(ligne.LotId) is not { } s) continue;
+            var choix = c.Lignes.Where(l => l.LotId == ligne.LotId).Select(l => l.RaisonLot).FirstOrDefault(r => !string.IsNullOrWhiteSpace(r));
+            var produit = produits.TryGetValue(ligne.ProduitId, out var p) ? p.NomCommercial : "Produit";
+            var lot = s.NumeroLot ?? ligne.LotId.ToString();
+            ligne.RaisonLot = SituationLot.Raison(s.Situation, choix, produit, lot, s.LotDelaisse, exiger);
+        }
+        return situations;
     }
 
     /// <summary>Boîtes identifiées par lot : jamais deux fois la même, au plus autant que de boîtes vendues du lot.</summary>
@@ -113,6 +142,8 @@ public sealed class Encaisser(
 
         await Stock.VentesSuspendues.VerifierAsync(campagnes, ct);
         var (vente, produits) = await ConstruireAsync(commande, utilisateurId, session.Id, ct);
+        // Lot plus récent servi alors qu'un lot plus ancien est en stock : raison obligatoire (ou péremption vérifiée, validée)
+        await RaisonsAsync(commande, vente, produits, exiger: true, ct);
 
         if (vente.ContientSousRegistre && !await droits.APermissionAsync(utilisateurId, Permissions.PsychotropesDelivrer, ct))
             throw new DroitRefuseException(Permissions.PsychotropesDelivrer, "délivrer un psychotrope", await MessagePsychotropeAsync(ct));
@@ -182,8 +213,25 @@ public sealed class Encaisser(
                 new Dictionary<string, object?> { ["ticket"] = numero, ["produits"] = sansOrdonnance },
                 Permissions.CaisseVendreSansOrdonnance, ct);
 
+        await AlerterLotsDelaissesAsync(vente);
+
         return new VenteEncaissee(id, numero, vente.MontantTotal, vente.PartOrganisme, vente.PartPatient,
             reglement.Mode, reglement.Rendu);
+    }
+
+    /// <summary>
+    /// Après la vente : ancien lot délaissé au profit d'un lot plus récent (seuil atteint par un vendeur) ; alerte au titulaire, prévenu
+    /// par SMS ou e-mail. La vente est enregistrée : un échec ici ne l'annule pas.
+    /// </summary>
+    private async Task AlerterLotsDelaissesAsync(Vente vente)
+    {
+        if (lotsDelaisses is null) return;
+        try
+        {
+            foreach (var a in await lotsDelaisses.AlerterAsync(vente.Lignes.Select(l => l.ProduitId).Distinct().ToList(), CancellationToken.None))
+                if (alertesTitulaire is not null) await alertesTitulaire.LotDelaisseAsync(a.Message, a.Niveau == "urgent", CancellationToken.None);
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { }
     }
 
     private async Task<(Vente, IReadOnlyDictionary<long, Produit>)> ConstruireAsync(

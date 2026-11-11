@@ -29,6 +29,11 @@ internal static class InventaireEndpoints
                 Results.Ok(new IdentifiantDto(await commencer.ExecuterAsync(req.Rayon, user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.StockAjuster);
 
+        // Inventaire d'un produit, depuis l'alerte « ancien lot délaissé » (titulaire seul)
+        inv.MapPost("/produit/{produitId:long}", async (long produitId, CommencerInventaireProduit commencer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new IdentifiantDto(await commencer.ExecuterAsync(produitId, user.UtilisateurId(), ct))))
+           .ExigerTitulaire();
+
         inv.MapGet("/{id:long}", async (long id, ObtenirInventaire obtenir, CancellationToken ct) =>
                 await obtenir.ExecuterAsync(id, ct) is { } d
                     ? Results.Ok(new InventaireDto(d.Id, d.Rayon, d.Statut, d.CommenceLe, d.CommencePar, d.TermineLe,

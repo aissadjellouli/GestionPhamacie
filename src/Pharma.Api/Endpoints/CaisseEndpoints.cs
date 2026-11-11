@@ -43,7 +43,8 @@ internal static class CaisseEndpoints
             {
                 var a = await encaisser.CalculerAsync(VersCommande(req), user.UtilisateurId(), ct);
                 return Results.Ok(new ApercuVenteDto(a.MontantBrut, a.PartOrganisme, a.MontantRemise, a.PartPatient, a.MontantTotal, a.OrdonnanceRequise,
-                    a.PrixLignes, a.Shp, a.TotalMedicaments, a.ProduitsBloques, a.SurOrdonnance));
+                    a.PrixLignes, a.Shp, a.TotalMedicaments, a.ProduitsBloques, a.SurOrdonnance,
+                    a.Situations?.Select(s => new SituationLotDto(s.LotId, s.Situation, s.LotDelaisse, s.PeremptionDelaisse)).ToList()));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -203,7 +204,7 @@ internal static class CaisseEndpoints
         catch (ArgumentException) { throw new RegleMetierException($"Mode de paiement inconnu : {d.Mode}."); }
 
         return new CommandeVente(
-            d.Lignes.Select(l => new LigneCommande(l.ProduitId, l.LotId, l.Quantite, l.Boites)).ToList(),
+            d.Lignes.Select(l => new LigneCommande(l.ProduitId, l.LotId, l.Quantite, l.Boites, l.RaisonLot)).ToList(),
             d.TiersPayant, d.OrganismeId, d.TauxTiersPayant, d.PatientId,
             d.Ordonnance is { } o ? new OrdonnanceSaisie(o.MedecinId, o.DatePrescription, o.Numero, o.JetonScan, o.TexteReconnu,
                 o.PorteurNom is null && o.PorteurAdresse is null && o.PorteurPiece is null ? null : new PorteurOrdonnance(o.PorteurNom, o.PorteurAdresse, o.PorteurPiece)) : null,

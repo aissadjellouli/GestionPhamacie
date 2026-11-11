@@ -6,13 +6,15 @@ namespace Pharma.Infrastructure.Lecture;
 public sealed class AlertesLecture(NpgsqlDataSource db) : IAlertesLecture
 {
     // Même périmètre que la liste : alertes nouvelles ou vues (index idx_alerte_ouverte_tri)
-    public async Task<int> CompterUrgentesAsync(CancellationToken ct = default)
+    public async Task<int> CompterUrgentesAsync(bool titulaire, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT count(*)::int FROM alerte WHERE statut IN ('nouvelle', 'vue') AND niveau = 'urgent'");
+        await using var cmd = db.CreateCommand("SELECT count(*)::int FROM alerte WHERE statut IN ('nouvelle', 'vue') AND niveau = 'urgent' AND ($1 OR type <> ALL ($2))");
+        cmd.Parameters.AddWithValue(titulaire);
+        cmd.Parameters.AddWithValue(AlertesReservees.Types.ToArray());
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
-    public async Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(bool titulaire, CancellationToken ct = default)
     {
         const string sql = """
             SELECT a.id, a.type, a.niveau, a.produit_id, a.lot_id, a.message, a.valeur_dzd, a.statut,
@@ -23,11 +25,13 @@ public sealed class AlertesLecture(NpgsqlDataSource db) : IAlertesLecture
             LEFT JOIN lot l ON l.id = a.lot_id
             LEFT JOIN emplacement ev ON ev.id = p.emplacement_id
             LEFT JOIN emplacement er ON er.id = p.reserve_id
-            WHERE a.statut IN ('nouvelle', 'vue')
+            WHERE a.statut IN ('nouvelle', 'vue') AND ($1 OR a.type <> ALL ($2))
             ORDER BY CASE a.niveau WHEN 'urgent' THEN 0 WHEN 'attention' THEN 1 ELSE 2 END,
                      a.valeur_dzd DESC NULLS LAST, a.mise_a_jour_le DESC
             """;
         await using var cmd = db.CreateCommand(sql);
+        cmd.Parameters.AddWithValue(titulaire);
+        cmd.Parameters.AddWithValue(AlertesReservees.Types.ToArray());
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<Alerte>();
         while (await r.ReadAsync(ct))
@@ -36,6 +40,21 @@ public sealed class AlertesLecture(NpgsqlDataSource db) : IAlertesLecture
                 r.IsDBNull(4) ? null : r.GetInt64(4), r.GetString(5),
                 r.IsDBNull(6) ? null : r.GetDecimal(6), r.GetString(7), r.GetDateTime(8),
                 r.GetString(9), r.IsDBNull(10) ? null : r.GetString(10), r.IsDBNull(11) || r.GetString(11) == "" ? null : r.GetString(11)));
+        return liste;
+    }
+}
+
+/// <summary>Ancien lot délaissé : calcul après une vente (fonction SQL alerter_lots_delaisses, database/053_lot_delaisse.sql).</summary>
+public sealed class AlertesLotsDelaissesSql(NpgsqlDataSource db) : IAlertesLotsDelaisses
+{
+    public async Task<IReadOnlyList<AlerteLotDelaisse>> AlerterAsync(IReadOnlyCollection<long> produits, CancellationToken ct = default)
+    {
+        if (produits.Count == 0) return [];
+        await using var cmd = db.CreateCommand("SELECT o_alerte_id, o_niveau, o_message FROM alerter_lots_delaisses($1)");
+        cmd.Parameters.AddWithValue(produits.ToArray());
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var liste = new List<AlerteLotDelaisse>();
+        while (await r.ReadAsync(ct)) liste.Add(new AlerteLotDelaisse(r.GetInt64(0), r.GetString(1), r.GetString(2)));
         return liste;
     }
 }

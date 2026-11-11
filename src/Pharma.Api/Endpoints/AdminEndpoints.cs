@@ -61,7 +61,8 @@ internal static class AdminEndpoints
             {
                 var g = req.General;
                 var reglages = new ReglagesSeuils(
-                    new ParametresAlerte(g.JoursOrange, g.JoursRouge, g.HorizonRisqueJours, g.DelaiFournisseurJours, g.JoursSecurite, g.JoursCibleCommande, g.JoursDormant),
+                    new ParametresAlerte(g.JoursOrange, g.JoursRouge, g.HorizonRisqueJours, g.DelaiFournisseurJours, g.JoursSecurite, g.JoursCibleCommande, g.JoursDormant,
+                        g.SeuilLotDelaisse, g.SeuilLotDelaisseCollectif),
                     req.Grossistes.Select(f => new SeuilGrossiste(f.FournisseurId, f.Nom, f.DelaiRepriseJours, f.JoursOrange, f.JoursRouge)).ToList(),
                     req.Exceptions.Select(e => new ExceptionProduit(e.ProduitId, e.Nom, e.JoursOrange, e.JoursRouge)).ToList());
                 return Results.Ok(new EnregistrementSeuilsDto(await enregistrer.ExecuterAsync(reglages, user.UtilisateurId(), ct)));
@@ -128,7 +129,8 @@ internal static class AdminEndpoints
 
     private static ReglagesSeuilsDto VersDto(ReglagesSeuils s) => new(
         new ParametresAlerteDto(s.General.JoursOrange, s.General.JoursRouge, s.General.HorizonRisqueJours,
-            s.General.DelaiFournisseurJours, s.General.JoursSecurite, s.General.JoursCibleCommande, s.General.JoursDormant),
+            s.General.DelaiFournisseurJours, s.General.JoursSecurite, s.General.JoursCibleCommande, s.General.JoursDormant,
+            s.General.SeuilLotDelaisse, s.General.SeuilLotDelaisseCollectif),
         s.Grossistes.Select(f => new SeuilGrossisteDto(f.FournisseurId, f.Nom, f.DelaiRepriseJours, f.JoursOrange, f.JoursRouge)).ToList(),
         s.Exceptions.Select(e => new ExceptionProduitDto(e.ProduitId, e.Nom, e.JoursOrange, e.JoursRouge)).ToList());
 }

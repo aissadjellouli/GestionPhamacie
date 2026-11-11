@@ -12,8 +12,8 @@ internal static class AlertesEndpoints
 
     public static void MapAlertes(this RouteGroupBuilder api)
     {
-        api.MapGet("/alertes", async (ListerAlertesOuvertes lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(a => a.VersDto())))
+        api.MapGet("/alertes", async (ListerAlertesOuvertes lister, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(user.UtilisateurId(), ct)).Select(a => a.VersDto())))
            .ExigerPermission(Permissions.StockConsulter);
 
         // Pastille du bandeau : le nombre seulement (avant : toute la liste, à chaque navigation)
@@ -26,16 +26,16 @@ internal static class AlertesEndpoints
             })
            .ExigerPermission(Permissions.StockConsulter);
 
-        api.MapGet("/alertes/urgentes", async (ListerAlertesOuvertes lister, CancellationToken ct) =>
-                Results.Ok(new CompteDto(await lister.CompterUrgentesAsync(ct))))
+        api.MapGet("/alertes/urgentes", async (ListerAlertesOuvertes lister, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new CompteDto(await lister.CompterUrgentesAsync(user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.StockConsulter);
 
         api.MapPost("/alertes/generer", async (GenererAlertes generer, CancellationToken ct) =>
                 Results.Ok(new { misesAJour = await generer.ExecuterAsync(ct) }))
            .ExigerPermission(Permissions.AdminParametres);
 
-        api.MapPost("/alertes/{id:long}/reporter", async (long id, ReporterAlerteRequete req, ReporterAlerte reporter, CancellationToken ct) =>
-                await reporter.ExecuterAsync(id, req.JusquAu, ct)
+        api.MapPost("/alertes/{id:long}/reporter", async (long id, ReporterAlerteRequete req, ReporterAlerte reporter, ClaimsPrincipal user, CancellationToken ct) =>
+                await reporter.ExecuterAsync(id, req.JusquAu, user.UtilisateurId(), ct)
                     ? Results.NoContent()
                     : Results.NotFound(new ErreurDto(Introuvable)))
            .ExigerPermission(Permissions.StockConsulter);

@@ -240,7 +240,19 @@
     private bool EstTitulaire => Session.A("role.titulaire");
     private RayonInventaireDto? Choisi => tableau?.Rayons.FirstOrDefault(r => r.Rayon == rayonChoisi);
 
-    protected override Task OnInitializedAsync() => ChargerAsync();
+    /// <summary>Depuis l'alerte « ancien lot délaissé » : inventaire de ce produit (tous ses lots), lancé par le titulaire.</summary>
+    [SupplyParameterFromQuery(Name = "produit")] public long? Produit { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ChargerAsync();
+        if (Produit is > 0 && EstTitulaire)
+            await Executer(async () =>
+            {
+                var (id, e) = await Api.CommencerInventaireProduitAsync(Produit.Value);
+                return e ?? await OuvrirAsync(id!.Id);
+            });
+    }
 
     private async Task ChargerAsync()
     {

@@ -84,8 +84,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             long ligneId;
             await using (var cmd = new NpgsqlCommand("""
                 INSERT INTO ligne_vente (vente_id, produit_id, lot_id, quantite, prix_unitaire,
-                                         base_remboursement, taux_remboursement, montant_organisme, montant_patient, shp)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+                                         base_remboursement, taux_remboursement, montant_organisme, montant_patient, shp, raison_lot)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
                 """, cx, tx))
             {
                 cmd.Parameters.AddWithValue(venteId);
@@ -98,6 +98,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                 cmd.Parameters.AddWithValue(l.MontantOrganisme);
                 cmd.Parameters.AddWithValue(l.MontantPatient);
                 cmd.Parameters.AddWithValue(l.Shp);
+                cmd.Parameters.Add(Valeur(l.RaisonLot, NpgsqlDbType.Text));
                 ligneId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
 

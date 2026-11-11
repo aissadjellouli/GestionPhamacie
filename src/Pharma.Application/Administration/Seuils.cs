@@ -9,7 +9,8 @@ namespace Pharma.Application.Administration;
 /// <summary>Réglage général (table parametre_alerte).</summary>
 public sealed record ParametresAlerte(
     int JoursOrange, int JoursRouge, int HorizonRisqueJours,
-    int DelaiFournisseurJours, int JoursSecurite, int JoursCibleCommande, int JoursDormant);
+    int DelaiFournisseurJours, int JoursSecurite, int JoursCibleCommande, int JoursDormant,
+    int SeuilLotDelaisse = 5, int SeuilLotDelaisseCollectif = 10);
 
 public sealed record SeuilGrossiste(long FournisseurId, string Nom, int? DelaiRepriseJours, int? JoursOrange, int? JoursRouge);
 public sealed record ExceptionProduit(long ProduitId, string Nom, int? JoursOrange, int? JoursRouge);
@@ -37,6 +38,8 @@ public sealed class EnregistrerSeuils(ISeuilsAdmin seuils, IMoteurAlertes alerte
         RegleSeuils.VerifierGeneral(g.JoursOrange, g.JoursRouge);
         if (g.HorizonRisqueJours <= 0 || g.JoursCibleCommande <= 0 || g.JoursDormant <= 0)
             throw new RegleMetierException("Le risque d’écoulement, le stock visé et le délai « dormant » doivent être d’au moins 1 jour.");
+        if (g.SeuilLotDelaisse < 1 || g.SeuilLotDelaisseCollectif < 1)
+            throw new RegleMetierException("Ancien lot délaissé : les seuils doivent être d’au moins 1 boîte.", "seuil_lot_delaisse");
         if (g.DelaiFournisseurJours < 0 || g.JoursSecurite < 0)
             throw new RegleMetierException("Le délai de livraison et le stock de sécurité ne peuvent pas être négatifs.");
 

@@ -14,13 +14,14 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
         ParametresAlerte general;
         await using (var cmd = db.CreateCommand("""
             SELECT jours_orange, jours_rouge, horizon_risque_jours, delai_fournisseur_jours, jours_securite,
-                   jours_cible_commande, jours_dormant
+                   jours_cible_commande, jours_dormant, seuil_lot_delaisse, seuil_lot_delaisse_collectif
             FROM parametre_alerte WHERE id = 1
             """))
         await using (var r = await cmd.ExecuteReaderAsync(ct))
         {
             await r.ReadAsync(ct);
-            general = new ParametresAlerte(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4), r.GetInt32(5), r.GetInt32(6));
+            general = new ParametresAlerte(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4), r.GetInt32(5), r.GetInt32(6),
+                r.GetInt32(7), r.GetInt32(8));
         }
 
         var grossistes = new List<SeuilGrossiste>();
@@ -51,12 +52,13 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
         await using (var cmd = new NpgsqlCommand("""
             UPDATE parametre_alerte
             SET jours_orange = $1, jours_rouge = $2, horizon_risque_jours = $3, delai_fournisseur_jours = $4,
-                jours_securite = $5, jours_cible_commande = $6, jours_dormant = $7
+                jours_securite = $5, jours_cible_commande = $6, jours_dormant = $7, seuil_lot_delaisse = $8, seuil_lot_delaisse_collectif = $9
             WHERE id = 1
             """, cx, tx))
         {
             var g = s.General;
-            foreach (var v in new[] { g.JoursOrange, g.JoursRouge, g.HorizonRisqueJours, g.DelaiFournisseurJours, g.JoursSecurite, g.JoursCibleCommande, g.JoursDormant })
+            foreach (var v in new[] { g.JoursOrange, g.JoursRouge, g.HorizonRisqueJours, g.DelaiFournisseurJours, g.JoursSecurite, g.JoursCibleCommande, g.JoursDormant,
+                                      g.SeuilLotDelaisse, g.SeuilLotDelaisseCollectif })
                 cmd.Parameters.AddWithValue(v);
             await cmd.ExecuteNonQueryAsync(ct);
         }

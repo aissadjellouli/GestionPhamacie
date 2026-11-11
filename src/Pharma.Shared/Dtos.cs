@@ -94,7 +94,7 @@ public sealed record EtatCaisseDto(
 public sealed record OuvrirCaisseRequete(string? Poste, decimal? FondCaisse);
 
 /// <summary>Boites : boîtes identifiées scannées (étiquette interne ou n° de série), rattachées à la vente.</summary>
-public sealed record LigneCommandeDto(long ProduitId, long LotId, int Quantite, IReadOnlyList<long>? Boites = null);
+public sealed record LigneCommandeDto(long ProduitId, long LotId, int Quantite, IReadOnlyList<long>? Boites = null, string? RaisonLot = null);
 /// <summary>Médecin obligatoire pour un psychotrope ; JetonScan : image envoyée par POST api/ordonnances/scans.</summary>
 /// <summary>Porteur* : à remplir quand le porteur de l'ordonnance n'est pas le patient (psychotrope).</summary>
 public sealed record OrdonnanceDto(long? MedecinId, DateOnly DatePrescription, string? Numero,
@@ -114,7 +114,13 @@ public sealed record ValidationBlocageDto(bool Accepte, string? ValidateurIdenti
 public sealed record ApercuVenteDto(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
     decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
-    IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false);
+    IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false, IReadOnlyList<SituationLotDto>? Situations = null);
+
+/// <summary>
+/// Raison à demander pour le lot d'une ligne (même ordre que les lignes envoyées) : aucune, peremption (vérifiée, à valider par le
+/// vendeur) ou obligatoire (à choisir : introuvable, abimee, demande_client). LotDelaisse : lot plus ancien en stock.
+/// </summary>
+public sealed record SituationLotDto(long LotId, string Situation, string? LotDelaisse, DateOnly? PeremptionDelaisse);
 
 public sealed record VenteEncaisseeDto(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
@@ -156,7 +162,8 @@ public sealed record IdentifiantDto(long Id);
 
 public sealed record ParametresAlerteDto(
     int JoursOrange, int JoursRouge, int HorizonRisqueJours,
-    int DelaiFournisseurJours, int JoursSecurite, int JoursCibleCommande, int JoursDormant);
+    int DelaiFournisseurJours, int JoursSecurite, int JoursCibleCommande, int JoursDormant,
+    int SeuilLotDelaisse = 5, int SeuilLotDelaisseCollectif = 10);
 public sealed record SeuilGrossisteDto(long FournisseurId, string Nom, int? DelaiRepriseJours, int? JoursOrange, int? JoursRouge);
 public sealed record ExceptionProduitDto(long ProduitId, string Nom, int? JoursOrange, int? JoursRouge);
 public sealed record ReglagesSeuilsDto(ParametresAlerteDto General, IReadOnlyList<SeuilGrossisteDto> Grossistes, IReadOnlyList<ExceptionProduitDto> Exceptions);

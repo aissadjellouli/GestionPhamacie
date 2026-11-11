@@ -10,13 +10,13 @@ internal sealed class AlertesEspion : IAlertesEcriture
     public (long Id, string? Action, long Utilisateur)? Traitement { get; private set; }
     public bool Existe { get; init; } = true;
 
-    public Task<bool> ReporterAsync(long alerteId, DateOnly jusquAu, CancellationToken ct = default)
+    public Task<bool> ReporterAsync(long alerteId, DateOnly jusquAu, bool titulaire, CancellationToken ct = default)
     {
         Report = (alerteId, jusquAu);
         return Task.FromResult(Existe);
     }
 
-    public Task<bool> TraiterAsync(long alerteId, string? actionPrise, long utilisateurId, CancellationToken ct = default)
+    public Task<bool> TraiterAsync(long alerteId, string? actionPrise, long utilisateurId, bool titulaire, CancellationToken ct = default)
     {
         Traitement = (alerteId, actionPrise, utilisateurId);
         return Task.FromResult(Existe);

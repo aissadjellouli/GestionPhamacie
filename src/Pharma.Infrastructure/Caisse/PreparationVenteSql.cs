@@ -58,4 +58,26 @@ public sealed class PreparationVenteSql(NpgsqlDataSource db) : IPreparationVente
             };
         return lots;
     }
+
+    /// <summary>Raison à demander pour chaque lot (fonction SQL situation_lot), avec le lot plus ancien en stock.</summary>
+    public async Task<IReadOnlyDictionary<long, SituationLotVente>> SituationsAsync(IEnumerable<long> lotIds, CancellationToken ct = default)
+    {
+        var ids = lotIds.Distinct().ToArray();
+        if (ids.Length == 0) return new Dictionary<long, SituationLotVente>();
+        await using var cmd = db.CreateCommand("""
+            SELECT l.id, s.o_situation, l.numero_lot, s.o_lot_delaisse_id, d.numero_lot, d.date_peremption
+            FROM unnest($1::bigint[]) AS u(id)
+            JOIN lot l ON l.id = u.id
+            CROSS JOIN LATERAL situation_lot(u.id) s
+            LEFT JOIN lot d ON d.id = s.o_lot_delaisse_id
+            """);
+        cmd.Parameters.AddWithValue(ids);
+        var situations = new Dictionary<long, SituationLotVente>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            situations[r.GetInt64(0)] = new SituationLotVente(r.GetInt64(0), r.GetString(1), r.GetString(2),
+                r.IsDBNull(3) ? null : r.GetInt64(3), r.IsDBNull(4) ? null : r.GetString(4),
+                r.IsDBNull(5) ? null : DateOnly.FromDateTime(r.GetDateTime(5)));
+        return situations;
+    }
 }

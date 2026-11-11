@@ -40,6 +40,11 @@ internal sealed class CatalogueEnMemoire : IPreparationVente
         Task.FromResult<IReadOnlyDictionary<long, Produit>>(produits.Where(p => ids.Contains(p.Key)).ToDictionary());
     public Task<IReadOnlyDictionary<long, Lot>> LotsAsync(IEnumerable<long> ids, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<long, Lot>>(lots.Where(l => ids.Contains(l.Key)).ToDictionary());
+
+    /// <summary>Situation de chaque lot (par défaut : aucune raison à demander).</summary>
+    public Dictionary<long, SituationLotVente> Situations { get; } = [];
+    public Task<IReadOnlyDictionary<long, SituationLotVente>> SituationsAsync(IEnumerable<long> lotIds, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<long, SituationLotVente>>(Situations.Where(s => lotIds.Contains(s.Key)).ToDictionary());
 }
 
 internal sealed class PatientsEnMemoire(params Patient[] liste) : IPatients

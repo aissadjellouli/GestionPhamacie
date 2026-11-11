@@ -277,6 +277,37 @@
                                             </div>
                                         </div>
                                     }
+                                    @if (l.Situation is { Situation: "peremption" or "obligatoire" } sit)
+                                    {
+                                        @* Lot plus ancien en stock : raison vérifiée (à valider) ou à choisir ; inscrite avec la vente *@
+                                        <div class="avertissement-fefo @(l.RaisonLot is null ? "orange" : null)" role="group" data-champ="raison_lot" aria-label="Raison du lot servi">
+                                            <span>
+                                                Lot plus ancien en stock : @sit.LotDelaisse@(sit.PeremptionDelaisse is { } pd ? $" (exp. {Libelles.Date(pd)})" : "").
+                                                @if (l.RaisonLot is { } r) { <strong> Raison : @RaisonLotLibelle(r).</strong> }
+                                            </span>
+                                            @if (l.RaisonLot is null)
+                                            {
+                                                <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                                                    @if (sit.Situation == "peremption")
+                                                    {
+                                                        <span class="detail" style="flex-basis: 100%">Vérifié par le logiciel : ce lot périme avant le lot @sit.LotDelaisse.</span>
+                                                        <button type="button" class="btn btn-principal" @onclick="() => ChoisirRaisonAsync(l, RaisonPeremption)">Valider : péremption plus proche</button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="detail" style="flex-basis: 100%">Pourquoi servir ce lot ?</span>
+                                                    }
+                                                    <button type="button" class="btn" @onclick="() => ChoisirRaisonAsync(l, RaisonIntrouvable)">Boîte de l’ancien lot introuvable</button>
+                                                    <button type="button" class="btn" @onclick="() => ChoisirRaisonAsync(l, RaisonAbimee)">Boîte abîmée</button>
+                                                    <button type="button" class="btn" @onclick="() => ChoisirRaisonAsync(l, RaisonDemandeClient)">Demande du client</button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="lien-bouton" @onclick="() => ChoisirRaisonAsync(l, null)">Changer la raison</button>
+                                            }
+                                        </div>
+                                    }
                                     <div class="quantite">
                                         <button type="button" class="btn btn-icone" aria-label="Retirer une boîte" @onclick="() => ChangerAsync(l, -1)">−</button>
                                         <span>× @l.Quantite</span>
@@ -591,6 +622,9 @@
         /// <summary>Boîtes identifiées scannées (étiquette interne, n° de série) : rattachées à la vente pour le remboursement.</summary>
         public List<long> Boites { get; } = [];
         public string? AvertissementFefo { get; set; }
+        /// <summary>Lot plus ancien en stock : raison à demander (SituationLotDto : peremption ou obligatoire), lot délaissé, raison retenue.</summary>
+        public SituationLotDto? Situation { get; set; }
+        public string? RaisonLot { get; set; }
         public LotFefoDto? LotConseille { get; set; }
         /// <summary>Où trouver une boîte du lot conseillé (emplacement ou réserve du produit).</summary>
         public string? EmplacementConseille { get; set; }
@@ -689,6 +723,8 @@
         : PatientObligatoire && patient is null ? "Choisissez le patient"
         : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
         : PorteurIncomplet ? "Porteur de l’ordonnance : nom, adresse et pièce d’identité obligatoires"
+        : lignes.FirstOrDefault(l => l.Lot is not null && l.Situation is { Situation: not "aucune" } && l.RaisonLot is null) is { } sansRaison
+            ? $"{sansRaison.Nom} : un lot plus ancien est en stock, indiquez ou validez la raison sous la ligne"
         : apercu?.ProduitsBloques is { Count: > 0 } && !accordBlocage.Complet(Session.A("produits.bloquer"))
             ? "Produit bloqué à la vente : validation du pharmacien ou de l’assistant nécessaire"
         : null;
@@ -1241,7 +1277,7 @@
 
     private CommandeVenteDto Commande(string modePaiement) => new(
         lignes.Where(l => l.Lot is not null).Select(l => new LigneCommandeDto(l.ProduitId, l.Lot!.LotId, l.Quantite,
-            l.Boites.Count > 0 ? l.Boites.Take(l.Quantite).ToList() : null)).ToList(),
+            l.Boites.Count > 0 ? l.Boites.Take(l.Quantite).ToList() : null, l.RaisonLot)).ToList(),
         tiersPayant, tiersPayant ? organismeId : null, tiersPayant ? taux : null,
         patient?.Id,
         jetonScan is not null || ((apercu?.OrdonnanceRequise == true || apercu?.SurOrdonnance == true) && medecin is not null)
@@ -1253,6 +1289,24 @@
         accordBlocage.VersDto(Session.A("produits.bloquer")));
 
     /// <summary>Les totaux viennent du serveur : mêmes règles que l'encaissement (tiers payant, remise).</summary>
+    // Raison du lot servi quand un lot plus ancien est en stock (codes de Pharma.Domain.Ventes.RaisonLot)
+    private const string RaisonPeremption = "peremption", RaisonIntrouvable = "introuvable", RaisonAbimee = "abimee", RaisonDemandeClient = "demande_client";
+
+    private static string RaisonLotLibelle(string code) => code switch
+    {
+        RaisonPeremption => "péremption plus proche (vérifiée)",
+        RaisonIntrouvable => "boîte de l’ancien lot introuvable",
+        RaisonAbimee => "boîte de l’ancien lot abîmée",
+        RaisonDemandeClient => "demande du client",
+        _ => code
+    };
+
+    private async Task ChoisirRaisonAsync(LignePanier l, string? raison)
+    {
+        l.RaisonLot = raison;
+        await RecalculerAsync();
+    }
+
     private async Task RecalculerAsync()
     {
         var numero = ++requeteCalcul;
@@ -1261,6 +1315,17 @@
         if (numero != requeteCalcul) return;
         (apercu, erreurCalcul) = (resultat, err);
         // Prix de chaque boîte calculé par le serveur : PPA du lot (ou prix du catalogue) plus le SHP
+        // Lot plus ancien en stock : raison à choisir, ou péremption plus proche vérifiée par le serveur (à valider)
+        if (resultat?.Situations is { } situations)
+        {
+            var lignesLot = lignes.Where(l => l.Lot is not null).ToList();
+            for (var i = 0; i < lignesLot.Count && i < situations.Count; i++)
+            {
+                var l = lignesLot[i];
+                if (l.Situation?.Situation != situations[i].Situation || l.Situation?.LotId != situations[i].LotId) l.RaisonLot = null;
+                l.Situation = situations[i];
+            }
+        }
         if (resultat?.PrixLignes is { } prix)
         {
             var avecLot = lignes.Where(l => l.Lot is not null).ToList();

@@ -43,6 +43,7 @@ public static class Libelles
         "stock_critique" => "Stock critique",
         "dormant" => "Produit dormant",
         "surstock" => "Surstock",
+        "lot_delaisse" => "Ancien lot délaissé (titulaire)",
         _ => a.Type
     };
 
@@ -70,6 +71,7 @@ public static class Libelles
     {
         "peremption" or "risque_ecoulement" => "Valeur à risque",
         "perime" => "Perte",
+        "lot_delaisse" => "Valeur du lot délaissé",
         _ => null
     };
 
@@ -81,6 +83,7 @@ public static class Libelles
         "rupture" => "Commander",
         "stock_critique" => "Ajouter à la commande",
         "dormant" => "Mettre en avant",
+        "lot_delaisse" => "Lancer l’inventaire de ce produit",
         _ => null
     };
 

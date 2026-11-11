@@ -34,6 +34,11 @@ public interface IInventaires
     Task<IReadOnlyList<RayonInventaire>> RayonsAsync(CancellationToken ct = default);
     /// <summary>Crée l'inventaire et une ligne par lot en stock rangé dans le rayon (vente ou réserve).</summary>
     Task<long> CreerAsync(string rayon, long utilisateurId, CancellationToken ct = default);
+    /// <summary>
+    /// Inventaire d'un seul produit (tous ses lots en stock, rayon et réserve), demandé par une alerte. Inventaire de ce produit déjà en
+    /// cours : renvoyé tel quel. Null si le produit n'a aucun lot en stock.
+    /// </summary>
+    Task<long?> CreerProduitAsync(long produitId, long utilisateurId, CancellationToken ct = default);
     Task<InventaireDetail?> DetailAsync(long id, CancellationToken ct = default);
     /// <summary>Enregistre le comptage et relève le stock théorique du lot à cet instant.</summary>
     Task EnregistrerComptageAsync(long ligneId, int compte, DateOnly? dateVerifiee, long utilisateurId, CancellationToken ct = default);
@@ -78,6 +83,20 @@ public sealed class CommencerInventaire(IInventaires inventaires, IPermissionSer
         if (r.EnCoursId is { } enCours) return enCours;
         if (r.NombreLots == 0) throw new RegleMetierException($"Aucun lot en stock n’est rangé dans le rayon {r.Rayon}.");
         return await inventaires.CreerAsync(r.Rayon, utilisateurId, ct);
+    }
+}
+
+/// <summary>
+/// Inventaire d'un produit, demandé par l'alerte « ancien lot délaissé » (titulaire seul) : comptage à l'aveugle de tous ses lots,
+/// écarts validés comme pour un rayon.
+/// </summary>
+public sealed class CommencerInventaireProduit(IInventaires inventaires, IPermissionService droits)
+{
+    public async Task<long> ExecuterAsync(long produitId, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(utilisateurId, "lancer l’inventaire d’un produit", ct);
+        return await inventaires.CreerProduitAsync(produitId, utilisateurId, ct)
+               ?? throw new RegleMetierException("Ce produit n’a aucun lot en stock : rien à compter.");
     }
 }
 

@@ -176,6 +176,7 @@ public static class DependencyInjection
         services.AddScoped<RangerProduit>();
         services.AddScoped<ObtenirTableauInventaire>();
         services.AddScoped<CommencerInventaire>();
+        services.AddScoped<CommencerInventaireProduit>();
         services.AddScoped<ObtenirInventaire>();
         services.AddScoped<CompterLot>();
         services.AddScoped<ScannerBoiteInventaire>();

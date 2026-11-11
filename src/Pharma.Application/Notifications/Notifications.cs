@@ -290,6 +290,8 @@ public interface IAlertesTitulaire
     Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default);
     Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default);
     Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default);
+    /// <summary>Ancien lot délaissé au profit d'un lot plus récent (le message nomme le vendeur) : inventaire du produit à faire.</summary>
+    Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default);
 }
 
 public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationService notifications) : IAlertesTitulaire
@@ -317,6 +319,19 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
             $"Lot {numeroLot} bloqué : {produit}",
             $"Le lot {numeroLot} de {produit} a été bloqué (rappel). Boîtes en stock : {boitesEnStock}. Boîtes déjà vendues : {boitesVendues}. La liste des patients à contacter est dans le logiciel (Stock, Traçabilité).",
             null, r.SmsLotBloque ? texte : null), ct);
+    }
+
+    /// <summary>
+    /// Ancien lot délaissé : message calculé en base (produit, lots, vendeurs et nombres de boîtes, aucune donnée de patient).
+    /// SMS avec le réglage des SMS de lot (court, sans accents : TexteSms le prépare).
+    /// </summary>
+    public async Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default)
+    {
+        var r = await depot.ReglagesAsync(ct);
+        var objet = urgent ? "URGENT : ancien lot délaissé, inventaire à faire" : "Ancien lot délaissé, inventaire à faire";
+        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.LotDelaisse, objet,
+            $"{message}\n\nDans le logiciel : Alertes, « Lancer l’inventaire de ce produit ».",
+            null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
     }
 
     public async Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default)

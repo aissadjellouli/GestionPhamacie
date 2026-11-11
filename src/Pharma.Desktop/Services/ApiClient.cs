@@ -601,6 +601,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // ---- Inventaire tournant ----
     public Task<(TableauInventaireDto?, string?)> TableauInventaireAsync() => GetAsync<TableauInventaireDto?>("api/inventaires", null);
     public Task<(IdentifiantDto?, string?)> CommencerInventaireAsync(string rayon) => PostAsync<CommencerInventaireRequete, IdentifiantDto>("api/inventaires", new(rayon));
+    /// <summary>Inventaire d'un produit (tous ses lots), depuis l'alerte « ancien lot délaissé » : titulaire seul.</summary>
+    public Task<(IdentifiantDto?, string?)> CommencerInventaireProduitAsync(long produitId) =>
+        PostAsync<object, IdentifiantDto>($"api/inventaires/produit/{produitId}", new());
     public Task<(InventaireDto?, string?)> InventaireAsync(long id) => GetAsync<InventaireDto?>($"api/inventaires/{id}", null);
     public async Task<string?> CompterLotAsync(long id, long ligneId, int compte, DateOnly? dateVerifiee) =>
         (await EnvoyerCorpsAsync<ComptageRequete, object>(HttpMethod.Put, $"api/inventaires/{id}/lignes/{ligneId}", new(compte, dateVerifiee))).Item2;

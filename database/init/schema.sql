@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 052 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 053 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 052 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 053 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict RdiQ380goVekaxbIV1a4QAsJNfCjg65Nwao2HP8B0cUkvHu8paCknO1d8rvBIbc
+\restrict KMCyIAUAa9tijtVNUWfV8VL58DwyNtVKuyum9L6aonuoNGpg0pOkRUbQoQD6Xid
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -570,6 +570,44 @@ $$;
 
 
 --
+-- Name: alerter_lots_delaisses(bigint[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.alerter_lots_delaisses(p_produits bigint[]) RETURNS TABLE(o_alerte_id bigint, o_niveau text, o_message text)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    c        record;
+    v_id     bigint;
+    v_ancien text;
+BEGIN
+    FOR c IN SELECT d.* FROM unnest(p_produits) AS u(pid), LATERAL lots_delaisses(u.pid) d LOOP
+        v_id := NULL;
+        SELECT a.id, a.niveau INTO v_id, v_ancien FROM alerte a
+        WHERE a.type = c.o_type AND a.produit_id = c.o_produit_id AND a.lot_id = c.o_lot_id
+          AND a.statut IN ('nouvelle', 'vue', 'reportee');
+        IF v_id IS NULL THEN
+            INSERT INTO alerte (type, niveau, produit_id, lot_id, message, valeur_dzd)
+            VALUES (c.o_type, c.o_niveau, c.o_produit_id, c.o_lot_id, c.o_message, c.o_valeur_dzd)
+            RETURNING id INTO v_id;
+            o_alerte_id := v_id; o_niveau := c.o_niveau; o_message := c.o_message;
+            RETURN NEXT;
+        ELSE
+            UPDATE alerte SET message = c.o_message, valeur_dzd = c.o_valeur_dzd, niveau = c.o_niveau,
+                              statut = CASE WHEN alerte.niveau <> c.o_niveau THEN 'nouvelle' ELSE alerte.statut END,
+                              mise_a_jour_le = now()
+            WHERE alerte.id = v_id;
+            IF v_ancien <> c.o_niveau AND c.o_niveau = 'urgent' THEN
+                o_alerte_id := v_id; o_niveau := c.o_niveau; o_message := c.o_message;
+                RETURN NEXT;
+            END IF;
+        END IF;
+    END LOOP;
+END;
+$$;
+
+
+--
 -- Name: completer_reception_boite(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -796,7 +834,12 @@ BEGIN
            END,
            NULL::numeric
     FROM v_etat_stock e
-    WHERE e.statut <> 'ok';
+    WHERE e.statut <> 'ok'
+
+    UNION ALL
+
+    -- Ancien lot délaissé au profit d'un lot plus récent (alerte réservée au titulaire)
+    SELECT * FROM lots_delaisses(NULL);
 
     -- Créer les nouvelles alertes ; mettre à jour celles qui existent.
     -- Si le niveau s'aggrave, l'alerte redevient « nouvelle » même si elle était reportée.
@@ -959,6 +1002,77 @@ CREATE FUNCTION public.lot_fefo(p_produit_id bigint) RETURNS bigint
       AND date_peremption > current_date
     ORDER BY date_peremption, id
     LIMIT 1;
+$$;
+
+
+--
+-- Name: lots_delaisses(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lots_delaisses(p_produit_id bigint DEFAULT NULL::bigint) RETURNS TABLE(o_type text, o_niveau text, o_produit_id bigint, o_lot_id bigint, o_message text, o_valeur_dzd numeric)
+    LANGUAGE sql STABLE
+    AS $$
+    WITH p AS (SELECT seuil_lot_delaisse AS seuil, seuil_lot_delaisse_collectif AS collectif, jours_rouge FROM parametre_alerte WHERE id = 1),
+    lots AS (
+        SELECT l.id, l.produit_id, l.numero_lot, l.date_peremption, l.quantite_disponible, l.prix_achat_ht, l.bloque, r.date_reception
+        FROM lot l JOIN reception r ON r.id = l.reception_id
+        WHERE p_produit_id IS NULL OR l.produit_id = p_produit_id
+    ),
+    -- Ancien lot A, encore en stock et vendable
+    delaisses AS (
+        SELECT a.*,
+               (SELECT max(t.traitee_le) FROM alerte t
+                WHERE t.type = 'lot_delaisse' AND t.lot_id = a.id AND t.statut = 'traitee') AS traitee_le
+        FROM lots a
+        WHERE a.quantite_disponible > 0 AND a.date_peremption > current_date AND NOT a.bloque
+    ),
+    -- Lot B plus récent (reçu après, ou périmant après) qui ne périme pas avant A ; compté depuis l'arrivée
+    -- des deux lots, ou depuis la dernière alerte traitée par le titulaire
+    paires AS (
+        SELECT a.id AS a_id, b.id AS b_id,
+               greatest(a.date_reception, b.date_reception, a.traitee_le) AS depuis
+        FROM delaisses a
+        JOIN lots b ON b.produit_id = a.produit_id AND b.id <> a.id
+        WHERE (b.date_reception > a.date_reception OR b.date_peremption > a.date_peremption)
+          AND b.date_peremption >= a.date_peremption
+    ),
+    ventes AS (
+        SELECT pa.a_id, v.utilisateur_id, sum(lv.quantite)::int AS boites, bool_or(lv.raison_lot = 'introuvable') AS introuvable
+        FROM paires pa
+        JOIN ligne_vente lv ON lv.lot_id = pa.b_id
+        JOIN vente v ON v.id = lv.vente_id AND v.statut = 'validee' AND v.date_vente >= pa.depuis
+        WHERE lv.raison_lot IS DISTINCT FROM 'peremption'
+          -- Aucune boîte de A vendue depuis
+          AND NOT EXISTS (SELECT 1 FROM ligne_vente la JOIN vente va ON va.id = la.vente_id
+                          WHERE la.lot_id = pa.a_id AND va.statut = 'validee' AND va.date_vente >= pa.depuis)
+        GROUP BY pa.a_id, v.utilisateur_id
+    ),
+    -- Par ancien lot : seuil d'un vendeur atteint, ou seuil collectif atteint par plusieurs vendeurs
+    par_lot AS (
+        SELECT ve.a_id, max(ve.boites) AS max_vendeur, sum(ve.boites) AS total, count(*) AS vendeurs, bool_or(ve.introuvable) AS introuvable
+        FROM ventes ve GROUP BY ve.a_id
+    ),
+    retenus AS (
+        SELECT pl.*, (pl.vendeurs >= 2 AND pl.total >= p.collectif) AS collectif
+        FROM par_lot pl, p
+        WHERE pl.max_vendeur >= p.seuil OR (pl.vendeurs >= 2 AND pl.total >= p.collectif)
+    )
+    SELECT 'lot_delaisse'::text,
+           CASE WHEN rt.collectif OR rt.introuvable OR a.date_peremption <= current_date + (SELECT jours_rouge FROM p) THEN 'urgent' ELSE 'attention' END,
+           a.produit_id,
+           a.id,
+           format('%s, lot %s : %s boîte(s) en stock, plus vendues depuis l''arrivée d''un lot plus récent. %s%s. Risque de péremption ou de perte des boîtes du lot %s : faites l''inventaire de ce produit.',
+                  pr.nom_commercial, a.numero_lot, a.quantite_disponible,
+                  CASE WHEN rt.collectif THEN format('%s vendeurs ont vendu ensemble %s boîte(s) d''un lot plus récent : ', rt.vendeurs, rt.total) ELSE '' END,
+                  (SELECT string_agg(format('%s a vendu %s boîte(s) d''un lot plus récent%s', u.nom_complet, ve.boites,
+                                            CASE WHEN ve.introuvable THEN ' (dont « boîte de l''ancien lot introuvable »)' ELSE '' END),
+                                     ' ; ' ORDER BY ve.boites DESC)
+                   FROM ventes ve JOIN utilisateur u ON u.id = ve.utilisateur_id WHERE ve.a_id = a.id),
+                  a.numero_lot),
+           round(a.quantite_disponible * a.prix_achat_ht, 2)
+    FROM retenus rt
+    JOIN delaisses a ON a.id = rt.a_id
+    JOIN produit pr ON pr.id = a.produit_id;
 $$;
 
 
@@ -1237,6 +1351,39 @@ $$;
 CREATE FUNCTION public.sans_accent(t text) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     RETURN translate(t, 'àâäáãçéèêëíìîïñóòôöõúùûüÿœÀÂÄÁÃÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜŸŒ'::text, 'aaaaaceeeeiiiinooooouuuuyoAAAAACEEEEIIIINOOOOOUUUUYO'::text);
+
+
+--
+-- Name: situation_lot(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.situation_lot(p_lot_id bigint) RETURNS TABLE(o_situation text, o_lot_delaisse_id bigint)
+    LANGUAGE sql STABLE
+    AS $$
+    WITH l AS (
+        SELECT lt.id, lt.produit_id, lt.date_peremption, lt.date_a_verifier, r.date_reception
+        FROM lot lt JOIN reception r ON r.id = lt.reception_id
+        WHERE lt.id = p_lot_id
+    ),
+    -- Autres lots vendables du produit, reçus avant ou périmant avant le lot servi
+    autres AS (
+        SELECT a.id, a.date_peremption, a.date_a_verifier
+        FROM l
+        JOIN lot a ON a.produit_id = l.produit_id AND a.id <> l.id
+        JOIN reception ra ON ra.id = a.reception_id
+        WHERE NOT a.bloque AND a.quantite_disponible > 0 AND a.date_peremption > current_date
+          AND (ra.date_reception < l.date_reception OR a.date_peremption < l.date_peremption)
+    )
+    SELECT CASE
+               WHEN NOT EXISTS (SELECT 1 FROM autres) THEN 'aucune'
+               -- Raison vérifiée sur les dates enregistrées : le lot servi périme avant tous les autres
+               WHEN NOT l.date_a_verifier
+                    AND NOT EXISTS (SELECT 1 FROM autres WHERE date_a_verifier OR date_peremption <= l.date_peremption) THEN 'peremption'
+               ELSE 'obligatoire'
+           END,
+           (SELECT id FROM autres ORDER BY date_peremption, id LIMIT 1)
+    FROM l;
+$$;
 
 
 --
@@ -1674,7 +1821,7 @@ CREATE TABLE public.alerte (
     traitee_le timestamp with time zone,
     CONSTRAINT alerte_niveau_check CHECK ((niveau = ANY (ARRAY['info'::text, 'attention'::text, 'urgent'::text]))),
     CONSTRAINT alerte_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'vue'::text, 'reportee'::text, 'traitee'::text, 'resolue'::text]))),
-    CONSTRAINT alerte_type_check CHECK ((type = ANY (ARRAY['peremption'::text, 'perime'::text, 'risque_ecoulement'::text, 'rupture'::text, 'stock_critique'::text, 'dormant'::text, 'surstock'::text])))
+    CONSTRAINT alerte_type_check CHECK ((type = ANY (ARRAY['peremption'::text, 'perime'::text, 'risque_ecoulement'::text, 'rupture'::text, 'stock_critique'::text, 'dormant'::text, 'surstock'::text, 'lot_delaisse'::text])))
 );
 
 
@@ -2094,7 +2241,7 @@ CREATE TABLE public.destinataire_notification (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT destinataire_notification_check CHECK (((NOT canal_email) OR (email IS NOT NULL))),
     CONSTRAINT destinataire_notification_check1 CHECK (((NOT canal_sms) OR (telephone IS NOT NULL))),
-    CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text]))
+    CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text]))
 );
 
 
@@ -2350,6 +2497,7 @@ CREATE TABLE public.inventaire (
     termine_le timestamp with time zone,
     termine_par bigint,
     campagne_id bigint,
+    produit_id bigint,
     CONSTRAINT inventaire_statut_check CHECK ((statut = ANY (ARRAY['en_cours'::text, 'termine'::text, 'annule'::text])))
 );
 
@@ -2568,6 +2716,8 @@ CREATE TABLE public.ligne_vente (
     montant_organisme numeric(12,2) DEFAULT 0 NOT NULL,
     montant_patient numeric(12,2) DEFAULT 0 NOT NULL,
     shp numeric(8,2) DEFAULT 0 NOT NULL,
+    raison_lot text,
+    CONSTRAINT ck_ligne_vente_raison_lot CHECK (((raison_lot IS NULL) OR (raison_lot = ANY (ARRAY['peremption'::text, 'introuvable'::text, 'abimee'::text, 'demande_client'::text])))),
     CONSTRAINT ck_ligne_vente_shp CHECK ((shp >= (0)::numeric)),
     CONSTRAINT ligne_vente_quantite_check CHECK ((quantite > 0)),
     CONSTRAINT ligne_vente_taux_remboursement_check CHECK (((taux_remboursement >= (0)::numeric) AND (taux_remboursement <= (100)::numeric)))
@@ -2673,7 +2823,7 @@ CREATE TABLE public.message_sortant (
     envoye_le timestamp with time zone,
     CONSTRAINT message_sortant_canal_check CHECK ((canal = ANY (ARRAY['email'::text, 'sms'::text]))),
     CONSTRAINT message_sortant_statut_check CHECK ((statut = ANY (ARRAY['en_attente'::text, 'envoye'::text, 'echec'::text]))),
-    CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'test'::text])))
+    CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'test'::text])))
 );
 
 
@@ -2984,6 +3134,10 @@ CREATE TABLE public.parametre_alerte (
     jours_cible_commande integer DEFAULT 30 NOT NULL,
     jours_dormant integer DEFAULT 90 NOT NULL,
     jours_surstock integer DEFAULT 180 NOT NULL,
+    seuil_lot_delaisse integer DEFAULT 5 NOT NULL,
+    seuil_lot_delaisse_collectif integer DEFAULT 10 NOT NULL,
+    CONSTRAINT ck_parametre_alerte_lot_delaisse CHECK ((seuil_lot_delaisse >= 1)),
+    CONSTRAINT ck_parametre_alerte_lot_delaisse_collectif CHECK ((seuil_lot_delaisse_collectif >= 1)),
     CONSTRAINT ck_parametre_alerte_positifs CHECK (((jours_orange > 0) AND (jours_rouge > 0) AND (horizon_risque_jours > 0) AND (fenetre_conso_jours > 0) AND (delai_fournisseur_jours >= 0) AND (jours_securite >= 0) AND (jours_cible_commande > 0) AND (jours_dormant > 0) AND (jours_surstock > 0))),
     CONSTRAINT ck_seuils_general CHECK ((jours_rouge < jours_orange)),
     CONSTRAINT parametre_alerte_id_check CHECK ((id = 1))
@@ -6825,6 +6979,14 @@ ALTER TABLE ONLY public.inventaire
 
 
 --
+-- Name: inventaire inventaire_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventaire
+    ADD CONSTRAINT inventaire_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
 -- Name: inventaire inventaire_termine_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7548,5 +7710,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict RdiQ380goVekaxbIV1a4QAsJNfCjg65Nwao2HP8B0cUkvHu8paCknO1d8rvBIbc
+\unrestrict KMCyIAUAa9tijtVNUWfV8VL58DwyNtVKuyum9L6aonuoNGpg0pOkRUbQoQD6Xid
 

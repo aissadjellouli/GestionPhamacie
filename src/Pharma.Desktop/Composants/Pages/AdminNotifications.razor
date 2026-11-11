@@ -175,7 +175,7 @@
         public HashSet<string> Types { get; set; } = [.. TypesAbonnables];
     }
 
-    private static readonly string[] TypesAbonnables = ["rapport_quotidien", "ecart_caisse", "lot_bloque", "sauvegarde", "ecart_inventaire"];
+    private static readonly string[] TypesAbonnables = ["rapport_quotidien", "ecart_caisse", "lot_bloque", "sauvegarde", "ecart_inventaire", "lot_delaisse"];
 
     private Reglages? r;
     private bool motDePasseEnregistre;
@@ -300,7 +300,7 @@
 
     private static string LibelleType(string t) => t switch
     {
-        "rapport_quotidien" => "Rapport du soir", "ecart_caisse" => "Écart de caisse", "lot_bloque" => "Lot bloqué", "sauvegarde" => "Sauvegarde", "ecart_inventaire" => "Écart d’inventaire", _ => t
+        "rapport_quotidien" => "Rapport du soir", "ecart_caisse" => "Écart de caisse", "lot_bloque" => "Lot bloqué", "sauvegarde" => "Sauvegarde", "ecart_inventaire" => "Écart d’inventaire", "lot_delaisse" => "Ancien lot délaissé", _ => t
     };
 
     private static string LibelleStatut(string s) => s switch { "envoye" => "Envoyé", "echec" => "Abandonné", _ => "En attente" };

@@ -26,6 +26,7 @@ internal sealed class InventairesEnMemoire : IInventaires
     public Task<IReadOnlyList<RayonInventaire>> RayonsAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<RayonInventaire>>([new("C", null, 3, 0, null), new("V", null, 0, 0, null)]);
     public Task<long> CreerAsync(string rayon, long u, CancellationToken ct = default) => Task.FromResult(5L);
+    public Task<long?> CreerProduitAsync(long produitId, long u, CancellationToken ct = default) => Task.FromResult<long?>(produitId == 0 ? null : 8L);
     public Task<InventaireDetail?> DetailAsync(long id, CancellationToken ct = default) => Task.FromResult<InventaireDetail?>(id == Detail.Id ? Detail : null);
     public Task EnregistrerComptageAsync(long ligneId, int compte, DateOnly? d, long u, CancellationToken ct = default) { Comptages.Add((ligneId, compte)); return Task.CompletedTask; }
     public Task<int?> AjouterBoiteAsync(long ligneId, int max, long u, CancellationToken ct = default)
