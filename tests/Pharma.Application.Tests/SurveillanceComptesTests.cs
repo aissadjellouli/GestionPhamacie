@@ -46,6 +46,16 @@ public class SurveillanceComptesTests
     }
 
     [Fact]
+    public async Task Telephone_du_patient_controle_des_la_creation()
+    {
+        var creer = new CreerPatient(new PatientsEnMemoire(), new JournalEspion());
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => creer.ExecuterAsync(new NouveauPatient("Benali", null, "12ab", null, null, 0m), 4));
+        Assert.Equal("telephone", ex.Champ);
+        await creer.ExecuterAsync(new NouveauPatient("Benali", null, " 0550  12 34 99 ", null, null, 0m), 4);   // accepté
+        await creer.ExecuterAsync(new NouveauPatient("Benali", null, null, null, null, 0m), 4);                  // facultatif
+    }
+
+    [Fact]
     public async Task Reglages_journalises_avec_ancienne_et_nouvelle_valeur_seulement_si_changes()
     {
         var (depot, journal) = (new SurveillanceEnMemoire(), new JournalEspion());

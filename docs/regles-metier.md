@@ -282,7 +282,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Recherche à partir de 2 caractères, 20 résultats au plus**. — `src/Pharma.Application/Patients/Patients.cs`
 
 ### Coordonnées (téléphone, e-mail, adresse)
-- **Téléphone : chiffres, espaces, +, -, ., parenthèses ; au moins 6 chiffres ; 30 caractères au plus**. — `src/Pharma.Application/Contacts/Contacts.cs`
+- **Téléphone : chiffres, espaces, +, -, ., parenthèses ; au moins 6 chiffres ; 30 caractères au plus**, contrôlé à la création d'un patient comme à sa modification. — `src/Pharma.Application/Contacts/Contacts.cs`, `src/Pharma.Application/Patients/Patients.cs`
 - **Téléphone repris de l'ancien logiciel accepté tel quel tant qu'on n'y touche pas**. — `src/Pharma.Application/Contacts/Contacts.cs`, `src/Pharma.Application/Patients/Patients.cs`
 - **E-mail de la forme nom@domaine.ext, sans espace, 120 caractères au plus**. — `src/Pharma.Application/Contacts/Contacts.cs`
 - **Adresse : 300 caractères au plus ; un patient n'a pas d'adresse** (grossiste et entreprise seulement). — `src/Pharma.Application/Contacts/Contacts.cs`

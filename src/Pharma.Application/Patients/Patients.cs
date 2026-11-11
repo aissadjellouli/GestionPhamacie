@@ -103,7 +103,7 @@ public sealed class CreerPatient(IPatients patients, Commun.IJournal? journal = 
         static string? Net(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         var id = await patients.CreerAsync(p with
         {
-            Nom = p.Nom.Trim(), Prenom = Net(p.Prenom), Telephone = Net(p.Telephone), NumAssure = Net(p.NumAssure),
+            Nom = p.Nom.Trim(), Prenom = Net(p.Prenom), Telephone = Contacts.RegleContact.Telephone(p.Telephone), NumAssure = Net(p.NumAssure),
             Email = Contacts.RegleContact.Email(p.Email)
         }, utilisateurId, ct);
         if (journal is not null && utilisateurId is { } u)
