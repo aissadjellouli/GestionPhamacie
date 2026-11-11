@@ -194,15 +194,19 @@ internal static class AchatsEndpoints
                     req.ScansMobile, user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.AchatsReceptionner);
 
-        achats.MapGet("/receptions/comptages", async (ListerComptagesReception lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(c => new ComptageResumeDto(c.Id, c.FournisseurId, c.Fournisseur, c.NumeroBl, c.Statut,
-                    c.Compteur, c.CompteLe, c.Factureur, c.FactureLe, c.Lignes.Count, c.Ecarts.Select(VersDto).ToList(),
-                    c.BoitesManquantes, c.BoitesEnTrop, c.ValeurManquante)).ToList()))
+        // Quantités facturées et comptées : seulement pour qui décide des écarts (le recompteur ne doit pas les voir)
+        achats.MapGet("/receptions/comptages", async (ListerComptagesReception lister, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var l = await lister.ExecuterAsync(user.UtilisateurId(), ct);
+                return Results.Ok(l.Comptages.Select(c => new ComptageResumeDto(c.Id, c.FournisseurId, c.Fournisseur, c.NumeroBl, c.Statut,
+                    c.Compteur, c.CompteLe, c.Factureur, c.FactureLe, c.Lignes.Count, c.Ecarts.Select(e => VersDto(e, l.VoirQuantites)).ToList(),
+                    l.VoirQuantites ? c.BoitesManquantes : null, l.VoirQuantites ? c.BoitesEnTrop : null, l.VoirQuantites ? c.ValeurManquante : null)).ToList());
+            })
            .ExigerPermission(Permissions.AchatsReceptionner, Permissions.AchatsValiderEcart);
 
-        achats.MapGet("/receptions/comptages/{id:long}", async (long id, ObtenirComptageReception obtenir, CancellationToken ct) =>
+        achats.MapGet("/receptions/comptages/{id:long}", async (long id, ObtenirComptageReception obtenir, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                var c = await obtenir.ExecuterAsync(id, ct);
+                var c = await obtenir.ExecuterAsync(id, user.UtilisateurId(), ct);
                 return Results.Ok(new ComptageAFacturerDto(c.Id, c.FournisseurId, c.NumeroBl, c.Compteur,
                     c.Lignes.Select(l => new LotAFacturerDto(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Gtin)).ToList()));
             })
@@ -212,8 +216,17 @@ internal static class AchatsEndpoints
                 CancellationToken ct) =>
             {
                 var r = await facturer.ExecuterAsync(id, VersSaisie(req), user.UtilisateurId(), ct);
-                return Results.Ok(new ResultatFacturationDto(r.Reception is { } rec ? VersDto(rec) : null, r.Ecarts.Select(VersDto).ToList()));
+                return Results.Ok(new ResultatFacturationDto(r.Reception is { } rec ? VersDto(rec) : null,
+                    r.Ecarts.Select(e => VersDto(e, r.VoirQuantites)).ToList()));
             })
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        // Livraison à recompter : nouveau comptage à l'aveugle, comparé à la facture gardée
+        achats.MapPost("/receptions/comptages/{id:long}/recompter", async (long id, RecompterLivraisonRequete req, RecompterLivraison recompter,
+                ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new NombreDto(await recompter.ExecuterAsync(id,
+                    req.Lignes.Select(l => new LigneComptee(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.Gtin, l.NumerosSerie)).ToList(),
+                    user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.AchatsReceptionner);
 
         achats.MapPost("/receptions/comptages/{id:long}/annuler", async (long id, AnnulerComptage annuler, ClaimsPrincipal user, CancellationToken ct) =>
@@ -267,5 +280,6 @@ internal static class AchatsEndpoints
     private static ReceptionEnregistreeDto VersDto(ReceptionEnregistree r) => new(r.ReceptionId, r.MontantTtc,
         r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList());
 
-    private static EcartComptageDto VersDto(EcartComptage e) => new(e.ProduitId, e.Nom, e.NumeroLot, e.Facture, e.Compte);
+    private static EcartComptageDto VersDto(EcartComptage e, bool quantites) =>
+        new(e.ProduitId, e.Nom, e.NumeroLot, quantites ? e.Facture : null, quantites ? e.Compte : null);
 }

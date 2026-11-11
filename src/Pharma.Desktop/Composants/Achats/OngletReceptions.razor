@@ -13,7 +13,7 @@
 }
 
 @* Réception à l'aveugle : livraisons comptées dont la facture reste à saisir, et écarts à valider *@
-@if (aveugle && aFacturer is null && resultat is null && comptages.Count > 0)
+@if (aFacturer is null && aRecompter is null && resultat is null && comptages.Count > 0)
 {
     <section class="panneau" aria-labelledby="t-comptages">
         <div>
@@ -34,11 +34,23 @@
                                 @if (c.Statut == "ecart")
                                 {
                                     <span class="pastille @(c.BoitesManquantes > 0 ? "urgent" : "attention")">Écart à valider</span>
-                                    <br /><span class="detail">Facture saisie par @c.Factureur : @c.BoitesManquantes boîte(s) manquante(s) (@Libelles.Dinars(c.ValeurManquante, 2)), @c.BoitesEnTrop en trop.</span>
-                                    @foreach (var e in c.Ecarts)
+                                    @if (c.BoitesManquantes is { } manq)
                                     {
-                                        <br /><span class="detail">@e.Nom, lot @e.NumeroLot : facturé @e.Facture, compté @e.Compte</span>
+                                        <br /><span class="detail">Facture saisie par @c.Factureur : @manq boîte(s) manquante(s) (@Libelles.Dinars(c.ValeurManquante ?? 0, 2)), @c.BoitesEnTrop en trop.</span>
+                                        @foreach (var e in c.Ecarts)
+                                        {
+                                            <br /><span class="detail">@e.Nom, lot @e.NumeroLot : facturé @e.Facture, compté @e.Compte</span>
+                                        }
                                     }
+                                    else
+                                    {
+                                        <br /><span class="detail">Facture saisie par @c.Factureur : @c.Ecarts.Count lot(s) en écart, en attente de décision.</span>
+                                    }
+                                }
+                                else if (c.Statut == "a_recompter")
+                                {
+                                    <span class="pastille attention">À recompter</span>
+                                    <br /><span class="detail">Comptez de nouveau les boîtes, sans regarder le BL : le logiciel compare avec la facture déjà saisie.</span>
                                 }
                                 else
                                 {
@@ -51,11 +63,16 @@
                                     <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => SaisirFactureAsync(c.Id)">Saisir la facture</button>
                                     <button type="button" class="btn" disabled="@enCours" @onclick="() => AnnulerComptageAsync(c)">Annuler</button>
                                 }
+                                else if (c.Statut == "a_recompter" && Session.A("achats.receptionner"))
+                                {
+                                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => RecompterAsync(c.Id)">Recompter</button>
+                                }
                                 else if (c.Statut == "ecart" && Session.A("achats.valider_ecart"))
                                 {
                                     <button type="button" class="btn btn-principal" disabled="@enCours" title="Le stock prend les boîtes comptées, la dette suit la facture ; les boîtes manquantes sont à réclamer au grossiste"
                                             @onclick="() => DeciderEcartAsync(c, true)">Valider l’écart</button>
                                     <button type="button" class="btn" disabled="@enCours" @onclick="() => DeciderEcartAsync(c, false)">Faire recompter</button>
+                                    <button type="button" class="btn" disabled="@enCours" title="Mauvais BL ou mauvais grossiste : rien n'entre en stock" @onclick="() => AnnulerComptageAsync(c)">Annuler</button>
                                 }
                                 else if (c.Statut == "ecart")
                                 {
@@ -79,7 +96,7 @@
             (ou d’une personne habilitée), qui est prévenu.
             @foreach (var e in ecartFacture.Ecarts)
             {
-                <br /><span>@e.Nom, lot @e.NumeroLot : facturé @e.Facture, compté @e.Compte.</span>
+                <br /><span>@e.Nom, lot @e.NumeroLot@(e.Facture is { } fa ? $" : facturé {fa}, compté {e.Compte}" : "").</span>
             }
         </div>
         <div><button type="button" class="btn" @onclick="Nouvelle">Nouvelle réception</button></div>
@@ -113,7 +130,7 @@ else if (resultat is not null)
 else
 {
     <section class="panneau" aria-labelledby="t-recep">
-        <h2 id="t-recep">@(Comptage ? "Compter une livraison" : aFacturer is { } af ? $"Saisir la facture du BL {af.NumeroBl}" : "Réceptionner une livraison")</h2>
+        <h2 id="t-recep">@(aRecompter is { } ar ? $"Recompter le BL {ar.NumeroBl}" : Comptage ? "Compter une livraison" : aFacturer is { } af ? $"Saisir la facture du BL {af.NumeroBl}" : "Réceptionner une livraison")</h2>
         @if (Comptage)
         {
             <p class="detail" style="margin: 0">Réception à l’aveugle : comptez les boîtes du carton (scan ou saisie) sans regarder le bon de livraison. La facture se saisit ensuite, de préférence par une autre personne, et le logiciel compare.</p>
@@ -148,7 +165,7 @@ else
             }
             <div class="champ" style="flex: 1 1 160px">
                 <label for="r-bl" class="requis">N° du bon de livraison</label>
-                <input id="r-bl" type="text" @ref="champBl" @bind="numeroBl" @bind:event="oninput" @bind:after="DocumentSaisiAsync" class="@(BlInvalide ? "champ-invalide" : null)"
+                <input id="r-bl" data-champ="numero_bl" type="text" @ref="champBl" @bind="numeroBl" @bind:event="oninput" @bind:after="DocumentSaisiAsync" class="@(BlInvalide ? "champ-invalide" : null)"
                        readonly="@(aFacturer is not null)" aria-invalid="@(BlInvalide ? "true" : "false")" aria-describedby="@(BlInvalide ? "r-bl-erreur" : null)" />
                 @if (BlInvalide) { <span id="r-bl-erreur" class="message-champ">Indiquez le numéro du bon de livraison.</span> }
             </div>
@@ -482,14 +499,17 @@ else
     // ---- Réception à l'aveugle : comptage (Comptage), puis facture saisie sur ce comptage (aFacturer) ----
     private bool aveugle;
     private ComptageAFacturerDto? aFacturer;
-    private bool Comptage => aveugle && aFacturer is null;
+    /// <summary>Livraison à recompter : comptage à l'aveugle des lots de la livraison, comparé à la facture déjà saisie.</summary>
+    private ComptageAFacturerDto? aRecompter;
+    private bool Comptage => (aveugle || aRecompter is not null) && aFacturer is null;
     private List<ComptageResumeDto> comptages = [];
     private ResultatFacturationDto? ecartFacture;
     private string? infoComptage;
 
     private async Task ChargerComptagesAsync()
     {
-        if (!aveugle || !(Session.A("achats.receptionner") || Session.A("achats.valider_ecart"))) { comptages = []; return; }
+        // Toujours chargés, même mode aveugle désactivé : les comptages en cours restent à traiter
+        if (!(Session.A("achats.receptionner") || Session.A("achats.valider_ecart"))) { comptages = []; return; }
         (comptages, _) = await Api.ComptagesReceptionAsync();
     }
 
@@ -509,9 +529,18 @@ else
         enCours = true;
         try
         {
-            var (id, e) = await Api.CompterLivraisonAsync(new CompterLivraisonRequete(fournisseurId, numeroBl,
-                aEnvoyer.Select(l => new LigneCompteeDto(l.ProduitId, l.Nom, l.NumeroLot, l.Peremption!.Value, l.Quantite, l.Gtin,
-                    l.Series.Count > 0 ? l.Series : null)).ToList(),
+            var lignesComptees = aEnvoyer.Select(l => new LigneCompteeDto(l.ProduitId, l.Nom, l.NumeroLot, l.Peremption!.Value, l.Quantite, l.Gtin,
+                l.Series.Count > 0 ? l.Series : null)).ToList();
+            if (aRecompter is { } ar)
+            {
+                var (n, er) = await Api.RecompterLivraisonAsync(ar.Id, lignesComptees);
+                if (er is not null) { erreur = er; return; }
+                lignes.Clear();
+                await Nouvelle();
+                infoComptage = $"BL {ar.NumeroBl} recompté : " + (n!.Nombre == 0 ? "conforme à la facture, " : $"{n.Nombre} lot(s) encore en écart, ") + "en attente de la décision du pharmacien ou d'une personne habilitée.";
+                return;
+            }
+            var (id, e) = await Api.CompterLivraisonAsync(new CompterLivraisonRequete(fournisseurId, numeroBl, lignesComptees,
                 lignes.SelectMany(l => l.ScansMobile).ToList()));
             if (e is not null) { erreur = e; return; }
             var bl = numeroBl;
@@ -536,6 +565,19 @@ else
         await DocumentSaisiAsync();
     }
 
+    /// <summary>Recomptage : lots de la livraison repris (produit, lot, péremption) sans aucune quantité, à compter de nouveau.</summary>
+    private async Task RecompterAsync(long id)
+    {
+        (erreur, infoComptage) = (null, null);
+        var (c, e) = await Api.ComptageAFacturerAsync(id);
+        if (e is not null) { erreur = e; return; }
+        aRecompter = c;
+        lignes.Clear();
+        (fournisseurId, numeroBl, commandeId) = (c!.FournisseurId, c.NumeroBl, 0);
+        foreach (var l in c.Lots)
+            lignes.Add(new Ligne { ProduitId = l.ProduitId, Nom = l.Nom, NumeroLot = l.NumeroLot, Peremption = l.DatePeremption, Gtin = l.Gtin, Quantite = 0 });
+    }
+
     private async Task AnnulerComptageAsync(ComptageResumeDto c)
     {
         (erreur, infoComptage) = (await Api.AnnulerComptageAsync(c.Id), null);
@@ -555,11 +597,11 @@ else
             {
                 resultat = r;
                 infoComptage = $"Écart du BL {c.NumeroBl} validé : stock selon le comptage, dette selon la facture"
-                               + (c.BoitesManquantes > 0 ? $" ; {c.BoitesManquantes} boîte(s) manquante(s) sortie(s) du stock, à réclamer au grossiste ({Libelles.Dinars(c.ValeurManquante, 2)})." : ".");
+                               + (c.BoitesManquantes > 0 ? $" ; {c.BoitesManquantes} boîte(s) manquante(s) sortie(s) du stock, à réclamer au grossiste ({Libelles.Dinars(c.ValeurManquante ?? 0, 2)})." : ".");
                 await ChargerReceptionsAsync(1);
             }
             else
-                infoComptage = $"BL {c.NumeroBl} : livraison à recompter (nouveau comptage), puis facture à saisir à nouveau.";
+                infoComptage = $"BL {c.NumeroBl} : livraison à recompter (« Recompter » dans Livraisons comptées) ; la facture saisie est gardée et sera comparée au nouveau comptage.";
             await ChargerComptagesAsync();
         }
         finally { enCours = false; }
@@ -889,7 +931,7 @@ else
         lignes.Clear();
         (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
         (dejaRecues, timbre) = ([], 0);
-        (aFacturer, ecartFacture) = (null, null);
+        (aFacturer, ecartFacture, aRecompter) = (null, null, null);
         await ChargerComptagesAsync();
         accordBlocage.Effacer();
         controle = false;

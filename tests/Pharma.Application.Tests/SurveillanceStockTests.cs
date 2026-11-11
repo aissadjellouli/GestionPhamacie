@@ -24,7 +24,7 @@ public class SurveillanceStockTests
     public async Task Echantillon_nominatif_jamais_pour_un_psychotrope_et_surveille()
     {
         var (sorties, surveillance) = (new SortiesEnMemoire(), new SurveillanceEnMemoire());
-        var cas = new DeclarerSortieStock(sorties, new DroitsFactices("stock.donner"), new JournalEspion(), new Surveiller(surveillance, Horloge));
+        var cas = new DeclarerSortieStock(sorties, new DroitsFactices("stock.donner"), new JournalEspion(), new Surveiller(surveillance));
 
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(9, 1, "echantillon", null, 3));
         Assert.Equal("commentaire_sortie", ex.Champ);
@@ -55,7 +55,7 @@ public class SurveillanceStockTests
     public async Task Peremption_declaree_sans_calcul_de_surveillance()
     {
         var (sorties, surveillance) = (new SortiesEnMemoire(), new SurveillanceEnMemoire());
-        await new DeclarerSortieStock(sorties, new DroitsFactices("stock.declarer_perime"), new JournalEspion(), new Surveiller(surveillance, Horloge))
+        await new DeclarerSortieStock(sorties, new DroitsFactices("stock.declarer_perime"), new JournalEspion(), new Surveiller(surveillance))
             .ExecuterAsync(9, 1, "perime", null, 3);
         Assert.Empty(surveillance.Calculs);
     }

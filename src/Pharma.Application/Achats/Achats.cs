@@ -76,13 +76,15 @@ public sealed record ReceptionResume(
 /// <summary>Lot reçu : nouveau ou complété (même lot, même grossiste), avec les étiquettes internes créées pour ses boîtes sans Data Matrix.</summary>
 public sealed record LotRecu(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int Etiquettes, bool LotExistant = false);
 
-public sealed record ReceptionEnregistree(long ReceptionId, decimal MontantTtc, IReadOnlyList<LotRecu> Lots);
+/// <summary>AReclamer : valeur des boîtes facturées absentes du carton (réception à l'aveugle, écart validé).</summary>
+public sealed record ReceptionEnregistree(long ReceptionId, decimal MontantTtc, IReadOnlyList<LotRecu> Lots, decimal AReclamer = 0);
 
 /// <summary>MontantTtc : net à payer au grossiste (dette) ; Totaux : détail de la facture (044).</summary>
 public sealed record NouvelleReception(
     long FournisseurId, long? CommandeId, string NumeroBl, string? NumeroFacture,
     IReadOnlyList<LigneReceptionSaisie> Lignes, IReadOnlyDictionary<long, decimal> TauxTva,
-    decimal MontantTtc, long UtilisateurId, TotauxFactureAchat? Totaux = null);
+    decimal MontantTtc, long UtilisateurId, TotauxFactureAchat? Totaux = null,
+    long? ComptageId = null, IReadOnlyList<LigneManquante>? Manquants = null);
 
 /// <summary>Ce qu'il faut savoir d'un produit pour lire la facture du grossiste : liste (SHP), prix public du catalogue, TVA.</summary>
 public sealed record InfoAchatProduit(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite,
@@ -328,10 +330,13 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
     }
 
     /// <summary>Livraison comptée puis facturée (FacturerComptage, DeciderEcartReception) : lignes déjà rapprochées du comptage.</summary>
-    public Task<ReceptionEnregistree> ExecuterDepuisComptageAsync(SaisieReception s, long utilisateurId, CancellationToken ct = default) =>
-        EntrerAsync(s, utilisateurId, ct);
+    /// <param name="manquants">Boîtes facturées absentes du carton : sorties du stock dans la même transaction que l'entrée.</param>
+    public Task<ReceptionEnregistree> ExecuterDepuisComptageAsync(SaisieReception s, long utilisateurId, long comptageId,
+        IReadOnlyList<LigneManquante>? manquants = null, CancellationToken ct = default) =>
+        EntrerAsync(s, utilisateurId, ct, comptageId, manquants);
 
-    private async Task<ReceptionEnregistree> EntrerAsync(SaisieReception s, long utilisateurId, CancellationToken ct)
+    private async Task<ReceptionEnregistree> EntrerAsync(SaisieReception s, long utilisateurId, CancellationToken ct,
+        long? comptageId = null, IReadOnlyList<LigneManquante>? manquants = null)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "réceptionner une livraison", ct);
         if (await achats.FournisseurAsync(s.FournisseurId, ct) is not { } grossiste)
@@ -382,7 +387,7 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
 
         var r = await achats.ReceptionnerAsync(new NouvelleReception(
             s.FournisseurId, s.CommandeId, s.NumeroBl!.Trim(), string.IsNullOrWhiteSpace(s.NumeroFacture) ? null : s.NumeroFacture.Trim(),
-            lignes, tva, ttc, utilisateurId, totaux), ct);
+            lignes, tva, ttc, utilisateurId, totaux, comptageId, manquants), ct);
         await journal.EcrireAsync(utilisateurId, "reception", "reception", r.ReceptionId,
             new Dictionary<string, object?>
             {

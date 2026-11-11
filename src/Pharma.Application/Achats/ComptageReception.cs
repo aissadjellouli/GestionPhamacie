@@ -30,14 +30,15 @@ public interface IComptagesReception
     Task<long> CreerAsync(long fournisseurId, string numeroBl, IReadOnlyList<LigneComptee> lignes, IReadOnlyList<long> scansMobile,
         long utilisateurId, CancellationToken ct = default);
     Task<ComptageReception?> LireAsync(long id, CancellationToken ct = default);
-    /// <summary>Comptages à facturer et réceptions en écart (les plus anciens d'abord).</summary>
+    /// <summary>Comptages à facturer, réceptions en écart et livraisons à recompter (les plus anciens d'abord).</summary>
     Task<IReadOnlyList<ComptageReception>> EnCoursAsync(CancellationToken ct = default);
+    /// <summary>Comptage en cours (à facturer, en écart ou à recompter) du même grossiste et du même BL (sans casse ni espaces).</summary>
+    Task<bool> ComptageOuvertAsync(long fournisseurId, string numeroBl, CancellationToken ct = default);
     /// <summary>Passe d'un statut à l'autre seulement si le comptage est encore au statut attendu (deux postes à la fois).</summary>
     Task<bool> ChangerStatutAsync(long id, string attendu, string nouveau, long? facturePar, long? decidePar, CancellationToken ct = default);
     Task<bool> EnregistrerEcartAsync(long id, string saisie, FusionComptage fusion, decimal valeurManquante, long facturePar, CancellationToken ct = default);
-    Task LierReceptionAsync(long id, long receptionId, CancellationToken ct = default);
-    /// <summary>Boîtes facturées absentes du carton : sorties du stock (boîte « manquante »). Valeur au prix d'achat.</summary>
-    Task<decimal> SortirManquantsAsync(long receptionId, string numeroBl, IReadOnlyList<(long LotId, int Boites)> manquants, long utilisateurId,
+    /// <summary>Recomptage : nouvelles lignes, écart recalculé avec la facture gardée ; seulement depuis « à recompter ».</summary>
+    Task<bool> RecompterAsync(long id, IReadOnlyList<LigneComptee> lignes, FusionComptage fusion, decimal valeurManquante, long utilisateurId,
         CancellationToken ct = default);
 }
 
@@ -45,6 +46,16 @@ public interface IComptagesReception
 public sealed class ModeReception(Surveillance.ISurveillance surveillance)
 {
     public async Task<bool> AveugleAsync(CancellationToken ct = default) => (await surveillance.ParametresAsync(ct)).ReceptionAveugle;
+}
+
+internal static class LignesComptees
+{
+    public static List<LigneComptee> Normaliser(IReadOnlyList<LigneComptee> lignes) => lignes.Select(l => l with
+    {
+        NumeroLot = Pharma.Domain.Stock.RegleLot.Normaliser(l.NumeroLot),
+        Gtin = string.IsNullOrWhiteSpace(l.Gtin) ? null : l.Gtin.Trim(),
+        NumerosSerie = l.NumerosSerie?.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()).ToList()
+    }).ToList();
 }
 
 /// <summary>Première étape : les boîtes du carton, comptées (scan ou saisie) sans voir le bon de livraison.</summary>
@@ -57,14 +68,12 @@ public sealed class CompterLivraison(IComptagesReception comptages, IAchats acha
         if (await achats.FournisseurAsync(fournisseurId, ct) is not { } grossiste)
             throw new RegleMetierException("Grossiste introuvable.", "grossiste");
         if (!grossiste.Actif) throw new RegleMetierException($"{grossiste.RaisonSociale} est désactivé : réactivez-le dans l’onglet Grossistes.", "grossiste");
-        var normalisees = lignes.Select(l => l with
-        {
-            NumeroLot = Pharma.Domain.Stock.RegleLot.Normaliser(l.NumeroLot),
-            Gtin = string.IsNullOrWhiteSpace(l.Gtin) ? null : l.Gtin.Trim(),
-            NumerosSerie = l.NumerosSerie?.Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n.Trim()).ToList()
-        }).ToList();
+        var normalisees = LignesComptees.Normaliser(lignes);
         RegleComptageReception.VerifierComptage(numeroBl, normalisees, horloge.Aujourdhui);
-        var id = await comptages.CreerAsync(fournisseurId, numeroBl!.Trim(), normalisees, scansMobile ?? [], utilisateurId, ct);
+        // Un même BL n'est compté qu'une fois à la fois : sinon la livraison entrerait deux fois en stock
+        if (await comptages.ComptageOuvertAsync(fournisseurId, numeroBl!.Trim(), ct))
+            throw new RegleMetierException($"Le BL {numeroBl.Trim()} de {grossiste.RaisonSociale} est déjà compté et en cours (voir « Livraisons comptées »).", "numero_bl");
+        var id = await comptages.CreerAsync(fournisseurId, numeroBl.Trim(), normalisees, scansMobile ?? [], utilisateurId, ct);
         await journal.EcrireAsync(utilisateurId, "comptage_reception", "comptage_reception", id,
             new Dictionary<string, object?> { ["grossiste"] = grossiste.RaisonSociale, ["bl"] = numeroBl.Trim(), ["lots"] = normalisees.Count,
                 ["boites"] = normalisees.Sum(l => l.Quantite) }, Permissions.AchatsReceptionner, ct);
@@ -72,33 +81,82 @@ public sealed class CompterLivraison(IComptagesReception comptages, IAchats acha
     }
 }
 
-public sealed class ListerComptagesReception(IComptagesReception comptages)
+/// <summary>Livraisons en cours ; VoirQuantites : les quantités facturées et comptées ne sont montrées qu'à qui décide des écarts.</summary>
+public sealed record ComptagesEnCours(IReadOnlyList<ComptageReception> Comptages, bool VoirQuantites);
+
+public sealed class ListerComptagesReception(IComptagesReception comptages, IPermissionService droits)
 {
-    public Task<IReadOnlyList<ComptageReception>> ExecuterAsync(CancellationToken ct = default) => comptages.EnCoursAsync(ct);
+    public async Task<ComptagesEnCours> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        var voir = await droits.APermissionAsync(utilisateurId, Permissions.AchatsValiderEcart, ct);
+        if (!voir) await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "consulter les livraisons comptées", ct);
+        return new ComptagesEnCours(await comptages.EnCoursAsync(ct), voir);
+    }
 }
 
-public sealed class ObtenirComptageReception(IComptagesReception comptages)
+public sealed class ObtenirComptageReception(IComptagesReception comptages, IPermissionService droits)
 {
-    public async Task<ComptageReception> ExecuterAsync(long id, CancellationToken ct = default) =>
-        await comptages.LireAsync(id, ct) ?? throw new RegleMetierException("Comptage introuvable.");
+    public async Task<ComptageReception> ExecuterAsync(long id, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "saisir la facture d’une livraison", ct);
+        return await comptages.LireAsync(id, ct) ?? throw new RegleMetierException("Comptage introuvable.");
+    }
 }
 
-/// <summary>Comptage erroné (mauvais BL, mauvais grossiste) avant la saisie de la facture.</summary>
+/// <summary>
+/// Comptage erroné (mauvais BL, mauvais grossiste) : avant la facture, par un réceptionnaire ; une fois la facture saisie (écart,
+/// recomptage), seulement par qui décide des écarts.
+/// </summary>
 public sealed class AnnulerComptage(IComptagesReception comptages, IPermissionService droits, IJournal journal)
 {
     public async Task ExecuterAsync(long id, long utilisateurId, CancellationToken ct = default)
     {
-        await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "annuler un comptage", ct);
         var c = await comptages.LireAsync(id, ct) ?? throw new RegleMetierException("Comptage introuvable.");
-        if (!await comptages.ChangerStatutAsync(id, StatutsComptage.Compte, StatutsComptage.Annule, null, utilisateurId, ct))
-            throw new RegleMetierException("Ce comptage a déjà été traité (facture saisie ou annulé).");
+        var permission = c.Statut == StatutsComptage.Compte ? Permissions.AchatsReceptionner : Permissions.AchatsValiderEcart;
+        await droits.ExigerAsync(utilisateurId, permission, "annuler un comptage", ct);
+        if (c.Statut is not (StatutsComptage.Compte or StatutsComptage.Ecart or StatutsComptage.ARecompter)
+            || !await comptages.ChangerStatutAsync(id, c.Statut, StatutsComptage.Annule, null, utilisateurId, ct))
+            throw new RegleMetierException("Ce comptage a déjà été traité (réceptionné ou annulé).");
         await journal.EcrireAsync(utilisateurId, "comptage_annule", "comptage_reception", id,
-            new Dictionary<string, object?> { ["bl"] = c.NumeroBl, ["grossiste"] = c.Fournisseur }, Permissions.AchatsReceptionner, ct);
+            new Dictionary<string, object?> { ["bl"] = c.NumeroBl, ["grossiste"] = c.Fournisseur, ["statut"] = c.Statut }, permission, ct);
     }
 }
 
-/// <summary>Facture saisie : réception (sans écart) ou réception bloquée jusqu'à la validation de l'écart.</summary>
-public sealed record ResultatFacturation(ReceptionEnregistree? Reception, IReadOnlyList<EcartComptage> Ecarts);
+/// <summary>
+/// Livraison à recompter (décidé sur un écart) : nouveau comptage à l'aveugle (ni facture ni ancien compte montrés), comparé à la
+/// facture déjà saisie ; l'écart recalculé (ou nul) attend de nouveau la décision du titulaire ou d'un employé habilité.
+/// </summary>
+public sealed class RecompterLivraison(IComptagesReception comptages, IPermissionService droits, IHorloge horloge, IJournal journal,
+    Surveillance.Surveiller? surveillance = null)
+{
+    public async Task<int> ExecuterAsync(long id, IReadOnlyList<LigneComptee> lignes, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "recompter une livraison", ct);
+        var c = await comptages.LireAsync(id, ct) ?? throw new RegleMetierException("Comptage introuvable.");
+        if (c.Statut != StatutsComptage.ARecompter || c.Saisie is null) throw new RegleMetierException("Cette livraison n’est pas à recompter.");
+        var normalisees = LignesComptees.Normaliser(lignes);
+        RegleComptageReception.VerifierComptage(c.NumeroBl, normalisees, horloge.Aujourdhui);
+        var fusion = RegleComptageReception.Fusionner(SaisieJson.Lire(c.Saisie).Lignes, normalisees);
+        var valeur = SaisieJson.ValeurManquante(fusion);
+        if (!await comptages.RecompterAsync(id, normalisees, fusion, valeur, utilisateurId, ct))
+            throw new RegleMetierException("Cette livraison vient d’être recomptée sur un autre poste.");
+        await journal.EcrireAsync(utilisateurId, "comptage_recompte", "comptage_reception", id,
+            new Dictionary<string, object?>
+            {
+                ["bl"] = c.NumeroBl, ["grossiste"] = c.Fournisseur, ["compte_avant_par"] = c.Compteur, ["manquantes"] = fusion.BoitesManquantes,
+                ["en_trop"] = fusion.BoitesEnTrop
+            }, Permissions.AchatsReceptionner, ct);
+        if (surveillance is not null) await surveillance.ExecuterAsync(ct);
+        // Le recompteur ne voit pas le détail : seulement le nombre de lots encore en écart
+        return fusion.Ecarts.Count;
+    }
+}
+
+/// <summary>
+/// Facture saisie : réception (sans écart) ou réception bloquée jusqu'à la validation de l'écart. VoirQuantites : le détail facturé /
+/// compté n'est montré qu'à qui décide des écarts (celui qui saisit la facture ne voit pas le compté).
+/// </summary>
+public sealed record ResultatFacturation(ReceptionEnregistree? Reception, IReadOnlyList<EcartComptage> Ecarts, bool VoirQuantites = false);
 
 internal static class SaisieJson
 {
@@ -135,16 +193,16 @@ public sealed class FacturerComptage(IComptagesReception comptages, Receptionner
             if (!await comptages.ChangerStatutAsync(comptageId, StatutsComptage.Compte, StatutsComptage.Receptionne, utilisateurId, null, ct))
                 throw new RegleMetierException("La facture de cette livraison vient d’être saisie sur un autre poste.");
             ReceptionEnregistree r;
-            try { r = await receptionner.ExecuterDepuisComptageAsync(saisie with { Lignes = fusion.Lignes }, utilisateurId, ct); }
+            // Comptage rattaché à la réception dans la même transaction
+            try { r = await receptionner.ExecuterDepuisComptageAsync(saisie with { Lignes = fusion.Lignes }, utilisateurId, comptageId, null, ct); }
             catch
             {
                 await comptages.ChangerStatutAsync(comptageId, StatutsComptage.Receptionne, StatutsComptage.Compte, null, null, CancellationToken.None);
                 throw;
             }
-            await comptages.LierReceptionAsync(comptageId, r.ReceptionId, ct);
             await journal.EcrireAsync(utilisateurId, "comptage_facture", "comptage_reception", comptageId,
                 new Dictionary<string, object?> { ["bl"] = c.NumeroBl, ["reception"] = r.ReceptionId, ["compte_par"] = c.Compteur },
-                Permissions.AchatsReceptionner, ct);
+                Permissions.AchatsReceptionner, CancellationToken.None);   // livraison déjà en stock : le journal va jusqu'au bout
             if (surveillance is not null) await surveillance.ExecuterAsync(ct);   // comptage et facture par la même personne
             return new ResultatFacturation(r, []);
         }
@@ -163,7 +221,7 @@ public sealed class FacturerComptage(IComptagesReception comptages, Receptionner
                 ["lignes"] = fusion.Ecarts.Select(e => $"{e.Nom} lot {e.NumeroLot} : facturé {e.Facture}, compté {e.Compte}").ToList()
             }, Permissions.AchatsReceptionner, ct);
         if (surveillance is not null) await surveillance.ExecuterAsync(ct);   // anomalie et alerte au titulaire
-        return new ResultatFacturation(null, fusion.Ecarts);
+        return new ResultatFacturation(null, fusion.Ecarts, await droits.APermissionAsync(utilisateurId, Permissions.AchatsValiderEcart, ct));
     }
 }
 
@@ -181,6 +239,9 @@ public sealed class DeciderEcartReception(IComptagesReception comptages, Recepti
         var c = await comptages.LireAsync(comptageId, ct) ?? throw new RegleMetierException("Comptage introuvable.");
         if (c.Statut != StatutsComptage.Ecart || c.Saisie is null) throw new RegleMetierException("Cet écart a déjà été traité.");
         var titulaire = await droits.EstTitulaireAsync(utilisateurId, ct);
+        // Personne ne décide de son propre écart (sauf le titulaire) : sinon un vol se maquille en boîtes « à réclamer au grossiste »
+        if (!titulaire && (utilisateurId == c.ComptePar || utilisateurId == c.FacturePar))
+            throw new RegleMetierException("Vous avez compté ou saisi la facture de cette livraison : l'écart doit être décidé par le titulaire ou un autre employé habilité.");
 
         if (!valider)
         {
@@ -200,29 +261,27 @@ public sealed class DeciderEcartReception(IComptagesReception comptages, Recepti
         ReceptionEnregistree r;
         try
         {
-            // Celui qui valide réceptionne : un produit bloqué à l'achat demande aussi son droit produits.bloquer
+            // Celui qui valide réceptionne (un produit bloqué à l'achat demande aussi son droit produits.bloquer) ; l'entrée en stock,
+            // la sortie des boîtes manquantes et le rattachement du comptage forment une seule transaction : tout ou rien
             r = await receptionner.ExecuterDepuisComptageAsync(saisie with { Lignes = fusion.Lignes, Blocage = new Catalogue.ValidationBlocage(true) },
-                utilisateurId, ct);
+                utilisateurId, comptageId, fusion.Manquants, ct);
         }
         catch
         {
             await comptages.ChangerStatutAsync(comptageId, StatutsComptage.Receptionne, StatutsComptage.Ecart, null, null, CancellationToken.None);
             throw;
         }
-        await comptages.LierReceptionAsync(comptageId, r.ReceptionId, ct);
-        var aReclamer = fusion.Manquants.Count == 0 ? 0m
-            : await comptages.SortirManquantsAsync(r.ReceptionId, c.NumeroBl,
-                fusion.Manquants.Select(m => (r.Lots[m.Index].LotId, m.Boites)).ToList(), utilisateurId, ct);
+        var aReclamer = r.AReclamer;
         await journal.EcrireAsync(utilisateurId, "ecart_reception_valide", "comptage_reception", comptageId,
             new Dictionary<string, object?>
             {
                 ["bl"] = c.NumeroBl, ["grossiste"] = c.Fournisseur, ["reception"] = r.ReceptionId, ["compte_par"] = c.Compteur,
                 ["facture_par"] = c.Factureur, ["manquantes"] = fusion.BoitesManquantes, ["en_trop"] = fusion.BoitesEnTrop, ["a_reclamer"] = aReclamer
-            }, Permissions.AchatsValiderEcart, ct);
+            }, Permissions.AchatsValiderEcart, CancellationToken.None);   // livraison déjà en stock : le journal va jusqu'au bout
         if (!titulaire && alertes is not null)
             await alertes.SurveillanceAsync(
                 $"Ecart de reception BL {c.NumeroBl} ({c.Fournisseur}) valide par un employe habilite : {fusion.BoitesManquantes} boite(s) manquante(s) a reclamer ({aReclamer:0.00} DA), {fusion.BoitesEnTrop} en trop.",
-                fusion.BoitesManquantes > 0, ct);
+                fusion.BoitesManquantes > 0, CancellationToken.None);
         // Boîtes réellement entrées : sans les manquantes (ni leurs étiquettes, qui ne s'impriment pas)
         var lots = r.Lots.ToList();
         foreach (var m in fusion.Manquants)

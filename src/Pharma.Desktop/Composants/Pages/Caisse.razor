@@ -1481,6 +1481,10 @@
 
     public async ValueTask DisposeAsync()
     {
+        // Panier non encaissé ni mis en attente, perdu en quittant la caisse (autre écran) : signalé comme boîtes retirées,
+        // sinon quitter l'écran contournerait la surveillance « lignes retirées »
+        foreach (var l in lignes.Where(l => l.Quantite > 0).ToList()) SignalerRetrait(l, l.Quantite);
+        lignes.Clear();
         try { await JS.InvokeVoidAsync("pharma.arreterF12"); }
         catch (JSDisconnectedException) { }
         reference?.Dispose();

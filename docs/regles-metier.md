@@ -50,7 +50,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **État du stock** (vue `v_etat_stock`) : compte les lots bloqués ; seuls les lots périmés sont exclus.
 - **Date de péremption confirmée à l'inventaire** : refusée seulement si elle est passée de plus d'un an, alors que le commentaire du code dit « ne peut pas être déjà passée ». (à confirmer)
 - **Prix public** : le code exige un prix supérieur à 0, la base accepte 0.
-- **Calcul des anomalies de surveillance** : aucun calcul planifié ; il se lance après une vente, un événement de caisse, un inventaire ou une sortie de stock (casse ou don).
+- **Calcul des anomalies de surveillance** : lancé après chaque opération concernée et, depuis la revue de code, toutes les heures par le serveur (tâche de fond) ; un échec est inscrit au journal du serveur (corrigé).
 - **Tableau de bord du titulaire** : lit les alertes générales ; les anomalies de surveillance n'y figurent pas (elles sont dans l'écran Surveillance). (à confirmer)
 - **Nombre de droits** : `docs/securite-et-droits.md` en annonce 26, le logiciel en compte 32.
 - **Droits de l'assistant** : diffèrent entre l'ancien script `006_droits_utilisateurs.sql` et le script de départ `database/init/seed_referentiel.sql` ; le tableau des droits suit le script de départ.
@@ -155,7 +155,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Panier vide : rien à mettre en attente** ; panier trop volumineux (plus de 200 000 caractères) refusé. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 - **Libellé par défaut « Vente en attente », 80 caractères au plus** (au-delà, tronqué). — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 - **Une vente en attente est gardée sur le serveur et peut être reprise par n'importe quel employé du poste** ; reprise, elle quitte l'attente (une seconde reprise est refusée). — `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `database/026_ventes_attente.sql`
-- **Une vente en attente abandonnée est enregistrée pour la surveillance** (qui, quand, montant). — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
+- **Une vente en attente abandonnée est enregistrée pour la surveillance** (qui, quand, montant) ; l'abandon exige toujours l'employé qui abandonne. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 
 ### Surveillance de la caisse (titulaire)
 - **Ouvrir le tiroir sans vente demande le droit `caisse.ouvrir_tiroir`** ; chaque ouverture est enregistrée et inscrite au journal ; le bouton est grisé sans ce droit. — `src/Pharma.Application/Surveillance/Surveillance.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
@@ -347,6 +347,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Le motif d'un blocage de lot n'est jamais envoyé au téléphone** (il peut citer un patient) : le mobile affiche seulement « Le motif est sur le poste ». — `src/Pharma.Application/Mobile/Mobile.cs`
 
 ### Sorties de stock : périmé, cassé, don
+- **La liste des lots d'un produit et la lecture d'un lot sont ouvertes à `stock.consulter`, `stock.donner` ou `stock.declarer_perime`** : un vendeur qui a seulement le droit de donner peut choisir le lot. — `src/Pharma.Api/Endpoints/CatalogueEndpoints.cs`
 - **Trois motifs de sortie seulement : périmé, cassé, échantillon/gratuité/don**. — `src/Pharma.Application/Stock/SortieStock.cs`
 - **Déclarer des boîtes périmées ou cassées exige le droit `stock.declarer_perime` ; un don (échantillon, gratuité, personne dans le besoin) exige le droit `stock.donner`** (accordé par défaut au titulaire et à l'assistant). — `src/Pharma.Application/Stock/SortieStock.cs`, `database/056_droit_don.sql`
 - **La quantité sortie va de 1 au stock du lot**. — `src/Pharma.Application/Stock/SortieStock.cs`
@@ -358,6 +359,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Chaque sortie est inscrite au journal** ; les casses et les dons relancent la surveillance des employés. — `src/Pharma.Application/Stock/SortieStock.cs`
 
 ### Inventaire tournant (par rayon)
+- **Un lot n'est jamais dans deux inventaires en cours à la fois** (rayon, produit, produits sensibles) : il n'est pas ajouté à un second inventaire, sinon son écart serait ajusté deux fois ; un seul comptage « Produits sensibles » en cours, même lancé sur deux postes. — `src/Pharma.Infrastructure/Lecture/InventairesSql.cs`
 - **Un lot appartient au rayon de l'emplacement de vente de son produit, à défaut à celui de sa réserve, sinon au rayon « (Sans emplacement) »** ; on compte toutes ses boîtes, réserve comprise. — `src/Pharma.Infrastructure/Lecture/InventairesSql.cs`
 - **Commencer, compter, scanner, terminer ou annuler un inventaire exige le droit `stock.ajuster`** ; le tableau des inventaires exige `stock.consulter`. — `src/Pharma.Application/Stock/Inventaire.cs`, `src/Pharma.Api/Endpoints/InventaireEndpoints.cs`
 - **Un seul inventaire en cours par rayon** : commencer un rayon déjà en cours reprend l'inventaire existant (index `ux_inventaire_en_cours`) ; un rayon sans lot en stock est refusé. — `src/Pharma.Application/Stock/Inventaire.cs`, `database/init/schema.sql`
@@ -616,14 +618,19 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 ### Réception à l'aveugle (comptage, puis facture)
 - **Réception en deux étapes quand le réglage « Réception à l'aveugle » est actif (actif par défaut)** : la saisie directe d'une livraison est alors refusée. — `src/Pharma.Application/Achats/Achats.cs`, `database/057_reception_aveugle.sql`
 - **Étape 1, comptage : les boîtes du carton sont comptées (scan Data Matrix, saisie ou scans du mobile) sans voir le bon de livraison, ni prix ni bon de commande.** Droit `achats.receptionner` ; grossiste actif ; BL, lot et péremption contrôlés comme une réception ; un même lot une seule fois. Inscrit au journal (`comptage_reception`). — `src/Pharma.Application/Achats/ComptageReception.cs`, `src/Pharma.Domain/Achats/RegleComptageReception.cs`
-- **Un comptage dont la facture n'est pas encore saisie peut être annulé** (droit `achats.receptionner`, journal `comptage_annule`). — `src/Pharma.Application/Achats/ComptageReception.cs`
+- **Un même BL d'un même grossiste n'est compté qu'une fois à la fois** : un second comptage est refusé tant que le premier est à facturer, en écart ou à recompter (comparaison sans casse ni espaces).
+- **Annuler un comptage** : avant la facture, droit `achats.receptionner` ; en écart ou à recompter, seulement qui décide des écarts (`achats.valider_ecart`) ; rien n'entre en stock ; journal `comptage_annule`. — `src/Pharma.Application/Achats/ComptageReception.cs`
 - **Étape 2, facture : les lots comptés (produit, lot, péremption) sont repris sans le nombre de boîtes comptées ; on saisit la facture (boîtes facturées UG comprises, prix).** Le BL et le grossiste sont ceux du comptage ; la facture d'un comptage ne se saisit qu'une fois. — `src/Pharma.Application/Achats/ComptageReception.cs`, `src/Pharma.Api/Endpoints/AchatsEndpoints.cs`
 - **Comparaison lot par lot (produit et n° de lot, sans tenir compte des majuscules ni des espaces)** : un lot compté laissé à 0 ou absent de la facture compte comme non facturé. — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
 - **Sans écart, la livraison entre en stock comme une réception ordinaire**, avec les Data Matrix du comptage. — `src/Pharma.Application/Achats/ComptageReception.cs`
 - **Avec écart, rien n'entre en stock : la réception est bloquée** ; la facture est gardée telle que saisie, sans jamais garder de code comptoir ; anomalie et alerte au titulaire. — `src/Pharma.Application/Achats/ComptageReception.cs`
-- **L'écart est décidé par le titulaire ou un employé qui a le droit `achats.valider_ecart`** (titulaire et assistant par défaut, attribuable à un vendeur) : « Valider » ou « Faire recompter » (nouveau comptage, puis facture à ressaisir). — `src/Pharma.Application/Achats/ComptageReception.cs`
-- **Écart validé : le stock prend les boîtes comptées, la dette du grossiste suit la facture.** — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
-- **Boîtes facturées absentes du carton : entrées puis aussitôt sorties du stock** (boîte « manquante », mouvement `manquant_reception`, « à réclamer au grossiste ») ; les boîtes sans Data Matrix les plus chères sortent d'abord ; pour un psychotrope, le registre inscrit un écart en moins. — `src/Pharma.Infrastructure/Achats/ComptagesReceptionSql.cs`, `database/057_reception_aveugle.sql`
+- **L'écart est décidé par le titulaire ou un employé qui a le droit `achats.valider_ecart`** (titulaire et assistant par défaut, attribuable à un vendeur) : « Valider » ou « Faire recompter ».
+- **Personne ne décide d'un écart qu'il a compté ou dont il a saisi la facture, sauf le titulaire.**
+- **Les quantités facturées et comptées d'un écart ne sont montrées qu'à qui décide des écarts** : le réceptionnaire, le recompteur et celui qui saisit la facture voient seulement les lots en écart.
+- **« Faire recompter » : la livraison passe « à recompter » ; un nouveau comptage à l'aveugle (lots repris sans aucune quantité) est comparé à la facture déjà saisie, qui est gardée** ; l'écart recalculé (ou nul) attend de nouveau la décision. Journal `comptage_recompte`.
+- **Les livraisons comptées restent affichées et traitables même si la réception à l'aveugle est désactivée.** — `src/Pharma.Application/Achats/ComptageReception.cs`
+- **Écart validé : le stock prend les boîtes comptées, la dette du grossiste suit la facture.** L'entrée en stock, la sortie des boîtes manquantes et le rattachement du comptage forment une seule transaction (tout ou rien) ; s'il n'y a pas assez de boîtes sans Data Matrix pour sortir les manquantes, rien n'est enregistré. — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
+- **Boîtes facturées absentes du carton : entrées puis aussitôt sorties du stock** (boîte « manquante », mouvement `manquant_reception`, « à réclamer au grossiste ») ; les boîtes sans Data Matrix les plus chères sortent d'abord ; pour un psychotrope, le registre inscrit un écart en moins. — `src/Pharma.Infrastructure/Achats/ManquantsReception.cs`, `database/057_reception_aveugle.sql`
 - **Boîtes en trop (comptées, non facturées) : entrées comme unités gratuites à 0 DA** ; un lot compté absent de la facture entre entièrement à 0 DA. — `src/Pharma.Domain/Achats/RegleComptageReception.cs`
 - **Celui qui valide l'écart réceptionne** : il lui faut aussi `achats.receptionner`, et `produits.bloquer` si la livraison contient un produit bloqué à l'achat. — `src/Pharma.Application/Achats/ComptageReception.cs`
 - **Écart validé ou renvoyé au recomptage par un autre que le titulaire : le titulaire est prévenu** (e-mail, SMS selon ses réglages ; urgent s'il manque des boîtes). — `src/Pharma.Application/Achats/ComptageReception.cs`
@@ -1170,7 +1177,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le rôle titulaire n'est pas reconnu pour une connexion par code comptoir, ni tant que le mot de passe doit être changé** : sauf autorisation « sur place » (mécanisme `AutoriseSurPlaceAsync`, détail à confirmer). — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 
 ### Événements de caisse (ce qui se passe au comptoir sans laisser de vente)
-- **Trois types d'événements sont enregistrés** : ligne retirée du panier (`ligne_retiree`), tiroir ouvert sans vente (`tiroir_ouvert`), vente en attente abandonnée (`attente_abandonnee`). — `database/054_surveillance_caisse.sql`
+- **Trois types d'événements sont enregistrés** : ligne retirée du panier (`ligne_retiree`), tiroir ouvert sans vente (`tiroir_ouvert`), vente en attente abandonnée (`attente_abandonnee`). Un panier non encaissé ni mis en attente, perdu en quittant l'écran de caisse, est signalé comme lignes retirées. — `database/054_surveillance_caisse.sql`
 - **Chaque événement garde l'employé, le poste, la caisse (session) du poste, et l'heure** ; selon le type : produit, lot, nombre de boîtes, montant, détail. — `database/054_surveillance_caisse.sql`
 - **Le poste ne peut signaler lui-même que deux types : ligne retirée et tiroir ouvert** : tout autre type est refusé (« Événement de caisse inconnu »). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Signaler un événement demande le droit `caisse.vendre`.** — `src/Pharma.Api/Endpoints/SurveillanceEndpoints.cs`
@@ -1182,11 +1189,11 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Supprimer une vente mise en attente enregistre une « vente en attente abandonnée »** : avec son montant total et son numéro. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 
 ### Déclenchement du calcul des anomalies
-- **Le calcul porte toujours sur la journée en cours** (date du jour du serveur). — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **Le calcul porte toujours sur la journée en cours, selon la date du serveur PostgreSQL** (celle à laquelle les ventes sont horodatées). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Le calcul est relancé après** : chaque vente encaissée, chaque événement de caisse (ligne retirée, tiroir, attente abandonnée), chaque fin d'inventaire, chaque écart d'inventaire validé, chaque déclaration de casse ou d'échantillon (pas pour un périmé), chaque facture saisie sur un comptage (avec ou sans écart), chaque avoir inférieur au montant attendu, chaque connexion réussie (mot de passe ou code), chaque baisse de prix depuis la fiche produit. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `src/Pharma.Application/Stock/Inventaire.cs`, `src/Pharma.Application/Stock/SortieStock.cs`
-- **Le calcul ne bloque jamais la vente ni l'opération** : elle est déjà enregistrée ; une erreur de surveillance est ignorée. — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **Le calcul ne bloque jamais la vente ni l'opération** : elle est déjà enregistrée ; une erreur de surveillance est inscrite au journal du serveur. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les journées et les horaires sont ceux de l'heure du serveur PostgreSQL** : son fuseau doit être réglé sur l'heure de la pharmacie. — `database/054_surveillance_caisse.sql`
-- **Il n'y a pas de calcul planifié** : constaté, le calcul n'est lancé que par les opérations ci-dessus (à confirmer : aucun appel planifié trouvé). — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **Le calcul est aussi lancé au démarrage du serveur puis toutes les heures**, même sans activité (retour sans avoir, crédit jamais remboursé, comptage des produits sensibles en retard). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 
 ### Types d'anomalies
 
@@ -1221,7 +1228,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le seuil est atteint dès que la valeur est égale au seuil** (comparaison « supérieur ou égal »). — `database/055_surveillance_stock.sql`
 - **Une seule anomalie par type, par employé, par jour** (et par patient, par inventaire ou par date de dernier comptage selon le type). — `database/054_surveillance_caisse.sql`
 - **Une anomalie existante est mise à jour avec les chiffres du jour** (message, valeur, niveau) à chaque nouveau calcul. — `database/054_surveillance_caisse.sql`
-- **Une anomalie déjà traitée reste traitée**, même si ses chiffres continuent d'augmenter. — `database/054_surveillance_caisse.sql`
+- **Une anomalie déjà traitée reste traitée** si ses chiffres augmentent, **sauf si elle devient urgente** : elle revient alors « à examiner » (le traitement précédent est gardé dans l'action prise). — `database/054_surveillance_caisse.sql`
 - **Une anomalie n'est jamais supprimée.** — `database/054_surveillance_caisse.sql`
 - **Les valeurs en dinars des casses, échantillons, ajustements et boîtes fantômes sont calculées au prix d'achat HT du lot.** — `database/055_surveillance_stock.sql`
 
@@ -1232,13 +1239,13 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Hors horaires : une vente à l'heure exacte de fermeture est hors horaires** ; une vente à l'heure exacte d'ouverture ne l'est pas. — `database/055_surveillance_stock.sql`
 - **Remises : seules les ventes validées avec un pourcentage de remise supérieur à 0 comptent.** — `database/055_surveillance_stock.sql`
 - **Remises au même patient : la période couvre le jour du calcul et les 29 jours précédents** (30 jours). — `database/055_surveillance_stock.sql`
-- **Remises au même patient : une seule anomalie par patient et par mois civil** (rattachée au 1er du mois) ; elle n'est rattachée à aucun employé et cite les vendeurs. — `database/055_surveillance_stock.sql`
+- **Remises au même patient : une seule anomalie par patient et par mois civil** (rattachée au 1er du mois), et pas de nouvelle anomalie si une autre a été créée pour ce patient dans les 30 jours (série à cheval sur deux mois) ; elle n'est rattachée à aucun employé et cite les vendeurs. — `database/055_surveillance_stock.sql`
 - **Ajustements : seuls les ajustements d'inventaire qui diminuent le stock comptent**, attribués à l'employé qui a terminé ou validé l'inventaire. — `database/055_surveillance_stock.sql`
 - **Boîtes fantômes : le contrôle porte sur les inventaires terminés le jour du calcul.** — `database/055_surveillance_stock.sql`
-- **Boîtes fantômes : seuls les lots dont au moins une boîte a été scannée pendant le comptage sont contrôlés.** — `database/055_surveillance_stock.sql`
+- **Boîtes fantômes : seuls les lots comptés uniquement en scannant leurs boîtes identifiées sont contrôlés** (autant de boîtes vues que de boîtes comptées) ; un lot compté à la main, ou par un code qui ne désigne pas une boîte, n'a pas de boîtes fantômes. — `database/055_surveillance_stock.sql`
 - **Boîtes fantômes : seules les boîtes encore « en stock » et entrées avant le début du comptage sont concernées.** — `database/055_surveillance_stock.sql`
 - **Boîtes fantômes : une anomalie par inventaire**, rattachée à aucun employé, listant produit, lot et nombre de boîtes ; le message invite à les rechercher puis à faire leur sortie. — `database/055_surveillance_stock.sql`
-- **Une boîte n'est comptée qu'une fois par inventaire.** — `database/055_surveillance_stock.sql`
+- **Une boîte n'est comptée qu'une fois par inventaire** ; une boîte se retrouve par son étiquette interne, ou par son GTIN et son n° de série ensemble. — `database/055_surveillance_stock.sql`
 - **Produits sensibles en retard : l'anomalie n'apparaît que s'il existe au moins un produit sensible actif.** — `database/055_surveillance_stock.sql`
 - **Produits sensibles en retard : retard si aucun comptage « Produits sensibles » n'a été terminé, ou si le dernier date de 7 jours ou plus (fréquence réglée)** : précisément, dernier comptage antérieur à (jour − fréquence + 1). — `database/055_surveillance_stock.sql`
 - **Produits sensibles en retard : une anomalie par date de dernier comptage** ; une fois traitée, elle ne réapparaît qu'après un nouveau comptage redevenu en retard (constat sur la clé de l'anomalie). — `database/055_surveillance_stock.sql`
@@ -1265,7 +1272,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le délai d'un retour sans avoir va de 1 à 365 jours.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **La réception à l'aveugle se désactive dans les réglages (petite équipe)** : la réception redevient une saisie directe en une étape. — `src/Pharma.Application/Achats/Achats.cs`
 - **Les horaires se renseignent ensemble (ouverture et fermeture) ou pas du tout** ; vides, les ventes hors horaires ne sont pas contrôlées. — `src/Pharma.Application/Surveillance/Surveillance.cs`
-- **L'heure d'ouverture doit précéder l'heure de fermeture** (une plage passant minuit n'est donc pas possible). — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **L'ouverture et la fermeture doivent être différentes ; une plage peut passer minuit** (08:00-00:30 : une vente entre 00:30 et 08:00 est hors horaires). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les seuils s'appliquent par employé et par jour** (par patient sur 30 jours pour les remises au même patient). — `database/054_surveillance_caisse.sql`
 - **Toute modification des réglages est inscrite au journal des actions** (action `reglages_surveillance`) : seulement les réglages changés, chacun avec l'ancienne et la nouvelle valeur ; rien n'est inscrit si rien ne change. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les montants de crédit surveillés doivent être supérieurs à 0 ; patient récent de 1 à 90 jours ; crédit jamais remboursé de 1 à 365 jours ; postes simultanés de 1 à 120 minutes.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
@@ -1291,6 +1298,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Un employé est signalé quand il y a eu au moins 3 jours de perte en sa présence, au moins 3 jours sans lui pour comparer, et que sa perte moyenne de présence atteint 2 fois celle des jours d'absence** ; un employé présent tous les jours n'est jamais signalé. Un signalement est un indice, pas une preuve. — `src/Pharma.Domain/Rapports/RegleRisques.cs`
 - **Employés listés : les comptes actifs et ceux présents sur la période** ; signalés en tête, puis par perte décroissante en leur présence. — `src/Pharma.Application/Surveillance/Risques.cs`, `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
 - **Indicateurs par employé sur la période** : manque à ses propres clôtures, anomalies (dont urgentes), annulations et retours clients, ventes avec remise, crédits accordés, autorisations par code demandées et données, boîtes cassées, données (échantillons) et ajustées en moins. — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
+- **Les anomalies sont comptées le jour de leur création** (et non leur jour de rattachement : 1er du mois, date d'envoi d'un retour…). — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
 - **Une perte d'inventaire apparaît le jour du comptage, pas le jour de la disparition** (à lire en tendance sur la période). — `src/Pharma.Desktop/Composants/Pages/Risques.razor`
 
 ## Rapports

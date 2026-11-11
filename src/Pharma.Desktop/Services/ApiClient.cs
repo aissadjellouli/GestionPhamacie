@@ -775,6 +775,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(ComptageAFacturerDto?, string?)> ComptageAFacturerAsync(long id) => GetAsync<ComptageAFacturerDto?>($"api/achats/receptions/comptages/{id}", null);
     public Task<(ResultatFacturationDto?, string?)> FacturerComptageAsync(long id, ReceptionRequete reception) =>
         PostAsync<ReceptionRequete, ResultatFacturationDto>($"api/achats/receptions/comptages/{id}/facturer", reception);
+    public Task<(NombreDto?, string?)> RecompterLivraisonAsync(long id, IReadOnlyList<LigneCompteeDto> lignes) =>
+        PostAsync<RecompterLivraisonRequete, NombreDto>($"api/achats/receptions/comptages/{id}/recompter", new(lignes));
     public async Task<string?> AnnulerComptageAsync(long id) => (await PostAsync<object, object>($"api/achats/receptions/comptages/{id}/annuler", new())).Item2;
     public Task<(ReceptionEnregistreeDto?, string?)> DeciderEcartReceptionAsync(long id, bool valider) =>
         PostAsync<DecisionEcartReceptionRequete, ReceptionEnregistreeDto>($"api/achats/receptions/comptages/{id}/decision", new(valider));

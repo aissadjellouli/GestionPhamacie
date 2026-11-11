@@ -29,7 +29,7 @@ public class SurveillanceComptesTests
     {
         var comptes = new ComptesEnMemoire(new Utilisateur { Id = 7, Identifiant = "vendeur", NomComplet = "Vendeur Test", MotDePasseHash = "hash:secret" });
         var surveillance = new SurveillanceEnMemoire();
-        await new SeConnecter(comptes, new VerificateurFactice(), new JetonsFactices(), surveillance: new Surveiller(surveillance, Horloge))
+        await new SeConnecter(comptes, new VerificateurFactice(), new JetonsFactices(), surveillance: new Surveiller(surveillance))
             .ExecuterAsync("vendeur", "secret", default, " Caisse 2 ");
         Assert.Equal((7L, "Caisse 2", "mot_de_passe"), comptes.ConnexionsDetail.Single());
         Assert.Single(surveillance.Calculs);

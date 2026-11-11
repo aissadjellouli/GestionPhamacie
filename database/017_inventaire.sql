@@ -53,10 +53,22 @@ CREATE INDEX IF NOT EXISTS idx_ligne_inventaire_a_valider ON ligne_inventaire (s
 -- ---------------------------------------------------------------------
 -- 3. Notification « écart d'inventaire » pour le titulaire
 -- ---------------------------------------------------------------------
-ALTER TABLE destinataire_notification DROP CONSTRAINT IF EXISTS destinataire_notification_types_check;
-ALTER TABLE destinataire_notification ADD CONSTRAINT destinataire_notification_types_check
-    CHECK (types <@ ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire']);
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « ecart_inventaire »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'destinataire_notification_types_check' AND pg_get_constraintdef(oid) LIKE '%''ecart_inventaire''%') THEN
+        ALTER TABLE destinataire_notification DROP CONSTRAINT IF EXISTS destinataire_notification_types_check;
+        ALTER TABLE destinataire_notification ADD CONSTRAINT destinataire_notification_types_check
+            CHECK (types <@ ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire']);
+    END IF;
+END $garde$;
 
-ALTER TABLE message_sortant DROP CONSTRAINT IF EXISTS message_sortant_type_check;
-ALTER TABLE message_sortant ADD CONSTRAINT message_sortant_type_check
-    CHECK (type IN ('rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'test'));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « ecart_inventaire »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'message_sortant_type_check' AND pg_get_constraintdef(oid) LIKE '%''ecart_inventaire''%') THEN
+        ALTER TABLE message_sortant DROP CONSTRAINT IF EXISTS message_sortant_type_check;
+        ALTER TABLE message_sortant ADD CONSTRAINT message_sortant_type_check
+            CHECK (type IN ('rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'test'));
+    END IF;
+END $garde$;

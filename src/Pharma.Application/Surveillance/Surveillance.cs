@@ -41,7 +41,8 @@ public interface ISurveillance
 {
     Task EnregistrerAsync(EvenementCaisse evenement, CancellationToken ct = default);
     /// <summary>Calcul du jour (fonction SQL surveiller) : anomalies nouvelles, à notifier.</summary>
-    Task<IReadOnlyList<AnomalieNouvelle>> SurveillerAsync(DateOnly jour, CancellationToken ct = default);
+    /// <param name="jour">Journée calculée ; null : la date du jour du serveur PostgreSQL.</param>
+    Task<IReadOnlyList<AnomalieNouvelle>> SurveillerAsync(DateOnly? jour, CancellationToken ct = default);
     Task<IReadOnlyList<AlerteSurveillance>> ListerAsync(bool traitees, int limite, CancellationToken ct = default);
     Task<bool> TraiterAsync(long id, string? actionPrise, long utilisateurId, CancellationToken ct = default);
     Task<ParametresSurveillance> ParametresAsync(CancellationToken ct = default);
@@ -55,18 +56,22 @@ public interface ISurveillance
 
 /// <summary>
 /// Calcul des anomalies du jour après une vente ou un événement de caisse ; les nouvelles sont notifiées au titulaire (SMS ou e-mail).
-/// Jamais bloquant : la vente ou l'événement est déjà enregistré.
+/// Jamais bloquant : la vente ou l'événement est déjà enregistré ; un échec est inscrit au journal du serveur. La journée est celle
+/// du serveur PostgreSQL (les ventes et les horaires sont comparés à son heure).
 /// </summary>
-public sealed class Surveiller(ISurveillance surveillance, IHorloge horloge, IAlertesTitulaire? alertes = null)
+public sealed class Surveiller(ISurveillance surveillance, IAlertesTitulaire? alertes = null, ITraceErreurs? trace = null)
 {
     public async Task ExecuterAsync(CancellationToken ct = default)
     {
         try
         {
-            foreach (var a in await surveillance.SurveillerAsync(horloge.Aujourdhui, ct))
+            foreach (var a in await surveillance.SurveillerAsync(null, ct))
                 if (alertes is not null) await alertes.SurveillanceAsync(a.Notification, a.Niveau == "urgent", ct);
         }
-        catch (Exception e) when (e is not OperationCanceledException) { }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            trace?.Erreur("Calcul des anomalies de surveillance en échec", e);
+        }
     }
 }
 
@@ -144,8 +149,9 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
             throw new RegleMetierException("Postes simultanés : de 1 à 120 minutes.", "minutes_postes");
         if ((p.HeureOuverture is null) != (p.HeureFermeture is null))
             throw new RegleMetierException("Horaires : renseignez l’ouverture et la fermeture, ou aucune des deux (pas de contrôle).", "heure_ouverture");
-        if (p.HeureOuverture is { } o && p.HeureFermeture is { } f && o >= f)
-            throw new RegleMetierException("Horaires : l’ouverture doit précéder la fermeture.", "heure_ouverture");
+        // Une plage peut passer minuit (ouverture 08:00, fermeture 00:30) ; ouverture et fermeture identiques n'ont pas de sens
+        if (p.HeureOuverture is { } o && p.HeureFermeture is { } f && o == f)
+            throw new RegleMetierException("Horaires : l’ouverture et la fermeture doivent être différentes.", "heure_ouverture");
         var avant = Valeurs(await surveillance.ParametresAsync(ct));
         await surveillance.EnregistrerParametresAsync(p, ct);
         // Journal des modifications : chaque réglage changé, avec l'ancienne et la nouvelle valeur

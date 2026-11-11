@@ -72,6 +72,7 @@ builder.Services.AddScoped(sp => new Pharma.Application.Securite.ListerValidateu
 builder.Services.AddHostedService<AlertesQuotidiennes>();
 builder.Services.AddHostedService<EnvoiNotifications>();
 builder.Services.AddHostedService<SauvegardesAutomatiques>();
+builder.Services.AddHostedService<SurveillancePeriodique>();
 builder.Services.AddProblemDetails();
 
 builder.Services

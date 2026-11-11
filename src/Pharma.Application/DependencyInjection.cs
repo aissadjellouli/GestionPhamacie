@@ -70,6 +70,7 @@ public static class DependencyInjection
         services.AddScoped<Achats.ListerComptagesReception>();
         services.AddScoped<Achats.ObtenirComptageReception>();
         services.AddScoped<Achats.AnnulerComptage>();
+        services.AddScoped<Achats.RecompterLivraison>();
         services.AddScoped<Achats.FacturerComptage>();
         services.AddScoped<Achats.DeciderEcartReception>();
         services.AddScoped<Achats.ListerReceptions>();

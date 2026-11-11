@@ -105,7 +105,7 @@ public sealed class ComptagesReceptionSql(NpgsqlDataSource db) : IComptagesRecep
         (await LireAsync(" WHERE c.id = $1", p => p.AddWithValue(id), ct)).FirstOrDefault();
 
     public async Task<IReadOnlyList<ComptageReception>> EnCoursAsync(CancellationToken ct = default) =>
-        await LireAsync(" WHERE c.statut IN ('compte', 'ecart') ORDER BY c.compte_le", _ => { }, ct);
+        await LireAsync(" WHERE c.statut IN ('compte', 'ecart', 'a_recompter') ORDER BY c.compte_le", _ => { }, ct);
 
     public async Task<bool> ChangerStatutAsync(long id, string attendu, string nouveau, long? facturePar, long? decidePar, CancellationToken ct = default)
     {
@@ -144,68 +144,60 @@ public sealed class ComptagesReceptionSql(NpgsqlDataSource db) : IComptagesRecep
         return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
-    public async Task LierReceptionAsync(long id, long receptionId, CancellationToken ct = default)
+    public async Task<bool> ComptageOuvertAsync(long fournisseurId, string numeroBl, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("UPDATE comptage_reception SET reception_id = $2 WHERE id = $1");
-        cmd.Parameters.AddWithValue(id);
-        cmd.Parameters.AddWithValue(receptionId);
-        await cmd.ExecuteNonQueryAsync(ct);
+        await using var cmd = db.CreateCommand("""
+            SELECT EXISTS (SELECT 1 FROM comptage_reception
+                           WHERE fournisseur_id = $1 AND statut IN ('compte', 'ecart', 'a_recompter')
+                             AND regexp_replace(upper(numero_bl), '\s', '', 'g') = regexp_replace(upper($2), '\s', '', 'g'))
+            """);
+        cmd.Parameters.AddWithValue(fournisseurId);
+        cmd.Parameters.AddWithValue(numeroBl);
+        return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
-    public async Task<decimal> SortirManquantsAsync(long receptionId, string numeroBl, IReadOnlyList<(long LotId, int Boites)> manquants, long utilisateurId,
+    public async Task<bool> RecompterAsync(long id, IReadOnlyList<LigneComptee> lignes, FusionComptage fusion, decimal valeurManquante, long utilisateurId,
         CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
-        var total = 0m;
-        var reference = $"BL {numeroBl} : manquant à la réception, à réclamer au grossiste";
-        foreach (var (lotId, boites) in manquants)
+        // Nouveau comptage : écart recalculé avec la facture gardée, de nouveau à décider
+        await using (var cmd = new NpgsqlCommand("""
+            UPDATE comptage_reception
+            SET statut = 'ecart', compte_par = $2, compte_le = now(), ecarts = $3::jsonb, boites_manquantes = $4, boites_en_trop = $5,
+                valeur_manquante = $6, decide_par = NULL, decide_le = NULL
+            WHERE id = $1 AND statut = 'a_recompter'
+            """, cnx, tx))
         {
-            // Boîtes de cette livraison sans Data Matrix (non vues au comptage), les plus chères d'abord (facturées avant les UG)
-            int n;
-            decimal valeur;
-            await using (var cmd = new NpgsqlCommand("""
-                WITH choisies AS (
-                    SELECT id, prix_achat_ht FROM boite
-                    WHERE lot_id = $1 AND reception_id = $2 AND statut = 'en_stock' AND numero_serie IS NULL
-                    ORDER BY prix_achat_ht DESC NULLS LAST, id DESC LIMIT $3 FOR UPDATE),
-                maj AS (UPDATE boite SET statut = 'manquante' WHERE id IN (SELECT id FROM choisies) RETURNING id, prix_achat_ht),
-                ev AS (INSERT INTO boite_evenement (boite_id, type, utilisateur_id, commentaire) SELECT id, 'manquant_reception', $4, $5 FROM maj)
-                SELECT count(*)::int, COALESCE(sum(prix_achat_ht), 0) FROM maj
-                """, cnx, tx))
-            {
-                cmd.Parameters.AddWithValue(lotId);
-                cmd.Parameters.AddWithValue(receptionId);
-                cmd.Parameters.AddWithValue(boites);
-                cmd.Parameters.AddWithValue(utilisateurId);
-                cmd.Parameters.AddWithValue(reference);
-                await using var r = await cmd.ExecuteReaderAsync(ct);
-                await r.ReadAsync(ct);
-                (n, valeur) = (r.GetInt32(0), r.GetDecimal(1));
-            }
-            if (n == 0) continue;
-            await using (var cmd = new NpgsqlCommand("UPDATE lot SET quantite_disponible = quantite_disponible - $2 WHERE id = $1", cnx, tx))
-            {
-                cmd.Parameters.AddWithValue(lotId);
-                cmd.Parameters.AddWithValue(n);
-                await cmd.ExecuteNonQueryAsync(ct);
-            }
-            await using (var cmd = new NpgsqlCommand("""
-                INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id, reception_id, prix_achat_ht)
-                VALUES ($1, 'manquant_reception', $2, $3, $4, $5, $6)
-                """, cnx, tx))
-            {
-                cmd.Parameters.AddWithValue(lotId);
-                cmd.Parameters.AddWithValue(-n);
-                cmd.Parameters.AddWithValue(reference);
-                cmd.Parameters.AddWithValue(utilisateurId);
-                cmd.Parameters.AddWithValue(receptionId);
-                cmd.Parameters.AddWithValue(Math.Round(valeur / n, 2, MidpointRounding.AwayFromZero));
-                await cmd.ExecuteNonQueryAsync(ct);
-            }
-            total += valeur;
+            cmd.Parameters.AddWithValue(id);
+            cmd.Parameters.AddWithValue(utilisateurId);
+            cmd.Parameters.AddWithValue(JsonSerializer.Serialize(fusion.Ecarts.Select(e => new EcartJson(e.ProduitId, e.Nom, e.NumeroLot, e.Facture, e.Compte))));
+            cmd.Parameters.AddWithValue(fusion.BoitesManquantes);
+            cmd.Parameters.AddWithValue(fusion.BoitesEnTrop);
+            cmd.Parameters.AddWithValue(valeurManquante);
+            if (await cmd.ExecuteNonQueryAsync(ct) != 1) return false;
+        }
+        await using (var cmd = new NpgsqlCommand("DELETE FROM comptage_reception_ligne WHERE comptage_id = $1", cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(id);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        foreach (var l in lignes)
+        {
+            await using var cmd = new NpgsqlCommand("""
+                INSERT INTO comptage_reception_ligne (comptage_id, produit_id, numero_lot, date_peremption, gtin, quantite, numeros_serie)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """, cnx, tx);
+            cmd.Parameters.AddWithValue(id);
+            cmd.Parameters.AddWithValue(l.ProduitId);
+            cmd.Parameters.AddWithValue(l.NumeroLot);
+            cmd.Parameters.AddWithValue(l.DatePeremption);
+            cmd.Parameters.Add(Valeur(l.Gtin, NpgsqlDbType.Text));
+            cmd.Parameters.AddWithValue(l.Quantite);
+            cmd.Parameters.AddWithValue((l.NumerosSerie ?? []).ToArray());
+            await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
-        return total;
+        return true;
     }
 }

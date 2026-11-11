@@ -51,10 +51,10 @@ internal static class CatalogueEndpoints
         // Sortie de stock : boîtes périmées ou cassées
         api.MapGet("/stock/produits/{produitId:long}/lots", async (long produitId, Pharma.Application.Stock.ListerLotsEnStock lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(produitId, ct)).Select(VersDto).ToList()))
-           .ExigerPermission(Permissions.StockConsulter);
+           .ExigerPermission(Permissions.StockConsulter, Permissions.StockDonner, Permissions.StockDeclarerPerime);
         api.MapGet("/stock/lots/{lotId:long}", async (long lotId, Pharma.Application.Stock.ISortiesStock sorties, CancellationToken ct) =>
                 await sorties.LotAsync(lotId, ct) is { } l ? Results.Ok(VersDto(l)) : Results.NotFound(new ErreurDto("Lot introuvable.")))
-           .ExigerPermission(Permissions.StockConsulter);
+           .ExigerPermission(Permissions.StockConsulter, Permissions.StockDonner, Permissions.StockDeclarerPerime);
         api.MapPost("/stock/sorties", async (SortieStockRequete req, Pharma.Application.Stock.DeclarerSortieStock declarer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new NombreDto(await declarer.ExecuterAsync(req.LotId, req.Quantite, req.Motif, req.Commentaire, user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.StockDeclarerPerime, Permissions.StockDonner);

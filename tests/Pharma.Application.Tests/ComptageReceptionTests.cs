@@ -9,7 +9,6 @@ namespace Pharma.Application.Tests;
 internal sealed class ComptagesEnMemoire : IComptagesReception
 {
     public Dictionary<long, ComptageReception> Comptages { get; } = [];
-    public List<(long ReceptionId, IReadOnlyList<(long LotId, int Boites)> Manquants)> Sorties { get; } = [];
 
     public Task<long> CreerAsync(long f, string bl, IReadOnlyList<LigneComptee> lignes, IReadOnlyList<long> scans, long u, CancellationToken ct = default)
     {
@@ -34,11 +33,14 @@ internal sealed class ComptagesEnMemoire : IComptagesReception
             BoitesManquantes = fusion.BoitesManquantes, BoitesEnTrop = fusion.BoitesEnTrop, ValeurManquante = valeur };
         return Task.FromResult(true);
     }
-    public Task LierReceptionAsync(long id, long receptionId, CancellationToken ct = default) => Task.CompletedTask;
-    public Task<decimal> SortirManquantsAsync(long receptionId, string bl, IReadOnlyList<(long LotId, int Boites)> manquants, long u, CancellationToken ct = default)
+    public Task<bool> ComptageOuvertAsync(long f, string bl, CancellationToken ct = default) =>
+        Task.FromResult(Comptages.Values.Any(c => c.FournisseurId == f && c.NumeroBl == bl && c.Statut is "compte" or "ecart" or "a_recompter"));
+    public Task<bool> RecompterAsync(long id, IReadOnlyList<LigneComptee> lignes, FusionComptage fusion, decimal valeur, long u, CancellationToken ct = default)
     {
-        Sorties.Add((receptionId, manquants));
-        return Task.FromResult(manquants.Sum(m => m.Boites * 10m));
+        if (Comptages[id].Statut != StatutsComptage.ARecompter) return Task.FromResult(false);
+        Comptages[id] = Comptages[id] with { Statut = StatutsComptage.Ecart, Lignes = lignes, ComptePar = u, Ecarts = fusion.Ecarts,
+            BoitesManquantes = fusion.BoitesManquantes, BoitesEnTrop = fusion.BoitesEnTrop, ValeurManquante = valeur };
+        return Task.FromResult(true);
     }
 }
 
@@ -94,7 +96,7 @@ public class ComptageReceptionTests
         var (comptages, achats, id) = Compte1(4);
         var surveillance = new SurveillanceEnMemoire();
         var r = await new FacturerComptage(comptages, Receptionner(achats, surveillance), new DroitsFactices("achats.receptionner"), Horloge,
-            new JournalEspion(), new Surveiller(surveillance, Horloge)).ExecuterAsync(id, Facture(4), 5);
+            new JournalEspion(), new Surveiller(surveillance)).ExecuterAsync(id, Facture(4), 5);
         Assert.NotNull(r.Reception);
         Assert.Equal("BL-7", achats.ReceptionRecue!.NumeroBl);      // le BL du comptage
         Assert.Equal(StatutsComptage.Receptionne, comptages.Comptages[id].Statut);
@@ -134,7 +136,8 @@ public class ComptageReceptionTests
             new DroitsFactices("achats.receptionner", "achats.valider_ecart"), journal, alertes).ExecuterAsync(id, true, 6);
         Assert.NotNull(r);
         Assert.Equal(5, achats.ReceptionRecue!.Lignes.Single().Quantite);           // dette selon la facture
-        Assert.Equal([(100L, 2)], comptages.Sorties.Single().Manquants);            // 2 boîtes manquantes sorties du stock
+        Assert.Equal([new LigneManquante(0, 2)], achats.ReceptionRecue.Manquants!);   // 2 boîtes sorties dans la même transaction
+        Assert.Equal(id, achats.ReceptionRecue.ComptageId);
         Assert.Equal(StatutsComptage.Receptionne, comptages.Comptages[id].Statut);
         Assert.Contains("ecart_reception_valide", journal.Actions);
         Assert.True(alertes.Surveillances.Single().Urgent);
@@ -155,6 +158,59 @@ public class ComptageReceptionTests
         Assert.Null(achats.ReceptionRecue);
         Assert.Equal(StatutsComptage.ARecompter, comptages.Comptages[id].Statut);
         Assert.Empty(alertes.Surveillances);
+    }
+
+    [Fact]
+    public async Task Personne_ne_decide_de_son_propre_ecart_sauf_le_titulaire()
+    {
+        var (comptages, achats, id) = Compte1(3);                       // compté par 3
+        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner"), Horloge, new JournalEspion())
+            .ExecuterAsync(id, Facture(5), 5);                         // facture saisie par 5
+        var droits = new DroitsFactices("achats.receptionner", "achats.valider_ecart");
+        foreach (var u in new long[] { 3, 5 })
+        {
+            var ex = await Assert.ThrowsAsync<RegleMetierException>(() =>
+                new DeciderEcartReception(comptages, Receptionner(achats), droits, new JournalEspion()).ExecuterAsync(id, true, u));
+            Assert.Contains("autre employé habilité", ex.Message);
+        }
+        Assert.Null(achats.ReceptionRecue);
+        // Le titulaire peut décider même s'il a compté
+        await new DeciderEcartReception(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner", "achats.valider_ecart") { Titulaire = true },
+            new JournalEspion()).ExecuterAsync(id, true, 3);
+        Assert.NotNull(achats.ReceptionRecue);
+    }
+
+    [Fact]
+    public async Task Recomptage_a_l_aveugle_compare_a_la_facture_gardee()
+    {
+        var (comptages, achats, id) = Compte1(3);
+        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner"), Horloge, new JournalEspion())
+            .ExecuterAsync(id, Facture(5), 5);
+        await new DeciderEcartReception(comptages, Receptionner(achats), new DroitsFactices("achats.valider_ecart") { Titulaire = true },
+            new JournalEspion()).ExecuterAsync(id, false, 1);
+        var recompter = new RecompterLivraison(comptages, new DroitsFactices("achats.receptionner"), Horloge, new JournalEspion());
+        Assert.Equal(0, await recompter.ExecuterAsync(id, [Compte(5)], 7));   // 5 boîtes retrouvées : conforme à la facture
+        var c = comptages.Comptages[id];
+        Assert.Equal((StatutsComptage.Ecart, 7L, 0), (c.Statut, c.ComptePar, c.Ecarts.Count));   // à décider de nouveau
+        await Assert.ThrowsAsync<RegleMetierException>(() => recompter.ExecuterAsync(id, [Compte(5)], 7));
+    }
+
+    [Fact]
+    public async Task Meme_BL_compte_une_seule_fois_quantites_reservees_a_qui_decide()
+    {
+        var (comptages, journal) = (new ComptagesEnMemoire(), new JournalEspion());
+        var compter = new CompterLivraison(comptages, new AchatsEnMemoire(), new DroitsFactices("achats.receptionner"), Horloge, journal);
+        await compter.ExecuterAsync(1, "BL-1", [Compte(2)], null, 3);
+        await Assert.ThrowsAsync<RegleMetierException>(() => compter.ExecuterAsync(1, "BL-1", [Compte(2)], null, 4));
+        Assert.False((await new ListerComptagesReception(comptages, new DroitsFactices("achats.receptionner")).ExecuterAsync(3)).VoirQuantites);
+        Assert.True((await new ListerComptagesReception(comptages, new DroitsFactices("achats.valider_ecart")).ExecuterAsync(1)).VoirQuantites);
+        await Assert.ThrowsAsync<DroitRefuseException>(() => new ListerComptagesReception(comptages, new DroitsFactices("caisse.vendre")).ExecuterAsync(9));
+        // Un écart ne s'annule que par qui en décide
+        await new FacturerComptage(comptages, Receptionner(new AchatsEnMemoire()), new DroitsFactices("achats.receptionner"), Horloge, journal)
+            .ExecuterAsync(1, Facture(4), 5);
+        await Assert.ThrowsAsync<DroitRefuseException>(() => new AnnulerComptage(comptages, new DroitsFactices("achats.receptionner"), journal).ExecuterAsync(1, 3));
+        await new AnnulerComptage(comptages, new DroitsFactices("achats.valider_ecart"), journal).ExecuterAsync(1, 1);
+        Assert.Equal(StatutsComptage.Annule, comptages.Comptages[1].Statut);
     }
 
     [Fact]

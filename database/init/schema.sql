@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/001 à 058 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/001 à 059 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 058 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 059 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict C5ONDPymFlzogzLMVaVUhR4wolxOQAk0wQs2esxw7lYOVnCeF1hwmF2Hu5usRVk
+\restrict CGbTyrZ7vdG4s948F7kpQdbeNCXaezPcyXDpvsRPpV9QVRWOMbyN435MSPjtBNa
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1420,7 +1420,10 @@ CREATE FUNCTION public.surveillance_candidats(p_jour date) RETURNS TABLE(o_type 
                min(v.date_vente)::time(0) AS premiere, max(v.date_vente)::time(0) AS derniere
         FROM ventes v, p
         WHERE p.heure_ouverture IS NOT NULL
-          AND (v.date_vente::time < p.heure_ouverture OR v.date_vente::time >= p.heure_fermeture)
+          -- Plage normale (08:00-20:00) ou passant minuit (08:00-00:30)
+          AND CASE WHEN p.heure_ouverture < p.heure_fermeture
+                   THEN v.date_vente::time < p.heure_ouverture OR v.date_vente::time >= p.heure_fermeture
+                   ELSE v.date_vente::time >= p.heure_fermeture AND v.date_vente::time < p.heure_ouverture END
         GROUP BY v.utilisateur_id
     ),
     remises AS (
@@ -1457,10 +1460,15 @@ CREATE FUNCTION public.surveillance_candidats(p_jour date) RETURNS TABLE(o_type 
         SELECT i.id, i.rayon, i.commence_le FROM inventaire i
         WHERE i.statut = 'termine' AND i.termine_le >= p_jour AND i.termine_le < p_jour + 1
     ),
+    -- Lot compté uniquement en scannant ses boîtes identifiées (boîtes vues = boîtes comptées) : un lot compté à la main,
+    -- ou par un code qui ne désigne pas une boîte, n'a pas de boîtes fantômes
     lots_scannes AS (
-        SELECT DISTINCT e.inventaire_id, b.lot_id
+        SELECT e.inventaire_id, b.lot_id
         FROM boite_evenement e JOIN boite b ON b.id = e.boite_id
+        JOIN ligne_inventaire li ON li.inventaire_id = e.inventaire_id AND li.lot_id = b.lot_id
         WHERE e.type = 'inventaire' AND e.inventaire_id IN (SELECT id FROM inv)
+        GROUP BY e.inventaire_id, b.lot_id, li.compte
+        HAVING count(*) = COALESCE(li.compte, 0)
     ),
     fantomes AS (
         SELECT ls.inventaire_id, b.lot_id, count(*)::int AS n
@@ -1521,6 +1529,9 @@ CREATE FUNCTION public.surveillance_candidats(p_jour date) RETURNS TABLE(o_type 
            format('Remises repetees au meme patient : %s ventes en 30 jours (detail dans Surveillance).', rp.n),
            rp.montant
     FROM remises_patient rp JOIN patient pt ON pt.id = rp.patient_id, p WHERE rp.n >= p.seuil_remises_patient
+      -- Une série de remises à cheval sur deux mois ne crée pas une seconde anomalie
+      AND NOT EXISTS (SELECT 1 FROM alerte_surveillance a WHERE a.type = 'remises_patient' AND a.cle = 'patient:' || rp.patient_id
+                      AND a.jour < date_trunc('month', p_jour)::date AND a.cree_le >= p_jour - 29)
     UNION ALL
     SELECT 'ajustements', CASE WHEN a.boites >= 2 * p.seuil_ajustements THEN 'urgent' ELSE 'attention' END, a.utilisateur_id, p_jour, '',
            format('Inventaires terminés ou validés par %s le %s : %s boîte(s) manquante(s) ajustée(s) (%s DA au prix d''achat).', u.nom_complet,
@@ -1785,7 +1796,15 @@ BEGIN
             RETURN NEXT;
         ELSE
             -- Une anomalie traitée reste traitée ; son message suit les chiffres du jour
-            UPDATE alerte_surveillance SET message = c.o_message, valeur = c.o_valeur, niveau = c.o_niveau, mise_a_jour_le = now()
+            -- Une anomalie traitée qui devient urgente revient « à examiner » (la notification renvoie à l'écran)
+            UPDATE alerte_surveillance SET message = c.o_message, valeur = c.o_valeur, niveau = c.o_niveau, mise_a_jour_le = now(),
+                   statut = CASE WHEN v_ancien <> c.o_niveau AND c.o_niveau = 'urgent' THEN 'nouvelle' ELSE statut END,
+                   action_prise = CASE WHEN v_ancien <> c.o_niveau AND c.o_niveau = 'urgent' AND statut = 'traitee'
+                                       THEN concat('Traitée le ', to_char(traitee_le, 'DD/MM/YYYY HH24:MI'), COALESCE(' : ' || action_prise, ''),
+                                                   ' ; redevenue urgente.')
+                                       ELSE action_prise END,
+                   traitee_par = CASE WHEN v_ancien <> c.o_niveau AND c.o_niveau = 'urgent' THEN NULL ELSE traitee_par END,
+                   traitee_le = CASE WHEN v_ancien <> c.o_niveau AND c.o_niveau = 'urgent' THEN NULL ELSE traitee_le END
             WHERE id = v_id;
             IF v_ancien <> c.o_niveau AND c.o_niveau = 'urgent' THEN
                 o_id := v_id; o_niveau := c.o_niveau; o_notification := c.o_notification;
@@ -8558,5 +8577,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict C5ONDPymFlzogzLMVaVUhR4wolxOQAk0wQs2esxw7lYOVnCeF1hwmF2Hu5usRVk
+\unrestrict CGbTyrZ7vdG4s948F7kpQdbeNCXaezPcyXDpvsRPpV9QVRWOMbyN435MSPjtBNa
 

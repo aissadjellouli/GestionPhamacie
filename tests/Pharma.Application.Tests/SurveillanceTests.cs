@@ -8,12 +8,13 @@ namespace Pharma.Application.Tests;
 internal sealed class SurveillanceEnMemoire(params AnomalieNouvelle[] nouvelles) : ISurveillance
 {
     public List<EvenementCaisse> Evenements { get; } = [];
-    public List<DateOnly> Calculs { get; } = [];
+    /// <summary>Journées calculées ; null : la date du serveur PostgreSQL.</summary>
+    public List<DateOnly?> Calculs { get; } = [];
     public ParametresSurveillance Parametres { get; set; } = new(5, 3, 3, 5, 3, null, null);
     public List<(long Id, string? Action)> Traitees { get; } = [];
 
     public Task EnregistrerAsync(EvenementCaisse e, CancellationToken ct = default) { Evenements.Add(e); return Task.CompletedTask; }
-    public Task<IReadOnlyList<AnomalieNouvelle>> SurveillerAsync(DateOnly jour, CancellationToken ct = default)
+    public Task<IReadOnlyList<AnomalieNouvelle>> SurveillerAsync(DateOnly? jour, CancellationToken ct = default)
     {
         Calculs.Add(jour);
         return Task.FromResult<IReadOnlyList<AnomalieNouvelle>>(nouvelles);
@@ -43,7 +44,7 @@ public class SurveillanceTests
         params AnomalieNouvelle[] nouvelles)
     {
         var (depot, titulaire) = (new SurveillanceEnMemoire(nouvelles), new AlertesTitulaireEspion());
-        var cas = new SignalerEvenementCaisse(depot, new SessionsEnMemoire(), droits, new Surveiller(depot, Horloge, titulaire), new JournalEspion());
+        var cas = new SignalerEvenementCaisse(depot, new SessionsEnMemoire(), droits, new Surveiller(depot, titulaire), new JournalEspion());
         return (cas, depot, titulaire);
     }
 
@@ -55,7 +56,7 @@ public class SurveillanceTests
 
         var e = depot.Evenements.Single();
         Assert.Equal(("ligne_retiree", 5L, "Caisse 1", 1L, 3, 1050m), (e.Type, e.UtilisateurId, e.Poste, e.SessionCaisseId!.Value, e.Quantite!.Value, e.Montant!.Value));
-        Assert.Equal([Horloge.Aujourdhui], depot.Calculs);
+        Assert.Equal([(DateOnly?)null], depot.Calculs);            // journée du serveur PostgreSQL
         Assert.Equal([("Vendeur Démo : 10 boite(s) retiree(s)", true)], titulaire.Surveillances);
     }
 
@@ -87,7 +88,7 @@ public class SurveillanceTests
     public async Task Vente_en_attente_abandonnee_inscrite_avec_l_employe_et_le_montant()
     {
         var (attente, depot) = (new AttenteEnMemoire(), new SurveillanceEnMemoire());
-        var gerer = new GererVentesEnAttente(attente, depot, new Surveiller(depot, Horloge));
+        var gerer = new GererVentesEnAttente(attente, depot, new Surveiller(depot));
         var id = await gerer.MettreEnAttenteAsync("Caisse 1", 5, "Mme A", 2, 1250, "{}");
         await gerer.SupprimerAsync(id, "Caisse 1", utilisateurId: 5);
 
@@ -106,7 +107,10 @@ public class SurveillanceTests
         var regler = new ReglerSurveillance(depot, new DroitsFactices { Titulaire = true }, new JournalEspion());
         await Assert.ThrowsAsync<RegleMetierException>(() => regler.EnregistrerAsync(depot.Parametres with { HeureOuverture = new TimeOnly(8, 0) }, 1));
         await Assert.ThrowsAsync<RegleMetierException>(() =>
-            regler.EnregistrerAsync(depot.Parametres with { HeureOuverture = new TimeOnly(20, 0), HeureFermeture = new TimeOnly(8, 0) }, 1));
+            regler.EnregistrerAsync(depot.Parametres with { HeureOuverture = new TimeOnly(8, 0), HeureFermeture = new TimeOnly(8, 0) }, 1));
+        // Plage qui passe minuit acceptée
+        await regler.EnregistrerAsync(depot.Parametres with { HeureOuverture = new TimeOnly(8, 0), HeureFermeture = new TimeOnly(0, 30) }, 1);
+        Assert.Equal(new TimeOnly(0, 30), depot.Parametres.HeureFermeture);
         await Assert.ThrowsAsync<RegleMetierException>(() => regler.EnregistrerAsync(depot.Parametres with { SeuilTiroir = 0 }, 1));
 
         await regler.EnregistrerAsync(depot.Parametres with { HeureOuverture = new TimeOnly(8, 30), HeureFermeture = new TimeOnly(20, 0) }, 1);
@@ -114,10 +118,36 @@ public class SurveillanceTests
     }
 
     [Fact]
+    public async Task Echec_du_calcul_inscrit_au_journal_du_serveur()
+    {
+        var trace = new TraceEspion();
+        await new Surveiller(new SurveillanceEnPanne(), null, trace).ExecuterAsync();     // ne lève pas
+        Assert.Single(trace.Erreurs);
+    }
+
+    private sealed class TraceEspion : ITraceErreurs
+    {
+        public List<Exception> Erreurs { get; } = [];
+        public void Erreur(string message, Exception exception) => Erreurs.Add(exception);
+    }
+
+    private sealed class SurveillanceEnPanne : ISurveillance
+    {
+        public Task EnregistrerAsync(EvenementCaisse e, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<AnomalieNouvelle>> SurveillerAsync(DateOnly? jour, CancellationToken ct = default) => throw new InvalidOperationException("base");
+        public Task<IReadOnlyList<AlerteSurveillance>> ListerAsync(bool t, int l, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> TraiterAsync(long id, string? a, long u, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ParametresSurveillance> ParametresAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task EnregistrerParametresAsync(ParametresSurveillance p, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ProduitSensible>> SensiblesAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<string?> MarquerSensibleAsync(long p, bool s, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    [Fact]
     public async Task Echec_de_notification_ne_bloque_pas()
     {
         var depot = new SurveillanceEnMemoire(new AnomalieNouvelle(1, "attention", "x"));
-        await new Surveiller(depot, Horloge, new AlertesEnPanne()).ExecuterAsync();
+        await new Surveiller(depot, new AlertesEnPanne()).ExecuterAsync();
         Assert.Single(depot.Calculs);
     }
 

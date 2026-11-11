@@ -66,17 +66,35 @@ CREATE TABLE IF NOT EXISTS comptage_reception_ligne (
 CREATE INDEX IF NOT EXISTS ix_comptage_reception_ligne ON comptage_reception_ligne (comptage_id);
 
 -- 3. Boîtes manquantes à la réception (facturées, non livrées)
-ALTER TABLE boite DROP CONSTRAINT IF EXISTS boite_statut_check;
-ALTER TABLE boite ADD CONSTRAINT boite_statut_check CHECK (statut = ANY (ARRAY['en_stock', 'vendue', 'retournee_fournisseur', 'detruite',
-    'retour_client', 'donnee', 'manquante']));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « manquante »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'boite_statut_check' AND pg_get_constraintdef(oid) LIKE '%''manquante''%') THEN
+        ALTER TABLE boite DROP CONSTRAINT IF EXISTS boite_statut_check;
+        ALTER TABLE boite ADD CONSTRAINT boite_statut_check CHECK (statut = ANY (ARRAY['en_stock', 'vendue', 'retournee_fournisseur', 'detruite',
+            'retour_client', 'donnee', 'manquante']));
+    END IF;
+END $garde$;
 
-ALTER TABLE boite_evenement DROP CONSTRAINT IF EXISTS boite_evenement_type_check;
-ALTER TABLE boite_evenement ADD CONSTRAINT boite_evenement_type_check CHECK (type = ANY (ARRAY['reception', 'vente', 'retour_client',
-    'retour_fournisseur', 'destruction', 'blocage', 'correction', 'inventaire', 'echantillon', 'manquant_reception']));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « manquant_reception »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'boite_evenement_type_check' AND pg_get_constraintdef(oid) LIKE '%''manquant_reception''%') THEN
+        ALTER TABLE boite_evenement DROP CONSTRAINT IF EXISTS boite_evenement_type_check;
+        ALTER TABLE boite_evenement ADD CONSTRAINT boite_evenement_type_check CHECK (type = ANY (ARRAY['reception', 'vente', 'retour_client',
+            'retour_fournisseur', 'destruction', 'blocage', 'correction', 'inventaire', 'echantillon', 'manquant_reception']));
+    END IF;
+END $garde$;
 
-ALTER TABLE mouvement_stock DROP CONSTRAINT IF EXISTS mouvement_stock_type_check;
-ALTER TABLE mouvement_stock ADD CONSTRAINT mouvement_stock_type_check CHECK (type = ANY (ARRAY['entree', 'vente', 'retour_client',
-    'retour_fournisseur', 'perime', 'casse', 'ajustement_inventaire', 'destruction', 'echantillon', 'manquant_reception']));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « manquant_reception »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mouvement_stock_type_check' AND pg_get_constraintdef(oid) LIKE '%''manquant_reception''%') THEN
+        ALTER TABLE mouvement_stock DROP CONSTRAINT IF EXISTS mouvement_stock_type_check;
+        ALTER TABLE mouvement_stock ADD CONSTRAINT mouvement_stock_type_check CHECK (type = ANY (ARRAY['entree', 'vente', 'retour_client',
+            'retour_fournisseur', 'perime', 'casse', 'ajustement_inventaire', 'destruction', 'echantillon', 'manquant_reception']));
+    END IF;
+END $garde$;
 
 -- Registre des psychotropes : une boîte facturée mais non livrée est un écart en moins
 CREATE OR REPLACE FUNCTION inscrire_mouvement_registre() RETURNS trigger
@@ -126,10 +144,16 @@ BEGIN
 END $$;
 
 -- 5. Types d'anomalie
-ALTER TABLE alerte_surveillance DROP CONSTRAINT IF EXISTS ck_alerte_surveillance_type;
-ALTER TABLE alerte_surveillance ADD CONSTRAINT ck_alerte_surveillance_type CHECK (type IN ('lignes_retirees', 'tiroir', 'attentes_abandonnees',
-    'hors_horaires', 'remises', 'remises_patient', 'ajustements', 'casses', 'echantillons', 'boites_fantomes', 'sensibles_en_retard',
-    'ecart_reception', 'reception_meme_personne', 'retour_sans_avoir', 'avoir_incomplet'));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « avoir_incomplet »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_alerte_surveillance_type' AND pg_get_constraintdef(oid) LIKE '%''avoir_incomplet''%') THEN
+        ALTER TABLE alerte_surveillance DROP CONSTRAINT IF EXISTS ck_alerte_surveillance_type;
+        ALTER TABLE alerte_surveillance ADD CONSTRAINT ck_alerte_surveillance_type CHECK (type IN ('lignes_retirees', 'tiroir', 'attentes_abandonnees',
+            'hors_horaires', 'remises', 'remises_patient', 'ajustements', 'casses', 'echantillons', 'boites_fantomes', 'sensibles_en_retard',
+            'ecart_reception', 'reception_meme_personne', 'retour_sans_avoir', 'avoir_incomplet'));
+    END IF;
+END $garde$;
 
 -- 6. Anomalies des achats
 CREATE OR REPLACE FUNCTION surveillance_candidats_achats(p_jour date)

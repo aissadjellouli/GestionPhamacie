@@ -12,9 +12,15 @@
 -- =====================================================================
 
 -- Destruction d'une boîte reprise au patient (stock inchangé : entrée puis sortie)
-ALTER TABLE mouvement_stock DROP CONSTRAINT IF EXISTS mouvement_stock_type_check;
-ALTER TABLE mouvement_stock ADD CONSTRAINT mouvement_stock_type_check CHECK (type IN (
-    'entree', 'vente', 'retour_client', 'retour_fournisseur', 'perime', 'casse', 'ajustement_inventaire', 'destruction'));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « destruction »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mouvement_stock_type_check' AND pg_get_constraintdef(oid) LIKE '%''destruction''%') THEN
+        ALTER TABLE mouvement_stock DROP CONSTRAINT IF EXISTS mouvement_stock_type_check;
+        ALTER TABLE mouvement_stock ADD CONSTRAINT mouvement_stock_type_check CHECK (type IN (
+            'entree', 'vente', 'retour_client', 'retour_fournisseur', 'perime', 'casse', 'ajustement_inventaire', 'destruction'));
+    END IF;
+END $garde$;
 
 CREATE TABLE IF NOT EXISTS retour_client (
     id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -41,11 +41,13 @@ public sealed class GererVentesEnAttente(IVentesEnAttente attente, Surveillance.
         ?? throw new RegleMetierException("Cette vente en attente n’existe plus (déjà reprise par un collègue ?).");
 
     /// <summary>Abandon d'une vente en attente : inscrit pour la surveillance de la caisse (qui, quand, montant).</summary>
-    public async Task SupprimerAsync(long id, string? poste, long utilisateurId = 0, CancellationToken ct = default)
+    public async Task SupprimerAsync(long id, string? poste, long utilisateurId, CancellationToken ct = default)
     {
+        // Toujours un employé : un abandon sans auteur échapperait à la surveillance
+        if (utilisateurId <= 0) throw new RegleMetierException("Abandon d’une vente en attente : employé inconnu.");
         var p = PosteCaisse.Exiger(poste);
         var total = await attente.SupprimerAsync(id, p, ct) ?? throw new RegleMetierException("Cette vente en attente n’existe plus.");
-        if (surveillance is not null && utilisateurId > 0)
+        if (surveillance is not null)
         {
             await surveillance.EnregistrerAsync(new Surveillance.EvenementCaisse(Surveillance.TypesEvenementCaisse.AttenteAbandonnee, utilisateurId, p, null,
                 Montant: total, Detail: $"vente en attente n° {id}"), ct);

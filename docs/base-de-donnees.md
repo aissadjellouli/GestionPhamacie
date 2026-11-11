@@ -82,6 +82,7 @@ PostgreSQL 17+. Le schéma est défini par les scripts du dossier `database/`, e
 | `056_droit_don.sql` | Droit `stock.donner` (« Donner un échantillon ou une gratuité (don à un nécessiteux) »), titulaire et assistant par défaut, à donner à un vendeur dans la matrice des droits ; posé à la première exécution seulement. |
 | `057_reception_aveugle.sql` | Réception à l’aveugle : `comptage_reception` et `comptage_reception_ligne` (boîtes comptées sans voir le BL, facture en écart gardée en `saisie` sans code comptoir), réglages `reception_aveugle` (actif) et `jours_avoir_retour` (30), droit `achats.valider_ecart` (titulaire, assistant), boîte `manquante` et mouvement `manquant_reception` (écart en moins au registre des psychotropes), fonction `surveillance_candidats_achats` (anomalies ecart_reception, reception_meme_personne, retour_sans_avoir, avoir_incomplet) et `surveiller` remplacée. |
 | `058_surveillance_comptes.sql` | Surveillance des comptes : `patient.cree_par`, table `connexion_employe` (poste et méthode de chaque connexion), réglages des crédits suspects (5 000 DA pour un patient de moins de 7 jours, 20 000 DA de crédits par employé et par jour, 60 jours sans remboursement), des autorisations par code (10 données, 5 demandées par jour), des postes simultanés (3 passages en moins de 10 minutes) et des baisses de prix (1) ; fonction `surveillance_candidats_comptes` et `surveiller` remplacée. |
+| `059_corrections_surveillance.sql` | Corrections de la surveillance : boîtes fantômes seulement pour un lot compté uniquement par scans de boîtes identifiées, remises au même patient sans seconde anomalie à cheval sur deux mois, horaires passant minuit, anomalie traitée redevenue urgente remise « à examiner » (`surveillance_candidats` et `surveiller` remplacées). |
 
 ### Règle permanente : tout script est répliqué dans `init/`
 
@@ -104,13 +105,13 @@ Contrôle automatique : `tests/Pharma.Architecture.Tests/ScriptsInitTests.cs` é
 pas le dernier script, si une table, une vue, une fonction ou une colonne créée par un script manque dans `schema.sql`, ou si
 une permission du logiciel (`Pharma.Domain.Securite.Permissions`) manque dans un script numéroté ou dans le seed.
 
-Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dans la même modification régénérer `init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges --no-comments` d'une base où tous les scripts ont été rejoués dans l'ordre) et compléter `init/seed_referentiel.sql` s'il ajoute des données de référence. Les scripts se rejouent **tous, dans l'ordre** : rejouer un ancien script seul peut ramener une fonction ou une vue à une version antérieure. Dans une vue, nommer les colonnes une à une (pas de `table.*`) et ne jamais ajouter de colonne à une vue définie par un script antérieur : le rejeu de l'ancien script échouerait.
+Pour une nouvelle évolution : ajouter un script `0NN_...sql` idempotent, et dans la même modification régénérer `init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges --no-comments` d'une base où tous les scripts ont été rejoués dans l'ordre) et compléter `init/seed_referentiel.sql` s'il ajoute des données de référence. Les scripts se rejouent **tous, dans l'ordre** : rejouer un ancien script seul peut ramener une fonction ou une vue à une version antérieure. Dans une vue, nommer les colonnes une à une (pas de `table.*`) et ne jamais ajouter de colonne à une vue définie par un script antérieur : le rejeu de l'ancien script échouerait. **Une contrainte CHECK à liste de valeurs** (types, statuts) ne se recrée jamais sans garde : la recréer seulement si sa définition n'a pas encore la valeur apportée par le script (`DO $garde$ … IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = … AND pg_get_constraintdef(oid) LIKE '%''valeur''%') …`) ; sinon le rejeu complet (restauration d'une sauvegarde) échoue dès que la base contient une valeur ajoutée par un script plus récent.
 
 ### Installation neuve : `database/init/`
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 058, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 059, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

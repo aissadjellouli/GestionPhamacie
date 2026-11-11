@@ -12,6 +12,10 @@ namespace Pharma.Infrastructure.Lecture;
 /// </summary>
 public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
 {
+    /// <summary>Lot déjà dans un inventaire en cours : jamais ajouté à un second (sinon son écart serait ajusté deux fois).</summary>
+    private static string DejaEnCours(string lot) =>
+        $"SELECT 1 FROM ligne_inventaire x JOIN inventaire i ON i.id = x.inventaire_id WHERE x.lot_id = {lot} AND i.statut = 'en_cours'";
+
     private const string LotsParRayon = """
         SELECT COALESCE(ev.rayon, er.rayon, '(Sans emplacement)') AS rayon, l.id AS lot_id, l.date_a_verifier
         FROM lot l
@@ -77,6 +81,7 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
         await using (var cmd = new NpgsqlCommand($"""
             INSERT INTO ligne_inventaire (inventaire_id, lot_id)
             SELECT $1, lot_id FROM ({LotsParRayon}) lots WHERE lots.rayon = $2
+              AND NOT EXISTS ({DejaEnCours("lots.lot_id")})
             """, cnx, tx))
         {
             cmd.Parameters.AddWithValue(id);
@@ -114,9 +119,9 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
             id = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
         int lignes;
-        await using (var cmd = new NpgsqlCommand("""
+        await using (var cmd = new NpgsqlCommand($"""
             INSERT INTO ligne_inventaire (inventaire_id, lot_id)
-            SELECT $1, l.id FROM lot l WHERE l.produit_id = $2 AND l.quantite_disponible > 0
+            SELECT $1, l.id FROM lot l WHERE l.produit_id = $2 AND l.quantite_disponible > 0 AND NOT EXISTS ({DejaEnCours("l.id")})
             """, cnx, tx))
         {
             cmd.Parameters.AddWithValue(id);
@@ -227,7 +232,9 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
             if (await cmd.ExecuteScalarAsync(ct) is long id) return id;
         }
         if (!Gs1DataMatrix.TryParse(code, out var dm) || dm?.NumeroSerie is null) return null;
-        await using var serie = db.CreateCommand("SELECT id FROM boite WHERE numero_serie = $1 LIMIT 1");
+        // Une boîte est unique par (GTIN, n° de série) : deux produits peuvent porter le même n° de série
+        await using var serie = db.CreateCommand("SELECT id FROM boite WHERE gtin = $1 AND numero_serie = $2");
+        serie.Parameters.AddWithValue(dm.Gtin);
         serie.Parameters.AddWithValue(dm.NumeroSerie);
         return await serie.ExecuteScalarAsync(ct) as long?;
     }
@@ -247,9 +254,16 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
 
     public async Task<long?> CreerSensiblesAsync(long utilisateurId, CancellationToken ct = default)
     {
-        if ((await EtatSensiblesAsync(ct)).EnCoursId is { } enCours) return enCours;
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
+        // Un seul comptage « Produits sensibles » en cours, même lancé sur deux postes à la fois
+        await using (var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('inventaire_sensibles'))", cnx, tx))
+            await verrou.ExecuteNonQueryAsync(ct);
+        await using (var enCours = new NpgsqlCommand("SELECT id FROM inventaire WHERE rayon = $1 AND statut = 'en_cours' ORDER BY id DESC LIMIT 1", cnx, tx))
+        {
+            enCours.Parameters.AddWithValue(CommencerInventaireSensibles.Rayon);
+            if (await enCours.ExecuteScalarAsync(ct) is long existant) return existant;
+        }
         long id;
         await using (var cmd = new NpgsqlCommand("INSERT INTO inventaire (rayon, commence_par) VALUES ($1, $2) RETURNING id", cnx, tx))
         {
@@ -257,9 +271,10 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
             cmd.Parameters.AddWithValue(utilisateurId);
             id = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
-        await using (var cmd = new NpgsqlCommand("""
+        await using (var cmd = new NpgsqlCommand($"""
             INSERT INTO ligne_inventaire (inventaire_id, lot_id)
             SELECT $1, l.id FROM lot l JOIN produit p ON p.id = l.produit_id WHERE p.sensible AND p.actif AND l.quantite_disponible > 0
+              AND NOT EXISTS ({DejaEnCours("l.id")})
             """, cnx, tx))
         {
             cmd.Parameters.AddWithValue(id);

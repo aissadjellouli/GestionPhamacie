@@ -433,8 +433,14 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         await ReleveGrossiste.ContexteAsync(cnx, tx, ReleveGrossiste.Reception, n.UtilisateurId,
             $"Réception BL {n.NumeroBl}{(n.NumeroFacture is null ? "" : $", facture {n.NumeroFacture}")}", ct);
         await Executer(cnx, tx, "UPDATE fournisseur SET solde = solde + $2 WHERE id = $1", ct, n.FournisseurId, n.MontantTtc);
+        // Réception à l'aveugle : boîtes manquantes sorties et comptage rattaché, dans la même transaction (tout ou rien)
+        var aReclamer = n.Manquants is { Count: > 0 } m
+            ? await ManquantsReception.SortirAsync(cnx, tx, receptionId, n.NumeroBl, m.Select(x => (lots[x.Index].LotId, x.Boites)), n.UtilisateurId, ct)
+            : 0m;
+        if (n.ComptageId is { } comptage)
+            await Executer(cnx, tx, "UPDATE comptage_reception SET reception_id = $2 WHERE id = $1", ct, comptage, receptionId);
         await tx.CommitAsync(ct);
-        return new ReceptionEnregistree(receptionId, n.MontantTtc, lots);
+        return new ReceptionEnregistree(receptionId, n.MontantTtc, lots, aReclamer);
     }
 
     public async Task<IReadOnlyList<ReceptionResume>> ReceptionsAvecDocumentAsync(long fournisseurId, string numero, CancellationToken ct = default)

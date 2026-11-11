@@ -47,12 +47,18 @@ BEGIN
 END $$;
 
 -- 4. Types d'anomalie
-ALTER TABLE alerte_surveillance DROP CONSTRAINT IF EXISTS ck_alerte_surveillance_type;
-ALTER TABLE alerte_surveillance ADD CONSTRAINT ck_alerte_surveillance_type CHECK (type IN ('lignes_retirees', 'tiroir', 'attentes_abandonnees',
-    'hors_horaires', 'remises', 'remises_patient', 'ajustements', 'casses', 'echantillons', 'boites_fantomes', 'sensibles_en_retard',
-    'ecart_reception', 'reception_meme_personne', 'retour_sans_avoir', 'avoir_incomplet',
-    'credit_nouveau_patient', 'credits_employe', 'credit_sans_remboursement', 'autorisations_valideur', 'autorisations_employe',
-    'postes_simultanes', 'baisses_prix'));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « baisses_prix »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_alerte_surveillance_type' AND pg_get_constraintdef(oid) LIKE '%''baisses_prix''%') THEN
+        ALTER TABLE alerte_surveillance DROP CONSTRAINT IF EXISTS ck_alerte_surveillance_type;
+        ALTER TABLE alerte_surveillance ADD CONSTRAINT ck_alerte_surveillance_type CHECK (type IN ('lignes_retirees', 'tiroir', 'attentes_abandonnees',
+            'hors_horaires', 'remises', 'remises_patient', 'ajustements', 'casses', 'echantillons', 'boites_fantomes', 'sensibles_en_retard',
+            'ecart_reception', 'reception_meme_personne', 'retour_sans_avoir', 'avoir_incomplet',
+            'credit_nouveau_patient', 'credits_employe', 'credit_sans_remboursement', 'autorisations_valideur', 'autorisations_employe',
+            'postes_simultanes', 'baisses_prix'));
+    END IF;
+END $garde$;
 
 -- 5. Anomalies des comptes (le nom du patient n'apparaît que dans l'écran, jamais dans la notification)
 CREATE OR REPLACE FUNCTION surveillance_candidats_comptes(p_jour date)

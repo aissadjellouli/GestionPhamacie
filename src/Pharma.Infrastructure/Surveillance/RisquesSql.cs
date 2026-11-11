@@ -28,9 +28,10 @@ public sealed class RisquesSql(NpgsqlDataSource db) : IRisques
                 FROM mouvement_stock m JOIN lot l ON l.id = m.lot_id
                 WHERE m.type = 'ajustement_inventaire' AND m.quantite < 0 AND m.cree_le::date BETWEEN $1 AND $2 GROUP BY 1),
             anomalies AS (
-                SELECT a.jour, count(*)::int AS n, count(*) FILTER (WHERE a.niveau = 'urgent')::int AS urgentes,
+                -- Jour de création de l'anomalie (et non son jour de rattachement : 1er du mois, date d'envoi d'un retour…)
+                SELECT a.cree_le::date AS jour, count(*)::int AS n, count(*) FILTER (WHERE a.niveau = 'urgent')::int AS urgentes,
                        COALESCE(sum(a.valeur) FILTER (WHERE a.type = 'boites_fantomes'), 0) AS fantomes
-                FROM alerte_surveillance a WHERE a.jour BETWEEN $1 AND $2 GROUP BY 1),
+                FROM alerte_surveillance a WHERE a.cree_le::date BETWEEN $1 AND $2 GROUP BY 1),
             jours AS (
                 SELECT jour FROM pres UNION SELECT jour FROM caisse UNION SELECT jour FROM stock UNION SELECT jour FROM anomalies)
             SELECT j.jour, COALESCE(c.ecart, 0), COALESCE(c.manque, 0), COALESCE(s.perte, 0), COALESCE(s.boites, 0), COALESCE(a.fantomes, 0),
@@ -60,8 +61,8 @@ public sealed class RisquesSql(NpgsqlDataSource db) : IRisques
             SELECT u.id, u.nom_complet, u.actif,
                    COALESCE((SELECT -sum(least(s.ecart, 0)) FROM session_caisse s WHERE s.utilisateur_id = u.id AND s.fermee_le::date BETWEEN $1 AND $2), 0),
                    (SELECT count(*) FROM session_caisse s WHERE s.utilisateur_id = u.id AND s.fermee_le::date BETWEEN $1 AND $2)::int,
-                   (SELECT count(*) FROM alerte_surveillance a WHERE a.utilisateur_id = u.id AND a.jour BETWEEN $1 AND $2)::int,
-                   (SELECT count(*) FROM alerte_surveillance a WHERE a.utilisateur_id = u.id AND a.jour BETWEEN $1 AND $2 AND a.niveau = 'urgent')::int,
+                   (SELECT count(*) FROM alerte_surveillance a WHERE a.utilisateur_id = u.id AND a.cree_le::date BETWEEN $1 AND $2)::int,
+                   (SELECT count(*) FROM alerte_surveillance a WHERE a.utilisateur_id = u.id AND a.cree_le::date BETWEEN $1 AND $2 AND a.niveau = 'urgent')::int,
                    (SELECT count(*) FROM journal j WHERE j.utilisateur_id = u.id AND j.action = 'vente_annulee')::int,
                    (SELECT count(*) FROM journal j WHERE j.utilisateur_id = u.id AND j.action = 'retour_client')::int,
                    (SELECT count(*) FROM vente v WHERE v.utilisateur_id = u.id AND v.statut = 'validee' AND v.remise_pct > 0

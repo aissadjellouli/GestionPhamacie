@@ -51,16 +51,34 @@ END $$;
 COMMENT ON COLUMN parametre_alerte.seuil_lot_delaisse_collectif IS 'Boîtes d''un lot plus récent vendues par plusieurs vendeurs ensemble, l''ancien lot n''étant plus vendu, avant l''alerte lot_delaisse urgente';
 
 -- 3. Type d'alerte et de notification
-ALTER TABLE alerte DROP CONSTRAINT IF EXISTS alerte_type_check;
-ALTER TABLE alerte ADD CONSTRAINT alerte_type_check CHECK (type = ANY (ARRAY['peremption', 'perime', 'risque_ecoulement', 'rupture',
-    'stock_critique', 'dormant', 'surstock', 'lot_delaisse']));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « lot_delaisse »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'alerte_type_check' AND pg_get_constraintdef(oid) LIKE '%''lot_delaisse''%') THEN
+        ALTER TABLE alerte DROP CONSTRAINT IF EXISTS alerte_type_check;
+        ALTER TABLE alerte ADD CONSTRAINT alerte_type_check CHECK (type = ANY (ARRAY['peremption', 'perime', 'risque_ecoulement', 'rupture',
+            'stock_critique', 'dormant', 'surstock', 'lot_delaisse']));
+    END IF;
+END $garde$;
 
-ALTER TABLE destinataire_notification DROP CONSTRAINT IF EXISTS destinataire_notification_types_check;
-ALTER TABLE destinataire_notification ADD CONSTRAINT destinataire_notification_types_check
-    CHECK (types <@ ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'lot_delaisse']);
-ALTER TABLE message_sortant DROP CONSTRAINT IF EXISTS message_sortant_type_check;
-ALTER TABLE message_sortant ADD CONSTRAINT message_sortant_type_check
-    CHECK (type = ANY (ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'lot_delaisse', 'test']));
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « lot_delaisse »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'destinataire_notification_types_check' AND pg_get_constraintdef(oid) LIKE '%''lot_delaisse''%') THEN
+        ALTER TABLE destinataire_notification DROP CONSTRAINT IF EXISTS destinataire_notification_types_check;
+        ALTER TABLE destinataire_notification ADD CONSTRAINT destinataire_notification_types_check
+            CHECK (types <@ ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'lot_delaisse']);
+    END IF;
+END $garde$;
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « lot_delaisse »
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'message_sortant_type_check' AND pg_get_constraintdef(oid) LIKE '%''lot_delaisse''%') THEN
+        ALTER TABLE message_sortant DROP CONSTRAINT IF EXISTS message_sortant_type_check;
+        ALTER TABLE message_sortant ADD CONSTRAINT message_sortant_type_check
+            CHECK (type = ANY (ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'lot_delaisse', 'test']));
+    END IF;
+END $garde$;
 -- Les destinataires des alertes de lot reçoivent aussi celle-ci
 UPDATE destinataire_notification SET types = types || 'lot_delaisse'::text
 WHERE 'lot_bloque' = ANY (types) AND NOT 'lot_delaisse' = ANY (types);

@@ -27,10 +27,11 @@ public sealed class SurveillanceSql(NpgsqlDataSource db) : ISurveillance
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<IReadOnlyList<AnomalieNouvelle>> SurveillerAsync(DateOnly jour, CancellationToken ct = default)
+    public async Task<IReadOnlyList<AnomalieNouvelle>> SurveillerAsync(DateOnly? jour, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT o_id, o_niveau, o_notification FROM surveiller($1)");
-        cmd.Parameters.AddWithValue(jour);
+        // Sans date : la journée du serveur PostgreSQL, celle à laquelle les ventes sont horodatées
+        await using var cmd = db.CreateCommand("SELECT o_id, o_niveau, o_notification FROM surveiller(COALESCE($1::date, current_date))");
+        cmd.Parameters.Add(Valeur(jour, NpgsqlDbType.Date));
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<AnomalieNouvelle>();
         while (await r.ReadAsync(ct)) liste.Add(new AnomalieNouvelle(r.GetInt64(0), r.GetString(1), r.GetString(2)));

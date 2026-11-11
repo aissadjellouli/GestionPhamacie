@@ -688,15 +688,17 @@ public sealed record ModeReceptionDto(bool Aveugle);
 public sealed record LigneCompteeDto(long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, int Quantite,
     string? Gtin = null, IReadOnlyList<string>? NumerosSerie = null);
 public sealed record CompterLivraisonRequete(long FournisseurId, string? NumeroBl, IReadOnlyList<LigneCompteeDto> Lignes, IReadOnlyList<long>? ScansMobile = null);
-public sealed record EcartComptageDto(long ProduitId, string Nom, string NumeroLot, int Facture, int Compte);
+/// <summary>Facture et Compte vides pour qui ne décide pas des écarts (réception à l'aveugle).</summary>
+public sealed record EcartComptageDto(long ProduitId, string Nom, string NumeroLot, int? Facture, int? Compte);
 /// <summary>Comptage en cours : jamais le nombre de boîtes comptées (la facture se saisit sans le voir) ; écarts une fois la facture saisie.</summary>
 public sealed record ComptageResumeDto(long Id, long FournisseurId, string Fournisseur, string NumeroBl, string Statut, string Compteur, DateTime CompteLe,
-    string? Factureur, DateTime? FactureLe, int NombreLots, IReadOnlyList<EcartComptageDto> Ecarts, int BoitesManquantes, int BoitesEnTrop, decimal ValeurManquante);
+    string? Factureur, DateTime? FactureLe, int NombreLots, IReadOnlyList<EcartComptageDto> Ecarts, int? BoitesManquantes, int? BoitesEnTrop, decimal? ValeurManquante);
 /// <summary>Lot compté, à compléter avec la facture (quantité facturée, prix) : sans le nombre de boîtes comptées.</summary>
 public sealed record LotAFacturerDto(long ProduitId, string Nom, string NumeroLot, DateOnly DatePeremption, string? Gtin);
 public sealed record ComptageAFacturerDto(long Id, long FournisseurId, string NumeroBl, string Compteur, IReadOnlyList<LotAFacturerDto> Lots);
 public sealed record ResultatFacturationDto(ReceptionEnregistreeDto? Reception, IReadOnlyList<EcartComptageDto> Ecarts);
 public sealed record DecisionEcartReceptionRequete(bool Valider);
+public sealed record RecompterLivraisonRequete(IReadOnlyList<LigneCompteeDto> Lignes);
 
 // ---- Écarts dans le temps et risques par employé (titulaire) ----
 public sealed record JourEcartsDto(DateOnly Jour, decimal Ecart, decimal Manque, decimal PerteStock, int BoitesAjustees, decimal ValeurFantomes,
