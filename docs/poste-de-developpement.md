@@ -131,6 +131,10 @@ dotnet run --project src\Pharma.Desktop
 
 Le dossier contient deux solutions (`.sln` et `.slnx`) : toujours préciser le fichier dans les commandes `dotnet build` et `dotnet test`.
 
+**Vidéos : jamais dans git.** Les vidéos (`.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.3gp`…), y compris celles des exemples
+(`docs/EXEMPLE/`), restent sur le disque ou se partagent à part : elles sont exclues par `.gitignore` et ne sont ni commitées
+ni rattachées à la solution. Seules les photos utiles sont gardées.
+
 ## 6. Problèmes rencontrés et solutions
 
 | Symptôme | Cause | Solution |

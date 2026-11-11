@@ -10,5 +10,15 @@ appsettings.Development.json
 # HTTPS du scanner mobile : propres à chaque PC serveur (scripts/certificat_mobile.ps1)
 appsettings.Https.json
 autorite-pharmacie.crt
-# Vidéos de démonstration : trop lourdes pour git (limite GitHub 100 Mo), à partager à part
-demo/*.mp4
+# Vidéos : jamais dans git, où qu'elles soient (démonstrations, exemples de docs/EXEMPLE…) :
+# trop lourdes (limite GitHub 100 Mo), à garder sur le disque ou à partager à part
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.avi
+*.mkv
+*.webm
+*.3gp
+*.m4v
+*.wmv
