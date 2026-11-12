@@ -18,7 +18,8 @@ d'œil, et éloignées du menu pour ne pas être confondues avec un écran. Leur
   (Rapports, Contrôle interne). Le groupe qui contient l'écran ouvert est souligné en ambre ; dans le menu ouvert, l'écran
   ouvert est marqué d'un trait ambre à gauche.
 - **Outils à droite**, dans cet ordre : ⚙ Administration (si l'employé y a droit), le **menu à son nom ▾** (l'employé
-  connecté : Mon code comptoir, Mot de passe, Affichage, Guide et retours, Changer d'utilisateur, Se déconnecter), puis
+  connecté : Mon code comptoir, Mot de passe, Affichage, Zoom de l’écran − 80 à 150 % + retenu par le poste, Guide et retours,
+  Changer d’utilisateur, Se déconnecter), puis
   **⇄ Changer** (changer d'utilisateur, la caisse du poste reste ouverte), le plus à droite.
 - **Un écran sans droit n'apparaît pas** (pas de lien grisé) ; un groupe sans écran permis disparaît. Seul un écran pas
   encore disponible (Chifa) reste visible, grisé, avec « (à venir) ».

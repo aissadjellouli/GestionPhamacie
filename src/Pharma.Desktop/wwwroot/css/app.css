@@ -621,3 +621,10 @@ details.avance[open] summary { margin-bottom: 8px; }
   .entete-interieur:has(.outils-utilisateur) .marque-textes { display: none; }
   .entete-interieur:has(.outils-utilisateur) .libelle-retour { max-width: 110px; }
 }
+/* Zoom dans le menu à son nom : − 100 % + */
+.entete .menu-panneau .ligne-zoom { display: flex; align-items: center; gap: 6px; padding: 6px 12px; color: var(--texte); font-size: 14px; font-weight: 500; }
+.entete .menu-panneau .ligne-zoom > span { flex: 1; }
+.entete .menu-panneau .ligne-zoom :is(.bouton-zoom, .valeur-zoom) { padding: 4px 10px; border: 1px solid var(--bordure-champ); border-radius: 6px; text-align: center; }
+.entete .menu-panneau .ligne-zoom .bouton-zoom { width: 34px; font-size: 18px; font-weight: 700; line-height: 1; }
+.entete .menu-panneau .ligne-zoom .valeur-zoom { min-width: 62px; }
+.entete .menu-panneau .ligne-zoom button:disabled { opacity: 0.4; cursor: default; }

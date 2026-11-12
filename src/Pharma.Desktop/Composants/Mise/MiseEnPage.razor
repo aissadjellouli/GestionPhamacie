@@ -100,6 +100,13 @@
                             <button type="button" class="bouton-affichage" @onclick="ChangerAffichageAsync"
                                     title="Affichage : Automatique (suit Windows), Clair ou Sombre. Cliquer pour changer ; votre choix est retenu."
                                     aria-label="@($"Affichage : {LibelleAffichage}. Changer l’affichage")">Affichage : @SymboleAffichage @LibelleAffichage</button>
+                            @* Zoom de tout l'écran (80 à 150 %), retenu par le poste : il dépend de la taille de l'écran *@
+                            <div class="ligne-zoom" role="group" aria-label="Zoom de l’écran">
+                                <span>Zoom</span>
+                                <button type="button" class="bouton-zoom" disabled="@(zoom <= ZoomMin)" @onclick="() => ZoomerAsync(-10)" aria-label="Réduire le zoom">−</button>
+                                <button type="button" class="valeur-zoom" @onclick="() => ZoomerAsync(100 - zoom)" title="Revenir à 100 %" aria-label="@($"Zoom {zoom} %, revenir à 100 %")">@zoom %</button>
+                                <button type="button" class="bouton-zoom" disabled="@(zoom >= ZoomMax)" @onclick="() => ZoomerAsync(10)" aria-label="Agrandir le zoom">+</button>
+                            </div>
                             <a href="guide" @onclick="FermerMenus" title="Ce qu’il faut essayer, et vos remarques">Guide et retours</a>
                             <hr />
                             <button type="button" @onclick="ChangerUtilisateur" title="La caisse du poste reste ouverte">Changer d’utilisateur</button>
@@ -336,6 +343,8 @@
         reference = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("pharma.affichage.suivre", reference);
         await JS.InvokeVoidAsync("pharma.retour.suivre", reference);
+        zoom = await JS.InvokeAsync<int>("pharma.zoom.lire");
+        StateHasChanged();
         await AppliquerAffichageAsync();
     }
 
@@ -348,6 +357,16 @@
     }
 
     private void SurHistorique() => _ = InvokeAsync(StateHasChanged);
+
+    // ---- Zoom de l'écran (menu à son nom), retenu par le poste ----
+    private const int ZoomMin = 80, ZoomMax = 150;
+    private int zoom = 100;
+
+    private async Task ZoomerAsync(int pas)
+    {
+        zoom = Math.Clamp(zoom + pas, ZoomMin, ZoomMax);
+        await JS.InvokeVoidAsync("pharma.zoom.appliquer", zoom);
+    }
 
     // ---- Tâches laissées au « Changer d'utilisateur » (bandeau) ----
     private bool bandeauMasque;

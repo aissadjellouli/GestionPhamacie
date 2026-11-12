@@ -177,3 +177,18 @@ window.pharma.accord = (function () {
   if (document.body) demarrer(); else document.addEventListener("DOMContentLoaded", demarrer);
   return { accorder: accorder, texte: accord };
 })();
+
+// Zoom de tout l'écran (menu à son nom › Zoom), de 80 à 150 %, retenu par le poste (navigateur intégré) et réappliqué au démarrage
+window.pharma.zoom = {
+  _cle: "pharma.zoom",
+  lire: function () {
+    let v = 100;
+    try { v = parseInt(localStorage.getItem(this._cle) || "100", 10) || 100; } catch (e) { }
+    return Math.min(150, Math.max(80, v));
+  },
+  appliquer: function (v) {
+    document.documentElement.style.zoom = v === 100 ? "" : (v / 100).toString();
+    try { localStorage.setItem(this._cle, String(v)); } catch (e) { }
+  }
+};
+window.pharma.zoom.appliquer(window.pharma.zoom.lire());
