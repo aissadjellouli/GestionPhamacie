@@ -1,5 +1,6 @@
 @page "/admin/notifications"
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 <div class="page admin">
     <NavAdmin Actif="admin/notifications" />
@@ -250,7 +251,18 @@
     {
         await ChargerReglagesAsync();
         (destinataires, _) = await Api.DestinatairesAsync();
-        await ChargerFileAsync();
+        // « ← Retour » : filtres et page de la file d'attente retrouvés tels qu'ils étaient
+        Historique.Suivre("notifications", e =>
+        {
+            e.Mettre("type", fileType); e.Mettre("statut", fileStatut); e.Mettre("du", fileDu); e.Mettre("au", fileAu);
+            e.Mettre("page", filePage); e.Mettre("taille", fileTaille);
+        });
+        if (Historique.Restaurer("notifications") is { } retour)
+        {
+            (fileType, fileStatut, fileDu, fileAu) = (retour.Texte("type") ?? "", retour.Texte("statut") ?? "", retour.Date("du"), retour.Date("au"));
+            await ChargerFileAsync(retour.Entier("page") ?? 1, retour.Entier("taille") ?? fileTaille);
+        }
+        else await ChargerFileAsync();
     }
 
     private async Task ChargerReglagesAsync()

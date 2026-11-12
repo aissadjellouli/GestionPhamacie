@@ -1,6 +1,9 @@
 @page "/factures"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject NavigationManager Nav
+@inject HistoriqueNavigation Historique
+@inject TachesLaissees Taches
 
 <div class="page">
     <div class="titre-page">
@@ -16,7 +19,7 @@
 
     @if (mode is not null)
     {
-        <EditeurFacture @key="cleEditeur" Mode="@mode" Origine="origine" OnFerme="() => mode = null" OnTermine="TermineAsync" />
+        <EditeurFacture @key="cleEditeur" Mode="@mode" Origine="origine" Reprise="@repriseFacture" OnFerme="() => (mode, repriseFacture) = (null, null)" OnTermine="TermineAsync" />
     }
 
     <!-- Filtres -->
@@ -24,7 +27,7 @@
         @foreach (var (code, libelle) in Suivis)
         {
             <button type="button" role="tab" class="puce" aria-selected="@(suivi == code ? "true" : "false")" aria-pressed="@(suivi == code ? "true" : "false")"
-                    @onclick="() => FiltrerAsync(code)">@libelle</button>
+                    @onclick="() => ChoisirSuivi(code)">@libelle</button>
         }
     </div>
     <div class="achats-ligne" style="align-items: flex-end">
@@ -223,18 +226,58 @@
     private string? qApplique;
     private bool initialise;
 
+    // Onglet de suivi dans l'adresse (factures?suivi=…) : chaque onglet est un écran pour « ← Retour »
+    [SupplyParameterFromQuery(Name = "suivi")] public string? Suivi { get; set; }
+    private void ChoisirSuivi(string? code) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("suivi", code));
+
     protected override async Task OnInitializedAsync()
     {
-        (recherche, qApplique) = (Q, Q);
+        (recherche, qApplique, suivi) = (Q, Q, Suivi);
+        // « ← Retour » : filtres, page et facture ouverte retrouvés tels qu'ils étaient
+        Historique.Suivre("factures", e =>
+        {
+            e.Mettre("recherche", recherche); e.Mettre("destinataire", filtreDestinataire); e.Mettre("du", du); e.Mettre("au", au);
+            e.Mettre("page", page); e.Mettre("taille", taille); e.Mettre("detail", detail?.Resume.Id); e.Mettre("version", versionVue);
+            // Éditeur ouvert (nouvelle facture, correction, remplacement) : rouvert au retour, sa saisie est retenue par l'éditeur
+            e.Mettre("editeur", mode); e.Mettre("origine", origine?.Resume.Id); e.Mettre("versionOrigine", origine?.Resume.Version);
+        });
+        var r = Historique.Restaurer("factures");
+        if (r is not null)
+        {
+            (recherche, filtreDestinataire, du, au) = (r.Texte("recherche"), r.Texte("destinataire"), r.Date("du"), r.Date("au"));
+            (page, taille) = (r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        }
         await ChargerAsync();
+        if (r?.Long("detail") is { } id) await OuvrirAsync(id, r.Entier("version"));
+        if (r?.Texte("editeur") is { } m)
+        {
+            FactureDetailDto? o = null;
+            if (r.Long("origine") is { } oid) (o, _) = await Api.FactureAsync(oid, r.Entier("versionOrigine"));
+            if (r.Long("origine") is null || o is not null) Editer(m, o);
+        }
+        else
+        {
+            Historique.Restaurer("editeur-facture");   // éditeur fermé quand on est parti : son ancienne saisie est écartée
+            // Bandeau « tâches laissées » : facture en préparation laissée par l'employé précédent, rouverte telle quelle
+            if (Taches.PrendreChoisie("facture") is { } t && System.Text.Json.JsonSerializer.Deserialize<FactureLaissee>(t.Contenu) is { } f)
+            {
+                FactureDetailDto? o = null;
+                if (f.OrigineId is { } oid) (o, _) = await Api.FactureAsync(oid, f.OrigineVersion);
+                if (f.OrigineId is null || o is not null)
+                {
+                    Editer(f.Mode, o);
+                    (repriseFacture, message) = (f.Preparation, $"Facture en préparation reprise : {t.LaisseePar} l’a laissée en changeant d’utilisateur.");
+                }
+            }
+        }
         initialise = true;
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (!initialise || Q == qApplique) return;
-        (recherche, qApplique) = (Q, Q);
-        await PremierePageAsync();
+        if (!initialise) return;
+        if (Q != qApplique) { (recherche, qApplique) = (Q, Q); await PremierePageAsync(); }
+        if (Suivi != suivi) { suivi = Suivi; await PremierePageAsync(); }
     }
 
     /// <summary>Un filtre a changé : retour à la première page.</summary>
@@ -252,7 +295,6 @@
         (factures, total, page, totalTtc, totalReste) = (p.Page.Lignes.ToList(), p.Page.Total, p.Page.Numero, p.TotalTtc, p.TotalReste);
     }
 
-    private Task FiltrerAsync(string? code) { suivi = code; return PremierePageAsync(); }
 
     private async Task OuvrirAsync(long id, int? version = null)
     {
@@ -284,8 +326,12 @@
         await fenetre.FocusAsync();
     }
 
+    /// <summary>Préparation laissée par l'employé précédent, transmise une fois à l'éditeur.</summary>
+    private string? repriseFacture;
+
     private void Editer(string m, FactureDetailDto? d)
     {
+        repriseFacture = null;   // une ouverture normale ne reprend jamais une préparation laissée (la reprise la repose après)
         // Correction ou remplacement : la fenêtre de la facture se ferme, l'éditeur prend sa place dans la page
         detail = null;
         (mode, origine, erreur, message, pdfOuvert) = (m, d, null, null, null);

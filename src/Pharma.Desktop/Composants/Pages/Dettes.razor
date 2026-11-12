@@ -1,6 +1,8 @@
 @page "/dettes"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject NavigationManager Nav
+@inject HistoriqueNavigation Historique
 
 @* Dettes et créances de tous les tiers : patients, factures clients, organismes, grossistes, effets.
    Échéancier par ancienneté et alertes au-delà du délai réglé par le titulaire. *@
@@ -18,7 +20,7 @@
 
     @if (suivi is not { } s)
     {
-        @if (erreur is null) { <p class="vide">Chargement…</p> }
+        @if (erreur is null) { <Chargement /> }
     }
     else
     {
@@ -79,7 +81,7 @@
             @foreach (var (code, libelle) in Filtres)
             {
                 <button type="button" role="tab" class="puce" aria-selected="@(filtre == code ? "true" : "false")" aria-pressed="@(filtre == code ? "true" : "false")"
-                        @onclick="() => filtre = code">@libelle (@Lignes(s, code).Count())</button>
+                        @onclick="@(() => Nav.NavigateTo(Nav.GetUriWithQueryParameter("onglet", code)))">@libelle (@Lignes(s, code).Count())</button>
             }
             <label class="case"><input type="checkbox" @bind="alertesSeulement" /><span>En alerte seulement</span></label>
         </div>
@@ -150,7 +152,17 @@
     private bool enCours, alertesSeulement;
     private int delai;
 
-    protected override Task OnInitializedAsync() => ChargerAsync();
+    // Onglet du tiers dans l'adresse (dettes?onglet=…) : chaque onglet est un écran pour « ← Retour »
+    [SupplyParameterFromQuery(Name = "onglet")] public string? Onglet { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        Historique.Suivre("dettes", e => e.Mettre("alertes", alertesSeulement));
+        alertesSeulement = Historique.Restaurer("dettes")?.Oui("alertes") ?? false;
+        return ChargerAsync();
+    }
+
+    protected override void OnParametersSet() => filtre = Onglet;
 
     private async Task ChargerAsync()
     {

@@ -1,4 +1,8 @@
+@implements IDisposable
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
+@inject SessionPoste Session
+@inject TachesLaissees Taches
 
 @if (message is not null)
 {
@@ -154,6 +158,45 @@
     [Parameter] public string? NumeroLot { get; set; }
     [Parameter] public string? Motif { get; set; }
 
+    /// <summary>Lot choisi avant « Préparer le retour », gardé par l'historique pour « ← Retour » (session du poste).</summary>
+    private sealed record LotEnPreparation(LotRetournableDto Lot, int Quantite, List<string> Codes);
+    /// <summary>Retour en préparation laissé au « Changer d'utilisateur » : lots et motif, repris par l'employé suivant.</summary>
+    private sealed record RetourLaisse(List<LotEnPreparation> Lots, string Motif);
+
+    private string LotsEnJson() =>
+        System.Text.Json.JsonSerializer.Serialize(lignes.Select(l => new LotEnPreparation(l.Lot, l.Quantite, l.Codes.ToList())).ToList());
+
+    private void AjouterLots(string json)
+    {
+        foreach (var l in System.Text.Json.JsonSerializer.Deserialize<List<LotEnPreparation>>(json) ?? [])
+        {
+            if (lignes.Any(x => x.Lot.LotId == l.Lot.LotId)) continue;
+            var ligne = new Ligne(l.Lot) { Quantite = l.Quantite };
+            ligne.Codes.AddRange(l.Codes);
+            lignes.Add(ligne);
+        }
+    }
+
+    private void ReprendreSaisie(string contenu)
+    {
+        if (System.Text.Json.JsonSerializer.Deserialize<RetourLaisse>(contenu) is not { } r) return;
+        if (Libelles.MotifsRetour.Any(x => x.Code == r.Motif)) motif = r.Motif;
+        AjouterLots(System.Text.Json.JsonSerializer.Serialize(r.Lots));
+    }
+
+    /// <summary>« Changer d'utilisateur » avec un retour en préparation : confié au poste pour l'employé suivant (bandeau).</summary>
+    private void LaisserAuSuivant()
+    {
+        if (!Session.ChangementUtilisateur || lignes.Count == 0) return;
+        var contenu = System.Text.Json.JsonSerializer.Serialize(new RetourLaisse(
+            lignes.Select(l => new LotEnPreparation(l.Lot, l.Quantite, l.Codes.ToList())).ToList(), motif));
+        Taches.Ajouter(new TacheLaissee("retour", $"Retour fournisseur en préparation · {lignes.Count} lot(s)", Session.NomComplet ?? "l’employé précédent",
+            "achats.retour_fournisseur", contenu, DateTime.Now));
+        lignes.Clear();
+    }
+
+    public void Dispose() => Session.AvantFermeture -= LaisserAuSuivant;
+
     private sealed class Ligne(LotRetournableDto lot)
     {
         public LotRetournableDto Lot { get; } = lot;
@@ -193,9 +236,36 @@
     protected override async Task OnInitializedAsync()
     {
         if (Motif is not null && Libelles.MotifsRetour.Any(m => m.Code == Motif)) motif = Motif;
+        Session.AvantFermeture += LaisserAuSuivant;
+        // « ← Retour » : filtres et page de la liste des retours retrouvés tels qu'ils étaient
+        Historique.Suivre("retours", e =>
+        {
+            e.Mettre("grossiste", fFournisseur > 0 ? fFournisseur : null); e.Mettre("statut", fStatut); e.Mettre("du", fDu); e.Mettre("au", fAu);
+            e.Mettre("page", page); e.Mettre("taille", taille);
+            // Retour en préparation (avant « Préparer le retour ») : lots, quantités, boîtes scannées et motif, gardés pour la session
+            if (lignes.Count > 0)
+                e.Mettre("saisie", LotsEnJson());
+            e.Mettre("motif", motif);
+        });
+        var r = Historique.Restaurer("retours");
+        if (r is not null)
+        {
+            (fFournisseur, fStatut, fDu, fAu) = (r.Long("grossiste") ?? 0, r.Texte("statut") ?? "", r.Date("du"), r.Date("au"));
+            (page, taille) = (r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+            if (r.Texte("motif") is { } m && Libelles.MotifsRetour.Any(x => x.Code == m)) motif = m;
+            if (r.Texte("saisie") is { } json) AjouterLots(json);
+        }
         await RechargerAsync();
         (grossistesFiltre, _) = await Api.FournisseursAsync();
-        // Arrivée depuis une alerte (un lot) ou un rappel de lot (tous les lots de ce numéro)
+        // Arrivée depuis une alerte (un lot) ou un rappel de lot (tous les lots de ce numéro) ; pas après un « Retour » (saisie retrouvée)
+        if (r?.Texte("saisie") is not null) return;
+        // Bandeau « tâches laissées » : retour en préparation laissé par l'employé précédent
+        if (Taches.PrendreChoisie("retour") is { } laisse)
+        {
+            ReprendreSaisie(laisse.Contenu);
+            message = $"Retour en préparation repris : {laisse.LaisseePar} l’a laissé en changeant d’utilisateur.";
+            return;
+        }
         if (LotId is { } id)
         {
             var (lot, e) = await Api.LotRetournableAsync(id);

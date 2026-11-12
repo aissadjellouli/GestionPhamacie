@@ -1,6 +1,7 @@
 @page "/rapports"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 <div class="page">
     <div class="titre-page">
@@ -323,6 +324,7 @@
             des boîtes périmées, cassées ou données, moins la TVA à reverser sur ces boîtes selon le réglage ci-dessus.
         </p>
     }
+    else if (erreur is null) { <Chargement Texte="Calcul du rapport…" /> }
 </div>
 
 @code {
@@ -339,7 +341,17 @@
 
     private static DateOnly Aujourdhui => DateOnly.FromDateTime(DateTime.Now);
 
-    protected override Task OnInitializedAsync() => ChargerAsync();
+    protected override Task OnInitializedAsync()
+    {
+        // « ← Retour » : période, date et tableau par jour retrouvés tels qu'ils étaient
+        Historique.Suivre("rapports", e =>
+        {
+            e.Mettre("periode", periode); e.Mettre("reference", reference); e.Mettre("du", du); e.Mettre("au", au); e.Mettre("jours", tableauJours);
+        });
+        if (Historique.Restaurer("rapports") is { } r)
+            (periode, reference, du, au, tableauJours) = (r.Texte("periode") ?? periode, r.Date("reference") ?? reference, r.Date("du") ?? du, r.Date("au") ?? au, r.Oui("jours"));
+        return ChargerAsync();
+    }
 
     private async Task ChargerAsync()
     {

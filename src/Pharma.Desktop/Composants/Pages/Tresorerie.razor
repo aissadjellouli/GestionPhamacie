@@ -1,5 +1,6 @@
 @page "/tresorerie"
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 @inject ConfigurationPoste Config
 
 <div class="page">
@@ -200,6 +201,12 @@
                 <div class="achats-ligne" style="align-items: flex-end">
                     <div class="champ" style="flex: 0 0 160px"><label for="p-du">Du</label><input id="p-du" type="date" @bind="du" @bind:after="ChargerMouvementsAsync" /></div>
                     <div class="champ" style="flex: 0 0 160px"><label for="p-au">Au</label><input id="p-au" type="date" @bind="au" @bind:after="ChargerMouvementsAsync" /></div>
+                    <div class="champ" style="flex: 0 0 220px"><label for="p-employe">Employé</label>
+                        <select id="p-employe" data-champ="employe" @bind="employeVu" @bind:after="FiltrerMouvementsAsync">
+                            <option value="">Tous</option>
+                            @foreach (var n in employesMouvements) { <option value="@n">@n</option> }
+                        </select></div>
+                    @if (employeVu != "") { <button type="button" class="btn" @onclick="ToutAfficherMouvementsAsync">Tout afficher</button> }
                 </div>
             </div>
             <div class="tableau-cadre">
@@ -218,17 +225,19 @@
                                 <td>@(m.Employe ?? "—")</td>
                             </tr>
                         }
-                        @if (mouvements.Count == 0) { <tr><td colspan="7" class="vide">Aucun mouvement sur la période.</td></tr> }
+                        @if (mouvements.Count == 0) { <tr><td colspan="7" class="vide">@(employeVu == "" ? "Aucun mouvement sur la période." : "Aucun mouvement pour ces filtres.")</td></tr> }
                     </tbody>
-                    @if (mouvements.Count > 0)
+                    @if (totalMouvements > 0)
                     {
-                        <tfoot><tr><th scope="row" colspan="3">Total de la période</th>
-                            <td class="nombre"><strong>@Libelles.Dinars(mouvements.Where(m => m.Sens == "entree").Sum(m => m.Montant), 2)</strong></td>
-                            <td class="nombre"><strong>@Libelles.Dinars(mouvements.Where(m => m.Sens == "sortie").Sum(m => m.Montant), 2)</strong></td>
+                        @* Totaux calculés par le serveur sur tout le filtre (toutes les pages), pas sur la seule page affichée *@
+                        <tfoot><tr><th scope="row" colspan="3">@(employeVu == "" ? "Total de la période" : $"Total de la période · {employeVu}")</th>
+                            <td class="nombre"><strong>@Libelles.Dinars(totalEntrees, 2)</strong></td>
+                            <td class="nombre"><strong>@Libelles.Dinars(totalSorties, 2)</strong></td>
                             <td colspan="2"></td></tr></tfoot>
                     }
                 </table>
             </div>
+            <Pagination Total="totalMouvements" Numero="pageMouvements" Taille="tailleMouvements" Libelle="Pages des mouvements" OnChange="p => ChargerMouvementsAsync(p.Numero, p.Taille)" />
             <p class="detail" style="margin: 0">« auto » : calculé sans saisie (paiements par carte du jour, remises de chèques, règlements des grossistes, remboursements par carte).</p>
         </section>
     }
@@ -255,6 +264,11 @@
     private List<CodeLibelleDto> categories = [];
     private List<OrganismeDto> organismes = [];
     private List<MouvementTresorerieDto> mouvements = [];
+    // Mouvements : paginés et filtrés par le serveur ; totaux de tout le filtre ; employés de la période pour la liste du filtre
+    private string employeVu = "";
+    private int pageMouvements = 1, tailleMouvements = Pagination.TailleParDefaut, totalMouvements;
+    private decimal totalEntrees, totalSorties;
+    private List<string> employesMouvements = [];
     private AVerserDto? aVerser;
     private EditionCompte? edition;
     private readonly Dictionary<long, decimal> versements = [];
@@ -323,7 +337,19 @@
         compteVu = comptes.FirstOrDefault()?.Id ?? 0;
         (initialise, reglementPrepare) = (true, (Facture, Bordereau));
         PreparerReglement();
-        await ChargerMouvementsAsync();
+        // « ← Retour » : compte affiché, période, employé, page et type de mouvement en saisie retrouvés tels qu'ils étaient
+        Historique.Suivre("tresorerie", e =>
+        {
+            e.Mettre("compte", compteVu); e.Mettre("du", du); e.Mettre("au", au); e.Mettre("employe", employeVu);
+            e.Mettre("page", pageMouvements); e.Mettre("taille", tailleMouvements); e.Mettre("nature", nature);
+        });
+        if (Historique.Restaurer("tresorerie") is { } r)
+        {
+            if (r.Long("compte") is { } c && comptes.Any(x => x.Id == c)) compteVu = c;
+            (du, au, employeVu, nature) = (r.Date("du") ?? du, r.Date("au") ?? au, r.Texte("employe") ?? "", r.Texte("nature") ?? nature);
+            await ChargerMouvementsAsync(r.Entier("page") ?? 1, r.Entier("taille") ?? tailleMouvements);
+        }
+        else await ChargerMouvementsAsync();
     }
 
     // Écran gardé quand seule l'adresse change (autre facture depuis « Dettes et créances ») : la saisie suit le nouveau lien
@@ -359,12 +385,20 @@
         facturesChoisies.RemoveAll(id => facturesOuvertes.All(f => f.Id != id));
     }
 
-    private async Task ChargerMouvementsAsync()
+    // Nouvelle période, nouveau compte, nouvel employé ou nouvel enregistrement : retour à la première page
+    private Task ChargerMouvementsAsync() => ChargerMouvementsAsync(1, tailleMouvements);
+    private Task FiltrerMouvementsAsync() => ChargerMouvementsAsync(1, tailleMouvements);
+    private Task ToutAfficherMouvementsAsync() { employeVu = ""; return FiltrerMouvementsAsync(); }
+
+    private async Task ChargerMouvementsAsync(int page, int taille)
     {
         if (compteVu == 0) return;
-        string? e;
-        (mouvements, e) = await Api.MouvementsTresorerieAsync(compteVu, du, au);
-        erreur ??= e;
+        var (r, e) = await Api.MouvementsTresorerieAsync(compteVu, du, au, page, taille, employeVu);
+        if (r is null) { erreur ??= e; return; }
+        // Employé sans mouvement sur la nouvelle période ou le compte affiché : retour à « Tous »
+        if (employeVu != "" && !r.Employes.Contains(employeVu)) { employeVu = ""; await ChargerMouvementsAsync(1, taille); return; }
+        (mouvements, totalMouvements, pageMouvements, tailleMouvements) = (r.Page.Lignes.ToList(), r.Page.Total, r.Page.Numero, r.Page.Taille);
+        (totalEntrees, totalSorties, employesMouvements) = (r.TotalEntrees, r.TotalSorties, r.Employes);
     }
 
     private async Task VoirAsync(long id) { compteVu = id; await ChargerMouvementsAsync(); }

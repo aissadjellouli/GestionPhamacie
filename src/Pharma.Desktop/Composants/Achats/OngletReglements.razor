@@ -1,4 +1,5 @@
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 @* Règlement des grossistes, facture par facture (droit achats.regler) *@
 <div class="colonnes">
@@ -6,7 +7,7 @@
         <h2 id="t-grossistes-dette">Dette par grossiste</h2>
         @if (grossistes is null)
         {
-            <p class="vide">Chargement…</p>
+            <Chargement />
         }
         else
         {
@@ -256,7 +257,16 @@
         (banques, _) = await Api.BanquesReglementAsync();
         compteId = banques.FirstOrDefault(b => b.RecoitCarte)?.Id ?? banques.FirstOrDefault()?.Id ?? 0;
         grossisteApplique = Grossiste;
-        if (Grossiste is > 0) await ChoisirAsync(Grossiste.Value);
+        // « ← Retour » : grossiste ouvert, filtres et page de son relevé retrouvés tels qu'ils étaient
+        Historique.Suivre("reglements", e =>
+        {
+            e.Mettre("grossiste", situation?.Id); e.Mettre("du", releveDu); e.Mettre("au", releveAu); e.Mettre("type", releveType);
+            e.Mettre("page", mouvementsPage); e.Mettre("taille", mouvementsTaille);
+        });
+        var r = Historique.Restaurer("reglements");
+        if (r is not null) (releveDu, releveAu, releveType, mouvementsTaille) = (r.Date("du"), r.Date("au"), r.Texte("type") ?? "", r.Entier("taille") ?? mouvementsTaille);
+        if ((r?.Long("grossiste") ?? Grossiste) is > 0 and var g) await ChoisirAsync(g);
+        if (r?.Entier("page") is > 1 and var pr) await ChargerMouvementsAsync(pr, mouvementsTaille);
         initialise = true;
     }
 

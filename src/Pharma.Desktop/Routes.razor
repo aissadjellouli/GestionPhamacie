@@ -3,6 +3,7 @@
         <RouteView RouteData="@routeData" DefaultLayout="@typeof(MiseEnPage)" />
     </Found>
     <NotFound>
-        <MiseEnPage><p class="page">Page introuvable.</p></MiseEnPage>
+        @* Une mise en page reçoit son contenu par LayoutView (pas en enfant direct : le poste plantait sur une adresse inconnue) *@
+        <LayoutView Layout="@typeof(MiseEnPage)"><p class="page">Page introuvable.</p></LayoutView>
     </NotFound>
 </Router>

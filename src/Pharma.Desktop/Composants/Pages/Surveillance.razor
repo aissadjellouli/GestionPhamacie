@@ -1,6 +1,7 @@
 @page "/surveillance"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject NavigationManager Nav
 
 <div class="page page-serree">
     <div class="titre-page">
@@ -215,6 +216,7 @@
     protected override async Task OnInitializedAsync()
     {
         if (!Session.A("role.titulaire")) return;
+        traitees = Onglet == "traitees";
         await ChargerAsync();
         var (p, e) = await Api.ParametresSurveillanceAsync();
         if (p is not null)
@@ -261,8 +263,15 @@
         (sensibles, _) = await Api.ProduitsSensiblesAsync();
     }
 
-    private async Task BasculerAsync(bool versTraitees)
+    // Onglet dans l'adresse (surveillance?onglet=traitees) : chaque onglet est un écran pour « ← Retour »
+    [SupplyParameterFromQuery(Name = "onglet")] public string? Onglet { get; set; }
+    private void BasculerAsync(bool versTraitees) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("onglet", versTraitees ? "traitees" : null));
+
+    protected override async Task OnParametersSetAsync()
     {
+        if (!Session.A("role.titulaire")) return;
+        var versTraitees = Onglet == "traitees";
+        if (versTraitees == traitees) return;   // premier affichage : OnInitializedAsync a déjà chargé cet onglet
         (traitees, enEdition, message) = (versTraitees, null, null);
         await ChargerAsync();
     }

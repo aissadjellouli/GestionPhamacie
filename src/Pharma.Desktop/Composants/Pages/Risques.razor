@@ -1,6 +1,7 @@
 @page "/surveillance/risques"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 <div class="page">
     <div class="titre-page">
@@ -104,6 +105,7 @@
             </section>
             <p class="pied-page">Une perte d’inventaire apparaît le jour du comptage, pas le jour où la boîte a disparu : sur une longue période, regardez la tendance plutôt qu’un jour isolé. Présence : connexion, vente, ouverture de caisse ou action inscrite au journal ce jour-là.</p>
         }
+        else if (erreur is null) { <Chargement Texte="Calcul des risques…" /> }
     }
 </div>
 
@@ -119,7 +121,23 @@
 
     private int? Duree => du is { } d && au is { } a && a == DateOnly.FromDateTime(DateTime.Today) ? a.DayNumber - d.DayNumber + 1 : null;
 
-    protected override Task OnInitializedAsync() => PeriodeAsync(30);
+    protected override async Task OnInitializedAsync()
+    {
+        // « ← Retour » : période et pages des deux tableaux retrouvées telles qu'elles étaient
+        Historique.Suivre("risques", e =>
+        {
+            e.Mettre("du", du); e.Mettre("au", au); e.Mettre("pageEmployes", pageEmployes); e.Mettre("tailleEmployes", tailleEmployes);
+            e.Mettre("pageJours", pageJours); e.Mettre("tailleJours", tailleJours);
+        });
+        if (Historique.Restaurer("risques") is { } r && r.Date("du") is { } d && r.Date("au") is { } a)
+        {
+            (du, au) = (d, a);
+            await ChargerAsync();
+            (pageEmployes, tailleEmployes) = (r.Entier("pageEmployes") ?? 1, r.Entier("tailleEmployes") ?? tailleEmployes);
+            (pageJours, tailleJours) = (r.Entier("pageJours") ?? 1, r.Entier("tailleJours") ?? tailleJours);
+        }
+        else await PeriodeAsync(30);
+    }
 
     private Task PeriodeAsync(int jours)
     {

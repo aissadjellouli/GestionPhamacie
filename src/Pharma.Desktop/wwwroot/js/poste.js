@@ -67,3 +67,20 @@ window.pharma.affichage._requete.addEventListener('change', function () {
   const a = window.pharma.affichage;
   if (a._poste) a._poste.invokeMethodAsync('SurChangementAffichage', a.estSombre());
 });
+
+// Retour à l'écran précédent : Alt + ← et bouton « précédent » de la souris passent par l'historique du poste (qui
+// rouvre l'écran avec son état), jamais par le retour du navigateur intégré.
+window.pharma.retour = {
+  _poste: null,
+  suivre: function (reference) { this._poste = reference; },
+  _demander: function (e) {
+    e.preventDefault();
+    if (window.pharma.retour._poste) window.pharma.retour._poste.invokeMethodAsync('Retour');
+  }
+};
+document.addEventListener('keydown', function (e) {
+  if (e.altKey && e.key === 'ArrowLeft') window.pharma.retour._demander(e);
+});
+// Bouton 3 = précédent : empêché à l'appui et au relâché (sinon le navigateur intégré reviendrait seul)
+document.addEventListener('mousedown', function (e) { if (e.button === 3) e.preventDefault(); });
+document.addEventListener('mouseup', function (e) { if (e.button === 3) window.pharma.retour._demander(e); });

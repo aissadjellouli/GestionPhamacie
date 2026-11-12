@@ -3,6 +3,7 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject NavigationManager Nav
+@inject HistoriqueNavigation Historique
 
 @* Fenêtre unique de la fiche contact, posée dans la mise en page : coordonnées, situation, raccourcis vers les écrans du tiers.
    Coordonnées d'un patient, d'un grossiste ou d'une entreprise modifiables ici, selon les droits ; fiche complète d'un patient
@@ -27,7 +28,7 @@
             }
             else if (fiche is null)
             {
-                <p class="vide" style="margin: 0">Chargement…</p>
+                <Chargement />
             }
             else if (patient is not null)
             {
@@ -277,9 +278,11 @@
         Session.AvantFermeture -= Fiches.Fermer;
     }
 
+    // Changement d'écran : la fiche se ferme ; après un « Retour », celle qui était ouverte sur l'écran retrouvé se rouvre
     private void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         if (Fiches.Ouverte is not null) Fiches.Fermer();
+        if (Historique.PrendreFicheARouvrir() is { } f) Fiches.Ouvrir(f.Type, f.Id, f.Nom);
     }
 
     private void Rafraichir() => _ = InvokeAsync(async () =>
@@ -308,11 +311,8 @@
         else Fiches.Fermer();
     }
 
-    private void Aller(string route)
-    {
-        Fiches.Fermer();
-        Nav.NavigateTo(route);
-    }
+    // La fiche reste ouverte jusqu'au changement d'écran : l'historique la retient et « Retour » la rouvre
+    private void Aller(string route) => Nav.NavigateTo(route);
 
     private async Task CopierAsync(string valeur)
     {

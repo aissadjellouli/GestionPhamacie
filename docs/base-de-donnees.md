@@ -5,6 +5,7 @@
 | `066_alertes_peremption_claires.sql` | Alertes de péremption utiles seulement : `generer_alertes` ne crée plus d'alerte pour un lot dont toutes les boîtes seront vendues à temps ; messages qui disent combien de boîtes, quelle valeur et quoi faire. |
 | `067_controle_interne.sql` | « Surveillance » devient « Contrôle interne » dans les messages d'anomalie (`surveillance_candidats`, `surveillance_candidats_comptes`) ; noms techniques inchangés. |
 | `068_verification_destinataire.sql` | Vérification d'un destinataire des notifications par un code : `destinataire_notification.code_verification_hash` (haché), `code_verification_expire` (15 minutes), `code_verification_essais` (5 au plus). |
+| `069_receptions_attente.sql` | Réceptions en attente : table `reception_attente` (saisie de l'écran Réceptions en JSON, mode `reception` / `facture` / `comptage` / `recompte`, scans du mobile repris) ; mise en attente par bouton, en quittant l'écran ou en se déconnectant, reprise depuis n'importe quel poste. |
 | `061_tva_sorties.sql` | TVA à reverser sur les pertes et dons : table `parametre_rapport` (une ligne : `tva_reversee_perime`, `tva_reversee_casse`, `tva_reversee_don`, « non » par défaut), réglée par le titulaire selon l'avis de son comptable ; les rapports en tirent la marge après pertes et dons. |
 # Base de données
 
@@ -133,7 +134,7 @@ L'API emporte ces scripts numérotés dans le sous-dossier `database` de son dos
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 068, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 069, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

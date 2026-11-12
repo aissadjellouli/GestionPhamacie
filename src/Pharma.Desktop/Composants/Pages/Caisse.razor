@@ -6,6 +6,7 @@
 @inject AfficheurClient Afficheur
 @inject IJSRuntime JS
 @inject ImprimanteTickets Tickets
+@inject HistoriqueNavigation Historique
 
 <div class="page" style="padding-top: 24px">
     @if (erreurEtat is not null)
@@ -14,7 +15,7 @@
     }
     else if (etat is null)
     {
-        <p class="vide">Chargement de la caisse…</p>
+        <Chargement Texte="Chargement de la caisse…" />
     }
     else if (etat.SessionId is null)
     {
@@ -208,6 +209,7 @@
                     </div>
                     @if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
                 }
+                @if (messageRetour is not null) { <div class="info-bandeau" role="status">@messageRetour</div> }
 
                 <div class="champ recherche">
                     <label for="scan">Scanner ou rechercher un produit (nom, DCI, code-barres)</label>
@@ -802,9 +804,73 @@
     protected override async Task OnInitializedAsync()
     {
         Session.AvantFermeture += PanierAbandonne;
+        // Quitter la Caisse panier rempli (menu, lien, « Retour ») : la vente part en attente, « Retour » la reprend
+        Historique.AvantDeQuitter("caisse", QuitterAsync);
+        Historique.Suivre("caisse", e => { e.Mettre("attente", venteMiseDeCoteEnPartant); e.Mettre("credit", creditOuvert); });
+        var retour = Historique.Restaurer("caisse");
+        var aReprendre = retour?.Long("attente");
+        if (retour?.Oui("credit") == true) creditOuvert = true;   // panneau « Règlement d'un crédit » rouvert (son patient et son relevé : PanneauCredit)
         (organismes, _) = await Api.OrganismesAsync();
         organismeId = organismes.FirstOrDefault()?.Id ?? 0;
         await ChargerEtatAsync();
+        if (aReprendre is { } id) await ReprendreAuRetourAsync(id);
+        // Vente laissée en attente au « Changer d'utilisateur » : reprise par l'employé qui se connecte ensuite sur ce poste
+        else if (Session.A("caisse.vendre") && Session.PrendreVenteAReprendre() is { } laissee) await ReprendreLaisseeAsync(laissee.Id, laissee.LaisseePar);
+    }
+
+    // ---- Retour sur la Caisse : mise en attente automatique en partant, reprise en revenant ----
+    private long? derniereMiseEnAttente, venteMiseDeCoteEnPartant;
+    private string? messageRetour;
+
+    /// <summary>
+    /// Avant de quitter la Caisse : un panier rempli part en attente (rien n'est perdu, rien n'est signalé comme retiré).
+    /// Si la mise en attente échoue, ou pendant un encaissement, on reste sur la Caisse.
+    /// </summary>
+    private async Task<bool> QuitterAsync(string cible)
+    {
+        if (HistoriqueNavigation.Chemin(cible) == "caisse") return true;   // reste sur la Caisse (ex. relevé d'un crédit) : panier gardé
+        venteMiseDeCoteEnPartant = null;
+        if (lignes.Count == 0) return true;
+        if (enCours) { erreurAttente = "Encaissement en cours : attendez la fin avant de quitter la caisse."; await InvokeAsync(StateHasChanged); return false; }
+        enCours = true;
+        try { derniereMiseEnAttente = null; await MettreDeCoteAsync(); }
+        finally { enCours = false; }
+        if (erreurAttente is not null || derniereMiseEnAttente is null)
+        {
+            erreurAttente ??= "La vente n'a pas pu être mise en attente : la caisse reste affichée pour ne pas perdre le panier.";
+            await InvokeAsync(StateHasChanged);
+            return false;
+        }
+        venteMiseDeCoteEnPartant = derniereMiseEnAttente;
+        return true;
+    }
+
+    /// <summary>Vente mise en attente au changement d'utilisateur : retenue par le poste pour le prochain employé connecté.</summary>
+    private async Task RetenirPourLeSuivantAsync(Task<(long? Id, string? Erreur)> envoi, string quitte)
+    {
+        var (id, _) = await envoi;
+        if (id is { } v) Session.RetenirVenteAReprendre(v, quitte);
+    }
+
+    /// <summary>Retour sur la Caisse : la vente mise en attente en partant est reprise, si personne ne l'a reprise entre-temps.</summary>
+    private async Task ReprendreAuRetourAsync(long id)
+    {
+        if (attentes.FirstOrDefault(v => v.Id == id) is { } v)
+        {
+            await ReprendreAsync(v);
+            if (erreurAttente is null) messageRetour = "Vente reprise : elle avait été mise en attente quand vous avez quitté la caisse.";
+        }
+        else messageRetour = "La vente mise en attente en quittant la caisse a déjà été reprise ou encaissée sur un autre poste.";
+    }
+
+    private async Task ReprendreLaisseeAsync(long id, string laisseePar)
+    {
+        if (attentes.FirstOrDefault(v => v.Id == id) is { } v)
+        {
+            await ReprendreAsync(v);
+            if (erreurAttente is null) messageRetour = $"Vente reprise : {laisseePar} l'a laissée en attente en changeant d'utilisateur.";
+        }
+        else messageRetour = $"La vente laissée par {laisseePar} a déjà été reprise ou encaissée.";
     }
 
     [JSInvokable]
@@ -1519,20 +1585,26 @@
     /// Tout ce qui a été saisi part avec le panier : boîtes scannées (rattachées à la vente), raisons de lot, reste à charge,
     /// porteur de l'ordonnance ; rien n'est à ressaisir à la reprise.
     /// </summary>
-    private async Task MettreDeCoteAsync()
+    /// <summary>Panier en requête de mise en attente, calculée sans attendre (utilisable au moment même d'un changement d'utilisateur).</summary>
+    private MiseEnAttenteRequete DemandeAttente(string? precision = null)
     {
-        if (lignes.Count == 0) return;
-        erreurAttente = null;
         var panier = new PanierAttenteDto(
             lignes.Select(l => new LignePanierAttenteDto(l.ProduitId, l.Nom, l.Prix, l.Lot, l.Quantite, l.BoiteScannee, l.StockProduit,
                 l.Boites.ToList(), l.RaisonLot, l.LotConseilleServi)).ToList(),
             tiersPayant, organismeId, taux, patient, medecin, datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu, voletBrut,
             resteSaisi, porteurAutre, porteurNom, porteurAdresse, porteurPiece);
-        var libelle = patient is { } p ? $"{p.Nom} {p.Prenom}".Trim() : $"Vente de {DateTime.Now:HH:mm}";
+        var libelle = (patient is { } p ? $"{p.Nom} {p.Prenom}".Trim() : $"Vente de {DateTime.Now:HH:mm}") + precision;
         var total = apercu?.MontantTotal ?? lignes.Sum(l => l.Prix * l.Quantite);
-        var e = await Api.MettreEnAttenteAsync(new MiseEnAttenteRequete(libelle, lignes.Count, total,
-            System.Text.Json.JsonSerializer.Serialize(panier)));
+        return new MiseEnAttenteRequete(libelle, lignes.Count, total, System.Text.Json.JsonSerializer.Serialize(panier));
+    }
+
+    private async Task MettreDeCoteAsync()
+    {
+        if (lignes.Count == 0) return;
+        erreurAttente = null;
+        var (id, e) = await Api.MettreEnAttenteAsync(DemandeAttente());
         if (e is not null) { erreurAttente = e; return; }
+        derniereMiseEnAttente = id;
         venteFaite = null;
         ViderPanier();
         await ChargerAttentesAsync();
@@ -1599,6 +1671,16 @@
     // déconnexion, appelé juste avant que le jeton soit effacé (SessionPoste.AvantFermeture).
     private void PanierAbandonne()
     {
+        // « Changer d'utilisateur » panier rempli : la vente part en attente (rien n'est perdu ni signalé « retiré ») et le
+        // prochain employé connecté sur ce poste la retrouve à la Caisse. Requête partie avant la fermeture de la session.
+        if (Session.ChangementUtilisateur && lignes.Any(l => l.Quantite > 0))
+        {
+            var quitte = Session.NomComplet ?? "l’employé précédent";
+            var envoi = Api.MettreEnAttenteAsync(DemandeAttente($" · laissée par {quitte}"));
+            lignes.Clear();
+            _ = RetenirPourLeSuivantAsync(envoi, quitte);
+            return;
+        }
         foreach (var l in lignes.Where(l => l.Quantite > 0).ToList()) SignalerRetrait(l, l.Quantite);
         lignes.Clear();
     }
@@ -1606,6 +1688,7 @@
     public async ValueTask DisposeAsync()
     {
         Session.AvantFermeture -= PanierAbandonne;
+        Historique.Oublier("caisse");
         PanierAbandonne();
         try { await JS.InvokeVoidAsync("pharma.arreterF12"); }
         catch (JSDisconnectedException) { }

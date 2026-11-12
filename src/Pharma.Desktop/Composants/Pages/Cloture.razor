@@ -1,5 +1,7 @@
 @page "/cloture"
 @inject ApiClient Api
+@inject SessionPoste Session
+@inject NavigationManager Nav
 
 <div class="page page-serree">
     <div class="titre-page">
@@ -17,7 +19,7 @@
 
     @if (etat is null && erreur is null)
     {
-        <p class="vide">Chargement…</p>
+        <Chargement />
     }
     else if (etat is not null && etat.SessionId is null && resultat is null)
     {
@@ -105,6 +107,7 @@
                     <div class="succes" role="status">
                         Relève faite : la caisse reste ouverte avec un fond de @Libelles.Dinars(resultat.Compte, 2).
                         <a href="caisse">Retour à la caisse</a>
+                        <button type="button" class="btn" style="margin-left: 8px" @onclick="ChangerUtilisateur">⇄ Changer d’utilisateur maintenant</button>
                     </div>
                 }
                 @if (fichier is not null)
@@ -135,6 +138,13 @@
     [SupplyParameterFromQuery(Name = "releve")] public bool Releve { get; set; }
 
     private long? nouvelleSession;
+
+    // Relève faite au changement d'équipe : l'employé passe la main tout de suite (la caisse reste ouverte)
+    private void ChangerUtilisateur()
+    {
+        Session.Fermer($"{Session.NomComplet} a quitté le poste après la relève. La caisse reste ouverte.", changementUtilisateur: true);
+        Nav.NavigateTo("connexion");
+    }
     private EtatCaisseDto? etat;
     private readonly Dictionary<string, decimal> saisies = Coupures.ToDictionary(c => c.Code, _ => 0m);
     private ClotureDto? resultat;
@@ -167,6 +177,7 @@
         {
             var (releve, err) = await Api.ReleveCaisseAsync(new Dictionary<string, decimal>(saisies));
             (resultat, nouvelleSession, erreur) = (releve?.Cloture, releve?.NouvelleSessionId, err);
+            if (err is null) Session.MarquerReleveFaite();   // « ⇄ Changer » ne repropose pas la relève
         }
         else
             (resultat, erreur) = await Api.CloturerCaisseAsync(new Dictionary<string, decimal>(saisies));

@@ -188,6 +188,29 @@ internal static class AchatsEndpoints
         achats.MapGet("/receptions/mode", async (ModeReception mode, CancellationToken ct) => Results.Ok(new ModeReceptionDto(await mode.AveugleAsync(ct))))
            .ExigerPermission(Lecture);
 
+        // Réceptions en attente : saisie mise de côté (bouton, départ de l'écran, déconnexion), reprise depuis n'importe quel poste
+        achats.MapGet("/receptions/attente", async (GererReceptionsEnAttente gerer, CancellationToken ct) =>
+                Results.Ok((await gerer.ListerAsync(ct))
+                    .Select(r => new ReceptionEnAttenteDto(r.Id, r.Libelle, r.Mode, r.Lignes, r.EmployeId, r.Employe, r.Poste, r.CreeLe))))
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        achats.MapPost("/receptions/attente", async (MiseEnAttenteReceptionRequete req, GererReceptionsEnAttente gerer, ClaimsPrincipal user, HttpRequest requete,
+                CancellationToken ct) =>
+                Results.Ok(new IdentifiantDto(await gerer.MettreEnAttenteAsync(requete.Poste(), user.UtilisateurId(), req.Libelle, req.Mode, req.Lignes,
+                    req.Contenu, req.Scans, ct))))
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        achats.MapPost("/receptions/attente/{id:long}/reprendre", async (long id, GererReceptionsEnAttente gerer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Content((await gerer.ReprendreAsync(id, user.UtilisateurId(), ct)).Contenu, "application/json"))
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
+        achats.MapDelete("/receptions/attente/{id:long}", async (long id, GererReceptionsEnAttente gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await gerer.SupprimerAsync(id, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.AchatsReceptionner);
+
         achats.MapPost("/receptions/comptages", async (CompterLivraisonRequete req, CompterLivraison compter, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await compter.ExecuterAsync(req.FournisseurId, req.NumeroBl,
                     req.Lignes.Select(l => new LigneComptee(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.Gtin, l.NumerosSerie)).ToList(),

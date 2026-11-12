@@ -1,6 +1,9 @@
-﻿@inject ApiClient Api
+﻿@implements IDisposable
+@inject ApiClient Api
 @inject SessionPoste Session
 @inject NavigationManager Nav
+@inject HistoriqueNavigation Historique
+@inject TachesLaissees Taches
 @inject ImprimanteEtiquettes Imprimante
 
 @if (erreur is not null)
@@ -13,6 +16,53 @@
 }
 
 @* Réception à l'aveugle : livraisons comptées dont la facture reste à saisir, et écarts à valider *@
+@* Réceptions mises en attente (bouton, départ de l'écran, déconnexion) : reprises depuis n'importe quel poste *@
+@if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
+@if (messageAttente is not null) { <div class="info-bandeau" role="status">@messageAttente</div> }
+@if (attentes.Count > 0)
+{
+    <section class="panneau" aria-labelledby="t-attente-rec">
+        <h2 id="t-attente-rec">Réceptions en attente (@attentes.Count)</h2>
+        <div class="tableau-cadre">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Réception</th><th scope="col" class="nombre">Lignes</th><th scope="col">Mise en attente par</th><th scope="col">Le</th><th scope="col"></th></tr></thead>
+                <tbody>
+                    @foreach (var a in attentes)
+                    {
+                        // Comptage à l'aveugle : repris par qui l'a compté ou par qui décide des écarts (le serveur le revérifie)
+                        var reserve = a.Mode is "comptage" or "recompte" && a.Employe != Session.NomComplet && !Session.A("achats.valider_ecart");
+                        <tr>
+                            <td>@a.Libelle</td>
+                            <td class="nombre">@a.Lignes</td>
+                            <td>@a.Employe<span class="detail">@(string.IsNullOrEmpty(a.Poste) ? "" : $" · {a.Poste}")</span></td>
+                            <td style="white-space: nowrap">@a.CreeLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                            <td style="white-space: nowrap">
+                                @if (reserve)
+                                {
+                                    <span class="detail">Réservée à @a.Employe</span>
+                                }
+                                else if (aAbandonner == a.Id)
+                                {
+                                    <span>Abandonner cette réception ? </span>
+                                    <button type="button" class="btn btn-danger" disabled="@enCours" @onclick="() => AbandonnerAsync(a.Id)">Abandonner</button>
+                                    <button type="button" class="btn" @onclick="() => aAbandonner = null">Garder</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-contour" disabled="@enCours" @onclick="() => ReprendreAsync(a.Id)"
+                                            title="@(SaisieEnCours ? "La saisie en cours part d’abord en attente" : null)">Reprendre</button>
+                                    <button type="button" class="btn" disabled="@enCours" @onclick="() => aAbandonner = a.Id">Abandonner</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="detail" style="margin: 0">Une réception quittée en cours de saisie (autre écran, déconnexion) arrive ici. Abandonnée, ses boîtes scannées sur le mobile reviennent dans la liste d’import.</p>
+    </section>
+}
+
 @if (aFacturer is null && aRecompter is null && resultat is null && comptages.Count > 0)
 {
     <section class="panneau" aria-labelledby="t-comptages">
@@ -353,6 +403,7 @@ else
             {
                 <div style="display: flex; gap: 8px">
                     <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="TerminerComptageAsync">Terminer le comptage</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="MettreEnAttenteAsync" title="Mettre ce comptage de côté et le reprendre plus tard">⏸ Mettre en attente</button>
                     <button type="button" class="btn" disabled="@enCours" @onclick="Nouvelle">Abandonner</button>
                 </div>
             }
@@ -378,6 +429,7 @@ else
             <ValidationProduitBloque Produits="ProduitsBloques" Operation="à l’achat" Id="rec" Accord="accordBlocage" />
             <div style="display: flex; gap: 8px">
                 <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">@(aFacturer is null ? "Valider la réception" : "Valider la facture")</button>
+                <button type="button" class="btn" disabled="@(enCours || !SaisieEnCours)" @onclick="MettreEnAttenteAsync" title="Mettre cette livraison de côté et la reprendre plus tard, depuis n’importe quel poste">⏸ Mettre en attente</button>
                 <button type="button" class="btn" disabled="@enCours" @onclick="Nouvelle">Abandonner</button>
             </div>
             }
@@ -621,13 +673,33 @@ else
         // Commandes à recevoir : les commandes en cours sont en tête de liste (200 au plus)
         commandes = (await Api.CommandesAchatAsync(1, 200)).Item1?.Lignes.ToList() ?? [];
         commandes = commandes.Where(c => c.Statut is "envoyee" or "recue_partielle").ToList();
-        await ChargerReceptionsAsync(1);
+        // « ← Retour » : filtres et page de la liste des réceptions retrouvés tels qu'ils étaient
+        Historique.Suivre("receptions", e =>
+        {
+            e.Mettre("grossiste", fFournisseur > 0 ? fFournisseur : null); e.Mettre("du", fDu); e.Mettre("au", fAu); e.Mettre("recherche", fRecherche);
+            e.Mettre("page", pageReceptions); e.Mettre("taille", tailleReceptions); e.Mettre("attente", receptionMiseDeCoteEnPartant);
+        });
+        // Quitter l'onglet ou se déconnecter avec une livraison en cours de saisie : elle part en attente (rien n'est perdu)
+        Historique.AvantDeQuitter("receptions", QuitterAsync);
+        Session.AvantFermeture += MettreDeCoteADeconnexion;
+        await ChargerAttentesAsync();
+        var r = Historique.Restaurer("receptions");
+        if (r is not null) (fFournisseur, fDu, fAu, fRecherche) = (r.Long("grossiste") ?? 0, r.Date("du"), r.Date("au"), r.Texte("recherche"));
+        await ChargerReceptionsAsync(r?.Entier("page") ?? 1, r?.Entier("taille"));
         await CompterScansMobileAsync();
         // Réception à l'aveugle : le bon de commande (et ses quantités) ne s'ouvre pas au comptage
         if (!aveugle && CommandeId is { } cid && commandes.FirstOrDefault(c => c.Id == cid) is { } c)
         {
             (fournisseurId, commandeId) = (c.FournisseurId, c.Id);
             await ChargerCommandeAsync();
+        }
+        // « ← Retour » : la réception mise en attente en partant est reprise
+        if (r?.Long("attente") is { } enAttente) await ReprendreAuRetourAsync(enAttente);
+        // Bandeau « tâches laissées » : réception laissée par l'employé précédent, reprise sans rien refaire
+        else if (Taches.PrendreChoisie("reception") is { } t && long.TryParse(t.Contenu, out var laissee))
+        {
+            await ReprendreAsync(laissee);
+            if (erreurAttente is null) messageAttente = $"Réception reprise : {t.LaisseePar} l’a laissée en changeant d’utilisateur.";
         }
     }
 
@@ -943,5 +1015,181 @@ else
         controle = false;
         await RemettreScansAsync(aRemettre);
         Nav.NavigateTo("achats?onglet=receptions");
+    }
+
+    // ---- Réceptions en attente : saisie mise de côté sur le serveur (bouton, départ de l'écran, déconnexion), reprise partout ----
+    private sealed record LigneMiseDeCote(long ProduitId, string Nom, string NumeroLot, DateOnly? Peremption, int Quantite, decimal Prix, decimal RemisePct,
+        int Ug, bool UgCoutReparti, bool RemplacerPrixCatalogue, decimal? Ppa, decimal? Shp, int? Commandee, string? Gtin, List<string> Series,
+        int SansSerie, int? QuantiteSaisie, int? QuantiteMobile, List<long> ScansMobile, bool LotSepare, bool EntrerBloque);
+    private sealed record ReceptionMiseDeCote(long FournisseurId, long CommandeId, string? NumeroBl, string? NumeroFacture, decimal Timbre,
+        ComptageAFacturerDto? AFacturer, ComptageAFacturerDto? ARecompter, List<LigneMiseDeCote> Lignes);
+
+    private List<ReceptionEnAttenteDto> attentes = [];
+    private string? erreurAttente, messageAttente;
+    private long? aAbandonner, receptionMiseDeCoteEnPartant;
+
+    /// <summary>Une livraison est en cours de saisie (pas encore validée) : à mettre en attente plutôt qu'à perdre.</summary>
+    private bool SaisieEnCours => resultat is null && (lignes.Count > 0 || aFacturer is not null || aRecompter is not null);
+
+    private string ModeSaisie => aRecompter is not null ? "recompte" : aFacturer is not null ? "facture" : Comptage ? "comptage" : "reception";
+
+    private static string LibelleMode(string mode) => mode switch
+    {
+        "recompte" => "Recompte", "facture" => "Facture d’un BL compté", "comptage" => "Comptage à l’aveugle", _ => "Réception"
+    };
+
+    private async Task ChargerAttentesAsync() => (attentes, _) = await Api.ReceptionsEnAttenteAsync();
+
+    /// <summary>Saisie de l'écran en requête de mise en attente (calculée sans attendre : utilisable juste avant une déconnexion).</summary>
+    private MiseEnAttenteReceptionRequete Demande()
+    {
+        var bl = numeroBl ?? aFacturer?.NumeroBl ?? aRecompter?.NumeroBl;
+        var grossiste = fournisseurs.FirstOrDefault(f => f.Id == (fournisseurId > 0 ? fournisseurId : aFacturer?.FournisseurId ?? aRecompter?.FournisseurId ?? 0))?.RaisonSociale;
+        var libelle = string.Join(" · ", new[] { LibelleMode(ModeSaisie), bl is null ? null : $"BL {bl}", grossiste }.Where(x => x is not null));
+        var contenu = new ReceptionMiseDeCote(fournisseurId, commandeId, numeroBl, numeroFacture, timbre, aFacturer, aRecompter,
+            lignes.Select(l => new LigneMiseDeCote(l.ProduitId, l.Nom, l.NumeroLot, l.Peremption, l.Quantite, l.Prix, l.RemisePct, l.Ug, l.UgCoutReparti,
+                l.RemplacerPrixCatalogue, l.Ppa, l.Shp, l.Commandee, l.Gtin, l.Series.ToList(), l.SansSerie, l.QuantiteSaisie, l.QuantiteMobile,
+                l.ScansMobile.ToList(), l.LotSepare, l.EntrerBloque)).ToList());
+        return new MiseEnAttenteReceptionRequete(libelle, ModeSaisie, lignes.Count, System.Text.Json.JsonSerializer.Serialize(contenu),
+            lignes.SelectMany(l => l.ScansMobile).Distinct().ToList());
+    }
+
+    /// <summary>Écran vidé après une mise en attente : les scans du mobile restent avec la réception en attente (pas de remise).</summary>
+    private void ViderSaisie()
+    {
+        lignes.Clear();
+        (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
+        (dejaRecues, timbre) = ([], 0);
+        (aFacturer, ecartFacture, aRecompter) = (null, null, null);
+        accordBlocage.Effacer();
+        controle = false;
+    }
+
+    /// <summary>Met la saisie en attente ; renvoie son numéro, ou null (erreur affichée).</summary>
+    private async Task<long?> MettreDeCoteAsync()
+    {
+        erreurAttente = null;
+        if (!SaisieEnCours) return null;
+        var (id, e) = await Api.MettreReceptionEnAttenteAsync(Demande());
+        if (e is not null) { erreurAttente = e; return null; }
+        ViderSaisie();
+        await ChargerAttentesAsync();
+        return id;
+    }
+
+    private async Task MettreEnAttenteAsync()
+    {
+        if (enCours) return;
+        enCours = true;
+        try { if (await MettreDeCoteAsync() is not null) messageAttente = "Réception mise en attente : reprenez-la dans « Réceptions en attente », depuis n’importe quel poste."; }
+        finally { enCours = false; }
+    }
+
+    /// <summary>Reprise : la saisie en cours (s'il y en a une) part d'abord en attente, rien n'est perdu.</summary>
+    private async Task ReprendreAsync(long id)
+    {
+        if (enCours) return;
+        enCours = true;
+        try
+        {
+            (erreurAttente, messageAttente) = (null, null);
+            if (SaisieEnCours && await MettreDeCoteAsync() is null) return;
+            var (json, e) = await Api.ReprendreReceptionEnAttenteAsync(id);
+            if (e is not null) { erreurAttente = e; await ChargerAttentesAsync(); return; }
+            var r = System.Text.Json.JsonSerializer.Deserialize<ReceptionMiseDeCote>(json!)!;
+            ViderSaisie();
+            (fournisseurId, commandeId, numeroBl, numeroFacture, timbre, aFacturer, aRecompter) =
+                (r.FournisseurId, r.CommandeId, r.NumeroBl, r.NumeroFacture, r.Timbre, r.AFacturer, r.ARecompter);
+            foreach (var l in r.Lignes)
+            {
+                // Infos d'achat (TVA, SHP, prix public) rechargées à l'affichage, comme pour une ligne ajoutée
+                var ligne = new Ligne
+                {
+                    ProduitId = l.ProduitId, Nom = l.Nom, NumeroLot = l.NumeroLot, Peremption = l.Peremption, Quantite = l.Quantite, Prix = l.Prix,
+                    RemisePct = l.RemisePct, Ug = l.Ug, UgCoutReparti = l.UgCoutReparti, RemplacerPrixCatalogue = l.RemplacerPrixCatalogue, Ppa = l.Ppa,
+                    Shp = l.Shp, Commandee = l.Commandee, Gtin = l.Gtin, SansSerie = l.SansSerie, QuantiteSaisie = l.QuantiteSaisie,
+                    QuantiteMobile = l.QuantiteMobile, LotSepare = l.LotSepare, EntrerBloque = l.EntrerBloque
+                };
+                ligne.Series.AddRange(l.Series);
+                ligne.ScansMobile.AddRange(l.ScansMobile);
+                lignes.Add(ligne);
+            }
+            await ChargerAttentesAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    /// <summary>Abandon d'une réception en attente : ses scans du mobile reviennent en attente d'import (serveur), inscrit au journal.</summary>
+    private async Task AbandonnerAsync(long id)
+    {
+        if (enCours) return;
+        enCours = true;
+        try
+        {
+            (erreurAttente, messageAttente, aAbandonner) = (await Api.AbandonnerReceptionEnAttenteAsync(id), null, null);
+            await ChargerAttentesAsync();
+            await CompterScansMobileAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    /// <summary>
+    /// Avant de quitter l'onglet (autre onglet d'Achats, autre écran, « Retour ») : la saisie en cours part en attente.
+    /// Si la mise en attente échoue, ou pendant un enregistrement, on reste sur l'écran avec le message.
+    /// </summary>
+    private async Task<bool> QuitterAsync(string cible)
+    {
+        if (HistoriqueNavigation.Chemin(cible) == "achats" && HistoriqueNavigation.Parametre(cible, "onglet") == "receptions") return true;
+        receptionMiseDeCoteEnPartant = null;
+        if (!SaisieEnCours) return true;
+        if (enCours) { erreurAttente = "Enregistrement en cours : attendez la fin avant de quitter la réception."; await InvokeAsync(StateHasChanged); return false; }
+        enCours = true;
+        try { receptionMiseDeCoteEnPartant = await MettreDeCoteAsync(); }
+        finally { enCours = false; }
+        if (receptionMiseDeCoteEnPartant is null)
+        {
+            erreurAttente ??= "La réception n’a pas pu être mise en attente : l’écran reste affiché pour ne pas perdre la saisie.";
+            await InvokeAsync(StateHasChanged);
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>Déconnexion (bouton, changement d'utilisateur, inactivité) : la saisie en cours part en attente, rien n'est perdu.</summary>
+    private void MettreDeCoteADeconnexion()
+    {
+        if (!SaisieEnCours) return;
+        // Requête préparée et envoyée tout de suite : le jeton est lu avant que la session ne soit fermée
+        var demande = Demande();
+        var envoi = Api.MettreReceptionEnAttenteAsync(demande);
+        ViderSaisie();
+        // « Changer d'utilisateur » : le suivant la voit dans le bandeau des tâches laissées et la reprend d'un clic
+        if (Session.ChangementUtilisateur) _ = SignalerAuSuivantAsync(envoi, demande, Session.NomComplet ?? "l’employé précédent");
+    }
+
+    private async Task SignalerAuSuivantAsync(Task<(long? Id, string? Erreur)> envoi, MiseEnAttenteReceptionRequete demande, string quitte)
+    {
+        var (id, _) = await envoi;
+        if (id is { } v)
+            Taches.Ajouter(new TacheLaissee("reception", demande.Libelle ?? "Réception", quitte, "achats.receptionner",
+                v.ToString(System.Globalization.CultureInfo.InvariantCulture), DateTime.Now, demande.Mode is "comptage" or "recompte"));
+    }
+
+    /// <summary>Retour sur l'onglet : la réception mise en attente en partant est reprise, si personne ne l'a reprise entre-temps.</summary>
+    private async Task ReprendreAuRetourAsync(long id)
+    {
+        if (attentes.All(a => a.Id != id))
+        {
+            messageAttente = "La réception mise en attente en quittant l’écran a déjà été reprise ou abandonnée.";
+            return;
+        }
+        await ReprendreAsync(id);
+        if (erreurAttente is null) messageAttente = "Réception reprise : elle avait été mise en attente quand vous avez quitté l’écran.";
+    }
+
+    public void Dispose()
+    {
+        Session.AvantFermeture -= MettreDeCoteADeconnexion;
+        Historique.Oublier("receptions");
     }
 }

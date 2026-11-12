@@ -102,6 +102,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Caisse.ITicketLecture, Caisse.TicketSql>();
         services.AddScoped<Pharma.Application.Securite.IPreferencesAffichage, Securite.PreferencesAffichageSql>();
         services.AddScoped<Pharma.Application.Caisse.IVentesEnAttente, Caisse.VentesEnAttenteSql>();
+        services.AddScoped<Pharma.Application.Achats.IReceptionsEnAttente, Achats.ReceptionsEnAttenteSql>();
         services.AddScoped<Pharma.Application.Caisse.IAnnulationsVente, Caisse.AnnulationsVenteSql>();
         services.AddScoped<Pharma.Application.Caisse.IVentesParBoite, Caisse.AnnulationsVenteSql>();
         services.AddScoped<Pharma.Application.Caisse.IRetoursClient, Caisse.RetoursClientSql>();

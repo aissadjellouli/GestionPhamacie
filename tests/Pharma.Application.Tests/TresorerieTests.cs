@@ -14,12 +14,13 @@ internal sealed class TresorerieEnMemoire : ITresorerie
     ];
     public List<CaisseAVerser> Caisses { get; } = [];
     public List<MouvementAEcrire> Mouvements { get; } = [];
+    public List<MouvementTresorerie> Lus { get; } = [];
     public List<(long Session, decimal Montant, bool Pendant, bool Auto)> Versements { get; } = [];
     public (long De, long Vers, decimal Montant)? Transfert { get; private set; }
 
     public Task<IReadOnlyList<CompteTresorerie>> ComptesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CompteTresorerie>>(Comptes);
     public Task<IReadOnlyList<MouvementTresorerie>> MouvementsAsync(long c, DateOnly du, DateOnly au, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<MouvementTresorerie>>([]);
+        Task.FromResult<IReadOnlyList<MouvementTresorerie>>(Lus);
     public Task<AVerser> AVerserAsync(CancellationToken ct = default) => Task.FromResult(new AVerser([], Caisses, []));
     public Task<long> EnregistrerCompteAsync(CompteAEcrire c, CancellationToken ct = default) => Task.FromResult(3L);
     public Task<long> AjouterMouvementAsync(MouvementAEcrire m, CancellationToken ct = default) { Mouvements.Add(m); return Task.FromResult(10L); }
@@ -33,6 +34,32 @@ internal sealed class TresorerieEnMemoire : ITresorerie
 public class TresorerieTests
 {
     private static readonly HorlogeFixe Horloge = new(new DateOnly(2026, 11, 9));
+
+    [Fact]
+    public async Task Mouvements_pagines_et_filtres_par_employe_avec_totaux_de_tout_le_filtre()
+    {
+        var t = new TresorerieEnMemoire();
+        var jour = new DateOnly(2026, 11, 5);
+        for (var i = 0; i < 12; i++)
+            t.Lus.Add(new MouvementTresorerie(jour, i % 3 == 0 ? "sortie" : "entree", 100, "versement_caisse", null, $"M{i}", null, i % 2 == 0 ? "Karim" : "Amina", "saisi"));
+        t.Lus.Add(new MouvementTresorerie(jour, "entree", 50, "carte", null, "Cartes du jour", null, null, "calcule"));
+        var cas = new ConsulterTresorerie(t, new DroitsFactices("tresorerie.gerer"));
+
+        var tous = await cas.PageMouvementsAsync(1, jour, jour, null, new DemandePage(2, 5), 9);
+        Assert.Equal(13, tous.Page.Total);
+        Assert.Equal(["M5", "M6", "M7", "M8", "M9"], tous.Page.Lignes.Select(m => m.Libelle));
+        Assert.Equal(["Amina", "Karim"], tous.Employes);   // employés de la période, triés ; un mouvement calculé n'a pas d'employé
+
+        var karim = await cas.PageMouvementsAsync(1, jour, jour, "Karim", new DemandePage(2, 5), 9);
+        Assert.Equal(6, karim.Page.Total);
+        Assert.Single(karim.Page.Lignes);                  // 6e mouvement de Karim seul en page 2
+        Assert.Equal(400, karim.TotalEntrees);             // totaux de tout le filtre, pas de la seule page
+        Assert.Equal(200, karim.TotalSorties);
+        Assert.Equal(["Amina", "Karim"], karim.Employes);  // la liste du filtre ne se réduit pas à l'employé choisi
+
+        await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            new ConsulterTresorerie(t, new DroitsFactices("caisse.vendre")).PageMouvementsAsync(1, jour, jour, null, new DemandePage(), 9));
+    }
 
     [Fact]
     public async Task Cloture_automatique_porte_le_compte_moins_le_fond_au_coffre()

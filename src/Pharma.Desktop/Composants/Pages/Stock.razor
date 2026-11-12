@@ -1,6 +1,7 @@
 @page "/stock"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 <div class="page page-serree">
     <div class="titre-page">
@@ -46,7 +47,7 @@
     }
     else if (etat is null)
     {
-        <p class="vide">Chargement du stock…</p>
+        <Chargement Texte="Chargement du stock…" />
     }
     else
     {
@@ -218,6 +219,9 @@
         var lieux = Api.EmplacementsAsync();
         (etat, erreur) = await stock;
         (emplacements, _) = await lieux;
+        // « ← Retour » : recherche, filtre et rayon retrouvés tels qu'ils étaient
+        Historique.Suivre("stock", e => { e.Mettre("recherche", recherche); e.Mettre("filtre", filtre); e.Mettre("rayon", rayon); });
+        if (Historique.Restaurer("stock") is { } r) (recherche, filtre, rayon) = (r.Texte("recherche") ?? "", r.Texte("filtre") ?? "tous", r.Texte("rayon") ?? "");
         // Depuis l'alerte : le produit est cherché et son rangement ouvert
         if (Ranger is { } id && etat?.Lignes.FirstOrDefault(l => l.ProduitId == id) is { } ligne)
         {

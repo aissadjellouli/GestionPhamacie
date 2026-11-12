@@ -541,6 +541,12 @@ public sealed record VenteEnAttenteDto(long Id, string Libelle, int Lignes, deci
 /// <summary>Contenu : panier du poste en JSON (PanierAttenteDto), rendu tel quel à la reprise.</summary>
 public sealed record MiseEnAttenteRequete(string? Libelle, int Lignes, decimal Total, string Contenu);
 
+/// <summary>Réception mise en attente. Mode : reception, facture, comptage ou recompte (ces deux-là repris par EmployeId seul).</summary>
+public sealed record ReceptionEnAttenteDto(long Id, string Libelle, string Mode, int Lignes, long EmployeId, string Employe, string Poste, DateTime CreeLe);
+
+/// <summary>Contenu : saisie de l'écran Réceptions en JSON, rendue telle quelle à la reprise ; Scans : scans du mobile qu'elle contient.</summary>
+public sealed record MiseEnAttenteReceptionRequete(string? Libelle, string Mode, int Lignes, string Contenu, IReadOnlyList<long>? Scans);
+
 /// <summary>Boites : boîtes identifiées scannées (rattachées à la vente) ; RaisonLot et LotConseilleServi : choix du caissier sur le lot.</summary>
 public sealed record LignePanierAttenteDto(long ProduitId, string Nom, decimal Prix, LotFefoDto? Lot, int Quantite, bool BoiteScannee, int StockProduit,
     IReadOnlyList<long>? Boites = null, string? RaisonLot = null, bool LotConseilleServi = false);

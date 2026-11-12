@@ -7,6 +7,24 @@ et notes explicatives discrètes.
 Tout est défini dans `src/Pharma.Desktop/wwwroot/css/app.css`. Un écran ne redéfinit ni taille, ni couleur, ni police : il
 utilise les classes ci-dessous. Pas de `style="font-size: …"`, `style="color: …"` ni `style="height: …"` dans un écran.
 
+## En-tête et menu
+
+Une seule ligne, dans cet ordre : logo et nom de la pharmacie, **« ← *écran précédent* »**, menu, puis outils de l'employé.
+« ← *écran précédent* » (à gauche) et « ⇄ Changer » (à droite) sont des **pastilles blanches à texte vert** : repérables d'un coup
+d'œil, et éloignées du menu pour ne pas être confondues avec un écran. Leurs libellés restent courts pour garder l'en-tête sur une ligne.
+
+- **Premier niveau : les écrans du quotidien** : Caisse, Stock, Achats, Alertes (avec le compteur des alertes urgentes).
+- **Groupes déroulants** : **Finances ▾** (Factures, Trésorerie, Dettes et créances, Chifa « à venir ») et **Pilotage ▾**
+  (Rapports, Contrôle interne). Le groupe qui contient l'écran ouvert est souligné en ambre ; dans le menu ouvert, l'écran
+  ouvert est marqué d'un trait ambre à gauche.
+- **Outils à droite**, dans cet ordre : ⚙ Administration (si l'employé y a droit), le **menu à son nom ▾** (l'employé
+  connecté : Mon code comptoir, Mot de passe, Affichage, Guide et retours, Changer d'utilisateur, Se déconnecter), puis
+  **⇄ Changer** (changer d'utilisateur, la caisse du poste reste ouverte), le plus à droite.
+- **Un écran sans droit n'apparaît pas** (pas de lien grisé) ; un groupe sans écran permis disparaît. Seul un écran pas
+  encore disponible (Chifa) reste visible, grisé, avec « (à venir) ».
+- Un menu déroulant s'ouvre au clic et se ferme avec Échap, un clic à côté ou un changement d'écran.
+- Un nouvel écran se range dans un groupe existant ; le premier niveau reste limité aux écrans du quotidien.
+
 ## Structure d'un écran
 
 ```html
@@ -40,7 +58,7 @@ utilise les classes ci-dessous. Pas de `style="font-size: …"`, `style="color: 
 | Information secondaire explicative | `.detail` | 13 px | texte secondaire (gris) |
 | Note de bas d'écran | `.pied-page` | 13 px, filet au-dessus | texte secondaire (gris) |
 | Étiquette de champ | `label` dans `.champ` | 13 px | texte secondaire (gris) |
-| En-tête de tableau | `th` dans `.tableau thead` | 12 px, majuscules | texte secondaire (gris) |
+| En-tête de tableau | `th` dans `.tableau thead` | 12 px, majuscules, gras 600 | texte 3, bandeau `--surface-2` souligné de 2 px |
 | Liste vide | `.vide` | 15 px | texte secondaire (gris) |
 
 Une seule police : Poppins. L'information principale n'est jamais en gris ; une explication, une précision ou une aide à la
@@ -81,6 +99,15 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 - **Tout tableau paginé a des filtres au-dessus** (`.filtres-liste` : grossiste ou tiers, statut ou type, période « Du » / « Au »,
   recherche selon le tableau), appliqués par le serveur pour que le total et les pages les suivent, avec un bouton
   « Tout afficher » dès qu'un filtre est actif et un message « Aucun … pour ces filtres » quand rien ne répond.
+- **Retour à l'écran précédent** (`docs/navigation.md`) : tout écran avec des filtres ou une pagination déclare son état à
+  l'historique (`Historique.Suivre` et `Historique.Restaurer`) ; tout nouvel onglet passe par l'adresse (`?onglet=…`).
+- **Bouton mis en évidence au survol et au clavier** (`.btn`, `.puce`, automatique) : bord et texte verts, fond vert clair et
+  halo ; bouton principal plus foncé ; bouton rouge plus foncé avec halo rouge. Aucun effet sur un bouton inactif, jamais
+  d'agrandissement.
+- **Texte cliquable mis en évidence** (liens, `.lien`, `.lien-bouton`, nom de contact) : vert, gras et souligné au repos ; au survol ou au clavier, fond vert clair arrondi et soulignement plein ; inactif : gris sans soulignement. L’en-tête vert garde son texte blanc.
+- **Relief des tableaux** (automatique avec `.tableau`, rien à ajouter dans un écran) : bandeau d'en-tête souligné, trait
+  vertical léger entre les colonnes, une ligne sur deux teintée, ligne survolée mise en avant (contour vert et ombre ; jamais d'agrandissement, qui ferait apparaître une barre de défilement dans le cadre du tableau), pied de total séparé par un
+  trait de 2 px. Valable en thème clair comme en sombre.
 - **La taille de page se règle en bas du tableau**, toujours visible même pour une liste courte ou vide : 5, 10, 20, 30, 50,
   100 ou 200 lignes, 10 par défaut (`Pagination.TailleParDefaut`, `DemandePage.TailleParDefaut`).
 - Un relevé propre à un tiers (dette d'un patient, dette envers un grossiste) permet de changer de tiers depuis ses filtres,
@@ -103,6 +130,14 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 - **Tout champ obligatoire** (libellé `requis`) porte `aria-invalid` (contrôle sur le poste) ou `data-champ` (désigné par le
   serveur) ; et tout nom de champ utilisé par le serveur existe en `data-champ` sur un écran. Les deux règles sont vérifiées par
   `tests/Pharma.Architecture.Tests/ChampsObligatoiresTests.cs`.
+
+## Chargement
+
+- **Écran, panneau ou fenêtre dont les données arrivent** : composant `<Chargement />` (roue qui tourne et texte, par défaut
+  « Chargement… » ; `Texte="Calcul du rapport…"` pour préciser). Jamais un simple texte « Chargement… ».
+- **Tout appel au serveur de plus de 0,3 s** (filtre, page suivante, enregistrement…) : barre fine ambre en haut de la fenêtre,
+  affichée automatiquement par la mise en page (`BarreChargement`, appels comptés par `AppelsEnCours`). Un écran n'a rien à
+  ajouter. Un appel plus rapide n'affiche rien, pour éviter le clignotement.
 
 ## Barre d'état
 

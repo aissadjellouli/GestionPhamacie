@@ -15,6 +15,9 @@ public sealed record CompteTresorerie(long Id, string Type, string Nom, string? 
 public sealed record MouvementTresorerie(DateOnly Date, string Sens, decimal Montant, string Nature, string? Categorie, string Libelle,
     string? Reference, string? Employe, string Origine);
 
+/// <summary>Une page de mouvements, les totaux de tout le filtre et les employés de la période.</summary>
+public sealed record PageMouvementsTresorerie(Page<MouvementTresorerie> Page, decimal TotalEntrees, decimal TotalSorties, IReadOnlyList<string> Employes);
+
 public sealed record ChequeARemettre(long PaiementId, DateTime Date, decimal Montant, string Origine, string? Patient, long? PatientId = null);
 
 /// <summary>Caisse clôturée dont l'argent n'est pas encore au coffre ; Propose = compté moins le fond par défaut.</summary>
@@ -60,6 +63,21 @@ public sealed class ConsulterTresorerie(ITresorerie tresorerie, IPermissionServi
         await droits.ExigerAsync(utilisateurId, Permissions.TresorerieGerer, "consulter la trésorerie", ct);
         if (au < du) throw new RegleMetierException("La date de fin précède la date de début.");
         return await tresorerie.MouvementsAsync(compteId, du, au, ct);
+    }
+
+    /// <summary>
+    /// Mouvements d'un compte sur la période, filtrés par employé et paginés. Les totaux portent sur tout le filtre (toutes
+    /// les pages) ; la liste des employés est celle de la période, pour préremplir le filtre.
+    /// </summary>
+    public async Task<PageMouvementsTresorerie> PageMouvementsAsync(long compteId, DateOnly du, DateOnly au, string? employe, DemandePage page,
+        long utilisateurId, CancellationToken ct = default)
+    {
+        var tous = await MouvementsAsync(compteId, du, au, utilisateurId, ct);
+        var employes = tous.Select(m => m.Employe).OfType<string>().Distinct().Order(StringComparer.CurrentCulture).ToList();
+        var filtres = string.IsNullOrWhiteSpace(employe) ? tous : tous.Where(m => m.Employe == employe.Trim()).ToList();
+        return new PageMouvementsTresorerie(
+            new Page<MouvementTresorerie>(filtres.Skip(page.Decalage).Take(page.Taille).ToList(), filtres.Count, page.Page, page.Taille),
+            filtres.Where(m => m.Sens == "entree").Sum(m => m.Montant), filtres.Where(m => m.Sens == "sortie").Sum(m => m.Montant), employes);
     }
 
     public async Task<AVerser> AVerserAsync(long utilisateurId, CancellationToken ct = default)

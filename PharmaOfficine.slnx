@@ -9,6 +9,7 @@
     <File Path="docs/feuille-de-route.md" />
     <File Path="docs/fonctionnalites.md" />
     <File Path="docs/mise-en-production.md" />
+    <File Path="docs/navigation.md" />
     <File Path="docs/notifications.md" />
     <File Path="docs/poste-de-developpement.md" />
     <File Path="docs/regles-metier.md" />
@@ -145,6 +146,7 @@
     <File Path="database/migration/066_alertes_peremption_claires.sql" />
     <File Path="database/migration/067_controle_interne.sql" />
     <File Path="database/migration/068_verification_destinataire.sql" />
+    <File Path="database/migration/069_receptions_attente.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

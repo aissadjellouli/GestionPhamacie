@@ -75,9 +75,28 @@ public sealed class SessionPoste
     /// </summary>
     public event Action? AvantFermeture;
 
-    public void Fermer(string? motif = null)
+    /// <summary>
+    /// Vrai pendant AvantFermeture quand la session se ferme par « Changer d'utilisateur » (pas une déconnexion ni l'inactivité) :
+    /// la Caisse met alors son panier en attente au lieu de l'abandonner.
+    /// </summary>
+    public bool ChangementUtilisateur { get; private set; }
+
+    /// <summary>Vente mise en attente au changement d'utilisateur, reprise par le prochain employé connecté sur ce poste.</summary>
+    private (long Id, string LaisseePar)? venteAReprendre;
+    public void RetenirVenteAReprendre(long id, string laisseePar) => venteAReprendre = (id, laisseePar);
+    public bool AVenteAReprendre => venteAReprendre is not null;
+    public (long Id, string LaisseePar)? PrendreVenteAReprendre() { var v = venteAReprendre; venteAReprendre = null; return v; }
+
+    /// <summary>Relève de caisse faite par cet employé : « Changer d'utilisateur » ne la repropose pas.</summary>
+    public bool ReleveFaite { get; private set; }
+    public void MarquerReleveFaite() => ReleveFaite = true;
+
+    public void Fermer(string? motif = null, bool changementUtilisateur = false)
     {
-        if (Jeton is not null) AvantFermeture?.Invoke();
+        ReleveFaite = false;
+        ChangementUtilisateur = changementUtilisateur;
+        try { if (Jeton is not null) AvantFermeture?.Invoke(); }
+        finally { ChangementUtilisateur = false; }
         Affichage = "auto";
         (Jeton, NomComplet, MotifDeconnexion, ParCode, SuperAdmin) = (null, null, motif, false, false);
         Permissions = new HashSet<string>();
@@ -295,8 +314,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> DelaiAlerteDettesAsync(int jours) =>
         (await EnvoyerCorpsAsync<DelaiAlerteDettesRequete, object>(HttpMethod.Put, "api/suivi-dettes/delai", new(jours))).Item2;
     public Task<(List<CompteTresorerieDto>, string?)> ComptesTresorerieAsync() => GetAsync<List<CompteTresorerieDto>>("api/tresorerie/comptes", []);
-    public Task<(List<MouvementTresorerieDto>, string?)> MouvementsTresorerieAsync(long compteId, DateOnly du, DateOnly au) =>
-        GetAsync<List<MouvementTresorerieDto>>($"api/tresorerie/comptes/{compteId}/mouvements?du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}", []);
+    public Task<(MouvementsTresoreriePageDto?, string?)> MouvementsTresorerieAsync(long compteId, DateOnly du, DateOnly au, int page, int taille, string? employe) =>
+        GetAsync<MouvementsTresoreriePageDto?>($"api/tresorerie/comptes/{compteId}/mouvements?du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}&page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(employe) ? "" : $"&employe={Uri.EscapeDataString(employe)}"), null);
     public Task<(AVerserDto?, string?)> AVerserAsync() => GetAsync<AVerserDto?>("api/tresorerie/a-verser", null);
     public Task<(List<CodeLibelleDto>, string?)> CategoriesDepensesAsync() => GetAsync<List<CodeLibelleDto>>("api/tresorerie/categories", []);
     public async Task<string?> EnregistrerCompteTresorerieAsync(long? id, CompteTresorerieRequete r) => id is { } i
@@ -335,15 +355,39 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // ---- Ventes en attente du poste ----
     public Task<(List<VenteEnAttenteDto>, string?)> VentesEnAttenteAsync() => GetAsync<List<VenteEnAttenteDto>>("api/caisse/attente", []);
 
-    public async Task<string?> MettreEnAttenteAsync(MiseEnAttenteRequete r) =>
-        (await PostAsync<MiseEnAttenteRequete, IdentifiantDto>("api/caisse/attente", r)).Item2;
+    // ---- Réceptions en attente (Achats › Réceptions) ----
+    public Task<(List<ReceptionEnAttenteDto>, string?)> ReceptionsEnAttenteAsync() =>
+        GetAsync<List<ReceptionEnAttenteDto>>("api/achats/receptions/attente", []);
+
+    /// <summary>Numéro de la réception mise en attente, ou l'erreur. Le jeton est lu avant le premier « await » (utilisable juste avant une déconnexion).</summary>
+    public async Task<(long? Id, string? Erreur)> MettreReceptionEnAttenteAsync(MiseEnAttenteReceptionRequete r)
+    {
+        var (id, e) = await PostAsync<MiseEnAttenteReceptionRequete, IdentifiantDto>("api/achats/receptions/attente", r);
+        return (id?.Id, e);
+    }
+
+    /// <summary>Contenu JSON de la réception reprise (retirée de l'attente).</summary>
+    public Task<(string?, string?)> ReprendreReceptionEnAttenteAsync(long id) => ReprendreJsonAsync($"api/achats/receptions/attente/{id}/reprendre");
+
+    public async Task<string?> AbandonnerReceptionEnAttenteAsync(long id) =>
+        (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/achats/receptions/attente/{id}", null)).Item2;
+
+    /// <summary>Numéro de la vente mise en attente (pour la reprendre au retour sur la Caisse), ou l'erreur.</summary>
+    public async Task<(long? Id, string? Erreur)> MettreEnAttenteAsync(MiseEnAttenteRequete r)
+    {
+        var (id, e) = await PostAsync<MiseEnAttenteRequete, IdentifiantDto>("api/caisse/attente", r);
+        return (id?.Id, e);
+    }
 
     /// <summary>Contenu JSON du panier repris (retiré de l'attente).</summary>
-    public async Task<(string?, string?)> ReprendreVenteEnAttenteAsync(long id)
+    public Task<(string?, string?)> ReprendreVenteEnAttenteAsync(long id) => ReprendreJsonAsync($"api/caisse/attente/{id}/reprendre");
+
+    /// <summary>Reprise d'un élément en attente (vente, réception) : contenu JSON rendu tel quel, ou l'erreur.</summary>
+    private async Task<(string?, string?)> ReprendreJsonAsync(string url)
     {
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, $"api/caisse/attente/{id}/reprendre");
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
             using var rep = await http.SendAsync(req);
             if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree());

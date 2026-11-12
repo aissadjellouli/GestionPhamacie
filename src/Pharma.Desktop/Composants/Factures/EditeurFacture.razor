@@ -1,4 +1,8 @@
+@implements IDisposable
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
+@inject SessionPoste Session
+@inject TachesLaissees Taches
 
 @* Préparation d'une facture : destinataire, ventes (par ordonnance ou une à une) et lignes libres.
    Mode : nouvelle, correction (même numéro, version + 1) ou remplacement (nouveau numéro) d'une facture rejetée. *@
@@ -174,6 +178,8 @@
     [Parameter] public FactureDetailDto? Origine { get; set; }
     [Parameter] public EventCallback OnFerme { get; set; }
     [Parameter] public EventCallback<(long Id, string Numero)> OnTermine { get; set; }
+    /// <summary>Préparation laissée par l'employé précédent (bandeau des tâches laissées), reprise telle quelle.</summary>
+    [Parameter] public string? Reprise { get; set; }
 
     private sealed class Libre
     {
@@ -182,6 +188,12 @@
         public decimal Prix { get; set; }
         public decimal Tva { get; set; }
     }
+
+    /// <summary>Facture en préparation, gardée par l'historique pour « ← Retour ».</summary>
+    private sealed record Preparation(string Destinataire, PatientDto? Patient, long ClientId, long OrganismeId, DateOnly Du, DateOnly Au,
+        DateOnly DateFacture, DateOnly DateEcheance, bool EcheanceSaisie, string? Commentaire, string? Motif, string? RecherchePatient,
+        string? RechercheVente, List<long> Ventes, List<LibreRetenue> Libres, bool VentesChargees);
+    private sealed record LibreRetenue(string Designation, decimal Quantite, decimal Prix, decimal Tva);
 
     private sealed record VenteAffichee(long VenteId, string Numero, DateTime Date, string? Patient, long? OrdonnanceId, string? OrdonnanceNumero,
         string Produits, decimal Montant, bool DejaFacturee);
@@ -267,9 +279,47 @@
         }
         // Remplacement : nouvelle facture du jour, échéance selon le délai du destinataire (liste chargée ci-dessus)
         SuivreEcheance();
+        // « ← Retour » : la facture en préparation est retrouvée telle qu'elle était (gardée par l'historique, session du poste)
+        Historique.Suivre("editeur-facture", e => e.Mettre("saisie", PreparationEnJson()));
+        if (Historique.Restaurer("editeur-facture")?.Texte("saisie") is { } json) await AppliquerAsync(json);
+        // Facture laissée par l'employé précédent au « Changer d'utilisateur » (bandeau des tâches laissées)
+        else if (Reprise is { } laissee) await AppliquerAsync(laissee);
+        Session.AvantFermeture += LaisserAuSuivant;
         // Mentions de la pharmacie imprimées sur la facture (adresse, NIF, RC…) : avertir si elles manquent
         (mentionsManquantes, _) = await Api.MentionsFactureManquantesAsync();
     }
+
+    /// <summary>Saisie de la facture en préparation (destinataire, ventes cochées, lignes libres, dates, commentaire).</summary>
+    private string PreparationEnJson() => System.Text.Json.JsonSerializer.Serialize(new Preparation(
+        destinataire, patient, clientId, organismeId, du, au, dateFacture, dateEcheance, echeanceSaisie, commentaire, motif, recherchePatient,
+        rechercheVente, ventes.ToList(), libres.Select(l => new LibreRetenue(l.Designation, l.Quantite, l.Prix, l.Tva)).ToList(), charge));
+
+    private async Task AppliquerAsync(string json)
+    {
+        if (System.Text.Json.JsonSerializer.Deserialize<Preparation>(json) is not { } s) return;
+        (destinataire, patient, clientId, organismeId, du, au) = (s.Destinataire, s.Patient, s.ClientId, s.OrganismeId, s.Du, s.Au);
+        (dateFacture, dateEcheance, echeanceSaisie, commentaire, motif) = (s.DateFacture, s.DateEcheance, s.EcheanceSaisie, s.Commentaire, s.Motif);
+        (recherchePatient, rechercheVente) = (s.RecherchePatient, s.RechercheVente);
+        ventes.Clear();
+        ventes.UnionWith(s.Ventes);
+        libres.Clear();
+        libres.AddRange(s.Libres.Select(l => new Libre { Designation = l.Designation, Quantite = l.Quantite, Prix = l.Prix, Tva = l.Tva }));
+        // Ventes de la période rechargées (cochées comme avant) si la liste était affichée
+        if (s.VentesChargees) await ChercherVentesAsync(Origine?.PatientId);
+    }
+
+    /// <summary>« Changer d'utilisateur » pendant la préparation : la facture est confiée au poste pour l'employé suivant (bandeau).</summary>
+    private void LaisserAuSuivant()
+    {
+        if (!Session.ChangementUtilisateur) return;
+        var qui = destinataire switch { "organisme" => organismes.FirstOrDefault(o => o.Id == organismeId)?.Nom, "entreprise" => clients.FirstOrDefault(c => c.Id == clientId)?.RaisonSociale,
+            _ => patient is { } p ? $"{p.Nom} {p.Prenom}".Trim() : null };
+        var libelle = $"{Titre}{(qui is null ? "" : $" · {qui}")} · {ventes.Count} vente(s), {libres.Count} ligne(s) libre(s)";
+        Taches.Ajouter(new TacheLaissee("facture", libelle, Session.NomComplet ?? "l’employé précédent", "factures.gerer",
+            System.Text.Json.JsonSerializer.Serialize(new FactureLaissee(Mode, Origine?.Resume.Id, Origine?.Resume.Version, PreparationEnJson())), DateTime.Now));
+    }
+
+    public void Dispose() => Session.AvantFermeture -= LaisserAuSuivant;
 
     private void ChangerDestinataire(string code)
     {

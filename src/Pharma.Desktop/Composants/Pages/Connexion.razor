@@ -160,6 +160,7 @@
         enCours = true;
         erreur = await Api.ConnecterAsync(identifiant, motDePasse);
         enCours = false;
-        if (erreur is null) Nav.NavigateTo(Session.DoitChangerMotDePasse ? "mot-de-passe" : "");
+        // Une vente a été laissée en attente au changement d'utilisateur : on arrive directement à la Caisse pour la reprendre
+        if (erreur is null) Nav.NavigateTo(Session.DoitChangerMotDePasse ? "mot-de-passe" : Session.AVenteAReprendre && Session.A("caisse.vendre") ? "caisse" : "");
     }
 }

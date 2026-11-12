@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 068 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 069 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 068 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 069 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict 9XNbhNeeUQHwqYIjeGoS00UP3zyV3qUPs31JmQknj9AizwFWTCbktWFtIR7Izxh
+\restrict 37ZClob2wNZkXPgMP0nnPimWB5VUUIJUQm7PSD52ACQeT3STcZyLyQw8IKVB4O5
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -4124,6 +4124,39 @@ CREATE TABLE public.reception (
 
 
 --
+-- Name: reception_attente; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reception_attente (
+    id bigint NOT NULL,
+    poste text DEFAULT ''::text NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    libelle text NOT NULL,
+    mode text DEFAULT 'reception'::text NOT NULL,
+    lignes integer NOT NULL,
+    contenu jsonb NOT NULL,
+    scans bigint[] DEFAULT '{}'::bigint[] NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT reception_attente_lignes_check CHECK ((lignes >= 0)),
+    CONSTRAINT reception_attente_mode_check CHECK ((mode = ANY (ARRAY['reception'::text, 'facture'::text, 'comptage'::text, 'recompte'::text])))
+);
+
+
+--
+-- Name: reception_attente_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.reception_attente ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.reception_attente_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: reception_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -6235,6 +6268,14 @@ ALTER TABLE ONLY public.produit
 
 
 --
+-- Name: reception_attente reception_attente_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reception_attente
+    ADD CONSTRAINT reception_attente_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: reception_ligne reception_ligne_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6804,6 +6845,13 @@ CREATE INDEX idx_produit_nom_sans_accent ON public.produit USING gin (public.san
 --
 
 CREATE INDEX idx_produit_nom_trgm ON public.produit USING gin (nom_commercial public.gin_trgm_ops);
+
+
+--
+-- Name: idx_reception_attente_cree; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_reception_attente_cree ON public.reception_attente USING btree (cree_le);
 
 
 --
@@ -8370,6 +8418,14 @@ ALTER TABLE ONLY public.produit
 
 
 --
+-- Name: reception_attente reception_attente_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reception_attente
+    ADD CONSTRAINT reception_attente_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: reception reception_commande_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8741,5 +8797,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9XNbhNeeUQHwqYIjeGoS00UP3zyV3qUPs31JmQknj9AizwFWTCbktWFtIR7Izxh
+\unrestrict 37ZClob2wNZkXPgMP0nnPimWB5VUUIJUQm7PSD52ACQeT3STcZyLyQw8IKVB4O5
 

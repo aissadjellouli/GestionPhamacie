@@ -61,6 +61,7 @@ Vérification rapide de l’API : `GET http://localhost:5080/api/sante`.
 
 - [Architecture](docs/architecture.md)
 - [Charte graphique du poste](docs/charte-graphique.md) : à respecter pour tout écran, sauf demande explicite
+- [Navigation et retour à l’écran précédent](docs/navigation.md)
 - [Base de données](docs/base-de-donnees.md)
 - [Fonctionnalités et état d’avancement](docs/fonctionnalites.md)
 - [Traçabilité des boîtes](docs/tracabilite.md)

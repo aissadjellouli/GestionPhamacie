@@ -1,0 +1,9 @@
+@* Écran, panneau ou fenêtre en cours de chargement : roue qui tourne et texte (lu par les lecteurs d'écran). *@
+<p class="chargement" role="status">
+    <span class="chargement-roue" aria-hidden="true"></span>
+    <span>@Texte</span>
+</p>
+
+@code {
+    [Parameter] public string Texte { get; set; } = "Chargement…";
+}

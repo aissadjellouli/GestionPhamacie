@@ -1,6 +1,7 @@
 @inject ApiClient Api
 @inject ImprimanteTickets Tickets
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 @* Le patient rembourse tout ou partie de sa dette : l'argent entre dans la caisse ouverte du poste *@
 <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-credit">
@@ -270,7 +271,17 @@
 
     protected override async Task OnInitializedAsync()
     {
-        if (PatientId is > 0) await ChoisirAsync(PatientId.Value);
+        // « ← Retour » : patient ouvert, filtres et page de son relevé retrouvés tels qu'ils étaient
+        Historique.Suivre("credit", e =>
+        {
+            e.Mettre("patient", situation?.Patient.Id); e.Mettre("recherche", recherche); e.Mettre("du", releveDu); e.Mettre("au", releveAu);
+            e.Mettre("type", releveType); e.Mettre("page", mouvementsPage); e.Mettre("taille", mouvementsTaille);
+        });
+        var r = Historique.Restaurer("credit");
+        if (r is not null)
+            (recherche, releveDu, releveAu, releveType, mouvementsTaille) = (r.Texte("recherche") ?? recherche, r.Date("du"), r.Date("au"), r.Texte("type") ?? "", r.Entier("taille") ?? mouvementsTaille);
+        if ((r?.Long("patient") ?? PatientId) is > 0 and var p) await ChoisirAsync(p);
+        if (situation is not null && r?.Entier("page") is > 1 and var pr) await ChargerMouvementsAsync(pr, mouvementsTaille);
         await RechercherAsync();
     }
 

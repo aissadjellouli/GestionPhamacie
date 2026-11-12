@@ -1,6 +1,7 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject NavigationManager Nav
+@inject HistoriqueNavigation Historique
 
 @if (message is not null)
 {
@@ -235,7 +236,20 @@
         (fournisseurs, erreur) = await Api.FournisseursAsync();
         fournisseurId = fournisseurs.FirstOrDefault()?.Id ?? 0;
         (fFournisseur, grossisteApplique, initialise) = (Grossiste ?? 0, Grossiste, true);
+        // « ← Retour » : filtres, page et bon ouvert retrouvés tels qu'ils étaient
+        Historique.Suivre("commandes", e =>
+        {
+            e.Mettre("grossiste", fFournisseur > 0 ? fFournisseur : null); e.Mettre("statut", fStatut); e.Mettre("du", fDu); e.Mettre("au", fAu);
+            e.Mettre("page", page); e.Mettre("taille", taille); e.Mettre("bon", detail?.Entete.Id);
+        });
+        var r = Historique.Restaurer("commandes");
+        if (r is not null)
+        {
+            (fFournisseur, fStatut, fDu, fAu) = (r.Long("grossiste") ?? 0, r.Texte("statut") ?? "", r.Date("du"), r.Date("au"));
+            (page, taille) = (r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        }
         await RechargerAsync();
+        if (r?.Long("bon") is { } bon) await OuvrirAsync(bon);
         if (PeutCommander) (suggestions, _) = await Api.SuggestionsCommandeAsync();
 
         // Arrivée depuis une alerte « Commander » : produit présélectionné, grossiste et quantité suggérés

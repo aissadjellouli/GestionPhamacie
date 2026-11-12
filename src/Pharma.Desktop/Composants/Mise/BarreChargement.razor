@@ -1,0 +1,37 @@
+@implements IDisposable
+@inject AppelsEnCours Appels
+
+@* Barre fine en haut de la fenêtre pendant un appel au serveur, quel que soit l'écran (filtre, page suivante, enregistrement…).
+   Elle n'apparaît qu'après 0,3 s : un appel rapide ne fait pas clignoter l'écran. *@
+@if (visible)
+{
+    <div class="barre-chargement" role="progressbar" aria-label="Chargement en cours"></div>
+}
+
+@code {
+    private static readonly TimeSpan Delai = TimeSpan.FromMilliseconds(300);
+    private bool visible;
+    private CancellationTokenSource? attente;
+
+    protected override void OnInitialized() => Appels.Change += SurChangement;
+
+    private void SurChangement() => _ = InvokeAsync(async () =>
+    {
+        attente?.Cancel();
+        if (!Appels.Actif)
+        {
+            if (visible) { visible = false; StateHasChanged(); }
+            return;
+        }
+        var jeton = (attente = new CancellationTokenSource()).Token;
+        try { await Task.Delay(Delai, jeton); }
+        catch (TaskCanceledException) { return; }
+        if (Appels.Actif && !visible) { visible = true; StateHasChanged(); }
+    });
+
+    public void Dispose()
+    {
+        Appels.Change -= SurChangement;
+        attente?.Cancel();
+    }
+}

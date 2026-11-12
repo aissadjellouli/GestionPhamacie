@@ -5,6 +5,8 @@
 @inject ApiClient Api
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject HistoriqueNavigation Historique
+@inject TachesLaissees Taches
 
 <header class="entete">
     <div class="entete-interieur">
@@ -29,18 +31,19 @@
         }
         else if (Session.EstConnecte)
         {
-            <nav class="nav" aria-label="Navigation principale">
+            @* Retour à l'écran précédent avec son état (aussi Alt + ← et le bouton précédent de la souris) *@
+            <button type="button" class="lien-bouton bouton-retour" disabled="@(!Historique.PeutRevenir)" @onclick="Historique.Retour"
+                    title="Revenir à l'écran précédent tel que vous l'avez laissé (Alt + ←)"
+                    aria-label="@(Historique.EcranPrecedent is { } p ? $"Retour à l’écran précédent : {p}" : "Retour : aucun écran précédent")">← @(Historique.EcranPrecedent ?? "Retour")</button>
+
+            @* Menu : les écrans du quotidien au premier niveau, le reste regroupé ; un écran sans droit n'apparaît pas *@
+            <nav class="nav" aria-label="Navigation principale" @onkeydown="ToucheMenu">
                 <a href="caisse" class="@Actif("caisse", "cloture")" aria-current="@Courant("caisse", "cloture")">Caisse</a>
-                <a href="stock" class="@Actif("stock", "tracabilite")" aria-current="@Courant("stock", "tracabilite")">Stock</a>
+                <a href="stock" class="@ActifPrefixe("stock", "tracabilite", "inventaire")" aria-current="@Courant("stock", "tracabilite", "inventaire", "stock/registre")">Stock</a>
                 @if (Session.A("achats.commander") || Session.A("achats.receptionner") || Session.A("achats.retour_fournisseur"))
                 {
                     <a href="achats" class="@Actif("achats")" aria-current="@Courant("achats")">Achats</a>
                 }
-                else
-                {
-                    <span class="nav-inactif" aria-disabled="true" title="Droit d’achat nécessaire">Achats</span>
-                }
-                <span class="nav-inactif" aria-disabled="true" title="Format des factures Chifa à obtenir">Chifa</span>
                 <a href="" class="@Actif("")" aria-current="@Courant("")">
                     Alertes
                     @if (urgentes > 0 && Chemin != "")
@@ -48,57 +51,88 @@
                         <span class="compteur" aria-label="@($"{urgentes} alertes urgentes")">@urgentes</span>
                     }
                 </a>
-                @if (Session.A("rapports.ventes"))
+                @foreach (var g in Groupes.Where(g => g.Entrees.Any(x => x.Permis)))
                 {
-                    <a href="rapports" class="@Actif("rapports")" aria-current="@Courant("rapports")">Rapports</a>
-                }
-                else
-                {
-                    <span class="nav-inactif" aria-disabled="true" title="Droit « Rapports de ventes » nécessaire">Rapports</span>
-                }
-                @if (Session.A("factures.gerer"))
-                {
-                    <a href="factures" class="@Actif("factures")" aria-current="@Courant("factures")">Factures</a>
-                }
-                @if (Session.A("tresorerie.gerer"))
-                {
-                    <a href="tresorerie" class="@Actif("tresorerie")" aria-current="@Courant("tresorerie")">Trésorerie</a>
-                    <a href="dettes" class="@Actif("dettes")" aria-current="@Courant("dettes")">Dettes et créances</a>
-                }
-                @if (Session.A("role.titulaire"))
-                {
-                    <a href="surveillance" class="@Actif("surveillance")" aria-current="@Courant("surveillance")">Contrôle interne</a>
-                }
-                @if (PremiereRubriqueAdmin is { } lienAdmin)
-                {
-                    <a href="@lienAdmin" class="@ActifPrefixe("admin")" aria-current="@(Chemin.StartsWith("admin") ? "page" : null)">Administration</a>
-                }
-                else
-                {
-                    <span class="nav-inactif" aria-disabled="true" title="Réservé au titulaire">Administration</span>
+                    <div class="nav-groupe">
+                        <button type="button" class="nav-bouton @(g.Entrees.Any(x => x.Permis && EstActif(x.Chemins)) ? "active" : null)"
+                                aria-haspopup="true" aria-expanded="@(menuOuvert == g.Cle ? "true" : "false")" @onclick="() => Basculer(g.Cle)">@g.Libelle ▾</button>
+                        @if (menuOuvert == g.Cle)
+                        {
+                            <div class="menu-panneau" aria-label="@g.Libelle">
+                                @foreach (var x in g.Entrees.Where(x => x.Permis || x.Raison is not null))
+                                {
+                                    if (x.Permis)
+                                    {
+                                        <a href="@x.Lien" class="@(EstActif(x.Chemins) ? "actif" : null)" aria-current="@(EstActif(x.Chemins) ? "page" : null)" @onclick="FermerMenus">@x.Libelle</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="inactif" aria-disabled="true" title="@(x.Libelle == "Chifa" ? "Format des factures Chifa à obtenir" : x.Raison)">@x.Libelle <span class="detail">(@x.Raison)</span></span>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
                 }
             </nav>
-            <div class="utilisateur">
-                <span>Connecté : @Session.NomComplet</span>
-                @if (Session.ParCode)
+
+            <div class="outils-utilisateur">
+                @if (PremiereRubriqueAdmin is { } lienAdmin)
                 {
-                    <span class="badge-code" title="Connecté par code comptoir : écrans du comptoir seulement">code comptoir</span>
+                    <a href="@lienAdmin" class="nav-icone @ActifPrefixe("admin")" aria-current="@(Chemin.StartsWith("admin") ? "page" : null)"
+                       title="Administration" aria-label="Administration">⚙</a>
                 }
-                else
-                {
-                    <a href="mon-code" class="lien-bouton">Mon code comptoir</a>
-                    <a href="mot-de-passe" class="lien-bouton">Mot de passe</a>
-                }
-                <a href="guide" class="lien-bouton" title="Ce qu’il faut essayer, et vos remarques">Guide et retours</a>
-                <button type="button" class="lien-bouton bouton-affichage" @onclick="ChangerAffichageAsync"
-                        title="Affichage : Automatique (suit Windows), Clair ou Sombre. Cliquer pour changer ; votre choix est retenu."
-                        aria-label="@($"Affichage : {LibelleAffichage}. Changer l’affichage")">@SymboleAffichage @LibelleAffichage</button>
-                <button type="button" class="lien-bouton" @onclick="ChangerUtilisateur" title="La caisse du poste reste ouverte">Changer d’utilisateur</button>
-                <button type="button" class="lien-bouton" @onclick="SeDeconnecter">Se déconnecter</button>
+                <div class="nav-groupe" @onkeydown="ToucheMenu">
+                    <button type="button" class="bouton-utilisateur" aria-haspopup="true" aria-expanded="@(menuOuvert == "utilisateur" ? "true" : "false")"
+                            @onclick="@(() => Basculer("utilisateur"))">@Session.NomComplet ▾</button>
+                    @if (menuOuvert == "utilisateur")
+                    {
+                        <div class="menu-panneau menu-droite" aria-label="Mon compte">
+                            @if (Session.ParCode)
+                            {
+                                <span class="inactif" title="Connecté par code comptoir : écrans du comptoir seulement"><span class="badge-code">code comptoir</span></span>
+                            }
+                            else
+                            {
+                                <a href="mon-code" @onclick="FermerMenus">Mon code comptoir</a>
+                                <a href="mot-de-passe" @onclick="FermerMenus">Mot de passe</a>
+                            }
+                            <button type="button" class="bouton-affichage" @onclick="ChangerAffichageAsync"
+                                    title="Affichage : Automatique (suit Windows), Clair ou Sombre. Cliquer pour changer ; votre choix est retenu."
+                                    aria-label="@($"Affichage : {LibelleAffichage}. Changer l’affichage")">Affichage : @SymboleAffichage @LibelleAffichage</button>
+                            <a href="guide" @onclick="FermerMenus" title="Ce qu’il faut essayer, et vos remarques">Guide et retours</a>
+                            <hr />
+                            <button type="button" @onclick="ChangerUtilisateur" title="La caisse du poste reste ouverte">Changer d’utilisateur</button>
+                            <button type="button" @onclick="SeDeconnecter">Se déconnecter</button>
+                        </div>
+                    }
+                </div>
+                <button type="button" class="lien-bouton bouton-changer" @onclick="ChangerUtilisateur" title="Changer d’utilisateur : la caisse du poste reste ouverte" aria-label="Changer d’utilisateur">⇄ Changer</button>
             </div>
         }
     </div>
 </header>
+@* « ⇄ Changer » avec une caisse ouverte : relève proposée avant de passer la main *@
+@if (proposerReleve)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-releve-changer" tabindex="-1" @onkeydown="ToucheReleve">
+        <section class="panneau fenetre-releve">
+            <h2 id="t-releve-changer">Faire la relève avant de changer d’utilisateur ?</h2>
+            <p style="margin: 0">Une caisse est ouverte sur ce poste. La relève la compte et en ouvre aussitôt une nouvelle avec l’argent compté :
+                chacun répond de sa période. Elle reste facultative.</p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                <button type="button" class="btn btn-principal" @onclick="FaireReleve">Faire la relève</button>
+                <button type="button" class="btn" @onclick="ConfirmerChangement">Changer sans relève</button>
+                <button type="button" class="btn" @onclick="() => proposerReleve = false">Annuler</button>
+            </div>
+        </section>
+    </div>
+}
+@* Menu ouvert : un clic à côté le ferme (voile transparent sous l'en-tête) *@
+@if (menuOuvert is not null)
+{
+    <div class="menu-voile" @onclick="FermerMenus"></div>
+}
 <main>
     @if (Session.EstConnecte && Session.DoitChangerMotDePasse && !Chemin.StartsWith("mot-de-passe", StringComparison.Ordinal))
     {
@@ -111,6 +145,23 @@
         <ErrorBoundary @ref="garde">
             <ChildContent>
                 @if (messageAcces is not null) { <div class="bandeau-attention" role="alert" style="margin: 16px 24px 0">@messageAcces</div> }
+                @if (Session.EstConnecte && !Session.SuperAdmin && !bandeauMasque && Taches.Visibles(Session) is { Count: > 0 } laissees)
+                {
+                    @* Tâches longues laissées au « Changer d'utilisateur » : le nouvel employé les reprend sans rien refaire *@
+                    <section class="bandeau-taches" aria-labelledby="t-taches">
+                        <h2 id="t-taches">Tâches laissées en cours sur ce poste</h2>
+                        <ul>
+                            @foreach (var t in laissees)
+                            {
+                                <li>
+                                    <span><strong>@t.Libelle</strong> <span class="detail">· laissée par @t.LaisseePar à @t.Le.ToString("HH:mm")</span></span>
+                                    <button type="button" class="btn btn-principal" @onclick="() => ReprendreTache(t)">Reprendre</button>
+                                </li>
+                            }
+                        </ul>
+                        <div><button type="button" class="lien-bouton" @onclick="() => bandeauMasque = true">Plus tard</button> <span class="detail">(la liste reste gardée sur ce poste)</span></div>
+                    </section>
+                }
                 @Body
             </ChildContent>
             <ErrorContent Context="exception">
@@ -122,6 +173,7 @@
             </ErrorContent>
         </ErrorBoundary>
         <FenetreContact />
+        <BarreChargement />
         <FenetreAutorisation />
         <SignalementChamps />
     }
@@ -147,12 +199,42 @@
 
     private string? Actif(params string[] chemins) => chemins.Contains(Chemin) ? "active" : null;
     private string? Courant(params string[] chemins) => chemins.Contains(Chemin) ? "page" : null;
-    private string? ActifPrefixe(string prefixe) => Chemin.StartsWith(prefixe, StringComparison.Ordinal) ? "active" : null;
+    private string? ActifPrefixe(params string[] prefixes) => prefixes.Any(p => Chemin.StartsWith(p, StringComparison.Ordinal)) ? "active" : null;
+    private bool EstActif(string[] chemins) => chemins.Any(c => Chemin == c || Chemin.StartsWith(c + "/", StringComparison.Ordinal));
+
+    // ---- Menus déroulants de l'en-tête (Finances, Pilotage, compte de l'employé) ----
+    private sealed record EntreeMenu(string Libelle, string Lien, string[] Chemins, bool Permis, string? Raison = null);
+    private sealed record GroupeMenu(string Cle, string Libelle, IReadOnlyList<EntreeMenu> Entrees);
+
+    /// <summary>Groupes du menu, selon les droits : un écran sans droit n'apparaît pas, un groupe sans écran permis non plus.</summary>
+    private IEnumerable<GroupeMenu> Groupes =>
+    [
+        new("finances", "Finances",
+        [
+            new("Factures", "factures", ["factures"], Session.A("factures.gerer")),
+            new("Trésorerie", "tresorerie", ["tresorerie"], Session.A("tresorerie.gerer")),
+            new("Dettes et créances", "dettes", ["dettes"], Session.A("tresorerie.gerer")),
+            new("Chifa", "", ["chifa"], false, "à venir")
+        ]),
+        new("pilotage", "Pilotage",
+        [
+            new("Rapports", "rapports", ["rapports"], Session.A("rapports.ventes")),
+            new("Contrôle interne", "surveillance", ["surveillance"], Session.A("role.titulaire"))
+        ])
+    ];
+
+    private string? menuOuvert;
+    private void Basculer(string cle) => menuOuvert = menuOuvert == cle ? null : cle;
+    private void FermerMenus() => menuOuvert = null;
+    private void ToucheMenu(KeyboardEventArgs e) { if (e.Key == "Escape") FermerMenus(); }
 
     protected override async Task OnInitializedAsync()
     {
         Nav.LocationChanged += SurNavigation;
         Session.Changee += SurSession;
+        Historique.Demarrer();
+        Historique.Change += SurHistorique;
+        Taches.Change += SurTaches;
         Api.AlertesModifiees += SurSession;
         await CompterUrgentesAsync();
         _ = SurveillerInactiviteAsync();
@@ -222,8 +304,9 @@
 
     private async void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        // Changer d'écran efface l'erreur affichée par le précédent
+        // Changer d'écran efface l'erreur affichée par le précédent et ferme les menus déroulants
         garde?.Recover();
+        menuOuvert = null;
         var refuse = !VerifierAcces();
         if (!refuse && Chemin.Length > 0) messageAcces = null;
         await CompterUrgentesAsync();
@@ -232,6 +315,7 @@
 
     private async void SurSession()
     {
+        if (!Session.EstConnecte) bandeauMasque = false;   // le prochain employé connecté voit les tâches laissées
         // Documents de l'ancien dossier du poste (ou restés au poste, serveur injoignable) : envoyés à la GED du serveur
         if (Session.EstConnecte && !Session.DoitChangerMotDePasse && !Session.SuperAdmin) _ = Documents.MigrerAsync(Api);
         await CompterUrgentesAsync();
@@ -250,6 +334,7 @@
         if (!premierAffichage) return;
         reference = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("pharma.affichage.suivre", reference);
+        await JS.InvokeVoidAsync("pharma.retour.suivre", reference);
         await AppliquerAffichageAsync();
     }
 
@@ -260,6 +345,25 @@
         try { BarreDeTitre.Appliquer(await JS.InvokeAsync<bool>("pharma.affichage.appliquer", Session.Affichage)); }
         catch (JSDisconnectedException) { /* fenêtre fermée */ }
     }
+
+    private void SurHistorique() => _ = InvokeAsync(StateHasChanged);
+
+    // ---- Tâches laissées au « Changer d'utilisateur » (bandeau) ----
+    private bool bandeauMasque;
+    private void SurTaches() { bandeauMasque = false; _ = InvokeAsync(StateHasChanged); }
+
+    private void ReprendreTache(TacheLaissee t)
+    {
+        Taches.Choisir(t);
+        var ecran = TachesLaissees.Ecran(t);
+        // Déjà sur l'écran visé : il est rouvert pour qu'il reprenne la tâche à son ouverture
+        if (Nav.ToBaseRelativePath(Nav.Uri).TrimEnd('/') == ecran) Nav.NavigateTo("");
+        Nav.NavigateTo(ecran);
+    }
+
+    /// <summary>Alt + ← ou bouton précédent de la souris (poste.js).</summary>
+    [JSInvokable]
+    public void Retour() => Historique.Retour();
 
     /// <summary>Windows passe en clair ou en sombre (mode Automatique) : la barre de titre suit.</summary>
     [JSInvokable]
@@ -279,12 +383,35 @@
         Nav.NavigateTo("connexion");
     }
 
-    // Caisse partagée : l'employé suivant reprend la main par son code, sans fermer la caisse
-    private void ChangerUtilisateur()
+    // Caisse partagée : l'employé suivant reprend la main par son code, sans fermer la caisse.
+    // Caisse ouverte sur le poste : la relève est d'abord proposée (facultative), pour que chacun réponde de sa période.
+    private bool proposerReleve;
+
+    private async Task ChangerUtilisateur()
     {
-        Session.Fermer($"{Session.NomComplet} a quitté le poste. La caisse reste ouverte.");
+        FermerMenus();
+        if (!Session.ReleveFaite && Session.A("caisse.vendre"))
+        {
+            var (etat, _) = await Api.EtatCaisseAsync();
+            if (etat?.SessionId is not null) { proposerReleve = true; return; }
+        }
+        ConfirmerChangement();
+    }
+
+    private void ConfirmerChangement()
+    {
+        proposerReleve = false;
+        Session.Fermer($"{Session.NomComplet} a quitté le poste. La caisse reste ouverte.", changementUtilisateur: true);
         Nav.NavigateTo("connexion");
     }
+
+    private void FaireReleve()
+    {
+        proposerReleve = false;
+        Nav.NavigateTo("cloture?releve=true");
+    }
+
+    private void ToucheReleve(KeyboardEventArgs e) { if (e.Key == "Escape") proposerReleve = false; }
 
     public void Dispose()
     {
@@ -292,6 +419,8 @@
         Nav.LocationChanged -= SurNavigation;
         Session.Changee -= SurSession;
         Api.AlertesModifiees -= SurSession;
+        Historique.Change -= SurHistorique;
+        Taches.Change -= SurTaches;
         reference?.Dispose();
     }
 }

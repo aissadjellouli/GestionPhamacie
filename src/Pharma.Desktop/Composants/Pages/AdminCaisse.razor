@@ -1,5 +1,6 @@
 @page "/admin/caisse"
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 <div class="page admin">
     <NavAdmin Actif="admin/caisse" />
@@ -154,6 +155,15 @@
     {
         (journalEmploye, employeApplique) = (Employe, Employe);
         initialise = true;
+        // « ← Retour » : filtres et page du journal des actions retrouvés tels qu'ils étaient
+        Historique.Suivre("journal", e =>
+        {
+            e.Mettre("employe", journalEmploye); e.Mettre("categorie", journalCategorie); e.Mettre("du", journalDu); e.Mettre("au", journalAu);
+            e.Mettre("page", journalPage); e.Mettre("taille", journalTaille);
+        });
+        var retour = Historique.Restaurer("journal");
+        if (retour is not null)
+            (journalEmploye, journalCategorie, journalDu, journalAu) = (retour.Texte("employe"), retour.Texte("categorie") ?? "", retour.Date("du"), retour.Date("au"));
         var (p, err) = await Api.ParametresCaisseAsync();
         erreur = err;
         if (p is not null)
@@ -163,7 +173,7 @@
                 SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut,
                 SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode
             };
-        await ChargerJournalAsync(1);
+        await ChargerJournalAsync(retour?.Entier("page") ?? 1, retour?.Entier("taille"));
     }
 
     private void BasculerDeconnexion(ChangeEventArgs e)

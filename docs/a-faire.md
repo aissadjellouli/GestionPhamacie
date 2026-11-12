@@ -95,6 +95,19 @@ récemment »). Restent :
 
 ## Livré récemment
 
+- [x] Navigation : retour à l'écran précédent partout avec son état (docs/navigation.md) ; menu réorganisé sur une ligne (Finances, Pilotage, ⚙, menu à son nom, « ⇄ Changer ») ; « Page introuvable » au lieu d'un plantage sur une adresse inconnue.
+- [x] Rien n'est perdu en quittant un écran : vente de la Caisse mise en attente (départ de l'écran, changement d'utilisateur, reprise par le suivant) ; réceptions en attente sur le serveur (069) ; retour et facture en préparation gardés pour la session.
+- [x] Affichage : indicateur de chargement, tableaux en relief, liens et boutons mis en évidence ; Trésorerie et file des notifications paginées et filtrées par le serveur.
+
+- [x] Passation au « ⇄ Changer » : relève de caisse proposée ; facture, retour fournisseur et réception en cours repris par le suivant (bandeau « Tâches laissées en cours sur ce poste »).
+
+**Points ouverts de ces livraisons**
+- [ ] État intermédiaire de caisse sans compter ni clôturer (récapitulatif depuis l'ouverture) : n'existe pas aujourd'hui ; à construire selon les choix du titulaire (montant attendu caché aux employés en comptage aveugle).
+- [ ] Facture et retour fournisseur laissés au changement d'utilisateur : gardés dans la mémoire du poste, perdus si le poste redémarre.
+- [ ] Abandon d'une réception en attente : inscrit au journal des actions ; à décider s'il doit aussi lever une anomalie dans le Contrôle interne.
+- [ ] Mise en évidence des boutons au survol en thème clair : préciser ce qui ne convient pas (« pareil que sombre »).
+- [ ] Vente mise en attente au changement d'utilisateur : si le serveur est injoignable à ce moment-là, le panier est perdu sans signalement (la session est déjà fermée).
+
 - [x] Corrections de la recette du 12/11/2026 (défauts majeurs) : mot de passe provisoire et code comptoir ; révocation des connexions (063) ; psychotrope jamais autorisé par le code d'un collègue ; portée de la connexion par code ; vrai validateur d'une annulation ou d'un retour autorisés par code ; remboursement d'une vente à crédit limité à ce qui a été payé ; annulation et retour simultanés ; aucune écriture sur une caisse clôturée (064) ; lot rappelé bloqué pour tous les grossistes ; GTIN contrôlé à la réception ; Data Matrix : lot de la date lue ; retour des boîtes non scannées ; stock vendable sans les lots bloqués (065) ; vente en attente qui garde tout, double clic, boîtes retirées signalées à la déconnexion, impression du ticket, fiche contact et « Faire autoriser » fermées ; scripts 003, 901, 903, sauvegarde planifiée et restauration par script.
 - [x] Alertes qui ont un sens : péremption seulement s'il y a quelque chose à faire (066), « RAS » à l'écran, rapport du soir sans rubrique vide, e-mails d'alerte une information par ligne.
 - [x] « Surveillance » renommé « Contrôle interne » (écrans, e-mails, SMS, documentation ; 067).

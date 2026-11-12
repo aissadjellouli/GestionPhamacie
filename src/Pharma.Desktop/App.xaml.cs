@@ -24,7 +24,10 @@ public partial class App : Application
         var api = Environment.GetEnvironmentVariable("PHARMA_API") ?? "http://localhost:5080/";
         // Chaque appel nomme le poste : il identifie la caisse (le tiroir) partagée par les employés du poste
         var poste = new ConfigurationPoste();
-        var client = new HttpClient { BaseAddress = new Uri(api) };
+        // Chaque appel est compté : la barre de chargement du haut de la fenêtre s'affiche pendant les appels
+        var appels = new AppelsEnCours();
+        services.AddSingleton(appels);
+        var client = new HttpClient(new SuiviAppels(appels)) { BaseAddress = new Uri(api) };
         client.DefaultRequestHeaders.Add("X-Pharma-Poste", Uri.EscapeDataString(poste.Poste));
         services.AddSingleton(client);
         services.AddSingleton(poste);
@@ -35,6 +38,10 @@ public partial class App : Application
         services.AddSingleton<SessionPoste>();
         services.AddSingleton<ApiClient>();
         services.AddSingleton<FichesContact>();
+        // Tâches laissées au « Changer d'utilisateur » (facture, retour, réception), reprises par le suivant sur ce poste
+        services.AddSingleton<TachesLaissees>();
+        // Historique des écrans pour « ← Retour » (un par fenêtre du poste)
+        services.AddScoped<HistoriqueNavigation>();
         services.AddSingleton<DemandesAutorisation>();
 
         // Dernier filet : une erreur imprévue hors d'un écran est notée et signalée, sans arrêter le poste en pleine vente

@@ -62,6 +62,15 @@ Légende : **Base** = prêt dans les scripts SQL · **API** = exposé par l’AP
 | Contrôle interne | Écarts et risques par employé (titulaire) : jour par jour, perte (manque de caisse et boîtes manquantes ajustées), boîtes fantômes, anomalies, employés présents et postes ; par employé, jours de présence et de perte, perte moyenne présent / absent (signalé quand les pertes reviennent en sa présence), manque à ses clôtures, anomalies, annulations, retours, remises, crédits, codes demandés et donnés, casses, dons, ajustements ; période de 366 jours au plus | API, Écran |
 | Administration | Journal des actions filtré par catégorie (modifications, autorisations par code et blocages), modifications affichées « ancienne → nouvelle valeur » | Base, API, Écran |
 | Affichage | Clair, sombre ou automatique (suit Windows, même en cours de journée), choisi par chaque employé et retrouvé à chaque connexion (mot de passe ou code comptoir) ; bouton dans le bandeau ; barre de titre assortie ; impressions toujours claires ; scanner mobile selon le réglage du téléphone | Base, API, Écran |
+| Navigation | Retour à l'écran précédent partout (pastille « ← *écran* », Alt + ←, bouton précédent de la souris) : onglet, filtres, page, élément ouvert et fiche contact retrouvés ; historique vidé à chaque connexion (docs/navigation.md) | Écran |
+| Navigation | Menu sur une ligne : Caisse, Stock, Achats, Alertes au premier niveau ; Finances ▾ (Factures, Trésorerie, Dettes et créances, Chifa à venir) et Pilotage ▾ (Rapports, Contrôle interne) ; ⚙ Administration, menu à son nom, « ⇄ Changer » ; écrans sans droit masqués | Écran |
+| Caisse | Quitter la caisse ou changer d'utilisateur panier rempli : vente mise en attente automatiquement, reprise par « Retour » ou par le prochain employé connecté sur le poste | Écran |
+| Passation | « ⇄ Changer » : relève de caisse proposée (facultative) ; facture, retour fournisseur et réception en cours laissés au suivant, repris d’un clic dans le bandeau « Tâches laissées en cours sur ce poste » (selon ses droits) | Écran |
+| Achats | Réceptions en attente (069) : saisie d'une livraison mise de côté (bouton, départ de l'écran, déconnexion), reprise depuis n'importe quel poste ; comptage à l'aveugle repris par son auteur ou qui décide des écarts ; abandon tracé, scans du mobile rendus | Base, API, Écran |
+| Achats, Factures | Retour en préparation et facture en préparation gardés pour la session : retrouvés par « Retour » | Écran |
+| Trésorerie | Mouvements d'un compte paginés et filtrés par le serveur (période, employé), totaux de tout le filtre | API, Écran |
+| Notifications | File d'attente paginée et filtrée (objet, statut, période) ; mot de passe du compte d'envoi jamais réaffiché (« Changer », « Enregistrer ») | API, Écran |
+| Affichage | Indicateur de chargement (roue, barre en haut de la fenêtre au-delà de 0,3 s) ; tableaux en relief (ligne sur deux, survol vert, traits de colonnes) ; liens et boutons mis en évidence au survol | Écran |
 
 ## Ordonnances manuscrites
 

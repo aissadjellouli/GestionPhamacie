@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Pharma.Api.Securite;
+using Pharma.Application.Commun;
 using Pharma.Application.Tresorerie;
 using Pharma.Domain.Securite;
 using Pharma.Domain.Tresorerie;
@@ -23,9 +24,15 @@ internal static class TresorerieEndpoints
         t.MapPut("/comptes/{id:long}", async (long id, CompteTresorerieRequete r, EnregistrerCompteTresorerie e, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok(new IdentifiantDto(await e.ExecuterAsync(VersCompte(id, r), user.UtilisateurId(), ct))));
 
-        t.MapGet("/comptes/{id:long}/mouvements", async (long id, DateOnly du, DateOnly au, ConsulterTresorerie c, ClaimsPrincipal user, CancellationToken ct) =>
-            Results.Ok((await c.MouvementsAsync(id, du, au, user.UtilisateurId(), ct))
-                .Select(m => new MouvementTresorerieDto(m.Date, m.Sens, m.Montant, m.Nature, m.Categorie, m.Libelle, m.Reference, m.Employe, m.Origine))));
+        // Paginé et filtré par employé ; totaux de tout le filtre et employés de la période (liste du filtre)
+        t.MapGet("/comptes/{id:long}/mouvements", async (long id, DateOnly du, DateOnly au, int? page, int? taille, string? employe,
+            ConsulterTresorerie c, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var r = await c.PageMouvementsAsync(id, du, au, employe, DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
+                var p = r.Page.Vers(m => new MouvementTresorerieDto(m.Date, m.Sens, m.Montant, m.Nature, m.Categorie, m.Libelle, m.Reference, m.Employe, m.Origine));
+                return Results.Ok(new MouvementsTresoreriePageDto(new PageDto<MouvementTresorerieDto>(p.Lignes, p.Total, p.Numero, p.Taille),
+                    r.TotalEntrees, r.TotalSorties, r.Employes.ToList()));
+            });
 
         t.MapGet("/a-verser", async (ConsulterTresorerie c, ClaimsPrincipal user, CancellationToken ct) =>
             {
