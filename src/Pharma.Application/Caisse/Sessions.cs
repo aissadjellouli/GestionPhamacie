@@ -198,6 +198,9 @@ public sealed class ConsulterJournal(IJournalLecture journal)
 {
     public Task<IReadOnlyList<EntreeJournal>> ExecuterAsync(CancellationToken ct = default) => journal.DernieresAsync(200, ct);
 
+    /// <summary>Employés du journal, pour la liste du filtre « Employé ».</summary>
+    public Task<IReadOnlyList<string>> EmployesAsync(CancellationToken ct = default) => journal.EmployesAsync(ct);
+
     /// <summary>Journal paginé et filtré (période, employé) : plus aucune action n'est hors d'atteinte au-delà des 200 dernières.</summary>
     public Task<Page<EntreeJournal>> PageAsync(DateOnly? du, DateOnly? au, string? employe, DemandePage page, CancellationToken ct = default,
         string? categorie = null)

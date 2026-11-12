@@ -84,3 +84,96 @@ document.addEventListener('keydown', function (e) {
 // Bouton 3 = précédent : empêché à l'appui et au relâché (sinon le navigateur intégré reviendrait seul)
 document.addEventListener('mousedown', function (e) { if (e.button === 3) e.preventDefault(); });
 document.addEventListener('mouseup', function (e) { if (e.button === 3) window.pharma.retour._demander(e); });
+
+// ---- Accord automatique des « (s) » dans tout le texte affiché (écrans, messages du serveur et de la base) ----
+/**
+ * Accord automatique des « (s) » selon le nombre qui précède : 0 ou 1 (et tout nombre inférieur à 2) → singulier, 2 et plus →
+ * pluriel. « 3 lot(s) » → « 3 lots », « 1 boîte(s) ajoutée(s) » → « 1 boîte ajoutée ». Le nombre vaut jusqu'à la prochaine
+ * ponctuation ou le prochain nombre ; un « (s) » sans nombre devant reste tel quel. Même règle que Pharma.Domain.Commun.Accord.
+ */
+function accorder(texte, nombre) {
+  if (!texte) return { texte: texte ?? "", nombre };
+  let sortie = "", i = 0;
+  const chiffre = (c) => c >= "0" && c <= "9";
+  const lettre = (c) => !!c && c.toLowerCase() !== c.toUpperCase();
+  while (i < texte.length) {
+    const c = texte[i];
+    if (chiffre(c)) {
+      const debut = i; let valeur = ""; let decimale = false;
+      while (i < texte.length) {
+        const d = texte[i], suivant = texte[i + 1];
+        if (chiffre(d)) { valeur += d; i++; }
+        else if ((d === " " || d === " " || d === " ") && chiffre(suivant) && valeur) i++;
+        else if ((d === "," || d === ".") && chiffre(suivant) && !decimale) { valeur += "."; decimale = true; i++; }
+        else break;
+      }
+      sortie += texte.slice(debut, i);
+      nombre = parseFloat(valeur);
+      continue;
+    }
+    if (texte.startsWith("(s)", i) && i > 0 && lettre(texte[i - 1])) {
+      sortie += nombre === null || nombre === undefined || isNaN(nombre) ? "(s)" : nombre >= 2 ? "s" : "";
+      i += 3;
+      continue;
+    }
+    if (",;:.·()\n!?".includes(c)) nombre = null;
+    sortie += c;
+    i++;
+  }
+  return { texte: sortie, nombre };
+}
+const accord = (texte) => accorder(texte, null).texte;
+
+// Le texte d'origine (avec « (s) ») de chaque nœud est gardé : quand Blazor change un nombre voisin (« 2 » devient « 1 »),
+// l'accord est recalculé depuis l'original. Le nombre peut être dans un nœud voisin (« @n lot(s) » donne deux nœuds de texte).
+window.pharma.accord = (function () {
+  const origine = new WeakMap(), ecrit = new WeakMap();
+  const ignores = new Set(["SCRIPT", "STYLE", "TEXTAREA", "INPUT", "SELECT", "OPTION"]);
+  const source = (n) => { if (ecrit.get(n) !== n.data) origine.set(n, n.data); return origine.get(n); };
+  const aTraiter = (n) => (origine.get(n) ?? n.data).includes("(s)");
+
+  function parent(el) {
+    if (!el || ignores.has(el.nodeName) || el.isContentEditable) return;
+    let nombre = null;
+    for (const n of el.childNodes) {
+      if (n.nodeType === 3) {
+        const texte = source(n);
+        const r = accorder(texte, nombre);
+        nombre = r.nombre;
+        if (texte.includes("(s)") && n.data !== r.texte) n.data = r.texte;
+        if (texte.includes("(s)")) ecrit.set(n, n.data);
+      } else if (n.nodeType === 1) {
+        // Élément en ligne (ex. <strong>3</strong> lot(s)) : son texte compte pour le nombre en cours
+        nombre = accorder(n.textContent, nombre).nombre;
+      }
+    }
+  }
+
+  function tout(racine) {
+    const marcheur = document.createTreeWalker(racine, NodeFilter.SHOW_TEXT);
+    const parents = new Set();
+    for (let n = marcheur.nextNode(); n; n = marcheur.nextNode()) if (aTraiter(n)) parents.add(n.parentNode);
+    parents.forEach(parent);
+  }
+
+  const observateur = new MutationObserver(function (mutations) {
+    const parents = new Set();
+    for (const m of mutations) {
+      if (m.type === "characterData") parents.add(m.target.parentNode);
+      else {
+        parents.add(m.target);
+        m.addedNodes.forEach(function (n) { if (n.nodeType === 1) tout(n); else if (n.nodeType === 3) parents.add(n.parentNode); });
+      }
+    }
+    parents.forEach(function (p) {
+      if (p && [...p.childNodes].some(function (n) { return n.nodeType === 3 && aTraiter(n); })) parent(p);
+    });
+  });
+
+  function demarrer() {
+    tout(document.body);
+    observateur.observe(document.body, { subtree: true, childList: true, characterData: true });
+  }
+  if (document.body) demarrer(); else document.addEventListener("DOMContentLoaded", demarrer);
+  return { accorder: accorder, texte: accord };
+})();

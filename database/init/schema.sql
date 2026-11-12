@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 069 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 070 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 069 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 070 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict 37ZClob2wNZkXPgMP0nnPimWB5VUUIJUQm7PSD52ACQeT3STcZyLyQw8IKVB4O5
+\restrict qtbgQGLYk3kLCjrXkHI6RtBwFFWLpMz8qUNlSMPxlW3udz6TrxI9ZCd3Jj2ohmV
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -2656,6 +2656,37 @@ CREATE TABLE public.comptage_caisse (
     CONSTRAINT comptage_caisse_coupure_check CHECK ((coupure = ANY (ARRAY['b2000'::text, 'b1000'::text, 'b500'::text, 'b200'::text, 'p100'::text, 'autres'::text]))),
     CONSTRAINT comptage_caisse_montant_check CHECK ((montant >= (0)::numeric)),
     CONSTRAINT comptage_caisse_nombre_check CHECK ((nombre >= 0))
+);
+
+
+--
+-- Name: comptage_intermediaire; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.comptage_intermediaire (
+    id bigint NOT NULL,
+    session_caisse_id bigint NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    compte numeric(12,2) NOT NULL,
+    attendu numeric(12,2) NOT NULL,
+    ecart numeric(12,2) NOT NULL,
+    comptage jsonb NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT comptage_intermediaire_compte_check CHECK ((compte >= (0)::numeric))
+);
+
+
+--
+-- Name: comptage_intermediaire_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.comptage_intermediaire ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.comptage_intermediaire_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -5820,6 +5851,14 @@ ALTER TABLE ONLY public.comptage_caisse
 
 
 --
+-- Name: comptage_intermediaire comptage_intermediaire_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_intermediaire
+    ADD CONSTRAINT comptage_intermediaire_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: comptage_reception_ligne comptage_reception_ligne_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6544,6 +6583,13 @@ CREATE INDEX idx_boite_numero_serie ON public.boite USING btree (numero_serie);
 --
 
 CREATE INDEX idx_boite_reception ON public.boite USING btree (reception_id);
+
+
+--
+-- Name: idx_comptage_intermediaire_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_comptage_intermediaire_session ON public.comptage_intermediaire USING btree (session_caisse_id, cree_le);
 
 
 --
@@ -7786,6 +7832,22 @@ ALTER TABLE ONLY public.comptage_caisse
 
 
 --
+-- Name: comptage_intermediaire comptage_intermediaire_session_caisse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_intermediaire
+    ADD CONSTRAINT comptage_intermediaire_session_caisse_id_fkey FOREIGN KEY (session_caisse_id) REFERENCES public.session_caisse(id);
+
+
+--
+-- Name: comptage_intermediaire comptage_intermediaire_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comptage_intermediaire
+    ADD CONSTRAINT comptage_intermediaire_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: comptage_reception comptage_reception_compte_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8797,5 +8859,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 37ZClob2wNZkXPgMP0nnPimWB5VUUIJUQm7PSD52ACQeT3STcZyLyQw8IKVB4O5
+\unrestrict qtbgQGLYk3kLCjrXkHI6RtBwFFWLpMz8qUNlSMPxlW3udz6TrxI9ZCd3Jj2ohmV
 

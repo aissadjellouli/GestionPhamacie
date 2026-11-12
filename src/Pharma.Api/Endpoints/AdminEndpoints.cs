@@ -41,6 +41,10 @@ internal static class AdminEndpoints
             })
            .ExigerPermission(Permissions.AdminParametres);
 
+        // Employés présents dans le journal : liste préremplie du filtre « Employé »
+        admin.MapGet("/journal/employes", async (ConsulterJournal consulter, CancellationToken ct) => Results.Ok(await consulter.EmployesAsync(ct)))
+           .ExigerPermission(Permissions.AdminParametres);
+
         // ---- Alertes et seuils ----
         admin.MapGet("/seuils-stock", async (ListerSeuilsStockManuels lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(ct)).Select(VersDto)))

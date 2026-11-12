@@ -45,6 +45,9 @@ public sealed record AlerteDto(
     string Message, decimal? ValeurDzd, string Statut, DateTime MiseAJourLe,
     string Produit, string? NumeroLot, string? Emplacement = null);
 
+/// <summary>Page d'alertes (filtrée par le serveur) ; nombre par onglet et par type, et valeur à risque, sur toutes les alertes ouvertes.</summary>
+public sealed record AlertesPageDto(PageDto<AlerteDto> Page, Dictionary<string, int> ParFiltre, Dictionary<string, int> ParType, decimal ValeurARisque);
+
 public sealed record IndicateursStockDto(int ReferencesEnStock, decimal ValeurAchat, int LotsDateAVerifier);
 
 /// <summary>Statut : ok, rupture, critique, dormant ou surstock.</summary>
@@ -55,6 +58,9 @@ public sealed record LigneStockDto(
     string Statut, bool PeremptionProche, long? EmplacementId = null, string? Emplacement = null, long? ReserveId = null, string? Reserve = null);
 
 public sealed record EtatStockDto(IndicateursStockDto Indicateurs, IReadOnlyList<LigneStockDto> Lignes);
+
+/// <summary>Page du tableau de stock (filtrée par le serveur), indicateurs de tout le stock, propositions pour la saisie de la recherche.</summary>
+public sealed record StockPageDto(IndicateursStockDto Indicateurs, PageDto<LigneStockDto> Page, List<string> Suggestions);
 
 public sealed record EtatEtiquetageDto(int BoitesIdentifiees, int BoitesEnStock, int Pourcentage, bool ModeStrict);
 
@@ -135,6 +141,16 @@ public sealed record ClotureDto(
 
 /// <summary>Relève : clôture comptée de la session précédente et caisse rouverte avec ce montant.</summary>
 public sealed record ReleveDto(ClotureDto Cloture, long NouvelleSessionId);
+
+/// <summary>
+/// État intermédiaire de la caisse ouverte : jamais d'espèces, de total ni d'attendu (comptage aveugle strict) ; montants nets
+/// par carte, chèque, crédit et part du tiers payant ; comptages intermédiaires (écart seulement avec le droit de voir les écarts).
+/// </summary>
+public sealed record EtatIntermediaireDto(long SessionId, string Poste, DateTime OuverteLe, string? OuvertePar, decimal FondCaisse,
+    int NombreVentes, decimal Carte, decimal Cheque, decimal Credit, decimal TiersPayant, List<VentesEmployeDto> ParEmploye,
+    List<ComptageIntermediaireDto> Comptages, bool PeutVoirEcart);
+public sealed record VentesEmployeDto(string Employe, int Ventes);
+public sealed record ComptageIntermediaireDto(DateTime Le, string Employe, decimal Compte, decimal? Ecart);
 
 /// <summary>VersementCloture : manuel ou automatique (argent des caisses clôturées vers le coffre).</summary>
 public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel",
@@ -429,6 +445,9 @@ public sealed record ProduitVenduDto(string Produit, int Quantite, decimal Chiff
 /// </summary>
 public sealed record RetourRapportDto(string Ticket, DateTime DateVente, string Vendeur, DateTime DateRetour, string Poste, string Employe,
     string Produits, decimal Montant, decimal DetteDiminuee, bool DeduitDansLaPeriode, long? VendeurId = null, long? EmployeId = null);
+/// <summary>Clôtures de la période, paginées et filtrées par le serveur ; employés et postes de la période pour préremplir les filtres.</summary>
+public sealed record CloturesPageDto(PageDto<ClotureRapportDto> Page, bool EcartsVisibles, List<string> Employes, List<string> Postes);
+
 public sealed record ClotureRapportDto(string Employe, string Poste, DateTime OuverteLe, DateTime? FermeeLe,
     decimal? Attendu, decimal? Compte, decimal? Ecart, int Annulations, int Remises, int Retours = 0, long? EmployeId = null);
 /// <summary>Periode : jour, semaine ou mois. Marge : null sans le droit « rapports.marges ».</summary>

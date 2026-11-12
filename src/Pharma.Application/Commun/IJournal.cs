@@ -34,4 +34,6 @@ public interface IJournalLecture
     Task<IReadOnlyList<EntreeJournal>> DernieresAsync(int nombre, CancellationToken ct = default);
     /// <summary>Une page du journal, de la plus récente à la plus ancienne, avec le total des actions qui répondent aux filtres.</summary>
     Task<Page<EntreeJournal>> PageAsync(FiltreJournal filtre, DemandePage page, CancellationToken ct = default);
+    /// <summary>Employés présents dans le journal (auteurs et personnes qui ont autorisé), pour préremplir le filtre « Employé ».</summary>
+    Task<IReadOnlyList<string>> EmployesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<string>>([]);
 }

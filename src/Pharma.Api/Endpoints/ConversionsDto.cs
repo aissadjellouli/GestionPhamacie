@@ -30,12 +30,18 @@ internal static class ConversionsDto
         new(a.Id, a.Type, a.Niveau, a.ProduitId, a.LotId, a.Message, a.ValeurDzd, a.Statut, a.MiseAJourLe,
             a.Produit, a.NumeroLot, a.Emplacement);
 
-    public static EtatStockDto VersDto(this EtatStock e) =>
-        new(new IndicateursStockDto(e.Indicateurs.ReferencesEnStock, e.Indicateurs.ValeurAchat, e.Indicateurs.LotsDateAVerifier),
-            e.Lignes.Select(l => new LigneStockDto(
-                l.ProduitId, l.NomCommercial, l.Dci, l.CodeBarre, l.Classe.Code(), l.Stock, l.CouvertureJours,
-                l.PremierePeremption, l.NombreLots, l.Grossistes, l.NumerosLots, l.Statut, l.PeremptionProche,
-                l.EmplacementId, l.Emplacement, l.ReserveId, l.Reserve)).ToList());
+    public static EtatStockDto VersDto(this EtatStock e) => new(e.Indicateurs.VersDto(), e.Lignes.Select(l => l.VersDto()).ToList());
+
+    public static IndicateursStockDto VersDto(this IndicateursStock i) => new(i.ReferencesEnStock, i.ValeurAchat, i.LotsDateAVerifier);
+
+    public static LigneStockDto VersDto(this LigneStock l) => new(
+        l.ProduitId, l.NomCommercial, l.Dci, l.CodeBarre, l.Classe.Code(), l.Stock, l.CouvertureJours,
+        l.PremierePeremption, l.NombreLots, l.Grossistes, l.NumerosLots, l.Statut, l.PeremptionProche,
+        l.EmplacementId, l.Emplacement, l.ReserveId, l.Reserve);
+
+    public static StockPageDto VersDto(this PageStock p) =>
+        new(p.Indicateurs.VersDto(), new PageDto<LigneStockDto>(p.Page.Lignes.Select(l => l.VersDto()).ToList(), p.Page.Total, p.Page.Numero, p.Page.Taille),
+            p.Suggestions.ToList());
 
     public static EtatEtiquetageDto VersDto(this EtatEtiquetage e) =>
         new(e.BoitesIdentifiees, e.BoitesEnStock, e.Pourcentage, e.ModeStrict);

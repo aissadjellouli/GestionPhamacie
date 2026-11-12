@@ -5,6 +5,7 @@ using MigraDoc.Rendering;
 using PdfSharp.Fonts;
 using Pharma.Application.Caisse;
 using Pharma.Domain.Caisse;
+using Pharma.Domain.Commun;
 
 namespace Pharma.Infrastructure.Impression;
 
@@ -344,7 +345,7 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         Ligne(synthese, "Lots en stock", (c.NombreLots ?? 0).ToString(Fr));
         Ligne(synthese, "Boîtes en stock", (c.NombreBoites ?? 0).ToString("N0", Fr));
         Ligne(synthese, "Valeur du stock au prix d’achat HT", Da(c.ValeurStock ?? 0), gras: true);
-        Ligne(synthese, "Écarts corrigés pendant l’inventaire", $"{e.Ecarts} ligne(s) · {Da(e.ValeurEcarts)}");
+        Ligne(synthese, "Écarts corrigés pendant l’inventaire", Accord.Texte($"{e.Ecarts} ligne(s) · {Da(e.ValeurEcarts)}"));
 
         foreach (var rayon in e.Lignes.GroupBy(l => l.Rayon))
         {

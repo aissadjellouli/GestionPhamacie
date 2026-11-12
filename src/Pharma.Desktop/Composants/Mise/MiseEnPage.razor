@@ -10,7 +10,7 @@
 
 <header class="entete">
     <div class="entete-interieur">
-        <div class="marque">
+        <div class="marque" title="@($"{Poste.NomLogiciel} · {SousTitre}")">
             <img class="logo" src="img/logo.svg" alt="" aria-hidden="true" />
             <div class="marque-textes">
                 <span class="marque-nom">@Poste.NomLogiciel</span>
@@ -33,12 +33,12 @@
         {
             @* Retour à l'écran précédent avec son état (aussi Alt + ← et le bouton précédent de la souris) *@
             <button type="button" class="lien-bouton bouton-retour" disabled="@(!Historique.PeutRevenir)" @onclick="Historique.Retour"
-                    title="Revenir à l'écran précédent tel que vous l'avez laissé (Alt + ←)"
-                    aria-label="@(Historique.EcranPrecedent is { } p ? $"Retour à l’écran précédent : {p}" : "Retour : aucun écran précédent")">← @(Historique.EcranPrecedent ?? "Retour")</button>
+                    title="@(Historique.EcranPrecedent is { } ecranPrecedent ? $"Revenir à {ecranPrecedent}, tel que vous l’avez laissé (Alt + ←)" : "Aucun écran précédent")"
+                    aria-label="@(Historique.EcranPrecedent is { } p ? $"Retour à l’écran précédent : {p}" : "Retour : aucun écran précédent")"><span class="fleche" aria-hidden="true">←</span><span class="libelle-retour">@(Historique.EcranPrecedent ?? "Retour")</span></button>
 
             @* Menu : les écrans du quotidien au premier niveau, le reste regroupé ; un écran sans droit n'apparaît pas *@
             <nav class="nav" aria-label="Navigation principale" @onkeydown="ToucheMenu">
-                <a href="caisse" class="@Actif("caisse", "cloture")" aria-current="@Courant("caisse", "cloture")">Caisse</a>
+                <a href="caisse" class="@Actif("caisse", "cloture", "caisse/etat")" aria-current="@Courant("caisse", "cloture", "caisse/etat")">Caisse</a>
                 <a href="stock" class="@ActifPrefixe("stock", "tracabilite", "inventaire")" aria-current="@Courant("stock", "tracabilite", "inventaire", "stock/registre")">Stock</a>
                 @if (Session.A("achats.commander") || Session.A("achats.receptionner") || Session.A("achats.retour_fournisseur"))
                 {
@@ -55,7 +55,7 @@
                 {
                     <div class="nav-groupe">
                         <button type="button" class="nav-bouton @(g.Entrees.Any(x => x.Permis && EstActif(x.Chemins)) ? "active" : null)"
-                                aria-haspopup="true" aria-expanded="@(menuOuvert == g.Cle ? "true" : "false")" @onclick="() => Basculer(g.Cle)">@g.Libelle ▾</button>
+                                aria-haspopup="true" aria-expanded="@(menuOuvert == g.Cle ? "true" : "false")" @onclick="() => Basculer(g.Cle)">@g.Libelle<span class="chevron" aria-hidden="true"></span></button>
                         @if (menuOuvert == g.Cle)
                         {
                             <div class="menu-panneau" aria-label="@g.Libelle">
@@ -84,7 +84,7 @@
                 }
                 <div class="nav-groupe" @onkeydown="ToucheMenu">
                     <button type="button" class="bouton-utilisateur" aria-haspopup="true" aria-expanded="@(menuOuvert == "utilisateur" ? "true" : "false")"
-                            @onclick="@(() => Basculer("utilisateur"))">@Session.NomComplet ▾</button>
+                            @onclick="@(() => Basculer("utilisateur"))">@Session.NomComplet<span class="chevron" aria-hidden="true"></span></button>
                     @if (menuOuvert == "utilisateur")
                     {
                         <div class="menu-panneau menu-droite" aria-label="Mon compte">
@@ -107,7 +107,7 @@
                         </div>
                     }
                 </div>
-                <button type="button" class="lien-bouton bouton-changer" @onclick="ChangerUtilisateur" title="Changer d’utilisateur : la caisse du poste reste ouverte" aria-label="Changer d’utilisateur">⇄ Changer</button>
+                <button type="button" class="lien-bouton bouton-changer" @onclick="ChangerUtilisateur" title="Changer d’utilisateur : la caisse du poste reste ouverte" aria-label="Changer d’utilisateur"><span class="fleche" aria-hidden="true">⇄</span>Changer</button>
             </div>
         }
     </div>
@@ -118,8 +118,9 @@
     <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-releve-changer" tabindex="-1" @onkeydown="ToucheReleve">
         <section class="panneau fenetre-releve">
             <h2 id="t-releve-changer">Faire la relève avant de changer d’utilisateur ?</h2>
-            <p style="margin: 0">Une caisse est ouverte sur ce poste. La relève la compte et en ouvre aussitôt une nouvelle avec l’argent compté :
-                chacun répond de sa période. Elle reste facultative.</p>
+            <p style="margin: 0">La caisse de ce poste est ouverte. Avant de passer la main, vous pouvez faire la relève : vous comptez
+                le tiroir, la caisse est clôturée puis rouverte aussitôt avec l’argent compté. Ainsi, chacun répond seulement de sa propre période.</p>
+            <p class="detail" style="margin: 0">La relève est facultative.</p>
             <div style="display: flex; gap: 8px; flex-wrap: wrap">
                 <button type="button" class="btn btn-principal" @onclick="FaireReleve">Faire la relève</button>
                 <button type="button" class="btn" @onclick="ConfirmerChangement">Changer sans relève</button>

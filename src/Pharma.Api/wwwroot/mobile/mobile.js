@@ -9,6 +9,44 @@ const $ = id => document.getElementById(id);
 // ---- Outils ------------------------------------------------------------------------
 
 /** Crée un élément : el("li", { class: "x" }, "texte", autreElement). */
+/**
+ * Accord automatique des « (s) » selon le nombre qui précède : 0 ou 1 (et tout nombre inférieur à 2) → singulier, 2 et plus →
+ * pluriel. « 3 lot(s) » → « 3 lots », « 1 boîte(s) ajoutée(s) » → « 1 boîte ajoutée ». Le nombre vaut jusqu'à la prochaine
+ * ponctuation ou le prochain nombre ; un « (s) » sans nombre devant reste tel quel. Même règle que Pharma.Domain.Commun.Accord.
+ */
+function accorder(texte, nombre) {
+  if (!texte) return { texte: texte ?? "", nombre };
+  let sortie = "", i = 0;
+  const chiffre = (c) => c >= "0" && c <= "9";
+  const lettre = (c) => !!c && c.toLowerCase() !== c.toUpperCase();
+  while (i < texte.length) {
+    const c = texte[i];
+    if (chiffre(c)) {
+      const debut = i; let valeur = ""; let decimale = false;
+      while (i < texte.length) {
+        const d = texte[i], suivant = texte[i + 1];
+        if (chiffre(d)) { valeur += d; i++; }
+        else if ((d === " " || d === " " || d === " ") && chiffre(suivant) && valeur) i++;
+        else if ((d === "," || d === ".") && chiffre(suivant) && !decimale) { valeur += "."; decimale = true; i++; }
+        else break;
+      }
+      sortie += texte.slice(debut, i);
+      nombre = parseFloat(valeur);
+      continue;
+    }
+    if (texte.startsWith("(s)", i) && i > 0 && lettre(texte[i - 1])) {
+      sortie += nombre === null || nombre === undefined || isNaN(nombre) ? "(s)" : nombre >= 2 ? "s" : "";
+      i += 3;
+      continue;
+    }
+    if (",;:.·()\n!?".includes(c)) nombre = null;
+    sortie += c;
+    i++;
+  }
+  return { texte: sortie, nombre };
+}
+const accord = (texte) => accorder(texte, null).texte;
+
 function el(tag, attrs, ...enfants) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -17,7 +55,7 @@ function el(tag, attrs, ...enfants) {
     else if (k === "class") e.className = v;
     else e.setAttribute(k, v === true ? "" : v);
   }
-  for (const c of enfants.flat()) if (c !== null && c !== undefined && c !== false) e.append(c instanceof Node ? c : String(c));
+  for (const c of enfants.flat()) if (c !== null && c !== undefined && c !== false) e.append(c instanceof Node ? c : accord(String(c)));
   return e;
 }
 
@@ -27,7 +65,7 @@ const peut = p => etat.permissions.includes(p);
 
 function statut(message, type) {
   const s = $("statut");
-  s.textContent = message || "";
+  s.textContent = accord(message || "");
   s.className = "statut" + (type ? " " + type : "");
 }
 

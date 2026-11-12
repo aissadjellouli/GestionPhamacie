@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Alertes;
+using Pharma.Application.Commun;
 using Pharma.Domain.Securite;
 using Pharma.Shared;
 
@@ -14,6 +15,16 @@ internal static class AlertesEndpoints
     {
         api.MapGet("/alertes", async (ListerAlertesOuvertes lister, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(user.UtilisateurId(), ct)).Select(a => a.VersDto())))
+           .ExigerPermission(Permissions.StockConsulter);
+
+        // Liste paginée et filtrée par le serveur ; tuiles et onglets comptés sur toutes les alertes ouvertes
+        api.MapGet("/alertes/page", async (string? filtre, int? page, int? taille, ListerAlertesOuvertes lister, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await lister.PageAsync(user.UtilisateurId(), filtre, DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new AlertesPageDto(
+                    new PageDto<AlerteDto>(p.Page.Lignes.Select(a => a.VersDto()).ToList(), p.Page.Total, p.Page.Numero, p.Page.Taille),
+                    p.ParFiltre.ToDictionary(), p.ParType.ToDictionary(), p.ValeurARisque));
+            })
            .ExigerPermission(Permissions.StockConsulter);
 
         // Pastille du bandeau : le nombre seulement (avant : toute la liste, à chaque navigation)

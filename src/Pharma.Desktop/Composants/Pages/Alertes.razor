@@ -32,22 +32,22 @@
         <section class="tuiles" aria-label="Indicateurs">
             <div class="tuile">
                 <span class="tuile-libelle">Valeur à risque (péremption)</span>
-                <span class="tuile-valeur @(ValeurARisque > 0 ? "urgent" : null)">@(ValeurARisque > 0 ? Libelles.Dinars(ValeurARisque) : "RAS")</span>
+                <span class="tuile-valeur @(ValeurARisque > 0 ? "urgent" : null)">@Libelles.Dinars(ValeurARisque)</span>
                 <span class="tuile-note">au prix d’achat</span>
             </div>
             <div class="tuile">
                 <span class="tuile-libelle">Lots périmés à retirer</span>
-                <span class="tuile-valeur">@Ras(Compter("perime"))</span>
+                <span class="tuile-valeur">@Compter("perime")</span>
                 <span class="tuile-note">vente bloquée automatiquement</span>
             </div>
             <div class="tuile">
                 <span class="tuile-libelle">Ruptures</span>
-                <span class="tuile-valeur">@Ras(Compter("rupture"))</span>
+                <span class="tuile-valeur">@Compter("rupture")</span>
                 <span class="tuile-note">commande suggérée dans l’alerte</span>
             </div>
             <div class="tuile">
                 <span class="tuile-libelle">Stock critique</span>
-                <span class="tuile-valeur">@Ras(Compter("stock_critique"))</span>
+                <span class="tuile-valeur">@Compter("stock_critique")</span>
                 <span class="tuile-note">commande suggérée dans l’alerte</span>
             </div>
         </section>
@@ -79,7 +79,7 @@
             @foreach (var f in Filtres)
             {
                 <button type="button" class="puce" aria-pressed="@(f.Id == filtre ? "true" : "false")"
-                        @onclick="() => filtre = f.Id">@f.Libelle (@f.Nombre)</button>
+                        @onclick="() => ChoisirFiltreAsync(f.Id)">@f.Libelle (@f.Nombre)</button>
             }
         </div>
 
@@ -165,6 +165,7 @@
                     </article>
                 }
             </section>
+            <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des alertes" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
         }
     }
 </div>
@@ -215,17 +216,29 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // « ← Retour » : filtre des alertes retrouvé tel qu'il était
-        Historique.Suivre("alertes", e => e.Mettre("filtre", filtre));
-        if (Historique.Restaurer("alertes")?.Texte("filtre") is { } f) filtre = f;
-        await ChargerAsync();
+        // « ← Retour » : filtre et page des alertes retrouvés tels qu'ils étaient
+        Historique.Suivre("alertes", e => { e.Mettre("filtre", filtre); e.Mettre("page", page); e.Mettre("taille", taille); });
+        var r = Historique.Restaurer("alertes");
+        if (r?.Texte("filtre") is { } f) filtre = f;
+        await ChargerAsync(r?.Entier("page") ?? 1, r?.Entier("taille") ?? taille);
     }
 
     private IndicateursAlertesDto? indicateurs;
 
-    private async Task ChargerAsync()
+    // Liste paginée et filtrée par le serveur ; tuiles et onglets comptés sur toutes les alertes ouvertes (AlertesPageDto)
+    private AlertesPageDto? donnees;
+    private int total, page = 1, taille = Pagination.TailleParDefaut;
+
+    private Task ChargerAsync() => ChargerAsync(page, taille);
+    private Task ChoisirFiltreAsync(string id) { filtre = id; return ChargerAsync(1, taille); }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
     {
-        (alertes, erreur) = await Api.AlertesAsync();
+        var (p, e) = await Api.AlertesPageAsync(filtre, numero, nouvelleTaille);
+        if (e is not null) { erreur = e; return; }
+        // Page au-delà de la fin (alerte traitée ou reportée) : retour à la première
+        if (p!.Page.Lignes.Count == 0 && numero > 1) { await ChargerAsync(1, nouvelleTaille); return; }
+        (donnees, alertes, total, page, taille, erreur) = (p, p.Page.Lignes.ToList(), p.Page.Total, p.Page.Numero, p.Page.Taille, null);
         (indicateurs, _) = await Api.IndicateursAlertesAsync();
     }
 
@@ -254,25 +267,14 @@
         await ChargerAsync();
     }
 
-    private int Compter(string type) => alertes?.Count(a => a.Type == type) ?? 0;
+    private int Compter(string type) => donnees?.ParType.GetValueOrDefault(type) ?? 0;
 
-    // Rien à signaler : « RAS » plutôt qu'un 0 qu'on pourrait prendre pour un chiffre manquant
-    private static string Ras(int n) => n == 0 ? "RAS" : n.ToString();
 
-    private decimal ValeurARisque =>
-        alertes?.Where(Libelles.EstPeremption).Sum(a => a.ValeurDzd ?? 0) ?? 0;
-
-    private bool Correspond(AlerteDto a, string id) => id switch
-    {
-        "urgent" => a.Niveau == "urgent",
-        "peremption" => Libelles.EstPeremption(a),
-        "stock" => !Libelles.EstPeremption(a),
-        _ => true
-    };
+    private decimal ValeurARisque => donnees?.ValeurARisque ?? 0;
 
     private IEnumerable<Filtre> Filtres =>
         new[] { ("toutes", "Toutes"), ("urgent", "Urgentes"), ("peremption", "Péremption"), ("stock", "Stock") }
-            .Select(f => new Filtre(f.Item1, f.Item2, alertes?.Count(a => Correspond(a, f.Item1)) ?? 0));
+            .Select(f => new Filtre(f.Item1, f.Item2, donnees?.ParFiltre.GetValueOrDefault(f.Item1) ?? 0));
 
-    private List<AlerteDto> Visibles => alertes?.Where(a => Correspond(a, filtre)).ToList() ?? [];
+    private List<AlerteDto> Visibles => alertes ?? [];
 }

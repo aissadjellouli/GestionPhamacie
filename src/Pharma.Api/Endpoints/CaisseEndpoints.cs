@@ -183,6 +183,26 @@ internal static class CaisseEndpoints
            .ExigerPermission(Permissions.CaisseVendre);
 
         // Relève au changement d'équipe : comptage, clôture, et caisse rouverte aussitôt avec l'argent compté
+        // État intermédiaire : récapitulatif sans espèces et comptage du tiroir sans clôture (la caisse reste ouverte)
+        caisse.MapGet("/etat-intermediaire", async (GererEtatIntermediaire gerer, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
+            {
+                var e = await gerer.LireAsync(user.UtilisateurId(), requete.Poste(), ct);
+                return Results.Ok(new EtatIntermediaireDto(e.SessionId, e.Poste, e.OuverteLe, e.OuvertePar, e.FondCaisse, e.Resume.NombreVentes,
+                    e.Resume.Carte, e.Resume.Cheque, e.Resume.Credit, e.Resume.TiersPayant,
+                    e.Resume.ParEmploye.Select(x => new VentesEmployeDto(x.Employe, x.Ventes)).ToList(),
+                    e.Comptages.Select(c => new ComptageIntermediaireDto(c.Le, c.Employe, c.Compte, c.Ecart)).ToList(), e.PeutVoirEcart));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        caisse.MapPost("/comptage-intermediaire", async (ClotureRequete req, GererEtatIntermediaire gerer, ClaimsPrincipal user, HttpRequest requete,
+                CancellationToken ct) =>
+            {
+                var r = await gerer.CompterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies, ct);
+                // Même présentation que la clôture (écart seulement avec le droit de voir les écarts)
+                return Results.Ok(new ClotureDto(r.SessionId, r.Compte, r.FondCaisse, r.VentesEspeces, r.Attendu, r.Ecart, r.AuDelaDuSeuil, r.SeuilEcart));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
         caisse.MapPost("/releve", async (ClotureRequete req, ReleverCaisse relever, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
                 var r = await relever.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies, ct);

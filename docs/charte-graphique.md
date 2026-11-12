@@ -96,6 +96,7 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 
 - Une liste qui peut grandir est paginée avec le composant `Pagination` : le nombre total de lignes est toujours affiché, et
   les totaux sont calculés par le serveur sur toutes les pages.
+- **Un filtre sur des valeurs connues est une liste préremplie, jamais une saisie libre** : employé, poste, grossiste, statut, type, rayon… (valeurs prises dans les données : par exemple les employés présents dans le journal ou sur la période). La saisie libre reste pour les recherches sur des valeurs sans fin (nom de produit, n° de facture ou de BL, patient), avec des propositions pendant la saisie quand c'est possible.
 - **Tout tableau paginé a des filtres au-dessus** (`.filtres-liste` : grossiste ou tiers, statut ou type, période « Du » / « Au »,
   recherche selon le tableau), appliqués par le serveur pour que le total et les pages les suivent, avec un bouton
   « Tout afficher » dès qu'un filtre est actif et un message « Aucun … pour ces filtres » quand rien ne répond.

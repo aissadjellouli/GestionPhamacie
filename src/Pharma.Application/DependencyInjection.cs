@@ -104,6 +104,7 @@ public static class DependencyInjection
         services.AddScoped<Securite.ChoisirAffichage>();
         services.AddScoped<Securite.LireAffichage>();
         services.AddScoped<Caisse.GererVentesEnAttente>();
+        services.AddScoped<Caisse.GererEtatIntermediaire>();
         services.AddScoped<Achats.GererReceptionsEnAttente>();
         services.AddScoped<Securite.VerificationCodeComptoir>();
         services.AddScoped<Securite.AutorisationCourante>();

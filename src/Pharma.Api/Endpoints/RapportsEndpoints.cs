@@ -20,6 +20,19 @@ internal static class RapportsEndpoints
                 Results.Ok(VersDto(await obtenir.ExecuterAsync(Periode(periode, date, du, au), user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.RapportsVentes);
 
+        // Clôtures de la période, paginées et filtrées par le serveur (employé, poste, ecart=true : avec un écart seulement)
+        rapports.MapGet("/clotures", async (string? periode, DateOnly? date, DateOnly? du, DateOnly? au, string? employe, string? poste, bool? ecart,
+                int? page, int? taille, ObtenirRapport obtenir, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var r = await obtenir.CloturesPageAsync(Periode(periode, date, du, au), employe, poste, ecart == true,
+                    Pharma.Application.Commun.DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
+                return Results.Ok(new CloturesPageDto(new PageDto<ClotureRapportDto>(
+                    r.Page.Lignes.Select(c => new ClotureRapportDto(c.Employe, c.Poste, c.OuverteLe, c.FermeeLe, c.Attendu, c.Compte, c.Ecart, c.Annulations,
+                        c.Remises, c.Retours, c.EmployeId)).ToList(), r.Page.Total, r.Page.Numero, r.Page.Taille),
+                    r.EcartsVisibles, r.Employes.ToList(), r.Postes.ToList()));
+            })
+           .ExigerPermission(Permissions.RapportsVentes);
+
         // ?format=pdf|excel
         rapports.MapGet("/export", async (string? periode, DateOnly? date, DateOnly? du, DateOnly? au, string? format, ExporterRapport exporter, ClaimsPrincipal user, CancellationToken ct) =>
             {

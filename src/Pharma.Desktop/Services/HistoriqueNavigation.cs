@@ -172,6 +172,7 @@ public sealed class HistoriqueNavigation(NavigationManager nav, FichesContact fi
     {
         "" => "Alertes",
         "caisse" => "Caisse",
+        "caisse/etat" => "État de la caisse",
         "cloture" => "Clôture",
         "stock" => "Stock",
         "stock/registre" => "Registre",

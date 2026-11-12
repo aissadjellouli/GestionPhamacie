@@ -61,7 +61,12 @@
             <div class="achats-ligne" style="align-items: flex-end">
                 <div class="champ" style="flex: 0 0 160px"><label for="j-du">Du</label><input id="j-du" type="date" @bind="journalDu" @bind:after="() => ChargerJournalAsync(1)" /></div>
                 <div class="champ" style="flex: 0 0 160px"><label for="j-au">Au</label><input id="j-au" type="date" @bind="journalAu" @bind:after="() => ChargerJournalAsync(1)" /></div>
-                <div class="champ" style="flex: 1 1 220px"><label for="j-employe">Employé (nom ou identifiant)</label><input id="j-employe" type="search" @bind="journalEmploye" @bind:after="() => ChargerJournalAsync(1)" /></div>
+                <div class="champ" style="flex: 0 0 240px"><label for="j-employe">Employé</label>
+                    <select id="j-employe" data-champ="employe" @bind="journalEmploye" @bind:after="() => ChargerJournalAsync(1)">
+                        <option value="">Tous</option>
+                        @foreach (var e in employesJournal) { <option value="@e">@e</option> }
+                        @if (!string.IsNullOrEmpty(journalEmploye) && !employesJournal.Contains(journalEmploye)) { <option value="@journalEmploye">@journalEmploye</option> }
+                    </select></div>
                 <div class="champ" style="flex: 0 0 260px"><label for="j-categorie">Actions</label>
                     <select id="j-categorie" @bind="journalCategorie" @bind:after="() => ChargerJournalAsync(1)">
                         <option value="">Toutes les actions</option>
@@ -118,6 +123,8 @@
     private int journalTotal, journalPage = 1, journalTaille = Pagination.TailleParDefaut;
     private DateOnly? journalDu, journalAu;
     private string? journalEmploye, erreurJournal;
+    // Liste préremplie du filtre « Employé » : les employés présents dans le journal
+    private List<string> employesJournal = [];
     private string journalCategorie = "";
 
     private async Task ChargerJournalAsync(int page, int? taille = null)
@@ -173,6 +180,7 @@
                 SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut,
                 SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode
             };
+        (employesJournal, _) = await Api.EmployesJournalAsync();
         await ChargerJournalAsync(retour?.Entier("page") ?? 1, retour?.Entier("taille"));
     }
 

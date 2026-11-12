@@ -6,7 +6,7 @@
 <div class="page page-serree">
     <div class="titre-page">
         <div>
-            <h1>@(Releve ? "Relève de caisse" : "Clôture de caisse")</h1>
+            <h1>@(Intermediaire ? "Comptage intermédiaire" : Releve ? "Relève de caisse" : "Clôture de caisse")</h1>
             @if (etat?.SessionId is not null)
             {
                 <p class="sous-titre">Session ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value)@(etat.OuvertePar is { } par ? $" par {par}" : "") avec un fond de caisse de @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste</p>
@@ -27,6 +27,13 @@
     }
     else if (etat is not null)
     {
+        @if (Intermediaire && resultat is null)
+        {
+            <div class="info-bandeau" role="note">
+                Comptage en cours de journée : comptez le tiroir. Rien n’est clôturé, la caisse reste ouverte et les ventes continuent.
+                Le montant compté est enregistré ; l’écart s’affiche comme à la clôture, pour qui peut le voir.
+            </div>
+        }
         @if (Releve && resultat is null)
         {
             <div class="info-bandeau" role="note">
@@ -64,7 +71,7 @@
                     <span style="font-size: 16px">Total compté : <strong>@Libelles.Dinars(TotalCompte, 2)</strong></span>
                     @if (resultat is null)
                     {
-                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">@(Releve ? "Valider la relève" : "Valider le comptage")</button>
+                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">@(Intermediaire ? "Valider le comptage intermédiaire" : Releve ? "Valider la relève" : "Valider le comptage")</button>
                     }
                 </div>
             </section>
@@ -78,7 +85,7 @@
                 else if (resultat.Attendu is null)
                 {
                     <div class="succes" role="status">Comptage enregistré : @Libelles.Dinars(resultat.Compte, 2). L’attendu et l’écart sont consultables par le titulaire.</div>
-                    <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button>
+                    @if (!Intermediaire) { <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button> }
                 }
                 else
                 {
@@ -99,8 +106,12 @@
                         {
                             <div class="info-bandeau" role="status">@Libelles.Dinars(resultat.VerseAuCoffre, 2) portés au coffre automatiquement ; le fond de caisse reste dans le tiroir.</div>
                         }
-                        <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button>
+                        @if (!Intermediaire) { <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button> }
                     </div>
+                }
+                @if (Intermediaire && resultat is not null)
+                {
+                    <div class="succes" role="status">Comptage intermédiaire enregistré : la caisse reste ouverte. <a href="caisse/etat">État de la caisse</a> · <a href="caisse">Retour à la caisse</a></div>
                 }
                 @if (nouvelleSession is not null && resultat is not null)
                 {
@@ -137,6 +148,9 @@
     /// <summary>Relève au changement d'équipe : comptage, puis caisse rouverte avec l'argent compté.</summary>
     [SupplyParameterFromQuery(Name = "releve")] public bool Releve { get; set; }
 
+    /// <summary>Comptage intermédiaire : le tiroir est compté sans clôturer ; résultat présenté comme une clôture.</summary>
+    [SupplyParameterFromQuery(Name = "intermediaire")] public bool Intermediaire { get; set; }
+
     private long? nouvelleSession;
 
     // Relève faite au changement d'équipe : l'employé passe la main tout de suite (la caisse reste ouverte)
@@ -155,12 +169,13 @@
 
     // Relève ou clôture affichée : Blazor garde l'écran quand seule l'adresse change (?releve=true ou non) ;
     // on repart alors d'un comptage vierge et de l'état de caisse à jour (sinon le résultat précédent restait affiché)
-    private bool? releveAffichee;
+    private string? modeAffiche;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (releveAffichee == Releve) return;
-        releveAffichee = Releve;
+        var mode = Intermediaire ? "intermediaire" : Releve ? "releve" : "cloture";
+        if (modeAffiche == mode) return;
+        modeAffiche = mode;
         (resultat, nouvelleSession, fichier, erreur) = (null, null, null, null);
         foreach (var c in Coupures) saisies[c.Code] = 0;
         (etat, erreur) = await Api.EtatCaisseAsync();
@@ -173,7 +188,9 @@
     private async Task ValiderAsync()
     {
         enCours = true;
-        if (Releve)
+        if (Intermediaire)
+            (resultat, erreur) = await Api.ComptageIntermediaireAsync(new Dictionary<string, decimal>(saisies));
+        else if (Releve)
         {
             var (releve, err) = await Api.ReleveCaisseAsync(new Dictionary<string, decimal>(saisies));
             (resultat, nouvelleSession, erreur) = (releve?.Cloture, releve?.NouvelleSessionId, err);

@@ -197,6 +197,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\067_controle_interne.sql = database\migration\067_controle_interne.sql
 		database\migration\068_verification_destinataire.sql = database\migration\068_verification_destinataire.sql
 		database\migration\069_receptions_attente.sql = database\migration\069_receptions_attente.sql
+		database\migration\070_comptage_intermediaire.sql = database\migration\070_comptage_intermediaire.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"

@@ -1,0 +1,85 @@
+@page "/caisse/etat"
+@inject ApiClient Api
+
+@* État intermédiaire de la caisse du poste : depuis l'ouverture, sans compter ni clôturer. Comptage aveugle strict : ni espèces,
+   ni total, ni attendu ; le tiroir se compte par un comptage intermédiaire (écran de clôture, mode intermédiaire). *@
+<div class="page">
+    <div class="titre-page">
+        <div>
+            <h1>État de la caisse</h1>
+            <p class="sous-titre">Depuis l’ouverture de la caisse du poste, sans compter ni clôturer</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            @if (etat is not null)
+            {
+                <a href="cloture?intermediaire=true" class="btn btn-principal">Faire un comptage intermédiaire</a>
+            }
+            <a href="caisse" class="btn">Retour à la caisse</a>
+        </div>
+    </div>
+
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (etat is null && erreur is null) { <Chargement Texte="Chargement de l’état de la caisse…" /> }
+
+    @if (etat is { } e)
+    {
+        <p class="detail" style="margin: 0">@e.Poste · ouverte le @Libelles.DateHeureLocale(e.OuverteLe)@(e.OuvertePar is { } par ? $" par {par}" : "") · fond de caisse @Libelles.Dinars(e.FondCaisse, 2)</p>
+
+        <section class="tuiles" aria-label="Récapitulatif depuis l’ouverture">
+            <div class="tuile"><span class="tuile-libelle">Ventes</span><span class="tuile-valeur">@e.NombreVentes</span><span class="tuile-note">ventes validées</span></div>
+            <div class="tuile"><span class="tuile-libelle">Carte</span><span class="tuile-valeur">@Libelles.Dinars(e.Carte, 2)</span><span class="tuile-note">net des remboursements</span></div>
+            <div class="tuile"><span class="tuile-libelle">Chèque</span><span class="tuile-valeur">@Libelles.Dinars(e.Cheque, 2)</span><span class="tuile-note">net des remboursements</span></div>
+            <div class="tuile"><span class="tuile-libelle">Crédit</span><span class="tuile-valeur">@Libelles.Dinars(e.Credit, 2)</span><span class="tuile-note">ventes à crédit</span></div>
+            <div class="tuile"><span class="tuile-libelle">Tiers payant</span><span class="tuile-valeur">@Libelles.Dinars(e.TiersPayant, 2)</span><span class="tuile-note">part des organismes</span></div>
+        </section>
+        <div class="info-bandeau" role="note">
+            Comptage aveugle : les espèces, le total et le montant attendu dans le tiroir ne sont pas affichés.
+            Pour connaître l’argent du tiroir, faites un comptage intermédiaire : il est enregistré, et l’écart s’affiche comme à la clôture, pour qui peut le voir.
+        </div>
+
+        <div class="colonnes">
+            <section class="panneau" aria-labelledby="t-employes">
+                <h2 id="t-employes">Ventes par employé</h2>
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Employé</th><th scope="col" class="nombre">Ventes</th></tr></thead>
+                        <tbody>
+                            @foreach (var v in e.ParEmploye) { <tr><td>@v.Employe</td><td class="nombre">@v.Ventes</td></tr> }
+                            @if (e.ParEmploye.Count == 0) { <tr><td colspan="2" class="vide">Aucune vente depuis l’ouverture.</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            <section class="panneau" aria-labelledby="t-comptages-inter">
+                <h2 id="t-comptages-inter">Comptages intermédiaires</h2>
+                <div class="tableau-cadre">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Le</th><th scope="col">Compté par</th><th scope="col" class="nombre">Compté</th>@if (e.PeutVoirEcart) { <th scope="col" class="nombre">Écart</th> }</tr></thead>
+                        <tbody>
+                            @foreach (var c in e.Comptages)
+                            {
+                                <tr>
+                                    <td style="white-space: nowrap">@Libelles.DateHeureLocale(c.Le)</td>
+                                    <td>@c.Employe</td>
+                                    <td class="nombre">@Libelles.Dinars(c.Compte, 2)</td>
+                                    @if (e.PeutVoirEcart)
+                                    {
+                                        <td class="nombre" style="color: @(c.Ecart < 0 ? "var(--urgent)" : "var(--accent-texte)")">@(c.Ecart > 0 ? "+" : "")@Libelles.Dinars(c.Ecart ?? 0, 2)</td>
+                                    }
+                                </tr>
+                            }
+                            @if (e.Comptages.Count == 0) { <tr><td colspan="@(e.PeutVoirEcart ? 4 : 3)" class="vide">Aucun comptage intermédiaire depuis l’ouverture.</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private EtatIntermediaireDto? etat;
+    private string? erreur;
+
+    protected override async Task OnInitializedAsync() => (etat, erreur) = await Api.EtatIntermediaireAsync();
+}

@@ -34,6 +34,9 @@ public sealed record VentesJour(DateOnly Date, int NombreVentes, decimal Chiffre
 public sealed record ProduitVendu(string Produit, int Quantite, decimal ChiffreAffaires);
 
 /// <summary>Session de caisse clôturée. Attendu et Ecart : null sans le droit de voir les écarts.</summary>
+/// <summary>Page des clôtures de la période ; employés et postes de la période pour les filtres.</summary>
+public sealed record PageClotures(Commun.Page<ClotureRapport> Page, bool EcartsVisibles, IReadOnlyList<string> Employes, IReadOnlyList<string> Postes);
+
 public sealed record ClotureRapport(string Employe, string Poste, DateTime OuverteLe, DateTime? FermeeLe,
     decimal? Attendu, decimal? Compte, decimal? Ecart, int Annulations, int Remises, int Retours = 0, long? EmployeId = null);
 
@@ -185,6 +188,27 @@ public sealed class ObtenirRapport(IRapports rapports, IPermissionService droits
     }
 
     /// <summary>Longue période : une barre par semaine (datée du lundi) au lieu d'une par jour.</summary>
+    /// <summary>
+    /// Clôtures de caisse de la période, paginées et filtrées par le serveur (employé, poste, avec un écart seulement) ;
+    /// listes d'employés et de postes de la période pour préremplir les filtres. Attendu, écart et filtre sur l'écart :
+    /// seulement avec le droit de voir les écarts.
+    /// </summary>
+    public async Task<PageClotures> CloturesPageAsync(PeriodeRapport p, string? employe, string? poste, bool avecEcart, Commun.DemandePage page,
+        long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.RapportsVentes, "consulter les rapports", ct);
+        var voirEcarts = await droits.APermissionAsync(utilisateurId, Permissions.CaisseVoirEcart, ct);
+        var toutes = await rapports.CloturesAsync(p.Du, p.Au, ct);
+        if (!voirEcarts) toutes = toutes.Select(c => c with { Attendu = null, Ecart = null }).ToList();
+        var retenues = toutes.Where(c => (string.IsNullOrWhiteSpace(employe) || c.Employe == employe)
+                && (string.IsNullOrWhiteSpace(poste) || c.Poste == poste)
+                && (!avecEcart || !voirEcarts || (c.Ecart ?? 0) != 0)).ToList();
+        return new PageClotures(
+            new Commun.Page<ClotureRapport>(retenues.Skip(page.Decalage).Take(page.Taille).ToList(), retenues.Count, page.Page, page.Taille),
+            voirEcarts, toutes.Select(c => c.Employe).Distinct().Order(StringComparer.CurrentCulture).ToList(),
+            toutes.Select(c => c.Poste).Distinct().Order(StringComparer.CurrentCulture).ToList());
+    }
+
     public static IReadOnlyList<VentesJour> ParSemaine(PeriodeRapport p, IReadOnlyList<VentesJour> jours) =>
         !p.ParSemaine ? jours
         : jours.GroupBy(j => PeriodeRapport.Lundi(j.Date))

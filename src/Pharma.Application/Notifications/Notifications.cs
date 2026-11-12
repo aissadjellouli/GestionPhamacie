@@ -186,12 +186,14 @@ public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail em
                 if (m.Canal == CanalNotification.Email)
                 {
                     if (connexion is null) throw new InvalidOperationException(erreurSmtp ?? "Serveur SMTP non configuré.");
-                    await email.EnvoyerAsync(connexion, m.Adresse, m.Objet ?? "Pharma Officine", m.Corps, m.CorpsHtml, ct);
+                    // « 3 lot(s) » → « 3 lots », « 1 boîte(s) » → « 1 boîte » (Accord) : textes venus du code et de la base
+                    await email.EnvoyerAsync(connexion, m.Adresse, Accord.Texte(m.Objet ?? "Pharma Officine"), Accord.Texte(m.Corps),
+                        m.CorpsHtml is null ? null : Accord.Texte(m.CorpsHtml), ct);
                 }
                 else
                 {
                     if (!reglages.SmsActifs) throw new InvalidOperationException("Modem GSM non configuré.");
-                    await sms.EnvoyerAsync(reglages.ModemPort!, m.Adresse, m.Corps, ct);
+                    await sms.EnvoyerAsync(reglages.ModemPort!, m.Adresse, Accord.Texte(m.Corps), ct);
                 }
                 await depot.MarquerEnvoyeAsync(m.Id, maintenantUtc, ct);
                 envoyes++;

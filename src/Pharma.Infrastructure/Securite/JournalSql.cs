@@ -48,6 +48,20 @@ public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)permissionCode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
     }
 
+    public async Task<IReadOnlyList<string>> EmployesAsync(CancellationToken ct = default)
+    {
+        // Auteurs des actions et personnes qui les ont autorisées : le filtre « Employé » cherche dans les deux
+        await using var cmd = db.CreateCommand("""
+            SELECT DISTINCT u.nom_complet FROM utilisateur u
+            WHERE EXISTS (SELECT 1 FROM journal_audit j WHERE j.utilisateur_id = u.id OR j.autorise_par = u.id)
+            ORDER BY u.nom_complet
+            """);
+        var noms = new List<string>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) noms.Add(r.GetString(0));
+        return noms;
+    }
+
     public async Task<Page<EntreeJournal>> PageAsync(FiltreJournal filtre, DemandePage page, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand($"""

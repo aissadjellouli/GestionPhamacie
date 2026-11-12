@@ -100,9 +100,9 @@ récemment »). Restent :
 - [x] Affichage : indicateur de chargement, tableaux en relief, liens et boutons mis en évidence ; Trésorerie et file des notifications paginées et filtrées par le serveur.
 
 - [x] Passation au « ⇄ Changer » : relève de caisse proposée ; facture, retour fournisseur et réception en cours repris par le suivant (bandeau « Tâches laissées en cours sur ce poste »).
+- [x] État de la caisse et comptage intermédiaire sans clôture (070) : comptage aveugle strict, écart affiché comme à la clôture pour qui peut le voir.
 
 **Points ouverts de ces livraisons**
-- [ ] État intermédiaire de caisse sans compter ni clôturer (récapitulatif depuis l'ouverture) : n'existe pas aujourd'hui ; à construire selon les choix du titulaire (montant attendu caché aux employés en comptage aveugle).
 - [ ] Facture et retour fournisseur laissés au changement d'utilisateur : gardés dans la mémoire du poste, perdus si le poste redémarre.
 - [ ] Abandon d'une réception en attente : inscrit au journal des actions ; à décider s'il doit aussi lever une anomalie dans le Contrôle interne.
 - [ ] Mise en évidence des boutons au survol en thème clair : préciser ce qui ne convient pas (« pareil que sombre »).

@@ -466,6 +466,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(EtatCaisseDto?, string?)> EtatCaisseAsync() => GetAsync<EtatCaisseDto?>("api/caisse/etat", null);
 
+    /// <summary>État intermédiaire de la caisse du poste : récapitulatif sans espèces et comptages intermédiaires.</summary>
+    public Task<(EtatIntermediaireDto?, string?)> EtatIntermediaireAsync() => GetAsync<EtatIntermediaireDto?>("api/caisse/etat-intermediaire", null);
+
+    /// <summary>Comptage du tiroir sans clôture : la caisse reste ouverte.</summary>
+    public Task<(ClotureDto?, string?)> ComptageIntermediaireAsync(Dictionary<string, decimal> saisies) =>
+        PostAsync<ClotureRequete, ClotureDto>("api/caisse/comptage-intermediaire", new ClotureRequete(saisies));
+
     public Task<(IdentifiantDto?, string?)> OuvrirCaisseAsync(string poste, decimal? fond) =>
         PostAsync<OuvrirCaisseRequete, IdentifiantDto>("api/caisse/ouvrir", new(poste, fond));
 
@@ -643,6 +650,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         string.Join("&", parametres.Where(p => p.Valeur is not null && p.Valeur as string != "")
             .Select(p => $"{p.Nom}={Uri.EscapeDataString(p.Valeur switch { DateOnly d => d.ToString("yyyy-MM-dd"), var v => Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)! })}"));
 
+    /// <summary>Employés présents dans le journal : liste préremplie du filtre « Employé ».</summary>
+    public Task<(List<string>, string?)> EmployesJournalAsync() => GetAsync<List<string>>("api/admin/journal/employes", []);
+
     public Task<(PageDto<EntreeJournalDto>?, string?)> JournalAsync(DateOnly? du, DateOnly? au, string? employe, int page, int taille, string? categorie = null) =>
         GetAsync<PageDto<EntreeJournalDto>?>("api/admin/journal?" + Requete(("du", du), ("au", au), ("employe", employe?.Trim()), ("categorie", categorie),
             ("page", page), ("taille", taille)), null);
@@ -650,6 +660,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // ---- Alertes, stock, traçabilité -------------------------------------------
 
     public Task<(List<AlerteDto>, string?)> AlertesAsync() => GetAsync<List<AlerteDto>>("api/alertes", []);
+
+    /// <summary>Alertes paginées et filtrées par le serveur (toutes, urgent, peremption, stock), avec les nombres des tuiles et des onglets.</summary>
+    public Task<(AlertesPageDto?, string?)> AlertesPageAsync(string filtre, int page, int taille) =>
+        GetAsync<AlertesPageDto?>($"api/alertes/page?filtre={Uri.EscapeDataString(filtre)}&page={page}&taille={taille}", null);
     public Task<(IndicateursAlertesDto?, string?)> IndicateursAlertesAsync() => GetAsync<IndicateursAlertesDto?>("api/alertes/indicateurs", null);
     public Task<(CompteDto?, string?)> AlertesUrgentesAsync() => GetAsync<CompteDto?>("api/alertes/urgentes", null);
 
@@ -710,6 +724,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         GetAsync<List<ProduitAlternatifDto>>($"api/produits/{produitId}/alternatives", []);
 
     public Task<(EtatStockDto?, string?)> StockAsync() => GetAsync<EtatStockDto?>("api/stock", null);
+
+    /// <summary>Tableau de stock paginé et filtré par le serveur, avec les propositions pour la saisie de la recherche.</summary>
+    public Task<(StockPageDto?, string?)> StockPageAsync(int page, int taille, string? recherche, string? filtre, string? rayon) =>
+        GetAsync<StockPageDto?>($"api/stock/page?page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(recherche) ? "" : $"&q={Uri.EscapeDataString(recherche)}")
+            + (string.IsNullOrWhiteSpace(filtre) || filtre == "tous" ? "" : $"&filtre={Uri.EscapeDataString(filtre)}")
+            + (string.IsNullOrWhiteSpace(rayon) ? "" : $"&rayon={Uri.EscapeDataString(rayon)}"), null);
 
     public Task<(EtatEtiquetageDto?, string?)> EtiquetageAsync() =>
         GetAsync<EtatEtiquetageDto?>("api/tracabilite/etiquetage", null);
@@ -879,6 +900,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         periode == "dates" ? $"periode=dates&du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}" : $"periode={periode}&date={date:yyyy-MM-dd}";
     public Task<(RapportActiviteDto?, string?)> RapportAsync(string periode, DateOnly date, DateOnly du, DateOnly au) =>
         GetAsync<RapportActiviteDto?>($"api/rapports?{FiltreRapport(periode, date, du, au)}", null);
+
+    /// <summary>Clôtures de la période, paginées et filtrées par le serveur (employé, poste, avec un écart seulement).</summary>
+    public Task<(CloturesPageDto?, string?)> CloturesRapportAsync(string periode, DateOnly date, DateOnly du, DateOnly au, string? employe, string? poste,
+        bool avecEcart, int page, int taille) =>
+        GetAsync<CloturesPageDto?>($"api/rapports/clotures?{FiltreRapport(periode, date, du, au)}&page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(employe) ? "" : $"&employe={Uri.EscapeDataString(employe)}")
+            + (string.IsNullOrWhiteSpace(poste) ? "" : $"&poste={Uri.EscapeDataString(poste)}") + (avecEcart ? "&ecart=true" : ""), null);
     public Task<(byte[]?, string?, string?)> ExporterRapportAsync(string periode, DateOnly date, DateOnly du, DateOnly au, string format) =>
         FichierAsync(HttpMethod.Get, $"api/rapports/export?{FiltreRapport(periode, date, du, au)}&format={format}", $"rapport.{(format == "excel" ? "csv" : "pdf")}");
     public async Task<string?> EnregistrerAvoirAsync(long id, decimal montant) => (await PostAsync<AvoirRequete, object>($"api/achats/retours/{id}/avoir", new(montant))).Item2;

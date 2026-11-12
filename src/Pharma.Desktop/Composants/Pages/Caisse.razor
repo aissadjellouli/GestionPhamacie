@@ -604,7 +604,8 @@
                 {
                     <span class="sous-titre" style="font-size: 13px">Pour mettre en crédit, choisissez d’abord le patient.</span>
                 }
-                <a href="cloture?releve=true" class="btn" title="Changement d’équipe : compter le tiroir sans fermer la caisse">Relève (comptage)</a>
+                <a href="caisse/etat" class="btn" title="Récapitulatif depuis l’ouverture et comptage intermédiaire, sans clôturer">État de la caisse</a>
+                <a href="cloture?releve=true" class="btn" title="Changement d’équipe : compter le tiroir, clôturer la période et rouvrir aussitôt la caisse avec l’argent compté">Relève</a>
                 <button type="button" class="btn" @onclick="() => OuvrirAnnulation(null)">Annulation ou retour</button>
                 <button type="button" class="btn" @onclick="() => creditOuvert = true">Règlement d’un crédit</button>
                 <a href="cloture" class="btn">Clôturer la caisse</a>

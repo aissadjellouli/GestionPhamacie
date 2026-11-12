@@ -172,6 +172,26 @@
 
         <section class="panneau" aria-labelledby="t-clo">
             <h2 id="t-clo">Clôtures de caisse</h2>
+            @* Paginées et filtrées par le serveur ; listes préremplies avec les employés et postes de la période *@
+            <div class="filtres-liste" role="search" aria-label="Filtrer les clôtures">
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 220px"><label for="clo-employe">Employé</label>
+                        <select id="clo-employe" data-champ="employe" @bind="clotEmploye" @bind:after="FiltrerCloturesAsync">
+                            <option value="">Tous</option>
+                            @foreach (var e in clotures?.Employes ?? []) { <option value="@e">@e</option> }
+                        </select></div>
+                    <div class="champ" style="flex: 0 0 180px"><label for="clo-poste">Poste</label>
+                        <select id="clo-poste" data-champ="poste" @bind="clotPoste" @bind:after="FiltrerCloturesAsync">
+                            <option value="">Tous</option>
+                            @foreach (var p in clotures?.Postes ?? []) { <option value="@p">@p</option> }
+                        </select></div>
+                    @if (clotures?.EcartsVisibles == true)
+                    {
+                        <label class="case" style="align-self: end"><input type="checkbox" @bind="clotEcart" @bind:after="FiltrerCloturesAsync" /><span>Avec un écart seulement</span></label>
+                    }
+                    @if (FiltreCloturesActif) { <button type="button" class="btn" style="align-self: end" @onclick="ToutesLesCloturesAsync">Tout afficher</button> }
+                </div>
+            </div>
             <div class="tableau-cadre">
                 <table class="tableau" style="min-width: 0">
                     <thead>
@@ -184,7 +204,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var c in r.Clotures)
+                        @foreach (var c in clotures?.Page.Lignes ?? [])
                         {
                             <tr>
                                 <td class="nom"><LienContact Type="employe" Id="c.EmployeId" Nom="@c.Employe" /><br /><span class="detail">@c.Poste</span></td>
@@ -200,13 +220,14 @@
                                 <td>@c.Retours</td>
                             </tr>
                         }
-                        @if (r.Clotures.Count == 0)
+                        @if ((clotures?.Page.Total ?? 0) == 0)
                         {
-                            <tr><td colspan="@(r.EcartsVisibles ? 8 : 6)" class="vide">Aucune clôture de caisse sur la période.</td></tr>
+                            <tr><td colspan="@(r.EcartsVisibles ? 8 : 6)" class="vide">@(FiltreCloturesActif ? "Aucune clôture pour ces filtres." : "Aucune clôture de caisse sur la période.")</td></tr>
                         }
                     </tbody>
                 </table>
             </div>
+            <Pagination Total="clotures?.Page.Total ?? 0" Numero="clotPage" Taille="clotTaille" Libelle="Pages des clôtures" OnChange="p => ChargerCloturesAsync(p.Numero, p.Taille)" />
             @if (!r.EcartsVisibles)
             {
                 <p class="detail" style="margin: 0">L’attendu et l’écart sont réservés au droit « Voir les écarts de caisse ».</p>
@@ -364,11 +385,30 @@
             {
                 rapport = r;
                 if (r.Tva is { } t) (tvaPerime, tvaCasse, tvaDon) = (t.Perime, t.Casse, t.Don);
+                await ChargerCloturesAsync(1, clotTaille);
             }
             erreur = e;
         }
         finally { enCours = false; }
     }
+
+    // ---- Clôtures de caisse de la période : paginées et filtrées par le serveur (employé, poste, avec un écart seulement) ----
+    private CloturesPageDto? clotures;
+    private string clotEmploye = "", clotPoste = "";
+    private bool clotEcart;
+    private int clotPage = 1, clotTaille = Pagination.TailleParDefaut;
+    private bool FiltreCloturesActif => clotEmploye != "" || clotPoste != "" || clotEcart;
+
+    private async Task ChargerCloturesAsync(int numero, int taille)
+    {
+        var (c, e) = await Api.CloturesRapportAsync(periode, reference, du, au, clotEmploye, clotPoste, clotEcart, numero, taille);
+        if (e is not null) { erreur ??= e; return; }
+        if (c!.Page.Lignes.Count == 0 && numero > 1) { await ChargerCloturesAsync(1, taille); return; }
+        (clotures, clotPage, clotTaille) = (c, c.Page.Numero, c.Page.Taille);
+    }
+
+    private Task FiltrerCloturesAsync() => ChargerCloturesAsync(1, clotTaille);
+    private Task ToutesLesCloturesAsync() { (clotEmploye, clotPoste, clotEcart) = ("", "", false); return FiltrerCloturesAsync(); }
 
     private bool tvaPerime, tvaCasse, tvaDon;
 
