@@ -1,3 +1,4 @@
+using Pharma.Api.Securite;
 using Microsoft.AspNetCore.Http.Features;
 using Pharma.Application.Ged;
 using Pharma.Shared;
@@ -19,6 +20,6 @@ internal static class GedEndpoints
                 var chemin = await deposer.ExecuterAsync(type, nom, memoire.ToArray(), ct);
                 return Results.Ok(new DocumentGedDto(chemin));
             })
-           .RequireAuthorization();
+           .ExigerConnexion();
     }
 }

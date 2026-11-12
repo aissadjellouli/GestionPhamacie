@@ -105,7 +105,7 @@ public sealed class ListerSurveillance(ISurveillance surveillance, IPermissionSe
 {
     public async Task<IReadOnlyList<AlerteSurveillance>> ExecuterAsync(bool traitees, long utilisateurId, CancellationToken ct = default)
     {
-        await droits.ExigerTitulaireAsync(utilisateurId, "consulter la surveillance de la caisse", ct);
+        await droits.ExigerTitulaireAsync(utilisateurId, "consulter le contrôle interne", ct);
         return await surveillance.ListerAsync(traitees, traitees ? 200 : 500, ct);
     }
 }
@@ -114,7 +114,7 @@ public sealed class TraiterSurveillance(ISurveillance surveillance, IPermissionS
 {
     public async Task<bool> ExecuterAsync(long id, string? actionPrise, long utilisateurId, CancellationToken ct = default)
     {
-        await droits.ExigerTitulaireAsync(utilisateurId, "traiter une anomalie de surveillance", ct);
+        await droits.ExigerTitulaireAsync(utilisateurId, "traiter un point du contrôle interne", ct);
         var action = string.IsNullOrWhiteSpace(actionPrise) ? null : actionPrise.Trim();
         return await surveillance.TraiterAsync(id, action is { Length: > 300 } ? action[..300] : action, utilisateurId, ct);
     }
@@ -124,13 +124,13 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
 {
     public async Task<ParametresSurveillance> LireAsync(long utilisateurId, CancellationToken ct = default)
     {
-        await droits.ExigerTitulaireAsync(utilisateurId, "régler la surveillance de la caisse", ct);
+        await droits.ExigerTitulaireAsync(utilisateurId, "régler le contrôle interne", ct);
         return await surveillance.ParametresAsync(ct);
     }
 
     public async Task EnregistrerAsync(ParametresSurveillance p, long utilisateurId, CancellationToken ct = default)
     {
-        await droits.ExigerTitulaireAsync(utilisateurId, "régler la surveillance de la caisse", ct);
+        await droits.ExigerTitulaireAsync(utilisateurId, "régler le contrôle interne", ct);
         if (p.SeuilLignesRetirees < 1 || p.SeuilTiroir < 1 || p.SeuilAttentesAbandonnees < 1 || p.SeuilRemises < 1 || p.SeuilRemisesPatient < 1
             || p.SeuilAjustements < 1 || p.SeuilCasses < 1 || p.SeuilEchantillons < 1 || p.SeuilAutorisationsValideur < 1
             || p.SeuilAutorisationsEmploye < 1 || p.SeuilChangementsPoste < 1 || p.SeuilBaissesPrix < 1)

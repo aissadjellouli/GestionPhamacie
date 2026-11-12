@@ -14,6 +14,6 @@ internal static class EtatPosteEndpoints
                 var e = await obtenir.ExecuterAsync(requete.Poste(), ct);
                 return Results.Ok(new EtatPosteDto(e.SauvegardeActive, e.DerniereSauvegarde, e.StatutSauvegarde, e.CaisseSessionId, e.CaisseOuverteLe));
             })
-           .RequireAuthorization();
+           .ExigerConnexion(motDePasseProvisoire: true, superAdmin: true);
     }
 }

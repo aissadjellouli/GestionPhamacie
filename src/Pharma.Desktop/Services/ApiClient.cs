@@ -69,8 +69,15 @@ public sealed class SessionPoste
         Changee?.Invoke();
     }
 
+    /// <summary>
+    /// Juste avant la fermeture de la session (déconnexion, changement d'utilisateur, inactivité), jeton encore valable : la caisse
+    /// y signale son panier abandonné, les fenêtres ouvertes se ferment.
+    /// </summary>
+    public event Action? AvantFermeture;
+
     public void Fermer(string? motif = null)
     {
+        if (Jeton is not null) AvantFermeture?.Invoke();
         Affichage = "auto";
         (Jeton, NomComplet, MotifDeconnexion, ParCode, SuperAdmin) = (null, null, motif, false, false);
         Permissions = new HashSet<string>();
@@ -573,6 +580,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> ValiderDestinataireAsync(long id, bool valide) =>
         (await PostAsync<ValidationDestinataireDto, object>($"api/admin/notifications/destinataires/{id}/validation", new(valide))).Item2;
     public Task<(NombreDto?, string?)> EnvoyerTestAsync(long id) => PostAsync<object, NombreDto>($"api/admin/notifications/destinataires/{id}/test", new());
+    /// <summary>« Vérifier » : code à 6 chiffres envoyé au destinataire.</summary>
+    public Task<(NombreDto?, string?)> EnvoyerCodeVerificationAsync(long id) => PostAsync<object, NombreDto>($"api/admin/notifications/destinataires/{id}/code", new());
+    public async Task<string?> VerifierCodeDestinataireAsync(long id, string code) =>
+        (await PostAsync<CodeVerificationDto, object>($"api/admin/notifications/destinataires/{id}/verification", new(code))).Item2;
     public Task<(NombreDto?, string?)> EnvoyerRapportMaintenantAsync() => PostAsync<object, NombreDto>("api/admin/notifications/rapport", new());
     public Task<(List<MessageSortantDto>, string?)> FileMessagesAsync() => GetAsync<List<MessageSortantDto>>("api/admin/notifications/file", []);
 

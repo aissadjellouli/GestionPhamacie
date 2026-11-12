@@ -32,7 +32,9 @@ ALTER TABLE lot ALTER COLUMN fournisseur_id SET NOT NULL;
 ALTER TABLE lot DROP CONSTRAINT IF EXISTS lot_produit_id_numero_lot_key;
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ux_lot_reception') THEN
+    -- Au rejeu : 018 puis 021 l'ont remplacée (ux_lot_fournisseur, puis ux_lot_fournisseur_date) ; la recréer échouerait sur
+    -- une réception qui a deux lots de même n° (lot séparé, reprise de données)
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname IN ('ux_lot_reception', 'ux_lot_fournisseur', 'ux_lot_fournisseur_date')) THEN
         ALTER TABLE lot ADD CONSTRAINT ux_lot_reception UNIQUE (reception_id, produit_id, numero_lot);
     END IF;
 END $$;

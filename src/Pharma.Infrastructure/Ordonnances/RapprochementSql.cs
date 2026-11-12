@@ -31,7 +31,7 @@ public sealed class RapprochementSql(NpgsqlDataSource db) : IRapprochementCatalo
         FROM c
         -- Stock vendable (même calcul que v_etat_stock), lu pour les seuls produits retenus
         CROSS JOIN LATERAL (SELECT COALESCE(sum(l.quantite_disponible), 0)::int AS stock FROM lot l
-                            WHERE l.produit_id = c.id AND l.date_peremption > current_date) e
+                            WHERE l.produit_id = c.id AND l.date_peremption > current_date AND NOT l.bloque) e
         WHERE score >= $3
         ORDER BY score DESC, ressemblance_nom DESC, stock DESC, nom_commercial
         LIMIT $2

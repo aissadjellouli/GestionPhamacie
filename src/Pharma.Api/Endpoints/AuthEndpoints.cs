@@ -19,7 +19,7 @@ internal static class AuthEndpoints
         // L'employé connecté change son mot de passe (obligatoire avec un mot de passe provisoire) : nouveau jeton, droits du rôle
         app.MapPost("/api/auth/mot-de-passe", async (ChangementMotDePasseRequete req, ChangerMonMotDePasse changer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok((await changer.ExecuterAsync(user.UtilisateurId(), req.Actuel, req.Nouveau, req.Confirmation, ct)).VersDto()))
-           .RequireAuthorization()
+           .ExigerConnexion(motDePasseProvisoire: true)
            .GererErreursMetier();
 
         // Changement d'utilisateur au comptoir : seulement sur un poste dont la caisse est ouverte ; jeton limité au comptoir
@@ -38,19 +38,19 @@ internal static class AuthEndpoints
         // Droits de l'employé connecté : le poste s'en sert pour griser ce qui est refusé (le serveur revérifie toujours)
         app.MapGet("/api/auth/permissions", async (ListerMesPermissions lister, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(await lister.ExecuterAsync(user.UtilisateurId(), ct)))
-           .RequireAuthorization();
+           .ExigerConnexion(motDePasseProvisoire: true, superAdmin: true);
 
         // Affichage du poste choisi par l'employé (clair, sombre, auto) : aucun droit particulier, code comptoir compris
         app.MapGet("/api/auth/affichage", async (LireAffichage lire, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new AffichageDto(await lire.ExecuterAsync(user.UtilisateurId(), ct))))
-           .RequireAuthorization();
+           .ExigerConnexion(motDePasseProvisoire: true, superAdmin: true);
 
         app.MapPut("/api/auth/affichage", async (AffichageDto req, ChoisirAffichage choisir, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await choisir.ExecuterAsync(user.UtilisateurId(), req.Affichage, ct);
                 return Results.NoContent();
             })
-           .RequireAuthorization();
+           .ExigerConnexion(motDePasseProvisoire: true, superAdmin: true);
 
         // L'employé choisit son code comptoir (connexion par mot de passe exigée)
         app.MapPut("/api/auth/code-comptoir", async (CodeComptoirRequete req, DefinirCodeComptoir definir, ClaimsPrincipal user, CancellationToken ct) =>
@@ -58,6 +58,6 @@ internal static class AuthEndpoints
                 await definir.ExecuterAsync(user.UtilisateurId(), user.ParCodeComptoir(), req.Code, ct);
                 return Results.NoContent();
             })
-           .RequireAuthorization();
+           .ExigerConnexion();
     }
 }

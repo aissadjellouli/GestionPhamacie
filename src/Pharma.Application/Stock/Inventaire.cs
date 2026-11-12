@@ -69,7 +69,7 @@ public sealed record TableauInventaire(
     IReadOnlyList<RayonInventaire> Rayons, RayonInventaire? Propose, ParametresInventaire Parametres,
     IReadOnlyList<EcartAValider> EcartsAValider, IReadOnlyList<InventaireResume> Historique, EtatSensibles? Sensibles = null);
 
-/// <summary>Produits sensibles : comptage à part, régulier (réglage de la Surveillance). Dernier : fin du dernier comptage.</summary>
+/// <summary>Produits sensibles : comptage à part, régulier (réglage du Contrôle interne). Dernier : fin du dernier comptage.</summary>
 public sealed record EtatSensibles(int Produits, DateTime? Dernier, long? EnCoursId);
 
 public sealed class ObtenirTableauInventaire(IInventaires inventaires)
@@ -109,7 +109,7 @@ public sealed class CommencerInventaireSensibles(IInventaires inventaires, IPerm
     {
         await droits.ExigerAsync(utilisateurId, Permissions.StockAjuster, "faire un inventaire", ct);
         return await inventaires.CreerSensiblesAsync(utilisateurId, ct)
-               ?? throw new RegleMetierException("Aucun produit sensible en stock : rien à compter (le titulaire les choisit dans Surveillance).");
+               ?? throw new RegleMetierException("Aucun produit sensible en stock : rien à compter (le titulaire les choisit dans Contrôle interne).");
     }
 }
 

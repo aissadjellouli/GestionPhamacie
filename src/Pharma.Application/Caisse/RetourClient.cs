@@ -51,7 +51,7 @@ public sealed class LireVenteRetournable(IRetoursClient retours)
 /// caissier valide seul.
 /// </summary>
 public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCaisse sessions, IPermissionService droits,
-    VerificationCodeComptoir codes, IJournal journal, Patients.IPatients? patients = null)
+    VerificationCodeComptoir codes, IJournal journal, Patients.IPatients? patients = null, Securite.AutorisationCourante? autorisation = null)
 {
     public async Task<ResultatRetour> ExecuterAsync(long venteId, string? motif, IReadOnlyList<LigneRetourDemandee> demandees, long utilisateurId,
         string? poste, string? validateurIdentifiant, string? validateurCode, bool solderDette = false, long? patientDetteId = null,
@@ -75,14 +75,16 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             RegleRetour.VerifierQuantite(l.Produit, d.Quantite, l.QuantiteVendue, l.DejaRendue);
             var destination = RegleRetour.Destination(d.Destination);
 
-            // Boîtes identifiées : ce sont elles, et pas d'autres, que le patient rapporte
-            IReadOnlyList<long> boites = [];
-            if (l.Boites.Count > 0)
-            {
-                boites = (d.Boites ?? []).Distinct().ToList();
-                if (boites.Count != d.Quantite || boites.Any(b => l.Boites.All(x => x.Id != b)))
-                    throw new RegleMetierException($"{l.Produit} : cochez les {d.Quantite} boîte(s) rendue(s) parmi celles vendues (n° de série ou étiquette).");
-            }
+            // Boîtes identifiées cochées parmi celles de la vente ; le reste de la quantité, ce sont des boîtes vendues sans
+            // être scannées (scan facultatif) : au plus celles encore chez le patient
+            var boites = (d.Boites ?? []).Distinct().ToList();
+            if (boites.Any(b => l.Boites.All(x => x.Id != b)))
+                throw new RegleMetierException($"{l.Produit} : une boîte cochée ne fait pas partie de cette vente (n° de série ou étiquette).");
+            var nonIdentifiees = Math.Max(l.QuantiteVendue - l.DejaRendue - l.Boites.Count, 0);
+            if (boites.Count > d.Quantite || d.Quantite - boites.Count > nonIdentifiees)
+                throw new RegleMetierException(nonIdentifiees == 0
+                    ? $"{l.Produit} : cochez les {d.Quantite} boîte(s) rendue(s) parmi celles vendues (n° de série ou étiquette)."
+                    : $"{l.Produit} : {nonIdentifiees} boîte(s) vendue(s) sans identité ; cochez les autres boîtes rendues parmi celles vendues.");
             lignes.Add(new LigneRetourAEcrire(l.LigneVenteId, l.LotId, d.Quantite, destination,
                 RegleRetour.MontantPaye(l.MontantPatient, l.QuantiteVendue, d.Quantite, v.PartPatient, brutPatient), boites));
         }
@@ -110,8 +112,10 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             var patient = (patients is null ? null : await patients.TrouverAsync(pid, ct)) ?? throw new RegleMetierException("Patient introuvable.");
             (dette, patientDette) = (patient.SoldeCredit, pid);
         }
-        var reductionDette = v.Mode == "credit" || solderDette ? Math.Min(Math.Max(dette, 0), montant) : 0;
-        var aRendre = montant - reductionDette;
+        // Vente à crédit : la dette baisse au plus de ce qui reste impayé sur la vente ; seul ce qui a vraiment été payé est rendu
+        var (reductionDette, aRendre) = v.Mode == "credit"
+            ? RegleAnnulation.RemboursementCredit(montant, Math.Max(v.PartPatient - v.DejaRendu, 0), v.PayeSurVente, dette)
+            : solderDette ? (Math.Min(Math.Max(dette, 0), montant), montant - Math.Min(Math.Max(dette, 0), montant)) : (0m, montant);
         var deduitAuChoix = solderDette && v.Mode != "credit" && reductionDette > 0;
         if (deduitAuChoix && !accordClient) throw RegleAnnulation.AccordClientManquant();
 
@@ -129,6 +133,8 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
                 throw new DroitRefuseException(Permissions.CaisseRetourEspeces, "valider le retour d’un produit");
             (validePar, nomValidateur) = (validateur.Id, validateur.NomComplet);
         }
+        // Droit donné sur place par le code d'un collègue (en-têtes d'autorisation) : c'est ce collègue qui valide
+        else if (autorisation?.AutoriseParId is { } par) (validePar, nomValidateur) = (par, autorisation.AutoriseParNom);
 
         var session = await sessions.SessionDuPosteAsync(nomPoste, ct);
         if (v.Mode is "especes" or "credit" && aRendre > 0 && session is null)

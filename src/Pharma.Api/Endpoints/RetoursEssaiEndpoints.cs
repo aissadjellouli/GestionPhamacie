@@ -13,13 +13,13 @@ internal static class RetoursEssaiEndpoints
         api.MapGet("/retours-essai", async (RetoursEssai retours, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok((await retours.ListerAsync(user.UtilisateurId(), ct))
                     .Select(r => new RetourEssaiDto(r.Date, r.Employe, r.Ecran, r.Genre, r.Texte)).ToList()))
-           .RequireAuthorization();
+           .ExigerConnexion();
 
         api.MapPost("/retours-essai", async (NouveauRetourEssaiDto d, RetoursEssai retours, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await retours.EnregistrerAsync(d.Ecran, d.Genre, d.Texte, user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
-           .RequireAuthorization();
+           .ExigerConnexion();
     }
 }

@@ -19,7 +19,7 @@ internal sealed class MobileEnMemoire : IMobile
     public List<ScanReception> Scans { get; } = [];
 
     public Task<CodeResolu?> ResoudreCodeAsync(string code, CancellationToken ct = default) => Task.FromResult(Codes.GetValueOrDefault(code));
-    public Task<CodeResolu?> ResoudreDataMatrixAsync(string gtin, string? lot, string? serie, CancellationToken ct = default) => Task.FromResult(ParDataMatrix);
+    public Task<CodeResolu?> ResoudreDataMatrixAsync(string gtin, string? lot, string? serie, CancellationToken ct = default, DateOnly? peremption = null) => Task.FromResult(ParDataMatrix);
     public Task<FicheProduit?> FicheAsync(long produitId, CancellationToken ct = default) =>
         Task.FromResult<FicheProduit?>(new(produitId, "Sintrom 4 mg cp", "Acénocoumarol", "4 mg", "comprimé", 300, Lots.Sum(l => l.Quantite), 1, "C-03-1", null, null, Lots));
     public Task<LotAConfirmer?> LotAsync(long lotId, CancellationToken ct = default) => Task.FromResult(Lot);

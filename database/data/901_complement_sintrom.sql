@@ -22,5 +22,6 @@ INSERT INTO lot (produit_id, reception_id, fournisseur_id, numero_lot, date_pere
 SELECT p.id, r.id, r.fournisseur_id, 'SIN4-26', current_date + 420, 25, 200.00
 FROM produit p
 JOIN reception r ON r.numero_bl = 'BL-DEMO-1'
+-- Réexécution sans effet : le lot n'est créé qu'une fois (la contrainte ux_lot_reception n'existe plus depuis 018)
 WHERE p.code_barre = '6130000000107'
-ON CONFLICT ON CONSTRAINT ux_lot_reception DO NOTHING;
+  AND NOT EXISTS (SELECT 1 FROM lot l WHERE l.produit_id = p.id AND l.fournisseur_id = r.fournisseur_id AND l.numero_lot = 'SIN4-26');

@@ -8,7 +8,7 @@ public sealed class StockLecture(NpgsqlDataSource db) : IStockLecture
 {
     public async Task<IndicateursStock> IndicateursAsync(CancellationToken ct = default)
     {
-        // Même périmètre que v_etat_stock : le périmé ne compte pas dans le stock vendable
+        // Même périmètre que v_etat_stock : ni le périmé ni le bloqué ne comptent dans le stock vendable
         const string sql = """
             SELECT (SELECT count(*) FROM v_etat_stock WHERE stock > 0)::int,
                    (SELECT COALESCE(SUM(v.valeur), 0)                       -- prix réel de chaque boîte (021_prix_boite.sql)

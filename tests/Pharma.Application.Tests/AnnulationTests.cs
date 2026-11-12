@@ -22,7 +22,9 @@ public partial class AnnulationTests
     // Crédit : par défaut la dette couvre encore toute la vente (rien n'a été remboursé)
     private static VenteAnnulable Vente(bool caisseOuverte, string mode = "especes", decimal dejaRendu = 0, decimal? solde = null, string? facture = null) =>
         new(12, "T-000012", DateTime.UtcNow, "Vendeur", "Patient fictif", 470, 470, 0, mode, "validee", caisseOuverte, false,
-            [new LigneVenteAnnulable("Produit fictif", 2, 470)], dejaRendu, solde ?? (mode == "credit" ? 470 : 0), facture);
+            [new LigneVenteAnnulable("Produit fictif", 2, 470)], dejaRendu, solde ?? (mode == "credit" ? 470 : 0), facture,
+            // Vente à crédit : ce que le patient a remboursé sur cette vente (montant moins dette restante)
+            PayeSurVente: mode == "credit" ? 470 - (solde ?? 470) : 0);
 
     // Le caissier (5) n'a que « vendre » ; l'assistante (8) a « annuler » et un code comptoir 4826
     private static (AnnulerVente Cas, AnnulationsEnMemoire Stock, JournalEspion Journal) Monter(VenteAnnulable v, SessionsEnMemoire? sessions = null)

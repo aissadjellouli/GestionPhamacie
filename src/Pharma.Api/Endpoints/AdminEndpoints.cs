@@ -122,7 +122,7 @@ internal static class AdminEndpoints
                 var p = await obtenir.ExecuterAsync(ct);
                 return Results.Ok(new PharmacieDto(p.Nom, p.Titulaire, p.Adresse, p.Telephone, p.Nif, p.ChifaOfficine, p.LangueDefaut, p.Rc, p.Nis, p.ArticleImposition));
             })
-           .RequireAuthorization();
+           .ExigerConnexion(motDePasseProvisoire: true, superAdmin: true);
     }
 
     private static SeuilStockDto VersDto(SeuilStockProduit s) =>

@@ -215,6 +215,8 @@ public static class DependencyInjection
         services.AddScoped<Notifications.EnregistrerDestinataire>();
         services.AddScoped<Notifications.EnvoyerMessageTest>();
         services.AddScoped<Notifications.ValiderDestinataire>();
+        services.AddScoped<Notifications.EnvoyerCodeVerification>();
+        services.AddScoped<Notifications.VerifierCodeDestinataire>();
         services.AddScoped<Notifications.ConsulterFileMessages>();
         services.AddScoped<Sauvegardes.LancerSauvegarde>();
         services.AddScoped<Sauvegardes.SauvegardeAutomatique>();

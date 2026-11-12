@@ -1,21 +1,37 @@
 # =====================================================================
 # Sauvegarde automatique de la base PostgreSQL de l'officine
-# A planifier chaque soir via le Planificateur de taches Windows
+# A planifier chaque soir via le Planificateur de taches Windows.
+# Choisir ce script OU la sauvegarde automatique de l'application
+# (Administration, Sauvegardes) : pas les deux.
+#
+# Mot de passe : jamais dans ce script. Creer une fois le fichier
+#   C:\ProgramData\PharmaOfficine\pgpass.conf
+# avec une seule ligne (hote:port:base:compte:mot de passe) :
+#   localhost:5432:pharmacie:pharma_app:<mot de passe de pharma_app>
+# puis en limiter l'acces au compte Windows qui lance la tache :
+#   icacls C:\ProgramData\PharmaOfficine\pgpass.conf /inheritance:r /grant:r "<compte>:R"
 # =====================================================================
 
 # --- Configuration (a adapter) ---------------------------------------
-$PgBin         = "C:\Program Files\PostgreSQL\17\bin"
 $DbName        = "pharmacie"
-$DbUser        = "sauvegarde"
+$DbUser        = "pharma_app"                   # compte de l'application (proprietaire de la base)
 $DbHost        = "localhost"
 $DbPort        = 5432
 $DossierLocal  = "D:\Sauvegardes\Pharmacie"     # second disque interne
 $DossierExterne = "E:\Sauvegardes\Pharmacie"    # disque USB externe
 $RetentionJours = 30
-$Journal       = "C:\ProgramData\Pharmacie\sauvegarde.log"
+$Journal       = "C:\ProgramData\PharmaOfficine\sauvegarde.log"
 
-# Fichier de mot de passe protege (voir instructions)
-$env:PGPASSFILE = "C:\ProgramData\Pharmacie\pgpass.conf"
+# PostgreSQL : la version la plus recente installee (pg_dump doit etre de la meme version que le serveur, ou plus recent)
+$installation = Get-ChildItem "C:\Program Files\PostgreSQL" -Directory -ErrorAction SilentlyContinue |
+    Where-Object { Test-Path (Join-Path $_.FullName "bin\pg_dump.exe") } |
+    Sort-Object { [int]($_.Name -replace '\D', '') } -Descending | Select-Object -First 1
+if (-not $installation) { Write-Output "ERREUR : PostgreSQL introuvable dans C:\Program Files\PostgreSQL"; exit 3 }
+$PgBin = Join-Path $installation.FullName "bin"
+
+# Fichier de mot de passe protege (voir l'en-tete)
+$env:PGPASSFILE = "C:\ProgramData\PharmaOfficine\pgpass.conf"
+if (-not (Test-Path $env:PGPASSFILE)) { Write-Output "ERREUR : $($env:PGPASSFILE) absent (voir l'en-tete du script)"; exit 4 }
 
 # --- Fonctions --------------------------------------------------------
 function Ecrire-Journal($message) {

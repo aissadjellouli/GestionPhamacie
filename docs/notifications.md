@@ -16,9 +16,16 @@ Le titulaire est prévenu à distance **sans cloud ni application mobile** : par
 | Lot bloqué | Rappel de lot (Stock, Traçabilité) | Oui | Si la case « SMS lot bloqué » est cochée |
 | Sauvegarde | Échec de pg_dump ou disque externe absent | Oui | Si la case « SMS sauvegarde » est cochée |
 | Écart d'inventaire | Fin d'un inventaire tournant avec des écarts au-delà des seuils (à valider par le titulaire) | Oui | Oui |
+| Contrôle interne | Nouvelle anomalie (caisse, stock, comptes, réception) : objet « Contrôle interne : point à examiner » (« URGENT : … » au double du seuil) | Oui | Si la case « SMS lot bloqué » est cochée |
+| Ancien lot délaissé | Lot récent servi alors qu'un plus ancien reste en stock, au-delà des seuils | Oui | Si la case « SMS lot bloqué » est cochée |
+| Annulations | Annulations au-delà du seuil sur une même caisse | Oui | Oui |
 | Test | Bouton « Test » d'un destinataire | Oui | Oui |
 
-Contenu du **rapport quotidien** : chiffre du jour (nombre de ventes, part tiers payant), annulations, écarts de caisse par employé, nouvelles alertes de péremption et nouvelles ruptures.
+Contenu du **rapport quotidien** : chiffre du jour (nombre de ventes, part tiers payant), annulations, écarts de caisse par employé, nouvelles alertes de péremption et nouvelles ruptures. **Une rubrique sans rien à signaler n'apparaît pas** (ni « 0 » ni « RAS » : « RAS » est réservé à l'écran Alertes). Les alertes y sont **recalculées juste avant l'envoi**, et seules celles encore ouvertes sont reprises : une alerte devenue sans objet n'est pas envoyée.
+
+Alertes de péremption : créées **seulement s'il y a quelque chose à faire** (lot périmé, ou boîtes qui ne seront pas vendues à temps au rythme des ventes) ; le message dit combien de boîtes, quelle valeur et quoi faire. Un lot qui sera vendu à temps ne crée aucune alerte, ni dans le logiciel ni par e-mail.
+
+Mise en page des e-mails d'alerte : une information par ligne (caisse, employé, écart, seuil…). Lot bloqué : « patients à contacter » seulement si des boîtes du lot ont été vendues.
 
 ## Réglages (Administration, Notifications au titulaire)
 
@@ -40,10 +47,11 @@ Le lien « envoyer le rapport du jour maintenant » met le rapport en file tout 
 Seules les personnes enregistrées par le titulaire reçoivent des messages, et **seulement une fois vérifiées** :
 
 1. Le titulaire ajoute le destinataire : nom, e-mail, mobile algérien (05, 06 ou 07, ou +213), canaux et types de messages.
-2. Il clique sur « Test » ; le message de test est le seul qui part vers une adresse non vérifiée.
-3. Quand la personne confirme la réception, il clique sur « Vérifié ».
+2. Il clique sur « Vérifier » : un **code à 6 chiffres** part au destinataire (e-mail, et SMS si un modem est réglé), valable 15 minutes. Le message de test et ce code sont les seuls qui partent vers une adresse non vérifiée.
+3. La personne lui donne le code reçu ; il le saisit dans « Code reçu » puis « Valider le code ». Code juste : le destinataire est vérifié. 5 codes faux : il faut en demander un nouveau. Seul le haché du code est gardé ; l'envoi et la vérification sont inscrits au journal.
+4. « Retirer la vérification » reste possible à tout moment ; vérifier sans code est impossible.
 
-Changer l'e-mail ou le numéro retire la vérification. Un destinataire désactivé ne reçoit plus rien. La base refuse elle-même (déclencheur `trg_message_destinataire`) tout message vers une adresse différente de celle enregistrée, vers un destinataire désactivé, ou vers un destinataire non vérifié (sauf le test). Chaque ajout ou modification est inscrit au journal.
+Chaque e-mail (alerte, test, code, rapport du soir) est **signé du nom de la pharmacie** (Administration › Langue et pharmacie). Changer l'e-mail ou le numéro retire la vérification. Un destinataire désactivé ne reçoit plus rien. La base refuse elle-même (déclencheur `trg_message_destinataire`) tout message vers une adresse différente de celle enregistrée, vers un destinataire désactivé, ou vers un destinataire non vérifié (sauf le test). Chaque ajout ou modification est inscrit au journal.
 
 ## File d'attente
 

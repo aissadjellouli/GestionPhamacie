@@ -45,7 +45,7 @@ public sealed class RechercherVenteParBoite(IMobile codes, IVentesParBoite vente
         if (Gs1DataMatrix.TryParse(brut, out var dm) && dm is not null)
         {
             lotSaisi ??= dm.Lot is null ? null : RegleLot.Normaliser(dm.Lot);
-            resolu = await codes.ResoudreDataMatrixAsync(dm.Gtin, lotSaisi, dm.NumeroSerie, ct);
+            resolu = await codes.ResoudreDataMatrixAsync(dm.Gtin, lotSaisi, dm.NumeroSerie, ct, dm.Peremption);
         }
         else resolu = await codes.ResoudreCodeAsync(brut, ct);
         if (resolu is null) throw new RegleMetierException("Code inconnu : aucun produit de la pharmacie ne porte ce code.", "code_boite");

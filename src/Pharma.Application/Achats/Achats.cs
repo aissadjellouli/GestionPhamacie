@@ -157,7 +157,7 @@ public interface IAchats
     Task<Page<ReceptionResume>> ReceptionsAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default);
     /// <summary>Réceptions du grossiste dont le n° de BL ou de facture est ce numéro (casse et espaces ignorés).</summary>
     Task<IReadOnlyList<ReceptionResume>> ReceptionsAvecDocumentAsync(long fournisseurId, string numero, CancellationToken ct = default);
-    /// <summary>Lots du même produit, même n° (normalisé) et même grossiste, toutes dates de péremption.</summary>
+    /// <summary>Lots du même produit et même n° (normalisé) : ceux du grossiste (toutes dates), et ceux bloqués chez un autre grossiste.</summary>
     Task<IReadOnlyList<LotExistant>> LotsMemeNumeroAsync(long produitId, long fournisseurId, string numeroLot, CancellationToken ct = default);
 
     Task<LotRetournable?> LotRetournableAsync(long lotId, CancellationToken ct = default);
@@ -353,6 +353,15 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
         RegleFactureAchat.Verifier(lignes, s.Timbre);
         if (lignes.GroupBy(l => (l.ProduitId, l.NumeroLot.ToUpperInvariant())).Any(g => g.Count() > 1))
             throw new RegleMetierException("Un même lot figure deux fois : regroupez les quantités sur une ligne.");
+        // Data Matrix : le GTIN des boîtes doit être celui du produit de la ligne (sinon boîtes d'un autre produit entrées sous ce nom)
+        foreach (var l in lignes.Where(l => l.Gtin is not null))
+        {
+            var produit = await achats.ProduitParGtinAsync(l.Gtin!, ct);
+            if (produit is null)
+                throw new RegleMetierException($"{l.Nom} : le Data Matrix scanné (GTIN {l.Gtin}) ne correspond à aucun produit du catalogue. Vérifiez la boîte, ou créez le produit.");
+            if (produit.Value.Id != l.ProduitId)
+                throw new RegleMetierException($"{l.Nom} : le Data Matrix scanné est celui de {produit.Value.Nom} (GTIN {l.Gtin}), pas de ce produit.");
+        }
 
         if (s.CommandeId is { } cid)
         {
@@ -661,7 +670,7 @@ public sealed class AnalyserReception(IAchats achats, IPermissionService droits)
             var numero = RegleLot.Normaliser(l.NumeroLot);
             if (numero.Length == 0 || l.Quantite <= 0) continue;
             var memeNumero = await achats.LotsMemeNumeroAsync(l.ProduitId, fournisseurId, numero, ct);
-            var dates = memeNumero.Select(x => x.DatePeremption).Distinct().ToList();
+            var dates = RegleLot.Propres(memeNumero).Select(x => x.DatePeremption).Distinct().ToList();
             foreach (var c in RegleLot.Conflits(memeNumero, l.DatePeremption))
                 conflits.Add(new ConflitReception(i, c, c == ConflitLot.DateDifferente
                     ? $"{l.Nom}, lot {numero} : déjà en stock avec la péremption du {string.Join(", ", dates.Select(d => d.ToString("dd/MM/yyyy")))}, pas du {l.DatePeremption:dd/MM/yyyy}."

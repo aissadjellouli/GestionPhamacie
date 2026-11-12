@@ -31,22 +31,22 @@
         <section class="tuiles" aria-label="Indicateurs">
             <div class="tuile">
                 <span class="tuile-libelle">Valeur à risque (péremption)</span>
-                <span class="tuile-valeur urgent">@Libelles.Dinars(ValeurARisque)</span>
+                <span class="tuile-valeur @(ValeurARisque > 0 ? "urgent" : null)">@(ValeurARisque > 0 ? Libelles.Dinars(ValeurARisque) : "RAS")</span>
                 <span class="tuile-note">au prix d’achat</span>
             </div>
             <div class="tuile">
                 <span class="tuile-libelle">Lots périmés à retirer</span>
-                <span class="tuile-valeur">@Compter("perime")</span>
+                <span class="tuile-valeur">@Ras(Compter("perime"))</span>
                 <span class="tuile-note">vente bloquée automatiquement</span>
             </div>
             <div class="tuile">
                 <span class="tuile-libelle">Ruptures</span>
-                <span class="tuile-valeur">@Compter("rupture")</span>
+                <span class="tuile-valeur">@Ras(Compter("rupture"))</span>
                 <span class="tuile-note">commande suggérée dans l’alerte</span>
             </div>
             <div class="tuile">
                 <span class="tuile-libelle">Stock critique</span>
-                <span class="tuile-valeur">@Compter("stock_critique")</span>
+                <span class="tuile-valeur">@Ras(Compter("stock_critique"))</span>
                 <span class="tuile-note">commande suggérée dans l’alerte</span>
             </div>
         </section>
@@ -89,7 +89,7 @@
 
         @if (Visibles.Count == 0)
         {
-            <div class="carte vide">Aucune alerte ouverte dans cette catégorie. Le stock est en ordre.</div>
+            <div class="carte vide">@(Filtres.First(f => f.Id == filtre).Libelle) : RAS, aucune alerte ouverte. Le stock est en ordre.</div>
         }
         else
         {
@@ -248,6 +248,9 @@
     }
 
     private int Compter(string type) => alertes?.Count(a => a.Type == type) ?? 0;
+
+    // Rien à signaler : « RAS » plutôt qu'un 0 qu'on pourrait prendre pour un chiffre manquant
+    private static string Ras(int n) => n == 0 ? "RAS" : n.ToString();
 
     private decimal ValeurARisque =>
         alertes?.Where(Libelles.EstPeremption).Sum(a => a.ValeurDzd ?? 0) ?? 0;

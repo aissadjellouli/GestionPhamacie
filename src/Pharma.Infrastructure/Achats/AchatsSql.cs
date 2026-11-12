@@ -760,15 +760,16 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         long produitId, long fournisseurId, string numero, bool verrouiller, CancellationToken ct)
     {
         await using var cmd = new NpgsqlCommand($"""
-            SELECT id, date_peremption, date_a_verifier, quantite_disponible, prix_achat_ht, bloque
-            FROM lot WHERE produit_id = $1 AND fournisseur_id = $2 AND numero_lot = $3
+            -- Lots de ce grossiste, et ce n° de lot bloqué (rappel) chez un autre grossiste
+            SELECT id, date_peremption, date_a_verifier, quantite_disponible, prix_achat_ht, bloque, fournisseur_id <> $2
+            FROM lot WHERE produit_id = $1 AND numero_lot = $3 AND (fournisseur_id = $2 OR bloque)
             ORDER BY date_peremption {(verrouiller ? "FOR UPDATE" : "")}
             """, cnx, tx);
         cmd.Parameters.AddWithValue(produitId);
         cmd.Parameters.AddWithValue(fournisseurId);
         cmd.Parameters.AddWithValue(numero);
         return await Lister(cmd, r => new Pharma.Domain.Stock.LotExistant(r.GetInt64(0), r.GetFieldValue<DateOnly>(1), r.GetBoolean(2),
-            r.GetInt32(3), r.GetDecimal(4), r.GetBoolean(5)), ct);
+            r.GetInt32(3), r.GetDecimal(4), r.GetBoolean(5), r.GetBoolean(6)), ct);
     }
 
     // ---- Outils -------------------------------------------------------------

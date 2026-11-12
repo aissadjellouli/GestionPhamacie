@@ -189,6 +189,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\060_volet_chifa.sql = database\migration\060_volet_chifa.sql
 		database\migration\061_tva_sorties.sql = database\migration\061_tva_sorties.sql
 		database\migration\062_vues_parametres_nommes.sql = database\migration\062_vues_parametres_nommes.sql
+		database\migration\063_revocation_connexions.sql = database\migration\063_revocation_connexions.sql
+		database\migration\064_caisse_cloturee.sql = database\migration\064_caisse_cloturee.sql
+		database\migration\065_stock_vendable_hors_bloque.sql = database\migration\065_stock_vendable_hors_bloque.sql
+		database\migration\066_alertes_peremption_claires.sql = database\migration\066_alertes_peremption_claires.sql
+		database\migration\067_controle_interne.sql = database\migration\067_controle_interne.sql
+		database\migration\068_verification_destinataire.sql = database\migration\068_verification_destinataire.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"

@@ -23,9 +23,9 @@ public sealed class CatalogueLecture(NpgsqlDataSource db) : ICatalogueLecture
         JOIN produit p ON p.id = t.id
         CROSS JOIN q
         LEFT JOIN dci d          ON d.id = p.dci_id
-        -- Stock vendable (même calcul que v_etat_stock : lots non périmés), lu pour ce produit seulement
+        -- Stock vendable (même calcul que v_etat_stock : lots ni périmés ni bloqués), lu pour ce produit seulement
         LEFT JOIN LATERAL (SELECT sum(l.quantite_disponible) AS stock FROM lot l
-                           WHERE l.produit_id = p.id AND l.date_peremption > current_date) e ON true
+                           WHERE l.produit_id = p.id AND l.date_peremption > current_date AND NOT l.bloque) e ON true
         WHERE (p.actif OR $3)
         ORDER BY COALESCE(p.code_barre = $1, false) DESC,
                  similarity(sans_accent(p.nom_commercial), q.t) DESC, p.nom_commercial

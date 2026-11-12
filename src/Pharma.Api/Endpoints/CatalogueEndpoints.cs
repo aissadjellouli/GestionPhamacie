@@ -18,7 +18,7 @@ internal static class CatalogueEndpoints
         // Catégories de produits et classement d'un produit (catégorie, liste d'un psychotrope pour son SHP)
         api.MapGet("/categories-produits", async (ListerCategoriesProduits lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(ct)).Select(c => new CategorieProduitDto(c.Code, c.Libelle, c.Medicament)).ToList()))
-           .RequireAuthorization();
+           .ExigerConnexion();
         api.MapGet("/produits/{id:long}/classement", async (long id, LireClassementProduit lire, CancellationToken ct) =>
             {
                 var c = await lire.ExecuterAsync(id, ct);

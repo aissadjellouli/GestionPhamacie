@@ -43,6 +43,22 @@ public static class RegleAnnulation
     public static RegleMetierException AccordClientManquant() =>
         new("Pour déduire le remboursement de sa dette, le client doit l’accepter : cochez son accord, ou rendez-lui l’argent.", "accord_client");
 
+    /// <summary>
+    /// Vente à crédit, annulée (montant = tout ce qui reste de la vente) ou en partie rendue (montant des boîtes rendues).
+    /// resteVente : part patient moins ce qui a déjà été rendu ; payeSurVente : remboursements réellement versés par le patient
+    /// et imputés à cette vente (les plus anciennes dettes d'abord ; une dette corrigée ou abandonnée n'est pas un paiement).
+    /// La dette baisse d'abord, au plus de ce qui reste impayé sur la vente ; seul ce qui a vraiment été payé est rendu.
+    /// </summary>
+    public static (decimal ReductionDette, decimal ARendre) RemboursementCredit(decimal montant, decimal resteVente, decimal payeSurVente,
+        decimal soldeCredit)
+    {
+        montant = Math.Max(montant, 0);
+        var paye = Math.Clamp(payeSurVente, 0, Math.Max(resteVente, 0));
+        var nonPaye = Math.Max(resteVente - paye, 0);
+        var reduction = Math.Min(Math.Min(Math.Max(soldeCredit, 0), nonPaye), montant);
+        return (reduction, Math.Min(montant - reduction, paye));
+    }
+
     public static (decimal ReductionDette, decimal ARendre) Remboursement(string? mode, decimal partPatient, decimal dejaRendu, decimal soldeCredit,
         bool solderDette = false)
     {

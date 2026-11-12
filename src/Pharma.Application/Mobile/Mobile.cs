@@ -43,7 +43,8 @@ public interface IMobile
     /// <summary>Étiquette interne de boîte, code interne de lot ou code-barres du fabricant.</summary>
     Task<CodeResolu?> ResoudreCodeAsync(string code, CancellationToken ct = default);
     /// <summary>Data Matrix : produit par le GTIN, lot par son numéro, boîte par sa série.</summary>
-    Task<CodeResolu?> ResoudreDataMatrixAsync(string gtin, string? numeroLot, string? numeroSerie, CancellationToken ct = default);
+    /// <summary>Lot de la boîte : par son n° de série, sinon par n° de lot et, à n° égal, par la date de péremption lue (champ 17).</summary>
+    Task<CodeResolu?> ResoudreDataMatrixAsync(string gtin, string? numeroLot, string? numeroSerie, CancellationToken ct = default, DateOnly? peremption = null);
     Task<FicheProduit?> FicheAsync(long produitId, CancellationToken ct = default);
 
     Task<LotAConfirmer?> LotAsync(long lotId, CancellationToken ct = default);
@@ -73,7 +74,7 @@ public sealed class IdentifierCode(IMobile mobile, IPermissionService droits, IH
         var alertes = new List<string>();
         if (Gs1DataMatrix.TryParse(brut, out var dm) && dm is not null)
         {
-            resolu = await mobile.ResoudreDataMatrixAsync(dm.Gtin, dm.Lot is null ? null : RegleLot.Normaliser(dm.Lot), dm.NumeroSerie, ct)
+            resolu = await mobile.ResoudreDataMatrixAsync(dm.Gtin, dm.Lot is null ? null : RegleLot.Normaliser(dm.Lot), dm.NumeroSerie, ct, dm.Peremption)
                 ?? throw new RegleMetierException($"Produit inconnu du catalogue (GTIN {dm.Gtin}) : créez-le sur le poste.");
             if (dm.Lot is not null && resolu.LotId is null)
                 alertes.Add($"Lot {RegleLot.Normaliser(dm.Lot)} absent du stock : boîte non réceptionnée ?");

@@ -30,7 +30,7 @@ public sealed class ControlerBoiteCaisse(IMobile codes, IPermissionService droit
         if (brut.Length == 0) return null;
 
         CodeResolu? resolu = Gs1DataMatrix.TryParse(brut, out var dm) && dm is not null
-            ? await codes.ResoudreDataMatrixAsync(dm.Gtin, dm.Lot is null ? null : RegleLot.Normaliser(dm.Lot), dm.NumeroSerie, ct)
+            ? await codes.ResoudreDataMatrixAsync(dm.Gtin, dm.Lot is null ? null : RegleLot.Normaliser(dm.Lot), dm.NumeroSerie, ct, dm.Peremption)
             : await codes.ResoudreCodeAsync(brut, ct);
         if (resolu is null || resolu.Type == "produit" || resolu.LotId is not { } lotId) return null;
 

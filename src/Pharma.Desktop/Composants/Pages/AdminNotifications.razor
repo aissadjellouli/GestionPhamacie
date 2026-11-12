@@ -72,7 +72,22 @@
                                 <td>
                                     <div style="display: flex; gap: 6px; flex-wrap: wrap">
                                         <button type="button" class="btn" disabled="@(enCours || !d.Actif)" @onclick="() => TestAsync(d)">Test</button>
-                                        <button type="button" class="btn" disabled="@(enCours || !d.Actif)" @onclick="() => ValiderAsync(d, !d.Valide)">@(d.Valide ? "Retirer la vérification" : "Vérifié")</button>
+                                        @if (d.Valide)
+                                        {
+                                            <button type="button" class="btn" disabled="@(enCours || !d.Actif)" @onclick="() => ValiderAsync(d, false)">Retirer la vérification</button>
+                                        }
+                                        else
+                                        {
+                                            @* Vérification par code : envoyé au destinataire, saisi ici par le titulaire *@
+                                            <button type="button" class="btn" disabled="@(enCours || !d.Actif)" @onclick="() => EnvoyerCodeAsync(d)">@(codeEnvoyeA == d.Id ? "Renvoyer un code" : "Vérifier")</button>
+                                            @if (codeEnvoyeA == d.Id)
+                                            {
+                                                <label class="visuellement-cache" for="code-@d.Id">Code reçu par @d.Nom</label>
+                                                <input id="code-@d.Id" style="width: 9ch" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
+                                                       placeholder="Code reçu" data-champ="code" @bind="codeSaisi" @bind:event="oninput" />
+                                                <button type="button" class="btn btn-principal" disabled="@(enCours || string.IsNullOrWhiteSpace(codeSaisi))" @onclick="() => VerifierCodeAsync(d)">Valider le code</button>
+                                            }
+                                        }
                                         <button type="button" class="btn" disabled="@enCours" @onclick="() => Editer(d)">Modifier</button>
                                     </div>
                                 </td>
@@ -267,6 +282,30 @@
         return null;
     });
 
+    // Vérification par code : destinataire à qui un code vient d'être envoyé, et code saisi
+    private long? codeEnvoyeA;
+    private string? codeSaisi;
+
+    private async Task EnvoyerCodeAsync(DestinataireDto d) => await Executer(async () =>
+    {
+        var (n, e) = await Api.EnvoyerCodeVerificationAsync(d.Id);
+        if (e is not null) return e;
+        (codeEnvoyeA, codeSaisi) = (d.Id, null);
+        message = $"Code de vérification envoyé à {d.Nom} ({n!.Nombre} message(s), valable 15 minutes). Saisissez le code qu’il a reçu.";
+        await ChargerFileAsync();
+        return null;
+    });
+
+    private async Task VerifierCodeAsync(DestinataireDto d) => await Executer(async () =>
+    {
+        var e = await Api.VerifierCodeDestinataireAsync(d.Id, codeSaisi ?? "");
+        if (e is not null) return e;
+        (codeEnvoyeA, codeSaisi) = (null, null);
+        message = $"{d.Nom} est vérifié : il recevra les alertes de la pharmacie.";
+        (destinataires, _) = await Api.DestinatairesAsync();
+        return null;
+    });
+
     private async Task ValiderAsync(DestinataireDto d, bool valide) => await Executer(async () =>
     {
         var e = await Api.ValiderDestinataireAsync(d.Id, valide);
@@ -300,7 +339,7 @@
 
     private static string LibelleType(string t) => t switch
     {
-        "rapport_quotidien" => "Rapport du soir", "ecart_caisse" => "Écart de caisse", "lot_bloque" => "Lot bloqué", "sauvegarde" => "Sauvegarde", "ecart_inventaire" => "Écart d’inventaire", "lot_delaisse" => "Ancien lot délaissé", "surveillance" => "Surveillance de la caisse", _ => t
+        "rapport_quotidien" => "Rapport du soir", "ecart_caisse" => "Écart de caisse", "lot_bloque" => "Lot bloqué", "sauvegarde" => "Sauvegarde", "ecart_inventaire" => "Écart d’inventaire", "lot_delaisse" => "Ancien lot délaissé", "surveillance" => "Contrôle interne", _ => t
     };
 
     private static string LibelleStatut(string s) => s switch { "envoye" => "Envoyé", "echec" => "Abandonné", _ => "En attente" };

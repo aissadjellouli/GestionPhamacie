@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 062 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 068 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 062 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 068 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict rE4mumUy36zSY5wMkZczqMcL0SUBrjrpiLoQcrtcQITvxJfhumhzyVtrKicVZtt
+\restrict 9XNbhNeeUQHwqYIjeGoS00UP3zyV3qUPs31JmQknj9AizwFWTCbktWFtIR7Izxh
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -775,7 +775,8 @@ BEGIN
     DROP TABLE IF EXISTS _candidats;
     CREATE TEMP TABLE _candidats ON COMMIT DROP AS
 
-    -- Péremption
+    -- Péremption : une alerte seulement s'il y a quelque chose à faire (lot périmé, boîtes qui ne seront pas vendues à temps) ;
+    -- le message dit pourquoi et quoi faire. Lot dont toutes les boîtes seront vendues à temps : aucune alerte
     SELECT CASE r.niveau
                WHEN 'perime'            THEN 'perime'
                WHEN 'risque_ecoulement' THEN 'risque_ecoulement'
@@ -788,18 +789,18 @@ BEGIN
            END AS niveau,
            r.produit_id,
            r.lot_id,
-           CASE r.niveau
-               WHEN 'perime' THEN format('%s, lot %s : PÉRIMÉ depuis le %s, %s unités à retirer du rayon.',
+           CASE
+               WHEN r.niveau = 'perime' THEN format('%s, lot %s : PÉRIMÉ depuis le %s. %s boîte(s) à retirer du rayon.',
                                   r.nom_commercial, r.numero_lot,
                                   to_char(r.date_peremption, 'DD/MM/YYYY'), r.quantite_disponible)
-               ELSE format('%s, lot %s : expire le %s (%s j). %s unités sur %s risquent de ne pas être vendues.',
+               ELSE format('%s, lot %s : expire le %s (dans %s j). Au rythme des ventes, %s boîte(s) sur %s ne seront pas vendues à temps (%s DA au prix d''achat). À faire : les mettre en avant, les retourner au grossiste ou les proposer à la place d''un équivalent.',
                            r.nom_commercial, r.numero_lot,
                            to_char(r.date_peremption, 'DD/MM/YYYY'), r.jours_restants,
-                           r.qte_a_risque, r.quantite_disponible)
+                           r.qte_a_risque, r.quantite_disponible, to_char(r.valeur_a_risque, 'FM999G999G990D00'))
            END AS message,
            r.valeur_a_risque AS valeur_dzd
     FROM v_risque_peremption r
-    WHERE r.niveau <> 'ok'
+    WHERE r.niveau = 'perime' OR (r.niveau <> 'ok' AND r.qte_a_risque > 0)
 
     UNION ALL
 
@@ -1001,6 +1002,7 @@ CREATE FUNCTION public.lot_fefo(p_produit_id bigint) RETURNS bigint
     WHERE produit_id = p_produit_id
       AND quantite_disponible > 0
       AND date_peremption > current_date
+      AND NOT bloque
     ORDER BY date_peremption, id
     LIMIT 1;
 $$;
@@ -1346,6 +1348,26 @@ $$;
 
 
 --
+-- Name: revoquer_connexions_utilisateur(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.revoquer_connexions_utilisateur() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.mot_de_passe_hash IS DISTINCT FROM OLD.mot_de_passe_hash
+       OR (OLD.actif AND NOT NEW.actif)
+       OR (NEW.doit_changer_mot_de_passe AND NOT OLD.doit_changer_mot_de_passe)
+       OR (OLD.pin_hash IS NOT NULL AND NEW.pin_hash IS NULL)
+    THEN
+        NEW.jetons_revoques_le := now();
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: sans_accent(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1526,7 +1548,7 @@ CREATE FUNCTION public.surveillance_candidats(p_jour date) RETURNS TABLE(o_type 
            date_trunc('month', p_jour)::date, 'patient:' || rp.patient_id,
            format('%s %s : %s vente(s) avec remise en 30 jours (%s DA de remise), accordées par %s.',
                   pt.nom, COALESCE(pt.prenom, ''), rp.n, to_char(rp.montant, 'FM999G999G990D00'), rp.vendeurs),
-           format('Remises repetees au meme patient : %s ventes en 30 jours (detail dans Surveillance).', rp.n),
+           format('Remises repetees au meme patient : %s ventes en 30 jours (detail dans Controle interne).', rp.n),
            rp.montant
     FROM remises_patient rp JOIN patient pt ON pt.id = rp.patient_id, p WHERE rp.n >= p.seuil_remises_patient
       -- Une série de remises à cheval sur deux mois ne crée pas une seconde anomalie
@@ -1724,7 +1746,7 @@ CREATE FUNCTION public.surveillance_candidats_comptes(p_jour date) RETURNS TABLE
            format('%s %s, patient créé le %s%s : dette de %s DA dès ses premiers jours (crédits accordés par %s).', n.nom, COALESCE(n.prenom, ''),
                   to_char(n.cree_le, 'DD/MM/YYYY'), COALESCE(' par ' || (SELECT nom_complet FROM utilisateur WHERE id = n.cree_par), ''),
                   to_char(n.solde_credit, 'FM999G999G990D00'), COALESCE(n.vendeurs, '?')),
-           format('Patient cree recemment avec une dette de %s DA (detail dans Surveillance).', to_char(n.solde_credit, 'FM999G999G990')),
+           format('Patient cree recemment avec une dette de %s DA (detail dans Controle interne).', to_char(n.solde_credit, 'FM999G999G990')),
            n.solde_credit
     FROM nouveaux n, p
     UNION ALL
@@ -1738,7 +1760,7 @@ CREATE FUNCTION public.surveillance_candidats_comptes(p_jour date) RETURNS TABLE
     SELECT 'credit_sans_remboursement', 'attention', NULL::bigint, j.premier::date, 'patient:' || j.id,
            format('%s %s doit %s DA et n''a jamais rien remboursé depuis son premier crédit du %s (crédits accordés par %s).',
                   j.nom, COALESCE(j.prenom, ''), to_char(j.solde_credit, 'FM999G999G990D00'), to_char(j.premier, 'DD/MM/YYYY'), COALESCE(j.vendeurs, '?')),
-           format('Patient endette sans aucun remboursement depuis le %s (detail dans Surveillance).', to_char(j.premier, 'DD/MM/YYYY')),
+           format('Patient endette sans aucun remboursement depuis le %s (detail dans Controle interne).', to_char(j.premier, 'DD/MM/YYYY')),
            j.solde_credit
     FROM jamais j
     UNION ALL
@@ -1926,6 +1948,40 @@ CREATE FUNCTION public.ventes_lot(p_produit_id bigint, p_numero_lot text) RETURN
       AND v.statut = 'validee'
     GROUP BY pt.nom, pt.prenom, pt.telephone, v.date_vente, v.numero
     ORDER BY v.date_vente DESC;
+$$;
+
+
+--
+-- Name: verifier_caisse_ouverte(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.verifier_caisse_ouverte() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_fermee timestamptz;
+BEGIN
+    IF NEW.session_caisse_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+    -- Seulement l'argent du tiroir : part du tiroir d'un règlement grossiste, versement au coffre pendant la journée.
+    -- Champs propres à une table : lus seulement pour cette table (IF imbriqués), sinon l'expression échoue sur les autres
+    IF TG_TABLE_NAME = 'reglement_fournisseur' THEN
+        IF NEW.part_tiroir = 0 THEN
+            RETURN NEW;
+        END IF;
+    ELSIF TG_TABLE_NAME = 'mouvement_tresorerie' THEN
+        IF NOT NEW.pendant_session THEN
+            RETURN NEW;
+        END IF;
+    END IF;
+    SELECT fermee_le INTO v_fermee FROM session_caisse WHERE id = NEW.session_caisse_id FOR SHARE;
+    IF v_fermee IS NOT NULL THEN
+        RAISE EXCEPTION 'Cette caisse vient d''être clôturée : ouvrez la caisse du poste et recommencez.'
+            USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
 $$;
 
 
@@ -2823,6 +2879,9 @@ CREATE TABLE public.destinataire_notification (
     valide boolean DEFAULT false NOT NULL,
     actif boolean DEFAULT true NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    code_verification_hash text,
+    code_verification_expire timestamp with time zone,
+    code_verification_essais integer DEFAULT 0 NOT NULL,
     CONSTRAINT destinataire_notification_check CHECK (((NOT canal_email) OR (email IS NOT NULL))),
     CONSTRAINT destinataire_notification_check1 CHECK (((NOT canal_sms) OR (telephone IS NOT NULL))),
     CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text]))
@@ -4585,6 +4644,7 @@ CREATE TABLE public.utilisateur (
     doit_changer_mot_de_passe boolean DEFAULT false NOT NULL,
     telephone text,
     email text,
+    jetons_revoques_le timestamp with time zone,
     CONSTRAINT ck_utilisateur_affichage CHECK ((affichage = ANY (ARRAY['auto'::text, 'clair'::text, 'sombre'::text])))
 );
 
@@ -4681,7 +4741,7 @@ CREATE VIEW public.v_etat_stock AS
          SELECT lot.produit_id,
             sum(lot.quantite_disponible) AS qte
            FROM public.lot
-          WHERE (lot.date_peremption > CURRENT_DATE)
+          WHERE ((lot.date_peremption > CURRENT_DATE) AND (NOT lot.bloque))
           GROUP BY lot.produit_id
         ), derniere AS (
          SELECT lv.produit_id,
@@ -7166,6 +7226,48 @@ CREATE TRIGGER trg_boite_reception BEFORE INSERT ON public.boite FOR EACH ROW EX
 
 
 --
+-- Name: annulation_vente trg_caisse_ouverte; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.annulation_vente FOR EACH ROW EXECUTE FUNCTION public.verifier_caisse_ouverte();
+
+
+--
+-- Name: mouvement_tresorerie trg_caisse_ouverte; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.mouvement_tresorerie FOR EACH ROW EXECUTE FUNCTION public.verifier_caisse_ouverte();
+
+
+--
+-- Name: paiement trg_caisse_ouverte; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.paiement FOR EACH ROW EXECUTE FUNCTION public.verifier_caisse_ouverte();
+
+
+--
+-- Name: reglement_fournisseur trg_caisse_ouverte; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.reglement_fournisseur FOR EACH ROW EXECUTE FUNCTION public.verifier_caisse_ouverte();
+
+
+--
+-- Name: retour_client trg_caisse_ouverte; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.retour_client FOR EACH ROW EXECUTE FUNCTION public.verifier_caisse_ouverte();
+
+
+--
+-- Name: vente trg_caisse_ouverte; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.vente FOR EACH ROW EXECUTE FUNCTION public.verifier_caisse_ouverte();
+
+
+--
 -- Name: credit_mouvement trg_credit_mouvement_immuable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7310,6 +7412,13 @@ CREATE TRIGGER trg_registre_sans_doublon BEFORE INSERT ON public.registre_psycho
 --
 
 CREATE TRIGGER trg_retour_bon_fournisseur BEFORE INSERT OR UPDATE ON public.ligne_retour_fournisseur FOR EACH ROW EXECUTE FUNCTION public.verifier_retour_bon_fournisseur();
+
+
+--
+-- Name: utilisateur trg_revoquer_connexions; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_revoquer_connexions BEFORE UPDATE ON public.utilisateur FOR EACH ROW EXECUTE FUNCTION public.revoquer_connexions_utilisateur();
 
 
 --
@@ -8632,5 +8741,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict rE4mumUy36zSY5wMkZczqMcL0SUBrjrpiLoQcrtcQITvxJfhumhzyVtrKicVZtt
+\unrestrict 9XNbhNeeUQHwqYIjeGoS00UP3zyV3qUPs31JmQknj9AizwFWTCbktWFtIR7Izxh
 

@@ -2,8 +2,12 @@ using Pharma.Domain.Commun;
 
 namespace Pharma.Domain.Stock;
 
-/// <summary>Lot déjà en stock avec le même produit, le même n° de lot et le même grossiste.</summary>
-public sealed record LotExistant(long Id, DateOnly DatePeremption, bool DateAVerifier, int Quantite, decimal PrixAchatHt, bool Bloque);
+/// <summary>
+/// Lot déjà en stock avec le même produit et le même n° de lot : du même grossiste, ou (AutreGrossiste) bloqué chez un autre
+/// grossiste (un rappel bloque ce n° de lot chez tous les grossistes, y compris pour une livraison à venir).
+/// </summary>
+public sealed record LotExistant(long Id, DateOnly DatePeremption, bool DateAVerifier, int Quantite, decimal PrixAchatHt, bool Bloque,
+    bool AutreGrossiste = false);
 
 /// <summary>Situation à trancher par l'utilisateur à la réception.</summary>
 public enum ConflitLot
@@ -32,16 +36,23 @@ public static class RegleLot
     public static string Normaliser(string? numero) => (numero ?? "").Trim().ToUpperInvariant();
 
     /// <summary>Lot à compléter : même date, ou lot unique repris avec une date provisoire (« à vérifier »).</summary>
-    private static LotExistant? Cible(IReadOnlyList<LotExistant> memeNumero, DateOnly peremption) =>
-        memeNumero.FirstOrDefault(l => l.DatePeremption == peremption)
-        ?? (memeNumero is [{ DateAVerifier: true } seul] ? seul : null);
+    private static LotExistant? Cible(IReadOnlyList<LotExistant> memeNumero, DateOnly peremption)
+    {
+        var propres = Propres(memeNumero);
+        return propres.FirstOrDefault(l => l.DatePeremption == peremption) ?? (propres is [{ DateAVerifier: true } seul] ? seul : null);
+    }
+
+    /// <summary>Lots de ce grossiste (seuls complétés par la livraison, seuls comparés pour la date).</summary>
+    public static IReadOnlyList<LotExistant> Propres(IReadOnlyList<LotExistant> memeNumero) => memeNumero.Where(l => !l.AutreGrossiste).ToList();
 
     public static IReadOnlyList<ConflitLot> Conflits(IReadOnlyList<LotExistant> memeNumero, DateOnly peremption)
     {
         var cible = Cible(memeNumero, peremption);
         var conflits = new List<ConflitLot>();
-        if (cible is null && memeNumero.Count > 0) conflits.Add(ConflitLot.DateDifferente);
-        if (cible?.Bloque ?? memeNumero.Any(l => l.Bloque)) conflits.Add(ConflitLot.LotBloque);
+        if (cible is null && Propres(memeNumero).Count > 0) conflits.Add(ConflitLot.DateDifferente);
+        // Lot bloqué ici, ou ce n° de lot bloqué (rappel) chez un autre grossiste
+        if ((cible?.Bloque ?? Propres(memeNumero).Any(l => l.Bloque)) || memeNumero.Any(l => l.AutreGrossiste && l.Bloque))
+            conflits.Add(ConflitLot.LotBloque);
         return conflits;
     }
 
@@ -51,7 +62,7 @@ public static class RegleLot
         var conflits = Conflits(memeNumero, peremption);
         if (conflits.Contains(ConflitLot.DateDifferente) && !choix.LotSepare)
         {
-            var dates = string.Join(", ", memeNumero.Select(l => l.DatePeremption.ToString("dd/MM/yyyy")).Distinct());
+            var dates = string.Join(", ", Propres(memeNumero).Select(l => l.DatePeremption.ToString("dd/MM/yyyy")).Distinct());
             throw new RegleMetierException(
                 $"{produit}, lot {numero} : déjà en stock avec la péremption du {dates}, pas du {peremption:dd/MM/yyyy}. " +
                 "Corrigez la date ou choisissez « Créer un lot séparé ».");

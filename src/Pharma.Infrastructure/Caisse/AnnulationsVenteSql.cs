@@ -18,7 +18,21 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                COALESCE(pa.solde_credit, 0),
                (SELECT fc.numero FROM facture_client_ligne fl JOIN facture_client fc ON fc.id = fl.facture_id
                 WHERE fl.vente_id = v.id AND fc.type = 'facture' AND fc.statut IN ('emise', 'rejetee') ORDER BY fc.id LIMIT 1),
-               v.utilisateur_id, v.patient_id
+               v.utilisateur_id, v.patient_id,
+               -- Vente à crédit : remboursements réellement versés (ni correction ni abandon de dette) imputés à cette vente, les plus
+               -- anciennes dettes d'abord (ouverture et reprise, puis ventes à crédit nettes de leurs retours et annulations)
+               COALESCE((
+                   WITH m AS (SELECT * FROM credit_mouvement WHERE patient_id = v.patient_id),
+                   dettes AS (
+                       SELECT 0 AS rang, min(cree_le) AS le, NULL::bigint AS vente_id, sum(montant) AS net FROM m WHERE type IN ('ouverture', 'reprise')
+                       UNION ALL
+                       SELECT 1, min(cree_le), vente_id, sum(montant) FROM m
+                       WHERE vente_id IS NOT NULL AND type IN ('vente_credit', 'retour', 'annulation') GROUP BY vente_id),
+                   cumul AS (SELECT vente_id, GREATEST(net, 0) AS net,
+                                    COALESCE(sum(GREATEST(net, 0)) OVER (ORDER BY rang, le, vente_id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS avant
+                             FROM dettes WHERE net IS NOT NULL)
+                   SELECT LEAST(GREATEST((SELECT COALESCE(-sum(montant), 0) FROM m WHERE type = 'remboursement') - c.avant, 0), c.net)
+                   FROM cumul c WHERE c.vente_id = v.id), 0)
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient pa ON pa.id = v.patient_id
@@ -97,7 +111,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                 ventes.Add((r.GetInt64(0), new VenteAnnulable(r.GetInt64(0), r.GetString(1), r.GetDateTime(2), r.GetString(3),
                     r.IsDBNull(4) ? null : r.GetString(4), r.GetDecimal(5), r.GetDecimal(6), r.GetDecimal(7),
                     r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9), r.GetBoolean(10), r.GetBoolean(11), [],
-                    r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16))));
+                    r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16), r.GetDecimal(17))));
         if (ventes.Count == 0) return [];
 
         var lignes = new Dictionary<long, List<LigneVenteAnnulable>>();
@@ -149,6 +163,14 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
             if (!await r.ReadAsync(ct)) throw new RegleMetierException("Cette vente vient d’être annulée ou n’est plus encaissée.");
             (numero, patientId) = (r.GetString(0), r.IsDBNull(1) ? null : r.GetInt64(1));
         }
+        // Vente verrouillée : un retour enregistré entre la lecture et l'annulation changerait le montant à rendre (double remboursement)
+        if (a.DejaRenduLu is { } lu)
+            await using (var cmd = new NpgsqlCommand("SELECT COALESCE(SUM(montant_rembourse), 0) FROM retour_client WHERE vente_id = $1", cx, tx))
+            {
+                cmd.Parameters.AddWithValue(a.VenteId);
+                if ((decimal)(await cmd.ExecuteScalarAsync(ct))! != lu)
+                    throw new RegleMetierException("Un retour vient d’être enregistré sur cette vente : rechargez-la avant de l’annuler.");
+            }
         var reference = $"Annulation {numero}";
 
         // 2. Stock remis sur le même lot, sauf les boîtes déjà rendues par un retour client (déjà remises en stock ou détruites) ;

@@ -139,6 +139,12 @@
     <File Path="database/migration/060_volet_chifa.sql" />
     <File Path="database/migration/061_tva_sorties.sql" />
     <File Path="database/migration/062_vues_parametres_nommes.sql" />
+    <File Path="database/migration/063_revocation_connexions.sql" />
+    <File Path="database/migration/064_caisse_cloturee.sql" />
+    <File Path="database/migration/065_stock_vendable_hors_bloque.sql" />
+    <File Path="database/migration/066_alertes_peremption_claires.sql" />
+    <File Path="database/migration/067_controle_interne.sql" />
+    <File Path="database/migration/068_verification_destinataire.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

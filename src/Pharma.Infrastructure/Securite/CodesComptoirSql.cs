@@ -8,7 +8,7 @@ namespace Pharma.Infrastructure.Securite;
 public sealed class CodesComptoirSql(NpgsqlDataSource db) : ICodesComptoir
 {
     private const string Select = """
-        SELECT id, identifiant, nom_complet, pin_hash, code_comptoir_essais, code_comptoir_bloque_jusqu FROM utilisateur
+        SELECT id, identifiant, nom_complet, pin_hash, code_comptoir_essais, code_comptoir_bloque_jusqu, doit_changer_mot_de_passe FROM utilisateur
         """;
 
     public async Task<CompteComptoir?> TrouverActifAsync(string identifiant, CancellationToken ct = default)
@@ -27,7 +27,7 @@ public sealed class CodesComptoirSql(NpgsqlDataSource db) : ICodesComptoir
 
     public async Task<IReadOnlyList<CompteComptoir>> AvecCodeAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand($"{Select} WHERE actif AND pin_hash IS NOT NULL ORDER BY nom_complet");
+        await using var cmd = db.CreateCommand($"{Select} WHERE actif AND pin_hash IS NOT NULL AND NOT doit_changer_mot_de_passe ORDER BY nom_complet");
         return await Lire(cmd, ct);
     }
 
@@ -74,7 +74,7 @@ public sealed class CodesComptoirSql(NpgsqlDataSource db) : ICodesComptoir
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
             liste.Add(new CompteComptoir(r.GetInt64(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3),
-                r.GetInt32(4), r.IsDBNull(5) ? null : r.GetDateTime(5)));
+                r.GetInt32(4), r.IsDBNull(5) ? null : r.GetDateTime(5), r.GetBoolean(6)));
         return liste;
     }
 }

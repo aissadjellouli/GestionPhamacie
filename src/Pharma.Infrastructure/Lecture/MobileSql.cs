@@ -23,7 +23,8 @@ public sealed class MobileSql(NpgsqlDataSource db) : IMobile
             type == "boite" && !r.IsDBNull(4) ? r.GetInt64(4) : null);
     }
 
-    public async Task<CodeResolu?> ResoudreDataMatrixAsync(string gtin, string? numeroLot, string? numeroSerie, CancellationToken ct = default)
+    public async Task<CodeResolu?> ResoudreDataMatrixAsync(string gtin, string? numeroLot, string? numeroSerie, CancellationToken ct = default,
+        DateOnly? peremption = null)
     {
         await using var cmd = db.CreateCommand("""
             WITH p AS (
@@ -33,7 +34,8 @@ public sealed class MobileSql(NpgsqlDataSource db) : IMobile
             SELECT p.id,
                    COALESCE((SELECT b.lot_id FROM boite b WHERE b.gtin = $1 AND b.numero_serie = $3),
                             (SELECT l.id FROM lot l WHERE l.produit_id = p.id AND l.numero_lot = $2
-                             ORDER BY l.quantite_disponible DESC, l.id LIMIT 1)),
+                             -- Deux lots du même n° (deux dates) : celui de la date lue sur la boîte
+                             ORDER BY (l.date_peremption = $4) DESC NULLS LAST, l.quantite_disponible DESC, l.id LIMIT 1)),
                    (SELECT b.statut FROM boite b WHERE b.gtin = $1 AND b.numero_serie = $3),
                    (SELECT b.id FROM boite b WHERE b.gtin = $1 AND b.numero_serie = $3)
             FROM p
@@ -41,6 +43,7 @@ public sealed class MobileSql(NpgsqlDataSource db) : IMobile
         cmd.Parameters.AddWithValue(gtin);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)numeroLot ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)numeroSerie ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)peremption ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         var statut = r.IsDBNull(2) ? null : r.GetString(2);

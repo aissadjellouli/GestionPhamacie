@@ -93,26 +93,34 @@ if (-not $SansBase) {
     }
 
     try {
-        # 3. Base existante : jamais supprimée, renommée seulement si demandé
-        if (Invoke-Super "SELECT 1 FROM pg_database WHERE datname = '$Base'") {
-            if (-not $Remplacer) {
-                throw "La base $Base existe déjà : rien n'a été fait. Relancer avec -Remplacer (elle sera gardée sous un autre nom), ou choisir un autre nom avec -Base."
-            }
-            $ancienne = "{0}_avant_restauration_{1:yyyyMMdd_HHmm}" -f $Base, (Get-Date)
+        # 3. Base existante : jamais supprimée, remplacée seulement si demandé, et seulement après une restauration réussie
+        $existe = [bool](Invoke-Super "SELECT 1 FROM pg_database WHERE datname = '$Base'")
+        if ($existe -and -not $Remplacer) {
+            throw "La base $Base existe déjà : rien n'a été fait. Relancer avec -Remplacer (elle sera gardée sous un autre nom), ou choisir un autre nom avec -Base."
+        }
+        $horodatage = "{0:yyyyMMdd_HHmmss}" -f (Get-Date)
+        $cible = if ($existe) { "{0}_restauration_{1}" -f $Base, $horodatage } else { $Base }
+
+        # 4. Base neuve (nom provisoire si la base existe), restaurée par son propriétaire (extensions pg_trgm et pgcrypto permises)
+        Invoke-Super "CREATE DATABASE $cible OWNER $AppUser ENCODING 'UTF8' TEMPLATE template0" | Out-Null
+        Write-Host "Restauration dans $cible..."
+        & $pgRestore -h $HostPg -p $Port -U $SuperUser -d $cible --role=$AppUser --no-owner --no-privileges --exit-on-error $Fichier
+        if ($LASTEXITCODE -ne 0) {
+            # Restauration ratée : la base incomplète est supprimée, la base en service n'a pas été touchée
+            Invoke-Super "DROP DATABASE IF EXISTS $cible WITH (FORCE)" | Out-Null
+            throw "Échec de pg_restore (code $LASTEXITCODE) : rien n'a changé$(if ($existe) { " (la base $Base en service est intacte)" }). Recommencer avec une autre sauvegarde."
+        }
+
+        # 5. Restauration réussie : la base en service est gardée sous un autre nom, la restaurée prend son nom
+        if ($existe) {
+            $ancienne = "{0}_avant_restauration_{1}" -f $Base, $horodatage
             Invoke-Super "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$Base' AND pid <> pg_backend_pid()" | Out-Null
             Invoke-Super "ALTER DATABASE $Base RENAME TO $ancienne" | Out-Null
-            Write-Host "Base actuelle gardée sous le nom $ancienne"
+            Invoke-Super "ALTER DATABASE $cible RENAME TO $Base" | Out-Null
+            Write-Host "Base précédente gardée sous le nom $ancienne"
         }
 
-        # 4. Base neuve, puis restauration par son propriétaire (les extensions pg_trgm et pgcrypto sont autorisées au propriétaire)
-        Invoke-Super "CREATE DATABASE $Base OWNER $AppUser ENCODING 'UTF8' TEMPLATE template0" | Out-Null
-        Write-Host "Restauration dans $Base..."
-        & $pgRestore -h $HostPg -p $Port -U $SuperUser -d $Base --role=$AppUser --no-owner --no-privileges --exit-on-error $Fichier
-        if ($LASTEXITCODE -ne 0) {
-            throw "Échec de pg_restore (code $LASTEXITCODE) : la base $Base est incomplète. Supprimer cette base, puis recommencer avec une autre sauvegarde."
-        }
-
-        # 5. Contrôle : contenu restauré
+        # 6. Contrôle : contenu restauré
         $env:PGPASSWORD = $superPwd
         $resume = & $psql -h $HostPg -p $Port -U $SuperUser -d $Base -qtA -c @"
 SELECT 'Ventes : ' || (SELECT count(*) FROM vente) || ', dernière le ' || COALESCE(to_char((SELECT max(date_vente) FROM vente), 'DD/MM/YYYY HH24:MI'), '—')

@@ -42,7 +42,7 @@ public interface IComptagesReception
         CancellationToken ct = default);
 }
 
-/// <summary>Réception à l'aveugle active (réglage du titulaire dans Surveillance).</summary>
+/// <summary>Réception à l'aveugle active (réglage du titulaire dans Contrôle interne).</summary>
 public sealed class ModeReception(Surveillance.ISurveillance surveillance)
 {
     public async Task<bool> AveugleAsync(CancellationToken ct = default) => (await surveillance.ParametresAsync(ct)).ReceptionAveugle;

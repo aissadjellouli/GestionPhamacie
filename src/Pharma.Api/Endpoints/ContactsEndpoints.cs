@@ -19,7 +19,7 @@ internal static class ContactsEndpoints
                     f.Situation.Select(i => new InfoContactDto(i.Libelle, i.Valeur, i.Genre)).ToList(), f.CoordonneesMasquees,
                     f.Saisie is { } s ? new CoordonneesContactDto(s.Telephone, s.Email, s.Adresse, s.DelaiPaiementJours) : null, f.Modifiable));
             })
-           .RequireAuthorization();
+           .ExigerConnexion();
 
         // Téléphone, e-mail, adresse d'un patient, d'un grossiste ou d'une entreprise ; le droit est vérifié par ModifierCoordonneesContact
         api.MapPut("/contacts/{type}/{id:long}/coordonnees", async (string type, long id, CoordonneesContactDto req, ModifierCoordonneesContact modifier,
@@ -28,6 +28,6 @@ internal static class ContactsEndpoints
                 await modifier.ExecuterAsync(type, id, req.Telephone, req.Email, req.Adresse, user.UtilisateurId(), ct, req.DelaiPaiementJours);
                 return Results.NoContent();
             })
-           .RequireAuthorization();
+           .ExigerConnexion();
     }
 }

@@ -77,12 +77,17 @@ builder.Services.AddProblemDetails();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(o => o.TokenValidationParameters = new TokenValidationParameters
+    .AddJwtBearer(o =>
     {
-        ValidIssuer = builder.Configuration["Jwt:Emetteur"],
-        ValidAudience = builder.Configuration["Jwt:Emetteur"],
-        IssuerSigningKey = JetonService.Cle(builder.Configuration),
-        ClockSkew = TimeSpan.FromMinutes(1)
+        o.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidIssuer = builder.Configuration["Jwt:Emetteur"],
+            ValidAudience = builder.Configuration["Jwt:Emetteur"],
+            IssuerSigningKey = JetonService.Cle(builder.Configuration),
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+        // Compte désactivé, mot de passe changé, code effacé ou base restaurée : connexion refusée à l'appel suivant
+        o.Events = new JwtBearerEvents { OnTokenValidated = ValidationJeton.VerifierAsync };
     });
 builder.Services.AddAuthorization();
 

@@ -62,6 +62,15 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
 
             etape("Mise à la version du logiciel (scripts de la base rejoués)");
             await RejouerScriptsAsync(neuve, ct);
+
+            // Les connexions ouvertes avant la restauration ne valent plus rien : chaque employé se reconnecte (063_revocation_connexions.sql)
+            etape("Connexions en cours fermées : chaque employé se reconnecte");
+            await using (var cx = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(chaineConnexion) { Database = neuve, Pooling = false }.ConnectionString))
+            {
+                await cx.OpenAsync(ct);
+                await using var revoquer = new NpgsqlCommand("UPDATE utilisateur SET jetons_revoques_le = now()", cx);
+                await revoquer.ExecuteNonQueryAsync(ct);
+            }
         }
         catch
         {

@@ -103,6 +103,14 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
 
             if (l.Boites.Count > 0)
             {
+                // Sous le verrou de la vente : chaque boîte est encore vendue sur cette ligne (jamais rendue deux fois)
+                await using (var cmd = new NpgsqlCommand("SELECT count(*) FROM boite WHERE id = ANY($1) AND statut = 'vendue' AND ligne_vente_id = $2", cx, tx))
+                {
+                    cmd.Parameters.AddWithValue(l.Boites.ToArray());
+                    cmd.Parameters.AddWithValue(l.LigneVenteId);
+                    if ((long)(await cmd.ExecuteScalarAsync(ct))! != l.Boites.Distinct().Count())
+                        throw new RegleMetierException("Une de ces boîtes vient déjà d’être rendue ou n’est plus rattachée à la vente : rechargez la vente.");
+                }
                 await Executer(cx, tx, """
                     INSERT INTO boite_evenement (boite_id, type, ligne_vente_id, utilisateur_id, commentaire)
                     SELECT id, 'retour_client', ligne_vente_id, $2, $3 FROM boite WHERE id = ANY($1)

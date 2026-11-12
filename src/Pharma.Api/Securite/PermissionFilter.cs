@@ -22,7 +22,8 @@ public static class PermissionExtensions
     public static async Task<IResult> RefusAsync(HttpContext http, string permission, string message)
     {
         var autorisation = http.RequestServices.GetRequiredService<AutorisationParCode>();
-        var active = await autorisation.ActiveeAsync(http.RequestAborted);
+        // Droit jamais autorisé par le code d'un collègue (psychotrope ; hors comptoir sur une connexion par code) : pas de proposition
+        var active = PermissionsComptoir.AutorisableSurPlace(http.User, permission) && await autorisation.ActiveeAsync(http.RequestAborted);
         var texte = autorisation.Demandee && autorisation.Erreur is { } erreur ? erreur
             : active ? $"{message} Un employé qui a ce droit peut autoriser l’action avec son code comptoir." : message;
         return Results.Json(new Pharma.Shared.ErreurDto(texte, null, active, permission), statusCode: StatusCodes.Status403Forbidden);
@@ -35,6 +36,26 @@ public static class PermissionExtensions
     // Super admin : seulement la restauration et la reprise de données, jamais les écrans des employés
     private static IResult SuperAdminRefuse() => Results.Json(
         new Pharma.Shared.ErreurDto("Le compte super admin ne donne accès qu’à la restauration et à la reprise de données."), statusCode: StatusCodes.Status403Forbidden);
+
+    /// <summary>
+    /// Route ouverte à tout employé connecté (pas de droit particulier). Par défaut, le jeton d'un mot de passe provisoire et
+    /// celui du super admin sont refusés, comme sur les routes à droit ; motDePasseProvisoire / superAdmin ouvrent la route
+    /// à ces jetons pour ce qui leur reste permis (changer son mot de passe, thème, état du poste, ses propres droits).
+    /// </summary>
+    public static TBuilder ExigerConnexion<TBuilder>(this TBuilder builder, bool motDePasseProvisoire = false, bool superAdmin = false)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        builder.RequireAuthorization();
+        builder.AddEndpointFilter(async (ctx, next) =>
+        {
+            var http = ctx.HttpContext;
+            if (!long.TryParse(http.User.FindFirstValue(ClaimTypes.NameIdentifier), out _)) return Results.Unauthorized();
+            if (!motDePasseProvisoire && http.User.MotDePasseAChanger()) return MotDePasseAChanger();
+            if (!superAdmin && http.User.EstSuperAdmin()) return SuperAdminRefuse();
+            return await next(ctx);
+        });
+        return builder;
+    }
 
     public static TBuilder ExigerTitulaire<TBuilder>(this TBuilder builder) where TBuilder : IEndpointConventionBuilder
     {

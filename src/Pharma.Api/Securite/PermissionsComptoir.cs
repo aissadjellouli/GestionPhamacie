@@ -15,8 +15,16 @@ public sealed class PermissionsComptoir(PermissionService droits, IHttpContextAc
     private bool EstUtilisateurCourant(long utilisateurId) =>
         long.TryParse(http.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && id == utilisateurId;
 
+    // Jamais par le code d'un collègue :
+    //  - la délivrance d'un psychotrope (le registre nomme celui qui délivre : un employé habilité reprend la vente) ;
+    //  - sur une connexion par code comptoir, un droit hors du comptoir ou du titulaire (portée de la connexion conservée).
+    public static bool AutorisableSurPlace(ClaimsPrincipal user, string permission) =>
+        permission != Permissions.PsychotropesDelivrer && (!user.ParCodeComptoir() || CodeComptoir.Autorise(permission));
+
     private async Task<bool> AutoriseSurPlaceAsync(long utilisateurId, string permission, CancellationToken ct) =>
-        autorisation is not null && !MotDePasseAChanger && EstUtilisateurCourant(utilisateurId) && await autorisation.AutoriseAsync(utilisateurId, permission, ct);
+        autorisation is not null && !MotDePasseAChanger && EstUtilisateurCourant(utilisateurId)
+        && http.HttpContext?.User is { } u && AutorisableSurPlace(u, permission)
+        && await autorisation.AutoriseAsync(utilisateurId, permission, ct);
 
     private bool ParCode => http.HttpContext?.User.ParCodeComptoir() == true;
     // Mot de passe provisoire pas encore changé, ou super admin (aucun droit d'employé) : aucun droit

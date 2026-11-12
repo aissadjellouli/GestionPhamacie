@@ -62,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<IInventaires, InventairesSql>();
         services.AddScoped<Pharma.Application.Mobile.IMobile, MobileSql>();
         services.AddScoped<Pharma.Application.Securite.ICodesComptoir, Securite.CodesComptoirSql>();
+        services.AddScoped<Pharma.Application.Securite.IEtatConnexions, Securite.EtatConnexionsSql>();
         services.AddScoped<Pharma.Application.Catalogue.INomenclature, Catalogue.NomenclatureSql>();
         services.AddSingleton<Pharma.Application.Catalogue.ILecteurNomenclature, Catalogue.LecteurNomenclatureXlsx>();
         services.AddScoped<Pharma.Application.Administration.ISeuilsStock, Administration.SeuilsStockSql>();
@@ -122,6 +123,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Achats.IComptagesReception, Achats.ComptagesReceptionSql>();
         services.AddSingleton<Application.Achats.IDocumentsAchats, DocumentsAchats>();
         services.AddScoped<Application.Notifications.INotificationsDepot, Notifications.NotificationsSql>();
+        services.AddScoped<Application.Notifications.ICodesVerificationDestinataire, Notifications.CodesVerificationDestinataireSql>();
         services.AddScoped<Application.Notifications.IDonneesRapport, Notifications.DonneesRapportSql>();
         services.AddSingleton<Application.Notifications.IProtectionSecret, Notifications.ProtectionDpapi>();
         services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();

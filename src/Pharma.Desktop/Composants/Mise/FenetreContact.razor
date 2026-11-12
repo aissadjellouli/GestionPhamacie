@@ -261,8 +261,26 @@
     // Pendant une modification, un clic à côté ou Échap ne ferme pas la fiche : la saisie serait perdue
     private void ClicACote() { if (saisie is null && patient is null) Fiches.Fermer(); }
 
-    protected override void OnInitialized() => Fiches.Changee += Rafraichir;
-    public void Dispose() => Fiches.Changee -= Rafraichir;
+    // La fiche se ferme quand on change d'écran ou que la session se ferme : elle ne reste jamais sur un autre écran ni sur
+    // l'écran de connexion (données d'un employé, d'un patient)
+    protected override void OnInitialized()
+    {
+        Fiches.Changee += Rafraichir;
+        Nav.LocationChanged += SurNavigation;
+        Session.AvantFermeture += Fiches.Fermer;
+    }
+
+    public void Dispose()
+    {
+        Fiches.Changee -= Rafraichir;
+        Nav.LocationChanged -= SurNavigation;
+        Session.AvantFermeture -= Fiches.Fermer;
+    }
+
+    private void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (Fiches.Ouverte is not null) Fiches.Fermer();
+    }
 
     private void Rafraichir() => _ = InvokeAsync(async () =>
     {

@@ -82,7 +82,7 @@ public class RetourClientTests
     {
         // Dette restante 100 DA : elle est effacée, les 250 DA déjà remboursés par le patient lui sont rendus
         var vente = Vente("credit");
-        var partielle = vente with { Vente = vente.Vente with { SoldeCreditPatient = 100 } };
+        var partielle = vente with { Vente = vente.Vente with { SoldeCreditPatient = 100, PayeSurVente = 490 } };
         var (cas, stock) = Monter(partielle);
         var r = await cas.ExecuterAsync(20, "Erreur", [new(1, 3, "stock", null)], 8, "Caisse 1", null, null);
         Assert.Equal((250m, "especes"), (r.ARendre, r.Mode));
@@ -157,5 +157,38 @@ public class RetourClientTests
         var petite = vente with { Vente = vente.Vente with { Patient = "Patient Fictif", SoldeCreditPatient = 100 } };
         var (surplus, _) = Monter(petite);
         await Assert.ThrowsAsync<RegleMetierException>(() => surplus.ExecuterAsync(20, "Erreur", l, 5, "Caisse 1", null, null, solderDette: true, accordClient: true));
+    }
+}
+
+public class RetourBoitesNonScanneesTests
+{
+    // Ligne de 3 boîtes dont une seule scannée à la vente (scan facultatif)
+    private static VenteRetournable Vente() => new(
+        new VenteAnnulable(30, "T-000030", DateTime.UtcNow, "Vendeur", null, 300, 300, 0, "especes", "validee", false, false, []),
+        [new LigneRetournable(5, 15, "Gélule fictive", "G1", 3, 0, 300, [new BoiteVendue(200, "SN-C")])]);
+
+    private static EnregistrerRetourClient Monter()
+    {
+        var codes = new CodesEnMemoire();
+        var droits = new DroitsParEmploye(new() { [8] = ["caisse.vendre", "caisse.retour_especes"] });
+        var journal = new JournalEspion();
+        return new EnregistrerRetourClient(new RetoursEnMemoire(Vente()), new SessionsEnMemoire(), droits,
+            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal), journal);
+    }
+
+    [Fact]
+    public async Task Boites_vendues_sans_identite_rendues_sans_les_cocher()
+    {
+        var r = await Monter().ExecuterAsync(30, "Traitement arrêté", [new(5, 2, "stock", null)], 8, "Caisse 1", null, null);
+        Assert.Equal(2, r.RemisEnStock);
+    }
+
+    [Fact]
+    public async Task Boite_identifiee_a_cocher_au_dela_des_boites_sans_identite()
+    {
+        await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Monter().ExecuterAsync(30, "Traitement arrêté", [new(5, 3, "stock", null)], 8, "Caisse 1", null, null));
+        var r = await Monter().ExecuterAsync(30, "Traitement arrêté", [new(5, 3, "stock", [200])], 8, "Caisse 1", null, null);
+        Assert.Equal(3, r.RemisEnStock);
     }
 }

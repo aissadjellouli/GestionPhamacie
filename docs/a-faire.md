@@ -40,6 +40,38 @@ Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livr�
 - [ ] **Qui imprime les volets** : Chifa_Officine, ou un logiciel privé relié à Chifa ? (question de l'agrément CNAS)
 - [ ] **QR des factures de grossistes** : sur 3 grossistes, ils ne portent que le n° de facture (`26/F-015695`, `FA.26-327890ZZ1ZZ1`, `26/FA076277`) ; vérifier si d'autres grossistes y mettent les lignes (produits, lots, prix).
 
+## Recette complète du 12/11/2026 : reste à faire
+
+Recette par l'API (4 copies de base), passage de tous les écrans (39 écrans, 460 boutons, aucun plantage), envoi réel des alertes
+par Gmail, et revue de code de toute la branche `develop`. Les défauts majeurs sont corrigés (scripts 063 à 067, voir « Livré
+récemment »). Restent :
+
+**Défauts mineurs**
+- [ ] Alerte immédiate perdue sans trace quand l'envoi est refusé (destinataire non vérifié, base indisponible) : l'erreur est avalée (`RappelerLot`, clôture, inventaire…) ; à inscrire au journal du serveur et à signaler au titulaire.
+- [ ] Erreurs techniques (500) au lieu d'un message clair : lot d'un autre produit à l'encaissement, règlement grossiste au millième, liste à null dans une requête, pagination très grande, reprise « Autre » sans produit.
+- [ ] Remise négative acceptée sans message (ramenée à 0) ; coupure inconnue ignorée à la clôture (caisse fermée avec 0 compté) ; saisie énorme au comptage.
+- [ ] Doublons selon les majuscules : client facturé, compte de trésorerie ; zone d'emplacement inconnue enregistrée « vente » ; emplacement créé « inactif » enregistré actif.
+- [ ] Recherche d'un patient par téléphone : numéro exact, espaces compris (l'écran des crédits cherche par début de numéro).
+- [ ] « Dernier prix d'achat » repris à 0 DA quand la dernière entrée est une unité gratuite.
+- [ ] Concurrence : deux ventes sur les mêmes lots dans un ordre différent (erreur technique au lieu de « réessayez ») ; double clic sur « Encaisser » si le serveur répond très lentement ; deux dépenses de trésorerie simultanées ; un lot pris par deux inventaires créés au même instant ; statut de commande non revérifié en base.
+- [ ] Poste : données du client précédent (formulaire « nouveau patient », taux) gardées à la vente suivante ; caméra jamais coupée ; afficheur client figé sur le dernier panier et « Payé » affiché pour une vente à crédit ; F12 encaisse sous un volet ouvert ; scan double rapide ; essai de l'afficheur appliqué sans enregistrer ; fermer le logiciel avec l'écran client ne l'arrête pas.
+- [ ] Montant en lettres : « deux cents millions », « quatre-vingts millions » ; arrondi bancaire à quelques endroits (centime d'écart) ; avoir non arrondi au centime.
+- [ ] Export : `format=csv` des rapports renvoie un PDF (seul `excel` donne le CSV) ; message « Toutes les boîtes ont déjà une identité » pour un lot inexistant.
+- [ ] Journal des actions vidable par `TRUNCATE` (UPDATE et DELETE sont bien refusés) ; journal fichier arrêté à la première erreur d'écriture.
+- [ ] Scripts : contraintes CHECK de 024 et 025 recréées sans garde ; rejeu de 053/054 qui remet les types de notification retirés ; `v_nomenclature` en `n.*` ; `initialiser_base_locale.ps1 -Recreer` sans confirmation.
+
+**Points à trancher**
+- [ ] Facture encaissée en trésorerie : la dette du patient (vente à crédit facturée) reste due → risque de double encaissement.
+- [ ] Banque « carte » changée : l'historique des paiements par carte passe sur la nouvelle banque (soldes faux).
+- [ ] Règlement grossiste par chèque sans banque choisie : accepté, aucun compte débité.
+- [ ] Rappel de lot : boîtes rendues ou détruites encore comptées dans les patients à contacter.
+- [ ] Registre des psychotropes : balance mensuelle (une délivrance antérieure au solde d'ouverture comptée en plus, données de démo).
+- [ ] Lot délaissé jamais détecté si une boîte de l'ancien lot a été vendue après l'arrivée du nouveau ; écart d'inventaire égal au seuil corrigé sans validation (« sous les seuils » ?).
+- [ ] Psychotrope créé en classe « libre » par l'assistant (droit `catalogue.creer`) : vendable sans registre jusqu'à vérification.
+- [ ] Produit non remboursable dans une vente en tiers payant avec reste à charge saisi : part organisme répartie aussi sur lui.
+- [ ] Notification d'écart de caisse : seulement au-delà du seuil (la règle dit « tout écart non nul est signalé »).
+- [ ] Valeurs au prix d'achat visibles avec le seul droit `stock.consulter` (alertes), alors que les rapports les réservent à `rapports.marges`.
+
 ## À confirmer avec le comptable
 
 - [ ] **TVA sur les pertes et dons** (script 061, Rapports › « TVA à reverser sur les pertes et dons ») : pour quels motifs la TVA d'achat déjà déduite doit-elle être reversée ? Boîtes périmées détruites (avec ou sans procès-verbal), casses, dons et échantillons. Le réglage est à « non » pour les trois motifs tant que la règle n'est pas confirmée ; le titulaire l'active motif par motif.
@@ -62,6 +94,11 @@ Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livr�
 - [ ] **DPAPI** : le service de l'API doit tourner sur le PC serveur qui a enregistré le mot de passe SMTP.
 
 ## Livré récemment
+
+- [x] Corrections de la recette du 12/11/2026 (défauts majeurs) : mot de passe provisoire et code comptoir ; révocation des connexions (063) ; psychotrope jamais autorisé par le code d'un collègue ; portée de la connexion par code ; vrai validateur d'une annulation ou d'un retour autorisés par code ; remboursement d'une vente à crédit limité à ce qui a été payé ; annulation et retour simultanés ; aucune écriture sur une caisse clôturée (064) ; lot rappelé bloqué pour tous les grossistes ; GTIN contrôlé à la réception ; Data Matrix : lot de la date lue ; retour des boîtes non scannées ; stock vendable sans les lots bloqués (065) ; vente en attente qui garde tout, double clic, boîtes retirées signalées à la déconnexion, impression du ticket, fiche contact et « Faire autoriser » fermées ; scripts 003, 901, 903, sauvegarde planifiée et restauration par script.
+- [x] Alertes qui ont un sens : péremption seulement s'il y a quelque chose à faire (066), « RAS » à l'écran, rapport du soir sans rubrique vide, e-mails d'alerte une information par ligne.
+- [x] « Surveillance » renommé « Contrôle interne » (écrans, e-mails, SMS, documentation ; 067).
+- [x] Destinataires des notifications vérifiés par un code à 6 chiffres reçu par e-mail ou SMS (068) ; e-mails signés du nom de la pharmacie ; rapport du soir construit sur les seules alertes encore ouvertes, recalculées juste avant l'envoi.
 
 - [x] Scripts de la base séparés en deux usages : `database/migration/` (scripts numérotés, mise à jour d'une base en service) et `database/init/` (création d'une base neuve à la mise en production) ; outils limités aux migrations `0NN_*.sql`.
 - [x] Script 062 : vues `v_etat_stock`, `v_risque_peremption` et `v_mouvement_tresorerie` sans colonne figée ; une base neuve (`init/`) et une base mise à jour par les migrations ont exactement la même structure (vérifié sur une ancienne sauvegarde rejouée).

@@ -102,25 +102,32 @@ public sealed record DonneesRapportQuotidien(
 
 // ---- Mise en file -------------------------------------------------------------
 
-public sealed class NotificationService(INotificationsDepot depot) : INotificationService
+public sealed class NotificationService(INotificationsDepot depot, Administration.IPharmacie? pharmacie = null) : INotificationService
 {
+    /// <summary>Signature des e-mails : le nom de la pharmacie (Administration, Langue et pharmacie), sinon « Pharma Officine ».</summary>
+    public static async Task<string> SignatureAsync(Administration.IPharmacie? pharmacie, CancellationToken ct = default) =>
+        (pharmacie is null ? null : (await pharmacie.LireAsync(ct)).Nom) is { Length: > 0 } nom ? nom.Trim() : "Pharma Officine";
+
     public async Task<int> MettreEnFileAsync(ContenuNotification c, CancellationToken ct = default)
     {
         var reglages = await depot.ReglagesAsync(ct);
-        var messages = Construire(c, await depot.DestinatairesAsync(ct), reglages.SmsActifs);
+        var messages = Construire(c, await depot.DestinatairesAsync(ct), reglages.SmsActifs, await SignatureAsync(pharmacie, ct));
         if (messages.Count > 0) await depot.AjouterMessagesAsync(messages, ct);
         return messages.Count;
     }
 
     /// <summary>Un message par canal et par destinataire concerné ; pas de SMS sans modem configuré.</summary>
-    public static List<NouveauMessage> Construire(ContenuNotification c, IEnumerable<Destinataire> destinataires, bool smsActifs)
+    /// <param name="signature">Nom de la pharmacie, en fin d'e-mail (le rapport du soir, mis en forme à part, signe lui-même).</param>
+    public static List<NouveauMessage> Construire(ContenuNotification c, IEnumerable<Destinataire> destinataires, bool smsActifs, string? signature = null)
     {
         var liste = new List<NouveauMessage>();
+        // E-mail signé du nom de la pharmacie (version texte et version HTML)
+        var texte = c.HtmlEmail is null && signature is not null ? $"{c.TexteEmail}\n\n{signature}" : c.TexteEmail;
         foreach (var d in destinataires)
         {
             if (d.Recoit(c.Type, CanalNotification.Email))
-                liste.Add(new NouveauMessage(CanalNotification.Email, d.Id, d.Adresse(CanalNotification.Email), c.Type, c.Objet, c.TexteEmail,
-                    c.HtmlEmail ?? HtmlAlerte(c.Objet, c.TexteEmail)));
+                liste.Add(new NouveauMessage(CanalNotification.Email, d.Id, d.Adresse(CanalNotification.Email), c.Type, c.Objet, texte,
+                    c.HtmlEmail ?? HtmlAlerte(c.Objet, c.TexteEmail, signature)));
             if (smsActifs && c.TexteSms is not null && d.Recoit(c.Type, CanalNotification.Sms))
                 liste.Add(new NouveauMessage(CanalNotification.Sms, d.Id, d.Adresse(CanalNotification.Sms), c.Type, null, TexteSms.Preparer(c.TexteSms), null));
         }
@@ -128,7 +135,7 @@ public sealed class NotificationService(INotificationsDepot depot) : INotificati
     }
 
     /// <summary>E-mail d'alerte : l'objet de l'alerte en gras en tête, puis le texte (paragraphes et retours à la ligne gardés).</summary>
-    public static string HtmlAlerte(string objet, string texte)
+    public static string HtmlAlerte(string objet, string texte, string? signature = null)
     {
         // Caractères spéciaux du HTML seulement : les accents restent lisibles (e-mail en UTF-8)
         static string E(string s) => s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
@@ -136,7 +143,9 @@ public sealed class NotificationService(INotificationsDepot depot) : INotificati
             .Select(p => $"<p style=\"margin: 0 0 10px\">{string.Join("<br />", p.Split('\n').Select(E))}</p>");
         return "<div style=\"font-family: 'Segoe UI', Arial, sans-serif; font-size: 14px; line-height: 1.5; color: #1f2937\">"
                + $"<p style=\"margin: 0 0 14px; font-size: 16px\"><strong>{E(objet)}</strong></p>"
-               + string.Concat(paragraphes) + "</div>";
+               + string.Concat(paragraphes)
+               + (signature is null ? "" : $"<p style=\"margin: 18px 0 0; color: #475467\">{E(signature)}</p>")
+               + "</div>";
     }
 }
 
@@ -201,7 +210,8 @@ public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail em
 
 // ---- Rapport quotidien ---------------------------------------------------------
 
-public sealed class EnvoyerRapportQuotidien(INotificationsDepot depot, IDonneesRapport donnees, INotificationService notifications, Administration.IPharmacie pharmacie)
+public sealed class EnvoyerRapportQuotidien(INotificationsDepot depot, IDonneesRapport donnees, INotificationService notifications, Administration.IPharmacie pharmacie,
+    Alertes.IMoteurAlertes? alertes = null)
 {
     /// <summary>Envoie le rapport du jour une fois l'heure réglée passée, une seule fois par jour.</summary>
     public async Task<bool> ExecuterAsync(DateTime maintenantLocal, CancellationToken ct = default)
@@ -216,6 +226,8 @@ public sealed class EnvoyerRapportQuotidien(INotificationsDepot depot, IDonneesR
 
     public async Task<int> EnvoyerAsync(DateOnly jour, CancellationToken ct = default)
     {
+        // Alertes recalculées juste avant : une alerte devenue sans objet (lot qui sera vendu à temps, stock revenu) n'est pas envoyée
+        if (alertes is not null) await alertes.GenererAsync(ct);
         var d = await donnees.LireAsync(jour, ct);
         var nom = (await pharmacie.LireAsync(ct)).Nom;
         return await notifications.MettreEnFileAsync(RapportQuotidien.Construire(d, nom), ct);
@@ -234,13 +246,22 @@ public static class RapportQuotidien
         texte.AppendLine(titre).AppendLine();
         texte.AppendLine($"Chiffre du jour : {Da(d.ChiffreAffaires)} ({d.NombreVentes} vente(s), dont {Da(d.PartTiersPayant)} en tiers payant)");
         texte.AppendLine($"Annulations : {d.Annulations} ({Da(d.MontantAnnule)})");
-        texte.AppendLine().AppendLine("Écarts de caisse :");
-        if (d.Ecarts.Count == 0) texte.AppendLine("  aucune clôture ce jour");
-        foreach (var e in d.Ecarts) texte.AppendLine($"  {e.Employe} ({e.Poste}) : {Signe(e.Ecart)}");
-        texte.AppendLine().AppendLine($"Nouvelles alertes de péremption : {d.Peremptions.Count}");
-        foreach (var a in d.Peremptions) texte.AppendLine($"  {a.Produit}{Lot(a)} : {Detail(a)}");
-        texte.AppendLine().AppendLine($"Nouvelles ruptures : {d.Ruptures.Count}");
-        foreach (var a in d.Ruptures) texte.AppendLine($"  {a.Produit} : {Detail(a)}");
+        // Rubriques sans rien à signaler : absentes de l'e-mail (ni « 0 » ni « RAS », réservé à l'écran Alertes)
+        if (d.Ecarts.Count > 0)
+        {
+            texte.AppendLine().AppendLine("Écarts de caisse :");
+            foreach (var e in d.Ecarts) texte.AppendLine($"  {e.Employe} ({e.Poste}) : {Signe(e.Ecart)}");
+        }
+        if (d.Peremptions.Count > 0)
+        {
+            texte.AppendLine().AppendLine($"Nouvelles alertes de péremption : {d.Peremptions.Count}");
+            foreach (var a in d.Peremptions) texte.AppendLine($"  {a.Produit}{Lot(a)} : {Detail(a)}");
+        }
+        if (d.Ruptures.Count > 0)
+        {
+            texte.AppendLine().AppendLine($"Nouvelles ruptures : {d.Ruptures.Count}");
+            foreach (var a in d.Ruptures) texte.AppendLine($"  {a.Produit} : {Detail(a)}");
+        }
 
         var h = new System.Text.StringBuilder();
         h.Append("<!doctype html><html lang=\"fr\"><body style=\"font-family:Segoe UI,Arial,sans-serif;color:#1f2937;max-width:640px\">");
@@ -250,10 +271,9 @@ public static class RapportQuotidien
         Ligne(h, "Dont tiers payant", Da(d.PartTiersPayant));
         Ligne(h, "Annulations", $"{d.Annulations} ({Da(d.MontantAnnule)})");
         h.Append("</table>");
-        h.Append("<h2 style=\"font-size:16px\">Écarts de caisse par employé</h2>");
-        if (d.Ecarts.Count == 0) h.Append("<p>Aucune clôture ce jour.</p>");
-        else
+        if (d.Ecarts.Count > 0)
         {
+            h.Append("<h2 style=\"font-size:16px\">Écarts de caisse par employé</h2>");
             h.Append("<table style=\"border-collapse:collapse\">");
             foreach (var e in d.Ecarts)
                 Ligne(h, $"{e.Employe} ({e.Poste})", Signe(e.Ecart), e.Ecart != 0 ? "#912018" : null);
@@ -261,15 +281,20 @@ public static class RapportQuotidien
         }
         Liste(h, "Nouvelles alertes de péremption", d.Peremptions);
         Liste(h, "Nouvelles ruptures", d.Ruptures);
-        h.Append("<p style=\"color:#6b7280;font-size:12px\">Message automatique de Pharma Officine. Aucune donnée de patient n’est transmise.</p></body></html>");
+        // Signé du nom de la pharmacie
+        var signature = string.IsNullOrWhiteSpace(pharmacie) ? "Pharma Officine" : pharmacie.Trim();
+        texte.AppendLine().AppendLine(signature);
+        h.Append($"<p style=\"margin:18px 0 0;color:#475467\">{E(signature)}</p>");
+        h.Append("<p style=\"color:#6b7280;font-size:12px\">Message automatique. Aucune donnée de patient n’est transmise.</p></body></html>");
 
         return new ContenuNotification(TypeNotification.RapportQuotidien, titre, texte.ToString(), h.ToString(), null);
     }
 
     private static void Liste(System.Text.StringBuilder h, string titre, IReadOnlyList<AlerteDuJour> alertes)
     {
-        h.Append($"<h2 style=\"font-size:16px\">{E(titre)} : {alertes.Count}</h2>");
+        // Rien de nouveau : rubrique absente de l'e-mail
         if (alertes.Count == 0) return;
+        h.Append($"<h2 style=\"font-size:16px\">{E(titre)} : {alertes.Count}</h2>");
         h.Append("<ul>");
         foreach (var a in alertes) h.Append($"<li><strong>{E(a.Produit)}</strong>{E(Lot(a))} : {E(Detail(a))}</li>");
         h.Append("</ul>");
@@ -305,7 +330,7 @@ public interface IAlertesTitulaire
     Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default);
     /// <summary>Ancien lot délaissé au profit d'un lot plus récent (le message nomme le vendeur) : inventaire du produit à faire.</summary>
     Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default);
-    /// <summary>Anomalie de surveillance (caisse, stock, réception, retours) : texte court, employé et chiffres, aucune donnée de patient.</summary>
+    /// <summary>Point du contrôle interne (caisse, stock, réception, retours) : texte court, employé et chiffres, aucune donnée de patient.</summary>
     Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default);
 }
 
@@ -320,19 +345,27 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
         if (Math.Abs(ecart) <= seuil) return;
         var montant = (ecart > 0 ? "+" : "") + ecart.ToString("N2", Fr) + " DA";
         var texte = $"Ecart de caisse {montant} a la cloture de {employe} ({poste}), seuil {seuil.ToString("N0", Fr)} DA.";
+        // E-mail : une information par ligne (les retours à la ligne deviennent des lignes dans l'e-mail, HtmlAlerte)
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
-            $"Écart de caisse {montant}", $"Écart de caisse de {montant} à la clôture de {employe} ({poste}). Seuil d’alerte : {seuil.ToString("N2", Fr)} DA.",
+            $"Écart de caisse {montant}",
+            $"Écart de caisse à la clôture.\n\nCaisse : {poste}\nClôturée par : {employe}\nÉcart : {montant}\nSeuil d’alerte : {seuil.ToString("N2", Fr)} DA",
             null, texte), ct);
     }
 
-    /// <summary>Ni motif (saisi librement, il pourrait citer un patient) ni liste des patients : produit, lot et nombres seulement.</summary>
+    /// <summary>
+    /// Ni motif (saisi librement, il pourrait citer un patient) ni liste des patients : produit, lot et nombres seulement.
+    /// Patients à contacter : mentionnés seulement si des boîtes du lot ont été vendues.
+    /// </summary>
     public async Task LotBloqueAsync(string produit, string numeroLot, int boitesEnStock, int boitesVendues, CancellationToken ct = default)
     {
         var r = await depot.ReglagesAsync(ct);
         var texte = $"Lot {numeroLot} de {produit} bloque (rappel) : {boitesEnStock} boite(s) en stock, {boitesVendues} vendue(s).";
+        var suite = boitesVendues > 0
+            ? "Patients à contacter : liste dans le logiciel (Stock, Traçabilité)."
+            : "Aucune boîte vendue : aucun patient à contacter.";
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.LotBloque,
             $"Lot {numeroLot} bloqué : {produit}",
-            $"Le lot {numeroLot} de {produit} a été bloqué (rappel). Boîtes en stock : {boitesEnStock}. Boîtes déjà vendues : {boitesVendues}. La liste des patients à contacter est dans le logiciel (Stock, Traçabilité).",
+            $"Le lot {numeroLot} de {produit} a été bloqué (rappel).\n\nBoîtes en stock : {boitesEnStock}\nBoîtes déjà vendues : {boitesVendues}\n\n{suite}",
             null, r.SmsLotBloque ? texte : null), ct);
     }
 
@@ -343,9 +376,9 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
     public async Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default)
     {
         var r = await depot.ReglagesAsync(ct);
-        var objet = urgent ? "URGENT : anomalie de surveillance" : "Anomalie de surveillance";
+        var objet = urgent ? "URGENT : contrôle interne, point à examiner" : "Contrôle interne : point à examiner";
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Surveillance, objet,
-            $"{message}\n\nDétail dans le logiciel : Surveillance (titulaire).", null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
+            $"{message}\n\nDétail dans le logiciel : Contrôle interne (titulaire).", null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
     }
 
     public async Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default)
@@ -362,14 +395,14 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
         var r = await depot.ReglagesAsync(ct);
         var objet = disqueAbsent ? "Sauvegarde impossible : disque externe absent" : "Sauvegarde échouée";
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Sauvegarde, objet,
-            $"{objet}. {detail}", null, r.SmsSauvegarde ? $"{objet}. {detail}" : null), ct);
+            $"{objet}.\n\n{detail}", null, r.SmsSauvegarde ? $"{objet}. {detail}" : null), ct);
     }
 
     /// <summary>Annulations de vente au-delà du seuil sur une même session de caisse (envoyé avec les alertes d'écart de caisse).</summary>
     public async Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default) =>
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
             $"{annulations} ventes annulées sur la caisse {poste}",
-            $"{annulations} ventes ont été annulées sur la caisse « {poste} » depuis son ouverture (seuil d’alerte : {seuil}). Le détail est dans le journal des actions.",
+            $"Ventes annulées depuis l’ouverture de la caisse.\n\nCaisse : {poste}\nAnnulations : {annulations}\nSeuil d’alerte : {seuil}\n\nDétail : journal des actions.",
             null, $"{annulations} ventes annulees sur la caisse {poste} (seuil {seuil})."), ct);
 
     /// <summary>Écarts d'inventaire au-delà des seuils : le titulaire doit les valider (Stock, Inventaire).</summary>
@@ -379,7 +412,7 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
         var signe = (boites > 0 ? "+" : "") + boites;
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartInventaire,
             $"Inventaire rayon {rayon} : {lignes} écart(s) à valider",
-            $"L'inventaire du rayon {rayon} laisse {lignes} écart(s) au-delà des seuils : {signe} boîte(s), {montant} au prix d'achat. Validez-les ou faites recompter (Stock, Inventaire).",
+            $"Écarts d’inventaire au-delà des seuils, à valider.\n\nRayon : {rayon}\nÉcarts : {lignes}\nBoîtes : {signe}\nValeur au prix d’achat : {montant}\n\nÀ faire : validez-les ou faites recompter (Stock, Inventaire).",
             null, $"Inventaire rayon {rayon} : {lignes} ecart(s) a valider ({signe} boite(s), {montant})."), ct);
     }
 }
@@ -473,7 +506,7 @@ public sealed class EnregistrerDestinataire(INotificationsDepot depot, IPermissi
 }
 
 /// <summary>Message de test vers un destinataire enregistré (même non vérifié : c'est ce qui permet de le vérifier).</summary>
-public sealed class EnvoyerMessageTest(INotificationsDepot depot, IPermissionService droits)
+public sealed class EnvoyerMessageTest(INotificationsDepot depot, IPermissionService droits, Administration.IPharmacie? pharmacie = null)
 {
     public async Task<int> ExecuterAsync(long destinataireId, long utilisateurId, CancellationToken ct = default)
     {
@@ -485,7 +518,7 @@ public sealed class EnvoyerMessageTest(INotificationsDepot depot, IPermissionSer
         var contenu = new ContenuNotification(TypeNotification.Test, "Pharma Officine : message de test",
             $"Bonjour {d.Nom}, ce message de test confirme que vous recevrez les alertes de la pharmacie. Signalez sa réception au titulaire pour valider votre adresse.",
             null, "Pharma Officine : message de test. Signalez sa reception au titulaire pour valider votre numero.");
-        var messages = NotificationService.Construire(contenu, [d], reglages.SmsActifs);
+        var messages = NotificationService.Construire(contenu, [d], reglages.SmsActifs, await NotificationService.SignatureAsync(pharmacie, ct));
         if (messages.Count == 0)
             throw new RegleMetierException(d.CanalSms && !reglages.SmsActifs ? "Modem GSM non configuré : aucun SMS possible." : "Aucun canal utilisable pour ce destinataire.");
         await depot.AjouterMessagesAsync(messages, ct);
@@ -498,6 +531,8 @@ public sealed class ValiderDestinataire(INotificationsDepot depot, IPermissionSe
     public async Task ExecuterAsync(long id, bool valide, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "valider un destinataire", ct);
+        // Vérifier une adresse se fait par le code reçu (VerifierCodeDestinataire) ; ici, seulement retirer la vérification
+        if (valide) throw new RegleMetierException("Pour vérifier une adresse, cliquez sur « Vérifier » et saisissez le code reçu par le destinataire.");
         if (!await depot.MarquerValideAsync(id, valide, ct)) throw new RegleMetierException("Destinataire introuvable.");
     }
 }

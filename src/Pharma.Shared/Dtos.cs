@@ -297,6 +297,8 @@ public sealed record SaisieDestinataireDto(
     string? Nom, string? Email, string? Telephone, bool CanalEmail, bool CanalSms, IReadOnlyList<string> Types, bool Actif);
 
 public sealed record ValidationDestinataireDto(bool Valide);
+/// <summary>Code reçu par le destinataire, saisi par le titulaire.</summary>
+public sealed record CodeVerificationDto(string? Code);
 
 /// <summary>Statut : en_attente, envoye ou echec.</summary>
 public sealed record MessageSortantDto(
@@ -539,13 +541,16 @@ public sealed record VenteEnAttenteDto(long Id, string Libelle, int Lignes, deci
 /// <summary>Contenu : panier du poste en JSON (PanierAttenteDto), rendu tel quel à la reprise.</summary>
 public sealed record MiseEnAttenteRequete(string? Libelle, int Lignes, decimal Total, string Contenu);
 
-public sealed record LignePanierAttenteDto(long ProduitId, string Nom, decimal Prix, LotFefoDto? Lot, int Quantite, bool BoiteScannee, int StockProduit);
+/// <summary>Boites : boîtes identifiées scannées (rattachées à la vente) ; RaisonLot et LotConseilleServi : choix du caissier sur le lot.</summary>
+public sealed record LignePanierAttenteDto(long ProduitId, string Nom, decimal Prix, LotFefoDto? Lot, int Quantite, bool BoiteScannee, int StockProduit,
+    IReadOnlyList<long>? Boites = null, string? RaisonLot = null, bool LotConseilleServi = false);
 
 /// <summary>Panier mis en attente par le poste : lignes et règlement en cours de saisie.</summary>
 public sealed record PanierAttenteDto(
     IReadOnlyList<LignePanierAttenteDto> Lignes, bool TiersPayant, long OrganismeId, int Taux, PatientDto? Patient,
     MedecinDto? Medecin, DateOnly DatePrescription, string? NumeroOrdonnance, decimal RemisePct, string? JetonScan, string? TexteReconnu,
-    string? VoletChifa = null);
+    string? VoletChifa = null, decimal? ResteSaisi = null, bool PorteurAutre = false, string? PorteurNom = null, string? PorteurAdresse = null,
+    string? PorteurPiece = null);
 
 // ---- Annulation d'une vente ------------------------------------------------------
 

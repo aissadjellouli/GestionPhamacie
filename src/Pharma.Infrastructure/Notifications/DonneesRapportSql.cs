@@ -55,7 +55,9 @@ public sealed class DonneesRapportSql(NpgsqlDataSource db) : IDonneesRapport
         await using (var cmd = db.CreateCommand("""
             SELECT a.type, p.nom_commercial, l.numero_lot, a.message
             FROM alerte a JOIN produit p ON p.id = a.produit_id LEFT JOIN lot l ON l.id = a.lot_id
+            -- Alertes du jour encore ouvertes : une alerte close entre-temps (cause disparue) n'est plus d'actualité
             WHERE a.cree_le >= $1 AND a.cree_le < $2 AND a.type IN ('peremption', 'perime', 'risque_ecoulement', 'rupture')
+              AND a.statut IN ('nouvelle', 'vue', 'reportee')
             ORDER BY a.type, p.nom_commercial
             """))
         {

@@ -171,12 +171,12 @@ internal static class CaisseEndpoints
         api.MapGet("/auth/valideurs", async (string? permission, Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(permission ?? Pharma.Application.Securite.PermissionServiceExtensions.MarqueTitulaire, ct))
                     .Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet)).ToList()))
-           .RequireAuthorization();
+           .ExigerConnexion();
 
         // Qui peut valider un produit bloqué (à la vente ou à l'achat) avec son code comptoir
         api.MapGet("/produits/validateurs-blocage", async (Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(Permissions.ProduitsBloquer, ct)).Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet))))
-           .RequireAuthorization();
+           .ExigerConnexion();
 
         caisse.MapGet("/validateurs-annulation", async (Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(Permissions.CaisseAnnulerVente, ct)).Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet))))

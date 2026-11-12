@@ -32,7 +32,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - [Reprise de données (import depuis l'ancien logiciel)](#reprise-de-données-import-depuis-lancien-logiciel)
 - [Essai (retours du pharmacien)](#essai-retours-du-pharmacien)
 - [Notifications au titulaire](#notifications-au-titulaire)
-- [Surveillance anti-vol (caisse et stock)](#surveillance-anti-vol-caisse-et-stock)
+- [Contrôle interne (caisse et stock)](#contrôle-interne-caisse-et-stock)
 - [Rapports](#rapports)
 - [Pilotage (tableau de bord du titulaire)](#pilotage-tableau-de-bord-du-titulaire)
 - [Suivi des dettes et créances](#suivi-des-dettes-et-créances)
@@ -51,7 +51,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Date de péremption confirmée à l'inventaire** : refusée seulement si elle est passée de plus d'un an, alors que le commentaire du code dit « ne peut pas être déjà passée ». (à confirmer)
 - **Prix public** : le code exige un prix supérieur à 0, la base accepte 0.
 - **Calcul des anomalies de surveillance** : lancé après chaque opération concernée et, depuis la revue de code, toutes les heures par le serveur (tâche de fond) ; un échec est inscrit au journal du serveur (corrigé).
-- **Tableau de bord du titulaire** : lit les alertes générales ; les anomalies de surveillance n'y figurent pas (elles sont dans l'écran Surveillance). (à confirmer)
+- **Tableau de bord du titulaire** : lit les alertes générales ; les anomalies du contrôle interne n'y figurent pas (elles sont dans l'écran Contrôle interne). (à confirmer)
 - **Nombre de droits** : `docs/securite-et-droits.md` en annonce 26, le logiciel en compte 32.
 - **Droits de l'assistant** : diffèrent entre l'ancien script `006_droits_utilisateurs.sql` et le script de départ `database/init/seed_referentiel.sql` ; le tableau des droits suit le script de départ.
 - **Indicateur « sensible » d'un droit** : sans effet constaté en dehors de l'affichage. (à confirmer)
@@ -60,6 +60,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 ## Caisse et ventes
 
 ### Poste et caisse (session)
+- **Aucune écriture d'argent sur une caisse clôturée** (vente, paiement, annulation, retour, part du tiroir d'un règlement grossiste, argent porté au coffre pendant la journée) : la base la refuse, même lancée sur un autre poste pendant le comptage (« Cette caisse vient d'être clôturée »). — `database/migration/064_caisse_cloturee.sql`
 - **Sans nom de poste, pas de caisse** : le poste doit être nommé (`PHARMA_POSTE`) pour ouvrir, encaisser, annuler, rembourser, mettre en attente. — `src/Pharma.Application/Caisse/Sessions.cs`
 - **Une seule caisse ouverte par poste (un tiroir)** : une seconde ouverture est refusée (« vendez dessus, ou faites une relève ») ; contrôlé aussi en base (index unique `ux_session_poste_ouverte`). — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/022_caisse_partagee.sql`
 - **La caisse est partagée** : plusieurs employés vendent sur la caisse du poste ; chaque vente garde son vendeur, la caisse reste au nom de celui qui l'a ouverte. — `database/migration/022_caisse_partagee.sql`
@@ -91,6 +92,9 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Autorisation par code comptoir activée par défaut**, désactivable par le titulaire. — `database/migration/047_recette_corrections.sql`, `src/Pharma.Api/Securite/AutorisationParCode.cs`
 
 ### Code comptoir et autorisation sur place
+- **Tant que le mot de passe provisoire n'est pas changé, le code comptoir ne vaut rien** : ni pour se connecter au comptoir, ni pour autoriser un collègue ; choisir son code est refusé. — `src/Pharma.Application/Securite/ConnexionComptoir.cs`
+- **Connecté par code comptoir, le code d'un collègue n'ouvre aucun écran hors du comptoir** (règlements, paramètres…) ni aucune action du titulaire : la portée de la connexion est gardée. — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
+- **Une action autorisée par le code d'un collègue garde ce collègue comme validateur** (annulation d'une vente ancienne, retour client), pas l'employé connecté. — `src/Pharma.Application/Caisse/AnnulerVente.cs`, `src/Pharma.Application/Caisse/RetourClient.cs`
 - **Code comptoir de 4 à 6 chiffres**. — `src/Pharma.Domain/Securite/CodeComptoir.cs`
 - **5 erreurs bloquent le code 5 minutes** ; le blocage est inscrit au journal (`code_comptoir_bloque`). — `src/Pharma.Domain/Securite/CodeComptoir.cs`, `src/Pharma.Application/Securite/ConnexionComptoir.cs`
 - **Une action refusée faute de droit peut être autorisée par le code d'un autre employé qui a ce droit** : seulement pour les droits que le valideur a acceptés au poste (un code donné pour vendre sans ordonnance n'autorise pas un dépassement de plafond) ; jamais par l'employé lui-même ; inscrit au journal (« autorisé par »). — `src/Pharma.Api/Securite/AutorisationParCode.cs`
@@ -150,6 +154,9 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Aucune donnée du patient sur le ticket** ; il porte le nom, l'adresse, le téléphone et le NIF de la pharmacie, le vendeur, le poste, l'organisme et le taux, les lignes, la remise, les parts organisme/patient et le mode. — `src/Pharma.Application/Caisse/Ticket.cs`
 
 ### Ventes en attente
+- **Une vente mise en attente garde tout ce qui a été saisi** : boîtes scannées (rattachées à la vente), raisons de lot, reste à charge, porteur de l'ordonnance ; rien n'est à ressaisir à la reprise. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **« Mettre en attente » et « Reprendre » ne partent qu'une fois** (double clic sans effet) : pas de vente en attente en double, pas de panier perdu. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Panier abandonné en se déconnectant, en changeant d'utilisateur ou par inactivité : boîtes signalées « retirées du panier »** au contrôle interne, comme en quittant l'écran. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **Mettre de côté, reprendre ou abandonner une vente demande le droit de vendre** (`caisse.vendre`). — `src/Pharma.Api/Endpoints/CaisseEndpoints.cs`
 - **Au plus 20 ventes en attente par poste**. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 - **Panier vide : rien à mettre en attente** ; panier trop volumineux (plus de 200 000 caractères) refusé. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
@@ -157,7 +164,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Une vente en attente est gardée sur le serveur et peut être reprise par n'importe quel employé du poste** ; reprise, elle quitte l'attente (une seconde reprise est refusée). — `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `database/migration/026_ventes_attente.sql`
 - **Une vente en attente abandonnée est enregistrée pour la surveillance** (qui, quand, montant) ; l'abandon exige toujours l'employé qui abandonne. — `src/Pharma.Application/Caisse/VentesEnAttente.cs`
 
-### Surveillance de la caisse (titulaire)
+### Contrôle interne : caisse (titulaire)
 - **Ouvrir le tiroir sans vente demande le droit `caisse.ouvrir_tiroir`** ; chaque ouverture est enregistrée et inscrite au journal ; le bouton est grisé sans ce droit. — `src/Pharma.Application/Surveillance/Surveillance.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **Anomalies par employé et par jour, seuils par défaut** : 5 boîtes retirées du panier, 3 ouvertures du tiroir sans vente, 3 ventes en attente abandonnées, 5 ventes avec remise ; « urgente » à partir du double du seuil. — `database/migration/054_surveillance_caisse.sql`
 - **Remises répétées à un même patient** : 3 ventes avec remise en 30 jours (défaut), urgente au double. — `database/migration/054_surveillance_caisse.sql`
@@ -180,6 +187,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Ce droit ne s'applique jamais aux psychotropes et stupéfiants**. — `database/migration/049_vente_sans_ordonnance.sql`, `src/Pharma.Domain/Securite/Permissions.cs`
 
 ### Psychotropes et stupéfiants
+- **La délivrance d'un psychotrope n'est jamais autorisée par le code d'un collègue** : un employé qui a le droit reprend la vente (« Changer d'utilisateur ») ; le registre nomme toujours celui qui délivre. — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 - **Délivrance réservée au droit `psychotropes.delivrer`** : sans ce droit, le message nomme les employés qui l'ont pour qu'ils reprennent la vente (« Changer d'utilisateur »). — `src/Pharma.Application/Caisse/Encaisser.cs`
 - **Ordonnance obligatoire pour tous, patient identifié et médecin prescripteur obligatoires**. — `src/Pharma.Domain/Ventes/Vente.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`
 - **Porteur de l'ordonnance autre que le patient : nom et prénom, adresse et pièce d'identité obligatoires** (200 caractères au plus chacun ; arrêté du 29 juin 2013, art. 7) ; contrôlé aussi en base. — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/migration/024_registre_psychotropes.sql`
@@ -196,6 +204,9 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 ## Annulations et retours
 
 ### Annulation d'une vente
+- **Vente à crédit annulée ou rendue : seul ce que le patient a vraiment payé sur cette vente lui est rendu** ; la dette baisse au plus de ce qui reste impayé sur la vente. Les remboursements soldent les dettes les plus anciennes d'abord ; une dette corrigée ou abandonnée par le titulaire n'est pas un paiement (rien ne sort de la caisse). — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `src/Pharma.Infrastructure/Caisse/AnnulationsVenteSql.cs`
+- **Annulation et retour en même temps sur la même vente : le second refuse** (« un retour vient d'être enregistré ») ; jamais de double remboursement, jamais une boîte rendue deux fois. — `src/Pharma.Infrastructure/Caisse/AnnulationsVenteSql.cs`, `src/Pharma.Infrastructure/Caisse/RetoursClientSql.cs`
+- **Retour d'une ligne en partie scannée** : les boîtes identifiées sont cochées, les autres (vendues sans scan) sont rendues par quantité, au plus celles encore chez le patient. — `src/Pharma.Application/Caisse/RetourClient.cs`
 - **Motif obligatoire : 3 à 300 caractères** (aussi en base : au moins 3 caractères). — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `database/migration/027_annulation_vente.sql`
 - **Seule une vente encaissée peut être annulée** ; une vente déjà annulée est refusée (une seule annulation, même depuis deux postes). — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`, `src/Pharma.Infrastructure/Caisse/AnnulationsVenteSql.cs`
 - **Vente déjà placée sur un bordereau d'organisme : annulation refusée**, à traiter par la régularisation Chifa. — `src/Pharma.Domain/Ventes/RegleAnnulation.cs`
@@ -338,6 +349,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Depuis cette alerte, seul le titulaire peut lancer l'inventaire du produit** : comptage à l'aveugle de tous ses lots en stock (rayon et réserve) ; si un inventaire de ce produit est déjà en cours, il est repris ; refus si aucun lot en stock. — `src/Pharma.Application/Stock/Inventaire.cs` (`ExigerTitulaireAsync`)
 
 ### Blocage d'un lot (rappel)
+- **Un n° de lot rappelé reste bloqué pour une livraison d'un autre grossiste** : à la réception, ces boîtes sont mises de côté ou entrées en stock bloqué, jamais vendables sans choix. — `src/Pharma.Domain/Stock/RegleLot.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Un rappel exige le produit, le numéro de lot et un motif** ; le numéro est normalisé (majuscules). Droit `stock.declarer_perime` (exigé par l'API). — `src/Pharma.Application/Tracabilite/RappelerLot.cs`, `src/Pharma.Api/Endpoints/TracabiliteEndpoints.cs`
 - **Le rappel bloque ce n° de lot chez tous les grossistes où il est encore vendable, en une seule opération**, et trace un événement « blocage » sur chaque boîte identifiée en stock de ces lots. — fonction `rappel_lot`, `src/Pharma.Infrastructure/Tracabilite/RappelLotSql.cs`
 - **Un lot déjà bloqué partout n'est pas rebloqué** : refus « déjà rappelé … rien n'a été modifié », sans journal ni alerte ; la liste des patients reste consultable. — `src/Pharma.Application/Tracabilite/RappelerLot.cs`
@@ -404,7 +416,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Les produits sensibles se comptent à part, dans un inventaire « Produits sensibles »** (tous leurs lots en stock, à l'aveugle) ; droit `stock.ajuster` ; si un comptage est déjà en cours il est repris ; refus s'il n'y a rien à compter. — `src/Pharma.Application/Stock/Inventaire.cs`
 - **Une anomalie « comptage des produits sensibles en retard » est levée si le dernier comptage dépasse le délai réglé** : 7 jours par défaut, réglable de 1 à 90 jours par le titulaire. — fonction `surveillance_candidats`, `src/Pharma.Application/Surveillance/Surveillance.cs`
 
-### Surveillance du stock (anomalies au titulaire)
+### Contrôle interne : stock (anomalies au titulaire)
 - **Boîtes manquantes ajustées en inventaire, casses et dons sont comptés par employé et par jour** ; anomalie dès le seuil (par défaut 5 boîtes ajustées, 3 casses, 3 dons), « urgente » au double du seuil. — fonction `surveillance_candidats`, table `parametre_surveillance`
 - **Boîtes fantômes : à la fin d'un inventaire, les boîtes identifiées en stock d'un lot scanné mais jamais scannées sont signalées** (« elles ont peut-être quitté la pharmacie ») ; urgent à partir de 3 boîtes. — fonction `surveillance_candidats`
 
@@ -417,6 +429,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Ranger un produit exige le droit `stock.ajuster`** : un emplacement de vente (en zone de vente) et une réserve facultative (en zone de réserve), deux emplacements différents, actifs. — `src/Pharma.Application/Stock/Emplacements.cs`, `src/Pharma.Domain/Stock/RegleEmplacement.cs`, déclencheur `verifier_zones_produit`
 
 ### État du stock
+- **Le stock vendable ne compte ni le périmé ni les lots bloqués** (rappel) : alertes de rupture et de stock critique, commande suggérée, recherche à la caisse, alternatives et rapprochement d'ordonnance. — `database/migration/065_stock_vendable_hors_bloque.sql`
 - **Le stock d'un produit compte ses lots non périmés** (les lots bloqués y sont inclus) ; seuls les produits actifs apparaissent. — vue `v_etat_stock`
 - **Consommation journalière = boîtes vendues (ventes validées) sur les 90 derniers jours ÷ 90** (fenêtre réglable). — vue `v_consommation`, table `parametre_alerte`
 - **Seuil d'alerte d'un produit = stock minimum saisi, sinon consommation × (délai grossiste + stock de sécurité)** : par défaut 2 + 7 jours. — vue `v_etat_stock`
@@ -436,6 +449,9 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Boîtes à risque = boîtes du lot − boîtes vendables avant péremption** (consommation × jours restants, après les lots qui périment avant) ; valorisées au prix d'achat. — vue `v_risque_peremption`
 
 ### Génération et suivi des alertes
+- **Une alerte de péremption n'est créée que s'il y a quelque chose à faire** : lot périmé, ou boîtes qui ne seront pas vendues à temps au rythme des ventes. Un lot dont toutes les boîtes seront vendues à temps ne crée aucune alerte, ni dans le logiciel ni par e-mail (l'alerte déjà ouverte est close d'elle-même). — `database/migration/066_alertes_peremption_claires.sql`
+- **Le message dit combien de boîtes, quelle valeur au prix d'achat et quoi faire** (mettre en avant, retourner au grossiste, proposer à la place d'un équivalent). — `database/migration/066_alertes_peremption_claires.sql`
+- **Écran Alertes : une catégorie sans alerte affiche « RAS »** (tuiles et liste). Le rapport du soir ne montre pas les rubriques vides. — `src/Pharma.Desktop/Composants/Pages/Alertes.razor`, `src/Pharma.Application/Notifications/Notifications.cs`
 - **Les alertes sont recalculées chaque jour à 7 h**, et sur demande (droit `admin.parametres`). — `src/Pharma.Api/Taches/AlertesQuotidiennes.cs`, `src/Pharma.Api/Endpoints/AlertesEndpoints.cs`
 - **Types d'alerte** : péremption, périmé, risque d'écoulement, rupture, stock critique, dormant, surstock, ancien lot délaissé. — contrainte `alerte_type_check`
 - **Urgence** : périmé, rouge et rupture sont « urgents » ; critique, orange et risque d'écoulement sont « attention » ; dormant et surstock sont « info ». — fonction `generer_alertes`
@@ -653,6 +669,8 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Le grossiste d'un lot est forcément celui de sa réception** (contrôle en base). — `database/migration/003_provenance.sql`
 
 ### Boîtes, Data Matrix et étiquettes internes
+- **À la réception, le GTIN du Data Matrix doit être celui du produit de la ligne** ; inconnu ou d'un autre produit : refus (« le Data Matrix scanné est celui de … »). — `src/Pharma.Application/Achats/Achats.cs`
+- **Data Matrix lu (caisse, mobile, inventaire) : à n° de lot égal, le lot de la date de péremption lue** (champ 17). — `src/Pharma.Infrastructure/Lecture/MobileSql.cs`
 - **Un Data Matrix non reconnu (GTIN introuvable) est refusé** ; le produit est retrouvé par son code-barres (GTIN-14 = EAN-13 précédé de 0). — `src/Pharma.Application/Achats/Achats.cs`, `src/Pharma.Infrastructure/Achats/AchatsSql.cs`
 - **Des n° de série scannés exigent le GTIN, ne peuvent pas dépasser le nombre de boîtes reçues et ne peuvent pas être scannés deux fois.** — `src/Pharma.Domain/Achats/RegleAchats.cs`
 - **Une boîte (GTIN + n° de série) n'entre qu'une fois dans le logiciel** : une boîte déjà enregistrée est refusée (« ce BL a peut-être déjà été saisi »). — `src/Pharma.Infrastructure/Achats/AchatsSql.cs`, `database/migration/003_provenance.sql`
@@ -863,6 +881,8 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Une dette ou une créance est signalée au-delà d'une ancienneté réglable de 1 à 365 jours (30 par défaut).** — `database/migration/039_suivi_dettes.sql`
 
 ## Sécurité et droits
+- **Connexions révoquées** : changer ou réinitialiser un mot de passe, désactiver un compte, effacer un code comptoir ou restaurer la base ferme aussitôt les connexions déjà ouvertes (l'API relit l'état du compte à chaque appel). — `database/migration/063_revocation_connexions.sql`, `src/Pharma.Api/Securite/ValidationJeton.cs`
+- **Les routes sans droit particulier refusent le mot de passe provisoire et le super admin**, sauf ce qui leur reste permis (changer son mot de passe, ses droits, le thème, l'état du poste, l'identité de la pharmacie). — `src/Pharma.Api/Securite/PermissionFilter.cs`
 
 ### Rôles
 
@@ -1185,12 +1205,12 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le motif d'un rappel de lot (saisi librement) n'est jamais envoyé ; le message renvoie au logiciel pour la liste des patients à contacter.** — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Le rapport quotidien est construit à partir de données agrégées, sans colonne patient.** — `src/Pharma.Application/Notifications/Notifications.cs`
 
-## Surveillance anti-vol (caisse et stock)
+## Contrôle interne (caisse et stock)
 
 ### Accès réservé au titulaire
-- **Seul le titulaire consulte les anomalies de surveillance** : l'écran et l'API `/surveillance` exigent le rôle titulaire (marque `role.titulaire`). — `src/Pharma.Application/Surveillance/Surveillance.cs`, `src/Pharma.Api/Endpoints/SurveillanceEndpoints.cs`
+- **Seul le titulaire consulte les anomalies du contrôle interne** : l'écran et l'API `/surveillance` exigent le rôle titulaire (marque `role.titulaire`). — `src/Pharma.Application/Surveillance/Surveillance.cs`, `src/Pharma.Api/Endpoints/SurveillanceEndpoints.cs`
 - **Seul le titulaire traite une anomalie** (la marque « traitée »). — `src/Pharma.Application/Surveillance/Surveillance.cs`
-- **Seul le titulaire lit et modifie les réglages de la surveillance** (seuils, horaires, fréquence du comptage des produits sensibles). — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **Seul le titulaire lit et modifie les réglages du contrôle interne** (seuils, horaires, fréquence du comptage des produits sensibles). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Seul le titulaire consulte et choisit les produits sensibles.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Le rôle titulaire n'est pas reconnu pour une connexion par code comptoir, ni tant que le mot de passe doit être changé** : sauf autorisation « sur place » (mécanisme `AutoriseSurPlaceAsync`, détail à confirmer). — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 
@@ -1209,7 +1229,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 ### Déclenchement du calcul des anomalies
 - **Le calcul porte toujours sur la journée en cours, selon la date du serveur PostgreSQL** (celle à laquelle les ventes sont horodatées). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Le calcul est relancé après** : chaque vente encaissée, chaque événement de caisse (ligne retirée, tiroir, attente abandonnée), chaque fin d'inventaire, chaque écart d'inventaire validé, chaque déclaration de casse ou d'échantillon (pas pour un périmé), chaque facture saisie sur un comptage (avec ou sans écart), chaque avoir inférieur au montant attendu, chaque connexion réussie (mot de passe ou code), chaque baisse de prix depuis la fiche produit. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Application/Caisse/VentesEnAttente.cs`, `src/Pharma.Application/Stock/Inventaire.cs`, `src/Pharma.Application/Stock/SortieStock.cs`
-- **Le calcul ne bloque jamais la vente ni l'opération** : elle est déjà enregistrée ; une erreur de surveillance est inscrite au journal du serveur. — `src/Pharma.Application/Surveillance/Surveillance.cs`
+- **Le calcul ne bloque jamais la vente ni l'opération** : elle est déjà enregistrée ; une erreur du contrôle interne est inscrite au journal du serveur. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Les journées et les horaires sont ceux de l'heure du serveur PostgreSQL** : son fuseau doit être réglé sur l'heure de la pharmacie. — `database/migration/054_surveillance_caisse.sql`
 - **Le calcul est aussi lancé au démarrage du serveur puis toutes les heures**, même sans activité (retour sans avoir, crédit jamais remboursé, comptage des produits sensibles en retard). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 
@@ -1269,12 +1289,15 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Produits sensibles en retard : une anomalie par date de dernier comptage** ; une fois traitée, elle ne réapparaît qu'après un nouveau comptage redevenu en retard (constat sur la clé de l'anomalie). — `database/migration/055_surveillance_stock.sql`
 
 ### Notification des anomalies
+- **Un destinataire des notifications n'est vérifié que par le code à 6 chiffres qu'il a reçu** (15 minutes, 5 codes faux au plus, seul le haché est gardé) ; vérifier sans code est refusé, retirer la vérification reste possible ; envoi et vérification inscrits au journal. — `src/Pharma.Application/Notifications/VerificationDestinataire.cs`, `database/migration/068_verification_destinataire.sql`
+- **Chaque e-mail est signé du nom de la pharmacie.** — `src/Pharma.Application/Notifications/Notifications.cs`
+- **Le rapport du soir recalcule les alertes juste avant l'envoi et ne reprend que les alertes encore ouvertes** : une alerte devenue sans objet n'est pas envoyée. — `src/Pharma.Application/Notifications/Notifications.cs`, `src/Pharma.Infrastructure/Notifications/DonneesRapportSql.cs`
 - **Chaque nouvelle anomalie est notifiée au titulaire** (e-mail, et SMS selon le réglage). — `src/Pharma.Application/Surveillance/Surveillance.cs`, `src/Pharma.Application/Notifications/Notifications.cs`
 - **Une anomalie déjà connue est notifiée une seconde fois quand elle passe de « attention » à « urgent ».** — `database/migration/054_surveillance_caisse.sql`
-- **L'objet du message est « URGENT : anomalie de surveillance » ou « Anomalie de surveillance »** (caisse, stock, réception, retours) ; le message renvoie à l'écran Surveillance du titulaire. — `src/Pharma.Application/Notifications/Notifications.cs`
+- **L'objet du message est « URGENT : contrôle interne, point à examiner » ou « Contrôle interne : point à examiner »** (caisse, stock, réception, retours) ; le message renvoie à l'écran Contrôle interne du titulaire. — `src/Pharma.Application/Notifications/Notifications.cs`
 - **Le SMS de surveillance n'est envoyé que si le réglage SMS des lots bloqués est activé.** — `src/Pharma.Application/Notifications/Notifications.cs`
-- **Le texte notifié ne contient aucune donnée de patient** (le nom du patient n'apparaît que dans l'écran Surveillance). — `database/migration/055_surveillance_stock.sql`
-- **Crédits suspects : le nom du patient n'apparaît que dans l'écran Surveillance**, jamais dans l'e-mail ni le SMS. — `database/migration/058_surveillance_comptes.sql`
+- **Le texte notifié ne contient aucune donnée de patient** (le nom du patient n'apparaît que dans l'écran Contrôle interne). — `database/migration/055_surveillance_stock.sql`
+- **Crédits suspects : le nom du patient n'apparaît que dans l'écran Contrôle interne**, jamais dans l'e-mail ni le SMS. — `database/migration/058_surveillance_comptes.sql`
 - **Les destinataires sont ceux abonnés au type « surveillance »** ; à l'installation, ce type a été ajouté aux destinataires déjà abonnés au type « lot délaissé ». — `database/migration/054_surveillance_caisse.sql`
 
 ### Traitement des anomalies
@@ -1308,7 +1331,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Un échantillon exige d'indiquer à qui et pourquoi ; une casse exige d'indiquer ce qui s'est passé (200 caractères au plus).** — `src/Pharma.Application/Stock/SortieStock.cs`
 
 ### Écarts et risques par employé
-- **Écran réservé au titulaire** (« Écarts et risques par employé », depuis Surveillance) ; période choisie, 30 derniers jours par défaut, 366 jours au plus, période inversée refusée. — `src/Pharma.Application/Surveillance/Risques.cs`
+- **Écran réservé au titulaire** (« Écarts et risques par employé », depuis Contrôle interne) ; période choisie, 30 derniers jours par défaut, 366 jours au plus, période inversée refusée. — `src/Pharma.Application/Surveillance/Risques.cs`
 - **Perte d'un jour = manque de caisse (somme des écarts négatifs des clôtures du jour) + boîtes manquantes ajustées en inventaire ce jour-là, au prix d'achat.** Les boîtes fantômes et les anomalies du jour sont affichées à part. — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
 - **Un employé est « présent » un jour s'il s'est connecté, a vendu, a ouvert une caisse ou a fait une action inscrite au journal ce jour-là** ; les postes du jour sont ceux de ses connexions, ventes et caisses. — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`
 - **Seules les journées avec activité, perte ou anomalie sont prises en compte** (une journée sans rien, pharmacie fermée, est omise). — `src/Pharma.Infrastructure/Surveillance/RisquesSql.cs`

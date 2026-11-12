@@ -16,7 +16,8 @@
 -- A exécuter après les scripts 0xx (040 compris) et 900_donnees_demo.sql.
 -- Réexécution sans effet ; ignoré sans données de démonstration.
 -- =====================================================================
-SELECT NOT EXISTS (SELECT 1 FROM utilisateur WHERE identifiant = 'titulaire')
+-- Base de démonstration seulement (réception BL-DEMO-1 de 900) : le compte « titulaire » existe aussi en production
+SELECT NOT EXISTS (SELECT 1 FROM reception WHERE numero_bl = 'BL-DEMO-1')
        OR to_regclass('public.facture_client') IS NULL AS sans_demo \gset
 \if :sans_demo
 \echo 'Données de démonstration absentes : factures de démonstration ignorées.'

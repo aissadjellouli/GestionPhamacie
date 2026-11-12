@@ -1,5 +1,6 @@
 @implements IDisposable
 @inject DemandesAutorisation Demandes
+@inject SessionPoste Session
 @inject ApiClient Api
 
 @* « Faire autoriser » : action refusée faute de droit ; un employé qui a ce droit l'autorise avec son code comptoir.
@@ -41,8 +42,11 @@
     private bool charge;
     private DemandesAutorisation.Demande? chargee;
 
-    protected override void OnInitialized() => Demandes.Changee += Rafraichir;
-    public void Dispose() => Demandes.Changee -= Rafraichir;
+    // Session fermée (déconnexion, changement d'utilisateur, inactivité) : la demande en cours est abandonnée, la fenêtre et
+    // la liste des employés habilités ne restent pas sur l'écran de connexion
+    protected override void OnInitialized() { Demandes.Changee += Rafraichir; Session.AvantFermeture += Abandonner; }
+    public void Dispose() { Demandes.Changee -= Rafraichir; Session.AvantFermeture -= Abandonner; }
+    private void Abandonner() { if (Demandes.EnCours is not null) Demandes.Repondre(null); }
 
     private void Rafraichir() => _ = InvokeAsync(async () =>
     {

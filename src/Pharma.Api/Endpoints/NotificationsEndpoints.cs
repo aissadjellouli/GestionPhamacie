@@ -44,6 +44,18 @@ internal static class NotificationsEndpoints
                 Results.Ok(new IdentifiantDto(await enregistrer.ExecuterAsync(id, VersSaisie(d), user.UtilisateurId(), ct))))
            .ExigerTitulaire();
 
+        // Vérification par code : « Vérifier » envoie le code au destinataire, le titulaire saisit le code reçu
+        n.MapPost("/destinataires/{id:long}/code", async (long id, EnvoyerCodeVerification envoyer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new { nombre = await envoyer.ExecuterAsync(id, user.UtilisateurId(), ct) }))
+           .ExigerTitulaire();
+
+        n.MapPost("/destinataires/{id:long}/verification", async (long id, CodeVerificationDto d, VerifierCodeDestinataire verifier, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await verifier.ExecuterAsync(id, d.Code, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerTitulaire();
+
         n.MapPost("/destinataires/{id:long}/validation", async (long id, ValidationDestinataireDto d, ValiderDestinataire valider, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await valider.ExecuterAsync(id, d.Valide, user.UtilisateurId(), ct);

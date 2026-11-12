@@ -6,7 +6,9 @@ using Pharma.Domain.Securite;
 namespace Pharma.Application.Securite;
 
 /// <summary>Compte vu pour une connexion par code comptoir (code haché, essais manqués, blocage).</summary>
-public sealed record CompteComptoir(long Id, string Identifiant, string NomComplet, string? CodeHash, int Essais, DateTime? BloqueJusqu);
+/// <summary>DoitChangerMotDePasse : mot de passe provisoire pas encore changé, le code comptoir ne vaut rien.</summary>
+public sealed record CompteComptoir(long Id, string Identifiant, string NomComplet, string? CodeHash, int Essais, DateTime? BloqueJusqu,
+    bool DoitChangerMotDePasse = false);
 
 public sealed record VendeurComptoir(string Identifiant, string NomComplet);
 
@@ -62,6 +64,7 @@ public sealed class SeConnecterParCode(ICodesComptoir codes, IVerificateurMotDeP
     Surveillance.Surveiller? surveillance = null)
 {
     public const string Refus = "Code incorrect.";
+    public const string MotDePasseProvisoire = "Mot de passe provisoire : connectez-vous d’abord avec votre mot de passe et choisissez-en un personnel.";
 
     public async Task<Session> ExecuterAsync(string? identifiant, string? code, string? poste, CancellationToken ct = default)
     {
@@ -109,6 +112,8 @@ public sealed class VerificationCodeComptoir(ICodesComptoir codes, IVerificateur
         }
 
         await codes.EnregistrerEssaiAsync(compte.Id, 0, null, ct);
+        // Mot de passe provisoire pas encore changé : aucun droit, ni par la connexion par code ni pour autoriser un collègue
+        if (compte.DoitChangerMotDePasse) throw new RegleMetierException(SeConnecterParCode.MotDePasseProvisoire);
         return compte;
     }
 }

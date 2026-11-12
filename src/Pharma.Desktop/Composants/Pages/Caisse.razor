@@ -801,6 +801,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Session.AvantFermeture += PanierAbandonne;
         (organismes, _) = await Api.OrganismesAsync();
         organismeId = organismes.FirstOrDefault()?.Id ?? 0;
         await ChargerEtatAsync();
@@ -1446,14 +1447,20 @@
 
     private async Task ImprimerTicketAsync()
     {
-        if (venteFaite is null) return;
+        // Vente gardée ici : le caissier peut scanner le produit suivant pendant l'impression (venteFaite repasse alors à null)
+        if (venteFaite is not { } vente) return;
         (impressionEnCours, messageTicket) = (true, null);
         try
         {
-            var (ticket, e) = await Api.TicketAsync(venteFaite.VenteId);
-            e ??= await Tickets.ImprimerAsync(ticket!, venteFaite.Mode == "especes" ? venteFaite.Rendu : null);
+            var (ticket, e) = await Api.TicketAsync(vente.VenteId);
+            e ??= await Tickets.ImprimerAsync(ticket!, vente.Mode == "especes" ? vente.Rendu : null);
             ticketImprime = e is null;
-            messageTicket = e ?? $"Ticket {venteFaite.Numero} envoyé à l’imprimante{(Tickets.NomDeclare is { } n ? $" « {n} »" : " par défaut")}.";
+            messageTicket = e ?? $"Ticket {vente.Numero} envoyé à l’imprimante{(Tickets.NomDeclare is { } n ? $" « {n} »" : " par défaut")}.";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Une imprimante en panne ne fait jamais perdre le panier en cours
+            messageTicket = $"Ticket {vente.Numero} non imprimé : {ex.Message}";
         }
         finally { impressionEnCours = false; }
     }
@@ -1501,11 +1508,26 @@
     /// <summary>Le panier et le règlement en cours de saisie partent sur le serveur ; la caisse est libérée.</summary>
     private async Task MettreEnAttenteAsync()
     {
+        // Double clic : une seule mise en attente (sinon deux ventes en attente identiques)
+        if (enCours) return;
+        enCours = true;
+        try { await MettreDeCoteAsync(); }
+        finally { enCours = false; }
+    }
+
+    /// <summary>
+    /// Tout ce qui a été saisi part avec le panier : boîtes scannées (rattachées à la vente), raisons de lot, reste à charge,
+    /// porteur de l'ordonnance ; rien n'est à ressaisir à la reprise.
+    /// </summary>
+    private async Task MettreDeCoteAsync()
+    {
         if (lignes.Count == 0) return;
         erreurAttente = null;
         var panier = new PanierAttenteDto(
-            lignes.Select(l => new LignePanierAttenteDto(l.ProduitId, l.Nom, l.Prix, l.Lot, l.Quantite, l.BoiteScannee, l.StockProduit)).ToList(),
-            tiersPayant, organismeId, taux, patient, medecin, datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu, voletBrut);
+            lignes.Select(l => new LignePanierAttenteDto(l.ProduitId, l.Nom, l.Prix, l.Lot, l.Quantite, l.BoiteScannee, l.StockProduit,
+                l.Boites.ToList(), l.RaisonLot, l.LotConseilleServi)).ToList(),
+            tiersPayant, organismeId, taux, patient, medecin, datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu, voletBrut,
+            resteSaisi, porteurAutre, porteurNom, porteurAdresse, porteurPiece);
         var libelle = patient is { } p ? $"{p.Nom} {p.Prenom}".Trim() : $"Vente de {DateTime.Now:HH:mm}";
         var total = apercu?.MontantTotal ?? lignes.Sum(l => l.Prix * l.Quantite);
         var e = await Api.MettreEnAttenteAsync(new MiseEnAttenteRequete(libelle, lignes.Count, total,
@@ -1519,17 +1541,32 @@
     /// <summary>Reprise : le panier en cours (s'il y en a un) part d'abord en attente, rien n'est perdu.</summary>
     private async Task ReprendreAsync(VenteEnAttenteDto v)
     {
+        // Double clic, ou clic sur une seconde vente avant la réponse : une seule reprise (sinon un panier serait perdu)
+        if (enCours) return;
+        enCours = true;
+        try { await ReprendreVenteAsync(v); }
+        finally { enCours = false; }
+    }
+
+    private async Task ReprendreVenteAsync(VenteEnAttenteDto v)
+    {
         erreurAttente = null;
-        if (lignes.Count > 0) { await MettreEnAttenteAsync(); if (erreurAttente is not null) return; }
+        if (lignes.Count > 0) { await MettreDeCoteAsync(); if (erreurAttente is not null) return; }
         var (json, e) = await Api.ReprendreVenteEnAttenteAsync(v.Id);
         if (e is not null) { erreurAttente = e; await ChargerAttentesAsync(); return; }
         var p = System.Text.Json.JsonSerializer.Deserialize<PanierAttenteDto>(json!)!;
         ViderPanier();
         venteFaite = null;
         foreach (var l in p.Lignes)
-            lignes.Add(new LignePanier { ProduitId = l.ProduitId, Nom = l.Nom, Prix = l.Prix, Lot = l.Lot, Quantite = l.Quantite, BoiteScannee = l.BoiteScannee, StockProduit = l.StockProduit });
+        {
+            var ligne = new LignePanier { ProduitId = l.ProduitId, Nom = l.Nom, Prix = l.Prix, Lot = l.Lot, Quantite = l.Quantite, BoiteScannee = l.BoiteScannee,
+                StockProduit = l.StockProduit, RaisonLot = l.RaisonLot, LotConseilleServi = l.LotConseilleServi };
+            ligne.Boites.AddRange(l.Boites ?? []);
+            lignes.Add(ligne);
+        }
         (tiersPayant, organismeId, taux, patient, medecin) = (p.TiersPayant, p.OrganismeId, p.Taux, p.Patient, p.Medecin);
         (datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu) = (p.DatePrescription, p.NumeroOrdonnance, p.RemisePct, p.JetonScan, p.TexteReconnu);
+        (resteSaisi, porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (p.ResteSaisi, p.PorteurAutre, p.PorteurNom, p.PorteurAdresse, p.PorteurPiece);
         if (medecin is not null) medecinTexte = medecin.Nom;
         if (p.VoletChifa is { } brut && (await Api.LireVoletChifaAsync(brut)).Item1 is { } vr) (volet, voletBrut) = (vr, brut);
         await ChargerAttentesAsync();
@@ -1557,12 +1594,19 @@
         (porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (false, null, null, null);
     }
 
-    public async ValueTask DisposeAsync()
+    // Panier non encaissé ni mis en attente, perdu en quittant la caisse (autre écran, déconnexion, changement d'utilisateur,
+    // inactivité) : signalé comme boîtes retirées, sinon quitter contournerait la surveillance « lignes retirées ». À la
+    // déconnexion, appelé juste avant que le jeton soit effacé (SessionPoste.AvantFermeture).
+    private void PanierAbandonne()
     {
-        // Panier non encaissé ni mis en attente, perdu en quittant la caisse (autre écran) : signalé comme boîtes retirées,
-        // sinon quitter l'écran contournerait la surveillance « lignes retirées »
         foreach (var l in lignes.Where(l => l.Quantite > 0).ToList()) SignalerRetrait(l, l.Quantite);
         lignes.Clear();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Session.AvantFermeture -= PanierAbandonne;
+        PanierAbandonne();
         try { await JS.InvokeVoidAsync("pharma.arreterF12"); }
         catch (JSDisconnectedException) { }
         reference?.Dispose();

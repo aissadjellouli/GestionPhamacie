@@ -51,7 +51,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `062`. |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `068`. |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -109,6 +109,14 @@ Le dossier `database/init/` contient trois fichiers :
   ```
 - [ ] **3.4** Ouvrir le port 5080 du pare-feu Windows aux postes de la pharmacie.
 - [ ] **3.5** Vérifier : `http://<serveur>:5080/api/auth/comptoir` répond depuis un poste.
+- [ ] **3.5 bis** **Chiffrer les échanges (HTTPS)** : en `http`, mots de passe, codes comptoir et connexions passent en clair sur le réseau
+  de la pharmacie (Wi-Fi compris).
+  - Lancer `scripts\certificat_mobile.ps1` sur le serveur (voir [scanner-mobile.md](scanner-mobile.md)) : il crée l'autorité de
+    certification de la pharmacie et ouvre `https` sur le port 5443.
+  - Sur chaque poste : installer le certificat de l'autorité (`autorite-pharmacie.crt`) dans « Autorités de certification racines
+    de confiance » de l'ordinateur, puis régler `PHARMA_API=https://<serveur>:5443/` (étape 4).
+  - Une fois tous les postes et téléphones en `https`, fermer le port 5080 du pare-feu aux postes.
+  - À vérifier sur un poste avant le jour J : connexion, vente et impression en `https` (essai non encore fait sur un vrai poste).
 - [ ] **3.6** **Compte super admin** (reprise de données, et plus tard restauration), sur le PC serveur, dans une invite de commandes
   administrateur :
   ```powershell
@@ -133,7 +141,8 @@ Le dossier `database/init/` contient trois fichiers :
 ## Étape 5 — Première connexion et sécurité
 
 - [ ] **5.1** Se connecter avec **`titulaire` / `Provisoire-2026`**.
-- [ ] **5.2** L'écran « Choisissez votre mot de passe » s'ouvre de force. Le titulaire y choisit son mot de passe personnel (8 caractères minimum). Tant que ce n'est pas fait, le serveur refuse toute autre action.
+- [ ] **5.2** L'écran « Choisissez votre mot de passe » s'ouvre de force. Le titulaire y choisit son mot de passe personnel (8 caractères minimum). Tant que ce n'est pas fait, le serveur refuse toute autre action, code comptoir compris.
+- À savoir : changer ou réinitialiser un mot de passe, désactiver un compte (employé parti, téléphone perdu) ou effacer un code comptoir ferme aussitôt les connexions déjà ouvertes de ce compte, sur tous les postes et téléphones.
 - [ ] **5.3** Administration › Langue et pharmacie : nom de la pharmacie, titulaire, adresse, téléphone, **RC, NIF, NIS, AI**, n° d'officine Chifa. Ces informations sont imprimées sur les tickets, factures et rapports.
 - [ ] **5.4** Même page, « Organismes payeurs » : ajouter les organismes conventionnés (militaires…), avec leur adresse et leur NIF.
 
