@@ -51,9 +51,11 @@ Seules les personnes enregistrées par le titulaire reçoivent des messages, et 
 3. La personne lui donne le code reçu ; il le saisit dans « Code reçu » puis « Valider le code ». Code juste : le destinataire est vérifié. 5 codes faux : il faut en demander un nouveau. Seul le haché du code est gardé ; l'envoi et la vérification sont inscrits au journal.
 4. « Retirer la vérification » reste possible à tout moment ; vérifier sans code est impossible.
 
-Chaque e-mail (alerte, test, code, rapport du soir) est **signé du nom de la pharmacie** (Administration › Langue et pharmacie). Changer l'e-mail ou le numéro retire la vérification. Un destinataire désactivé ne reçoit plus rien. La base refuse elle-même (déclencheur `trg_message_destinataire`) tout message vers une adresse différente de celle enregistrée, vers un destinataire désactivé, ou vers un destinataire non vérifié (sauf le test). Chaque ajout ou modification est inscrit au journal.
+Mot de passe du compte d'envoi : une fois enregistré (chiffré), il n'est jamais réaffiché ; le champ est grisé (« Enregistré, chiffré ») et le lien « Changer », sur la ligne du libellé, l'ouvre (avec « Annuler »). Sans mot de passe, le champ est actif avec le lien « Enregistrer ». Le champ reste aligné sur l'adresse de l'expéditeur et l'identifiant. Chaque e-mail (alerte, test, code, rapport du soir) est **signé du nom de la pharmacie** (Administration › Langue et pharmacie). Changer l'e-mail ou le numéro retire la vérification. Un destinataire désactivé ne reçoit plus rien. La base refuse elle-même (déclencheur `trg_message_destinataire`) tout message vers une adresse différente de celle enregistrée, vers un destinataire désactivé, ou vers un destinataire non vérifié (sauf le test). Chaque ajout ou modification est inscrit au journal.
 
 ## File d'attente
+
+Dans Administration › Notifications, la file s'affiche comme les autres listes : **paginée** (10 lignes par défaut, 5 à 200) et **filtrée** par objet (type de message, liste de valeurs), statut (en attente, envoyé, abandonné) et période de création.
 
 Table `message_sortant` : canal, destinataire, objet, corps, statut (`en_attente`, `envoye`, `echec`), tentatives, prochaine tentative, dernière erreur.
 

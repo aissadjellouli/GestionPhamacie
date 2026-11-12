@@ -124,6 +124,7 @@ public static class DependencyInjection
         services.AddSingleton<Application.Achats.IDocumentsAchats, DocumentsAchats>();
         services.AddScoped<Application.Notifications.INotificationsDepot, Notifications.NotificationsSql>();
         services.AddScoped<Application.Notifications.ICodesVerificationDestinataire, Notifications.CodesVerificationDestinataireSql>();
+        services.AddScoped<Application.Notifications.IFileMessagesLecture, Notifications.NotificationsSql>();
         services.AddScoped<Application.Notifications.IDonneesRapport, Notifications.DonneesRapportSql>();
         services.AddSingleton<Application.Notifications.IProtectionSecret, Notifications.ProtectionDpapi>();
         services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();

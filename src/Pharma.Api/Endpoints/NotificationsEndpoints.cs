@@ -72,11 +72,18 @@ internal static class NotificationsEndpoints
                 Results.Ok(new NombreDto(await rapport.EnvoyerAsync(DateOnly.FromDateTime(DateTime.Now), ct))))
            .ExigerTitulaire();
 
-        n.MapGet("/file", async (ConsulterFileMessages consulter, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok((await consulter.ExecuterAsync(user.UtilisateurId(), ct)).Select(m => new MessageSortantDto(
+        // File des messages, paginée et filtrée : ?page=&taille=&type=&statut=&du=&au=
+        n.MapGet("/file", async (int? page, int? taille, string? type, string? statut, DateOnly? du, DateOnly? au, ConsulterFileMessages consulter,
+                ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await consulter.PageAsync(Pharma.Application.Commun.DemandePage.Lire(page, taille),
+                    new FiltreFile(string.IsNullOrWhiteSpace(type) ? null : type, string.IsNullOrWhiteSpace(statut) ? null : statut, du, au), user.UtilisateurId(), ct);
+                return Results.Ok(new PageDto<MessageSortantDto>(p.Lignes.Select(m => new MessageSortantDto(
                     m.Id, m.Canal.Code(), m.Destinataire, m.Adresse, m.Type.Code(), m.Objet, m.Corps, m.Statut, m.Tentatives,
-                    m.ProchaineTentative, m.DerniereErreur, m.CreeLe, m.EnvoyeLe))))
-           .ExigerTitulaire();
+                    m.ProchaineTentative, m.DerniereErreur, m.CreeLe, m.EnvoyeLe)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerTitulaire()
+           .GererErreursMetier();
 
         // ---- Sauvegardes ----
         var s = api.MapGroup("/admin/sauvegardes");

@@ -34,8 +34,34 @@
                         @if (ExpediteurManquant) { <span class="message-champ">Avec un serveur SMTP, l’adresse de l’expéditeur est obligatoire.</span> }</div>
                     <div class="champ" style="flex: 1 1 200px"><label for="n-id">Identifiant</label><input id="n-id" type="text" autocomplete="off" @bind="r.SmtpIdentifiant" /></div>
                     <div class="champ" style="flex: 1 1 200px">
-                        <label for="n-mdp">Mot de passe @(motDePasseEnregistre ? "(enregistré, chiffré)" : "")</label>
-                        <input id="n-mdp" type="password" autocomplete="new-password" placeholder="@(motDePasseEnregistre ? "laisser vide pour le garder" : "")" @bind="nouveauMotDePasse" />
+                        @* Boutons sur la ligne du libellé (liens de la hauteur du texte) : le champ reste aligné sur l'identifiant et l'e-mail *@
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; white-space: nowrap">
+                            <label for="n-mdp">Mot de passe</label>
+                            @if (motDePasseEnregistre && !changementMotDePasse)
+                            {
+                                <button type="button" class="lien-bouton" disabled="@enCours" @onclick="ChangerMotDePasse">Changer</button>
+                            }
+                            else
+                            {
+                                <span style="display: flex; gap: 10px">
+                                    <button type="button" class="lien-bouton" disabled="@(enCours || string.IsNullOrEmpty(nouveauMotDePasse))" @onclick="EnregistrerMotDePasseAsync">Enregistrer</button>
+                                    @if (changementMotDePasse)
+                                    {
+                                        <button type="button" class="lien-bouton" disabled="@enCours" @onclick="AnnulerChangementMotDePasse">Annuler</button>
+                                    }
+                                </span>
+                            }
+                        </div>
+                        @if (motDePasseEnregistre && !changementMotDePasse)
+                        {
+                            @* Mot de passe déjà enregistré : jamais réaffiché, champ grisé ; le changer est un geste volontaire *@
+                            <input id="n-mdp" type="text" value="Enregistré, chiffré" disabled />
+                        }
+                        else
+                        {
+                            <input id="n-mdp" type="password" autocomplete="new-password" data-champ="smtp_mot_de_passe" @ref="champMotDePasse"
+                                   placeholder="@(motDePasseEnregistre ? "nouveau mot de passe" : "mot de passe du compte d’envoi")" @bind="nouveauMotDePasse" @bind:event="oninput" />
+                        }
                     </div>
                 </div>
             </section>
@@ -134,9 +160,26 @@
         <section class="panneau" aria-labelledby="t-file">
             <div style="display: flex; justify-content: space-between; align-items: center">
                 <h2 id="t-file">File d’attente</h2>
-                <button type="button" class="btn" @onclick="ChargerFileAsync">Actualiser</button>
+                <button type="button" class="btn" @onclick="() => ChargerFileAsync()">Actualiser</button>
             </div>
             <p class="detail" style="margin: 0">Sans internet ou sans modem, chaque message est réessayé après 1, 5, 15 puis 60 minutes, ensuite toutes les heures, pendant 7 jours.</p>
+            <div class="filtres-liste" role="search" aria-label="Filtrer la file d’attente" style="margin-top: 8px">
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 220px"><label for="f-type">Objet</label>
+                        <select id="f-type" data-champ="type" @bind="fileType" @bind:after="FiltrerFileAsync">
+                            <option value="">Tous</option>
+                            @foreach (var t in TypesFile) { <option value="@t">@LibelleTypeFile(t)</option> }
+                        </select></div>
+                    <div class="champ" style="flex: 0 0 160px"><label for="f-statut">Statut</label>
+                        <select id="f-statut" data-champ="statut" @bind="fileStatut" @bind:after="FiltrerFileAsync">
+                            <option value="">Tous</option>
+                            @foreach (var s in StatutsFile) { <option value="@s">@LibelleStatut(s)</option> }
+                        </select></div>
+                    <div class="champ" style="flex: 0 0 160px"><label for="f-du">Du</label><input id="f-du" type="date" @bind="fileDu" @bind:after="FiltrerFileAsync" /></div>
+                    <div class="champ" style="flex: 0 0 160px"><label for="f-au">Au</label><input id="f-au" type="date" data-champ="au" @bind="fileAu" @bind:after="FiltrerFileAsync" /></div>
+                    @if (FiltreFileActif) { <button type="button" class="btn" style="align-self: end" @onclick="EffacerFiltresFileAsync">Tout afficher</button> }
+                </div>
+            </div>
             <div class="tableau-cadre">
                 <table class="tableau" style="min-width: 760px">
                     <thead><tr><th scope="col">Créé</th><th scope="col">Canal</th><th scope="col">Destinataire</th><th scope="col">Objet / texte</th><th scope="col">Statut</th></tr></thead>
@@ -155,10 +198,11 @@
                                 </td>
                             </tr>
                         }
-                        @if (file.Count == 0) { <tr><td colspan="5" class="vide">Aucun message.</td></tr> }
+                        @if (file.Count == 0) { <tr><td colspan="5" class="vide">@(FiltreFileActif ? "Aucun message pour ces filtres." : "Aucun message.")</td></tr> }
                     </tbody>
                 </table>
             </div>
+            <Pagination Total="fileTotal" Numero="filePage" Taille="fileTaille" Libelle="Pages de la file d’attente" OnChange="p => ChargerFileAsync(p.Numero, p.Taille)" />
         </section>
     </div>
 </div>
@@ -221,11 +265,26 @@
         (motDePasseEnregistre, dernierRapport) = (d.MotDePasseEnregistre, d.DernierRapport);
     }
 
-    private async Task ChargerFileAsync()
+    // File d'attente : paginée et filtrée par le serveur, comme les autres listes ; un nouvel envoi garde la page et les filtres
+    private int fileTotal, filePage = 1, fileTaille = Pagination.TailleParDefaut;
+    private string fileType = "", fileStatut = "";
+    private DateOnly? fileDu, fileAu;
+    private bool FiltreFileActif => fileType != "" || fileStatut != "" || fileDu is not null || fileAu is not null;
+    private static readonly string[] StatutsFile = ["en_attente", "envoye", "echec"];
+    private static IEnumerable<string> TypesFile => TypesAbonnables.Append("test");
+    private static string LibelleTypeFile(string t) => t == "test" ? "Test et code de vérification" : LibelleType(t);
+
+    private Task ChargerFileAsync() => ChargerFileAsync(filePage, fileTaille);
+    private Task FiltrerFileAsync() => ChargerFileAsync(1, fileTaille);
+    private Task EffacerFiltresFileAsync() { (fileType, fileStatut, fileDu, fileAu) = ("", "", null, null); return FiltrerFileAsync(); }
+
+    private async Task ChargerFileAsync(int page, int taille)
     {
-        string? e;
-        (file, e) = await Api.FileMessagesAsync();
-        erreur ??= e;
+        var (p, e) = await Api.FileMessagesAsync(page, taille, fileType, fileStatut, fileDu, fileAu);
+        if (e is not null) { erreur = e; return; }
+        // Page au-delà de la fin (messages purgés, filtre plus étroit) : retour à la première
+        if (p!.Lignes.Count == 0 && page > 1) { await ChargerFileAsync(1, taille); return; }
+        (file, fileTotal, filePage, fileTaille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
     }
 
     // Champs obligatoires : SMTP (serveur et expéditeur vont ensemble), destinataire (nom, canal, adresse du canal, type)
@@ -248,10 +307,37 @@
         var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
             r.SmtpIdentifiant, string.IsNullOrEmpty(nouveauMotDePasse) ? null : nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde));
         if (e is not null) return e;
-        nouveauMotDePasse = null;
+        (nouveauMotDePasse, changementMotDePasse) = (null, false);
         controleSmtp = false;
         await ChargerReglagesAsync();
         message = "Réglages enregistrés." + (motDePasseEnregistre ? " Mot de passe chiffré sur ce serveur." : "");
+        return null;
+    });
+
+    // Mot de passe d'envoi : enregistré → champ grisé et « Changer le mot de passe » ; sinon champ actif et « Enregistrer le mot de passe »
+    private bool changementMotDePasse;
+    private ElementReference champMotDePasse;
+
+    private async Task ChangerMotDePasse()
+    {
+        (changementMotDePasse, nouveauMotDePasse) = (true, null);
+        StateHasChanged();
+        await Task.Yield();
+        try { await champMotDePasse.FocusAsync(); } catch (InvalidOperationException) { }
+    }
+
+    private void AnnulerChangementMotDePasse() => (changementMotDePasse, nouveauMotDePasse) = (false, null);
+
+    private async Task EnregistrerMotDePasseAsync() => await Executer(async () =>
+    {
+        if (string.IsNullOrEmpty(nouveauMotDePasse)) return "Saisissez le mot de passe du compte d’envoi.";
+        // Les autres réglages sont renvoyés tels qu'ils sont à l'écran : seul le mot de passe change
+        var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
+            r.SmtpIdentifiant, nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde));
+        if (e is not null) return e;
+        (nouveauMotDePasse, changementMotDePasse) = (null, false);
+        await ChargerReglagesAsync();
+        message = "Mot de passe enregistré, chiffré sur ce serveur.";
         return null;
     });
 

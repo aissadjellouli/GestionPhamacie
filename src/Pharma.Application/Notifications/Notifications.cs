@@ -537,8 +537,28 @@ public sealed class ValiderDestinataire(INotificationsDepot depot, IPermissionSe
     }
 }
 
-public sealed class ConsulterFileMessages(INotificationsDepot depot, IPermissionService droits)
+/// <summary>Filtres de la file des messages : type (objet), statut, période de création (jours inclus).</summary>
+public sealed record FiltreFile(string? Type = null, string? Statut = null, DateOnly? Du = null, DateOnly? Au = null);
+
+public interface IFileMessagesLecture
 {
+    Task<Page<MessageEnFile>> PageAsync(DemandePage page, FiltreFile filtre, CancellationToken ct = default);
+}
+
+public sealed class ConsulterFileMessages(INotificationsDepot depot, IPermissionService droits, IFileMessagesLecture? pages = null)
+{
+    public static readonly IReadOnlyList<string> Statuts = ["en_attente", "envoye", "echec"];
+
+    /// <summary>File paginée et filtrée (écran Administration, Notifications), comme les autres listes.</summary>
+    public async Task<Page<MessageEnFile>> PageAsync(DemandePage page, FiltreFile filtre, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(utilisateurId, "consulter la file des messages", ct);
+        if (filtre.Du is { } du && filtre.Au is { } au && au < du) throw new RegleMetierException("La date de fin précède la date de début.", "au");
+        if (filtre.Statut is { } s && !Statuts.Contains(s)) throw new RegleMetierException("Statut inconnu.", "statut");
+        if (filtre.Type is { } t && !Enum.GetValues<TypeNotification>().Any(x => x.Code() == t)) throw new RegleMetierException("Type de message inconnu.", "type");
+        return await (pages ?? throw new InvalidOperationException("Lecture paginée de la file non branchée.")).PageAsync(page, filtre, ct);
+    }
+
     public async Task<IReadOnlyList<MessageEnFile>> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "consulter la file des messages", ct);

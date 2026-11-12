@@ -1,12 +1,13 @@
 using Npgsql;
 using NpgsqlTypes;
+using Pharma.Application.Commun;
 using Pharma.Application.Notifications;
 using Pharma.Domain.Notifications;
 
 namespace Pharma.Infrastructure.Notifications;
 
 /// <summary>Réglages, destinataires et file d'attente des messages (PostgreSQL).</summary>
-public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot
+public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot, IFileMessagesLecture
 {
     // ---- Réglages -----------------------------------------------------------
 
@@ -199,12 +200,33 @@ public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot
     {
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<MessageEnFile>();
-        while (await r.ReadAsync(ct))
-            liste.Add(new MessageEnFile(
-                r.GetInt64(0), r.GetString(1) == "sms" ? CanalNotification.Sms : CanalNotification.Email, r.GetString(2), r.GetString(3),
-                CodesNotification.TypeDepuisCode(r.GetString(4)), Texte(r, 5), r.GetString(6), Texte(r, 7), r.GetString(8), r.GetInt32(9),
-                r.IsDBNull(10) ? null : r.GetDateTime(10), Texte(r, 11), r.GetDateTime(12), r.IsDBNull(13) ? null : r.GetDateTime(13)));
+        while (await r.ReadAsync(ct)) liste.Add(LireMessage(r));
         return liste;
+    }
+
+    private static MessageEnFile LireMessage(NpgsqlDataReader r) => new(
+        r.GetInt64(0), r.GetString(1) == "sms" ? CanalNotification.Sms : CanalNotification.Email, r.GetString(2), r.GetString(3),
+        CodesNotification.TypeDepuisCode(r.GetString(4)), Texte(r, 5), r.GetString(6), Texte(r, 7), r.GetString(8), r.GetInt32(9),
+        r.IsDBNull(10) ? null : r.GetDateTime(10), Texte(r, 11), r.GetDateTime(12), r.IsDBNull(13) ? null : r.GetDateTime(13));
+
+    /// <summary>File des messages, la plus récente d'abord, filtrée par type, statut et période (jours du serveur), une page à la fois.</summary>
+    public async Task<Page<MessageEnFile>> PageAsync(DemandePage page, FiltreFile filtre, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand($"""
+            SELECT m.id, m.canal, d.nom, m.adresse, m.type, m.objet, m.corps, m.corps_html, m.statut, m.tentatives,
+                   m.prochaine_tentative, m.derniere_erreur, m.cree_le, m.envoye_le, {Lecture.PaginationSql.Total}
+            FROM message_sortant m JOIN destinataire_notification d ON d.id = m.destinataire_id
+            WHERE ($1::text IS NULL OR m.type = $1) AND ($2::text IS NULL OR m.statut = $2)
+              AND ($3::date IS NULL OR m.cree_le >= $3::date) AND ($4::date IS NULL OR m.cree_le < $4::date + 1)
+            ORDER BY m.cree_le DESC, m.id DESC
+            {Lecture.PaginationSql.Limite(5)}
+            """);
+        cmd.Parameters.Add(Nul(filtre.Type, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nul(filtre.Statut, NpgsqlDbType.Text));
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Du ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        Lecture.PaginationSql.Parametres(cmd, page);
+        return await Lecture.PaginationSql.LireAsync(cmd, page, 14, LireMessage, ct);
     }
 
     private static string? Texte(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);

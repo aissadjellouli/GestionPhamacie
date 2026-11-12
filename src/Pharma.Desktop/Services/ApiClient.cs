@@ -585,7 +585,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> VerifierCodeDestinataireAsync(long id, string code) =>
         (await PostAsync<CodeVerificationDto, object>($"api/admin/notifications/destinataires/{id}/verification", new(code))).Item2;
     public Task<(NombreDto?, string?)> EnvoyerRapportMaintenantAsync() => PostAsync<object, NombreDto>("api/admin/notifications/rapport", new());
-    public Task<(List<MessageSortantDto>, string?)> FileMessagesAsync() => GetAsync<List<MessageSortantDto>>("api/admin/notifications/file", []);
+    /// <summary>File des messages, paginée ; filtres : type (objet), statut, période de création.</summary>
+    public Task<(PageDto<MessageSortantDto>?, string?)> FileMessagesAsync(int page, int taille, string? type = null, string? statut = null, DateOnly? du = null, DateOnly? au = null) =>
+        GetAsync<PageDto<MessageSortantDto>?>("api/admin/notifications/file?" + Requete(("type", type), ("statut", statut), ("du", du), ("au", au), ("page", page), ("taille", taille)), null);
 
     public Task<(EtatSauvegardesDto?, string?)> SauvegardesAsync() => GetAsync<EtatSauvegardesDto?>("api/admin/sauvegardes", null);
     public async Task<string?> ModifierReglagesSauvegardeAsync(ReglagesSauvegardeDto r) =>
