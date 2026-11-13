@@ -49,6 +49,66 @@ public class SuiviDettesTests
     }
 }
 
+public class FiltrageSuiviDettesTests
+{
+    private static readonly DateOnly Jour = new(2026, 11, 10);
+
+    private static SuiviDettes Suivi() => RegleSuiviDettes.Construire(
+    [
+        new("creance", "patient", 1, "Patient A", "Vente T-1", Jour.AddDays(-45), null, 500, false),   // en retard
+        new("creance", "patient", 1, "Patient A", "Vente T-2", Jour.AddDays(-5), null, 100, false),
+        new("creance", "patient", 2, "Patient B", "Vente T-3", Jour.AddDays(-10), null, 300, false),
+        new("creance", "patient", 3, "Patient B", "Vente T-4", Jour.AddDays(-12), null, 50, false),     // homonyme : autre patient
+        new("creance", "facture_entreprise", 9, "Entreprise", "Facture F-1", Jour.AddDays(-20), Jour.AddDays(10), 900, true),
+        new("dette", "grossiste", 7, "Grossiste A", "Facture 1", Jour.AddDays(-31), null, 4000, false)
+    ], delaiJours: 30, Jour);
+
+    [Fact]
+    public void Categorie_tiers_et_total_de_tout_le_filtre()
+    {
+        var r = FiltrageSuiviDettes.Filtrer(Suivi(), new FiltreSuiviDettes("patient"), new Pharma.Application.Commun.DemandePage(1, 2));
+        Assert.Equal(4, r.Page.Total);                       // toutes les lignes de la catégorie, pas seulement la page
+        Assert.Equal(2, r.Page.Lignes.Count);
+        Assert.Equal(950m, r.Total);                         // total de toutes les pages
+        Assert.True(r.Page.Lignes[0].EnAlerte);              // même ordre que le suivi : alertes d'abord
+        Assert.Empty(r.Tiers);                               // patients : pas de liste de tous les noms, seulement une recherche
+    }
+
+    [Fact]
+    public void Recherche_du_tiers_avec_propositions_sans_majuscules_ni_accents()
+    {
+        var s = Suivi();
+        var page = new Pharma.Application.Commun.DemandePage();
+        var r = FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes("patient", Recherche: "PATIËNT b"), page);
+        // Deux « Patient B » distingués par leur n° ; le tableau suit la saisie
+        Assert.Equal(["Patient B (n° 2)", "Patient B (n° 3)"], r.Tiers.Select(t => t.Nom));
+        Assert.Equal(350m, r.Total);
+        Assert.Empty(FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes("patient", Recherche: "b"), page).Tiers);   // moins de 2 lettres
+        // Grossistes : peu nombreux, liste complète sans saisie
+        Assert.Equal(["Grossiste A"], FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes("grossiste"), page).Tiers.Select(t => t.Nom));
+    }
+
+    [Fact]
+    public void Filtres_tiers_etat_et_periode()
+    {
+        var s = Suivi();
+        var page = new Pharma.Application.Commun.DemandePage();
+        Assert.Equal(600m, FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes("patient", Tiers: "1"), page).Total);
+        Assert.Equal(500m, FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes("patient", Etat: "alerte"), page).Total);
+        Assert.Equal(450m, FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes("patient", Etat: "delai"), page).Total);
+        Assert.Equal(900m, FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes("facture", Etat: "rejetee"), page).Total);
+        Assert.Equal(400m, FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes("patient", Du: Jour.AddDays(-10), Au: Jour), page).Total);
+        Assert.Equal(6, FiltrageSuiviDettes.Filtrer(s, new FiltreSuiviDettes(), page).Page.Total);   // « Tout »
+    }
+
+    [Fact]
+    public void Valeurs_inconnues_ignorees()
+    {
+        var f = FiltreSuiviDettes.Lire("inconnue", "  ", "bizarre", null, null);
+        Assert.Equal(new FiltreSuiviDettes(), f);
+    }
+}
+
 public class SuiviFacturesEcheanceTests
 {
     private static readonly DateOnly Jour = new(2026, 11, 10);

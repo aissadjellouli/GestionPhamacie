@@ -47,6 +47,41 @@ d'œil, et éloignées du menu pour ne pas être confondues avec un écran. Leur
 </div>
 ```
 
+### Écran fixe, sans défilement (règle valable sur tous les écrans, demandée le 2026-11-13)
+
+**Un écran ne défile jamais** : titre, menu, filtres, boutons et pagination restent en place dans la fenêtre (1 536 × 890 sur le
+poste de référence, zoom 100 %). Seul un tableau défile, dans son cadre (règle des listes ci-dessous). Un écran dont le contenu
+dépasse la fenêtre est **découpé en rubriques** avec le menu vertical à gauche (ci-dessous) : une rubrique = ce qui tient dans
+la fenêtre. Exceptions : les fenêtres au-dessus de l'écran (`.voile`), qui défilent dans leur cadre.
+
+### Écran trop chargé : menu vertical de rubriques
+
+Un écran qui empile trop de panneaux est découpé en **rubriques**, avec le menu vertical de l'Administration (même rendu :
+liens à gauche, rubrique active surlignée avec le filet ambre). Utilisé par l'Administration (`.admin`, `.admin-nav`,
+`.admin-contenu`, composant `NavAdmin`), la Trésorerie et Dettes et créances (classes génériques ci-dessous).
+
+```html
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques de …">
+        <a href="ecran?rubrique=…" class="active" aria-current="page">Rubrique <span class="compteur">2</span></a>
+        …
+        <div class="nav-resume"><span class="detail">Solde du coffre</span><strong>…</strong></div>
+    </nav>
+    <div class="contenu-rubrique">
+        <div class="titre-page"><div><h1>Écran · Rubrique</h1><p class="sous-titre">…</p></div></div>
+        <section class="panneau">…</section>
+    </div>
+</div>
+```
+
+- La rubrique est **dans l'adresse** (`?rubrique=…`) : « Retour » revient à la rubrique précédente (voir `navigation.md`).
+- `.compteur` (rouge) à côté d'une rubrique : nombre de choses qui attendent ou sont en alerte (caisses à verser, chèques à remettre,
+  alertes), absent à zéro. `.compteur.neutre` (gris) : simple nombre de lignes (patients, grossistes…), affiché même à zéro.
+- `.nav-groupe-titre` : intitulé de groupe dans le menu (« À recevoir », « À payer »), en petites capitales grises ; les rubriques
+  du groupe sont en retrait (`class="sous-rubrique"`).
+- `.nav-resume` sous le menu : un seul chiffre utile partout dans l'écran (ex. solde du coffre), facultatif.
+- Le titre reprend l'écran et la rubrique (« Trésorerie · Mouvements ») ; le sous-titre dit à quoi sert la rubrique.
+
 ## Hiérarchie du texte
 
 | Rôle | Balise ou classe | Taille | Couleur |
@@ -95,9 +130,32 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 
 ## Listes et fenêtres
 
-- Une liste qui peut grandir est paginée avec le composant `Pagination` : le nombre total de lignes est toujours affiché, et
-  les totaux sont calculés par le serveur sur toutes les pages.
-- **Un filtre sur des valeurs connues est une liste préremplie, jamais une saisie libre** : employé, poste, grossiste, statut, type, rayon… (valeurs prises dans les données : par exemple les employés présents dans le journal ou sur la période). La saisie libre reste pour les recherches sur des valeurs sans fin (nom de produit, n° de facture ou de BL, patient), avec des propositions pendant la saisie quand c'est possible.
+- **Règle des listes, valable sur tous les écrans** (demandée par le titulaire du projet le 2026-11-13) : tout tableau dont le
+  nombre de lignes peut grandir avec l'activité (ventes, patients, produits, lots, factures, journaux, historiques…) est
+  1. **paginé** avec le composant `Pagination` (10 lignes par défaut, taille réglable en bas, toujours visible) : le nombre
+     total de lignes est toujours affiché, et les totaux sont calculés par le serveur sur toutes les pages ;
+  2. **filtré** par des filtres au-dessus du tableau (`.filtres-liste`, voir plus bas), appliqués par le serveur ;
+  3. **retenu par « Retour »** : filtres et page (`Historique.Suivre` / `Historique.Restaurer`) ;
+  4. **défilant dans son cadre** : c'est le tableau qui défile, jamais l'écran. La hauteur du cadre (`.tableau-cadre`) est
+     ajustée à la place qui reste dans la fenêtre (`pharma.tableaux` dans `wwwroot/js/poste.js`, automatique) et la ligne
+     d'en-tête reste visible pendant le défilement.
+
+  Seuls échappent à la pagination les tableaux **bornés par nature**, dont la taille ne dépend pas de l'activité : contenu
+  d'un document (lignes d'une facture), réglages (seuils par grossiste, droits par rôle), rayons, sauvegardes gardées
+  (nombre limité par le réglage), synthèses (échéancier, tableau par jour d'un rapport). Un test d'architecture
+  (`ListesTests`) liste ces exceptions avec leur raison et refuse tout nouveau tableau qui n'y est pas et n'est pas paginé.
+- **Règle des listes déroulantes, valable sur tous les écrans** (filtres comme saisies ; demandée le 2026-11-13) :
+  - **valeurs peu nombreuses et bornées** (employé, poste, grossiste, organisme, banque, statut, type, rayon, motif…) : une
+    **liste préremplie**, jamais une saisie libre ; valeurs prises dans les données (par exemple les employés présents dans le
+    journal ou sur la période) ;
+  - **valeurs sans fin** (patient, entreprise cliente, produit, médecin, lot, n° de facture ou de BL…) : **jamais une liste de
+    toutes les valeurs**, mais un **champ de recherche avec propositions** : propositions dès 2 lettres (dès la 1re pour un
+    produit), 10 au plus, sans tenir compte des majuscules ni des accents, flèches haut et bas, Entrée pour choisir, Échap pour
+    fermer, message « Aucun … pour « saisie » » quand rien ne répond ; le choix fait s'affiche avec un lien « Changer ». Dans
+    un filtre de tableau, le tableau suit la saisie (filtre sur une partie du nom) avant même qu'une proposition soit choisie.
+  - Exemples : choix du produit (composant `ChoixProduit`), du patient et du médecin à la caisse, du patient et de l'entreprise dans
+    l'éditeur de facture, filtre « Tiers » de Dettes et créances (recherche pour patients et factures clients, liste pour
+    grossistes, effets et bordereaux).
 - **Tout tableau paginé a des filtres au-dessus** (`.filtres-liste` : grossiste ou tiers, statut ou type, période « Du » / « Au »,
   recherche selon le tableau), appliqués par le serveur pour que le total et les pages les suivent, avec un bouton
   « Tout afficher » dès qu'un filtre est actif et un message « Aucun … pour ces filtres » quand rien ne répond.

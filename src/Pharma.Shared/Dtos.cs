@@ -236,6 +236,9 @@ public sealed record SuggestionCommandeDto(
     long ProduitId, string Produit, string Statut, int Stock, int QteSuggeree,
     decimal? DernierPrixHt, long? DernierFournisseurId, string? DernierFournisseur);
 
+/// <summary>Produits à commander paginés ; grossistes des derniers achats pour le filtre ; SansAchat : au moins un produit jamais acheté.</summary>
+public sealed record SuggestionsCommandePageDto(PageDto<SuggestionCommandeDto> Page, IReadOnlyList<CodeLibelleDto> Grossistes, bool SansAchat);
+
 /// <summary>Sans prix, le dernier prix d'achat connu est repris.</summary>
 public sealed record AjoutCommandeRequete(long FournisseurId, long ProduitId, int Quantite, decimal? PrixAchatHt);
 public sealed record ModificationLigneCommandeRequete(int Quantite, decimal PrixAchatHt);
@@ -534,6 +537,9 @@ public sealed record ProduitRegistreDto(long Id, string Nom);
 
 public sealed record BalanceMensuelleDto(long ProduitId, string Produit, int Annee, int Mois, int Entrees, int Sorties, int? SoldeFin);
 
+/// <summary>Inscriptions du registre paginées et filtrées par le serveur (produit, période, opération) ; opérations présentes pour le filtre.</summary>
+public sealed record InscriptionsRegistreDto(PageDto<LigneRegistreDto> Page, IReadOnlyList<CodeLibelleDto> Operations, bool NomsMasques);
+
 public sealed record RegistreDto(DateOnly Du, DateOnly Au, string? Produit, IReadOnlyList<LigneRegistreDto> Lignes,
     IReadOnlyList<BalanceMensuelleDto> Balance, bool NomsMasques);
 
@@ -682,6 +688,12 @@ public sealed record SuiviDettesDto(int DelaiJours, DateOnly Jour, decimal Total
     IReadOnlyList<TotalTrancheDto> Tranches, IReadOnlyList<AlerteDetteDto> Alertes);
 
 public sealed record DelaiAlerteDettesRequete(int Jours);
+
+/// <summary>Tiers proposé dans le filtre de la liste : Valeur à renvoyer (identifiant, ou « nom:… » sans identifiant), nom affiché.</summary>
+public sealed record TiersSuiviDto(string Valeur, string Nom);
+
+/// <summary>Liste des sommes dues filtrée et paginée par le serveur ; Total : montant de tout le filtre (toutes pages).</summary>
+public sealed record SuiviDettesLignesDto(PageDto<LigneSuiviDto> Page, decimal Total, IReadOnlyList<TiersSuiviDto> Tiers);
 
 // ---- Barre d'état du poste ------------------------------------------------------------------
 

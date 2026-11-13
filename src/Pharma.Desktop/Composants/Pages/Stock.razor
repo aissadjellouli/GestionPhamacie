@@ -2,35 +2,37 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
+@inject NavigationManager Nav
 
-<div class="page page-serree">
+@* Écran fixe : menu vertical à gauche ; le tableau des produits défile dans son cadre. Rubrique dans l'adresse (stock?rubrique=…) *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques du stock">
+        @foreach (var r in Rubriques.Where(r => r.Permis))
+        {
+            <a href="@($"stock?rubrique={r.Id}")" class="@(r.Id == rubrique ? "active" : null)" aria-current="@(r.Id == rubrique ? "page" : null)">@r.Libelle</a>
+        }
+        <span class="nav-groupe-titre">Autres écrans du stock</span>
+        <a href="tracabilite" class="sous-rubrique">Traçabilité et rappel de lot</a>
+        @if (Session.A("psychotropes.registre")) { <a href="stock/registre" class="sous-rubrique">Registre des psychotropes</a> }
+        <a href="inventaire" class="sous-rubrique">Inventaire</a>
+        <a href="achats?onglet=etiquettes" class="sous-rubrique">Imprimer des étiquettes</a>
+        @if (etat is not null)
+        {
+            <div class="nav-resume"><span class="detail">Valeur du stock</span><strong>@Libelles.Dinars(etat.Indicateurs.ValeurAchat)</strong></div>
+        }
+    </nav>
+
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Stock</h1>
-            <p class="sous-titre">Par produit, avec lots, péremptions et grossistes</p>
-        </div>
-        <div class="actions">
-            <a href="tracabilite" class="btn">Traçabilité et rappel de lot</a>
-            @if (Session.A("psychotropes.registre"))
-            {
-                <a href="stock/registre" class="btn">Registre des psychotropes</a>
-            }
-            else
-            {
-                <button type="button" class="btn" disabled title="Droit « Consulter le registre » nécessaire">Registre des psychotropes</button>
-            }
-            @if (Session.A("catalogue.creer"))
-            {
-                <button type="button" class="btn" @onclick="() => (creation, messageCreation) = (true, null)">Nouveau produit</button>
-            }
-            <a href="achats?onglet=etiquettes" class="btn">Imprimer des étiquettes</a>
-            <a href="inventaire" class="btn btn-principal">Inventaire tournant</a>
+            <h1>Stock · @RubriqueCourante.Libelle</h1>
+            <p class="sous-titre">@RubriqueCourante.SousTitre</p>
         </div>
     </div>
 
-    @if (creation)
+    @if (rubrique == "nouveau")
     {
-        <FicheNouveauProduit OnCree="ProduitCreeAsync" OnAnnule="() => creation = false" />
+        <FicheNouveauProduit OnCree="ProduitCreeAsync" OnAnnule="@(() => Nav.NavigateTo("stock"))" />
     }
     @if (messageCreation is not null)
     {
@@ -49,7 +51,7 @@
     {
         <Chargement Texte="Chargement du stock…" />
     }
-    else
+    else if (rubrique == "ensemble")
     {
         <section class="tuiles" aria-label="Indicateurs">
             <div class="tuile">
@@ -67,8 +69,10 @@
                 <span class="tuile-note">issus de l’ancien logiciel</span>
             </div>
         </section>
-
-        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end">
+    }
+    else if (rubrique == "produits")
+    {
+        <div class="filtres-liste" role="search" aria-label="Filtrer les produits">
             <div class="champ" style="flex: 999 1 320px">
                 <label for="rech">Rechercher (nom, DCI, code-barres, lot)</label>
                 @* Aide à la saisie : propositions du stock (noms, DCI, lots, emplacements) dès 2 caractères *@
@@ -166,9 +170,10 @@
         <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages du stock" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
     }
 
-    <ModificationProduit />
-    <SortieStock LotInitial="Sortie" />
-    <BlocageProduits />
+    @if (rubrique == "modifier") { <ModificationProduit /> }
+    @if (rubrique == "sortie") { <SortieStock LotInitial="Sortie" /> }
+    @if (rubrique == "blocage") { <BlocageProduits /> }
+    </div>
 </div>
 
 @code {
@@ -176,6 +181,29 @@
     [SupplyParameterFromQuery(Name = "sortie")] public long? Sortie { get; set; }
     /// <summary>Produit à ranger, proposé depuis l'alerte « Mettre en avant » (stock dormant).</summary>
     [SupplyParameterFromQuery(Name = "ranger")] public long? Ranger { get; set; }
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+
+    private sealed record RubriqueStock(string Id, string Libelle, string SousTitre, bool Permis = true);
+    private RubriqueStock[] Rubriques =>
+    [
+        new("produits", "Produits", "Par produit, avec lots, péremptions, grossistes et emplacement"),
+        new("ensemble", "Vue d’ensemble", "Références, valeur du stock et lots à date à vérifier"),
+        new("nouveau", "Nouveau produit", "Ajouter un produit au catalogue", Session.A("catalogue.creer")),
+        new("modifier", "Modifier un produit", "Nom, DCI, dosage, forme, code-barres, prix, TVA, remboursement, activation", Session.A("catalogue.creer")),
+        new("sortie", "Sortie de stock", "Périmés, boîtes cassées, dons et échantillons"),
+        new("blocage", "Blocage des produits", "Produits bloqués à l’achat ou à la vente")
+    ];
+    private string rubrique = "produits";
+    private RubriqueStock RubriqueCourante => Rubriques.First(r => r.Id == rubrique);
+
+    protected override void OnParametersSet()
+    {
+        // Lot à sortir (depuis une alerte) : rubrique Sortie ; produit à ranger : rubrique Produits
+        var voulue = Rubrique ?? (Sortie is not null ? "sortie" : "produits");
+        var avant = rubrique;
+        rubrique = Rubriques.FirstOrDefault(r => r.Id == voulue && r.Permis)?.Id ?? "produits";
+        if (avant != rubrique) (messageCreation, erreurRangement) = (null, null);
+    }
 
     // Tableau paginé et filtré par le serveur (recherche, filtre, rayon), comme les autres listes ; la recherche propose
     // des valeurs du stock pendant la saisie (noms, DCI, lots, emplacements)
@@ -228,12 +256,11 @@
         (emplacements, _) = await Api.EmplacementsAsync();
     }
 
-    private bool creation;
     private string? messageCreation;
 
     private async Task ProduitCreeAsync((long Id, string Nom) p)
     {
-        (creation, messageCreation) = (false, $"« {p.Nom} » ajouté au catalogue. Il sera vendable après sa première réception (Achats, Réceptions).");
+        messageCreation = ($"« {p.Nom} » ajouté au catalogue. Il sera vendable après sa première réception (Achats, Réceptions).");
         await ChargerAsync(page, taille);
         (emplacements, _) = await Api.EmplacementsAsync();
     }

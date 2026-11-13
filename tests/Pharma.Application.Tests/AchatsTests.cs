@@ -1,3 +1,4 @@
+using Pharma.Application.Commun;
 using Pharma.Application.Achats;
 using Pharma.Domain.Achats;
 using Pharma.Domain.Commun;
@@ -49,7 +50,8 @@ internal sealed class AchatsEnMemoire : IAchats
 
     public Task<IReadOnlyList<Fournisseur>> FournisseursAsync(CancellationToken ct = default) => throw new NotSupportedException();
     public Task<Pharma.Application.Commun.Page<CommandeResume>> CommandesAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
-    public Task<IReadOnlyList<SuggestionCommande>> SuggestionsAsync(CancellationToken ct = default) => throw new NotSupportedException();
+    public List<SuggestionCommande> Suggestions { get; } = [];
+    public Task<IReadOnlyList<SuggestionCommande>> SuggestionsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<SuggestionCommande>>(Suggestions);
     public List<Pharma.Domain.Stock.LotExistant> MemeNumero { get; } = [];
     public Task<IReadOnlyList<Pharma.Domain.Stock.LotExistant>> LotsMemeNumeroAsync(long produitId, long fournisseurId, string numeroLot, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<Pharma.Domain.Stock.LotExistant>>(MemeNumero);
@@ -68,7 +70,8 @@ internal sealed class AchatsEnMemoire : IAchats
     public Task MarquerEnvoyeAsync(long retourId, CancellationToken ct = default) => throw new NotSupportedException();
     public Task EnregistrerAvoirAsync(long retourId, decimal montant, CancellationToken ct = default) => throw new NotSupportedException();
     public Task RefuserRetourAsync(long retourId, long utilisateurId, string commentaire, CancellationToken ct = default) => throw new NotSupportedException();
-    public Task<IReadOnlyList<LotAEtiqueter>> LotsAEtiqueterAsync(CancellationToken ct = default) => throw new NotSupportedException();
+    public List<LotAEtiqueter> AEtiqueter { get; } = [];
+    public Task<IReadOnlyList<LotAEtiqueter>> LotsAEtiqueterAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<LotAEtiqueter>>(AEtiqueter);
     public Task<IReadOnlyList<EtiquetteBoite>> CreerEtiquettesAsync(long lotId, int nombre, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<EtiquetteBoite>> EtiquettesReceptionAsync(long receptionId, CancellationToken ct = default) => throw new NotSupportedException();
 }
@@ -246,5 +249,63 @@ public class AnalyseReceptionTests
         Assert.All(conflits, c => Assert.Equal(0, c.Index));
         Assert.Contains("30/11/2027", conflits[0].Message);
         Assert.Contains("AM55", conflits[0].Message);
+    }
+}
+
+
+public class LotsAEtiqueterPageTests
+{
+    private static AchatsEnMemoire Achats()
+    {
+        var a = new AchatsEnMemoire();
+        a.AEtiqueter.AddRange(
+        [
+            new(1, "Amlodipine 5 mg cp", "AM55", new DateOnly(2027, 11, 30), 4, 4),
+            new(2, "Oméprazole 20 mg gél", "OMZ7", new DateOnly(2027, 11, 9), 10, 10),
+            new(3, "Paracétamol 500 mg cp", "P8831", new DateOnly(2029, 4, 26), 300, 297)
+        ]);
+        return a;
+    }
+
+    [Fact]
+    public async Task Recherche_sans_accents_sur_produit_ou_lot_et_pagination()
+    {
+        var lister = new ListerLotsAEtiqueter(Achats());
+        Assert.Equal([2L], (await lister.PageAsync("OMEPRAZOLE", null, null, new DemandePage())).Lignes.Select(l => l.LotId));
+        Assert.Equal([1L], (await lister.PageAsync("am55", null, null, new DemandePage())).Lignes.Select(l => l.LotId));
+        var p = await lister.PageAsync(null, null, null, new DemandePage(2, 5));
+        Assert.Equal((3, 0), (p.Total, p.Lignes.Count));   // total de tout le filtre ; page au-delà de la fin vide
+        Assert.Equal(2, (await lister.PageAsync(null, new DateOnly(2027, 12, 31), null, new DemandePage())).Total);
+        Assert.Equal([3L], (await lister.PageAsync(null, null, 3, new DemandePage())).Lignes.Select(l => l.LotId));
+    }
+}
+
+public class SuggestionsCommandePageTests
+{
+    private static AchatsEnMemoire Achats()
+    {
+        var a = new AchatsEnMemoire();
+        a.Suggestions.AddRange(
+        [
+            new(1, "Amlodipine 5 mg cp", "rupture", 0, 10, 120m, 7, "Biopharm"),
+            new(2, "Oméprazole 20 mg gél", "critique", 2, 8, 300m, 8, "Hydrapharm"),
+            new(3, "Paracétamol 500 mg cp", "critique", 3, 20, null, null, null),
+            new(4, "Ibuprofène 400 mg cp", "rupture", 0, 12, 90m, 7, "Biopharm")
+        ]);
+        return a;
+    }
+
+    [Fact]
+    public async Task Filtres_produit_etat_grossiste_et_pagination()
+    {
+        var lister = new ListerSuggestionsCommande(Achats());
+        Assert.Equal([2L], (await lister.PageAsync("OMEPRAZOLE", null, null, new DemandePage())).Page.Lignes.Select(s => s.ProduitId));
+        Assert.Equal([1L, 4L], (await lister.PageAsync(null, "rupture", null, new DemandePage())).Page.Lignes.Select(s => s.ProduitId));
+        Assert.Equal([1L, 4L], (await lister.PageAsync(null, null, 7, new DemandePage())).Page.Lignes.Select(s => s.ProduitId));
+        Assert.Equal([3L], (await lister.PageAsync(null, null, 0, new DemandePage())).Page.Lignes.Select(s => s.ProduitId));   // jamais acheté
+        var p = await lister.PageAsync(null, null, null, new DemandePage(2, 3));
+        Assert.Equal((4, 1), (p.Page.Total, p.Page.Lignes.Count));
+        Assert.Equal(["Biopharm", "Hydrapharm"], p.Grossistes.Select(g => g.Nom));   // sans doublon, par nom
+        Assert.True(p.SansAchat);
     }
 }

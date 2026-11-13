@@ -208,6 +208,23 @@ public class CaisseTests
     }
 
     [Fact]
+    public void Excedent_au_dela_du_seuil_aussi_signale()
+    {
+        var session = new SessionCaisse { FondCaisse = 5000m };
+        var r = session.Cloturer(Comptage.Depuis(new Dictionary<string, decimal> { ["b2000"] = 3, ["b1000"] = 2, ["p100"] = 9 }), ventesEspeces: 2692.50m, seuilEcart: 500m);
+        Assert.Equal(1207.50m, r.Ecart);
+        Assert.True(r.AuDelaDuSeuil);
+        Assert.Equal("Excédent", NatureEcart.Libelle(r.Ecart));
+        Assert.False(NatureEcart.EstManque(r.Ecart));
+    }
+
+    [Theory]
+    [InlineData(-0.5, "Manque")]
+    [InlineData(0, "Écart")]
+    [InlineData(300, "Excédent")]
+    public void Nature_de_l_ecart(double ecart, string attendu) => Assert.Equal(attendu, NatureEcart.Libelle((decimal)ecart));
+
+    [Fact]
     public void Session_deja_cloturee_refusee() =>
         Assert.Throws<RegleMetierException>(() =>
             new SessionCaisse { FermeeLe = DateTime.UtcNow }.Cloturer(Comptage.Depuis(new Dictionary<string, decimal>()), 0, 500));

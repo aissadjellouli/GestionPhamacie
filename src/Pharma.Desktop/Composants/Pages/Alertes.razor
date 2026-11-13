@@ -3,10 +3,27 @@
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
 
-<div class="page">
+@* Écran fixe : menu vertical à gauche (vue d'ensemble, puis les listes d'alertes) ; la liste défile dans son cadre *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques des alertes">
+        <a href="?rubrique=ensemble" class="@(rubrique == "ensemble" ? "active" : null)" aria-current="@(rubrique == "ensemble" ? "page" : null)">Vue d’ensemble</a>
+        <span class="nav-groupe-titre">Alertes ouvertes</span>
+        @foreach (var f in Filtres)
+        {
+            <a href="@($"?rubrique={f.Id}")" class="sous-rubrique @(rubrique == f.Id ? "active" : null)" aria-current="@(rubrique == f.Id ? "page" : null)">
+                @f.Libelle<span class="@(f.Id == "urgent" && f.Nombre > 0 ? "compteur" : "compteur neutre")">@f.Nombre</span>
+            </a>
+        }
+        @if (donnees is not null)
+        {
+            <div class="nav-resume"><span class="detail">Valeur à risque</span><strong class="@(ValeurARisque > 0 ? "montant-du" : null)">@Libelles.Dinars(ValeurARisque)</strong></div>
+        }
+    </nav>
+
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Alertes du jour</h1>
+            <h1>Alertes du jour@(rubrique == "ensemble" ? "" : $" · {Filtres.First(f => f.Id == rubrique).Libelle}")</h1>
             <p class="sous-titre">@Libelles.Aujourdhui() · triées par urgence puis par montant en jeu</p>
         </div>
         @if (Session.A("admin.parametres"))
@@ -27,7 +44,7 @@
     {
         <Chargement Texte="Chargement des alertes…" />
     }
-    else
+    else if (rubrique == "ensemble")
     {
         <section class="tuiles" aria-label="Indicateurs">
             <div class="tuile">
@@ -75,13 +92,10 @@
             </section>
         }
 
-        <div class="filtres" role="group" aria-label="Filtrer les alertes">
-            @foreach (var f in Filtres)
-            {
-                <button type="button" class="puce" aria-pressed="@(f.Id == filtre ? "true" : "false")"
-                        @onclick="() => ChoisirFiltreAsync(f.Id)">@f.Libelle (@f.Nombre)</button>
-            }
-        </div>
+        <p class="pied-page">Les listes d’alertes sont dans le menu à gauche : urgentes, péremption, stock, ou toutes.</p>
+    }
+    else
+    {
 
         @if (confirmation is not null)
         {
@@ -94,7 +108,7 @@
         }
         else
         {
-            <section class="liste" aria-label="Liste des alertes">
+            <section class="liste cadre-defilant" aria-label="Liste des alertes">
                 @foreach (var a in Visibles)
                 {
                     <article class="carte alerte">
@@ -168,6 +182,7 @@
             <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des alertes" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
         }
     }
+    </div>
 </div>
 
 @code {
@@ -199,6 +214,19 @@
     private List<AlerteDto>? alertes;
     private string? erreur;
     private string filtre = "toutes";
+    // Rubrique dans l'adresse (?rubrique=…) : vue d'ensemble ou une liste d'alertes ; « Retour » y revient
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique = "ensemble";
+    private static readonly string[] Listes = ["toutes", "urgent", "peremption", "stock"];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var voulue = Listes.Contains(Rubrique) ? Rubrique! : "ensemble";
+        if (voulue == rubrique) return;
+        rubrique = voulue;
+        confirmation = null;
+        if (Listes.Contains(rubrique) && filtre != rubrique) await ChoisirFiltreAsync(rubrique);
+    }
 
     private sealed record Filtre(string Id, string Libelle, int Nombre);
 
@@ -220,6 +248,9 @@
         Historique.Suivre("alertes", e => { e.Mettre("filtre", filtre); e.Mettre("page", page); e.Mettre("taille", taille); });
         var r = Historique.Restaurer("alertes");
         if (r?.Texte("filtre") is { } f) filtre = f;
+        // La rubrique de l'adresse choisit la liste
+        rubrique = Listes.Contains(Rubrique) ? Rubrique! : "ensemble";
+        if (Listes.Contains(rubrique)) filtre = rubrique;
         await ChargerAsync(r?.Entier("page") ?? 1, r?.Entier("taille") ?? taille);
     }
 

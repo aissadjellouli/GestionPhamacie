@@ -221,7 +221,16 @@ public class NotificationsApplicationTests
         await alertes.EcartCaisseAsync("Vendeur Démo", "Caisse 1", -300m, seuilCaisse: 500m);
         Assert.Empty(depot.Ajoutes);
         await alertes.EcartCaisseAsync("Vendeur Démo", "Caisse 1", -1200m, seuilCaisse: 500m);
-        Assert.Contains(depot.Ajoutes, m => m.Canal == CanalNotification.Sms && m.Corps.StartsWith("Ecart de caisse -1"));
+        Assert.Contains(depot.Ajoutes, m => m.Canal == CanalNotification.Sms && m.Corps.StartsWith("Manque de caisse -1"));
+    }
+
+    [Fact]
+    public async Task Excedent_de_caisse_nomme_comme_tel()
+    {
+        var depot = new NotificationsEnMemoire { Destinataires = { Dest(1, true, TypeNotification.EcartCaisse) } };
+        var alertes = new AlertesTitulaire(depot, new NotificationService(depot));
+        await alertes.EcartCaisseAsync("Vendeur Démo", "Caisse 1", 1207.50m, seuilCaisse: 500m);
+        Assert.Contains(depot.Ajoutes, m => m.Canal == CanalNotification.Sms && m.Corps.StartsWith("Excedent de caisse +1"));
     }
 
     // ---- Destinataires : le titulaire seulement ----

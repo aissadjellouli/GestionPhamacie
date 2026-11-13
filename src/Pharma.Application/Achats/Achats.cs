@@ -212,7 +212,32 @@ public sealed class ObtenirCommande(IAchats achats)
 public sealed class ListerSuggestionsCommande(IAchats achats)
 {
     public Task<IReadOnlyList<SuggestionCommande>> ExecuterAsync(CancellationToken ct = default) => achats.SuggestionsAsync(ct);
+
+    /// <summary>
+    /// Produits à commander, paginés et filtrés (règle des listes) : produit (sans tenir compte des majuscules ni des accents),
+    /// état (rupture, critique), grossiste du dernier achat (0 : aucun achat connu). Ruptures d'abord, puis par nom.
+    /// Les grossistes proposés au filtre (liste bornée) accompagnent la page.
+    /// </summary>
+    public async Task<PageSuggestions> PageAsync(string? recherche, string? statut, long? grossisteId, DemandePage page, CancellationToken ct = default)
+    {
+        var toutes = await achats.SuggestionsAsync(ct);
+        var lignes = toutes
+            .Where(x => TexteRecherche.Contient(recherche, x.Produit)
+                && (string.IsNullOrEmpty(statut) || x.Statut == statut)
+                && (grossisteId is null || (grossisteId == 0 ? x.DernierFournisseurId is null : x.DernierFournisseurId == grossisteId)))
+            .ToList();
+        var grossistes = toutes.Where(x => x.DernierFournisseurId is not null)
+            .Select(x => new GrossisteSuggere(x.DernierFournisseurId!.Value, x.DernierFournisseur ?? "")).Distinct()
+            .OrderBy(g => g.Nom, StringComparer.CurrentCulture).ToList();
+        return new PageSuggestions(new Page<SuggestionCommande>(lignes.Skip(page.Decalage).Take(page.Taille).ToList(), lignes.Count, page.Page, page.Taille),
+            grossistes, toutes.Any(x => x.DernierFournisseurId is null));
+    }
 }
+
+public sealed record GrossisteSuggere(long Id, string Nom);
+
+/// <summary>Page des produits à commander et grossistes des derniers achats (filtre) ; SansAchat : au moins un produit jamais acheté.</summary>
+public sealed record PageSuggestions(Page<SuggestionCommande> Page, IReadOnlyList<GrossisteSuggere> Grossistes, bool SansAchat);
 
 /// <summary>
 /// Ajoute un produit au bon de commande en brouillon du grossiste (créé au besoin).
@@ -596,6 +621,20 @@ public sealed class SuivreRetour(IAchats achats, IPermissionService droits, IDoc
 public sealed class ListerLotsAEtiqueter(IAchats achats)
 {
     public Task<IReadOnlyList<LotAEtiqueter>> ExecuterAsync(CancellationToken ct = default) => achats.LotsAEtiqueterAsync(ct);
+
+    /// <summary>
+    /// Lots à étiqueter filtrés et paginés par le serveur (règle des listes) : recherche sur le produit ou le n° de lot (sans majuscules
+    /// ni accents), péremption jusqu'à une date, ou un lot précis (lien depuis une réception ou une alerte). Plus récents d'abord.
+    /// </summary>
+    public async Task<Page<LotAEtiqueter>> PageAsync(string? recherche, DateOnly? perimeAvant, long? lotId, DemandePage page, CancellationToken ct = default)
+    {
+        var lots = (await achats.LotsAEtiqueterAsync(ct))
+            .Where(l => (lotId is null || l.LotId == lotId)
+                && TexteRecherche.Contient(recherche, l.Produit, l.NumeroLot)
+                && (perimeAvant is null || l.DatePeremption <= perimeAvant))
+            .ToList();
+        return new Page<LotAEtiqueter>(lots.Skip(page.Decalage).Take(page.Taille).ToList(), lots.Count, page.Page, page.Taille);
+    }
 }
 
 public sealed record EtiquettesImprimables(IReadOnlyList<string> Codes, byte[] Pdf, string Zpl);

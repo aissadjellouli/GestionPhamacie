@@ -12,14 +12,15 @@
     <div class="erreur" role="alert">@erreur</div>
 }
 
-<div class="achats-grille">
+@* Vue « a-commander » : ajout et suggestions ; vue « bons » : liste des bons et détail (écran fixe : une partie à la fois) *@
+<div class="@(Vue == "a-commander" ? "liste" : "achats-grille")">
     <div class="liste">
-        @if (PeutCommander)
+        @if (PeutCommander && Vue != "bons")
         {
             <section class="panneau" aria-labelledby="t-ajout">
                 <h2 id="t-ajout">Ajouter un produit à commander</h2>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 1 1 200px">
+                    <div class="champ" style="flex: 1 1 200px; min-width: 0">
                         <label for="c-gros" class="requis">Grossiste</label>
                         <select id="c-gros" data-champ="grossiste" @ref="champGrossiste" @bind="fournisseurId" class="@Obligatoire.Classe(GrossisteManque)" aria-invalid="@Obligatoire.Aria(GrossisteManque)">
                             @foreach (var f in fournisseurs.Where(x => x.Actif || x.Id == fournisseurId))
@@ -29,11 +30,11 @@
                         </select>
                     </div>
                     <ChoixProduit @ref="choixProduit" Id="c-prod" Style="flex: 3 1 260px" Requis="true" OnChoisi="Choisir" OnEfface="() => produitChoisi = null" />
-                    <div class="champ" style="flex: 0 0 110px">
+                    <div class="champ" style="flex: 0 0 110px; min-width: 0">
                         <label for="c-qte" class="requis">Quantité</label>
                         <input id="c-qte" type="number" min="1" @ref="champQuantite" @bind="quantite" class="@Obligatoire.Classe(QuantiteInvalide)" aria-invalid="@Obligatoire.Aria(QuantiteInvalide)" />
                     </div>
-                    <div class="champ" style="flex: 0 0 150px">
+                    <div class="champ" style="flex: 0 0 150px; min-width: 0">
                         <label for="c-prix">Prix HT (DA)</label>
                         <input id="c-prix" type="number" min="0" step="0.01" placeholder="dernier prix" @bind="prix" />
                     </div>
@@ -45,47 +46,70 @@
                         <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => AjouterAsync(produitChoisi.Id)">Ajouter au bon</button>
                     </div>
                 }
-                <p class="detail" style="margin: 0">Le produit va sur le bon en brouillon du grossiste (créé au besoin). Sans prix, le dernier prix d’achat est repris ; le prix facturé est saisi à la réception.</p>
+                <p class="detail" style="margin: 0">Ajouté au bon en brouillon du grossiste (créé au besoin) ; sans prix, le dernier prix d’achat est repris.</p>
             </section>
 
-            @if (suggestions.Count > 0)
-            {
-                <section class="panneau" aria-labelledby="t-sugg">
-                    <h2 id="t-sugg">À commander (ruptures et stocks critiques)</h2>
-                    <table class="tableau" style="min-width: 0">
-                        <thead><tr><th scope="col">Produit</th><th scope="col">Stock</th><th scope="col">Suggéré</th><th scope="col">Dernier achat</th><th scope="col"></th></tr></thead>
-                        <tbody>
-                            @foreach (var s in suggestions)
-                            {
-                                <tr>
-                                    <td><span class="nom">@s.Produit</span><br /><span class="pastille @(s.Statut == "rupture" ? "urgent" : "attention")">@(s.Statut == "rupture" ? "Rupture" : "Critique")</span></td>
-                                    <td>@s.Stock</td>
-                                    <td>@Math.Max(1, s.QteSuggeree)</td>
-                                    <td>@(s.DernierPrixHt is { } p ? $"{Libelles.Dinars(p, 2)} · {s.DernierFournisseur}" : "aucun")</td>
-                                    <td><button type="button" class="btn" disabled="@enCours" @onclick="() => AjouterSuggestionAsync(s)">Ajouter</button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </section>
-            }
+            <h2 id="t-sugg" style="margin: 0">À commander (ruptures et stocks critiques)</h2>
+            <div class="filtres-liste" role="search" aria-label="Filtrer les produits à commander">
+                <div class="champ" style="flex: 1 1 240px"><label for="fs-recherche">Produit</label>
+                    <input id="fs-recherche" type="search" autocomplete="off" placeholder="Ex. amlodipine" value="@sRecherche" @oninput="RechercheSuggestionsAsync" /></div>
+                <div class="champ" style="flex: 0 0 160px"><label for="fs-etat">État</label>
+                    <select id="fs-etat" @bind="sStatut" @bind:after="PremierePageSuggestionsAsync">
+                        <option value="">Tous</option>
+                        <option value="rupture">Rupture</option>
+                        <option value="critique">Critique</option>
+                    </select></div>
+                <div class="champ" style="flex: 0 0 220px"><label for="fs-grossiste">Dernier grossiste</label>
+                    <select id="fs-grossiste" @bind="sGrossiste" @bind:after="PremierePageSuggestionsAsync">
+                        <option value="">Tous</option>
+                        @foreach (var g in grossistesSuggestions) { <option value="@g.Code">@g.Libelle</option> }
+                        @if (sansAchat) { <option value="0">Jamais acheté</option> }
+                    </select></div>
+                @if (FiltreSuggestionsActif) { <button type="button" class="btn" @onclick="EffacerFiltresSuggestionsAsync">Tout afficher</button> }
+            </div>
+            <section class="tableau-cadre" aria-labelledby="t-sugg">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Produit</th><th scope="col">État</th><th scope="col">Stock</th><th scope="col">Suggéré</th><th scope="col">Dernier achat</th><th scope="col"></th></tr></thead>
+                    <tbody>
+                        @foreach (var s in suggestions)
+                        {
+                            <tr>
+                                <td><span class="nom">@s.Produit</span></td>
+                                <td><span class="pastille @(s.Statut == "rupture" ? "urgent" : "attention")">@(s.Statut == "rupture" ? "Rupture" : "Critique")</span></td>
+                                <td>@s.Stock</td>
+                                <td>@Math.Max(1, s.QteSuggeree)</td>
+                                <td>@(s.DernierPrixHt is { } p ? $"{Libelles.Dinars(p, 2)} · {s.DernierFournisseur}" : "aucun")</td>
+                                <td><button type="button" class="btn" disabled="@enCours" @onclick="() => AjouterSuggestionAsync(s)">Ajouter</button></td>
+                            </tr>
+                        }
+                        @if (suggestions.Count == 0)
+                        {
+                            <tr><td colspan="6" class="vide">@(FiltreSuggestionsActif ? "Aucun produit à commander pour ces filtres." : "Aucune rupture ni stock critique : rien à commander.")</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+            <Pagination Total="totalSuggestions" Numero="pageSuggestions" Taille="tailleSuggestions" Libelle="Pages des produits à commander" OnChange="p => ChargerSuggestionsAsync(p.Numero, p.Taille)" />
         }
+        @if (Vue == "a-commander" && !PeutCommander) { <p class="vide">Droit « achats.commander » nécessaire pour ajouter des produits à commander.</p> }
 
+        @if (Vue != "a-commander")
+        {
         <div class="filtres-liste" role="search" aria-label="Filtrer les bons de commande">
-            <div class="champ" style="flex: 1 1 200px"><label for="fc-grossiste">Grossiste</label>
+            <div class="champ" style="flex: 1 1 120px; min-width: 0"><label for="fc-grossiste">Grossiste</label>
                 <select id="fc-grossiste" @bind="fFournisseur" @bind:after="PremierePageAsync">
                     <option value="0">Tous</option>
                     @foreach (var g in fournisseurs) { <option value="@g.Id">@g.RaisonSociale</option> }
                 </select>
             </div>
-            <div class="champ" style="flex: 0 0 190px"><label for="fc-statut">Statut</label>
+            <div class="champ" style="flex: 0 0 130px; min-width: 0"><label for="fc-statut">Statut</label>
                 <select id="fc-statut" @bind="fStatut" @bind:after="PremierePageAsync">
                     <option value="">Tous</option>
                     @foreach (var s in StatutsCommande) { <option value="@s">@Libelles.StatutCommande(s)</option> }
                 </select>
             </div>
-            <div class="champ" style="flex: 0 0 160px"><label for="fc-du">Du</label><input id="fc-du" type="date" @bind="fDu" @bind:after="PremierePageAsync" /></div>
-            <div class="champ" style="flex: 0 0 160px"><label for="fc-au">Au</label><input id="fc-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
+            <div class="champ" style="flex: 0 0 150px; min-width: 0"><label for="fc-du">Du</label><input id="fc-du" type="date" @bind="fDu" @bind:after="PremierePageAsync" /></div>
+            <div class="champ" style="flex: 0 0 150px; min-width: 0"><label for="fc-au">Au</label><input id="fc-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
             @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
         </div>
         <section class="tableau-cadre" aria-label="Bons de commande">
@@ -110,9 +134,12 @@
             </table>
         </section>
         <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des bons de commande" OnChange="p => AllerPageAsync(p.Numero, p.Taille)" />
+        }
     </div>
 
-    <aside class="panneau" aria-label="Détail du bon">
+    @if (Vue != "a-commander")
+    {
+    <aside class="panneau cadre-defilant" aria-label="Détail du bon">
         @if (detail is null)
         {
             <p class="vide">Choisissez un bon pour le voir, le modifier ou l’émettre.</p>
@@ -134,8 +161,8 @@
                             <td>@l.Produit</td>
                             @if (brouillon && PeutCommander)
                             {
-                                <td><input type="number" min="0" style="width: 80px" aria-label="Quantité de @l.Produit" @bind="l.Quantite" @bind:after="() => EnregistrerLigneAsync(l)" /></td>
-                                <td><input type="number" min="0" step="0.01" style="width: 110px" aria-label="Prix HT de @l.Produit" @bind="l.Prix" @bind:after="() => EnregistrerLigneAsync(l)" /></td>
+                                <td><input type="number" min="0" style="width: 64px" aria-label="Quantité de @l.Produit" @bind="l.Quantite" @bind:after="() => EnregistrerLigneAsync(l)" /></td>
+                                <td><input type="number" min="0" step="0.01" style="width: 90px" aria-label="Prix HT de @l.Produit" @bind="l.Prix" @bind:after="() => EnregistrerLigneAsync(l)" /></td>
                             }
                             else
                             {
@@ -172,9 +199,12 @@
             </div>
         }
     </aside>
+    }
 </div>
 
 @code {
+    /// <summary>Partie affichée : « a-commander » (ajout et suggestions), « bons » (liste et détail), vide (tout).</summary>
+    [Parameter] public string Vue { get; set; } = "";
     [Parameter] public long? ProduitAAjouter { get; set; }
     [Parameter] public long? CommandeOuverte { get; set; }
     [Parameter] public string? NomProduit { get; set; }
@@ -212,7 +242,34 @@
     private bool FiltreActif => fFournisseur > 0 || fStatut != "" || fDu is not null || fAu is not null;
     private Task PremierePageAsync() { page = 1; return RechargerAsync(); }
     private Task EffacerFiltresAsync() { (fFournisseur, fStatut, fDu, fAu) = (0, "", null, null); return PremierePageAsync(); }
+    // Produits à commander : page et filtres appliqués par le serveur (règle des listes)
     private List<SuggestionCommandeDto> suggestions = [];
+    private List<CodeLibelleDto> grossistesSuggestions = [];
+    private bool sansAchat;
+    private int totalSuggestions, pageSuggestions = 1, tailleSuggestions = Pagination.TailleParDefaut, requeteSuggestions;
+    private string sRecherche = "", sStatut = "", sGrossiste = "";
+    private bool FiltreSuggestionsActif => sRecherche.Trim().Length > 0 || sStatut != "" || sGrossiste != "";
+    private Task PremierePageSuggestionsAsync() => ChargerSuggestionsAsync(1, tailleSuggestions);
+    private Task EffacerFiltresSuggestionsAsync() { (sRecherche, sStatut, sGrossiste) = ("", "", ""); return PremierePageSuggestionsAsync(); }
+
+    /// <summary>Saisie : rechargement après une courte pause (pas à chaque touche).</summary>
+    private async Task RechercheSuggestionsAsync(ChangeEventArgs e)
+    {
+        sRecherche = e.Value?.ToString() ?? "";
+        var n = ++requeteSuggestions;
+        await Task.Delay(250);
+        if (n == requeteSuggestions) await PremierePageSuggestionsAsync();
+    }
+
+    private async Task ChargerSuggestionsAsync(int numero, int nouvelleTaille)
+    {
+        var (r, e) = await Api.SuggestionsCommandePageAsync(sRecherche, sStatut, long.TryParse(sGrossiste, out var g) ? g : null, numero, nouvelleTaille);
+        if (r is null) { erreur ??= e; return; }
+        // Page au-delà de la fin (produits commandés entre-temps) : retour à la première
+        if (r.Page.Lignes.Count == 0 && numero > 1) { await ChargerSuggestionsAsync(1, nouvelleTaille); return; }
+        (suggestions, totalSuggestions, pageSuggestions, tailleSuggestions) = (r.Page.Lignes.ToList(), r.Page.Total, r.Page.Numero, r.Page.Taille);
+        (grossistesSuggestions, sansAchat) = (r.Grossistes.ToList(), r.SansAchat);
+    }
     private CommandeAchatDetailDto? detail;
     private List<LigneEdition> lignesEdition = [];
     private long fournisseurId;
@@ -241,26 +298,31 @@
         {
             e.Mettre("grossiste", fFournisseur > 0 ? fFournisseur : null); e.Mettre("statut", fStatut); e.Mettre("du", fDu); e.Mettre("au", fAu);
             e.Mettre("page", page); e.Mettre("taille", taille); e.Mettre("bon", detail?.Entete.Id);
+            e.Mettre("s_recherche", sRecherche); e.Mettre("s_etat", sStatut); e.Mettre("s_grossiste", sGrossiste);
+            e.Mettre("s_page", pageSuggestions); e.Mettre("s_taille", tailleSuggestions);
         });
         var r = Historique.Restaurer("commandes");
         if (r is not null)
         {
             (fFournisseur, fStatut, fDu, fAu) = (r.Long("grossiste") ?? 0, r.Texte("statut") ?? "", r.Date("du"), r.Date("au"));
             (page, taille) = (r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+            (sRecherche, sStatut, sGrossiste) = (r.Texte("s_recherche") ?? "", r.Texte("s_etat") ?? "", r.Texte("s_grossiste") ?? "");
+            (pageSuggestions, tailleSuggestions) = (r.Entier("s_page") ?? 1, r.Entier("s_taille") ?? tailleSuggestions);
         }
         await RechargerAsync();
         if (r?.Long("bon") is { } bon) await OuvrirAsync(bon);
-        if (PeutCommander) (suggestions, _) = await Api.SuggestionsCommandeAsync();
+        if (PeutCommander && Vue != "bons") await ChargerSuggestionsAsync(pageSuggestions, tailleSuggestions);
 
         // Arrivée depuis une alerte « Commander » : produit présélectionné, grossiste et quantité suggérés
         if (ProduitAAjouter is { } pid && PeutCommander)
         {
-            if (suggestions.FirstOrDefault(s => s.ProduitId == pid) is { } s)
+            var (toutes, _) = await Api.SuggestionsCommandeAsync();
+            var connu = toutes.FirstOrDefault(s => s.ProduitId == pid);
+            if (connu is not null)
             {
-                fournisseurId = s.DernierFournisseurId ?? fournisseurId;
-                quantite = Math.Max(1, s.QteSuggeree);
+                fournisseurId = connu.DernierFournisseurId ?? fournisseurId;
+                quantite = Math.Max(1, connu.QteSuggeree);
             }
-            var connu = suggestions.FirstOrDefault(s => s.ProduitId == pid);
             var nom = connu?.Produit ?? NomProduit;
             if (nom is not null)
             {
@@ -319,6 +381,7 @@
             if (e is not null) return e;
             message = $"{s.Produit} : {Math.Max(1, s.QteSuggeree)} boîte(s) ajoutée(s) au bon de {s.DernierFournisseur ?? "ce grossiste"}.";
             suggestions.Remove(s);
+            totalSuggestions--;
             await RechargerAsync();
             await OuvrirAsync(r!.Id);
             return null;

@@ -47,6 +47,17 @@ public sealed record Comptage(IReadOnlyList<LigneComptage> Lignes)
 /// <summary>Résultat de la clôture : attendu = fond de caisse + ventes en espèces ; écart = compté − attendu.</summary>
 public sealed record ResultatCloture(decimal FondCaisse, decimal VentesEspeces, decimal Attendu, decimal Compte, decimal Ecart, bool AuDelaDuSeuil);
 
+/// <summary>
+/// Nature d'un écart de caisse : manque (moins d'argent que l'attendu) ou excédent (plus d'argent).
+/// Les deux sont surveillés au-delà du seuil : un excédent signale souvent une vente non enregistrée ou une monnaie mal rendue.
+/// </summary>
+public static class NatureEcart
+{
+    public static bool EstManque(decimal ecart) => ecart < 0;
+    /// <summary>« Manque » ou « Excédent » (écart nul : « Écart »).</summary>
+    public static string Libelle(decimal ecart) => ecart < 0 ? "Manque" : ecart > 0 ? "Excédent" : "Écart";
+}
+
 public class SessionCaisse
 {
     public long Id { get; init; }

@@ -5,14 +5,42 @@
 @inject HistoriqueNavigation Historique
 
 @* Dettes et créances de tous les tiers : patients, factures clients, organismes, grossistes, effets.
-   Échéancier par ancienneté et alertes au-delà du délai réglé par le titulaire. *@
-<div class="page">
+   Échéancier par ancienneté et alertes au-delà du délai réglé par le titulaire.
+   Découpé en rubriques avec le menu vertical de l'Administration ; la rubrique est dans l'adresse (dettes?onglet=…). *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques des dettes et créances">
+        @foreach (var r in Rubriques)
+        {
+            @if (r.Groupe is { } g)
+            {
+                <span class="nav-groupe-titre">@g</span>
+            }
+            else
+            {
+                var alerte = r.Id == "alertes";
+                var nombre = suivi is null ? (int?)null : alerte ? suivi.Alertes.Sum(a => a.Nombre) : r.Liste ? Lignes(suivi, Filtre(r.Id)).Count() : null;
+                <a href="@(r.Id == "synthese" ? "dettes" : $"dettes?onglet={r.Id}")" class="@(r.SousRubrique ? "sous-rubrique" : null) @(r.Id == rubrique ? "active" : null)"
+                   aria-current="@(r.Id == rubrique ? "page" : null)">
+                    @r.Libelle@if (nombre is { } n && (!alerte || n > 0)) { <span class="@(alerte ? "compteur" : "compteur neutre")" aria-label="@($"{n} ligne(s)")">@n</span> }
+                </a>
+            }
+        }
+        @if (suivi is { } t)
+        {
+            <div class="nav-resume">
+                <span class="detail">À recevoir</span><strong>@Libelles.Dinars(t.TotalCreances, 2)</strong>
+                <span class="detail" style="margin-top: 6px">À payer</span><strong>@Libelles.Dinars(t.TotalDettes, 2)</strong>
+            </div>
+        }
+    </nav>
+
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Dettes et créances</h1>
-            <p class="sous-titre">Ce qui est dû à la pharmacie (patients, factures, organismes) et ce qu’elle doit (grossistes, effets), par ancienneté</p>
+            <h1>Dettes et créances · @RubriqueCourante.Libelle</h1>
+            <p class="sous-titre">@RubriqueCourante.SousTitre</p>
         </div>
-        <button type="button" class="btn" disabled="@enCours" @onclick="ChargerAsync">Actualiser</button>
+        <button type="button" class="btn" disabled="@enCours" @onclick="ActualiserAsync">Actualiser</button>
     </div>
 
     @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -22,7 +50,7 @@
     {
         @if (erreur is null) { <Chargement /> }
     }
-    else
+    else if (rubrique == "synthese")
     {
         <div class="tuiles">
             <div class="tuile">
@@ -42,8 +70,23 @@
             </div>
         </div>
 
+        <section class="panneau" aria-labelledby="t-echeancier">
+            <h2 id="t-echeancier">Échéancier par ancienneté</h2>
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col"></th><th scope="col">0 à 30 jours</th><th scope="col">31 à 60 jours</th><th scope="col">Plus de 60 jours</th></tr></thead>
+                    <tbody>
+                        <tr><td class="nom">À recevoir</td><td>@Tranche(s, "creance", "0-30")</td><td>@Tranche(s, "creance", "31-60")</td><td>@Tranche(s, "creance", "61+")</td></tr>
+                        <tr><td class="nom">À payer aux grossistes</td><td>@Tranche(s, "dette", "0-30")</td><td>@Tranche(s, "dette", "31-60")</td><td>@Tranche(s, "dette", "61+")</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+    else if (rubrique == "alertes")
+    {
         <section class="panneau" aria-labelledby="t-alertes">
-            <h2 id="t-alertes">Alertes</h2>
+            <h2 id="t-alertes">Sommes en retard</h2>
             @if (s.Alertes.Count == 0)
             {
                 <p class="vide" style="margin: 0">Rien en retard : aucune facture échue, aucune dette ni créance au-delà de @s.DelaiJours jours.</p>
@@ -63,42 +106,75 @@
                 </div>
             }
         </section>
-
-        <section class="panneau" aria-labelledby="t-echeancier">
-            <h2 id="t-echeancier">Échéancier par ancienneté</h2>
-            <div class="tableau-cadre">
-                <table class="tableau" style="min-width: 0">
-                    <thead><tr><th scope="col"></th><th scope="col">0 à 30 jours</th><th scope="col">31 à 60 jours</th><th scope="col">Plus de 60 jours</th></tr></thead>
-                    <tbody>
-                        <tr><td class="nom">À recevoir</td><td>@Tranche(s, "creance", "0-30")</td><td>@Tranche(s, "creance", "31-60")</td><td>@Tranche(s, "creance", "61+")</td></tr>
-                        <tr><td class="nom">À payer aux grossistes</td><td>@Tranche(s, "dette", "0-30")</td><td>@Tranche(s, "dette", "31-60")</td><td>@Tranche(s, "dette", "61+")</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <div class="filtres" role="tablist" aria-label="Tiers">
-            @foreach (var (code, libelle) in Filtres)
+    }
+    else
+    {
+        @* Filtres appliqués par le serveur : le total et les pages les suivent *@
+        <div class="filtres-liste" role="search" aria-label="Filtrer les sommes dues">
+            @if (TiersEnListe)
             {
-                <button type="button" role="tab" class="puce" aria-selected="@(filtre == code ? "true" : "false")" aria-pressed="@(filtre == code ? "true" : "false")"
-                        @onclick="@(() => Nav.NavigateTo(Nav.GetUriWithQueryParameter("onglet", code)))">@libelle (@Lignes(s, code).Count())</button>
-            }
-            <label class="case"><input type="checkbox" @bind="alertesSeulement" /><span>En alerte seulement</span></label>
-        </div>
-
-        <section class="panneau" aria-label="Détail des sommes dues">
-            @{ var lignes = Lignes(s, filtre).Where(l => !alertesSeulement || l.EnAlerte).ToList(); }
-            @if (lignes.Count == 0)
-            {
-                <p class="vide" style="margin: 0">Aucune somme due dans cette catégorie.</p>
+                @* Tiers peu nombreux (grossistes, organismes) : liste complète *@
+                <div class="champ" style="flex: 1 1 240px"><label for="fd-tiers">Tiers</label>
+                    <select id="fd-tiers" @bind="fTiers" @bind:after="PremierePageAsync">
+                        <option value="">Tous</option>
+                        @foreach (var tf in tiersFiltre) { <option value="@tf.Valeur">@tf.Nom</option> }
+                    </select>
+                </div>
             }
             else
             {
-                <div class="tableau-cadre">
+                @* Tiers sans fin (patients, clients) : recherche avec propositions dès 2 lettres ; le tableau suit la saisie *@
+                <div class="champ recherche" style="flex: 1 1 280px">
+                    <label for="fd-tiers">Tiers</label>
+                    <input id="fd-tiers" type="search" autocomplete="off" placeholder="Nom (2 lettres au moins)"
+                           role="combobox" aria-autocomplete="list" aria-expanded="@(PropositionsVisibles ? "true" : "false")" aria-controls="fd-tiers-liste"
+                           aria-activedescendant="@(PropositionsVisibles && actifTiers >= 0 ? $"fd-tiers-opt-{actifTiers}" : null)"
+                           value="@rechercheTiers" @oninput="SaisieTiersAsync" @onkeydown="ToucheTiersAsync"
+                           @onfocus="() => propositionsOuvertes = true" @onblur="() => propositionsOuvertes = false" />
+                    @if (PropositionsVisibles)
+                    {
+                        <ul class="suggestions" id="fd-tiers-liste" role="listbox" aria-label="Tiers proposés">
+                            @if (tiersFiltre.Count == 0)
+                            {
+                                <li class="choix-vide" role="option" aria-disabled="true">Aucun tiers pour « @rechercheTiers ».</li>
+                            }
+                            @for (var i = 0; i < tiersFiltre.Count; i++)
+                            {
+                                var tf = tiersFiltre[i];
+                                var index = i;
+                                <li id="@($"fd-tiers-opt-{index}")" role="option" aria-selected="@(index == actifTiers ? "true" : "false")">
+                                    <button type="button" tabindex="-1" class="@(index == actifTiers ? "actif" : null)"
+                                            @onmousedown:preventDefault @onmousedown="() => ChoisirTiersAsync(tf)" @onmouseenter="() => actifTiers = index">
+                                        <span><strong>@tf.Nom</strong></span>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+            <div class="champ" style="flex: 0 0 190px"><label for="fd-etat">État</label>
+                <select id="fd-etat" @bind="fEtat" @bind:after="PremierePageAsync">
+                    <option value="">Tous</option>
+                    <option value="alerte">En alerte</option>
+                    <option value="delai">Dans le délai</option>
+                    <option value="rejetee">Rejetée</option>
+                </select>
+            </div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fd-du">Due depuis le</label><input id="fd-du" type="date" @bind="fDu" @bind:after="PremierePageAsync" /></div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fd-au">Jusqu’au</label><input id="fd-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
+            @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
+        </div>
+
+        <section class="tableau-cadre" aria-label="Détail des sommes dues">
                     <table class="tableau" style="min-width: 760px">
                         <thead><tr><th scope="col">Tiers</th><th scope="col">Pièce</th><th scope="col">Depuis</th><th scope="col">Ancienneté</th><th scope="col">Montant</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Régler</span></th></tr></thead>
                         <tbody>
-                            @foreach (var l in lignes)
+                            @if (lignesPage.Count == 0)
+                            {
+                                <tr><td colspan="7" class="vide">@(FiltreActif ? "Aucune somme due pour ces filtres." : "Aucune somme due dans cette catégorie.")</td></tr>
+                            }
+                            @foreach (var l in lignesPage)
                             {
                                 <tr>
                                     <td class="nom"><LienContact Type="@Libelles.ContactDette(l.Categorie)" Id="l.TiersId" Nom="@l.Tiers" /><br /><span class="detail">@LibelleCategorie(l.Categorie)</span></td>
@@ -127,42 +203,123 @@
                                 </tr>
                             }
                         </tbody>
+                        @if (totalLignes > 0)
+                        {
+                            @* Total calculé par le serveur sur tout le filtre (toutes les pages) *@
+                            <tfoot><tr><th scope="row" colspan="4">Total · @totalLignes ligne(s)</th><td><strong>@Libelles.Dinars(totalMontant, 2)</strong></td><td colspan="2"></td></tr></tfoot>
+                        }
                     </table>
-                </div>
-                <p style="margin: 8px 0 0"><strong>Total : @Libelles.Dinars(lignes.Sum(l => l.Montant), 2)</strong></p>
-            }
         </section>
+        <Pagination Total="totalLignes" Numero="pageLignes" Taille="tailleLignes" Occupe="enCours" Libelle="Pages des sommes dues" OnChange="p => ChargerLignesAsync(p.Numero, p.Taille)" />
 
         <p class="pied-page">
             « Encaisser » ou « Payer » ouvre l’écran où la somme se règle, déjà rempli : « Règlement d’un crédit » à la caisse pour un patient,
             « Trésorerie » pour une facture client ou un bordereau d’organisme, « Achats, Règlements » pour un grossiste ou un effet.
         </p>
     }
+    </div>
 </div>
 
 @code {
-    private static readonly (string? Code, string Libelle)[] Filtres =
+    /// <summary>Menu vertical : rubriques et titres de groupe (Groupe non nul), dans l'ordre d'affichage.</summary>
+    private sealed record RubriqueDettes(string Id, string Libelle, string SousTitre, bool Liste = false, bool SousRubrique = false, string? Groupe = null);
+    private static readonly RubriqueDettes[] Rubriques =
     [
-        (null, "Tout"), ("patient", "Patients"), ("facture", "Factures clients"), ("bordereau", "Bordereaux d’organismes"),
-        ("grossiste", "Grossistes"), ("effet", "Effets à payer")
+        new("synthese", "Vue d’ensemble", "Ce qui est dû à la pharmacie et ce qu’elle doit, par ancienneté"),
+        new("alertes", "Alertes", "Factures échues ou rejetées, dettes et créances au-delà du délai, effets à payer sous peu"),
+        new("", "", "", Groupe: "À recevoir"),
+        new("patient", "Patients", "Ventes à crédit non soldées et dette antérieure des patients", true, true),
+        new("facture", "Factures clients", "Factures clients (patients, entreprises, organismes) restant à encaisser", true, true),
+        new("bordereau", "Bordereaux d’organismes", "Bordereaux d’organismes envoyés et pas encore payés en entier", true, true),
+        new("", "", "", Groupe: "À payer"),
+        new("grossiste", "Grossistes", "Factures des grossistes non réglées et ancien solde hors factures", true, true),
+        new("effet", "Effets à payer", "Effets remis aux grossistes dont l’échéance n’est pas passée", true, true),
+        new("tout", "Tout", "Toutes les sommes dues, à recevoir et à payer", true)
     ];
 
     private SuiviDettesDto? suivi;
-    private string? erreur, message, filtre;
-    private bool enCours, alertesSeulement;
+    private string? erreur, message;
+    private string rubrique = "synthese";
+    private bool enCours;
     private int delai;
 
-    // Onglet du tiers dans l'adresse (dettes?onglet=…) : chaque onglet est un écran pour « ← Retour »
-    [SupplyParameterFromQuery(Name = "onglet")] public string? Onglet { get; set; }
+    // Liste de la rubrique : filtrée et paginée par le serveur (total de tout le filtre, tiers de la catégorie)
+    private List<LigneSuiviDto> lignesPage = [];
+    private List<TiersSuiviDto> tiersFiltre = [];
+    private int totalLignes, pageLignes = 1, tailleLignes = Pagination.TailleParDefaut;
+    private decimal totalMontant;
+    private string fTiers = "", fEtat = "";
+    private DateOnly? fDu, fAu;
+    private bool FiltreActif => fTiers != "" || rechercheTiers != "" || fEtat != "" || fDu is not null || fAu is not null;
 
-    protected override Task OnInitializedAsync()
+    // Filtre du tiers : liste pour les grossistes et organismes, recherche avec propositions pour les patients et clients
+    private bool TiersEnListe => rubrique is "bordereau" or "grossiste" or "effet";
+    private string rechercheTiers = "";
+    private bool propositionsOuvertes;
+    private int actifTiers = -1, demandeLignes;
+    private bool PropositionsVisibles => propositionsOuvertes && fTiers == "" && rechercheTiers.Trim().Length >= 2;
+
+    private async Task SaisieTiersAsync(ChangeEventArgs e)
     {
-        Historique.Suivre("dettes", e => e.Mettre("alertes", alertesSeulement));
-        alertesSeulement = Historique.Restaurer("dettes")?.Oui("alertes") ?? false;
-        return ChargerAsync();
+        (rechercheTiers, fTiers, actifTiers, propositionsOuvertes) = (e.Value?.ToString() ?? "", "", -1, true);
+        await PremierePageAsync();
     }
 
-    protected override void OnParametersSet() => filtre = Onglet;
+    private async Task ChoisirTiersAsync(TiersSuiviDto t)
+    {
+        (fTiers, rechercheTiers, propositionsOuvertes, actifTiers) = (t.Valeur, t.Nom, false, -1);
+        await PremierePageAsync();
+    }
+
+    private async Task ToucheTiersAsync(KeyboardEventArgs e)
+    {
+        if (!PropositionsVisibles || tiersFiltre.Count == 0) return;
+        switch (e.Key)
+        {
+            case "ArrowDown": actifTiers = (actifTiers + 1) % tiersFiltre.Count; break;
+            case "ArrowUp": actifTiers = actifTiers <= 0 ? tiersFiltre.Count - 1 : actifTiers - 1; break;
+            case "Enter" when actifTiers >= 0: await ChoisirTiersAsync(tiersFiltre[actifTiers]); break;
+            case "Escape": propositionsOuvertes = false; break;
+        }
+    }
+
+    private RubriqueDettes RubriqueCourante => Rubriques.First(r => r.Id == rubrique);
+    /// <summary>Catégorie d'une rubrique de liste (null : toutes).</summary>
+    private static string? Filtre(string id) => id == "tout" ? null : id;
+
+    // Rubrique dans l'adresse (dettes?onglet=…) : chaque rubrique est un écran pour « ← Retour »
+    [SupplyParameterFromQuery(Name = "onglet")] public string? Onglet { get; set; }
+
+    private bool initialise;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ChoisirRubrique();
+        // « ← Retour » : filtres et page de la liste retrouvés tels qu'ils étaient (la rubrique, elle, est dans l'adresse)
+        Historique.Suivre("dettes", e =>
+        {
+            e.Mettre("tiers", fTiers); e.Mettre("recherche", rechercheTiers); e.Mettre("etat", fEtat); e.Mettre("du", fDu); e.Mettre("au", fAu);
+            e.Mettre("page", pageLignes); e.Mettre("taille", tailleLignes);
+        });
+        var r = Historique.Restaurer("dettes");
+        if (r is not null) (fTiers, rechercheTiers, fEtat, fDu, fAu) = (r.Texte("tiers") ?? "", r.Texte("recherche") ?? "", r.Texte("etat") ?? "", r.Date("du"), r.Date("au"));
+        initialise = true;
+        await ChargerAsync();
+        await ChargerLignesAsync(r?.Entier("page") ?? 1, r?.Entier("taille") ?? tailleLignes);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var avant = rubrique;
+        ChoisirRubrique();
+        if (!initialise || avant == rubrique) return;
+        // Autre rubrique : le message de la précédente n'a plus de sens ; le tiers choisi appartenait à l'autre catégorie
+        (message, fTiers, rechercheTiers) = (null, "", "");
+        await ChargerLignesAsync(1, tailleLignes);
+    }
+
+    private void ChoisirRubrique() =>
+        rubrique = Rubriques.Any(r => r.Groupe is null && r.Id == Onglet) ? Onglet! : "synthese";
 
     private async Task ChargerAsync()
     {
@@ -175,6 +332,35 @@
             delai = s!.DelaiJours;
         }
         finally { enCours = false; }
+    }
+
+    // « Actualiser » : chiffres du menu et de la vue d'ensemble, et page de la liste
+    private async Task ActualiserAsync()
+    {
+        await ChargerAsync();
+        await ChargerLignesAsync(pageLignes, tailleLignes);
+    }
+
+    private Task PremierePageAsync() => ChargerLignesAsync(1, tailleLignes);
+
+    private Task EffacerFiltresAsync()
+    {
+        (fTiers, rechercheTiers, fEtat, fDu, fAu) = ("", "", "", null, null);
+        return PremierePageAsync();
+    }
+
+    private async Task ChargerLignesAsync(int page, int taille)
+    {
+        if (!RubriqueCourante.Liste) return;
+        // Réponses dans l'ordre de la saisie : une réponse plus ancienne que la dernière demande est ignorée
+        var demande = ++demandeLignes;
+        var (r, e) = await Api.SuiviDettesLignesAsync(Filtre(rubrique), fTiers, fEtat, fDu, fAu, page, taille, fTiers == "" ? rechercheTiers : null);
+        if (demande != demandeLignes) return;
+        if (r is null) { erreur ??= e; return; }
+        // Grossiste ou organisme qui n'est plus dans la catégorie (somme réglée entre-temps) : retour à « Tous »
+        if (TiersEnListe && fTiers != "" && r.Tiers.All(t => t.Valeur != fTiers)) { fTiers = ""; await ChargerLignesAsync(1, taille); return; }
+        (lignesPage, totalLignes, pageLignes, tailleLignes) = (r.Page.Lignes.ToList(), r.Page.Total, r.Page.Numero, r.Page.Taille);
+        (totalMontant, tiersFiltre) = (r.Total, r.Tiers.ToList());
     }
 
     private async Task EnregistrerDelaiAsync()

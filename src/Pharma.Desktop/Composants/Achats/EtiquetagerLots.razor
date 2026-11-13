@@ -36,7 +36,7 @@
             }
             @if (Lots.Count == 0)
             {
-                <tr><td colspan="6" class="vide">Toutes les boîtes en stock ont une identité.</td></tr>
+                <tr><td colspan="6" class="vide">@MessageVide</td></tr>
             }
         </tbody>
     </table>
@@ -48,6 +48,8 @@
 
 @code {
     [Parameter, EditorRequired] public List<LotAEtiqueterDto> Lots { get; set; } = [];
+    /// <summary>Message quand la liste est vide (ex. « Aucun lot pour ces filtres »).</summary>
+    [Parameter] public string MessageVide { get; set; } = "Toutes les boîtes en stock ont une identité.";
 
     private readonly Dictionary<long, int> nombres = [];
     private readonly Dictionary<long, int> imprimees = [];

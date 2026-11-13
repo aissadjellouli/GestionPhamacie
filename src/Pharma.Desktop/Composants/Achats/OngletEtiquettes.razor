@@ -1,8 +1,21 @@
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
-<section class="panneau" aria-labelledby="t-etiq">
-    <h2 id="t-etiq">Lots à étiqueter</h2>
+@* Lots à étiqueter : liste paginée et filtrée par le serveur (règle des listes, docs/charte-graphique.md) ; le tableau défile dans son cadre *@
+<section aria-labelledby="t-etiq" style="display: flex; flex-direction: column; gap: 12px">
+    <h2 id="t-etiq" class="visuellement-cache">Lots à étiqueter</h2>
     <p class="detail" style="margin: 0">Boîtes en stock sans Data Matrix ni étiquette interne. Chaque étiquette porte un code EAN-13 unique (préfixe 20) qui suit la boîte jusqu’au patient.</p>
+
+    <div class="filtres-liste" role="search" aria-label="Filtrer les lots à étiqueter">
+        <div class="champ" style="flex: 1 1 280px">
+            <label for="fe-recherche">Produit ou n° de lot</label>
+            <input id="fe-recherche" type="search" autocomplete="off" placeholder="Ex. amlodipine, AM55" value="@recherche" @oninput="RechercheSaisieAsync" />
+        </div>
+        <div class="champ" style="flex: 0 0 200px"><label for="fe-peremption">Péremption jusqu’au</label>
+            <input id="fe-peremption" type="date" @bind="perimeAvant" @bind:after="PremierePageAsync" /></div>
+        @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
+    </div>
+
     @if (erreur is not null)
     {
         <div class="erreur" role="alert">@erreur</div>
@@ -13,22 +26,54 @@
     }
     else
     {
-        <EtiquetagerLots Lots="Visibles" />
+        <EtiquetagerLots Lots="lots" MessageVide="@(FiltreActif ? "Aucun lot à étiqueter pour ces filtres." : "Toutes les boîtes en stock ont une identité.")" />
+        <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des lots à étiqueter" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
     }
 </section>
 
 @code {
+    /// <summary>Lot précis (lien depuis une réception ou une alerte) : seul ce lot est listé.</summary>
     [Parameter] public long? LotId { get; set; }
 
     private List<LotAEtiqueterDto>? lots;
     private string? erreur;
-
-    private List<LotAEtiqueterDto> Visibles => LotId is { } id ? lots!.Where(l => l.LotId == id).ToList() : lots!;
+    private int total, page = 1, taille = Pagination.TailleParDefaut, requete;
+    private string recherche = "";
+    private DateOnly? perimeAvant;
+    private bool FiltreActif => recherche.Trim().Length > 0 || perimeAvant is not null || LotId is not null;
 
     protected override async Task OnInitializedAsync()
     {
-        List<LotAEtiqueterDto> l;
-        (l, erreur) = await Api.LotsAEtiqueterAsync();
-        lots = l;
+        // « ← Retour » : filtres et page retrouvés tels qu'ils étaient
+        Historique.Suivre("etiquettes", e => { e.Mettre("recherche", recherche); e.Mettre("peremption", perimeAvant); e.Mettre("page", page); e.Mettre("taille", taille); });
+        var r = Historique.Restaurer("etiquettes");
+        if (r is not null) (recherche, perimeAvant) = (r.Texte("recherche") ?? "", r.Date("peremption"));
+        await ChargerAsync(r?.Entier("page") ?? 1, r?.Entier("taille") ?? taille);
+    }
+
+    private Task PremierePageAsync() => ChargerAsync(1, taille);
+
+    private Task EffacerFiltresAsync()
+    {
+        (recherche, perimeAvant) = ("", null);
+        return PremierePageAsync();
+    }
+
+    /// <summary>Saisie : rechargement après une courte pause (pas à chaque touche).</summary>
+    private async Task RechercheSaisieAsync(ChangeEventArgs e)
+    {
+        recherche = e.Value?.ToString() ?? "";
+        var n = ++requete;
+        await Task.Delay(250);
+        if (n == requete) await PremierePageAsync();
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.LotsAEtiqueterPageAsync(recherche, perimeAvant, LotId, numero, nouvelleTaille);
+        if (p is null) { erreur = e; return; }
+        // Page au-delà de la fin (lots étiquetés entre-temps) : retour à la première
+        if (p.Lignes.Count == 0 && numero > 1) { await ChargerAsync(1, nouvelleTaille); return; }
+        (lots, total, page, taille, erreur) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille, null);
     }
 }

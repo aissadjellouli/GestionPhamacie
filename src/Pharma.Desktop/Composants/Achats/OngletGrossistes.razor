@@ -1,5 +1,6 @@
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 @* Grossistes : liste, dette, et fiche (création, modification, désactivation) avec le droit de commander. *@
 @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -30,11 +31,26 @@
         </div>
     </section>
 }
+@* Liste courte (grossistes de la pharmacie) : filtrée et paginée sur le poste, comme le veut la règle des listes *@
+<div class="filtres-liste" role="search" aria-label="Filtrer les grossistes">
+    <div class="champ" style="flex: 1 1 240px"><label for="fg-texte">Nom, téléphone ou e-mail</label>
+        <input id="fg-texte" type="search" autocomplete="off" @bind="fTexte" @bind:event="oninput" @bind:after="() => page = 1" /></div>
+    <div class="champ" style="flex: 0 0 170px"><label for="fg-etat">État</label>
+        <select id="fg-etat" @bind="fEtat" @bind:after="() => page = 1"><option value="">Tous</option><option value="actif">Actifs</option><option value="inactif">Désactivés</option></select></div>
+    <div class="champ" style="flex: 0 0 170px"><label for="fg-dette">Dette</label>
+        <select id="fg-dette" @bind="fDette" @bind:after="() => page = 1"><option value="">Toutes</option><option value="oui">Avec une dette</option><option value="non">Sans dette</option></select></div>
+    <label class="case" style="align-self: center"><input type="checkbox" @bind="fEmailManquant" @bind:after="() => page = 1" /><span>E-mail à compléter</span></label>
+    @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltres">Tout afficher</button> }
+</div>
 <section class="tableau-cadre" aria-label="Grossistes">
     <table class="tableau" style="min-width: 0">
         <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">E-mail</th><th scope="col">Dette (solde)</th><th scope="col">Délai de reprise</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
         <tbody>
-            @foreach (var g in fournisseurs)
+            @if (Filtres.Count == 0)
+            {
+                <tr><td colspan="7" class="vide">@(FiltreActif ? "Aucun grossiste pour ces filtres." : "Aucun grossiste.")</td></tr>
+            }
+            @foreach (var g in PageCourante)
             {
                 <tr>
                     <td class="nom"><LienContact Type="grossiste" Id="g.Id" Nom="@g.RaisonSociale" /></td>
@@ -49,6 +65,7 @@
         </tbody>
     </table>
 </section>
+<Pagination Total="Filtres.Count" Numero="page" Taille="taille" Libelle="Pages des grossistes" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
 <p class="detail" style="margin: 0">La dette augmente du montant de chaque réception et diminue de chaque avoir et de chaque règlement. Un grossiste désactivé n’est plus proposé aux commandes ni aux réceptions ; son historique est conservé.</p>
 
 @code {
@@ -70,7 +87,34 @@
     private string? erreur, message;
     private bool enCours;
 
-    protected override async Task OnInitializedAsync() => (fournisseurs, erreur) = await Api.FournisseursAsync();
+    // Filtres et page (liste courte, traitée sur le poste) ; retenus par « Retour »
+    private string fTexte = "", fEtat = "", fDette = "";
+    private bool fEmailManquant;
+    private int page = 1, taille = Pagination.TailleParDefaut;
+    private bool FiltreActif => fTexte.Trim() != "" || fEtat != "" || fDette != "" || fEmailManquant;
+    private void EffacerFiltres() => (fTexte, fEtat, fDette, fEmailManquant, page) = ("", "", "", false, 1);
+    private List<FournisseurDto> Filtres => fournisseurs.Where(g =>
+        (fEtat == "" || g.Actif == (fEtat == "actif"))
+        && (fDette == "" || (g.Solde > 0) == (fDette == "oui"))
+        && (!fEmailManquant || string.IsNullOrWhiteSpace(g.Email))
+        && (fTexte.Trim() == "" || new[] { g.RaisonSociale, g.Telephone, g.Email }.Any(t => t is not null && SansAccents(t).Contains(SansAccents(fTexte.Trim()), StringComparison.Ordinal))))
+        .ToList();
+    private List<FournisseurDto> PageCourante =>
+        Filtres.Skip((Math.Min(page, Math.Max(1, (Filtres.Count + taille - 1) / taille)) - 1) * taille).Take(taille).ToList();
+    private static string SansAccents(string t) => string.Concat(t.Normalize(System.Text.NormalizationForm.FormD)
+        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)).ToLowerInvariant();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("grossistes", e =>
+        {
+            e.Mettre("texte", fTexte); e.Mettre("etat", fEtat); e.Mettre("dette", fDette); e.Mettre("email", fEmailManquant);
+            e.Mettre("page", page); e.Mettre("taille", taille);
+        });
+        if (Historique.Restaurer("grossistes") is { } r)
+            (fTexte, fEtat, fDette, fEmailManquant, page, taille) = (r.Texte("texte") ?? "", r.Texte("etat") ?? "", r.Texte("dette") ?? "", r.Oui("email"), r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        (fournisseurs, erreur) = await Api.FournisseursAsync();
+    }
 
     private void Modifier(FournisseurDto g) => (fiche, message) = (new Fiche
     {

@@ -15,19 +15,42 @@
     <div class="succes" role="status">@infoComptage</div>
 }
 
+@* Vues (écran fixe, une partie à la fois) : « attente » (réceptions en attente, livraisons comptées), « saisie » (réception en cours), « historique » *@
+@if (Vue is "" or "attente")
+{
 @* Réception à l'aveugle : livraisons comptées dont la facture reste à saisir, et écarts à valider *@
 @* Réceptions mises en attente (bouton, départ de l'écran, déconnexion) : reprises depuis n'importe quel poste *@
 @if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
 @if (messageAttente is not null) { <div class="info-bandeau" role="status">@messageAttente</div> }
-@if (attentes.Count > 0)
+@if (attentes.Count > 0 || Vue == "attente")
 {
     <section class="panneau" aria-labelledby="t-attente-rec">
         <h2 id="t-attente-rec">Réceptions en attente (@attentes.Count)</h2>
+        @* Liste courte (20 au plus, règle métier) : filtrée et paginée sur le poste ; filtres pris dans les réceptions en attente *@
+        <div class="filtres-liste" role="search" aria-label="Filtrer les réceptions en attente">
+            <div class="champ" style="flex: 1 1 220px"><label for="fa-texte">Grossiste ou n° de BL</label>
+                <input id="fa-texte" type="search" autocomplete="off" @bind="faTexte" @bind:event="oninput" @bind:after="() => pageAttentes = 1" /></div>
+            <div class="champ" style="flex: 0 0 200px"><label for="fa-mode">Mode</label>
+                <select id="fa-mode" @bind="faMode" @bind:after="() => pageAttentes = 1">
+                    <option value="">Tous</option>
+                    @foreach (var m in attentes.Select(a => a.Mode).Distinct()) { <option value="@m">@LibelleMode(m)</option> }
+                </select></div>
+            <div class="champ" style="flex: 0 0 220px"><label for="fa-employe">Mise en attente par</label>
+                <select id="fa-employe" @bind="faEmploye" @bind:after="() => pageAttentes = 1">
+                    <option value="">Tous</option>
+                    @foreach (var n in attentes.Select(a => a.Employe).Distinct().Order()) { <option value="@n">@n</option> }
+                </select></div>
+            @if (FiltreAttentesActif) { <button type="button" class="btn" @onclick="EffacerFiltresAttentes">Tout afficher</button> }
+        </div>
         <div class="tableau-cadre">
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Réception</th><th scope="col" class="nombre">Lignes</th><th scope="col">Mise en attente par</th><th scope="col">Le</th><th scope="col"></th></tr></thead>
                 <tbody>
-                    @foreach (var a in attentes)
+                    @if (AttentesFiltrees.Count == 0)
+                    {
+                        <tr><td colspan="5" class="vide">@(FiltreAttentesActif ? "Aucune réception en attente pour ces filtres." : "Aucune réception en attente.")</td></tr>
+                    }
+                    @foreach (var a in AttentesPage)
                     {
                         // Comptage à l'aveugle : repris par qui l'a compté ou par qui décide des écarts (le serveur le revérifie)
                         var reserve = a.Mode is "comptage" or "recompte" && a.Employe != Session.NomComplet && !Session.A("achats.valider_ecart");
@@ -59,6 +82,7 @@
                 </tbody>
             </table>
         </div>
+        <Pagination Total="AttentesFiltrees.Count" Numero="pageAttentes" Taille="tailleAttentes" Libelle="Pages des réceptions en attente" OnChange="p => (pageAttentes, tailleAttentes) = (p.Numero, p.Taille)" />
         <p class="detail" style="margin: 0">Une réception quittée en cours de saisie (autre écran, déconnexion) arrive ici. Abandonnée, ses boîtes scannées sur le mobile reviennent dans la liste d’import.</p>
     </section>
 }
@@ -137,6 +161,11 @@
     </section>
 }
 
+@if (Vue == "attente" && attentes.Count == 0 && comptages.Count == 0) { <p class="vide">Aucune réception en attente, aucune livraison comptée à facturer.</p> }
+}
+
+@if (Vue is "" or "saisie")
+{
 @if (ecartFacture is not null)
 {
     <section class="panneau" aria-labelledby="t-ecart">
@@ -437,6 +466,10 @@ else
     </section>
 }
 
+}
+
+@if (Vue is "" or "historique")
+{
 <div class="filtres-liste" role="search" aria-label="Filtrer les réceptions">
             <div class="champ" style="flex: 1 1 200px"><label for="fr-grossiste">Grossiste</label>
                 <select id="fr-grossiste" @bind="fFournisseur" @bind:after="PremierePageAsync">
@@ -474,8 +507,11 @@ else
     </table>
 </section>
 <Pagination Total="totalReceptions" Numero="pageReceptions" Taille="tailleReceptions" Libelle="Pages des réceptions" OnChange="p => ChargerReceptionsAsync(p.Numero, p.Taille)" />
+}
 
 @code {
+    /// <summary>Partie affichée : « saisie », « attente », « historique », vide (tout).</summary>
+    [Parameter] public string Vue { get; set; } = "";
     [Parameter] public long? CommandeId { get; set; }
 
     private sealed class Ligne
@@ -616,6 +652,7 @@ else
         var (c, e) = await Api.ComptageAFacturerAsync(id);
         if (e is not null) { erreur = e; return; }
         aFacturer = c;
+        AllerSaisie();
         lignes.Clear();
         (fournisseurId, numeroBl, commandeId) = (c!.FournisseurId, c.NumeroBl, 0);
         foreach (var l in c.Lots)
@@ -630,6 +667,7 @@ else
         var (c, e) = await Api.ComptageAFacturerAsync(id);
         if (e is not null) { erreur = e; return; }
         aRecompter = c;
+        AllerSaisie();
         lignes.Clear();
         (fournisseurId, numeroBl, commandeId) = (c!.FournisseurId, c.NumeroBl, 0);
         foreach (var l in c.Lots)
@@ -678,6 +716,7 @@ else
         {
             e.Mettre("grossiste", fFournisseur > 0 ? fFournisseur : null); e.Mettre("du", fDu); e.Mettre("au", fAu); e.Mettre("recherche", fRecherche);
             e.Mettre("page", pageReceptions); e.Mettre("taille", tailleReceptions); e.Mettre("attente", receptionMiseDeCoteEnPartant);
+            e.Mettre("fa_texte", faTexte); e.Mettre("fa_mode", faMode); e.Mettre("fa_employe", faEmploye); e.Mettre("fa_page", pageAttentes); e.Mettre("fa_taille", tailleAttentes);
         });
         // Quitter l'onglet ou se déconnecter avec une livraison en cours de saisie : elle part en attente (rien n'est perdu)
         Historique.AvantDeQuitter("receptions", QuitterAsync);
@@ -685,6 +724,7 @@ else
         await ChargerAttentesAsync();
         var r = Historique.Restaurer("receptions");
         if (r is not null) (fFournisseur, fDu, fAu, fRecherche) = (r.Long("grossiste") ?? 0, r.Date("du"), r.Date("au"), r.Texte("recherche"));
+        if (r is not null) (faTexte, faMode, faEmploye, pageAttentes, tailleAttentes) = (r.Texte("fa_texte") ?? "", r.Texte("fa_mode") ?? "", r.Texte("fa_employe") ?? "", r.Entier("fa_page") ?? 1, r.Entier("fa_taille") ?? tailleAttentes);
         await ChargerReceptionsAsync(r?.Entier("page") ?? 1, r?.Entier("taille"));
         await CompterScansMobileAsync();
         // Réception à l'aveugle : le bon de commande (et ses quantités) ne s'ouvre pas au comptage
@@ -1025,6 +1065,21 @@ else
         ComptageAFacturerDto? AFacturer, ComptageAFacturerDto? ARecompter, List<LigneMiseDeCote> Lignes);
 
     private List<ReceptionEnAttenteDto> attentes = [];
+    // Réceptions en attente : filtres et page (liste courte, traitée sur le poste)
+    private string faTexte = "", faMode = "", faEmploye = "";
+    private int pageAttentes = 1, tailleAttentes = Pagination.TailleParDefaut;
+    private bool FiltreAttentesActif => faTexte.Trim() != "" || faMode != "" || faEmploye != "";
+    private List<ReceptionEnAttenteDto> AttentesFiltrees => attentes.Where(a =>
+        (faMode == "" || a.Mode == faMode) && (faEmploye == "" || a.Employe == faEmploye)
+        && (faTexte.Trim() == "" || SansAccents(a.Libelle).Contains(SansAccents(faTexte.Trim()), StringComparison.Ordinal))).ToList();
+    private List<ReceptionEnAttenteDto> AttentesPage =>
+        AttentesFiltrees.Skip((Math.Min(pageAttentes, Math.Max(1, (AttentesFiltrees.Count + tailleAttentes - 1) / tailleAttentes)) - 1) * tailleAttentes).Take(tailleAttentes).ToList();
+    /// <summary>Reprise depuis « En attente » : la saisie s'affiche dans « Réceptionner » (même onglet, rien n'est mis en attente).</summary>
+    private void AllerSaisie() { if (Vue is "attente" or "historique") Nav.NavigateTo("achats?onglet=receptions&vue=saisie"); }
+
+    private void EffacerFiltresAttentes() => (faTexte, faMode, faEmploye, pageAttentes) = ("", "", "", 1);
+    private static string SansAccents(string t) => string.Concat(t.Normalize(System.Text.NormalizationForm.FormD)
+        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)).ToLowerInvariant();
     private string? erreurAttente, messageAttente;
     private long? aAbandonner, receptionMiseDeCoteEnPartant;
 
@@ -1115,6 +1170,7 @@ else
                 lignes.Add(ligne);
             }
             await ChargerAttentesAsync();
+            AllerSaisie();
         }
         finally { enCours = false; }
     }

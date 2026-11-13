@@ -58,9 +58,10 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             Ligne(resultat, "Écart", Da(s.Ecart ?? 0), gras: true);
             if (s.Ecart is { } e && Math.Abs(e) > seuilEcart)
             {
-                var p = section.AddParagraph($"Écart supérieur au seuil de {Da(seuilEcart)} : inscrit au journal des actions sensibles.");
+                // Manque en rouge, excédent en orange : les deux sont inscrits au journal au-delà du seuil
+                var p = section.AddParagraph($"{NatureEcart.Libelle(e)} de {Da(Math.Abs(e))}, au-delà du seuil de {Da(seuilEcart)} : inscrit au journal des actions sensibles.");
                 p.Format.SpaceBefore = Unit.FromPoint(8);
-                p.Format.Font.Color = Color.FromRgb(0x91, 0x20, 0x18);
+                p.Format.Font.Color = NatureEcart.EstManque(e) ? Color.FromRgb(0x91, 0x20, 0x18) : Color.FromRgb(0x93, 0x5F, 0x0B);
             }
         }
         else

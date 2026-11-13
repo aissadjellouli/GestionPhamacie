@@ -2,47 +2,64 @@
 @inject SessionPoste Session
 @inject NavigationManager Nav
 
-<div class="page page-serree">
-    <div class="titre-page">
-        <div>
-            <h1>Achats</h1>
-            <p class="sous-titre">Commandes aux grossistes, réceptions, retours, étiquettes internes et règlements</p>
-        </div>
-    </div>
-
-    <div class="filtres" role="tablist" aria-label="Rubriques des achats">
-        @foreach (var (id, libelle, permis) in Onglets)
+@* Écran fixe : menu vertical à gauche (règle « Écran fixe », docs/charte-graphique.md), une partie à la fois.
+   L'adresse garde l'onglet (achats?onglet=…) et la partie affichée (&vue=…) : « Retour » y revient. Pour un même onglet, le composant
+   reste le même d'une vue à l'autre (la réception en cours n'est pas perdue en passant à « En attente » ou « Historique »). *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques des achats">
+        @foreach (var r in Rubriques)
         {
-            <button type="button" role="tab" class="puce" aria-selected="@(id == onglet ? "true" : "false")" aria-pressed="@(id == onglet ? "true" : "false")"
-                    disabled="@(!permis)" title="@(permis ? null : "Droit nécessaire")" @onclick="() => Aller(id)">@libelle</button>
+            if (r.Groupe is { } g)
+            {
+                <span class="nav-groupe-titre">@g</span>
+            }
+            else if (r.Permis)
+            {
+                var active = r.Onglet == onglet && (r.Vue is null || r.Vue == vue);
+                <a href="@Lien(r)" class="@(r.SousRubrique ? "sous-rubrique" : null) @(active ? "active" : null)" aria-current="@(active ? "page" : null)">@r.Libelle</a>
+            }
+            else
+            {
+                <span class="nav-inactif @(r.SousRubrique ? "sous-rubrique" : null)" aria-disabled="true" title="Droit nécessaire">@r.Libelle</span>
+            }
+        }
+    </nav>
+
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Achats · @Courante.Libelle</h1>
+                <p class="sous-titre">@Courante.SousTitre</p>
+            </div>
+        </div>
+
+        @switch (onglet)
+        {
+            case "commandes":
+                <OngletCommandes Vue="@vue" ProduitAAjouter="Produit" NomProduit="@Nom" CommandeOuverte="Commande" Grossiste="Grossiste" />
+                break;
+            case "receptions":
+                <OngletReceptions Vue="@vue" CommandeId="Commande" />
+                break;
+            case "retours":
+                <OngletRetours Vue="@vue" LotId="Lot" ProduitId="Produit" NumeroLot="@NumeroLot" Motif="@Motif" />
+                break;
+            case "etiquettes":
+                <OngletEtiquettes LotId="Lot" />
+                break;
+            case "reglements":
+                <OngletReglements Grossiste="Grossiste" />
+                break;
+            default:
+                <OngletGrossistes />
+                break;
         }
     </div>
-
-    @switch (onglet)
-    {
-        case "commandes":
-            <OngletCommandes ProduitAAjouter="Produit" NomProduit="@Nom" CommandeOuverte="Commande" Grossiste="Grossiste" />
-            break;
-        case "receptions":
-            <OngletReceptions CommandeId="Commande" />
-            break;
-        case "retours":
-            <OngletRetours LotId="Lot" ProduitId="Produit" NumeroLot="@NumeroLot" Motif="@Motif" />
-            break;
-        case "etiquettes":
-            <OngletEtiquettes LotId="Lot" />
-            break;
-        case "reglements":
-            <OngletReglements Grossiste="Grossiste" />
-            break;
-        default:
-            <OngletGrossistes />
-            break;
-    }
 </div>
 
 @code {
     [SupplyParameterFromQuery(Name = "onglet")] public string? Onglet { get; set; }
+    [SupplyParameterFromQuery(Name = "vue")] public string? Vue { get; set; }
     [SupplyParameterFromQuery(Name = "produit")] public long? Produit { get; set; }
     [SupplyParameterFromQuery(Name = "commande")] public long? Commande { get; set; }
     [SupplyParameterFromQuery(Name = "nom")] public string? Nom { get; set; }
@@ -52,24 +69,49 @@
     [SupplyParameterFromQuery(Name = "grossiste")] public long? Grossiste { get; set; }
 
     private string onglet = "commandes";
+    private string vue = "";
 
-    private (string Id, string Libelle, bool Permis)[] Onglets =>
+    /// <summary>Entrée du menu : onglet et partie affichée (Vue), ou titre de groupe (Groupe).</summary>
+    private sealed record Rubrique(string Onglet, string? Vue, string Libelle, string SousTitre, bool Permis = true, bool SousRubrique = false, string? Groupe = null);
+
+    private bool PeutCommander => Session.A("achats.commander") || Session.A("achats.receptionner");
+
+    private Rubrique[] Rubriques =>
     [
-        ("commandes", "Commandes", Session.A("achats.commander") || Session.A("achats.receptionner")),
-        ("receptions", "Réceptions", Session.A("achats.receptionner")),
-        ("retours", "Retours fournisseurs", Session.A("achats.retour_fournisseur")),
-        ("etiquettes", "Étiquettes internes", Session.A("achats.receptionner") || Session.A("stock.consulter")),
-        ("reglements", "Règlements", Session.A("achats.regler")),
-        ("grossistes", "Grossistes", true)
+        new("", null, "", "", Groupe: "Commandes"),
+        new("commandes", "a-commander", "À commander", "Ruptures et stocks critiques, ajout d’un produit au bon du grossiste", PeutCommander, true),
+        new("commandes", "bons", "Bons de commande", "Bons par grossiste et par statut : brouillon, envoyé, reçu en partie, reçu", PeutCommander, true),
+        new("", null, "", "", Groupe: "Réceptions"),
+        new("receptions", "saisie", "Réceptionner", "Compter ou saisir une livraison", Session.A("achats.receptionner"), true),
+        new("receptions", "attente", "En attente", "Réceptions mises en attente et livraisons comptées à facturer", Session.A("achats.receptionner"), true),
+        new("receptions", "historique", "Historique", "Dernières réceptions et réimpression des étiquettes", Session.A("achats.receptionner"), true),
+        new("", null, "", "", Groupe: "Retours"),
+        new("retours", "preparer", "Préparer un retour", "Lots à rendre au grossiste : périmés, rappelés, abîmés", Session.A("achats.retour_fournisseur"), true),
+        new("retours", "liste", "Retours fournisseurs", "Retours préparés, envoyés, et leurs avoirs", Session.A("achats.retour_fournisseur"), true),
+        new("", null, "", "", Groupe: "Autres"),
+        new("etiquettes", null, "Étiquettes internes", "Lots à étiqueter : une étiquette par boîte sans Data Matrix", Session.A("achats.receptionner") || Session.A("stock.consulter"), true),
+        new("reglements", null, "Règlements", "Dette et relevé de chaque grossiste, règlements", Session.A("achats.regler"), true),
+        new("grossistes", null, "Grossistes", "Fiches des grossistes, dette et délai de reprise", true, true)
     ];
+
+    private Rubrique Courante => Rubriques.FirstOrDefault(r => r.Groupe is null && r.Onglet == onglet && (r.Vue is null || r.Vue == vue))
+                                 ?? Rubriques.First(r => r.Groupe is null && r.Onglet == onglet);
+
+    private static string Lien(Rubrique r) => r.Vue is null ? $"achats?onglet={r.Onglet}" : $"achats?onglet={r.Onglet}&vue={r.Vue}";
 
     protected override void OnParametersSet()
     {
         var voulu = Onglet ?? "commandes";
         // Premier onglet autorisé si celui demandé ne l'est pas
-        onglet = Onglets.FirstOrDefault(o => o.Id == voulu && o.Permis).Id
-                 ?? Onglets.First(o => o.Permis).Id;
+        onglet = Rubriques.FirstOrDefault(r => r.Groupe is null && r.Onglet == voulu && r.Permis)?.Onglet
+                 ?? Rubriques.First(r => r.Groupe is null && r.Permis).Onglet;
+        // Partie affichée : celle de l'adresse, sinon selon le lien d'origine (produit à commander, lot à retourner)
+        vue = Vue ?? onglet switch
+        {
+            "commandes" => Produit is not null ? "a-commander" : "bons",
+            "receptions" => "saisie",
+            "retours" => Lot is not null || Produit is not null ? "preparer" : "liste",
+            _ => ""
+        };
     }
-
-    private void Aller(string id) => Nav.NavigateTo($"achats?onglet={id}");
 }

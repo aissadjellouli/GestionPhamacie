@@ -197,7 +197,11 @@ input[type=date], input[type=time] { height: 44px; padding: 0 12px; border-radiu
 .liste-rappel > div span:last-child { color: var(--texte-2); white-space: nowrap; }
 
 /* ---- Tableau ------------------------------------------------------------ */
-.tableau-cadre { background: var(--surface); border: 1px solid var(--bordure); border-radius: 12px; overflow-x: auto; }
+.tableau-cadre { background: var(--surface); border: 1px solid var(--bordure); border-radius: 12px; overflow: auto; }
+/* Liste de cartes qui défile dans son cadre, comme un tableau (hauteur ajustée par poste.js) */
+.cadre-defilant { overflow-y: auto; padding-right: 4px; }
+/* Le tableau défile dans son cadre (hauteur ajustée par poste.js) : la ligne d'en-tête reste visible */
+.tableau-cadre .tableau thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--bordure); }
 .tableau { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 860px; }
 .tableau thead tr { text-align: left; color: var(--texte-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; background: var(--surface-2); }
 .tableau th { padding: 12px; font-weight: 500; }
@@ -305,12 +309,20 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 .grille-comptage { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 
 /* ---- Administration ------------------------------------------------------- */
-.admin { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
-.admin-nav { flex: 0 1 220px; display: flex; flex-direction: column; gap: 2px; }
-.admin-nav a, .admin-nav .nav-inactif { padding: 10px 12px; border-radius: 6px; font-size: 14px; color: var(--texte-3); text-decoration: none; }
-.admin-nav a.active { color: var(--accent-texte); background: var(--accent-clair); font-weight: 600; box-shadow: inset 3px 0 0 var(--ambre); }
+/* Menu vertical : Administration, et écrans découpés en rubriques sur le même modèle (Trésorerie) */
+.admin, .avec-menu { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+/* Écran fixe : juste la place de la barre d'état (32 px) sous le contenu, pas de grande marge qui ferait défiler */
+.admin, .avec-menu { padding-bottom: 36px; }
+.admin-nav, .nav-laterale { flex: 0 1 220px; display: flex; flex-direction: column; gap: 2px; }
+.admin-nav a, .admin-nav .nav-inactif, .nav-laterale a { padding: 10px 12px; border-radius: 6px; font-size: 14px; color: var(--texte-3); text-decoration: none; }
+.admin-nav a.active, .nav-laterale a.active { color: var(--accent-texte); background: var(--accent-clair); font-weight: 600; box-shadow: inset 3px 0 0 var(--ambre); }
 .admin-nav .nav-inactif { color: var(--texte-inactif); cursor: not-allowed; }
-.admin-contenu { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.admin-contenu, .contenu-rubrique { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.nav-laterale .nav-groupe-titre { margin: 14px 12px 2px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texte-2); }
+.nav-laterale a.sous-rubrique { padding-left: 24px; }
+.nav-laterale .compteur { display: inline-block; text-decoration: none; }   /* pas souligné avec le lien */
+.compteur.neutre { background: var(--surface-2); color: var(--texte-2); border: 1px solid var(--bordure); }
+.nav-laterale .nav-resume { margin-top: 12px; padding: 12px 12px 0; border-top: 1px solid var(--bordure); display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
 .case { display: flex; align-items: center; gap: 10px; font-size: 14px; min-height: 32px; }
 .case input { width: 18px; height: 18px; accent-color: var(--accent); }
 .case.inactif { color: var(--texte-inactif); cursor: not-allowed; }
@@ -327,7 +339,9 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 #blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 24px; background: var(--alerte-fond); color: var(--urgent); }
 
 /* ---- Achats ------------------------------------------------------------- */
-.achats-grille { display: grid; grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr); gap: 20px; align-items: start; }
+.achats-grille { display: grid; grid-template-columns: minmax(0, 2fr) minmax(340px, 1fr); gap: 20px; align-items: start; }
+/* Détail du bon, colonne étroite : cellules resserrées pour que quantité et prix tiennent sans défilement horizontal */
+.achats-grille > aside .tableau th, .achats-grille > aside .tableau td { padding: 8px; }
 @media (max-width: 1100px) { .achats-grille { grid-template-columns: 1fr; } }
 .achats-ligne { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
 .ligne-cliquable { cursor: pointer; }

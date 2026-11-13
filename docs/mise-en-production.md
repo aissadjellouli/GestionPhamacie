@@ -17,6 +17,17 @@ Conventions :
   - imprimante de tickets avec son pilote Windows ;
   - imprimante d'étiquettes réseau (facultative) ;
   - deux disques externes pour les sauvegardes.
+- [ ] **0.1 bis** Versions de Windows :
+
+  | Machine | Minimum technique | Recommandé |
+  | --- | --- | --- |
+  | Poste de caisse | Windows 10 version 2004 (build 19041), cible du projet `Pharma.Desktop` pour WebView2 | Windows 11 (22H2 ou plus), ou Windows 10 IoT Enterprise LTSC pour un PC de caisse dédié |
+  | PC serveur | Windows 10 ou Windows Server 2016 (PostgreSQL 18 exige Windows 10 ou plus : runtime C « UCRT ») | Windows 11 Pro, ou Windows Server 2019, 2022 ou 2025 |
+
+  Windows 10 22H2 n'est plus maintenu par Microsoft depuis le 14 octobre 2025 (seules les éditions LTSC le restent) : pour des données
+  de santé, préférer Windows 11. Rien n'empêche l'installation sur une version plus ancienne que le minimum, mais elle n'est ni prise
+  en charge ni testée. À ce jour, le logiciel n'a été essayé que sous Windows 11 : faire un essai sur le système réel avant le jour J.
+  Les téléphones n'ont besoin que d'un navigateur récent (Android ou iPhone).
 - [ ] **0.2** Réseau : adresse IP fixe pour le PC serveur, et Wi-Fi si le scanner mobile est utilisé.
 - [ ] **0.3** Informations à demander à la pharmacie :
   - nom, adresse, téléphone ;
@@ -77,11 +88,12 @@ Le dossier `database/init/` contient trois fichiers :
 
 ## Étape 3 — API (PC serveur)
 
-- [ ] **3.1** Publier l'API dans un dossier d'installation :
+- [ ] **3.1** Publier l'API dans un dossier d'installation, en **publication autonome** (.NET inclus, comme le paquet d'essai) :
   ```powershell
-  dotnet publish src\Pharma.Api -c Release -o "C:\Program Files\PharmaOfficine\Api"
+  dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "C:\Program Files\PharmaOfficine\Api"
   ```
-  Le serveur a besoin du runtime ASP.NET Core 10, sauf si la publication est autonome.
+  Aucun runtime .NET n'est alors à installer sur le serveur. Sans `--self-contained true`, il faudrait le runtime ASP.NET Core 10.
+  Contrepartie : les correctifs de sécurité de .NET n'arrivent qu'avec une nouvelle publication (voir « Mises à jour du logiciel »).
 - [ ] **3.2** Configurer les réglages propres à la pharmacie, par variables d'environnement **système** (jamais dans le dépôt) :
   - `ConnectionStrings__Pharmacie=Host=localhost;Port=5432;Database=<base>;Username=pharma_app;Password=<mot de passe de l'étape 1.2>` ;
   - `Jwt__Cle` : une clé aléatoire de **64 caractères minimum**, propre à la pharmacie. La valeur d'exemple d'`appsettings.json` ne doit jamais rester : hors poste de développement, l'API refuse de démarrer avec elle ou avec une clé plus courte ;
@@ -132,7 +144,16 @@ Le dossier `database/init/` contient trois fichiers :
 
 ## Étape 4 — Postes (un par caisse)
 
-- [ ] **4.1** Installer le poste (publication de `src/Pharma.Desktop`). Il a besoin du runtime .NET 10 Desktop et de WebView2, présent sur Windows 10 et 11 à jour.
+- [ ] **4.1** Installer le poste : publication autonome de `src/Pharma.Desktop`, copiée sur chaque poste (par exemple dans
+  `C:\Program Files\PharmaOfficine\Poste`), avec un raccourci vers `Pharma.Desktop.exe` sur le bureau :
+  ```powershell
+  dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o <dossier de livraison>\Poste
+  ```
+  - Aucun runtime .NET à installer sur le poste (sans `--self-contained true`, il faudrait le runtime .NET 10 Desktop).
+  - **WebView2** reste nécessaire : il n'est pas inclus dans la publication. Il est présent sur Windows 10 et 11 à jour ; sur un PC
+    ancien ou jamais mis à jour, installer le « Microsoft Edge WebView2 Runtime » (gratuit, Microsoft) avant d'ouvrir le poste.
+  - Il n'existe pas encore d'installateur ni de mise à jour automatique des postes (prévus dans `feuille-de-route.md`) : la copie,
+    les variables (étape 4.2) et le raccourci se font à la main sur chaque poste.
 - [ ] **4.2** Variables d'environnement du poste :
   - `PHARMA_API=http://<serveur>:5080/` ;
   - `PHARMA_POSTE` : un nom **différent pour chaque poste** (ex. « Caisse 1 », « Caisse 2 »). Ce nom identifie la caisse (le tiroir) que partagent les employés du poste. Deux postes portant le même nom partageraient la même caisse.
@@ -239,6 +260,8 @@ L'ancienne base n'est jamais modifiée : on travaille sur une copie, ce qui rend
    - ils sont réexécutables sans dégât ;
    - **ne jamais** relancer `init/schema.sql` ni `init/clean.sql` sur une base en service.
 4. Remplacer les fichiers de l'API et des postes, puis redémarrer le service.
+   Les publications étant autonomes (.NET inclus), Windows Update ne corrige pas .NET : à chaque correctif de sécurité .NET important,
+   republier l'API et les postes avec le SDK à jour et les remplacer de la même façon, même sans nouvelle fonction.
 5. Nouvelle nomenclature du ministère : la réimporter dans Administration › Nomenclature. L'import remplace l'ancienne liste sans toucher au catalogue.
 
 Côté développement, à chaque nouveau script `0xx`, il faut régénérer `database/init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges` d'une base construite par les scripts) et compléter `seed_referentiel.sql` s'il ajoute des données de référence (un nouveau droit, par exemple).

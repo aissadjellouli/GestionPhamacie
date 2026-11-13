@@ -192,3 +192,67 @@ window.pharma.zoom = {
   }
 };
 window.pharma.zoom.appliquer(window.pharma.zoom.lire());
+
+// Tableaux : l'écran reste fixe (titre, menu, filtres, pagination), seul le tableau défile dans son cadre
+// (règle des listes, docs/charte-graphique.md). La hauteur de chaque cadre est ajustée à la place qui reste dans la fenêtre,
+// sous ce qui le précède et au-dessus de ce qui le suit de près (pagination, total, note) et de la barre d'état.
+window.pharma.tableaux = (function () {
+  const BARRE_ETAT = 32, MARGE = 24, MIN = 240;
+  function hautDansPage(el) { let y = 0; for (let e = el; e; e = e.offsetParent) y += e.offsetTop; return y; }
+  // Ce qui suit le cadre dans son conteneur et dans le conteneur au-dessus (petits éléments seulement : pagination, pied)
+  function dessous(cadre) {
+    let total = 0, niveau = cadre;
+    for (let i = 0; i < 2 && niveau && !niveau.classList.contains("page"); i++, niveau = niveau.parentElement) {
+      for (let s = niveau.nextElementSibling; s; s = s.nextElementSibling) {
+        const h = s.offsetHeight;
+        if (h > 160) return total;          // un autre panneau suit : la page défilera de toute façon jusqu'à lui
+        total += h + 16;
+      }
+      const st = niveau.parentElement ? getComputedStyle(niveau.parentElement) : null;
+      if (st) total += parseFloat(st.paddingBottom) || 0;
+    }
+    return total;
+  }
+  function ajuster() {
+    const zoom = parseFloat(document.documentElement.style.zoom) || 1;
+    const fenetre = window.innerHeight / zoom;
+    document.querySelectorAll(".tableau-cadre, .cadre-defilant").forEach(function (c) {
+      if (c.closest(".voile, .suggestions")) return;   // fenêtres au-dessus de l'écran : leur propre défilement
+      const h = Math.max(MIN, Math.floor(fenetre - hautDansPage(c) - dessous(c) - BARRE_ETAT - MARGE));
+      const valeur = h + "px";
+      if (c.style.maxHeight !== valeur) c.style.maxHeight = valeur;
+    });
+    // Correction : tant qu'il reste un débordement de l'écran (marges, notes, ligne de filtres ajoutée…), le plus grand cadre le reprend
+    const d = document.scrollingElement;
+    for (let essai = 0; essai < 4; essai++) {
+      // Fractions de pixel comprises : un dépassement de 0,4 px suffit à faire apparaître la barre de défilement de la fenêtre
+      const hauteurPage = document.documentElement.getBoundingClientRect().height;
+      const deborde = Math.ceil(Math.max(d.scrollHeight - d.clientHeight, hauteurPage - window.innerHeight) / zoom);
+      if (deborde <= 0) break;
+      const cadres = Array.from(document.querySelectorAll(".tableau-cadre, .cadre-defilant")).filter(function (c) { return !c.closest(".voile, .suggestions"); });
+      const grand = cadres.sort(function (a, b) { return b.clientHeight - a.clientHeight; })[0];
+      if (!grand) break;
+      const actuel = parseFloat(grand.style.maxHeight) || grand.clientHeight;
+      const h = Math.max(MIN, actuel - deborde);
+      if (h >= actuel) break;   // plus rien à reprendre : l'écran est trop chargé (à découper en rubriques)
+      grand.style.maxHeight = h + "px";
+    }
+  }
+  let prevu = false;
+  function planifier()
+  {
+    if (prevu) return;
+    prevu = true;
+    requestAnimationFrame(function () { prevu = false; ajuster(); });
+    // Second passage après l'affichage complet (polices, données arrivées juste après)
+    clearTimeout(planifier._t);
+    planifier._t = setTimeout(ajuster, 300);
+  }
+  function demarrer() {
+    new MutationObserver(planifier).observe(document.body, { subtree: true, childList: true });
+    window.addEventListener("resize", planifier);
+    planifier();
+  }
+  if (document.body) demarrer(); else document.addEventListener("DOMContentLoaded", demarrer);
+  return { ajuster: ajuster };
+})();

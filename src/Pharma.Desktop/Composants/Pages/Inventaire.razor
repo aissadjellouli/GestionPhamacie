@@ -1,14 +1,27 @@
 @page "/inventaire"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject NavigationManager Nav
 
-<div class="page page-serree">
+@* Écran fixe : rubriques dans le menu vertical (rubrique dans l'adresse : inventaire?rubrique=…) ; les tableaux défilent dans leur cadre *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques de l’inventaire">
+        @foreach (var r in Rubriques.Where(r => r.Permis))
+        {
+            var n = r.Id == "ecarts" ? tableau?.EcartsAValider.Count ?? 0 : 0;
+            <a href="@(r.Id == "comptage" ? "inventaire" : $"inventaire?rubrique={r.Id}")" class="@(r.Id == rubrique ? "active" : null)" aria-current="@(r.Id == rubrique ? "page" : null)">@r.Libelle@if (n > 0) { <span class="compteur">@n</span> }</a>
+        }
+        <span class="nav-groupe-titre">Autres écrans du stock</span>
+        <a href="stock" class="sous-rubrique">Stock</a>
+        <a href="tracabilite" class="sous-rubrique">Traçabilité et rappel de lot</a>
+    </nav>
+
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Inventaire</h1>
+            <h1>Inventaire · @Rubriques.First(r => r.Id == rubrique).Libelle</h1>
             <p class="sous-titre">Inventaire tournant (un rayon par jour) ou complet (tous les rayons), compté à l’aveugle. Les petits écarts sont corrigés tout de suite, les gros attendent le titulaire.</p>
         </div>
-        <a href="stock" class="lien">Retour au stock</a>
     </div>
 
     @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -20,7 +33,11 @@
     }
     else
     {
-        @if (tableau.EcartsAValider.Count > 0)
+        @if (rubrique == "ecarts" && tableau.EcartsAValider.Count == 0)
+        {
+            <p class="vide">Aucun écart à valider.</p>
+        }
+        @if (rubrique == "ecarts" && tableau.EcartsAValider.Count > 0)
         {
             <section class="panneau" aria-labelledby="t-ecarts">
                 <h2 id="t-ecarts">Écarts à valider par le titulaire (@tableau.EcartsAValider.Count)</h2>
@@ -58,9 +75,13 @@
             </section>
         }
 
-        @if (inventaire is null)
+        @if (rubrique == "complet")
         {
             <PanneauInventaireComplet OnCompter="CompterRayonAsync" />
+        }
+        @if (rubrique == "sensibles")
+        {
+            @if (tableau.Sensibles is not { Produits: > 0 }) { <p class="vide">Aucun produit sensible : le titulaire les choisit dans Contrôle interne.</p> }
             @if (tableau.Sensibles is { Produits: > 0 } sens)
             {
                 @* Produits sensibles (choisis par le titulaire dans Surveillance) : comptés à part, régulièrement *@
@@ -81,6 +102,10 @@
                     </div>
                 </section>
             }
+        }
+        @if (rubrique != "comptage") { }
+        else if (inventaire is null)
+        {
             <section class="panneau" aria-labelledby="t-jour">
                 <h2 id="t-jour">Rayon à compter</h2>
                 @if (tableau.Rayons.Count == 0)
@@ -210,7 +235,7 @@
             </section>
         }
 
-        @if (EstTitulaire)
+        @if (rubrique == "seuils" && EstTitulaire)
         {
             <section class="panneau" aria-labelledby="t-seuils">
                 <h2 id="t-seuils">Seuils de correction automatique (titulaire)</h2>
@@ -223,6 +248,8 @@
             </section>
         }
 
+        @if (rubrique == "historique")
+        {
         <section class="tableau-cadre" aria-label="Derniers inventaires">
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Date</th><th scope="col">Rayon</th><th scope="col">Par</th><th scope="col">Lots</th><th scope="col">Écarts</th><th scope="col">Valeur des écarts</th><th scope="col">État</th></tr></thead>
@@ -243,7 +270,9 @@
                 </tbody>
             </table>
         </section>
+        }
     }
+    </div>
 </div>
 
 @code {
@@ -258,6 +287,16 @@
     private readonly Dictionary<long, DateOnly?> datesLues = [];
 
     private bool EstTitulaire => Session.A("role.titulaire");
+
+    private sealed record RubriqueInventaire(string Id, string Libelle, bool Permis = true);
+    private RubriqueInventaire[] Rubriques =>
+    [
+        new("comptage", "Comptage du rayon"), new("complet", "Inventaire complet"), new("sensibles", "Produits sensibles"),
+        new("ecarts", "Écarts à valider"), new("historique", "Derniers inventaires"), new("seuils", "Seuils de correction", EstTitulaire)
+    ];
+    // Rubrique dans l'adresse ; un comptage commencé ailleurs (complet, sensibles, produit) s'ouvre dans « Comptage du rayon »
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => Rubriques.FirstOrDefault(r => r.Id == Rubrique && r.Permis)?.Id ?? "comptage";
     private RayonInventaireDto? Choisi => tableau?.Rayons.FirstOrDefault(r => r.Rayon == rayonChoisi);
 
     /// <summary>Depuis l'alerte « ancien lot délaissé » : inventaire de ce produit (tous ses lots), lancé par le titulaire.</summary>
@@ -308,6 +347,7 @@
         var (d, e) = await Api.InventaireAsync(id);
         if (e is not null) return e;
         inventaire = d;
+        if (rubrique != "comptage") Nav.NavigateTo("inventaire");
         if (d!.Statut == "termine")
         {
             var lots = d.Lignes.Select(l => l.LotId).ToHashSet();

@@ -22,7 +22,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
   chaque composant qui affiche une pagination.
 - **Un état retrouvé est lu une seule fois** : un composant rouvert ensuite sur le même écran (ex. une nouvelle facture) repart à vide.
 - **Saisies gardées pour la session** (Retours avant « Préparer », facture en préparation) : retrouvées par « Retour » tant que l'employé reste connecté ; la Caisse et les Réceptions, elles, sont mises en attente sur le serveur.
-- **Les onglets sont dans l'adresse** (`achats?onglet=…`, `factures?suivi=…`, `dettes?onglet=…`, `surveillance?onglet=traitees`) :
+- **Les onglets et rubriques sont dans l'adresse** (`achats?onglet=…`, `factures?suivi=…`, `dettes?onglet=…`, `surveillance?onglet=traitees`, `tresorerie?rubrique=…`, `?rubrique=…` pour les Alertes, `stock?rubrique=…`, `stock/registre?rubrique=balance`, `inventaire?rubrique=…`) :
   changer d'onglet est un changement d'écran, et « Retour » revient à l'onglet précédent.
 - **Une fiche contact ouverte est rouverte au retour**. Un raccourci de la fiche (Factures, Relevé de dette…) laisse la fiche
   ouverte jusqu'au changement d'écran pour que l'historique la retienne.
@@ -41,7 +41,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Stock | Traçabilité, Registre, Étiquettes, Inventaire | Stock : recherche, filtre, rayon |
 | Traçabilité | Stock, Étiquettes, retour fournisseur d'un lot rappelé | Traçabilité |
 | Inventaire, Registre | Stock | l'écran d'origine |
-| Dettes et créances | « Payer » / « Encaisser » (Caisse ou Achats › Règlements) | Dettes : onglet du tiers, « En alerte seulement » |
+| Dettes et créances | « Payer » / « Encaisser » (Caisse, Trésorerie › Saisir un mouvement, ou Achats › Règlements) | Dettes : rubrique du tiers, filtres et page de la liste |
 | Achats › Commandes | « Réceptionner » (Achats › Réceptions) | Commandes : filtres, page, bon ouvert |
 | Caisse | Clôture, Relevé | Caisse (vente reprise, panneau de crédit rouvert) |
 | Contrôle interne | Risques | Contrôle interne (onglet) |
@@ -55,16 +55,19 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 |---|---|---|
 | Caisse | `caisse` | vente mise en attente en partant (reprise au retour), panneau « Règlement d'un crédit » ouvert |
 | Caisse › Règlement d'un crédit | `credit` | patient ouvert, recherche, filtres et page du relevé |
-| Stock | `stock` | recherche, filtre, rayon |
-| Alertes | `alertes` | filtre |
-| Achats › Commandes | `commandes` | grossiste, statut, période, page, bon ouvert |
-| Achats › Réceptions | `receptions` | filtres et page de la liste ; la réception en cours de saisie, mise en attente en partant, est reprise |
+| Stock | `stock` | rubrique dans l'adresse (`produits`, `ensemble`, `nouveau`, `modifier`, `sortie`, `blocage`) ; recherche, filtre, rayon |
+| Alertes | `alertes` | rubrique dans l'adresse (vue d'ensemble, `toutes`, `urgent`, `peremption`, `stock`) ; page |
+| Achats › Commandes | `commandes` | partie dans l'adresse (`&vue=a-commander`, `&vue=bons`) ; bons : grossiste, statut, période, page, bon ouvert ; produits à commander : produit, état, dernier grossiste, page |
+| Achats › Réceptions | `receptions` | partie dans l'adresse (`&vue=saisie`, `attente`, `historique`) ; filtres et page des listes (en attente : grossiste ou n° de BL, mode, employé) ; la réception en cours de saisie, mise en attente en partant, est reprise |
+| Achats › Grossistes | `grossistes` | recherche (nom, téléphone, e-mail), état, dette, e-mail manquant, page |
 | Achats › Règlements | `reglements` | grossiste ouvert, filtres et page de son relevé |
 | Achats › Retours | `retours` | grossiste, statut, période, page ; retour en préparation (lots, quantités, boîtes scannées, motif, avant « Préparer le retour ») |
 | Rapports | `rapports` | période, date, tableau par jour |
 | Factures | `factures`, `editeur-facture` | recherche, destinataire, période, page, facture ouverte (et sa version), éditeur ouvert et sa saisie (destinataire, ventes cochées, lignes libres, dates, commentaire) ; onglet dans l’adresse |
-| Trésorerie | `tresorerie` | compte affiché, période, employé, page, type de mouvement en saisie |
-| Dettes et créances | `dettes` | « En alerte seulement » ; onglet dans l'adresse |
+| Registre des psychotropes | `registre` | rubrique dans l'adresse (inscriptions, `?rubrique=balance`) ; produit, période, opération, page des inscriptions |
+| Achats › Étiquettes internes | `etiquettes` | recherche (produit ou lot), péremption jusqu'au, page |
+| Trésorerie | `tresorerie` | rubrique dans l'adresse (`comptes`, `mouvements`, `saisie`, `caisses`, `cheques`) ; compte affiché, période, employé, page, type de mouvement en saisie |
+| Dettes et créances | `dettes` | rubrique dans l'adresse (`dettes` : vue d'ensemble ; `?onglet=alertes`, `patient`, `facture`, `bordereau`, `grossiste`, `effet`, `tout`) ; filtres de la liste (tiers, état, période) et page |
 | Contrôle interne › Risques | `risques` | période, pages des deux tableaux |
 | Administration › Caisse | `journal` | employé, catégorie, période, page du journal |
 | Administration › Notifications | `notifications` | objet, statut, période, page de la file d'attente |

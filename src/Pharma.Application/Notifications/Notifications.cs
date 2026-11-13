@@ -346,11 +346,14 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
         var seuil = r.SmsSeuilEcart ?? seuilCaisse;
         if (Math.Abs(ecart) <= seuil) return;
         var montant = (ecart > 0 ? "+" : "") + ecart.ToString("N2", Fr) + " DA";
-        var texte = $"Ecart de caisse {montant} a la cloture de {employe} ({poste}), seuil {seuil.ToString("N0", Fr)} DA.";
+        // Manque (moins d'argent que l'attendu) ou excédent (plus d'argent) : dit en clair, l'un et l'autre surveillés
+        var nature = Pharma.Domain.Caisse.NatureEcart.Libelle(ecart);
+        var natureSms = Pharma.Domain.Caisse.NatureEcart.EstManque(ecart) ? "Manque" : "Excedent";
+        var texte = $"{natureSms} de caisse {montant} a la cloture de {employe} ({poste}), seuil {seuil.ToString("N0", Fr)} DA.";
         // E-mail : une information par ligne (les retours à la ligne deviennent des lignes dans l'e-mail, HtmlAlerte)
         await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
-            $"Écart de caisse {montant}",
-            $"Écart de caisse à la clôture.\n\nCaisse : {poste}\nClôturée par : {employe}\nÉcart : {montant}\nSeuil d’alerte : {seuil.ToString("N2", Fr)} DA",
+            $"{nature} de caisse {montant}",
+            $"{nature} de caisse à la clôture.\n\nCaisse : {poste}\nClôturée par : {employe}\nÉcart : {montant} ({nature.ToLowerInvariant()})\nSeuil d’alerte : {seuil.ToString("N2", Fr)} DA",
             null, texte), ct);
     }
 

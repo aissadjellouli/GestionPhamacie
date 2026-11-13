@@ -311,6 +311,18 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     // ---- Trésorerie ----
     public Task<(SuiviDettesDto?, string?)> SuiviDettesAsync() => GetAsync<SuiviDettesDto?>("api/suivi-dettes", null);
+    /// <summary>Sommes dues filtrées et paginées par le serveur (catégorie, tiers, état, période).</summary>
+    public Task<(SuiviDettesLignesDto?, string?)> SuiviDettesLignesAsync(string? categorie, string? tiers, string? etat, DateOnly? du, DateOnly? au, int page, int taille, string? recherche = null)
+    {
+        var q = new List<string> { $"page={page}", $"taille={taille}" };
+        if (!string.IsNullOrEmpty(categorie)) q.Add($"categorie={categorie}");
+        if (!string.IsNullOrEmpty(tiers)) q.Add($"tiers={Uri.EscapeDataString(tiers)}");
+        if (!string.IsNullOrEmpty(etat)) q.Add($"etat={etat}");
+        if (du is { } d) q.Add($"du={d:yyyy-MM-dd}");
+        if (au is { } x) q.Add($"au={x:yyyy-MM-dd}");
+        if (!string.IsNullOrWhiteSpace(recherche)) q.Add($"recherche={Uri.EscapeDataString(recherche.Trim())}");
+        return GetAsync<SuiviDettesLignesDto?>("api/suivi-dettes/lignes?" + string.Join('&', q), null);
+    }
     public async Task<string?> DelaiAlerteDettesAsync(int jours) =>
         (await EnvoyerCorpsAsync<DelaiAlerteDettesRequete, object>(HttpMethod.Put, "api/suivi-dettes/delai", new(jours))).Item2;
     public Task<(List<CompteTresorerieDto>, string?)> ComptesTresorerieAsync() => GetAsync<List<CompteTresorerieDto>>("api/tresorerie/comptes", []);
@@ -411,6 +423,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(RegistreDto?, string?)> RegistreAsync(long? produit, DateOnly du, DateOnly au) =>
         GetAsync<RegistreDto?>($"api/registre?{FiltreRegistre(produit, du, au)}", null);
+
+    public Task<(InscriptionsRegistreDto?, string?)> InscriptionsRegistreAsync(long? produit, DateOnly du, DateOnly au, string? operation, int page, int taille) =>
+        GetAsync<InscriptionsRegistreDto?>($"api/registre/inscriptions?{FiltreRegistre(produit, du, au)}&page={page}&taille={taille}"
+            + (string.IsNullOrEmpty(operation) ? "" : $"&operation={Uri.EscapeDataString(operation)}"), null);
 
     public Task<(byte[]?, string?, string?)> ExporterRegistreAsync(long? produit, DateOnly du, DateOnly au, string format) =>
         FichierAsync(HttpMethod.Get, $"api/registre/export?format={format}&{FiltreRegistre(produit, du, au)}", $"registre_psychotropes.{format}");
@@ -821,6 +837,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             ("page", page), ("taille", taille)), null);
     public Task<(CommandeAchatDetailDto?, string?)> CommandeAchatAsync(long id) => GetAsync<CommandeAchatDetailDto?>($"api/achats/commandes/{id}", null);
     public Task<(List<SuggestionCommandeDto>, string?)> SuggestionsCommandeAsync() => GetAsync<List<SuggestionCommandeDto>>("api/achats/suggestions", []);
+    public Task<(SuggestionsCommandePageDto?, string?)> SuggestionsCommandePageAsync(string? recherche, string? statut, long? grossiste, int page, int taille) =>
+        GetAsync<SuggestionsCommandePageDto?>($"api/achats/suggestions/page?page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(recherche) ? "" : $"&recherche={Uri.EscapeDataString(recherche.Trim())}")
+            + (string.IsNullOrEmpty(statut) ? "" : $"&statut={Uri.EscapeDataString(statut)}") + (grossiste is { } g ? $"&grossiste={g}" : ""), null);
 
     public Task<(IdentifiantDto?, string?)> AjouterACommandeAsync(long fournisseurId, long produitId, int quantite, decimal? prixHt) =>
         PostAsync<AjoutCommandeRequete, IdentifiantDto>("api/achats/commandes/lignes", new(fournisseurId, produitId, quantite, prixHt));
@@ -913,6 +933,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> RefuserRetourAsync(long id, string? motif) => (await PostAsync<RefusRetourRequete, object>($"api/achats/retours/{id}/refuser", new(motif))).Item2;
 
     public Task<(List<LotAEtiqueterDto>, string?)> LotsAEtiqueterAsync() => GetAsync<List<LotAEtiqueterDto>>("api/achats/etiquettes/lots", []);
+    public Task<(PageDto<LotAEtiqueterDto>?, string?)> LotsAEtiqueterPageAsync(string? recherche, DateOnly? perimeAvant, long? lot, int page, int taille) =>
+        GetAsync<PageDto<LotAEtiqueterDto>?>($"api/achats/etiquettes/lots/page?page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(recherche) ? "" : $"&recherche={Uri.EscapeDataString(recherche.Trim())}")
+            + (perimeAvant is { } d ? $"&perimeAvant={d:yyyy-MM-dd}" : "") + (lot is { } l ? $"&lot={l}" : ""), null);
     public Task<(List<ScanReceptionDto>, string?)> ScansMobileAsync() => GetAsync<List<ScanReceptionDto>>("api/mobile/reception/scans", []);
     public Task<(NombreDto?, string?)> RemettreScansMobileAsync(IReadOnlyList<long> ids) =>
         PostAsync<IdsRequete, NombreDto>("api/mobile/reception/scans/remettre", new(ids));

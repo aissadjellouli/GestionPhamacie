@@ -17,13 +17,27 @@ Téléphone du titulaire ──(tunnel VPN chiffré)──► PC serveur de la p
 
 Seuls les appareils inscrits au VPN (le téléphone du titulaire) joignent le serveur. L'accès à la page demande en plus l'identifiant et le mot de passe du titulaire. L'onglet Pilotage n'apparaît qu'au titulaire.
 
+## Où installer le VPN
+
+- **Côté pharmacie** : le serveur VPN, sur la box ou le routeur s'il le permet, sinon sur le PC serveur.
+- **Côté extérieur** : l'application VPN sur le téléphone (ou le PC portable) du titulaire seulement.
+- **Jamais sur les postes de caisse** : ils sont dans la pharmacie et joignent le serveur par le réseau local. Un client VPN sur une
+  caisse n'apporte rien et ouvre une porte de plus vers le PC qui manipule l'argent et les données de santé.
+- Plusieurs pharmacies reliées à un même serveur (cas non prévu à ce jour) : relier les routeurs des sites entre eux (VPN « site à
+  site »), pas les postes un par un.
+
 ## Solutions possibles (à choisir avec le prestataire informatique)
 
-| Solution | Installation | À savoir |
-| --- | --- | --- |
-| **WireGuard** (logiciel libre) | Serveur WireGuard sur le routeur, s'il le permet, ou sur le PC serveur ; application WireGuard sur le téléphone | Ouvre un seul port UDP vers le serveur VPN, pas vers l'API. Il faut une adresse IP fixe ou un nom dynamique (DDNS) pour la box. |
-| **Tailscale** (service basé sur WireGuard) | Application Tailscale sur le PC serveur et sur le téléphone, même compte | Aucun port à ouvrir. Le service gère les clés ; vérifier ses conditions d'utilisation et activer la double authentification du compte. |
-| **VPN du routeur** (OpenVPN, IPsec selon le modèle) | Réglage dans l'interface de la box ou du routeur | Dépend du matériel. |
+| Solution | Installation | Coût et conditions | À savoir |
+| --- | --- | --- | --- |
+| **WireGuard** (logiciel libre) — **recommandé** | Serveur WireGuard sur le routeur, s'il le permet, ou sur le PC serveur ; application WireGuard sur le téléphone | Gratuit, usage commercial autorisé | Ouvre un seul port UDP vers le serveur VPN, pas vers l'API. Il faut une adresse IP fixe ou un nom dynamique (DDNS) pour la box. Aucune donnée ne passe par un service tiers. |
+| **VPN du routeur** (WireGuard, OpenVPN, IPsec selon le modèle) | Réglage dans l'interface de la box ou du routeur | Inclus dans le matériel | Dépend du modèle ; souvent le plus simple si la box le propose. |
+| **OpenVPN** (édition communautaire) | Serveur sur le routeur ou le PC serveur ; application sur le téléphone | Gratuit, usage commercial autorisé | Plus lourd à régler que WireGuard. |
+| **Tailscale** (service basé sur WireGuard) | Application Tailscale sur le PC serveur et sur le téléphone, même compte | **Le plan gratuit est réservé à un usage non commercial** : une pharmacie doit prendre un plan payant (par utilisateur et par mois) | Aucun port à ouvrir. Le service gère les clés et les accès ; activer la double authentification du compte. |
+
+Conditions et tarifs relevés en novembre 2026 sur des sources secondaires et la documentation de Tailscale : les vérifier sur les
+pages officielles au moment du choix. D'autres services du même genre (NetBird, ZeroTier) existent ; leurs conditions d'usage
+commercial sont à vérifier de la même façon.
 
 Rien n'est installé par le logiciel : ces réglages relèvent du prestataire informatique de la pharmacie.
 
@@ -40,4 +54,4 @@ Rien n'est installé par le logiciel : ces réglages relèvent du prestataire in
 
 - Un mot de passe solide pour le compte titulaire. La session mobile se ferme à la fermeture de l'onglet.
 - Si le téléphone est perdu : retirer l'appareil du VPN (console Tailscale ou clé WireGuard supprimée) et changer le mot de passe du titulaire.
-- Ne jamais rediriger le port 5443 (ou 5081) du routeur vers le serveur.
+- Ne jamais rediriger les ports de l'API (5443 en https, 5080 en http) du routeur vers le serveur.

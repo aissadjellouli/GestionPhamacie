@@ -100,7 +100,10 @@
                         </div>
                         @if (resultat.AuDelaDuSeuil == true)
                         {
-                            <div class="erreur" role="alert">Écart supérieur au seuil de @Libelles.Dinars(resultat.SeuilEcart ?? 0) : inscrit au journal des actions sensibles.</div>
+                            @* Manque : erreur (rouge) ; excédent : mise en garde (orange). Les deux sont inscrits au journal au-delà du seuil. *@
+                            var ecart = resultat.Ecart ?? 0;
+                            var message = $"{(ecart < 0 ? "Manque" : "Excédent")} de {Libelles.Dinars(Math.Abs(ecart), 2)}, au-delà du seuil de {Libelles.Dinars(resultat.SeuilEcart ?? 0)} : inscrit au journal des actions sensibles.";
+                            <div class="@(ecart < 0 ? "erreur" : "bandeau-attention")" role="alert">@message</div>
                         }
                         @if (resultat.VerseAuCoffre > 0)
                         {

@@ -1,16 +1,23 @@
 @page "/stock/registre"
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
-<div class="page">
+@* Écran fixe : inscriptions et balance mensuelle en deux rubriques (menu vertical) ; le tableau défile dans son cadre *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques du registre">
+        <a href="stock/registre" class="@(rubrique == "inscriptions" ? "active" : null)" aria-current="@(rubrique == "inscriptions" ? "page" : null)">Inscriptions @if (NombreInscriptions is { } n) { <span class="compteur neutre">@n</span> }</a>
+        <a href="stock/registre?rubrique=balance" class="@(rubrique == "balance" ? "active" : null)" aria-current="@(rubrique == "balance" ? "page" : null)">Balance mensuelle</a>
+        <span class="nav-groupe-titre">Autres écrans du stock</span>
+        <a href="stock" class="sous-rubrique">Stock</a>
+        <a href="tracabilite" class="sous-rubrique">Traçabilité et rappel de lot</a>
+        <a href="inventaire" class="sous-rubrique">Inventaire</a>
+    </nav>
+
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Registre des psychotropes</h1>
+            <h1>Registre des psychotropes · @(rubrique == "balance" ? "Balance mensuelle" : "Inscriptions")</h1>
             <p class="sous-titre">Entrées et sorties des psychotropes et stupéfiants, numérotées et non modifiables, avec la balance mensuelle.</p>
-        </div>
-        <div class="actions">
-            <a href="stock" style="font-size: 14px; font-weight: 500; align-self: center">Retour au stock</a>
-            <button type="button" class="btn" disabled="@(registre is null || enCours)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
-            <button type="button" class="btn" disabled="@(registre is null || enCours)" @onclick='() => ExporterAsync("csv")'>Exporter pour Excel</button>
         </div>
     </div>
 
@@ -20,8 +27,8 @@
         <div class="succes" role="status">Fichier rangé : @(emplacement ?? fichier) <button type="button" class="lien-bouton" @onclick="() => Documents.Ouvrir(fichier)">Ouvrir</button></div>
     }
 
-    <section class="panneau" aria-label="Filtres">
-        <div class="achats-ligne">
+    <section aria-label="Filtres">
+        <div class="filtres-liste" role="search" aria-label="Filtrer le registre">
             <div class="champ" style="flex: 2 1 260px">
                 <label for="r-produit">Produit</label>
                 <select id="r-produit" @bind="produitId" @bind:after="ChargerAsync">
@@ -31,6 +38,18 @@
             </div>
             <div class="champ" style="flex: 0 0 170px"><label for="r-du">Du</label><input id="r-du" type="date" @bind="du" @bind:after="ChargerAsync" /></div>
             <div class="champ" style="flex: 0 0 170px"><label for="r-au">Au</label><input id="r-au" type="date" @bind="au" @bind:after="ChargerAsync" /></div>
+            @if (rubrique == "inscriptions")
+            {
+                <div class="champ" style="flex: 0 0 220px"><label for="r-operation">Opération</label>
+                    <select id="r-operation" @bind="operation" @bind:after="PremierePageAsync">
+                        <option value="">Toutes</option>
+                        @foreach (var o in operations) { <option value="@o.Code">@o.Libelle</option> }
+                    </select></div>
+            }
+            @if (operation != "" && rubrique == "inscriptions") { <button type="button" class="btn" @onclick="ToutesOperationsAsync">Tout afficher</button> }
+            @* Exports sur la ligne des filtres (écran fixe : pas de ligne de boutons en plus) ; ils prennent tout le registre du produit et de la période *@
+            <button type="button" class="btn" disabled="@(registre is null || enCours)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
+            <button type="button" class="btn" disabled="@(registre is null || enCours)" @onclick='() => ExporterAsync("csv")'>Exporter pour Excel</button>
         </div>
         @if (registre?.NomsMasques == true)
         {
@@ -42,13 +61,12 @@
     {
         <Chargement />
     }
-    else
+    else if (rubrique == "inscriptions")
     {
-        <section class="panneau" aria-labelledby="t-lignes">
-            <h2 id="t-lignes">Inscriptions (@registre.Lignes.Count)</h2>
-            @if (registre.Lignes.Count == 0)
+        <section aria-label="Inscriptions">
+            @if (inscriptions.Count == 0)
             {
-                <p class="vide" style="margin: 0">Aucune inscription sur la période.</p>
+                <p class="vide" style="margin: 0">@(operation == "" ? "Aucune inscription sur la période." : "Aucune inscription pour ces filtres.")</p>
             }
             else
             {
@@ -63,7 +81,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var l in registre.Lignes)
+                            @foreach (var l in inscriptions)
                             {
                                 <tr>
                                     <td>@l.Numero</td>
@@ -90,10 +108,12 @@
                     </table>
                 </div>
             }
+            <Pagination Total="totalInscriptions" Numero="pageInscriptions" Taille="tailleInscriptions" Libelle="Pages des inscriptions" OnChange="p => ChargerInscriptionsAsync(p.Numero, p.Taille)" />
         </section>
-
-        <section class="panneau" aria-labelledby="t-balance">
-            <h2 id="t-balance">Balance mensuelle</h2>
+    }
+    else
+    {
+        <section aria-label="Balance mensuelle">
             @if (registre.Balance.Count == 0)
             {
                 <p class="vide" style="margin: 0">Pas de mouvement sur la période.</p>
@@ -114,9 +134,33 @@
             }
         </section>
     }
+    </div>
 </div>
 
 @code {
+    // Rubrique dans l'adresse (stock/registre?rubrique=balance) : « Retour » y revient
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => Rubrique == "balance" ? "balance" : "inscriptions";
+    private int? NombreInscriptions => registre?.Lignes.Count;
+
+    // Inscriptions : paginées et filtrées par le serveur (produit, période, opération)
+    private List<LigneRegistreDto> inscriptions = [];
+    private List<CodeLibelleDto> operations = [];
+    private string operation = "";
+    private int totalInscriptions, pageInscriptions = 1, tailleInscriptions = Pagination.TailleParDefaut;
+
+    private Task PremierePageAsync() => ChargerInscriptionsAsync(1, tailleInscriptions);
+    private Task ToutesOperationsAsync() { operation = ""; return PremierePageAsync(); }
+
+    private async Task ChargerInscriptionsAsync(int numero, int taille)
+    {
+        var (r, e) = await Api.InscriptionsRegistreAsync(produitId, du, au, operation, numero, taille);
+        if (r is null) { erreur ??= e; return; }
+        if (r.Page.Lignes.Count == 0 && numero > 1) { await ChargerInscriptionsAsync(1, taille); return; }
+        (inscriptions, totalInscriptions, pageInscriptions, tailleInscriptions, operations) = (r.Page.Lignes.ToList(), r.Page.Total, r.Page.Numero, r.Page.Taille, r.Operations.ToList());
+        if (operation != "" && operations.All(o => o.Code != operation)) { operation = ""; await ChargerInscriptionsAsync(1, taille); }
+    }
+
     private List<ProduitRegistreDto> produits = [];
     private long? produitId;
     private DateOnly du = new(DateTime.Today.Year, DateTime.Today.Month, 1);
@@ -127,16 +171,33 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // « ← Retour » : produit, période, opération et page retrouvés tels qu'ils étaient
+        Historique.Suivre("registre", e =>
+        {
+            e.Mettre("produit", produitId); e.Mettre("du", du); e.Mettre("au", au); e.Mettre("operation", operation);
+            e.Mettre("page", pageInscriptions); e.Mettre("taille", tailleInscriptions);
+        });
+        var r = Historique.Restaurer("registre");
+        if (r is not null)
+        {
+            produitId = r.Long("produit");
+            (du, au, operation) = (r.Date("du") ?? du, r.Date("au") ?? au, r.Texte("operation") ?? "");
+            (pageInscriptions, tailleInscriptions) = (r.Entier("page") ?? 1, r.Entier("taille") ?? tailleInscriptions);
+        }
         (produits, erreur) = await Api.ProduitsRegistreAsync();
-        await ChargerAsync();
+        await ChargerAsync(pageInscriptions);
     }
 
-    private async Task ChargerAsync()
+    // Produit ou période changés : registre (balance, nombre) et première page des inscriptions
+    private Task ChargerAsync() => ChargerAsync(1);
+
+    private async Task ChargerAsync(int pageVoulue)
     {
         (erreur, fichier) = (null, null);
         var (r, e) = await Api.RegistreAsync(produitId, du, au);
         if (e is not null) { erreur = e; return; }
         registre = r;
+        await ChargerInscriptionsAsync(pageVoulue, tailleInscriptions);
     }
 
     private async Task ExporterAsync(string format)

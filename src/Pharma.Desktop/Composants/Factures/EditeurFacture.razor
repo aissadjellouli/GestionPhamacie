@@ -58,13 +58,32 @@
     }
     else if (destinataire == "entreprise")
     {
-        <div class="achats-ligne" style="align-items: flex-end">
-            <div class="champ" style="flex: 1 1 260px">
-                <label for="f-client">Client</label>
-                <select id="f-client" @bind="clientId" @bind:after="SuivreEcheance"><option value="0">— choisir —</option>@foreach (var c in clients.Where(c => c.Actif)) { <option value="@c.Id">@c.RaisonSociale</option> }</select>
+        @* Entreprises clientes : liste sans fin, donc recherche avec propositions (règle des listes, docs/charte-graphique.md) *@
+        @if (clients.FirstOrDefault(c => c.Id == clientId) is { } choisi)
+        {
+            <p style="margin: 0"><strong>@choisi.RaisonSociale</strong>@(choisi.Nif is { Length: > 0 } nif ? $" · NIF {nif}" : "")
+                <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => { clientId = 0; rechercheClient = null; }">Changer</button></p>
+        }
+        else
+        {
+            <div class="achats-ligne" style="align-items: flex-end">
+                <div class="champ recherche" style="flex: 1 1 260px">
+                    <label for="f-client">Client (raison sociale ou NIF, 2 lettres au moins)</label>
+                    <input id="f-client" type="search" autocomplete="off" @bind="rechercheClient" @bind:event="oninput" />
+                    @if (ClientsTrouves.Count > 0 || rechercheClient?.Trim().Length >= 2)
+                    {
+                        <ul class="suggestions" aria-label="Clients trouvés">
+                            @if (ClientsTrouves.Count == 0) { <li class="choix-vide" aria-disabled="true">Aucun client pour « @rechercheClient ».</li> }
+                            @foreach (var c in ClientsTrouves)
+                            {
+                                <li><button type="button" @onclick="() => { clientId = c.Id ?? 0; rechercheClient = null; SuivreEcheance(); }"><span><strong>@c.RaisonSociale</strong>@if (c.Nif is { Length: > 0 }) { <br /><span class="detail">NIF @c.Nif</span> }</span></button></li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <button type="button" class="btn" @onclick="() => nouveauClient = new()">Nouveau client</button>
             </div>
-            <button type="button" class="btn" @onclick="() => nouveauClient = new()">Nouveau client</button>
-        </div>
+        }
         @if (nouveauClient is { } nc)
         {
             <div class="carte" style="display: grid; gap: 8px">
@@ -217,6 +236,14 @@
     private PatientDto? patient;
     private List<PatientDto> patients = [];
     private List<ClientFactureDto> clients = [];
+    // Recherche d'une entreprise cliente : 10 propositions au plus, sans majuscules ni accents, dès 2 lettres
+    private string? rechercheClient;
+    private List<ClientFactureDto> ClientsTrouves => rechercheClient?.Trim() is { Length: >= 2 } r
+        ? clients.Where(c => c.Actif && (SansAccents(c.RaisonSociale).Contains(SansAccents(r), StringComparison.Ordinal)
+            || (c.Nif ?? "").Contains(r, StringComparison.OrdinalIgnoreCase))).Take(10).ToList()
+        : [];
+    private static string SansAccents(string t) => string.Concat(t.Normalize(System.Text.NormalizationForm.FormD)
+        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)).ToLowerInvariant();
     private List<OrganismeDto> organismes = [];
     private long clientId, organismeId;
     private NouveauClient? nouveauClient;

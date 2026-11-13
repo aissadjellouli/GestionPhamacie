@@ -12,7 +12,7 @@ Le titulaire est prévenu à distance **sans cloud ni application mobile** : par
 | Message | Déclencheur | E-mail | SMS |
 | --- | --- | --- | --- |
 | Rapport quotidien | Chaque jour à l'heure réglée (21:00 par défaut), une seule fois | Oui | Non |
-| Écart de caisse | Clôture dont l'écart dépasse le seuil SMS (à défaut, le seuil de la caisse) | Oui | Oui |
+| Écart de caisse | Clôture dont l'écart (manque ou excédent) dépasse le seuil SMS (à défaut, le seuil de la caisse) ; l'objet dit « Manque de caisse » ou « Excédent de caisse » | Oui | Oui |
 | Lot bloqué | Rappel de lot (Stock, Traçabilité) | Oui | Si la case « SMS lot bloqué » est cochée |
 | Sauvegarde | Échec de pg_dump ou disque externe absent | Oui | Si la case « SMS sauvegarde » est cochée |
 | Écart d'inventaire | Fin d'un inventaire tournant avec des écarts au-delà des seuils (à valider par le titulaire) | Oui | Oui |

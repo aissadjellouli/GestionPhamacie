@@ -28,6 +28,21 @@ internal static class RegistreEndpoints
                     r.NomsMasques));
             });
 
+        // Inscriptions paginées et filtrées par le serveur (règle des listes) : produit, période, opération ; numéros dans l'ordre du registre
+        registre.MapGet("/inscriptions", async (long? produit, DateOnly? du, DateOnly? au, string? operation, int? page, int? taille,
+                ConsulterRegistre consulter, IHorloge horloge, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var r = await consulter.ExecuterAsync(user.UtilisateurId(), produit, du, au, horloge.Aujourdhui, ct);
+                var lignes = r.Lignes.Where(l => string.IsNullOrEmpty(operation) || l.Type == operation).ToList();
+                var p = DemandePage.Lire(page, taille);
+                var pageLignes = lignes.Skip(p.Decalage).Take(p.Taille).Select(l => new LigneRegistreDto(l.Numero, l.Date, l.ProduitId, l.Produit, l.NumeroLot, l.Type,
+                    RegistreCsv.Libelle(l.Type), l.Entree, l.Sortie, l.SoldeProduit, l.SoldeLot, l.Patient, l.Medecin,
+                    l.Ordonnance, l.Fournisseur, l.Reference, l.PorteurNom, l.PorteurAdresse, l.PorteurPiece, l.Employe, l.PatientId)).ToList();
+                var operations = r.Lignes.Select(l => l.Type).Distinct().Select(t => new CodeLibelleDto(t, RegistreCsv.Libelle(t)))
+                    .OrderBy(o => o.Libelle, StringComparer.CurrentCulture).ToList();
+                return Results.Ok(new InscriptionsRegistreDto(new PageDto<LigneRegistreDto>(pageLignes, lignes.Count, p.Page, p.Taille), operations, r.NomsMasques));
+            });
+
         registre.MapGet("/export", async (string? format, long? produit, DateOnly? du, DateOnly? au, ExporterRegistre exporter,
                 IHorloge horloge, ClaimsPrincipal user, CancellationToken ct) =>
             {

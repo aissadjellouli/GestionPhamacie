@@ -90,6 +90,80 @@ public static class RegleSuiviDettes
     }
 }
 
+/// <summary>
+/// Filtres de la liste des sommes dues. Categorie : patient, facture (toutes les factures clients), bordereau, grossiste, effet, ou null (tout).
+/// Tiers : identifiant du tiers, ou son nom quand il n'a pas d'identifiant. Etat : alerte, delai (dans le délai), rejetee, ou null (tous).
+/// Du / Au : période sur la date depuis laquelle la somme est due. Recherche : partie du nom du tiers (sans majuscules ni accents),
+/// pour les tiers sans fin (patients, clients) où une liste de tous les noms n'aurait pas de sens.
+/// </summary>
+public sealed record FiltreSuiviDettes(string? Categorie = null, string? Tiers = null, string? Etat = null, DateOnly? Du = null, DateOnly? Au = null,
+    string? Recherche = null)
+{
+    public static readonly string[] Categories = ["patient", "facture", "bordereau", "grossiste", "effet"];
+    public static readonly string[] Etats = ["alerte", "delai", "rejetee"];
+
+    /// <summary>Valeurs inconnues ignorées (pas d'erreur : un lien ancien ou modifié affiche simplement tout).</summary>
+    /// <summary>Catégories aux tiers peu nombreux : leur filtre est une liste complète ; les autres (patients, clients) une recherche.</summary>
+    public static readonly string[] CategoriesListeTiers = ["bordereau", "grossiste", "effet"];
+
+    public static FiltreSuiviDettes Lire(string? categorie, string? tiers, string? etat, DateOnly? du, DateOnly? au, string? recherche = null) => new(
+        Categories.Contains(categorie) ? categorie : null,
+        string.IsNullOrWhiteSpace(tiers) ? null : tiers.Trim(),
+        Etats.Contains(etat) ? etat : null, du, au,
+        string.IsNullOrWhiteSpace(recherche) ? null : recherche.Trim());
+}
+
+/// <summary>Tiers proposé dans le filtre : Valeur à renvoyer (identifiant, ou nom sans identifiant) et nom affiché.</summary>
+public sealed record TiersSuivi(string Valeur, string Nom);
+
+/// <summary>
+/// Une page de sommes dues, le total en DA de tout le filtre (toutes pages), et les tiers proposés pour le filtre : tous ceux de la
+/// catégorie quand ils sont peu nombreux (grossistes, organismes), sinon ceux qui répondent à la recherche (10 au plus, dès 2 lettres).
+/// </summary>
+public sealed record PageSuiviDettes(Page<LigneSuivi> Page, decimal Total, IReadOnlyList<TiersSuivi> Tiers);
+
+/// <summary>Liste des sommes dues filtrée et paginée par le serveur : calcul sans base, testable.</summary>
+public static class FiltrageSuiviDettes
+{
+    public const int PropositionsMax = 10;
+
+    /// <summary>Texte comparé sans majuscules ni accents.</summary>
+    public static string Normaliser(string texte) => TexteRecherche.Normaliser(texte);
+
+    public static string ValeurTiers(SommeDue s) => s.TiersId is { } id ? id.ToString(System.Globalization.CultureInfo.InvariantCulture) : "nom:" + s.Tiers;
+
+    private static bool DansCategorie(LigneSuivi l, string? categorie) => categorie switch
+    {
+        null => true,
+        "facture" => RegleSuiviDettes.EstFacture(l.Somme.Categorie),
+        _ => l.Somme.Categorie == categorie
+    };
+
+    public static PageSuiviDettes Filtrer(SuiviDettes suivi, FiltreSuiviDettes f, DemandePage page)
+    {
+        var categorie = suivi.Lignes.Where(l => DansCategorie(l, f.Categorie)).ToList();
+        // Tiers de la catégorie, quels que soient les autres filtres ; un même nom porté par deux tiers est distingué par son n°
+        var tiers = categorie.GroupBy(l => ValeurTiers(l.Somme)).Select(g => (Valeur: g.Key, Nom: g.First().Somme.Tiers)).ToList();
+        var homonymes = tiers.GroupBy(t => t.Nom).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        var recherche = f.Recherche is { Length: > 0 } r ? Normaliser(r) : null;
+        var tousProposes = FiltreSuiviDettes.CategoriesListeTiers.Contains(f.Categorie);
+        var listeTiers = tiers
+            .Where(t => tousProposes || (recherche is { Length: >= 2 } && Normaliser(t.Nom).Contains(recherche, StringComparison.Ordinal)))
+            .Select(t => new TiersSuivi(t.Valeur, homonymes.Contains(t.Nom) && !t.Valeur.StartsWith("nom:", StringComparison.Ordinal) ? $"{t.Nom} (n° {t.Valeur})" : t.Nom))
+            .OrderBy(t => t.Nom, StringComparer.CurrentCulture).Take(tousProposes ? int.MaxValue : PropositionsMax).ToList();
+
+        // Même ordre que le suivi : alertes d'abord, puis les plus anciennes
+        var lignes = categorie.Where(l =>
+            (f.Tiers is null || ValeurTiers(l.Somme) == f.Tiers)
+            && (f.Tiers is not null || recherche is null || Normaliser(l.Somme.Tiers).Contains(recherche, StringComparison.Ordinal))
+            && (f.Etat is null || f.Etat switch { "alerte" => l.EnAlerte, "delai" => !l.EnAlerte, "rejetee" => l.Somme.Rejetee, _ => true })
+            && (f.Du is null || l.Somme.Depuis >= f.Du)
+            && (f.Au is null || l.Somme.Depuis <= f.Au)).ToList();
+        var pageLignes = lignes.Skip(page.Decalage).Take(page.Taille).ToList();
+        return new PageSuiviDettes(new Page<LigneSuivi>(pageLignes, lignes.Count, page.Page, page.Taille), lignes.Sum(l => l.Somme.Montant), listeTiers);
+    }
+}
+
 /// <summary>Dettes et créances de tous les tiers, avec échéancier et alertes (droit « tresorerie.gerer »).</summary>
 public sealed class ObtenirSuiviDettes(ISuiviDettes suivi, IPermissionService droits, IHorloge horloge)
 {
@@ -97,6 +171,13 @@ public sealed class ObtenirSuiviDettes(ISuiviDettes suivi, IPermissionService dr
     {
         await droits.ExigerAsync(utilisateurId, Permissions.TresorerieGerer, "consulter les dettes et créances", ct);
         return await CalculerAsync(ct);
+    }
+
+    /// <summary>Liste des sommes dues filtrée et paginée par le serveur (même droit que le suivi).</summary>
+    public async Task<PageSuiviDettes> LignesAsync(long utilisateurId, FiltreSuiviDettes filtre, DemandePage page, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.TresorerieGerer, "consulter les dettes et créances", ct);
+        return FiltrageSuiviDettes.Filtrer(await CalculerAsync(ct), filtre, page);
     }
 
     /// <summary>Sans contrôle de droit : pour le tableau de bord du titulaire, qui a déjà vérifié le sien.</summary>

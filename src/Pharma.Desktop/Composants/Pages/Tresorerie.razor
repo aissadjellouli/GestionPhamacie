@@ -2,20 +2,42 @@
 @inject ApiClient Api
 @inject HistoriqueNavigation Historique
 @inject ConfigurationPoste Config
+@inject NavigationManager Nav
 
-<div class="page">
-    <div class="titre-page">
-        <div>
-            <h1>Trésorerie</h1>
-            <p class="sous-titre">Coffre et banques : dépenses, versements des caisses et des organismes, chèques à remettre, transferts</p>
+@* Trésorerie découpée en rubriques, avec le menu vertical de l'Administration ; la rubrique est dans l'adresse (« Retour » y revient) *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques de la trésorerie">
+        @foreach (var r in Rubriques)
+        {
+            var nombre = Compteur(r.Id);
+            <a href="@($"tresorerie?rubrique={r.Id}")" class="@(r.Id == rubrique ? "active" : null)" aria-current="@(r.Id == rubrique ? "page" : null)">
+                @r.Libelle@if (nombre > 0) { <span class="compteur" aria-label="@($"{nombre} en attente")">@nombre</span> }
+            </a>
+        }
+        @if (comptes.FirstOrDefault(c => c.Type == "coffre") is { } coffre)
+        {
+            <div class="nav-resume">
+                <span class="detail">Solde du coffre</span>
+                <strong class="@(coffre.Solde < 0 ? "montant-du" : null)">@Libelles.Dinars(coffre.Solde, 2)</strong>
+            </div>
+        }
+    </nav>
+
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Trésorerie · @RubriqueCourante.Libelle</h1>
+                <p class="sous-titre">@RubriqueCourante.SousTitre</p>
+            </div>
+            @if (rubrique == "comptes") { <button type="button" class="btn" @onclick="NouvelleBanque">Ajouter une banque</button> }
         </div>
-        <button type="button" class="btn" @onclick="NouvelleBanque">Ajouter une banque</button>
-    </div>
 
-    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
-    @if (message is not null) { <div class="succes" role="status">@message</div> }
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
 
-    <!-- Comptes et soldes -->
+        @switch (rubrique)
+        {
+            case "comptes":
     <div class="tuiles" style="grid-template-columns: repeat(auto-fill, minmax(230px, 1fr))">
         @foreach (var c in comptes)
         {
@@ -59,12 +81,11 @@
         </section>
     }
 
-    <div class="colonnes">
-        <!-- Argent à verser -->
-        <section class="panneau colonne-laterale" aria-labelledby="t-averser">
-            <h2 id="t-averser">À verser</h2>
+                break;
 
-            <h3 class="sous-titre-panneau">Caisses clôturées</h3>
+            case "caisses":
+        <section class="panneau" aria-labelledby="t-caisses">
+            <h2 id="t-caisses">Caisses clôturées</h2>
             @if (aVerser?.Caisses is not { Count: > 0 } caisses)
             {
                 <p class="vide" style="margin: 0">Aucune caisse en attente de versement.</p>
@@ -85,14 +106,21 @@
                 <p class="detail" style="margin: 0">Proposé : le compté moins le fond de caisse qui reste dans le tiroir.</p>
             }
 
-            <h3 class="sous-titre-panneau">Caisse de ce poste</h3>
+        </section>
+        <section class="panneau" aria-labelledby="t-poste">
+            <h2 id="t-poste">Caisse de ce poste, pendant la journée</h2>
             <div class="achats-ligne" style="align-items: flex-end">
                 <div class="champ" style="flex: 0 0 150px"><label for="v-poste">Montant (DA)</label><input id="v-poste" type="number" min="0.01" step="0.01" @bind="prelevement" /></div>
                 <button type="button" class="btn" disabled="@(enCours || prelevement <= 0)" @onclick="PreleverAsync">Porter au coffre</button>
             </div>
             <p class="detail" style="margin: 0">Pendant la journée : l’argent sort du tiroir ouvert de « @Config.Poste », son attendu de clôture diminue d’autant.</p>
 
-            <h3 class="sous-titre-panneau">Chèques à remettre en banque</h3>
+        </section>
+                break;
+
+            case "cheques":
+        <section class="panneau" aria-labelledby="t-cheques">
+            <h2 id="t-cheques">Chèques reçus</h2>
             @if (aVerser?.Cheques is not { Count: > 0 } cheques)
             {
                 <p class="vide" style="margin: 0">Aucun chèque en attente.</p>
@@ -121,10 +149,11 @@
                 @if (!Banques.Any()) { <p class="detail" style="margin: 0">Ajoutez d’abord une banque.</p> }
             }
         </section>
+                break;
 
-        <!-- Saisie d'un mouvement -->
-        <section class="panneau colonne-principale" aria-labelledby="t-saisie">
-            <h2 id="t-saisie">Saisir un mouvement</h2>
+            case "saisie":
+        <section class="panneau" aria-labelledby="t-saisie">
+            <h2 id="t-saisie">Nouveau mouvement</h2>
             <div class="filtres" role="tablist" aria-label="Type de mouvement">
                 @foreach (var (code, libelle) in Types)
                 {
@@ -190,15 +219,19 @@
             <div class="champ"><label for="m-ref">Référence (n° de chèque, de virement, de pièce)</label><input id="m-ref" type="text" maxlength="100" @bind="reference" /></div>
             <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="SaisirAsync">Enregistrer</button></div>
         </section>
-    </div>
+                break;
 
-    <!-- Mouvements du compte choisi -->
+            case "mouvements":
     @if (comptes.FirstOrDefault(c => c.Id == compteVu) is { } vu)
     {
         <section class="panneau" aria-labelledby="t-mouvements">
             <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px">
                 <h2 id="t-mouvements">Mouvements · @vu.Nom</h2>
                 <div class="achats-ligne" style="align-items: flex-end">
+                    <div class="champ" style="flex: 0 0 220px"><label for="p-compte">Compte</label>
+                        <select id="p-compte" data-champ="compte_vu" @bind="compteVu" @bind:after="ChargerMouvementsAsync">
+                            @foreach (var c in comptes) { <option value="@c.Id">@c.Nom@(c.Actif ? "" : " (inactif)")</option> }
+                        </select></div>
                     <div class="champ" style="flex: 0 0 160px"><label for="p-du">Du</label><input id="p-du" type="date" @bind="du" @bind:after="ChargerMouvementsAsync" /></div>
                     <div class="champ" style="flex: 0 0 160px"><label for="p-au">Au</label><input id="p-au" type="date" @bind="au" @bind:after="ChargerMouvementsAsync" /></div>
                     <div class="champ" style="flex: 0 0 220px"><label for="p-employe">Employé</label>
@@ -241,6 +274,13 @@
             <p class="detail" style="margin: 0">« auto » : calculé sans saisie (paiements par carte du jour, remises de chèques, règlements des grossistes, remboursements par carte).</p>
         </section>
     }
+    else
+    {
+        <p class="vide">Aucun compte : ajoutez d’abord le coffre ou une banque dans « Comptes et soldes ».</p>
+    }
+                break;
+        }
+    </div>
 </div>
 
 @code {
@@ -256,6 +296,36 @@
         public decimal SoldeInitial { get; set; }
         public DateOnly DateInitiale { get; set; } = DateOnly.FromDateTime(DateTime.Today);
     }
+
+    /// <summary>Rubriques du menu vertical, dans l'ordre ; la première est ouverte par défaut.</summary>
+    private sealed record RubriqueTresorerie(string Id, string Libelle, string SousTitre);
+    private static readonly RubriqueTresorerie[] Rubriques =
+    [
+        new("comptes", "Comptes et soldes", "Coffre et banques : soldes, comptes et soldes de départ"),
+        new("mouvements", "Mouvements", "Entrées et sorties d’un compte, par période et par employé"),
+        new("saisie", "Saisir un mouvement", "Dépense, encaissement divers, versement d’un organisme, transfert entre comptes"),
+        new("caisses", "Caisses à verser au coffre", "Argent des caisses clôturées, et du tiroir de ce poste pendant la journée"),
+        new("cheques", "Chèques à remettre", "Chèques reçus en caisse, à déposer à la banque")
+    ];
+
+    /// <summary>Rubrique demandée dans l'adresse (tresorerie?rubrique=…) ; un règlement venu de « Dettes et créances » ouvre la saisie.</summary>
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique = "comptes";
+    private RubriqueTresorerie RubriqueCourante => Rubriques.First(r => r.Id == rubrique);
+
+    private void ChoisirRubrique()
+    {
+        var voulue = Rubrique ?? (Facture is { Length: > 0 } || Bordereau is { Length: > 0 } ? "saisie" : "comptes");
+        rubrique = Rubriques.Any(r => r.Id == voulue) ? voulue : "comptes";
+    }
+
+    /// <summary>Nombre affiché à côté de la rubrique : ce qui attend d'être fait (caisses à verser, chèques à remettre).</summary>
+    private int Compteur(string id) => id switch
+    {
+        "caisses" => aVerser?.Caisses.Count ?? 0,
+        "cheques" => aVerser?.Cheques.Count ?? 0,
+        _ => 0
+    };
 
     private static readonly (string, string)[] Types =
         [("depense", "Dépense"), ("encaissement", "Encaissement divers"), ("versement_organisme", "Versement d’un organisme"), ("transfert", "Transfert entre comptes")];
@@ -327,6 +397,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        ChoisirRubrique();   // dès le premier affichage, avant la fin des chargements
         // Listes indépendantes chargées en même temps
         var cat = Api.CategoriesDepensesAsync();
         var org = Api.OrganismesAsync();
@@ -358,6 +429,10 @@
 
     protected override void OnParametersSet()
     {
+        var avant = rubrique;
+        ChoisirRubrique();
+        // Autre rubrique : le message de la précédente (« Compte enregistré »…) n'a plus de sens ici
+        if (initialise && avant != rubrique) (erreur, message) = (null, null);
         if (!initialise || reglementPrepare == (Facture, Bordereau)) return;
         reglementPrepare = (Facture, Bordereau);
         (erreur, message, organismeId, bordereauId, montant, libelle, reference) = (null, null, 0, 0, 0, null, null);
@@ -401,7 +476,13 @@
         (totalEntrees, totalSorties, employesMouvements) = (r.TotalEntrees, r.TotalSorties, r.Employes);
     }
 
-    private async Task VoirAsync(long id) { compteVu = id; await ChargerMouvementsAsync(); }
+    // « Mouvements » d'une tuile : ce compte, dans la rubrique Mouvements (changement d'écran : « Retour » revient aux comptes)
+    private async Task VoirAsync(long id)
+    {
+        compteVu = id;
+        Nav.NavigateTo("tresorerie?rubrique=mouvements");
+        await ChargerMouvementsAsync();
+    }
 
     private void NouvelleBanque() => edition = new EditionCompte { RecoitCarte = !comptes.Any(c => c.RecoitCarte) };
 

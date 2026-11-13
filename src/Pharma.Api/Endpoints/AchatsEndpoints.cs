@@ -43,6 +43,19 @@ internal static class AchatsEndpoints
                     s.ProduitId, s.Produit, s.Statut, s.Stock, s.QteSuggeree, s.DernierPrixHt, s.DernierFournisseurId, s.DernierFournisseur))))
            .ExigerPermission(Permissions.AchatsCommander);
 
+        // Produits à commander paginés et filtrés par le serveur (règle des listes) : produit, état, grossiste du dernier achat (0 : aucun)
+        achats.MapGet("/suggestions/page", async (string? recherche, string? statut, long? grossiste, int? page, int? taille,
+                ListerSuggestionsCommande lister, CancellationToken ct) =>
+            {
+                var r = await lister.PageAsync(recherche, statut, grossiste, DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new SuggestionsCommandePageDto(
+                    new PageDto<SuggestionCommandeDto>(r.Page.Lignes.Select(s => new SuggestionCommandeDto(
+                        s.ProduitId, s.Produit, s.Statut, s.Stock, s.QteSuggeree, s.DernierPrixHt, s.DernierFournisseurId, s.DernierFournisseur)).ToList(),
+                        r.Page.Total, r.Page.Numero, r.Page.Taille),
+                    r.Grossistes.Select(g => new CodeLibelleDto(g.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), g.Nom)).ToList(), r.SansAchat));
+            })
+           .ExigerPermission(Permissions.AchatsCommander);
+
         achats.MapPost("/commandes/lignes", async (AjoutCommandeRequete req, AjouterACommande ajouter, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await ajouter.ExecuterAsync(req.FournisseurId, req.ProduitId, req.Quantite, req.PrixAchatHt, user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.AchatsCommander);
@@ -174,6 +187,15 @@ internal static class AchatsEndpoints
         achats.MapGet("/etiquettes/lots", async (ListerLotsAEtiqueter lister, CancellationToken ct) =>
                 Results.Ok((await lister.ExecuterAsync(ct)).Select(l => new LotAEtiqueterDto(
                     l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Disponible, l.BoitesSansIdentite))))
+           .ExigerPermission(Permissions.AchatsReceptionner, Permissions.StockConsulter);
+
+        // Liste paginée et filtrée par le serveur (règle des listes) : recherche produit ou lot, péremption jusqu'au, lot précis
+        achats.MapGet("/etiquettes/lots/page", async (string? recherche, DateOnly? perimeAvant, long? lot, int? page, int? taille, ListerLotsAEtiqueter lister, CancellationToken ct) =>
+            {
+                var p = await lister.PageAsync(recherche, perimeAvant, lot, DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<LotAEtiqueterDto>(p.Lignes.Select(l => new LotAEtiqueterDto(
+                    l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Disponible, l.BoitesSansIdentite)).ToList(), p.Total, p.Numero, p.Taille));
+            })
            .ExigerPermission(Permissions.AchatsReceptionner, Permissions.StockConsulter);
 
         achats.MapGet("/receptions/{id:long}/etiquettes", async (long id, ImprimerEtiquettesReception imprimer, ClaimsPrincipal user, CancellationToken ct) =>
