@@ -56,6 +56,12 @@ input, select, button { font: inherit; }
 .marque-textes { display: flex; flex-direction: column; }
 .marque-nom { font-weight: 600; font-size: 16px; color: #FFFFFF; }
 .marque-poste { font-size: 12px; color: rgba(255, 255, 255, 0.78); }
+/* En-tête sur toute la largeur (validé le 2026-11-13) : logo et nom au-dessus de la colonne du menu vertical (240 px, voir .page.avec-menu),
+   le reste réparti jusqu'au bord droit. Nom et poste sur une ligne, coupés par « … » (texte complet au survol, attribut title). */
+.entete .entete-interieur { max-width: none; margin: 0; padding-left: 0; padding-right: 24px; }
+.entete .marque { box-sizing: border-box; width: 240px; flex: 0 0 240px; padding-left: 20px; }
+.entete .marque-textes { min-width: 0; }
+.entete .marque-nom, .entete .marque-poste { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nav { display: flex; flex-wrap: wrap; gap: 2px; flex: 1 1 400px; justify-content: center; }
 @media (min-width: 1200px) { .nav { flex-wrap: nowrap; } }
 .nav a, .nav .nav-inactif { padding: 10px 12px; border-radius: 8px; font-size: 14px; font-weight: 500; color: rgba(255, 255, 255, 0.9); text-decoration: none; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -330,7 +336,9 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 .nav-laterale a.sous-rubrique, .admin-nav a.sous-rubrique { padding-left: 24px; }
 /* Administration : sous-rubriques de l'écran affiché (menu à deux niveaux), plus discrètes que les écrans */
 .admin-nav a.sous-rubrique { padding-top: 7px; padding-bottom: 7px; font-size: 13px; }
-.admin-nav a.active:has(+ a.sous-rubrique) { box-shadow: none; }
+/* Écran affiché qui a des sous-rubriques : titre de groupe non cliquable (NavAdmin), même rendu que dans les autres menus */
+.admin-nav .nav-groupe-titre { margin: 14px 12px 2px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texte-2); }
+.admin-nav .nav-groupe-titre:first-child { margin-top: 0; }
 .nav-laterale .compteur { display: inline-block; text-decoration: none; }   /* pas souligné avec le lien */
 .compteur.neutre { background: var(--surface-2); color: var(--texte-2); border: 1px solid var(--bordure); }
 .nav-laterale .nav-resume { margin-top: 12px; padding: 12px 12px 0; border-top: 1px solid var(--bordure); display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }

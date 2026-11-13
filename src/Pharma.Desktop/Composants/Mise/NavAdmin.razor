@@ -19,10 +19,19 @@
         else
         {
             var actif = r.Lien == Actif;
-            <a href="@r.Lien" class="@(actif ? "active" : null)" aria-current="@(actif && SousRubriques(r.Lien).Count == 0 ? "page" : null)">@r.Libelle</a>
-            @if (actif)
+            IReadOnlyList<(string Id, string Libelle)> sous = actif ? SousRubriques(r.Lien) : [];
+            @if (sous.Count > 0)
             {
-                var sous = SousRubriques(r.Lien);
+                @* Écran affiché qui a des sous-rubriques : son nom devient un titre de groupe non cliquable (comme dans les autres menus) ;
+                   seule la sous-rubrique affichée porte le bandeau ambre *@
+                <span class="nav-groupe-titre">@r.Libelle</span>
+            }
+            else
+            {
+                <a href="@r.Lien" class="@(actif ? "active" : null)" aria-current="@(actif ? "page" : null)">@r.Libelle</a>
+            }
+            @if (sous.Count > 0)
+            {
                 foreach (var (id, libelle) in sous)
                 {
                     var courante = id == RubriqueCourante(r.Lien, Rubrique);

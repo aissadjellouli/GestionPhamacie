@@ -13,6 +13,10 @@ Une seule ligne, dans cet ordre : logo et nom de la pharmacie, **« ← *écran 
 « ← *écran précédent* » (à gauche) et « ⇄ Changer » (à droite) sont des **pastilles blanches à texte vert** : repérables d'un coup
 d'œil, et éloignées du menu pour ne pas être confondues avec un écran. Leurs libellés restent courts pour garder l'en-tête sur une ligne.
 
+L'en-tête occupe **toute la largeur de la fenêtre** (validé le 2026-11-13) : logo et nom dans les 240 px de gauche, au-dessus de la
+colonne du menu vertical, le reste réparti jusqu'au bord droit. Nom du logiciel et « pharmacie · poste » restent sur une ligne,
+coupés par « … » s'ils sont trop longs (texte complet au survol).
+
 - **Premier niveau : les écrans du quotidien** : Caisse, Stock, Achats, Alertes (avec le compteur des alertes urgentes).
 - **Groupes déroulants** : **Finances ▾** (Factures, Trésorerie, Dettes et créances, Chifa « à venir ») et **Pilotage ▾**
   (Rapports, Contrôle interne). Le groupe qui contient l'écran ouvert est souligné en ambre ; dans le menu ouvert, l'écran
@@ -62,7 +66,12 @@ liens à gauche, rubrique active surlignée avec le filet ambre).
 **Le menu est collé au bord gauche de la fenêtre** (demandé le 2026-11-13) : colonne de 240 px sur toute la hauteur, de l'en-tête
 à la barre d'état, fond `--surface` et filet `--bordure` à droite ; la page n'est plus centrée ni limitée à 1 280 px, le contenu
 prend toute la largeur restante (32 px d'écart avec la colonne). Tout vient de `.page.admin` et `.page.avec-menu` dans `app.css` :
-aucun écran n'a de style propre pour cela. Les écrans sans menu vertical restent centrés (1 280 px au plus). Utilisé par l'Administration (`.admin`, `.admin-nav`,
+aucun écran n'a de style propre pour cela. Les écrans sans menu vertical restent centrés (1 280 px au plus).
+
+**Bandeau ambre : toujours sur l'écran ou la sous-rubrique affichés, et sur eux seuls.** Dans l'Administration, l'écran affiché qui a
+des sous-rubriques (Alertes et seuils, Utilisateurs et droits…) devient un **titre de groupe non cliquable** (`.nav-groupe-titre`,
+gris, majuscules), comme « COMMANDES » ou « AUTRES ÉCRANS DU STOCK » dans les autres menus ; sa sous-rubrique affichée porte le
+bandeau. Les autres écrans de l'Administration restent des liens. Utilisé par l'Administration (`.admin`, `.admin-nav`,
 `.admin-contenu`, composant `NavAdmin`), la Trésorerie, Dettes et créances, Stock, Alertes, Registre, Inventaire, Achats, Rapports,
 Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux écarts et risques), le Guide et la Caisse (composant
 `NavCaisse`, commun à la vente, à l'annulation ou au retour, au règlement d'un crédit, à l'état de la caisse, à la relève et à la clôture ;
