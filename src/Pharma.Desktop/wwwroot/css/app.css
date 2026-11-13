@@ -187,7 +187,9 @@ input:disabled { background: var(--surface-2); color: var(--texte-2); }
 .bandeau { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 10px; background: var(--alerte-fond); border: 1px solid var(--alerte-bord); color: var(--urgent); font-size: 14px; }
 .bandeau > div { display: flex; flex-direction: column; gap: 2px; }
 .bandeau strong { font-weight: 600; }
-.vide { color: var(--texte-2); }
+/* Message « Aucun… » invisible pendant ses 0,3 premières secondes : si les données arrivent avant, il n'apparaît jamais (pas d'éclair au changement d'écran) */
+.vide { color: var(--texte-2); animation: vide-cache 0.3s steps(1) backwards; }
+@keyframes vide-cache { from, to { opacity: 0; } }
 .succes { padding: 12px 14px; border-radius: 8px; background: var(--accent-clair); border: 1px solid var(--accent-trait); color: var(--accent-fonce); font-size: 14px; }
 .action-en-cours { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding-top: 12px; border-top: 1px solid var(--bordure-2); }
 input[type=date], input[type=time] { height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--bordure-champ); font-size: 15px; background: var(--surface); color: var(--texte); box-sizing: border-box; }
@@ -319,7 +321,10 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 .admin-nav .nav-inactif { color: var(--texte-inactif); cursor: not-allowed; }
 .admin-contenu, .contenu-rubrique { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .nav-laterale .nav-groupe-titre { margin: 14px 12px 2px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texte-2); }
-.nav-laterale a.sous-rubrique { padding-left: 24px; }
+.nav-laterale a.sous-rubrique, .admin-nav a.sous-rubrique { padding-left: 24px; }
+/* Administration : sous-rubriques de l'écran affiché (menu à deux niveaux), plus discrètes que les écrans */
+.admin-nav a.sous-rubrique { padding-top: 7px; padding-bottom: 7px; font-size: 13px; }
+.admin-nav a.active:has(+ a.sous-rubrique) { box-shadow: none; }
 .nav-laterale .compteur { display: inline-block; text-decoration: none; }   /* pas souligné avec le lien */
 .compteur.neutre { background: var(--surface-2); color: var(--texte-2); border: 1px solid var(--bordure); }
 .nav-laterale .nav-resume { margin-top: 12px; padding: 12px 12px 0; border-top: 1px solid var(--bordure); display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }

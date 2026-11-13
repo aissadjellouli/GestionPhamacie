@@ -2,12 +2,12 @@
 @inject ApiClient Api
 
 <div class="page admin">
-    <NavAdmin Actif="admin/seuils" />
+    <NavAdmin Actif="admin/seuils" Rubrique="@Rubrique" />
 
     <div class="admin-contenu">
         <div class="titre-page">
             <div>
-                <h1>Alertes et seuils</h1>
+                <h1>Alertes et seuils · @NavAdmin.Libelle("admin/seuils", Rubrique)</h1>
                 <p class="sous-titre">Réservé au titulaire · chaque modification est inscrite au journal</p>
             </div>
             <button type="button" class="btn btn-principal" disabled="@(g is null || enCours)" @onclick="EnregistrerAsync">Enregistrer</button>
@@ -18,6 +18,8 @@
 
         @if (g is not null)
         {
+            @if (rubrique == "peremption")
+            {
             <section class="panneau" aria-labelledby="t-general">
                 <div>
                     <h2 id="t-general">Péremption : réglage général</h2>
@@ -64,7 +66,10 @@
                     </table>
                 </div>
             </section>
+            }
 
+            @if (rubrique == "exceptions")
+            {
             <section class="panneau" aria-labelledby="t-produits">
                 <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px">
                     <div>
@@ -103,7 +108,10 @@
                     </div>
                 }
             </section>
+            }
 
+            @if (rubrique == "stock")
+            {
             <section class="panneau" aria-labelledby="t-stock">
                 <div>
                     <h2 id="t-stock">Stock et commandes</h2>
@@ -128,13 +136,21 @@
                     <div class="champ"><label for="s-delaisse-coll">Boîtes vendues par plusieurs vendeurs (alerte rouge)</label><input id="s-delaisse-coll" type="number" min="1" @bind="g.SeuilLotDelaisseCollectif" /></div>
                 </div>
             </section>
+            }
 
+            @if (rubrique == "produits")
+            {
             <SeuilsStockProduits />
+            }
         }
     </div>
 </div>
 
 @code {
+    /// <summary>Sous-rubrique dans l'adresse (admin/seuils?rubrique=…) : une partie à la fois, l'écran reste fixe.</summary>
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => NavAdmin.RubriqueCourante("admin/seuils", Rubrique);
+
     private sealed class General
     {
         public int JoursOrange { get; set; }

@@ -1,6 +1,8 @@
 @inject SessionPoste Session
 
-@* Menu latéral de l'administration : chaque rubrique selon le droit de l'employé *@
+@* Menu latéral de l'administration : chaque rubrique selon le droit de l'employé.
+   Menu à deux niveaux : sous la rubrique affichée, ses sous-rubriques (adresse admin/…?rubrique=…), une partie à la fois,
+   pour que l'écran reste fixe (docs/charte-graphique.md). *@
 @if (!Session.SuperAdmin)
 {
 <nav class="admin-nav" aria-label="Rubriques d’administration">
@@ -16,7 +18,17 @@
         }
         else
         {
-            <a href="@r.Lien" class="@(r.Lien == Actif ? "active" : null)" aria-current="@(r.Lien == Actif ? "page" : null)">@r.Libelle</a>
+            var actif = r.Lien == Actif;
+            <a href="@r.Lien" class="@(actif ? "active" : null)" aria-current="@(actif && SousRubriques(r.Lien).Count == 0 ? "page" : null)">@r.Libelle</a>
+            @if (actif)
+            {
+                var sous = SousRubriques(r.Lien);
+                foreach (var (id, libelle) in sous)
+                {
+                    var courante = id == RubriqueCourante(r.Lien, Rubrique);
+                    <a href="@(id == sous[0].Id ? r.Lien : $"{r.Lien}?rubrique={id}")" class="sous-rubrique @(courante ? "active" : null)" aria-current="@(courante ? "page" : null)">@libelle</a>
+                }
+            }
         }
     }
 </nav>
@@ -25,8 +37,10 @@
 @code {
     /// <summary>Lien de la rubrique affichée (ex. « admin/seuils »).</summary>
     [Parameter] public string Actif { get; set; } = "";
+    /// <summary>Sous-rubrique demandée dans l'adresse (?rubrique=…) ; vide ou inconnue : la première.</summary>
+    [Parameter] public string? Rubrique { get; set; }
 
-    private sealed record Rubrique(string Libelle, string? Lien, string? Permission, string? Raison = null);
+    private sealed record Rubrique_(string Libelle, string? Lien, string? Permission, string? Raison = null);
 
     public static readonly IReadOnlyList<(string Lien, string Permission)> Accessibles =
     [
@@ -43,7 +57,7 @@
         ("admin/nomenclature", "role.titulaire")
     ];
 
-    private static readonly Rubrique[] Rubriques =
+    private static readonly Rubrique_[] Rubriques =
     [
         new("Alertes et seuils", "admin/seuils", "admin.parametres"),
         new("Utilisateurs et droits", "admin/droits", "admin.utilisateurs"),
@@ -57,4 +71,33 @@
         new("Nomenclature nationale", "admin/nomenclature", "role.titulaire"),
         new("Langue et pharmacie", "admin/pharmacie", "admin.parametres")
     ];
+
+    /// <summary>Sous-rubriques de chaque écran d'administration (second niveau du menu) ; la première est ouverte par défaut.</summary>
+    private static readonly Dictionary<string, (string Id, string Libelle)[]> Sous = new()
+    {
+        ["admin/seuils"] = [("peremption", "Péremption"), ("exceptions", "Exceptions par produit"), ("stock", "Stock et lots délaissés"), ("produits", "Seuils par produit")],
+        ["admin/droits"] = [("utilisateurs", "Utilisateurs"), ("roles", "Droits par rôle")],
+        ["admin/caisse"] = [("regles", "Règles"), ("journal", "Journal des actions sensibles")],
+        ["admin/imprimantes"] = [("tickets", "Tickets et afficheur"), ("etiquettes", "Étiquettes")],
+        ["admin/sauvegardes"] = [("reglages", "Réglages"), ("journal", "Journal des sauvegardes")],
+        ["admin/notifications"] = [("envoi", "E-mail et SMS"), ("destinataires", "Destinataires"), ("fiche", "Ajouter ou modifier"), ("file", "File d’attente")],
+        ["admin/nomenclature"] = [("version", "Version et catégories"), ("verifier", "Produits à vérifier")],
+        ["admin/pharmacie"] = [("pharmacie", "Pharmacie et langue"), ("organismes", "Organismes payeurs"), ("medecins", "Médecins prescripteurs")]
+    };
+
+    private static IReadOnlyList<(string Id, string Libelle)> SousRubriques(string lien) => Sous.TryGetValue(lien, out var s) ? s : [];
+
+    /// <summary>Sous-rubrique affichée par un écran : celle de l'adresse si elle existe, sinon la première (vide sans sous-rubriques).</summary>
+    public static string RubriqueCourante(string lien, string? demandee)
+    {
+        var s = SousRubriques(lien);
+        return s.Count == 0 ? "" : s.Any(x => x.Id == demandee) ? demandee! : s[0].Id;
+    }
+
+    /// <summary>Libellé de la sous-rubrique affichée, pour le titre de l'écran (« Sauvegardes · Journal des sauvegardes »).</summary>
+    public static string Libelle(string lien, string? demandee)
+    {
+        var id = RubriqueCourante(lien, demandee);
+        return SousRubriques(lien).FirstOrDefault(x => x.Id == id).Libelle ?? "";
+    }
 }

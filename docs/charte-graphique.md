@@ -82,6 +82,9 @@ Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux �
   du groupe sont en retrait (`class="sous-rubrique"`).
 - `.nav-resume` sous le menu : un seul chiffre utile partout dans l'écran (ex. solde du coffre), facultatif.
 - Le titre reprend l'écran et la rubrique (« Trésorerie · Mouvements ») ; le sous-titre dit à quoi sert la rubrique.
+- **Administration : menu à deux niveaux.** Sous l'écran affiché, ses sous-rubriques (`admin/…?rubrique=…`, déclarées dans
+  `NavAdmin`, en retrait et plus petites) ; une seule partie à la fois. Le titre devient « Écran · Sous-rubrique ». Un formulaire
+  d'ajout ou de modification trop long pour tenir sous sa liste a sa propre sous-rubrique (ex. Notifications › Ajouter ou modifier).
 - **La rubrique est lue dès l'ouverture de l'écran** (dans `OnInitialized`, avant tout chargement) : le titre affiché pendant le
   chargement est déjà le bon, il ne change pas sous les yeux.
 - Réglages nombreux (seuils) : groupés par thème en colonnes, une ligne par réglage, libellé à gauche et petite valeur à droite
@@ -202,9 +205,14 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
   « Chargement… » ; `Texte="Calcul du rapport…"` pour préciser). Jamais un simple texte « Chargement… ».
   Il n'apparaît qu'au bout de 0,4 s : un écran qui charge vite passe directement à son contenu, sans éclair du message
   (changement d'écran sans clignotement).
+- **Pas de clignotement au changement d'écran** :
+  - message « Aucun… » (`.vide`) invisible pendant ses 0,3 premières secondes : si les données arrivent avant, il n'apparaît jamais ;
+  - une partie qui se remplit en plusieurs lectures reste cachée (`visibility: hidden`, la place est gardée) jusqu'à la première
+    lecture complète, puis apparaît d'un coup (ex. Achats › Bons de commande) ;
+  - la barre fine du haut, une fois affichée, reste au moins 0,6 s et ne s'éteint qu'après 0,25 s sans appel.
 - **Tout appel au serveur de plus de 0,3 s** (filtre, page suivante, enregistrement…) : barre fine ambre en haut de la fenêtre,
   affichée automatiquement par la mise en page (`BarreChargement`, appels comptés par `AppelsEnCours`). Un écran n'a rien à
-  ajouter. Un appel plus rapide n'affiche rien, pour éviter le clignotement.
+  ajouter. Un appel plus rapide n'affiche rien, pour éviter le clignotement ; des appels enchaînés gardent la barre allumée.
 
 ## Barre d'état
 

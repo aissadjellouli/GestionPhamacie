@@ -2,15 +2,19 @@
 @inject AppelsEnCours Appels
 
 @* Barre fine en haut de la fenêtre pendant un appel au serveur, quel que soit l'écran (filtre, page suivante, enregistrement…).
-   Elle n'apparaît qu'après 0,3 s : un appel rapide ne fait pas clignoter l'écran. *@
+   Sans clignotement : elle n'apparaît qu'après 0,3 s d'appel ; une fois affichée, elle reste au moins 0,6 s, et ne s'éteint
+   qu'après 0,25 s sans appel (des appels enchaînés, comme à l'ouverture d'un écran, ne l'allument et ne l'éteignent pas à chaque fois). *@
 @if (visible)
 {
     <div class="barre-chargement" role="progressbar" aria-label="Chargement en cours"></div>
 }
 
 @code {
-    private static readonly TimeSpan Delai = TimeSpan.FromMilliseconds(300);
+    private static readonly TimeSpan DelaiApparition = TimeSpan.FromMilliseconds(300);
+    private static readonly TimeSpan DureeMinimale = TimeSpan.FromMilliseconds(600);
+    private static readonly TimeSpan DelaiExtinction = TimeSpan.FromMilliseconds(250);
     private bool visible;
+    private DateTime afficheeLe;
     private CancellationTokenSource? attente;
 
     protected override void OnInitialized() => Appels.Change += SurChangement;
@@ -18,15 +22,24 @@
     private void SurChangement() => _ = InvokeAsync(async () =>
     {
         attente?.Cancel();
-        if (!Appels.Actif)
-        {
-            if (visible) { visible = false; StateHasChanged(); }
-            return;
-        }
         var jeton = (attente = new CancellationTokenSource()).Token;
-        try { await Task.Delay(Delai, jeton); }
-        catch (TaskCanceledException) { return; }
-        if (Appels.Actif && !visible) { visible = true; StateHasChanged(); }
+        try
+        {
+            if (Appels.Actif)
+            {
+                if (visible) return;   // déjà affichée : elle reste
+                await Task.Delay(DelaiApparition, jeton);
+                if (Appels.Actif && !visible) { (visible, afficheeLe) = (true, DateTime.UtcNow); StateHasChanged(); }
+            }
+            else if (visible)
+            {
+                // Plus d'appel : attendre un peu (un autre appel suit souvent), et laisser la barre au moins 0,6 s en tout
+                var reste = DureeMinimale - (DateTime.UtcNow - afficheeLe);
+                await Task.Delay(reste > DelaiExtinction ? reste : DelaiExtinction, jeton);
+                if (!Appels.Actif) { visible = false; StateHasChanged(); }
+            }
+        }
+        catch (TaskCanceledException) { }
     });
 
     public void Dispose()

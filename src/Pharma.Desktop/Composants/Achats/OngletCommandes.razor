@@ -13,7 +13,8 @@
 }
 
 @* Vue « a-commander » : ajout et suggestions ; vue « bons » : liste des bons et détail (écran fixe : une partie à la fois) *@
-<div class="@(Vue == "a-commander" ? "liste" : "achats-grille")">
+@* Rien n'est montré avant la première lecture : l'écran apparaît d'un coup, déjà rempli (pas de tableau vide qui se remplit sous les yeux) *@
+<div class="@(Vue == "a-commander" ? "liste" : "achats-grille")" style="@(premiereLecture ? null : "visibility: hidden")">
     <div class="liste">
         @if (PeutCommander && Vue != "bons")
         {
@@ -211,7 +212,7 @@
     /// <summary>Liste des bons filtrée sur ce grossiste (depuis sa fiche contact).</summary>
     [Parameter] public long? Grossiste { get; set; }
     private long? grossisteApplique;
-    private bool initialise;
+    private bool initialise, premiereLecture;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -312,6 +313,7 @@
         await RechargerAsync();
         if (r?.Long("bon") is { } bon) await OuvrirAsync(bon);
         if (PeutCommander && Vue != "bons") await ChargerSuggestionsAsync(pageSuggestions, tailleSuggestions);
+        premiereLecture = true;
 
         // Arrivée depuis une alerte « Commander » : produit présélectionné, grossiste et quantité suggérés
         if (ProduitAAjouter is { } pid && PeutCommander)

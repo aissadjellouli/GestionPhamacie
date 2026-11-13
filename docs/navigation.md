@@ -63,6 +63,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Achats › Règlements | `reglements` | grossiste ouvert, filtres et page de son relevé |
 | Achats › Retours | `retours` | grossiste, statut, période, page ; retour en préparation (lots, quantités, boîtes scannées, motif, avant « Préparer le retour ») |
 | Rapports | `rapports` | rubrique dans l'adresse (`synthese`, `ventes`, `clotures`, `retours`, `pertes`, `pertes-detail`, `tva`) ; période, date, tableau par jour |
+| Administration | (adresse) | sous-rubrique dans l'adresse (`admin/seuils?rubrique=exceptions`, `admin/notifications?rubrique=fiche`…) ; voir `NavAdmin` |
 | Contrôle interne | `surveillance` | rubrique dans l'adresse (à examiner, `?onglet=traitees`, `?onglet=sensibles`) ; page des anomalies |
 | Guide et retours | `guide` | rubrique dans l'adresse (à essayer, `?rubrique=remarque`, `?rubrique=remarques`) ; écran, genre et page des remarques |
 | Factures | `factures`, `editeur-facture` | recherche, destinataire, période, page, facture ouverte (et sa version), éditeur ouvert et sa saisie (destinataire, ventes cochées, lignes libres, dates, commentaire) ; onglet dans l’adresse |

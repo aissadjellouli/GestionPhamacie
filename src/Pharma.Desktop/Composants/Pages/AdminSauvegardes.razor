@@ -2,12 +2,12 @@
 @inject ApiClient Api
 
 <div class="page admin">
-    <NavAdmin Actif="admin/sauvegardes" />
+    <NavAdmin Actif="admin/sauvegardes" Rubrique="@Rubrique" />
 
     <div class="admin-contenu">
         <div class="titre-page">
             <div>
-                <h1>Sauvegardes</h1>
+                <h1>Sauvegardes · @NavAdmin.Libelle("admin/sauvegardes", Rubrique)</h1>
                 <p class="sous-titre">Copie quotidienne de la base sur un disque externe ; le titulaire est prévenu par SMS en cas de problème.</p>
             </div>
             <div class="actions">
@@ -21,6 +21,8 @@
 
         @if (r is not null)
         {
+            @if (rubrique == "reglages")
+            {
             @if (baseSauvegardee is not null)
             {
                 <div class="info-bandeau" role="status">Base de données sauvegardée : <strong>@baseSauvegardee</strong>@(serveurBase is { } sv ? $" · serveur {sv}" : "")</div>
@@ -43,8 +45,11 @@
                 <p class="detail" style="margin: 0">Chaque sauvegarde copie la base sur le disque externe et dans la GED du serveur@(dossierGed is { } dg ? $" ({dg}\\Sauvegardes)" : ""), et les documents de la GED (ordonnances, factures, rapports…) sur le disque externe, dans son dossier GED.</p>
                 <p class="detail" style="margin: 0">Format pg_dump (restauration avec pg_restore). Dernière sauvegarde automatique : @(derniere is { } d ? Libelles.Date(d) : "jamais").</p>
             </section>
+            }
         }
 
+        @if (rubrique == "journal")
+        {
         <section class="tableau-cadre" aria-label="Journal des sauvegardes">
             <table class="tableau" style="min-width: 760px">
                 <thead><tr><th scope="col">Date</th><th scope="col">Déclenchement</th><th scope="col">Résultat</th><th scope="col">Fichier</th><th scope="col">Détail</th></tr></thead>
@@ -63,10 +68,15 @@
                 </tbody>
             </table>
         </section>
+        }
     </div>
 </div>
 
 @code {
+    /// <summary>Sous-rubrique dans l'adresse (admin/sauvegardes?rubrique=…) : une partie à la fois, l'écran reste fixe.</summary>
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => NavAdmin.RubriqueCourante("admin/sauvegardes", Rubrique);
+
     private sealed class Reglages
     {
         public bool Actif { get; set; }
