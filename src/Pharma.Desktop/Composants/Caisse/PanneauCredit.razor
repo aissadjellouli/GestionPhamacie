@@ -4,11 +4,12 @@
 @inject HistoriqueNavigation Historique
 
 @* Le patient rembourse tout ou partie de sa dette : l'argent entre dans la caisse ouverte du poste *@
-<div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-credit">
-    <section class="panneau fenetre-annulation">
+@* EnLigne : partie de la Caisse (colonne d'actions à gauche), sans voile ni « Fermer » ; sinon fenêtre par-dessus l'écran *@
+<div class="@(EnLigne ? "partie-caisse" : "voile")" role="@(EnLigne ? null : "dialog")" aria-modal="@(EnLigne ? null : "true")" aria-labelledby="t-credit">
+    <section class="panneau @(EnLigne ? "partie-caisse-panneau" : "fenetre-annulation")">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
             <h2 id="t-credit">Règlement d’un crédit</h2>
-            <button type="button" class="btn" @onclick="OnFerme">Fermer</button>
+            @if (!EnLigne) { <button type="button" class="btn" @onclick="OnFerme">Fermer</button> }
         </div>
 
         @if (recu is { } r)
@@ -34,7 +35,8 @@
             {
                 <p class="vide" style="margin: 0">Aucun patient avec un crédit en cours.</p>
             }
-            <div class="liste-ventes">
+            @* Patients en crédit : par page, filtrés par le serveur (règle des listes) ; la liste défile dans son cadre *@
+            <div class="liste-ventes cadre-defilant">
                 @foreach (var p in patients)
                 {
                     <button type="button" class="ligne-vente" @onclick="() => ChoisirAsync(p.Id)">
@@ -43,6 +45,7 @@
                     </button>
                 }
             </div>
+            <Pagination Total="totalPatients" Numero="pagePatients" Taille="taillePatients" Libelle="Pages des patients en crédit" OnChange="p => ChargerPatientsAsync(p.Numero, p.Taille)" />
         }
         else
         {
@@ -174,6 +177,8 @@
 
     /// <summary>Patient à ouvrir directement (depuis sa fiche contact) ; sinon la liste des patients en crédit.</summary>
     [Parameter] public long? PatientId { get; set; }
+    /// <summary>Affiché comme partie de la Caisse (pas de voile ni de « Fermer » : la colonne d'actions ramène à la vente).</summary>
+    [Parameter] public bool EnLigne { get; set; }
     [Parameter] public EventCallback OnFerme { get; set; }
     /// <summary>Prévient la caisse qu'un règlement est entré (attendu de caisse).</summary>
     [Parameter] public EventCallback OnEncaisse { get; set; }
@@ -276,13 +281,14 @@
         {
             e.Mettre("patient", situation?.Patient.Id); e.Mettre("recherche", recherche); e.Mettre("du", releveDu); e.Mettre("au", releveAu);
             e.Mettre("type", releveType); e.Mettre("page", mouvementsPage); e.Mettre("taille", mouvementsTaille);
+            e.Mettre("page_patients", pagePatients); e.Mettre("taille_patients", taillePatients);
         });
         var r = Historique.Restaurer("credit");
         if (r is not null)
             (recherche, releveDu, releveAu, releveType, mouvementsTaille) = (r.Texte("recherche") ?? recherche, r.Date("du"), r.Date("au"), r.Texte("type") ?? "", r.Entier("taille") ?? mouvementsTaille);
         if ((r?.Long("patient") ?? PatientId) is > 0 and var p) await ChoisirAsync(p);
         if (situation is not null && r?.Entier("page") is > 1 and var pr) await ChargerMouvementsAsync(pr, mouvementsTaille);
-        await RechercherAsync();
+        await ChargerPatientsAsync(r?.Entier("page_patients") ?? 1, r?.Entier("taille_patients") ?? taillePatients);
     }
 
     private async Task RechercherApresSaisieAsync()
@@ -292,12 +298,19 @@
         if (n == requete) await RechercherAsync();
     }
 
-    private async Task RechercherAsync()
+    private Task RechercherAsync() => ChargerPatientsAsync(1, taillePatients);
+
+    private int totalPatients, pagePatients = 1, taillePatients = Pagination.TailleParDefaut;
+
+    /// <summary>Patients en crédit (plus grosses dettes d'abord), une page ; recherche sur le nom ou le début du téléphone.</summary>
+    private async Task ChargerPatientsAsync(int numero, int taille)
     {
         var n = ++requete;
-        var (liste, e) = await Api.PatientsEnCreditAsync(recherche);
+        var (p, e) = await Api.PatientsEnCreditPageAsync(recherche, numero, taille);
         if (n != requete) return;
-        (patients, erreur, charge) = (liste, e, true);
+        if (p is { Lignes.Count: 0 } && numero > 1) { await ChargerPatientsAsync(1, taille); return; }
+        (patients, erreur, charge) = (p?.Lignes.ToList() ?? [], e, true);
+        if (p is not null) (totalPatients, pagePatients, taillePatients) = (p.Total, p.Numero, p.Taille);
     }
 
     private async Task ChoisirAsync(long id)

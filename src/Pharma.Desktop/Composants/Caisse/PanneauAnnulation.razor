@@ -1,13 +1,15 @@
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 @* Vente encaissée : annulation complète (récente par le caissier, ancienne validée sur place)
    ou retour de produits par le patient (le pharmacien choisit : remis en stock ou à détruire) *@
-<div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-annulation">
-    <section class="panneau fenetre-annulation">
+@* EnLigne : partie de la Caisse (colonne d'actions à gauche), sans voile ni « Fermer » ; sinon fenêtre par-dessus l'écran *@
+<div class="@(EnLigne ? "partie-caisse" : "voile")" role="@(EnLigne ? null : "dialog")" aria-modal="@(EnLigne ? null : "true")" aria-labelledby="t-annulation">
+    <section class="panneau @(EnLigne ? "partie-caisse-panneau" : "fenetre-annulation")">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
             <h2 id="t-annulation">@(mode == "retour" ? "Retour de produits" : "Annuler une vente ou faire un retour")</h2>
-            <button type="button" class="btn" @onclick="OnFerme">Fermer</button>
+            @if (!EnLigne) { <button type="button" class="btn" @onclick="OnFerme">Fermer</button> }
         </div>
 
         @if (message is not null)
@@ -82,7 +84,7 @@
                 {
                     <p class="vide" style="margin: 0">Aucune vente trouvée.</p>
                 }
-                <div class="liste-ventes">
+                <div class="liste-ventes cadre-defilant">
                     @foreach (var v in ventes)
                     {
                         <button type="button" class="ligne-vente @(v.Statut == "annulee" ? "annulee" : null)" disabled="@(v.Statut != "validee")" @onclick="() => Choisir(v)">
@@ -96,6 +98,11 @@
                         </button>
                     }
                 </div>
+                @* Ventes de la caisse ouverte : par page, filtrées par le serveur (règle des listes) ; la recherche par boîte garde sa liste *@
+                @if (resultatBoite is null && recherche)
+                {
+                    <Pagination Total="totalVentes" Numero="pageVentes" Taille="tailleVentes" Libelle="Pages des ventes" OnChange="p => ChargerVentesAsync(p.Numero, p.Taille)" />
+                }
             }
             else
             {
@@ -206,6 +213,8 @@
 
 @code {
     [Parameter] public string? NumeroInitial { get; set; }
+    /// <summary>Affiché comme partie de la Caisse (pas de voile ni de « Fermer » : la colonne d'actions ramène à la vente).</summary>
+    [Parameter] public bool EnLigne { get; set; }
     [Parameter] public EventCallback OnFerme { get; set; }
     /// <summary>Prévient la caisse qu'une vente a été annulée ou reprise (stock, attendu de caisse).</summary>
     [Parameter] public EventCallback OnAnnulee { get; set; }
@@ -407,20 +416,31 @@
         }
     };
 
+    private int totalVentes, pageVentes = 1, tailleVentes = Pagination.TailleParDefaut;
+
     protected override async Task OnInitializedAsync()
     {
         numero = NumeroInitial;
-        await RechercherAsync();
+        // « ← Retour » : page de la liste des ventes retrouvée
+        Historique.Suivre("annulation", e => { e.Mettre("page", pageVentes); e.Mettre("taille", tailleVentes); });
+        var r = Historique.Restaurer("annulation");
+        if (r is not null) (pageVentes, tailleVentes) = (r.Entier("page") ?? 1, r.Entier("taille") ?? tailleVentes);
+        await ChargerVentesAsync(NumeroInitial is null ? pageVentes : 1, tailleVentes);
         if (ventes.Count == 1 && NumeroInitial is not null && ventes[0].Statut == "validee") Choisir(ventes[0]);
     }
 
     private async Task ToucheRecherche(KeyboardEventArgs e) { if (e.Key == "Enter") await RechercherAsync(); }
 
-    private async Task RechercherAsync()
+    private Task RechercherAsync() => ChargerVentesAsync(1, tailleVentes);
+
+    /// <summary>Ventes de la caisse ouverte du poste, par page ; avec un n° de ticket, cette vente seule.</summary>
+    private async Task ChargerVentesAsync(int numeroPage, int taille)
     {
-        (erreur, choisie, mode) = (null, null, null);
-        (ventes, erreur) = await Api.VentesAnnulablesAsync(numero);
-        recherche = true;
+        (erreur, choisie, mode, resultatBoite) = (null, null, null, null);
+        var (p, e) = await Api.VentesAnnulablesPageAsync(numero, numeroPage, taille);
+        if (p is null) { (ventes, erreur) = ([], e); return; }
+        if (p.Lignes.Count == 0 && numeroPage > 1) { await ChargerVentesAsync(1, taille); return; }
+        (ventes, totalVentes, pageVentes, tailleVentes, recherche) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille, true);
     }
 
     private void Choisir(VenteAnnulableDto v)

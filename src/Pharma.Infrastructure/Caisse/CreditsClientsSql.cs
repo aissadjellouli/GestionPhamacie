@@ -31,6 +31,24 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
         return await Lire(cmd, ct);
     }
 
+    public async Task<Page<PatientEnCredit>> AvecCreditPageAsync(string? recherche, DemandePage page, CancellationToken ct = default)
+    {
+        // Mêmes critères que AvecCreditAsync, sans plafond de 50 : page et total
+        const string Ou = """
+            WHERE (p.solde_credit > 0 OR ($1::text IS NOT NULL AND EXISTS (SELECT 1 FROM credit_mouvement m WHERE m.patient_id = p.id)))
+              AND ($1::text IS NULL OR concat_ws(' ', p.nom, p.prenom) ILIKE '%' || $1 || '%' OR p.telephone LIKE $1 || '%')
+            """;
+        await using var cmd = db.CreateCommand($"{Select} {Ou} ORDER BY p.solde_credit DESC, p.id LIMIT $2 OFFSET $3");
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.AddWithValue(page.Taille);
+        cmd.Parameters.AddWithValue(page.Decalage);
+        var lignes = await Lire(cmd, ct);
+        await using var compte = db.CreateCommand($"SELECT count(*) FROM patient p {Ou}");
+        compte.Parameters.Add(new NpgsqlParameter { Value = (object?)recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        var total = Convert.ToInt32(await compte.ExecuteScalarAsync(ct));
+        return new(lignes, total, page.Page, page.Taille);
+    }
+
     public async Task<SituationCredit?> SituationAsync(long patientId, CancellationToken ct = default)
     {
         PatientEnCredit? patient;

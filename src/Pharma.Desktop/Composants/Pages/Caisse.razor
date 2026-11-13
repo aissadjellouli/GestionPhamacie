@@ -7,8 +7,12 @@
 @inject IJSRuntime JS
 @inject ImprimanteTickets Tickets
 @inject HistoriqueNavigation Historique
+@inject NavigationManager Nav
 
-<div class="page" style="padding-top: 24px">
+@* Écran fixe (docs/charte-graphique.md) : colonne d'actions de caisse à gauche (NavCaisse), une partie à la fois dans l'adresse :
+   la vente (caisse), l'annulation ou le retour (caisse?rubrique=annulation), le règlement d'un crédit (caisse?rubrique=credit).
+   Passer d'une partie à l'autre garde le panier ; le panier défile dans son cadre. *@
+<div class="page @(erreurEtat is null && etat?.SessionId is not null ? "avec-menu" : null)" style="padding-top: 24px">
     @if (erreurEtat is not null)
     {
         <div class="erreur" role="alert">@erreurEtat</div>
@@ -32,10 +36,18 @@
     }
     else
     {
-        <p class="sous-titre" style="margin: 0">
-            Caisse du poste ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value)@(etat.OuvertePar is { } par ? $" par {par}" : "") · fond de caisse @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste
-            · vendeur : <strong>@Session.NomComplet</strong>
-        </p>
+        <NavCaisse Actif="@AdresseRubrique" OuverteLe="etat.OuverteLe" OuvertePar="@etat.OuvertePar" Fond="etat.FondCaisse" Poste="@etat.Poste" />
+        <div class="contenu-rubrique">
+        @if (rubrique == "annulation")
+        {
+            <PanneauAnnulation EnLigne="true" NumeroInitial="@annulationNumero" OnFerme="RetourVente" OnAnnulee="VenteAnnuleeAsync" />
+        }
+        else if (rubrique == "credit")
+        {
+            <PanneauCredit EnLigne="true" PatientId="creditPatientId" OnFerme="RetourVente" OnEncaisse="ChargerEtatAsync" />
+        }
+        else
+        {
 
         @if (venteFaite is not null)
         {
@@ -272,7 +284,7 @@
                 }
                 else
                 {
-                    <div class="panier">
+                    <div class="panier cadre-defilant">
                         @foreach (var l in lignes)
                         {
                             @if (l.Lot is { } lot)
@@ -376,7 +388,7 @@
                 }
             </section>
 
-            <aside class="panneau colonne-laterale reglement" aria-label="Règlement">
+            <aside class="panneau colonne-laterale reglement cadre-defilant" aria-label="Règlement">
                 <div class="filtres" role="group" aria-label="Type de vente">
                     <button type="button" class="puce" aria-pressed="@(!tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(false)">Vente libre</button>
                     <button type="button" class="puce" aria-pressed="@(tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(true)">Tiers payant</button>
@@ -604,34 +616,12 @@
                 {
                     <span class="sous-titre" style="font-size: 13px">Pour mettre en crédit, choisissez d’abord le patient.</span>
                 }
-                <a href="caisse/etat" class="btn" title="Récapitulatif depuis l’ouverture et comptage intermédiaire, sans clôturer">État de la caisse</a>
-                <a href="cloture?releve=true" class="btn" title="Changement d’équipe : compter le tiroir, clôturer la période et rouvrir aussitôt la caisse avec l’argent compté">Relève</a>
-                <button type="button" class="btn" @onclick="() => OuvrirAnnulation(null)">Annulation ou retour</button>
-                <button type="button" class="btn" @onclick="() => creditOuvert = true">Règlement d’un crédit</button>
-                <a href="cloture" class="btn">Clôturer la caisse</a>
-                @if (Session.A("caisse.ouvrir_tiroir"))
-                {
-                    <button type="button" class="btn" title="Ouverture sans vente, enregistrée pour le titulaire (tiroir-caisse : matériel à brancher)" @onclick="OuvrirTiroirAsync">Ouvrir le tiroir</button>
-                }
-                else
-                {
-                    <button type="button" class="btn" disabled title="Droit « Ouvrir le tiroir sans vente » nécessaire">Ouvrir le tiroir</button>
-                }
-                @if (messageTiroir is not null) { <span class="detail" role="status">@messageTiroir</span> }
             </aside>
+        </div>
+        }
         </div>
     }
 </div>
-
-@if (creditOuvert)
-{
-    <PanneauCredit PatientId="creditPatientId" OnFerme="() => (creditOuvert, creditPatientId) = (false, null)" OnEncaisse="ChargerEtatAsync" />
-}
-
-@if (annulationOuverte)
-{
-    <PanneauAnnulation NumeroInitial="@annulationNumero" OnFerme="() => annulationOuverte = false" OnAnnulee="VenteAnnuleeAsync" />
-}
 
 @code {
     private sealed class LignePanier
@@ -795,11 +785,25 @@
     [SupplyParameterFromQuery(Name = "credit")] public long? Credit { get; set; }
     private long? creditPatientId, creditDemande;
 
+    /// <summary>Partie affichée (caisse?rubrique=annulation|credit) ; vide : la vente.</summary>
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique = "";
+    private string AdresseRubrique => rubrique == "" ? "caisse" : $"caisse?rubrique={rubrique}";
+
     protected override void OnParametersSet()
     {
+        rubrique = Rubrique is "annulation" or "credit" ? Rubrique : Credit is > 0 ? "credit" : "";
+        if (rubrique != "annulation") annulationNumero = null;
         if (Credit == creditDemande) return;
         creditDemande = Credit;
-        if (Credit is > 0) (creditOuvert, creditPatientId) = (true, Credit);
+        if (Credit is > 0) creditPatientId = Credit;
+    }
+
+    /// <summary>Fin d'une annulation ou d'un règlement : retour à la vente (panier gardé).</summary>
+    private void RetourVente()
+    {
+        creditPatientId = null;
+        Nav.NavigateTo("caisse");
     }
 
     protected override async Task OnInitializedAsync()
@@ -807,10 +811,10 @@
         Session.AvantFermeture += PanierAbandonne;
         // Quitter la Caisse panier rempli (menu, lien, « Retour ») : la vente part en attente, « Retour » la reprend
         Historique.AvantDeQuitter("caisse", QuitterAsync);
-        Historique.Suivre("caisse", e => { e.Mettre("attente", venteMiseDeCoteEnPartant); e.Mettre("credit", creditOuvert); });
+        // La partie affichée (annulation, crédit) est dans l'adresse : « Retour » y revient d'elle-même
+        Historique.Suivre("caisse", e => e.Mettre("attente", venteMiseDeCoteEnPartant));
         var retour = Historique.Restaurer("caisse");
         var aReprendre = retour?.Long("attente");
-        if (retour?.Oui("credit") == true) creditOuvert = true;   // panneau « Règlement d'un crédit » rouvert (son patient et son relevé : PanneauCredit)
         (organismes, _) = await Api.OrganismesAsync();
         organismeId = organismes.FirstOrDefault()?.Id ?? 0;
         await ChargerEtatAsync();
@@ -1286,14 +1290,7 @@
         _ = Api.SignalerCaisseAsync(new EvenementCaisseRequete("ligne_retiree", l.ProduitId, l.Lot.LotId, boites, l.Prix * boites));
     }
 
-    // Tiroir ouvert sans vente : enregistré (droit « caisse.ouvrir_tiroir ») ; l'ouverture du tiroir lui-même dépend du matériel
-    private string? messageTiroir;
-
-    private async Task OuvrirTiroirAsync()
-    {
-        var e = await Api.SignalerCaisseAsync(new EvenementCaisseRequete("tiroir_ouvert"));
-        messageTiroir = e ?? $"Ouverture du tiroir sans vente enregistrée à {DateTime.Now:HH:mm}.";
-    }
+    // Tiroir ouvert sans vente : dans la colonne d'actions (NavCaisse), avec confirmation
 
     /// <summary>Explique au comptoir pourquoi un lot a été écarté et lequel est servi à la place.</summary>
     private static Bandeau? Expliquer(ReponseLotFefo r)
@@ -1550,10 +1547,14 @@
     }
 
     // ---- Annulation d'une vente (panneau) ----
-    private bool annulationOuverte, creditOuvert;
     private string? annulationNumero;
 
-    private void OuvrirAnnulation(string? numero) => (annulationOuverte, annulationNumero) = (true, numero);
+    /// <summary>Annulation ou retour, d'une vente précise (ticket) ou à chercher : partie « Annulation ou retour » de la Caisse.</summary>
+    private void OuvrirAnnulation(string? numero)
+    {
+        annulationNumero = numero;   // gardé : OnParametersSet ne l'efface qu'en dehors de l'annulation
+        Nav.NavigateTo("caisse?rubrique=annulation");
+    }
 
     private async Task VenteAnnuleeAsync()
     {

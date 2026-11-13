@@ -3,7 +3,9 @@
 
 @* État intermédiaire de la caisse du poste : depuis l'ouverture, sans compter ni clôturer. Comptage aveugle strict : ni espèces,
    ni total, ni attendu ; le tiroir se compte par un comptage intermédiaire (écran de clôture, mode intermédiaire). *@
-<div class="page">
+<div class="page avec-menu">
+    <NavCaisse Actif="caisse/etat" OuverteLe="etat?.OuverteLe" OuvertePar="@etat?.OuvertePar" Fond="etat?.FondCaisse" Poste="@etat?.Poste" />
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
             <h1>État de la caisse</h1>
@@ -75,6 +77,7 @@
             </section>
         </div>
     }
+    </div>
 </div>
 
 @code {

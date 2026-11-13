@@ -32,6 +32,8 @@ public interface IAnnulationsVente
     Task<VenteAnnulable?> TrouverAsync(long? venteId, string? numero, CancellationToken ct = default);
     /// <summary>Dernières ventes encaissées sur la caisse ouverte du poste (les plus récentes d'abord).</summary>
     Task<IReadOnlyList<VenteAnnulable>> DernieresAsync(long sessionCaisseId, int limite, CancellationToken ct = default);
+    /// <summary>Ventes encaissées ou annulées sur la caisse ouverte du poste, par page (les plus récentes d'abord).</summary>
+    Task<Pharma.Application.Commun.Page<VenteAnnulable>> VentesSessionAsync(long sessionCaisseId, Pharma.Application.Commun.DemandePage page, CancellationToken ct = default);
     Task AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default);
     /// <summary>Ventes de la session de caisse annulées (pour l'alerte au-delà du seuil).</summary>
     Task<int> AnnulationsSessionAsync(long sessionCaisseId, CancellationToken ct = default);
@@ -49,6 +51,22 @@ public sealed class RechercherVenteAnnulable(IAnnulationsVente annulations, ISes
         return await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct) is { } s
             ? await annulations.DernieresAsync(s.Id, 20, ct)
             : [];
+    }
+
+    /// <summary>
+    /// Ventes de la caisse ouverte du poste, par page (règle des listes) ; un n° de ticket donné : cette vente seule, où qu'elle ait été faite.
+    /// </summary>
+    public async Task<Pharma.Application.Commun.Page<VenteAnnulable>> PageAsync(string? numero, string? poste, Pharma.Application.Commun.DemandePage page,
+        CancellationToken ct = default)
+    {
+        if (!string.IsNullOrWhiteSpace(numero))
+        {
+            var v = await annulations.TrouverAsync(null, numero.Trim().ToUpperInvariant(), ct);
+            return new(v is null ? [] : [v], v is null ? 0 : 1, 1, page.Taille);
+        }
+        return await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct) is { } s
+            ? await annulations.VentesSessionAsync(s.Id, page, ct)
+            : new([], 0, 1, page.Taille);
     }
 }
 

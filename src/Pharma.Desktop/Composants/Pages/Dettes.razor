@@ -253,7 +253,7 @@
     private bool FiltreActif => fTiers != "" || rechercheTiers != "" || fEtat != "" || fDu is not null || fAu is not null;
 
     // Filtre du tiers : liste pour les grossistes et organismes, recherche avec propositions pour les patients et clients
-    private bool TiersEnListe => rubrique is "bordereau" or "grossiste" or "effet";
+    private bool TiersEnListe => rubrique is "grossiste" or "effet";   // mêmes catégories que FiltreSuiviDettes.CategoriesListeTiers
     private string rechercheTiers = "";
     private bool propositionsOuvertes;
     private int actifTiers = -1, demandeLignes;

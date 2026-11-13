@@ -43,7 +43,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Inventaire, Registre | Stock | l'écran d'origine |
 | Dettes et créances | « Payer » / « Encaisser » (Caisse, Trésorerie › Saisir un mouvement, ou Achats › Règlements) | Dettes : rubrique du tiers, filtres et page de la liste |
 | Achats › Commandes | « Réceptionner » (Achats › Réceptions) | Commandes : filtres, page, bon ouvert |
-| Caisse | Clôture, Relevé | Caisse (vente reprise, panneau de crédit rouvert) |
+| Caisse | Clôture, Relevé | Caisse (vente reprise, partie « Règlement d'un crédit » rouverte) |
 | Contrôle interne | Écarts et risques | Contrôle interne (rubrique) |
 | Administration › Caisse | Imprimantes | Administration › Caisse (filtres et page du journal) |
 | Barre d'état (en bas) | Caisse ou Clôture, Sauvegardes | écran précédent |
@@ -53,8 +53,9 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 
 | Écran | Clé | Retenu |
 |---|---|---|
-| Caisse | `caisse` | vente mise en attente en partant (reprise au retour), panneau « Règlement d'un crédit » ouvert |
-| Caisse › Règlement d'un crédit | `credit` | patient ouvert, recherche, filtres et page du relevé |
+| Caisse | `caisse` | partie dans l'adresse (vente, `?rubrique=annulation`, `?rubrique=credit`) ; passer d'une partie à l'autre garde le panier ; vente mise en attente en quittant la Caisse (reprise au retour) |
+| Caisse › Annulation ou retour | `annulation` | page de la liste des ventes de la caisse |
+| Caisse › Règlement d'un crédit | `credit` | patient ouvert, recherche, page des patients en crédit, filtres et page du relevé |
 | Stock | `stock` | rubrique dans l'adresse (`produits`, `ensemble`, `nouveau`, `modifier`, `sortie`, `blocage`) ; recherche, filtre, rayon |
 | Alertes | `alertes` | rubrique dans l'adresse (vue d'ensemble, `toutes`, `urgent`, `peremption`, `stock`) ; page |
 | Achats › Commandes | `commandes` | partie dans l'adresse (`&vue=a-commander`, `&vue=bons`) ; bons : grossiste, statut, période, page, bon ouvert ; produits à commander : produit, état, dernier grossiste, page |

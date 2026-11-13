@@ -3,7 +3,10 @@
 @inject SessionPoste Session
 @inject NavigationManager Nav
 
-<div class="page page-serree">
+<div class="page avec-menu">
+    <NavCaisse Actif="@(Intermediaire ? "caisse/etat" : Releve ? "cloture?releve=true" : "cloture")"
+               OuverteLe="etat?.OuverteLe" OuvertePar="@etat?.OuvertePar" Fond="etat?.FondCaisse" Poste="@etat?.Poste" />
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
             <h1>@(Intermediaire ? "Comptage intermédiaire" : Releve ? "Relève de caisse" : "Clôture de caisse")</h1>
@@ -134,6 +137,7 @@
             </aside>
         </div>
     }
+    </div>
 </div>
 
 @code {

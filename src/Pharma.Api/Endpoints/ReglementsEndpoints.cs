@@ -46,6 +46,13 @@ internal static class ReglementsEndpoints
         credits.MapGet("", async (string? q, ConsulterCredits consulter, CancellationToken ct) =>
             Results.Ok((await consulter.ListerAsync(q, ct)).Select(VersDto)));
 
+        // Patients en crédit par page (règle des listes)
+        credits.MapGet("/page", async (string? q, int? page, int? taille, ConsulterCredits consulter, CancellationToken ct) =>
+            {
+                var p = await consulter.PageAsync(q, Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<PatientEnCreditDto>(p.Lignes.Select(VersDto).ToList(), p.Total, p.Numero, p.Taille));
+            });
+
         credits.MapGet("/{patientId:long}", async (long patientId, ConsulterCredits consulter, CancellationToken ct) =>
             {
                 var s = await consulter.SituationAsync(patientId, ct);

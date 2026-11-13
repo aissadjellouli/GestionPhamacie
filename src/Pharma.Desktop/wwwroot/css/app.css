@@ -656,3 +656,13 @@ details.avance[open] summary { margin-bottom: 8px; }
 .reglage-ligne { display: grid; grid-template-columns: minmax(0, 1fr) 124px; gap: 10px; align-items: center; }
 .reglage-ligne label { font-size: 13px; color: var(--texte-2); }
 .reglage-ligne input { min-width: 0; width: 100%; padding-top: 6px; padding-bottom: 6px; }
+
+/* Caisse : colonne d'actions (NavCaisse) */
+.nav-laterale .nav-inactif { padding: 10px 12px 10px 24px; border-radius: 6px; font-size: 14px; color: var(--texte-inactif); cursor: not-allowed; }
+.nav-confirmation { margin: 2px 0 4px 12px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--bordure); background: var(--surface-2);
+  display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+/* Annulation ou retour, règlement d'un crédit : parties de la Caisse (pas de voile) */
+.partie-caisse { display: block; }
+.partie-caisse-panneau { display: flex; flex-direction: column; gap: 12px; }
+/* Panneau Règlement : défile dans son cadre si besoin (tiers payant), « Encaisser » reste visible en bas */
+.reglement.cadre-defilant > .btn-large { position: sticky; bottom: 0; z-index: 1; box-shadow: 0 -8px 12px var(--surface); }

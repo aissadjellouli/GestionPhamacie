@@ -103,8 +103,8 @@ public sealed record FiltreSuiviDettes(string? Categorie = null, string? Tiers =
     public static readonly string[] Etats = ["alerte", "delai", "rejetee"];
 
     /// <summary>Valeurs inconnues ignorées (pas d'erreur : un lien ancien ou modifié affiche simplement tout).</summary>
-    /// <summary>Catégories aux tiers peu nombreux : leur filtre est une liste complète ; les autres (patients, clients) une recherche.</summary>
-    public static readonly string[] CategoriesListeTiers = ["bordereau", "grossiste", "effet"];
+    /// <summary>Catégories aux tiers peu nombreux : leur filtre est une liste complète ; les autres (patients, clients, organismes des bordereaux) une recherche.</summary>
+    public static readonly string[] CategoriesListeTiers = ["grossiste", "effet"];
 
     public static FiltreSuiviDettes Lire(string? categorie, string? tiers, string? etat, DateOnly? du, DateOnly? au, string? recherche = null) => new(
         Categories.Contains(categorie) ? categorie : null,
@@ -118,7 +118,7 @@ public sealed record TiersSuivi(string Valeur, string Nom);
 
 /// <summary>
 /// Une page de sommes dues, le total en DA de tout le filtre (toutes pages), et les tiers proposés pour le filtre : tous ceux de la
-/// catégorie quand ils sont peu nombreux (grossistes, organismes), sinon ceux qui répondent à la recherche (10 au plus, dès 2 lettres).
+/// catégorie quand ils sont peu nombreux (grossistes, effets), sinon ceux qui répondent à la recherche (10 au plus, dès 2 lettres).
 /// </summary>
 public sealed record PageSuiviDettes(Page<LigneSuivi> Page, decimal Total, IReadOnlyList<TiersSuivi> Tiers);
 

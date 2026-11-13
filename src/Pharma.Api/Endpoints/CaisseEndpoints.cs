@@ -115,6 +115,14 @@ internal static class CaisseEndpoints
                 Results.Ok((await rechercher.ExecuterAsync(numero, requete.Poste(), ct)).Select(VersDto)))
            .ExigerPermission(Permissions.CaisseVendre);
 
+        // Ventes de la caisse ouverte du poste, par page (règle des listes) ; ou la vente d'un n° de ticket
+        caisse.MapGet("/ventes/page", async (string? numero, int? page, int? taille, RechercherVenteAnnulable rechercher, HttpRequest requete, CancellationToken ct) =>
+            {
+                var p = await rechercher.PageAsync(numero, requete.Poste(), Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<VenteAnnulableDto>(p.Lignes.Select(VersDto).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
         // Remboursement sans ticket : la boîte rapportée désigne sa vente, ou les ventes récentes de ce produit (sans patient,
         // ou de ce patient s'il s'est nommé)
         caisse.MapGet("/ventes/par-boite", async (string? code, int? jours, long? patientId, string? lot, RechercherVenteParBoite rechercher,

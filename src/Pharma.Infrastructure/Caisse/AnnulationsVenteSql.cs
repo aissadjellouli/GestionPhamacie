@@ -55,6 +55,21 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         return await LireAsync(cmd, ct);
     }
 
+    public async Task<Pharma.Application.Commun.Page<VenteAnnulable>> VentesSessionAsync(long sessionCaisseId, Pharma.Application.Commun.DemandePage page,
+        CancellationToken ct = default)
+    {
+        const string Ou = "WHERE v.session_caisse_id = $1 AND v.statut IN ('validee', 'annulee')";
+        await using var cmd = db.CreateCommand($"{Select} {Ou} ORDER BY v.id DESC LIMIT $2 OFFSET $3");
+        cmd.Parameters.AddWithValue(sessionCaisseId);
+        cmd.Parameters.AddWithValue(page.Taille);
+        cmd.Parameters.AddWithValue(page.Decalage);
+        var lignes = await LireAsync(cmd, ct);
+        await using var compte = db.CreateCommand($"SELECT count(*) FROM vente v {Ou}");
+        compte.Parameters.AddWithValue(sessionCaisseId);
+        var total = Convert.ToInt32(await compte.ExecuteScalarAsync(ct));
+        return new(lignes, total, page.Page, page.Taille);
+    }
+
     public async Task<long?> VenteDeLaBoiteAsync(long boiteId, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""

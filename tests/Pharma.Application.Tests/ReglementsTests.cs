@@ -19,6 +19,8 @@ internal sealed class CreditsEnMemoire(decimal solde) : ICreditsClients
 {
     public (decimal Montant, string Mode, long Session)? Encaisse { get; private set; }
     public Task<IReadOnlyList<PatientEnCredit>> AvecCreditAsync(string? r, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<PatientEnCredit>>([]);
+    public Task<Pharma.Application.Commun.Page<PatientEnCredit>> AvecCreditPageAsync(string? r, Pharma.Application.Commun.DemandePage p, CancellationToken ct = default) =>
+        Task.FromResult(new Pharma.Application.Commun.Page<PatientEnCredit>([], 0, p.Page, p.Taille));
     public Task<SituationCredit?> SituationAsync(long id, CancellationToken ct = default) =>
         Task.FromResult<SituationCredit?>(new SituationCredit(new PatientEnCredit(id, "Patient fictif", null, solde, 5000, null), []));
     public Task<string> EncaisserAsync(long p, decimal m, string mode, long s, long u, CancellationToken ct = default) { Encaisse = (m, mode, s); return Task.FromResult("RC-000007"); }

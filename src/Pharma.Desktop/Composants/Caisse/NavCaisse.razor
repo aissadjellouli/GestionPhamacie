@@ -1,0 +1,76 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Colonne d'actions de la Caisse, commune à la vente, à l'annulation, au règlement d'un crédit, à l'état de la caisse,
+   à la relève et à la clôture (écran fixe, docs/charte-graphique.md). Chaque entrée est une adresse, « ← Retour » y revient ;
+   « Ouvrir le tiroir » n'est pas un écran : une confirmation, puis l'ouverture sans vente est inscrite au contrôle interne. *@
+<nav class="nav-laterale" aria-label="Actions de caisse">
+    <span class="nav-groupe-titre">Comptoir</span>
+    @Lien("caisse", "Vente")
+    <span class="nav-groupe-titre">Opérations</span>
+    @Lien("caisse?rubrique=annulation", "Annulation ou retour")
+    @Lien("caisse?rubrique=credit", "Règlement d’un crédit")
+    @if (!Session.A("caisse.ouvrir_tiroir"))
+    {
+        <span class="nav-inactif sous-rubrique" aria-disabled="true" title="Droit « Ouvrir le tiroir sans vente » nécessaire">Ouvrir le tiroir</span>
+    }
+    else if (!confirmation)
+    {
+        <a href="" class="sous-rubrique" title="Ouverture sans vente, inscrite au contrôle interne (tiroir-caisse : matériel à brancher)"
+           @onclick="() => (confirmation, messageTiroir) = (true, null)" @onclick:preventDefault="true">Ouvrir le tiroir</a>
+    }
+    else
+    {
+        <div class="nav-confirmation" role="alertdialog" aria-labelledby="t-tiroir">
+            <span id="t-tiroir">Ouvrir le tiroir sans vente ? Ce sera inscrit au contrôle interne.</span>
+            <div style="display: flex; gap: 6px">
+                <button type="button" class="btn" @onclick="() => confirmation = false">Annuler</button>
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="OuvrirTiroirAsync">Ouvrir</button>
+            </div>
+        </div>
+    }
+    @if (messageTiroir is not null) { <span class="detail" role="status" style="padding: 0 12px 0 24px">@messageTiroir</span> }
+    <span class="nav-groupe-titre">Caisse</span>
+    @Lien("caisse/etat", "État de la caisse")
+    @Lien("cloture?releve=true", "Relève")
+    @Lien("cloture", "Clôturer la caisse")
+
+    @if (OuverteLe is { } le)
+    {
+        <div class="nav-resume">
+            <span class="detail">Caisse ouverte le @Libelles.DateHeureLocale(le)@(OuvertePar is { } par ? $" par {par}" : "")</span>
+            @if (Fond is { } f) { <strong>fond @Libelles.Dinars(f)</strong> }
+            <span class="detail">@Poste@(Poste is null ? "" : " · ")vendeur : @Session.NomComplet</span>
+        </div>
+    }
+</nav>
+
+@code {
+    /// <summary>Adresse de l'écran affiché (« caisse », « caisse?rubrique=credit », « caisse/etat », « cloture?releve=true », « cloture »).</summary>
+    [Parameter] public string Actif { get; set; } = "caisse";
+    /// <summary>Caisse ouverte : date, auteur, fond et poste, rappelés sous le menu.</summary>
+    [Parameter] public DateTime? OuverteLe { get; set; }
+    [Parameter] public string? OuvertePar { get; set; }
+    [Parameter] public decimal? Fond { get; set; }
+    [Parameter] public string? Poste { get; set; }
+
+    private bool confirmation, enCours;
+    private string? messageTiroir;
+
+    private RenderFragment Lien(string adresse, string libelle) => __builder =>
+    {
+        var actif = adresse == Actif;
+        <a href="@adresse" class="sous-rubrique @(actif ? "active" : null)" aria-current="@(actif ? "page" : null)">@libelle</a>
+    };
+
+    private async Task OuvrirTiroirAsync()
+    {
+        enCours = true;
+        try
+        {
+            var e = await Api.SignalerCaisseAsync(new EvenementCaisseRequete("tiroir_ouvert"));
+            (messageTiroir, confirmation) = (e ?? $"Ouverture du tiroir sans vente enregistrée à {DateTime.Now:HH:mm}.", false);
+        }
+        finally { enCours = false; }
+    }
+}

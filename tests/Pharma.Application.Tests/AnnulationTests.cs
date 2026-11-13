@@ -10,6 +10,8 @@ internal sealed class AnnulationsEnMemoire(VenteAnnulable vente) : IAnnulationsV
     public AnnulationAEcrire? Ecrite { get; private set; }
     public Task<VenteAnnulable?> TrouverAsync(long? id, string? numero, CancellationToken ct = default) =>
         Task.FromResult<VenteAnnulable?>(Ecrite is null ? vente : vente with { Statut = "annulee" });
+    public Task<Pharma.Application.Commun.Page<VenteAnnulable>> VentesSessionAsync(long s, Pharma.Application.Commun.DemandePage p, CancellationToken ct = default) =>
+        throw new NotSupportedException();
     public Task<IReadOnlyList<VenteAnnulable>> DernieresAsync(long s, int l, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<VenteAnnulable>>([vente]);
     public Task AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default) { Ecrite = a; return Task.CompletedTask; }

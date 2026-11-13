@@ -27,6 +27,8 @@ public sealed record SituationCredit(PatientEnCredit Patient, IReadOnlyList<Vent
 public interface ICreditsClients
 {
     Task<IReadOnlyList<PatientEnCredit>> AvecCreditAsync(string? recherche, CancellationToken ct = default);
+    /// <summary>Même liste, par page (règle des listes) : plus grosses dettes d'abord.</summary>
+    Task<Page<PatientEnCredit>> AvecCreditPageAsync(string? recherche, DemandePage page, CancellationToken ct = default);
     Task<SituationCredit?> SituationAsync(long patientId, CancellationToken ct = default);
     /// <summary>Une page du relevé de dette, du mouvement le plus récent au plus ancien.</summary>
     Task<Page<MouvementCredit>> MouvementsAsync(long patientId, DemandePage page, FiltreReleve? filtre = null, CancellationToken ct = default);
@@ -44,6 +46,10 @@ public sealed class ConsulterCredits(ICreditsClients credits)
 {
     public Task<IReadOnlyList<PatientEnCredit>> ListerAsync(string? recherche, CancellationToken ct = default) =>
         credits.AvecCreditAsync(string.IsNullOrWhiteSpace(recherche) ? null : recherche.Trim(), ct);
+
+    /// <summary>Patients en crédit par page ; recherche sur le nom ou le début du téléphone.</summary>
+    public Task<Page<PatientEnCredit>> PageAsync(string? recherche, DemandePage page, CancellationToken ct = default) =>
+        credits.AvecCreditPageAsync(string.IsNullOrWhiteSpace(recherche) ? null : recherche.Trim(), page, ct);
 
     public Task<Page<MouvementCredit>> MouvementsAsync(long patientId, DemandePage page, FiltreReleve? filtre = null, CancellationToken ct = default) =>
         credits.MouvementsAsync(patientId, page, filtre, ct);

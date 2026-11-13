@@ -59,7 +59,9 @@ la fenêtre. Exceptions : les fenêtres au-dessus de l'écran (`.voile`), qui d�
 Un écran qui empile trop de panneaux est découpé en **rubriques**, avec le menu vertical de l'Administration (même rendu :
 liens à gauche, rubrique active surlignée avec le filet ambre). Utilisé par l'Administration (`.admin`, `.admin-nav`,
 `.admin-contenu`, composant `NavAdmin`), la Trésorerie, Dettes et créances, Stock, Alertes, Registre, Inventaire, Achats, Rapports,
-Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux écarts et risques) et le Guide (classes génériques ci-dessous).
+Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux écarts et risques), le Guide et la Caisse (composant
+`NavCaisse`, commun à la vente, à l'annulation ou au retour, au règlement d'un crédit, à l'état de la caisse, à la relève et à la clôture ;
+une action qui n'est pas un écran, comme ouvrir le tiroir, demande une confirmation dans le menu) (classes génériques ci-dessous).
 
 ```html
 <div class="page avec-menu">
@@ -162,8 +164,8 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
     fermer, message « Aucun … pour « saisie » » quand rien ne répond ; le choix fait s'affiche avec un lien « Changer ». Dans
     un filtre de tableau, le tableau suit la saisie (filtre sur une partie du nom) avant même qu'une proposition soit choisie.
   - Exemples : choix du produit (composant `ChoixProduit`), du patient et du médecin à la caisse, du patient et de l'entreprise dans
-    l'éditeur de facture, filtre « Tiers » de Dettes et créances (recherche pour patients et factures clients, liste pour
-    grossistes, effets et bordereaux).
+    l'éditeur de facture, filtre « Tiers » de Dettes et créances (recherche pour patients, factures clients et organismes des
+    bordereaux, demandée le 2026-11-13 ; liste pour grossistes et effets).
 - **Tout tableau paginé a des filtres au-dessus** (`.filtres-liste` : grossiste ou tiers, statut ou type, période « Du » / « Au »,
   recherche selon le tableau), appliqués par le serveur pour que le total et les pages les suivent, avec un bouton
   « Tout afficher » dès qu'un filtre est actif et un message « Aucun … pour ces filtres » quand rien ne répond.

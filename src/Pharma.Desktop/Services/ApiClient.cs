@@ -243,6 +243,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(List<VenteAnnulableDto>, string?)> VentesAnnulablesAsync(string? numero) =>
         GetAsync<List<VenteAnnulableDto>>($"api/caisse/ventes{(string.IsNullOrWhiteSpace(numero) ? "" : $"?numero={Uri.EscapeDataString(numero.Trim())}")}", []);
 
+    public Task<(PageDto<VenteAnnulableDto>?, string?)> VentesAnnulablesPageAsync(string? numero, int page, int taille) =>
+        GetAsync<PageDto<VenteAnnulableDto>?>($"api/caisse/ventes/page?page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(numero) ? "" : $"&numero={Uri.EscapeDataString(numero.Trim())}"), null);
+
     public Task<(AnnulationVenteDto?, string?)> AnnulerVenteAsync(long venteId, AnnulationVenteRequete r) =>
         PostAsync<AnnulationVenteRequete, AnnulationVenteDto>($"api/caisse/ventes/{venteId}/annuler", r);
 
@@ -353,6 +357,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(List<PatientEnCreditDto>, string?)> PatientsEnCreditAsync(string? recherche) =>
         GetAsync<List<PatientEnCreditDto>>($"api/caisse/credits{(string.IsNullOrWhiteSpace(recherche) ? "" : $"?q={Uri.EscapeDataString(recherche.Trim())}")}", []);
+    public Task<(PageDto<PatientEnCreditDto>?, string?)> PatientsEnCreditPageAsync(string? recherche, int page, int taille) =>
+        GetAsync<PageDto<PatientEnCreditDto>?>($"api/caisse/credits/page?page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(recherche) ? "" : $"&q={Uri.EscapeDataString(recherche.Trim())}"), null);
     public Task<(SituationCreditDto?, string?)> SituationCreditAsync(long patientId) => GetAsync<SituationCreditDto?>($"api/caisse/credits/{patientId}", null);
     public Task<(PageDto<MouvementCreditDto>?, string?)> MouvementsCreditAsync(long patientId, int page, int taille, DateOnly? du = null, DateOnly? au = null, string? type = null) =>
         GetAsync<PageDto<MouvementCreditDto>?>($"api/caisse/credits/{patientId}/mouvements?" + Requete(("du", du), ("au", au), ("type", type), ("page", page), ("taille", taille)), null);
