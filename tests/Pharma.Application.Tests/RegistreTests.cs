@@ -10,6 +10,18 @@ internal sealed class RegistreEnMemoire(params LigneRegistre[] lignes) : IRegist
 {
     public Task<IReadOnlyList<LigneRegistre>> LireAsync(long? produitId, DateOnly du, DateOnly au, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<LigneRegistre>>(lignes.Where(l => produitId is null || l.ProduitId == produitId).ToList());
+    public Task<Page<LigneRegistre>> LirePageAsync(long? produitId, DateOnly du, DateOnly au, string? type, DemandePage page, CancellationToken ct = default)
+    {
+        var choisies = lignes.Where(l => (produitId is null || l.ProduitId == produitId) && (type is null || l.Type == type)).ToList();
+        return Task.FromResult(new Page<LigneRegistre>(choisies.Skip(page.Decalage).Take(page.Taille).ToList(), choisies.Count, page.Page, page.Taille));
+    }
+    public Task<IReadOnlyList<string>> TypesAsync(long? produitId, DateOnly du, DateOnly au, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<string>>(lignes.Select(l => l.Type).Distinct().ToList());
+    public Task<(int Inscriptions, IReadOnlyList<BalanceMensuelle> Balance)> SyntheseAsync(long? produitId, DateOnly du, DateOnly au, CancellationToken ct = default)
+    {
+        var choisies = lignes.Where(l => produitId is null || l.ProduitId == produitId).ToList();
+        return Task.FromResult<(int, IReadOnlyList<BalanceMensuelle>)>((choisies.Count, ConsulterRegistre.Balance(choisies)));
+    }
     public Task<IReadOnlyList<ProduitRegistre>> ProduitsAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<ProduitRegistre>>([new ProduitRegistre(7, "Alprazolam 0,25 mg")]);
 }
@@ -60,13 +72,39 @@ public class RegistreTests
     }
 
     [Fact]
-    public async Task Periode_par_defaut_du_debut_du_mois_a_aujourd_hui_et_limitee_a_un_an()
+    public async Task Periode_par_defaut_du_debut_du_mois_a_aujourd_hui_et_export_limite_a_un_an()
     {
         var cas = new ConsulterRegistre(new RegistreEnMemoire(Lignes), new DroitsFactices("psychotropes.registre"));
         var r = await cas.ExecuterAsync(5, null, null, null, new DateOnly(2026, 11, 9));
         Assert.Equal((new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 9)), (r.Du, r.Au));
-        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(5, null, new DateOnly(2025, 1, 1), new DateOnly(2026, 11, 9), Jour));
+        // Registre complet (exports) : un an au plus
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(5, null, new DateOnly(2025, 1, 1), new DateOnly(2026, 11, 9), Jour));
+        Assert.Contains("Export", ex.Message);
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(5, null, new DateOnly(2026, 11, 9), new DateOnly(2026, 11, 1), Jour));
+    }
+
+    [Fact]
+    public async Task Consultation_a_l_ecran_sans_limite_de_duree()
+    {
+        var cas = new ConsulterRegistre(new RegistreEnMemoire(Lignes), new DroitsFactices("psychotropes.registre"));
+        var synthese = await cas.SyntheseAsync(5, null, new DateOnly(2015, 1, 1), new DateOnly(2026, 11, 9), Jour);
+        Assert.Equal((3, 2), (synthese.Inscriptions, synthese.Balance.Count));
+        var page = await cas.InscriptionsAsync(5, null, new DateOnly(2015, 1, 1), new DateOnly(2026, 11, 9), null, new DemandePage(1, 10), Jour);
+        Assert.Equal(3, page.Page.Total);
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.SyntheseAsync(5, null, new DateOnly(2026, 11, 9), new DateOnly(2026, 11, 1), Jour));
+        await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            new ConsulterRegistre(new RegistreEnMemoire(Lignes), new DroitsFactices("psychotropes.delivrer")).SyntheseAsync(5, null, null, null, Jour));
+    }
+
+    [Fact]
+    public async Task Page_d_inscriptions_filtree_par_operation_et_noms_abreges_hors_titulaire()
+    {
+        var cas = new ConsulterRegistre(new RegistreEnMemoire(Lignes), new DroitsFactices("psychotropes.registre"));
+        var r = await cas.InscriptionsAsync(5, null, null, null, "sortie", new DemandePage(1, 10), Jour);
+        Assert.Equal(1, r.Page.Total);
+        Assert.True(r.NomsMasques);
+        Assert.Equal(("P. F.", "•••"), (r.Page.Lignes[0].Patient, r.Page.Lignes[0].PorteurPiece));
+        Assert.Equal(3, r.Operations.Count);   // opérations de toute la période, pour le filtre
     }
 
     [Fact]

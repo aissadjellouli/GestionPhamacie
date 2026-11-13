@@ -2,7 +2,6 @@
 @implements IDisposable
 @inject ApiClient Api
 @inject SessionPoste Session
-@inject HistoriqueNavigation Historique
 
 <div class="page page-serree">
     <div class="titre-page">
@@ -97,7 +96,7 @@
 <FenetreValidationSuperAdmin Demande="validation" Fermee="() => validation = null" />
 
 @code {
-    // Sauvegardes trouvées : période et page (à l'écran) ; « ← Retour » les retrouve
+    // Sauvegardes trouvées : période et page (à l'écran)
     private DateOnly? fDu, fAu;
     private int page = 1, taille = Pagination.TailleParDefaut;
     private List<SauvegardeDisponibleDto> Filtrees(IEnumerable<SauvegardeDisponibleDto> sauvegardes) => sauvegardes.Where(s =>
@@ -113,8 +112,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Historique.Suivre("restauration", e => { e.Mettre("du", fDu); e.Mettre("au", fAu); e.Mettre("page", page); e.Mettre("taille", taille); });
-        if (Historique.Restaurer("restauration") is { } h) (fDu, fAu, page, taille) = (h.Date("du"), h.Date("au"), h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        // Pas de « ← Retour » : l'écran n'est jamais rouvert (HistoriqueNavigation.JamaisRouverts), période et page repartent à zéro
         if (!Session.SuperAdmin) return;
         (etat, _) = await Api.EtatRestaurationAsync();
         await ChargerAsync();

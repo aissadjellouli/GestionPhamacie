@@ -97,12 +97,10 @@
         (fEtat == "" || g.Actif == (fEtat == "actif"))
         && (fDette == "" || (g.Solde > 0) == (fDette == "oui"))
         && (!fEmailManquant || string.IsNullOrWhiteSpace(g.Email))
-        && (fTexte.Trim() == "" || new[] { g.RaisonSociale, g.Telephone, g.Email }.Any(t => t is not null && SansAccents(t).Contains(SansAccents(fTexte.Trim()), StringComparison.Ordinal))))
+        && RechercheTexte.Contient(fTexte, g.RaisonSociale, g.Telephone, g.Email))
         .ToList();
     private List<FournisseurDto> PageCourante =>
         Filtres.Skip((Math.Min(page, Math.Max(1, (Filtres.Count + taille - 1) / taille)) - 1) * taille).Take(taille).ToList();
-    private static string SansAccents(string t) => string.Concat(t.Normalize(System.Text.NormalizationForm.FormD)
-        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)).ToLowerInvariant();
 
     protected override async Task OnInitializedAsync()
     {

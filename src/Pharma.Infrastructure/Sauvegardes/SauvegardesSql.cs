@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Npgsql;
 using NpgsqlTypes;
 using Pharma.Application.Sauvegardes;
+using Pharma.Infrastructure.Lecture;
 
 namespace Pharma.Infrastructure.Sauvegardes;
 
@@ -60,30 +61,20 @@ public sealed class SauvegardesSql(NpgsqlDataSource db) : ISauvegardesDepot
     public async Task<Pharma.Application.Commun.Page<EntreeSauvegarde>> JournalPageAsync(FiltreJournalSauvegarde filtre, Pharma.Application.Commun.DemandePage page,
         CancellationToken ct = default)
     {
-        const string Ou = "WHERE ($1::text IS NULL OR j.statut = $1) AND ($2::date IS NULL OR j.debut >= $2::date) AND ($3::date IS NULL OR j.debut < $3::date + 1)";
-        void Filtre(NpgsqlCommand c)
-        {
-            c.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Statut ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
-            c.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Du ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
-            c.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
-        }
+        // Une seule requête : le total des lignes qui répondent aux filtres vient de count(*) OVER ()
         await using var cmd = db.CreateCommand($"""
-            SELECT j.id, j.debut, j.fin, j.statut, j.declenchement, j.fichier, j.taille_octets, j.message, u.nom_complet
+            SELECT j.id, j.debut, j.fin, j.statut, j.declenchement, j.fichier, j.taille_octets, j.message, u.nom_complet, {PaginationSql.Total}
             FROM journal_sauvegarde j LEFT JOIN utilisateur u ON u.id = j.utilisateur_id
-            {Ou} ORDER BY j.debut DESC, j.id DESC LIMIT $4 OFFSET $5
+            WHERE ($1::text IS NULL OR j.statut = $1) AND ($2::date IS NULL OR j.debut >= $2::date) AND ($3::date IS NULL OR j.debut < $3::date + 1)
+            ORDER BY j.debut DESC, j.id DESC {PaginationSql.Limite(4)}
             """);
-        Filtre(cmd);
-        cmd.Parameters.AddWithValue(page.Taille);
-        cmd.Parameters.AddWithValue(page.Decalage);
-        var liste = new List<EntreeSauvegarde>();
-        await using (var r = await cmd.ExecuteReaderAsync(ct))
-            while (await r.ReadAsync(ct))
-                liste.Add(new EntreeSauvegarde(r.GetInt64(0), r.GetDateTime(1), r.IsDBNull(2) ? null : r.GetDateTime(2), r.GetString(3), r.GetString(4),
-                    r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetInt64(6), r.IsDBNull(7) ? null : r.GetString(7),
-                    r.IsDBNull(8) ? null : r.GetString(8)));
-        await using var compte = db.CreateCommand($"SELECT count(*) FROM journal_sauvegarde j {Ou}");
-        Filtre(compte);
-        return new(liste, Convert.ToInt32(await compte.ExecuteScalarAsync(ct)), page.Page, page.Taille);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Statut ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Du ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        PaginationSql.Parametres(cmd, page);
+        return await PaginationSql.LireAsync(cmd, page, 9, r => new EntreeSauvegarde(r.GetInt64(0), r.GetDateTime(1), r.IsDBNull(2) ? null : r.GetDateTime(2),
+            r.GetString(3), r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetInt64(6), r.IsDBNull(7) ? null : r.GetString(7),
+            r.IsDBNull(8) ? null : r.GetString(8)), ct);
     }
 
     public async Task<IReadOnlyList<EntreeSauvegarde>> JournalAsync(int limite, CancellationToken ct = default)

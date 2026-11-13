@@ -1,7 +1,6 @@
 @page "/admin/reprise"
 @inject ApiClient Api
 @inject SessionPoste Session
-@inject HistoriqueNavigation Historique
 
 <div class="page admin">
     <NavAdmin Actif="admin/reprise" />
@@ -411,24 +410,12 @@
 <FenetreValidationSuperAdmin Demande="validation" Fermee="() => validation = null" />
 
 @code {
-    // Listes paginées et filtrées à l'écran (règle des listes) ; « ← Retour » retrouve pages et filtres
+    // Listes paginées et filtrées à l'écran (règle des listes). Pas de « ← Retour » : l'écran n'est jamais rouvert
+    // (HistoriqueNavigation.JamaisRouverts), pages et filtres repartent à zéro à chaque arrivée.
     private int pageSessions = 1, tailleSessions = Pagination.TailleParDefaut, pageAnomalies = 1, tailleAnomalies = Pagination.TailleParDefaut;
     private string fGravite = "", fEntite = "", fTexteAnomalie = "";
     private List<AnomalieRepriseDto> AnomaliesFiltrees(EtatRepriseDto et) => et.Anomalies.Where(a => (fGravite == "" || a.Gravite == fGravite)
         && (fEntite == "" || a.Entite == fEntite) && RechercheTexte.Contient(fTexteAnomalie, a.RefSource, a.Message)).ToList();
-
-    protected override void OnInitialized()
-    {
-
-        Historique.Suivre("reprise", e =>
-        {
-            e.Mettre("page_sessions", pageSessions); e.Mettre("taille_sessions", tailleSessions); e.Mettre("page", pageAnomalies); e.Mettre("taille", tailleAnomalies);
-            e.Mettre("gravite", fGravite); e.Mettre("entite", fEntite); e.Mettre("texte", fTexteAnomalie);
-        });
-        if (Historique.Restaurer("reprise") is { } h)
-            (pageSessions, tailleSessions, pageAnomalies, tailleAnomalies, fGravite, fEntite, fTexteAnomalie) = (h.Entier("page_sessions") ?? 1, h.Entier("taille_sessions") ?? tailleSessions,
-                h.Entier("page") ?? 1, h.Entier("taille") ?? tailleAnomalies, h.Texte("gravite") ?? "", h.Texte("entite") ?? "", h.Texte("texte") ?? "");
-    }
 
     // Action sensible en attente de validation (avertissement, mot de passe, code reçu)
     private FenetreValidationSuperAdmin.DemandeSuperAdmin? validation;
@@ -614,8 +601,11 @@
     {
         var (e, err) = await Api.EtatRepriseAsync(id);
         if (err is not null) return err;
+        // Autre session : filtres et page des contrôles repartent à zéro (ceux de la session précédente n'y ont pas de sens)
+        if (etat?.Session.Id != e!.Session.Id)
+            (fGravite, fEntite, fTexteAnomalie, pageAnomalies) = ("", "", "", 1);
         etat = e;
-        etape = e!.Session.Statut == "charge" ? 5 : e.Anomalies.Any(a => a.Gravite == "bloquant") ? 3 : 4;
+        etape = e.Session.Statut == "charge" ? 5 : e.Anomalies.Any(a => a.Gravite == "bloquant") ? 3 : 4;
         return null;
     }
 

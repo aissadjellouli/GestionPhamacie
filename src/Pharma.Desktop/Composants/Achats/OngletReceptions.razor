@@ -1109,15 +1109,13 @@ else
     private bool FiltreAttentesActif => faTexte.Trim() != "" || faMode != "" || faEmploye != "";
     private List<ReceptionEnAttenteDto> AttentesFiltrees => attentes.Where(a =>
         (faMode == "" || a.Mode == faMode) && (faEmploye == "" || a.Employe == faEmploye)
-        && (faTexte.Trim() == "" || SansAccents(a.Libelle).Contains(SansAccents(faTexte.Trim()), StringComparison.Ordinal))).ToList();
+        && RechercheTexte.Contient(faTexte, a.Libelle)).ToList();
     private List<ReceptionEnAttenteDto> AttentesPage =>
         AttentesFiltrees.Skip((Math.Min(pageAttentes, Math.Max(1, (AttentesFiltrees.Count + tailleAttentes - 1) / tailleAttentes)) - 1) * tailleAttentes).Take(tailleAttentes).ToList();
     /// <summary>Reprise depuis « En attente » : la saisie s'affiche dans « Réceptionner » (même onglet, rien n'est mis en attente).</summary>
     private void AllerSaisie() { if (Vue is "attente" or "historique") Nav.NavigateTo("achats?onglet=receptions&vue=saisie"); }
 
     private void EffacerFiltresAttentes() => (faTexte, faMode, faEmploye, pageAttentes) = ("", "", "", 1);
-    private static string SansAccents(string t) => string.Concat(t.Normalize(System.Text.NormalizationForm.FormD)
-        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)).ToLowerInvariant();
     private string? erreurAttente, messageAttente;
     private long? aAbandonner, receptionMiseDeCoteEnPartant;
 

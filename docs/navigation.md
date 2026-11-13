@@ -19,7 +19,10 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 - L'état d'un écran est ce qu'il déclare à l'historique : `Historique.Suivre("clé", e => …)` dit quoi retenir en partant,
   `Historique.Restaurer("clé")` le relit à l'arrivée, avant le premier chargement. Une arrivée normale (menu, lien) part de zéro.
 - **Tout tableau paginé retient ses filtres et sa page** ; un test d'architecture (`RetourEcranTests`) le vérifie pour
-  chaque composant qui affiche une pagination.
+  chaque composant qui affiche une pagination, sauf les écrans jamais rouverts (restauration, reprise), listés dans le test
+  et vérifiés contre `HistoriqueNavigation.JamaisRouverts`.
+- **Une page retrouvée qui n'existe plus** (la liste a raccourci entre-temps) est ramenée à la dernière page par le pied de
+  liste (`Pagination`), comme après une ligne traitée ou un filtre.
 - **Un état retrouvé est lu une seule fois** : un composant rouvert ensuite sur le même écran (ex. une nouvelle facture) repart à vide.
 - **Saisies gardées pour la session** (Retours avant « Préparer », facture en préparation) : retrouvées par « Retour » tant que l'employé reste connecté ; la Caisse et les Réceptions, elles, sont mises en attente sur le serveur.
 - **Les onglets et rubriques sont dans l'adresse** (`achats?onglet=…`, `factures?suivi=…`, `dettes?onglet=…`, `surveillance?onglet=traitees`, `tresorerie?rubrique=…`, `?rubrique=…` pour les Alertes, `stock?rubrique=…`, `stock/registre?rubrique=balance`, `inventaire?rubrique=…`) :
@@ -73,7 +76,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Contrôle interne | `surveillance` | rubrique dans l'adresse (à examiner, `?onglet=traitees`, `?onglet=sensibles`) ; page des anomalies |
 | Guide et retours | `guide` | rubrique dans l'adresse (à essayer, `?rubrique=remarque`, `?rubrique=remarques`) ; écran, genre et page des remarques |
 | Factures | `factures`, `editeur-facture` | recherche, destinataire, période, page, facture ouverte (et sa version), éditeur ouvert et sa saisie (destinataire, ventes cochées, lignes libres, dates, commentaire) ; onglet dans l’adresse |
-| Registre des psychotropes | `registre` | rubrique dans l'adresse (inscriptions, `?rubrique=balance`) ; produit, période, opération, page des inscriptions |
+| Registre des psychotropes | `registre` | rubrique dans l'adresse (inscriptions, `?rubrique=balance`) ; produit, période, opération, page des inscriptions, page de la balance |
 | Achats › Étiquettes internes | `etiquettes` | recherche (produit ou lot), péremption jusqu'au, page |
 | Trésorerie | `tresorerie` | rubrique dans l'adresse (`comptes`, `mouvements`, `saisie`, `caisses`, `cheques`) ; compte affiché, période, employé, page, type de mouvement en saisie |
 | Dettes et créances | `dettes` | rubrique dans l'adresse (`dettes` : vue d'ensemble ; `?onglet=alertes`, `patient`, `facture`, `bordereau`, `grossiste`, `effet`, `tout`) ; filtres de la liste (tiers, état, période) et page |

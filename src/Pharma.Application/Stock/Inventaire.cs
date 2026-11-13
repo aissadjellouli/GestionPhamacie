@@ -58,7 +58,6 @@ public interface IInventaires
     Task<IReadOnlyList<EcartAValider>> EcartsAValiderAsync(CancellationToken ct = default);
     /// <summary>Valider applique l'ajustement au stock actuel ; refuser laisse le stock (recompter).</summary>
     Task DeciderAsync(long ligneId, bool valider, long utilisateurId, CancellationToken ct = default);
-    Task<IReadOnlyList<InventaireResume>> HistoriqueAsync(int limite, CancellationToken ct = default);
     /// <summary>Historique complet par page, les plus récents d'abord ; filtre rayon, état et période (date de début).</summary>
     Task<Pharma.Application.Commun.Page<InventaireResume>> HistoriquePageAsync(FiltreHistoriqueInventaire filtre, Pharma.Application.Commun.DemandePage page,
         CancellationToken ct = default);
@@ -68,9 +67,10 @@ public interface IInventaires
     Task<long?> CreerSensiblesAsync(long utilisateurId, CancellationToken ct = default);
 }
 
+/// <summary>Tableau de l'inventaire ; l'historique se lit à part, par page (ConsulterHistoriqueInventaires).</summary>
 public sealed record TableauInventaire(
     IReadOnlyList<RayonInventaire> Rayons, RayonInventaire? Propose, ParametresInventaire Parametres,
-    IReadOnlyList<EcartAValider> EcartsAValider, IReadOnlyList<InventaireResume> Historique, EtatSensibles? Sensibles = null);
+    IReadOnlyList<EcartAValider> EcartsAValider, EtatSensibles? Sensibles = null);
 
 /// <summary>Produits sensibles : comptage à part, régulier (réglage du Contrôle interne). Dernier : fin du dernier comptage.</summary>
 public sealed record EtatSensibles(int Produits, DateTime? Dernier, long? EnCoursId);
@@ -96,7 +96,7 @@ public sealed class ObtenirTableauInventaire(IInventaires inventaires)
     {
         var rayons = await inventaires.RayonsAsync(ct);
         return new TableauInventaire(rayons, RegleInventaire.Proposer(rayons), await inventaires.ParametresAsync(ct),
-            await inventaires.EcartsAValiderAsync(ct), await inventaires.HistoriqueAsync(20, ct), await inventaires.EtatSensiblesAsync(ct));
+            await inventaires.EcartsAValiderAsync(ct), await inventaires.EtatSensiblesAsync(ct));
     }
 }
 

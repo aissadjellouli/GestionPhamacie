@@ -123,8 +123,17 @@
         var (p, e) = await Api.JournalSauvegardesAsync(fStatut, fDu, fAu, numero, taille);
         if (p is null) { erreur ??= e; return; }
         if (p.Lignes.Count == 0 && numero > 1) { await ChargerJournalAsync(1, taille); return; }
-        (journal, totalJournal, pageJournal, tailleJournal) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+        (journal, totalJournal, pageJournal, tailleJournal, journalAJour) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille, true);
     }
+
+    // Journal lu seulement quand sa rubrique est affichée ; après une sauvegarde ou un réglage, relu à la prochaine visite
+    private bool journalAJour;
+    private async Task ChargerJournalSiAfficheAsync()
+    {
+        if (rubrique == "journal" && !journalAJour) await ChargerJournalAsync(pageJournal, tailleJournal);
+    }
+
+    protected override Task OnParametersSetAsync() => r is null ? Task.CompletedTask : ChargerJournalSiAfficheAsync();
 
     protected override async Task OnInitializedAsync()
     {
@@ -143,7 +152,8 @@
         (retentionParDefaut, dossierGed) = (etat.Reglages.RetentionGedParDefaut, etat.Reglages.DossierGed);
         derniere = etat.Reglages.DerniereExecution;
         (baseSauvegardee, serveurBase) = (etat.Base, etat.Serveur);
-        await ChargerJournalAsync(pageJournal, tailleJournal);   // journal complet, par page (et non les 30 dernières)
+        journalAJour = false;
+        await ChargerJournalSiAfficheAsync();   // journal complet, par page (et non les 30 dernières)
     }
 
     // Dossier obligatoire pour activer la sauvegarde automatique ou sauvegarder maintenant : en rouge s'il manque

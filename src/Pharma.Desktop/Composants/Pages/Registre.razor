@@ -48,9 +48,13 @@
             }
             @if (operation != "" && rubrique == "inscriptions") { <button type="button" class="btn" @onclick="ToutesOperationsAsync">Tout afficher</button> }
             @* Exports sur la ligne des filtres (écran fixe : pas de ligne de boutons en plus) ; ils prennent tout le registre du produit et de la période *@
-            <button type="button" class="btn" disabled="@(registre is null || enCours)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
-            <button type="button" class="btn" disabled="@(registre is null || enCours)" @onclick='() => ExporterAsync("csv")'>Exporter pour Excel</button>
+            <button type="button" class="btn" disabled="@(registre is null || enCours || ExportTropLong)" title="@(ExportTropLong ? "Un an au plus par fichier" : null)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
+            <button type="button" class="btn" disabled="@(registre is null || enCours || ExportTropLong)" title="@(ExportTropLong ? "Un an au plus par fichier" : null)" @onclick='() => ExporterAsync("csv")'>Exporter pour Excel</button>
         </div>
+        @if (ExportTropLong)
+        {
+            <p class="detail" style="margin: 8px 0 0">Export : un an au plus par fichier. Réduisez la période pour exporter (un fichier par année).</p>
+        }
         @if (registre?.NomsMasques == true)
         {
             <p class="detail" style="margin: 8px 0 0">Noms des patients et des porteurs abrégés : seul le titulaire les voit en entier.</p>
@@ -142,7 +146,10 @@
     // Rubrique dans l'adresse (stock/registre?rubrique=balance) : « Retour » y revient
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
     private string rubrique => Rubrique == "balance" ? "balance" : "inscriptions";
-    private int? NombreInscriptions => registre?.Lignes.Count;
+    private int? NombreInscriptions => registre?.Inscriptions;
+    // Consultation sans limite de durée ; un export (PDF ou CSV) porte sur un an au plus : un fichier par année
+    private const int JoursMaxExport = 366;
+    private bool ExportTropLong => au.DayNumber - du.DayNumber >= JoursMaxExport;
 
     // Inscriptions : paginées et filtrées par le serveur (produit, période, opération)
     private List<LigneRegistreDto> inscriptions = [];
@@ -187,13 +194,18 @@
             produitId = r.Long("produit");
             (du, au, operation) = (r.Date("du") ?? du, r.Date("au") ?? au, r.Texte("operation") ?? "");
             (pageInscriptions, tailleInscriptions) = (r.Entier("page") ?? 1, r.Entier("taille") ?? tailleInscriptions);
+            (pageBalance, tailleBalance) = (r.Entier("page_balance") ?? 1, r.Entier("taille_balance") ?? tailleBalance);
         }
         (produits, erreur) = await Api.ProduitsRegistreAsync();
         await ChargerAsync(pageInscriptions);
     }
 
-    // Produit ou période changés : registre (balance, nombre) et première page des inscriptions
-    private Task ChargerAsync() => ChargerAsync(1);
+    // Produit ou période changés : registre (balance, nombre), première page des inscriptions et de la balance
+    private Task ChargerAsync()
+    {
+        pageBalance = 1;
+        return ChargerAsync(1);
+    }
 
     private async Task ChargerAsync(int pageVoulue)
     {

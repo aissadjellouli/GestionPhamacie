@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Pharma.Application.Commun;
 using Pharma.Application.Securite;
 using Pharma.Domain.Commun;
 using Pharma.Domain.Securite;
@@ -18,13 +19,26 @@ public sealed record BalanceMensuelle(long ProduitId, string Produit, int Annee,
 
 public sealed record ProduitRegistre(long Id, string Nom);
 
+/// <summary>Registre complet d'une période (exports PDF et CSV : un an au plus).</summary>
 public sealed record Registre(DateOnly Du, DateOnly Au, string? Produit, IReadOnlyList<LigneRegistre> Lignes,
     IReadOnlyList<BalanceMensuelle> Balance, bool NomsMasques);
+
+/// <summary>En-tête de l'écran du registre : nombre d'inscriptions et balance mensuelle de la période, calculés par la base (période sans limite).</summary>
+public sealed record SyntheseRegistre(DateOnly Du, DateOnly Au, string? Produit, int Inscriptions, IReadOnlyList<BalanceMensuelle> Balance, bool NomsMasques);
+
+/// <summary>Une page d'inscriptions (filtrée par opération) et les opérations présentes sur la période, pour le filtre.</summary>
+public sealed record InscriptionsRegistre(Page<LigneRegistre> Page, IReadOnlyList<string> Operations, bool NomsMasques);
 
 public interface IRegistrePsychotropes
 {
     /// <summary>Lignes de la période (bornes incluses, jours locaux), dans l'ordre des numéros.</summary>
     Task<IReadOnlyList<LigneRegistre>> LireAsync(long? produitId, DateOnly du, DateOnly au, CancellationToken ct = default);
+    /// <summary>Une page des lignes de la période, dans l'ordre des numéros ; <paramref name="type"/> filtre l'opération (null : toutes).</summary>
+    Task<Page<LigneRegistre>> LirePageAsync(long? produitId, DateOnly du, DateOnly au, string? type, DemandePage page, CancellationToken ct = default);
+    /// <summary>Types d'opération présents sur la période.</summary>
+    Task<IReadOnlyList<string>> TypesAsync(long? produitId, DateOnly du, DateOnly au, CancellationToken ct = default);
+    /// <summary>Nombre de lignes et balance mensuelle (mois en heure locale) de la période, triée par produit puis mois.</summary>
+    Task<(int Inscriptions, IReadOnlyList<BalanceMensuelle> Balance)> SyntheseAsync(long? produitId, DateOnly du, DateOnly au, CancellationToken ct = default);
     /// <summary>Produits classés psychotrope ou stupéfiant, ou ayant déjà une ligne au registre.</summary>
     Task<IReadOnlyList<ProduitRegistre>> ProduitsAsync(CancellationToken ct = default);
 }
@@ -37,33 +51,72 @@ public interface IDocumentsRegistre
 /// <summary>
 /// Consultation du registre (droit psychotropes.registre). Noms du patient et du porteur en clair pour le
 /// titulaire ; initiales pour les autres employés, à l'écran comme dans les exports.
+/// À l'écran, la période n'a pas de limite : inscriptions lues par page et balance calculée par la base.
+/// Le registre complet d'une période (exports PDF et CSV) est limité à un an par fichier.
 /// </summary>
 public sealed class ConsulterRegistre(IRegistrePsychotropes registre, IPermissionService droits)
 {
-    public const int JoursMax = 366;
+    /// <summary>Durée maximale d'un export (PDF ou CSV), qui charge toutes les lignes de la période.</summary>
+    public const int JoursMaxExport = 366;
 
+    /// <summary>Registre complet de la période, pour les exports : un an au plus.</summary>
     public async Task<Registre> ExecuterAsync(long utilisateurId, long? produitId, DateOnly? du, DateOnly? au, DateOnly aujourdhui,
         CancellationToken ct = default)
+    {
+        var (debut, fin) = await PeriodeAsync(utilisateurId, du, au, aujourdhui, ct);
+        if (fin.DayNumber - debut.DayNumber >= JoursMaxExport)
+            throw new RegleMetierException("Export limité à un an par fichier : choisissez une période plus courte (un fichier par année).");
+
+        var lignes = await registre.LireAsync(produitId, debut, fin, ct);
+        var masquer = !await droits.EstTitulaireAsync(utilisateurId, ct);
+        if (masquer) lignes = lignes.Select(Masquer).ToList();
+        return new Registre(debut, fin, await NomProduitAsync(produitId, lignes, ct), lignes, Balance(lignes), masquer);
+    }
+
+    /// <summary>En-tête de l'écran : nombre d'inscriptions et balance mensuelle, sur une période sans limite.</summary>
+    public async Task<SyntheseRegistre> SyntheseAsync(long utilisateurId, long? produitId, DateOnly? du, DateOnly? au, DateOnly aujourdhui,
+        CancellationToken ct = default)
+    {
+        var (debut, fin) = await PeriodeAsync(utilisateurId, du, au, aujourdhui, ct);
+        var (nombre, balance) = await registre.SyntheseAsync(produitId, debut, fin, ct);
+        var masquer = !await droits.EstTitulaireAsync(utilisateurId, ct);
+        string? nomProduit = produitId is null ? null
+            : balance.FirstOrDefault()?.Produit ?? (await registre.ProduitsAsync(ct)).FirstOrDefault(p => p.Id == produitId)?.Nom;
+        return new SyntheseRegistre(debut, fin, nomProduit, nombre, balance, masquer);
+    }
+
+    /// <summary>Une page d'inscriptions, filtrée par opération (vide : toutes), sur une période sans limite.</summary>
+    public async Task<InscriptionsRegistre> InscriptionsAsync(long utilisateurId, long? produitId, DateOnly? du, DateOnly? au, string? operation,
+        DemandePage page, DateOnly aujourdhui, CancellationToken ct = default)
+    {
+        var (debut, fin) = await PeriodeAsync(utilisateurId, du, au, aujourdhui, ct);
+        var types = await registre.TypesAsync(produitId, debut, fin, ct);
+        var type = string.IsNullOrWhiteSpace(operation) ? null : operation;
+        var p = await registre.LirePageAsync(produitId, debut, fin, type, page, ct);
+        var masquer = !await droits.EstTitulaireAsync(utilisateurId, ct);
+        if (masquer) p = p.Vers(Masquer);
+        return new InscriptionsRegistre(p, types, masquer);
+    }
+
+    /// <summary>Droit vérifié ; période par défaut du 1er du mois à aujourd'hui ; début avant la fin.</summary>
+    private async Task<(DateOnly Debut, DateOnly Fin)> PeriodeAsync(long utilisateurId, DateOnly? du, DateOnly? au, DateOnly aujourdhui, CancellationToken ct)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.PsychotropesRegistre, "consulter le registre des psychotropes", ct);
         var fin = au ?? aujourdhui;
         var debut = du ?? new DateOnly(fin.Year, fin.Month, 1);
         if (debut > fin) throw new RegleMetierException("La date de début doit précéder la date de fin.");
-        if (fin.DayNumber - debut.DayNumber >= JoursMax) throw new RegleMetierException("Période limitée à un an.");
-
-        var lignes = await registre.LireAsync(produitId, debut, fin, ct);
-        var masquer = !await droits.EstTitulaireAsync(utilisateurId, ct);
-        if (masquer)
-            lignes = lignes.Select(l => l with
-            {
-                Patient = Initiales(l.Patient), PatientId = null, PorteurNom = Initiales(l.PorteurNom),
-                PorteurAdresse = l.PorteurAdresse is null ? null : "•••", PorteurPiece = l.PorteurPiece is null ? null : "•••"
-            }).ToList();
-
-        string? nomProduit = produitId is null ? null : lignes.FirstOrDefault()?.Produit
-            ?? (await registre.ProduitsAsync(ct)).FirstOrDefault(p => p.Id == produitId)?.Nom;
-        return new Registre(debut, fin, nomProduit, lignes, Balance(lignes), masquer);
+        return (debut, fin);
     }
+
+    private async Task<string?> NomProduitAsync(long? produitId, IReadOnlyList<LigneRegistre> lignes, CancellationToken ct) =>
+        produitId is null ? null : lignes.FirstOrDefault()?.Produit ?? (await registre.ProduitsAsync(ct)).FirstOrDefault(p => p.Id == produitId)?.Nom;
+
+    /// <summary>Hors titulaire : initiales du patient et du porteur, adresse et pièce masquées.</summary>
+    private static LigneRegistre Masquer(LigneRegistre l) => l with
+    {
+        Patient = Initiales(l.Patient), PatientId = null, PorteurNom = Initiales(l.PorteurNom),
+        PorteurAdresse = l.PorteurAdresse is null ? null : "•••", PorteurPiece = l.PorteurPiece is null ? null : "•••"
+    };
 
     /// <summary>Entrées, sorties et solde de fin de mois, par produit.</summary>
     public static IReadOnlyList<BalanceMensuelle> Balance(IReadOnlyList<LigneRegistre> lignes) =>

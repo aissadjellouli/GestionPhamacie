@@ -441,61 +441,27 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
     public async Task<Pharma.Application.Commun.Page<InventaireResume>> HistoriquePageAsync(FiltreHistoriqueInventaire filtre, Pharma.Application.Commun.DemandePage page,
         CancellationToken ct = default)
     {
-        const string Ou = """
-            WHERE ($1::text IS NULL OR i.rayon = $1) AND ($2::text IS NULL OR i.statut = $2)
-              AND ($3::date IS NULL OR i.commence_le >= $3::date) AND ($4::date IS NULL OR i.commence_le < $4::date + 1)
-            """;
-        void Filtre(NpgsqlCommand c)
-        {
-            c.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Rayon ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
-            c.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Statut ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
-            c.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Du ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
-            c.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
-        }
+        // Une seule requête : le total (lignes groupées qui répondent aux filtres) vient de count(*) OVER ()
         await using var cmd = db.CreateCommand($"""
             SELECT i.id, i.rayon, i.statut, i.commence_le, u.nom_complet, i.termine_le,
                    count(li.id)::int,
                    count(li.id) FILTER (WHERE li.ecart <> 0)::int,
                    count(li.id) FILTER (WHERE li.statut = 'a_valider')::int,
-                   COALESCE(sum(li.valeur_ecart), 0)
+                   COALESCE(sum(li.valeur_ecart), 0),
+                   {PaginationSql.Total}
             FROM inventaire i JOIN utilisateur u ON u.id = i.commence_par
             LEFT JOIN ligne_inventaire li ON li.inventaire_id = i.id
-            {Ou}
+            WHERE ($1::text IS NULL OR i.rayon = $1) AND ($2::text IS NULL OR i.statut = $2)
+              AND ($3::date IS NULL OR i.commence_le >= $3::date) AND ($4::date IS NULL OR i.commence_le < $4::date + 1)
             GROUP BY i.id, u.nom_complet
-            ORDER BY i.commence_le DESC, i.id DESC LIMIT $5 OFFSET $6
+            ORDER BY i.commence_le DESC, i.id DESC {PaginationSql.Limite(5)}
             """);
-        Filtre(cmd);
-        cmd.Parameters.AddWithValue(page.Taille);
-        cmd.Parameters.AddWithValue(page.Decalage);
-        var liste = new List<InventaireResume>();
-        await using (var r = await cmd.ExecuteReaderAsync(ct))
-            while (await r.ReadAsync(ct))
-                liste.Add(new InventaireResume(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetDateTime(3), r.GetString(4),
-                    r.IsDBNull(5) ? null : r.GetDateTime(5), r.GetInt32(6), r.GetInt32(7), r.GetInt32(8), r.GetDecimal(9)));
-        await using var compte = db.CreateCommand($"SELECT count(*) FROM inventaire i {Ou}");
-        Filtre(compte);
-        return new(liste, Convert.ToInt32(await compte.ExecuteScalarAsync(ct)), page.Page, page.Taille);
-    }
-
-    public async Task<IReadOnlyList<InventaireResume>> HistoriqueAsync(int limite, CancellationToken ct = default)
-    {
-        await using var cmd = db.CreateCommand("""
-            SELECT i.id, i.rayon, i.statut, i.commence_le, u.nom_complet, i.termine_le,
-                   count(li.id)::int,
-                   count(li.id) FILTER (WHERE li.ecart <> 0)::int,
-                   count(li.id) FILTER (WHERE li.statut = 'a_valider')::int,
-                   COALESCE(sum(li.valeur_ecart), 0)
-            FROM inventaire i JOIN utilisateur u ON u.id = i.commence_par
-            LEFT JOIN ligne_inventaire li ON li.inventaire_id = i.id
-            GROUP BY i.id, u.nom_complet
-            ORDER BY i.commence_le DESC LIMIT $1
-            """);
-        cmd.Parameters.AddWithValue(limite);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        var liste = new List<InventaireResume>();
-        while (await r.ReadAsync(ct))
-            liste.Add(new InventaireResume(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetDateTime(3), r.GetString(4),
-                r.IsDBNull(5) ? null : r.GetDateTime(5), r.GetInt32(6), r.GetInt32(7), r.GetInt32(8), r.GetDecimal(9)));
-        return liste;
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Rayon ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Statut ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Du ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Au ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
+        PaginationSql.Parametres(cmd, page);
+        return await PaginationSql.LireAsync(cmd, page, 10, r => new InventaireResume(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetDateTime(3),
+            r.GetString(4), r.IsDBNull(5) ? null : r.GetDateTime(5), r.GetInt32(6), r.GetInt32(7), r.GetInt32(8), r.GetDecimal(9)), ct);
     }
 }

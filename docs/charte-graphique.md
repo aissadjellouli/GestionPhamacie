@@ -57,7 +57,12 @@ la fenêtre. Exceptions : les fenêtres au-dessus de l'écran (`.voile`), qui d�
 ### Écran trop chargé : menu vertical de rubriques
 
 Un écran qui empile trop de panneaux est découpé en **rubriques**, avec le menu vertical de l'Administration (même rendu :
-liens à gauche, rubrique active surlignée avec le filet ambre). Utilisé par l'Administration (`.admin`, `.admin-nav`,
+liens à gauche, rubrique active surlignée avec le filet ambre).
+
+**Le menu est collé au bord gauche de la fenêtre** (demandé le 2026-11-13) : colonne de 240 px sur toute la hauteur, de l'en-tête
+à la barre d'état, fond `--surface` et filet `--bordure` à droite ; la page n'est plus centrée ni limitée à 1 280 px, le contenu
+prend toute la largeur restante (32 px d'écart avec la colonne). Tout vient de `.page.admin` et `.page.avec-menu` dans `app.css` :
+aucun écran n'a de style propre pour cela. Les écrans sans menu vertical restent centrés (1 280 px au plus). Utilisé par l'Administration (`.admin`, `.admin-nav`,
 `.admin-contenu`, composant `NavAdmin`), la Trésorerie, Dettes et créances, Stock, Alertes, Registre, Inventaire, Achats, Rapports,
 Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux écarts et risques), le Guide et la Caisse (composant
 `NavCaisse`, commun à la vente, à l'annulation ou au retour, au règlement d'un crédit, à l'état de la caisse, à la relève et à la clôture ;
@@ -161,7 +166,13 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
   liste que le serveur renvoie déjà complète et de taille modérée est filtrée et paginée à l'écran (produits bloqués, seuils
   saisis, grossistes des seuils, produits à vérifier, écarts et feuille d'inventaire, balance du registre, livraisons
   comptées, sauvegardes à restaurer, contrôles de reprise) ; le filtre de texte ignore majuscules et accents
-  (`RechercheTexte` côté poste, `TexteRecherche` côté serveur).
+  (`RechercheTexte` côté poste, seule fonction de comparaison des écrans, `TexteRecherche` côté serveur). Le total vient de la
+  même requête que les lignes (`count(*) OVER ()`, `PaginationSql`). Une liste n'est lue que lorsque sa rubrique est affichée.
+- **La page reste valide.** Quand la liste raccourcit (ligne traitée, filtre, données changées avant « ← Retour »), le pied de
+  liste ramène la page à la dernière qui existe : jamais de tableau vide avec « Page 2 sur 1 ». Changer de produit, de période
+  ou de session (registre, reprise) repart de la première page et, pour la reprise, sans filtres ; une relecture de la même
+  feuille (comptage d'un lot, scan) garde filtres et page. Un filtre ne porte jamais sur la valeur en cours de saisie dans la
+  même ligne (ex. « délai de reprise à renseigner » : valeur enregistrée), pour que la ligne ne disparaisse pas sous le curseur.
 - **Règle des listes déroulantes, valable sur tous les écrans** (filtres comme saisies ; demandée le 2026-11-13) :
   - **valeurs peu nombreuses et bornées** (employé, poste, grossiste, organisme, banque, statut, type, rayon, motif…) : une
     **liste préremplie**, jamais une saisie libre ; valeurs prises dans les données (par exemple les employés présents dans le

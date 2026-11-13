@@ -239,11 +239,9 @@
     // Recherche d'une entreprise cliente : 10 propositions au plus, sans majuscules ni accents, dès 2 lettres
     private string? rechercheClient;
     private List<ClientFactureDto> ClientsTrouves => rechercheClient?.Trim() is { Length: >= 2 } r
-        ? clients.Where(c => c.Actif && (SansAccents(c.RaisonSociale).Contains(SansAccents(r), StringComparison.Ordinal)
+        ? clients.Where(c => c.Actif && (RechercheTexte.Contient(r, c.RaisonSociale)
             || (c.Nif ?? "").Contains(r, StringComparison.OrdinalIgnoreCase))).Take(10).ToList()
         : [];
-    private static string SansAccents(string t) => string.Concat(t.Normalize(System.Text.NormalizationForm.FormD)
-        .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)).ToLowerInvariant();
     private List<OrganismeDto> organismes = [];
     private long clientId, organismeId;
     private NouveauClient? nouveauClient;

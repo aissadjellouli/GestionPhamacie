@@ -312,14 +312,20 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 
 /* ---- Administration ------------------------------------------------------- */
 /* Menu vertical : Administration, et écrans découpés en rubriques sur le même modèle (Trésorerie) */
-.admin, .avec-menu { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
-/* Écran fixe : juste la place de la barre d'état (32 px) sous le contenu, pas de grande marge qui ferait défiler */
-.admin, .avec-menu { padding-bottom: 36px; }
-.admin-nav, .nav-laterale { flex: 0 1 220px; display: flex; flex-direction: column; gap: 2px; }
+.admin, .avec-menu { flex-direction: row; flex-wrap: nowrap; align-items: flex-start; }
+/* Menu collé au bord gauche de la fenêtre (demandé le 2026-11-13) : la page n'est plus centrée ni limitée à 1 280 px,
+   le contenu prend toute la largeur restante. Écran fixe : juste la place de la barre d'état (32 px) sous le contenu. */
+.page.admin, .page.avec-menu { --largeur-menu: 240px; max-width: none; margin: 0; padding: 28px 24px 36px 0; column-gap: 32px; }
+/* Colonne du menu sur toute la hauteur, de l'en-tête (qui la recouvre en haut, quelle que soit sa hauteur) à la barre d'état */
+.page.admin::before, .page.avec-menu::before { content: ""; position: fixed; z-index: 0; top: 0; bottom: 32px; left: 0; width: var(--largeur-menu);
+  background: var(--surface); border-right: 1px solid var(--bordure); }
+/* Menu et contenu au-dessus de la colonne (sinon le fond de la page la recouvre) ; l'en-tête (z-index 20) reste au-dessus de tout */
+.page.admin > *, .page.avec-menu > * { position: relative; z-index: 1; }
+.admin-nav, .nav-laterale { flex: 0 0 var(--largeur-menu, 220px); box-sizing: border-box; padding: 0 12px; display: flex; flex-direction: column; gap: 2px; }
 .admin-nav a, .admin-nav .nav-inactif, .nav-laterale a { padding: 10px 12px; border-radius: 6px; font-size: 14px; color: var(--texte-3); text-decoration: none; }
 .admin-nav a.active, .nav-laterale a.active { color: var(--accent-texte); background: var(--accent-clair); font-weight: 600; box-shadow: inset 3px 0 0 var(--ambre); }
 .admin-nav .nav-inactif { color: var(--texte-inactif); cursor: not-allowed; }
-.admin-contenu, .contenu-rubrique { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.admin-contenu, .contenu-rubrique { flex: 1 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .nav-laterale .nav-groupe-titre { margin: 14px 12px 2px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texte-2); }
 .nav-laterale a.sous-rubrique, .admin-nav a.sous-rubrique { padding-left: 24px; }
 /* Administration : sous-rubriques de l'écran affiché (menu à deux niveaux), plus discrètes que les écrans */

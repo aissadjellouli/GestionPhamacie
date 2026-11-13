@@ -20,8 +20,6 @@ internal static class InventaireEndpoints
                     t.Rayons.Select(r => new RayonInventaireDto(r.Rayon, r.DernierInventaire, r.NombreLots, r.LotsDateAVerifier, r.EnCoursId)).ToList(),
                     t.Propose?.Rayon, new ParametresInventaireDto(t.Parametres.SeuilBoites, t.Parametres.SeuilMontant),
                     t.EcartsAValider.Select(VersDto).ToList(),
-                    t.Historique.Select(h => new InventaireResumeDto(h.Id, h.Rayon, h.Statut, h.CommenceLe, h.CommencePar, h.TermineLe,
-                        h.Lignes, h.Ecarts, h.AValider, h.ValeurEcarts)).ToList(),
                     t.Sensibles is { } s ? new EtatSensiblesDto(s.Produits, s.Dernier, s.EnCoursId) : null));
             })
            .ExigerPermission(Permissions.StockConsulter);

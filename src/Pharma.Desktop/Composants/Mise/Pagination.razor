@@ -3,11 +3,11 @@
    la coupure n'est jamais silencieuse. *@
 <nav class="pagination" aria-label="@(Libelle ?? "Pages de la liste")">
     <span class="detail">@(Total == 0 ? "Aucune ligne" : $"Lignes {Debut} à {Fin} sur {Total:N0}")</span>
-    @if (Pages > 1 || Numero > 1)
+    @if (Pages > 1)
     {
-        <button type="button" class="btn" disabled="@(Occupe || Numero <= 1)" @onclick="() => AllerAsync(Numero - 1)">‹ Précédent</button>
-        <span class="detail">Page @Numero sur @Pages</span>
-        <button type="button" class="btn" disabled="@(Occupe || Numero >= Pages)" @onclick="() => AllerAsync(Numero + 1)">Suivant ›</button>
+        <button type="button" class="btn" disabled="@(Occupe || Courante <= 1)" @onclick="() => AllerAsync(Courante - 1)">‹ Précédent</button>
+        <span class="detail">Page @Courante sur @Pages</span>
+        <button type="button" class="btn" disabled="@(Occupe || Courante >= Pages)" @onclick="() => AllerAsync(Courante + 1)">Suivant ›</button>
     }
     <label class="detail pagination-taille">Lignes par page
         <select value="@Taille" @onchange="ChangerTailleAsync" disabled="@Occupe" aria-label="Lignes par page">
@@ -32,8 +32,23 @@
     [Parameter] public EventCallback<(int Numero, int Taille)> OnChange { get; set; }
 
     private int Pages => Math.Max(1, (int)Math.Ceiling(Total / (double)Math.Max(Taille, 1)));
-    private int Debut => Total == 0 ? 0 : (Numero - 1) * Taille + 1;
-    private int Fin => Math.Min(Numero * Taille, Total);
+    // Page affichée, ramenée dans les bornes : la liste a pu raccourcir (ligne traitée, filtre, « ← Retour » sur des données qui ont changé)
+    private int Courante => Math.Clamp(Numero, 1, Pages);
+    private int Debut => Total == 0 ? 0 : (Courante - 1) * Taille + 1;
+    private int Fin => Math.Min(Courante * Taille, Total);
+    private (int Numero, int Total, int Taille)? recalageDemande;
+
+    /// <summary>
+    /// Page au-delà de la fin : l'écran est prévenu une fois (OnChange avec la dernière page) et recale sa liste.
+    /// Les listes chargées par le serveur reviennent déjà d'elles-mêmes à une page valide ; ce recalage sert surtout aux listes à l'écran.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Occupe || Numero == Courante) { recalageDemande = null; return; }
+        if (recalageDemande == (Numero, Total, Taille)) return;
+        recalageDemande = (Numero, Total, Taille);
+        await OnChange.InvokeAsync((Courante, Taille));
+    }
 
     private Task AllerAsync(int numero) => OnChange.InvokeAsync((Math.Clamp(numero, 1, Pages), Taille));
 

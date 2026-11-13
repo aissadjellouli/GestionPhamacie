@@ -184,6 +184,9 @@
         public int? DelaiRepriseJours { get; set; }
         public int? JoursOrange { get; set; }
         public int? JoursRouge { get; set; }
+        /// <summary>Délai absent dans la base (à la lecture) : le filtre « à renseigner » s'y fie, pour que la ligne
+        /// ne disparaisse pas pendant qu'on la remplit ; il suit l'enregistrement.</summary>
+        public bool DelaiEnregistreAbsent { get; init; }
     }
 
     private sealed class ExceptionSaisie
@@ -201,7 +204,7 @@
     private string fGrossiste = "";
     private bool fSansDelai;
     private int pageGrossistes = 1, tailleGrossistes = Pagination.TailleParDefaut;
-    private List<Grossiste> GrossistesFiltres => grossistes.Where(x => RechercheTexte.Contient(fGrossiste, x.Nom) && (!fSansDelai || x.DelaiRepriseJours is null)).ToList();
+    private List<Grossiste> GrossistesFiltres => grossistes.Where(x => RechercheTexte.Contient(fGrossiste, x.Nom) && (!fSansDelai || x.DelaiEnregistreAbsent)).ToList();
     private List<ExceptionSaisie> exceptions = [];
     private string? erreur, message;
     private bool enCours, ajout;
@@ -231,7 +234,8 @@
         };
         grossistes = s.Grossistes.Select(f => new Grossiste
         {
-            Id = f.FournisseurId, Nom = f.Nom, DelaiRepriseJours = f.DelaiRepriseJours, JoursOrange = f.JoursOrange, JoursRouge = f.JoursRouge
+            Id = f.FournisseurId, Nom = f.Nom, DelaiRepriseJours = f.DelaiRepriseJours, JoursOrange = f.JoursOrange, JoursRouge = f.JoursRouge,
+            DelaiEnregistreAbsent = f.DelaiRepriseJours is null
         }).ToList();
         exceptions = s.Exceptions.Select(e => new ExceptionSaisie
         {

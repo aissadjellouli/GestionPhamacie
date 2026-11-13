@@ -193,8 +193,8 @@ public sealed class SauvegardeAutomatique(ISauvegardesDepot depot, LancerSauvega
 
 public sealed class ObtenirSauvegardes(ISauvegardesDepot depot)
 {
-    public async Task<(ReglagesSauvegarde Reglages, IReadOnlyList<EntreeSauvegarde> Journal)> ExecuterAsync(CancellationToken ct = default) =>
-        (await depot.ReglagesAsync(ct), await depot.JournalAsync(30, ct));
+    /// <summary>Réglages ; le journal se lit à part, par page (<see cref="JournalAsync"/>).</summary>
+    public Task<ReglagesSauvegarde> ExecuterAsync(CancellationToken ct = default) => depot.ReglagesAsync(ct);
 
     /// <summary>Journal complet, par page et filtré (règle des listes).</summary>
     public Task<Pharma.Application.Commun.Page<EntreeSauvegarde>> JournalAsync(FiltreJournalSauvegarde filtre, Pharma.Application.Commun.DemandePage page,

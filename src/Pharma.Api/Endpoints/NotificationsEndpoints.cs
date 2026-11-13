@@ -90,13 +90,12 @@ internal static class NotificationsEndpoints
 
         s.MapGet("", async (ObtenirSauvegardes obtenir, IConfiguration config, Pharma.Application.Ged.ReglagesGed ged, CancellationToken ct) =>
             {
-                var (r, journal) = await obtenir.ExecuterAsync(ct);
+                var r = await obtenir.ExecuterAsync(ct);
                 // Base sauvegardée, à titre d'information : nom et serveur seulement, jamais le mot de passe
                 var cnx = new Npgsql.NpgsqlConnectionStringBuilder(config.GetConnectionString("Pharmacie") ?? "");
                 return Results.Ok(new EtatSauvegardesDto(
                     new ReglagesSauvegardeDto(r.Actif, r.Dossier, r.Heure, r.Conservation, r.DerniereExecution, r.RetentionGedJours, ged.RetentionSauvegardesJours,
                         r.NettoyageGedAnnees, ged.Racine),
-                    journal.Select(j => new EntreeSauvegardeDto(j.Id, j.Debut, j.Fin, j.Statut, j.Declenchement, j.Fichier, j.TailleOctets, j.Message, j.Utilisateur)).ToList(),
                     cnx.Database, cnx.Host is { } h ? $"{h}:{cnx.Port}" : null));
             })
            .ExigerPermission(Permissions.AdminSauvegardes);

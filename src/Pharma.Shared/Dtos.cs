@@ -339,8 +339,9 @@ public sealed record DocumentGedDto(string Chemin);
 public sealed record EntreeSauvegardeDto(
     long Id, DateTime Debut, DateTime? Fin, string Statut, string Declenchement, string? Fichier, long? TailleOctets, string? Message, string? Utilisateur);
 
-/// <summary>Base et Serveur : base de données que le serveur utilise et sauvegarde (à titre d'information, sans mot de passe).</summary>
-public sealed record EtatSauvegardesDto(ReglagesSauvegardeDto Reglages, IReadOnlyList<EntreeSauvegardeDto> Journal, string? Base = null, string? Serveur = null);
+/// <summary>Base et Serveur : base de données que le serveur utilise et sauvegarde (à titre d'information, sans mot de passe).
+/// Le journal se lit à part, par page (api/admin/sauvegardes/journal).</summary>
+public sealed record EtatSauvegardesDto(ReglagesSauvegardeDto Reglages, string? Base = null, string? Serveur = null);
 public sealed record ResultatSauvegardeDto(string Statut, string? Fichier, long? TailleOctets, string Message);
 
 // ---- Création d'un produit ----------------------------------------------------
@@ -395,8 +396,8 @@ public sealed record LigneInventaireDto(
 public sealed record InventaireDto(long Id, string Rayon, string Statut, DateTime CommenceLe, string CommencePar, DateTime? TermineLe, IReadOnlyList<LigneInventaireDto> Lignes);
 public sealed record InventaireResumeDto(long Id, string Rayon, string Statut, DateTime CommenceLe, string CommencePar, DateTime? TermineLe, int Lignes, int Ecarts, int AValider, decimal ValeurEcarts);
 public sealed record EcartAValiderDto(long LigneId, long InventaireId, string Rayon, string Produit, string NumeroLot, int Theorique, int Compte, int Ecart, decimal ValeurEcart, string ComptePar, DateTime CompteLe);
-public sealed record TableauInventaireDto(IReadOnlyList<RayonInventaireDto> Rayons, string? RayonPropose, ParametresInventaireDto Parametres, IReadOnlyList<EcartAValiderDto> EcartsAValider, IReadOnlyList<InventaireResumeDto> Historique,
-    EtatSensiblesDto? Sensibles = null);
+public sealed record TableauInventaireDto(IReadOnlyList<RayonInventaireDto> Rayons, string? RayonPropose, ParametresInventaireDto Parametres, IReadOnlyList<EcartAValiderDto> EcartsAValider,
+    EtatSensiblesDto? Sensibles = null);   // historique : à part, par page (api/inventaires/historique)
 /// <summary>Produits sensibles : nombre, fin du dernier comptage, comptage en cours.</summary>
 public sealed record EtatSensiblesDto(int Produits, DateTime? Dernier, long? EnCoursId);
 
@@ -540,7 +541,9 @@ public sealed record BalanceMensuelleDto(long ProduitId, string Produit, int Ann
 /// <summary>Inscriptions du registre paginées et filtrées par le serveur (produit, période, opération) ; opérations présentes pour le filtre.</summary>
 public sealed record InscriptionsRegistreDto(PageDto<LigneRegistreDto> Page, IReadOnlyList<CodeLibelleDto> Operations, bool NomsMasques);
 
-public sealed record RegistreDto(DateOnly Du, DateOnly Au, string? Produit, IReadOnlyList<LigneRegistreDto> Lignes,
+/// <summary>En-tête de l'écran du registre : nombre d'inscriptions et balance mensuelle de la période (sans limite de durée) ;
+/// les inscriptions se lisent par page (InscriptionsRegistreDto).</summary>
+public sealed record RegistreDto(DateOnly Du, DateOnly Au, string? Produit, int Inscriptions,
     IReadOnlyList<BalanceMensuelleDto> Balance, bool NomsMasques);
 
 // ---- Ticket de caisse ------------------------------------------------------------
