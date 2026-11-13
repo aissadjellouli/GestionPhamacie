@@ -1,0 +1,140 @@
+@page "/admin/controle-interne"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Réglages du contrôle interne (seuils par employé et par jour, réception à l'aveugle, horaires d'ouverture) :
+   déplacés de l'écran Contrôle interne vers l'Administration ; réservés au titulaire (API /surveillance/parametres). *@
+<div class="page admin">
+    <NavAdmin Actif="admin/controle-interne" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Contrôle interne</h1>
+                <p class="sous-titre">Réservé au titulaire · au-delà d’un seuil, une anomalie est créée et vous êtes prévenu ; le double d’un seuil la rend urgente</p>
+            </div>
+            @if (reglages is not null) { <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button> }
+        </div>
+
+        @if (!Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Réglages réservés au pharmacien titulaire.</div>
+        }
+        else
+        {
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+            @if (reglages is { } r)
+            {
+                @* Seuils groupés par thème, une ligne par réglage (libellé à gauche, valeur à droite) : l'écran tient sans défilement *@
+                <div class="reglages-groupes">
+                    <section class="panneau" aria-labelledby="t-caisse">
+                        <h2 id="t-caisse">Caisse</h2>
+                        <p class="detail" style="margin: 0">Par employé et par jour.</p>
+                        <div class="reglage-ligne"><label for="sv-retraits">Boîtes retirées du panier avant paiement</label><input id="sv-retraits" type="number" min="1" @bind="r.SeuilLignesRetirees" /></div>
+                        <div class="reglage-ligne"><label for="sv-tiroir">Tiroir ouvert sans vente</label><input id="sv-tiroir" type="number" min="1" @bind="r.SeuilTiroir" /></div>
+                        <div class="reglage-ligne"><label for="sv-attente">Ventes en attente abandonnées</label><input id="sv-attente" type="number" min="1" @bind="r.SeuilAttentesAbandonnees" /></div>
+                        <div class="reglage-ligne"><label for="sv-remises">Ventes avec remise</label><input id="sv-remises" type="number" min="1" @bind="r.SeuilRemises" /></div>
+                        <div class="reglage-ligne"><label for="sv-remises-p">Remises au même patient (30 jours)</label><input id="sv-remises-p" type="number" min="1" @bind="r.SeuilRemisesPatient" /></div>
+                        <div class="reglage-ligne"><label for="sv-baisses">Baisses de prix (hors titulaire)</label><input id="sv-baisses" type="number" min="1" @bind="r.SeuilBaissesPrix" /></div>
+                        <h3 id="t-horaires" style="margin: 8px 0 0">Horaires d’ouverture</h3>
+                        <p class="detail" style="margin: 0">Une vente encaissée en dehors crée une anomalie urgente. Vide : pas de contrôle (garde, horaires variables).</p>
+                        <div class="reglage-ligne"><label for="sv-ouverture">Ouverture</label><input id="sv-ouverture" data-champ="heure_ouverture" type="time" @bind="r.HeureOuverture" /></div>
+                        <div class="reglage-ligne"><label for="sv-fermeture">Fermeture</label><input id="sv-fermeture" type="time" @bind="r.HeureFermeture" /></div>
+                    </section>
+
+                    <section class="panneau" aria-labelledby="t-stock">
+                        <h2 id="t-stock">Stock et réception</h2>
+                        <p class="detail" style="margin: 0">Par employé et par jour, sauf les délais.</p>
+                        <div class="reglage-ligne"><label for="sv-ajust">Boîtes manquantes ajustées en inventaire</label><input id="sv-ajust" type="number" min="1" @bind="r.SeuilAjustements" /></div>
+                        <div class="reglage-ligne"><label for="sv-casses">Boîtes déclarées cassées</label><input id="sv-casses" type="number" min="1" @bind="r.SeuilCasses" /></div>
+                        <div class="reglage-ligne"><label for="sv-echant">Boîtes données en échantillon</label><input id="sv-echant" type="number" min="1" @bind="r.SeuilEchantillons" /></div>
+                        <div class="reglage-ligne"><label for="sv-sensibles">Comptage des produits sensibles (tous les … jours)</label><input id="sv-sensibles" data-champ="jours_sensibles" type="number" min="1" max="90" @bind="r.JoursComptageSensibles" /></div>
+                        <div class="reglage-ligne"><label for="sv-avoir">Retour fournisseur sans avoir (après … jours)</label><input id="sv-avoir" data-champ="jours_avoir" type="number" min="1" max="365" @bind="r.JoursAvoirRetour" /></div>
+                        <label class="case" style="display: flex; gap: 8px; align-items: flex-start; margin-top: 4px"><input type="checkbox" @bind="r.ReceptionAveugle" />
+                            <span>Réception à l’aveugle : les boîtes sont comptées sans voir le bon de livraison, puis la facture est saisie et comparée (un écart bloque la réception jusqu’à votre validation).</span></label>
+                    </section>
+
+                    <section class="panneau" aria-labelledby="t-credits">
+                        <h2 id="t-credits">Crédits et accès</h2>
+                        <p class="detail" style="margin: 0">Montants en DA.</p>
+                        <div class="reglage-ligne"><label for="sv-cr-nouveau">Dette d’un patient récent</label><input id="sv-cr-nouveau" data-champ="seuil_credit" type="number" min="1" step="100" @bind="r.SeuilCreditNouveauPatient" /></div>
+                        <div class="reglage-ligne"><label for="sv-pat-recent">Patient récent (créé depuis … jours)</label><input id="sv-pat-recent" data-champ="jours_patient_recent" type="number" min="1" max="90" @bind="r.JoursPatientRecent" /></div>
+                        <div class="reglage-ligne"><label for="sv-cr-jour">Crédits accordés par un employé dans la journée</label><input id="sv-cr-jour" type="number" min="1" step="100" @bind="r.SeuilCreditsJour" /></div>
+                        <div class="reglage-ligne"><label for="sv-cr-jamais">Crédit jamais remboursé (après … jours)</label><input id="sv-cr-jamais" data-champ="jours_credit" type="number" min="1" max="365" @bind="r.JoursCreditSansRemboursement" /></div>
+                        <div class="reglage-ligne"><label for="sv-aut-val">Autorisations par code données par un employé</label><input id="sv-aut-val" type="number" min="1" @bind="r.SeuilAutorisationsValideur" /></div>
+                        <div class="reglage-ligne"><label for="sv-aut-emp">Autorisations par code demandées par un employé</label><input id="sv-aut-emp" type="number" min="1" @bind="r.SeuilAutorisationsEmploye" /></div>
+                        <div class="reglage-ligne"><label for="sv-postes">Passages d’un poste à l’autre en moins de … minutes</label><input id="sv-postes" data-champ="minutes_postes" type="number" min="1" max="120" @bind="r.MinutesPostesSimultanes" /></div>
+                        <div class="reglage-ligne"><label for="sv-postes-n">Nombre de ces passages dans la journée</label><input id="sv-postes-n" type="number" min="1" @bind="r.SeuilChangementsPoste" /></div>
+                    </section>
+                </div>
+            }
+            else if (erreur is null) { <Chargement /> }
+        }
+    </div>
+</div>
+
+@code {
+    private sealed class Reglages
+    {
+        public int SeuilLignesRetirees { get; set; }
+        public int SeuilTiroir { get; set; }
+        public int SeuilAttentesAbandonnees { get; set; }
+        public int SeuilRemises { get; set; }
+        public int SeuilRemisesPatient { get; set; }
+        public TimeOnly? HeureOuverture { get; set; }
+        public TimeOnly? HeureFermeture { get; set; }
+        public int SeuilAjustements { get; set; }
+        public int SeuilCasses { get; set; }
+        public int SeuilEchantillons { get; set; }
+        public int JoursComptageSensibles { get; set; }
+        public bool ReceptionAveugle { get; set; }
+        public int JoursAvoirRetour { get; set; }
+        public decimal SeuilCreditNouveauPatient { get; set; }
+        public int JoursPatientRecent { get; set; }
+        public decimal SeuilCreditsJour { get; set; }
+        public int JoursCreditSansRemboursement { get; set; }
+        public int SeuilAutorisationsValideur { get; set; }
+        public int SeuilAutorisationsEmploye { get; set; }
+        public int MinutesPostesSimultanes { get; set; }
+        public int SeuilChangementsPoste { get; set; }
+        public int SeuilBaissesPrix { get; set; }
+    }
+
+    private Reglages? reglages;
+    private bool enCours;
+    private string? erreur, message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.A("role.titulaire")) return;
+        var (p, e) = await Api.ParametresSurveillanceAsync();
+        if (p is not null)
+            reglages = new Reglages
+            {
+                SeuilLignesRetirees = p.SeuilLignesRetirees, SeuilTiroir = p.SeuilTiroir, SeuilAttentesAbandonnees = p.SeuilAttentesAbandonnees,
+                SeuilRemises = p.SeuilRemises, SeuilRemisesPatient = p.SeuilRemisesPatient, HeureOuverture = p.HeureOuverture, HeureFermeture = p.HeureFermeture,
+                SeuilAjustements = p.SeuilAjustements, SeuilCasses = p.SeuilCasses, SeuilEchantillons = p.SeuilEchantillons,
+                JoursComptageSensibles = p.JoursComptageSensibles, ReceptionAveugle = p.ReceptionAveugle, JoursAvoirRetour = p.JoursAvoirRetour,
+                SeuilCreditNouveauPatient = p.SeuilCreditNouveauPatient, JoursPatientRecent = p.JoursPatientRecent, SeuilCreditsJour = p.SeuilCreditsJour,
+                JoursCreditSansRemboursement = p.JoursCreditSansRemboursement, SeuilAutorisationsValideur = p.SeuilAutorisationsValideur,
+                SeuilAutorisationsEmploye = p.SeuilAutorisationsEmploye, MinutesPostesSimultanes = p.MinutesPostesSimultanes,
+                SeuilChangementsPoste = p.SeuilChangementsPoste, SeuilBaissesPrix = p.SeuilBaissesPrix
+            };
+        erreur = e;
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        var r = reglages!;
+        (enCours, message) = (true, null);
+        erreur = await Api.EnregistrerParametresSurveillanceAsync(new ParametresSurveillanceDto(r.SeuilLignesRetirees, r.SeuilTiroir,
+            r.SeuilAttentesAbandonnees, r.SeuilRemises, r.SeuilRemisesPatient, r.HeureOuverture, r.HeureFermeture, r.SeuilAjustements, r.SeuilCasses,
+            r.SeuilEchantillons, r.JoursComptageSensibles, r.ReceptionAveugle, r.JoursAvoirRetour, r.SeuilCreditNouveauPatient, r.JoursPatientRecent,
+            r.SeuilCreditsJour, r.JoursCreditSansRemboursement, r.SeuilAutorisationsValideur, r.SeuilAutorisationsEmploye, r.MinutesPostesSimultanes,
+            r.SeuilChangementsPoste, r.SeuilBaissesPrix));
+        enCours = false;
+        message = erreur is null ? "Réglages du contrôle interne enregistrés." : null;
+    }
+}

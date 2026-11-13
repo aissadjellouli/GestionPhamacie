@@ -44,7 +44,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Dettes et créances | « Payer » / « Encaisser » (Caisse, Trésorerie › Saisir un mouvement, ou Achats › Règlements) | Dettes : rubrique du tiers, filtres et page de la liste |
 | Achats › Commandes | « Réceptionner » (Achats › Réceptions) | Commandes : filtres, page, bon ouvert |
 | Caisse | Clôture, Relevé | Caisse (vente reprise, panneau de crédit rouvert) |
-| Contrôle interne | Risques | Contrôle interne (onglet) |
+| Contrôle interne | Écarts et risques | Contrôle interne (rubrique) |
 | Administration › Caisse | Imprimantes | Administration › Caisse (filtres et page du journal) |
 | Barre d'état (en bas) | Caisse ou Clôture, Sauvegardes | écran précédent |
 | Nom d'un tiers cliquable (17 écrans) | sa fiche (fenêtre) | Échap ou « Fermer » referme la fiche |
@@ -62,13 +62,15 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Achats › Grossistes | `grossistes` | recherche (nom, téléphone, e-mail), état, dette, e-mail manquant, page |
 | Achats › Règlements | `reglements` | grossiste ouvert, filtres et page de son relevé |
 | Achats › Retours | `retours` | grossiste, statut, période, page ; retour en préparation (lots, quantités, boîtes scannées, motif, avant « Préparer le retour ») |
-| Rapports | `rapports` | période, date, tableau par jour |
+| Rapports | `rapports` | rubrique dans l'adresse (`synthese`, `ventes`, `clotures`, `retours`, `pertes`, `pertes-detail`, `tva`) ; période, date, tableau par jour |
+| Contrôle interne | `surveillance` | rubrique dans l'adresse (à examiner, `?onglet=traitees`, `?onglet=sensibles`) ; page des anomalies |
+| Guide et retours | `guide` | rubrique dans l'adresse (à essayer, `?rubrique=remarque`, `?rubrique=remarques`) ; écran, genre et page des remarques |
 | Factures | `factures`, `editeur-facture` | recherche, destinataire, période, page, facture ouverte (et sa version), éditeur ouvert et sa saisie (destinataire, ventes cochées, lignes libres, dates, commentaire) ; onglet dans l’adresse |
 | Registre des psychotropes | `registre` | rubrique dans l'adresse (inscriptions, `?rubrique=balance`) ; produit, période, opération, page des inscriptions |
 | Achats › Étiquettes internes | `etiquettes` | recherche (produit ou lot), péremption jusqu'au, page |
 | Trésorerie | `tresorerie` | rubrique dans l'adresse (`comptes`, `mouvements`, `saisie`, `caisses`, `cheques`) ; compte affiché, période, employé, page, type de mouvement en saisie |
 | Dettes et créances | `dettes` | rubrique dans l'adresse (`dettes` : vue d'ensemble ; `?onglet=alertes`, `patient`, `facture`, `bordereau`, `grossiste`, `effet`, `tout`) ; filtres de la liste (tiers, état, période) et page |
-| Contrôle interne › Risques | `risques` | période, pages des deux tableaux |
+| Contrôle interne › Écarts et risques | `risques` | tableau dans l'adresse (par employé, `?rubrique=jours`) ; période, pages des deux tableaux |
 | Administration › Caisse | `journal` | employé, catégorie, période, page du journal |
 | Administration › Notifications | `notifications` | objet, statut, période, page de la file d'attente |
 

@@ -1,86 +1,113 @@
 @page "/guide"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 @* Guide de l'essai : ce qu'il faut essayer, écran par écran, et formulaire de retours (inscrits au journal des actions).
-   Le titulaire voit tous les retours et peut les copier pour les transmettre. *@
-<div class="page">
-    <div class="titre-page">
-        <div>
-            <h1>Guide et retours</h1>
-            <p class="sous-titre">Ce qu’il faut essayer pendant l’essai, et vos remarques : un problème, une idée, une question</p>
+   Le titulaire voit tous les retours et peut les copier pour les transmettre.
+   Écran fixe, menu vertical à gauche (docs/charte-graphique.md) ; la rubrique est dans l'adresse (guide?rubrique=…). *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques du guide">
+        @foreach (var (id, libelle) in Rubriques)
+        {
+            var nombre = id == "remarques" ? retours.Count : 0;
+            <a href="@(id == "essayer" ? "guide" : $"guide?rubrique={id}")" class="@(id == rubrique ? "active" : null)" aria-current="@(id == rubrique ? "page" : null)">
+                @libelle@if (nombre > 0) { <span class="compteur neutre">@nombre</span> }
+            </a>
+        }
+    </nav>
+
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Guide et retours · @Rubriques.First(r => r.Id == rubrique).Libelle</h1>
+                <p class="sous-titre">Ce qu’il faut essayer pendant l’essai, et vos remarques : un problème, une idée, une question</p>
+            </div>
         </div>
-    </div>
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
 
-    <div class="colonnes">
-        <section class="panneau colonne-principale" aria-labelledby="t-guide">
-            <h2 id="t-guide">À essayer</h2>
-            <p class="detail" style="margin: 0">
-                Base de démonstration : produits, patients, grossistes et factures sont fictifs. Comptes : <strong>titulaire</strong>, <strong>assistant</strong>
-                et <strong>vendeur</strong>, mot de passe <strong>demo</strong>. Rien de ce que vous faites ici ne touche une vraie pharmacie.
-            </p>
-            @foreach (var (titre, etapes) in Parcours)
-            {
-                <details class="carte">
-                    <summary><strong>@titre</strong></summary>
-                    <ol style="margin: 8px 0 0; padding-left: 20px">
-                        @foreach (var e in etapes) { <li>@e</li> }
-                    </ol>
-                </details>
-            }
-        </section>
-
-        <section class="panneau colonne-laterale" aria-labelledby="t-retour">
-            <h2 id="t-retour">Votre remarque</h2>
-            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
-            @if (message is not null) { <div class="succes" role="status">@message</div> }
-            <div class="champ">
-                <label for="re-ecran">Écran concerné</label>
-                <select id="re-ecran" @bind="ecran">
-                    @foreach (var e in Ecrans) { <option value="@e">@e</option> }
-                </select>
-            </div>
-            <fieldset class="champ" style="border: 0; padding: 0; margin: 0" data-champ="genre_retour">
-                <legend class="etiquette-champ requis">Genre</legend>
-                <div class="filtres" role="radiogroup">
-                    @foreach (var (code, libelle) in GenresAffiches)
-                    {
-                        <button type="button" role="radio" class="puce" aria-checked="@(genre == code ? "true" : "false")" aria-pressed="@(genre == code ? "true" : "false")"
-                                @onclick="() => genre = code">@libelle</button>
-                    }
+        @if (rubrique == "essayer")
+        {
+            <section class="panneau cadre-defilant" aria-labelledby="t-guide">
+                <h2 id="t-guide" class="visuellement-cache">À essayer</h2>
+                <p class="detail" style="margin: 0">
+                    Base de démonstration : produits, patients, grossistes et factures sont fictifs. Comptes : <strong>titulaire</strong>, <strong>assistant</strong>
+                    et <strong>vendeur</strong>, mot de passe <strong>demo</strong>. Rien de ce que vous faites ici ne touche une vraie pharmacie.
+                </p>
+                @foreach (var (titre, etapes) in Parcours)
+                {
+                    <details class="carte">
+                        <summary><strong>@titre</strong></summary>
+                        <ol style="margin: 8px 0 0; padding-left: 20px">
+                            @foreach (var e in etapes) { <li>@e</li> }
+                        </ol>
+                    </details>
+                }
+            </section>
+        }
+        else if (rubrique == "remarque")
+        {
+            <section class="panneau" aria-labelledby="t-retour" style="max-width: 760px">
+                <h2 id="t-retour" class="visuellement-cache">Votre remarque</h2>
+                <div class="champ">
+                    <label for="re-ecran">Écran concerné</label>
+                    <select id="re-ecran" @bind="ecran">
+                        @foreach (var e in Ecrans) { <option value="@e">@e</option> }
+                    </select>
                 </div>
-            </fieldset>
-            <div class="champ">
-                <label for="re-texte" class="requis">Remarque</label>
-                <textarea id="re-texte" data-champ="texte_retour" rows="6" maxlength="4000" placeholder="Ce que vous avez fait, ce qui s’est passé, ce que vous attendiez" @bind="texte"></textarea>
-            </div>
-            <div class="filtres">
-                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnvoyerAsync">Enregistrer la remarque</button>
-            </div>
-
-            <h2 style="margin-top: 12px">Remarques enregistrées (@retours.Count)</h2>
-            <p class="detail" style="margin: 0">Le titulaire voit les remarques de tous ; les autres employés voient les leurs.</p>
-            @if (retours.Count > 0)
-            {
+                <fieldset class="champ" style="border: 0; padding: 0; margin: 0" data-champ="genre_retour">
+                    <legend class="etiquette-champ requis">Genre</legend>
+                    <div class="filtres" role="radiogroup">
+                        @foreach (var (code, libelle) in GenresAffiches)
+                        {
+                            <button type="button" role="radio" class="puce" aria-checked="@(genre == code ? "true" : "false")" aria-pressed="@(genre == code ? "true" : "false")"
+                                    @onclick="() => genre = code">@libelle</button>
+                        }
+                    </div>
+                </fieldset>
+                <div class="champ">
+                    <label for="re-texte" class="requis">Remarque</label>
+                    <textarea id="re-texte" data-champ="texte_retour" rows="6" maxlength="4000" placeholder="Ce que vous avez fait, ce qui s’est passé, ce que vous attendiez" @bind="texte"></textarea>
+                </div>
                 <div class="filtres">
-                    <button type="button" class="btn" @onclick="Copier">Copier les remarques (pour les envoyer)</button>
-                    @if (copie is not null) { <span class="detail" role="status">@copie</span> }
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnvoyerAsync">Enregistrer la remarque</button>
                 </div>
-                <ul class="liste-simple" style="display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none">
-                    @foreach (var r in retours)
-                    {
-                        <li class="carte">
-                            <span class="detail">@Libelles.DateHeureLocale(r.Date) · @r.Employe · @r.Ecran · <span class="pastille @(r.Genre == "probleme" ? "urgent" : "info")">@LibelleGenre(r.Genre)</span></span>
-                            <p style="margin: 4px 0 0; white-space: pre-wrap">@r.Texte</p>
-                        </li>
-                    }
-                </ul>
-            }
-            else
-            {
-                <p class="vide" style="margin: 0">Aucune remarque pour l’instant.</p>
-            }
-        </section>
+            </section>
+        }
+        else
+        {
+            <p class="detail" style="margin: 0">Le titulaire voit les remarques de tous ; les autres employés voient les leurs.</p>
+            <div class="filtres-liste" role="search" aria-label="Filtrer les remarques">
+                <div class="champ" style="flex: 0 0 240px"><label for="fr-ecran">Écran</label>
+                    <select id="fr-ecran" @bind="fEcran" @bind:after="PremierePage">
+                        <option value="">Tous</option>
+                        @foreach (var e in Ecrans) { <option value="@e">@e</option> }
+                    </select></div>
+                <div class="champ" style="flex: 0 0 180px"><label for="fr-genre">Genre</label>
+                    <select id="fr-genre" @bind="fGenre" @bind:after="PremierePage">
+                        <option value="">Tous</option>
+                        @foreach (var (codeGenre, libelle) in GenresAffiches) { <option value="@codeGenre">@libelle</option> }
+                    </select></div>
+                @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficher">Tout afficher</button> }
+                @if (RetoursFiltres.Count > 0) { <button type="button" class="btn" @onclick="Copier">Copier ces remarques (pour les envoyer)</button> }
+            </div>
+            @if (copie is not null) { <span class="detail" role="status">@copie</span> }
+            <div class="cadre-defilant" style="display: flex; flex-direction: column; gap: 8px">
+                @foreach (var r in RetoursFiltres.Skip((page - 1) * taille).Take(taille))
+                {
+                    <article class="carte">
+                        <span class="detail">@Libelles.DateHeureLocale(r.Date) · @r.Employe · @r.Ecran · <span class="pastille @(r.Genre == "probleme" ? "urgent" : "info")">@LibelleGenre(r.Genre)</span></span>
+                        <p style="margin: 4px 0 0; white-space: pre-wrap">@r.Texte</p>
+                    </article>
+                }
+                @if (RetoursFiltres.Count == 0)
+                {
+                    <p class="vide" style="margin: 0">@(FiltreActif ? "Aucune remarque pour ces filtres." : "Aucune remarque pour l’instant.")</p>
+                }
+            </div>
+            <Pagination Total="RetoursFiltres.Count" Numero="page" Taille="taille" Libelle="Pages des remarques" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
+        }
     </div>
 </div>
 
@@ -119,13 +146,40 @@
             "Alertes : péremptions à 30, 60 et 180 jours, règlements grossistes à préparer."]),
     ];
 
+    // Rubrique dans l'adresse (guide?rubrique=remarque|remarques) : « ← Retour » y revient
+    private static readonly (string Id, string Libelle)[] Rubriques = [("essayer", "À essayer"), ("remarque", "Votre remarque"), ("remarques", "Remarques enregistrées")];
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique = "essayer";
+
+    protected override void OnParametersSet()
+    {
+        var voulue = Rubriques.Any(r => r.Id == Rubrique) ? Rubrique! : "essayer";
+        if (voulue != rubrique) (rubrique, message, copie) = (voulue, null, null);
+    }
+
     private List<RetourEssaiDto> retours = [];
     private string ecran = "Général";
     private string genre = "probleme";
     private string? texte, erreur, message, copie;
     private bool enCours;
 
-    protected override async Task OnInitializedAsync() => await ChargerAsync();
+    // Remarques enregistrées : filtrées (écran, genre) et paginées à l'écran
+    private string fEcran = "", fGenre = "";
+    private int page = 1, taille = Pagination.TailleParDefaut;
+    private bool FiltreActif => fEcran != "" || fGenre != "";
+    private List<RetourEssaiDto> RetoursFiltres => retours.Where(r => (fEcran == "" || r.Ecran == fEcran) && (fGenre == "" || r.Genre == fGenre)).ToList();
+    private void PremierePage() => page = 1;
+    private void ToutAfficher() => (fEcran, fGenre, page) = ("", "", 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        OnParametersSet();   // rubrique juste dès le premier affichage, pendant le chargement des remarques
+        // « ← Retour » : filtres et page des remarques retrouvés tels qu'ils étaient
+        Historique.Suivre("guide", e => { e.Mettre("ecran", fEcran); e.Mettre("genre", fGenre); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("guide") is { } r)
+            (fEcran, fGenre, page, taille) = (r.Texte("ecran") ?? "", r.Texte("genre") ?? "", r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        await ChargerAsync();
+    }
 
     private async Task ChargerAsync()
     {
@@ -140,7 +194,7 @@
         {
             var e = await Api.EnvoyerRetourEssaiAsync(new NouveauRetourEssaiDto(ecran, genre, texte));
             if (e is not null) { erreur = e; return; }
-            (texte, message) = (null, "Remarque enregistrée. Merci !");
+            (texte, message) = (null, "Remarque enregistrée. Merci ! Elle figure dans « Remarques enregistrées ».");
             await ChargerAsync();
         }
         finally { enCours = false; }
@@ -148,11 +202,12 @@
 
     private void Copier()
     {
-        var lignes = retours.Select(r => $"[{Libelles.DateHeureLocale(r.Date)}] {r.Employe} · {r.Ecran} · {LibelleGenre(r.Genre)}{Environment.NewLine}{r.Texte}");
+        var filtres = RetoursFiltres;
+        var lignes = filtres.Select(r => $"[{Libelles.DateHeureLocale(r.Date)}] {r.Employe} · {r.Ecran} · {LibelleGenre(r.Genre)}{Environment.NewLine}{r.Texte}");
         try
         {
             System.Windows.Clipboard.SetText(string.Join(Environment.NewLine + Environment.NewLine, lignes));
-            copie = $"{retours.Count} remarque(s) copiée(s) : collez-les dans un e-mail ou un message.";
+            copie = $"{filtres.Count} remarque(s) copiée(s) : collez-les dans un e-mail ou un message.";
         }
         catch (System.Runtime.InteropServices.ExternalException) { copie = "Copie impossible : le presse-papiers est occupé, réessayez."; }
     }

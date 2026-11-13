@@ -581,7 +581,9 @@ details.avance[open] summary { margin-bottom: 8px; }
 /* ---- Chargement ----
    Roue : écran, panneau ou fenêtre dont les données arrivent (composant Chargement).
    Barre fine en haut de la fenêtre : appel au serveur de plus de 0,3 s, sur tout écran (composant BarreChargement). */
-.chargement { display: flex; align-items: center; gap: 10px; margin: 0; padding: 24px 0; color: var(--texte-2); }
+/* Chargement : visible seulement s'il dure (0,4 s) ; un écran rapide passe directement à son contenu, sans éclair du message */
+.chargement { display: flex; align-items: center; gap: 10px; margin: 0; padding: 24px 0; color: var(--texte-2); opacity: 0; animation: chargement-apparait 0.2s ease-out 0.4s forwards; }
+@keyframes chargement-apparait { to { opacity: 1; } }
 .chargement-roue { flex: none; width: 20px; height: 20px; border: 3px solid color-mix(in srgb, var(--accent-texte) 25%, transparent); border-top-color: var(--accent-texte); border-radius: 50%; animation: chargement-tour 0.8s linear infinite; }
 .barre-chargement { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1000; overflow: hidden; background: var(--accent-clair); pointer-events: none; }
 .barre-chargement::before { content: ""; position: absolute; top: 0; bottom: 0; left: -35%; width: 35%; background: var(--ambre); animation: chargement-glisse 1.1s ease-in-out infinite; }
@@ -642,3 +644,10 @@ details.avance[open] summary { margin-bottom: 8px; }
 .entete .menu-panneau .ligne-zoom .bouton-zoom { width: 34px; font-size: 18px; font-weight: 700; line-height: 1; }
 .entete .menu-panneau .ligne-zoom .valeur-zoom { min-width: 62px; }
 .entete .menu-panneau .ligne-zoom button:disabled { opacity: 0.4; cursor: default; }
+
+/* Réglages groupés par thème (Administration › Contrôle interne) : une ligne par réglage, libellé à gauche, valeur à droite */
+.reglages-groupes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.reglages-groupes .panneau { gap: 8px; }
+.reglage-ligne { display: grid; grid-template-columns: minmax(0, 1fr) 124px; gap: 10px; align-items: center; }
+.reglage-ligne label { font-size: 13px; color: var(--texte-2); }
+.reglage-ligne input { min-width: 0; width: 100%; padding-top: 6px; padding-bottom: 6px; }

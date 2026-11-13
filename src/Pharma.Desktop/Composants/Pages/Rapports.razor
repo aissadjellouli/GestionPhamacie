@@ -3,10 +3,30 @@
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
 
-<div class="page">
+@* Écran fixe : une rubrique à la fois, menu vertical à gauche (docs/charte-graphique.md) ; la rubrique est dans l'adresse
+   (rapports?rubrique=…). La période choisie reste la même d'une rubrique à l'autre. *@
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques des rapports">
+        @foreach (var x in Rubriques)
+        {
+            if (x.Groupe is { } g)
+            {
+                <span class="nav-groupe-titre">@g</span>
+            }
+            else
+            {
+                var nombre = Compteur(x.Id);
+                <a href="@($"rapports?rubrique={x.Id}")" class="sous-rubrique @(x.Id == rubrique ? "active" : null)" aria-current="@(x.Id == rubrique ? "page" : null)">
+                    @x.Libelle@if (nombre > 0) { <span class="compteur neutre">@nombre</span> }
+                </a>
+            }
+        }
+    </nav>
+
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Rapports</h1>
+            <h1>Rapports · @Courante.Libelle</h1>
             <p class="sous-titre">@(rapport?.Libelle ?? "Chargement…")</p>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap">
@@ -50,6 +70,8 @@
 
     @if (rapport is { } r)
     {
+        @if (rubrique == "synthese")
+        {
         <div class="tuiles">
             <div class="tuile">
                 <span class="tuile-libelle">Chiffre d’affaires</span>
@@ -104,8 +126,20 @@
                 </div>
             }
         </div>
+        <p class="pied-page">
+            Ventes validées seulement, remises déduites. Marge brute : chiffre d’affaires hors TVA moins le coût d’achat HT des boîtes vendues,
+            au prix réel de chaque boîte identifiée, sinon au prix de son lot. Marge après pertes et dons : marge brute moins la valeur d’achat HT
+            des boîtes périmées, cassées ou données, moins la TVA à reverser sur ces boîtes selon le réglage de la rubrique « TVA à reverser ».
+        </p>
+        }
 
+        @if (rubrique == "ventes")
+        {
         <div class="rapport-colonnes">
+            @if (r.ParJour.Count <= 1)
+            {
+                <section class="panneau"><h2>Ventes par jour</h2><p class="vide">Période d’un seul jour : choisissez la semaine ou le mois pour voir l’évolution.</p></section>
+            }
             @if (r.ParJour.Count > 1)
             {
                 var max = Math.Max(1m, r.ParJour.Max(j => j.ChiffreAffaires));
@@ -116,6 +150,7 @@
                     </div>
                     @if (tableauJours)
                     {
+                        <div class="tableau-cadre">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">@(r.ParSemaine ? "Semaine du" : "Jour")</th><th scope="col">Ventes</th><th scope="col">Chiffre d’affaires</th></tr></thead>
                             <tbody>
@@ -125,6 +160,7 @@
                                 }
                             </tbody>
                         </table>
+                        </div>
                     }
                     else
                     {
@@ -169,7 +205,10 @@
                 }
             </section>
         </div>
+        }
 
+        @if (rubrique == "clotures")
+        {
         <section class="panneau" aria-labelledby="t-clo">
             <h2 id="t-clo">Clôtures de caisse</h2>
             @* Paginées et filtrées par le serveur ; listes préremplies avec les employés et postes de la période *@
@@ -233,9 +272,11 @@
                 <p class="detail" style="margin: 0">L’attendu et l’écart sont réservés au droit « Voir les écarts de caisse ».</p>
             }
         </section>
+        }
 
-        @if (r.Retours is { Count: > 0 } retours)
+        @if (rubrique == "retours")
         {
+            var retours = r.Retours ?? [];
             <section class="panneau" aria-labelledby="t-retours">
                 <h2 id="t-retours">Retours clients</h2>
                 <p class="detail" style="margin: 0 0 8px">Un retour diminue le chiffre du jour où il est enregistré. La recette du jour de la vente ne change pas : le retour y figure pour information.</p>
@@ -243,7 +284,7 @@
                     <table class="tableau" style="min-width: 760px">
                         <thead><tr><th scope="col">Vente</th><th scope="col">Produits rendus</th><th scope="col">Retour</th><th scope="col">Montant</th><th scope="col">Effet sur le chiffre</th></tr></thead>
                         <tbody>
-                            @foreach (var x in retours)
+                            @foreach (var x in retours.Skip((pageRetours - 1) * tailleRetours).Take(tailleRetours))
                             {
                                 <tr>
                                     <td class="nom">@x.Ticket<br /><span class="detail">@Libelles.DateHeureLocale(x.DateVente) · vendu par <LienContact Type="employe" Id="x.VendeurId" Nom="@x.Vendeur" /></span></td>
@@ -256,19 +297,26 @@
                                     </td>
                                 </tr>
                             }
+                            @if (retours.Count == 0)
+                            {
+                                <tr><td colspan="5" class="vide">Aucun retour client sur la période.</td></tr>
+                            }
                         </tbody>
                     </table>
                 </div>
+                <Pagination Total="retours.Count" Numero="pageRetours" Taille="tailleRetours" Libelle="Pages des retours clients" OnChange="p => (pageRetours, tailleRetours) = (p.Numero, p.Taille)" />
             </section>
         }
 
-        @if (r.Sorties is { } sorties)
+        @if (r.Sorties is { } sorties && rubrique is "pertes" or "pertes-detail")
         {
             var valeur = sorties.Total.Valeur is not null;
             <section class="panneau" aria-labelledby="t-sorties">
-                <h2 id="t-sorties">Sorties de stock sans vente</h2>
+                <h2 id="t-sorties" class="visuellement-cache">Sorties de stock sans vente</h2>
                 <p class="detail" style="margin: 0 0 8px">Boîtes périmées, cassées, données ou remises en échantillon pendant la période@(valeur ? ", au prix d’achat HT retenu le jour de la sortie" : "").
                     Ce ne sont pas des mouvements d’argent : elles n’apparaissent pas en trésorerie.</p>
+                @if (rubrique == "pertes")
+                {
                 <div class="rapport-colonnes">
                     @foreach (var (id, titre, totaux) in new[] { ("t-sorties-employes", "Par employé", sorties.ParEmploye), ("t-sorties-produits", "Par produit", sorties.ParProduit) })
                     {
@@ -288,12 +336,15 @@
                         </div>
                     }
                 </div>
-                <h3 id="t-sorties-detail">Détail</h3>
+                }
+                else
+                {
+                <h3 id="t-sorties-detail" class="visuellement-cache">Détail</h3>
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 760px" aria-labelledby="t-sorties-detail">
                         <thead><tr><th scope="col">Date</th><th scope="col">Produit</th><th scope="col">Motif</th><th scope="col">Boîtes</th>@if (valeur) { <th scope="col">Valeur HT</th> }<th scope="col">Employé et raison</th></tr></thead>
                         <tbody>
-                            @foreach (var s in sorties.Detail)
+                            @foreach (var s in sorties.Detail.Skip((pageSorties - 1) * tailleSorties).Take(tailleSorties))
                             {
                                 <tr>
                                     <td>@Libelles.DateHeureLocale(s.Date)</td>
@@ -304,9 +355,15 @@
                                     <td><LienContact Type="employe" Id="s.EmployeId" Nom="@s.Employe" />@if (!string.IsNullOrWhiteSpace(s.Reference)) {<br /><span class="detail">@s.Reference</span>}</td>
                                 </tr>
                             }
+                            @if (sorties.Detail.Count == 0)
+                            {
+                                <tr><td colspan="@(valeur ? 6 : 5)" class="vide">Aucune sortie sans vente sur la période.</td></tr>
+                            }
                         </tbody>
                     </table>
                 </div>
+                <Pagination Total="sorties.Detail.Count" Numero="pageSorties" Taille="tailleSorties" Libelle="Pages des sorties" OnChange="p => (pageSorties, tailleSorties) = (p.Numero, p.Taille)" />
+                }
                 @if (!valeur)
                 {
                     <p class="detail" style="margin: 0">La valeur d’achat est réservée au droit « Voir les prix d’achat et les marges ».</p>
@@ -314,7 +371,7 @@
             </section>
         }
 
-        @if (r.ApresSorties is not null && r.Tva is not null)
+        @if (r.ApresSorties is not null && r.Tva is not null && rubrique == "tva")
         {
             var titulaire = Session.A("role.titulaire");
             <section class="panneau" aria-labelledby="t-tva-sorties">
@@ -338,17 +395,53 @@
                 }
             </section>
         }
-
-        <p class="pied-page">
-            Ventes validées seulement, remises déduites. Marge brute : chiffre d’affaires hors TVA moins le coût d’achat HT des boîtes vendues,
-            au prix réel de chaque boîte identifiée, sinon au prix de son lot. Marge après pertes et dons : marge brute moins la valeur d’achat HT
-            des boîtes périmées, cassées ou données, moins la TVA à reverser sur ces boîtes selon le réglage ci-dessus.
-        </p>
     }
     else if (erreur is null) { <Chargement Texte="Calcul du rapport…" /> }
+    </div>
 </div>
 
 @code {
+    /// <summary>Rubriques du menu vertical, dans l'ordre ; Groupe : titre de groupe. Pertes et dons : seulement si le rapport les contient (droit).</summary>
+    private sealed record RubriqueRapport(string Id, string Libelle, string? Groupe = null);
+    private RubriqueRapport[] Rubriques =>
+    [
+        new("", "", "Activité"),
+        new("synthese", "Synthèse"),
+        new("ventes", "Ventes"),
+        new("clotures", "Clôtures de caisse"),
+        new("retours", "Retours clients"),
+        .. rapport?.Sorties is null ? Array.Empty<RubriqueRapport>() :
+        [
+            new("", "", "Pertes et dons"),
+            new("pertes", "Récapitulatif"),
+            new("pertes-detail", "Détail des sorties"),
+            .. rapport.ApresSorties is not null && rapport.Tva is not null ? [new RubriqueRapport("tva", "TVA à reverser")] : Array.Empty<RubriqueRapport>()
+        ]
+    ];
+
+    /// <summary>Rubrique demandée dans l'adresse (rapports?rubrique=…) ; inconnue ou non permise : la synthèse.</summary>
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique = "synthese";
+    // Pertes et dons demandées dans l'adresse : leur titre s'affiche déjà pendant le calcul du rapport (le menu attend le rapport, qui dit le droit)
+    private static readonly Dictionary<string, string> LibellesPertes = new() { ["pertes"] = "Récapitulatif", ["pertes-detail"] = "Détail des sorties", ["tva"] = "TVA à reverser" };
+    private RubriqueRapport Courante => Rubriques.FirstOrDefault(x => x.Groupe is null && x.Id == rubrique)
+        ?? (LibellesPertes.TryGetValue(rubrique, out var l) ? new RubriqueRapport(rubrique, l) : Rubriques[1]);
+    protected override void OnParametersSet() => ChoisirRubrique();
+    private void ChoisirRubrique() => rubrique = Rubrique is { } v && Rubriques.Any(x => x.Groupe is null && x.Id == v) ? v
+        : rapport is null && Rubrique is "pertes" or "pertes-detail" or "tva" ? Rubrique : "synthese";
+
+    /// <summary>Nombre affiché à côté de la rubrique (gris, pour information) : lignes de la période.</summary>
+    private int Compteur(string id) => id switch
+    {
+        "clotures" => clotures?.Page.Total ?? 0,
+        "retours" => rapport?.Retours?.Count ?? 0,
+        "pertes-detail" => rapport?.Sorties?.Detail.Count ?? 0,
+        _ => 0
+    };
+
+    // Retours clients et détail des sorties : listes de la période, paginées à l'écran
+    private int pageRetours = 1, tailleRetours = Pagination.TailleParDefaut, pageSorties = 1, tailleSorties = Pagination.TailleParDefaut;
+
     private static readonly (string Code, string Libelle)[] Periodes = [("jour", "Jour"), ("semaine", "Semaine"), ("mois", "Mois"), ("dates", "Dates choisies")];
     private static readonly System.Globalization.CultureInfo Fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
 
@@ -364,6 +457,7 @@
 
     protected override Task OnInitializedAsync()
     {
+        ChoisirRubrique();   // titre et rubrique justes dès le premier affichage, pendant le calcul du rapport
         // « ← Retour » : période, date et tableau par jour retrouvés tels qu'ils étaient
         Historique.Suivre("rapports", e =>
         {
@@ -384,6 +478,8 @@
             if (r is not null)
             {
                 rapport = r;
+                (pageRetours, pageSorties) = (1, 1);
+                ChoisirRubrique();   // pertes et dons : rubriques connues une fois le rapport chargé (droit)
                 if (r.Tva is { } t) (tvaPerime, tvaCasse, tvaDon) = (t.Perime, t.Casse, t.Don);
                 await ChargerCloturesAsync(1, clotTaille);
             }

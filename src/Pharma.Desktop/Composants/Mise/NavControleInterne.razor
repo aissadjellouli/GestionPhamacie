@@ -1,0 +1,29 @@
+@* Menu vertical commun aux écrans du contrôle interne (anomalies, produits sensibles, écarts et risques) :
+   chaque entrée est une adresse, « ← Retour » y revient. Les réglages (seuils, horaires) sont dans l'Administration. *@
+<nav class="nav-laterale" aria-label="Rubriques du contrôle interne">
+    <span class="nav-groupe-titre">Anomalies</span>
+    @Lien("surveillance", "À examiner", AExaminer)
+    @Lien("surveillance?onglet=traitees", "Traitées")
+    <span class="nav-groupe-titre">Écarts et risques</span>
+    @Lien("surveillance/risques", "Par employé")
+    @Lien("surveillance/risques?rubrique=jours", "Jour par jour")
+    <span class="nav-groupe-titre">Stock</span>
+    @Lien("surveillance?onglet=sensibles", "Produits sensibles")
+    <span class="nav-groupe-titre">Réglages</span>
+    <a href="admin/controle-interne" class="sous-rubrique">Seuils et horaires</a>
+</nav>
+
+@code {
+    /// <summary>Adresse de la rubrique affichée (ex. « surveillance?onglet=traitees »).</summary>
+    [Parameter] public string Actif { get; set; } = "";
+    /// <summary>Anomalies à examiner : nombre affiché en rouge à côté de la rubrique.</summary>
+    [Parameter] public int? AExaminer { get; set; }
+
+    private RenderFragment Lien(string adresse, string libelle, int? nombre = null) => __builder =>
+    {
+        var actif = adresse == Actif;
+        <a href="@adresse" class="sous-rubrique @(actif ? "active" : null)" aria-current="@(actif ? "page" : null)">
+            @libelle@if (nombre > 0) { <span class="compteur" aria-label="@($"{nombre} à examiner")">@nombre</span> }
+        </a>
+    };
+}

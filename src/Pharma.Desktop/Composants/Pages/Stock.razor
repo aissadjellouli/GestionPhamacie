@@ -270,6 +270,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        OnParametersSet();   // rubrique et titre justes dès le premier affichage, pendant les chargements
         // « ← Retour » : recherche, filtre, rayon et page retrouvés tels qu'ils étaient
         Historique.Suivre("stock", e =>
         {

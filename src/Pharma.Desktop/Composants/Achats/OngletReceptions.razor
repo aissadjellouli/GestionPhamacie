@@ -708,9 +708,7 @@ else
         (fournisseurs, erreur) = await Api.FournisseursAsync();
         aveugle = await Api.ReceptionAveugleAsync();
         await ChargerComptagesAsync();
-        // Commandes à recevoir : les commandes en cours sont en tête de liste (200 au plus)
-        commandes = (await Api.CommandesAchatAsync(1, 200)).Item1?.Lignes.ToList() ?? [];
-        commandes = commandes.Where(c => c.Statut is "envoyee" or "recue_partielle").ToList();
+        await ChargerCommandesARecevoirAsync();
         // « ← Retour » : filtres et page de la liste des réceptions retrouvés tels qu'ils étaient
         Historique.Suivre("receptions", e =>
         {
@@ -741,6 +739,26 @@ else
             await ReprendreAsync(laissee);
             if (erreurAttente is null) messageAttente = $"Réception reprise : {t.LaisseePar} l’a laissée en changeant d’utilisateur.";
         }
+    }
+
+    /// <summary>
+    /// Bons à recevoir (envoyés ou reçus en partie) : filtrés par le serveur et lus page après page jusqu'au total,
+    /// pour qu'aucun bon en cours ne manque, si ancien soit-il. La liste proposée ne garde que ceux du grossiste choisi.
+    /// </summary>
+    private async Task ChargerCommandesARecevoirAsync()
+    {
+        var aRecevoir = new List<CommandeAchatDto>();
+        foreach (var statut in new[] { "envoyee", "recue_partielle" })
+        {
+            for (var numero = 1; ; numero++)
+            {
+                var (p, e) = await Api.CommandesAchatAsync(numero, 200, statut: statut);
+                if (p is null) { erreur ??= e; break; }
+                aRecevoir.AddRange(p.Lignes);
+                if (p.Lignes.Count == 0 || numero * p.Taille >= p.Total) break;
+            }
+        }
+        commandes = aRecevoir.OrderByDescending(c => c.Date).ToList();
     }
 
     private Task ChoisirFournisseurAsync()

@@ -3,13 +3,16 @@
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
 
-<div class="page">
+@* Écran fixe, menu vertical du contrôle interne à gauche : un tableau à la fois (surveillance/risques, ?rubrique=jours) ; la période est commune *@
+<div class="page avec-menu">
+    <NavControleInterne Actif="@(jours ? "surveillance/risques?rubrique=jours" : "surveillance/risques")" />
+
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Écarts et risques par employé</h1>
+            <h1>Écarts et risques · @(jours ? "Jour par jour" : "Par employé")</h1>
             <p class="sous-titre">Les pertes rapprochées des jours, des postes et des employés présents : une perte qui revient quand la même personne travaille saute aux yeux. Visible du titulaire seul.</p>
         </div>
-        <a href="surveillance" class="btn">Retour au contrôle interne</a>
     </div>
 
     @if (!Session.A("role.titulaire"))
@@ -31,10 +34,12 @@
         @if (tableau is { } t)
         {
             var signales = t.Employes.Count(e => e.Signale);
+            @if (!jours)
+            {
             <section class="panneau" aria-labelledby="t-employes">
                 <div>
                     <h2 id="t-employes">Par employé, du @Libelles.Date(t.Du) au @Libelles.Date(t.Au)</h2>
-                    <p class="sous-titre">Perte du jour : manque de caisse aux clôtures et boîtes manquantes ajustées en inventaire (au prix d’achat). Un employé est signalé quand il y a eu au moins @t.JoursPerteMin jours de perte en sa présence et que la perte moyenne les jours où il est là atteint @t.Facteur.ToString("0.#") fois celle des jours où il n’est pas là (au moins @t.JoursAbsentMin jours sans lui pour comparer).</p>
+                    <p class="detail" style="margin: 0">Perte du jour : manque de caisse aux clôtures et boîtes manquantes ajustées en inventaire (au prix d’achat). Un employé est signalé quand il y a eu au moins @t.JoursPerteMin jours de perte en sa présence et que la perte moyenne les jours où il est là atteint @t.Facteur.ToString("0.#") fois celle des jours où il n’est pas là (au moins @t.JoursAbsentMin jours sans lui pour comparer).</p>
                 </div>
                 @if (signales > 0)
                 {
@@ -70,6 +75,9 @@
                 </div>
                 <Pagination Total="t.Employes.Count" Numero="pageEmployes" Taille="tailleEmployes" Libelle="Pages des employés" OnChange="p => (pageEmployes, tailleEmployes) = (p.Numero, p.Taille)" />
             </section>
+            }
+            else
+            {
 
             <section class="panneau" aria-labelledby="t-jours">
                 <div>
@@ -102,14 +110,19 @@
                     </table>
                 </div>
                 <Pagination Total="t.Jours.Count" Numero="pageJours" Taille="tailleJours" Libelle="Pages des jours" OnChange="p => (pageJours, tailleJours) = (p.Numero, p.Taille)" />
+                <p class="detail" style="margin: 0">Une perte d’inventaire apparaît le jour du comptage, pas le jour où la boîte a disparu : sur une longue période, regardez la tendance plutôt qu’un jour isolé. Présence : connexion, vente, ouverture de caisse ou action inscrite au journal ce jour-là.</p>
             </section>
-            <p class="pied-page">Une perte d’inventaire apparaît le jour du comptage, pas le jour où la boîte a disparu : sur une longue période, regardez la tendance plutôt qu’un jour isolé. Présence : connexion, vente, ouverture de caisse ou action inscrite au journal ce jour-là.</p>
+            }
         }
         else if (erreur is null) { <Chargement Texte="Calcul des risques…" /> }
     }
+    </div>
 </div>
 
 @code {
+    /// <summary>Tableau affiché : par employé (défaut) ou jour par jour (?rubrique=jours).</summary>
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private bool jours => Rubrique == "jours";
 
     private TableauRisquesDto? tableau;
     private DateOnly? du, au;

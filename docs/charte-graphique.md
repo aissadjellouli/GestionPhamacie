@@ -58,7 +58,8 @@ la fenêtre. Exceptions : les fenêtres au-dessus de l'écran (`.voile`), qui d�
 
 Un écran qui empile trop de panneaux est découpé en **rubriques**, avec le menu vertical de l'Administration (même rendu :
 liens à gauche, rubrique active surlignée avec le filet ambre). Utilisé par l'Administration (`.admin`, `.admin-nav`,
-`.admin-contenu`, composant `NavAdmin`), la Trésorerie et Dettes et créances (classes génériques ci-dessous).
+`.admin-contenu`, composant `NavAdmin`), la Trésorerie, Dettes et créances, Stock, Alertes, Registre, Inventaire, Achats, Rapports,
+Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux écarts et risques) et le Guide (classes génériques ci-dessous).
 
 ```html
 <div class="page avec-menu">
@@ -81,6 +82,10 @@ liens à gauche, rubrique active surlignée avec le filet ambre). Utilisé par l
   du groupe sont en retrait (`class="sous-rubrique"`).
 - `.nav-resume` sous le menu : un seul chiffre utile partout dans l'écran (ex. solde du coffre), facultatif.
 - Le titre reprend l'écran et la rubrique (« Trésorerie · Mouvements ») ; le sous-titre dit à quoi sert la rubrique.
+- **La rubrique est lue dès l'ouverture de l'écran** (dans `OnInitialized`, avant tout chargement) : le titre affiché pendant le
+  chargement est déjà le bon, il ne change pas sous les yeux.
+- Réglages nombreux (seuils) : groupés par thème en colonnes, une ligne par réglage, libellé à gauche et petite valeur à droite
+  (`.reglages-groupes`, `.reglage-ligne`), pour tenir sans défilement.
 
 ## Hiérarchie du texte
 
@@ -195,6 +200,8 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 
 - **Écran, panneau ou fenêtre dont les données arrivent** : composant `<Chargement />` (roue qui tourne et texte, par défaut
   « Chargement… » ; `Texte="Calcul du rapport…"` pour préciser). Jamais un simple texte « Chargement… ».
+  Il n'apparaît qu'au bout de 0,4 s : un écran qui charge vite passe directement à son contenu, sans éclair du message
+  (changement d'écran sans clignotement).
 - **Tout appel au serveur de plus de 0,3 s** (filtre, page suivante, enregistrement…) : barre fine ambre en haut de la fenêtre,
   affichée automatiquement par la mise en page (`BarreChargement`, appels comptés par `AppelsEnCours`). Un écran n'a rien à
   ajouter. Un appel plus rapide n'affiche rien, pour éviter le clignotement.
