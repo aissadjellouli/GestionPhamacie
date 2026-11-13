@@ -151,9 +151,17 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
      d'en-tête reste visible pendant le défilement.
 
   Seuls échappent à la pagination les tableaux **bornés par nature**, dont la taille ne dépend pas de l'activité : contenu
-  d'un document (lignes d'une facture), réglages (seuils par grossiste, droits par rôle), rayons, sauvegardes gardées
-  (nombre limité par le réglage), synthèses (échéancier, tableau par jour d'un rapport). Un test d'architecture
-  (`ListesTests`) liste ces exceptions avec leur raison et refuse tout nouveau tableau qui n'y est pas et n'est pas paginé.
+  d'un document (lignes d'une facture, d'un bon, d'un retour), réglages (droits par rôle), rayons, synthèses (échéancier,
+  tableau par jour d'un rapport), résultats d'une recherche plafonnée (médecins). Exceptions choisies par le pharmacien
+  le 2026-11-13 : **utilisateurs, organismes payeurs, emplacements** (courts en pratique). Le test d'architecture
+  `ListesTests` (`tests/Pharma.Architecture.Tests/ListesTests.cs`) liste ces exceptions avec leur raison et refuse tout
+  nouveau tableau qui n'y est pas et n'est pas paginé.
+- **Pagination par le serveur ou à l'écran.** Une liste que le serveur plafonnait (« les 20 derniers ») est paginée par le
+  serveur, sans plafond (journal des sauvegardes, historique des inventaires, ventes de la caisse, patients en crédit). Une
+  liste que le serveur renvoie déjà complète et de taille modérée est filtrée et paginée à l'écran (produits bloqués, seuils
+  saisis, grossistes des seuils, produits à vérifier, écarts et feuille d'inventaire, balance du registre, livraisons
+  comptées, sauvegardes à restaurer, contrôles de reprise) ; le filtre de texte ignore majuscules et accents
+  (`RechercheTexte` côté poste, `TexteRecherche` côté serveur).
 - **Règle des listes déroulantes, valable sur tous les écrans** (filtres comme saisies ; demandée le 2026-11-13) :
   - **valeurs peu nombreuses et bornées** (employé, poste, grossiste, organisme, banque, statut, type, rayon, motif…) : une
     **liste préremplie**, jamais une saisie libre ; valeurs prises dans les données (par exemple les employés présents dans le

@@ -187,6 +187,7 @@ public static class DependencyInjection
         services.AddScoped<EnregistrerEmplacement>();
         services.AddScoped<RangerProduit>();
         services.AddScoped<ObtenirTableauInventaire>();
+        services.AddScoped<ConsulterHistoriqueInventaires>();
         services.AddScoped<CommencerInventaire>();
         services.AddScoped<CommencerInventaireProduit>();
         services.AddScoped<CommencerInventaireSensibles>();

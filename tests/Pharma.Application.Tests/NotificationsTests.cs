@@ -274,6 +274,8 @@ internal sealed class SauvegardesEnMemoire : ISauvegardesDepot
     }
     public Task NoterExecutionAsync(DateOnly jour, CancellationToken ct = default) { Reglages = Reglages with { DerniereExecution = jour }; return Task.CompletedTask; }
     public Task<long> JournaliserAsync(NouvelleEntreeSauvegarde e, CancellationToken ct = default) { Journal.Add(e); return Task.FromResult((long)Journal.Count); }
+    public Task<Pharma.Application.Commun.Page<EntreeSauvegarde>> JournalPageAsync(FiltreJournalSauvegarde f, Pharma.Application.Commun.DemandePage p,
+        CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<EntreeSauvegarde>> JournalAsync(int limite, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<EntreeSauvegarde>>([]);
 }
 

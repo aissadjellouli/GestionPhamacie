@@ -59,6 +59,9 @@ public interface IInventaires
     /// <summary>Valider applique l'ajustement au stock actuel ; refuser laisse le stock (recompter).</summary>
     Task DeciderAsync(long ligneId, bool valider, long utilisateurId, CancellationToken ct = default);
     Task<IReadOnlyList<InventaireResume>> HistoriqueAsync(int limite, CancellationToken ct = default);
+    /// <summary>Historique complet par page, les plus récents d'abord ; filtre rayon, état et période (date de début).</summary>
+    Task<Pharma.Application.Commun.Page<InventaireResume>> HistoriquePageAsync(FiltreHistoriqueInventaire filtre, Pharma.Application.Commun.DemandePage page,
+        CancellationToken ct = default);
     /// <summary>Produits sensibles : nombre, dernier comptage terminé, comptage en cours.</summary>
     Task<EtatSensibles> EtatSensiblesAsync(CancellationToken ct = default);
     /// <summary>Inventaire « Produits sensibles » (lots en stock des produits sensibles) ; celui en cours s'il existe ; null si rien à compter.</summary>
@@ -71,6 +74,21 @@ public sealed record TableauInventaire(
 
 /// <summary>Produits sensibles : comptage à part, régulier (réglage du Contrôle interne). Dernier : fin du dernier comptage.</summary>
 public sealed record EtatSensibles(int Produits, DateTime? Dernier, long? EnCoursId);
+
+/// <summary>Filtre de l'historique des inventaires : rayon, état (en_cours, termine, annule), période sur la date de début.</summary>
+public sealed record FiltreHistoriqueInventaire(string? Rayon = null, string? Statut = null, DateOnly? Du = null, DateOnly? Au = null)
+{
+    public static readonly string[] Statuts = ["en_cours", "termine", "annule"];
+    public static FiltreHistoriqueInventaire Lire(string? rayon, string? statut, DateOnly? du, DateOnly? au) =>
+        new(string.IsNullOrWhiteSpace(rayon) ? null : rayon.Trim(), Statuts.Contains(statut) ? statut : null, du, au);
+}
+
+/// <summary>Historique des inventaires par page (règle des listes).</summary>
+public sealed class ConsulterHistoriqueInventaires(IInventaires inventaires)
+{
+    public Task<Pharma.Application.Commun.Page<InventaireResume>> ExecuterAsync(FiltreHistoriqueInventaire filtre, Pharma.Application.Commun.DemandePage page,
+        CancellationToken ct = default) => inventaires.HistoriquePageAsync(filtre, page, ct);
+}
 
 public sealed class ObtenirTableauInventaire(IInventaires inventaires)
 {

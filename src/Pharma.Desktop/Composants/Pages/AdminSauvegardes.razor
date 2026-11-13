@@ -1,5 +1,6 @@
 @page "/admin/sauvegardes"
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 <div class="page admin">
     <NavAdmin Actif="admin/sauvegardes" Rubrique="@Rubrique" />
@@ -50,6 +51,19 @@
 
         @if (rubrique == "journal")
         {
+        @* Journal complet, filtré et paginé par le serveur (règle des listes) *@
+        <div class="filtres-liste" role="search" aria-label="Filtrer le journal des sauvegardes">
+            <div class="champ" style="flex: 0 0 200px"><label for="fj-statut">Résultat</label>
+                <select id="fj-statut" @bind="fStatut" @bind:after="PremierePageAsync">
+                    <option value="">Tous</option>
+                    <option value="reussie">Réussie</option>
+                    <option value="echouee">Échouée</option>
+                    <option value="disque_absent">Disque absent</option>
+                </select></div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fj-du">Du</label><input id="fj-du" type="date" @bind="fDu" @bind:after="PremierePageAsync" /></div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fj-au">Au</label><input id="fj-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
+            @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+        </div>
         <section class="tableau-cadre" aria-label="Journal des sauvegardes">
             <table class="tableau" style="min-width: 760px">
                 <thead><tr><th scope="col">Date</th><th scope="col">Déclenchement</th><th scope="col">Résultat</th><th scope="col">Fichier</th><th scope="col">Détail</th></tr></thead>
@@ -64,10 +78,11 @@
                             <td class="detail">@j.Message</td>
                         </tr>
                     }
-                    @if (journal.Count == 0) { <tr><td colspan="5" class="vide">Aucune sauvegarde.</td></tr> }
+                    @if (journal.Count == 0) { <tr><td colspan="5" class="vide">@(FiltreActif ? "Aucune sauvegarde pour ces filtres." : "Aucune sauvegarde.")</td></tr> }
                 </tbody>
             </table>
         </section>
+        <Pagination Total="totalJournal" Numero="pageJournal" Taille="tailleJournal" Libelle="Pages du journal des sauvegardes" OnChange="p => ChargerJournalAsync(p.Numero, p.Taille)" />
         }
     </div>
 </div>
@@ -95,7 +110,29 @@
     private bool enCours;
     private string? erreur, message, baseSauvegardee, serveurBase;
 
-    protected override Task OnInitializedAsync() => ChargerAsync();
+    // Journal : page et filtres appliqués par le serveur ; « ← Retour » les retrouve
+    private int totalJournal, pageJournal = 1, tailleJournal = Pagination.TailleParDefaut;
+    private string fStatut = "";
+    private DateOnly? fDu, fAu;
+    private bool FiltreActif => fStatut != "" || fDu is not null || fAu is not null;
+    private Task PremierePageAsync() => ChargerJournalAsync(1, tailleJournal);
+    private Task ToutAfficherAsync() { (fStatut, fDu, fAu) = ("", null, null); return PremierePageAsync(); }
+
+    private async Task ChargerJournalAsync(int numero, int taille)
+    {
+        var (p, e) = await Api.JournalSauvegardesAsync(fStatut, fDu, fAu, numero, taille);
+        if (p is null) { erreur ??= e; return; }
+        if (p.Lignes.Count == 0 && numero > 1) { await ChargerJournalAsync(1, taille); return; }
+        (journal, totalJournal, pageJournal, tailleJournal) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("sauvegardes", e => { e.Mettre("statut", fStatut); e.Mettre("du", fDu); e.Mettre("au", fAu); e.Mettre("page", pageJournal); e.Mettre("taille", tailleJournal); });
+        var h = Historique.Restaurer("sauvegardes");
+        if (h is not null) (fStatut, fDu, fAu, pageJournal, tailleJournal) = (h.Texte("statut") ?? "", h.Date("du"), h.Date("au"), h.Entier("page") ?? 1, h.Entier("taille") ?? tailleJournal);
+        await ChargerAsync();
+    }
 
     private async Task ChargerAsync()
     {
@@ -106,7 +143,7 @@
         (retentionParDefaut, dossierGed) = (etat.Reglages.RetentionGedParDefaut, etat.Reglages.DossierGed);
         derniere = etat.Reglages.DerniereExecution;
         (baseSauvegardee, serveurBase) = (etat.Base, etat.Serveur);
-        journal = etat.Journal.ToList();
+        await ChargerJournalAsync(pageJournal, tailleJournal);   // journal complet, par page (et non les 30 dernières)
     }
 
     // Dossier obligatoire pour activer la sauvegarde automatique ou sauvegarder maintenant : en rouge s'il manque

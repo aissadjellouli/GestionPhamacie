@@ -101,6 +101,16 @@ internal static class NotificationsEndpoints
             })
            .ExigerPermission(Permissions.AdminSauvegardes);
 
+        // Journal des sauvegardes par page et filtré (règle des listes)
+        s.MapGet("/journal", async (string? statut, DateOnly? du, DateOnly? au, int? page, int? taille, ObtenirSauvegardes obtenir, CancellationToken ct) =>
+            {
+                var p = await obtenir.JournalAsync(Pharma.Application.Sauvegardes.FiltreJournalSauvegarde.Lire(statut, du, au),
+                    Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<EntreeSauvegardeDto>(p.Lignes.Select(j => new EntreeSauvegardeDto(j.Id, j.Debut, j.Fin, j.Statut, j.Declenchement,
+                    j.Fichier, j.TailleOctets, j.Message, j.Utilisateur)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.AdminSauvegardes);
+
         s.MapPut("/reglages", async (ReglagesSauvegardeDto d, ModifierReglagesSauvegarde modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await modifier.ExecuterAsync(d.Actif, d.Dossier, d.Heure, d.Conservation, user.UtilisateurId(), ct, d.RetentionGedJours, d.NettoyageGedAnnees);

@@ -26,6 +26,16 @@ public interface ISauvegardesDepot
     Task NoterExecutionAsync(DateOnly jour, CancellationToken ct = default);
     Task<long> JournaliserAsync(NouvelleEntreeSauvegarde entree, CancellationToken ct = default);
     Task<IReadOnlyList<EntreeSauvegarde>> JournalAsync(int limite, CancellationToken ct = default);
+    /// <summary>Journal des sauvegardes par page, les plus récentes d'abord ; filtre sur le résultat et la période (date de début).</summary>
+    Task<Pharma.Application.Commun.Page<EntreeSauvegarde>> JournalPageAsync(FiltreJournalSauvegarde filtre, Pharma.Application.Commun.DemandePage page,
+        CancellationToken ct = default);
+}
+
+/// <summary>Filtre du journal des sauvegardes : résultat (reussie, echouee, disque_absent), période sur la date de début.</summary>
+public sealed record FiltreJournalSauvegarde(string? Statut = null, DateOnly? Du = null, DateOnly? Au = null)
+{
+    public static readonly string[] Statuts = ["reussie", "echouee", "disque_absent"];
+    public static FiltreJournalSauvegarde Lire(string? statut, DateOnly? du, DateOnly? au) => new(Statuts.Contains(statut) ? statut : null, du, au);
 }
 
 /// <summary>Disque de destination et export de la base (pg_dump).</summary>
@@ -185,6 +195,10 @@ public sealed class ObtenirSauvegardes(ISauvegardesDepot depot)
 {
     public async Task<(ReglagesSauvegarde Reglages, IReadOnlyList<EntreeSauvegarde> Journal)> ExecuterAsync(CancellationToken ct = default) =>
         (await depot.ReglagesAsync(ct), await depot.JournalAsync(30, ct));
+
+    /// <summary>Journal complet, par page et filtré (règle des listes).</summary>
+    public Task<Pharma.Application.Commun.Page<EntreeSauvegarde>> JournalAsync(FiltreJournalSauvegarde filtre, Pharma.Application.Commun.DemandePage page,
+        CancellationToken ct = default) => depot.JournalPageAsync(filtre, page, ct);
 }
 
 public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal journal, SuperAdmin.ICompteSuperAdmin? superAdmin = null)

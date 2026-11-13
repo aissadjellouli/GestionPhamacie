@@ -1,4 +1,5 @@
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 @* Seuil d'alerte de stock par produit : saisi par le pharmacien, sinon calculé automatiquement. Enregistré tout de suite. *@
 
@@ -40,11 +41,22 @@
         </div>
     }
 
+    @* Seuils saisis : filtrés et paginés à l'écran (règle des listes) ; le tableau défile dans son cadre *@
+    <div class="filtres-liste" role="search" aria-label="Filtrer les seuils saisis">
+        <div class="champ" style="flex: 1 1 240px"><label for="fs-texte">Produit</label>
+            <input id="fs-texte" type="search" autocomplete="off" placeholder="Ex. amoxicilline" @bind="fTexte" @bind:event="oninput" @bind:after="() => page = 1" /></div>
+        <div class="champ" style="flex: 0 0 190px"><label for="fs-etat">État</label>
+            <select id="fs-etat" @bind="fEtat" @bind:after="() => page = 1">
+                <option value="">Tous</option>
+                @foreach (var st in manuels.Select(m => m.Statut).Distinct().OrderBy(LibelleStatut)) { <option value="@st">@LibelleStatut(st)</option> }
+            </select></div>
+        @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficher">Tout afficher</button> }
+    </div>
     <div class="tableau-cadre">
         <table class="tableau" style="min-width: 0">
             <thead><tr><th scope="col">Produit</th><th scope="col">Stock</th><th scope="col">Seuil saisi</th><th scope="col">Automatique</th><th scope="col">État</th><th scope="col"></th></tr></thead>
             <tbody>
-                @foreach (var s in manuels)
+                @foreach (var s in Filtres.Skip((page - 1) * taille).Take(taille))
                 {
                     <tr>
                         <td class="nom">@s.Nom</td>
@@ -55,13 +67,14 @@
                         <td><button type="button" class="lien" disabled="@enCours" @onclick="() => EnregistrerAsync(s.ProduitId, null)">Revenir à l’automatique</button></td>
                     </tr>
                 }
-                @if (manuels.Count == 0)
+                @if (Filtres.Count == 0)
                 {
-                    <tr><td colspan="6" class="vide">Aucun seuil saisi : tous les produits sont en seuil automatique.</td></tr>
+                    <tr><td colspan="6" class="vide">@(FiltreActif ? "Aucun seuil saisi pour ces filtres." : "Aucun seuil saisi : tous les produits sont en seuil automatique.")</td></tr>
                 }
             </tbody>
         </table>
     </div>
+    <Pagination Total="Filtres.Count" Numero="page" Taille="taille" Libelle="Pages des seuils saisis" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
 </section>
 
 @code {
@@ -72,7 +85,20 @@
     private bool enCours;
     private string? erreur, message;
 
-    protected override async Task OnInitializedAsync() => await ChargerManuelsAsync();
+    // Filtres et page (à l'écran) ; « ← Retour » les retrouve
+    private string fTexte = "", fEtat = "";
+    private int page = 1, taille = Pagination.TailleParDefaut;
+    private bool FiltreActif => fTexte.Trim() != "" || fEtat != "";
+    private List<SeuilStockDto> Filtres => manuels.Where(m => RechercheTexte.Contient(fTexte, m.Nom) && (fEtat == "" || m.Statut == fEtat)).ToList();
+    private void ToutAfficher() => (fTexte, fEtat, page) = ("", "", 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("seuils-produits", e => { e.Mettre("texte", fTexte); e.Mettre("etat", fEtat); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("seuils-produits") is { } h)
+            (fTexte, fEtat, page, taille) = (h.Texte("texte") ?? "", h.Texte("etat") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        await ChargerManuelsAsync();
+    }
 
     private async Task ChargerManuelsAsync()
     {

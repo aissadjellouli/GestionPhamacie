@@ -1,5 +1,6 @@
 @page "/admin/seuils"
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 <div class="page admin">
     <NavAdmin Actif="admin/seuils" Rubrique="@Rubrique" />
@@ -43,17 +44,27 @@
                     </div>
                 </div>
             </section>
+            }
 
+            @if (rubrique == "grossistes")
+            {
             <section class="panneau" aria-labelledby="t-grossistes">
                 <div>
                     <h2 id="t-grossistes">Par grossiste</h2>
                     <p class="sous-titre">Selon le délai de reprise de chaque grossiste. Champ vide : le réglage général s’applique.</p>
                 </div>
+                @* Grossistes : filtrés et paginés à l'écran (règle des listes) ; les saisies sont gardées d'une page à l'autre *@
+                <div class="filtres-liste" role="search" aria-label="Filtrer les grossistes">
+                    <div class="champ" style="flex: 1 1 240px"><label for="fg-texte">Grossiste</label>
+                        <input id="fg-texte" type="search" autocomplete="off" placeholder="Ex. Biopharm" @bind="fGrossiste" @bind:event="oninput" @bind:after="() => pageGrossistes = 1" /></div>
+                    <label class="case" style="align-self: end"><input type="checkbox" @bind="fSansDelai" @bind:after="() => pageGrossistes = 1" /><span>Délai de reprise à renseigner</span></label>
+                    @if (fGrossiste.Trim() != "" || fSansDelai) { <button type="button" class="btn" @onclick="() => (fGrossiste, fSansDelai, pageGrossistes) = (string.Empty, false, 1)">Tout afficher</button> }
+                </div>
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 640px">
                         <thead><tr><th scope="col">Grossiste</th><th scope="col">Reprise jusqu’à (jours avant péremption)</th><th scope="col">Orange (j)</th><th scope="col">Rouge (j)</th></tr></thead>
                         <tbody>
-                            @foreach (var f in grossistes)
+                            @foreach (var f in GrossistesFiltres.Skip((pageGrossistes - 1) * tailleGrossistes).Take(tailleGrossistes))
                             {
                                 <tr>
                                     <td class="nom"><LienContact Type="grossiste" Id="f.Id" Nom="@f.Nom" /></td>
@@ -62,9 +73,11 @@
                                     <td><input type="number" min="1" style="width: 120px" aria-label="Alerte rouge, @f.Nom" placeholder="@($"{g.JoursRouge} (général)")" @bind="f.JoursRouge" /></td>
                                 </tr>
                             }
+                            @if (GrossistesFiltres.Count == 0) { <tr><td colspan="4" class="vide">Aucun grossiste pour ces filtres.</td></tr> }
                         </tbody>
                     </table>
                 </div>
+                <Pagination Total="GrossistesFiltres.Count" Numero="pageGrossistes" Taille="tailleGrossistes" Libelle="Pages des grossistes" OnChange="p => (pageGrossistes, tailleGrossistes) = (p.Numero, p.Taille)" />
             </section>
             }
 
@@ -183,13 +196,26 @@
 
     private General? g;
     private List<Grossiste> grossistes = [];
+
+    // Grossistes : filtres et page (à l'écran) ; « ← Retour » les retrouve
+    private string fGrossiste = "";
+    private bool fSansDelai;
+    private int pageGrossistes = 1, tailleGrossistes = Pagination.TailleParDefaut;
+    private List<Grossiste> GrossistesFiltres => grossistes.Where(x => RechercheTexte.Contient(fGrossiste, x.Nom) && (!fSansDelai || x.DelaiRepriseJours is null)).ToList();
     private List<ExceptionSaisie> exceptions = [];
     private string? erreur, message;
     private bool enCours, ajout;
     private string recherche = "";
     private List<ProduitDto> suggestions = [];
 
-    protected override async Task OnInitializedAsync() => await ChargerAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        // « ← Retour » : filtres et page des grossistes retrouvés
+        Historique.Suivre("seuils", e => { e.Mettre("grossiste", fGrossiste); e.Mettre("sans_delai", fSansDelai); e.Mettre("page", pageGrossistes); e.Mettre("taille", tailleGrossistes); });
+        if (Historique.Restaurer("seuils") is { } h)
+            (fGrossiste, fSansDelai, pageGrossistes, tailleGrossistes) = (h.Texte("grossiste") ?? "", h.Oui("sans_delai"), h.Entier("page") ?? 1, h.Entier("taille") ?? tailleGrossistes);
+        await ChargerAsync();
+    }
 
     private async Task ChargerAsync()
     {

@@ -54,6 +54,8 @@ internal sealed class InventairesEnMemoire : IInventaires
         Task.FromResult<IReadOnlyList<EcartAValider>>([new(3, 5, "C", "Sintrom", "L103", 25, 20, -5, -1000, "Assistant", DateTime.UtcNow)]);
     public Task DeciderAsync(long ligneId, bool valider, long u, CancellationToken ct = default) { Decides.Add((ligneId, valider)); return Task.CompletedTask; }
     public Task<IReadOnlyList<InventaireResume>> HistoriqueAsync(int limite, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<InventaireResume>>([]);
+    public Task<Pharma.Application.Commun.Page<InventaireResume>> HistoriquePageAsync(FiltreHistoriqueInventaire f, Pharma.Application.Commun.DemandePage p,
+        CancellationToken ct = default) => Task.FromResult(new Pharma.Application.Commun.Page<InventaireResume>([], 0, p.Page, p.Taille));
 }
 
 public class InventaireApplicationTests

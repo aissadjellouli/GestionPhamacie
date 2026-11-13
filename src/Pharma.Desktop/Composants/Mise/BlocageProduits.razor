@@ -1,5 +1,6 @@
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 @* Produits bloqués à l'achat (ni commande, ni réception) et/ou à la vente (refusés en caisse).
    Liste visible avec le stock ; blocage et déblocage avec le droit « produits.bloquer » (titulaire et assistant par défaut). *@
@@ -36,11 +37,23 @@
         }
     }
 
+    @* Produits bloqués : filtrés et paginés à l'écran (règle des listes) ; le tableau défile dans son cadre *@
+    <div class="filtres-liste" role="search" aria-label="Filtrer les produits bloqués">
+        <div class="champ" style="flex: 1 1 240px"><label for="fb-texte">Produit ou motif</label>
+            <input id="fb-texte" type="search" autocomplete="off" placeholder="Ex. amoxicilline, rappel" @bind="fTexte" @bind:event="oninput" @bind:after="() => page = 1" /></div>
+        <div class="champ" style="flex: 0 0 190px"><label for="fb-blocage">Bloqué</label>
+            <select id="fb-blocage" @bind="fBlocage" @bind:after="() => page = 1">
+                <option value="">À l’achat ou à la vente</option>
+                <option value="achat">À l’achat</option>
+                <option value="vente">À la vente</option>
+            </select></div>
+        @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficher">Tout afficher</button> }
+    </div>
     <div class="tableau-cadre">
         <table class="tableau" style="min-width: 0">
             <thead><tr><th scope="col">Produit</th><th scope="col">Achat</th><th scope="col">Vente</th><th scope="col">Motif</th></tr></thead>
             <tbody>
-                @foreach (var b in bloques)
+                @foreach (var b in Filtres.Skip((page - 1) * taille).Take(taille))
                 {
                     <tr>
                         <td class="nom">@b.Nom</td>
@@ -49,13 +62,14 @@
                         <td>@(b.Motif ?? "—")</td>
                     </tr>
                 }
-                @if (bloques.Count == 0)
+                @if (Filtres.Count == 0)
                 {
-                    <tr><td colspan="4" class="vide">Aucun produit bloqué.</td></tr>
+                    <tr><td colspan="4" class="vide">@(FiltreActif ? "Aucun produit bloqué pour ces filtres." : "Aucun produit bloqué.")</td></tr>
                 }
             </tbody>
         </table>
     </div>
+    <Pagination Total="Filtres.Count" Numero="page" Taille="taille" Libelle="Pages des produits bloqués" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
 </section>
 
 @code {
@@ -64,7 +78,21 @@
     private bool achat, vente, enCours;
     private string? motif, erreur, message;
 
-    protected override async Task OnInitializedAsync() => (bloques, erreur) = await Api.ProduitsBloquesAsync();
+    // Filtres et page (à l'écran) ; « ← Retour » les retrouve
+    private string fTexte = "", fBlocage = "";
+    private int page = 1, taille = Pagination.TailleParDefaut;
+    private bool FiltreActif => fTexte.Trim() != "" || fBlocage != "";
+    private List<BlocageProduitDto> Filtres => bloques.Where(b => RechercheTexte.Contient(fTexte, b.Nom, b.Motif)
+        && (fBlocage == "" || (fBlocage == "achat" ? b.BloqueAchat : b.BloqueVente))).ToList();
+    private void ToutAfficher() => (fTexte, fBlocage, page) = ("", "", 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("blocages", e => { e.Mettre("texte", fTexte); e.Mettre("blocage", fBlocage); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("blocages") is { } h)
+            (fTexte, fBlocage, page, taille) = (h.Texte("texte") ?? "", h.Texte("blocage") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        (bloques, erreur) = await Api.ProduitsBloquesAsync();
+    }
 
     private async Task ChoisirAsync(ProduitDto p)
     {

@@ -1,6 +1,7 @@
 @page "/admin/reprise"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 <div class="page admin">
     <NavAdmin Actif="admin/reprise" />
@@ -157,7 +158,7 @@
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">N°</th><th scope="col">Ancien logiciel</th><th scope="col">Extraction</th><th scope="col">État</th><th scope="col">Import réalisé</th><th scope="col"></th></tr></thead>
                             <tbody>
-                                @foreach (var s in sessions)
+                                @foreach (var s in sessions.Skip((pageSessions - 1) * tailleSessions).Take(tailleSessions))
                                 {
                                     <tr>
                                         <td>@s.Id</td><td>@s.Logiciel</td>
@@ -170,6 +171,7 @@
                             </tbody>
                         </table>
                     </section>
+                    <Pagination Total="sessions.Count" Numero="pageSessions" Taille="tailleSessions" Libelle="Pages des reprises" OnChange="p => (pageSessions, tailleSessions) = (p.Numero, p.Taille)" />
                 }
             }
 
@@ -320,20 +322,38 @@
 
                 @if (et.Anomalies.Count > 0)
                 {
+                    <div class="filtres-liste" role="search" aria-label="Filtrer les contrôles">
+                        <div class="champ" style="flex: 0 0 180px"><label for="fa-gravite">Gravité</label>
+                            <select id="fa-gravite" @bind="fGravite" @bind:after="() => pageAnomalies = 1">
+                                <option value="">Toutes</option>
+                                <option value="bloquant">Bloquant</option>
+                                <option value="avertissement">À vérifier</option>
+                            </select></div>
+                        <div class="champ" style="flex: 0 0 200px"><label for="fa-entite">Donnée</label>
+                            <select id="fa-entite" @bind="fEntite" @bind:after="() => pageAnomalies = 1">
+                                <option value="">Toutes</option>
+                                @foreach (var en in et.Anomalies.Select(a => a.Entite).Distinct().Order()) { <option value="@en">@en</option> }
+                            </select></div>
+                        <div class="champ" style="flex: 1 1 220px"><label for="fa-texte">Réf. ou message</label>
+                            <input id="fa-texte" type="search" autocomplete="off" @bind="fTexteAnomalie" @bind:event="oninput" @bind:after="() => pageAnomalies = 1" /></div>
+                        @if (fGravite != "" || fEntite != "" || fTexteAnomalie.Trim() != "") { <button type="button" class="btn" @onclick="() => (fGravite, fEntite, fTexteAnomalie, pageAnomalies) = (string.Empty, string.Empty, string.Empty, 1)">Tout afficher</button> }
+                    </div>
                     <section class="tableau-cadre" aria-label="Contrôles avant chargement">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">Contrôle</th><th scope="col">Donnée</th><th scope="col">Réf.</th><th scope="col">Message</th></tr></thead>
                             <tbody>
-                                @foreach (var a in et.Anomalies.Take(200))
+                                @foreach (var a in AnomaliesFiltrees(et).Skip((pageAnomalies - 1) * tailleAnomalies).Take(tailleAnomalies))
                                 {
                                     <tr>
                                         <td><span class="pastille @(a.Gravite == "bloquant" ? "urgent" : "attention")">@(a.Gravite == "bloquant" ? "Bloquant" : "À vérifier")</span></td>
                                         <td>@a.Entite</td><td>@a.RefSource</td><td>@a.Message</td>
                                     </tr>
                                 }
+                                @if (AnomaliesFiltrees(et).Count == 0) { <tr><td colspan="4" class="vide">Aucun contrôle pour ces filtres.</td></tr> }
                             </tbody>
                         </table>
                     </section>
+                    <Pagination Total="AnomaliesFiltrees(et).Count" Numero="pageAnomalies" Taille="tailleAnomalies" Libelle="Pages des contrôles" OnChange="p => (pageAnomalies, tailleAnomalies) = (p.Numero, p.Taille)" />
                 }
 
                 @if (et.Session.Statut == "en_cours")
@@ -391,6 +411,25 @@
 <FenetreValidationSuperAdmin Demande="validation" Fermee="() => validation = null" />
 
 @code {
+    // Listes paginées et filtrées à l'écran (règle des listes) ; « ← Retour » retrouve pages et filtres
+    private int pageSessions = 1, tailleSessions = Pagination.TailleParDefaut, pageAnomalies = 1, tailleAnomalies = Pagination.TailleParDefaut;
+    private string fGravite = "", fEntite = "", fTexteAnomalie = "";
+    private List<AnomalieRepriseDto> AnomaliesFiltrees(EtatRepriseDto et) => et.Anomalies.Where(a => (fGravite == "" || a.Gravite == fGravite)
+        && (fEntite == "" || a.Entite == fEntite) && RechercheTexte.Contient(fTexteAnomalie, a.RefSource, a.Message)).ToList();
+
+    protected override void OnInitialized()
+    {
+
+        Historique.Suivre("reprise", e =>
+        {
+            e.Mettre("page_sessions", pageSessions); e.Mettre("taille_sessions", tailleSessions); e.Mettre("page", pageAnomalies); e.Mettre("taille", tailleAnomalies);
+            e.Mettre("gravite", fGravite); e.Mettre("entite", fEntite); e.Mettre("texte", fTexteAnomalie);
+        });
+        if (Historique.Restaurer("reprise") is { } h)
+            (pageSessions, tailleSessions, pageAnomalies, tailleAnomalies, fGravite, fEntite, fTexteAnomalie) = (h.Entier("page_sessions") ?? 1, h.Entier("taille_sessions") ?? tailleSessions,
+                h.Entier("page") ?? 1, h.Entier("taille") ?? tailleAnomalies, h.Texte("gravite") ?? "", h.Texte("entite") ?? "", h.Texte("texte") ?? "");
+    }
+
     // Action sensible en attente de validation (avertissement, mot de passe, code reçu)
     private FenetreValidationSuperAdmin.DemandeSuperAdmin? validation;
 

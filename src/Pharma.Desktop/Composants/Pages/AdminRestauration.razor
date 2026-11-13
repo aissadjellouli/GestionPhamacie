@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 <div class="page page-serree">
     <div class="titre-page">
@@ -50,11 +51,17 @@
                 }
                 else
                 {
+                    @* Sauvegardes trouvées : filtrées par période et paginées à l'écran (règle des listes) *@
+                    <div class="filtres-liste" role="search" aria-label="Filtrer les sauvegardes">
+                        <div class="champ" style="flex: 0 0 160px"><label for="fr-du">Du</label><input id="fr-du" type="date" @bind="fDu" @bind:after="() => page = 1" /></div>
+                        <div class="champ" style="flex: 0 0 160px"><label for="fr-au">Au</label><input id="fr-au" type="date" @bind="fAu" @bind:after="() => page = 1" /></div>
+                        @if (fDu is not null || fAu is not null) { <button type="button" class="btn" @onclick="() => (fDu, fAu, page) = (null, null, 1)">Tout afficher</button> }
+                    </div>
                     <div class="tableau-cadre">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">Sauvegarde du</th><th scope="col">Emplacement</th><th scope="col">Fichier</th><th scope="col" class="nombre">Taille</th><th scope="col"></th></tr></thead>
                             <tbody>
-                                @foreach (var s in c.Sauvegardes)
+                                @foreach (var s in Filtrees(c.Sauvegardes).Skip((page - 1) * taille).Take(taille))
                                 {
                                     <tr>
                                         <td>@Libelles.DateHeureLocale(s.Date)</td><td>@s.Emplacement</td>
@@ -63,9 +70,11 @@
                                         <td><button type="button" class="btn btn-danger" disabled="@EnCours" @onclick="() => DemanderBase(s)">Restaurer</button></td>
                                     </tr>
                                 }
+                                @if (Filtrees(c.Sauvegardes).Count == 0) { <tr><td colspan="5" class="vide">Aucune sauvegarde sur cette période.</td></tr> }
                             </tbody>
                         </table>
                     </div>
+                    <Pagination Total="Filtrees(c.Sauvegardes).Count" Numero="page" Taille="taille" Libelle="Pages des sauvegardes" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
                 }
             </section>
 
@@ -88,6 +97,12 @@
 <FenetreValidationSuperAdmin Demande="validation" Fermee="() => validation = null" />
 
 @code {
+    // Sauvegardes trouvées : période et page (à l'écran) ; « ← Retour » les retrouve
+    private DateOnly? fDu, fAu;
+    private int page = 1, taille = Pagination.TailleParDefaut;
+    private List<SauvegardeDisponibleDto> Filtrees(IEnumerable<SauvegardeDisponibleDto> sauvegardes) => sauvegardes.Where(s =>
+        DateOnly.FromDateTime(s.Date.ToLocalTime()) is var d && (fDu is null || d >= fDu) && (fAu is null || d <= fAu)).ToList();
+
     private ChoixRestaurationDto? choix;
     private EtatRestaurationDto? etat;
     private string? erreur;
@@ -98,6 +113,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Historique.Suivre("restauration", e => { e.Mettre("du", fDu); e.Mettre("au", fAu); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("restauration") is { } h) (fDu, fAu, page, taille) = (h.Date("du"), h.Date("au"), h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
         if (!Session.SuperAdmin) return;
         (etat, _) = await Api.EtatRestaurationAsync();
         await ChargerAsync();

@@ -664,6 +664,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         GetAsync<PageDto<MessageSortantDto>?>("api/admin/notifications/file?" + Requete(("type", type), ("statut", statut), ("du", du), ("au", au), ("page", page), ("taille", taille)), null);
 
     public Task<(EtatSauvegardesDto?, string?)> SauvegardesAsync() => GetAsync<EtatSauvegardesDto?>("api/admin/sauvegardes", null);
+    public Task<(PageDto<EntreeSauvegardeDto>?, string?)> JournalSauvegardesAsync(string? statut, DateOnly? du, DateOnly? au, int page, int taille) =>
+        GetAsync<PageDto<EntreeSauvegardeDto>?>("api/admin/sauvegardes/journal?" + Requete(("statut", statut), ("du", du), ("au", au), ("page", page), ("taille", taille)), null);
     public async Task<string?> ModifierReglagesSauvegardeAsync(ReglagesSauvegardeDto r) =>
         (await EnvoyerCorpsAsync<ReglagesSauvegardeDto, object>(HttpMethod.Put, "api/admin/sauvegardes/reglages", r)).Item2;
     public Task<(ResultatSauvegardeDto?, string?)> LancerSauvegardeAsync() => PostAsync<object, ResultatSauvegardeDto>("api/admin/sauvegardes/lancer", new());
@@ -695,6 +697,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     // ---- Inventaire tournant ----
     public Task<(TableauInventaireDto?, string?)> TableauInventaireAsync() => GetAsync<TableauInventaireDto?>("api/inventaires", null);
+    public Task<(PageDto<InventaireResumeDto>?, string?)> HistoriqueInventairesAsync(string? rayon, string? statut, DateOnly? du, DateOnly? au, int page, int taille) =>
+        GetAsync<PageDto<InventaireResumeDto>?>("api/inventaires/historique?" + Requete(("rayon", rayon), ("statut", statut), ("du", du), ("au", au), ("page", page), ("taille", taille)), null);
     public Task<(IdentifiantDto?, string?)> CommencerInventaireAsync(string rayon) => PostAsync<CommencerInventaireRequete, IdentifiantDto>("api/inventaires", new(rayon));
     /// <summary>Inventaire d'un produit (tous ses lots), depuis l'alerte « ancien lot délaissé » : titulaire seul.</summary>
     // ---- Écarts dans le temps et risques par employé (titulaire) ----

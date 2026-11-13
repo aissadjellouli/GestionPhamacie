@@ -1,5 +1,6 @@
 @page "/admin/nomenclature"
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 <div class="page admin">
     <NavAdmin Actif="admin/nomenclature" Rubrique="@Rubrique" />
@@ -59,11 +60,22 @@
                 }
                 else
                 {
+                    @* Produits à vérifier : filtrés et paginés à l'écran (règle des listes) ; le tableau défile dans son cadre *@
+                    <div class="filtres-liste" role="search" aria-label="Filtrer les produits à vérifier">
+                        <div class="champ" style="flex: 1 1 240px"><label for="fn-texte">Produit, DCI ou n° d’enregistrement</label>
+                            <input id="fn-texte" type="search" autocomplete="off" placeholder="Ex. alprazolam" @bind="fTexte" @bind:event="oninput" @bind:after="() => page = 1" /></div>
+                        <div class="champ" style="flex: 0 0 240px"><label for="fn-motif">Motif</label>
+                            <select id="fn-motif" @bind="fMotif" @bind:after="() => page = 1">
+                                <option value="">Tous</option>
+                                @foreach (var (codeMotif, libelle) in Motifs.Where(m => etat.AVerifier.Any(p => p.Motif == m.Code))) { <option value="@codeMotif">@libelle</option> }
+                            </select></div>
+                        @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficher">Tout afficher</button> }
+                    </div>
                     <div class="tableau-cadre">
                         <table class="tableau" style="min-width: 760px">
                             <thead><tr><th scope="col">Produit</th><th scope="col">N° d’enregistrement</th><th scope="col">Classe actuelle</th><th scope="col">Nomenclature</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
                             <tbody>
-                                @foreach (var p in etat.AVerifier)
+                                @foreach (var p in AVerifierFiltres.Skip((page - 1) * taille).Take(taille))
                                 {
                                     <tr>
                                         <td><span class="nom">@p.Nom</span> <span class="detail">@p.Dosage @p.Forme</span><br /><span class="detail">@p.Dci</span></td>
@@ -113,9 +125,11 @@
                                         </td>
                                     </tr>
                                 }
+                                @if (AVerifierFiltres.Count == 0) { <tr><td colspan="5" class="vide">Aucun produit à vérifier pour ces filtres.</td></tr> }
                             </tbody>
                         </table>
                     </div>
+                    <Pagination Total="AVerifierFiltres.Count" Numero="page" Taille="taille" Libelle="Pages des produits à vérifier" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
                 }
             </section>
             }
@@ -138,7 +152,23 @@
     private bool enCours;
     private static readonly string[] ClassesReglementaires = ["libre", "liste_i", "liste_ii", "psychotrope", "stupefiant"];
 
-    protected override async Task OnInitializedAsync() => await ChargerAsync();
+    // Produits à vérifier : filtres et page (à l'écran) ; « ← Retour » les retrouve
+    private static readonly (string Code, string Libelle)[] Motifs =
+        [("classe", "Classe à corriger"), ("repris", "Repris sans n° d’enregistrement"), ("absent", "Absent de la nomenclature"), ("situation", "Retiré ou non renouvelé")];
+    private string fTexte = "", fMotif = "";
+    private int page = 1, taille = Pagination.TailleParDefaut;
+    private bool FiltreActif => fTexte.Trim() != "" || fMotif != "";
+    private List<ProduitAVerifierDto> AVerifierFiltres => (etat?.AVerifier ?? []).Where(p => RechercheTexte.Contient(fTexte, p.Nom, p.Dci, p.NumEnregistrement)
+        && (fMotif == "" || p.Motif == fMotif || (fMotif == "situation" && p.Motif is not ("classe" or "repris" or "absent")))).ToList();
+    private void ToutAfficher() => (fTexte, fMotif, page) = ("", "", 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("nomenclature", e => { e.Mettre("texte", fTexte); e.Mettre("motif", fMotif); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("nomenclature") is { } h)
+            (fTexte, fMotif, page, taille) = (h.Texte("texte") ?? "", h.Texte("motif") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        await ChargerAsync();
+    }
 
     private async Task ChargerAsync()
     {

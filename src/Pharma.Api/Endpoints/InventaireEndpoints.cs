@@ -26,6 +26,16 @@ internal static class InventaireEndpoints
             })
            .ExigerPermission(Permissions.StockConsulter);
 
+        // Historique des inventaires par page et filtré (règle des listes)
+        inv.MapGet("/historique", async (string? rayon, string? statut, DateOnly? du, DateOnly? au, int? page, int? taille,
+                ConsulterHistoriqueInventaires consulter, CancellationToken ct) =>
+            {
+                var p = await consulter.ExecuterAsync(FiltreHistoriqueInventaire.Lire(rayon, statut, du, au), Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<InventaireResumeDto>(p.Lignes.Select(h => new InventaireResumeDto(h.Id, h.Rayon, h.Statut, h.CommenceLe, h.CommencePar,
+                    h.TermineLe, h.Lignes, h.Ecarts, h.AValider, h.ValeurEcarts)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.StockConsulter);
+
         inv.MapPost("", async (CommencerInventaireRequete req, CommencerInventaire commencer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await commencer.ExecuterAsync(req.Rayon, user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.StockAjuster);

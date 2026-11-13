@@ -124,13 +124,14 @@
                     <table class="tableau">
                         <thead><tr><th scope="col">Produit</th><th scope="col">Mois</th><th scope="col" class="nombre">Entrées</th><th scope="col" class="nombre">Sorties</th><th scope="col" class="nombre">Solde fin de mois</th></tr></thead>
                         <tbody>
-                            @foreach (var b in registre.Balance)
+                            @foreach (var b in registre.Balance.Skip((pageBalance - 1) * tailleBalance).Take(tailleBalance))
                             {
                                 <tr><td>@b.Produit</td><td>@($"{b.Mois:00}/{b.Annee}")</td><td class="nombre">@b.Entrees</td><td class="nombre">@b.Sorties</td><td class="nombre">@(b.SoldeFin?.ToString() ?? "—")</td></tr>
                             }
                         </tbody>
                     </table>
                 </div>
+                <Pagination Total="registre.Balance.Count" Numero="pageBalance" Taille="tailleBalance" Libelle="Pages de la balance" OnChange="p => (pageBalance, tailleBalance) = (p.Numero, p.Taille)" />
             }
         </section>
     }
@@ -148,6 +149,8 @@
     private List<CodeLibelleDto> operations = [];
     private string operation = "";
     private int totalInscriptions, pageInscriptions = 1, tailleInscriptions = Pagination.TailleParDefaut;
+    // Balance mensuelle : paginée à l'écran (elle suit déjà le produit et la période choisis)
+    private int pageBalance = 1, tailleBalance = Pagination.TailleParDefaut;
 
     private Task PremierePageAsync() => ChargerInscriptionsAsync(1, tailleInscriptions);
     private Task ToutesOperationsAsync() { operation = ""; return PremierePageAsync(); }
@@ -176,6 +179,7 @@
         {
             e.Mettre("produit", produitId); e.Mettre("du", du); e.Mettre("au", au); e.Mettre("operation", operation);
             e.Mettre("page", pageInscriptions); e.Mettre("taille", tailleInscriptions);
+            e.Mettre("page_balance", pageBalance); e.Mettre("taille_balance", tailleBalance);
         });
         var r = Historique.Restaurer("registre");
         if (r is not null)

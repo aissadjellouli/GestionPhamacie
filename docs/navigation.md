@@ -65,6 +65,11 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Achats › Retours | `retours` | grossiste, statut, période, page ; retour en préparation (lots, quantités, boîtes scannées, motif, avant « Préparer le retour ») |
 | Rapports | `rapports` | rubrique dans l'adresse (`synthese`, `ventes`, `clotures`, `retours`, `pertes`, `pertes-detail`, `tva`) ; période, date, tableau par jour |
 | Administration | (adresse) | sous-rubrique dans l'adresse (`admin/seuils?rubrique=exceptions`, `admin/notifications?rubrique=fiche`…) ; voir `NavAdmin` |
+| Inventaire | `inventaire` | rubrique dans l'adresse ; écarts (produit, rayon, page), historique (rayon, état, période, page) |
+| Administration › Sauvegardes | `sauvegardes` | journal : résultat, période, page |
+| Administration › Alertes et seuils | `seuils`, `seuils-produits` | grossistes (nom, délai à renseigner, page) ; seuils saisis (produit, état, page) |
+| Administration › Nomenclature | `nomenclature` | produits à vérifier : texte, motif, page |
+| Stock › Blocage des produits | `blocages` | produit ou motif, achat ou vente, page |
 | Contrôle interne | `surveillance` | rubrique dans l'adresse (à examiner, `?onglet=traitees`, `?onglet=sensibles`) ; page des anomalies |
 | Guide et retours | `guide` | rubrique dans l'adresse (à essayer, `?rubrique=remarque`, `?rubrique=remarques`) ; écran, genre et page des remarques |
 | Factures | `factures`, `editeur-facture` | recherche, destinataire, période, page, facture ouverte (et sa version), éditeur ouvert et sa saisie (destinataire, ventes cochées, lignes libres, dates, commentaire) ; onglet dans l’adresse |

@@ -2,6 +2,7 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject NavigationManager Nav
+@inject HistoriqueNavigation Historique
 
 @* Écran fixe : rubriques dans le menu vertical (rubrique dans l'adresse : inventaire?rubrique=…) ; les tableaux défilent dans leur cadre *@
 <div class="page avec-menu">
@@ -41,11 +42,21 @@
         {
             <section class="panneau" aria-labelledby="t-ecarts">
                 <h2 id="t-ecarts">Écarts à valider par le titulaire (@tableau.EcartsAValider.Count)</h2>
+                <div class="filtres-liste" role="search" aria-label="Filtrer les écarts">
+                    <div class="champ" style="flex: 1 1 220px"><label for="fe-texte">Produit ou lot</label>
+                        <input id="fe-texte" type="search" autocomplete="off" @bind="fEcartTexte" @bind:event="oninput" @bind:after="() => pageEcarts = 1" /></div>
+                    <div class="champ" style="flex: 0 0 200px"><label for="fe-rayon">Rayon</label>
+                        <select id="fe-rayon" @bind="fEcartRayon" @bind:after="() => pageEcarts = 1">
+                            <option value="">Tous</option>
+                            @foreach (var ry in tableau.EcartsAValider.Select(x => x.Rayon).Distinct().Order()) { <option value="@ry">@ry</option> }
+                        </select></div>
+                    @if (fEcartTexte.Trim() != "" || fEcartRayon != "") { <button type="button" class="btn" @onclick="() => (fEcartTexte, fEcartRayon, pageEcarts) = (string.Empty, string.Empty, 1)">Tout afficher</button> }
+                </div>
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 760px">
                         <thead><tr><th scope="col">Produit</th><th scope="col">Rayon</th><th scope="col">Théorique</th><th scope="col">Compté</th><th scope="col">Écart</th><th scope="col">Compté par</th><th scope="col"></th></tr></thead>
                         <tbody>
-                            @foreach (var e in tableau.EcartsAValider)
+                            @foreach (var e in EcartsFiltres.Skip((pageEcarts - 1) * tailleEcarts).Take(tailleEcarts))
                             {
                                 <tr>
                                     <td><span class="nom">@e.Produit</span><br /><span class="detail">lot @e.NumeroLot</span></td>
@@ -69,9 +80,11 @@
                                     </td>
                                 </tr>
                             }
+                            @if (EcartsFiltres.Count == 0) { <tr><td colspan="7" class="vide">Aucun écart pour ces filtres.</td></tr> }
                         </tbody>
                     </table>
                 </div>
+                <Pagination Total="EcartsFiltres.Count" Numero="pageEcarts" Taille="tailleEcarts" Libelle="Pages des écarts" OnChange="p => (pageEcarts, tailleEcarts) = (p.Numero, p.Taille)" />
             </section>
         }
 
@@ -160,11 +173,23 @@
                     <input id="i-scan" type="text" autocomplete="off" placeholder="Une boîte de plus sur la ligne de son lot" @bind="scan" @onkeydown="ToucheScanAsync" />
                 </div>
                 @if (infoScan is not null) { <p class="detail" role="status" style="margin: 0">@infoScan</p> }
+                <div class="filtres-liste" role="search" aria-label="Filtrer les lots à compter">
+                    <div class="champ" style="flex: 1 1 220px"><label for="fl-texte">Produit, lot ou emplacement</label>
+                        <input id="fl-texte" type="search" autocomplete="off" @bind="fLigneTexte" @bind:event="oninput" @bind:after="() => pageLignes = 1" /></div>
+                    <div class="champ" style="flex: 0 0 190px"><label for="fl-etat">Lots</label>
+                        <select id="fl-etat" @bind="fLigneEtat" @bind:after="() => pageLignes = 1">
+                            <option value="">Tous</option>
+                            <option value="a_compter">À compter</option>
+                            <option value="comptes">Comptés</option>
+                            <option value="date">Date à vérifier</option>
+                        </select></div>
+                    @if (fLigneTexte.Trim() != "" || fLigneEtat != "") { <button type="button" class="btn" @onclick="() => (fLigneTexte, fLigneEtat, pageLignes) = (string.Empty, string.Empty, 1)">Tout afficher</button> }
+                </div>
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 760px">
                         <thead><tr><th scope="col">Produit</th><th scope="col">Où chercher</th><th scope="col">Péremption</th><th scope="col">Boîtes comptées</th></tr></thead>
                         <tbody>
-                            @foreach (var l in inventaire.Lignes)
+                            @foreach (var l in LignesFiltrees.Skip((pageLignes - 1) * tailleLignes).Take(tailleLignes))
                             {
                                 <tr class="@(l.Compte is not null ? "ligne-comptee" : null)">
                                     <td><span class="nom">@l.Produit</span><br /><span class="detail">lot @l.NumeroLot</span></td>
@@ -184,9 +209,11 @@
                                     </td>
                                 </tr>
                             }
+                            @if (LignesFiltrees.Count == 0) { <tr><td colspan="4" class="vide">Aucun lot pour ces filtres.</td></tr> }
                         </tbody>
                     </table>
                 </div>
+                <Pagination Total="LignesFiltrees.Count" Numero="pageLignes" Taille="tailleLignes" Libelle="Pages des lots à compter" OnChange="p => (pageLignes, tailleLignes) = (p.Numero, p.Taille)" />
                 <div style="display: flex; gap: 8px; flex-wrap: wrap">
                     <button type="button" class="btn btn-principal" disabled="@(enCours || comptes < inventaire.Lignes.Count)" @onclick="TerminerAsync"
                             title="@(comptes < inventaire.Lignes.Count ? "Comptez d’abord tous les lots" : null)">Terminer l’inventaire</button>
@@ -208,11 +235,17 @@
                         <div class="tuile"><span class="tuile-libelle">À valider (titulaire)</span><span class="tuile-valeur petite @(bilan.AValider > 0 ? "attention" : null)">@bilan.AValider</span></div>
                     </div>
                 }
+                <div class="filtres-liste" role="search" aria-label="Filtrer le résultat">
+                    <div class="champ" style="flex: 1 1 220px"><label for="fr-texte">Produit ou lot</label>
+                        <input id="fr-texte" type="search" autocomplete="off" @bind="fLigneTexte" @bind:event="oninput" @bind:after="() => pageLignes = 1" /></div>
+                    <label class="case" style="align-self: end"><input type="checkbox" @bind="fAvecEcart" @bind:after="() => pageLignes = 1" /><span>Avec un écart seulement</span></label>
+                    @if (fLigneTexte.Trim() != "" || fAvecEcart) { <button type="button" class="btn" @onclick="() => (fLigneTexte, fAvecEcart, pageLignes) = (string.Empty, false, 1)">Tout afficher</button> }
+                </div>
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 760px">
                         <thead><tr><th scope="col">Produit</th><th scope="col">Théorique</th><th scope="col">Compté</th><th scope="col">Écart</th><th scope="col">Suite</th></tr></thead>
                         <tbody>
-                            @foreach (var l in inventaire.Lignes)
+                            @foreach (var l in ResultatFiltre.Skip((pageLignes - 1) * tailleLignes).Take(tailleLignes))
                             {
                                 <tr>
                                     <td><span class="nom">@l.Produit</span><br /><span class="detail">lot @l.NumeroLot@(l.DateVerifiee is { } dv ? $" · péremption vérifiée {Libelles.Date(dv)}" : "")</span></td>
@@ -222,9 +255,11 @@
                                     <td><span class="pastille @ClasseStatut(l.Statut)">@LibelleStatut(l.Statut)</span></td>
                                 </tr>
                             }
+                            @if (ResultatFiltre.Count == 0) { <tr><td colspan="5" class="vide">Aucun lot pour ces filtres.</td></tr> }
                         </tbody>
                     </table>
                 </div>
+                <Pagination Total="ResultatFiltre.Count" Numero="pageLignes" Taille="tailleLignes" Libelle="Pages du résultat" OnChange="p => (pageLignes, tailleLignes) = (p.Numero, p.Taille)" />
                 @if (aEtiqueter.Count > 0)
                 {
                     <h3 style="margin: 8px 0 0">Boîtes sans étiquette dans ce rayon (@aEtiqueter.Sum(l => l.BoitesSansIdentite))</h3>
@@ -250,11 +285,29 @@
 
         @if (rubrique == "historique")
         {
+        @* Historique complet, filtré et paginé par le serveur (règle des listes) *@
+        <div class="filtres-liste" role="search" aria-label="Filtrer l’historique des inventaires">
+            <div class="champ" style="flex: 0 0 200px"><label for="fh-rayon">Rayon</label>
+                <select id="fh-rayon" @bind="fHistRayon" @bind:after="PremierePageHistoriqueAsync">
+                    <option value="">Tous</option>
+                    @foreach (var ry in tableau.Rayons.Select(x => x.Rayon).Order()) { <option value="@ry">@ry</option> }
+                </select></div>
+            <div class="champ" style="flex: 0 0 170px"><label for="fh-statut">État</label>
+                <select id="fh-statut" @bind="fHistStatut" @bind:after="PremierePageHistoriqueAsync">
+                    <option value="">Tous</option>
+                    <option value="en_cours">En cours</option>
+                    <option value="termine">Terminé</option>
+                    <option value="annule">Abandonné</option>
+                </select></div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fh-du">Du</label><input id="fh-du" type="date" @bind="fHistDu" @bind:after="PremierePageHistoriqueAsync" /></div>
+            <div class="champ" style="flex: 0 0 160px"><label for="fh-au">Au</label><input id="fh-au" type="date" @bind="fHistAu" @bind:after="PremierePageHistoriqueAsync" /></div>
+            @if (FiltreHistoriqueActif) { <button type="button" class="btn" @onclick="ToutHistoriqueAsync">Tout afficher</button> }
+        </div>
         <section class="tableau-cadre" aria-label="Derniers inventaires">
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Date</th><th scope="col">Rayon</th><th scope="col">Par</th><th scope="col">Lots</th><th scope="col">Écarts</th><th scope="col">Valeur des écarts</th><th scope="col">État</th></tr></thead>
                 <tbody>
-                    @foreach (var h in tableau.Historique)
+                    @foreach (var h in historique)
                     {
                         <tr>
                             <td>@Libelles.DateHeureLocale(h.CommenceLe)</td>
@@ -266,10 +319,11 @@
                             <td><span class="pastille @(h.Statut == "termine" ? "ok" : h.Statut == "en_cours" ? "attention" : "info")">@(h.Statut switch { "termine" => "Terminé", "en_cours" => "En cours", _ => "Abandonné" })</span></td>
                         </tr>
                     }
-                    @if (tableau.Historique.Count == 0) { <tr><td colspan="7" class="vide">Aucun inventaire pour l’instant.</td></tr> }
+                    @if (historique.Count == 0) { <tr><td colspan="7" class="vide">@(FiltreHistoriqueActif ? "Aucun inventaire pour ces filtres." : "Aucun inventaire pour l’instant.")</td></tr> }
                 </tbody>
             </table>
         </section>
+        <Pagination Total="totalHistorique" Numero="pageHistorique" Taille="tailleHistorique" Libelle="Pages de l’historique des inventaires" OnChange="p => ChargerHistoriqueAsync(p.Numero, p.Taille)" />
         }
     }
     </div>
@@ -302,8 +356,48 @@
     /// <summary>Depuis l'alerte « ancien lot délaissé » : inventaire de ce produit (tous ses lots), lancé par le titulaire.</summary>
     [SupplyParameterFromQuery(Name = "produit")] public long? Produit { get; set; }
 
+    // ---- Listes paginées et filtrées (règle des listes) ; « ← Retour » retrouve filtres et pages ----
+    // Écarts à valider, feuille de comptage et résultat : à l'écran (listes complètes) ; historique : par le serveur
+    private string fEcartTexte = "", fEcartRayon = "", fLigneTexte = "", fLigneEtat = "", fHistRayon = "", fHistStatut = "";
+    private bool fAvecEcart;
+    private DateOnly? fHistDu, fHistAu;
+    private int pageEcarts = 1, tailleEcarts = Pagination.TailleParDefaut, pageLignes = 1, tailleLignes = Pagination.TailleParDefaut,
+        pageHistorique = 1, tailleHistorique = Pagination.TailleParDefaut, totalHistorique;
+    private List<InventaireResumeDto> historique = [];
+
+    private List<EcartAValiderDto> EcartsFiltres => (tableau?.EcartsAValider ?? []).Where(e => RechercheTexte.Contient(fEcartTexte, e.Produit, e.NumeroLot)
+        && (fEcartRayon == "" || e.Rayon == fEcartRayon)).ToList();
+    private List<LigneInventaireDto> LignesFiltrees => (inventaire?.Lignes ?? []).Where(l => RechercheTexte.Contient(fLigneTexte, l.Produit, l.NumeroLot, l.Emplacement)
+        && fLigneEtat switch { "a_compter" => l.Compte is null, "comptes" => l.Compte is not null, "date" => l.DateAVerifier, _ => true }).ToList();
+    private List<LigneInventaireDto> ResultatFiltre => (inventaire?.Lignes ?? []).Where(l => RechercheTexte.Contient(fLigneTexte, l.Produit, l.NumeroLot)
+        && (!fAvecEcart || l.Ecart is { } e && e != 0)).ToList();
+
+    private bool FiltreHistoriqueActif => fHistRayon != "" || fHistStatut != "" || fHistDu is not null || fHistAu is not null;
+    private Task PremierePageHistoriqueAsync() => ChargerHistoriqueAsync(1, tailleHistorique);
+    private Task ToutHistoriqueAsync() { (fHistRayon, fHistStatut, fHistDu, fHistAu) = ("", "", null, null); return PremierePageHistoriqueAsync(); }
+
+    private async Task ChargerHistoriqueAsync(int numero, int taille)
+    {
+        var (p, e) = await Api.HistoriqueInventairesAsync(fHistRayon, fHistStatut, fHistDu, fHistAu, numero, taille);
+        if (p is null) { erreur ??= e; return; }
+        if (p.Lignes.Count == 0 && numero > 1) { await ChargerHistoriqueAsync(1, taille); return; }
+        (historique, totalHistorique, pageHistorique, tailleHistorique) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
     protected override async Task OnInitializedAsync()
     {
+        Historique.Suivre("inventaire", e =>
+        {
+            e.Mettre("ecart_texte", fEcartTexte); e.Mettre("ecart_rayon", fEcartRayon); e.Mettre("page_ecarts", pageEcarts); e.Mettre("taille_ecarts", tailleEcarts);
+            e.Mettre("h_rayon", fHistRayon); e.Mettre("h_statut", fHistStatut); e.Mettre("h_du", fHistDu); e.Mettre("h_au", fHistAu);
+            e.Mettre("page_h", pageHistorique); e.Mettre("taille_h", tailleHistorique);
+        });
+        if (Historique.Restaurer("inventaire") is { } h)
+        {
+            (fEcartTexte, fEcartRayon, pageEcarts, tailleEcarts) = (h.Texte("ecart_texte") ?? "", h.Texte("ecart_rayon") ?? "", h.Entier("page_ecarts") ?? 1, h.Entier("taille_ecarts") ?? tailleEcarts);
+            (fHistRayon, fHistStatut, fHistDu, fHistAu) = (h.Texte("h_rayon") ?? "", h.Texte("h_statut") ?? "", h.Date("h_du"), h.Date("h_au"));
+            (pageHistorique, tailleHistorique) = (h.Entier("page_h") ?? 1, h.Entier("taille_h") ?? tailleHistorique);
+        }
         await ChargerAsync();
         if (Produit is > 0 && EstTitulaire)
             await Executer(async () =>
@@ -319,6 +413,7 @@
         (tableau, e) = await Api.TableauInventaireAsync();
         if (e is not null) { erreur = e; return; }
         rayonChoisi ??= tableau!.RayonPropose ?? tableau.Rayons.FirstOrDefault()?.Rayon;
+        await ChargerHistoriqueAsync(pageHistorique, tailleHistorique);
         (seuilBoites, seuilMontant) = (tableau!.Parametres.SeuilBoites, tableau.Parametres.SeuilMontant);
     }
 
@@ -347,6 +442,7 @@
         var (d, e) = await Api.InventaireAsync(id);
         if (e is not null) return e;
         inventaire = d;
+        (fLigneTexte, fLigneEtat, fAvecEcart, pageLignes) = ("", "", false, 1);   // nouvelle feuille : filtres remis à zéro
         if (rubrique != "comptage") Nav.NavigateTo("inventaire");
         if (d!.Statut == "termine")
         {

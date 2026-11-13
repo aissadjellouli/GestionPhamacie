@@ -94,11 +94,24 @@
             <h2 id="t-comptages">Livraisons comptées</h2>
             <p class="sous-titre">La facture se saisit sans voir les boîtes comptées, de préférence par une autre personne que celle qui a compté.</p>
         </div>
+        @* Livraisons comptées : filtrées et paginées à l'écran (règle des listes) *@
+        <div class="filtres-liste" role="search" aria-label="Filtrer les livraisons comptées">
+            <div class="champ" style="flex: 1 1 220px"><label for="fc-texte">Grossiste ou n° de BL</label>
+                <input id="fc-texte" type="search" autocomplete="off" @bind="fcTexte" @bind:event="oninput" @bind:after="() => pageComptages = 1" /></div>
+            <div class="champ" style="flex: 0 0 200px"><label for="fc-etat">État</label>
+                <select id="fc-etat" @bind="fcEtat" @bind:after="() => pageComptages = 1">
+                    <option value="">Tous</option>
+                    <option value="compte">Facture à saisir</option>
+                    <option value="ecart">Écart à valider</option>
+                    <option value="a_recompter">À recompter</option>
+                </select></div>
+            @if (fcTexte.Trim() != "" || fcEtat != "") { <button type="button" class="btn" @onclick="() => (fcTexte, fcEtat, pageComptages) = (string.Empty, string.Empty, 1)">Tout afficher</button> }
+        </div>
         <div class="tableau-cadre">
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Grossiste</th><th scope="col">BL</th><th scope="col">Comptée par</th><th scope="col">État</th><th scope="col"></th></tr></thead>
                 <tbody>
-                    @foreach (var c in comptages)
+                    @foreach (var c in ComptagesFiltres.Skip((pageComptages - 1) * tailleComptages).Take(tailleComptages))
                     {
                         <tr>
                             <td>@c.Fournisseur</td>
@@ -155,9 +168,11 @@
                             </td>
                         </tr>
                     }
+                    @if (ComptagesFiltres.Count == 0) { <tr><td colspan="5" class="vide">Aucune livraison comptée pour ces filtres.</td></tr> }
                 </tbody>
             </table>
         </div>
+        <Pagination Total="ComptagesFiltres.Count" Numero="pageComptages" Taille="tailleComptages" Libelle="Pages des livraisons comptées" OnChange="p => (pageComptages, tailleComptages) = (p.Numero, p.Taille)" />
     </section>
 }
 
@@ -597,6 +612,11 @@ else
     private ComptageAFacturerDto? aRecompter;
     private bool Comptage => (aveugle || aRecompter is not null) && aFacturer is null;
     private List<ComptageResumeDto> comptages = [];
+    // Livraisons comptées : filtres et page à l'écran
+    private string fcTexte = "", fcEtat = "";
+    private int pageComptages = 1, tailleComptages = Pagination.TailleParDefaut;
+    private List<ComptageResumeDto> ComptagesFiltres => comptages.Where(c => RechercheTexte.Contient(fcTexte, c.Fournisseur, c.NumeroBl)
+        && (fcEtat == "" || c.Statut == fcEtat)).ToList();
     private ResultatFacturationDto? ecartFacture;
     private string? infoComptage;
 
