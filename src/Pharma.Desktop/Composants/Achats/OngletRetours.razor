@@ -151,7 +151,8 @@
             }
             @if (retours.Count == 0)
             {
-                <tr><td colspan="6" class="vide">@(FiltreActif ? "Aucun retour pour ces filtres." : "Aucun retour fournisseur.")</td></tr>
+                <tr><td colspan="6" class="vide">@(FiltreActif ? "Aucun retour pour ces filtres." : "Aucun retour fournisseur.")
+                    @if (!FiltreActif) { <ActionSuivante Libelle="Préparer un retour" Lien="achats?onglet=retours&vue=preparer" Droits='["achats.retour_fournisseur"]' /> }</td></tr>
             }
         </tbody>
     </table>

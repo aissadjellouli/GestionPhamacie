@@ -8,13 +8,10 @@
 <nav class="admin-nav" aria-label="Rubriques d’administration">
     @foreach (var r in Rubriques)
     {
-        if (r.Lien is null)
+        // Écran à venir ou sans droit (ex. reprise de données : super admin) : absent du menu, pas grisé (docs/navigation.md)
+        if (r.Lien is null || !Session.A(r.Permission!))
         {
-            <span class="nav-inactif" aria-disabled="true" title="@r.Raison">@r.Libelle</span>
-        }
-        else if (!Session.A(r.Permission!))
-        {
-            <span class="nav-inactif" aria-disabled="true" title="@(r.Permission switch { "role.titulaire" => "Réservé au pharmacien titulaire", "role.super_admin" => "Réservé au super admin (connexion super admin)", _ => $"Droit « {r.Permission} » nécessaire" })">@r.Libelle</span>
+            continue;
         }
         else
         {

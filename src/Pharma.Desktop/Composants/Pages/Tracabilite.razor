@@ -2,10 +2,12 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 
-<div class="page page-serree">
+<div class="page page-serree avec-menu">
+    <NavDomaine Libelle="Écrans du stock" />
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Traçabilité</h1>
+            <h1>Traçabilité<AideEcran Cle="tracabilite" /></h1>
             <p class="sous-titre">Chaque boîte, du grossiste au patient</p>
         </div>
         <a href="stock" style="font-size: 14px; font-weight: 500">Retour au stock</a>
@@ -184,6 +186,7 @@
             }
         </section>
     </div>
+</div>
 </div>
 
 @code {

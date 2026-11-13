@@ -5,10 +5,12 @@
 @inject HistoriqueNavigation Historique
 @inject TachesLaissees Taches
 
-<div class="page">
+<div class="page avec-menu">
+    <NavDomaine Libelle="Écrans des finances" />
+    <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Factures</h1>
+            <h1>Factures<AideEcran Cle="factures" /></h1>
             <p class="sous-titre">Patients, entreprises et organismes : ventes, ordonnances, lignes libres ; rejets, corrections, avoirs et suivi des encaissements</p>
         </div>
         <button type="button" class="btn btn-principal" @onclick="() => Editer(Nouvelle, null)">Nouvelle facture</button>
@@ -201,6 +203,7 @@
         </section>
         </div>
     }
+</div>
 </div>
 
 @code {

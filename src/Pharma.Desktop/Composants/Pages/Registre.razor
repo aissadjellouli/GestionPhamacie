@@ -4,19 +4,15 @@
 
 @* Écran fixe : inscriptions et balance mensuelle en deux rubriques (menu vertical) ; le tableau défile dans son cadre *@
 <div class="page avec-menu">
-    <nav class="nav-laterale" aria-label="Rubriques du registre">
+    <NavDomaine Libelle="Rubriques du registre">
         <a href="stock/registre" class="@(rubrique == "inscriptions" ? "active" : null)" aria-current="@(rubrique == "inscriptions" ? "page" : null)">Inscriptions @if (NombreInscriptions is { } n) { <span class="compteur neutre">@n</span> }</a>
         <a href="stock/registre?rubrique=balance" class="@(rubrique == "balance" ? "active" : null)" aria-current="@(rubrique == "balance" ? "page" : null)">Balance mensuelle</a>
-        <span class="nav-groupe-titre">Autres écrans du stock</span>
-        <a href="stock" class="sous-rubrique">Stock</a>
-        <a href="tracabilite" class="sous-rubrique">Traçabilité et rappel de lot</a>
-        <a href="inventaire" class="sous-rubrique">Inventaire</a>
-    </nav>
+    </NavDomaine>
 
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Registre des psychotropes · @(rubrique == "balance" ? "Balance mensuelle" : "Inscriptions")</h1>
+            <h1>Registre des psychotropes · @(rubrique == "balance" ? "Balance mensuelle" : "Inscriptions")<AideEcran Cle="stock/registre" /></h1>
             <p class="sous-titre">Entrées et sorties des psychotropes et stupéfiants, numérotées et non modifiables, avec la balance mensuelle.</p>
         </div>
     </div>
@@ -71,6 +67,10 @@
             @if (inscriptions.Count == 0)
             {
                 <p class="vide" style="margin: 0">@(operation == "" ? "Aucune inscription sur la période." : "Aucune inscription pour ces filtres.")</p>
+                @if (operation == "")
+                {
+                    <ActionSuivante Libelle="Voir les 12 derniers mois" Action="DouzeDerniersMoisAsync" />
+                }
             }
             else
             {
@@ -90,7 +90,7 @@
                                 <tr>
                                     <td>@l.Numero</td>
                                     <td>@Libelles.DateHeureLocale(l.Date)</td>
-                                    <td><span class="nom">@l.Produit</span><br /><span class="detail">lot @l.NumeroLot</span></td>
+                                    <td><span class="nom"><LienProduit Texte="@l.Produit" /></span><br /><span class="detail">lot <LienProduit Texte="@l.NumeroLot" Lot="true" /></span></td>
                                     <td>@l.Operation</td>
                                     <td class="nombre">@l.Entree</td>
                                     <td class="nombre">@l.Sortie</td>
@@ -160,6 +160,12 @@
     private int pageBalance = 1, tailleBalance = Pagination.TailleParDefaut;
 
     private Task PremierePageAsync() => ChargerInscriptionsAsync(1, tailleInscriptions);
+    /// <summary>Période vide : proposée sur les 12 derniers mois (jusqu'à aujourd'hui).</summary>
+    private Task DouzeDerniersMoisAsync()
+    {
+        (du, au) = (DateOnly.FromDateTime(DateTime.Today).AddMonths(-12).AddDays(1), DateOnly.FromDateTime(DateTime.Today));
+        return ChargerAsync();
+    }
     private Task ToutesOperationsAsync() { operation = ""; return PremierePageAsync(); }
 
     private async Task ChargerInscriptionsAsync(int numero, int taille)

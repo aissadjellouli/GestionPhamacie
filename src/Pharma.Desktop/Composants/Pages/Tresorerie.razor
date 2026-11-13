@@ -6,7 +6,7 @@
 
 @* Trésorerie découpée en rubriques, avec le menu vertical de l'Administration ; la rubrique est dans l'adresse (« Retour » y revient) *@
 <div class="page avec-menu">
-    <nav class="nav-laterale" aria-label="Rubriques de la trésorerie">
+    <NavDomaine Libelle="Rubriques de la trésorerie">
         @foreach (var r in Rubriques)
         {
             var nombre = Compteur(r.Id);
@@ -21,12 +21,12 @@
                 <strong class="@(coffre.Solde < 0 ? "montant-du" : null)">@Libelles.Dinars(coffre.Solde, 2)</strong>
             </div>
         }
-    </nav>
+    </NavDomaine>
 
     <div class="contenu-rubrique">
         <div class="titre-page">
             <div>
-                <h1>Trésorerie · @RubriqueCourante.Libelle</h1>
+                <h1>Trésorerie · @RubriqueCourante.Libelle<AideEcran Cle="tresorerie" /></h1>
                 <p class="sous-titre">@RubriqueCourante.SousTitre</p>
             </div>
             @if (rubrique == "comptes") { <button type="button" class="btn" @onclick="NouvelleBanque">Ajouter une banque</button> }

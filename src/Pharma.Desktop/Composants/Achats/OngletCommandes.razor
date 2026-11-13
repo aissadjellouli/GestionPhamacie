@@ -129,7 +129,8 @@
                     }
                     @if (commandes.Count == 0)
                     {
-                        <tr><td colspan="5" class="vide">@(FiltreActif ? "Aucun bon de commande pour ces filtres." : "Aucun bon de commande.")</td></tr>
+                        <tr><td colspan="5" class="vide">@(FiltreActif ? "Aucun bon de commande pour ces filtres." : "Aucun bon de commande.")
+                            @if (!FiltreActif) { <ActionSuivante Libelle="Voir les produits à commander" Lien="achats?onglet=commandes&vue=a-commander" /> }</td></tr>
                     }
                 </tbody>
             </table>

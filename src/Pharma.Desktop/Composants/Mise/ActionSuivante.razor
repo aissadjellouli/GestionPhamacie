@@ -1,0 +1,26 @@
+@inject SessionPoste Session
+@inject NavigationManager Nav
+
+@* Liste vide sans filtre : l'étape suivante est proposée (« pas d'écran sans issue », docs/navigation.md), seulement si
+   l'employé peut l'ouvrir. Lien vers un écran, ou action de l'écran (Action). *@
+@if (Droits.Length == 0 || Droits.Any(Session.A))
+{
+    <div class="action-suivante">
+        <button type="button" class="btn btn-principal" @onclick="OuvrirAsync">@Libelle →</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Libelle { get; set; } = "";
+    /// <summary>Écran à ouvrir (adresse relative), si pas d'Action.</summary>
+    [Parameter] public string? Lien { get; set; }
+    [Parameter] public EventCallback Action { get; set; }
+    /// <summary>L'un de ces droits est nécessaire (aucun : toujours proposé).</summary>
+    [Parameter] public string[] Droits { get; set; } = [];
+
+    private async Task OuvrirAsync()
+    {
+        if (Action.HasDelegate) await Action.InvokeAsync();
+        else if (Lien is not null) Nav.NavigateTo(Lien);
+    }
+}

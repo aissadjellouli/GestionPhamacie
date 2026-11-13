@@ -1,0 +1,62 @@
+@inject NavigationManager Nav
+
+@* Aide en contexte (docs/navigation.md) : « ? » à côté du titre de l'écran ; quelques lignes sur ce qu'on y fait, les raccourcis,
+   et le lien vers le Guide. Placée dans le h1 de chaque écran de domaine (test NavigationTests). Échap ferme. *@
+@if (Textes.TryGetValue(Cle, out var aide))
+{
+    <button type="button" class="bouton-aide" title="Aide de cet écran" aria-label="@($"Aide : {aide.Titre}")" aria-expanded="@(ouverte ? "true" : "false")"
+            @onclick="() => ouverte = !ouverte">?</button>
+    @if (ouverte)
+    {
+        <aside class="panneau-aide" role="dialog" aria-label="@($"Aide : {aide.Titre}")" @onkeydown="Touche" tabindex="-1">
+            <h2>Aide · @aide.Titre</h2>
+            <ul>
+                @foreach (var p in aide.Points) { <li>@p</li> }
+            </ul>
+            <p class="detail">Raccourcis : Ctrl + K rechercher · Ctrl + Maj + lettre du domaine · Alt + ← retour · Échap fermer ou effacer.</p>
+            <div class="pied-aide">
+                <button type="button" class="btn" @onclick='() => { ouverte = false; Nav.NavigateTo("guide"); }'>Guide complet</button>
+                <button type="button" class="btn" @onclick="() => ouverte = false">Fermer</button>
+            </div>
+        </aside>
+    }
+}
+
+@code {
+    /// <summary>Écran (chemin sans « / » : « inventaire », « stock/registre »… ; vide : Alertes).</summary>
+    [Parameter, EditorRequired] public string Cle { get; set; } = "";
+
+    private bool ouverte;
+    private void Touche(KeyboardEventArgs e) { if (e.Key == "Escape") ouverte = false; }
+
+    private sealed record Aide(string Titre, string[] Points);
+
+    private static readonly Dictionary<string, Aide> Textes = new()
+    {
+        ["accueil"] = new("Tableau de bord", ["Chaque tuile ouvre l’écran concerné.", "Le logo en haut à gauche ramène ici.",
+            "Ctrl + K : chercher un écran, un produit ou un patient."]),
+        [""] = new("Alertes", ["Urgentes : à traiter aujourd’hui (périmé, rupture…).", "Une alerte se traite ou se reporte à une date ; elle reste tracée.",
+            "Péremption : lots qui périment bientôt, à vendre en priorité ou à retourner."]),
+        ["stock"] = new("Stock", ["Recherche par nom, DCI, code-barres, lot ou emplacement.", "Filtres : à commander, péremption proche, psychotropes ; rayon.",
+            "Un nom de produit ou de lot souligné en pointillé ouvre ce stock filtré."]),
+        ["inventaire"] = new("Inventaire", ["Comptage à l’aveugle : le stock du logiciel n’est montré qu’à la fin.",
+            "Scannez chaque boîte ou saisissez le nombre ; 0 si le lot est introuvable.", "Les petits écarts sont corrigés tout de suite, les gros attendent le titulaire."]),
+        ["stock/registre"] = new("Registre des psychotropes", ["Entrées et sorties numérotées, non modifiables.",
+            "Consultation sur toute période ; export PDF ou CSV : un an par fichier.", "Noms en clair pour le titulaire seul."]),
+        ["tracabilite"] = new("Traçabilité et rappel de lot", ["Scannez une boîte pour voir son parcours, du grossiste au patient.",
+            "Rappel de lot : choisissez le produit et le lot ; les boîtes vendues sont retrouvées."]),
+        ["caisse"] = new("Caisse", ["Scannez ou recherchez le produit, puis encaissez (F12).", "Tiers payant : choisissez le patient et l’organisme.",
+            "« ⇄ Changer » : passer la main sans fermer la caisse (relève proposée)."]),
+        ["achats"] = new("Achats", ["Commandes : produits à commander, puis bons par grossiste.",
+            "Réceptions : comptage à l’aveugle, puis facture saisie par une autre personne.", "Retours, étiquettes, règlements et grossistes dans le même écran."]),
+        ["factures"] = new("Factures", ["Patients, entreprises et organismes.", "Suivi : à encaisser, échues, soldées, rejetées.",
+            "Un avoir corrige une facture sans la modifier."]),
+        ["tresorerie"] = new("Trésorerie", ["Comptes : coffre, banque, caisse.", "Dépôts, retraits, dépenses par catégorie.",
+            "Le solde du coffre est rappelé en bas du menu."]),
+        ["dettes"] = new("Dettes et créances", ["Ce que l’officine doit (grossistes, effets) et ce qu’on lui doit (patients, entreprises, organismes).",
+            "Les sommes en retard passent en alerte."]),
+        ["rapports"] = new("Rapports", ["Ventes, clôtures, retours, pertes et dons sur une période.", "Exports pour le comptable."]),
+        ["surveillance"] = new("Contrôle interne", ["Anomalies à examiner : ventes hors horaires, remises en série, écarts de caisse…",
+            "Chaque anomalie traitée garde qui l’a traitée et l’action prise."]),
+    };
+}

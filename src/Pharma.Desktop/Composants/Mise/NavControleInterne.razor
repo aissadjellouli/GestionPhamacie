@@ -1,6 +1,6 @@
 @* Menu vertical commun aux écrans du contrôle interne (anomalies, produits sensibles, écarts et risques) :
    chaque entrée est une adresse, « ← Retour » y revient. Les réglages (seuils, horaires) sont dans l'Administration. *@
-<nav class="nav-laterale" aria-label="Rubriques du contrôle interne">
+<NavDomaine Libelle="Rubriques du contrôle interne">
     <span class="nav-groupe-titre">Anomalies</span>
     @Lien("surveillance", "À examiner", AExaminer)
     @Lien("surveillance?onglet=traitees", "Traitées")
@@ -11,7 +11,7 @@
     @Lien("surveillance?onglet=sensibles", "Produits sensibles")
     <span class="nav-groupe-titre">Réglages</span>
     <a href="admin/controle-interne" class="sous-rubrique">Seuils et horaires</a>
-</nav>
+</NavDomaine>
 
 @code {
     /// <summary>Adresse de la rubrique affichée (ex. « surveillance?onglet=traitees »).</summary>

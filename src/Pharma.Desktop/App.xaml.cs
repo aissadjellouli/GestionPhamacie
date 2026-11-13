@@ -38,6 +38,8 @@ public partial class App : Application
         services.AddSingleton<SessionPoste>();
         services.AddSingleton<ApiClient>();
         services.AddSingleton<FichesContact>();
+        // Compteurs du travail en attente (menu du haut et menu de gauche)
+        services.AddSingleton<CompteursAttente>();
         // Tâches laissées au « Changer d'utilisateur » (facture, retour, réception), reprises par le suivant sur ce poste
         services.AddSingleton<TachesLaissees>();
         // Historique des écrans pour « ← Retour » (un par fenêtre du poste)

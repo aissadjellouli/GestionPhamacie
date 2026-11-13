@@ -1,34 +1,40 @@
 @page "/achats"
 @inject SessionPoste Session
 @inject NavigationManager Nav
+@inject CompteursAttente Compteurs
+@implements IDisposable
 
 @* Écran fixe : menu vertical à gauche (règle « Écran fixe », docs/charte-graphique.md), une partie à la fois.
    L'adresse garde l'onglet (achats?onglet=…) et la partie affichée (&vue=…) : « Retour » y revient. Pour un même onglet, le composant
    reste le même d'une vue à l'autre (la réception en cours n'est pas perdue en passant à « En attente » ou « Historique »). *@
 <div class="page avec-menu">
-    <nav class="nav-laterale" aria-label="Rubriques des achats">
-        @foreach (var r in Rubriques)
+    <NavDomaine Libelle="Rubriques des achats">
+        @* Rubrique sans droit : absente (pas grisée) ; groupe dont aucune rubrique n'est permise : absent aussi *@
+        @for (var i = 0; i < Rubriques.Length; i++)
         {
+            var r = Rubriques[i];
             if (r.Groupe is { } g)
             {
-                <span class="nav-groupe-titre">@g</span>
+                if (Rubriques.Skip(i + 1).TakeWhile(x => x.Groupe is null).Any(x => x.Permis))
+                {
+                    <span class="nav-groupe-titre">@g</span>
+                }
             }
             else if (r.Permis)
             {
                 var active = r.Onglet == onglet && (r.Vue is null || r.Vue == vue);
-                <a href="@Lien(r)" class="@(r.SousRubrique ? "sous-rubrique" : null) @(active ? "active" : null)" aria-current="@(active ? "page" : null)">@r.Libelle</a>
-            }
-            else
-            {
-                <span class="nav-inactif @(r.SousRubrique ? "sous-rubrique" : null)" aria-disabled="true" title="Droit nécessaire">@r.Libelle</span>
+                var attente = r.Vue switch { "attente" => Compteurs.Receptions, "bons" => Compteurs.Brouillons, _ => null };
+                <a href="@Lien(r)" class="@(r.SousRubrique ? "sous-rubrique" : null) @(active ? "active" : null)" aria-current="@(active ? "page" : null)">
+                    @r.Libelle@if (attente is > 0) { <span class="compteur neutre" aria-label="@($"{attente} en attente")">@attente</span> }
+                </a>
             }
         }
-    </nav>
+    </NavDomaine>
 
     <div class="contenu-rubrique">
         <div class="titre-page">
             <div>
-                <h1>Achats · @Courante.Libelle</h1>
+                <h1>Achats · @Courante.Libelle<AideEcran Cle="achats" /></h1>
                 <p class="sous-titre">@Courante.SousTitre</p>
             </div>
         </div>
@@ -98,6 +104,11 @@
                                  ?? Rubriques.First(r => r.Groupe is null && r.Onglet == onglet);
 
     private static string Lien(Rubrique r) => r.Vue is null ? $"achats?onglet={r.Onglet}" : $"achats?onglet={r.Onglet}&vue={r.Vue}";
+
+    // Compteurs des rubriques (réceptions en attente, bons en brouillon) : relus par la mise en page
+    protected override void OnInitialized() => Compteurs.Change += SurCompteurs;
+    private void SurCompteurs() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Compteurs.Change -= SurCompteurs;
 
     protected override void OnParametersSet()
     {

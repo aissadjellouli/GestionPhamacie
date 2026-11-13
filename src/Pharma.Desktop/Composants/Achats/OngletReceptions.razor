@@ -48,7 +48,8 @@
                 <tbody>
                     @if (AttentesFiltrees.Count == 0)
                     {
-                        <tr><td colspan="5" class="vide">@(FiltreAttentesActif ? "Aucune réception en attente pour ces filtres." : "Aucune réception en attente.")</td></tr>
+                        <tr><td colspan="5" class="vide">@(FiltreAttentesActif ? "Aucune réception en attente pour ces filtres." : "Aucune réception en attente.")
+                            @if (!FiltreAttentesActif) { <ActionSuivante Libelle="Réceptionner une livraison" Lien="achats?onglet=receptions&vue=saisie" Droits='["achats.receptionner"]' /> }</td></tr>
                     }
                     @foreach (var a in AttentesPage)
                     {
@@ -176,7 +177,11 @@
     </section>
 }
 
-@if (Vue == "attente" && attentes.Count == 0 && comptages.Count == 0) { <p class="vide">Aucune réception en attente, aucune livraison comptée à facturer.</p> }
+@if (Vue == "attente" && attentes.Count == 0 && comptages.Count == 0)
+{
+    <p class="vide">Aucune réception en attente, aucune livraison comptée à facturer.</p>
+    <ActionSuivante Libelle="Réceptionner une livraison" Lien="achats?onglet=receptions&vue=saisie" Droits='["achats.receptionner"]' />
+}
 }
 
 @if (Vue is "" or "saisie")

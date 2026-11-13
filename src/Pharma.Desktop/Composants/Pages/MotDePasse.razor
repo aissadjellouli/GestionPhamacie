@@ -50,7 +50,7 @@
         enCours = false;
         (actuel, nouveau, confirmation) = ("", "", "");
         if (erreur is not null) return;
-        if (premiere) Nav.NavigateTo("");
+        if (premiere) Nav.NavigateTo(Domaines.Accueil(Session));
         else message = "Mot de passe changé.";
     }
 }

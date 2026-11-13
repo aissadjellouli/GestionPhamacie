@@ -7,16 +7,18 @@
 @inject IJSRuntime JS
 @inject HistoriqueNavigation Historique
 @inject TachesLaissees Taches
+@inject CompteursAttente Compteurs
 
 <header class="entete">
     <div class="entete-interieur">
-        <div class="marque" title="@($"{Poste.NomLogiciel} · {SousTitre}")">
+        @* Logo : retour à l'accueil de l'employé (tableau de bord, ou Caisse pour le vendeur) *@
+        <a class="marque" href="@(Session.EstConnecte && !Session.SuperAdmin ? Domaines.Accueil(Session) : null)" title="@($"{Poste.NomLogiciel} · {SousTitre} · Accueil")">
             <img class="logo" src="img/logo.svg" alt="" aria-hidden="true" />
             <div class="marque-textes">
                 <span class="marque-nom">@Poste.NomLogiciel</span>
                 <span class="marque-poste">@SousTitre</span>
             </div>
-        </div>
+        </a>
         @if (Session.EstConnecte && Session.SuperAdmin)
         {
             @* Super admin : ses seuls écrans ; aucun écran des employés *@
@@ -36,45 +38,30 @@
                     title="@(Historique.EcranPrecedent is { } ecranPrecedent ? $"Revenir à {ecranPrecedent}, tel que vous l’avez laissé (Alt + ←)" : "Aucun écran précédent")"
                     aria-label="@(Historique.EcranPrecedent is { } p ? $"Retour à l’écran précédent : {p}" : "Retour : aucun écran précédent")"><span class="fleche" aria-hidden="true">←</span><span class="libelle-retour">@(Historique.EcranPrecedent ?? "Retour")</span></button>
 
-            @* Menu : les écrans du quotidien au premier niveau, le reste regroupé ; un écran sans droit n'apparaît pas *@
-            <nav class="nav" aria-label="Navigation principale" @onkeydown="ToucheMenu">
-                <a href="caisse" class="@Actif("caisse", "cloture", "caisse/etat")" aria-current="@Courant("caisse", "cloture", "caisse/etat")">Caisse</a>
-                <a href="stock" class="@ActifPrefixe("stock", "tracabilite", "inventaire")" aria-current="@Courant("stock", "tracabilite", "inventaire", "stock/registre")">Stock</a>
-                @if (Session.A("achats.commander") || Session.A("achats.receptionner") || Session.A("achats.retour_fournisseur"))
+            @* Menu en deux niveaux (docs/navigation.md) : en haut les domaines (Services/Domaines), à gauche leurs écrans (NavDomaine) ;
+               un domaine sans écran permis n'apparaît pas. Raccourci : Ctrl + Maj + la lettre affichée (poste.js). *@
+            <nav class="nav" aria-label="Navigation principale">
+                @foreach (var d in Domaines.Tous.Where(d => d.Visible(Session)))
                 {
-                    <a href="achats" class="@Actif("achats")" aria-current="@Courant("achats")">Achats</a>
-                }
-                <a href="" class="@Actif("")" aria-current="@Courant("")">
-                    Alertes
-                    @if (urgentes > 0 && Chemin != "")
-                    {
-                        <span class="compteur" aria-label="@($"{urgentes} alertes urgentes")">@urgentes</span>
-                    }
-                </a>
-                @foreach (var g in Groupes.Where(g => g.Entrees.Any(x => x.Permis)))
-                {
-                    <div class="nav-groupe">
-                        <button type="button" class="nav-bouton @(g.Entrees.Any(x => x.Permis && EstActif(x.Chemins)) ? "active" : null)"
-                                aria-haspopup="true" aria-expanded="@(menuOuvert == g.Cle ? "true" : "false")" @onclick="() => Basculer(g.Cle)">@g.Libelle<span class="chevron" aria-hidden="true"></span></button>
-                        @if (menuOuvert == g.Cle)
+                    var actif = DomaineCourant == d;
+                    <a href="@d.Lien(Session)" class="@(actif ? "active" : null)" aria-current="@(actif ? "page" : null)" data-touche="@d.Touche"
+                       title="@($"{d.Libelle} (Ctrl + Maj + {d.Touche})")">
+                        @d.Libelle
+                        @if (d.Id == "stock" && urgentes > 0 && Chemin != "")
                         {
-                            <div class="menu-panneau" aria-label="@g.Libelle">
-                                @foreach (var x in g.Entrees.Where(x => x.Permis || x.Raison is not null))
-                                {
-                                    if (x.Permis)
-                                    {
-                                        <a href="@x.Lien" class="@(EstActif(x.Chemins) ? "actif" : null)" aria-current="@(EstActif(x.Chemins) ? "page" : null)" @onclick="FermerMenus">@x.Libelle</a>
-                                    }
-                                    else
-                                    {
-                                        <span class="inactif" aria-disabled="true" title="@(x.Libelle == "Chifa" ? "Format des factures Chifa à obtenir" : x.Raison)">@x.Libelle <span class="detail">(@x.Raison)</span></span>
-                                    }
-                                }
-                            </div>
+                            <span class="compteur" aria-label="@($"{urgentes} alertes urgentes")">@urgentes</span>
                         }
-                    </div>
+                        else if (Compteurs.Domaine(d.Id) is { } attente)
+                        {
+                            @* Travail en attente du domaine (réceptions et bons en brouillon ; factures à encaisser et sommes en alerte) *@
+                            <span class="compteur @(attente.Urgent ? null : "neutre")" aria-label="@($"{attente.Nombre} en attente")">@attente.Nombre</span>
+                        }
+                        <span class="touche" aria-hidden="true">⇧@d.Touche</span>
+                    </a>
                 }
             </nav>
+            <button type="button" class="bouton-recherche" @onclick="() => rechercheOuverte = true" title="Rechercher un écran, un produit, un patient (Ctrl + K)"
+                    aria-label="Rechercher partout (Ctrl + K)"><span aria-hidden="true">⌕</span> Rechercher… <span class="touche" aria-hidden="true">Ctrl K</span></button>
 
             <div class="outils-utilisateur">
                 @if (PremiereRubriqueAdmin is { } lienAdmin)
@@ -181,6 +168,10 @@
             </ErrorContent>
         </ErrorBoundary>
         <FenetreContact />
+        @if (Session.EstConnecte && !Session.SuperAdmin)
+        {
+            <RechercheGlobale @bind-Ouverte="rechercheOuverte" />
+        }
         <BarreChargement />
         <FenetreAutorisation />
         <SignalementChamps />
@@ -210,27 +201,11 @@
     private string? ActifPrefixe(params string[] prefixes) => prefixes.Any(p => Chemin.StartsWith(p, StringComparison.Ordinal)) ? "active" : null;
     private bool EstActif(string[] chemins) => chemins.Any(c => Chemin == c || Chemin.StartsWith(c + "/", StringComparison.Ordinal));
 
-    // ---- Menus déroulants de l'en-tête (Finances, Pilotage, compte de l'employé) ----
-    private sealed record EntreeMenu(string Libelle, string Lien, string[] Chemins, bool Permis, string? Raison = null);
-    private sealed record GroupeMenu(string Cle, string Libelle, IReadOnlyList<EntreeMenu> Entrees);
+    // ---- Domaine affiché (menu du haut) et recherche partout (Ctrl + K, ouverte par poste.js ou le bouton) ----
+    private Domaines.Domaine? DomaineCourant => Domaines.De(Chemin).Domaine;
+    private bool rechercheOuverte;
 
-    /// <summary>Groupes du menu, selon les droits : un écran sans droit n'apparaît pas, un groupe sans écran permis non plus.</summary>
-    private IEnumerable<GroupeMenu> Groupes =>
-    [
-        new("finances", "Finances",
-        [
-            new("Factures", "factures", ["factures"], Session.A("factures.gerer")),
-            new("Trésorerie", "tresorerie", ["tresorerie"], Session.A("tresorerie.gerer")),
-            new("Dettes et créances", "dettes", ["dettes"], Session.A("tresorerie.gerer")),
-            new("Chifa", "", ["chifa"], false, "à venir")
-        ]),
-        new("pilotage", "Pilotage",
-        [
-            new("Rapports", "rapports", ["rapports"], Session.A("rapports.ventes")),
-            new("Contrôle interne", "surveillance", ["surveillance"], Session.A("role.titulaire"))
-        ])
-    ];
-
+    // ---- Menu déroulant du compte de l'employé ----
     private string? menuOuvert;
     private void Basculer(string cle) => menuOuvert = menuOuvert == cle ? null : cle;
     private void FermerMenus() => menuOuvert = null;
@@ -243,6 +218,7 @@
         Historique.Demarrer();
         Historique.Change += SurHistorique;
         Taches.Change += SurTaches;
+        Compteurs.Change += SurCompteurs;
         Api.AlertesModifiees += SurSession;
         await CompterUrgentesAsync();
         _ = SurveillerInactiviteAsync();
@@ -253,7 +229,10 @@
         if (!Session.EstConnecte || Session.SuperAdmin) { urgentes = 0; return; }
         var (compte, erreur) = await Api.AlertesUrgentesAsync();
         urgentes = erreur is null ? compte?.Nombre ?? 0 : 0;
+        await Compteurs.ActualiserAsync();   // travail en attente : au plus toutes les 30 s (aussitôt pour un nouvel employé)
     }
+
+    private void SurCompteurs() => _ = InvokeAsync(StateHasChanged);
 
     /// <summary>Déconnexion automatique (paramètre de caisse) : vérifiée toutes les 15 secondes.</summary>
     private async Task SurveillerInactiviteAsync()
@@ -306,9 +285,13 @@
             : droits.All(d => d == "role.super_admin")
             ? "Écran réservé au super admin (bouton « Connexion super admin » de l’écran de connexion)."
             : $"Écran réservé : le droit « {string.Join(" » ou « ", droits.Select(Libelles.Droit))} » est nécessaire. Demandez-le au titulaire.";
-        Nav.NavigateTo("", replace: true);
+        redirectionAcces = Domaines.Accueil(Session);
+        Nav.NavigateTo(redirectionAcces, replace: true);
         return false;
     }
+
+    /// <summary>Accueil où l'employé vient d'être renvoyé (écran refusé) : le message y reste affiché, puis s'efface à l'écran suivant.</summary>
+    private string? redirectionAcces;
 
     private async void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
@@ -316,7 +299,7 @@
         garde?.Recover();
         menuOuvert = null;
         var refuse = !VerifierAcces();
-        if (!refuse && Chemin.Length > 0) messageAcces = null;
+        if (!refuse) { if (Chemin == redirectionAcces) redirectionAcces = null; else messageAcces = null; }
         await CompterUrgentesAsync();
         await InvokeAsync(StateHasChanged);
     }
@@ -441,6 +424,7 @@
         Api.AlertesModifiees -= SurSession;
         Historique.Change -= SurHistorique;
         Taches.Change -= SurTaches;
+        Compteurs.Change -= SurCompteurs;
         reference?.Dispose();
     }
 }

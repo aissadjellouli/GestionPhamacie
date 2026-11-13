@@ -6,26 +6,21 @@
 
 @* Écran fixe : menu vertical à gauche ; le tableau des produits défile dans son cadre. Rubrique dans l'adresse (stock?rubrique=…) *@
 <div class="page avec-menu">
-    <nav class="nav-laterale" aria-label="Rubriques du stock">
+    <NavDomaine Libelle="Rubriques du stock">
         @foreach (var r in Rubriques.Where(r => r.Permis))
         {
             <a href="@($"stock?rubrique={r.Id}")" class="@(r.Id == rubrique ? "active" : null)" aria-current="@(r.Id == rubrique ? "page" : null)">@r.Libelle</a>
         }
-        <span class="nav-groupe-titre">Autres écrans du stock</span>
-        <a href="tracabilite" class="sous-rubrique">Traçabilité et rappel de lot</a>
-        @if (Session.A("psychotropes.registre")) { <a href="stock/registre" class="sous-rubrique">Registre des psychotropes</a> }
-        <a href="inventaire" class="sous-rubrique">Inventaire</a>
-        <a href="achats?onglet=etiquettes" class="sous-rubrique">Imprimer des étiquettes</a>
         @if (etat is not null)
         {
             <div class="nav-resume"><span class="detail">Valeur du stock</span><strong>@Libelles.Dinars(etat.Indicateurs.ValeurAchat)</strong></div>
         }
-    </nav>
+    </NavDomaine>
 
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Stock · @RubriqueCourante.Libelle</h1>
+            <h1>Stock · @RubriqueCourante.Libelle<AideEcran Cle="stock" /></h1>
             <p class="sous-titre">@RubriqueCourante.SousTitre</p>
         </div>
     </div>
@@ -162,7 +157,8 @@
                     }
                     @if (lignes.Count == 0)
                     {
-                        <tr><td colspan="7" class="vide">@(FiltreActif ? "Aucun produit pour ces filtres." : "Aucun produit en stock.")</td></tr>
+                        <tr><td colspan="7" class="vide">@(FiltreActif ? "Aucun produit pour ces filtres." : "Aucun produit en stock.")
+                            @if (!FiltreActif) { <ActionSuivante Libelle="Réceptionner une livraison" Lien="achats?onglet=receptions&vue=saisie" Droits='["achats.receptionner"]' /> }</td></tr>
                     }
                 </tbody>
             </table>
@@ -268,6 +264,9 @@
     private static readonly (string, string)[] Filtres =
         [("tous", "Tous"), ("commander", "À commander"), ("peremption", "Péremption proche"), ("psychotropes", "Psychotropes")];
 
+    /// <summary>Recherche à appliquer à l'ouverture (produit choisi dans la recherche globale).</summary>
+    [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         OnParametersSet();   // rubrique et titre justes dès le premier affichage, pendant les chargements
@@ -278,6 +277,8 @@
         });
         var r = Historique.Restaurer("stock");
         if (r is not null) (recherche, filtre, rayon) = (r.Texte("recherche") ?? "", r.Texte("filtre") ?? "tous", r.Texte("rayon") ?? "");
+        // Produit choisi dans la recherche globale (Ctrl + K) : stock filtré sur son nom
+        if (!string.IsNullOrWhiteSpace(Q)) (recherche, filtre, rayon) = (Q.Trim(), "tous", "");
         var lieux = Api.EmplacementsAsync();
         await ChargerAsync(r?.Entier("page") ?? 1, r?.Entier("taille") ?? taille);
         (emplacements, _) = await lieux;

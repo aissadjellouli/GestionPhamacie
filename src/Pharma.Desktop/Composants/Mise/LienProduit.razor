@@ -1,0 +1,13 @@
+@inject NavigationManager Nav
+
+@* Nom de produit ou n° de lot cliquable (docs/navigation.md) : ouvre le Stock filtré dessus (la recherche du Stock porte aussi
+   sur les lots). Même rendu que les noms de contact (souligné en pointillé). Jamais dans un comptage à l'aveugle : le Stock
+   montrerait les quantités. *@
+<button type="button" class="lien-contact" title="@(Lot ? $"Voir le lot {Texte} dans le stock" : $"Voir {Texte} dans le stock")"
+        @onclick='() => Nav.NavigateTo($"stock?q={Uri.EscapeDataString(Texte)}")' @onclick:stopPropagation="true">@Texte</button>
+
+@code {
+    /// <summary>Nom du produit, ou n° de lot (Lot = true).</summary>
+    [Parameter, EditorRequired] public string Texte { get; set; } = "";
+    [Parameter] public bool Lot { get; set; }
+}

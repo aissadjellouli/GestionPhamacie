@@ -5,7 +5,7 @@
 
 @* Écran fixe : menu vertical à gauche (vue d'ensemble, puis les listes d'alertes) ; la liste défile dans son cadre *@
 <div class="page avec-menu">
-    <nav class="nav-laterale" aria-label="Rubriques des alertes">
+    <NavDomaine Libelle="Rubriques des alertes">
         <a href="?rubrique=ensemble" class="@(rubrique == "ensemble" ? "active" : null)" aria-current="@(rubrique == "ensemble" ? "page" : null)">Vue d’ensemble</a>
         <span class="nav-groupe-titre">Alertes ouvertes</span>
         @foreach (var f in Filtres)
@@ -18,12 +18,12 @@
         {
             <div class="nav-resume"><span class="detail">Valeur à risque</span><strong class="@(ValeurARisque > 0 ? "montant-du" : null)">@Libelles.Dinars(ValeurARisque)</strong></div>
         }
-    </nav>
+    </NavDomaine>
 
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Alertes du jour@(rubrique == "ensemble" ? "" : $" · {Filtres.First(f => f.Id == rubrique).Libelle}")</h1>
+            <h1>Alertes du jour@(rubrique == "ensemble" ? "" : $" · {Filtres.First(f => f.Id == rubrique).Libelle}")<AideEcran Cle="" /></h1>
             <p class="sous-titre">@Libelles.Aujourdhui() · triées par urgence puis par montant en jeu</p>
         </div>
         @if (Session.A("admin.parametres"))

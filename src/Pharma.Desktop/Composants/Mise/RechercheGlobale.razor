@@ -1,0 +1,137 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject NavigationManager Nav
+@inject FichesContact Fiches
+
+@* Recherche partout (Ctrl + K ou bouton « Rechercher » de l'en-tête ; docs/navigation.md) : écrans et rubriques permis,
+   produits (ouverts dans le Stock filtré), patients (fiche contact). Propositions dès 2 lettres, sans majuscules ni accents,
+   12 au plus ; flèches pour choisir, Entrée pour ouvrir, Échap pour fermer. *@
+@if (Ouverte)
+{
+    <div class="voile voile-recherche" @onclick="FermerAsync">
+        <div class="palette-recherche" role="dialog" aria-modal="true" aria-label="Rechercher partout" @onclick:stopPropagation="true">
+            <input @ref="champ" type="search" autocomplete="off" placeholder="Écran, rubrique, produit, patient…" aria-label="Rechercher partout"
+                   aria-controls="resultats-recherche" aria-activedescendant="@(resultats.Count > 0 ? $"resultat-{choix}" : null)"
+                   value="@saisie" @oninput="SaisieAsync" @onkeydown="ToucheAsync" @onkeydown:preventDefault="empecher" />
+            <div id="resultats-recherche" class="resultats-recherche" role="listbox">
+                @if (resultats.Count == 0)
+                {
+                    <p class="detail" style="margin: 8px 12px">@(saisie.Trim().Length < 2 ? "Tapez au moins 2 lettres." : $"Aucun résultat pour « {saisie.Trim()} ».")</p>
+                }
+                @{ string? groupe = null; }
+                @for (var i = 0; i < resultats.Count; i++)
+                {
+                    var r = resultats[i];
+                    var n = i;
+                    if (r.Groupe != groupe)
+                    {
+                        groupe = r.Groupe;
+                        <div class="groupe-recherche">@groupe</div>
+                    }
+                    <div id="@($"resultat-{n}")" role="option" aria-selected="@(n == choix)" class="resultat-recherche @(n == choix ? "choisi" : null)"
+                         @onclick="() => OuvrirAsync(n)" @onmouseover="() => choix = n">
+                        <span>@r.Libelle</span><span class="detail">@r.Ou</span>
+                    </div>
+                }
+            </div>
+            <div class="pied-recherche detail">↑ ↓ pour choisir · Entrée pour ouvrir · Échap pour fermer</div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Ouverte { get; set; }
+    [Parameter] public EventCallback<bool> OuverteChanged { get; set; }
+
+    private sealed record Resultat(string Groupe, string Libelle, string Ou, string? Lien, Action? Action = null);
+
+    /// <summary>Rubriques utiles à ouvrir directement (en plus des écrans), chacune selon un droit (vide : aucun).</summary>
+    private static readonly (string Libelle, string Ou, string Lien, string[] Droits)[] Rubriques =
+    [
+        ("Annulation ou retour", "Caisse", "caisse?rubrique=annulation", ["caisse.vendre"]),
+        ("Règlement d’un crédit", "Caisse", "caisse?rubrique=credit", ["caisse.vendre"]),
+        ("État de la caisse", "Caisse", "caisse/etat", ["caisse.vendre"]),
+        ("Relève", "Caisse", "cloture?releve=true", ["caisse.vendre"]),
+        ("Clôturer la caisse", "Caisse", "cloture", ["caisse.vendre"]),
+        ("Alertes urgentes", "Stock · Alertes", "?rubrique=urgent", []),
+        ("Alertes de péremption", "Stock · Alertes", "?rubrique=peremption", []),
+        ("Écarts d’inventaire à valider", "Stock · Inventaire", "inventaire?rubrique=ecarts", []),
+        ("Derniers inventaires", "Stock · Inventaire", "inventaire?rubrique=historique", []),
+        ("Balance mensuelle du registre", "Stock · Registre", "stock/registre?rubrique=balance", ["psychotropes.registre"]),
+        ("À commander", "Achats", "achats?onglet=commandes&vue=a-commander", ["achats.commander", "achats.receptionner"]),
+        ("Bons de commande", "Achats", "achats?onglet=commandes&vue=bons", ["achats.commander", "achats.receptionner"]),
+        ("Réceptionner une livraison", "Achats", "achats?onglet=receptions&vue=saisie", ["achats.receptionner"]),
+        ("Réceptions en attente", "Achats", "achats?onglet=receptions&vue=attente", ["achats.receptionner"]),
+        ("Préparer un retour", "Achats", "achats?onglet=retours&vue=preparer", ["achats.retour_fournisseur"]),
+        ("Règlements des grossistes", "Achats", "achats?onglet=reglements", ["achats.regler"]),
+        ("Grossistes", "Achats", "achats?onglet=grossistes", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]),
+    ];
+
+    private ElementReference champ;
+    private string saisie = "";
+    private List<Resultat> resultats = [];
+    private int choix, requete;
+    private bool empecher, etaitOuverte;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Ouverte && !etaitOuverte) { (saisie, resultats, choix) = ("", Ecrans("").Take(8).ToList(), 0); StateHasChanged(); await champ.FocusAsync(); }
+        etaitOuverte = Ouverte;
+    }
+
+    /// <summary>Écrans des domaines et rubriques permis qui contiennent la saisie (tous si elle est vide).</summary>
+    private IEnumerable<Resultat> Ecrans(string q)
+    {
+        var ecrans = Domaines.Tous.SelectMany(d => d.Permis(Session).Select(e => new Resultat("Écrans", e.Libelle, d.Libelle, e.Lien)));
+        if (Domaines.ATableauDeBord(Session)) ecrans = ecrans.Prepend(new Resultat("Écrans", "Tableau de bord", "Accueil", "accueil"));
+        var rubriques = Rubriques.Where(r => r.Droits.Length == 0 || r.Droits.Any(Session.A)).Select(r => new Resultat("Rubriques", r.Libelle, r.Ou, r.Lien));
+        return ecrans.Concat(rubriques).Where(r => q.Length == 0 || RechercheTexte.Contient(q, r.Libelle, r.Ou));
+    }
+
+    private async Task SaisieAsync(ChangeEventArgs e)
+    {
+        saisie = e.Value?.ToString() ?? "";
+        var q = saisie.Trim();
+        var n = ++requete;
+        if (q.Length < 2) { (resultats, choix) = (q.Length == 0 ? Ecrans("").Take(8).ToList() : [], 0); return; }
+        (resultats, choix) = (Ecrans(q).Take(12).ToList(), 0);
+        await Task.Delay(200);   // produits et patients : après une courte pause (pas à chaque touche)
+        if (n != requete) return;
+        var (produits, _) = await Api.RechercherProduitsAsync(q);
+        var (patients, _) = await Api.RechercherPatientsAsync(q);
+        if (n != requete) return;
+        resultats = Ecrans(q)
+            .Concat(produits.Take(6).Select(p => new Resultat("Produits", p.NomCommercial, $"Stock · {p.Stock} en stock", $"stock?q={Uri.EscapeDataString(p.NomCommercial)}")))
+            .Concat(patients.Take(5).Select(p => new Resultat("Patients", $"{p.Nom} {p.Prenom}".Trim(), p.Telephone ?? "Fiche patient", null,
+                () => Fiches.Ouvrir("patient", p.Id, $"{p.Nom} {p.Prenom}".Trim()))))
+            .Take(12).ToList();
+        choix = 0;
+    }
+
+    private async Task ToucheAsync(KeyboardEventArgs e)
+    {
+        empecher = e.Key is "ArrowDown" or "ArrowUp" or "Enter";
+        switch (e.Key)
+        {
+            case "Escape": await FermerAsync(); break;
+            case "ArrowDown" when resultats.Count > 0: choix = (choix + 1) % resultats.Count; break;
+            case "ArrowUp" when resultats.Count > 0: choix = (choix + resultats.Count - 1) % resultats.Count; break;
+            case "Enter": await OuvrirAsync(choix); break;
+        }
+    }
+
+    private async Task OuvrirAsync(int i)
+    {
+        if (i < 0 || i >= resultats.Count) return;
+        var r = resultats[i];
+        await FermerAsync();
+        if (r.Action is not null) r.Action();
+        else if (r.Lien is not null) Nav.NavigateTo(r.Lien.StartsWith('?') ? "./" + r.Lien : r.Lien);
+    }
+
+    private async Task FermerAsync()
+    {
+        requete++;
+        await OuverteChanged.InvokeAsync(false);
+    }
+}

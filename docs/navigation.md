@@ -1,5 +1,50 @@
 # Navigation et retour à l'écran précédent
 
+## Menu en deux niveaux, accueil, recherche et raccourcis (validé le 2026-11-13)
+
+- **En haut, les domaines seulement** : Caisse, Stock, Achats, Finances, Pilotage (et ⚙ Administration). Un clic ouvre le premier
+  écran permis du domaine. Plus de menus déroulants. Le compteur des alertes urgentes est sur « Stock ».
+- **À gauche, les écrans du domaine** ; l'écran affiché est déplié avec ses rubriques (composant `NavDomaine`). Domaine d'un seul
+  écran (Caisse, Achats) : ses rubriques directement. Les groupes « Autres écrans du stock » ont disparu (le test
+  `NavigationTests` refuse un menu vertical fait à la main et ces groupes).
+
+  | Domaine | Écrans |
+  |---|---|
+  | Caisse (Ctrl + Maj + V) | Caisse (vente, annulation, crédit, tiroir, état, relève, clôture) |
+  | Stock (Ctrl + Maj + S) | Alertes, Stock, Inventaire, Registre des psychotropes, Traçabilité et rappel de lot |
+  | Achats (Ctrl + Maj + H) | Achats (commandes, réceptions, retours, étiquettes, règlements, grossistes) |
+  | Finances (Ctrl + Maj + F) | Factures, Trésorerie, Dettes et créances (Chifa : à venir) |
+  | Pilotage (Ctrl + Maj + P) | Rapports, Contrôle interne |
+
+  Un écran sans droit n'apparaît pas ; un domaine sans écran permis non plus. Description unique : `Services/Domaines.cs`.
+- **Accueil selon les droits** : qui a un droit de gestion (achats, stock, rapports, trésorerie, factures, paramètres, titulaire)
+  arrive sur le **tableau de bord** (`/accueil` : alertes urgentes, lots périmant dans les 6 mois, réceptions en attente, écarts
+  d'inventaire à valider ; chaque tuile ouvre son écran et n'apparaît que si l'employé peut l'ouvrir) ; les autres (vendeur,
+  stagiaire) arrivent directement sur la **Caisse**. Le logo ramène à cet accueil ; un écran refusé aussi.
+- **Recherche partout : Ctrl + K** (ou « ⌕ Rechercher… » dans l'en-tête) : écrans et rubriques permis, produits (ouverts dans
+  le Stock filtré sur leur nom), patients (fiche contact). Dès 2 lettres, sans majuscules ni accents ; ↑ ↓, Entrée, Échap.
+  Composant `RechercheGlobale`.
+- **Raccourcis** : Ctrl + Maj + la lettre affichée à côté du domaine ; Ctrl + K ; F12 (encaisser) ; Alt + ← (retour).
+- **Ce qui est interdit n'est pas montré** : un écran ou une rubrique sans droit est absent des menus (plus de rubrique grisée :
+  Administration, Achats, « Ouvrir le tiroir » de la Caisse) ; un groupe dont aucune rubrique n'est permise disparaît aussi.
+- **Compteurs du travail en attente** (`Services/CompteursAttente.cs`), selon les droits, relus au changement d'écran au plus
+  toutes les 30 secondes : Achats (réceptions en attente + bons en brouillon ; à gauche « En attente » et « Bons de commande »),
+  Finances (factures à encaisser + sommes dues en alerte, en rouge si une facture est échue ou une somme en alerte ; à gauche
+  « Factures » et « Dettes et créances »), Stock (alertes urgentes).
+- **Pas d'écran sans issue** : une liste vide sans filtre propose l'étape suivante (`ActionSuivante`) : aucun écart → aller au
+  comptage ; aucun inventaire → commencer un comptage ; aucune réception en attente, aucun produit en stock → réceptionner une
+  livraison ; aucun bon → voir les produits à commander ; aucun retour → préparer un retour ; registre vide sur la période → voir
+  les 12 derniers mois. Le bouton n'apparaît que si l'employé peut ouvrir l'écran proposé.
+- **Produits et lots cliquables** (`LienProduit`, souligné en pointillé comme les contacts) : ouvrent le Stock filtré dessus ;
+  dans les écarts à valider, le résultat d'inventaire et le registre. **Jamais dans la feuille de comptage** (comptage à l'aveugle :
+  le Stock montrerait les quantités).
+- **Clavier** (`poste.js`) : à l'ouverture d'un écran ou d'une rubrique, le curseur va dans sa première recherche (sauf s'il est
+  déjà dans un champ) ; Échap efface la recherche, sauf si une liste de propositions ou une fenêtre est ouverte (Échap la ferme).
+- **Aide « ? »** à côté du titre de chaque écran de domaine (`AideEcran`) : quelques lignes sur l'écran, les raccourcis et le lien
+  vers le Guide ; Échap ferme. La Caisse n'a pas de titre : pas de « ? » pour l'instant.
+
+## Retour à l'écran précédent
+
 Partout dans le poste, **« ← Retour »** ramène à l'écran précédent **tel qu'on l'a laissé** : onglet, filtres, page, élément
 ouvert et fiche contact. Trois façons de revenir :
 

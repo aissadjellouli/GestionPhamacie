@@ -160,7 +160,9 @@
         enCours = true;
         erreur = await Api.ConnecterAsync(identifiant, motDePasse);
         enCours = false;
-        // Une vente a été laissée en attente au changement d'utilisateur : on arrive directement à la Caisse pour la reprendre
-        if (erreur is null) Nav.NavigateTo(Session.DoitChangerMotDePasse ? "mot-de-passe" : Session.AVenteAReprendre && Session.A("caisse.vendre") ? "caisse" : "");
+        // Une vente a été laissée en attente au changement d'utilisateur : on arrive directement à la Caisse pour la reprendre ;
+        // sinon, accueil selon les droits (tableau de bord, ou Caisse pour le vendeur)
+        if (erreur is null) Nav.NavigateTo(Session.DoitChangerMotDePasse ? "mot-de-passe"
+            : Session.AVenteAReprendre && Session.A("caisse.vendre") ? "caisse" : Domaines.Accueil(Session));
     }
 }

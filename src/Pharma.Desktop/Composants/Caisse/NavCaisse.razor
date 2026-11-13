@@ -4,7 +4,7 @@
 @* Colonne d'actions de la Caisse, commune à la vente, à l'annulation, au règlement d'un crédit, à l'état de la caisse,
    à la relève et à la clôture (écran fixe, docs/charte-graphique.md). Chaque entrée est une adresse, « ← Retour » y revient ;
    « Ouvrir le tiroir » n'est pas un écran : une confirmation, puis l'ouverture sans vente est inscrite au contrôle interne. *@
-<nav class="nav-laterale" aria-label="Actions de caisse">
+<NavDomaine Libelle="Actions de caisse">
     <span class="nav-groupe-titre">Comptoir</span>
     @Lien("caisse", "Vente")
     <span class="nav-groupe-titre">Opérations</span>
@@ -12,7 +12,7 @@
     @Lien("caisse?rubrique=credit", "Règlement d’un crédit")
     @if (!Session.A("caisse.ouvrir_tiroir"))
     {
-        <span class="nav-inactif sous-rubrique" aria-disabled="true" title="Droit « Ouvrir le tiroir sans vente » nécessaire">Ouvrir le tiroir</span>
+        @* Sans le droit « Ouvrir le tiroir sans vente » : rien (une action interdite n'est pas montrée, docs/navigation.md) *@
     }
     else if (!confirmation)
     {
@@ -43,7 +43,7 @@
             <span class="detail">@Poste@(Poste is null ? "" : " · ")vendeur : @Session.NomComplet</span>
         </div>
     }
-</nav>
+</NavDomaine>
 
 @code {
     /// <summary>Adresse de l'écran affiché (« caisse », « caisse?rubrique=credit », « caisse/etat », « cloture?releve=true », « cloture »).</summary>

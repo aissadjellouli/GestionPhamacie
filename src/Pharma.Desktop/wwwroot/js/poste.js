@@ -17,11 +17,54 @@ document.addEventListener('keydown', function (e) {
     e.preventDefault();
     window.pharma._caisse.invokeMethodAsync('SurF12');
   }
+  // Navigation (docs/navigation.md) : Ctrl + K ouvre la recherche partout ; Ctrl + Maj + lettre ouvre le domaine qui l'affiche
+  // dans le menu du haut (data-touche ; un domaine sans droit n'y est pas, le raccourci ne fait alors rien)
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+    var bouton = document.querySelector('.entete .bouton-recherche');
+    if (bouton) { e.preventDefault(); bouton.click(); }
+  } else if (e.ctrlKey && e.shiftKey && !e.altKey && /^[a-z]$/i.test(e.key)) {
+    var domaine = document.querySelector('.entete [data-touche="' + e.key.toUpperCase() + '"]');
+    if (domaine) { e.preventDefault(); domaine.click(); }
+  }
 }, true);
 
 ['mousedown', 'mousemove', 'wheel', 'touchstart'].forEach(function (evenement) {
   document.addEventListener(evenement, function () { window.pharma._derniereActivite = Date.now(); }, { passive: true });
 });
+
+// Clavier cohérent (docs/navigation.md) : à l'ouverture d'un écran ou d'une rubrique, le curseur va dans sa première recherche
+// (on tape directement) ; jamais s'il est déjà dans un champ. Échap efface la recherche où l'on est, sauf si une liste de
+// propositions est ouverte (Échap la ferme) ou dans une fenêtre (Échap la ferme).
+(function () {
+  var dernier = null, prevu = false;
+  function placer() {
+    prevu = false;
+    var ecran = location.pathname + location.search;
+    if (ecran === dernier) return;
+    var actif = document.activeElement;
+    var libre = !actif || actif === document.body || actif.tagName === 'A' || actif.tagName === 'BUTTON'
+      || (actif.closest && actif.closest('.entete, .nav-laterale, .admin-nav'));
+    if (!libre) { dernier = ecran; return; }
+    var champs = document.querySelectorAll('.page input[type="search"]');
+    for (var i = 0; i < champs.length; i++) {
+      var c = champs[i];
+      if (c.offsetParent !== null && !c.disabled && !c.readOnly && !c.closest('.voile')) { dernier = ecran; c.focus(); return; }
+    }
+  }
+  new MutationObserver(function () { if (!prevu) { prevu = true; requestAnimationFrame(placer); } })
+    .observe(document.documentElement, { childList: true, subtree: true });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    var c = document.activeElement;
+    if (!c || !c.matches || !c.matches('.page input[type="search"]') || !c.value || c.closest('.voile')) return;
+    if (document.querySelector('.suggestions')) return;
+    e.preventDefault();
+    c.value = '';
+    c.dispatchEvent(new Event('input', { bubbles: true }));
+    c.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+})();
 
 // Caméra au comptoir : photo de l'ordonnance (l'autorisation est accordée par la fenêtre du poste)
 window.pharma.camera = {

@@ -6,21 +6,18 @@
 
 @* Écran fixe : rubriques dans le menu vertical (rubrique dans l'adresse : inventaire?rubrique=…) ; les tableaux défilent dans leur cadre *@
 <div class="page avec-menu">
-    <nav class="nav-laterale" aria-label="Rubriques de l’inventaire">
+    <NavDomaine Libelle="Rubriques de l’inventaire">
         @foreach (var r in Rubriques.Where(r => r.Permis))
         {
             var n = r.Id == "ecarts" ? tableau?.EcartsAValider.Count ?? 0 : 0;
             <a href="@(r.Id == "comptage" ? "inventaire" : $"inventaire?rubrique={r.Id}")" class="@(r.Id == rubrique ? "active" : null)" aria-current="@(r.Id == rubrique ? "page" : null)">@r.Libelle@if (n > 0) { <span class="compteur">@n</span> }</a>
         }
-        <span class="nav-groupe-titre">Autres écrans du stock</span>
-        <a href="stock" class="sous-rubrique">Stock</a>
-        <a href="tracabilite" class="sous-rubrique">Traçabilité et rappel de lot</a>
-    </nav>
+    </NavDomaine>
 
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Inventaire · @Rubriques.First(r => r.Id == rubrique).Libelle</h1>
+            <h1>Inventaire · @Rubriques.First(r => r.Id == rubrique).Libelle<AideEcran Cle="inventaire" /></h1>
             <p class="sous-titre">Inventaire tournant (un rayon par jour) ou complet (tous les rayons), compté à l’aveugle. Les petits écarts sont corrigés tout de suite, les gros attendent le titulaire.</p>
         </div>
     </div>
@@ -37,6 +34,7 @@
         @if (rubrique == "ecarts" && tableau.EcartsAValider.Count == 0)
         {
             <p class="vide">Aucun écart à valider.</p>
+            <ActionSuivante Libelle="Aller au comptage du rayon proposé" Lien="inventaire" />
         }
         @if (rubrique == "ecarts" && tableau.EcartsAValider.Count > 0)
         {
@@ -59,7 +57,7 @@
                             @foreach (var e in EcartsFiltres.Skip((pageEcarts - 1) * tailleEcarts).Take(tailleEcarts))
                             {
                                 <tr>
-                                    <td><span class="nom">@e.Produit</span><br /><span class="detail">lot @e.NumeroLot</span></td>
+                                    <td><span class="nom"><LienProduit Texte="@e.Produit" /></span><br /><span class="detail">lot <LienProduit Texte="@e.NumeroLot" Lot="true" /></span></td>
                                     <td>@e.Rayon</td>
                                     <td>@e.Theorique</td>
                                     <td>@e.Compte</td>
@@ -248,7 +246,7 @@
                             @foreach (var l in ResultatFiltre.Skip((pageLignes - 1) * tailleLignes).Take(tailleLignes))
                             {
                                 <tr>
-                                    <td><span class="nom">@l.Produit</span><br /><span class="detail">lot @l.NumeroLot@(l.DateVerifiee is { } dv ? $" · péremption vérifiée {Libelles.Date(dv)}" : "")</span></td>
+                                    <td><span class="nom"><LienProduit Texte="@l.Produit" /></span><br /><span class="detail">lot <LienProduit Texte="@l.NumeroLot" Lot="true" />@(l.DateVerifiee is { } dv ? $" · péremption vérifiée {Libelles.Date(dv)}" : "")</span></td>
                                     <td>@l.Theorique</td>
                                     <td>@l.Compte</td>
                                     <td>@(l.Ecart is { } e && e != 0 ? $"{Signe(e)} ({Libelles.Dinars(l.ValeurEcart ?? 0, 2)})" : "—")</td>
@@ -319,7 +317,11 @@
                             <td><span class="pastille @(h.Statut == "termine" ? "ok" : h.Statut == "en_cours" ? "attention" : "info")">@(h.Statut switch { "termine" => "Terminé", "en_cours" => "En cours", _ => "Abandonné" })</span></td>
                         </tr>
                     }
-                    @if (historique.Count == 0) { <tr><td colspan="7" class="vide">@(FiltreHistoriqueActif ? "Aucun inventaire pour ces filtres." : "Aucun inventaire pour l’instant.")</td></tr> }
+                    @if (historique.Count == 0)
+                    {
+                        <tr><td colspan="7" class="vide">@(FiltreHistoriqueActif ? "Aucun inventaire pour ces filtres." : "Aucun inventaire pour l’instant.")
+                            @if (!FiltreHistoriqueActif) { <ActionSuivante Libelle="Commencer un comptage" Lien="inventaire" /> }</td></tr>
+                    }
                 </tbody>
             </table>
         </section>

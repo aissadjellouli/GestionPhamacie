@@ -9,7 +9,10 @@ utilise les classes ci-dessous. Pas de `style="font-size: …"`, `style="color: 
 
 ## En-tête et menu
 
-Une seule ligne, dans cet ordre : logo et nom de la pharmacie, **« ← *écran précédent* »**, menu, puis outils de l'employé.
+Une seule ligne, dans cet ordre : logo et nom de la pharmacie (lien vers l'accueil), **« ← *écran précédent* »**, menu des
+**domaines** (Caisse, Stock, Achats, Finances, Pilotage ; chacun suivi de son raccourci « ⇧lettre » dans un petit cadre),
+**« ⌕ Rechercher… Ctrl K »**, puis outils de l'employé. Pas de menu déroulant : les écrans d'un domaine sont dans le menu de
+gauche (docs/navigation.md).
 « ← *écran précédent* » (à gauche) et « ⇄ Changer » (à droite) sont des **pastilles blanches à texte vert** : repérables d'un coup
 d'œil, et éloignées du menu pour ne pas être confondues avec un écran. Leurs libellés restent courts pour garder l'en-tête sur une ligne.
 
@@ -62,6 +65,18 @@ la fenêtre. Exceptions : les fenêtres au-dessus de l'écran (`.voile`), qui d�
 
 Un écran qui empile trop de panneaux est découpé en **rubriques**, avec le menu vertical de l'Administration (même rendu :
 liens à gauche, rubrique active surlignée avec le filet ambre).
+
+**Le menu de gauche liste les écrans du domaine** (composant `NavDomaine`, docs/navigation.md) : titre du domaine (gris,
+majuscules), puis ses écrans ; l'écran affiché est écrit en vert, ses rubriques en retrait dessous (13 px), la rubrique affichée
+avec le bandeau ambre. Un écran garde ses rubriques et son résumé (`nav-resume`) en les passant à `NavDomaine` ; il ne liste
+jamais lui-même les autres écrans. Accueil : tuiles cliquables (`.tuile.tuile-lien` : toute la carte ouvre l'écran, bordure verte au
+survol, seul « … → » souligné).
+
+Compléments (2026-11-13) : **compteurs** du travail en attente dans le menu du haut (fond blanc, chiffre vert ; rouge si urgent)
+et à gauche (`.compteur.neutre`, ou `.compteur` si urgent) ; le menu du haut reste sur une ligne (`nowrap`, 8 px de marge par
+domaine). **Étape suivante** sous une liste vide : un seul bouton principal « … → » (`.action-suivante`), centré dans une cellule
+de tableau. **Produit ou lot cliquable** : rendu des noms de contact (souligné en pointillé). **Aide** : rond « ? » de 30 px à
+côté du titre, panneau de 380 px à droite (titre vert 17 px, liste courte, raccourcis en gris, « Guide complet » et « Fermer »).
 
 **Le menu est collé au bord gauche de la fenêtre** (demandé le 2026-11-13) : colonne de 240 px sur toute la hauteur, de l'en-tête
 à la barre d'état, fond `--surface` et filet `--bordure` à droite ; la page n'est plus centrée ni limitée à 1 280 px, le contenu

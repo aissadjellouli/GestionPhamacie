@@ -1,0 +1,63 @@
+@implements IDisposable
+@inject SessionPoste Session
+@inject NavigationManager Nav
+@inject CompteursAttente Compteurs
+
+@* Menu de gauche (navigation en deux niveaux, docs/navigation.md) : les écrans du domaine de l'écran affiché (Services/Domaines),
+   l'écran affiché déplié avec ses rubriques (ChildContent, fournies par l'écran). Domaine d'un seul écran (Caisse, Achats) :
+   les rubriques seules. Hors domaine (Accueil, Guide) : les rubriques seules aussi. Compteur du travail en attente à côté
+   d'un écran (CompteursAttente). *@
+<nav class="nav-laterale" aria-label="@Libelle">
+    @if (domaine is null || ecrans.Count <= 1)
+    {
+        @ChildContent
+    }
+    else
+    {
+        <span class="nav-groupe-titre">@domaine.Libelle</span>
+        @foreach (var e in ecrans)
+        {
+            var attente = Compteurs.Ecran(e.Lien);
+            if (e == ecran && ChildContent is not null)
+            {
+                <span class="nav-ecran-ouvert" aria-current="page">@e.Libelle@Compteur(attente)</span>
+                <div class="nav-rubriques">@ChildContent</div>
+            }
+            else
+            {
+                <a href="@e.Lien" class="@(e == ecran ? "active" : null)" aria-current="@(e == ecran ? "page" : null)">@e.Libelle@Compteur(attente)</a>
+            }
+        }
+    }
+</nav>
+
+@code {
+    /// <summary>Nom du menu pour les lecteurs d'écran (ex. « Rubriques de l'inventaire »).</summary>
+    [Parameter] public string Libelle { get; set; } = "Écrans et rubriques";
+    /// <summary>Rubriques de l'écran affiché ; sans rubriques, l'écran est un simple lien actif de la liste.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private Domaines.Domaine? domaine;
+    private Domaines.Ecran? ecran;
+    private List<Domaines.Ecran> ecrans = [];
+
+    private static RenderFragment Compteur((int Nombre, bool Urgent)? attente) => b =>
+    {
+        if (attente is not { } a) return;
+        b.OpenElement(0, "span");
+        b.AddAttribute(1, "class", a.Urgent ? "compteur" : "compteur neutre");
+        b.AddAttribute(2, "aria-label", $"{a.Nombre} en attente");
+        b.AddContent(3, a.Nombre);
+        b.CloseElement();
+    };
+
+    protected override void OnInitialized() => Compteurs.Change += SurCompteurs;
+    private void SurCompteurs() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Compteurs.Change -= SurCompteurs;
+
+    protected override void OnParametersSet()
+    {
+        (domaine, ecran) = Domaines.De(Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].TrimEnd('/'));
+        ecrans = domaine?.Permis(Session).ToList() ?? [];
+    }
+}

@@ -1,0 +1,88 @@
+@page "/accueil"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Accueil (navigation en deux niveaux, docs/navigation.md) : ce qui attend l'employé aujourd'hui. Chaque tuile ouvre l'écran concerné
+   et n'apparaît que si l'employé peut l'ouvrir. Écran d'arrivée de qui a des droits de gestion (Domaines.Accueil) ;
+   le vendeur arrive directement sur la Caisse. *@
+<div class="page avec-menu">
+    <NavDomaine Libelle="Accueil">
+        <span class="nav-groupe-titre">Accueil</span>
+        <a href="accueil" class="active" aria-current="page">Tableau de bord</a>
+    </NavDomaine>
+
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Bonjour @Session.NomComplet<AideEcran Cle="accueil" /></h1>
+                <p class="sous-titre">Ce qui vous attend aujourd’hui. Chaque tuile ouvre l’écran concerné.</p>
+            </div>
+        </div>
+
+        @if (charge)
+        {
+            <div class="tuiles-accueil">
+                <a href="./?rubrique=urgent" class="tuile tuile-lien @(urgentes > 0 ? "tuile-urgente" : null)">
+                    <span class="tuile-libelle">Alertes urgentes</span>
+                    <span class="tuile-valeur">@urgentes</span>
+                    <span class="tuile-aller">Voir les alertes →</span>
+                </a>
+                @if (peremption is { } p)
+                {
+                    <a href="./?rubrique=peremption" class="tuile tuile-lien">
+                        <span class="tuile-libelle">Lots périmant dans les @(p.Jours / 30) mois</span>
+                        <span class="tuile-valeur">@p.Lots</span>
+                        <span class="detail">@p.Boites boîte(s) · @Libelles.Dinars(p.Valeur, 2)</span>
+                        <span class="tuile-aller">Voir les alertes →</span>
+                    </a>
+                }
+                @if (receptionsEnAttente is { } r)
+                {
+                    <a href="achats?onglet=receptions&vue=attente" class="tuile tuile-lien">
+                        <span class="tuile-libelle">Réceptions en attente</span>
+                        <span class="tuile-valeur">@r</span>
+                        <span class="detail">@(r == 0 ? "Aucune livraison en cours" : "Livraisons commencées, à reprendre")</span>
+                        <span class="tuile-aller">Reprendre →</span>
+                    </a>
+                }
+                @if (ecartsAValider is { } e)
+                {
+                    <a href="inventaire?rubrique=ecarts" class="tuile tuile-lien">
+                        <span class="tuile-libelle">Écarts d’inventaire à valider</span>
+                        <span class="tuile-valeur">@e</span>
+                        <span class="detail">@(e == 0 ? "Rien à valider" : "En attente du titulaire")</span>
+                        <span class="tuile-aller">Inventaire →</span>
+                    </a>
+                }
+            </div>
+        }
+        else
+        {
+            <Chargement />
+        }
+    </div>
+</div>
+
+@code {
+    private bool charge;
+    private int urgentes;
+    private HorizonPeremptionDto? peremption;
+    private int? receptionsEnAttente, ecartsAValider;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var (compte, _) = await Api.AlertesUrgentesAsync();
+        urgentes = compte?.Nombre ?? 0;
+        // Horizon le plus long des indicateurs de péremption (6 mois aujourd'hui)
+        var (ind, _) = await Api.IndicateursAlertesAsync();
+        peremption = ind?.Peremption.OrderByDescending(h => h.Jours).FirstOrDefault();
+        if (Session.A("achats.receptionner"))
+        {
+            var (attentes, err) = await Api.ReceptionsEnAttenteAsync();
+            receptionsEnAttente = err is null ? attentes.Count : null;
+        }
+        var (tableau, _) = await Api.TableauInventaireAsync();
+        ecartsAValider = tableau?.EcartsAValider.Count;
+        charge = true;
+    }
+}

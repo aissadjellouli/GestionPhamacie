@@ -6,7 +6,7 @@
 @* Écran fixe : une rubrique à la fois, menu vertical à gauche (docs/charte-graphique.md) ; la rubrique est dans l'adresse
    (rapports?rubrique=…). La période choisie reste la même d'une rubrique à l'autre. *@
 <div class="page avec-menu">
-    <nav class="nav-laterale" aria-label="Rubriques des rapports">
+    <NavDomaine Libelle="Rubriques des rapports">
         @foreach (var x in Rubriques)
         {
             if (x.Groupe is { } g)
@@ -21,12 +21,12 @@
                 </a>
             }
         }
-    </nav>
+    </NavDomaine>
 
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Rapports · @Courante.Libelle</h1>
+            <h1>Rapports · @Courante.Libelle<AideEcran Cle="rapports" /></h1>
             <p class="sous-titre">@(rapport?.Libelle ?? "Chargement…")</p>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap">

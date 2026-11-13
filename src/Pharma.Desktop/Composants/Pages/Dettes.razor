@@ -8,7 +8,7 @@
    Échéancier par ancienneté et alertes au-delà du délai réglé par le titulaire.
    Découpé en rubriques avec le menu vertical de l'Administration ; la rubrique est dans l'adresse (dettes?onglet=…). *@
 <div class="page avec-menu">
-    <nav class="nav-laterale" aria-label="Rubriques des dettes et créances">
+    <NavDomaine Libelle="Rubriques des dettes et créances">
         @foreach (var r in Rubriques)
         {
             @if (r.Groupe is { } g)
@@ -32,12 +32,12 @@
                 <span class="detail" style="margin-top: 6px">À payer</span><strong>@Libelles.Dinars(t.TotalDettes, 2)</strong>
             </div>
         }
-    </nav>
+    </NavDomaine>
 
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>Dettes et créances · @RubriqueCourante.Libelle</h1>
+            <h1>Dettes et créances · @RubriqueCourante.Libelle<AideEcran Cle="dettes" /></h1>
             <p class="sous-titre">@RubriqueCourante.SousTitre</p>
         </div>
         <button type="button" class="btn" disabled="@enCours" @onclick="ActualiserAsync">Actualiser</button>
