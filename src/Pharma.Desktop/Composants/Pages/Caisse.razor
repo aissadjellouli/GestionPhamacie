@@ -553,7 +553,11 @@
                 {
                     <div class="champ">
                         <label for="remise">Remise sur la part du patient, hors SHP (%)</label>
-                        <input id="remise" type="number" min="0" max="100" step="1" @bind="remisePct" @bind:after="RecalculerAsync" />
+                        @* Entier de 0 à 100 (2026-11-14) : chiffres seulement, 2 au plus sauf 100 ; le 0 s'efface dès qu'on tape (contenu
+                           sélectionné à l'entrée dans le champ) ; champ vidé : 0. Le plafond du rôle est appliqué par le serveur au recalcul. *@
+                        <input id="remise" @ref="champRemise" type="text" inputmode="numeric" maxlength="3" autocomplete="off" value="@RemiseTexte"
+                               onfocus="this.select()" onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
+                               @oninput="SaisieRemiseAsync" @onchange="RecalculerAsync" />
                     </div>
                 }
 
@@ -587,14 +591,17 @@
                 </div>
                 @if (mode == "especes")
                 {
-                    <div style="display: flex; gap: 12px; align-items: flex-end">
-                        <div class="champ" style="flex: 1">
+                    @* Rendu mis en avant (2026-11-14), à côté du montant reçu (la colonne garde sa hauteur : écran fixe) : grand chiffre
+                       sur une ligne, encadré coloré dès qu'il y a de la monnaie à rendre. Montant de cette vente seulement (aucun cumul :
+                       comptage aveugle de la caisse) *@
+                    <div class="paiement-especes">
+                        <div class="champ">
                             <label for="recu">Montant reçu (DA)</label>
                             <input id="recu" type="number" min="0" step="1" @bind="montantRecu" @bind:event="oninput" placeholder="Appoint exact" />
                         </div>
-                        <div class="champ" style="flex: 1">
+                        <div class="champ">
                             <span class="etiquette-champ">Rendu</span>
-                            <strong style="font-size: 20px; line-height: 44px">@Libelles.Dinars(Rendu, 2)</strong>
+                            <strong class="rendu-caisse @(Rendu > 0 ? "a-rendre" : null)" role="status" aria-live="polite">@Libelles.Dinars(Rendu, 2)</strong>
                         </div>
                     </div>
                 }
@@ -712,6 +719,23 @@
     private DateOnly datePrescription = DateOnly.FromDateTime(DateTime.Today);
     private string? numeroOrdonnance;
     private decimal remisePct;
+    private ElementReference champRemise;
+    private string RemiseTexte => ((int)remisePct).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Saisie de la remise : chiffres seulement, zéros de tête retirés (le 0 par défaut s'efface dès qu'on tape), champ vidé : 0 ;
+    /// 2 chiffres au plus, sauf 100 ; une frappe qui dépasserait 100 est refusée (la valeur précédente reste).
+    /// </summary>
+    private async Task SaisieRemiseAsync(ChangeEventArgs e)
+    {
+        var brut = e.Value?.ToString() ?? "";
+        var chiffres = CodeComptoirSaisie.Chiffres(brut).TrimStart('0');
+        if (chiffres.Length == 0) remisePct = 0;
+        else if (int.TryParse(chiffres, System.Globalization.CultureInfo.InvariantCulture, out var v) && v <= 100) remisePct = v;
+        // Affichage corrigé si la saisie a été retouchée (Blazor ne réécrit pas un champ dont la valeur rendue n'a pas changé)
+        if (brut != RemiseTexte) await JS.InvokeVoidAsync("pharma.fixerValeur", champRemise, RemiseTexte);
+    }
+
     private string mode = "especes";
     private decimal? montantRecu;
     private ApercuVenteDto? apercu;

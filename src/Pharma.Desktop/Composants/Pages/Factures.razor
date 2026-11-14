@@ -68,7 +68,7 @@
                         <td><button type="button" class="lien-bouton" @onclick="() => OuvrirAsync(f.Id)">Ouvrir</button></td>
                     </tr>
                 }
-                @if (factures.Count == 0) { <tr><td colspan="9" class="vide">Aucune facture.</td></tr> }
+                @if (factures.Count == 0) { <tr><td colspan="9" class="vide">Aucune facture.<ActionSuivante Libelle="Nouvelle facture" Action="() => Editer(Nouvelle, null)" /></td></tr> }
             </tbody>
             @if (totalReste > 0 && factures.Count > 0)
             {

@@ -75,7 +75,7 @@
                         @foreach (var s in suggestions)
                         {
                             <tr>
-                                <td><span class="nom">@s.Produit</span></td>
+                                <td><span class="nom"><LienProduit Texte="@s.Produit" /></span></td>
                                 <td><span class="pastille @(s.Statut == "rupture" ? "urgent" : "attention")">@(s.Statut == "rupture" ? "Rupture" : "Critique")</span></td>
                                 <td>@s.Stock</td>
                                 <td>@Math.Max(1, s.QteSuggeree)</td>

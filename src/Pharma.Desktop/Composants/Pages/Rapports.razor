@@ -348,7 +348,7 @@
                             {
                                 <tr>
                                     <td>@Libelles.DateHeureLocale(s.Date)</td>
-                                    <td class="nom">@s.Produit<br /><span class="detail">lot @s.Lot</span></td>
+                                    <td class="nom"><LienProduit Texte="@s.Produit" /><br /><span class="detail">lot <LienProduit Texte="@s.Lot" Lot="true" /></span></td>
                                     <td><span class="pastille @(s.Motif == "echantillon" ? "info" : "attention")">@MotifSortie(s.Motif)</span></td>
                                     <td>@s.Quantite</td>
                                     @if (valeur) { <td>@Libelles.Dinars(s.Valeur ?? 0, 2)</td> }

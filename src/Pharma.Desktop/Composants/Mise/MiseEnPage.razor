@@ -61,7 +61,7 @@
                 }
             </nav>
             <button type="button" class="bouton-recherche" @onclick="() => rechercheOuverte = true" title="Rechercher un écran, un produit, un patient (Ctrl + K)"
-                    aria-label="Rechercher partout (Ctrl + K)"><span aria-hidden="true">⌕</span> Rechercher… <span class="touche" aria-hidden="true">Ctrl K</span></button>
+                    aria-label="Rechercher partout (Ctrl + K)"><span aria-hidden="true">⌕</span><span class="texte-recherche"> Rechercher…</span> <span class="touche" aria-hidden="true">Ctrl K</span></button>
 
             <div class="outils-utilisateur">
                 @if (PremiereRubriqueAdmin is { } lienAdmin)
@@ -263,6 +263,7 @@
     [
         ("rapports", ["rapports.ventes"]), ("surveillance", ["role.titulaire"]), ("factures", ["factures.gerer"]), ("tresorerie", ["tresorerie.gerer"]), ("dettes", ["tresorerie.gerer"]),
         ("achats", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]), ("stock/registre", ["psychotropes.registre"]),
+        ("stock/etiquettes", ["stock.consulter", "achats.receptionner"]),
         .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))
     ];
     private string? messageAcces;

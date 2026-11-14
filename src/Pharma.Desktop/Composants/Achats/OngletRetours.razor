@@ -66,7 +66,7 @@
                     {
                         var aScanner = AScanner(l);
                         <tr>
-                            <td><span class="nom">@l.Lot.Produit</span><br /><span class="detail">lot @l.Lot.NumeroLot · exp. @Libelles.Date(l.Lot.DatePeremption)</span></td>
+                            <td><span class="nom"><LienProduit Texte="@l.Lot.Produit" /></span><br /><span class="detail">lot <LienProduit Texte="@l.Lot.NumeroLot" Lot="true" /> · exp. @Libelles.Date(l.Lot.DatePeremption)</span></td>
                             <td>@l.Lot.Fournisseur</td>
                             <td>@l.Lot.Disponible<br /><span class="detail">@l.Lot.BoitesIdentifiees identifiée(s)</span></td>
                             <td><input type="number" min="1" max="@l.Lot.Disponible" style="width: 80px" aria-label="Boîtes à retourner du lot @l.Lot.NumeroLot" @bind="l.Quantite"

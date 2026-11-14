@@ -27,7 +27,8 @@ public partial class App : Application
         // Chaque appel est compté : la barre de chargement du haut de la fenêtre s'affiche pendant les appels
         var appels = new AppelsEnCours();
         services.AddSingleton(appels);
-        var client = new HttpClient(new SuiviAppels(appels)) { BaseAddress = new Uri(api) };
+        // Délai d'abandon de chaque appel : celui de SuiviAppels (30 s, 2 min ou 10 min selon l'opération), pas les 100 s par défaut
+        var client = new HttpClient(new SuiviAppels(appels)) { BaseAddress = new Uri(api), Timeout = Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.Add("X-Pharma-Poste", Uri.EscapeDataString(poste.Poste));
         services.AddSingleton(client);
         services.AddSingleton(poste);

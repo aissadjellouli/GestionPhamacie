@@ -8,19 +8,62 @@
 {
     <div class="barre-chargement" role="progressbar" aria-label="Chargement en cours"></div>
 }
+@* Serveur lent (docs/navigation.md) : au-delà de 5 s d'attente continue, un bandeau le dit ; au-delà de 20 s, il invite à vérifier
+   le réseau ou le serveur. L'appel est abandonné à son délai (SuiviAppels : 30 s, 2 min pour un document, 10 min pour une
+   opération lourde) et l'écran affiche alors son message. *@
+@if (lenteur > 0)
+{
+    <div class="bandeau-lenteur @(lenteur == 2 ? "grave" : null)" role="status">
+        @(lenteur == 1 ? "Le serveur met du temps à répondre…"
+            : "Le serveur ne répond toujours pas : vérifiez le réseau et que le PC serveur est allumé. Une sauvegarde ou un export peut être long : patientez.")
+    </div>
+}
 
 @code {
     private static readonly TimeSpan DelaiApparition = TimeSpan.FromMilliseconds(300);
     private static readonly TimeSpan DureeMinimale = TimeSpan.FromMilliseconds(600);
     private static readonly TimeSpan DelaiExtinction = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan DelaiLent = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DelaiTresLent = TimeSpan.FromSeconds(20);
     private bool visible;
     private DateTime afficheeLe;
-    private CancellationTokenSource? attente;
+    private CancellationTokenSource? attente, surveillance;
+    /// <summary>0 : rien ; 1 : plus de 5 s d'attente ; 2 : plus de 20 s.</summary>
+    private int lenteur;
 
-    protected override void OnInitialized() => Appels.Change += SurChangement;
+    protected override void OnInitialized()
+    {
+        Appels.Change += SurChangement;
+        // Un appel a pu commencer avant (écran affiché avant la barre, ex. la connexion) : l'état présent est pris en compte tout de suite
+        if (Appels.Actif) SurChangement();
+    }
+
+    /// <summary>Attente continue (au moins un appel en cours) : bandeau à 5 s puis 20 s ; plus d'appel : le bandeau disparaît.</summary>
+    private void SurveillerLenteur() => _ = InvokeAsync(async () =>
+    {
+        if (!Appels.Actif)
+        {
+            surveillance?.Cancel(); surveillance = null;
+            if (lenteur > 0) { lenteur = 0; StateHasChanged(); }
+            return;
+        }
+        if (surveillance is not null) return;   // déjà en cours depuis le début de l'attente
+        var jeton = (surveillance = new CancellationTokenSource()).Token;
+        try
+        {
+            await Task.Delay(DelaiLent, jeton);
+            if (!Appels.Actif) return;
+            lenteur = 1; StateHasChanged();
+            await Task.Delay(DelaiTresLent - DelaiLent, jeton);
+            if (!Appels.Actif) return;
+            lenteur = 2; StateHasChanged();
+        }
+        catch (TaskCanceledException) { }
+    });
 
     private void SurChangement() => _ = InvokeAsync(async () =>
     {
+        SurveillerLenteur();
         attente?.Cancel();
         var jeton = (attente = new CancellationTokenSource()).Token;
         try
@@ -46,5 +89,6 @@
     {
         Appels.Change -= SurChangement;
         attente?.Cancel();
+        surveillance?.Cancel();
     }
 }

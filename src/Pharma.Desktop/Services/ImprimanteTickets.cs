@@ -67,6 +67,49 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
             }
         }).Task;
 
+    /// <summary>
+    /// Imprimante « fichier » de Windows (Microsoft Print to PDF, XPS, OneNote, port FILE: ou PORTPROMPT:…) : elle demande où
+    /// enregistrer un fichier au lieu d'imprimer.
+    /// </summary>
+    public static bool EstFichier(PrintQueue file)
+    {
+        string port;
+        try { port = file.QueuePort?.Name ?? ""; }
+        catch (Exception e) when (e is PrintQueueException or InvalidOperationException) { port = ""; }
+        return port is "PORTPROMPT:" or "FILE:" or "nul:" || port.StartsWith("XPS", StringComparison.OrdinalIgnoreCase)
+            || file.FullName.Contains("Print to PDF", StringComparison.OrdinalIgnoreCase)
+            || file.FullName.Contains("XPS Document Writer", StringComparison.OrdinalIgnoreCase)
+            || file.FullName.StartsWith("OneNote", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Vrai si l'imprimante de ce nom (installée dans Windows) enregistre un fichier au lieu d'imprimer.</summary>
+    public static bool EstFichier(string nom)
+    {
+        try
+        {
+            using var serveur = new LocalPrintServer();
+            var file = serveur.GetPrintQueues([EnumeratedPrintQueueTypes.Local, EnumeratedPrintQueueTypes.Connections])
+                .FirstOrDefault(q => string.Equals(q.FullName, nom, StringComparison.OrdinalIgnoreCase) || string.Equals(q.Name, nom, StringComparison.OrdinalIgnoreCase));
+            return file is not null && EstFichier(file);
+        }
+        catch (Exception e) when (e is PrintQueueException or InvalidOperationException) { return false; }
+    }
+
+    /// <summary>Nom de l'imprimante par défaut de Windows si c'est une imprimante « fichier » (Microsoft Print to PDF…) ; sinon null.</summary>
+    public static string? DefautFichier()
+    {
+        try
+        {
+            var defaut = LocalPrintServer.GetDefaultPrintQueue();
+            return defaut is not null && EstFichier(defaut) ? defaut.FullName : null;
+        }
+        catch (Exception e) when (e is PrintQueueException or InvalidOperationException) { return null; }
+    }
+
+    private static string MessageFichier(string nom) =>
+        $"Aucune imprimante de tickets n’est choisie pour ce poste, et l’imprimante par défaut de Windows est « {nom} », qui enregistre "
+        + "un fichier au lieu d’imprimer : rien n’a été imprimé. Choisissez l’imprimante de tickets dans Administration › Imprimantes et étiquettes.";
+
     private PrintQueue? TrouverFile(out string? erreur)
     {
         erreur = null;
@@ -75,6 +118,9 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         {
             var defaut = LocalPrintServer.GetDefaultPrintQueue();
             if (defaut is null) erreur = "Aucune imprimante par défaut dans Windows : installez l’imprimante de tickets ou déclarez-la (PHARMA_IMPRIMANTE_TICKETS).";
+            // Imprimante par défaut « fichier » (Microsoft Print to PDF…) : pas d'impression, une fenêtre « Enregistrer » bloquerait
+            // le comptoir ; l'imprimante choisie exprès dans le réglage, elle, est respectée même si c'est un PDF
+            else if (EstFichier(defaut)) { erreur = MessageFichier(defaut.FullName); return null; }
             return defaut;
         }
         var file = serveur.GetPrintQueues([EnumeratedPrintQueueTypes.Local, EnumeratedPrintQueueTypes.Connections])

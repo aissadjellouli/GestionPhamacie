@@ -11,12 +11,13 @@
   | Domaine | Écrans |
   |---|---|
   | Caisse (Ctrl + Maj + V) | Caisse (vente, annulation, crédit, tiroir, état, relève, clôture) |
-  | Stock (Ctrl + Maj + S) | Alertes, Stock, Inventaire, Registre des psychotropes, Traçabilité et rappel de lot |
-  | Achats (Ctrl + Maj + H) | Achats (commandes, réceptions, retours, étiquettes, règlements, grossistes) |
+  | Stock (Ctrl + Maj + S) | Alertes, Stock, Inventaire, Registre des psychotropes, Étiquettes internes (`stock/etiquettes`), Traçabilité et rappel de lot |
+  | Achats (Ctrl + Maj + H) | Achats (commandes, réceptions et réimpression des étiquettes d'une livraison, retours, règlements, grossistes) |
   | Finances (Ctrl + Maj + F) | Factures, Trésorerie, Dettes et créances (Chifa : à venir) |
   | Pilotage (Ctrl + Maj + P) | Rapports, Contrôle interne |
 
-  Un écran sans droit n'apparaît pas ; un domaine sans écran permis non plus. Description unique : `Services/Domaines.cs`.
+  Étiquettes internes : dans le Stock depuis le 2026-11-13 (stock.consulter ou achats.receptionner ; imprimer : achats.receptionner) ;
+  l'ancienne adresse `achats?onglet=etiquettes` y renvoie. Un écran sans droit n'apparaît pas ; un domaine sans écran permis non plus. Description unique : `Services/Domaines.cs`.
 - **Accueil selon les droits** : qui a un droit de gestion (achats, stock, rapports, trésorerie, factures, paramètres, titulaire)
   arrive sur le **tableau de bord** (`/accueil` : alertes urgentes, lots périmant dans les 6 mois, réceptions en attente, écarts
   d'inventaire à valider ; chaque tuile ouvre son écran et n'apparaît que si l'employé peut l'ouvrir) ; les autres (vendeur,
@@ -34,14 +35,26 @@
 - **Pas d'écran sans issue** : une liste vide sans filtre propose l'étape suivante (`ActionSuivante`) : aucun écart → aller au
   comptage ; aucun inventaire → commencer un comptage ; aucune réception en attente, aucun produit en stock → réceptionner une
   livraison ; aucun bon → voir les produits à commander ; aucun retour → préparer un retour ; registre vide sur la période → voir
-  les 12 derniers mois. Le bouton n'apparaît que si l'employé peut ouvrir l'écran proposé.
+  les 12 derniers mois ; aucun produit sensible → les choisir ; aucun emplacement → les créer ; aucune vente depuis l'ouverture
+  → aller à la vente ; aucune facture → nouvelle facture ; aucun compte → « Comptes et soldes ». Le bouton n'apparaît que si
+  l'employé peut ouvrir l'écran proposé.
 - **Produits et lots cliquables** (`LienProduit`, souligné en pointillé comme les contacts) : ouvrent le Stock filtré dessus ;
-  dans les écarts à valider, le résultat d'inventaire et le registre. **Jamais dans la feuille de comptage** (comptage à l'aveugle :
+  dans les écarts à valider, le résultat d'inventaire, le registre, Achats › À commander, Préparer un retour et Rapports › Sorties. **Jamais dans la feuille de comptage** (comptage à l'aveugle :
   le Stock montrerait les quantités).
 - **Clavier** (`poste.js`) : à l'ouverture d'un écran ou d'une rubrique, le curseur va dans sa première recherche (sauf s'il est
   déjà dans un champ) ; Échap efface la recherche, sauf si une liste de propositions ou une fenêtre est ouverte (Échap la ferme).
 - **Aide « ? »** à côté du titre de chaque écran de domaine (`AideEcran`) : quelques lignes sur l'écran, les raccourcis et le lien
-  vers le Guide ; Échap ferme. La Caisse n'a pas de titre : pas de « ? » pour l'instant.
+  vers le Guide ; Échap ferme. La Caisse n'a pas de titre : « ? Aide de la caisse » en bas de son menu.
+- **Serveur lent** (`BarreChargement`, `Services/AppelsEnCours.cs`) : barre fine en haut dès 0,3 s d'appel ; au-delà de 5 s d'attente continue,
+  bandeau « Le serveur met du temps à répondre… » ; au-delà de 20 s, bandeau rouge (vérifier le réseau et le PC serveur ; une sauvegarde
+  ou un export peut être long). Chaque appel est abandonné à son délai : 30 s en général, 2 min pour un document (PDF, export,
+  étiquettes, rapport), 10 min pour une opération lourde (sauvegarde, restauration, reprise, import de nomenclature ou de scans, GED) ;
+  l'écran affiche alors « Le serveur met trop de temps à répondre… ». Écran de connexion : il attend l'état du poste (3 s au plus)
+  avant d'afficher le bon mode.
+- **En-tête toujours sur une ligne**, menu des domaines toujours entier : selon la largeur utile (fenêtre ÷ zoom du poste, classes
+  `largeur-*` posées par `poste.js`), d'abord les lettres de raccourci disparaissent (≤ 1 850 px), puis « Rechercher… » devient la loupe
+  (≤ 1 650 px), puis le nom du logiciel et l'écran précédent se réduisent (≤ 1 450 px, ≤ 1 250 px).
+- **Caisse : F7** remet le curseur dans « Scanner ou rechercher un produit » (repris de l'exemple Wasfa) ; F12 encaisse.
 
 ## Retour à l'écran précédent
 

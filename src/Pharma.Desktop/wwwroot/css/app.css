@@ -126,6 +126,8 @@ input, select, button { font: inherit; }
 .bouton-aide { margin-left: 12px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--bordure-champ); background: var(--surface);
   color: var(--accent-texte); font: inherit; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer; vertical-align: middle; }
 .bouton-aide[aria-expanded="true"] { background: var(--accent-clair); }
+.lien-aide { display: inline-flex; align-items: center; gap: 8px; margin: 14px 12px 0; font-size: 14px; }
+.lien-aide .bouton-aide { margin-left: 0; width: 24px; height: 24px; font-size: 13px; display: inline-grid; place-items: center; }
 .panneau-aide { position: fixed; z-index: 45; top: 130px; right: 16px; width: 380px; max-width: calc(100vw - 32px); max-height: calc(100vh - 200px); overflow-y: auto;
   background: var(--surface); border: 1px solid var(--bordure); border-radius: 12px; box-shadow: 0 16px 40px rgba(16, 24, 40, 0.25); padding: 18px 20px;
   display: flex; flex-direction: column; gap: 10px; font-size: 14px; font-weight: 400; color: var(--texte); letter-spacing: 0; }
@@ -133,6 +135,17 @@ input, select, button { font: inherit; }
 .panneau-aide ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .panneau-aide .detail { margin: 0; }
 .pied-aide { display: flex; gap: 8px; justify-content: space-between; }
+/* Serveur lent : bandeau sous l'en-tête, au-dessus de l'écran (BarreChargement) */
+.bandeau-lenteur { position: fixed; z-index: 75; top: 84px; left: 50%; transform: translateX(-50%); max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 18px; border-radius: 999px; background: var(--avert-fond); border: 1px solid var(--avert-bord); color: var(--attention);
+  font-size: 14px; font-weight: 500; box-shadow: 0 6px 18px rgba(16, 24, 40, 0.18); text-align: center; }
+.bandeau-lenteur.grave { border-radius: 12px; background: var(--alerte-fond); border-color: var(--alerte-bord); color: var(--urgent); }
+/* Caisse : rendu mis en avant (montant de la vente en cours seulement), sur une ligne */
+.paiement-especes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; align-items: end; }
+.rendu-caisse { display: flex; align-items: center; justify-content: flex-end; box-sizing: border-box; height: 44px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--bordure); background: var(--surface-2); color: var(--texte); font-size: 26px; font-weight: 700; white-space: nowrap;
+  font-variant-numeric: tabular-nums; overflow: hidden; }
+.rendu-caisse.a-rendre { background: var(--avert-fond); border-color: var(--avert-bord); color: var(--attention); }
 /* Liste vide : l'étape suivante proposée */
 .action-suivante { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 10px; }
 td.vide .action-suivante { justify-content: center; }
@@ -699,7 +712,21 @@ a.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-
 .entete-interieur:has(.outils-utilisateur) { flex-wrap: nowrap; }
 .entete-interieur:has(.outils-utilisateur) .nav { flex: 1 1 auto; min-width: 0; }
 .entete-interieur:has(.outils-utilisateur) > :is(.marque, .bouton-retour, .outils-utilisateur) { flex: none; }
-.entete-interieur:has(.outils-utilisateur) .nav { flex-wrap: wrap; }
+/* Menu des domaines toujours sur une ligne et toujours entier (2026-11-14) : il garde sa largeur ; quand la fenêtre se resserre
+   (ou au zoom), ce sont les autres éléments de l'en-tête qui se compactent, par étapes. L'en-tête garde sa hauteur : l'écran reste fixe. */
+.entete-interieur:has(.outils-utilisateur) .nav { flex: 1 0 auto; flex-wrap: nowrap; min-width: max-content; }
+/* Étapes selon la largeur utile (fenêtre ÷ zoom du poste), classes posées par poste.js (pharma.largeur) :
+   1. lettres de raccourci masquées (toujours dans l'info-bulle ; Ctrl + Maj + lettre marche toujours) */
+.largeur-1850 .entete .nav .touche { display: none; }
+/* 2. « Rechercher… » devient la loupe seule (Ctrl K reste affiché) */
+.largeur-1650 .entete .bouton-recherche .texte-recherche { display: none; }
+/* 3. Logo seul à gauche (nom au survol), espaces resserrés, écran précédent abrégé */
+.largeur-1450 .entete .marque { width: auto; flex: none; padding-left: 16px; }
+.largeur-1450 .entete .marque-textes { display: none; }
+.largeur-1450 .entete-interieur:has(.outils-utilisateur) .nav :is(a, .nav-bouton) { padding-left: 6px; padding-right: 6px; letter-spacing: 0; }
+.largeur-1450 .entete .libelle-retour { max-width: 110px; }
+/* 4. Très étroit : « Ctrl K » et le nom de l'écran précédent disparaissent aussi (la flèche ← reste) */
+.largeur-1250 .entete .bouton-recherche .touche, .largeur-1250 .entete .libelle-retour { display: none; }
 /* Menu un peu resserré (l'en-tête ne dépasse jamais 1 440 px de large) pour rester sur un rang */
 @media (min-width: 0px) {
   .entete-interieur:has(.outils-utilisateur) .nav :is(a, .nav-bouton) { padding-left: 7px; padding-right: 7px; font-size: 13px; letter-spacing: 0.02em; }

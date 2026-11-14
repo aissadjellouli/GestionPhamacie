@@ -1,3 +1,5 @@
+using Pharma.Domain.Securite;
+
 namespace Pharma.Application.Alertes;
 
 public sealed record Alerte(
@@ -7,10 +9,10 @@ public sealed record Alerte(
 
 public interface IAlertesLecture
 {
-    /// <summary>Alertes nouvelles ou vues, triées par urgence puis par montant en jeu ; titulaire : aussi les alertes qui lui sont réservées.</summary>
-    Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(bool titulaire, CancellationToken ct = default);
-    /// <summary>Nombre d'alertes urgentes ouvertes (pastille du bandeau, lue à chaque navigation).</summary>
-    Task<int> CompterUrgentesAsync(bool titulaire, CancellationToken ct = default);
+    /// <summary>Alertes nouvelles ou vues des types donnés (AlertesSelonDroits), triées par urgence puis par montant en jeu.</summary>
+    Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(IReadOnlyCollection<string> types, CancellationToken ct = default);
+    /// <summary>Nombre d'alertes urgentes ouvertes des types donnés (pastille du menu, tuile de l'accueil).</summary>
+    Task<int> CompterUrgentesAsync(IReadOnlyCollection<string> types, CancellationToken ct = default);
 }
 
 /// <summary>Alertes réservées au titulaire : elles nomment un employé (ancien lot délaissé par un vendeur).</summary>
@@ -18,6 +20,36 @@ public static class AlertesReservees
 {
     public const string LotDelaisse = "lot_delaisse";
     public static readonly IReadOnlySet<string> Types = new HashSet<string> { LotDelaisse };
+}
+
+/// <summary>
+/// Une alerte n'est montrée (liste, compteur du menu, tuile de l'accueil) et ne peut être traitée ou reportée que par qui peut agir
+/// dessus (choix du 2026-11-13, docs/regles-metier.md) : rupture et stock critique → commander ; surstock et dormant → commander
+/// ou ajuster le stock ; périmé → déclarer périmé ou retourner au grossiste ; péremption proche et risque d'écoulement → vendre
+/// d'abord ou retourner ; ancien lot délaissé → titulaire seul. Le titulaire voit tout.
+/// </summary>
+public static class AlertesSelonDroits
+{
+    private static readonly (string Type, string[] Droits)[] Regles =
+    [
+        ("rupture", [Permissions.AchatsCommander]),
+        ("stock_critique", [Permissions.AchatsCommander]),
+        ("surstock", [Permissions.AchatsCommander, Permissions.StockAjuster]),
+        ("dormant", [Permissions.AchatsCommander, Permissions.StockAjuster]),
+        ("perime", [Permissions.StockDeclarerPerime, Permissions.AchatsRetourFournisseur]),
+        ("peremption", [Permissions.CaisseVendre, Permissions.AchatsRetourFournisseur]),
+        ("risque_ecoulement", [Permissions.CaisseVendre, Permissions.AchatsRetourFournisseur]),
+        (AlertesReservees.LotDelaisse, []),   // titulaire seul
+    ];
+
+    /// <summary>Tous les types d'alerte connus (contrainte alerte_type_check).</summary>
+    public static IReadOnlyList<string> Tous => Regles.Select(r => r.Type).ToList();
+
+    public static IReadOnlyList<string> TypesVisibles(bool titulaire, IReadOnlyCollection<string> permissions) =>
+        titulaire ? Tous : Regles.Where(r => r.Droits.Any(permissions.Contains)).Select(r => r.Type).ToList();
+
+    public static async Task<IReadOnlyList<string>> TypesVisiblesAsync(Securite.IPermissionService droits, long utilisateurId, CancellationToken ct) =>
+        TypesVisibles(await droits.EstTitulaireAsync(utilisateurId, ct), (await droits.ListerAsync(utilisateurId, ct)).ToHashSet());
 }
 
 /// <summary>Ancien lot délaissé, créé ou passé à « urgent » après une vente (fonction SQL alerter_lots_delaisses).</summary>
@@ -38,10 +70,10 @@ public interface IMoteurAlertes
 public sealed class ListerAlertesOuvertes(IAlertesLecture alertes, Securite.IPermissionService droits)
 {
     public async Task<IReadOnlyList<Alerte>> ExecuterAsync(long utilisateurId, CancellationToken ct = default) =>
-        await alertes.ListerOuvertesAsync(await droits.EstTitulaireAsync(utilisateurId, ct), ct);
+        await alertes.ListerOuvertesAsync(await AlertesSelonDroits.TypesVisiblesAsync(droits, utilisateurId, ct), ct);
 
     public async Task<int> CompterUrgentesAsync(long utilisateurId, CancellationToken ct = default) =>
-        await alertes.CompterUrgentesAsync(await droits.EstTitulaireAsync(utilisateurId, ct), ct);
+        await alertes.CompterUrgentesAsync(await AlertesSelonDroits.TypesVisiblesAsync(droits, utilisateurId, ct), ct);
 
     /// <summary>
     /// Liste des alertes paginée et filtrée par le serveur (toutes, urgent, peremption, stock), avec ce que les tuiles et les

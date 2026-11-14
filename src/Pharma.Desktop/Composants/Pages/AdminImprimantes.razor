@@ -51,6 +51,18 @@
                     </select>
                 </div>
             </div>
+            @if (string.IsNullOrEmpty(v.ImprimanteTickets) && defautFichier is { } pdf)
+            {
+                @* L'imprimante par défaut de Windows enregistre un fichier : le poste n'imprime pas les tickets dessus (ImprimanteTickets) *@
+                <div class="bandeau-attention" role="status">L’imprimante par défaut de Windows est « @pdf », qui enregistre un fichier au lieu d’imprimer :
+                    tickets et reçus ne seront pas imprimés. Choisissez l’imprimante de tickets dans la liste.</div>
+            }
+            else if (v.ImprimanteTickets is { Length: > 0 } imprimanteFichier && ImprimanteTickets.EstFichier(imprimanteFichier))
+            {
+                @* Imprimante « fichier » choisie exprès : respectée, mais chaque ticket ou reçu ouvre une fenêtre « Enregistrer » *@
+                <div class="bandeau-attention" role="status">« @imprimanteFichier » enregistre un fichier au lieu d’imprimer : à chaque ticket ou reçu,
+                    Windows demandera où enregistrer le PDF. Pour le comptoir, choisissez l’imprimante de tickets.</div>
+            }
             <label class="case"><input type="checkbox" @bind="v.TicketAutomatique" /><span>Imprimer le ticket automatiquement après chaque vente</span></label>
             <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
                 <button type="button" class="btn" disabled="@enCours" @onclick="EssaiTicketAsync">Imprimer un ticket d’essai</button>
@@ -170,7 +182,11 @@
         ports = AfficheurClient.Ports();
         largeur = Tickets.LargeurMm;
         imprimantes = ImprimanteTickets.Installees();
+        defautFichier = ImprimanteTickets.DefautFichier();
     }
+
+    /// <summary>Imprimante par défaut de Windows si elle enregistre un fichier (Microsoft Print to PDF…) : avertissement.</summary>
+    private string? defautFichier;
 
     /// <summary>Imprimante installée pendant que la page est ouverte : relecture de la liste de Windows.</summary>
     private void Actualiser()
@@ -178,6 +194,7 @@
         (erreur, message) = (null, null);
         var avant = imprimantes.Count;
         imprimantes = ImprimanteTickets.Installees();
+        defautFichier = ImprimanteTickets.DefautFichier();
         message = imprimantes.Count == 0
             ? "Aucune imprimante dans Windows : installez le pilote de l’imprimante de tickets."
             : $"{imprimantes.Count} imprimante(s) dans Windows{(imprimantes.Count > avant ? $", dont {imprimantes.Count - avant} nouvelle(s)" : "")} : {string.Join(", ", imprimantes.Select(i => i.Nom))}.";

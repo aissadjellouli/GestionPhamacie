@@ -50,9 +50,6 @@
             case "retours":
                 <OngletRetours Vue="@vue" LotId="Lot" ProduitId="Produit" NumeroLot="@NumeroLot" Motif="@Motif" />
                 break;
-            case "etiquettes":
-                <OngletEtiquettes LotId="Lot" />
-                break;
             case "reglements":
                 <OngletReglements Grossiste="Grossiste" />
                 break;
@@ -95,7 +92,6 @@
         new("retours", "preparer", "Préparer un retour", "Lots à rendre au grossiste : périmés, rappelés, abîmés", Session.A("achats.retour_fournisseur"), true),
         new("retours", "liste", "Retours fournisseurs", "Retours préparés, envoyés, et leurs avoirs", Session.A("achats.retour_fournisseur"), true),
         new("", null, "", "", Groupe: "Autres"),
-        new("etiquettes", null, "Étiquettes internes", "Lots à étiqueter : une étiquette par boîte sans Data Matrix", Session.A("achats.receptionner") || Session.A("stock.consulter"), true),
         new("reglements", null, "Règlements", "Dette et relevé de chaque grossiste, règlements", Session.A("achats.regler"), true),
         new("grossistes", null, "Grossistes", "Fiches des grossistes, dette et délai de reprise", true, true)
     ];
@@ -112,6 +108,9 @@
 
     protected override void OnParametersSet()
     {
+        // Étiquettes internes : passées dans le domaine Stock (stock/etiquettes) ; une ancienne adresse y renvoie
+        // (l'onglet affiché est quand même calculé ci-dessous : l'écran reste valide le temps de la redirection)
+        if (Onglet == "etiquettes") Nav.NavigateTo(Lot is { } l ? $"stock/etiquettes?lot={l}" : "stock/etiquettes", replace: true);
         var voulu = Onglet ?? "commandes";
         // Premier onglet autorisé si celui demandé ne l'est pas
         onglet = Rubriques.FirstOrDefault(r => r.Groupe is null && r.Onglet == voulu && r.Permis)?.Onglet

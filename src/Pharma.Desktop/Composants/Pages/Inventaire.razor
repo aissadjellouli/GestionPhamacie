@@ -92,7 +92,11 @@
         }
         @if (rubrique == "sensibles")
         {
-            @if (tableau.Sensibles is not { Produits: > 0 }) { <p class="vide">Aucun produit sensible : le titulaire les choisit dans Contrôle interne.</p> }
+            @if (tableau.Sensibles is not { Produits: > 0 })
+            {
+                <p class="vide">Aucun produit sensible : le titulaire les choisit dans Contrôle interne.</p>
+                <ActionSuivante Libelle="Choisir les produits sensibles" Lien="surveillance?onglet=sensibles" Droits='["role.titulaire"]' />
+            }
             @if (tableau.Sensibles is { Produits: > 0 } sens)
             {
                 @* Produits sensibles (choisis par le titulaire dans Surveillance) : comptés à part, régulièrement *@
@@ -122,6 +126,7 @@
                 @if (tableau.Rayons.Count == 0)
                 {
                     <p class="vide">Aucun emplacement : créez les rayons dans Administration, Emplacements, puis rangez les produits.</p>
+                    <ActionSuivante Libelle="Créer les emplacements" Lien="admin/emplacements" Droits='["admin.parametres"]' />
                 }
                 else
                 {

@@ -7,6 +7,14 @@ window.pharma = {
   ecouterF12: function (reference) { this._caisse = reference; },
   arreterF12: function () { this._caisse = null; },
 
+  // Champ dont la saisie a été corrigée par l'écran (ex. remise : « 05 » → « 5 », champ vidé → « 0 ») : valeur affichée réécrite,
+  // curseur en fin de champ
+  fixerValeur: function (champ, valeur) {
+    if (!champ || champ.value === valeur) return;
+    champ.value = valeur;
+    try { champ.setSelectionRange(valeur.length, valeur.length); } catch (e) { }
+  },
+
   // Secondes écoulées depuis la dernière action (clavier, souris, scanner)
   inactiviteSecondes: function () { return Math.floor((Date.now() - this._derniereActivite) / 1000); }
 };
@@ -16,6 +24,11 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'F12' && window.pharma._caisse) {
     e.preventDefault();
     window.pharma._caisse.invokeMethodAsync('SurF12');
+  }
+  // Caisse : F7 place le curseur dans « Scanner ou rechercher un produit », d'où qu'on soit sur l'écran de vente
+  if (e.key === 'F7' && window.pharma._caisse) {
+    var scan = document.getElementById('scan');
+    if (scan) { e.preventDefault(); scan.focus(); scan.select(); }
   }
   // Navigation (docs/navigation.md) : Ctrl + K ouvre la recherche partout ; Ctrl + Maj + lettre ouvre le domaine qui l'affiche
   // dans le menu du haut (data-touche ; un domaine sans droit n'y est pas, le raccourci ne fait alors rien)
@@ -232,8 +245,24 @@ window.pharma.zoom = {
   appliquer: function (v) {
     document.documentElement.style.zoom = v === 100 ? "" : (v / 100).toString();
     try { localStorage.setItem(this._cle, String(v)); } catch (e) { }
+    window.pharma.largeur.maj();
   }
 };
+
+// Largeur utile de l'écran (fenêtre ÷ zoom) : les règles « @media (max-width) » ne voient pas le zoom (propriété CSS zoom) ;
+// ces classes, si : l'en-tête se compacte par étapes (app.css, « Menu des domaines toujours sur une ligne »)
+window.pharma.largeur = {
+  maj: function () {
+    const zoom = parseFloat(document.documentElement.style.zoom) || 1;
+    const utile = window.innerWidth / zoom;
+    const c = document.documentElement.classList;
+    c.toggle("largeur-1850", utile <= 1850);
+    c.toggle("largeur-1650", utile <= 1650);
+    c.toggle("largeur-1450", utile <= 1450);
+    c.toggle("largeur-1250", utile <= 1250);
+  }
+};
+window.addEventListener("resize", function () { window.pharma.largeur.maj(); });
 window.pharma.zoom.appliquer(window.pharma.zoom.lire());
 
 // Tableaux : l'écran reste fixe (titre, menu, filtres, pagination), seul le tableau défile dans son cadre

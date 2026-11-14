@@ -43,6 +43,8 @@
             <span class="detail">@Poste@(Poste is null ? "" : " · ")vendeur : @Session.NomComplet</span>
         </div>
     }
+    @* La Caisse n'a pas de titre : son aide est en bas du menu *@
+    <AideEcran Cle="caisse" Libelle="Aide de la caisse" />
 </NavDomaine>
 
 @code {

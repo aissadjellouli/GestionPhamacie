@@ -1,0 +1,23 @@
+@page "/stock/etiquettes"
+
+@* Étiquettes internes, dans le domaine Stock (2026-11-13) : boîtes en stock sans identité (ni Data Matrix ni étiquette interne).
+   Ouvert à stock.consulter ou achats.receptionner (comme la liste côté serveur) ; imprimer demande achats.receptionner
+   (bouton désactivé sinon). La réimpression d'une livraison reste dans Achats › Réceptionner et Historique. *@
+<div class="page avec-menu">
+    <NavDomaine Libelle="Écrans du stock" />
+
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Étiquettes internes<AideEcran Cle="stock/etiquettes" /></h1>
+                <p class="sous-titre">Lots à étiqueter : une étiquette par boîte sans Data Matrix</p>
+            </div>
+        </div>
+        <OngletEtiquettes LotId="Lot" />
+    </div>
+</div>
+
+@code {
+    /// <summary>Lot à afficher seul (ex. depuis une alerte ou la traçabilité).</summary>
+    [SupplyParameterFromQuery(Name = "lot")] public long? Lot { get; set; }
+}

@@ -4,8 +4,16 @@
    et le lien vers le Guide. Placée dans le h1 de chaque écran de domaine (test NavigationTests). Échap ferme. *@
 @if (Textes.TryGetValue(Cle, out var aide))
 {
-    <button type="button" class="bouton-aide" title="Aide de cet écran" aria-label="@($"Aide : {aide.Titre}")" aria-expanded="@(ouverte ? "true" : "false")"
-            @onclick="() => ouverte = !ouverte">?</button>
+    @if (Libelle is null)
+    {
+        <button type="button" class="bouton-aide" title="Aide de cet écran" aria-label="@($"Aide : {aide.Titre}")" aria-expanded="@(ouverte ? "true" : "false")"
+                @onclick="() => ouverte = !ouverte">?</button>
+    }
+    else
+    {
+        @* Écran sans titre (Caisse) : l'aide est un lien du menu *@
+        <button type="button" class="lien-bouton lien-aide" aria-expanded="@(ouverte ? "true" : "false")" @onclick="() => ouverte = !ouverte"><span class="bouton-aide" aria-hidden="true">?</span> @Libelle</button>
+    }
     @if (ouverte)
     {
         <aside class="panneau-aide" role="dialog" aria-label="@($"Aide : {aide.Titre}")" @onkeydown="Touche" tabindex="-1">
@@ -25,6 +33,8 @@
 @code {
     /// <summary>Écran (chemin sans « / » : « inventaire », « stock/registre »… ; vide : Alertes).</summary>
     [Parameter, EditorRequired] public string Cle { get; set; } = "";
+    /// <summary>Texte du lien (écran sans titre, ex. « Aide de la caisse ») ; sans texte : le rond « ? » à côté du titre.</summary>
+    [Parameter] public string? Libelle { get; set; }
 
     private bool ouverte;
     private void Touche(KeyboardEventArgs e) { if (e.Key == "Escape") ouverte = false; }
@@ -43,9 +53,11 @@
             "Scannez chaque boîte ou saisissez le nombre ; 0 si le lot est introuvable.", "Les petits écarts sont corrigés tout de suite, les gros attendent le titulaire."]),
         ["stock/registre"] = new("Registre des psychotropes", ["Entrées et sorties numérotées, non modifiables.",
             "Consultation sur toute période ; export PDF ou CSV : un an par fichier.", "Noms en clair pour le titulaire seul."]),
+        ["stock/etiquettes"] = new("Étiquettes internes", ["Boîtes en stock sans Data Matrix ni étiquette : une étiquette par boîte, collée avant le rangement.",
+            "Chaque étiquette porte un code unique qui suit la boîte jusqu’au patient.", "Imprimer demande le droit de réceptionner ; la réimpression d’une livraison est dans Achats › Historique."]),
         ["tracabilite"] = new("Traçabilité et rappel de lot", ["Scannez une boîte pour voir son parcours, du grossiste au patient.",
             "Rappel de lot : choisissez le produit et le lot ; les boîtes vendues sont retrouvées."]),
-        ["caisse"] = new("Caisse", ["Scannez ou recherchez le produit, puis encaissez (F12).", "Tiers payant : choisissez le patient et l’organisme.",
+        ["caisse"] = new("Caisse", ["Scannez ou recherchez le produit (F7 : retour à la recherche), puis encaissez (F12).", "Tiers payant : choisissez le patient et l’organisme.",
             "« ⇄ Changer » : passer la main sans fermer la caisse (relève proposée)."]),
         ["achats"] = new("Achats", ["Commandes : produits à commander, puis bons par grossiste.",
             "Réceptions : comptage à l’aveugle, puis facture saisie par une autre personne.", "Retours, étiquettes, règlements et grossistes dans le même écran."]),

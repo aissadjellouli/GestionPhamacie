@@ -47,7 +47,7 @@
                         <thead><tr><th scope="col">Employé</th><th scope="col" class="nombre">Ventes</th></tr></thead>
                         <tbody>
                             @foreach (var v in e.ParEmploye) { <tr><td>@v.Employe</td><td class="nombre">@v.Ventes</td></tr> }
-                            @if (e.ParEmploye.Count == 0) { <tr><td colspan="2" class="vide">Aucune vente depuis l’ouverture.</td></tr> }
+                            @if (e.ParEmploye.Count == 0) { <tr><td colspan="2" class="vide">Aucune vente depuis l’ouverture.<ActionSuivante Libelle="Aller à la vente" Lien="caisse" Droits='["caisse.vendre"]' /></td></tr> }
                         </tbody>
                     </table>
                 </div>

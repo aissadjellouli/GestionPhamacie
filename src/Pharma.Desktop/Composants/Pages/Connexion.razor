@@ -10,7 +10,12 @@
         <p class="sous-titre">Chaque employé se connecte avec son propre identifiant.</p>
     </div>
 
-    @if (caisseOuverte && !superAdmin)
+    @* Le mode (code comptoir si la caisse du poste est ouverte, sinon mot de passe) est connu avant d'afficher : pas de bascule *@
+    @if (!pret)
+    {
+        <Chargement />
+    }
+    @if (pret && caisseOuverte && !superAdmin)
     {
         <div class="onglets-connexion" role="tablist" aria-label="Mode de connexion">
             <button type="button" role="tab" aria-selected="@(parCode ? "true" : "false")" class="@(parCode ? "actif" : null)" @onclick="() => Basculer(true)">Code comptoir</button>
@@ -18,7 +23,11 @@
         </div>
     }
 
-    @if (superAdmin)
+    @if (!pret)
+    {
+        @* en attente de l'état du poste (au plus 3 secondes) *@
+    }
+    else if (superAdmin)
     {
         <form class="carte" @onsubmit="SeConnecterSuperAdminAsync">
             <h2 style="margin: 0">Super admin</h2>
@@ -104,10 +113,44 @@
     private bool MotDePasseManque => Obligatoire.Manque(controle, motDePasse);
     private bool CodeManque => Obligatoire.Manque(controle, code);
 
+    /// <summary>État du poste connu (ou délai dépassé) : le formulaire s'affiche directement dans le bon mode.</summary>
+    private bool pret;
+
+    /// <summary>
+    /// Dernier état connu de la caisse du poste (gardé tant que le poste est ouvert) : au changement d'utilisateur, le bon
+    /// formulaire s'affiche aussitôt, puis l'état est relu en arrière-plan. Seul le premier lancement attend le serveur.
+    /// </summary>
+    private static bool? caisseOuverteConnue;
+
     protected override async Task OnInitializedAsync()
     {
-        var (comptoir, _) = await Api.ComptoirAsync();
-        parCode = caisseOuverte = comptoir?.CaisseOuverte == true;
+        if (caisseOuverteConnue is { } connue)
+        {
+            (parCode, caisseOuverte, pret) = (connue, connue, true);
+            _ = RelireEnArrierePlanAsync();
+            return;
+        }
+        // Premier lancement : attente du serveur, 3 secondes au plus ; sinon mot de passe (le code comptoir demande une caisse ouverte)
+        var lecture = Api.ComptoirAsync();
+        if (await Task.WhenAny(lecture, Task.Delay(TimeSpan.FromSeconds(3))) == lecture)
+        {
+            var (comptoir, e) = await lecture;
+            parCode = caisseOuverte = comptoir?.CaisseOuverte == true;
+            if (e is null) caisseOuverteConnue = caisseOuverte;
+        }
+        pret = true;
+    }
+
+    /// <summary>État relu : s'il a changé (caisse fermée entre-temps), le formulaire suit, sauf si l'employé a déjà commencé à saisir.</summary>
+    private async Task RelireEnArrierePlanAsync()
+    {
+        var (comptoir, e) = await Api.ComptoirAsync();
+        if (e is not null || comptoir is null) return;
+        caisseOuverteConnue = comptoir.CaisseOuverte;
+        if (comptoir.CaisseOuverte == caisseOuverte) return;
+        caisseOuverte = comptoir.CaisseOuverte;
+        if (string.IsNullOrEmpty(identifiant) && string.IsNullOrEmpty(vendeur) && !superAdmin) parCode = caisseOuverte;
+        await InvokeAsync(StateHasChanged);
     }
 
     private void Basculer(bool versCode)

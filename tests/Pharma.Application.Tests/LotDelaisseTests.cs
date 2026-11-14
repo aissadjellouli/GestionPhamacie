@@ -20,15 +20,16 @@ internal sealed class LotsDelaissesFactices(params AlerteLotDelaisse[] alertes) 
 
 internal sealed class AlertesLectureEspion : IAlertesLecture
 {
-    public List<bool> Titulaire { get; } = [];
-    public Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(bool titulaire, CancellationToken ct = default)
+    /// <summary>Types demandés à chaque lecture.</summary>
+    public List<IReadOnlyCollection<string>> Types { get; } = [];
+    public Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(IReadOnlyCollection<string> types, CancellationToken ct = default)
     {
-        Titulaire.Add(titulaire);
+        Types.Add(types);
         return Task.FromResult<IReadOnlyList<Alerte>>([]);
     }
-    public Task<int> CompterUrgentesAsync(bool titulaire, CancellationToken ct = default)
+    public Task<int> CompterUrgentesAsync(IReadOnlyCollection<string> types, CancellationToken ct = default)
     {
-        Titulaire.Add(titulaire);
+        Types.Add(types);
         return Task.FromResult(0);
     }
 }
@@ -105,11 +106,29 @@ public class LotDelaisseTests
     public async Task Alertes_reservees_vues_par_le_titulaire_seul()
     {
         var lecture = new AlertesLectureEspion();
-        await new ListerAlertesOuvertes(lecture, new DroitsFactices("stock.consulter")).ExecuterAsync(5);
+        await new ListerAlertesOuvertes(lecture, new DroitsFactices("stock.consulter", "achats.commander", "stock.ajuster")).ExecuterAsync(5);
         await new ListerAlertesOuvertes(lecture, new DroitsFactices { Titulaire = true }).ExecuterAsync(1);
-        await new ListerAlertesOuvertes(lecture, new DroitsFactices("stock.consulter")).CompterUrgentesAsync(5);
-        Assert.Equal([false, true, false], lecture.Titulaire);
+        await new ListerAlertesOuvertes(lecture, new DroitsFactices("stock.consulter", "achats.commander")).CompterUrgentesAsync(5);
+        Assert.DoesNotContain("lot_delaisse", lecture.Types[0]);
+        Assert.Contains("lot_delaisse", lecture.Types[1]);
+        Assert.DoesNotContain("lot_delaisse", lecture.Types[2]);
         Assert.Contains("lot_delaisse", AlertesReservees.Types);
+    }
+
+    [Fact]
+    public void Chaque_employe_voit_les_alertes_sur_lesquelles_il_peut_agir()
+    {
+        // Vendeur : vendre (et réceptionner) ; il peut vendre d'abord un lot qui périme, pas commander ni ajuster
+        Assert.Equal(["peremption", "risque_ecoulement"],
+            AlertesSelonDroits.TypesVisibles(false, ["caisse.vendre", "stock.consulter", "achats.receptionner"]).Order());
+        // Commander : ruptures, stocks critiques, surstocks et dormants
+        Assert.Equal(["dormant", "rupture", "stock_critique", "surstock"], AlertesSelonDroits.TypesVisibles(false, ["achats.commander"]).Order());
+        // Périmé : déclarer périmé ou retourner au grossiste ; le retour vaut aussi pour les lots qui périment bientôt
+        Assert.Equal(["peremption", "perime", "risque_ecoulement"], AlertesSelonDroits.TypesVisibles(false, ["achats.retour_fournisseur"]).Order());
+        Assert.Equal(["perime"], AlertesSelonDroits.TypesVisibles(false, ["stock.declarer_perime"]));
+        // Aucun droit d'action : aucune alerte ; le titulaire voit tout, ancien lot délaissé compris
+        Assert.Empty(AlertesSelonDroits.TypesVisibles(false, ["stock.consulter"]));
+        Assert.Equal(8, AlertesSelonDroits.TypesVisibles(true, []).Count);
     }
 
     [Fact]

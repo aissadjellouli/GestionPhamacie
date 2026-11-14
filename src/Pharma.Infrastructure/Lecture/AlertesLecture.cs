@@ -5,16 +5,15 @@ namespace Pharma.Infrastructure.Lecture;
 
 public sealed class AlertesLecture(NpgsqlDataSource db) : IAlertesLecture
 {
-    // Même périmètre que la liste : alertes nouvelles ou vues (index idx_alerte_ouverte_tri)
-    public async Task<int> CompterUrgentesAsync(bool titulaire, CancellationToken ct = default)
+    // Même périmètre que la liste : alertes nouvelles ou vues (index idx_alerte_ouverte_tri), des types visibles par l'employé
+    public async Task<int> CompterUrgentesAsync(IReadOnlyCollection<string> types, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT count(*)::int FROM alerte WHERE statut IN ('nouvelle', 'vue') AND niveau = 'urgent' AND ($1 OR type <> ALL ($2))");
-        cmd.Parameters.AddWithValue(titulaire);
-        cmd.Parameters.AddWithValue(AlertesReservees.Types.ToArray());
+        await using var cmd = db.CreateCommand("SELECT count(*)::int FROM alerte WHERE statut IN ('nouvelle', 'vue') AND niveau = 'urgent' AND type = ANY ($1)");
+        cmd.Parameters.AddWithValue(types.ToArray());
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
-    public async Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(bool titulaire, CancellationToken ct = default)
+    public async Task<IReadOnlyList<Alerte>> ListerOuvertesAsync(IReadOnlyCollection<string> types, CancellationToken ct = default)
     {
         const string sql = """
             SELECT a.id, a.type, a.niveau, a.produit_id, a.lot_id, a.message, a.valeur_dzd, a.statut,
@@ -25,13 +24,12 @@ public sealed class AlertesLecture(NpgsqlDataSource db) : IAlertesLecture
             LEFT JOIN lot l ON l.id = a.lot_id
             LEFT JOIN emplacement ev ON ev.id = p.emplacement_id
             LEFT JOIN emplacement er ON er.id = p.reserve_id
-            WHERE a.statut IN ('nouvelle', 'vue') AND ($1 OR a.type <> ALL ($2))
+            WHERE a.statut IN ('nouvelle', 'vue') AND a.type = ANY ($1)
             ORDER BY CASE a.niveau WHEN 'urgent' THEN 0 WHEN 'attention' THEN 1 ELSE 2 END,
                      a.valeur_dzd DESC NULLS LAST, a.mise_a_jour_le DESC
             """;
         await using var cmd = db.CreateCommand(sql);
-        cmd.Parameters.AddWithValue(titulaire);
-        cmd.Parameters.AddWithValue(AlertesReservees.Types.ToArray());
+        cmd.Parameters.AddWithValue(types.ToArray());
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<Alerte>();
         while (await r.ReadAsync(ct))

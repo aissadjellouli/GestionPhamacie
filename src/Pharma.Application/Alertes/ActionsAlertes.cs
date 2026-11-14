@@ -5,12 +5,20 @@ namespace Pharma.Application.Alertes;
 
 public interface IAlertesEcriture
 {
-    /// <summary>Reporte une alerte ouverte. Faux si elle n'existe pas ou n'est plus ouverte.</summary>
-    /// <param name="titulaire">Faux : une alerte réservée au titulaire (AlertesReservees) n'est pas touchée.</param>
-    Task<bool> ReporterAsync(long alerteId, DateOnly jusquAu, bool titulaire, CancellationToken ct = default);
+    /// <summary>Reporte une alerte ouverte. Faux si elle n'existe pas, n'est plus ouverte, ou n'est pas d'un des types donnés.</summary>
+    /// <param name="types">Types que l'employé peut voir (AlertesSelonDroits) : une autre alerte n'est pas touchée.</param>
+    Task<bool> ReporterAsync(long alerteId, DateOnly jusquAu, IReadOnlyCollection<string> types, CancellationToken ct = default);
 
-    /// <summary>Marque une alerte ouverte ou reportée comme traitée. Faux si elle n'existe pas ou est déjà close.</summary>
-    Task<bool> TraiterAsync(long alerteId, string? actionPrise, long utilisateurId, bool titulaire, CancellationToken ct = default);
+    /// <summary>Marque une alerte ouverte ou reportée comme traitée. Faux si elle n'existe pas, est déjà close, ou n'est pas d'un des types donnés.</summary>
+    Task<bool> TraiterAsync(long alerteId, string? actionPrise, long utilisateurId, IReadOnlyCollection<string> types, CancellationToken ct = default);
+}
+
+/// <summary>Types d'alerte sur lesquels l'employé peut agir ; sans service de droits : tous sauf ceux réservés au titulaire.</summary>
+internal static class TypesActionnables
+{
+    public static async Task<IReadOnlyCollection<string>> LireAsync(Securite.IPermissionService? droits, long utilisateurId, CancellationToken ct) =>
+        droits is not null ? await AlertesSelonDroits.TypesVisiblesAsync(droits, utilisateurId, ct)
+            : AlertesSelonDroits.Tous.Where(t => !AlertesReservees.Types.Contains(t)).ToList();
 }
 
 /// <summary>Reporte une alerte jusqu'à la date choisie : elle réapparaît ce jour-là (generer_alertes).</summary>
@@ -19,8 +27,7 @@ public sealed class ReporterAlerte(IAlertesEcriture alertes, IHorloge horloge, S
     public async Task<bool> ExecuterAsync(long alerteId, DateOnly jusquAu, long utilisateurId = 0, CancellationToken ct = default)
     {
         RegleAlerte.VerifierReport(jusquAu, horloge.Aujourdhui);
-        var titulaire = droits is not null && await droits.EstTitulaireAsync(utilisateurId, ct);
-        return await alertes.ReporterAsync(alerteId, jusquAu, titulaire, ct);
+        return await alertes.ReporterAsync(alerteId, jusquAu, await TypesActionnables.LireAsync(droits, utilisateurId, ct), ct);
     }
 }
 
@@ -37,7 +44,6 @@ public sealed class TraiterAlerte(IAlertesEcriture alertes, Securite.IPermission
         var action = string.IsNullOrWhiteSpace(actionPrise) ? null : actionPrise.Trim();
         if (action is { Length: > LongueurMaxAction })
             action = action[..LongueurMaxAction];
-        var titulaire = droits is not null && await droits.EstTitulaireAsync(utilisateurId, ct);
-        return await alertes.TraiterAsync(alerteId, action, utilisateurId, titulaire, ct);
+        return await alertes.TraiterAsync(alerteId, action, utilisateurId, await TypesActionnables.LireAsync(droits, utilisateurId, ct), ct);
     }
 }

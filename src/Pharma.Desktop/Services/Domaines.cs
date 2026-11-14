@@ -33,6 +33,7 @@ public static class Domaines
             new("Stock", "stock", ["stock"], []),
             new("Inventaire", "inventaire", ["inventaire"], []),
             new("Registre des psychotropes", "stock/registre", ["stock/registre"], ["psychotropes.registre"]),
+            new("Étiquettes internes", "stock/etiquettes", ["stock/etiquettes"], ["stock.consulter", "achats.receptionner"]),
             new("Traçabilité et rappel de lot", "tracabilite", ["tracabilite"], []),
         ]),
         new("achats", "Achats", 'H', [new("Achats", "achats", ["achats"], ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"])]),
