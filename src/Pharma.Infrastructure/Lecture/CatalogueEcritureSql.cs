@@ -62,7 +62,7 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
         return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
-    public async Task<long> CreerAsync(FicheProduit f, bool aVerifier, CancellationToken ct = default)
+    public async Task<long> CreerAsync(FicheProduit f, bool aVerifier, CancellationToken ct = default, long? classeConfirmeePar = null)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
@@ -79,8 +79,9 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
 
         await using var cmd = new NpgsqlCommand("""
             INSERT INTO produit (code_barre, nom_commercial, dci_id, dosage, forme, prix_public, tarif_reference,
-                                 remboursable, taux_tva, classe, stock_minimum, num_enregistrement, categorie, liste_psychotrope, a_verifier)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id
+                                 remboursable, taux_tva, classe, stock_minimum, num_enregistrement, categorie, liste_psychotrope, a_verifier,
+                                 classe_confirmee_par, classe_confirmee_le)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CASE WHEN $16 IS NULL THEN NULL ELSE now() END) RETURNING id
             """, cnx, tx);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.CodeBarre ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(f.NomCommercial);
@@ -97,6 +98,8 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
         cmd.Parameters.AddWithValue(f.Categorie);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.ListePsychotrope ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(aVerifier);
+        // Titulaire qui enregistre une classe moins stricte que la substance ou la nomenclature : confirmation mémorisée (080)
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)classeConfirmeePar ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
         long id;
         try { id = (long)(await cmd.ExecuteScalarAsync(ct))!; }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.ForeignKeyViolation && e.ConstraintName == "fk_produit_categorie")

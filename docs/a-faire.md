@@ -78,6 +78,11 @@ récemment »). Restent :
 - [x] **Prêteur hors trésorerie**. (Tranché et livré le 2026-11-14 : son nom se corrige à tout moment, ancien et nouveau nom au journal, colonnes d'import retenues reportées sur le nouveau nom ; banque suivie et type de prêteur toujours figés une fois le prêt utilisé.)
 - [x] **Envoi en échec signalé à l'accueil**. (Tranché le 2026-11-14 : un seul signalement, après un jour ; pas de second à l'abandon — comportement vérifié et couvert par un test.)
 
+**Lot 7 (2026-11-14) : points tranchés par le titulaire**
+- [x] **E-mail d'écart de caisse : quel employé nommer**. (Tranché et livré le 2026-11-14 : celui qui a clôturé la caisse ou fait la relève, pas celui qui l'a ouverte ; « à la relève » / « Relève faite par » pour une relève ; même logique que le bandeau de l'accueil, qui affiche la date de la clôture ou de la relève et celle de l'ouverture à part.)
+- [x] **Confirmation « hors registre » du titulaire**. (Tranché et livré le 2026-11-14 : mémorisée, script 080 ; un employé ne reclasse plus le produit et ne le remet pas « à vérifier » ; la confirmation tombe si la DCI change ; le produit n'est plus signalé « classe à corriger ».)
+- [x] **Psychotrope dont la substance est un stupéfiant**. (Tranché et livré le 2026-11-14 : classé par un employé, monté en stupéfiant, à la création comme à la modification ; le titulaire décide lui-même, sa confirmation vaut.)
+
 ## À confirmer avec le comptable
 
 - [ ] **TVA sur les pertes et dons** (script 061, Rapports › « TVA à reverser sur les pertes et dons ») : pour quels motifs la TVA d'achat déjà déduite doit-elle être reversée ? Boîtes périmées détruites (avec ou sans procès-verbal), casses, dons et échantillons. Le réglage est à « non » pour les trois motifs tant que la règle n'est pas confirmée ; le titulaire l'active motif par motif.

@@ -148,6 +148,7 @@ internal sealed class SessionsEnMemoire : ISessionsCaisse
     public Task<decimal> VentesEspecesAsync(long s, CancellationToken ct = default) => Task.FromResult(Especes);
     public Task CloturerAsync(long s, Comptage c, ResultatCloture r, CancellationToken ct = default) { Cloture = r; return Task.CompletedTask; }
     public Task<DetailSession?> DetailAsync(long s, CancellationToken ct = default) => Task.FromResult<DetailSession?>(null);
+    public Task<string?> NomEmployeAsync(long u, CancellationToken ct = default) => Task.FromResult<string?>($"Employé {u}");
     public Task<ParametresCaisse> ParametresAsync(CancellationToken ct = default) => Task.FromResult(Parametres);
     public Task ModifierParametresAsync(ParametresCaisse p, CancellationToken ct = default) => Task.CompletedTask;
 }

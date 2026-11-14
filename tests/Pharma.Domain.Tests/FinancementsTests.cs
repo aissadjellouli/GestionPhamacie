@@ -94,6 +94,63 @@ public class RegleEcheancierTests
     }
 
     [Fact]
+    public void Assurance_comptee_dans_l_echeance_au_centime()
+    {
+        // Assurance de 500 DA sur chaque échéance : capital + intérêts + TVA + marge + assurance = échéance
+        var l = Correct().Select(x => x with { Assurance = 500, Montant = x.Montant + 500 }).ToList();
+        Assert.Empty(RegleEcheancier.Controler(300000, DatePret, l));
+
+        // Assurance oubliée dans l'échéance : écart signalé sur la ligne
+        var oubli = Correct();
+        oubli[1] = oubli[1] with { Assurance = 500 };
+        var a = Assert.Single(RegleEcheancier.Controler(300000, DatePret, oubli));
+        Assert.Equal((2, "montant"), (a.Ligne, a.Champ));
+        Assert.Contains("assurance", a.Message);
+
+        // Assurance négative ou au-delà du centime
+        var faux = Correct();
+        faux[0] = faux[0] with { Assurance = -10, Montant = 103560 };
+        Assert.Contains(RegleEcheancier.Controler(300000, DatePret, faux), x => x is { Ligne: 1, Champ: "assurance" });
+        faux[0] = faux[0] with { Assurance = 0.005m, Montant = 103570.005m };
+        Assert.Contains(RegleEcheancier.Controler(300000, DatePret, faux), x => x is { Ligne: 1, Champ: "assurance" });
+    }
+
+    [Fact]
+    public void Paiement_assurance_comptee_en_charges_financieres_avec_les_interets()
+    {
+        var (capital, charges) = RegleEcheancier.Parts(new LigneEcheancier(new DateOnly(2026, 2, 10), 100000, 3000, 570, 250, 104320, 200000, 500));
+        Assert.Equal((100000m, 4320m), (capital, charges));
+    }
+
+    [Fact]
+    public void Cout_du_credit_interets_assurance_tva_et_marge()
+    {
+        var l = Correct();
+        l[0] = l[0] with { Assurance = 500, Marge = 100, Montant = l[0].Montant + 600 };
+        var cout = CoutEcheancier.De(l);
+        Assert.Equal((6000m, 500m, 570m, 100m, 7170m), (cout.Interets, cout.Assurance, cout.Tva, cout.Marge, cout.CoutTotal));
+        Assert.Equal(0m, CoutEcheancier.De([]).CoutTotal);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(0.0, 1)]
+    [InlineData(5.75, 60)]
+    [InlineData(100.0, 600)]
+    [InlineData(4.1234, 84)]
+    public void Taux_et_duree_admis_tels_qu_au_contrat(double? taux, int? duree) =>
+        RegleConditionsPret.Verifier(taux is { } t ? (decimal)t : null, duree);
+
+    [Theory]
+    [InlineData(-0.01, null, "taux")]
+    [InlineData(100.01, null, "taux")]
+    [InlineData(5.12345, null, "taux")]
+    [InlineData(null, 0, "duree")]
+    [InlineData(null, 601, "duree")]
+    public void Taux_ou_duree_hors_bornes_refuses(double? taux, int? duree, string champ) =>
+        Assert.Equal(champ, Assert.Throws<RegleMetierException>(() => RegleConditionsPret.Verifier(taux is { } t ? (decimal)t : null, duree)).Champ);
+
+    [Fact]
     public void Capital_restant_calcule_quand_la_banque_ne_le_donne_pas() =>
         Assert.Equal([200000m, 100000m, 0m], RegleEcheancier.Encours(300000, [100000, 100000, 100000]));
 }
@@ -174,6 +231,24 @@ public class LectureEcheancierTests
         Assert.Equal((100000m, 103000m, 100000m), (lu.Lignes[0].Capital, lu.Lignes[0].Montant, lu.Lignes[0].CapitalRestant));
         var a = Assert.Single(lu.Illisibles);
         Assert.Equal((2, "montant"), (a.Ligne, a.Champ));
+    }
+
+    [Fact]
+    public void Colonne_assurance_lue_et_comptee_dans_le_capital_calcule()
+    {
+        IReadOnlyList<IReadOnlyList<string?>> tableau =
+        [
+            ["Date", "Échéance", "Intérêts", "Assurance"],
+            ["10/02/2026", "103 500,00", "3 000,00", "500,00"],
+            ["10/03/2026", "102 500,00", "2 000,00", "500,00"]
+        ];
+        // Capital absent du tableau : échéance − intérêts − assurance
+        var lu = LectureEcheancier.Appliquer(tableau, new CorrespondanceColonnes(0, null, 2, null, null, 1, null, 1, Assurance: 3), 200000);
+        Assert.Equal(new LigneEcheancier(new DateOnly(2026, 2, 10), 100000, 3000, 0, 0, 103500, 100000, 500), lu.Lignes[0]);
+        Assert.Empty(RegleEcheancier.Controler(200000, new DateOnly(2026, 1, 10), lu.Lignes));
+
+        // Colonne d'assurance déjà prise par une autre information : refus
+        Assert.Throws<RegleMetierException>(() => new CorrespondanceColonnes(0, 1, 2, null, null, 3, null, Assurance: 2).Verifier());
     }
 
     [Fact]

@@ -12,10 +12,12 @@ namespace Pharma.Application.Financements;
 /// Prêt bancaire. CompteId : banque suivie en trésorerie (compte de type banque), null pour un prêteur hors trésorerie ; Banque : nom
 /// du compte, sinon nom du prêteur. CapitalRembourse : capital des échéances payées ; ResteDu : capital
 /// restant dû ; Utilise : part du prêt déjà employée (versée sur un compte, dépense, facture ou traite payée) ; Document : chemin GED.
+/// Taux (annuel, %) et DureeMois : tels qu'au contrat, null si non saisis. ProchainMontant : mensualité, montant de la prochaine
+/// échéance non payée, assurance comprise (ProchaineAssurance) ; null si aucune échéance ne reste à payer.
 /// </summary>
 public sealed record PretResume(long Id, long? CompteId, string Banque, string Reference, string? Objet, decimal Montant, DateOnly DatePret,
     string? Document, decimal CapitalRembourse, decimal ResteDu, decimal Utilise, int Echeances, int EcheancesPayees, int EchuesNonPayees,
-    DateOnly? ProchaineEcheance, decimal? ProchainMontant, string Employe)
+    DateOnly? ProchaineEcheance, decimal? ProchainMontant, string Employe, decimal? Taux = null, int? DureeMois = null, decimal? ProchaineAssurance = null)
 {
     public decimal AUtiliser => Montant - Utilise;
     /// <summary>Prêteur hors trésorerie : son argent n'entre dans aucun compte suivi, il ne sert que directement.</summary>
@@ -67,8 +69,12 @@ public sealed record CompteTitulaire(decimal SoldeDu, decimal TotalApports, deci
 /// <summary>Source utilisable (choix d'une liste) : Code « titulaire » ou « pret:ID » ; Disponible : reste du prêt à employer (null : apport).</summary>
 public sealed record SourceDisponible(string Code, string Libelle, decimal? Disponible);
 
-/// <summary>CompteId (banque de la trésorerie) ou Preteur (nom libre, hors trésorerie) : exactement l'un des deux.</summary>
-public sealed record PretAEcrire(long? CompteId, string? Preteur, string Reference, string? Objet, decimal Montant, DateOnly DatePret, long UtilisateurId);
+/// <summary>
+/// CompteId (banque de la trésorerie) ou Preteur (nom libre, hors trésorerie) : exactement l'un des deux. Taux (annuel, %) et DureeMois
+/// (mois) : facultatifs, tels qu'au contrat.
+/// </summary>
+public sealed record PretAEcrire(long? CompteId, string? Preteur, string Reference, string? Objet, decimal Montant, DateOnly DatePret, long UtilisateurId,
+    decimal? Taux = null, int? DureeMois = null);
 
 /// <summary>Paiement d'une échéance. PartTiroir (espèces) : argent du tiroir de la caisse ouverte porté au coffre avant le paiement.</summary>
 public sealed record PaiementEcheanceAEcrire(long EcheanceId, DateOnly Date, string Moyen, long? CompteId, string? Reference, decimal PartTiroir,
@@ -167,15 +173,17 @@ public sealed class ConsulterFinancements(IFinancements financements, IPermissio
 
 /// <summary>
 /// Création et modification d'un prêt (titulaire seul), document joint ; journalisés. Prêteur : une banque suivie en trésorerie
-/// (compteId) ou un autre prêteur, hors trésorerie (nom libre) ; exactement l'un des deux (PreteurPret).
+/// (compteId) ou un autre prêteur, hors trésorerie (nom libre) ; exactement l'un des deux (PreteurPret). Taux annuel et durée en mois :
+/// facultatifs, saisis tels qu'au contrat (RegleConditionsPret), jamais recalculés ; ils se corrigent à tout moment.
 /// </summary>
 public sealed class EnregistrerPret(IFinancements financements, IPermissionService droits, IHorloge horloge, IJournal journal, ITresorerie tresorerie)
 {
     public async Task<long> CreerAsync(long? compteId, string? preteur, string? reference, string? objet, decimal montant, DateOnly? date,
-        long utilisateurId, CancellationToken ct = default)
+        long utilisateurId, CancellationToken ct = default, decimal? taux = null, int? dureeMois = null)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "enregistrer un prêt", ct);
-        var p = await VerifierAsync(compteId, preteur, reference, objet, montant, date, utilisateurId, ct);
+        var p = await VerifierAsync(compteId, preteur, reference, objet, montant, date, utilisateurId, ct) with { Taux = taux, DureeMois = dureeMois };
+        RegleConditionsPret.Verifier(taux, dureeMois);
         var id = await financements.CreerPretAsync(p, ct);
         await journal.EcrireAsync(utilisateurId, "pret_cree", "pret_bancaire", id, Details(p), null, ct);
         return id;
@@ -187,15 +195,16 @@ public sealed class EnregistrerPret(IFinancements financements, IPermissionServi
     /// et le nouveau nom inscrits au journal, et ses colonnes d'import retenues suivent le nouveau nom.
     /// </summary>
     public async Task ModifierAsync(long id, long? compteId, string? preteur, string? reference, string? objet, decimal montant, DateOnly? date,
-        long utilisateurId, CancellationToken ct = default)
+        long utilisateurId, CancellationToken ct = default, decimal? taux = null, int? dureeMois = null)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "modifier un prêt", ct);
         var avant = (await financements.PretAsync(id, ct) ?? throw new RegleMetierException("Prêt introuvable.")).Pret;
-        var p = await VerifierAsync(compteId, preteur, reference, objet, montant, date, utilisateurId, ct, avant.CompteId);
+        var p = await VerifierAsync(compteId, preteur, reference, objet, montant, date, utilisateurId, ct, avant.CompteId) with { Taux = taux, DureeMois = dureeMois };
+        RegleConditionsPret.Verifier(taux, dureeMois);
         // Autre banque, ou passage banque suivie ↔ prêteur hors trésorerie : CompteId différent (null pour un prêteur hors trésorerie)
         if ((avant.EcheancesPayees > 0 || avant.Utilise > 0) && (p.CompteId != avant.CompteId || p.Montant != avant.Montant || p.DatePret != avant.DatePret))
             throw new RegleMetierException("Une échéance est payée ou une part du prêt est employée : la banque, le type de prêteur, le montant "
-                + "et la date ne changent plus (le nom d’un prêteur hors trésorerie se corrige).", "montant");
+                + "et la date ne changent plus (le nom d’un prêteur hors trésorerie, le taux et la durée se corrigent).", "montant");
         var renomme = avant.CompteId is null && p.CompteId is null && p.Preteur != avant.Banque ? avant.Banque : null;
         await financements.ModifierPretAsync(id, p, ct);
         var details = Details(p);
@@ -231,7 +240,8 @@ public sealed class EnregistrerPret(IFinancements financements, IPermissionServi
 
     private static Dictionary<string, object?> Details(PretAEcrire p) => new()
     {
-        ["compte_id"] = p.CompteId, ["preteur"] = p.Preteur, ["reference"] = p.Reference, ["objet"] = p.Objet, ["montant"] = p.Montant, ["date"] = p.DatePret
+        ["compte_id"] = p.CompteId, ["preteur"] = p.Preteur, ["reference"] = p.Reference, ["objet"] = p.Objet, ["montant"] = p.Montant, ["date"] = p.DatePret,
+        ["taux"] = p.Taux, ["duree_mois"] = p.DureeMois
     };
 }
 
@@ -263,11 +273,12 @@ public sealed class EnregistrerEcheancier(IFinancements financements, IPermissio
         RegleEcheancier.Exiger(detail.Pret.Montant, detail.Pret.DatePret, lignes);
         var payees = detail.Echeances.Count(e => e.PayeeLe is not null);
         await financements.RemplacerEcheancierAsync(pretId, payees, lignes.Skip(payees).ToList(), ct);
+        var cout = CoutEcheancier.De(lignes);
         await journal.EcrireAsync(utilisateurId, "echeancier_pret", "pret_bancaire", pretId,
             new Dictionary<string, object?>
             {
                 ["pret"] = detail.Pret.Reference, ["echeances"] = lignes.Count, ["gardees_payees"] = payees,
-                ["interets"] = lignes.Sum(l => l.Interets), ["tva"] = lignes.Sum(l => l.Tva), ["marge"] = lignes.Sum(l => l.Marge)
+                ["interets"] = cout.Interets, ["tva"] = cout.Tva, ["marge"] = cout.Marge, ["assurance"] = cout.Assurance, ["cout_total"] = cout.CoutTotal
             }, null, ct);
     }
 
@@ -337,7 +348,7 @@ public sealed class EnregistrerEcheancier(IFinancements financements, IPermissio
 /// <summary>
 /// Paiement d'une échéance de prêt, confirmé par le titulaire : la plus ancienne non payée du prêt. Espèces (coffre, complété au besoin
 /// par l'argent du tiroir de la caisse ouverte, porté au coffre), chèque, virement ou prélèvement (banque et référence obligatoires).
-/// Le capital diminue la dette envers la banque ; intérêts, TVA et marge sont une dépense « charges financières ». Journalisé.
+/// Le capital diminue la dette envers la banque ; intérêts, assurance, TVA et marge sont une dépense « charges financières ». Journalisé.
 /// </summary>
 public sealed class PayerEcheancePret(IFinancements financements, ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, IJournal journal,
     ITresorerie tresorerie)
@@ -383,7 +394,7 @@ public sealed class PayerEcheancePret(IFinancements financements, ISessionsCaiss
             new Dictionary<string, object?>
             {
                 ["pret"] = e.Pret, ["banque"] = e.Banque, ["echeance"] = e.Ligne.Date, ["montant"] = e.Ligne.Montant, ["capital"] = capital,
-                ["charges_financieres"] = charges, ["date"] = jour, ["moyen"] = m, ["compte_id"] = compteId, ["part_tiroir"] = partTiroir
+                ["charges_financieres"] = charges, ["assurance"] = e.Ligne.Assurance, ["date"] = jour, ["moyen"] = m, ["compte_id"] = compteId, ["part_tiroir"] = partTiroir
             }, null, ct);
         return id;
     }

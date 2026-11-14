@@ -31,11 +31,12 @@ internal static class FinancementsEndpoints
             });
 
         f.MapPost("/prets", async (PretRequete r, EnregistrerPret e, ClaimsPrincipal user, CancellationToken ct) =>
-            Results.Ok(new IdentifiantDto(await e.CreerAsync(r.CompteId, r.Preteur, r.Reference, r.Objet, r.Montant, r.Date, user.UtilisateurId(), ct))));
+            Results.Ok(new IdentifiantDto(await e.CreerAsync(r.CompteId, r.Preteur, r.Reference, r.Objet, r.Montant, r.Date, user.UtilisateurId(), ct,
+                r.Taux, r.DureeMois))));
 
         f.MapPut("/prets/{id:long}", async (long id, PretRequete r, EnregistrerPret e, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await e.ModifierAsync(id, r.CompteId, r.Preteur, r.Reference, r.Objet, r.Montant, r.Date, user.UtilisateurId(), ct);
+                await e.ModifierAsync(id, r.CompteId, r.Preteur, r.Reference, r.Objet, r.Montant, r.Date, user.UtilisateurId(), ct, r.Taux, r.DureeMois);
                 return Results.NoContent();
             });
 
@@ -123,22 +124,25 @@ internal static class FinancementsEndpoints
     {
         var pret = await c.PretAsync(utilisateurId, pretId, ct);
         return await c.CorrespondanceAsync(utilisateurId, pret.Pret, ct) is { } x
-            ? new CorrespondanceDto(x.Date, x.Capital, x.Interets, x.Tva, x.Marge, x.Montant, x.Encours, x.LignesIgnorees)
+            ? new CorrespondanceDto(x.Date, x.Capital, x.Interets, x.Tva, x.Marge, x.Montant, x.Encours, x.LignesIgnorees, x.Assurance)
             : null;
     }
 
     private static PretDto VersDto(PretResume p) => new(p.Id, p.CompteId, p.Banque, p.Reference, p.Objet, p.Montant, p.DatePret, p.Document,
-        p.CapitalRembourse, p.ResteDu, p.Utilise, p.Echeances, p.EcheancesPayees, p.EchuesNonPayees, p.ProchaineEcheance, p.ProchainMontant, p.Employe);
+        p.CapitalRembourse, p.ResteDu, p.Utilise, p.Echeances, p.EcheancesPayees, p.EchuesNonPayees, p.ProchaineEcheance, p.ProchainMontant, p.Employe,
+        p.Taux, p.DureeMois, p.ProchaineAssurance);
 
     private static EcheancePretDto VersDto(EcheancePret e) => new(e.Id, e.PretId, e.Pret, e.Banque, e.Rang, VersDto(e.Ligne), e.PayeeLe, e.Moyen, e.Compte,
         e.ReferencePaiement, e.Employe);
 
-    private static LigneEcheancierDto VersDto(LigneEcheancier l) => new(l.Date, l.Capital, l.Interets, l.Tva, l.Marge, l.Montant, l.CapitalRestant);
+    private static LigneEcheancierDto VersDto(LigneEcheancier l) =>
+        new(l.Date, l.Capital, l.Interets, l.Tva, l.Marge, l.Montant, l.CapitalRestant, l.Assurance);
 
     private static AnomalieEcheancierDto VersDto(AnomalieEcheancier a) => new(a.Ligne, a.Champ, a.Message);
 
-    private static LigneEcheancier VersLigne(LigneEcheancierDto l) => new(l.Date, l.Capital, l.Interets, l.Tva, l.Marge, l.Montant, l.CapitalRestant);
+    private static LigneEcheancier VersLigne(LigneEcheancierDto l) =>
+        new(l.Date, l.Capital, l.Interets, l.Tva, l.Marge, l.Montant, l.CapitalRestant, l.Assurance);
 
     private static CorrespondanceColonnes VersCorrespondance(CorrespondanceDto c) =>
-        new(c.Date, c.Capital, c.Interets, c.Tva, c.Marge, c.Montant, c.Encours, c.LignesIgnorees);
+        new(c.Date, c.Capital, c.Interets, c.Tva, c.Marge, c.Montant, c.Encours, c.LignesIgnorees, c.Assurance);
 }

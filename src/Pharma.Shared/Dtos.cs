@@ -364,9 +364,11 @@ public sealed record AlertesVuesRequete(long JusquA);
 
 /// <summary>
 /// Écart de caisse d'une session clôturée (accueil du titulaire) : Ecart négatif = manque, positif = excédent. Employe : celui qui a
-/// clôturé la caisse si ClotureePar, sinon (clôture sans trace au journal) celui qui l'a ouverte.
+/// clôturé la caisse (ou fait la relève) si ClotureePar, sinon (clôture sans trace au journal) celui qui l'a ouverte. ClotureLe : date de
+/// la clôture ou de la relève (jamais celle de l'ouverture, donnée à part : OuverteLe). Releve : la session a été close par une relève.
 /// </summary>
-public sealed record EcartCaisseRecentDto(long SessionId, string Poste, string Employe, DateTime ClotureLe, decimal Ecart, bool ClotureePar = true);
+public sealed record EcartCaisseRecentDto(long SessionId, string Poste, string Employe, DateTime ClotureLe, decimal Ecart, bool ClotureePar = true,
+    DateTime? OuverteLe = null, bool Releve = false);
 
 /// <summary>Écarts de caisse récents non vus : nombre total et les plus récents.</summary>
 public sealed record EcartsCaisseRecentsDto(int Nombre, IReadOnlyList<EcartCaisseRecentDto> Derniers);

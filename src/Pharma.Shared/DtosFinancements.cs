@@ -4,14 +4,16 @@ namespace Pharma.Shared;
 
 /// <summary>
 /// Prêt : CompteId = banque suivie en trésorerie, null pour un prêteur hors trésorerie (Banque : son nom) ; ResteDu = capital restant dû ;
-/// Utilise = part employée (versée, dépense, facture, traite) ; Document : chemin GED.
+/// Utilise = part employée (versée, dépense, facture, traite) ; Document : chemin GED. Taux (annuel, %) et DureeMois : tels qu'au contrat
+/// (null : non saisis). ProchainMontant : mensualité (prochaine échéance non payée, assurance comprise : ProchaineAssurance).
 /// </summary>
 public sealed record PretDto(long Id, long? CompteId, string Banque, string Reference, string? Objet, decimal Montant, DateOnly DatePret, string? Document,
     decimal CapitalRembourse, decimal ResteDu, decimal Utilise, int Echeances, int EcheancesPayees, int EchuesNonPayees, DateOnly? ProchaineEcheance,
-    decimal? ProchainMontant, string Employe);
+    decimal? ProchainMontant, string Employe, decimal? Taux = null, int? DureeMois = null, decimal? ProchaineAssurance = null);
 
-/// <summary>Ligne d'échéancier (saisie, importée ou enregistrée). Montant = Capital + Interets + Tva + Marge.</summary>
-public sealed record LigneEcheancierDto(DateOnly Date, decimal Capital, decimal Interets, decimal Tva, decimal Marge, decimal Montant, decimal CapitalRestant);
+/// <summary>Ligne d'échéancier (saisie, importée ou enregistrée). Montant = Capital + Interets + Tva + Marge + Assurance.</summary>
+public sealed record LigneEcheancierDto(DateOnly Date, decimal Capital, decimal Interets, decimal Tva, decimal Marge, decimal Montant, decimal CapitalRestant,
+    decimal Assurance = 0);
 
 /// <summary>Échéance enregistrée ; PayeeLe et Moyen (especes, cheque, virement, prelevement) : paiement confirmé, null sinon.</summary>
 public sealed record EcheancePretDto(long Id, long PretId, string Pret, string Banque, int Rang, LigneEcheancierDto Ligne, DateOnly? PayeeLe,
@@ -22,8 +24,12 @@ public sealed record UtilisationFinancementDto(long Id, string Source, long? Pre
 
 public sealed record PretDetailDto(PretDto Pret, IReadOnlyList<EcheancePretDto> Echeances, IReadOnlyList<UtilisationFinancementDto> Utilisations);
 
-/// <summary>CompteId : banque suivie en trésorerie ; ou Preteur : nom d'un prêteur hors trésorerie (CompteId null) ; exactement l'un des deux.</summary>
-public sealed record PretRequete(long? CompteId, string? Reference, string? Objet, decimal Montant, DateOnly? Date, string? Preteur = null);
+/// <summary>
+/// CompteId : banque suivie en trésorerie ; ou Preteur : nom d'un prêteur hors trésorerie (CompteId null) ; exactement l'un des deux.
+/// Taux (annuel, %) et DureeMois : facultatifs, tels qu'au contrat.
+/// </summary>
+public sealed record PretRequete(long? CompteId, string? Reference, string? Objet, decimal Montant, DateOnly? Date, string? Preteur = null,
+    decimal? Taux = null, int? DureeMois = null);
 
 /// <summary>Chemin « Type\nom » du document déposé dans la GED.</summary>
 public sealed record DocumentPretRequete(string? Chemin);
@@ -34,7 +40,8 @@ public sealed record AnomalieEcheancierDto(int Ligne, string Champ, string Messa
 public sealed record EcheancierRequete(IReadOnlyList<LigneEcheancierDto> Lignes);
 
 /// <summary>Colonnes (à partir de 0) du tableau de la banque ; null : absente. LignesIgnorees : lignes d'en-tête.</summary>
-public sealed record CorrespondanceDto(int Date, int? Capital, int? Interets, int? Tva, int? Marge, int? Montant, int? Encours, int LignesIgnorees);
+public sealed record CorrespondanceDto(int Date, int? Capital, int? Interets, int? Tva, int? Marge, int? Montant, int? Encours, int LignesIgnorees,
+    int? Assurance = null);
 
 /// <summary>Fichier fourni par la banque (Excel .xlsx ou CSV), en base64.</summary>
 public sealed record TableauFichierRequete(string NomFichier, string ContenuBase64);

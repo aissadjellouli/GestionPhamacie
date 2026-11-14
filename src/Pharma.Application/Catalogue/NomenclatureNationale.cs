@@ -34,8 +34,17 @@ public interface INomenclature
     Task<VersionNomenclature?> VersionAsync(CancellationToken ct = default);
     Task<IReadOnlyList<MedicamentNomenclature>> RechercherAsync(string texte, int limite, CancellationToken ct = default);
     Task<IReadOnlyList<ProduitAVerifier>> AVerifierAsync(CancellationToken ct = default);
-    /// <summary>Nouvelle classe d'un produit ; renvoie l'ancienne (null si produit introuvable).</summary>
-    Task<string?> ChangerClasseAsync(long produitId, string classe, long utilisateurId, CancellationToken ct = default);
+    /// <summary>
+    /// Nouvelle classe d'un produit ; renvoie l'ancienne (null si produit introuvable). <paramref name="confirmation"/> : classe moins
+    /// stricte que celle de la substance ou de la nomenclature, choisie par le titulaire : mémorisée (produit.classe_confirmee_par, _le) ;
+    /// sinon la confirmation précédente éventuelle est effacée.
+    /// </summary>
+    Task<string?> ChangerClasseAsync(long produitId, string classe, long utilisateurId, CancellationToken ct = default, bool confirmation = false);
+    /// <summary>
+    /// Classe sous registre (psychotrope ou stupefiant) que donnent au produit sa DCI (substance surveillée) et la nomenclature nationale
+    /// (n° d'enregistrement), la plus stricte des deux ; null si aucune, ou produit introuvable.
+    /// </summary>
+    Task<string?> ClasseSurveilleeProduitAsync(long produitId, CancellationToken ct = default);
 }
 
 /// <summary>Import du fichier Excel de la nomenclature (titulaire), inscrit au journal.</summary>
@@ -84,7 +93,11 @@ public sealed class RechercherNomenclature(INomenclature nomenclature)
             : nomenclature.RechercherAsync(texte!.Trim(), 15, ct);
 }
 
-/// <summary>Le titulaire applique la classe proposée (ex. psychotrope) à un produit du catalogue ; inscrit au journal.</summary>
+/// <summary>
+/// Le titulaire applique la classe proposée (ex. psychotrope) à un produit du catalogue, ou confirme sa classe ; inscrit au journal.
+/// Classe moins stricte que celle de la substance surveillée (DCI) ou de la nomenclature (n° d'enregistrement) : confirmation
+/// mémorisée, le produit n'est plus « à vérifier » et une modification par un employé ne le reclasse plus (tant que sa DCI ne change pas).
+/// </summary>
 public sealed class AppliquerClasseNomenclature(INomenclature nomenclature, IPermissionService droits, IJournal journal)
 {
     public async Task ExecuterAsync(long produitId, string? classe, long utilisateurId, CancellationToken ct = default)
@@ -93,9 +106,12 @@ public sealed class AppliquerClasseNomenclature(INomenclature nomenclature, IPer
         ClasseReglementaire c;
         try { c = CodesMetier.ClasseDepuisCode(classe ?? ""); }
         catch (ArgumentException) { throw new RegleMetierException($"Classe inconnue : {classe}."); }
-        var ancienne = await nomenclature.ChangerClasseAsync(produitId, c.Code(), utilisateurId, ct)
+        var proposee = await nomenclature.ClasseSurveilleeProduitAsync(produitId, ct);
+        var confirmation = RegleProduit.MoinsStricteQueSurveillee(c, proposee);
+        var ancienne = await nomenclature.ChangerClasseAsync(produitId, c.Code(), utilisateurId, ct, confirmation)
                        ?? throw new RegleMetierException("Produit introuvable.");
-        await journal.EcrireAsync(utilisateurId, "classe_produit", "produit", produitId,
-            new Dictionary<string, object?> { ["ancienne"] = ancienne, ["nouvelle"] = c.Code(), ["source"] = "nomenclature" }, null, ct);
+        var details = new Dictionary<string, object?> { ["ancienne"] = ancienne, ["nouvelle"] = c.Code(), ["source"] = "nomenclature" };
+        if (confirmation) { details["classe_confirmee"] = true; details["classe_proposee"] = proposee; }
+        await journal.EcrireAsync(utilisateurId, "classe_produit", "produit", produitId, details, null, ct);
     }
 }

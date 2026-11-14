@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 079 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 081 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 079 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 081 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict fcRt7Ap1fQy2yVVTpMJsVBcLEf6Tnx4QV5tteeyKEkGIqcqMJqHQfApGLiD31Ep
+\restrict 3dfgRo1u48Mozn2AnZCUxiIcC38hbkoi76STMGHFcc2CByCOLkvAtiy7AtqTAG3
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -2959,6 +2959,8 @@ CREATE TABLE public.correspondance_echeancier (
     lignes_ignorees integer DEFAULT 0 NOT NULL,
     utilisateur_id bigint NOT NULL,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    col_assurance integer,
+    CONSTRAINT correspondance_echeancier_col_assurance_check CHECK ((col_assurance >= 0)),
     CONSTRAINT correspondance_echeancier_col_capital_check CHECK ((col_capital >= 0)),
     CONSTRAINT correspondance_echeancier_col_date_check CHECK ((col_date >= 0)),
     CONSTRAINT correspondance_echeancier_col_encours_check CHECK ((col_encours >= 0)),
@@ -2986,6 +2988,8 @@ CREATE TABLE public.correspondance_echeancier_preteur (
     lignes_ignorees integer DEFAULT 0 NOT NULL,
     utilisateur_id bigint NOT NULL,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    col_assurance integer,
+    CONSTRAINT correspondance_echeancier_preteur_col_assurance_check CHECK ((col_assurance >= 0)),
     CONSTRAINT correspondance_echeancier_preteur_col_capital_check CHECK ((col_capital >= 0)),
     CONSTRAINT correspondance_echeancier_preteur_col_date_check CHECK ((col_date >= 0)),
     CONSTRAINT correspondance_echeancier_preteur_col_encours_check CHECK ((col_encours >= 0)),
@@ -3131,9 +3135,11 @@ CREATE TABLE public.echeance_pret (
     marge numeric(12,2) DEFAULT 0 NOT NULL,
     montant numeric(12,2) NOT NULL,
     capital_restant numeric(12,2) NOT NULL,
+    assurance numeric(12,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT echeance_pret_assurance_check CHECK ((assurance >= (0)::numeric)),
     CONSTRAINT echeance_pret_capital_check CHECK ((capital >= (0)::numeric)),
     CONSTRAINT echeance_pret_capital_restant_check CHECK ((capital_restant >= (0)::numeric)),
-    CONSTRAINT echeance_pret_check CHECK (((((capital + interets) + tva) + marge) = montant)),
+    CONSTRAINT echeance_pret_check CHECK ((((((capital + interets) + tva) + marge) + assurance) = montant)),
     CONSTRAINT echeance_pret_interets_check CHECK ((interets >= (0)::numeric)),
     CONSTRAINT echeance_pret_marge_check CHECK ((marge >= (0)::numeric)),
     CONSTRAINT echeance_pret_montant_check CHECK ((montant > (0)::numeric)),
@@ -4393,8 +4399,12 @@ CREATE TABLE public.pret_bancaire (
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     preteur text,
+    taux numeric(7,4),
+    duree_mois integer,
+    CONSTRAINT pret_bancaire_duree_mois_check CHECK (((duree_mois >= 1) AND (duree_mois <= 600))),
     CONSTRAINT pret_bancaire_montant_check CHECK ((montant > (0)::numeric)),
-    CONSTRAINT pret_bancaire_preteur_check CHECK ((((compte_id IS NOT NULL) AND (preteur IS NULL)) OR ((compte_id IS NULL) AND (btrim(preteur) <> ''::text))))
+    CONSTRAINT pret_bancaire_preteur_check CHECK ((((compte_id IS NOT NULL) AND (preteur IS NULL)) OR ((compte_id IS NULL) AND (btrim(preteur) <> ''::text)))),
+    CONSTRAINT pret_bancaire_taux_check CHECK (((taux >= (0)::numeric) AND (taux <= (100)::numeric)))
 );
 
 
@@ -4447,9 +4457,12 @@ CREATE TABLE public.produit (
     bloque_vente boolean DEFAULT false NOT NULL,
     motif_blocage text,
     sensible boolean DEFAULT false NOT NULL,
+    classe_confirmee_par bigint,
+    classe_confirmee_le timestamp with time zone,
     CONSTRAINT ck_produit_liste_psychotrope CHECK (((liste_psychotrope IS NULL) OR (liste_psychotrope = ANY (ARRAY['liste_i'::text, 'liste_ii'::text])))),
     CONSTRAINT ck_seuils_produit CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
     CONSTRAINT produit_classe_check CHECK ((classe = ANY (ARRAY['libre'::text, 'liste_i'::text, 'liste_ii'::text, 'psychotrope'::text, 'stupefiant'::text]))),
+    CONSTRAINT produit_classe_confirmee_check CHECK (((classe_confirmee_par IS NULL) = (classe_confirmee_le IS NULL))),
     CONSTRAINT produit_jours_orange_check CHECK ((jours_orange > 0)),
     CONSTRAINT produit_jours_rouge_check CHECK ((jours_rouge > 0)),
     CONSTRAINT produit_prix_public_check CHECK ((prix_public >= (0)::numeric)),
@@ -5543,6 +5556,36 @@ UNION ALL
 
 
 --
+-- Name: v_echeance_pret_complete; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_echeance_pret_complete AS
+ SELECT v.id,
+    v.pret_id,
+    v.pret,
+    v.banque_id,
+    v.banque,
+    v.rang,
+    v.date_echeance,
+    v.capital,
+    v.interets,
+    v.tva,
+    v.marge,
+    v.montant,
+    v.capital_restant,
+    v.date_paiement,
+    v.moyen,
+    v.compte_id,
+    v.compte,
+    v.reference,
+    v.part_tiroir,
+    v.employe,
+    e.assurance
+   FROM (public.v_echeance_pret v
+     JOIN public.echeance_pret e ON ((e.id = v.id)));
+
+
+--
 -- Name: v_vente_credit; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -5819,6 +5862,42 @@ CREATE VIEW public.v_parcours_boite AS
 
 
 --
+-- Name: v_pret_bancaire_complet; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_pret_bancaire_complet AS
+ SELECT v.id,
+    v.compte_id,
+    v.banque,
+    v.reference,
+    v.objet,
+    v.montant,
+    v.date_pret,
+    v.document,
+    v.capital_rembourse,
+    v.reste_du,
+    v.utilise,
+    v.echeances,
+    v.echeances_payees,
+    v.echues_non_payees,
+    v.prochaine_echeance,
+    v.prochain_montant,
+    v.employe,
+    v.cree_le,
+    p.taux,
+    p.duree_mois,
+    ( SELECT e.assurance
+           FROM public.echeance_pret e
+          WHERE ((e.pret_id = v.id) AND (NOT (EXISTS ( SELECT 1
+                   FROM public.paiement_echeance_pret x
+                  WHERE (x.echeance_id = e.id)))))
+          ORDER BY e.rang
+         LIMIT 1) AS prochaine_assurance
+   FROM (public.v_pret_bancaire v
+     JOIN public.pret_bancaire p ON ((p.id = v.id)));
+
+
+--
 -- Name: v_produit_a_verifier; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -5830,15 +5909,15 @@ CREATE VIEW public.v_produit_a_verifier AS
     p.classe,
     d.nom AS dci,
     p.num_enregistrement,
-    COALESCE(sd.classe, n.classe_proposee) AS classe_proposee,
+    cp.classe AS classe_proposee,
     n.situation,
         CASE
-            WHEN ((COALESCE(sd.classe, n.classe_proposee) = ANY (ARRAY['psychotrope'::text, 'stupefiant'::text])) AND (p.classe <> ALL (ARRAY['psychotrope'::text, 'stupefiant'::text]))) THEN 'classe'::text
+            WHEN ((p.classe_confirmee_par IS NULL) AND (((cp.classe = ANY (ARRAY['psychotrope'::text, 'stupefiant'::text])) AND (p.classe <> ALL (ARRAY['psychotrope'::text, 'stupefiant'::text]))) OR ((cp.classe = 'stupefiant'::text) AND (p.classe = 'psychotrope'::text)))) THEN 'classe'::text
             WHEN p.a_verifier THEN 'repris'::text
             WHEN (n.situation IS NULL) THEN 'absent'::text
             ELSE 'situation'::text
         END AS motif
-   FROM (((public.produit p
+   FROM ((((public.produit p
      LEFT JOIN public.dci d ON ((d.id = p.dci_id)))
      LEFT JOIN LATERAL ( SELECT s.classe
            FROM public.substance_surveillee s
@@ -5851,7 +5930,12 @@ CREATE VIEW public.v_produit_a_verifier AS
           WHERE (v.num_enregistrement = p.num_enregistrement)
           ORDER BY (v.situation = 'en_vigueur'::text) DESC
          LIMIT 1) n ON (true))
-  WHERE (p.actif AND (((COALESCE(sd.classe, n.classe_proposee) = ANY (ARRAY['psychotrope'::text, 'stupefiant'::text])) AND (p.classe <> ALL (ARRAY['psychotrope'::text, 'stupefiant'::text]))) OR p.a_verifier OR (n.situation = ANY (ARRAY['retire'::text, 'non_renouvele'::text])) OR ((n.situation IS NULL) AND (NULLIF(TRIM(BOTH FROM p.num_enregistrement), ''::text) IS NOT NULL) AND (EXISTS ( SELECT 1
+     CROSS JOIN LATERAL ( SELECT
+                CASE
+                    WHEN ((sd.classe = 'stupefiant'::text) OR (n.classe_proposee = 'stupefiant'::text)) THEN 'stupefiant'::text
+                    ELSE COALESCE(sd.classe, n.classe_proposee)
+                END AS classe) cp)
+  WHERE (p.actif AND (((p.classe_confirmee_par IS NULL) AND (((cp.classe = ANY (ARRAY['psychotrope'::text, 'stupefiant'::text])) AND (p.classe <> ALL (ARRAY['psychotrope'::text, 'stupefiant'::text]))) OR ((cp.classe = 'stupefiant'::text) AND (p.classe = 'psychotrope'::text)))) OR p.a_verifier OR (n.situation = ANY (ARRAY['retire'::text, 'non_renouvele'::text])) OR ((n.situation IS NULL) AND (NULLIF(TRIM(BOTH FROM p.num_enregistrement), ''::text) IS NOT NULL) AND (EXISTS ( SELECT 1
            FROM public.nomenclature_produit)))));
 
 
@@ -9503,6 +9587,14 @@ ALTER TABLE ONLY public.pret_bancaire
 
 
 --
+-- Name: produit produit_classe_confirmee_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.produit
+    ADD CONSTRAINT produit_classe_confirmee_par_fkey FOREIGN KEY (classe_confirmee_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: produit produit_dci_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10026,5 +10118,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fcRt7Ap1fQy2yVVTpMJsVBcLEf6Tnx4QV5tteeyKEkGIqcqMJqHQfApGLiD31Ep
+\unrestrict 3dfgRo1u48Mozn2AnZCUxiIcC38hbkoi76STMGHFcc2CByCOLkvAtiy7AtqTAG3
 

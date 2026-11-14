@@ -356,7 +356,9 @@ public static class RapportQuotidien
 /// <summary>Événements graves signalés au titulaire, par SMS (urgent) et par e-mail.</summary>
 public interface IAlertesTitulaire
 {
-    Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default);
+    /// <param name="employe">Celui qui a compté la caisse (clôture ou relève), pas celui qui l'a ouverte.</param>
+    /// <param name="releve">Écart constaté à une relève (sinon à la clôture).</param>
+    Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default, bool releve = false);
     Task LotBloqueAsync(string produit, string numeroLot, int boitesEnStock, int boitesVendues, CancellationToken ct = default);
     Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default);
     Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default);
@@ -383,9 +385,10 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
 
     /// <summary>
     /// Écart de caisse : tout écart non nul est notifié (e-mail, et dans le logiciel par le journal des actions) ;
-    /// le SMS seulement au-delà du seuil SMS réglé, à défaut du seuil d'écart de la caisse.
+    /// le SMS seulement au-delà du seuil SMS réglé, à défaut du seuil d'écart de la caisse. Nomme celui qui a compté la caisse
+    /// (clôture ou relève).
     /// </summary>
-    public Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default)
+    public Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default, bool releve = false)
     {
         var montant = (ecart > 0 ? "+" : "") + ecart.ToString("N2", Fr) + " DA";
         // Manque (moins d'argent que l'attendu) ou excédent (plus d'argent) : dit en clair, l'un et l'autre surveillés
@@ -397,11 +400,11 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
             var r = await depot.ReglagesAsync(ct);
             var seuil = r.SmsSeuilEcart ?? seuilCaisse;
             var natureSms = Pharma.Domain.Caisse.NatureEcart.EstManque(ecart) ? "Manque" : "Excedent";
-            var texte = $"{natureSms} de caisse {montant} a la cloture de {employe} ({poste}), seuil {seuil.ToString("N0", Fr)} DA.";
+            var texte = $"{natureSms} de caisse {montant} a la {(releve ? "releve" : "cloture")} de {employe} ({poste}), seuil {seuil.ToString("N0", Fr)} DA.";
             // E-mail : une information par ligne (les retours à la ligne deviennent des lignes dans l'e-mail, HtmlAlerte)
             return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
                 $"{nature} de caisse {montant}",
-                $"{nature} de caisse à la clôture.\n\nCaisse : {poste}\nClôturée par : {employe}\nÉcart : {montant} ({nature.ToLowerInvariant()})\nSeuil d’alerte SMS : {seuil.ToString("N2", Fr)} DA",
+                $"{nature} de caisse à la {(releve ? "relève" : "clôture")}.\n\nCaisse : {poste}\n{(releve ? "Relève faite par" : "Clôturée par")} : {employe}\nÉcart : {montant} ({nature.ToLowerInvariant()})\nSeuil d’alerte SMS : {seuil.ToString("N2", Fr)} DA",
                 null, Math.Abs(ecart) > seuil ? texte : null), ct);
         });
     }

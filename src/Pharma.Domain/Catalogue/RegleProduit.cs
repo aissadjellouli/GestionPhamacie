@@ -51,15 +51,32 @@ public static class RegleProduit
     /// Classe imposée quand un autre que le titulaire crée ou modifie un produit dont la DCI correspond à une
     /// substance surveillée, ou dont le n° d'enregistrement est classé sous registre par la nomenclature nationale
     /// (<paramref name="classeSurveillee"/> : psychotrope ou stupefiant, voir <see cref="ClasseSurveilleeRetenue"/>) alors que
-    /// la classe choisie n'est pas soumise au registre : la classe de la substance. Null sinon (titulaire, DCI non surveillée,
-    /// classe déjà sous registre). Le produit est alors « à vérifier » : invendable jusqu'à la confirmation du titulaire.
+    /// la classe choisie est moins stricte (ordre : stupéfiant, puis psychotrope, puis liste I, liste II et libre) : la classe de la
+    /// substance. Un psychotrope dont la substance est un stupéfiant est ainsi monté en stupéfiant. Null sinon (titulaire, DCI non
+    /// surveillée, classe déjà aussi stricte). Le produit est alors « à vérifier » : invendable jusqu'à la confirmation du titulaire.
     /// </summary>
     public static ClasseReglementaire? ClasseImposee(ClasseReglementaire choisie, string? classeSurveillee, bool titulaire)
     {
         if (titulaire || classeSurveillee is not ("psychotrope" or "stupefiant")) return null;
-        if (choisie is ClasseReglementaire.Psychotrope or ClasseReglementaire.Stupefiant) return null;
-        return CodesMetier.ClasseDepuisCode(classeSurveillee);
+        var surveillee = CodesMetier.ClasseDepuisCode(classeSurveillee);
+        return Severite(surveillee) > Severite(choisie) ? surveillee : null;
     }
+
+    /// <summary>
+    /// Vrai quand la classe <paramref name="choisie"/> est moins stricte que celle de la substance surveillée ou de la nomenclature
+    /// (<paramref name="classeSurveillee"/>) : un employé se la verrait imposer ; choisie par le titulaire, c'est une confirmation à
+    /// mémoriser (produit.classe_confirmee_par).
+    /// </summary>
+    public static bool MoinsStricteQueSurveillee(ClasseReglementaire choisie, string? classeSurveillee) =>
+        ClasseImposee(choisie, classeSurveillee, false) is not null;
+
+    /// <summary>Sévérité au regard du registre : stupéfiant (2) avant psychotrope (1) ; liste I, liste II et libre (0) hors registre.</summary>
+    public static int Severite(ClasseReglementaire c) => c switch
+    {
+        ClasseReglementaire.Stupefiant => 2,
+        ClasseReglementaire.Psychotrope => 1,
+        _ => 0
+    };
 
     /// <summary>
     /// Classe sous registre retenue entre celle de la substance surveillée qui correspond à la DCI (<paramref name="parDci"/>) et celle

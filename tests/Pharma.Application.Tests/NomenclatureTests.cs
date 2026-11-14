@@ -16,11 +16,16 @@ internal sealed class NomenclatureEnMemoire : INomenclature
     public Task<IReadOnlyList<MedicamentNomenclature>> RechercherAsync(string t, int l, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<MedicamentNomenclature>>([]);
     public Task<IReadOnlyList<ProduitAVerifier>> AVerifierAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ProduitAVerifier>>([]);
-    public Task<string?> ChangerClasseAsync(long p, string c, long u, CancellationToken ct = default)
+    public bool? Confirmation { get; private set; }
+    /// <summary>Classe sous registre que donnent la DCI et la nomenclature au produit (null : aucune).</summary>
+    public string? ClasseSurveillee { get; set; }
+    public Task<string?> ChangerClasseAsync(long p, string c, long u, CancellationToken ct = default, bool confirmation = false)
     {
         Changement = (p, c);
+        Confirmation = confirmation;
         return Task.FromResult<string?>(p == 7 ? "liste_i" : null);
     }
+    public Task<string?> ClasseSurveilleeProduitAsync(long p, CancellationToken ct = default) => Task.FromResult(ClasseSurveillee);
 }
 
 internal sealed class LecteurFactice(int lignes, bool illisible = false) : ILecteurNomenclature

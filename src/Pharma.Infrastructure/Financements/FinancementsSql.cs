@@ -10,16 +10,20 @@ using Pharma.Infrastructure.Tresorerie;
 
 namespace Pharma.Infrastructure.Financements;
 
-/// <summary>Prêts bancaires (banque de la trésorerie ou prêteur hors trésorerie), échéances, compte du titulaire et usage des sources (078, 079).</summary>
+/// <summary>
+/// Prêts bancaires (banque de la trésorerie ou prêteur hors trésorerie), échéances, compte du titulaire et usage des sources (078, 079) ;
+/// taux, durée et assurance des échéances (081 : vues v_pret_bancaire_complet et v_echeance_pret_complete).
+/// </summary>
 public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
 {
     private const string ColonnesPret = """
         id, compte_id, banque, reference, objet, montant, date_pret, document, capital_rembourse, reste_du, utilise, echeances, echeances_payees,
-        echues_non_payees, prochaine_echeance, prochain_montant, employe
+        echues_non_payees, prochaine_echeance, prochain_montant, employe, taux, duree_mois, prochaine_assurance
         """;
 
     private const string ColonnesEcheance = """
-        id, pret_id, pret, banque, rang, date_echeance, capital, interets, tva, marge, montant, capital_restant, date_paiement, moyen, compte, reference, employe
+        id, pret_id, pret, banque, rang, date_echeance, capital, interets, tva, marge, montant, capital_restant, date_paiement, moyen, compte, reference, employe,
+        assurance
         """;
 
     public async Task<Page<PretResume>> PretsAsync(FiltrePrets filtre, DemandePage page, CancellationToken ct = default)
@@ -27,7 +31,7 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         var etat = filtre.Etat switch { "rembourses" => "reste_du <= 0", "tous" => "true", _ => "reste_du > 0" };
         await using var cmd = db.CreateCommand($"""
             SELECT {ColonnesPret}, {Lecture.PaginationSql.Total}
-            FROM v_pret_bancaire
+            FROM v_pret_bancaire_complet
             WHERE {etat}
               AND ($1::bigint IS NULL OR compte_id = $1)
               AND ($2::text IS NULL OR reference ILIKE '%' || $2 || '%' OR objet ILIKE '%' || $2 || '%' OR banque ILIKE '%' || $2 || '%')
@@ -37,13 +41,13 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         cmd.Parameters.Add(Long(filtre.CompteId));
         cmd.Parameters.Add(Texte(filtre.Texte));
         Lecture.PaginationSql.Parametres(cmd, page);
-        return await Lecture.PaginationSql.LireAsync(cmd, page, 17, LirePret, ct);
+        return await Lecture.PaginationSql.LireAsync(cmd, page, 20, LirePret, ct);
     }
 
     public async Task<PretDetail?> PretAsync(long id, CancellationToken ct = default)
     {
         PretResume pret;
-        await using (var cmd = db.CreateCommand($"SELECT {ColonnesPret} FROM v_pret_bancaire WHERE id = $1"))
+        await using (var cmd = db.CreateCommand($"SELECT {ColonnesPret} FROM v_pret_bancaire_complet WHERE id = $1"))
         {
             cmd.Parameters.AddWithValue(id);
             await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -51,7 +55,7 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
             pret = LirePret(r);
         }
         var echeances = new List<EcheancePret>();
-        await using (var cmd = db.CreateCommand($"SELECT {ColonnesEcheance} FROM v_echeance_pret WHERE pret_id = $1 ORDER BY rang"))
+        await using (var cmd = db.CreateCommand($"SELECT {ColonnesEcheance} FROM v_echeance_pret_complete WHERE pret_id = $1 ORDER BY rang"))
         {
             cmd.Parameters.AddWithValue(id);
             await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -76,8 +80,8 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
     public async Task<long> CreerPretAsync(PretAEcrire p, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            INSERT INTO pret_bancaire (compte_id, reference, objet, montant, date_pret, preteur, utilisateur_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
+            INSERT INTO pret_bancaire (compte_id, reference, objet, montant, date_pret, preteur, taux, duree_mois, utilisateur_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
             """);
         Parametres(cmd, p);
         cmd.Parameters.AddWithValue(p.UtilisateurId);
@@ -106,7 +110,8 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
             ancien = await lecture.ExecuteScalarAsync(ct) as string;
         }
         await using (var cmd = new NpgsqlCommand("""
-            UPDATE pret_bancaire SET compte_id = $1, reference = $2, objet = $3, montant = $4, date_pret = $5, preteur = $6 WHERE id = $7
+            UPDATE pret_bancaire SET compte_id = $1, reference = $2, objet = $3, montant = $4, date_pret = $5, preteur = $6, taux = $7, duree_mois = $8
+            WHERE id = $9
             """, cx, tx))
         {
             Parametres(cmd, p);
@@ -124,8 +129,8 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         {
             await using (var report = new NpgsqlCommand("""
                 INSERT INTO correspondance_echeancier_preteur (preteur, col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours,
-                                                               lignes_ignorees, utilisateur_id)
-                SELECT $2, col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours, lignes_ignorees, $3
+                                                               lignes_ignorees, col_assurance, utilisateur_id)
+                SELECT $2, col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours, lignes_ignorees, col_assurance, $3
                 FROM correspondance_echeancier_preteur WHERE preteur = $1
                 ON CONFLICT (preteur) DO NOTHING
                 """, cx, tx))
@@ -185,8 +190,8 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         foreach (var l in lignes)
         {
             await using var cmd = new NpgsqlCommand("""
-                INSERT INTO echeance_pret (pret_id, rang, date_echeance, capital, interets, tva, marge, montant, capital_restant)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                INSERT INTO echeance_pret (pret_id, rang, date_echeance, capital, interets, tva, marge, montant, capital_restant, assurance)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 """, cx, tx);
             cmd.Parameters.AddWithValue(pretId);
             cmd.Parameters.AddWithValue(++rang);
@@ -197,6 +202,7 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
             cmd.Parameters.AddWithValue(l.Marge);
             cmd.Parameters.AddWithValue(l.Montant);
             cmd.Parameters.AddWithValue(l.CapitalRestant);
+            cmd.Parameters.AddWithValue(l.Assurance);
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
@@ -212,14 +218,14 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
     {
         var (table, cle, valeur) = CleCorrespondance(compteId, preteur);
         await using var cmd = db.CreateCommand($"""
-            SELECT col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours, lignes_ignorees
+            SELECT col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours, lignes_ignorees, col_assurance
             FROM {table} WHERE {cle} = $1
             """);
         cmd.Parameters.AddWithValue(valeur);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         int? Col(int i) => r.IsDBNull(i) ? null : r.GetInt32(i);
-        return new CorrespondanceColonnes(r.GetInt32(0), Col(1), Col(2), Col(3), Col(4), Col(5), Col(6), r.GetInt32(7));
+        return new CorrespondanceColonnes(r.GetInt32(0), Col(1), Col(2), Col(3), Col(4), Col(5), Col(6), r.GetInt32(7), Col(8));
     }
 
     public async Task EnregistrerCorrespondanceAsync(long? compteId, string? preteur, CorrespondanceColonnes c, long utilisateurId, CancellationToken ct = default)
@@ -227,18 +233,20 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         var (table, cle, valeur) = CleCorrespondance(compteId, preteur);
         await using var cmd = db.CreateCommand($"""
             INSERT INTO {table} ({cle}, col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours,
-                                 lignes_ignorees, utilisateur_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                                 lignes_ignorees, utilisateur_id, col_assurance)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT ({cle}) DO UPDATE SET col_date = EXCLUDED.col_date, col_capital = EXCLUDED.col_capital,
                 col_interets = EXCLUDED.col_interets, col_tva = EXCLUDED.col_tva, col_marge = EXCLUDED.col_marge, col_montant = EXCLUDED.col_montant,
-                col_encours = EXCLUDED.col_encours, lignes_ignorees = EXCLUDED.lignes_ignorees, utilisateur_id = EXCLUDED.utilisateur_id, modifie_le = now()
+                col_encours = EXCLUDED.col_encours, lignes_ignorees = EXCLUDED.lignes_ignorees, utilisateur_id = EXCLUDED.utilisateur_id,
+                col_assurance = EXCLUDED.col_assurance, modifie_le = now()
             """);
         cmd.Parameters.AddWithValue(valeur);
         cmd.Parameters.AddWithValue(c.Date);
         foreach (var col in new[] { c.Capital, c.Interets, c.Tva, c.Marge, c.Montant, c.Encours })
-            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)col ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
+            cmd.Parameters.Add(Entier(col));
         cmd.Parameters.AddWithValue(c.LignesIgnorees);
         cmd.Parameters.AddWithValue(utilisateurId);
+        cmd.Parameters.Add(Entier(c.Assurance));
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -255,7 +263,7 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         var ordre = filtre.Etat == "payees" ? "date_paiement DESC, id DESC" : "date_echeance, id";
         await using var cmd = db.CreateCommand($"""
             SELECT {ColonnesEcheance}, {Lecture.PaginationSql.Total}
-            FROM v_echeance_pret
+            FROM v_echeance_pret_complete
             WHERE {condition}
               AND ($2::text IS NULL OR pret ILIKE '%' || $2 || '%' OR banque ILIKE '%' || $2 || '%')
             ORDER BY {ordre}
@@ -264,12 +272,12 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         cmd.Parameters.AddWithValue(filtre.Aujourdhui);
         cmd.Parameters.Add(Texte(filtre.Texte));
         Lecture.PaginationSql.Parametres(cmd, page);
-        return await Lecture.PaginationSql.LireAsync(cmd, page, 17, LireEcheance, ct);
+        return await Lecture.PaginationSql.LireAsync(cmd, page, 18, LireEcheance, ct);
     }
 
     public async Task<EcheancePret?> EcheanceAsync(long id, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand($"SELECT {ColonnesEcheance} FROM v_echeance_pret WHERE id = $1");
+        await using var cmd = db.CreateCommand($"SELECT {ColonnesEcheance} FROM v_echeance_pret_complete WHERE id = $1");
         cmd.Parameters.AddWithValue(id);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         return await r.ReadAsync(ct) ? LireEcheance(r) : null;
@@ -285,7 +293,7 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         DateOnly dateEcheance, datePret;
         decimal capital, charges, montant;
         await using (var cmd = new NpgsqlCommand("""
-            SELECT e.pret_id, p.reference, e.date_echeance, e.capital, e.interets + e.tva + e.marge, e.montant, p.date_pret, e.rang,
+            SELECT e.pret_id, p.reference, e.date_echeance, e.capital, e.interets + e.tva + e.marge + e.assurance, e.montant, p.date_pret, e.rang,
                    EXISTS (SELECT 1 FROM paiement_echeance_pret x WHERE x.echeance_id = e.id),
                    EXISTS (SELECT 1 FROM echeance_pret a WHERE a.pret_id = e.pret_id AND a.rang < e.rang
                            AND NOT EXISTS (SELECT 1 FROM paiement_echeance_pret x WHERE x.echeance_id = a.id))
@@ -319,9 +327,10 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         long? mouvementCapital = capital > 0
             ? await MouvementAsync(cx, tx, compte, p.Date, "sortie", capital, "remboursement_financement", null, libelle + " (capital)", p.Reference, p.UtilisateurId, ct)
             : null;
+        // Intérêts, assurance, TVA et marge : une seule dépense « charges financières »
         long? mouvementCharges = charges > 0
             ? await MouvementAsync(cx, tx, compte, p.Date, "sortie", charges, "depense", RegleTresorerie.ChargesFinancieres,
-                libelle + " (intérêts, TVA, marge)", p.Reference, p.UtilisateurId, ct)
+                libelle + " (intérêts, assurance, TVA, marge)", p.Reference, p.UtilisateurId, ct)
             : null;
 
         long id;
@@ -545,17 +554,22 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         cmd.Parameters.AddWithValue(p.Montant);
         cmd.Parameters.AddWithValue(p.DatePret);
         cmd.Parameters.Add(Texte(p.Preteur));
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)p.Taux ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Numeric });
+        cmd.Parameters.Add(Entier(p.DureeMois));
     }
 
     private static PretResume LirePret(NpgsqlDataReader r) => new(r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), r.GetString(2), r.GetString(3), Txt(r, 4), r.GetDecimal(5),
         r.GetFieldValue<DateOnly>(6), Txt(r, 7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetInt32(11), r.GetInt32(12), r.GetInt32(13),
-        r.IsDBNull(14) ? null : r.GetFieldValue<DateOnly>(14), r.IsDBNull(15) ? null : r.GetDecimal(15), r.GetString(16));
+        r.IsDBNull(14) ? null : r.GetFieldValue<DateOnly>(14), r.IsDBNull(15) ? null : r.GetDecimal(15), r.GetString(16),
+        r.IsDBNull(17) ? null : r.GetDecimal(17), r.IsDBNull(18) ? null : r.GetInt32(18), r.IsDBNull(19) ? null : r.GetDecimal(19));
 
     private static EcheancePret LireEcheance(NpgsqlDataReader r) => new(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetInt32(4),
-        new LigneEcheancier(r.GetFieldValue<DateOnly>(5), r.GetDecimal(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetDecimal(11)),
+        new LigneEcheancier(r.GetFieldValue<DateOnly>(5), r.GetDecimal(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetDecimal(11),
+            r.GetDecimal(17)),
         r.IsDBNull(12) ? null : r.GetFieldValue<DateOnly>(12), Txt(r, 13), Txt(r, 14), Txt(r, 15), Txt(r, 16));
 
     private static string? Txt(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
     private static NpgsqlParameter Texte(string? v) => new() { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text };
     private static NpgsqlParameter Long(long? v) => new() { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint };
+    private static NpgsqlParameter Entier(int? v) => new() { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer };
 }

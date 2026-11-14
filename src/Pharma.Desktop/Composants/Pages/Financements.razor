@@ -70,9 +70,13 @@
                             <input id="np-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="nouveauMontant" /></div>
                         <div class="champ" style="flex: 0 0 170px"><label for="np-date" class="requis">Date du prêt</label>
                             <input id="np-date" data-champ="date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="nouvelleDate" /></div>
+                        <div class="champ" style="flex: 0 0 150px"><label for="np-taux">Taux annuel (%)</label>
+                            <input id="np-taux" data-champ="taux" type="number" min="0" max="100" step="0.0001" @bind="nouveauTaux" placeholder="Ex. 5,75" /></div>
+                        <div class="champ" style="flex: 0 0 150px"><label for="np-duree">Durée (mois)</label>
+                            <input id="np-duree" data-champ="duree" type="number" min="1" max="600" step="1" @bind="nouvelleDuree" placeholder="Ex. 60" /></div>
                     </div>
                     <div class="champ"><label for="np-objet">Objet</label><input id="np-objet" type="text" maxlength="200" @bind="nouvelObjet" placeholder="Ex. Achat du stock d’ouverture, travaux" /></div>
-                    <p class="detail" style="margin: 0">Ensuite, dans la fiche du prêt : l’échéancier (saisi ou importé), le document joint, et l’usage de l’argent reçu.</p>
+                    <p class="detail" style="margin: 0">Taux et durée : tels qu’écrits au contrat (facultatifs, jamais recalculés). Ensuite, dans la fiche du prêt : l’échéancier (saisi ou importé, assurance comprise), le document joint, et l’usage de l’argent reçu.</p>
                     @if (nouveauHorsTresorerie)
                     {
                         <p class="detail" style="margin: 0">Prêteur hors trésorerie : l’argent reçu n’entre dans aucun compte suivi ; il sert directement à payer une facture, une traite ou une dépense. Les échéances se paient depuis le coffre, le tiroir ou une banque, comme les autres.</p>
@@ -101,15 +105,15 @@
                 </div>
                 <div class="tableau-cadre">
                     <table class="tableau">
-                        <thead><tr><th scope="col">Prêt</th><th scope="col">Banque</th><th scope="col" class="nombre">Montant</th><th scope="col" class="nombre">Capital restant dû</th><th scope="col">Prochaine échéance</th><th scope="col" class="nombre">Reste à employer</th><th scope="col"><span class="visuellement-cache">Ouvrir</span></th></tr></thead>
+                        <thead><tr><th scope="col">Prêt</th><th scope="col">Banque</th><th scope="col" class="nombre">Montant</th><th scope="col" class="nombre">Taux · Durée</th><th scope="col" class="nombre" title="Montant de la prochaine échéance non payée, assurance comprise">Mensualité</th><th scope="col" class="nombre">Capital restant dû</th><th scope="col">Prochaine échéance</th><th scope="col" class="nombre">Reste à employer</th><th scope="col"><span class="visuellement-cache">Ouvrir</span></th></tr></thead>
                         <tbody>
                             @if (prets is null)
                             {
-                                <tr><td colspan="7"><Chargement /></td></tr>
+                                <tr><td colspan="9"><Chargement /></td></tr>
                             }
                             else if (prets.Lignes.Count == 0)
                             {
-                                <tr><td colspan="7" class="vide">@(FiltrePretsActif ? "Aucun prêt pour ces filtres." : "Aucun prêt en cours.")</td></tr>
+                                <tr><td colspan="9" class="vide">@(FiltrePretsActif ? "Aucun prêt pour ces filtres." : "Aucun prêt en cours.")</td></tr>
                             }
                             else
                             {
@@ -119,11 +123,16 @@
                                         <td><strong>@p.Reference</strong><br /><span class="detail">du @p.DatePret.ToString("dd/MM/yyyy")@(p.Objet is { } o ? $" · {o}" : "")</span></td>
                                         <td>@p.Banque@if (p.CompteId is null) { <br /><span class="detail">hors trésorerie</span> }</td>
                                         <td class="nombre">@Libelles.Dinars(p.Montant, 2)</td>
+                                        <td class="nombre">@Libelles.TauxPret(p.Taux)<br /><span class="detail">@Libelles.DureePret(p.DureeMois)</span></td>
+                                        <td class="nombre">
+                                            @(p.ProchainMontant is { } mensualite ? Libelles.Dinars(mensualite, 2) : "—")
+                                            @if (p.ProchaineAssurance is > 0) { <br /><span class="detail">dont assurance @Libelles.Dinars(p.ProchaineAssurance.Value, 2)</span> }
+                                        </td>
                                         <td class="nombre"><strong>@Libelles.Dinars(p.ResteDu, 2)</strong></td>
                                         <td>
                                             @if (p.ProchaineEcheance is { } pe)
                                             {
-                                                @pe.ToString("dd/MM/yyyy")<text> · </text>@Libelles.Dinars(p.ProchainMontant ?? 0, 2)
+                                                @pe.ToString("dd/MM/yyyy")
                                                 @if (p.EchuesNonPayees > 0) { <br /><span class="pastille urgent">Échue, non payée</span> }
                                                 else if (pe.DayNumber - DateOnly.FromDateTime(DateTime.Today).DayNumber <= JoursAvantEcheance) { <br /><span class="pastille attention">À payer sous peu</span> }
                                             }
@@ -154,7 +163,7 @@
                 </div>
                 <div class="tableau-cadre">
                     <table class="tableau">
-                        <thead><tr><th scope="col">Échéance</th><th scope="col">Prêt</th><th scope="col" class="nombre">Capital</th><th scope="col" class="nombre">Intérêts, TVA, marge</th><th scope="col" class="nombre">Montant</th><th scope="col">Paiement</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                        <thead><tr><th scope="col">Échéance</th><th scope="col">Prêt</th><th scope="col" class="nombre">Capital</th><th scope="col" class="nombre" title="Intérêts, assurance, TVA et marge">Charges financières</th><th scope="col" class="nombre">Montant</th><th scope="col">Paiement</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
                         <tbody>
                             @if (echeances is null)
                             {
@@ -173,7 +182,7 @@
                                         <td>@e.Ligne.Date.ToString("dd/MM/yyyy")@if (echue) { <br /><span class="pastille urgent">Échue, non payée</span> }</td>
                                         <td><a href="@($"financements?rubrique=prets&pret={e.PretId}")">@e.Pret</a><br /><span class="detail">@e.Banque · n° @e.Rang</span></td>
                                         <td class="nombre">@Libelles.Dinars(e.Ligne.Capital, 2)</td>
-                                        <td class="nombre">@Libelles.Dinars(e.Ligne.Interets + e.Ligne.Tva + e.Ligne.Marge, 2)</td>
+                                        <td class="nombre">@Libelles.Dinars(e.Ligne.Interets + e.Ligne.Tva + e.Ligne.Marge + e.Ligne.Assurance, 2)@if (e.Ligne.Assurance > 0) { <br /><span class="detail">dont assurance @Libelles.Dinars(e.Ligne.Assurance, 2)</span> }</td>
                                         <td class="nombre"><strong>@Libelles.Dinars(e.Ligne.Montant, 2)</strong></td>
                                         <td>@Paiement(e)</td>
                                         <td>@if (e.PayeeLe is null && choisie?.Id != e.Id) { <button type="button" class="btn" @onclick="() => ChoisirEcheance(e)">Payée…</button> }</td>
@@ -190,7 +199,7 @@
                 {
                     <section class="panneau" aria-labelledby="t-paiement-echeance">
                         <h2 id="t-paiement-echeance">Échéance du @c.Ligne.Date.ToString("dd/MM/yyyy") · prêt @c.Pret · @Libelles.Dinars(c.Ligne.Montant, 2)</h2>
-                        <p class="detail" style="margin: 0">Capital @Libelles.Dinars(c.Ligne.Capital, 2) (diminue la dette envers @c.Banque) · charges financières @Libelles.Dinars(c.Ligne.Interets + c.Ligne.Tva + c.Ligne.Marge, 2) (intérêts, TVA, marge : dépense de la trésorerie).</p>
+                        <p class="detail" style="margin: 0">Capital @Libelles.Dinars(c.Ligne.Capital, 2) (diminue la dette envers @c.Banque) · charges financières @Libelles.Dinars(c.Ligne.Interets + c.Ligne.Tva + c.Ligne.Marge + c.Ligne.Assurance, 2) (intérêts, assurance, TVA, marge : dépense de la trésorerie@(c.Ligne.Assurance > 0 ? $", dont assurance {Libelles.Dinars(c.Ligne.Assurance, 2)}" : "")).</p>
                         <div class="achats-ligne">
                             <div class="champ" style="flex: 0 0 170px"><label for="pe-date" class="requis">Date du paiement</label>
                                 <input id="pe-date" data-champ="date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="datePaiement" /></div>
@@ -343,6 +352,8 @@
     private bool nouveauHorsTresorerie;
     private string? nouvelleReference, nouvelObjet, nouveauPreteur;
     private decimal nouveauMontant;
+    private decimal? nouveauTaux;
+    private int? nouvelleDuree;
     private DateOnly nouvelleDate = DateOnly.FromDateTime(DateTime.Today);
 
     // Échéances
@@ -473,7 +484,7 @@
     {
         (creation, erreur, message) = (true, null, null);
         (nouveauCompte, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate) = (Banques.FirstOrDefault()?.Id ?? 0, null, null, 0, DateOnly.FromDateTime(DateTime.Today));
-        (nouveauHorsTresorerie, nouveauPreteur) = (false, null);
+        (nouveauHorsTresorerie, nouveauPreteur, nouveauTaux, nouvelleDuree) = (false, null, null, null);
     }
 
     private async Task CreerPretAsync()
@@ -481,8 +492,8 @@
         (enCours, erreur, message) = (true, null, null);
         // Banque suivie en trésorerie, ou autre prêteur (nom libre) : un seul des deux est envoyé
         var requete = nouveauHorsTresorerie
-            ? new PretRequete(null, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate, nouveauPreteur)
-            : new PretRequete(nouveauCompte, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate);
+            ? new PretRequete(null, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate, nouveauPreteur, nouveauTaux, nouvelleDuree)
+            : new PretRequete(nouveauCompte, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate, null, nouveauTaux, nouvelleDuree);
         var (id, e) = await Api.CreerPretAsync(requete);
         enCours = false;
         if (e is not null || id is null) { erreur = e; return; }

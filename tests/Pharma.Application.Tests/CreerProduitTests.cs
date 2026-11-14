@@ -13,7 +13,12 @@ internal sealed class CatalogueEcritureEnMemoire : ICatalogueEcriture
     public Task<string?> DoublonAsync(string nom, string dosage, string forme, CancellationToken ct = default) =>
         Task.FromResult<string?>(nom.Equals("paracétamol 500 mg cp", StringComparison.OrdinalIgnoreCase) && dosage == "500 mg" ? "Paracétamol 500 mg cp" : null);
     public List<bool> AVerifier { get; } = [];
-    public Task<long> CreerAsync(FicheProduit f, bool aVerifier, CancellationToken ct = default) { Crees.Add(f); AVerifier.Add(aVerifier); return Task.FromResult(50L); }
+    public List<long?> ConfirmeesPar { get; } = [];
+    public Task<long> CreerAsync(FicheProduit f, bool aVerifier, CancellationToken ct = default, long? classeConfirmeePar = null)
+    {
+        Crees.Add(f); AVerifier.Add(aVerifier); ConfirmeesPar.Add(classeConfirmeePar);
+        return Task.FromResult(50L);
+    }
     public Task<IReadOnlyList<string>> DciAsync(string texte, int limite, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<string>>([]);
     /// <summary>Substances surveillées : alprazolam (psychotrope), morphine (stupéfiant).</summary>
     public Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default) =>

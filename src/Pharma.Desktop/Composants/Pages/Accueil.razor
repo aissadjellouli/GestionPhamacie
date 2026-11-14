@@ -47,7 +47,8 @@
                 <ul style="margin: 6px 0">
                     @foreach (var e in ec.Derniers)
                     {
-                        <li>@e.ClotureLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @e.Poste · @(e.ClotureePar ? "clôturée par" : "ouverte par") @e.Employe : <strong>@((e.Ecart > 0 ? "+" : "") + Libelles.Dinars(e.Ecart, 2))</strong> (@(e.Ecart < 0 ? "manque" : "excédent"))</li>
+                        @* Date de la clôture (ou de la relève) de la session, pas celle de l'ouverture : la caisse rouverte ensuite est une autre session *@
+                        <li>@(e.Releve ? "Relève" : "Clôture") du @e.ClotureLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @e.Poste@(e.OuverteLe is { } o ? $" (caisse ouverte le {o.ToLocalTime():dd/MM/yyyy HH:mm})" : "") · @(e.ClotureePar ? (e.Releve ? "relève faite par" : "clôturée par") : "ouverte par") @e.Employe : <strong>@((e.Ecart > 0 ? "+" : "") + Libelles.Dinars(e.Ecart, 2))</strong> (@(e.Ecart < 0 ? "manque" : "excédent"))</li>
                     }
                 </ul>
                 @if (ec.Nombre > ec.Derniers.Count) { <div class="detail">… et @(ec.Nombre - ec.Derniers.Count) plus ancien(s).</div> }

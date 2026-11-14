@@ -153,7 +153,7 @@ public class SurveillanceTests
 
     private sealed class AlertesEnPanne : Notifications.IAlertesTitulaire
     {
-        public Task EcartCaisseAsync(string e, string p, decimal ecart, decimal seuil, CancellationToken ct = default) => Task.CompletedTask;
+        public Task EcartCaisseAsync(string e, string p, decimal ecart, decimal seuil, CancellationToken ct = default, bool releve = false) => Task.CompletedTask;
         public Task LotBloqueAsync(string produit, string lot, int stock, int vendues, CancellationToken ct = default) => Task.CompletedTask;
         public Task SauvegardeEnEchecAsync(bool d, string detail, CancellationToken ct = default) => Task.CompletedTask;
         public Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default) => Task.CompletedTask;

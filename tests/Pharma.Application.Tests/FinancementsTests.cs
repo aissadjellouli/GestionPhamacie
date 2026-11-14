@@ -98,6 +98,58 @@ public class FinancementsTests
     }
 
     [Fact]
+    public async Task Echeance_avec_assurance_payee_assurance_en_charges_financieres()
+    {
+        var f = new FinancementsEnMemoire();
+        f.Echeances[0] = f.Echeances[0] with { Ligne = f.Echeances[0].Ligne with { Assurance = 450, Montant = 104020 } };
+        var j = new JournalEspion();
+        await Payer(f, j).ExecuterAsync(100, null, "virement", 2, "VIR-9", 0, 1, "Caisse 1");
+        Assert.Single(f.Paiements);
+        // Intérêts 3 000 + TVA 570 + assurance 450 : une seule dépense « charges financières » ; le capital diminue la dette
+        Assert.Equal((100000m, 4020m, 450m), ((decimal)j.Details[0]["capital"]!, (decimal)j.Details[0]["charges_financieres"]!, (decimal)j.Details[0]["assurance"]!));
+    }
+
+    [Fact]
+    public async Task Echeancier_avec_assurance_enregistre_et_cout_au_journal()
+    {
+        var f = new FinancementsEnMemoire();
+        var j = new JournalEspion();
+        var cas = new EnregistrerEcheancier(f, Titulaire, j);
+        var lignes = f.Echeances.Select(e => e.Ligne with { Assurance = 500, Montant = e.Ligne.Montant + 500 }).ToList();
+        // Assurance non reportée dans l'échéance : refus
+        var faux = lignes.ToList();
+        faux[0] = faux[0] with { Montant = faux[0].Montant - 500 };
+        Assert.Contains(await cas.ControlerAsync(5, faux, 1), a => a is { Ligne: 1, Champ: "montant" });
+
+        await cas.ExecuterAsync(5, lignes, 1);
+        Assert.Equal([500m, 500m, 500m], f.Remplace!.Value.Lignes.Select(l => l.Assurance));
+        Assert.Equal((1500m, 8070m), ((decimal)j.Details[0]["assurance"]!, (decimal)j.Details[0]["cout_total"]!));
+    }
+
+    [Fact]
+    public async Task Taux_et_duree_du_pret_saisis_tels_qu_au_contrat_et_journalises()
+    {
+        var f = new FinancementsEnMemoire();
+        var j = new JournalEspion();
+        var cas = new EnregistrerPret(f, Titulaire, Horloge, j, new TresorerieEnMemoire());
+        Assert.Equal("taux", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(2, null, "PR-3", null, 1000, null, 1, taux: 100.5m))).Champ);
+        Assert.Equal("taux", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(2, null, "PR-3", null, 1000, null, 1, taux: 5.12345m))).Champ);
+        Assert.Equal("duree", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(2, null, "PR-3", null, 1000, null, 1, dureeMois: 0))).Champ);
+        Assert.Empty(f.PretsEcrits);
+
+        await cas.CreerAsync(2, null, "PR-3", null, 1000, null, 1, taux: 5.75m, dureeMois: 60);
+        Assert.Equal(((decimal?)5.75m, (int?)60), (f.PretsEcrits[0].Taux, f.PretsEcrits[0].DureeMois));
+        Assert.Equal(((decimal?)5.75m, (int?)60), ((decimal?)j.Details[0]["taux"], (int?)j.Details[0]["duree_mois"]));
+
+        // Facultatifs ; corrigés même quand une échéance est payée
+        f.Pret = f.Pret with { EcheancesPayees = 1 };
+        await cas.ModifierAsync(5, 2, null, "PR-1", null, 300000, f.Pret.DatePret, 1, taux: 6m, dureeMois: 36);
+        Assert.Equal(((decimal?)6m, (int?)36), (f.PretsEcrits[^1].Taux, f.PretsEcrits[^1].DureeMois));
+        await cas.CreerAsync(2, null, "PR-4", null, 1000, null, 1);
+        Assert.Equal(((decimal?)null, (int?)null), (f.PretsEcrits[^1].Taux, f.PretsEcrits[^1].DureeMois));
+    }
+
+    [Fact]
     public async Task Echeance_payee_en_especes_avec_complement_du_tiroir()
     {
         var f = new FinancementsEnMemoire();

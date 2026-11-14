@@ -11,7 +11,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
     {
         await using var cmd = db.CreateCommand("""
             SELECT p.id, p.nom_commercial, d.nom, p.dosage, p.forme, p.code_barre, p.prix_public, p.tarif_reference, p.remboursable,
-                   p.taux_tva, p.actif, p.classe, p.num_enregistrement
+                   p.taux_tva, p.actif, p.classe, p.num_enregistrement, p.classe_confirmee_par IS NOT NULL
             FROM produit p LEFT JOIN dci d ON d.id = p.dci_id WHERE p.id = $1
             """);
         cmd.Parameters.AddWithValue(id);
@@ -19,7 +19,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         if (!await r.ReadAsync(ct)) return null;
         string? T(int i) => r.IsDBNull(i) ? null : r.GetString(i);
         return new FicheProduitModifiable(r.GetInt64(0), r.GetString(1), T(2), T(3), T(4), T(5), r.GetDecimal(6),
-            r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetBoolean(8), r.GetDecimal(9), r.GetBoolean(10), r.GetString(11), T(12));
+            r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetBoolean(8), r.GetDecimal(9), r.GetBoolean(10), r.GetString(11), T(12), r.GetBoolean(13));
     }
 
     public async Task<bool> CodeBarreAutreProduitAsync(string codeBarre, long id, CancellationToken ct = default)
@@ -50,9 +50,12 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
             dci.Parameters.AddWithValue(nomDci);
             dciId = (long)(await dci.ExecuteScalarAsync(ct))!;
         }
+        // DCI changée : la confirmation de classe du titulaire (080) tombe, elle portait sur l'ancienne DCI
         await using var cmd = new NpgsqlCommand("""
             UPDATE produit SET nom_commercial = $2, dci_id = $3, dosage = $4, forme = $5, code_barre = $6, prix_public = $7,
-                               tarif_reference = $8, remboursable = $9, taux_tva = $10, actif = $11
+                               tarif_reference = $8, remboursable = $9, taux_tva = $10, actif = $11,
+                               classe_confirmee_par = CASE WHEN dci_id IS DISTINCT FROM $3 THEN NULL ELSE classe_confirmee_par END,
+                               classe_confirmee_le = CASE WHEN dci_id IS DISTINCT FROM $3 THEN NULL ELSE classe_confirmee_le END
             WHERE id = $1
             """, cnx, tx);
         cmd.Parameters.AddWithValue(f.Id);
@@ -72,16 +75,20 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         }
         // Classe imposée (produit modifié par un employé, DCI de substance surveillée ou n° classé par la nomenclature) : produit « à vérifier », invendable jusqu'à la
         // confirmation du titulaire ; avec du stock, solde d'ouverture au registre, comme un classement par le titulaire.
-        // Seulement si la classe en base est encore hors registre (pas de classement du titulaire entre-temps).
+        // Seulement si la classe en base est encore moins stricte (hors registre, ou psychotrope monté en stupéfiant) et n'a pas été
+        // confirmée par le titulaire entre-temps. Un psychotrope monté en stupéfiant était déjà sous registre : pas de solde d'ouverture.
         if (classeImposee)
         {
             await using var classe = new NpgsqlCommand("""
-                UPDATE produit SET classe = $2, liste_psychotrope = NULL, a_verifier = true
-                WHERE id = $1 AND classe NOT IN ('psychotrope', 'stupefiant')
+                UPDATE produit p SET classe = $2, liste_psychotrope = NULL, a_verifier = true
+                FROM (SELECT classe FROM produit WHERE id = $1 FOR UPDATE) avant
+                WHERE p.id = $1 AND p.classe_confirmee_par IS NULL
+                  AND (p.classe NOT IN ('psychotrope', 'stupefiant') OR (p.classe = 'psychotrope' AND $2 = 'stupefiant'))
+                RETURNING avant.classe
                 """, cnx, tx);
             classe.Parameters.AddWithValue(f.Id);
             classe.Parameters.AddWithValue(f.Classe);
-            if (await classe.ExecuteNonQueryAsync(ct) == 1)
+            if (await classe.ExecuteScalarAsync(ct) is string avant && avant is not ("psychotrope" or "stupefiant"))
                 await Catalogue.NomenclatureSql.InscrireOuvertureAsync(cnx, tx, f.Id, utilisateurId, ct);
         }
         await tx.CommitAsync(ct);

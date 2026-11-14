@@ -53,7 +53,7 @@
             <label class="case"><input type="checkbox" @bind="anomaliesSeules" @bind:after="() => pageLignes = 1" /><span>Lignes incohérentes seulement</span></label>
             <button type="button" class="btn" disabled="@enCours" @onclick="ImporterAsync">Importer le tableau de la banque…</button>
             <button type="button" class="btn" @onclick="AjouterLigne">Ajouter une ligne</button>
-            <button type="button" class="btn" title="Échéance = capital + intérêts + TVA + marge, sur les lignes non payées" @onclick="CalculerEcheances">Calculer les échéances</button>
+            <button type="button" class="btn" title="Échéance = capital + intérêts + TVA + marge + assurance, sur les lignes non payées" @onclick="CalculerEcheances">Calculer les échéances</button>
             <button type="button" class="btn" title="Capital restant dû = montant du prêt moins le capital cumulé" @onclick="CalculerEncours">Calculer le capital restant</button>
         </div>
         @if (ecartees.Count > 0)
@@ -63,7 +63,7 @@
         }
         <div class="tableau-cadre">
             <table class="tableau">
-                <thead><tr><th scope="col">N°</th><th scope="col">Date</th><th scope="col">Capital</th><th scope="col">Intérêts</th><th scope="col">TVA</th><th scope="col">Marge</th><th scope="col">Échéance</th><th scope="col">Capital restant dû</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                <thead><tr><th scope="col">N°</th><th scope="col">Date</th><th scope="col">Capital</th><th scope="col">Intérêts</th><th scope="col">TVA</th><th scope="col">Marge</th><th scope="col">Assurance</th><th scope="col">Échéance</th><th scope="col">Capital restant dû</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
                 <tbody>
                     @foreach (var (l, n) in LignesFiltrees.Skip((pageLignes - 1) * tailleLignes).Take(tailleLignes))
                     {
@@ -74,7 +74,8 @@
                             @if (l.Payee)
                             {
                                 <td>@l.Date.ToString("dd/MM/yyyy")</td><td class="nombre">@Libelles.Dinars(l.Capital, 2)</td><td class="nombre">@Libelles.Dinars(l.Interets, 2)</td>
-                                <td class="nombre">@Libelles.Dinars(l.Tva, 2)</td><td class="nombre">@Libelles.Dinars(l.Marge, 2)</td><td class="nombre">@Libelles.Dinars(l.Montant, 2)</td>
+                                <td class="nombre">@Libelles.Dinars(l.Tva, 2)</td><td class="nombre">@Libelles.Dinars(l.Marge, 2)</td><td class="nombre">@Libelles.Dinars(l.Assurance, 2)</td>
+                                <td class="nombre">@Libelles.Dinars(l.Montant, 2)</td>
                                 <td class="nombre">@Libelles.Dinars(l.CapitalRestant, 2)</td><td><span class="pastille ok">Payée</span></td>
                             }
                             else
@@ -84,21 +85,23 @@
                                 <td><input type="number" step="0.01" style="width: 110px" aria-label="@($"Intérêts de la ligne {numero}")" @bind="l.Interets" class="@Classe(fautes, "interets")" /></td>
                                 <td><input type="number" step="0.01" style="width: 100px" aria-label="@($"TVA de la ligne {numero}")" @bind="l.Tva" class="@Classe(fautes, "tva")" /></td>
                                 <td><input type="number" step="0.01" style="width: 100px" aria-label="@($"Marge de la ligne {numero}")" @bind="l.Marge" class="@Classe(fautes, "marge")" /></td>
+                                <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="@($"Assurance de la ligne {numero}")" @bind="l.Assurance" class="@Classe(fautes, "assurance")" /></td>
                                 <td><input type="number" step="0.01" style="width: 120px" aria-label="@($"Échéance de la ligne {numero}")" @bind="l.Montant" class="@Classe(fautes, "montant")" /></td>
                                 <td><input type="number" step="0.01" style="width: 130px" aria-label="@($"Capital restant dû de la ligne {numero}")" @bind="l.CapitalRestant" class="@Classe(fautes, "capital_restant")" /></td>
                                 <td><button type="button" class="lien-bouton" @onclick="() => Supprimer(l)">Retirer</button></td>
                             }
                         </tr>
-                        @foreach (var a in fautes) { <tr><td></td><td colspan="8" class="montant-du">@a.Message</td></tr> }
+                        @foreach (var a in fautes) { <tr><td></td><td colspan="9" class="montant-du">@a.Message</td></tr> }
                     }
-                    @if (lignes.Count == 0) { <tr><td colspan="9" class="vide">Aucune ligne : ajoutez-les une à une, ou importez le tableau fourni par la banque.</td></tr> }
+                    @if (lignes.Count == 0) { <tr><td colspan="10" class="vide">Aucune ligne : ajoutez-les une à une, ou importez le tableau fourni par la banque.</td></tr> }
                 </tbody>
                 @if (lignes.Count > 0)
                 {
                     <tfoot><tr><th scope="row" colspan="2">Total · @lignes.Count ligne(s)</th>
                         <td class="nombre"><strong>@Libelles.Dinars(lignes.Sum(x => x.Capital), 2)</strong></td>
                         <td class="nombre">@Libelles.Dinars(lignes.Sum(x => x.Interets), 2)</td><td class="nombre">@Libelles.Dinars(lignes.Sum(x => x.Tva), 2)</td>
-                        <td class="nombre">@Libelles.Dinars(lignes.Sum(x => x.Marge), 2)</td><td class="nombre"><strong>@Libelles.Dinars(lignes.Sum(x => x.Montant), 2)</strong></td>
+                        <td class="nombre">@Libelles.Dinars(lignes.Sum(x => x.Marge), 2)</td><td class="nombre">@Libelles.Dinars(lignes.Sum(x => x.Assurance), 2)</td>
+                        <td class="nombre"><strong>@Libelles.Dinars(lignes.Sum(x => x.Montant), 2)</strong></td>
                         <td colspan="2"></td></tr></tfoot>
                 }
             </table>
@@ -132,19 +135,21 @@
         public decimal Interets { get; set; }
         public decimal Tva { get; set; }
         public decimal Marge { get; set; }
+        public decimal Assurance { get; set; }
         public decimal Montant { get; set; }
         public decimal CapitalRestant { get; set; }
         public bool Payee { get; init; }
 
         public static LigneEdition De(LigneEcheancierDto l, bool payee = false) =>
-            new() { Date = l.Date, Capital = l.Capital, Interets = l.Interets, Tva = l.Tva, Marge = l.Marge, Montant = l.Montant, CapitalRestant = l.CapitalRestant, Payee = payee };
-        public LigneEcheancierDto Dto() => new(Date, Capital, Interets, Tva, Marge, Montant, CapitalRestant);
+            new() { Date = l.Date, Capital = l.Capital, Interets = l.Interets, Tva = l.Tva, Marge = l.Marge, Assurance = l.Assurance, Montant = l.Montant,
+                CapitalRestant = l.CapitalRestant, Payee = payee };
+        public LigneEcheancierDto Dto() => new(Date, Capital, Interets, Tva, Marge, Montant, CapitalRestant, Assurance);
     }
 
     private static readonly (string Code, string Libelle, bool Obligatoire)[] Champs =
     [
         ("date", "Date", true), ("capital", "Capital", false), ("interets", "Intérêts", false), ("tva", "TVA", false), ("marge", "Marge", false),
-        ("montant", "Échéance totale", false), ("encours", "Capital restant dû", false)
+        ("assurance", "Assurance", false), ("montant", "Échéance totale", false), ("encours", "Capital restant dû", false)
     ];
 
     private List<LigneEdition> lignes = [];
@@ -189,7 +194,7 @@
 
     private void CalculerEcheances()
     {
-        foreach (var l in lignes.Where(l => !l.Payee)) l.Montant = l.Capital + l.Interets + l.Tva + l.Marge;
+        foreach (var l in lignes.Where(l => !l.Payee)) l.Montant = l.Capital + l.Interets + l.Tva + l.Marge + l.Assurance;
         controle = false;
     }
 
@@ -224,7 +229,9 @@
         var e = await Api.EnregistrerEcheancierAsync(Pret.Id, Requete());
         enCours = false;
         if (e is not null) { erreur = e; return; }
-        await OnEnregistre.InvokeAsync($"Échéancier enregistré : {lignes.Count} échéance(s), intérêts {Libelles.Dinars(lignes.Sum(l => l.Interets), 2)}.");
+        var assurance = lignes.Sum(l => l.Assurance);
+        await OnEnregistre.InvokeAsync($"Échéancier enregistré : {lignes.Count} échéance(s), intérêts {Libelles.Dinars(lignes.Sum(l => l.Interets), 2)}"
+            + (assurance > 0 ? $", assurance {Libelles.Dinars(assurance, 2)}." : "."));
     }
 
     /// <summary>
@@ -271,11 +278,13 @@
         {
             (colonnes["date"], colonnes["capital"], colonnes["interets"], colonnes["tva"]) = (c.Date, c.Capital ?? -1, c.Interets ?? -1, c.Tva ?? -1);
             (colonnes["marge"], colonnes["montant"], colonnes["encours"], lignesIgnorees) = (c.Marge ?? -1, c.Montant ?? -1, c.Encours ?? -1, c.LignesIgnorees);
+            colonnes["assurance"] = c.Assurance ?? -1;
             return;
         }
         var n = NombreColonnes;
         int Col(int i) => i < n ? i : -1;
         (colonnes["date"], colonnes["capital"], colonnes["interets"], colonnes["tva"], colonnes["marge"]) = (0, Col(1), Col(2), -1, -1);
+        colonnes["assurance"] = -1;
         (colonnes["montant"], colonnes["encours"], lignesIgnorees) = (Col(3), Col(4), 1);
     }
 
@@ -287,7 +296,7 @@
     {
         int? Col(string code) => Colonne(code) is >= 0 and var c ? c : null;
         return new CorrespondanceDto(Math.Max(Colonne("date"), 0), Col("capital"), Col("interets"), Col("tva"), Col("marge"), Col("montant"), Col("encours"),
-            Math.Max(lignesIgnorees, 0));
+            Math.Max(lignesIgnorees, 0), Col("assurance"));
     }
 
     private async Task ApercuAsync()

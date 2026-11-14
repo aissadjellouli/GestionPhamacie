@@ -9,13 +9,14 @@ namespace Pharma.Domain.Financements;
 /// Correspondance des colonnes d'un tableau d'échéances (Excel, CSV ou texte lu dans un PDF ou un scan) : n° de colonne (à partir
 /// de 0) de chaque information, null quand le tableau ne la donne pas. LignesIgnorees : lignes d'en-tête en haut du tableau.
 /// La date est obligatoire, et deux au moins parmi capital, intérêts et échéance totale (la troisième se calcule).
-/// TVA, marge absentes : 0. Capital restant dû absent : calculé (montant du prêt moins le capital cumulé).
+/// TVA, marge, assurance absentes : 0. Capital restant dû absent : calculé (montant du prêt moins le capital cumulé).
 /// </summary>
-public sealed record CorrespondanceColonnes(int Date, int? Capital, int? Interets, int? Tva, int? Marge, int? Montant, int? Encours, int LignesIgnorees = 0)
+public sealed record CorrespondanceColonnes(int Date, int? Capital, int? Interets, int? Tva, int? Marge, int? Montant, int? Encours, int LignesIgnorees = 0,
+    int? Assurance = null)
 {
     public void Verifier()
     {
-        int?[] colonnes = [Date, Capital, Interets, Tva, Marge, Montant, Encours];
+        int?[] colonnes = [Date, Capital, Interets, Tva, Marge, Montant, Encours, Assurance];
         if (colonnes.Any(c => c < 0) || LignesIgnorees < 0) throw new RegleMetierException("Correspondance des colonnes invalide.", "correspondance");
         if (new[] { Capital, Interets, Montant }.Count(c => c is not null) < 2)
             throw new RegleMetierException("Indiquez au moins deux colonnes parmi le capital, les intérêts et l’échéance totale.", "correspondance");
@@ -39,7 +40,8 @@ public static partial class LectureEcheancier
     public static EcheancierLu Appliquer(IReadOnlyList<IReadOnlyList<string?>> tableau, CorrespondanceColonnes c, decimal montantPret)
     {
         c.Verifier();
-        var lues = new List<(int Origine, DateOnly Date, decimal? Capital, decimal? Interets, decimal Tva, decimal Marge, decimal? Montant, decimal? Encours)>();
+        var lues = new List<(int Origine, DateOnly Date, decimal? Capital, decimal? Interets, decimal Tva, decimal Marge, decimal Assurance, decimal? Montant,
+            decimal? Encours)>();
         var ecartees = new List<string>();
         var illisibles = new List<AnomalieEcheancier>();
         for (var i = c.LignesIgnorees; i < tableau.Count; i++)
@@ -63,20 +65,21 @@ public static partial class LectureEcheancier
                 return 0;
             }
             lues.Add((i + 1, date, Valeur(c.Capital, "capital"), Valeur(c.Interets, "interets"), Valeur(c.Tva, "tva") ?? 0, Valeur(c.Marge, "marge") ?? 0,
-                Valeur(c.Montant, "montant"), Valeur(c.Encours, "capital_restant")));
+                Valeur(c.Assurance, "assurance") ?? 0, Valeur(c.Montant, "montant"), Valeur(c.Encours, "capital_restant")));
         }
 
         // Information absente du tableau : calculée à partir des autres
         var lignes = lues.Select(l =>
         {
-            var capital = l.Capital ?? (l.Montant ?? 0) - (l.Interets ?? 0) - l.Tva - l.Marge;
-            var interets = l.Interets ?? (l.Montant ?? 0) - capital - l.Tva - l.Marge;
-            var montant = l.Montant ?? capital + interets + l.Tva + l.Marge;
-            return (l.Date, capital, interets, l.Tva, l.Marge, montant, l.Encours);
+            var autres = l.Tva + l.Marge + l.Assurance;
+            var capital = l.Capital ?? (l.Montant ?? 0) - (l.Interets ?? 0) - autres;
+            var interets = l.Interets ?? (l.Montant ?? 0) - capital - autres;
+            var montant = l.Montant ?? capital + interets + autres;
+            return (l.Date, capital, interets, l.Tva, l.Marge, l.Assurance, montant, l.Encours);
         }).ToList();
         var encours = RegleEcheancier.Encours(montantPret, lignes.Select(l => l.capital));
         return new EcheancierLu(
-            lignes.Select((l, k) => new LigneEcheancier(l.Date, l.capital, l.interets, l.Tva, l.Marge, l.montant, l.Encours ?? encours[k])).ToList(),
+            lignes.Select((l, k) => new LigneEcheancier(l.Date, l.capital, l.interets, l.Tva, l.Marge, l.montant, l.Encours ?? encours[k], l.Assurance)).ToList(),
             lues.Select(l => l.Origine).ToList(), ecartees, illisibles);
     }
 

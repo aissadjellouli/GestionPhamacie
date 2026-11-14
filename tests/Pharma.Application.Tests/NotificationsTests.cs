@@ -310,7 +310,12 @@ internal sealed class StockageFactice(bool disque = true, bool panne = false) : 
 internal sealed class AlertesTitulaireEspion : IAlertesTitulaire
 {
     public List<(bool DisqueAbsent, string Detail)> Sauvegardes { get; } = [];
-    public Task EcartCaisseAsync(string e, string p, decimal ecart, decimal seuil, CancellationToken ct = default) => Task.CompletedTask;
+    public List<(string Employe, string Poste, decimal Ecart, bool Releve)> Ecarts { get; } = [];
+    public Task EcartCaisseAsync(string e, string p, decimal ecart, decimal seuil, CancellationToken ct = default, bool releve = false)
+    {
+        Ecarts.Add((e, p, ecart, releve));
+        return Task.CompletedTask;
+    }
     public Task LotBloqueAsync(string produit, string lot, int stock, int vendues, CancellationToken ct = default) => Task.CompletedTask;
     public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default) { Sauvegardes.Add((disqueAbsent, detail)); return Task.CompletedTask; }
     public List<(string Rayon, int Lignes)> Inventaires { get; } = [];

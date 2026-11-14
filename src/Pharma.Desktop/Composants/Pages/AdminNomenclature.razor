@@ -56,7 +56,7 @@
                 <h2 id="t-verif">Produits du catalogue à vérifier</h2>
                 @if (etat.AVerifier.Count == 0)
                 {
-                    <p class="vide" style="margin: 0">Rien à signaler : aucun psychotrope mal classé, aucun produit retiré, non renouvelé ou absent de la nomenclature dans le catalogue.</p>
+                    <p class="vide" style="margin: 0">Rien à signaler : aucun psychotrope ou stupéfiant mal classé, aucun produit retiré, non renouvelé ou absent de la nomenclature dans le catalogue.</p>
                 }
                 else
                 {
@@ -84,7 +84,8 @@
                                         <td>
                                             @if (p.Motif == "classe")
                                             {
-                                                <span class="pastille urgent">@Libelles.Classe(p.ClasseProposee)</span>
+                                                @* Classe proposée : la plus stricte de la DCI (substance surveillée) et de la nomenclature ; un psychotrope peut être à passer en stupéfiant *@
+                                                <span class="pastille urgent" title="Classe donnée par la DCI (substance surveillée) ou la nomenclature (n° d’enregistrement), la plus stricte des deux">Classe à corriger : @Libelles.Classe(p.ClasseProposee).ToLowerInvariant()</span>
                                             }
                                             else if (p.Motif == "repris")
                                             {
@@ -102,7 +103,11 @@
                                         <td>
                                             @if (p.Motif == "classe" && p.ClasseProposee is { } proposee)
                                             {
-                                                <button type="button" class="btn" disabled="@enCours" @onclick="() => AppliquerAsync(p, proposee)">Classer « @Libelles.Classe(proposee) »</button>
+                                                <div style="display: flex; flex-wrap: wrap; gap: 6px">
+                                                    <button type="button" class="btn" disabled="@enCours" @onclick="() => AppliquerAsync(p, proposee)">Classer « @Libelles.Classe(proposee) »</button>
+                                                    @* Le titulaire garde la classe actuelle en connaissance de cause : confirmation mémorisée, un employé ne la change plus *@
+                                                    <button type="button" class="btn" disabled="@enCours" title="Garder cette classe : un employé ne pourra plus la changer, sauf en changeant la DCI" @onclick="() => AppliquerAsync(p, p.Classe)">Confirmer « @Libelles.Classe(p.Classe) »</button>
+                                                </div>
                                             }
                                             else if (p.Motif == "repris")
                                             {

@@ -10,8 +10,11 @@ public sealed class EcartsCaisseRecentsSql(NpgsqlDataSource db) : IEcartsCaisseR
     {
         // Employé qui a clôturé (compté) : session_caisse ne le garde pas ; la clôture avec écart non nul est inscrite au journal
         // (action « ecart_caisse », au nom de celui qui a compté, relève comprise). Sans cette trace : celui qui a ouvert la caisse.
+        // Seules les sessions closes (fermee_le) : une par ligne, à la date de leur clôture ; relève : une session l'a suivie (releve_de).
+        // La caisse rouverte ensuite sur le même poste est une autre session, sans écart tant qu'elle n'est pas close.
         await using var cmd = db.CreateCommand("""
-            SELECT s.id, s.poste, COALESCE(c.nom_complet, u.nom_complet), s.fermee_le, s.ecart, count(*) OVER (), c.nom_complet IS NOT NULL
+            SELECT s.id, s.poste, COALESCE(c.nom_complet, u.nom_complet), s.fermee_le, s.ecart, count(*) OVER (), c.nom_complet IS NOT NULL,
+                   s.ouverte_le, EXISTS (SELECT 1 FROM session_caisse n WHERE n.releve_de = s.id)
             FROM session_caisse s JOIN utilisateur u ON u.id = s.utilisateur_id
             LEFT JOIN LATERAL (
                 SELECT uc.nom_complet FROM journal_audit j JOIN utilisateur uc ON uc.id = j.utilisateur_id
@@ -29,7 +32,8 @@ public sealed class EcartsCaisseRecentsSql(NpgsqlDataSource db) : IEcartsCaisseR
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
         {
-            liste.Add(new EcartCaisseRecent(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetDateTime(3), r.GetDecimal(4), r.GetBoolean(6)));
+            liste.Add(new EcartCaisseRecent(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetDateTime(3), r.GetDecimal(4), r.GetBoolean(6),
+                r.GetDateTime(7), r.GetBoolean(8)));
             nombre = (int)r.GetInt64(5);
         }
         return new EcartsCaisseNonVus(nombre, liste);

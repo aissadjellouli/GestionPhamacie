@@ -11,6 +11,12 @@ public static class Libelles
     public static string Dinars(decimal montant, int decimales = 0) =>
         montant.ToString(decimales == 0 ? "N0" : "N2", Fr) + " DA";
 
+    /// <summary>Taux annuel d'un prêt tel qu'au contrat (« 5,75 % »), « — » s'il n'est pas saisi.</summary>
+    public static string TauxPret(decimal? taux) => taux is { } t ? t.ToString("0.####", Fr) + " %" : "—";
+
+    /// <summary>Durée d'un prêt en mois (« 60 mois »), « — » si elle n'est pas saisie.</summary>
+    public static string DureePret(int? mois) => mois is { } m ? $"{m} mois" : "—";
+
     public static string Date(DateOnly d) => d.ToString("dd/MM/yyyy", Fr);
     public static string MoisAnnee(DateOnly d) => d.ToString("MM/yyyy", Fr);
     public static string DateLocale(DateTime utc) => utc.ToLocalTime().ToString("dd/MM/yyyy", Fr);
@@ -359,7 +365,7 @@ public static class Libelles
                 "rappel_lot" => $"Lot {T("numero_lot")} · {T("motif")} · {T("ventes")} vente(s) concernée(s)",
                 "remise" => $"{N("pourcentage"):0.##} % · ticket {T("ticket")} · {Dinars(N("montant"), 2)}",
                 "delivrance_psychotrope" => $"Ticket {T("ticket")}",
-                "ecart_caisse" => $"Écart {Dinars(N("ecart"), 2)} (attendu {Dinars(N("attendu"), 2)}, compté {Dinars(N("compte"), 2)})",
+                "ecart_caisse" => $"Écart {Dinars(N("ecart"), 2)} (attendu {Dinars(N("attendu"), 2)}, compté {Dinars(N("compte"), 2)})" + (B("releve") ? " · relève" : ""),
                 "parametres_caisse" => "Règles de caisse modifiées",
                 "droits_modifies" => Droits(d),
                 "utilisateur_cree" => $"{T("nom")} ({T("identifiant")}), rôle {T("role")}",

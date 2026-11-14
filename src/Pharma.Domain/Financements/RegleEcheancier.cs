@@ -3,13 +3,48 @@ using Pharma.Domain.Commun;
 namespace Pharma.Domain.Financements;
 
 /// <summary>
-/// Échéance d'un prêt : Montant = Capital + Interets + Tva + Marge. Tva et Marge facultatives (0) : la marge est celle d'un
-/// financement islamique (mourabaha). CapitalRestant : capital restant dû tel que le tableau de la banque l'indique.
+/// Échéance d'un prêt : Montant = Capital + Interets + Tva + Marge + Assurance. Tva, Marge et Assurance facultatives (0) : la marge
+/// est celle d'un financement islamique (mourabaha). CapitalRestant : capital restant dû tel que le tableau de la banque l'indique.
 /// </summary>
-public sealed record LigneEcheancier(DateOnly Date, decimal Capital, decimal Interets, decimal Tva, decimal Marge, decimal Montant, decimal CapitalRestant)
+public sealed record LigneEcheancier(DateOnly Date, decimal Capital, decimal Interets, decimal Tva, decimal Marge, decimal Montant, decimal CapitalRestant,
+    decimal Assurance = 0)
 {
-    /// <summary>Part comptée en charge financière : intérêts, TVA et marge.</summary>
-    public decimal Charges => Interets + Tva + Marge;
+    /// <summary>Part comptée en charge financière : intérêts, assurance, TVA et marge.</summary>
+    public decimal Charges => Interets + Tva + Marge + Assurance;
+}
+
+/// <summary>
+/// Coût d'un échéancier : totaux des intérêts, de l'assurance, de la TVA et de la marge ; CoutTotal (coût du crédit) = leur somme,
+/// soit tout ce qui est payé en plus du capital.
+/// </summary>
+public sealed record CoutEcheancier(decimal Interets, decimal Assurance, decimal Tva, decimal Marge)
+{
+    public decimal CoutTotal => Interets + Assurance + Tva + Marge;
+
+    public static CoutEcheancier De(IEnumerable<LigneEcheancier> lignes)
+    {
+        var l = lignes.ToList();
+        return new(l.Sum(x => x.Interets), l.Sum(x => x.Assurance), l.Sum(x => x.Tva), l.Sum(x => x.Marge));
+    }
+}
+
+/// <summary>
+/// Conditions du contrat de prêt, saisies telles qu'au contrat et jamais recalculées : taux annuel en % (0 à 100, 4 décimales au
+/// plus) et durée en mois (entière, 1 à 600). Facultatifs (prêts enregistrés avant ces champs).
+/// </summary>
+public static class RegleConditionsPret
+{
+    public const int DureeMax = 600;
+
+    public static void Verifier(decimal? taux, int? dureeMois)
+    {
+        if (taux is { } t && (t < 0 || t > 100))
+            throw new RegleMetierException("Le taux annuel se saisit en %, entre 0 et 100.", "taux");
+        if (taux is { } d && decimal.Round(d, 4) != d)
+            throw new RegleMetierException("Le taux annuel se saisit avec 4 décimales au plus.", "taux");
+        if (dureeMois is { } m && (m < 1 || m > DureeMax))
+            throw new RegleMetierException($"La durée se saisit en mois, de 1 à {DureeMax}.", "duree");
+    }
 }
 
 /// <summary>Incohérence d'un échéancier. Ligne : n° de la ligne (à partir de 1), 0 pour l'échéancier entier. Champ : colonne en cause.</summary>
@@ -17,7 +52,7 @@ public sealed record AnomalieEcheancier(int Ligne, string Champ, string Message)
 
 /// <summary>
 /// Contrôles d'un échéancier avant son enregistrement (saisi, importé d'Excel ou de CSV, ou lu dans un PDF ou un scan) :
-/// chaque ligne au centime, capital + intérêts + TVA + marge = échéance ; dates strictement croissantes, pas avant le prêt ;
+/// chaque ligne au centime, capital + intérêts + TVA + marge + assurance = échéance ; dates strictement croissantes, pas avant le prêt ;
 /// capital restant dû jamais en hausse ; somme du capital = montant du prêt. Tant qu'une incohérence reste, l'enregistrement est refusé.
 /// </summary>
 public static class RegleEcheancier
@@ -35,15 +70,15 @@ public static class RegleEcheancier
             var l = lignes[i];
             var n = i + 1;
             foreach (var (champ, valeur) in new[] { ("capital", l.Capital), ("interets", l.Interets), ("tva", l.Tva), ("marge", l.Marge),
-                         ("montant", l.Montant), ("capital_restant", l.CapitalRestant) })
+                         ("assurance", l.Assurance), ("montant", l.Montant), ("capital_restant", l.CapitalRestant) })
             {
                 if (valeur < 0) anomalies.Add(new(n, champ, $"Ligne {n} : montant négatif ({Nom(champ)})."));
                 else if (!Arrondi.AuCentime(valeur)) anomalies.Add(new(n, champ, $"Ligne {n} : {Nom(champ)} au centime près (2 décimales au plus)."));
             }
             if (l.Montant <= 0) anomalies.Add(new(n, "montant", $"Ligne {n} : l’échéance doit être supérieure à 0."));
-            var somme = l.Capital + l.Interets + l.Tva + l.Marge;
+            var somme = l.Capital + l.Interets + l.Tva + l.Marge + l.Assurance;
             if (somme != l.Montant)
-                anomalies.Add(new(n, "montant", $"Ligne {n} : capital + intérêts + TVA + marge = {somme:N2} DA, l’échéance indique {l.Montant:N2} DA (écart {l.Montant - somme:N2} DA)."));
+                anomalies.Add(new(n, "montant", $"Ligne {n} : capital + intérêts + TVA + marge + assurance = {somme:N2} DA, l’échéance indique {l.Montant:N2} DA (écart {l.Montant - somme:N2} DA)."));
             if (i == 0 && l.Date < datePret)
                 anomalies.Add(new(n, "date", $"Ligne {n} : l’échéance ({l.Date:dd/MM/yyyy}) précède la date du prêt ({datePret:dd/MM/yyyy})."));
             if (i > 0 && l.Date <= lignes[i - 1].Date)
@@ -68,7 +103,7 @@ public static class RegleEcheancier
         throw new RegleMetierException($"Échéancier incohérent : {anomalies[0].Message}{autres} Corrigez-le avant de l’enregistrer.", "echeancier");
     }
 
-    /// <summary>Paiement d'une échéance : le capital diminue la dette envers la banque ; intérêts, TVA et marge sont des charges financières.</summary>
+    /// <summary>Paiement d'une échéance : le capital diminue la dette envers la banque ; intérêts, assurance, TVA et marge sont des charges financières.</summary>
     public static (decimal Capital, decimal Charges) Parts(LigneEcheancier l) => (l.Capital, l.Charges);
 
     /// <summary>Capital restant dû après chaque échéance, calculé quand le tableau de la banque ne le donne pas.</summary>
@@ -86,7 +121,8 @@ public static class RegleEcheancier
 
     private static string Nom(string champ) => champ switch
     {
-        "capital" => "capital", "interets" => "intérêts", "tva" => "TVA", "marge" => "marge", "montant" => "échéance", _ => "capital restant dû"
+        "capital" => "capital", "interets" => "intérêts", "tva" => "TVA", "marge" => "marge", "assurance" => "assurance", "montant" => "échéance",
+        _ => "capital restant dû"
     };
 }
 

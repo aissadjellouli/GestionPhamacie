@@ -234,7 +234,7 @@ internal static class CaisseEndpoints
             {
                 var e = await consulter.ExecuterAsync(user.UtilisateurId(), ct);
                 return Results.Ok(new EcartsCaisseRecentsDto(e.Nombre,
-                    e.Derniers.Select(x => new EcartCaisseRecentDto(x.SessionId, x.Poste, x.Employe, x.ClotureLe, x.Ecart, x.ClotureePar)).ToList()));
+                    e.Derniers.Select(x => new EcartCaisseRecentDto(x.SessionId, x.Poste, x.Employe, x.ClotureLe, x.Ecart, x.ClotureePar, x.OuverteLe, x.Releve)).ToList()));
             })
            .ExigerTitulaire();
 

@@ -151,6 +151,13 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
         return detail with { Comptage = lignes.OrderBy(l => ordre.IndexOf(l.Coupure)).ToList() };
     }
 
+    public async Task<string?> NomEmployeAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT nom_complet FROM utilisateur WHERE id = $1");
+        cmd.Parameters.AddWithValue(utilisateurId);
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
     public async Task<ParametresCaisse> ParametresAsync(CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(

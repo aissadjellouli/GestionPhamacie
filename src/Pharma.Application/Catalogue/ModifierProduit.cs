@@ -8,10 +8,12 @@ namespace Pharma.Application.Catalogue;
 
 /// <summary>
 /// Fiche modifiable d'un produit du catalogue (la classe réglementaire se confirme à part, par le titulaire). NumEnregistrement : lu
-/// en base, jamais modifié ici.
+/// en base, jamais modifié ici. ClasseConfirmee : lue en base (produit.classe_confirmee_par, 080), jamais saisie : le titulaire a
+/// confirmé une classe moins stricte que celle de la substance surveillée ou de la nomenclature.
 /// </summary>
 public sealed record FicheProduitModifiable(long Id, string NomCommercial, string? Dci, string? Dosage, string? Forme, string? CodeBarre,
-    decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre", string? NumEnregistrement = null);
+    decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre", string? NumEnregistrement = null,
+    bool ClasseConfirmee = false);
 
 public interface IProduitsModification
 {
@@ -23,8 +25,9 @@ public interface IProduitsModification
     Task<string?> ClasseNomenclatureAsync(string numEnregistrement, CancellationToken ct = default);
     /// <summary>
     /// Enregistre la fiche ; la DCI est créée si elle n'existe pas encore. La classe n'est écrite que si elle est imposée
-    /// (<paramref name="classeImposee"/>) : le produit devient alors « à vérifier » et, s'il a du stock, reçoit son solde
-    /// d'ouverture au registre (une fois par produit), inscrit au nom de <paramref name="utilisateurId"/>.
+    /// (<paramref name="classeImposee"/>) : le produit devient alors « à vérifier » et, s'il entre sous registre avec du stock, reçoit
+    /// son solde d'ouverture au registre (une fois par produit), inscrit au nom de <paramref name="utilisateurId"/>. Une DCI changée
+    /// retire la confirmation de classe du titulaire.
     /// </summary>
     Task ModifierAsync(FicheProduitModifiable f, bool classeImposee, long utilisateurId, CancellationToken ct = default);
 }
@@ -38,9 +41,11 @@ public sealed class LireFicheProduit(IProduitsModification produits)
 /// <summary>
 /// Modification d'un produit (droit de créer un produit) ; changer le prix public demande en plus le droit de modifier un prix de
 /// vente. Un produit désactivé n'est plus proposé à la vente ni aux commandes. Chaque champ changé est inscrit au journal.
-/// Un autre que le titulaire qui modifie un produit dont la classe est hors registre (que la DCI change ou non) : si sa DCI est celle
-/// d'une substance surveillée, ou si la nomenclature nationale classe sous registre le n° d'enregistrement du produit, classe imposée
+/// Un autre que le titulaire qui modifie un produit dont la classe est moins stricte (hors registre, ou psychotrope) que celle de sa
+/// substance surveillée (DCI) ou de la nomenclature nationale (n° d'enregistrement), que la DCI change ou non : classe imposée
 /// (psychotrope ou stupéfiant, la plus stricte) et produit « à vérifier » ; renvoie alors le message à lui afficher (sinon null).
+/// Sauf si le titulaire a confirmé la classe du produit (produit.classe_confirmee_par) et que la DCI ne change pas : sa confirmation
+/// vaut. Une DCI changée (par quiconque) retire la confirmation ; le n° d'enregistrement ne change pas ici.
 /// </summary>
 public sealed class ModifierProduit(IProduitsModification produits, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null)
 {
@@ -50,7 +55,7 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         var actuel = await produits.LireAsync(saisie.Id, ct) ?? throw new RegleMetierException("Produit introuvable.");
         static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         var f = saisie with { NomCommercial = saisie.NomCommercial?.Trim() ?? "", Dci = N(saisie.Dci), Dosage = N(saisie.Dosage), Forme = N(saisie.Forme),
-            CodeBarre = N(saisie.CodeBarre), Classe = actuel.Classe, NumEnregistrement = actuel.NumEnregistrement };
+            CodeBarre = N(saisie.CodeBarre), Classe = actuel.Classe, NumEnregistrement = actuel.NumEnregistrement, ClasseConfirmee = actuel.ClasseConfirmee };
         if (f.NomCommercial.Length == 0) throw new RegleMetierException("Nom commercial obligatoire.", "nom_commercial");
         if (f.NomCommercial.Length > 120) throw new RegleMetierException("Nom commercial : 120 caractères au plus.", "nom_commercial");
         if (f.PrixPublic <= 0) throw new RegleMetierException("Le prix public doit être supérieur à 0.", "prix_public");
@@ -68,11 +73,14 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         if (f.PrixPublic != actuel.PrixPublic)
             await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "modifier un prix de vente", ct);
 
-        // Toute modification par un autre que le titulaire d'un produit hors registre (DCI changée ou non) : DCI de psychotrope ou de
-        // stupéfiant, ou n° d'enregistrement classé sous registre par la nomenclature (une DCI anodine ne suffit pas à l'en sortir),
-        // la plus stricte l'emportant : classe imposée, à vérifier, comme à la création
+        // Toute modification par un autre que le titulaire d'un produit moins strictement classé que sa substance (DCI changée ou non) :
+        // DCI de psychotrope ou de stupéfiant, ou n° d'enregistrement classé sous registre par la nomenclature (une DCI anodine ne suffit
+        // pas à l'en sortir), la plus stricte l'emportant : classe imposée, à vérifier, comme à la création. Classe confirmée par le
+        // titulaire, DCI inchangée : rien n'est imposé ; DCI changée : la confirmation tombe (ProduitsModificationSql).
+        var dciChangee = !string.Equals(actuel.Dci, f.Dci, StringComparison.OrdinalIgnoreCase);
+        var confirmationRetiree = actuel.ClasseConfirmee && dciChangee;
         string? information = null;
-        if (actuel.Classe is not ("psychotrope" or "stupefiant") && !await droits.EstTitulaireAsync(utilisateurId, ct))
+        if ((!actuel.ClasseConfirmee || dciChangee) && actuel.Classe != "stupefiant" && !await droits.EstTitulaireAsync(utilisateurId, ct))
         {
             ClasseReglementaire choisie;
             try { choisie = CodesMetier.ClasseDepuisCode(actuel.Classe); }
@@ -96,6 +104,7 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         Comparer("taux_tva", actuel.TauxTva, f.TauxTva); Comparer("actif", actuel.Actif, f.Actif);
         Comparer("classe", actuel.Classe, f.Classe);
         if (information is not null) changes["a_verifier"] = true;
+        if (confirmationRetiree) changes["confirmation_classe_retiree"] = true;
         if (changes.Count > 1)
             await journal.EcrireAsync(utilisateurId, "produit_modifie", "produit", f.Id, changes, Permissions.CatalogueCreer, ct);
         if (f.PrixPublic != actuel.PrixPublic)

@@ -5,10 +5,13 @@ namespace Pharma.Application.Caisse;
 
 /// <summary>
 /// Écart de caisse d'une session clôturée : poste, employé, date de clôture, montant (négatif : manque). <paramref name="Employe"/> : celui
-/// qui a clôturé (compté) la caisse quand <paramref name="ClotureePar"/> est vrai ; sinon (aucune trace de la clôture au journal), celui
-/// qui l'a ouverte.
+/// qui a clôturé (compté) la caisse ou fait la relève quand <paramref name="ClotureePar"/> est vrai ; sinon (aucune trace de la clôture au
+/// journal), celui qui l'a ouverte. <paramref name="ClotureLe"/> : date de la clôture (ou de la relève), jamais celle de l'ouverture, donnée
+/// à part (<paramref name="OuverteLe"/>). <paramref name="Releve"/> : session close par une relève (une nouvelle session l'a suivie,
+/// session_caisse.releve_de). Un comptage intermédiaire ne clôt pas la caisse et n'y figure pas.
 /// </summary>
-public sealed record EcartCaisseRecent(long SessionId, string Poste, string Employe, DateTime ClotureLe, decimal Ecart, bool ClotureePar = true);
+public sealed record EcartCaisseRecent(long SessionId, string Poste, string Employe, DateTime ClotureLe, decimal Ecart, bool ClotureePar = true,
+    DateTime? OuverteLe = null, bool Releve = false);
 
 /// <summary>Écarts récents pas encore vus par le titulaire : nombre total et les plus récents.</summary>
 public sealed record EcartsCaisseNonVus(int Nombre, IReadOnlyList<EcartCaisseRecent> Derniers);

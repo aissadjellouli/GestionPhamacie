@@ -142,18 +142,23 @@ public sealed class NomenclatureSql(NpgsqlDataSource db) : INomenclature
         return liste;
     }
 
-    public async Task<string?> ChangerClasseAsync(long produitId, string classe, long utilisateurId, CancellationToken ct = default)
+    public async Task<string?> ChangerClasseAsync(long produitId, string classe, long utilisateurId, CancellationToken ct = default, bool confirmation = false)
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
         string? ancienne;
+        // Confirmation du titulaire (classe moins stricte que la substance ou la nomenclature) mémorisée (080) ; sinon effacée
         await using (var cmd = new NpgsqlCommand("""
-            UPDATE produit p SET classe = $2, a_verifier = false FROM (SELECT classe FROM produit WHERE id = $1 FOR UPDATE) avant
+            UPDATE produit p SET classe = $2, a_verifier = false,
+                                 classe_confirmee_par = CASE WHEN $4 THEN $3 END, classe_confirmee_le = CASE WHEN $4 THEN now() END
+            FROM (SELECT classe FROM produit WHERE id = $1 FOR UPDATE) avant
             WHERE p.id = $1 RETURNING avant.classe
             """, cx, tx))
         {
             cmd.Parameters.AddWithValue(produitId);
             cmd.Parameters.AddWithValue(classe);
+            cmd.Parameters.AddWithValue(utilisateurId);
+            cmd.Parameters.AddWithValue(confirmation);
             ancienne = (string?)await cmd.ExecuteScalarAsync(ct);
         }
         if (ancienne is null) return null;
@@ -163,6 +168,23 @@ public sealed class NomenclatureSql(NpgsqlDataSource db) : INomenclature
         if (classe is "psychotrope" or "stupefiant") await InscrireOuvertureAsync(cx, tx, produitId, utilisateurId, ct);
         await tx.CommitAsync(ct);
         return ancienne;
+    }
+
+    public async Task<string?> ClasseSurveilleeProduitAsync(long produitId, CancellationToken ct = default)
+    {
+        string? dci, num;
+        await using (var cmd = db.CreateCommand("SELECT d.nom, p.num_enregistrement FROM produit p LEFT JOIN dci d ON d.id = p.dci_id WHERE p.id = $1"))
+        {
+            cmd.Parameters.AddWithValue(produitId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (!await r.ReadAsync(ct)) return null;
+            dci = r.IsDBNull(0) ? null : r.GetString(0);
+            num = r.IsDBNull(1) ? null : r.GetString(1);
+        }
+        // Mêmes sources qu'à la création et à la modification d'un produit (CatalogueEcritureSql) : la plus stricte des deux
+        var parDci = dci is null ? null : await Lecture.CatalogueEcritureSql.ClasseSurveilleeAsync(db, dci, ct);
+        var parNomenclature = string.IsNullOrWhiteSpace(num) ? null : await Lecture.CatalogueEcritureSql.ClasseNomenclatureAsync(db, num, ct);
+        return Pharma.Domain.Catalogue.RegleProduit.ClasseSurveilleeRetenue(parDci, parNomenclature);
     }
 
     /// <summary>
