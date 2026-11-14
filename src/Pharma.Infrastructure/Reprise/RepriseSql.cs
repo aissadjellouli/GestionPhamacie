@@ -160,6 +160,14 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
 
     public async Task DeciderAsync(long session, string refSource, DecisionProduit decision, long? produitId, CancellationToken ct = default)
     {
+        // « Autre » : le produit choisi doit exister dans le catalogue (sinon message clair, pas d'erreur technique)
+        if (decision == DecisionProduit.Autre)
+            await using (var existe = db.CreateCommand("SELECT EXISTS (SELECT 1 FROM produit WHERE id = $1)"))
+            {
+                existe.Parameters.AddWithValue(produitId ?? 0L);
+                if (await existe.ExecuteScalarAsync(ct) is not true)
+                    throw new Pharma.Domain.Commun.RegleMetierException("Produit introuvable dans le catalogue : choisissez un produit existant.", "produit");
+            }
         await using var cmd = db.CreateCommand(decision == DecisionProduit.Confirmer
             ? "UPDATE import.correspondance_produit SET valide = true WHERE session_id = $1 AND ref_source = $2 AND produit_id IS NOT NULL"
             : """

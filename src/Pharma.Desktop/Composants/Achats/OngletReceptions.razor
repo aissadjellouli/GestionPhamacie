@@ -867,11 +867,11 @@ else
     private string? gtinInconnu;
 
     /// <summary>Produit créé depuis la réception : ajouté aussitôt aux lignes de la livraison.</summary>
-    private void ProduitCree((long Id, string Nom) p)
+    private void ProduitCree((long Id, string Nom, string? Information) p)
     {
         (creation, gtinInconnu) = (null, null);
         AjouterProduit(p.Id, p.Nom);
-        infoScan = $"« {p.Nom} » créé et ajouté à la livraison : complétez le lot, la péremption et le prix.";
+        infoScan = $"« {p.Nom} » créé et ajouté à la livraison : complétez le lot, la péremption et le prix.{(p.Information is null ? "" : " " + p.Information)}";
     }
 
     private int scansMobile;

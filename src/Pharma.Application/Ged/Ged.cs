@@ -22,7 +22,7 @@ public static class TypesGed
 
     /// <summary>Documents envoyés par les postes : un sous-dossier par type.</summary>
     public static readonly IReadOnlyList<string> DocumentsPostes =
-        ["Factures", "Rapports", "Clotures", "Registre", "Commandes", "Retours", "Etiquettes", "Inventaires", "Credits"];
+        ["Factures", "Rapports", "Clotures", "Registre", "Commandes", "Retours", "Etiquettes", "Inventaires", "Credits", "Financements"];
 
     /// <summary>Nom du sous-dossier tel qu'il est écrit dans la liste (null : type inconnu).</summary>
     public static string? Normaliser(string? type) =>

@@ -14,8 +14,11 @@ public sealed record LigneRegistre(
     string? Patient, string? Medecin, string? Ordonnance, string? Fournisseur, string? Reference,
     string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe, long? PatientId = null);
 
-/// <summary>Balance mensuelle des entrées et sorties d'un produit (arrêté du 23 août 1999, art. 4).</summary>
-public sealed record BalanceMensuelle(long ProduitId, string Produit, int Annee, int Mois, int Entrees, int Sorties, int? SoldeFin);
+/// <summary>
+/// Balance mensuelle des entrées et sorties d'un produit (arrêté du 23 août 1999, art. 4). SoldeReporte : solde d'ouverture du
+/// registre inscrit ce mois-là (stock repris), distinct des entrées. Les lignes antérieures à l'ouverture n'y sont pas comptées.
+/// </summary>
+public sealed record BalanceMensuelle(long ProduitId, string Produit, int Annee, int Mois, int Entrees, int Sorties, int? SoldeFin, int SoldeReporte = 0);
 
 public sealed record ProduitRegistre(long Id, string Nom);
 
@@ -118,11 +121,17 @@ public sealed class ConsulterRegistre(IRegistrePsychotropes registre, IPermissio
         PorteurAdresse = l.PorteurAdresse is null ? null : "•••", PorteurPiece = l.PorteurPiece is null ? null : "•••"
     };
 
-    /// <summary>Entrées, sorties et solde de fin de mois, par produit.</summary>
+    /// <summary>
+    /// Solde reporté, entrées, sorties et solde de fin de mois, par produit. Le solde d'ouverture est un solde reporté, pas une
+    /// entrée ; les lignes antérieures à l'ouverture (solde du produit non calculé) sont exclues de la balance.
+    /// </summary>
     public static IReadOnlyList<BalanceMensuelle> Balance(IReadOnlyList<LigneRegistre> lignes) =>
-        lignes.GroupBy(l => (l.ProduitId, l.Produit, l.Date.ToLocalTime().Year, l.Date.ToLocalTime().Month))
+        lignes.Where(l => l.SoldeProduit is not null)
+              .GroupBy(l => (l.ProduitId, l.Produit, l.Date.ToLocalTime().Year, l.Date.ToLocalTime().Month))
               .Select(g => new BalanceMensuelle(g.Key.ProduitId, g.Key.Produit, g.Key.Year, g.Key.Month,
-                  g.Sum(l => l.Entree ?? 0), g.Sum(l => l.Sortie ?? 0), g.OrderBy(l => l.Numero).Last().SoldeProduit))
+                  g.Where(l => l.Type != "ouverture").Sum(l => l.Entree ?? 0), g.Sum(l => l.Sortie ?? 0),
+                  g.OrderBy(l => l.Numero).Last().SoldeProduit,
+                  g.Where(l => l.Type == "ouverture").Sum(l => l.Entree ?? 0)))
               .OrderBy(b => b.Produit).ThenBy(b => b.Annee).ThenBy(b => b.Mois)
               .ToList();
 
@@ -189,8 +198,8 @@ public static class RegistreCsv
               l.SoldeProduit, l.SoldeLot, l.Patient, l.Medecin, l.Ordonnance, l.Fournisseur, l.Reference,
               l.PorteurNom, l.PorteurAdresse, l.PorteurPiece, l.Employe);
         L();
-        L("Balance mensuelle", "Mois", "Entrées", "Sorties", "Solde fin de mois");
-        foreach (var b in r.Balance) L(b.Produit, $"{b.Mois:00}/{b.Annee}", b.Entrees, b.Sorties, b.SoldeFin);
+        L("Balance mensuelle", "Mois", "Solde reporté", "Entrées", "Sorties", "Solde fin de mois");
+        foreach (var b in r.Balance) L(b.Produit, $"{b.Mois:00}/{b.Annee}", b.SoldeReporte == 0 ? null : b.SoldeReporte, b.Entrees, b.Sorties, b.SoldeFin);
         return [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(sb.ToString())];
     }
 

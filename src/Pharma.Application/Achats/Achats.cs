@@ -143,11 +143,18 @@ public interface IAchats
 
     /// <summary>Brouillon du grossiste, créé s'il n'existe pas. Renvoie son identifiant.</summary>
     Task<long> BrouillonAsync(long fournisseurId, long utilisateurId, CancellationToken ct = default);
-    /// <summary>Ajoute la quantité si le produit est déjà sur le brouillon, sinon crée la ligne.</summary>
+    /// <summary>
+    /// Ajoute la quantité si le produit est déjà sur le brouillon, sinon crée la ligne. Ajout, modification et suppression d'une
+    /// ligne verrouillent la commande et la refusent si elle n'est plus un brouillon en base (<see cref="RegleCommande.ModifieeEntreTemps"/>).
+    /// </summary>
     Task AjouterLigneAsync(long commandeId, long produitId, int quantite, decimal prixHt, CancellationToken ct = default);
     Task ModifierLigneAsync(long commandeId, long ligneId, int quantite, decimal prixHt, CancellationToken ct = default);
     Task SupprimerLigneAsync(long commandeId, long ligneId, CancellationToken ct = default);
-    Task ChangerStatutCommandeAsync(long commandeId, string statut, CancellationToken ct = default);
+    /// <summary>
+    /// Change le statut seulement si la commande a encore, en base, le statut lu (<paramref name="statutAttendu"/>) ;
+    /// false si elle a été modifiée entre-temps (émise, annulée ou reçue sur un autre poste).
+    /// </summary>
+    Task<bool> ChangerStatutCommandeAsync(long commandeId, string statutAttendu, string statut, CancellationToken ct = default);
 
     Task<IReadOnlyDictionary<long, decimal>> TauxTvaAsync(IEnumerable<long> produitIds, CancellationToken ct = default);
     /// <summary>Liste du médicament (pour le SHP), prix public du catalogue et TVA de chaque produit.</summary>
@@ -265,7 +272,14 @@ public sealed class AjouterACommande(IAchats achats, IPermissionService droits)
     }
 }
 
-/// <summary>Modification d'une ligne, uniquement sur un brouillon. Quantité 0 : la ligne est retirée.</summary>
+/// <summary>Contrôle de concurrence des commandes : le statut lu est revérifié en base au moment d'écrire.</summary>
+public static class RegleCommande
+{
+    /// <summary>Statut changé par un autre poste entre la lecture et l'écriture (émise, annulée, reçue).</summary>
+    public const string ModifieeEntreTemps = "Commande modifiée entre-temps : rechargez.";
+}
+
+/// <summary>Modification d'une ligne, uniquement sur un brouillon (revérifié en base). Quantité 0 : la ligne est retirée.</summary>
 public sealed class ModifierLigneCommande(IAchats achats, IPermissionService droits)
 {
     public async Task ExecuterAsync(long commandeId, long ligneId, int quantite, decimal prixHt, long utilisateurId, CancellationToken ct = default)
@@ -293,7 +307,8 @@ public sealed class EmettreCommande(IAchats achats, IPermissionService droits, I
         RegleAchats.VerifierCommande(c.Lignes.Select(l => new LigneCommandeSaisie(l.ProduitId, l.Produit, l.QteCommandee, l.PrixAchatHt)).ToList());
         var f = await achats.FournisseurAsync(c.Entete.FournisseurId, ct) ?? throw new RegleMetierException("Grossiste introuvable.");
 
-        await achats.ChangerStatutCommandeAsync(commandeId, "envoyee", ct);
+        if (!await achats.ChangerStatutCommandeAsync(commandeId, "brouillon", "envoyee", ct))
+            throw new RegleMetierException(RegleCommande.ModifieeEntreTemps);
         await journal.EcrireAsync(utilisateurId, "commande_emise", "commande_fournisseur", commandeId,
             new Dictionary<string, object?> { ["numero"] = c.Entete.Numero, ["montant_ht"] = c.Entete.MontantHt }, Permissions.AchatsCommander, ct);
         var detail = c with { Entete = c.Entete with { Statut = "envoyee" } };
@@ -325,7 +340,8 @@ public sealed class AnnulerCommande(IAchats achats, IPermissionService droits, I
             throw new RegleMetierException($"La commande {c.Entete.Numero} est « {c.Entete.Statut} » : annulation impossible.");
         if (c.Lignes.Any(l => l.QteRecue > 0))
             throw new RegleMetierException("Une partie de la commande a déjà été reçue.");
-        await achats.ChangerStatutCommandeAsync(commandeId, "annulee", ct);
+        if (!await achats.ChangerStatutCommandeAsync(commandeId, c.Entete.Statut, "annulee", ct))
+            throw new RegleMetierException(RegleCommande.ModifieeEntreTemps);
         await journal.EcrireAsync(utilisateurId, "commande_annulee", "commande_fournisseur", commandeId,
             new Dictionary<string, object?> { ["numero"] = c.Entete.Numero }, Permissions.AchatsCommander, ct);
     }
@@ -664,8 +680,12 @@ public sealed class ImprimerEtiquettes(IAchats achats, IPermissionService droits
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "étiqueter des boîtes", ct);
         if (nombre is < 1 or > MaxParLot)
             throw new RegleMetierException($"Nombre d’étiquettes entre 1 et {MaxParLot}.");
-        var lot = (await achats.LotsAEtiqueterAsync(ct)).FirstOrDefault(l => l.LotId == lotId)
-            ?? throw new RegleMetierException("Toutes les boîtes de ce lot ont déjà une identité.");
+        var lot = (await achats.LotsAEtiqueterAsync(ct)).FirstOrDefault(l => l.LotId == lotId);
+        if (lot is null)
+            // Lot absent de la liste : inexistant, ou toutes ses boîtes déjà identifiées
+            throw new RegleMetierException(await achats.LotRetournableAsync(lotId, ct) is null
+                ? "Lot introuvable."
+                : "Toutes les boîtes de ce lot ont déjà une identité.");
         if (nombre > lot.BoitesSansIdentite)
             throw new RegleMetierException($"Lot {lot.NumeroLot} : {lot.BoitesSansIdentite} boîte(s) sans identité, {nombre} demandée(s).");
         var etiquettes = await achats.CreerEtiquettesAsync(lotId, nombre, ct);

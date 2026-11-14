@@ -7,8 +7,10 @@ namespace Pharma.Application.Suivi;
 
 /// <summary>
 /// Somme due, lue dans v_suivi_dettes (039). Sens : « creance » (due à la pharmacie) ou « dette » (due par elle).
-/// Categorie : patient, facture_patient, facture_entreprise, facture_organisme, bordereau, grossiste, effet.
-/// Depuis : date depuis laquelle la somme est due (date d'établissement d'une facture) ; Echeance : date d'échéance d'une facture client, ou date de paiement prévue d'un effet.
+/// Categorie : patient, facture_patient, facture_entreprise, facture_organisme, bordereau, grossiste, effet ; et, pour le titulaire seul
+/// (v_dette_financement, 078) : pret (capital restant dû à une banque) et titulaire (apports non remboursés).
+/// Depuis : date depuis laquelle la somme est due (date d'établissement d'une facture) ; Echeance : date d'échéance d'une facture client,
+/// date de paiement prévue d'un effet, ou prochaine échéance non payée d'un prêt.
 /// </summary>
 public sealed record SommeDue(string Sens, string Categorie, long? TiersId, string Tiers, string Libelle, DateOnly Depuis, DateOnly? Echeance,
     decimal Montant, bool Rejetee);
@@ -25,8 +27,14 @@ public sealed record SuiviDettes(int DelaiJours, DateOnly Jour, IReadOnlyList<Li
     IReadOnlyList<AlerteDette> Alertes)
 {
     public decimal TotalCreances => Lignes.Where(l => l.Somme.Sens == "creance").Sum(l => l.Somme.Montant);
-    /// <summary>Factures des grossistes à payer ; les effets déjà remis n'y sont pas (ils ont déjà diminué la dette).</summary>
-    public decimal TotalDettes => Lignes.Where(l => l.Somme is { Sens: "dette", Categorie: not "effet" }).Sum(l => l.Somme.Montant);
+    /// <summary>
+    /// Factures des grossistes à payer ; les effets déjà remis n'y sont pas (ils ont déjà diminué la dette), ni les financements
+    /// (prêts, compte du titulaire : <see cref="TotalFinancements"/>).
+    /// </summary>
+    public decimal TotalDettes => Lignes.Where(l => l.Somme.Sens == "dette" && l.Somme.Categorie != "effet" && !RegleSuiviDettes.EstFinancement(l.Somme.Categorie))
+        .Sum(l => l.Somme.Montant);
+    /// <summary>Capital restant dû aux banques et apports du titulaire non remboursés (titulaire seul).</summary>
+    public decimal TotalFinancements => Lignes.Where(l => RegleSuiviDettes.EstFinancement(l.Somme.Categorie)).Sum(l => l.Somme.Montant);
 }
 
 public interface ISuiviDettes
@@ -45,6 +53,10 @@ public static class RegleSuiviDettes
 
     public static bool EstFacture(string categorie) => categorie.StartsWith("facture_", StringComparison.Ordinal);
 
+    /// <summary>Dettes des financements (prêts bancaires, compte du titulaire) : réservées au titulaire.</summary>
+    public static readonly string[] CategoriesFinancement = ["pret", "titulaire"];
+    public static bool EstFinancement(string categorie) => CategoriesFinancement.Contains(categorie);
+
     public static string Tranche(int jours) => jours <= 30 ? Tranches[0] : jours <= 60 ? Tranches[1] : Tranches[2];
 
     public static SuiviDettes Construire(IEnumerable<SommeDue> sommes, int delaiJours, DateOnly aujourdhui)
@@ -52,14 +64,19 @@ public static class RegleSuiviDettes
         var lignes = sommes.Where(s => s.Montant > 0).Select(s =>
         {
             var jours = Math.Max(aujourdhui.DayNumber - s.Depuis.DayNumber, 0);
-            // Effet : à payer sous peu. Facture client : rejetée, ou échéance dépassée. Autres : plus anciennes que le délai réglé.
-            var alerte = s.Categorie == "effet"
-                ? s.Echeance is { } e && e.DayNumber - aujourdhui.DayNumber <= JoursAvantEcheance
-                : s.Rejetee || (EstFacture(s.Categorie) && s.Echeance is { } due ? due < aujourdhui : jours > delaiJours);
+            // Effet, prêt : échéance à payer sous peu ou passée sans paiement. Compte du titulaire : jamais en retard (pas d'échéance).
+            // Facture client : rejetée, ou échéance dépassée. Autres : plus anciennes que le délai réglé.
+            var alerte = s.Categorie switch
+            {
+                "effet" or "pret" => s.Echeance is { } e && e.DayNumber - aujourdhui.DayNumber <= JoursAvantEcheance,
+                "titulaire" => false,
+                _ => s.Rejetee || (EstFacture(s.Categorie) && s.Echeance is { } due ? due < aujourdhui : jours > delaiJours)
+            };
             return new LigneSuivi(s, jours, Tranche(jours), alerte);
         }).OrderByDescending(l => l.EnAlerte).ThenByDescending(l => l.Jours).ThenBy(l => l.Somme.Tiers, StringComparer.CurrentCulture).ToList();
 
-        var tranches = lignes.Where(l => l.Somme.Categorie != "effet")
+        // Ancienneté : sans objet pour les traites et les financements (ils ont leurs échéances)
+        var tranches = lignes.Where(l => l.Somme.Categorie != "effet" && !EstFinancement(l.Somme.Categorie))
             .GroupBy(l => (l.Somme.Sens, l.Tranche))
             .Select(g => new TotalTranche(g.Key.Sens, g.Key.Tranche, g.Count(), g.Sum(l => l.Somme.Montant)))
             .OrderBy(t => t.Sens).ThenBy(t => Array.IndexOf(Tranches, t.Tranche)).ToList();
@@ -85,13 +102,15 @@ public static class RegleSuiviDettes
             "bordereau" => $"{nombre} bordereau(x) d'organismes envoyés depuis plus de {delai} jours ou rejetés en partie : {da} à recevoir.",
             "grossiste" => $"{nombre} facture(s) de {tiers} grossiste(s) à payer depuis plus de {delai} jours : {da}.",
             "effet" => $"{nombre} traite(s) échue(s) ou à payer dans les {JoursAvantEcheance} jours : {da} à prévoir.",
+            "pret" => $"{nombre} prêt(s) avec une échéance échue ou à payer dans les {JoursAvantEcheance} jours (capital restant dû : {da}).",
             _ => $"{nombre} somme(s) due(s) : {da}."
         };
     }
 }
 
 /// <summary>
-/// Filtres de la liste des sommes dues. Categorie : patient, facture (toutes les factures clients), bordereau, grossiste, effet, ou null (tout).
+/// Filtres de la liste des sommes dues. Categorie : patient, facture (toutes les factures clients), bordereau, grossiste, effet, pret,
+/// titulaire (ces deux-là pour le titulaire seul), ou null (tout).
 /// Tiers : identifiant du tiers, ou son nom quand il n'a pas d'identifiant. Etat : alerte, delai (dans le délai), rejetee, ou null (tous).
 /// Du / Au : période sur la date depuis laquelle la somme est due. Recherche : partie du nom du tiers (sans majuscules ni accents),
 /// pour les tiers sans fin (patients, clients) où une liste de tous les noms n'aurait pas de sens.
@@ -99,12 +118,12 @@ public static class RegleSuiviDettes
 public sealed record FiltreSuiviDettes(string? Categorie = null, string? Tiers = null, string? Etat = null, DateOnly? Du = null, DateOnly? Au = null,
     string? Recherche = null)
 {
-    public static readonly string[] Categories = ["patient", "facture", "bordereau", "grossiste", "effet"];
+    public static readonly string[] Categories = ["patient", "facture", "bordereau", "grossiste", "effet", "pret", "titulaire"];
     public static readonly string[] Etats = ["alerte", "delai", "rejetee"];
 
     /// <summary>Valeurs inconnues ignorées (pas d'erreur : un lien ancien ou modifié affiche simplement tout).</summary>
     /// <summary>Catégories aux tiers peu nombreux : leur filtre est une liste complète ; les autres (patients, clients, organismes des bordereaux) une recherche.</summary>
-    public static readonly string[] CategoriesListeTiers = ["grossiste", "effet"];
+    public static readonly string[] CategoriesListeTiers = ["grossiste", "effet", "pret", "titulaire"];
 
     public static FiltreSuiviDettes Lire(string? categorie, string? tiers, string? etat, DateOnly? du, DateOnly? au, string? recherche = null) => new(
         Categories.Contains(categorie) ? categorie : null,
@@ -170,14 +189,22 @@ public sealed class ObtenirSuiviDettes(ISuiviDettes suivi, IPermissionService dr
     public async Task<SuiviDettes> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.TresorerieGerer, "consulter les dettes et créances", ct);
-        return await CalculerAsync(ct);
+        return await CalculerPourAsync(utilisateurId, ct);
     }
 
     /// <summary>Liste des sommes dues filtrée et paginée par le serveur (même droit que le suivi).</summary>
     public async Task<PageSuiviDettes> LignesAsync(long utilisateurId, FiltreSuiviDettes filtre, DemandePage page, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.TresorerieGerer, "consulter les dettes et créances", ct);
-        return FiltrageSuiviDettes.Filtrer(await CalculerAsync(ct), filtre, page);
+        return FiltrageSuiviDettes.Filtrer(await CalculerPourAsync(utilisateurId, ct), filtre, page);
+    }
+
+    /// <summary>Les dettes des financements (prêts, compte du titulaire) ne sont montrées qu'au titulaire.</summary>
+    private async Task<SuiviDettes> CalculerPourAsync(long utilisateurId, CancellationToken ct)
+    {
+        var sommes = await suivi.SommesDuesAsync(ct);
+        if (!await droits.EstTitulaireAsync(utilisateurId, ct)) sommes = sommes.Where(s => !RegleSuiviDettes.EstFinancement(s.Categorie)).ToList();
+        return RegleSuiviDettes.Construire(sommes, await suivi.DelaiAlerteAsync(ct), horloge.Aujourdhui);
     }
 
     /// <summary>Sans contrôle de droit : pour le tableau de bord du titulaire, qui a déjà vérifié le sien.</summary>

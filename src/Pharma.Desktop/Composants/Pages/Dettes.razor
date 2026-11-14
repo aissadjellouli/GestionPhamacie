@@ -9,7 +9,7 @@
    Découpé en rubriques avec le menu vertical de l'Administration ; la rubrique est dans l'adresse (dettes?onglet=…). *@
 <div class="page avec-menu">
     <NavDomaine Libelle="Rubriques des dettes et créances">
-        @foreach (var r in Rubriques)
+        @foreach (var r in Rubriques.Where(r => Session.A("role.titulaire") || !RubriquesTitulaire.Contains(r.Id)))
         {
             @if (r.Groupe is { } g)
             {
@@ -180,11 +180,11 @@
                                     <td class="nom"><LienContact Type="@Libelles.ContactDette(l.Categorie)" Id="l.TiersId" Nom="@l.Tiers" /><br /><span class="detail">@LibelleCategorie(l.Categorie)</span></td>
                                     <td>@l.Libelle</td>
                                     <td>@l.Depuis.ToString("dd/MM/yyyy")@if (l.Echeance is { } e) { <br /><span class="detail">échéance @e.ToString("dd/MM/yyyy")</span> }</td>
-                                    <td>@(l.Categorie == "effet" ? "—" : $"{l.Jours} jour(s)")</td>
+                                    <td>@(l.Categorie is "effet" or "pret" or "titulaire" ? "—" : $"{l.Jours} jour(s)")</td>
                                     <td><strong>@Libelles.Dinars(l.Montant, 2)</strong></td>
                                     <td>
                                         @if (l.Rejetee) { <span class="pastille urgent">Rejetée</span> }
-                                        @if (l.EnAlerte && !l.Rejetee) { <span class="pastille @(l.Sens == "dette" ? "urgent" : "attention")">@(l.Categorie == "effet" ? (l.Echeance is { } ech && ech < DateOnly.FromDateTime(DateTime.Today) ? "Échue, non payée" : "À payer sous peu") : l.Categorie.StartsWith("facture_", StringComparison.Ordinal) ? "Échue" : "En retard")</span> }
+                                        @if (l.EnAlerte && !l.Rejetee) { <span class="pastille @(l.Sens == "dette" ? "urgent" : "attention")">@(l.Categorie is "effet" or "pret" ? (l.Echeance is { } ech && ech < DateOnly.FromDateTime(DateTime.Today) ? "Échue, non payée" : "À payer sous peu") : l.Categorie.StartsWith("facture_", StringComparison.Ordinal) ? "Échue" : "En retard")</span> }
                                         @if (!l.EnAlerte) { <span class="pastille ok">Dans le délai</span> }
                                     </td>
                                     <td>
@@ -234,8 +234,13 @@
         new("", "", "", Groupe: "À payer"),
         new("grossiste", "Grossistes", "Factures des grossistes non réglées et ancien solde hors factures", true, true),
         new("effet", "Traites à payer", "Traites remises aux grossistes : à venir, ou échues sans paiement confirmé", true, true),
+        new("pret", "Prêts bancaires", "Capital restant dû aux banques ; alerte 7 jours avant une échéance, ou échéance passée sans paiement", true, true),
+        new("titulaire", "Compte du titulaire", "Apports du titulaire que la pharmacie ne lui a pas encore remboursés", true, true),
         new("tout", "Tout", "Toutes les sommes dues, à recevoir et à payer", true)
     ];
+
+    /// <summary>Dettes des financements (prêts, compte du titulaire) : rubriques du titulaire seul (le serveur ne les envoie qu'à lui).</summary>
+    private static readonly string[] RubriquesTitulaire = ["pret", "titulaire"];
 
     private SuiviDettesDto? suivi;
     private string? erreur, message;
@@ -253,7 +258,7 @@
     private bool FiltreActif => fTiers != "" || rechercheTiers != "" || fEtat != "" || fDu is not null || fAu is not null;
 
     // Filtre du tiers : liste pour les grossistes et organismes, recherche avec propositions pour les patients et clients
-    private bool TiersEnListe => rubrique is "grossiste" or "effet";   // mêmes catégories que FiltreSuiviDettes.CategoriesListeTiers
+    private bool TiersEnListe => rubrique is "grossiste" or "effet" or "pret" or "titulaire";   // mêmes catégories que FiltreSuiviDettes.CategoriesListeTiers
     private string rechercheTiers = "";
     private bool propositionsOuvertes;
     private int actifTiers = -1, demandeLignes;
@@ -388,6 +393,8 @@
             "bordereau" when Numero(l.Libelle, "Bordereau ") is { } b => ($"tresorerie?bordereau={Uri.EscapeDataString(b)}", "tresorerie.gerer"),
             "grossiste" when l.TiersId is { } g => ($"achats?onglet=reglements&grossiste={g}", "achats.regler"),
             "effet" => ("achats?onglet=traites", "achats.regler"),
+            "pret" => ("financements?rubrique=echeances", "role.titulaire"),
+            "titulaire" => ("financements?rubrique=titulaire", "role.titulaire"),
             _ => null
         };
     }
@@ -407,6 +414,7 @@
     private static string LibelleCategorie(string c) => c switch
     {
         "patient" => "Patient", "facture_patient" => "Facture patient", "facture_entreprise" => "Facture entreprise",
-        "facture_organisme" => "Facture organisme", "bordereau" => "Bordereau", "grossiste" => "Grossiste", "effet" => "Traite", _ => c
+        "facture_organisme" => "Facture organisme", "bordereau" => "Bordereau", "grossiste" => "Grossiste", "effet" => "Traite",
+        "pret" => "Prêt bancaire", "titulaire" => "Compte du titulaire", _ => c
     };
 }

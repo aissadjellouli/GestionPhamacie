@@ -27,7 +27,24 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
         return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
-    public async Task<long> CreerAsync(FicheProduit f, CancellationToken ct = default)
+    public Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default) => ClasseSurveilleeAsync(db, dci, ct);
+
+    /// <summary>
+    /// Classe de la substance surveillée dont le motif figure dans la DCI (majuscules sans accents), stupéfiant avant psychotrope :
+    /// même test que la vue v_produit_a_verifier.
+    /// </summary>
+    internal static async Task<string?> ClasseSurveilleeAsync(NpgsqlDataSource db, string dci, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT s.classe FROM substance_surveillee s
+            WHERE majuscule_sans_accent($1) LIKE '%' || s.motif || '%'
+            ORDER BY s.classe DESC LIMIT 1
+            """);
+        cmd.Parameters.AddWithValue(dci);
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
+    public async Task<long> CreerAsync(FicheProduit f, bool aVerifier, CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
@@ -44,8 +61,8 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
 
         await using var cmd = new NpgsqlCommand("""
             INSERT INTO produit (code_barre, nom_commercial, dci_id, dosage, forme, prix_public, tarif_reference,
-                                 remboursable, taux_tva, classe, stock_minimum, num_enregistrement, categorie, liste_psychotrope)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id
+                                 remboursable, taux_tva, classe, stock_minimum, num_enregistrement, categorie, liste_psychotrope, a_verifier)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id
             """, cnx, tx);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.CodeBarre ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(f.NomCommercial);
@@ -61,6 +78,7 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.NumEnregistrement ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(f.Categorie);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.ListePsychotrope ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.AddWithValue(aVerifier);
         long id;
         try { id = (long)(await cmd.ExecuteScalarAsync(ct))!; }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.ForeignKeyViolation && e.ConstraintName == "fk_produit_categorie")

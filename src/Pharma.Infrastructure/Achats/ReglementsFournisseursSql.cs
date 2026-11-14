@@ -97,6 +97,8 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
 
+        if (g.Moyen == MoyenReglement.Financement && g.Source is null)
+            throw new RegleMetierException("Un règlement par prêt ou apport indique sa source.", "source");
         // Grossiste verrouillé : deux règlements simultanés ne paient pas deux fois la même facture
         await using (var cmd = new NpgsqlCommand("SELECT solde FROM fournisseur WHERE id = $1 FOR UPDATE", cx, tx))
         {
@@ -158,6 +160,10 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
             cmd.Parameters.AddWithValue(g.Montant);
             await cmd.ExecuteNonQueryAsync(ct);
         }
+        // Payé par un prêt ou un apport du titulaire : source tracée (prêt verrouillé, jamais employé au-delà de son montant)
+        if (g.Source is { } source)
+            await Financements.FinancementsSql.EnregistrerUtilisationAsync(cx, tx, source, "reglement", g.Date, g.Montant, $"Règlement {numero}",
+                null, null, id, null, g.UtilisateurId, ct);
         await tx.CommitAsync(ct);
         return id;
     }
@@ -173,6 +179,7 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
     /// <summary>Moyen de règlement tel qu'il s'écrit dans le relevé du grossiste.</summary>
     private static string MoyenEnClair(string code) => code switch
     {
-        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", "effet" => "Traite", "prelevement" => "Prélèvement", _ => code
+        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", "effet" => "Traite", "prelevement" => "Prélèvement",
+        "financement" => "Prêt ou apport du titulaire", _ => code
     };
 }

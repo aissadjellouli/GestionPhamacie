@@ -30,7 +30,9 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
-    public async Task ModifierAsync(FicheProduitModifiable f, CancellationToken ct = default)
+    public Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default) => CatalogueEcritureSql.ClasseSurveilleeAsync(db, dci, ct);
+
+    public async Task ModifierAsync(FicheProduitModifiable f, bool classeImposee, long utilisateurId, CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
@@ -64,6 +66,20 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             throw new Pharma.Domain.Commun.RegleMetierException("Un autre produit porte déjà ce nom, ce dosage et cette forme (ou ce code-barres).");
+        }
+        // Classe imposée (DCI de substance surveillée saisie par un employé) : produit « à vérifier », invendable jusqu'à la
+        // confirmation du titulaire ; avec du stock, solde d'ouverture au registre, comme un classement par le titulaire.
+        // Seulement si la classe en base est encore hors registre (pas de classement du titulaire entre-temps).
+        if (classeImposee)
+        {
+            await using var classe = new NpgsqlCommand("""
+                UPDATE produit SET classe = $2, liste_psychotrope = NULL, a_verifier = true
+                WHERE id = $1 AND classe NOT IN ('psychotrope', 'stupefiant')
+                """, cnx, tx);
+            classe.Parameters.AddWithValue(f.Id);
+            classe.Parameters.AddWithValue(f.Classe);
+            if (await classe.ExecuteNonQueryAsync(ct) == 1)
+                await Catalogue.NomenclatureSql.InscrireOuvertureAsync(cnx, tx, f.Id, utilisateurId, ct);
         }
         await tx.CommitAsync(ct);
     }

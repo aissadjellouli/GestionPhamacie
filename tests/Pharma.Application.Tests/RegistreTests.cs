@@ -67,8 +67,26 @@ public class RegistreTests
     {
         var b = ConsulterRegistre.Balance(Lignes);
         Assert.Equal(2, b.Count);
-        Assert.Equal((10, 13, 1, (int?)12), (b[0].Mois, b[0].Entrees, b[0].Sorties, b[0].SoldeFin));
-        Assert.Equal((11, 5, 0, (int?)17), (b[1].Mois, b[1].Entrees, b[1].Sorties, b[1].SoldeFin));
+        // Le solde d'ouverture est un solde reporté, pas une entrée
+        Assert.Equal((10, 13, 0, 1, (int?)12), (b[0].Mois, b[0].SoldeReporte, b[0].Entrees, b[0].Sorties, b[0].SoldeFin));
+        Assert.Equal((11, 0, 5, 0, (int?)17), (b[1].Mois, b[1].SoldeReporte, b[1].Entrees, b[1].Sorties, b[1].SoldeFin));
+    }
+
+    [Fact]
+    public void Balance_mensuelle_sans_les_lignes_anterieures_a_l_ouverture()
+    {
+        // Délivrance inscrite avant le solde d'ouverture (solde du produit non calculé) : hors balance, sinon comptée en plus
+        LigneRegistre[] lignes =
+        [
+            Ligne(1, new DateTime(2026, 9, 28, 9, 0, 0, DateTimeKind.Utc), "sortie", null, 2, null),
+            Ligne(2, new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc), "sortie", null, 1, null),
+            .. Lignes.Select(l => l with { Numero = l.Numero + 2 })
+        ];
+        var b = ConsulterRegistre.Balance(lignes);
+        Assert.Equal(2, b.Count);   // septembre, sans ligne après l'ouverture, n'apparaît pas
+        Assert.Equal((10, 13, 0, 1, (int?)12), (b[0].Mois, b[0].SoldeReporte, b[0].Entrees, b[0].Sorties, b[0].SoldeFin));
+        // Solde reporté + entrées − sorties = solde de fin de mois
+        Assert.All(b, m => Assert.Equal(m.SoldeFin, (b.TakeWhile(x => x != m).LastOrDefault()?.SoldeFin ?? 0) + m.SoldeReporte + m.Entrees - m.Sorties));
     }
 
     [Fact]

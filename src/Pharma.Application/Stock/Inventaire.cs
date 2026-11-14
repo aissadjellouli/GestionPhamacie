@@ -202,7 +202,7 @@ public sealed record BilanInventaire(int Lignes, int Conformes, int Ajustes, int
 /// prévenu par SMS ou e-mail.
 /// </summary>
 public sealed class TerminerInventaire(IInventaires inventaires, IPermissionService droits, IJournal journal, IAlertesTitulaire? alertes = null,
-    Surveillance.Surveiller? surveillance = null)
+    Surveillance.Surveiller? surveillance = null, ITraceErreurs? trace = null)
 {
     public async Task<BilanInventaire> ExecuterAsync(long id, long utilisateurId, CancellationToken ct = default)
     {
@@ -233,11 +233,11 @@ public sealed class TerminerInventaire(IInventaires inventaires, IPermissionServ
                 ["boites_ecart"] = bilan.BoitesEcart, ["valeur_ecart"] = bilan.ValeurEcart
             }, Permissions.StockAjuster, ct);
 
+        // L'inventaire est terminé : l'alerte ne le fait jamais échouer (échec : journal du serveur, bandeau du titulaire)
         if (alertes is not null && aValider.Count > 0)
-        {
-            try { await alertes.EcartsInventaireAsync(d.Rayon, aValider.Count, aValider.Sum(x => x.Ecart), aValider.Sum(x => x.ValeurEcart), ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { }
-        }
+            await Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(
+                () => alertes.EcartsInventaireAsync(d.Rayon, aValider.Count, aValider.Sum(x => x.Ecart), aValider.Sum(x => x.ValeurEcart), ct),
+                $"écarts d’inventaire du rayon {d.Rayon}", trace);
         // Surveillance : boîtes fantômes, boîtes manquantes ajustées (anomalies notifiées au titulaire)
         if (surveillance is not null) await surveillance.ExecuterAsync(ct);
         return bilan;

@@ -28,7 +28,15 @@ internal sealed class ProduitsModifEnMemoire : IProduitsModification
     public FicheProduitModifiable? Modifiee { get; private set; }
     public Task<FicheProduitModifiable?> LireAsync(long id, CancellationToken ct = default) => Task.FromResult<FicheProduitModifiable?>(id == Fiche.Id ? Fiche : null);
     public Task<bool> CodeBarreAutreProduitAsync(string codeBarre, long id, CancellationToken ct = default) => Task.FromResult(false);
-    public Task ModifierAsync(FicheProduitModifiable f, CancellationToken ct = default) { Modifiee = f; return Task.CompletedTask; }
+    public bool ClasseImposee { get; private set; }
+    public Task ModifierAsync(FicheProduitModifiable f, bool classeImposee, long utilisateurId, CancellationToken ct = default)
+    {
+        (Modifiee, ClasseImposee) = (f, classeImposee);
+        return Task.CompletedTask;
+    }
+    /// <summary>Substance surveillée : alprazolam (psychotrope).</summary>
+    public Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default) =>
+        Task.FromResult<string?>(dci.Contains("alprazolam", StringComparison.OrdinalIgnoreCase) ? "psychotrope" : null);
 }
 
 public class RecetteCorrectionsTests
@@ -78,5 +86,31 @@ public class RecetteCorrectionsTests
         Assert.Contains("prix_modifie", j2.Actions);
         await Assert.ThrowsAsync<RegleMetierException>(() =>
             new ModifierProduit(p, new DroitsFactices("catalogue.creer"), new JournalEspion()).ExecuterAsync(p.Fiche with { Remboursable = true, TarifReference = null }, 1));
+    }
+
+    [Fact]
+    public async Task Nouvelle_dci_de_psychotrope_donnee_par_un_employe_classe_d_office_et_a_verifier()
+    {
+        var p = new ProduitsModifEnMemoire();
+        var journal = new JournalEspion();
+        var information = await new ModifierProduit(p, new DroitsFactices("catalogue.creer"), journal).ExecuterAsync(p.Fiche with { Dci = "Alprazolam" }, 3);
+        Assert.Equal(("psychotrope", true), (p.Modifiee!.Classe, p.ClasseImposee));
+        Assert.Contains("invendable", information);
+        Assert.Equal(true, journal.Details.Single()["a_verifier"]);
+    }
+
+    [Fact]
+    public async Task Titulaire_ou_dci_inchangee_classe_non_imposee()
+    {
+        var p = new ProduitsModifEnMemoire();
+        Assert.Null(await new ModifierProduit(p, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
+            .ExecuterAsync(p.Fiche with { Dci = "Alprazolam" }, 1));
+        Assert.Equal(("liste_i", false), (p.Modifiee!.Classe, p.ClasseImposee));
+
+        // DCI déjà surveillée et inchangée (signalée au titulaire par « Produits à vérifier ») : une autre modification ne la reclasse pas
+        p.Fiche = p.Fiche with { Dci = "Alprazolam" };
+        Assert.Null(await new ModifierProduit(p, new DroitsFactices("catalogue.creer"), new JournalEspion())
+            .ExecuterAsync(p.Fiche with { NomCommercial = "Autre nom" }, 3));
+        Assert.Equal(("liste_i", false), (p.Modifiee!.Classe, p.ClasseImposee));
     }
 }

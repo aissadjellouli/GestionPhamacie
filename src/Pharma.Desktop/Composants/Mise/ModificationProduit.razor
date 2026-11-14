@@ -83,10 +83,10 @@
         (enCours, erreur, message) = (true, null, null);
         try
         {
-            var e = await Api.ModifierProduitAsync(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic,
+            var (information, e) = await Api.ModifierProduitAsync(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic,
                 f.TarifReference, f.Remboursable, f.TauxTva, f.Actif, f.Classe));
             if (e is not null) { erreur = e; return; }
-            message = $"« {f.NomCommercial.Trim()} » enregistré.";
+            message = $"« {f.NomCommercial.Trim()} » enregistré.{(information is null ? "" : " " + information)}";
             fiche = null;
         }
         finally { enCours = false; }

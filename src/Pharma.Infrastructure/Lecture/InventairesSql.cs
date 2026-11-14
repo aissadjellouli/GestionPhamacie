@@ -63,10 +63,22 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
         return liste;
     }
 
+    /// <summary>
+    /// Création d'inventaire (rayon, produit, produits sensibles) une à la fois, jusqu'à la fin de la transaction : la recherche des
+    /// lots déjà pris par un inventaire en cours voit alors les lots de l'inventaire créé juste avant, et un lot n'entre jamais dans
+    /// deux inventaires créés au même instant.
+    /// </summary>
+    private static async Task VerrouCreationAsync(NpgsqlConnection cnx, NpgsqlTransaction tx, CancellationToken ct)
+    {
+        await using var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('inventaire_creation'))", cnx, tx);
+        await verrou.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<long> CreerAsync(string rayon, long utilisateurId, CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
+        await VerrouCreationAsync(cnx, tx, ct);
         long id;
         // Pendant un inventaire complet, le rayon compté lui est rattaché
         await using (var cmd = new NpgsqlCommand("""
@@ -96,6 +108,7 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
+        await VerrouCreationAsync(cnx, tx, ct);
         // Un seul inventaire en cours par produit (verrou sur le produit pendant la création)
         await using (var cmd = new NpgsqlCommand("SELECT 1 FROM produit WHERE id = $1 FOR UPDATE", cnx, tx))
         {
@@ -259,6 +272,7 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
         // Un seul comptage « Produits sensibles » en cours, même lancé sur deux postes à la fois
         await using (var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('inventaire_sensibles'))", cnx, tx))
             await verrou.ExecuteNonQueryAsync(ct);
+        await VerrouCreationAsync(cnx, tx, ct);
         await using (var enCours = new NpgsqlCommand("SELECT id FROM inventaire WHERE rayon = $1 AND statut = 'en_cours' ORDER BY id DESC LIMIT 1", cnx, tx))
         {
             enCours.Parameters.AddWithValue(CommencerInventaireSensibles.Rayon);

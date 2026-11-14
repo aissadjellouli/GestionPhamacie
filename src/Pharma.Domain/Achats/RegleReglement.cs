@@ -2,8 +2,11 @@ using Pharma.Domain.Commun;
 
 namespace Pharma.Domain.Achats;
 
-/// <summary>Effet : la traite (code « effet » en base, « traite » à l'écran). Prelevement : prélèvement bancaire.</summary>
-public enum MoyenReglement { Especes, Cheque, Virement, Effet, Prelevement }
+/// <summary>
+/// Effet : la traite (code « effet » en base, « traite » à l'écran). Prelevement : prélèvement bancaire. Financement : payé par un prêt
+/// ou un apport du titulaire, hors trésorerie (aucun compte débité) ; jamais lu comme un moyen ordinaire, seulement avec sa source.
+/// </summary>
+public enum MoyenReglement { Especes, Cheque, Virement, Effet, Prelevement, Financement }
 
 /// <summary>Facture d'un grossiste encore à payer (réception), et part qui lui est imputée.</summary>
 public sealed record FactureAPayer(long ReceptionId, DateTime Date, decimal Reste);
@@ -31,6 +34,7 @@ public static class RegleReglement
         MoyenReglement.Cheque => "cheque",
         MoyenReglement.Virement => "virement",
         MoyenReglement.Prelevement => "prelevement",
+        MoyenReglement.Financement => "financement",
         _ => "effet"
     };
 
@@ -41,6 +45,7 @@ public static class RegleReglement
         MoyenReglement.Cheque => "chèque",
         MoyenReglement.Virement => "virement",
         MoyenReglement.Prelevement => "prélèvement",
+        MoyenReglement.Financement => "prêt ou apport du titulaire",
         _ => "traite"
     };
 
@@ -97,7 +102,7 @@ public static class RegleReglement
         if (!AuCentime(montant)) throw new RegleMetierException("Le montant réglé se saisit au centime près (2 décimales au plus).", "montant");
         if (!AuCentime(partTiroir)) throw new RegleMetierException("Le complément pris dans le tiroir se saisit au centime près (2 décimales au plus).", "tiroir");
         if (dateReglement > aujourdhui) throw new RegleMetierException("La date du règlement ne peut pas être dans le futur.", "date");
-        if (moyen != MoyenReglement.Especes && string.IsNullOrWhiteSpace(reference))
+        if (moyen is not (MoyenReglement.Especes or MoyenReglement.Financement) && string.IsNullOrWhiteSpace(reference))
             throw new RegleMetierException(MessageReference(moyen));
         if (moyen == MoyenReglement.Effet && echeance is null) throw new RegleMetierException("Indiquez la date d’échéance de la traite.", "echeance");
         if (partTiroir < 0) throw new RegleMetierException("Le complément pris dans le tiroir ne peut pas être négatif.", "tiroir");

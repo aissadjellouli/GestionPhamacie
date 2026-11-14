@@ -219,7 +219,9 @@ public class NotificationsApplicationTests
         var depot = new NotificationsEnMemoire { Destinataires = { Dest(1, true, TypeNotification.EcartCaisse) } };
         var alertes = new AlertesTitulaire(depot, new NotificationService(depot));
         await alertes.EcartCaisseAsync("Vendeur Démo", "Caisse 1", -300m, seuilCaisse: 500m);
-        Assert.Empty(depot.Ajoutes);
+        // Sous le seuil : e-mail seulement (tout écart non nul est notifié)
+        Assert.DoesNotContain(depot.Ajoutes, m => m.Canal == CanalNotification.Sms);
+        Assert.Contains(depot.Ajoutes, m => m.Canal == CanalNotification.Email);
         await alertes.EcartCaisseAsync("Vendeur Démo", "Caisse 1", -1200m, seuilCaisse: 500m);
         Assert.Contains(depot.Ajoutes, m => m.Canal == CanalNotification.Sms && m.Corps.StartsWith("Manque de caisse -1"));
     }

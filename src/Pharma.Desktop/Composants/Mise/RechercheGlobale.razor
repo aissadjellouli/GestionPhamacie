@@ -65,6 +65,9 @@
         ("Préparer un retour", "Achats", "achats?onglet=retours&vue=preparer", ["achats.retour_fournisseur"]),
         ("Règlements des grossistes", "Achats", "achats?onglet=reglements", ["achats.regler"]),
         ("Grossistes", "Achats", "achats?onglet=grossistes", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]),
+        ("Prêts bancaires", "Finances · Financements", "financements?rubrique=prets", ["role.titulaire"]),
+        ("Échéances des prêts à payer", "Finances · Financements", "financements?rubrique=echeances", ["role.titulaire"]),
+        ("Compte du titulaire (apports)", "Finances · Financements", "financements?rubrique=titulaire", ["role.titulaire"]),
     ];
 
     private ElementReference champ;

@@ -15,7 +15,7 @@ internal sealed class EmplacementsDuStock(IReadOnlyList<Emplacement> liste) : IE
 {
     public Task<IReadOnlyList<Emplacement>> ListerAsync(CancellationToken ct = default) => Task.FromResult(liste);
     public Task<bool> CodeExisteAsync(string code, long? saufId, CancellationToken ct = default) => Task.FromResult(false);
-    public Task<long> CreerAsync(string code, string rayon, string? etagere, string? tiroir, string? libelle, ZoneEmplacement zone, CancellationToken ct = default) => Task.FromResult(1L);
+    public Task<long> CreerAsync(string code, string rayon, string? etagere, string? tiroir, string? libelle, ZoneEmplacement zone, bool actif, CancellationToken ct = default) => Task.FromResult(1L);
     public Task<bool> ModifierAsync(long id, string code, string rayon, string? etagere, string? tiroir, string? libelle, ZoneEmplacement zone, bool actif, CancellationToken ct = default) => Task.FromResult(true);
     public Task<string?> NomProduitAsync(long produitId, CancellationToken ct = default) => Task.FromResult<string?>(null);
     public Task RangerAsync(long produitId, long? emplacementId, long? reserveId, CancellationToken ct = default) => Task.CompletedTask;

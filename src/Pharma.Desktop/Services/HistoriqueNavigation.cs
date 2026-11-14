@@ -183,6 +183,7 @@ public sealed class HistoriqueNavigation(NavigationManager nav, FichesContact fi
         "factures" => "Factures",
         "tresorerie" => "Trésorerie",
         "dettes" => "Dettes et créances",
+        "financements" => "Financements",
         "surveillance" => "Contrôle interne",
         "surveillance/risques" => "Risques",
         "guide" => "Guide",

@@ -25,7 +25,16 @@
             </div>
             @if (valideurs.Count == 0 && charge)
             {
-                <p class="detail" style="margin: 0">Aucun employé qui a ce droit n’a encore choisi de code comptoir (« Mon code comptoir », en haut de l’écran).</p>
+                <p class="detail" style="margin: 0">
+                    @if (d.Seuil is { } seuil)
+                    {
+                        <text>Aucun employé dont le maximum de remise atteint @seuil.ToString("0.##") % n’a de code comptoir (« Mon code comptoir », en haut de l’écran).</text>
+                    }
+                    else
+                    {
+                        <text>Aucun employé qui a ce droit n’a encore choisi de code comptoir (« Mon code comptoir », en haut de l’écran).</text>
+                    }
+                </p>
             }
             <div class="filtres">
                 <button type="button" class="btn btn-principal" disabled="@(string.IsNullOrEmpty(valideur) || CodeComptoirSaisie.Erreur(code, nouveauCode: false) is not null)"
@@ -54,7 +63,8 @@
         {
             (chargee, code, charge) = (d, null, false);
             StateHasChanged();
-            (valideurs, _) = await Api.ValideursAsync(d.Permission);
+            // Remise refusée : seuls les employés dont le maximum de remise couvre le pourcentage demandé (d.Seuil)
+            (valideurs, _) = await Api.ValideursAsync(d.Permission, d.Seuil);
             valideur = valideurs.Count == 1 ? valideurs[0].Identifiant : valideur;
             charge = true;
         }

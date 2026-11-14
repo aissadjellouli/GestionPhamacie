@@ -12,7 +12,14 @@ public static partial class RegleEmplacement
     private static partial Regex Segment();
 
     public static string Code(this ZoneEmplacement z) => z == ZoneEmplacement.Vente ? "vente" : "reserve";
-    public static ZoneEmplacement ZoneDepuisCode(string code) => code == "reserve" ? ZoneEmplacement.Reserve : ZoneEmplacement.Vente;
+    /// <summary>« vente » ou « reserve » seulement : une zone inconnue est refusée (elle était enregistrée « vente »).</summary>
+    public static ZoneEmplacement ZoneDepuisCode(string? code) => code?.Trim().ToLowerInvariant() switch
+    {
+        "vente" => ZoneEmplacement.Vente,
+        "reserve" => ZoneEmplacement.Reserve,
+        null or "" => throw new RegleMetierException("Indiquez la zone de l’emplacement : vente ou réserve.", "zone"),
+        _ => throw new RegleMetierException($"Zone inconnue : {code!.Trim()} (vente ou réserve).", "zone")
+    };
 
     /// <summary>Normalise et vérifie les trois niveaux, puis compose le code (étagère et tiroir facultatifs).</summary>
     public static (string Rayon, string? Etagere, string? Tiroir, string Code) Composer(string? rayon, string? etagere, string? tiroir)

@@ -260,9 +260,11 @@
 
     private string? messageCreation;
 
-    private async Task ProduitCreeAsync((long Id, string Nom) p)
+    private async Task ProduitCreeAsync((long Id, string Nom, string? Information) p)
     {
-        messageCreation = ($"« {p.Nom} » ajouté au catalogue. Il sera vendable après sa première réception (Achats, Réceptions).");
+        messageCreation = p.Information is null
+            ? $"« {p.Nom} » ajouté au catalogue. Il sera vendable après sa première réception (Achats, Réceptions)."
+            : $"« {p.Nom} » ajouté au catalogue. {p.Information}";
         await ChargerAsync(page, taille);
         (emplacements, _) = await Api.EmplacementsAsync();
     }

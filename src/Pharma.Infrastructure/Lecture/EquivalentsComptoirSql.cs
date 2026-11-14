@@ -12,9 +12,14 @@ public sealed class EquivalentsComptoirSql(NpgsqlDataSource db) : IEquivalentsCo
 {
     internal const string Selection = """
         SELECT p.id, p.nom_commercial, p.dci_id, p.dosage, p.forme, COALESCE(e.stock, 0)::int, COALESCE(f.ppa, p.prix_public),
-               p.classe, p.liste_psychotrope, lab.nom
+               p.classe, p.liste_psychotrope, COALESCE(lab.nom, nl.nom)
         FROM produit p
         LEFT JOIN laboratoire lab ON lab.id = p.laboratoire_id
+        -- Laboratoire absent de la fiche (produit.laboratoire_id jamais renseigné) : celui de la nomenclature nationale, par le
+        -- n° d'enregistrement (version la plus récente, produit en vigueur d'abord)
+        LEFT JOIN LATERAL (SELECT btrim(n.laboratoire) AS nom FROM nomenclature_produit n
+                           WHERE lab.id IS NULL AND n.num_enregistrement = p.num_enregistrement AND btrim(n.laboratoire) <> ''
+                           ORDER BY n.version_id DESC, n.situation = 'en_vigueur' DESC, n.id LIMIT 1) nl ON true
         LEFT JOIN LATERAL (SELECT sum(l.quantite_disponible) AS stock FROM lot l
                            WHERE l.produit_id = p.id AND l.date_peremption > current_date AND NOT l.bloque) e ON true
         LEFT JOIN LATERAL (SELECT l.ppa FROM lot l

@@ -76,7 +76,7 @@ public sealed record ResultatSauvegarde(string Statut, string? Fichier, long? Ta
 /// en années. Disque absent ou échec : inscrit au journal et signalé au titulaire (SMS et e-mail).
 /// </summary>
 public sealed class LancerSauvegarde(ISauvegardesDepot depot, IStockageSauvegarde stockage, IAlertesTitulaire alertes, IHorloge horloge,
-    Ged.ReglagesGed? ged = null)
+    Ged.ReglagesGed? ged = null, ITraceErreurs? trace = null)
 {
     public async Task<ResultatSauvegarde> ExecuterAsync(bool automatique, long? utilisateurId, DateTime maintenantLocal, CancellationToken ct = default)
     {
@@ -169,12 +169,9 @@ public sealed class LancerSauvegarde(ISauvegardesDepot depot, IStockageSauvegard
     private Task Terminer(ResultatSauvegarde r, DateTime debut, string declenchement, long? utilisateurId, CancellationToken ct) =>
         depot.JournaliserAsync(new NouvelleEntreeSauvegarde(debut, horloge.MaintenantUtc, r.Statut, declenchement, r.Fichier, r.TailleOctets, r.Message, utilisateurId), ct);
 
-    // La sauvegarde est faite ou journalisée : un échec de mise en file ne doit pas la masquer
-    private async Task Signaler(bool disqueAbsent, string detail, CancellationToken ct)
-    {
-        try { await alertes.SauvegardeEnEchecAsync(disqueAbsent, detail, ct); }
-        catch (Exception ex) when (ex is not OperationCanceledException) { }
-    }
+    // La sauvegarde est faite ou journalisée : un échec de mise en file ne doit pas la masquer (journal du serveur, bandeau du titulaire)
+    private Task Signaler(bool disqueAbsent, string detail, CancellationToken ct) =>
+        Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.SauvegardeEnEchecAsync(disqueAbsent, detail, ct), "sauvegarde en échec", trace);
 }
 
 /// <summary>Sauvegarde automatique quotidienne, une fois l'heure réglée passée.</summary>

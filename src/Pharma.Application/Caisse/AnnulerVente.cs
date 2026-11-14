@@ -78,7 +78,7 @@ public sealed class RechercherVenteAnnulable(IAnnulationsVente annulations, ISes
 /// </summary>
 public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse sessions, IPermissionService droits,
     VerificationCodeComptoir codes, IJournal journal, Notifications.IAlertesTitulaire? alertes = null, Patients.IPatients? patients = null,
-    Securite.AutorisationCourante? autorisation = null)
+    Securite.AutorisationCourante? autorisation = null, ITraceErreurs? trace = null)
 {
     public async Task<ResultatAnnulation> ExecuterAsync(long venteId, string? motif, long utilisateurId, string? poste,
         string? validateurIdentifiant, string? validateurCode, CancellationToken ct = default, bool solderDette = false, long? patientDetteId = null,
@@ -148,7 +148,9 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
             await journal.EcrireAsync(utilisateurId, "annulations_excessives", "session_caisse", session.Id,
                 new Dictionary<string, object?> { ["poste"] = nomPoste, ["annulations"] = nombre, ["seuil"] = seuil }, null, ct);
             if (alertes is not null)
-                try { await alertes.AnnulationsAsync(nomPoste, nombre, seuil, ct); } catch (Exception) { /* la notification ne bloque pas l'annulation */ }
+                // La notification ne bloque pas l'annulation (échec : journal du serveur, bandeau du titulaire)
+                await Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.AnnulationsAsync(nomPoste, nombre, seuil, ct),
+                    $"annulations sur la caisse {nomPoste}", trace);
         }
         return new ResultatAnnulation(v.Numero, rembourse, modeRemboursement, nomValidateur, reductionDette);
     }

@@ -31,12 +31,14 @@ public sealed class EmplacementsSql(NpgsqlDataSource db) : IEmplacements
         return await cmd.ExecuteScalarAsync(ct) is true;
     }
 
-    public async Task<long> CreerAsync(string code, string rayon, string? etagere, string? tiroir, string? libelle, ZoneEmplacement zone, CancellationToken ct = default)
+    public async Task<long> CreerAsync(string code, string rayon, string? etagere, string? tiroir, string? libelle, ZoneEmplacement zone, bool actif, CancellationToken ct = default)
     {
+        // Actif comme saisi : un emplacement créé « inactif » le reste
         await using var cmd = db.CreateCommand("""
-            INSERT INTO emplacement (code, rayon, etagere, tiroir, libelle, zone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            INSERT INTO emplacement (code, rayon, etagere, tiroir, libelle, zone, actif) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
             """);
         Parametres(cmd, code, rayon, etagere, tiroir, libelle, zone);
+        cmd.Parameters.AddWithValue(actif);
         return (long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 

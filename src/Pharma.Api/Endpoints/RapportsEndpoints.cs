@@ -33,10 +33,17 @@ internal static class RapportsEndpoints
             })
            .ExigerPermission(Permissions.RapportsVentes);
 
-        // ?format=pdf|excel
+        // ?format=pdf (ou rien) : PDF ; csv ou excel : fichier CSV ; tout autre format : 400
         rapports.MapGet("/export", async (string? periode, DateOnly? date, DateOnly? du, DateOnly? au, string? format, ExporterRapport exporter, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                var f = string.Equals(format, "excel", StringComparison.OrdinalIgnoreCase) ? FormatExport.Excel : FormatExport.Pdf;
+                FormatExport f;
+                switch (format?.Trim().ToLowerInvariant())
+                {
+                    case null or "" or "pdf": f = FormatExport.Pdf; break;
+                    case "csv" or "excel": f = FormatExport.Excel; break;
+                    default:
+                        return Results.BadRequest(new ErreurDto($"Format d’export inconnu : {format} (pdf, csv ou excel).", "format"));
+                }
                 var (contenu, nom) = await exporter.ExecuterAsync(Periode(periode, date, du, au), f, user.UtilisateurId(), ct);
                 return Results.File(contenu, f == FormatExport.Pdf ? "application/pdf" : "text/csv; charset=utf-8", nom);
             })

@@ -4,8 +4,8 @@
 
 @* Traites remises aux grossistes (droit achats.regler), filtrées et paginées par le serveur ; par défaut : échues ou à 7 jours,
    non payées. Le titulaire confirme le paiement : espèces (coffre, complété au besoin par le tiroir de la caisse ouverte),
-   chèque, virement ou prélèvement (banque et référence obligatoires). Une traite remise avec une banque est débitée à l'échéance
-   sans action. Filtres et page retenus par « ← Retour ». *@
+   chèque, virement ou prélèvement (banque et référence obligatoires), ou prêt / apport du titulaire (hors trésorerie, source
+   tracée). Une traite remise avec une banque est débitée à l'échéance sans action. Filtres et page retenus par « ← Retour ». *@
 <div class="filtres-liste" role="search" aria-label="Filtrer les traites">
     <div class="champ" style="flex: 1 1 240px"><label for="ft-texte">Grossiste ou n° de traite</label>
         <input id="ft-texte" type="search" autocomplete="off" @bind="fTexte" @bind:event="oninput" @bind:after="FiltrerAsync" /></div>
@@ -77,9 +77,22 @@
                     <select id="tp-moyen" data-champ="moyen" @bind="moyen" @bind:after="ProposerTiroir">
                         <option value="especes">Espèces</option><option value="cheque">Chèque</option>
                         <option value="virement">Virement</option><option value="prelevement">Prélèvement</option>
+                        <option value="financement">Prêt ou apport du titulaire</option>
                     </select>
                 </div>
-                @if (moyen != "especes")
+                @if (moyen == "financement")
+                {
+                    @* Hors trésorerie : aucun compte débité, la source est tracée (titulaire seul) *@
+                    <div class="champ" style="flex: 1 1 260px">
+                        <label for="tp-source" class="requis">Payée par</label>
+                        <select id="tp-source" data-champ="source" @bind="source">
+                            @foreach (var s in sources) { <option value="@s.Code">@s.Libelle@(s.Disponible is { } d ? $" · reste {Libelles.Dinars(d, 2)}" : "")</option> }
+                        </select>
+                    </div>
+                    <div class="champ" style="flex: 1 1 160px"><label for="tp-ref-f">Référence (facultative)</label><input id="tp-ref-f" type="text" @bind="reference" /></div>
+                    <span class="detail" style="align-self: center">Aucun compte de la trésorerie n’est débité : la traite est payée par le prêt ou l’apport choisi.</span>
+                }
+                else if (moyen != "especes")
                 {
                     <div class="champ" style="flex: 1 1 180px">
                         <label for="tp-compte" class="requis">Banque débitée</label>
@@ -131,8 +144,11 @@
     private static DateOnly Aujourdhui => DateOnly.FromDateTime(DateTime.Today);
     private bool EstTitulaire => Session.A("role.titulaire");
     private bool FiltreActif => fTexte.Trim() != "" || fEtat != EtatParDefaut;
-    private bool BanqueManque => controle && moyen != "especes" && compteId <= 0;
-    private bool ReferenceManque => controle && moyen != "especes" && string.IsNullOrWhiteSpace(reference);
+    private bool BanqueManque => controle && moyen is not ("especes" or "financement") && compteId <= 0;
+    private bool ReferenceManque => controle && moyen is not ("especes" or "financement") && string.IsNullOrWhiteSpace(reference);
+    // Prêt ou apport du titulaire (hors trésorerie) : « titulaire » ou « pret:ID »
+    private List<SourceFinancementDto> sources = [];
+    private string source = "titulaire";
 
     /// <summary>Moyen lu par l'employé ; « debit_echeance » : traite remise avec une banque, débitée à l'échéance.</summary>
     private static string Paiement(TraiteAPayerDto t) => t.PayeeLe is { } le
@@ -142,6 +158,7 @@
             "especes" => $"Payée le {le:dd/MM/yyyy} en espèces",
             "cheque" => $"Payée le {le:dd/MM/yyyy} par chèque",
             "virement" => $"Payée le {le:dd/MM/yyyy} par virement",
+            "financement" => $"Payée le {le:dd/MM/yyyy} par un prêt ou un apport du titulaire",
             _ => $"Payée le {le:dd/MM/yyyy} par prélèvement"
         })
         : t.Banque is { } b ? $"Débitée à l’échéance sur {b}" : "À confirmer par le titulaire";
@@ -156,7 +173,11 @@
         if (Historique.Restaurer("traites") is { } r)
             (fTexte, fEtat, page, taille) = (r.Texte("texte") ?? "", r.Texte("etat") ?? EtatParDefaut, r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
         await ChargerAsync(page, taille);
-        if (EstTitulaire) (banques, _) = await Api.BanquesReglementAsync();
+        if (EstTitulaire)
+        {
+            (banques, _) = await Api.BanquesReglementAsync();
+            (sources, _) = await Api.SourcesFinancementAsync();
+        }
     }
 
     private async Task ChargerAsync(int numero, int nouvelleTaille)
@@ -175,7 +196,7 @@
     private void Choisir(TraiteAPayerDto t)
     {
         (choisie, erreur, message, controle) = (t, null, null, false);
-        (date, moyen, compteId, reference) = (Aujourdhui, "especes", 0, null);
+        (date, moyen, compteId, reference, source) = (Aujourdhui, "especes", 0, null, sources.FirstOrDefault()?.Code ?? "titulaire");
         ProposerTiroir();
     }
 
@@ -191,9 +212,12 @@
         if (t.CompteId is null && ReferenceManque) { erreur = "Indiquez la référence du paiement."; return; }
         enCours = true;
         var avecBanque = t.CompteId is not null;
-        var e = await Api.PayerTraiteAsync(t.ReglementId, new PaiementTraiteRequete(date, avecBanque ? null : moyen,
-            avecBanque || moyen == "especes" ? null : compteId, avecBanque || moyen == "especes" ? null : reference,
-            !avecBanque && moyen == "especes" ? partTiroir : 0));
+        var parSource = !avecBanque && moyen == "financement";
+        var e = await Api.PayerTraiteAsync(t.ReglementId, parSource
+            ? new PaiementTraiteRequete(date, null, null, reference, 0, source)
+            : new PaiementTraiteRequete(date, avecBanque ? null : moyen,
+                avecBanque || moyen == "especes" ? null : compteId, avecBanque || moyen == "especes" ? null : reference,
+                !avecBanque && moyen == "especes" ? partTiroir : 0));
         enCours = false;
         if (e is not null) { erreur = e; return; }
         message = $"Traite {t.Reference} de {t.Grossiste} ({Libelles.Dinars(t.Montant, 2)}) : paiement enregistré.";

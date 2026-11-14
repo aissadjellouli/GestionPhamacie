@@ -70,6 +70,7 @@ Pour remettre à zéro une seule base (par exemple `pharmacie_test` après des e
 ```powershell
 .\scripts\initialiser_base_locale.ps1 -Bases pharmacie_test -Recreer
 ```
+La base est supprimée, données comprises : le script demande d’abord de retaper son nom (`pharmacie_test`) ; une autre saisie arrête tout sans rien toucher. Pour un enchaînement automatique, sans question : ajouter `-Force`.
 
 Options : `-SansDemo` pour ne pas charger les données fictives, `-Bases` pour choisir les bases.
 

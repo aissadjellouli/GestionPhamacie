@@ -87,31 +87,40 @@ public sealed record ClotureVue(
     long SessionId, decimal Compte, decimal? FondCaisse, decimal? VentesEspeces, decimal? Attendu,
     decimal? Ecart, bool? AuDelaDuSeuil, decimal? SeuilEcart);
 
-public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionService droits, IJournal journal, Notifications.IAlertesTitulaire? alertes = null)
+public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionService droits, IJournal journal, Notifications.IAlertesTitulaire? alertes = null,
+    ITraceErreurs? trace = null)
 {
-    public async Task<ClotureVue> ExecuterAsync(long utilisateurId, string? poste, IReadOnlyDictionary<string, decimal> saisies, CancellationToken ct = default)
+    /// <summary>Message (et champ) du refus d'une clôture à 0 DA compté sans confirmation explicite.</summary>
+    public const string ConfirmationZero = "Vous clôturez avec 0 DA compté : confirmez.";
+
+    /// <param name="confirmerZero">Clôture avec 0 DA compté : accepté seulement sur confirmation explicite (oubli de saisie fréquent).</param>
+    public async Task<ClotureVue> ExecuterAsync(long utilisateurId, string? poste, IReadOnlyDictionary<string, decimal> saisies, CancellationToken ct = default,
+        bool confirmerZero = false)
     {
         var session = await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct)
                       ?? throw new RegleMetierException("Aucune caisse ouverte à clôturer sur ce poste.");
         var parametres = await sessions.ParametresAsync(ct);
         var comptage = Comptage.Depuis(saisies);
+        if (comptage.Total == 0 && !confirmerZero) throw new RegleMetierException(ConfirmationZero, "confirmer_zero");
         var resultat = session.Cloturer(comptage, await sessions.VentesEspecesAsync(session.Id, ct), parametres.SeuilEcart);
 
         await sessions.CloturerAsync(session.Id, comptage, resultat, ct);
-        if (resultat.AuDelaDuSeuil)
+        // Tout écart non nul est inscrit au journal des actions (notifié dans le logiciel) ; au-delà du seuil, il est marqué
+        if (resultat.Ecart != 0)
             await journal.EcrireAsync(utilisateurId, "ecart_caisse", "session_caisse", session.Id,
                 new Dictionary<string, object?>
                 {
                     ["attendu"] = resultat.Attendu, ["compte"] = resultat.Compte,
-                    ["ecart"] = resultat.Ecart, ["seuil"] = parametres.SeuilEcart
+                    ["ecart"] = resultat.Ecart, ["seuil"] = parametres.SeuilEcart, ["au_dela_du_seuil"] = resultat.AuDelaDuSeuil
                 }, null, ct);
 
-        // Alerte du titulaire (SMS au-delà du seuil d'alerte) : la clôture reste valide même si la mise en file échoue
+        // Alerte du titulaire (e-mail pour tout écart, SMS au-delà du seuil d'alerte) : la clôture reste valide même si la mise en file
+        // échoue (journal du serveur, bandeau de l'accueil du titulaire)
         if (alertes is not null && resultat.Ecart != 0)
-        {
-            try { await alertes.EcartCaisseAsync((await sessions.DetailAsync(session.Id, ct))?.Employe ?? "employé", session.Poste, resultat.Ecart, parametres.SeuilEcart, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { }
-        }
+            await Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(async () =>
+                    await alertes.EcartCaisseAsync((await sessions.DetailAsync(session.Id, ct))?.Employe ?? "employé", session.Poste, resultat.Ecart,
+                        parametres.SeuilEcart, ct),
+                $"écart de caisse ({session.Poste})", trace);
 
         if (!await droits.APermissionAsync(utilisateurId, Permissions.CaisseVoirEcart, ct))
             return new ClotureVue(session.Id, resultat.Compte, null, null, null, null, null, null);
@@ -128,11 +137,12 @@ public sealed record Releve(ClotureVue Cloture, long NouvelleSessionId);
 /// </summary>
 public sealed class ReleverCaisse(ISessionsCaisse sessions, CloturerSessionCaisse cloturer, IJournal journal)
 {
-    public async Task<Releve> ExecuterAsync(long utilisateurId, string? poste, IReadOnlyDictionary<string, decimal> saisies, CancellationToken ct = default)
+    public async Task<Releve> ExecuterAsync(long utilisateurId, string? poste, IReadOnlyDictionary<string, decimal> saisies, CancellationToken ct = default,
+        bool confirmerZero = false)
     {
         var nomPoste = PosteCaisse.Exiger(poste);
         var precedente = await sessions.SessionDuPosteAsync(nomPoste, ct) ?? throw new RegleMetierException("Aucune caisse ouverte sur ce poste.");
-        var cloture = await cloturer.ExecuterAsync(utilisateurId, nomPoste, saisies, ct);
+        var cloture = await cloturer.ExecuterAsync(utilisateurId, nomPoste, saisies, ct, confirmerZero);
         var nouvelle = await sessions.OuvrirAsync(utilisateurId, nomPoste, cloture.Compte, precedente.Id, ct);
         await journal.EcrireAsync(utilisateurId, "releve_caisse", "session_caisse", nouvelle,
             new Dictionary<string, object?> { ["poste"] = nomPoste, ["session_precedente"] = precedente.Id, ["fond"] = cloture.Compte }, null, ct);

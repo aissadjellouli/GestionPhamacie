@@ -66,8 +66,11 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 -- Classe proposée : substance surveillée, sinon la liste de la nomenclature
+-- Colonnes nommées une à une (pas de n.*) : un rejeu garde la vue identique
 CREATE OR REPLACE VIEW v_nomenclature AS
-SELECT n.*,
+SELECT n.id, n.version_id, n.situation, n.num_enregistrement, n.code, n.dci, n.marque, n.forme, n.dosage,
+       n.conditionnement, n.liste, n.p1, n.p2, n.obs, n.laboratoire, n.pays, n.date_initiale, n.date_finale,
+       n.type, n.statut, n.stabilite,
        COALESCE(
            (SELECT s.classe FROM substance_surveillee s
             WHERE majuscule_sans_accent(n.dci) LIKE '%' || s.motif || '%'

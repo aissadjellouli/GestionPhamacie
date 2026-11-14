@@ -122,12 +122,15 @@ public sealed class VerificationCodeComptoir(ICodesComptoir codes, IVerificateur
 public sealed class ListerValidateurs(ICodesComptoir codes, IPermissionService droits)
 {
     /// <param name="sauf">Employé qui demande l'autorisation : jamais proposé (on ne s'autorise pas soi-même).</param>
-    public async Task<IReadOnlyList<VendeurComptoir>> ExecuterAsync(string permission, CancellationToken ct = default, long? sauf = null)
+    /// <param name="remisePct">Remise refusée à valider : seuls les employés dont le maximum de remise la couvre sont proposés.</param>
+    public async Task<IReadOnlyList<VendeurComptoir>> ExecuterAsync(string permission, CancellationToken ct = default, long? sauf = null,
+        decimal? remisePct = null)
     {
         var liste = new List<VendeurComptoir>();
         foreach (var c in (await codes.AvecCodeAsync(ct)).Where(c => c.Id != sauf))
-            if (permission == PermissionServiceExtensions.MarqueTitulaire ? await droits.EstTitulaireAsync(c.Id, ct)
-                : await droits.APermissionAsync(c.Id, permission, ct))
+            if ((permission == PermissionServiceExtensions.MarqueTitulaire ? await droits.EstTitulaireAsync(c.Id, ct)
+                    : await droits.APermissionAsync(c.Id, permission, ct))
+                && (remisePct is not { } pct || await droits.RemiseMaxAsync(c.Id, ct) >= pct))
                 liste.Add(new VendeurComptoir(c.Identifiant, c.NomComplet));
         return liste.OrderBy(v => v.NomComplet).ToList();
     }

@@ -7,7 +7,10 @@ public class InventaireTests
 {
     [Theory]
     [InlineData(0, 0, DecisionEcart.Conforme)]
-    [InlineData(-2, -400, DecisionEcart.Ajuste)]      // sous les deux seuils
+    [InlineData(-1, -400, DecisionEcart.Ajuste)]      // sous les deux seuils
+    [InlineData(-2, -400, DecisionEcart.AValider)]    // exactement au seuil de boîtes : validation du titulaire
+    [InlineData(1, 2000, DecisionEcart.AValider)]     // exactement au seuil de valeur : validation du titulaire
+    [InlineData(1, 1999.99, DecisionEcart.Ajuste)]    // juste sous le seuil de valeur
     [InlineData(-3, -450, DecisionEcart.AValider)]    // trop de boîtes
     [InlineData(1, 3800, DecisionEcart.AValider)]     // une seule boîte, mais trop chère (insuline)
     public void Decision_selon_les_seuils(int ecart, decimal valeur, DecisionEcart attendu) =>

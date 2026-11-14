@@ -107,7 +107,8 @@
 @code {
     [Parameter] public string? CodeBarreInitial { get; set; }
     [Parameter] public string? NomInitial { get; set; }
-    [Parameter] public EventCallback<(long Id, string Nom)> OnCree { get; set; }
+    /// <summary>Produit créé ; Information : message du serveur à afficher (classe imposée, produit à vérifier), sinon null.</summary>
+    [Parameter] public EventCallback<(long Id, string Nom, string? Information)> OnCree { get; set; }
     [Parameter] public EventCallback OnAnnule { get; set; }
 
     private string? nom, dci, dosage, forme, codeBarre;
@@ -198,7 +199,7 @@
                 choisi?.NumEnregistrement, categorie, string.IsNullOrEmpty(listePsychotrope) ? null : listePsychotrope));
             if (e is not null) { erreur = e; return; }
             controle = false;
-            await OnCree.InvokeAsync((r!.Id, nom!.Trim()));
+            await OnCree.InvokeAsync((r!.Id, nom!.Trim(), r.Information));
         }
         finally { enCours = false; }
     }

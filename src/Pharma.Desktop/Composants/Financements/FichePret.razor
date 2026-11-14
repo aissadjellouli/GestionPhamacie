@@ -1,0 +1,249 @@
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Fiche d'un prêt (titulaire seul) : résumé, échéancier (filtré et paginé à l'écran), usages de l'argent reçu, document joint ;
+   modifier le prêt, saisir ou importer l'échéancier (EditeurEcheancier), employer l'argent (versement, dépense).
+   Vue, filtre et page retenus par « ← Retour ». *@
+@if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+@if (message is not null) { <div class="succes" role="status">@message</div> }
+
+@if (detail is not { } d)
+{
+    @if (erreur is null) { <Chargement /> }
+}
+else
+{
+    var p = d.Pret;
+    <div class="tuiles">
+        <div class="tuile"><span class="tuile-libelle">Prêt @p.Reference · @p.Banque</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant, 2)</span>
+            <span class="tuile-pied">du @p.DatePret.ToString("dd/MM/yyyy")@(p.Objet is { } o ? $" · {o}" : "")</span></div>
+        <div class="tuile"><span class="tuile-libelle">Capital restant dû</span><span class="tuile-valeur">@Libelles.Dinars(p.ResteDu, 2)</span>
+            <span class="tuile-pied">@p.EcheancesPayees échéance(s) payée(s) sur @p.Echeances</span></div>
+        <div class="tuile"><span class="tuile-libelle">Reste à employer</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant - p.Utilise, 2)</span>
+            <span class="tuile-pied">versé, dépenses, factures et traites : @Libelles.Dinars(p.Utilise, 2)</span></div>
+    </div>
+    <div class="filtres" role="tablist" aria-label="Fiche du prêt">
+        @foreach (var (code, libelle) in Vues)
+        {
+            <button type="button" role="tab" class="puce" aria-selected="@(vue == code ? "true" : "false")" @onclick="() => Ouvrir(code)">@libelle</button>
+        }
+        <a class="btn" href="financements?rubrique=prets">← Liste des prêts</a>
+    </div>
+
+    @switch (vue)
+    {
+        case "modifier":
+            <section class="panneau" aria-labelledby="t-modifier-pret">
+                <h2 id="t-modifier-pret">Modifier le prêt</h2>
+                @if (p.EcheancesPayees > 0 || p.Utilise > 0) { <p class="detail" style="margin: 0">Une échéance est payée ou une part du prêt est employée : seuls la référence et l’objet changent.</p> }
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 200px"><label for="mp-banque" class="requis">Banque</label>
+                        <select id="mp-banque" data-champ="compte" @bind="compteId">
+                            @foreach (var b in Comptes.Where(c => c.Type == "banque" && (c.Actif || c.Id == p.CompteId))) { <option value="@b.Id">@b.Nom</option> }
+                        </select></div>
+                    <div class="champ" style="flex: 1 1 180px"><label for="mp-ref" class="requis">Référence</label><input id="mp-ref" data-champ="reference" type="text" maxlength="60" @bind="reference" /></div>
+                    <div class="champ" style="flex: 0 0 180px"><label for="mp-montant" class="requis">Montant (DA)</label><input id="mp-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montant" /></div>
+                    <div class="champ" style="flex: 0 0 170px"><label for="mp-date" class="requis">Date du prêt</label><input id="mp-date" data-champ="date" type="date" @bind="datePret" /></div>
+                </div>
+                <div class="champ"><label for="mp-objet">Objet</label><input id="mp-objet" type="text" maxlength="200" @bind="objet" /></div>
+                <div class="filtres">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ModifierAsync">Enregistrer</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="JoindreDocumentAsync">Joindre un document…</button>
+                    @if (p.Document is { } doc) { <span class="detail" style="align-self: center">Document joint : GED du serveur, @doc</span> }
+                </div>
+            </section>
+            break;
+
+        case "employer":
+            <section class="panneau" aria-labelledby="t-employer">
+                <h2 id="t-employer">Employer l’argent du prêt · reste @Libelles.Dinars(p.Montant - p.Utilise, 2)</h2>
+                <p class="detail" style="margin: 0">Pour payer une facture ou une traite d’un grossiste avec ce prêt (hors trésorerie) : Achats, Règlements ou Traites à payer, « Prêt ou apport ».</p>
+                <UsageSource Source="@($"pret:{p.Id}")" Comptes="Comptes" Categories="Categories" OnEnregistre="ApresUsageAsync" />
+            </section>
+            break;
+
+        case "editer":
+            <EditeurEcheancier Pret="p" Echeances="d.Echeances" OnEnregistre="ApresEcheancierAsync" OnAnnule='() => Ouvrir("echeancier")' />
+            break;
+
+        case "usages":
+            <div class="filtres-liste" role="search" aria-label="Filtrer les usages du prêt">
+                <div class="champ" style="flex: 0 0 240px"><label for="fu-usage">Usage</label>
+                    <select id="fu-usage" @bind="filtreUsage" @bind:after="() => pageUsages = 1">
+                        <option value="">Tous</option><option value="tresorerie">Versé en trésorerie</option><option value="depense">Dépense payée</option>
+                        <option value="reglement">Facture de grossiste</option><option value="traite">Traite</option>
+                    </select></div>
+            </div>
+            <div class="tableau-cadre">
+                <table class="tableau">
+                    <thead><tr><th scope="col">Date</th><th scope="col">Usage</th><th scope="col">Libellé</th><th scope="col" class="nombre">Montant</th><th scope="col">Par</th></tr></thead>
+                    <tbody>
+                        @foreach (var u in UsagesFiltres.Skip((pageUsages - 1) * tailleUsages).Take(tailleUsages))
+                        {
+                            <tr><td>@u.Date.ToString("dd/MM/yyyy")</td><td>@Usage(u.Usage)</td><td>@u.Libelle</td><td class="nombre">@Libelles.Dinars(u.Montant, 2)</td><td>@u.Employe</td></tr>
+                        }
+                        @if (!UsagesFiltres.Any()) { <tr><td colspan="5" class="vide">Aucun usage enregistré.</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+            <Pagination Total="UsagesFiltres.Count()" Numero="pageUsages" Taille="tailleUsages" Libelle="Pages des usages du prêt" OnChange="x => (pageUsages, tailleUsages) = (x.Numero, x.Taille)" />
+            break;
+
+        default:
+            <div class="filtres-liste" role="search" aria-label="Filtrer l’échéancier">
+                <div class="champ" style="flex: 0 0 220px"><label for="fe-etat-pret">Échéances</label>
+                    <select id="fe-etat-pret" @bind="filtreEcheances" @bind:after="() => pageEcheances = 1">
+                        <option value="">Toutes</option><option value="a_payer">À payer</option><option value="payees">Payées</option>
+                    </select></div>
+                <button type="button" class="btn" @onclick='() => Ouvrir("editer")'>@(d.Echeances.Count == 0 ? "Saisir ou importer l’échéancier…" : "Modifier ou réimporter l’échéancier…")</button>
+            </div>
+            <div class="tableau-cadre">
+                <table class="tableau">
+                    <thead><tr><th scope="col">N°</th><th scope="col">Date</th><th scope="col" class="nombre">Capital</th><th scope="col" class="nombre">Intérêts</th><th scope="col" class="nombre">TVA</th><th scope="col" class="nombre">Marge</th><th scope="col" class="nombre">Échéance</th><th scope="col" class="nombre">Capital restant dû</th><th scope="col">Paiement</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in EcheancesFiltrees.Skip((pageEcheances - 1) * tailleEcheances).Take(tailleEcheances))
+                        {
+                            var l = e.Ligne;
+                            <tr>
+                                <td>@e.Rang</td>
+                                <td>@l.Date.ToString("dd/MM/yyyy")</td>
+                                <td class="nombre">@Libelles.Dinars(l.Capital, 2)</td>
+                                <td class="nombre">@Libelles.Dinars(l.Interets, 2)</td>
+                                <td class="nombre">@(l.Tva == 0 ? "—" : Libelles.Dinars(l.Tva, 2))</td>
+                                <td class="nombre">@(l.Marge == 0 ? "—" : Libelles.Dinars(l.Marge, 2))</td>
+                                <td class="nombre"><strong>@Libelles.Dinars(l.Montant, 2)</strong></td>
+                                <td class="nombre">@Libelles.Dinars(l.CapitalRestant, 2)</td>
+                                <td>
+                                    @if (e.PayeeLe is { } le) { <span class="pastille ok">Payée le @le.ToString("dd/MM/yyyy")</span> }
+                                    else if (l.Date < DateOnly.FromDateTime(DateTime.Today)) { <a class="pastille urgent" href="financements?rubrique=echeances">Échue, non payée</a> }
+                                    else if (l.Date.DayNumber - DateOnly.FromDateTime(DateTime.Today).DayNumber <= 7) { <a class="pastille attention" href="financements?rubrique=echeances">À payer sous peu</a> }
+                                </td>
+                            </tr>
+                        }
+                        @if (!EcheancesFiltrees.Any()) { <tr><td colspan="9" class="vide">@(d.Echeances.Count == 0 ? "Aucun échéancier : saisissez-le ou importez le tableau de la banque." : "Aucune échéance pour ce filtre.")</td></tr> }
+                    </tbody>
+                    @if (d.Echeances.Count > 0)
+                    {
+                        <tfoot><tr><th scope="row" colspan="2">Total · @d.Echeances.Count échéance(s)</th>
+                            <td class="nombre"><strong>@Libelles.Dinars(d.Echeances.Sum(x => x.Ligne.Capital), 2)</strong></td>
+                            <td class="nombre">@Libelles.Dinars(d.Echeances.Sum(x => x.Ligne.Interets), 2)</td>
+                            <td class="nombre">@Libelles.Dinars(d.Echeances.Sum(x => x.Ligne.Tva), 2)</td>
+                            <td class="nombre">@Libelles.Dinars(d.Echeances.Sum(x => x.Ligne.Marge), 2)</td>
+                            <td class="nombre"><strong>@Libelles.Dinars(d.Echeances.Sum(x => x.Ligne.Montant), 2)</strong></td>
+                            <td colspan="2"></td></tr></tfoot>
+                    }
+                </table>
+            </div>
+            <Pagination Total="EcheancesFiltrees.Count()" Numero="pageEcheances" Taille="tailleEcheances" Libelle="Pages de l’échéancier" OnChange="x => (pageEcheances, tailleEcheances) = (x.Numero, x.Taille)" />
+            break;
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public long PretId { get; set; }
+    [Parameter] public List<CompteTresorerieDto> Comptes { get; set; } = [];
+    [Parameter] public List<CodeLibelleDto> Categories { get; set; } = [];
+    /// <summary>Appelé après un changement (prêt, échéancier, usage) : l'écran relit soldes et compteurs.</summary>
+    [Parameter] public EventCallback OnModifie { get; set; }
+
+    private static readonly (string, string)[] Vues =
+        [("echeancier", "Échéancier"), ("usages", "Usages de l’argent"), ("employer", "Employer l’argent…"), ("modifier", "Prêt et document…")];
+
+    private PretDetailDto? detail;
+    private long chargeId;
+    private string vue = "echeancier", filtreEcheances = "", filtreUsage = "";
+    private int pageEcheances = 1, tailleEcheances = Pagination.TailleParDefaut, pageUsages = 1, tailleUsages = Pagination.TailleParDefaut;
+    private string? erreur, message, reference, objet;
+    private long compteId;
+    private decimal montant;
+    private DateOnly datePret;
+    private bool enCours;
+
+    private IEnumerable<EcheancePretDto> EcheancesFiltrees => (detail?.Echeances ?? []).Where(e => filtreEcheances switch
+    {
+        "a_payer" => e.PayeeLe is null,
+        "payees" => e.PayeeLe is not null,
+        _ => true
+    });
+    private IEnumerable<UtilisationFinancementDto> UsagesFiltres => (detail?.Utilisations ?? []).Where(u => filtreUsage == "" || u.Usage == filtreUsage);
+
+    protected override void OnInitialized()
+    {
+        Historique.Suivre("fiche-pret", e =>
+        {
+            e.Mettre("pret", PretId); e.Mettre("vue", vue == "editer" ? "echeancier" : vue); e.Mettre("filtre", filtreEcheances); e.Mettre("usage", filtreUsage);
+            e.Mettre("page", pageEcheances); e.Mettre("taille", tailleEcheances); e.Mettre("page_u", pageUsages); e.Mettre("taille_u", tailleUsages);
+        });
+        if (Historique.Restaurer("fiche-pret") is { } r && r.Long("pret") == PretId)
+            (vue, filtreEcheances, filtreUsage, pageEcheances, tailleEcheances, pageUsages, tailleUsages) = (r.Texte("vue") ?? "echeancier", r.Texte("filtre") ?? "",
+                r.Texte("usage") ?? "", r.Entier("page") ?? 1, r.Entier("taille") ?? tailleEcheances, r.Entier("page_u") ?? 1, r.Entier("taille_u") ?? tailleUsages);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (chargeId == PretId) return;
+        if (chargeId != 0) (vue, filtreEcheances, filtreUsage, pageEcheances, pageUsages) = ("echeancier", "", "", 1, 1);
+        chargeId = PretId;
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        var (d, e) = await Api.PretAsync(PretId);
+        if (d is null) { erreur = e; return; }
+        detail = d;
+        (compteId, reference, objet, montant, datePret) = (d.Pret.CompteId, d.Pret.Reference, d.Pret.Objet, d.Pret.Montant, d.Pret.DatePret);
+    }
+
+    private void Ouvrir(string code) => (vue, erreur, message) = (code, null, null);
+
+    private async Task ModifierAsync()
+    {
+        (enCours, erreur, message) = (true, null, null);
+        var e = await Api.ModifierPretAsync(PretId, new PretRequete(compteId, reference, objet, montant, datePret));
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        message = "Prêt enregistré.";
+        await ChargerAsync();
+        await OnModifie.InvokeAsync();
+    }
+
+    /// <summary>Document (contrat, tableau) rangé dans la GED du serveur, dossier Financements, et rattaché au prêt.</summary>
+    private async Task JoindreDocumentAsync()
+    {
+        (erreur, message) = (null, null);
+        DocumentBanque? doc;
+        try { doc = await LectureTableauBanque.ChoisirDocumentAsync(); }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { erreur = $"Fichier illisible : {ex.Message}"; return; }
+        if (doc is null) return;
+        enCours = true;
+        try
+        {
+            var range = await Documents.RangerAsync(Api, "Financements", $"Pret-{detail?.Pret.Reference}-{doc.Nom}", doc.Contenu);
+            if (range.CheminGed is not { } chemin) { erreur = range.Erreur; return; }
+            if (await Api.JoindreDocumentPretAsync(PretId, chemin) is { } e) { erreur = e; return; }
+            message = $"Document joint : GED du serveur, {chemin}.";
+            await ChargerAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    private async Task ApresUsageAsync(string succes)
+    {
+        message = succes;
+        await ChargerAsync();
+        await OnModifie.InvokeAsync();
+    }
+
+    private async Task ApresEcheancierAsync(string succes)
+    {
+        (vue, message, pageEcheances) = ("echeancier", succes, 1);
+        await ChargerAsync();
+        await OnModifie.InvokeAsync();
+    }
+
+    private static string Usage(string u) => u switch
+    {
+        "tresorerie" => "Versé en trésorerie", "depense" => "Dépense payée", "reglement" => "Facture de grossiste", "traite" => "Traite", _ => u
+    };
+}

@@ -21,9 +21,10 @@ public sealed record MouvementGrossiste(DateTime Date, string Type, decimal Mont
 public sealed record SituationGrossiste(long Id, string Nom, decimal Solde, IReadOnlyList<FactureFournisseur> Factures, IReadOnlyList<ReglementPasse> Reglements,
     IReadOnlyList<MouvementGrossiste>? Mouvements = null, int MouvementsTotal = 0);
 
+/// <summary>Source : prêt ou apport du titulaire qui paie hors trésorerie (moyen Financement, aucun compte débité), null sinon.</summary>
 public sealed record ReglementAEcrire(long FournisseurId, DateOnly Date, decimal Montant, MoyenReglement Moyen, string? Reference, string? Banque,
     DateOnly? Echeance, decimal PartTiroir, long? SessionCaisseId, long UtilisateurId, string? Commentaire,
-    IReadOnlyList<(long ReceptionId, decimal Montant)> Imputations, long? CompteId = null);
+    IReadOnlyList<(long ReceptionId, decimal Montant)> Imputations, long? CompteId = null, Pharma.Domain.Financements.SourceFinancement? Source = null);
 
 public interface IReglementsFournisseurs
 {
@@ -64,6 +65,7 @@ public sealed record ImputationDemandee(long ReceptionId, decimal Montant);
 /// Espèces : le coffre, et le complément pris dans le tiroir de la caisse ouverte du poste quand le coffre ne suffit pas.
 /// Chèque, virement, prélèvement : banque de la trésorerie obligatoire (active), débitée à la date du règlement. Traite : banque
 /// facultative (avec une banque, débitée à l'échéance ; sans, payée à l'échéance sur confirmation du titulaire, « Traites à payer »).
+/// Source (titulaire seul) : facture payée par un prêt ou un apport du titulaire, hors trésorerie (aucun compte débité, source tracée).
 /// </summary>
 public sealed class EnregistrerReglement(IReglementsFournisseurs reglements, ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, IJournal journal,
     Tresorerie.ITresorerie? tresorerie = null)
@@ -78,15 +80,22 @@ public sealed class EnregistrerReglement(IReglementsFournisseurs reglements, ISe
 
     public async Task<long> ExecuterAsync(long fournisseurId, DateOnly? date, decimal montant, string? moyen, string? reference, string? banque,
         DateOnly? echeance, decimal partTiroir, string? commentaire, IReadOnlyList<ImputationDemandee>? imputations, long utilisateurId, string? poste,
-        long? compteId = null, CancellationToken ct = default)
+        long? compteId = null, string? source = null, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsRegler, "régler un grossiste", ct);
-        var m = RegleReglement.Moyen(moyen);
+        // Prêt ou apport du titulaire : réservé au titulaire, hors trésorerie (aucun compte débité, pas de tiroir)
+        var sourceFinancement = Pharma.Domain.Financements.SourceFinancement.Lire(source);
+        if (sourceFinancement is not null)
+        {
+            await droits.ExigerTitulaireAsync(utilisateurId, "payer une facture de grossiste par un prêt ou un apport", ct);
+            (moyen, compteId, partTiroir, echeance) = ("financement", null, 0, null);
+        }
+        var m = sourceFinancement is null ? RegleReglement.Moyen(moyen) : MoyenReglement.Financement;
         var jour = date ?? horloge.Aujourdhui;
         RegleReglement.Verifier(montant, m, reference, echeance, partTiroir, jour, horloge.Aujourdhui);
         // Plus de règlement « hors trésorerie » par chèque, virement ou prélèvement : la banque débitée est obligatoire
         RegleReglement.VerifierBanque(m, compteId);
-        if (m != MoyenReglement.Especes && compteId is > 0 and var banqueId) await VerifierBanqueAsync(tresorerie, banqueId, ct);
+        if (m is not (MoyenReglement.Especes or MoyenReglement.Financement) && compteId is > 0 and var banqueId) await VerifierBanqueAsync(tresorerie, banqueId, ct);
         var situation = await reglements.SituationAsync(fournisseurId, ct) ?? throw new RegleMetierException("Grossiste introuvable.");
         // Montant au centime près (vérifié ci-dessus) : comparaison exacte avec la dette arrondie au centime
         if (montant > Arrondi.Centime(Math.Max(situation.Solde, 0)))
@@ -106,12 +115,13 @@ public sealed class EnregistrerReglement(IReglementsFournisseurs reglements, ISe
         var id = await reglements.EnregistrerAsync(new ReglementAEcrire(fournisseurId, jour, montant, m,
             string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), string.IsNullOrWhiteSpace(banque) ? null : banque.Trim(),
             m == MoyenReglement.Effet ? echeance : null, partTiroir, sessionId, utilisateurId,
-            string.IsNullOrWhiteSpace(commentaire) ? null : commentaire.Trim(), lignes, m == MoyenReglement.Especes || compteId is not > 0 ? null : compteId), ct);
+            string.IsNullOrWhiteSpace(commentaire) ? null : commentaire.Trim(), lignes,
+            m is MoyenReglement.Especes or MoyenReglement.Financement || compteId is not > 0 ? null : compteId, sourceFinancement), ct);
         await journal.EcrireAsync(utilisateurId, "reglement_grossiste", "reglement_fournisseur", id,
             new Dictionary<string, object?>
             {
                 ["grossiste"] = situation.Nom, ["montant"] = montant, ["moyen"] = m.Code(), ["reference"] = reference,
-                ["part_tiroir"] = partTiroir, ["factures"] = lignes.Count
+                ["part_tiroir"] = partTiroir, ["factures"] = lignes.Count, ["source"] = sourceFinancement?.Type, ["pret_id"] = sourceFinancement?.PretId
             }, Permissions.AchatsRegler, ct);
         return id;
     }

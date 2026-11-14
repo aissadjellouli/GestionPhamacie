@@ -1,7 +1,9 @@
 @inject ApiClient Api
 @inject HistoriqueNavigation Historique
+@inject SessionPoste Session
 
-@* Règlement des grossistes, facture par facture (droit achats.regler) *@
+@* Règlement des grossistes, facture par facture (droit achats.regler). Titulaire seul : facture payée par un prêt ou un apport du
+   titulaire (« Prêt ou apport »), hors trésorerie : aucun compte débité, la source est tracée. *@
 <div class="colonnes">
     <section class="panneau colonne-laterale" aria-labelledby="t-grossistes-dette">
         <h2 id="t-grossistes-dette">Dette par grossiste</h2>
@@ -85,9 +87,20 @@
                         <select data-champ="moyen" id="r-moyen" @bind="moyen">
                             <option value="especes">Espèces</option><option value="cheque">Chèque</option>
                             <option value="virement">Virement</option><option value="prelevement">Prélèvement</option><option value="effet">Traite</option>
+                            @if (EstTitulaire) { <option value="financement">Prêt ou apport du titulaire</option> }
                         </select>
                     </div>
-                    @if (moyen != "especes")
+                    @if (moyen == "financement")
+                    {
+                        <div class="champ" style="flex: 1 1 260px">
+                            <label for="r-source" class="requis">Payé par</label>
+                            <select id="r-source" data-champ="source" @bind="source">
+                                @foreach (var x in sources) { <option value="@x.Code">@x.Libelle@(x.Disponible is { } d ? $" · reste {Libelles.Dinars(d, 2)}" : "")</option> }
+                            </select>
+                        </div>
+                        <div class="champ" style="flex: 1 1 160px"><label for="r-ref-f">Référence (facultative)</label><input id="r-ref-f" type="text" @bind="reference" /></div>
+                    }
+                    else if (moyen != "especes")
                     {
                         <div class="champ" style="flex: 1 1 180px"><label for="r-ref" class="requis">@(moyen switch { "cheque" => "N° du chèque", "virement" => "Référence du virement", "prelevement" => "Référence du prélèvement", _ => "N° de la traite" })</label>
                             <input id="r-ref" type="text" @bind="reference" @bind:event="oninput" class="@Obligatoire.Classe(ReferenceManque)" aria-invalid="@Obligatoire.Aria(ReferenceManque)" /></div>
@@ -253,7 +266,11 @@
     private bool avecTiroir, enCours, controle;
 
     private bool MontantManque => controle && montant <= 0;
-    private bool ReferenceManque => controle && moyen != "especes" && string.IsNullOrWhiteSpace(reference);
+    private bool ReferenceManque => controle && moyen is not ("especes" or "financement") && string.IsNullOrWhiteSpace(reference);
+    private bool EstTitulaire => Session.A("role.titulaire");
+    // Prêt ou apport du titulaire (hors trésorerie) : « titulaire » ou « pret:ID »
+    private List<SourceFinancementDto> sources = [];
+    private string source = "titulaire";
     private bool EcheanceManque => controle && moyen == "effet" && echeance is null;
     private bool BanqueObligatoire => moyen is "cheque" or "virement" or "prelevement";
     private bool BanqueManque => controle && BanqueObligatoire && compteId <= 0;
@@ -261,7 +278,8 @@
     /// <summary>Moyen lu par l'employé : le code « effet » s'affiche « Traite ».</summary>
     private static string Moyen(string m) => m switch
     {
-        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", "prelevement" => "Prélèvement", _ => "Traite"
+        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", "prelevement" => "Prélèvement",
+        "financement" => "Prêt ou apport du titulaire", _ => "Traite"
     };
 
     /// <summary>Grossiste ouvert directement (depuis sa fiche contact).</summary>
@@ -273,6 +291,8 @@
     {
         await ChargerAsync();
         (banques, _) = await Api.BanquesReglementAsync();
+        if (EstTitulaire) (sources, _) = await Api.SourcesFinancementAsync();
+        source = sources.FirstOrDefault()?.Code ?? "titulaire";
         compteId = banques.FirstOrDefault(b => b.RecoitCarte)?.Id ?? banques.FirstOrDefault()?.Id ?? 0;
         grossisteApplique = Grossiste;
         // « ← Retour » : grossiste ouvert, filtres et page de son relevé retrouvés tels qu'ils étaient
@@ -342,7 +362,7 @@
         var req = new ReglementRequete(date, montant, moyen, reference, banque, moyen == "effet" ? echeance : null,
             moyen == "especes" && avecTiroir ? partTiroir : 0, commentaire,
             imputations.Count > 0 ? imputations.Select(i => new ImputationDto(i.Key, i.Value)).ToList() : null,
-            moyen != "especes" && compteId > 0 ? compteId : null);
+            moyen is not ("especes" or "financement") && compteId > 0 ? compteId : null, moyen == "financement" ? source : null);
         var e = await Api.EnregistrerReglementAsync(situation.Id, req);
         enCours = false;
         if (e is not null) { erreur = e; return; }
@@ -350,5 +370,7 @@
         await ChargerAsync();
         await ChoisirAsync(situation.Id);
         message = $"Règlement de {Libelles.Dinars(regle, 2)} à {nom} enregistré. Nouvelle dette : {Libelles.Dinars(situation?.Solde ?? 0, 2)}.";
+        // Le reste à employer des prêts a changé
+        if (EstTitulaire) (sources, _) = await Api.SourcesFinancementAsync();
     }
 }

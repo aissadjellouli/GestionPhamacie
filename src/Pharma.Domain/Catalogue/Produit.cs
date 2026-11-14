@@ -17,7 +17,10 @@ public class Produit
     /// <summary>Seuil d'alerte saisi (boîtes) ; null : seuil automatique.</summary>
     public int? StockMinimum { get; init; }
     public bool Actif { get; init; } = true;
-    /// <summary>Repris de l'ancien logiciel sans n° d'enregistrement : classe à confirmer par le titulaire, non vendable d'ici là (037).</summary>
+    /// <summary>
+    /// Classe à confirmer par le titulaire, non vendable d'ici là : repris de l'ancien logiciel sans n° d'enregistrement (037), ou classé
+    /// d'office psychotrope ou stupéfiant d'après sa DCI quand un employé l'a créé ou lui a donné cette DCI (075).
+    /// </summary>
     public bool AVerifier { get; init; }
     /// <summary>Liste I ou II d'un psychotrope (liste_i, liste_ii), pour son SHP ; null : à renseigner.</summary>
     public string? ListePsychotrope { get; init; }

@@ -39,7 +39,7 @@ internal static class ReglementsEndpoints
                 HttpRequest requete, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await enregistrer.ExecuterAsync(id, req.Date, req.Montant, req.Moyen, req.Reference, req.Banque,
                     req.Echeance, req.PartTiroir, req.Commentaire, req.Imputations?.Select(i => new ImputationDemandee(i.ReceptionId, i.Montant)).ToList(),
-                    user.UtilisateurId(), requete.Poste(), req.CompteId, ct))));
+                    user.UtilisateurId(), requete.Poste(), req.CompteId, req.Source, ct))));
 
         // Traites à payer (échues ou à 7 jours) ; le paiement est confirmé par le titulaire
         var traites = api.MapGroup("/achats/traites").ExigerPermission(Permissions.AchatsRegler);
@@ -57,7 +57,7 @@ internal static class ReglementsEndpoints
         traites.MapPost("/{id:long}/paiement", async (long id, PaiementTraiteRequete req, PayerTraite payer, ClaimsPrincipal user,
                 HttpRequest requete, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await payer.ExecuterAsync(id, req.Date, req.Moyen, req.CompteId, req.Reference, req.PartTiroir,
-                    user.UtilisateurId(), requete.Poste(), ct))))
+                    user.UtilisateurId(), requete.Poste(), req.Source, ct))))
            .ExigerTitulaire();
 
         var credits = api.MapGroup("/caisse/credits").ExigerPermission(Permissions.CaisseVendre);

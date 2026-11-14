@@ -28,7 +28,7 @@ public static class ErreursMetier
             {
                 ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus")
                     .LogInformation("{Chemin} refusé (droit {Droit}) : {Message}", ctx.HttpContext.Request.Path, e.Permission, e.Message);
-                return await PermissionExtensions.RefusAsync(ctx.HttpContext, e.Permission, e.Message);
+                return await PermissionExtensions.RefusAsync(ctx.HttpContext, e.Permission, e.Message, e.Seuil);
             }
             catch (PostgresException e) when (e.SqlState == "P0001")
             {

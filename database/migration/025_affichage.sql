@@ -6,6 +6,10 @@
 -- =====================================================================
 
 ALTER TABLE utilisateur ADD COLUMN IF NOT EXISTS affichage text NOT NULL DEFAULT 'auto';
-ALTER TABLE utilisateur DROP CONSTRAINT IF EXISTS ck_utilisateur_affichage;
-ALTER TABLE utilisateur ADD CONSTRAINT ck_utilisateur_affichage CHECK (affichage IN ('auto', 'clair', 'sombre'));
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_utilisateur_affichage') THEN
+        ALTER TABLE utilisateur ADD CONSTRAINT ck_utilisateur_affichage CHECK (affichage IN ('auto', 'clair', 'sombre'));
+    END IF;
+END $$;
 COMMENT ON COLUMN utilisateur.affichage IS 'Affichage du poste : auto (suit Windows), clair ou sombre';

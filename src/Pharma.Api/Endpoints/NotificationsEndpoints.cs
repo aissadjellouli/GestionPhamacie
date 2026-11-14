@@ -85,6 +85,20 @@ internal static class NotificationsEndpoints
            .ExigerTitulaire()
            .GererErreursMetier();
 
+        // Alertes qui n'ont pas pu partir : bandeau de l'accueil du titulaire, marquées vues par lui
+        n.MapGet("/non-envoyees", async (ConsulterAlertesNonEnvoyees consulter, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var a = await consulter.ExecuterAsync(user.UtilisateurId(), ct);
+                return Results.Ok(new AlertesNonEnvoyeesDto(a.Nombre,
+                    a.Dernieres.Select(x => new AlerteNonEnvoyeeDto(x.Id, x.Type, x.Objet, x.Raison, x.CreeLe)).ToList()));
+            })
+           .ExigerTitulaire();
+
+        n.MapPost("/non-envoyees/vues", async (AlertesVuesRequete d, MarquerAlertesNonEnvoyeesVues marquer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new NombreDto(await marquer.ExecuterAsync(d.JusquA, user.UtilisateurId(), ct))))
+           .ExigerTitulaire()
+           .GererErreursMetier();
+
         // ---- Sauvegardes ----
         var s = api.MapGroup("/admin/sauvegardes");
 

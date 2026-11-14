@@ -42,6 +42,7 @@ public static class Domaines
             new("Factures", "factures", ["factures"], ["factures.gerer"]),
             new("Trésorerie", "tresorerie", ["tresorerie"], ["tresorerie.gerer"]),
             new("Dettes et créances", "dettes", ["dettes"], ["tresorerie.gerer"]),
+            new("Financements", "financements", ["financements"], ["role.titulaire"]),
             new("Chifa", "", ["chifa"], [], "à venir"),
         ]),
         new("pilotage", "Pilotage", 'P',

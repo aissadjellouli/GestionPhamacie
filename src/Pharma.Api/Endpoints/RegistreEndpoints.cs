@@ -22,7 +22,7 @@ internal static class RegistreEndpoints
             {
                 var r = await consulter.SyntheseAsync(user.UtilisateurId(), produit, du, au, horloge.Aujourdhui, ct);
                 return Results.Ok(new RegistreDto(r.Du, r.Au, r.Produit, r.Inscriptions,
-                    r.Balance.Select(b => new BalanceMensuelleDto(b.ProduitId, b.Produit, b.Annee, b.Mois, b.Entrees, b.Sorties, b.SoldeFin)).ToList(),
+                    r.Balance.Select(b => new BalanceMensuelleDto(b.ProduitId, b.Produit, b.Annee, b.Mois, b.Entrees, b.Sorties, b.SoldeFin, b.SoldeReporte)).ToList(),
                     r.NomsMasques));
             });
 

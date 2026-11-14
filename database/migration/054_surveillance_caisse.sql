@@ -84,12 +84,16 @@ COMMENT ON TABLE alerte_surveillance IS 'Anomalies de caisse par employé et par
 
 -- 4. Notification au titulaire
 -- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « surveillance »
+-- Les destinataires des alertes de lot délaissé reçoivent aussi celle-ci : une seule fois, quand le type est ajouté
+-- (un rejeu ne recoche pas le type retiré ensuite par le titulaire)
 DO $garde$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'destinataire_notification_types_check' AND pg_get_constraintdef(oid) LIKE '%''surveillance''%') THEN
         ALTER TABLE destinataire_notification DROP CONSTRAINT IF EXISTS destinataire_notification_types_check;
         ALTER TABLE destinataire_notification ADD CONSTRAINT destinataire_notification_types_check
             CHECK (types <@ ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'lot_delaisse', 'surveillance']);
+        UPDATE destinataire_notification SET types = types || 'surveillance'::text
+        WHERE 'lot_delaisse' = ANY (types) AND NOT 'surveillance' = ANY (types);
     END IF;
 END $garde$;
 -- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « surveillance »
@@ -101,8 +105,6 @@ BEGIN
             CHECK (type = ANY (ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'lot_delaisse', 'surveillance', 'test']));
     END IF;
 END $garde$;
-UPDATE destinataire_notification SET types = types || 'surveillance'::text
-WHERE 'lot_delaisse' = ANY (types) AND NOT 'surveillance' = ANY (types);
 
 -- 5. Anomalies d'un jour (candidates). o_notification : texte sans donnée de patient (SMS, e-mail)
 CREATE OR REPLACE FUNCTION surveillance_candidats(p_jour date)

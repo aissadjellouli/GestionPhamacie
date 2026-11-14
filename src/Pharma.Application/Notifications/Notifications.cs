@@ -153,7 +153,8 @@ public sealed class NotificationService(INotificationsDepot depot, Administratio
 
 public sealed record BilanEnvoi(int Envoyes, int Echecs);
 
-public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail email, IEnvoiSms sms, IProtectionSecret secrets)
+public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail email, IEnvoiSms sms, IProtectionSecret secrets,
+    IAlertesNonEnvoyees? nonEnvoyees = null, ITraceErreurs? trace = null)
 {
     public async Task<BilanEnvoi> ExecuterAsync(DateTime maintenantUtc, CancellationToken ct = default)
     {
@@ -204,6 +205,11 @@ public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail em
                 var prochaine = RegleNouvelleTentative.Prochaine(maintenantUtc, m.CreeLe, m.Tentatives + 1);
                 await depot.MarquerEchecAsync(m.Id, ex.Message, prochaine, ct);
                 echecs++;
+                // Abandon (trop ancien) : signalé au titulaire par le bandeau de l'accueil
+                if (prochaine is null)
+                    await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, m.Type,
+                        $"{(m.Canal == CanalNotification.Email ? "E-mail" : "SMS")} à {m.Destinataire} : {m.Objet ?? Accord.Texte(m.Corps)}",
+                        $"Envoi abandonné après {m.Tentatives + 1} tentative(s) : {ex.Message}");
             }
         }
         return new BilanEnvoi(envoyes, echecs);
@@ -336,89 +342,198 @@ public interface IAlertesTitulaire
     Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default);
 }
 
-public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationService notifications) : IAlertesTitulaire
+/// <summary>
+/// Jamais bloquant : l'opération (clôture, rappel, inventaire, sauvegarde…) est déjà enregistrée. Une alerte qui ne peut pas être
+/// mise en file (erreur, base indisponible) ou qu'aucun destinataire vérifié ne reçoit est inscrite au journal du serveur
+/// (erreur seulement) et mémorisée pour le bandeau de l'accueil du titulaire (alerte_non_envoyee).
+/// </summary>
+public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationService notifications,
+    IAlertesNonEnvoyees? nonEnvoyees = null, ITraceErreurs? trace = null) : IAlertesTitulaire
 {
     private static readonly System.Globalization.CultureInfo Fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
 
-    public async Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default)
+    /// <summary>Raison mémorisée quand la file ne reçoit aucun message pour l'alerte.</summary>
+    public const string AucunDestinataire = "Aucun destinataire vérifié et actif ne reçoit ce type d’alerte (Administration › Notifications).";
+
+    /// <summary>
+    /// Écart de caisse : tout écart non nul est notifié (e-mail, et dans le logiciel par le journal des actions) ;
+    /// le SMS seulement au-delà du seuil SMS réglé, à défaut du seuil d'écart de la caisse.
+    /// </summary>
+    public Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default)
     {
-        var r = await depot.ReglagesAsync(ct);
-        var seuil = r.SmsSeuilEcart ?? seuilCaisse;
-        if (Math.Abs(ecart) <= seuil) return;
         var montant = (ecart > 0 ? "+" : "") + ecart.ToString("N2", Fr) + " DA";
         // Manque (moins d'argent que l'attendu) ou excédent (plus d'argent) : dit en clair, l'un et l'autre surveillés
         var nature = Pharma.Domain.Caisse.NatureEcart.Libelle(ecart);
-        var natureSms = Pharma.Domain.Caisse.NatureEcart.EstManque(ecart) ? "Manque" : "Excedent";
-        var texte = $"{natureSms} de caisse {montant} a la cloture de {employe} ({poste}), seuil {seuil.ToString("N0", Fr)} DA.";
-        // E-mail : une information par ligne (les retours à la ligne deviennent des lignes dans l'e-mail, HtmlAlerte)
-        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
-            $"{nature} de caisse {montant}",
-            $"{nature} de caisse à la clôture.\n\nCaisse : {poste}\nClôturée par : {employe}\nÉcart : {montant} ({nature.ToLowerInvariant()})\nSeuil d’alerte : {seuil.ToString("N2", Fr)} DA",
-            null, texte), ct);
+        var objet = $"{nature} de caisse {montant} ({poste})";
+        return ProtegerAsync(TypeNotification.EcartCaisse, objet, async () =>
+        {
+            if (ecart == 0) return -1;   // rien à signaler
+            var r = await depot.ReglagesAsync(ct);
+            var seuil = r.SmsSeuilEcart ?? seuilCaisse;
+            var natureSms = Pharma.Domain.Caisse.NatureEcart.EstManque(ecart) ? "Manque" : "Excedent";
+            var texte = $"{natureSms} de caisse {montant} a la cloture de {employe} ({poste}), seuil {seuil.ToString("N0", Fr)} DA.";
+            // E-mail : une information par ligne (les retours à la ligne deviennent des lignes dans l'e-mail, HtmlAlerte)
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
+                $"{nature} de caisse {montant}",
+                $"{nature} de caisse à la clôture.\n\nCaisse : {poste}\nClôturée par : {employe}\nÉcart : {montant} ({nature.ToLowerInvariant()})\nSeuil d’alerte SMS : {seuil.ToString("N2", Fr)} DA",
+                null, Math.Abs(ecart) > seuil ? texte : null), ct);
+        });
     }
 
     /// <summary>
     /// Ni motif (saisi librement, il pourrait citer un patient) ni liste des patients : produit, lot et nombres seulement.
     /// Patients à contacter : mentionnés seulement si des boîtes du lot ont été vendues.
     /// </summary>
-    public async Task LotBloqueAsync(string produit, string numeroLot, int boitesEnStock, int boitesVendues, CancellationToken ct = default)
-    {
-        var r = await depot.ReglagesAsync(ct);
-        var texte = $"Lot {numeroLot} de {produit} bloque (rappel) : {boitesEnStock} boite(s) en stock, {boitesVendues} vendue(s).";
-        var suite = boitesVendues > 0
-            ? "Patients à contacter : liste dans le logiciel (Stock, Traçabilité)."
-            : "Aucune boîte vendue : aucun patient à contacter.";
-        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.LotBloque,
-            $"Lot {numeroLot} bloqué : {produit}",
-            $"Le lot {numeroLot} de {produit} a été bloqué (rappel).\n\nBoîtes en stock : {boitesEnStock}\nBoîtes déjà vendues : {boitesVendues}\n\n{suite}",
-            null, r.SmsLotBloque ? texte : null), ct);
-    }
+    public Task LotBloqueAsync(string produit, string numeroLot, int boitesEnStock, int boitesVendues, CancellationToken ct = default) =>
+        ProtegerAsync(TypeNotification.LotBloque, $"Lot {numeroLot} bloqué : {produit}", async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            var texte = $"Lot {numeroLot} de {produit} bloque (rappel) : {boitesEnStock} boite(s) en stock, {boitesVendues} vendue(s).";
+            var suite = boitesVendues > 0
+                ? "Patients à contacter : liste dans le logiciel (Stock, Traçabilité)."
+                : "Aucune boîte vendue : aucun patient à contacter.";
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.LotBloque,
+                $"Lot {numeroLot} bloqué : {produit}",
+                $"Le lot {numeroLot} de {produit} a été bloqué (rappel).\n\nBoîtes en stock : {boitesEnStock}\nBoîtes déjà vendues : {boitesVendues}\n\n{suite}",
+                null, r.SmsLotBloque ? texte : null), ct);
+        });
 
     /// <summary>
     /// Ancien lot délaissé : message calculé en base (produit, lots, vendeurs et nombres de boîtes, aucune donnée de patient).
     /// SMS avec le réglage des SMS de lot (court, sans accents : TexteSms le prépare).
     /// </summary>
-    public async Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default)
+    public Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default)
     {
-        var r = await depot.ReglagesAsync(ct);
         var objet = urgent ? "URGENT : contrôle interne, point à examiner" : "Contrôle interne : point à examiner";
-        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Surveillance, objet,
-            $"{message}\n\nDétail dans le logiciel : Contrôle interne (titulaire).", null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
+        return ProtegerAsync(TypeNotification.Surveillance, objet, async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Surveillance, objet,
+                $"{message}\n\nDétail dans le logiciel : Contrôle interne (titulaire).", null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
+        });
     }
 
-    public async Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default)
+    public Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default)
     {
-        var r = await depot.ReglagesAsync(ct);
         var objet = urgent ? "URGENT : ancien lot délaissé, inventaire à faire" : "Ancien lot délaissé, inventaire à faire";
-        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.LotDelaisse, objet,
-            $"{message}\n\nDans le logiciel : Alertes, « Lancer l’inventaire de ce produit ».",
-            null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
+        return ProtegerAsync(TypeNotification.LotDelaisse, objet, async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.LotDelaisse, objet,
+                $"{message}\n\nDans le logiciel : Alertes, « Lancer l’inventaire de ce produit ».",
+                null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
+        });
     }
 
-    public async Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default)
+    public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default)
     {
-        var r = await depot.ReglagesAsync(ct);
         var objet = disqueAbsent ? "Sauvegarde impossible : disque externe absent" : "Sauvegarde échouée";
-        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Sauvegarde, objet,
-            $"{objet}.\n\n{detail}", null, r.SmsSauvegarde ? $"{objet}. {detail}" : null), ct);
+        return ProtegerAsync(TypeNotification.Sauvegarde, objet, async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Sauvegarde, objet,
+                $"{objet}.\n\n{detail}", null, r.SmsSauvegarde ? $"{objet}. {detail}" : null), ct);
+        });
     }
 
     /// <summary>Annulations de vente au-delà du seuil sur une même session de caisse (envoyé avec les alertes d'écart de caisse).</summary>
-    public async Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default) =>
-        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
-            $"{annulations} ventes annulées sur la caisse {poste}",
-            $"Ventes annulées depuis l’ouverture de la caisse.\n\nCaisse : {poste}\nAnnulations : {annulations}\nSeuil d’alerte : {seuil}\n\nDétail : journal des actions.",
-            null, $"{annulations} ventes annulees sur la caisse {poste} (seuil {seuil})."), ct);
+    public Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default) =>
+        ProtegerAsync(TypeNotification.EcartCaisse, $"{annulations} ventes annulées sur la caisse {poste}", () =>
+            notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartCaisse,
+                $"{annulations} ventes annulées sur la caisse {poste}",
+                $"Ventes annulées depuis l’ouverture de la caisse.\n\nCaisse : {poste}\nAnnulations : {annulations}\nSeuil d’alerte : {seuil}\n\nDétail : journal des actions.",
+                null, $"{annulations} ventes annulees sur la caisse {poste} (seuil {seuil})."), ct));
 
     /// <summary>Écarts d'inventaire au-delà des seuils : le titulaire doit les valider (Stock, Inventaire).</summary>
-    public async Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default)
+    public Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default)
     {
         var montant = (valeur > 0 ? "+" : "") + valeur.ToString("N2", Fr) + " DA";
         var signe = (boites > 0 ? "+" : "") + boites;
-        await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartInventaire,
-            $"Inventaire rayon {rayon} : {lignes} écart(s) à valider",
-            $"Écarts d’inventaire au-delà des seuils, à valider.\n\nRayon : {rayon}\nÉcarts : {lignes}\nBoîtes : {signe}\nValeur au prix d’achat : {montant}\n\nÀ faire : validez-les ou faites recompter (Stock, Inventaire).",
-            null, $"Inventaire rayon {rayon} : {lignes} ecart(s) a valider ({signe} boite(s), {montant})."), ct);
+        return ProtegerAsync(TypeNotification.EcartInventaire, $"Inventaire rayon {rayon} : {lignes} écart(s) à valider", () =>
+            notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.EcartInventaire,
+                $"Inventaire rayon {rayon} : {lignes} écart(s) à valider",
+                $"Écarts d’inventaire au-delà des seuils, à valider.\n\nRayon : {rayon}\nÉcarts : {lignes}\nBoîtes : {signe}\nValeur au prix d’achat : {montant}\n\nÀ faire : validez-les ou faites recompter (Stock, Inventaire).",
+                null, $"Inventaire rayon {rayon} : {lignes} ecart(s) a valider ({signe} boite(s), {montant})."), ct));
+    }
+
+    /// <param name="mise">Nombre de messages mis en file (négatif : rien à envoyer, pas un échec).</param>
+    private async Task ProtegerAsync(TypeNotification type, string objet, Func<Task<int>> mise)
+    {
+        string raison;
+        try
+        {
+            if (await mise() != 0) return;
+            raison = AucunDestinataire;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            trace?.Erreur($"Alerte au titulaire non mise en file : {objet}", e);
+            raison = $"Mise en file impossible : {e.Message}";
+        }
+        await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, type, objet, raison);
+    }
+}
+
+// ---- Alertes qui n'ont pas pu partir (bandeau du titulaire) ----------------------
+
+/// <summary>Alerte au titulaire qui n'a pas pu partir : mise en file impossible, aucun destinataire, ou envoi abandonné.</summary>
+public sealed record AlerteNonEnvoyee(long Id, string Type, string Objet, string Raison, DateTime CreeLe);
+
+/// <summary>Alertes non encore vues par le titulaire : nombre total et les plus récentes.</summary>
+public sealed record AlertesNonEnvoyeesNonVues(int Nombre, IReadOnlyList<AlerteNonEnvoyee> Dernieres);
+
+public interface IAlertesNonEnvoyees
+{
+    Task NoterAsync(TypeNotification type, string objet, string raison, CancellationToken ct = default);
+    Task<AlertesNonEnvoyeesNonVues> NonVuesAsync(int limite, CancellationToken ct = default);
+    /// <summary>Marque vues les alertes non vues jusqu'à l'identifiant affiché (celles arrivées depuis restent signalées).</summary>
+    Task<int> MarquerVuesAsync(long jusquA, long utilisateurId, CancellationToken ct = default);
+}
+
+public static class AlerteNonEnvoyeeSignalee
+{
+    /// <summary>Mémorise l'échec pour le bandeau ; si la base est elle-même indisponible, seul le journal du serveur le garde.</summary>
+    public static async Task NoterAsync(IAlertesNonEnvoyees? nonEnvoyees, ITraceErreurs? trace, TypeNotification type, string objet, string raison)
+    {
+        if (nonEnvoyees is null) return;
+        try { await nonEnvoyees.NoterAsync(type, objet, raison, CancellationToken.None); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            trace?.Erreur($"Alerte non envoyée non mémorisée pour le titulaire : {objet} ({raison})", e);
+        }
+    }
+
+    /// <summary>
+    /// Après l'opération déjà enregistrée : une erreur avant ou pendant l'alerte (lecture du détail…) ne la fait jamais échouer ;
+    /// elle est inscrite au journal du serveur.
+    /// </summary>
+    public static async Task SansBlocageAsync(Func<Task> alerte, string quoi, ITraceErreurs? trace)
+    {
+        try { await alerte(); }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            trace?.Erreur($"Alerte au titulaire non envoyée : {quoi}", e);
+        }
+    }
+}
+
+/// <summary>Bandeau de l'accueil : réservé au titulaire.</summary>
+public sealed class ConsulterAlertesNonEnvoyees(IAlertesNonEnvoyees nonEnvoyees, IPermissionService droits)
+{
+    public async Task<AlertesNonEnvoyeesNonVues> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(utilisateurId, "consulter les alertes non envoyées", ct);
+        return await nonEnvoyees.NonVuesAsync(5, ct);
+    }
+}
+
+public sealed class MarquerAlertesNonEnvoyeesVues(IAlertesNonEnvoyees nonEnvoyees, IPermissionService droits)
+{
+    public async Task<int> ExecuterAsync(long jusquA, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(utilisateurId, "marquer les alertes non envoyées comme vues", ct);
+        if (jusquA <= 0) throw new RegleMetierException("Aucune alerte à marquer comme vue.");
+        return await nonEnvoyees.MarquerVuesAsync(jusquA, utilisateurId, ct);
     }
 }
 

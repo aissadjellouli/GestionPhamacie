@@ -135,6 +135,12 @@ public static class DependencyInjection
         services.AddScoped<Achats.EnregistrerReglement>();
         services.AddScoped<Achats.ConsulterTraites>();
         services.AddScoped<Achats.PayerTraite>();
+        services.AddScoped<Financements.ConsulterFinancements>();
+        services.AddScoped<Financements.EnregistrerPret>();
+        services.AddScoped<Financements.EnregistrerEcheancier>();
+        services.AddScoped<Financements.PayerEcheancePret>();
+        services.AddScoped<Financements.UtiliserFinancement>();
+        services.AddScoped<Financements.RembourserTitulaire>();
         services.AddScoped<Caisse.ConsulterCredits>();
         services.AddScoped<Caisse.EncaisserReglementCredit>();
         services.AddScoped<Caisse.ImprimerReleveCredit>();
@@ -217,6 +223,8 @@ public static class DependencyInjection
         services.AddScoped<Notifications.INotificationService, Notifications.NotificationService>();
         services.AddScoped<Notifications.IAlertesTitulaire, Notifications.AlertesTitulaire>();
         services.AddScoped<Notifications.TraiterFileAttente>();
+        services.AddScoped<Notifications.ConsulterAlertesNonEnvoyees>();
+        services.AddScoped<Notifications.MarquerAlertesNonEnvoyeesVues>();
         services.AddScoped<Notifications.EnvoyerRapportQuotidien>();
         services.AddScoped<Notifications.ObtenirReglagesNotification>();
         services.AddScoped<Notifications.ModifierReglagesNotification>();

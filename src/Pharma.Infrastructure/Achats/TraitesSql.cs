@@ -88,6 +88,10 @@ public sealed class TraitesSql(NpgsqlDataSource db) : ITraites
             (montant, numero, debitALEcheance) = (r.GetDecimal(0), r.IsDBNull(1) ? null : r.GetString(1), r.GetBoolean(2));
         }
 
+        // Prêt ou apport du titulaire : hors trésorerie, et seulement pour une traite remise sans banque
+        if (p.Moyen == MoyenReglement.Financement && (debitALEcheance || p.Source is null))
+            throw new RegleMetierException("Cette traite est débitée à l’échéance par sa banque : elle ne se paie pas par un prêt ou un apport.", "source");
+
         long? versementId = null;
         if (!debitALEcheance && p.Moyen == MoyenReglement.Especes)
         {
@@ -143,6 +147,10 @@ public sealed class TraitesSql(NpgsqlDataSource db) : ITraites
                 throw new RegleMetierException("Cette traite vient d’être payée depuis un autre poste : rechargez la liste.");
             }
         }
+        // Source tracée (prêt verrouillé : jamais employé au-delà de son montant)
+        if (p.Source is { } source)
+            await Financements.FinancementsSql.EnregistrerUtilisationAsync(cx, tx, source, "traite", p.Date, montant,
+                numero is null ? "Traite payée hors trésorerie" : $"Traite {numero} payée hors trésorerie", null, null, null, id, p.UtilisateurId, ct);
         await tx.CommitAsync(ct);
         return id;
     }

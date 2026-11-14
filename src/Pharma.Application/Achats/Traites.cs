@@ -30,9 +30,12 @@ public sealed record FiltreTraites(string Etat, string? Texte, DateOnly Aujourdh
 /// <summary>Une page de traites et, pour le titulaire seulement, le solde du coffre (proposition du complément pris dans le tiroir).</summary>
 public sealed record TraitesAPayer(Page<TraiteAPayer> Traites, decimal? SoldeCoffre);
 
-/// <summary>Paiement d'une traite. PartTiroir (espèces) : argent du tiroir de la caisse ouverte porté au coffre avant le paiement.</summary>
+/// <summary>
+/// Paiement d'une traite. PartTiroir (espèces) : argent du tiroir de la caisse ouverte porté au coffre avant le paiement. Source : prêt ou
+/// apport du titulaire (moyen Financement, hors trésorerie), null sinon.
+/// </summary>
 public sealed record PaiementTraiteAEcrire(long ReglementId, DateOnly Date, MoyenReglement Moyen, long? CompteId, string? Reference, decimal PartTiroir,
-    long? SessionCaisseId, string? Poste, long UtilisateurId);
+    long? SessionCaisseId, string? Poste, long UtilisateurId, Pharma.Domain.Financements.SourceFinancement? Source = null);
 
 public interface ITraites
 {
@@ -73,19 +76,30 @@ public sealed class ConsulterTraites(ITraites traites, IPermissionService droits
 /// <summary>
 /// Paiement d'une traite à son échéance, confirmé par le titulaire : espèces (coffre, complété au besoin par l'argent du tiroir de la
 /// caisse ouverte du poste, porté au coffre), chèque, virement ou prélèvement (banque obligatoire, débitée à la date du paiement).
-/// Traite remise avec une banque : déjà débitée à l'échéance, la confirmation est notée sans second débit. Journalisé.
+/// Traite remise avec une banque : déjà débitée à l'échéance, la confirmation est notée sans second débit. Source : traite payée par un
+/// prêt ou un apport du titulaire, hors trésorerie (aucun compte débité, source tracée ; pas pour une traite remise avec une banque).
+/// Journalisé.
 /// </summary>
 public sealed class PayerTraite(ITraites traites, ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, IJournal journal,
     Tresorerie.ITresorerie? tresorerie = null)
 {
     public async Task<long> ExecuterAsync(long reglementId, DateOnly? date, string? moyen, long? compteId, string? reference, decimal partTiroir,
-        long utilisateurId, string? poste, CancellationToken ct = default)
+        long utilisateurId, string? poste, string? source = null, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "confirmer le paiement d’une traite", ct);
         var t = await traites.TraiteAsync(reglementId, ct) ?? throw new RegleMetierException("Cette traite est introuvable ou déjà payée : rechargez la liste.");
         var jour = date ?? horloge.Aujourdhui;
+        var sourceFinancement = Pharma.Domain.Financements.SourceFinancement.Lire(source);
         MoyenReglement m;
-        if (t.CompteId is { } banqueRemise)
+        if (sourceFinancement is not null)
+        {
+            if (t.CompteId is not null)
+                throw new RegleMetierException("Cette traite est débitée à l’échéance par la banque choisie à la remise : elle ne se paie pas par un prêt ou un apport.", "source");
+            if (jour > horloge.Aujourdhui) throw new RegleMetierException("La date du paiement ne peut pas être dans le futur.", "date");
+            if (jour < t.DateRemise) throw new RegleMetierException("La date du paiement précède la remise de la traite.", "date");
+            (m, compteId, partTiroir) = (MoyenReglement.Financement, null, 0);
+        }
+        else if (t.CompteId is { } banqueRemise)
         {
             // Débitée à l'échéance sur la banque choisie à la remise : la confirmation ne débite rien de plus
             if (jour > horloge.Aujourdhui) throw new RegleMetierException("La date du paiement ne peut pas être dans le futur.", "date");
@@ -110,12 +124,13 @@ public sealed class PayerTraite(ITraites traites, ISessionsCaisse sessions, IPer
         }
 
         var id = await traites.PayerAsync(new PaiementTraiteAEcrire(reglementId, jour, m, compteId,
-            string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), partTiroir, sessionId, poste, utilisateurId), ct);
+            string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), partTiroir, sessionId, poste, utilisateurId, sourceFinancement), ct);
         await journal.EcrireAsync(utilisateurId, "traite_payee", "reglement_fournisseur", reglementId,
             new Dictionary<string, object?>
             {
                 ["grossiste"] = t.Grossiste, ["traite"] = t.Reference, ["montant"] = t.Montant, ["echeance"] = t.Echeance, ["date"] = jour,
-                ["moyen"] = m.Code(), ["compte_id"] = compteId, ["part_tiroir"] = partTiroir, ["debit_a_l_echeance"] = t.CompteId is not null
+                ["moyen"] = m.Code(), ["compte_id"] = compteId, ["part_tiroir"] = partTiroir, ["debit_a_l_echeance"] = t.CompteId is not null,
+                ["source"] = sourceFinancement?.Type, ["pret_id"] = sourceFinancement?.PretId
             }, null, ct);
         return id;
     }

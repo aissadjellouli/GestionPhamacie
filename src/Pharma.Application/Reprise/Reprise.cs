@@ -177,7 +177,8 @@ public sealed class DeciderProduitReprise(IRepriseImport import, SuperAdmin.Supe
     public async Task<int> ExecuterAsync(long session, string refSource, DecisionProduit decision, long? produitId, long utilisateurId, CancellationToken ct = default)
     {
         superAdmin.Exiger("faire la reprise de données");
-        if (decision == DecisionProduit.Autre && produitId is null) throw new RegleMetierException("Choisissez le produit du catalogue.");
+        // Produit inexistant : refusé par le dépôt (« Produit introuvable dans le catalogue »)
+        if (decision == DecisionProduit.Autre && produitId is not > 0) throw new RegleMetierException("Choisissez le produit du catalogue.");
         var etat = await import.EtatAsync(session, ct) ?? throw new RegleMetierException("Session de reprise introuvable.");
         if (etat.Session.Statut != "en_cours") throw new RegleMetierException("Cette reprise est déjà chargée ou annulée.");
         await import.DeciderAsync(session, refSource, decision, produitId, ct);

@@ -14,8 +14,14 @@ public interface IProduitsModification
 {
     Task<FicheProduitModifiable?> LireAsync(long id, CancellationToken ct = default);
     Task<bool> CodeBarreAutreProduitAsync(string codeBarre, long id, CancellationToken ct = default);
-    /// <summary>Enregistre la fiche ; la DCI est créée si elle n'existe pas encore.</summary>
-    Task ModifierAsync(FicheProduitModifiable f, CancellationToken ct = default);
+    /// <summary>Classe (psychotrope ou stupefiant) de la substance surveillée qui correspond à la DCI (table substance_surveillee), sinon null.</summary>
+    Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default);
+    /// <summary>
+    /// Enregistre la fiche ; la DCI est créée si elle n'existe pas encore. La classe n'est écrite que si elle est imposée
+    /// (<paramref name="classeImposee"/>) : le produit devient alors « à vérifier » et, s'il a du stock, reçoit son solde
+    /// d'ouverture au registre (une fois par produit), inscrit au nom de <paramref name="utilisateurId"/>.
+    /// </summary>
+    Task ModifierAsync(FicheProduitModifiable f, bool classeImposee, long utilisateurId, CancellationToken ct = default);
 }
 
 public sealed class LireFicheProduit(IProduitsModification produits)
@@ -27,10 +33,12 @@ public sealed class LireFicheProduit(IProduitsModification produits)
 /// <summary>
 /// Modification d'un produit (droit de créer un produit) ; changer le prix public demande en plus le droit de modifier un prix de
 /// vente. Un produit désactivé n'est plus proposé à la vente ni aux commandes. Chaque champ changé est inscrit au journal.
+/// Un autre que le titulaire qui donne au produit une nouvelle DCI de substance surveillée alors que sa classe est hors registre :
+/// classe imposée (psychotrope ou stupéfiant) et produit « à vérifier » ; renvoie alors le message à lui afficher (sinon null).
 /// </summary>
 public sealed class ModifierProduit(IProduitsModification produits, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null)
 {
-    public async Task ExecuterAsync(FicheProduitModifiable saisie, long utilisateurId, CancellationToken ct = default)
+    public async Task<string?> ExecuterAsync(FicheProduitModifiable saisie, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.CatalogueCreer, "modifier un produit", ct);
         var actuel = await produits.LireAsync(saisie.Id, ct) ?? throw new RegleMetierException("Produit introuvable.");
@@ -54,7 +62,22 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         if (f.PrixPublic != actuel.PrixPublic)
             await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "modifier un prix de vente", ct);
 
-        await produits.ModifierAsync(f, ct);
+        // Nouvelle DCI de psychotrope ou de stupéfiant donnée par un employé à un produit hors registre : classe imposée, à vérifier
+        string? information = null;
+        if (f.Dci is { } dci && !string.Equals(dci, actuel.Dci, StringComparison.OrdinalIgnoreCase)
+            && actuel.Classe is not ("psychotrope" or "stupefiant"))
+        {
+            ClasseReglementaire choisie;
+            try { choisie = CodesMetier.ClasseDepuisCode(actuel.Classe); }
+            catch (ArgumentException) { choisie = ClasseReglementaire.Libre; }
+            if (RegleProduit.ClasseImposee(choisie, await produits.ClasseSurveilleeAsync(dci, ct), await droits.EstTitulaireAsync(utilisateurId, ct)) is { } imposee)
+            {
+                f = f with { Classe = imposee.Code() };
+                information = RegleProduit.MessageClasseImposee(dci, imposee);
+            }
+        }
+
+        await produits.ModifierAsync(f, information is not null, utilisateurId, ct);
 
         var changes = new Dictionary<string, object?> { ["produit"] = f.NomCommercial };
         void Comparer(string nom, object? avant, object? apres) { if (!Equals(avant, apres)) changes[nom] = new { avant, apres }; }
@@ -62,6 +85,8 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         Comparer("dosage", actuel.Dosage, f.Dosage); Comparer("forme", actuel.Forme, f.Forme); Comparer("code_barre", actuel.CodeBarre, f.CodeBarre);
         Comparer("tarif_reference", actuel.TarifReference, f.TarifReference); Comparer("remboursable", actuel.Remboursable, f.Remboursable);
         Comparer("taux_tva", actuel.TauxTva, f.TauxTva); Comparer("actif", actuel.Actif, f.Actif);
+        Comparer("classe", actuel.Classe, f.Classe);
+        if (information is not null) changes["a_verifier"] = true;
         if (changes.Count > 1)
             await journal.EcrireAsync(utilisateurId, "produit_modifie", "produit", f.Id, changes, Permissions.CatalogueCreer, ct);
         if (f.PrixPublic != actuel.PrixPublic)
@@ -70,5 +95,6 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
                 Permissions.PrixModifier, ct);
         // Surveillance : baisse de prix par un autre que le titulaire
         if (f.PrixPublic < actuel.PrixPublic && surveillance is not null) await surveillance.ExecuterAsync(ct);
+        return information;
     }
 }

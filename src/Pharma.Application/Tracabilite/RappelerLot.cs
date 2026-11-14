@@ -37,7 +37,7 @@ public interface IRappelLot
 }
 
 /// <summary>Rappel de lot (fonction SQL rappel_lot) : blocage immédiat et liste des patients à contacter.</summary>
-public sealed class RappelerLot(IRappelLot rappel, Notifications.IAlertesTitulaire? alertes = null)
+public sealed class RappelerLot(IRappelLot rappel, Notifications.IAlertesTitulaire? alertes = null, Commun.ITraceErreurs? trace = null)
 {
     public async Task<ResultatRappel> ExecuterAsync(
         long produitId, string? numeroLot, string? motif, long utilisateurId, CancellationToken ct = default)
@@ -55,11 +55,10 @@ public sealed class RappelerLot(IRappelLot rappel, Notifications.IAlertesTitulai
             throw new RegleMetierException($"Lot {r.NumeroLot} déjà rappelé : il est bloqué chez tous les grossistes, rien n'a été modifié. " +
                                            "Consultez la liste des patients concernés.", "lot_rappel");
         // Alerte du titulaire : le blocage est fait, la notification ne doit pas le faire échouer
+        // (échec : journal du serveur, et bandeau de l'accueil du titulaire)
         if (alertes is not null)
-        {
-            try { await alertes.LotBloqueAsync(r.Produit, r.NumeroLot, r.BoitesEnStock, r.BoitesVendues, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { }
-        }
+            await Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(
+                () => alertes.LotBloqueAsync(r.Produit, r.NumeroLot, r.BoitesEnStock, r.BoitesVendues, ct), $"lot {r.NumeroLot} bloqué", trace);
         return r;
     }
 }

@@ -9,20 +9,22 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
 {
     public async Task<IReadOnlyList<PatientResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
+        // Téléphone : par début de numéro, à partir de 4 chiffres, séparateurs ignorés, +213 = 0 (même règle que les crédits clients)
+        await using var cmd = db.CreateCommand($"""
             SELECT p.id, p.nom, p.prenom, p.telephone, p.num_assure, p.organisme_id, o.code, p.plafond_credit, p.solde_credit
             FROM patient p
             LEFT JOIN organisme o ON o.id = p.organisme_id
             WHERE p.nom ILIKE '%' || $1 || '%'
                OR p.prenom ILIKE '%' || $1 || '%'
                OR (p.nom || ' ' || COALESCE(p.prenom, '')) ILIKE '%' || $1 || '%'
-               OR p.telephone = $1
+               OR ($3::text IS NOT NULL AND {TelephoneSql.Normalise("p.telephone")} LIKE $3 || '%')
                OR p.num_assure = $1
             ORDER BY p.nom, p.prenom
             LIMIT $2
             """);
         cmd.Parameters.AddWithValue(texte);
         cmd.Parameters.AddWithValue(limite);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)RechercheTelephone.Prefixe(texte) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<PatientResume>();
         while (await r.ReadAsync(ct))

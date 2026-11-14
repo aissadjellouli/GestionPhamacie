@@ -13,7 +13,7 @@
   | Caisse (Ctrl + Maj + V) | Caisse (vente, annulation, crédit, tiroir, état, relève, clôture) |
   | Stock (Ctrl + Maj + S) | Alertes, Stock, Inventaire, Registre des psychotropes, Étiquettes internes (`stock/etiquettes`), Traçabilité et rappel de lot |
   | Achats (Ctrl + Maj + H) | Achats (commandes, réceptions et réimpression des étiquettes d'une livraison, retours, règlements, traites à payer, grossistes) |
-  | Finances (Ctrl + Maj + F) | Factures, Trésorerie, Dettes et créances (Chifa : à venir) |
+  | Finances (Ctrl + Maj + F) | Factures, Trésorerie, Dettes et créances, Financements (titulaire seul) (Chifa : à venir) |
   | Pilotage (Ctrl + Maj + P) | Rapports, Contrôle interne |
 
   Étiquettes internes : dans le Stock depuis le 2026-11-13 (stock.consulter ou achats.receptionner ; imprimer : achats.receptionner) ;
@@ -21,7 +21,9 @@
 - **Accueil selon les droits** : qui a un droit de gestion (achats, stock, rapports, trésorerie, factures, paramètres, titulaire)
   arrive sur le **tableau de bord** (`/accueil` : alertes urgentes, lots périmant dans les 6 mois, réceptions en attente, écarts
   d'inventaire à valider ; chaque tuile ouvre son écran et n'apparaît que si l'employé peut l'ouvrir) ; les autres (vendeur,
-  stagiaire) arrivent directement sur la **Caisse**. Le logo ramène à cet accueil ; un écran refusé aussi.
+  stagiaire) arrivent directement sur la **Caisse**. Le logo ramène à cet accueil ; un écran refusé aussi. Titulaire : bandeau
+  « N alerte(s) n'ont pas pu être envoyées » en tête du tableau de bord (5 plus récentes, « Marquer comme vues »,
+  « Vérifier les destinataires » vers Administration › Notifications) (2026-11-14).
 - **Recherche partout : Ctrl + K** (ou « ⌕ Rechercher… » dans l'en-tête) : écrans et rubriques permis, produits (ouverts dans
   le Stock filtré sur leur nom), patients (fiche contact). Dès 2 lettres, sans majuscules ni accents ; ↑ ↓, Entrée, Échap.
   Composant `RechercheGlobale`.
@@ -83,7 +85,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
   liste (`Pagination`), comme après une ligne traitée ou un filtre.
 - **Un état retrouvé est lu une seule fois** : un composant rouvert ensuite sur le même écran (ex. une nouvelle facture) repart à vide.
 - **Saisies gardées pour la session** (Retours avant « Préparer », facture en préparation) : retrouvées par « Retour » tant que l'employé reste connecté ; la Caisse et les Réceptions, elles, sont mises en attente sur le serveur.
-- **Les onglets et rubriques sont dans l'adresse** (`achats?onglet=…`, `factures?suivi=…`, `dettes?onglet=…`, `surveillance?onglet=traitees`, `tresorerie?rubrique=…`, `?rubrique=…` pour les Alertes, `stock?rubrique=…`, `stock/registre?rubrique=balance`, `inventaire?rubrique=…`) :
+- **Les onglets et rubriques sont dans l'adresse** (`achats?onglet=…`, `factures?suivi=…`, `dettes?onglet=…`, `surveillance?onglet=traitees`, `tresorerie?rubrique=…`, `financements?rubrique=…&pret=…`, `?rubrique=…` pour les Alertes, `stock?rubrique=…`, `stock/registre?rubrique=balance`, `inventaire?rubrique=…`) :
   changer d'onglet est un changement d'écran, et « Retour » revient à l'onglet précédent.
 - **Une fiche contact ouverte est rouverte au retour**. Un raccourci de la fiche (Factures, Relevé de dette…) laisse la fiche
   ouverte jusqu'au changement d'écran pour que l'historique la retienne.
@@ -139,7 +141,8 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Registre des psychotropes | `registre` | rubrique dans l'adresse (inscriptions, `?rubrique=balance`) ; produit, période, opération, page des inscriptions, page de la balance |
 | Achats › Étiquettes internes | `etiquettes` | recherche (produit ou lot), péremption jusqu'au, page |
 | Trésorerie | `tresorerie` | rubrique dans l'adresse (`comptes`, `mouvements`, `saisie`, `caisses`, `cheques`) ; compte affiché, période, employé, page, type de mouvement en saisie |
-| Dettes et créances | `dettes` | rubrique dans l'adresse (`dettes` : vue d'ensemble ; `?onglet=alertes`, `patient`, `facture`, `bordereau`, `grossiste`, `effet`, `tout`) ; filtres de la liste (tiers, état, période) et page |
+| Dettes et créances | `dettes` | rubrique dans l'adresse (`dettes` : vue d'ensemble ; `?onglet=alertes`, `patient`, `facture`, `bordereau`, `grossiste`, `effet`, `pret` et `titulaire` pour le titulaire seul, `tout`) ; filtres de la liste (tiers, état, période) et page |
+| Financements (titulaire seul) | `financements`, `fiche-pret`, `editeur-echeancier` | rubrique dans l'adresse (`prets`, `echeances`, `titulaire`) et prêt ouvert (`&pret=…`) ; prêts : texte, état (en cours par défaut, remboursés, tous), banque, page ; échéances : prêt ou banque, état (échues et à 7 jours par défaut, échues, à venir, payées, toutes), page ; compte du titulaire : mouvement, période, page ; fiche du prêt : vue (échéancier, usages…), filtre et page de l'échéancier et des usages ; saisie de l'échéancier : « lignes incohérentes seulement », page. La saisie en cours d'un échéancier n'est pas retenue (à enregistrer avant de quitter) |
 | Contrôle interne › Écarts et risques | `risques` | tableau dans l'adresse (par employé, `?rubrique=jours`) ; période, pages des deux tableaux |
 | Administration › Caisse | `journal` | employé, catégorie, période, page du journal |
 | Administration › Notifications | `notifications` | objet, statut, période, page de la file d'attente |

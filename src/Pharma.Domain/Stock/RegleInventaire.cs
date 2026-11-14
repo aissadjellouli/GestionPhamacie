@@ -17,10 +17,13 @@ public static class RegleInventaire
             throw new RegleMetierException($"Quantité comptée entre 0 et {QuantiteMax}.");
     }
 
-    /// <summary>Un écart reste sous les seuils si le nombre de boîtes ET la valeur au prix d'achat y restent.</summary>
+    /// <summary>
+    /// Un écart est ajusté tout de suite s'il reste strictement sous les deux seuils : nombre de boîtes ET valeur au prix d'achat.
+    /// Un écart égal à un seuil attend la validation du titulaire.
+    /// </summary>
     public static DecisionEcart Decider(int ecart, decimal valeurEcart, int seuilBoites, decimal seuilMontant) =>
         ecart == 0 ? DecisionEcart.Conforme
-        : Math.Abs(ecart) <= seuilBoites && Math.Abs(valeurEcart) <= seuilMontant ? DecisionEcart.Ajuste
+        : Math.Abs(ecart) < seuilBoites && Math.Abs(valeurEcart) < seuilMontant ? DecisionEcart.Ajuste
         : DecisionEcart.AValider;
 
     /// <summary>

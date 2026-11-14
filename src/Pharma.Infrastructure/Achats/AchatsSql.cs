@@ -102,16 +102,18 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     /// <summary>
     /// Chaque achat d'un produit, avec son prix et sa date : une entrée en stock par livraison (018_lot_unique.sql),
     /// ou le lot lui-même quand il n'a pas de mouvement d'entrée (lots créés avant, données de démonstration).
+    /// Prix retenu : celui de l'entrée en stock, net de remise ; une entrée à 0 DA (unités gratuites) n'est pas un achat
+    /// et est ignorée.
     /// </summary>
     private static string AchatsDuProduit(string produit) => $"""
         SELECT l.fournisseur_id, COALESCE(m.prix_achat_ht, l.prix_achat_ht) AS prix_achat_ht, r.date_reception, m.id AS ordre
         FROM mouvement_stock m JOIN lot l ON l.id = m.lot_id
         JOIN reception r ON r.id = COALESCE(m.reception_id, l.reception_id)
-        WHERE l.produit_id = {produit} AND m.type = 'entree'
+        WHERE l.produit_id = {produit} AND m.type = 'entree' AND COALESCE(m.prix_achat_ht, l.prix_achat_ht) > 0
         UNION ALL
         SELECT l.fournisseur_id, l.prix_achat_ht, r.date_reception, 0
         FROM lot l JOIN reception r ON r.id = l.reception_id
-        WHERE l.produit_id = {produit}
+        WHERE l.produit_id = {produit} AND l.prix_achat_ht > 0
           AND NOT EXISTS (SELECT 1 FROM mouvement_stock m WHERE m.lot_id = l.id AND m.type = 'entree')
         """;
 
@@ -179,6 +181,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
+        await VerrouillerBrouillonAsync(cnx, tx, commandeId, ct);
         await using (var maj = new NpgsqlCommand("""
             UPDATE ligne_commande SET qte_commandee = qte_commandee + $3, prix_achat_ht = $4
             WHERE commande_id = $1 AND produit_id = $2
@@ -201,6 +204,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
+        await VerrouillerBrouillonAsync(cnx, tx, commandeId, ct);
         await Executer(cnx, tx, "UPDATE ligne_commande SET qte_commandee = $3, prix_achat_ht = $4 WHERE commande_id = $1 AND id = $2",
             ct, commandeId, ligneId, quantite, prixHt);
         await MettreAJourTotal(cnx, tx, commandeId, ct);
@@ -211,17 +215,32 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
+        await VerrouillerBrouillonAsync(cnx, tx, commandeId, ct);
         await Executer(cnx, tx, "DELETE FROM ligne_commande WHERE commande_id = $1 AND id = $2", ct, commandeId, ligneId);
         await MettreAJourTotal(cnx, tx, commandeId, ct);
         await tx.CommitAsync(ct);
     }
 
-    public async Task ChangerStatutCommandeAsync(long commandeId, string statut, CancellationToken ct = default)
+    /// <summary>
+    /// Commande verrouillée jusqu'à la fin de la transaction, et refusée si elle n'est plus un brouillon en base
+    /// (émise ou annulée sur un autre poste depuis l'affichage).
+    /// </summary>
+    private static async Task VerrouillerBrouillonAsync(NpgsqlConnection cnx, NpgsqlTransaction tx, long commandeId, CancellationToken ct)
     {
-        await using var cmd = db.CreateCommand("UPDATE commande_fournisseur SET statut = $2 WHERE id = $1");
+        await using var cmd = new NpgsqlCommand("SELECT statut FROM commande_fournisseur WHERE id = $1 FOR UPDATE", cnx, tx);
         cmd.Parameters.AddWithValue(commandeId);
+        var statut = await cmd.ExecuteScalarAsync(ct) as string ?? throw new RegleMetierException("Commande introuvable.");
+        if (statut != "brouillon") throw new RegleMetierException(RegleCommande.ModifieeEntreTemps);
+    }
+
+    public async Task<bool> ChangerStatutCommandeAsync(long commandeId, string statutAttendu, string statut, CancellationToken ct = default)
+    {
+        // Statut revérifié en base : un autre poste a pu émettre, annuler ou réceptionner la commande depuis sa lecture
+        await using var cmd = db.CreateCommand("UPDATE commande_fournisseur SET statut = $3 WHERE id = $1 AND statut = $2");
+        cmd.Parameters.AddWithValue(commandeId);
+        cmd.Parameters.AddWithValue(statutAttendu);
         cmd.Parameters.AddWithValue(statut);
-        await cmd.ExecuteNonQueryAsync(ct);
+        return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
     private static Task MettreAJourTotal(NpgsqlConnection cnx, NpgsqlTransaction tx, long commandeId, CancellationToken ct) =>
@@ -423,12 +442,18 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         }
 
         if (n.CommandeId is { } commande)
-            await Executer(cnx, tx, """
+        {
+            // Statut revérifié en base : une commande annulée (ou repassée hors réception) sur un autre poste depuis
+            // l'affichage fait abandonner toute la réception
+            await using var maj = new NpgsqlCommand("""
                 UPDATE commande_fournisseur SET statut = CASE
                     WHEN EXISTS (SELECT 1 FROM ligne_commande WHERE commande_id = $1 AND qte_recue < qte_commandee)
                     THEN 'recue_partielle' ELSE 'recue' END
-                WHERE id = $1
-                """, ct, commande);
+                WHERE id = $1 AND statut IN ('envoyee', 'recue_partielle')
+                """, cnx, tx);
+            maj.Parameters.AddWithValue(commande);
+            if (await maj.ExecuteNonQueryAsync(ct) == 0) throw new RegleMetierException(RegleCommande.ModifieeEntreTemps);
+        }
 
         await ReleveGrossiste.ContexteAsync(cnx, tx, ReleveGrossiste.Reception, n.UtilisateurId,
             $"Réception BL {n.NumeroBl}{(n.NumeroFacture is null ? "" : $", facture {n.NumeroFacture}")}", ct);

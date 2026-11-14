@@ -10,7 +10,7 @@ internal sealed class InventairesEnMemoire : IInventaires
     public InventaireDetail Detail { get; set; } = new(5, "C", "en_cours", DateTime.UtcNow, "Assistant", null,
     [
         Ligne(1, 101, "Metformine", compte: 30, theorique: 30, prix: 150),     // conforme
-        Ligne(2, 102, "Amlodipine", compte: 6, theorique: 8, prix: 200),       // -2 boîtes, -400 DA : corrigé
+        Ligne(2, 102, "Amlodipine", compte: 6, theorique: 8, prix: 200),       // -2 boîtes, -400 DA : corrigé (sous les seuils de 3 boîtes et 2 000 DA)
         Ligne(3, 103, "Sintrom", compte: 20, theorique: 25, prix: 200)         // -5 boîtes : à valider
     ]);
     public IReadOnlyList<DecisionLigne>? Decisions { get; private set; }
@@ -21,7 +21,7 @@ internal sealed class InventairesEnMemoire : IInventaires
     public static LigneInventaire Ligne(long id, long lot, string produit, int? compte, int? theorique, decimal prix) =>
         new(id, lot, produit, $"L{lot}", new DateOnly(2027, 6, 30), false, "C-01-1", prix, compte, null, compte is null ? "a_compter" : "compte", theorique, null, null);
 
-    public Task<ParametresInventaire> ParametresAsync(CancellationToken ct = default) => Task.FromResult(new ParametresInventaire(2, 2000));
+    public Task<ParametresInventaire> ParametresAsync(CancellationToken ct = default) => Task.FromResult(new ParametresInventaire(3, 2000));
     public Task ModifierParametresAsync(ParametresInventaire p, CancellationToken ct = default) => Task.CompletedTask;
     public Task<IReadOnlyList<RayonInventaire>> RayonsAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<RayonInventaire>>([new("C", null, 3, 0, null), new("V", null, 0, 0, null)]);

@@ -9,21 +9,35 @@
       2. y applique les scripts de la base, puis les données de démonstration (fictives) ;
       3. écrit api\appsettings.Production.json : connexion à la base, clé de signature tirée au sort,
          serveur joignable seulement depuis ce PC (http://localhost:5080).
-    Il ne touche à aucune autre base. Relancé, il met la base à jour sans rien effacer ; -Recreer repart de zéro.
+    Il ne touche à aucune autre base. Relancé, il met la base à jour sans rien effacer ; -Recreer repart de zéro
+    (la base d'essai est supprimée après confirmation : son nom est à retaper ; -Force supprime sans confirmation).
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\installer.ps1
+
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\installer.ps1 -Recreer
+    Repart de zéro : efface la base d'essai, après confirmation.
 #>
 param(
     [string]$PgBin = "",
     [int]$Port = 5432,
-    [switch]$Recreer
+    [switch]$Recreer,
+    [switch]$Force      # avec -Recreer : pas de confirmation (automatisation)
 )
 
 $ErrorActionPreference = "Stop"
 $ici = $PSScriptRoot
 $base = "pharmacie_essai"
 $compte = "pharma_essai"
+
+if ($Force -and -not $Recreer) { throw "-Force ne sert qu'avec -Recreer." }
+# -Recreer efface la base d'essai et toutes ses données : le nom de la base est retapé avant que rien ne soit fait, sauf avec -Force
+if ($Recreer -and -not $Force) {
+    Write-Warning "-Recreer EFFACE la base $base et toutes ses données (ventes, saisies de l'essai)."
+    $saisie = Read-Host "Pour confirmer, retapez le nom de la base ($base)"
+    if ($saisie -cne $base) { throw "Confirmation incorrecte : rien n'a été fait." }
+}
 
 if (-not $PgBin) {
     $installation = Get-ChildItem "C:\Program Files\PostgreSQL" -Directory -ErrorAction SilentlyContinue |

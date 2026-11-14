@@ -12,7 +12,7 @@ namespace Pharma.Desktop.Services;
 public static class Documents
 {
     /// <summary>Types de documents (sous-dossiers de la GED), les mêmes que ceux acceptés par le serveur.</summary>
-    public static readonly string[] Types = ["Factures", "Rapports", "Clotures", "Registre", "Commandes", "Retours", "Etiquettes", "Inventaires", "Credits"];
+    public static readonly string[] Types = ["Factures", "Rapports", "Clotures", "Registre", "Commandes", "Retours", "Etiquettes", "Inventaires", "Credits", "Financements"];
 
     /// <summary>CheminLocal : copie à ouvrir au poste ; CheminGed : « Type\nom » dans la GED (null : pas encore envoyé, voir Erreur).</summary>
     public sealed record DocumentRange(string CheminLocal, string? CheminGed, string? Erreur)

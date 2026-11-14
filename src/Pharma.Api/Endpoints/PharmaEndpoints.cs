@@ -34,6 +34,7 @@ public static class PharmaEndpoints
         api.MapRegistre();
         api.MapReglements();
         api.MapTresorerie();
+        api.MapFinancements();
         api.MapFactures();
         api.MapInventaireComplet();
         api.MapPilotage();

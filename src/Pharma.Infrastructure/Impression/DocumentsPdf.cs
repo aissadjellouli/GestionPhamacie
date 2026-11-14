@@ -316,13 +316,14 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         if (r.Lignes.Count == 0) section.AddParagraph("Aucune inscription sur la période.");
 
         SousTitre(section, "Balance mensuelle des entrées et sorties");
-        var b = Tableau(section, 8, 3, 3, 3, 4);
-        Entete(b, "Produit", "Mois", "Entrées", "Sorties", "Solde fin de mois");
+        var b = Tableau(section, 8, 3, 3, 3, 3, 4);
+        Entete(b, "Produit", "Mois", "Solde reporté", "Entrées", "Sorties", "Solde fin de mois");
         foreach (var m in r.Balance)
         {
             var row = b.AddRow();
             row.TopPadding = row.BottomPadding = Unit.FromPoint(2);
-            string[] c = [m.Produit, $"{m.Mois:00}/{m.Annee}", m.Entrees.ToString(Fr), m.Sorties.ToString(Fr), m.SoldeFin?.ToString(Fr) ?? "—"];
+            string[] c = [m.Produit, $"{m.Mois:00}/{m.Annee}", m.SoldeReporte == 0 ? "—" : m.SoldeReporte.ToString(Fr),
+                m.Entrees.ToString(Fr), m.Sorties.ToString(Fr), m.SoldeFin?.ToString(Fr) ?? "—"];
             for (var i = 0; i < c.Length; i++) row.Cells[i].AddParagraph(c[i]);
         }
 

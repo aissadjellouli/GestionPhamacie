@@ -119,6 +119,8 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Factures.IFactures, Factures.FacturesSql>();
         services.AddScoped<Pharma.Application.Achats.IReglementsFournisseurs, Achats.ReglementsFournisseursSql>();
         services.AddScoped<Pharma.Application.Achats.ITraites, Achats.TraitesSql>();
+        services.AddScoped<Pharma.Application.Financements.IFinancements, Financements.FinancementsSql>();
+        services.AddSingleton<Pharma.Application.Financements.ILecteurTableau, Financements.LecteurTableau>();
         services.AddScoped<Pharma.Application.Rapports.IRapports, RapportsSql>();
         services.AddSingleton<Pharma.Application.Reprise.ISourceReprise, Reprise.SourceOdbc>();
         services.AddScoped<Pharma.Application.Reprise.IRepriseImport, Reprise.RepriseSql>();
@@ -133,6 +135,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Notifications.ICodesVerificationDestinataire, Notifications.CodesVerificationDestinataireSql>();
         services.AddScoped<Application.Notifications.IFileMessagesLecture, Notifications.NotificationsSql>();
         services.AddScoped<Application.Notifications.IDonneesRapport, Notifications.DonneesRapportSql>();
+        services.AddScoped<Application.Notifications.IAlertesNonEnvoyees, Notifications.AlertesNonEnvoyeesSql>();
         services.AddSingleton<Application.Notifications.IProtectionSecret, Notifications.ProtectionDpapi>();
         services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();
         services.AddSingleton<Application.Notifications.IEnvoiSms, Notifications.EnvoiSmsModemGsm>();

@@ -46,4 +46,26 @@ public static class RegleProduit
         return f with { NomCommercial = nom, Dci = dci, Dosage = dosage, Forme = forme, CodeBarre = code, NumEnregistrement = num,
             Categorie = categorie, ListePsychotrope = liste };
     }
+
+    /// <summary>
+    /// Classe imposée quand un autre que le titulaire crée un produit (ou lui donne une nouvelle DCI) dont la DCI correspond à une
+    /// substance surveillée (<paramref name="classeSurveillee"/> : psychotrope ou stupefiant, table substance_surveillee) alors que
+    /// la classe choisie n'est pas soumise au registre : la classe de la substance. Null sinon (titulaire, DCI non surveillée,
+    /// classe déjà sous registre). Le produit est alors « à vérifier » : invendable jusqu'à la confirmation du titulaire.
+    /// </summary>
+    public static ClasseReglementaire? ClasseImposee(ClasseReglementaire choisie, string? classeSurveillee, bool titulaire)
+    {
+        if (titulaire || classeSurveillee is not ("psychotrope" or "stupefiant")) return null;
+        if (choisie is ClasseReglementaire.Psychotrope or ClasseReglementaire.Stupefiant) return null;
+        return CodesMetier.ClasseDepuisCode(classeSurveillee);
+    }
+
+    /// <summary>Message au créateur (ou à l'auteur de la modification) quand la classe a été imposée.</summary>
+    public static string MessageClasseImposee(string dci, ClasseReglementaire classe)
+    {
+        var libelle = classe == ClasseReglementaire.Stupefiant ? "stupéfiant" : "psychotrope";
+        return $"La DCI « {dci} » correspond à une substance classée {libelle} : le produit est enregistré en classe « {libelle} » "
+            + "(registre obligatoire) et reste invendable jusqu’à ce que le titulaire confirme sa classe "
+            + "(Administration › Nomenclature nationale, « Produits à vérifier »).";
+    }
 }

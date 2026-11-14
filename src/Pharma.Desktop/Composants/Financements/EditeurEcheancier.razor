@@ -1,0 +1,308 @@
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Échéancier d'un prêt : saisi ligne par ligne, ou importé du tableau de la banque (Excel, CSV : lu par le serveur ; PDF, scan :
+   texte lu sur ce poste). Import : correspondance des colonnes (retenue pour la banque), aperçu, puis les lignes lues
+   préremplissent la saisie, toujours vérifiée et corrigeable. Rien n'est enregistré tant qu'une incohérence reste.
+   Les échéances déjà payées restent en tête, non modifiables. *@
+<section class="panneau" aria-labelledby="t-echeancier" data-champ="echeancier">
+    <h2 id="t-echeancier">Échéancier du prêt @Pret.Reference · @Libelles.Dinars(Pret.Montant, 2)</h2>
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+    @if (tableau is not null)
+    {
+        @* Étape « correspondance des colonnes » d'un tableau importé *@
+        <p class="detail" style="margin: 0">@origine : indiquez la colonne de chaque information (les numéros sont ceux du tableau ci-dessous) et les lignes d’en-tête à ignorer.</p>
+        <div class="achats-ligne" data-champ="correspondance">
+            @foreach (var (code, libelle, obligatoire) in Champs)
+            {
+                <div class="champ" style="flex: 0 0 150px"><label for="@($"co-{code}")">@libelle</label>
+                    <select id="@($"co-{code}")" value="@Colonne(code)" @onchange="e => Choisir(code, e)">
+                        @if (!obligatoire) { <option value="-1">— absente —</option> }
+                        @for (var i = 0; i < NombreColonnes; i++) { var k = i; <option value="@k">Colonne @(k + 1)</option> }
+                    </select></div>
+            }
+            <div class="champ" style="flex: 0 0 150px"><label for="co-entete">Lignes d’en-tête</label>
+                <input id="co-entete" type="number" min="0" max="50" @bind="lignesIgnorees" /></div>
+        </div>
+        <label class="case"><input type="checkbox" @bind="retenir" /><span>Retenir ces colonnes pour @Pret.Banque (proposées au prochain import)</span></label>
+        <div class="tableau-cadre">
+            <table class="tableau">
+                <thead><tr><th scope="col">Ligne</th>@for (var i = 0; i < NombreColonnes; i++) { <th scope="col">Colonne @(i + 1)</th> }</tr></thead>
+                <tbody>
+                    @foreach (var (cellules, n) in tableau.Select((c, n) => (c, n)).Skip((pageTableau - 1) * tailleTableau).Take(tailleTableau))
+                    {
+                        <tr style="@(n < lignesIgnorees ? "opacity: .5" : null)">
+                            <td>@(n + 1)</td>
+                            @for (var i = 0; i < NombreColonnes; i++) { <td>@(i < cellules.Count ? cellules[i] : "")</td> }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <Pagination Total="tableau.Count" Numero="pageTableau" Taille="tailleTableau" Libelle="Pages du tableau importé" OnChange="x => (pageTableau, tailleTableau) = (x.Numero, x.Taille)" />
+        <div class="filtres">
+            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ApercuAsync">Aperçu des échéances</button>
+            <button type="button" class="btn" @onclick="() => tableau = null">Annuler l’import</button>
+        </div>
+    }
+    else
+    {
+        <div class="filtres-liste" role="search" aria-label="Filtrer les lignes de l’échéancier">
+            <label class="case"><input type="checkbox" @bind="anomaliesSeules" @bind:after="() => pageLignes = 1" /><span>Lignes incohérentes seulement</span></label>
+            <button type="button" class="btn" disabled="@enCours" @onclick="ImporterAsync">Importer le tableau de la banque…</button>
+            <button type="button" class="btn" @onclick="AjouterLigne">Ajouter une ligne</button>
+            <button type="button" class="btn" title="Échéance = capital + intérêts + TVA + marge, sur les lignes non payées" @onclick="CalculerEcheances">Calculer les échéances</button>
+            <button type="button" class="btn" title="Capital restant dû = montant du prêt moins le capital cumulé" @onclick="CalculerEncours">Calculer le capital restant</button>
+        </div>
+        @if (ecartees.Count > 0)
+        {
+            <details><summary>@ecartees.Count ligne(s) du tableau écartée(s) (sans date lisible : en-têtes, totaux…)</summary>
+                <ul style="margin: 4px 0">@foreach (var x in ecartees.Take(30)) { <li class="detail">@x</li> }</ul></details>
+        }
+        <div class="tableau-cadre">
+            <table class="tableau">
+                <thead><tr><th scope="col">N°</th><th scope="col">Date</th><th scope="col">Capital</th><th scope="col">Intérêts</th><th scope="col">TVA</th><th scope="col">Marge</th><th scope="col">Échéance</th><th scope="col">Capital restant dû</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                <tbody>
+                    @foreach (var (l, n) in LignesFiltrees.Skip((pageLignes - 1) * tailleLignes).Take(tailleLignes))
+                    {
+                        var numero = n + 1;
+                        var fautes = anomalies.Where(a => a.Ligne == numero).ToList();
+                        <tr>
+                            <td>@numero</td>
+                            @if (l.Payee)
+                            {
+                                <td>@l.Date.ToString("dd/MM/yyyy")</td><td class="nombre">@Libelles.Dinars(l.Capital, 2)</td><td class="nombre">@Libelles.Dinars(l.Interets, 2)</td>
+                                <td class="nombre">@Libelles.Dinars(l.Tva, 2)</td><td class="nombre">@Libelles.Dinars(l.Marge, 2)</td><td class="nombre">@Libelles.Dinars(l.Montant, 2)</td>
+                                <td class="nombre">@Libelles.Dinars(l.CapitalRestant, 2)</td><td><span class="pastille ok">Payée</span></td>
+                            }
+                            else
+                            {
+                                <td><input type="date" aria-label="@($"Date de la ligne {numero}")" @bind="l.Date" class="@Classe(fautes, "date")" /></td>
+                                <td><input type="number" step="0.01" style="width: 120px" aria-label="@($"Capital de la ligne {numero}")" @bind="l.Capital" class="@Classe(fautes, "capital")" /></td>
+                                <td><input type="number" step="0.01" style="width: 110px" aria-label="@($"Intérêts de la ligne {numero}")" @bind="l.Interets" class="@Classe(fautes, "interets")" /></td>
+                                <td><input type="number" step="0.01" style="width: 100px" aria-label="@($"TVA de la ligne {numero}")" @bind="l.Tva" class="@Classe(fautes, "tva")" /></td>
+                                <td><input type="number" step="0.01" style="width: 100px" aria-label="@($"Marge de la ligne {numero}")" @bind="l.Marge" class="@Classe(fautes, "marge")" /></td>
+                                <td><input type="number" step="0.01" style="width: 120px" aria-label="@($"Échéance de la ligne {numero}")" @bind="l.Montant" class="@Classe(fautes, "montant")" /></td>
+                                <td><input type="number" step="0.01" style="width: 130px" aria-label="@($"Capital restant dû de la ligne {numero}")" @bind="l.CapitalRestant" class="@Classe(fautes, "capital_restant")" /></td>
+                                <td><button type="button" class="lien-bouton" @onclick="() => Supprimer(l)">Retirer</button></td>
+                            }
+                        </tr>
+                        @foreach (var a in fautes) { <tr><td></td><td colspan="8" class="montant-du">@a.Message</td></tr> }
+                    }
+                    @if (lignes.Count == 0) { <tr><td colspan="9" class="vide">Aucune ligne : ajoutez-les une à une, ou importez le tableau fourni par la banque.</td></tr> }
+                </tbody>
+                @if (lignes.Count > 0)
+                {
+                    <tfoot><tr><th scope="row" colspan="2">Total · @lignes.Count ligne(s)</th>
+                        <td class="nombre"><strong>@Libelles.Dinars(lignes.Sum(x => x.Capital), 2)</strong></td>
+                        <td class="nombre">@Libelles.Dinars(lignes.Sum(x => x.Interets), 2)</td><td class="nombre">@Libelles.Dinars(lignes.Sum(x => x.Tva), 2)</td>
+                        <td class="nombre">@Libelles.Dinars(lignes.Sum(x => x.Marge), 2)</td><td class="nombre"><strong>@Libelles.Dinars(lignes.Sum(x => x.Montant), 2)</strong></td>
+                        <td colspan="2"></td></tr></tfoot>
+                }
+            </table>
+        </div>
+        <Pagination Total="LignesFiltrees.Count()" Numero="pageLignes" Taille="tailleLignes" Libelle="Pages des lignes de l’échéancier" OnChange="x => (pageLignes, tailleLignes) = (x.Numero, x.Taille)" />
+        @foreach (var a in anomalies.Where(a => a.Ligne == 0)) { <p class="montant-du" style="margin: 0">@a.Message</p> }
+        <p class="detail" style="margin: 0">
+            @(anomalies.Count == 0 ? (controle ? "Aucune incohérence : l’échéancier peut être enregistré." : "Contrôlez l’échéancier avant de l’enregistrer.")
+              : $"{anomalies.Count} incohérence(s) : corrigez-les, l’échéancier n’est pas enregistré tant qu’il en reste.")
+        </p>
+        <div class="filtres">
+            <button type="button" class="btn" disabled="@enCours" @onclick="ControlerAsync">Contrôler</button>
+            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer l’échéancier</button>
+            <button type="button" class="btn" @onclick="() => OnAnnule.InvokeAsync()">Annuler</button>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PretDto Pret { get; set; } = default!;
+    [Parameter] public IReadOnlyList<EcheancePretDto> Echeances { get; set; } = [];
+    /// <summary>Appelé avec le message de réussite après l'enregistrement.</summary>
+    [Parameter] public EventCallback<string> OnEnregistre { get; set; }
+    [Parameter] public EventCallback OnAnnule { get; set; }
+
+    /// <summary>Ligne en cours de saisie ; Payee : échéance déjà payée, gardée telle quelle en tête.</summary>
+    private sealed class LigneEdition
+    {
+        public DateOnly Date { get; set; }
+        public decimal Capital { get; set; }
+        public decimal Interets { get; set; }
+        public decimal Tva { get; set; }
+        public decimal Marge { get; set; }
+        public decimal Montant { get; set; }
+        public decimal CapitalRestant { get; set; }
+        public bool Payee { get; init; }
+
+        public static LigneEdition De(LigneEcheancierDto l, bool payee = false) =>
+            new() { Date = l.Date, Capital = l.Capital, Interets = l.Interets, Tva = l.Tva, Marge = l.Marge, Montant = l.Montant, CapitalRestant = l.CapitalRestant, Payee = payee };
+        public LigneEcheancierDto Dto() => new(Date, Capital, Interets, Tva, Marge, Montant, CapitalRestant);
+    }
+
+    private static readonly (string Code, string Libelle, bool Obligatoire)[] Champs =
+    [
+        ("date", "Date", true), ("capital", "Capital", false), ("interets", "Intérêts", false), ("tva", "TVA", false), ("marge", "Marge", false),
+        ("montant", "Échéance totale", false), ("encours", "Capital restant dû", false)
+    ];
+
+    private List<LigneEdition> lignes = [];
+    private List<AnomalieEcheancierDto> anomalies = [];
+    private List<string> ecartees = [];
+    private bool anomaliesSeules, enCours, controle, retenir = true;
+    private int pageLignes = 1, tailleLignes = Pagination.TailleParDefaut, pageTableau = 1, tailleTableau = Pagination.TailleParDefaut;
+    private string? erreur, message, origine;
+
+    // Import : tableau lu (cellules) et correspondance choisie (colonnes à partir de 0 ; -1 : absente)
+    private List<IReadOnlyList<string?>>? tableau;
+    private readonly Dictionary<string, int> colonnes = [];
+    private int lignesIgnorees;
+    private int NombreColonnes => tableau is null || tableau.Count == 0 ? 0 : Math.Min(tableau.Max(l => l.Count), 30);
+
+    private IEnumerable<(LigneEdition Ligne, int Index)> LignesFiltrees => lignes.Select((l, i) => (l, i))
+        .Where(x => !anomaliesSeules || anomalies.Any(a => a.Ligne == x.i + 1));
+
+    protected override void OnInitialized()
+    {
+        lignes = Echeances.OrderBy(e => e.Rang).Select(e => LigneEdition.De(e.Ligne, e.PayeeLe is not null)).ToList();
+        Historique.Suivre("editeur-echeancier", e => { e.Mettre("seules", anomaliesSeules); e.Mettre("page", pageLignes); e.Mettre("taille", tailleLignes); });
+        if (Historique.Restaurer("editeur-echeancier") is { } r)
+            (anomaliesSeules, pageLignes, tailleLignes) = (r.Oui("seules"), r.Entier("page") ?? 1, r.Entier("taille") ?? tailleLignes);
+    }
+
+    private static string? Classe(List<AnomalieEcheancierDto> fautes, string champ) => Obligatoire.Classe(fautes.Any(a => a.Champ == champ));
+
+    private void AjouterLigne()
+    {
+        var derniere = lignes.LastOrDefault();
+        lignes.Add(new LigneEdition
+        {
+            Date = derniere?.Date.AddMonths(1) ?? Pret.DatePret.AddMonths(1),
+            CapitalRestant = derniere?.CapitalRestant ?? Pret.Montant
+        });
+        pageLignes = Math.Max(1, (int)Math.Ceiling(lignes.Count / (double)tailleLignes));
+        controle = false;
+    }
+
+    private void Supprimer(LigneEdition l) { lignes.Remove(l); anomalies.Clear(); controle = false; }
+
+    private void CalculerEcheances()
+    {
+        foreach (var l in lignes.Where(l => !l.Payee)) l.Montant = l.Capital + l.Interets + l.Tva + l.Marge;
+        controle = false;
+    }
+
+    private void CalculerEncours()
+    {
+        var reste = Pret.Montant;
+        foreach (var l in lignes)
+        {
+            reste -= l.Capital;
+            if (!l.Payee) l.CapitalRestant = Math.Max(reste, 0);
+        }
+        controle = false;
+    }
+
+    private EcheancierRequete Requete() => new(lignes.Select(l => l.Dto()).ToList());
+
+    private async Task ControlerAsync()
+    {
+        (enCours, erreur, message) = (true, null, null);
+        var (a, e) = await Api.ControlerEcheancierAsync(Pret.Id, Requete());
+        enCours = false;
+        if (a is null) { erreur = e; return; }
+        (anomalies, controle) = (a, true);
+        if (anomalies.Count == 0) message = "Aucune incohérence : l’échéancier peut être enregistré.";
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        await ControlerAsync();
+        if (erreur is not null || anomalies.Count > 0) { erreur ??= "L’échéancier contient des incohérences : corrigez les lignes signalées."; return; }
+        enCours = true;
+        var e = await Api.EnregistrerEcheancierAsync(Pret.Id, Requete());
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        await OnEnregistre.InvokeAsync($"Échéancier enregistré : {lignes.Count} échéance(s), intérêts {Libelles.Dinars(lignes.Sum(l => l.Interets), 2)}.");
+    }
+
+    /// <summary>
+    /// Tableau de la banque : Excel ou CSV lus par le serveur ; PDF ou scan lus ici (reconnaissance de texte). Le document est joint au prêt
+    /// (GED du serveur, dossier Financements).
+    /// </summary>
+    private async Task ImporterAsync()
+    {
+        (erreur, message) = (null, null);
+        DocumentBanque? doc;
+        try { doc = await LectureTableauBanque.ChoisirAsync(); }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { erreur = $"Fichier illisible : {ex.Message}"; return; }
+        if (doc is null) return;
+        enCours = true;
+        try
+        {
+            TableauLuDto? lu;
+            string? e;
+            if (doc.EstTableur)
+                (lu, e) = await Api.LireTableauFichierAsync(Pret.Id, new TableauFichierRequete(doc.Nom, Convert.ToBase64String(doc.Contenu)));
+            else
+            {
+                IReadOnlyList<string> texte;
+                try { texte = await LectureTableauBanque.LireTexteAsync(doc); }
+                catch (Exception ex) { erreur = $"Lecture du document impossible : {ex.Message}"; return; }
+                (lu, e) = await Api.LireTableauTexteAsync(Pret.Id, new TableauTexteRequete(texte));
+            }
+            if (lu is null) { erreur = e; return; }
+            // Original joint au prêt (GED) : la fiche du prêt garde le dernier document importé
+            var range = await Documents.RangerAsync(Api, "Financements", $"Pret-{Pret.Reference}-{doc.Nom}", doc.Contenu);
+            if (range.CheminGed is { } chemin) await Api.JoindreDocumentPretAsync(Pret.Id, chemin);
+            (tableau, pageTableau, origine) = (lu.Lignes.ToList(), 1, doc.EstTableur ? $"Tableau « {doc.Nom} »" : $"Texte lu dans « {doc.Nom} » (à vérifier ligne par ligne)");
+            Proposer(lu.Correspondance);
+            if (range.Erreur is { } r) message = r;
+        }
+        finally { enCours = false; }
+    }
+
+    /// <summary>Correspondance retenue pour la banque, sinon : date, capital, intérêts, échéance dans les premières colonnes, à vérifier.</summary>
+    private void Proposer(CorrespondanceDto? c)
+    {
+        colonnes.Clear();
+        if (c is not null)
+        {
+            (colonnes["date"], colonnes["capital"], colonnes["interets"], colonnes["tva"]) = (c.Date, c.Capital ?? -1, c.Interets ?? -1, c.Tva ?? -1);
+            (colonnes["marge"], colonnes["montant"], colonnes["encours"], lignesIgnorees) = (c.Marge ?? -1, c.Montant ?? -1, c.Encours ?? -1, c.LignesIgnorees);
+            return;
+        }
+        var n = NombreColonnes;
+        int Col(int i) => i < n ? i : -1;
+        (colonnes["date"], colonnes["capital"], colonnes["interets"], colonnes["tva"], colonnes["marge"]) = (0, Col(1), Col(2), -1, -1);
+        (colonnes["montant"], colonnes["encours"], lignesIgnorees) = (Col(3), Col(4), 1);
+    }
+
+    private int Colonne(string code) => colonnes.TryGetValue(code, out var c) ? c : -1;
+
+    private void Choisir(string code, ChangeEventArgs e) => colonnes[code] = int.TryParse(e.Value?.ToString(), out var c) ? c : -1;
+
+    private CorrespondanceDto Correspondance()
+    {
+        int? Col(string code) => Colonne(code) is >= 0 and var c ? c : null;
+        return new CorrespondanceDto(Math.Max(Colonne("date"), 0), Col("capital"), Col("interets"), Col("tva"), Col("marge"), Col("montant"), Col("encours"),
+            Math.Max(lignesIgnorees, 0));
+    }
+
+    private async Task ApercuAsync()
+    {
+        if (tableau is null) return;
+        (enCours, erreur, message) = (true, null, null);
+        var correspondance = Correspondance();
+        var (a, e) = await Api.ApercuEcheancierAsync(Pret.Id, new ApercuRequete(tableau, correspondance));
+        if (a is null) { enCours = false; erreur = e; return; }
+        if (retenir && await Api.RetenirCorrespondanceAsync(Pret.Id, correspondance) is { } er) message = $"Colonnes non retenues : {er}";
+        enCours = false;
+        // Les échéances déjà payées restent en tête ; les lignes lues des suivantes remplacent les autres
+        var payees = lignes.Where(l => l.Payee).ToList();
+        lignes = [.. payees, .. a.Lignes.Skip(payees.Count).Select(l => LigneEdition.De(l))];
+        (anomalies, ecartees, tableau, pageLignes, controle) = (a.Anomalies.ToList(), a.Ecartees.ToList(), null, 1, true);
+        message ??= $"{a.Lignes.Count} échéance(s) lue(s) : vérifiez chaque ligne avec le document de la banque avant d’enregistrer.";
+    }
+}

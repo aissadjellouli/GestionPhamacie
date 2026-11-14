@@ -88,7 +88,7 @@
                                             }
                                             else if (p.Motif == "repris")
                                             {
-                                                <span class="pastille urgent" title="Créé par la reprise des données, sans n° d’enregistrement : la nomenclature ne peut pas proposer sa classe">Repris, vente bloquée</span>
+                                                <span class="pastille urgent" title="Créé par la reprise des données sans n° d’enregistrement (la nomenclature ne peut pas proposer sa classe), ou classé d’office psychotrope ou stupéfiant d’après sa DCI quand un employé l’a créé ou lui a donné cette DCI">À vérifier, vente bloquée</span>
                                             }
                                             else if (p.Motif == "absent")
                                             {
@@ -154,7 +154,7 @@
 
     // Produits à vérifier : filtres et page (à l'écran) ; « ← Retour » les retrouve
     private static readonly (string Code, string Libelle)[] Motifs =
-        [("classe", "Classe à corriger"), ("repris", "Repris sans n° d’enregistrement"), ("absent", "Absent de la nomenclature"), ("situation", "Retiré ou non renouvelé")];
+        [("classe", "Classe à corriger"), ("repris", "À vérifier (reprise ou classe d’office)"), ("absent", "Absent de la nomenclature"), ("situation", "Retiré ou non renouvelé")];
     private string fTexte = "", fMotif = "";
     private int page = 1, taille = Pagination.TailleParDefaut;
     private bool FiltreActif => fTexte.Trim() != "" || fMotif != "";

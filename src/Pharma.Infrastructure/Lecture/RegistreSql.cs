@@ -78,13 +78,19 @@ public sealed class RegistreSql(NpgsqlDataSource db) : IRegistrePsychotropes
     public async Task<(int Inscriptions, IReadOnlyList<BalanceMensuelle> Balance)> SyntheseAsync(long? produitId, DateOnly du, DateOnly au,
         CancellationToken ct = default)
     {
-        // Balance mensuelle (arrêté du 23 août 1999, art. 4) : entrées, sorties et solde du produit à la dernière ligne du mois,
-        // mois en heure locale ($4 : fuseau) ; le nombre de lignes de chaque mois donne le nombre d'inscriptions de la période
+        // Balance mensuelle (arrêté du 23 août 1999, art. 4) : solde reporté (solde d'ouverture du registre, pas une entrée),
+        // entrées, sorties et solde du produit à la dernière ligne du mois, mois en heure locale ($4 : fuseau). Les lignes
+        // antérieures à l'ouverture (solde du produit non calculé par la vue) sont exclues de la balance, mais comptées dans le
+        // nombre d'inscriptions de la période (toutes les lignes de chaque mois)
         await using var cmd = db.CreateCommand($"""
             SELECT produit_id, produit, extract(year FROM jour)::int, extract(month FROM jour)::int,
-                   COALESCE(sum(entree), 0)::int, COALESCE(sum(sortie), 0)::int,
-                   (array_agg(solde_produit ORDER BY numero DESC))[1], count(*)::int
-            FROM (SELECT produit_id, produit, numero, entree, sortie, solde_produit, cree_le AT TIME ZONE $4 AS jour
+                   COALESCE(sum(entree) FILTER (WHERE solde_produit IS NOT NULL AND type_mouvement <> 'ouverture'), 0)::int,
+                   COALESCE(sum(sortie) FILTER (WHERE solde_produit IS NOT NULL), 0)::int,
+                   (array_agg(solde_produit ORDER BY numero DESC) FILTER (WHERE solde_produit IS NOT NULL))[1],
+                   count(*)::int,
+                   COALESCE(sum(entree) FILTER (WHERE solde_produit IS NOT NULL AND type_mouvement = 'ouverture'), 0)::int,
+                   count(*) FILTER (WHERE solde_produit IS NOT NULL)::int
+            FROM (SELECT produit_id, produit, numero, type_mouvement, entree, sortie, solde_produit, cree_le AT TIME ZONE $4 AS jour
                   FROM v_registre_psychotrope WHERE {Periode}) l
             GROUP BY produit_id, produit, extract(year FROM jour), extract(month FROM jour)
             ORDER BY produit, produit_id, 3, 4
@@ -96,9 +102,10 @@ public sealed class RegistreSql(NpgsqlDataSource db) : IRegistrePsychotropes
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
         {
-            balance.Add(new BalanceMensuelle(r.GetInt64(0), r.GetString(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4), r.GetInt32(5),
-                r.IsDBNull(6) ? null : r.GetInt32(6)));
             nombre += r.GetInt32(7);
+            if (r.GetInt32(9) == 0) continue;   // mois sans ligne postérieure à l'ouverture : hors balance
+            balance.Add(new BalanceMensuelle(r.GetInt64(0), r.GetString(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4), r.GetInt32(5),
+                r.IsDBNull(6) ? null : r.GetInt32(6), r.GetInt32(8)));
         }
         return (nombre, balance);
     }

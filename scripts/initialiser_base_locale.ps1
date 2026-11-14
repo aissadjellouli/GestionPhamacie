@@ -18,7 +18,11 @@
 
 .EXAMPLE
     .\scripts\initialiser_base_locale.ps1 -Bases pharmacie_test -Recreer
-    Supprime puis recrée la base de test.
+    Supprime puis recrée la base de test, après confirmation : le nom de chaque base à supprimer est à retaper.
+
+.EXAMPLE
+    .\scripts\initialiser_base_locale.ps1 -Bases pharmacie_test -Recreer -Force
+    Même chose sans confirmation (automatisation).
 #>
 param(
     [string]$PgBin       = "",          # vide : dernière version de PostgreSQL installée
@@ -29,6 +33,7 @@ param(
     [string]$AppPassword = "pharma_dev",
     [string[]]$Bases     = @("pharmacie_dev", "pharmacie_test"),
     [switch]$Recreer,
+    [switch]$Force,                     # avec -Recreer : pas de confirmation (automatisation)
     [switch]$MiseAJour,
     [switch]$SansDemo
 )
@@ -48,6 +53,16 @@ if (-not (Test-Path $psql)) { throw "psql introuvable : $psql (adapter -PgBin)" 
 Write-Host "PostgreSQL : $PgBin"
 
 if ($MiseAJour -and $Recreer) { throw "-MiseAJour et -Recreer ne vont pas ensemble." }
+if ($Force -and -not $Recreer) { throw "-Force ne sert qu'avec -Recreer." }
+
+# -Recreer supprime les bases (données comprises) : chaque nom est retapé avant que rien ne soit fait, sauf avec -Force
+if ($Recreer -and -not $Force) {
+    Write-Warning "-Recreer SUPPRIME les bases suivantes et toutes leurs données : $($Bases -join ', ')"
+    foreach ($base in $Bases) {
+        $saisie = Read-Host "Pour confirmer la suppression, retapez le nom de la base « $base »"
+        if ($saisie -cne $base) { throw "Confirmation incorrecte pour $base : rien n'a été fait." }
+    }
+}
 
 # Les scripts contiennent des accents
 $env:PGCLIENTENCODING = "UTF8"

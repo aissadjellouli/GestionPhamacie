@@ -31,6 +31,7 @@ public sealed class JournalFichierProvider : ILoggerProvider
     private readonly long tailleMax;
     private readonly Channel<string> file = Channel.CreateBounded<string>(new BoundedChannelOptions(10_000) { FullMode = BoundedChannelFullMode.DropOldest });
     private readonly ConcurrentDictionary<string, Journal> journaux = new();
+    private readonly CancellationTokenSource arret = new();
     private readonly Task ecriture;
 
     public JournalFichierProvider(OptionsJournalFichier options)
@@ -45,33 +46,98 @@ public sealed class JournalFichierProvider : ILoggerProvider
 
     private void Ajouter(string ligne) => file.Writer.TryWrite(ligne);
 
+    /// <summary>
+    /// Écriture ligne par ligne : une erreur (disque plein ou débranché, droits, fichier verrouillé) ne fait perdre que la ligne en cours.
+    /// Le fichier est fermé puis rouvert après une courte attente (1 s, puis jusqu'à 30 s si l'erreur dure) ; l'échec est signalé
+    /// sur la sortie d'erreur, et le nombre de lignes perdues est écrit dans le fichier dès que l'écriture reprend.
+    /// Le journal ne doit jamais arrêter le serveur.
+    /// </summary>
     private async Task EcrireAsync()
     {
         StreamWriter? fichier = null;
         DateOnly? jour = null;
+        var echecsSuivis = 0;
+        var lignesPerdues = 0;
+        string? derniereErreur = null;
         try
         {
             await foreach (var ligne in file.Reader.ReadAllAsync())
             {
-                var aujourdhui = DateOnly.FromDateTime(DateTime.Now);
-                if (fichier is null || jour != aujourdhui || fichier.BaseStream.Length >= tailleMax)
+                // Deux essais par ligne : le second avec un fichier rouvert
+                for (var essai = 1; essai <= 2; essai++)
                 {
-                    if (jour != aujourdhui) Purger(options.Dossier, options.RetentionMois, DateTime.Now);
-                    fichier?.Dispose();
-                    fichier = Ouvrir(aujourdhui);
-                    jour = aujourdhui;
+                    try
+                    {
+                        var aujourdhui = DateOnly.FromDateTime(DateTime.Now);
+                        if (fichier is null || jour != aujourdhui || fichier.BaseStream.Length >= tailleMax)
+                        {
+                            if (jour != aujourdhui) Purger(options.Dossier, options.RetentionMois, DateTime.Now);
+                            Fermer(fichier);
+                            fichier = null;
+                            fichier = Ouvrir(aujourdhui);
+                            jour = aujourdhui;
+                        }
+                        if (lignesPerdues > 0)
+                        {
+                            await fichier.WriteLineAsync(LignePerdues(lignesPerdues, derniereErreur));
+                            lignesPerdues = 0;
+                        }
+                        await fichier.WriteLineAsync(ligne);
+                        if (file.Reader.Count == 0) await fichier.FlushAsync();
+                        if (echecsSuivis > 0) Signaler("Journal fichier : écriture rétablie.");
+                        echecsSuivis = 0;
+                        break;
+                    }
+                    catch (Exception e)
+                    {
+                        // Fichier fermé (le flux peut être inutilisable) puis rouvert au prochain essai
+                        Fermer(fichier);
+                        fichier = null;
+                        jour = null;
+                        derniereErreur = e.Message;
+                        if (echecsSuivis++ == 0) Signaler($"Journal fichier : échec d'écriture dans {options.Dossier} ({e.GetType().Name} : {e.Message}). Nouvel essai.");
+                        if (essai == 2) lignesPerdues++;
+                        await AttendreAsync(echecsSuivis);
+                    }
                 }
-                await fichier.WriteLineAsync(ligne);
-                if (file.Reader.Count == 0) await fichier.FlushAsync();
             }
         }
-        catch (Exception) { /* le journal ne doit jamais arrêter le serveur (disque plein, droits) */ }
-        finally { fichier?.Dispose(); }
+        catch (Exception e) { Signaler($"Journal fichier arrêté : {e}"); /* ne doit jamais arrêter le serveur */ }
+        finally { Fermer(fichier); }
+    }
+
+    private static string LignePerdues(int nombre, string? erreur) =>
+        new StringBuilder()
+            .Append(DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture))
+            .Append(" [AVT] Pharma.Api.Journalisation : ").Append(nombre).Append(" ligne(s) du journal perdue(s) : échec d'écriture")
+            .Append(erreur is null ? "" : $" ({erreur})").ToString();
+
+    /// <summary>Attente avant un nouvel essai : 1 s, 2 s, 4 s… jusqu'à 30 s ; écourtée à l'arrêt du serveur.</summary>
+    private async Task AttendreAsync(int echecs)
+    {
+        if (arret.IsCancellationRequested) return;
+        try { await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, Math.Min(echecs, 6) - 1))), arret.Token); }
+        catch (OperationCanceledException) { }
+    }
+
+    private static void Fermer(StreamWriter? fichier)
+    {
+        if (fichier is null) return;
+        try { fichier.Dispose(); }
+        catch (Exception) { /* flux déjà inutilisable (disque plein, débranché) : rien à sauver */ }
+    }
+
+    /// <summary>Trace d'un échec du journal fichier, hors du fichier : sortie d'erreur (console de l'API lancée à la main).</summary>
+    private static void Signaler(string message)
+    {
+        try { Console.Error.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}"); }
+        catch (Exception) { }
     }
 
     /// <summary>Fichier du jour qui n'a pas atteint la taille maximale : pharma-api-AAAAMMJJ.log, puis _2, _3…</summary>
     private StreamWriter Ouvrir(DateOnly jour)
     {
+        Directory.CreateDirectory(options.Dossier);   // dossier supprimé ou disque rebranché
         for (var n = 1; ; n++)
         {
             var chemin = Path.Combine(options.Dossier, NomFichier(jour, n));
@@ -102,6 +168,7 @@ public sealed class JournalFichierProvider : ILoggerProvider
     public void Dispose()
     {
         file.Writer.TryComplete();
+        arret.Cancel();   // plus d'attente entre deux essais : les dernières lignes sont écrites tout de suite
         ecriture.Wait(TimeSpan.FromSeconds(5));
     }
 

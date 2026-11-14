@@ -19,6 +19,26 @@
             </div>
         </div>
 
+        @if (nonEnvoyees is { Nombre: > 0 } ne)
+        {
+            @* Titulaire : alertes qui n'ont pas pu partir (aucun destinataire vérifié, mise en file impossible, envoi abandonné) *@
+            <div class="bandeau-attention" role="alert" style="margin-bottom: 16px">
+                <strong>@ne.Nombre alerte(s) n’ont pas pu être envoyées :</strong>
+                <ul style="margin: 6px 0">
+                    @foreach (var a in ne.Dernieres)
+                    {
+                        <li>@a.CreeLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @a.Objet : @a.Raison</li>
+                    }
+                </ul>
+                @if (ne.Nombre > ne.Dernieres.Count) { <div class="detail">… et @(ne.Nombre - ne.Dernieres.Count) plus ancienne(s).</div> }
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px">
+                    <button type="button" class="btn" disabled="@marquage" @onclick="MarquerVuesAsync">Marquer comme vues</button>
+                    <a href="admin/notifications" class="btn">Vérifier les destinataires</a>
+                </div>
+                @if (erreurNonEnvoyees is not null) { <div class="erreur" role="alert">@erreurNonEnvoyees</div> }
+            </div>
+        }
+
         @if (charge)
         {
             <div class="tuiles-accueil">
@@ -83,6 +103,23 @@
         }
         var (tableau, _) = await Api.TableauInventaireAsync();
         ecartsAValider = tableau?.EcartsAValider.Count;
+        if (Session.A("role.titulaire")) (nonEnvoyees, _) = await Api.AlertesNonEnvoyeesAsync();
         charge = true;
+    }
+
+    // ---- Alertes non envoyées (titulaire) ----
+    private AlertesNonEnvoyeesDto? nonEnvoyees;
+    private string? erreurNonEnvoyees;
+    private bool marquage;
+
+    private async Task MarquerVuesAsync()
+    {
+        if (nonEnvoyees is not { Dernieres.Count: > 0 } ne) return;
+        marquage = true;
+        // Jusqu'à la plus récente affichée : une alerte arrivée entre-temps reste signalée
+        var (_, err) = await Api.MarquerAlertesNonEnvoyeesVuesAsync(ne.Dernieres.Max(a => a.Id));
+        erreurNonEnvoyees = err;
+        if (err is null) (nonEnvoyees, _) = await Api.AlertesNonEnvoyeesAsync();
+        marquage = false;
     }
 }

@@ -506,6 +506,16 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
 
     public async Task<long> EnregistrerClientAsync(ClientFacture c, CancellationToken ct = default)
     {
+        // Doublon selon les majuscules et les espaces autour (« SARL Alpha » et « sarl alpha ») : refusé avec un message clair
+        // (l'index unique sur lower(btrim(raison_sociale)) du script 077 couvre deux postes simultanés)
+        await using (var doublon = db.CreateCommand(
+            "SELECT raison_sociale FROM client_facture WHERE lower(btrim(raison_sociale)) = lower(btrim($1)) AND id IS DISTINCT FROM $2 LIMIT 1"))
+        {
+            doublon.Parameters.AddWithValue(c.RaisonSociale);
+            doublon.Parameters.Add(Long(c.Id));
+            if (await doublon.ExecuteScalarAsync(ct) is string existant)
+                throw new RegleMetierException($"Un client s’appelle déjà « {existant} » (majuscules et espaces ne comptent pas).", "raison_sociale");
+        }
         await using var cmd = db.CreateCommand(c.Id is null
             ? "INSERT INTO client_facture (raison_sociale, adresse, telephone, nif, rc, nis, article_imposition, actif, email, delai_paiement_jours) VALUES ($2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
             : """

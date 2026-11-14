@@ -73,6 +73,16 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        // Doublon selon les majuscules et les espaces autour (« BNA » et « bna ») : refusé avec un message clair
+        // (l'index unique sur lower(btrim(nom)) du script 077 couvre deux postes simultanés)
+        await using (var doublon = new NpgsqlCommand(
+            "SELECT nom FROM compte_tresorerie WHERE lower(btrim(nom)) = lower(btrim($1)) AND id IS DISTINCT FROM $2 LIMIT 1", cx, tx))
+        {
+            doublon.Parameters.AddWithValue(c.Nom);
+            doublon.Parameters.Add(new NpgsqlParameter { Value = (object?)c.Id ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+            if (await doublon.ExecuteScalarAsync(ct) is string existant)
+                throw new RegleMetierException($"Un compte s’appelle déjà « {existant} » (majuscules et espaces ne comptent pas).", "nom_compte");
+        }
         // Une seule banque reçoit les cartes : celle-ci la remplace
         if (c.RecoitCarte)
             await using (var cmd = new NpgsqlCommand("UPDATE compte_tresorerie SET recoit_carte = false WHERE recoit_carte AND id IS DISTINCT FROM $1", cx, tx))

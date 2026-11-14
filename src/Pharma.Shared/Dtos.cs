@@ -94,7 +94,8 @@ public sealed record ParcoursBoiteDto(
 
 /// <summary>Refus renvoyé au poste. Champ : champ de saisie en cause (data-champ côté poste), ou null.</summary>
 /// <summary>Autorisable : refus de droit que le code comptoir d'un employé habilité peut lever (Permission : le droit, ou « role.titulaire »).</summary>
-public sealed record ErreurDto(string Message, string? Champ = null, bool Autorisable = false, string? Permission = null);
+/// <summary>Seuil : remise refusée (caisse.remise), pourcentage demandé : seuls les employés dont le maximum le couvre sont proposés.</summary>
+public sealed record ErreurDto(string Message, string? Champ = null, bool Autorisable = false, string? Permission = null, decimal? Seuil = null);
 
 // ---- Caisse -----------------------------------------------------------------
 
@@ -148,8 +149,11 @@ public sealed record VenteEncaisseeDto(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
     string Mode, decimal Rendu);
 
-/// <summary>Saisies par coupure : b2000, b1000, b500, b200, p100 (nombres), autres (montant total).</summary>
-public sealed record ClotureRequete(IReadOnlyDictionary<string, decimal> Saisies);
+/// <summary>
+/// Saisies par coupure : b2000, b1000, b500, b200, p100 (nombres), autres (montant total). Coupure inconnue refusée.
+/// ConfirmerZero : clôture ou relève avec 0 DA compté confirmée explicitement (sinon refusée).
+/// </summary>
+public sealed record ClotureRequete(IReadOnlyDictionary<string, decimal> Saisies, bool ConfirmerZero = false);
 
 public sealed record ClotureDto(
     long SessionId, decimal Compte, decimal? FondCaisse, decimal? VentesEspeces, decimal? Attendu,
@@ -345,6 +349,15 @@ public sealed record MessageSortantDto(
 
 public sealed record NombreDto(int Nombre);
 
+/// <summary>Alerte au titulaire qui n’a pas pu partir (bandeau de l’accueil du titulaire).</summary>
+public sealed record AlerteNonEnvoyeeDto(long Id, string Type, string Objet, string Raison, DateTime CreeLe);
+
+/// <summary>Alertes non vues : nombre total et les plus récentes.</summary>
+public sealed record AlertesNonEnvoyeesDto(int Nombre, IReadOnlyList<AlerteNonEnvoyeeDto> Dernieres);
+
+/// <summary>Marque vues les alertes non envoyées jusqu’à cet identifiant (le plus récent affiché).</summary>
+public sealed record AlertesVuesRequete(long JusquA);
+
 // ---- Sauvegardes ------------------------------------------------------------
 
 /// <summary>RetentionGedJours : jours de conservation de la copie dans la GED (null : réglage du serveur, 7 jours par défaut).</summary>
@@ -375,6 +388,12 @@ public sealed record NouveauProduitDto(
 /// <summary>Remarque laissée pendant l'essai (page « Guide et retours ») ; Genre : probleme, suggestion ou question.</summary>
 public sealed record RetourEssaiDto(DateTime Date, string Employe, string Ecran, string Genre, string Texte);
 public sealed record NouveauRetourEssaiDto(string? Ecran, string? Genre, string? Texte);
+
+/// <summary>
+/// Produit créé ou modifié ; Information : message à afficher (classe imposée à un psychotrope ou stupéfiant saisi hors registre,
+/// produit « à vérifier »), sinon null.
+/// </summary>
+public sealed record ProduitEnregistreDto(long Id, string? Information = null);
 
 /// <summary>Fiche modifiable d'un produit (Classe en lecture seule).</summary>
 public sealed record FicheProduitModifiableDto(long Id, string NomCommercial, string? Dci, string? Dosage, string? Forme, string? CodeBarre,
@@ -561,7 +580,8 @@ public sealed record LigneRegistreDto(
 
 public sealed record ProduitRegistreDto(long Id, string Nom);
 
-public sealed record BalanceMensuelleDto(long ProduitId, string Produit, int Annee, int Mois, int Entrees, int Sorties, int? SoldeFin);
+/// <summary>SoldeReporte : solde d'ouverture du registre inscrit ce mois-là, distinct des entrées.</summary>
+public sealed record BalanceMensuelleDto(long ProduitId, string Produit, int Annee, int Mois, int Entrees, int Sorties, int? SoldeFin, int SoldeReporte = 0);
 
 /// <summary>Inscriptions du registre paginées et filtrées par le serveur (produit, période, opération) ; opérations présentes pour le filtre.</summary>
 public sealed record InscriptionsRegistreDto(PageDto<LigneRegistreDto> Page, IReadOnlyList<CodeLibelleDto> Operations, bool NomsMasques);
@@ -672,9 +692,12 @@ public sealed record SituationGrossisteDto(long Id, string Nom, decimal Solde, I
 
 public sealed record ImputationDto(long ReceptionId, decimal Montant);
 
-/// <summary>Imputations vides : réparties sur les factures les plus anciennes. PartTiroir : complément en espèces pris dans la caisse ouverte.</summary>
+/// <summary>
+/// Imputations vides : réparties sur les factures les plus anciennes. PartTiroir : complément en espèces pris dans la caisse ouverte.
+/// Source (titulaire seul) : « titulaire » ou « pret:ID », facture payée par un prêt ou un apport, hors trésorerie (Moyen ignoré).
+/// </summary>
 public sealed record ReglementRequete(DateOnly? Date, decimal Montant, string Moyen, string? Reference, string? Banque, DateOnly? Echeance,
-    decimal PartTiroir, string? Commentaire, IReadOnlyList<ImputationDto>? Imputations, long? CompteId = null);
+    decimal PartTiroir, string? Commentaire, IReadOnlyList<ImputationDto>? Imputations, long? CompteId = null, string? Source = null);
 
 /// <summary>
 /// Traite remise à un grossiste. CompteId / Banque : banque choisie à la remise (débitée à l'échéance sans action). PayeeLe /
@@ -686,8 +709,11 @@ public sealed record TraiteAPayerDto(long ReglementId, string? Numero, long Four
 /// <summary>Une page de traites (filtrée par le serveur) ; SoldeCoffre : pour le titulaire seulement (complément du tiroir proposé).</summary>
 public sealed record TraitesAPayerDto(PageDto<TraiteAPayerDto> Traites, decimal? SoldeCoffre);
 
-/// <summary>Moyen : especes, cheque, virement ou prelevement ; CompteId obligatoire hors espèces ; PartTiroir : complément pris dans la caisse ouverte.</summary>
-public sealed record PaiementTraiteRequete(DateOnly? Date, string? Moyen, long? CompteId, string? Reference, decimal PartTiroir);
+/// <summary>
+/// Moyen : especes, cheque, virement ou prelevement ; CompteId obligatoire hors espèces ; PartTiroir : complément pris dans la caisse ouverte.
+/// Source : « titulaire » ou « pret:ID », traite payée par un prêt ou un apport, hors trésorerie (Moyen ignoré).
+/// </summary>
+public sealed record PaiementTraiteRequete(DateOnly? Date, string? Moyen, long? CompteId, string? Reference, decimal PartTiroir, string? Source = null);
 
 // ---- Crédits clients -------------------------------------------------------------------
 

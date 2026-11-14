@@ -73,9 +73,9 @@ internal static class CatalogueEndpoints
            .ExigerPermission(Permissions.CatalogueCreer);
         api.MapPut("/produits/{id:long}", async (long id, FicheProduitModifiableDto d, ModifierProduit modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await modifier.ExecuterAsync(new FicheProduitModifiable(id, d.NomCommercial, d.Dci, d.Dosage, d.Forme, d.CodeBarre, d.PrixPublic,
+                var information = await modifier.ExecuterAsync(new FicheProduitModifiable(id, d.NomCommercial, d.Dci, d.Dosage, d.Forme, d.CodeBarre, d.PrixPublic,
                     d.TarifReference, d.Remboursable, d.TauxTva, d.Actif), user.UtilisateurId(), ct);
-                return Results.NoContent();
+                return Results.Ok(new ProduitEnregistreDto(id, information));
             })
            .ExigerPermission(Permissions.CatalogueCreer);
 
@@ -113,10 +113,10 @@ internal static class CatalogueEndpoints
                 Pharma.Domain.Catalogue.ClasseReglementaire classe;
                 try { classe = Pharma.Domain.Commun.CodesMetier.ClasseDepuisCode(d.Classe); }
                 catch (ArgumentException) { throw new Pharma.Domain.Commun.RegleMetierException("Classe réglementaire inconnue."); }
-                var id = await creer.ExecuterAsync(new Pharma.Domain.Catalogue.FicheProduit(d.NomCommercial ?? "", d.Dci ?? "", d.Dosage ?? "", d.Forme ?? "",
+                var cree = await creer.ExecuterAsync(new Pharma.Domain.Catalogue.FicheProduit(d.NomCommercial ?? "", d.Dci ?? "", d.Dosage ?? "", d.Forme ?? "",
                     d.PrixPublic, classe, d.CodeBarre, d.TarifReference, d.Remboursable, d.TauxTva, d.StockMinimum, d.NumEnregistrement,
                     d.Categorie, d.ListePsychotrope), user.UtilisateurId(), ct);
-                return Results.Ok(new IdentifiantDto(id));
+                return Results.Ok(new ProduitEnregistreDto(cree.Id, cree.Information));
             })
            .ExigerPermission(Permissions.CatalogueCreer);
 

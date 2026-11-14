@@ -23,28 +23,40 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
         await using var cmd = db.CreateCommand($"""
             {Select}
             -- Sans recherche : patients qui doivent de l'argent ; avec une recherche : aussi ceux dont la dette est soldée (relevé consultable)
-            WHERE (p.solde_credit > 0 OR ($1::text IS NOT NULL AND EXISTS (SELECT 1 FROM credit_mouvement m WHERE m.patient_id = p.id)))
-              AND ($1::text IS NULL OR concat_ws(' ', p.nom, p.prenom) ILIKE '%' || $1 || '%' OR p.telephone LIKE $1 || '%')
+            {Ou(2)}
             ORDER BY p.solde_credit DESC LIMIT 50
             """);
-        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        Recherche(cmd, recherche);
         return await Lire(cmd, ct);
+    }
+
+    /// <summary>
+    /// Critères de la recherche ($1 : texte, $<paramref name="numeroPrefixe"/> : début de numéro normalisé). Téléphone : par début de
+    /// numéro, à partir de 4 chiffres, séparateurs ignorés, +213 = 0 (même règle qu'à la caisse, RechercheTelephone).
+    /// </summary>
+    private static string Ou(int numeroPrefixe) => $"""
+        WHERE (p.solde_credit > 0 OR ($1::text IS NOT NULL AND EXISTS (SELECT 1 FROM credit_mouvement m WHERE m.patient_id = p.id)))
+          AND ($1::text IS NULL OR concat_ws(' ', p.nom, p.prenom) ILIKE '%' || $1 || '%'
+               OR (${numeroPrefixe}::text IS NOT NULL AND {Patients.TelephoneSql.Normalise("p.telephone")} LIKE ${numeroPrefixe} || '%'))
+        """;
+
+    private static void Recherche(NpgsqlCommand cmd, string? recherche)
+    {
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)Pharma.Domain.Ventes.RechercheTelephone.Prefixe(recherche) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
     }
 
     public async Task<Page<PatientEnCredit>> AvecCreditPageAsync(string? recherche, DemandePage page, CancellationToken ct = default)
     {
         // Mêmes critères que AvecCreditAsync, sans plafond de 50 : page et total
-        const string Ou = """
-            WHERE (p.solde_credit > 0 OR ($1::text IS NOT NULL AND EXISTS (SELECT 1 FROM credit_mouvement m WHERE m.patient_id = p.id)))
-              AND ($1::text IS NULL OR concat_ws(' ', p.nom, p.prenom) ILIKE '%' || $1 || '%' OR p.telephone LIKE $1 || '%')
-            """;
-        await using var cmd = db.CreateCommand($"{Select} {Ou} ORDER BY p.solde_credit DESC, p.id LIMIT $2 OFFSET $3");
+        await using var cmd = db.CreateCommand($"{Select} {Ou(4)} ORDER BY p.solde_credit DESC, p.id LIMIT $2 OFFSET $3");
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(page.Taille);
         cmd.Parameters.AddWithValue(page.Decalage);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)Pharma.Domain.Ventes.RechercheTelephone.Prefixe(recherche) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         var lignes = await Lire(cmd, ct);
-        await using var compte = db.CreateCommand($"SELECT count(*) FROM patient p {Ou}");
-        compte.Parameters.Add(new NpgsqlParameter { Value = (object?)recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        await using var compte = db.CreateCommand($"SELECT count(*) FROM patient p {Ou(2)}");
+        Recherche(compte, recherche);
         var total = Convert.ToInt32(await compte.ExecuteScalarAsync(ct));
         return new(lignes, total, page.Page, page.Taille);
     }

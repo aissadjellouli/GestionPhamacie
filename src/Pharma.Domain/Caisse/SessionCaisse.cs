@@ -22,9 +22,21 @@ public sealed record Comptage(IReadOnlyList<LigneComptage> Lignes)
 {
     public decimal Total => Lignes.Sum(l => l.Montant);
 
-    /// <summary>Nombres saisis par coupure ; pour « autres », le montant total des pièces.</summary>
+    /// <summary>Au plus 100 000 billets ou pièces par coupure (au-delà : erreur de saisie).</summary>
+    public const int NombreMaximum = 100_000;
+
+    /// <summary>« Autres pièces » : au plus 10 000 000 DA.</summary>
+    public const decimal AutresMaximum = 10_000_000m;
+
+    /// <summary>
+    /// Nombres saisis par coupure ; pour « autres », le montant total des pièces (arrondi au centime).
+    /// Coupure inconnue refusée (jamais ignorée) ; saisie énorme refusée.
+    /// </summary>
     public static Comptage Depuis(IReadOnlyDictionary<string, decimal> saisies)
     {
+        foreach (var code in saisies.Keys)
+            if (Coupures.Toutes.All(c => c.Code != code))
+                throw new RegleMetierException($"Coupure inconnue : {code}.");
         var lignes = new List<LigneComptage>();
         foreach (var (code, valeur, libelle) in Coupures.Toutes)
         {
@@ -32,11 +44,18 @@ public sealed record Comptage(IReadOnlyList<LigneComptage> Lignes)
             if (saisie < 0)
                 throw new RegleMetierException($"{libelle} : la valeur ne peut pas être négative.");
             if (code == "autres")
-                lignes.Add(new LigneComptage(code, saisie > 0 ? 1 : 0, saisie));
+            {
+                if (saisie > AutresMaximum)
+                    throw new RegleMetierException($"{libelle} : au plus 10 000 000 DA.");
+                var montant = Arrondi.Centime(saisie);
+                lignes.Add(new LigneComptage(code, montant > 0 ? 1 : 0, montant));
+            }
             else
             {
                 if (saisie != Math.Floor(saisie))
                     throw new RegleMetierException($"{libelle} : indiquez un nombre entier.");
+                if (saisie > NombreMaximum)
+                    throw new RegleMetierException($"{libelle} : au plus 100 000 billets ou pièces.");
                 lignes.Add(new LigneComptage(code, (int)saisie, saisie * valeur));
             }
         }

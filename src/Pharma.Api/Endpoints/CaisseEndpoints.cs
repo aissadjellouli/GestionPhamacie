@@ -74,7 +74,7 @@ internal static class CaisseEndpoints
         caisse.MapPost("/cloturer", async (ClotureRequete req, CloturerSessionCaisse cloturer, Pharma.Application.Tresorerie.VerserCaisseAuCoffre verser,
                 ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
-                var vue = await cloturer.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct);
+                var vue = await cloturer.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct, req.ConfirmerZero);
                 var verse = await verser.ApresClotureAutomatiqueAsync(vue.SessionId, user.UtilisateurId(), ct);
                 return Results.Ok(VersDto(vue) with { VerseAuCoffre = verse });
             })
@@ -177,9 +177,12 @@ internal static class CaisseEndpoints
                 Results.Ok((await detenteurs.ListerAsync(Permissions.PsychotropesDelivrer, ct)).Select(d => new DetenteurDroitDto(d.NomComplet, d.CodeComptoir))))
            .ExigerPermission(Permissions.CaisseVendre);
 
-        // Qui peut autoriser sur place une action refusée faute de droit (droit donné, ou « role.titulaire »)
-        api.MapGet("/auth/valideurs", async (string? permission, Pharma.Application.Securite.ListerValidateurs lister, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(permission ?? Pharma.Application.Securite.PermissionServiceExtensions.MarqueTitulaire, ct, user.UtilisateurId()))
+        // Qui peut autoriser sur place une action refusée faute de droit (droit donné, ou « role.titulaire ») ;
+        // ?remise= : remise refusée (caisse.remise), seuls les employés dont le maximum de remise la couvre
+        api.MapGet("/auth/valideurs", async (string? permission, decimal? remise, Pharma.Application.Securite.ListerValidateurs lister, ClaimsPrincipal user,
+                CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(permission ?? Pharma.Application.Securite.PermissionServiceExtensions.MarqueTitulaire, ct, user.UtilisateurId(),
+                        remise is > 0 ? remise : null))
                     .Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet)).ToList()))
            .ExigerConnexion();
 
@@ -215,7 +218,7 @@ internal static class CaisseEndpoints
 
         caisse.MapPost("/releve", async (ClotureRequete req, ReleverCaisse relever, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
-                var r = await relever.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct);
+                var r = await relever.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct, req.ConfirmerZero);
                 return Results.Ok(new ReleveDto(VersDto(r.Cloture), r.NouvelleSessionId));
             })
            .ExigerPermission(Permissions.CaisseVendre);

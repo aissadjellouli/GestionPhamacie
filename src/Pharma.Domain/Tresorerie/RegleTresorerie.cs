@@ -7,11 +7,15 @@ public enum NatureMouvement { Depense, Encaissement, VersementOrganisme }
 
 public static class RegleTresorerie
 {
+    /// <summary>Catégorie des intérêts (et TVA, marge) payés avec une échéance de prêt (volet Financements).</summary>
+    public const string ChargesFinancieres = "charges_financieres";
+
     /// <summary>Catégories de dépenses (code, libellé).</summary>
     public static readonly IReadOnlyList<(string Code, string Libelle)> Categories =
     [
         ("loyer", "Loyer et charges"), ("energie", "Électricité, eau, gaz"), ("salaires", "Salaires et cotisations"),
         ("impots", "Impôts et taxes"), ("fournitures", "Fournitures et consommables"), ("entretien", "Entretien et réparations"),
+        (ChargesFinancieres, "Charges financières (intérêts d’emprunt)"),
         ("autre", "Autre dépense")
     ];
 

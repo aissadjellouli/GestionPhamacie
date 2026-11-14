@@ -15,7 +15,7 @@ public interface IEmplacements
 {
     Task<IReadOnlyList<Emplacement>> ListerAsync(CancellationToken ct = default);
     Task<bool> CodeExisteAsync(string code, long? saufId, CancellationToken ct = default);
-    Task<long> CreerAsync(string code, string rayon, string? etagere, string? tiroir, string? libelle, ZoneEmplacement zone, CancellationToken ct = default);
+    Task<long> CreerAsync(string code, string rayon, string? etagere, string? tiroir, string? libelle, ZoneEmplacement zone, bool actif, CancellationToken ct = default);
     Task<bool> ModifierAsync(long id, string code, string rayon, string? etagere, string? tiroir, string? libelle, ZoneEmplacement zone, bool actif, CancellationToken ct = default);
     Task<string?> NomProduitAsync(long produitId, CancellationToken ct = default);
     Task RangerAsync(long produitId, long? emplacementId, long? reserveId, CancellationToken ct = default);
@@ -38,7 +38,7 @@ public sealed class EnregistrerEmplacement(IEmplacements emplacements, IPermissi
             throw new RegleMetierException($"L’emplacement {code} existe déjà.");
 
         if (id is null)
-            id = await emplacements.CreerAsync(code, rayon, etagere, tiroir, libelle, s.Zone, ct);
+            id = await emplacements.CreerAsync(code, rayon, etagere, tiroir, libelle, s.Zone, s.Actif, ct);   // créé inactif si demandé
         else if (!await emplacements.ModifierAsync(id.Value, code, rayon, etagere, tiroir, libelle, s.Zone, s.Actif, ct))
             throw new RegleMetierException("Emplacement introuvable.");
 

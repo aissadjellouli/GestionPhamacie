@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 074 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 078 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 074 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 078 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict f1QcYt1Btlys2uSnckWmRkkNm1k5FNYIygWqcwmIrMrn2NSk9ydyqAIxJjovwAS
+\restrict 53ZnnHZ4uievkv2KiKrS0hNVfWl6FO9QLkMHbWEDdwXCvJyrEtrhtqNIACj3XDD
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -989,6 +989,25 @@ $$;
 
 
 --
+-- Name: interdire_vidage(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.interdire_vidage() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION '% ne peut pas être vidé (TRUNCATE refusé) : ses lignes sont conservées',
+        CASE TG_TABLE_NAME
+            WHEN 'journal_audit'        THEN 'Le journal des actions'
+            WHEN 'registre_psychotrope' THEN 'Le registre des psychotropes'
+            WHEN 'journal_sauvegarde'   THEN 'Le journal des sauvegardes'
+            ELSE 'La table ' || TG_TABLE_NAME
+        END;
+END;
+$$;
+
+
+--
 -- Name: journaliser_entree_boite(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1032,19 +1051,22 @@ CREATE FUNCTION public.lots_delaisses(p_produit_id bigint DEFAULT NULL::bigint) 
         FROM lot l JOIN reception r ON r.id = l.reception_id
         WHERE p_produit_id IS NULL OR l.produit_id = p_produit_id
     ),
-    -- Ancien lot A, encore en stock et vendable
+    -- Ancien lot A, encore en stock et vendable ; dernière vente validée d'une de ses boîtes
     delaisses AS (
         SELECT a.*,
                (SELECT max(t.traitee_le) FROM alerte t
-                WHERE t.type = 'lot_delaisse' AND t.lot_id = a.id AND t.statut = 'traitee') AS traitee_le
+                WHERE t.type = 'lot_delaisse' AND t.lot_id = a.id AND t.statut = 'traitee') AS traitee_le,
+               (SELECT max(va.date_vente) FROM ligne_vente la JOIN vente va ON va.id = la.vente_id
+                WHERE la.lot_id = a.id AND va.statut = 'validee') AS derniere_vente
         FROM lots a
         WHERE a.quantite_disponible > 0 AND a.date_peremption > current_date AND NOT a.bloque
     ),
     -- Lot B plus récent (reçu après, ou périmant après) qui ne périme pas avant A ; compté depuis l'arrivée
-    -- des deux lots, ou depuis la dernière alerte traitée par le titulaire
+    -- des deux lots, la dernière alerte traitée par le titulaire ou la dernière vente d'une boîte de A
     paires AS (
         SELECT a.id AS a_id, b.id AS b_id,
-               greatest(a.date_reception, b.date_reception, a.traitee_le) AS depuis
+               greatest(a.date_reception, b.date_reception, a.traitee_le, a.derniere_vente) AS depuis,
+               a.derniere_vente
         FROM delaisses a
         JOIN lots b ON b.produit_id = a.produit_id AND b.id <> a.id
         WHERE (b.date_reception > a.date_reception OR b.date_peremption > a.date_peremption)
@@ -1056,9 +1078,8 @@ CREATE FUNCTION public.lots_delaisses(p_produit_id bigint DEFAULT NULL::bigint) 
         JOIN ligne_vente lv ON lv.lot_id = pa.b_id
         JOIN vente v ON v.id = lv.vente_id AND v.statut = 'validee' AND v.date_vente >= pa.depuis
         WHERE lv.raison_lot IS DISTINCT FROM 'peremption'
-          -- Aucune boîte de A vendue depuis
-          AND NOT EXISTS (SELECT 1 FROM ligne_vente la JOIN vente va ON va.id = la.vente_id
-                          WHERE la.lot_id = pa.a_id AND va.statut = 'validee' AND va.date_vente >= pa.depuis)
+          -- Strictement après la dernière vente de A (une vente qui contient aussi une boîte de A ne compte pas)
+          AND (pa.derniere_vente IS NULL OR v.date_vente > pa.derniere_vente)
         GROUP BY pa.a_id, v.utilisateur_id
     ),
     -- Par ancien lot : seuil d'un vendeur atteint, ou seuil collectif atteint par plusieurs vendeurs
@@ -1075,7 +1096,7 @@ CREATE FUNCTION public.lots_delaisses(p_produit_id bigint DEFAULT NULL::bigint) 
            CASE WHEN rt.collectif OR rt.introuvable OR a.date_peremption <= current_date + (SELECT jours_rouge FROM p) THEN 'urgent' ELSE 'attention' END,
            a.produit_id,
            a.id,
-           format('%s, lot %s : %s boîte(s) en stock, plus vendues depuis l''arrivée d''un lot plus récent. %s%s. Risque de péremption ou de perte des boîtes du lot %s : faites l''inventaire de ce produit.',
+           format('%s, lot %s : %s boîte(s) en stock, délaissées : un lot plus récent est vendu à leur place. %s%s. Risque de péremption ou de perte des boîtes du lot %s : faites l''inventaire de ce produit.',
                   pr.nom_commercial, a.numero_lot, a.quantite_disponible,
                   CASE WHEN rt.collectif THEN format('%s vendeurs ont vendu ensemble %s boîte(s) d''un lot plus récent : ', rt.vendeurs, rt.total) ELSE '' END,
                   (SELECT string_agg(format('%s a vendu %s boîte(s) d''un lot plus récent%s', u.nom_complet, ve.boites,
@@ -1969,17 +1990,20 @@ $$;
 CREATE FUNCTION public.ventes_lot(p_produit_id bigint, p_numero_lot text) RETURNS TABLE(o_patient text, o_telephone text, o_date_vente timestamp with time zone, o_ticket text, o_boites bigint)
     LANGUAGE sql STABLE
     AS $$
-    -- Aussi les ventes d'avant l'étiquetage par boîte
+    -- Aussi les ventes d'avant l'étiquetage par boîte ; une vente dont toutes les boîtes du lot ont été rendues est masquée
     SELECT COALESCE(NULLIF(btrim(COALESCE(pt.nom, '') || ' ' || COALESCE(pt.prenom, '')), ''),
                     'Vente anonyme'),
-           pt.telephone, v.date_vente, v.numero, SUM(lv.quantite)::bigint
+           pt.telephone, v.date_vente, v.numero, SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0))::bigint
     FROM ligne_vente lv
     JOIN vente v     ON v.id = lv.vente_id
     JOIN lot l       ON l.id = lv.lot_id
     LEFT JOIN patient pt ON pt.id = v.patient_id
+    LEFT JOIN LATERAL (SELECT sum(rl.quantite) AS rendues
+                       FROM retour_client_ligne rl WHERE rl.ligne_vente_id = lv.id) rd ON true
     WHERE l.produit_id = p_produit_id AND l.numero_lot = p_numero_lot
       AND v.statut = 'validee'
     GROUP BY pt.nom, pt.prenom, pt.telephone, v.date_vente, v.numero
+    HAVING SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0)) > 0
     ORDER BY v.date_vente DESC;
 $$;
 
@@ -2350,6 +2374,36 @@ CREATE TABLE public.alerte (
 
 ALTER TABLE public.alerte ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.alerte_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: alerte_non_envoyee; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alerte_non_envoyee (
+    id bigint NOT NULL,
+    type text NOT NULL,
+    objet text NOT NULL,
+    raison text NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    vue_le timestamp with time zone,
+    vue_par bigint,
+    CONSTRAINT alerte_non_envoyee_check CHECK (((vue_le IS NULL) = (vue_par IS NULL)))
+);
+
+
+--
+-- Name: alerte_non_envoyee_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.alerte_non_envoyee ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.alerte_non_envoyee_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -2887,6 +2941,33 @@ ALTER TABLE public.connexion_employe ALTER COLUMN id ADD GENERATED ALWAYS AS IDE
 
 
 --
+-- Name: correspondance_echeancier; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.correspondance_echeancier (
+    compte_id bigint NOT NULL,
+    col_date integer NOT NULL,
+    col_capital integer,
+    col_interets integer,
+    col_tva integer,
+    col_marge integer,
+    col_montant integer,
+    col_encours integer,
+    lignes_ignorees integer DEFAULT 0 NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT correspondance_echeancier_col_capital_check CHECK ((col_capital >= 0)),
+    CONSTRAINT correspondance_echeancier_col_date_check CHECK ((col_date >= 0)),
+    CONSTRAINT correspondance_echeancier_col_encours_check CHECK ((col_encours >= 0)),
+    CONSTRAINT correspondance_echeancier_col_interets_check CHECK ((col_interets >= 0)),
+    CONSTRAINT correspondance_echeancier_col_marge_check CHECK ((col_marge >= 0)),
+    CONSTRAINT correspondance_echeancier_col_montant_check CHECK ((col_montant >= 0)),
+    CONSTRAINT correspondance_echeancier_col_tva_check CHECK ((col_tva >= 0)),
+    CONSTRAINT correspondance_echeancier_lignes_ignorees_check CHECK ((lignes_ignorees >= 0))
+);
+
+
+--
 -- Name: credit_mouvement; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2985,6 +3066,46 @@ CREATE TABLE public.destinataire_notification (
 
 ALTER TABLE public.destinataire_notification ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.destinataire_notification_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: echeance_pret; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.echeance_pret (
+    id bigint NOT NULL,
+    pret_id bigint NOT NULL,
+    rang integer NOT NULL,
+    date_echeance date NOT NULL,
+    capital numeric(12,2) NOT NULL,
+    interets numeric(12,2) DEFAULT 0 NOT NULL,
+    tva numeric(12,2) DEFAULT 0 NOT NULL,
+    marge numeric(12,2) DEFAULT 0 NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    capital_restant numeric(12,2) NOT NULL,
+    CONSTRAINT echeance_pret_capital_check CHECK ((capital >= (0)::numeric)),
+    CONSTRAINT echeance_pret_capital_restant_check CHECK ((capital_restant >= (0)::numeric)),
+    CONSTRAINT echeance_pret_check CHECK (((((capital + interets) + tva) + marge) = montant)),
+    CONSTRAINT echeance_pret_interets_check CHECK ((interets >= (0)::numeric)),
+    CONSTRAINT echeance_pret_marge_check CHECK ((marge >= (0)::numeric)),
+    CONSTRAINT echeance_pret_montant_check CHECK ((montant > (0)::numeric)),
+    CONSTRAINT echeance_pret_rang_check CHECK ((rang > 0)),
+    CONSTRAINT echeance_pret_tva_check CHECK ((tva >= (0)::numeric))
+);
+
+
+--
+-- Name: echeance_pret_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.echeance_pret ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.echeance_pret_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -3674,7 +3795,7 @@ CREATE TABLE public.mouvement_tresorerie (
     CONSTRAINT mouvement_tresorerie_check1 CHECK (((nature <> 'versement_caisse'::text) OR ((session_caisse_id IS NOT NULL) AND (sens = 'entree'::text)))),
     CONSTRAINT mouvement_tresorerie_check2 CHECK (((nature <> 'depense'::text) OR ((sens = 'sortie'::text) AND (categorie IS NOT NULL)))),
     CONSTRAINT mouvement_tresorerie_montant_check CHECK ((montant > (0)::numeric)),
-    CONSTRAINT mouvement_tresorerie_nature_check CHECK ((nature = ANY (ARRAY['depense'::text, 'encaissement'::text, 'versement_organisme'::text, 'transfert'::text, 'versement_caisse'::text]))),
+    CONSTRAINT mouvement_tresorerie_nature_check CHECK ((nature = ANY (ARRAY['depense'::text, 'encaissement'::text, 'versement_organisme'::text, 'transfert'::text, 'versement_caisse'::text, 'financement'::text, 'remboursement_financement'::text]))),
     CONSTRAINT mouvement_tresorerie_sens_check CHECK ((sens = ANY (ARRAY['entree'::text, 'sortie'::text])))
 );
 
@@ -3850,6 +3971,44 @@ CREATE TABLE public.paiement (
 
 
 --
+-- Name: paiement_echeance_pret; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.paiement_echeance_pret (
+    id bigint NOT NULL,
+    echeance_id bigint NOT NULL,
+    date_paiement date NOT NULL,
+    moyen text NOT NULL,
+    compte_id bigint,
+    reference text,
+    part_tiroir numeric(12,2) DEFAULT 0 NOT NULL,
+    versement_id bigint,
+    mouvement_capital_id bigint,
+    mouvement_charges_id bigint,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT paiement_echeance_pret_check CHECK (((moyen = 'especes'::text) OR ((compte_id IS NOT NULL) AND (reference IS NOT NULL)))),
+    CONSTRAINT paiement_echeance_pret_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (versement_id IS NOT NULL)))),
+    CONSTRAINT paiement_echeance_pret_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text]))),
+    CONSTRAINT paiement_echeance_pret_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
+);
+
+
+--
+-- Name: paiement_echeance_pret_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.paiement_echeance_pret ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.paiement_echeance_pret_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: paiement_effet; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3864,9 +4023,9 @@ CREATE TABLE public.paiement_effet (
     versement_id bigint,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT paiement_effet_check CHECK (((moyen = 'especes'::text) OR (compte_id IS NOT NULL))),
+    CONSTRAINT paiement_effet_check CHECK (((moyen = ANY (ARRAY['especes'::text, 'financement'::text])) OR (compte_id IS NOT NULL))),
     CONSTRAINT paiement_effet_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (versement_id IS NOT NULL)))),
-    CONSTRAINT paiement_effet_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text]))),
+    CONSTRAINT paiement_effet_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text, 'financement'::text]))),
     CONSTRAINT paiement_effet_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
 );
 
@@ -4176,6 +4335,38 @@ CREATE TABLE public.pharmacie (
 
 
 --
+-- Name: pret_bancaire; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pret_bancaire (
+    id bigint NOT NULL,
+    compte_id bigint NOT NULL,
+    reference text NOT NULL,
+    objet text,
+    montant numeric(12,2) NOT NULL,
+    date_pret date NOT NULL,
+    document text,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pret_bancaire_montant_check CHECK ((montant > (0)::numeric))
+);
+
+
+--
+-- Name: pret_bancaire_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.pret_bancaire ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.pret_bancaire_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: produit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4446,7 +4637,7 @@ CREATE TABLE public.reglement_fournisseur (
     CONSTRAINT reglement_fournisseur_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (session_caisse_id IS NOT NULL)))),
     CONSTRAINT reglement_fournisseur_check2 CHECK (((moyen <> 'effet'::text) OR (echeance IS NOT NULL))),
     CONSTRAINT reglement_fournisseur_montant_check CHECK ((montant > (0)::numeric)),
-    CONSTRAINT reglement_fournisseur_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'effet'::text, 'prelevement'::text]))),
+    CONSTRAINT reglement_fournisseur_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'effet'::text, 'prelevement'::text, 'financement'::text]))),
     CONSTRAINT reglement_fournisseur_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
 );
 
@@ -4457,6 +4648,38 @@ CREATE TABLE public.reglement_fournisseur (
 
 ALTER TABLE public.reglement_fournisseur ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.reglement_fournisseur_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: remboursement_titulaire; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.remboursement_titulaire (
+    id bigint NOT NULL,
+    date_remboursement date NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    compte_id bigint NOT NULL,
+    mouvement_id bigint NOT NULL,
+    libelle text NOT NULL,
+    reference text,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT remboursement_titulaire_montant_check CHECK ((montant > (0)::numeric))
+);
+
+
+--
+-- Name: remboursement_titulaire_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.remboursement_titulaire ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.remboursement_titulaire_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -4877,6 +5100,49 @@ ALTER TABLE public.utilisateur ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY 
 
 
 --
+-- Name: utilisation_financement; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.utilisation_financement (
+    id bigint NOT NULL,
+    source text NOT NULL,
+    pret_id bigint,
+    usage text NOT NULL,
+    date_usage date NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    libelle text NOT NULL,
+    mouvement_id bigint,
+    depense_id bigint,
+    reglement_id bigint,
+    paiement_effet_id bigint,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT utilisation_financement_check CHECK (((source = 'pret'::text) = (pret_id IS NOT NULL))),
+    CONSTRAINT utilisation_financement_check1 CHECK (((usage <> 'tresorerie'::text) OR (mouvement_id IS NOT NULL))),
+    CONSTRAINT utilisation_financement_check2 CHECK (((usage <> 'depense'::text) OR ((mouvement_id IS NOT NULL) AND (depense_id IS NOT NULL)))),
+    CONSTRAINT utilisation_financement_check3 CHECK (((usage <> 'reglement'::text) OR (reglement_id IS NOT NULL))),
+    CONSTRAINT utilisation_financement_check4 CHECK (((usage <> 'traite'::text) OR (paiement_effet_id IS NOT NULL))),
+    CONSTRAINT utilisation_financement_montant_check CHECK ((montant > (0)::numeric)),
+    CONSTRAINT utilisation_financement_source_check CHECK ((source = ANY (ARRAY['pret'::text, 'titulaire'::text]))),
+    CONSTRAINT utilisation_financement_usage_check CHECK ((usage = ANY (ARRAY['tresorerie'::text, 'depense'::text, 'reglement'::text, 'traite'::text])))
+);
+
+
+--
+-- Name: utilisation_financement_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.utilisation_financement ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.utilisation_financement_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: vente; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5065,6 +5331,36 @@ CREATE VIEW public.v_cheque_a_remettre AS
 
 
 --
+-- Name: v_compte_titulaire; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_compte_titulaire AS
+ SELECT 'apport'::text AS sens,
+    f.date_usage AS date,
+    f.montant,
+    f.usage,
+    f.libelle,
+    f.id AS source_id,
+    u.nom_complet AS employe,
+    f.cree_le
+   FROM (public.utilisation_financement f
+     JOIN public.utilisateur u ON ((u.id = f.utilisateur_id)))
+  WHERE (f.source = 'titulaire'::text)
+UNION ALL
+ SELECT 'remboursement'::text AS sens,
+    r.date_remboursement AS date,
+    r.montant,
+    'remboursement'::text AS usage,
+    (((r.libelle || ' ('::text) || c.nom) || ')'::text) AS libelle,
+    r.id AS source_id,
+    u.nom_complet AS employe,
+    r.cree_le
+   FROM ((public.remboursement_titulaire r
+     JOIN public.compte_tresorerie c ON ((c.id = r.compte_id)))
+     JOIN public.utilisateur u ON ((u.id = r.utilisateur_id)));
+
+
+--
 -- Name: v_credit_accorde; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -5081,6 +5377,123 @@ CREATE VIEW public.v_credit_accorde AS
            FROM public.paiement p
           WHERE ((p.vente_id = v.id) AND (p.mode = 'credit'::text))) x ON ((x.montant > (0)::numeric)))
   WHERE ((v.statut = 'validee'::text) AND (v.patient_id IS NOT NULL));
+
+
+--
+-- Name: v_echeance_pret; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_echeance_pret AS
+ SELECT e.id,
+    e.pret_id,
+    p.reference AS pret,
+    p.compte_id AS banque_id,
+    c.nom AS banque,
+    e.rang,
+    e.date_echeance,
+    e.capital,
+    e.interets,
+    e.tva,
+    e.marge,
+    e.montant,
+    e.capital_restant,
+    pe.date_paiement,
+    pe.moyen,
+    pe.compte_id,
+    cp.nom AS compte,
+    pe.reference,
+    pe.part_tiroir,
+    u.nom_complet AS employe
+   FROM (((((public.echeance_pret e
+     JOIN public.pret_bancaire p ON ((p.id = e.pret_id)))
+     JOIN public.compte_tresorerie c ON ((c.id = p.compte_id)))
+     LEFT JOIN public.paiement_echeance_pret pe ON ((pe.echeance_id = e.id)))
+     LEFT JOIN public.compte_tresorerie cp ON ((cp.id = pe.compte_id)))
+     LEFT JOIN public.utilisateur u ON ((u.id = pe.utilisateur_id)));
+
+
+--
+-- Name: v_pret_bancaire; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_pret_bancaire AS
+ SELECT p.id,
+    p.compte_id,
+    c.nom AS banque,
+    p.reference,
+    p.objet,
+    p.montant,
+    p.date_pret,
+    p.document,
+    COALESCE(e.capital_paye, (0)::numeric) AS capital_rembourse,
+    (p.montant - COALESCE(e.capital_paye, (0)::numeric)) AS reste_du,
+    COALESCE(( SELECT sum(x.montant) AS sum
+           FROM public.utilisation_financement x
+          WHERE (x.pret_id = p.id)), (0)::numeric) AS utilise,
+    (COALESCE(e.nombre, (0)::bigint))::integer AS echeances,
+    (COALESCE(e.payees, (0)::bigint))::integer AS echeances_payees,
+    (COALESCE(e.echues, (0)::bigint))::integer AS echues_non_payees,
+    ( SELECT v.date_echeance
+           FROM public.v_echeance_pret v
+          WHERE ((v.pret_id = p.id) AND (v.date_paiement IS NULL))
+          ORDER BY v.rang
+         LIMIT 1) AS prochaine_echeance,
+    ( SELECT v.montant
+           FROM public.v_echeance_pret v
+          WHERE ((v.pret_id = p.id) AND (v.date_paiement IS NULL))
+          ORDER BY v.rang
+         LIMIT 1) AS prochain_montant,
+    u.nom_complet AS employe,
+    p.cree_le
+   FROM (((public.pret_bancaire p
+     JOIN public.compte_tresorerie c ON ((c.id = p.compte_id)))
+     JOIN public.utilisateur u ON ((u.id = p.utilisateur_id)))
+     LEFT JOIN LATERAL ( SELECT count(*) AS nombre,
+            count(v.date_paiement) AS payees,
+            sum(v.capital) FILTER (WHERE (v.date_paiement IS NOT NULL)) AS capital_paye,
+            count(*) FILTER (WHERE ((v.date_paiement IS NULL) AND (v.date_echeance < CURRENT_DATE))) AS echues
+           FROM public.v_echeance_pret v
+          WHERE (v.pret_id = p.id)) e ON (true));
+
+
+--
+-- Name: v_dette_financement; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_dette_financement AS
+ SELECT 'dette'::text AS sens,
+    'pret'::text AS categorie,
+    NULL::bigint AS tiers_id,
+    p.banque AS tiers,
+    ((('Prêt '::text || p.reference) || COALESCE((' · '::text || p.objet), ''::text)) ||
+        CASE
+            WHEN (p.echues_non_payees > 0) THEN ' · échéance échue, non payée'::text
+            ELSE ''::text
+        END) AS libelle,
+    p.date_pret AS date_reference,
+    p.prochaine_echeance AS echeance,
+    p.reste_du AS montant,
+    false AS rejetee
+   FROM public.v_pret_bancaire p
+  WHERE (p.reste_du > (0)::numeric)
+UNION ALL
+ SELECT 'dette'::text AS sens,
+    'titulaire'::text AS categorie,
+    NULL::bigint AS tiers_id,
+    'Titulaire'::text AS tiers,
+    'Apports du titulaire non remboursés'::text AS libelle,
+    t.depuis AS date_reference,
+    NULL::date AS echeance,
+    t.solde AS montant,
+    false AS rejetee
+   FROM ( SELECT COALESCE(sum(
+                CASE
+                    WHEN (v_compte_titulaire.sens = 'apport'::text) THEN v_compte_titulaire.montant
+                    ELSE (- v_compte_titulaire.montant)
+                END), (0)::numeric) AS solde,
+            min(v_compte_titulaire.date) FILTER (WHERE (v_compte_titulaire.sens = 'apport'::text)) AS depuis
+           FROM public.v_compte_titulaire) t
+  WHERE (t.solde > (0)::numeric);
 
 
 --
@@ -5864,6 +6277,14 @@ ALTER TABLE ONLY import.stock_src
 
 
 --
+-- Name: alerte_non_envoyee alerte_non_envoyee_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alerte_non_envoyee
+    ADD CONSTRAINT alerte_non_envoyee_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: alerte alerte_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6072,6 +6493,14 @@ ALTER TABLE ONLY public.connexion_employe
 
 
 --
+-- Name: correspondance_echeancier correspondance_echeancier_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correspondance_echeancier
+    ADD CONSTRAINT correspondance_echeancier_pkey PRIMARY KEY (compte_id);
+
+
+--
 -- Name: credit_mouvement credit_mouvement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6109,6 +6538,22 @@ ALTER TABLE ONLY public.dci
 
 ALTER TABLE ONLY public.destinataire_notification
     ADD CONSTRAINT destinataire_notification_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: echeance_pret echeance_pret_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.echeance_pret
+    ADD CONSTRAINT echeance_pret_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: echeance_pret echeance_pret_pret_id_rang_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.echeance_pret
+    ADD CONSTRAINT echeance_pret_pret_id_rang_key UNIQUE (pret_id, rang);
 
 
 --
@@ -6352,6 +6797,22 @@ ALTER TABLE ONLY public.organisme
 
 
 --
+-- Name: paiement_echeance_pret paiement_echeance_pret_echeance_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_echeance_pret
+    ADD CONSTRAINT paiement_echeance_pret_echeance_id_key UNIQUE (echeance_id);
+
+
+--
+-- Name: paiement_echeance_pret paiement_echeance_pret_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_echeance_pret
+    ADD CONSTRAINT paiement_echeance_pret_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: paiement_effet paiement_effet_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6472,6 +6933,22 @@ ALTER TABLE ONLY public.pharmacie
 
 
 --
+-- Name: pret_bancaire pret_bancaire_compte_id_reference_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pret_bancaire
+    ADD CONSTRAINT pret_bancaire_compte_id_reference_key UNIQUE (compte_id, reference);
+
+
+--
+-- Name: pret_bancaire pret_bancaire_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pret_bancaire
+    ADD CONSTRAINT pret_bancaire_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: produit produit_code_barre_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6565,6 +7042,14 @@ ALTER TABLE ONLY public.reglement_facture
 
 ALTER TABLE ONLY public.reglement_fournisseur
     ADD CONSTRAINT reglement_fournisseur_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: remboursement_titulaire remboursement_titulaire_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_titulaire
+    ADD CONSTRAINT remboursement_titulaire_pkey PRIMARY KEY (id);
 
 
 --
@@ -6696,6 +7181,14 @@ ALTER TABLE ONLY public.utilisateur
 
 
 --
+-- Name: utilisation_financement utilisation_financement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.utilisation_financement
+    ADD CONSTRAINT utilisation_financement_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: lot ux_lot_fournisseur_date; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6717,6 +7210,13 @@ ALTER TABLE ONLY public.vente
 
 ALTER TABLE ONLY public.vente
     ADD CONSTRAINT vente_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_alerte_non_envoyee_non_vue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alerte_non_envoyee_non_vue ON public.alerte_non_envoyee USING btree (id) WHERE (vue_le IS NULL);
 
 
 --
@@ -6822,6 +7322,13 @@ CREATE INDEX idx_dci_nom_sans_accent ON public.dci USING gin (public.sans_accent
 --
 
 CREATE INDEX idx_dci_nom_trgm ON public.dci USING gin (nom public.gin_trgm_ops);
+
+
+--
+-- Name: idx_echeance_pret_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_echeance_pret_date ON public.echeance_pret USING btree (date_echeance);
 
 
 --
@@ -7217,6 +7724,13 @@ CREATE INDEX idx_session_fermee ON public.session_caisse USING btree (fermee_le)
 
 
 --
+-- Name: idx_utilisation_financement_pret; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_utilisation_financement_pret ON public.utilisation_financement USING btree (pret_id);
+
+
+--
 -- Name: idx_vente_bordereau; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7326,6 +7840,20 @@ CREATE UNIQUE INDEX ux_boite_vue_inventaire ON public.boite_evenement USING btre
 --
 
 CREATE UNIQUE INDEX ux_campagne_en_cours ON public.campagne_inventaire USING btree ((true)) WHERE (statut = 'en_cours'::text);
+
+
+--
+-- Name: ux_client_facture_raison_sociale_ci; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_client_facture_raison_sociale_ci ON public.client_facture USING btree (lower(btrim(raison_sociale)));
+
+
+--
+-- Name: ux_compte_tresorerie_nom_ci; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_compte_tresorerie_nom_ci ON public.compte_tresorerie USING btree (lower(btrim(nom)));
 
 
 --
@@ -7681,10 +8209,24 @@ CREATE TRIGGER trg_journal_immuable BEFORE DELETE OR UPDATE ON public.journal_au
 
 
 --
+-- Name: journal_audit trg_journal_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_journal_non_vidable BEFORE TRUNCATE ON public.journal_audit FOR EACH STATEMENT EXECUTE FUNCTION public.interdire_vidage();
+
+
+--
 -- Name: journal_sauvegarde trg_journal_sauvegarde_immuable; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_journal_sauvegarde_immuable BEFORE DELETE OR UPDATE ON public.journal_sauvegarde FOR EACH ROW EXECUTE FUNCTION public.interdire_modification_historique();
+
+
+--
+-- Name: journal_sauvegarde trg_journal_sauvegarde_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_journal_sauvegarde_non_vidable BEFORE TRUNCATE ON public.journal_sauvegarde FOR EACH STATEMENT EXECUTE FUNCTION public.interdire_vidage();
 
 
 --
@@ -7741,6 +8283,13 @@ CREATE TRIGGER trg_proteger_role_systeme BEFORE INSERT OR DELETE ON public.role_
 --
 
 CREATE TRIGGER trg_registre_immuable BEFORE DELETE OR UPDATE ON public.registre_psychotrope FOR EACH ROW EXECUTE FUNCTION public.interdire_modification();
+
+
+--
+-- Name: registre_psychotrope trg_registre_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_registre_non_vidable BEFORE TRUNCATE ON public.registre_psychotrope FOR EACH STATEMENT EXECUTE FUNCTION public.interdire_vidage();
 
 
 --
@@ -7861,6 +8410,14 @@ ALTER TABLE ONLY import.stock_src
 
 ALTER TABLE ONLY public.alerte
     ADD CONSTRAINT alerte_lot_id_fkey FOREIGN KEY (lot_id) REFERENCES public.lot(id);
+
+
+--
+-- Name: alerte_non_envoyee alerte_non_envoyee_vue_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alerte_non_envoyee
+    ADD CONSTRAINT alerte_non_envoyee_vue_par_fkey FOREIGN KEY (vue_par) REFERENCES public.utilisateur(id);
 
 
 --
@@ -8176,6 +8733,22 @@ ALTER TABLE ONLY public.connexion_employe
 
 
 --
+-- Name: correspondance_echeancier correspondance_echeancier_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correspondance_echeancier
+    ADD CONSTRAINT correspondance_echeancier_compte_id_fkey FOREIGN KEY (compte_id) REFERENCES public.compte_tresorerie(id);
+
+
+--
+-- Name: correspondance_echeancier correspondance_echeancier_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correspondance_echeancier
+    ADD CONSTRAINT correspondance_echeancier_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: credit_mouvement credit_mouvement_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8205,6 +8778,14 @@ ALTER TABLE ONLY public.credit_mouvement
 
 ALTER TABLE ONLY public.credit_ouverture
     ADD CONSTRAINT credit_ouverture_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: echeance_pret echeance_pret_pret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.echeance_pret
+    ADD CONSTRAINT echeance_pret_pret_id_fkey FOREIGN KEY (pret_id) REFERENCES public.pret_bancaire(id);
 
 
 --
@@ -8656,6 +9237,54 @@ ALTER TABLE ONLY public.ordonnance
 
 
 --
+-- Name: paiement_echeance_pret paiement_echeance_pret_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_echeance_pret
+    ADD CONSTRAINT paiement_echeance_pret_compte_id_fkey FOREIGN KEY (compte_id) REFERENCES public.compte_tresorerie(id);
+
+
+--
+-- Name: paiement_echeance_pret paiement_echeance_pret_echeance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_echeance_pret
+    ADD CONSTRAINT paiement_echeance_pret_echeance_id_fkey FOREIGN KEY (echeance_id) REFERENCES public.echeance_pret(id);
+
+
+--
+-- Name: paiement_echeance_pret paiement_echeance_pret_mouvement_capital_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_echeance_pret
+    ADD CONSTRAINT paiement_echeance_pret_mouvement_capital_id_fkey FOREIGN KEY (mouvement_capital_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
+-- Name: paiement_echeance_pret paiement_echeance_pret_mouvement_charges_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_echeance_pret
+    ADD CONSTRAINT paiement_echeance_pret_mouvement_charges_id_fkey FOREIGN KEY (mouvement_charges_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
+-- Name: paiement_echeance_pret paiement_echeance_pret_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_echeance_pret
+    ADD CONSTRAINT paiement_echeance_pret_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: paiement_echeance_pret paiement_echeance_pret_versement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_echeance_pret
+    ADD CONSTRAINT paiement_echeance_pret_versement_id_fkey FOREIGN KEY (versement_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
 -- Name: paiement_effet paiement_effet_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8741,6 +9370,22 @@ ALTER TABLE ONLY public.patient
 
 ALTER TABLE ONLY public.patient
     ADD CONSTRAINT patient_organisme_id_fkey FOREIGN KEY (organisme_id) REFERENCES public.organisme(id);
+
+
+--
+-- Name: pret_bancaire pret_bancaire_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pret_bancaire
+    ADD CONSTRAINT pret_bancaire_compte_id_fkey FOREIGN KEY (compte_id) REFERENCES public.compte_tresorerie(id);
+
+
+--
+-- Name: pret_bancaire pret_bancaire_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pret_bancaire
+    ADD CONSTRAINT pret_bancaire_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
 
 
 --
@@ -8952,6 +9597,30 @@ ALTER TABLE ONLY public.reglement_fournisseur
 
 
 --
+-- Name: remboursement_titulaire remboursement_titulaire_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_titulaire
+    ADD CONSTRAINT remboursement_titulaire_compte_id_fkey FOREIGN KEY (compte_id) REFERENCES public.compte_tresorerie(id);
+
+
+--
+-- Name: remboursement_titulaire remboursement_titulaire_mouvement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_titulaire
+    ADD CONSTRAINT remboursement_titulaire_mouvement_id_fkey FOREIGN KEY (mouvement_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
+-- Name: remboursement_titulaire remboursement_titulaire_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_titulaire
+    ADD CONSTRAINT remboursement_titulaire_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: remise_automatique remise_automatique_arretee_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9144,6 +9813,54 @@ ALTER TABLE ONLY public.utilisateur
 
 
 --
+-- Name: utilisation_financement utilisation_financement_depense_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.utilisation_financement
+    ADD CONSTRAINT utilisation_financement_depense_id_fkey FOREIGN KEY (depense_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
+-- Name: utilisation_financement utilisation_financement_mouvement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.utilisation_financement
+    ADD CONSTRAINT utilisation_financement_mouvement_id_fkey FOREIGN KEY (mouvement_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
+-- Name: utilisation_financement utilisation_financement_paiement_effet_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.utilisation_financement
+    ADD CONSTRAINT utilisation_financement_paiement_effet_id_fkey FOREIGN KEY (paiement_effet_id) REFERENCES public.paiement_effet(id);
+
+
+--
+-- Name: utilisation_financement utilisation_financement_pret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.utilisation_financement
+    ADD CONSTRAINT utilisation_financement_pret_id_fkey FOREIGN KEY (pret_id) REFERENCES public.pret_bancaire(id);
+
+
+--
+-- Name: utilisation_financement utilisation_financement_reglement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.utilisation_financement
+    ADD CONSTRAINT utilisation_financement_reglement_id_fkey FOREIGN KEY (reglement_id) REFERENCES public.reglement_fournisseur(id);
+
+
+--
+-- Name: utilisation_financement utilisation_financement_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.utilisation_financement
+    ADD CONSTRAINT utilisation_financement_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: vente vente_bordereau_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9195,5 +9912,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict f1QcYt1Btlys2uSnckWmRkkNm1k5FNYIygWqcwmIrMrn2NSk9ydyqAIxJjovwAS
+\unrestrict 53ZnnHZ4uievkv2KiKrS0hNVfWl6FO9QLkMHbWEDdwXCvJyrEtrhtqNIACj3XDD
 

@@ -160,22 +160,28 @@ public sealed class NomenclatureSql(NpgsqlDataSource db) : INomenclature
 
         // Le produit entre sous registre (psychotrope, stupéfiant) avec du stock : solde d'ouverture par lot, comme au
         // démarrage du registre (024), sinon la première délivrance donnerait un solde négatif. Une seule fois par produit.
-        if (classe is "psychotrope" or "stupefiant")
-        {
-            await using var cmd = new NpgsqlCommand("""
-                INSERT INTO registre_psychotrope (lot_id, type_mouvement, quantite, solde_apres, utilisateur_id, reference)
-                SELECT l.id, 'ouverture', l.quantite_disponible, l.quantite_disponible, $2, 'Solde d''ouverture : produit classé sous registre'
-                FROM lot l
-                WHERE l.produit_id = $1 AND l.quantite_disponible > 0
-                  AND NOT EXISTS (SELECT 1 FROM registre_psychotrope r JOIN lot l2 ON l2.id = r.lot_id
-                                  WHERE l2.produit_id = $1 AND r.type_mouvement = 'ouverture')
-                ORDER BY l.id
-                """, cx, tx);
-            cmd.Parameters.AddWithValue(produitId);
-            cmd.Parameters.AddWithValue(utilisateurId);
-            await cmd.ExecuteNonQueryAsync(ct);
-        }
+        if (classe is "psychotrope" or "stupefiant") await InscrireOuvertureAsync(cx, tx, produitId, utilisateurId, ct);
         await tx.CommitAsync(ct);
         return ancienne;
+    }
+
+    /// <summary>
+    /// Produit qui entre sous registre avec du stock : solde d'ouverture par lot, une seule fois par produit
+    /// (aussi pour une classe imposée à la modification de la fiche).
+    /// </summary>
+    internal static async Task InscrireOuvertureAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long produitId, long utilisateurId, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand("""
+            INSERT INTO registre_psychotrope (lot_id, type_mouvement, quantite, solde_apres, utilisateur_id, reference)
+            SELECT l.id, 'ouverture', l.quantite_disponible, l.quantite_disponible, $2, 'Solde d''ouverture : produit classé sous registre'
+            FROM lot l
+            WHERE l.produit_id = $1 AND l.quantite_disponible > 0
+              AND NOT EXISTS (SELECT 1 FROM registre_psychotrope r JOIN lot l2 ON l2.id = r.lot_id
+                              WHERE l2.produit_id = $1 AND r.type_mouvement = 'ouverture')
+            ORDER BY l.id
+            """, cx, tx);
+        cmd.Parameters.AddWithValue(produitId);
+        cmd.Parameters.AddWithValue(utilisateurId);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 }

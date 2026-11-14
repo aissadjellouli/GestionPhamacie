@@ -60,7 +60,14 @@ internal sealed class AchatsEnMemoire : IAchats
         Task.FromResult<(long Id, string Nom)?>(Gtins.TryGetValue(gtin, out var p) ? p : null);
     public Task ModifierLigneAsync(long commandeId, long ligneId, int quantite, decimal prixHt, CancellationToken ct = default) => throw new NotSupportedException();
     public Task SupprimerLigneAsync(long commandeId, long ligneId, CancellationToken ct = default) => throw new NotSupportedException();
-    public Task ChangerStatutCommandeAsync(long commandeId, string statut, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Statut de la commande en base (null : celui de <see cref="Commande"/>), changé par un autre poste dans les tests.</summary>
+    public string? StatutEnBase { get; set; }
+    public Task<bool> ChangerStatutCommandeAsync(long commandeId, string statutAttendu, string statut, CancellationToken ct = default)
+    {
+        if ((StatutEnBase ?? Commande?.Entete.Statut) != statutAttendu) return Task.FromResult(false);
+        StatutEnBase = statut;
+        return Task.FromResult(true);
+    }
     public Task<IReadOnlyList<ReceptionResume>> ReceptionsAvecDocumentAsync(long f, string n, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<ReceptionResume>>(n == "26/F-015695" ? [new ReceptionResume(9, "Qouds", n, null, null, DateTime.UtcNow, 0, 0, 100, f)] : []);
     public Task<Pharma.Application.Commun.Page<ReceptionResume>> ReceptionsAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
@@ -232,6 +239,36 @@ public class AchatsApplicationTests
     public async Task Meme_lot_sur_deux_lignes_refuse() =>
         await Assert.ThrowsAsync<RegleMetierException>(() => Reception(new AchatsEnMemoire()).ExecuterAsync(new SaisieReception(1, null, "BL", null,
             [new LigneReceptionSaisie(1, "x", "l1", Aujourdhui.AddYears(1), 1, 1m), new LigneReceptionSaisie(1, "x", "L1", Aujourdhui.AddYears(1), 1, 1m)]), 5));
+
+    [Fact]
+    public async Task Annulation_d_une_commande_emise_entre_temps_sur_un_autre_poste_refusee()
+    {
+        // Lue « brouillon » à l'écran, mais émise entre-temps : le statut en base ne correspond plus
+        var achats = new AchatsEnMemoire
+        {
+            Commande = new CommandeDetail(new CommandeResume(3, "C-000003", 2, "Grossiste 2", DateTime.UtcNow, "brouillon", 1, 100), []),
+            StatutEnBase = "envoyee"
+        };
+        var journal = new JournalEspion();
+        var e = await Assert.ThrowsAsync<RegleMetierException>(() =>
+            new AnnulerCommande(achats, new DroitsFactices("achats.commander"), journal).ExecuterAsync(3, 5));
+        Assert.Equal(RegleCommande.ModifieeEntreTemps, e.Message);
+        Assert.Empty(journal.Actions);
+        Assert.Equal("envoyee", achats.StatutEnBase);
+    }
+
+    [Fact]
+    public async Task Annulation_avec_le_statut_lu_toujours_en_base_acceptee()
+    {
+        var achats = new AchatsEnMemoire
+        {
+            Commande = new CommandeDetail(new CommandeResume(3, "C-000003", 2, "Grossiste 2", DateTime.UtcNow, "envoyee", 1, 100), [])
+        };
+        var journal = new JournalEspion();
+        await new AnnulerCommande(achats, new DroitsFactices("achats.commander"), journal).ExecuterAsync(3, 5);
+        Assert.Equal("annulee", achats.StatutEnBase);
+        Assert.Equal(["commande_annulee"], journal.Actions);
+    }
 }
 
 public class AnalyseReceptionTests

@@ -478,6 +478,7 @@ public static class Libelles
     private static readonly Dictionary<string, string> ValeursCodees = new()
     {
         ["especes"] = "espèces", ["cheque"] = "chèque", ["carte"] = "carte", ["virement"] = "virement", ["effet"] = "traite", ["prelevement"] = "prélèvement", ["credit"] = "crédit",
+        ["financement"] = "prêt ou apport du titulaire",
         ["perime"] = "périmé", ["casse"] = "cassé", ["echantillon"] = "échantillon ou don", ["peremption_proche"] = "péremption proche",
         ["erreur_livraison"] = "erreur de livraison"
     };

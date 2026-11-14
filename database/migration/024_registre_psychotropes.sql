@@ -14,10 +14,17 @@
 -- =====================================================================
 
 -- Types de lignes : entrées (+) et sorties (-)
-ALTER TABLE registre_psychotrope DROP CONSTRAINT IF EXISTS registre_psychotrope_type_mouvement_check;
-ALTER TABLE registre_psychotrope ADD CONSTRAINT registre_psychotrope_type_mouvement_check CHECK (type_mouvement IN (
-    'ouverture', 'entree', 'retour_client', 'retour_refuse', 'ecart_plus',                 -- entrées
-    'sortie', 'retour_fournisseur', 'destruction', 'casse', 'ecart_moins'));               -- sorties
+-- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « ouverture »
+-- (la liste de 001 : entree, sortie, destruction), jamais ramenée en arrière par un rejeu
+DO $garde$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'registre_psychotrope_type_mouvement_check' AND pg_get_constraintdef(oid) LIKE '%''ouverture''%') THEN
+        ALTER TABLE registre_psychotrope DROP CONSTRAINT IF EXISTS registre_psychotrope_type_mouvement_check;
+        ALTER TABLE registre_psychotrope ADD CONSTRAINT registre_psychotrope_type_mouvement_check CHECK (type_mouvement IN (
+            'ouverture', 'entree', 'retour_client', 'retour_refuse', 'ecart_plus',             -- entrées
+            'sortie', 'retour_fournisseur', 'destruction', 'casse', 'ecart_moins'));           -- sorties
+    END IF;
+END $garde$;
 
 ALTER TABLE registre_psychotrope ADD COLUMN IF NOT EXISTS mouvement_id    bigint UNIQUE REFERENCES mouvement_stock(id);
 ALTER TABLE registre_psychotrope ADD COLUMN IF NOT EXISTS reference       text;
@@ -53,9 +60,13 @@ DROP TRIGGER IF EXISTS trg_registre_numero ON registre_psychotrope;
 CREATE TRIGGER trg_registre_numero BEFORE INSERT ON registre_psychotrope
     FOR EACH ROW EXECUTE FUNCTION numeroter_registre();
 
-ALTER TABLE registre_psychotrope DROP CONSTRAINT IF EXISTS ck_registre_porteur_complet;
-ALTER TABLE registre_psychotrope ADD CONSTRAINT ck_registre_porteur_complet CHECK (
-    porteur_nom IS NULL OR (porteur_adresse IS NOT NULL AND porteur_piece IS NOT NULL));
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_registre_porteur_complet') THEN
+        ALTER TABLE registre_psychotrope ADD CONSTRAINT ck_registre_porteur_complet CHECK (
+            porteur_nom IS NULL OR (porteur_adresse IS NOT NULL AND porteur_piece IS NOT NULL));
+    END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION est_sous_registre(p_lot_id bigint) RETURNS boolean
 LANGUAGE sql STABLE AS $$

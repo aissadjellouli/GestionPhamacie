@@ -19,14 +19,15 @@ public static class PermissionExtensions
     /// Refus de droit : message clair et, si le titulaire l'a permis, proposition d'autorisation sur place par le code comptoir d'un
     /// employé qui a ce droit (le poste rejoue la demande avec ce code). Code faux : le motif est rendu, la proposition reste ouverte.
     /// </summary>
-    public static async Task<IResult> RefusAsync(HttpContext http, string permission, string message)
+    /// <param name="seuil">Remise refusée : pourcentage demandé, transmis au poste pour filtrer les employés proposés.</param>
+    public static async Task<IResult> RefusAsync(HttpContext http, string permission, string message, decimal? seuil = null)
     {
         var autorisation = http.RequestServices.GetRequiredService<AutorisationParCode>();
         // Droit jamais autorisé par le code d'un collègue (psychotrope ; hors comptoir sur une connexion par code) : pas de proposition
         var active = PermissionsComptoir.AutorisableSurPlace(http.User, permission) && await autorisation.ActiveeAsync(http.RequestAborted);
         var texte = autorisation.Demandee && autorisation.Erreur is { } erreur ? erreur
             : active ? $"{message} Un employé qui a ce droit peut autoriser l’action avec son code comptoir." : message;
-        return Results.Json(new Pharma.Shared.ErreurDto(texte, null, active, permission), statusCode: StatusCodes.Status403Forbidden);
+        return Results.Json(new Pharma.Shared.ErreurDto(texte, null, active, permission, seuil), statusCode: StatusCodes.Status403Forbidden);
     }
 
     // Mot de passe provisoire : tout est refusé tant qu'il n'est pas changé (POST /api/auth/mot-de-passe)

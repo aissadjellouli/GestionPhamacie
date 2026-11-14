@@ -407,6 +407,7 @@ public class CaisseApplicationTests
         {
             var ex = await Assert.ThrowsAsync<DroitRefuseException>(() => cas.ExecuterAsync(Commande(11, 110, remise: remise), 5, "Caisse 1"));
             Assert.Contains("maximum est de 10 %", ex.Message);
+            Assert.Equal(remise, ex.Seuil);   // transmis au poste : seuls les employés dont le maximum couvre la remise sont proposés
             return;
         }
         await cas.ExecuterAsync(Commande(11, 110, remise: remise), 5, "Caisse 1");

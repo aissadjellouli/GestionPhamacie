@@ -126,11 +126,11 @@
             {
                 <div class="tableau-cadre">
                     <table class="tableau">
-                        <thead><tr><th scope="col">Produit</th><th scope="col">Mois</th><th scope="col" class="nombre">Entrées</th><th scope="col" class="nombre">Sorties</th><th scope="col" class="nombre">Solde fin de mois</th></tr></thead>
+                        <thead><tr><th scope="col">Produit</th><th scope="col">Mois</th><th scope="col" class="nombre" title="Solde d’ouverture du registre (stock repris), distinct des entrées">Solde reporté</th><th scope="col" class="nombre">Entrées</th><th scope="col" class="nombre">Sorties</th><th scope="col" class="nombre">Solde fin de mois</th></tr></thead>
                         <tbody>
                             @foreach (var b in registre.Balance.Skip((pageBalance - 1) * tailleBalance).Take(tailleBalance))
                             {
-                                <tr><td>@b.Produit</td><td>@($"{b.Mois:00}/{b.Annee}")</td><td class="nombre">@b.Entrees</td><td class="nombre">@b.Sorties</td><td class="nombre">@(b.SoldeFin?.ToString() ?? "—")</td></tr>
+                                <tr><td>@b.Produit</td><td>@($"{b.Mois:00}/{b.Annee}")</td><td class="nombre">@(b.SoldeReporte == 0 ? "—" : b.SoldeReporte.ToString())</td><td class="nombre">@b.Entrees</td><td class="nombre">@b.Sorties</td><td class="nombre">@(b.SoldeFin?.ToString() ?? "—")</td></tr>
                             }
                         </tbody>
                     </table>

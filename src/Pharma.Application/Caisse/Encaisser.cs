@@ -112,7 +112,7 @@ public sealed class Encaisser(
     IDetenteursDroit? detenteurs = null, Stock.ICampagnesInventaire? campagnes = null,
     VerificationCodeComptoir? codesComptoir = null, IJournal? journal = null,
     Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null,
-    Surveillance.Surveiller? surveillance = null, IRemisesAutomatiques? remisesAuto = null)
+    Surveillance.Surveiller? surveillance = null, IRemisesAutomatiques? remisesAuto = null, ITraceErreurs? trace = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
@@ -142,7 +142,8 @@ public sealed class Encaisser(
             var max = await droits.RemiseMaxAsync(utilisateurId, ct);
             throw new DroitRefuseException(Permissions.CaisseRemise, "accorder une remise", max <= 0
                 ? $"Remise de {vente.RemisePct:0.##} % : vous n’avez pas le droit d’accorder une remise. Faites valider par un employé qui l’a."
-                : $"Remise de {vente.RemisePct:0.##} % : votre maximum est de {max:0.##} %. Faites valider par un employé dont le maximum le permet.");
+                : $"Remise de {vente.RemisePct:0.##} % : votre maximum est de {max:0.##} %. Faites valider par un employé dont le maximum le permet.",
+                vente.RemisePct);   // la fenêtre « Faire autoriser » ne propose que les employés dont le maximum couvre cette remise
         }
         if (vente.DonManuelSurMedicaments && !await droits.APermissionAsync(utilisateurId, Permissions.StockDonner, ct))
             throw new DroitRefuseException(Permissions.StockDonner, "faire un don partiel du reste à charge sur un médicament",
@@ -352,17 +353,17 @@ public sealed class Encaisser(
 
     /// <summary>
     /// Après la vente : ancien lot délaissé au profit d'un lot plus récent (seuil atteint par un vendeur) ; alerte au titulaire, prévenu
-    /// par SMS ou e-mail. La vente est enregistrée : un échec ici ne l'annule pas.
+    /// par SMS ou e-mail. La vente est enregistrée : un échec ici ne l'annule pas ; il est inscrit au journal du serveur (et l'alerte
+    /// qui n'a pas pu partir est signalée au titulaire par le bandeau de l'accueil).
     /// </summary>
-    private async Task AlerterLotsDelaissesAsync(Vente vente)
+    private Task AlerterLotsDelaissesAsync(Vente vente)
     {
-        if (lotsDelaisses is null) return;
-        try
+        if (lotsDelaisses is null) return Task.CompletedTask;
+        return Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(async () =>
         {
             foreach (var a in await lotsDelaisses.AlerterAsync(vente.Lignes.Select(l => l.ProduitId).Distinct().ToList(), CancellationToken.None))
                 if (alertesTitulaire is not null) await alertesTitulaire.LotDelaisseAsync(a.Message, a.Niveau == "urgent", CancellationToken.None);
-        }
-        catch (Exception e) when (e is not OperationCanceledException) { }
+        }, "lots délaissés après une vente", trace);
     }
 
     private async Task<(Vente, IReadOnlyDictionary<long, Produit>)> ConstruireAsync(
@@ -389,10 +390,11 @@ public sealed class Encaisser(
         {
             if (!produits.TryGetValue(ligne.ProduitId, out var produit) || !produit.Actif)
                 throw new RegleMetierException("Un produit du panier n’existe plus ou n’est plus actif.");
-            // Repris de l'ancien logiciel sans n° d'enregistrement : sa classe (psychotrope ?) n'a pas été confirmée
+            // Repris de l'ancien logiciel sans n° d'enregistrement, ou psychotrope (stupéfiant) créé par un employé :
+            // sa classe n'a pas été confirmée par le titulaire
             if (produit.AVerifier)
                 throw new RegleMetierException(
-                    $"{produit.NomCommercial} : produit repris de l’ancien logiciel, à vérifier par le titulaire avant la vente (Administration, Nomenclature nationale, « Produits à vérifier »).");
+                    $"{produit.NomCommercial} : produit à vérifier par le titulaire avant la vente (repris de l’ancien logiciel, ou classé d’office psychotrope ou stupéfiant à sa création) : Administration, Nomenclature nationale, « Produits à vérifier ».");
             if (!lots.TryGetValue(ligne.LotId, out var lot))
                 throw new RegleMetierException($"{produit.NomCommercial} : lot introuvable, rescannez la boîte.");
             vente.AjouterProduit(produit, lot, ligne.Quantite, aujourdhui, autoriserBloque: true, controlerLot: controlerLots);   // blocage contrôlé à l'encaissement

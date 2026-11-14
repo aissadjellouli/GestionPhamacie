@@ -3,13 +3,19 @@ using Pharma.Application.Suivi;
 
 namespace Pharma.Infrastructure.Suivi;
 
-/// <summary>Sommes dues de tous les tiers (vue v_suivi_dettes, 039_suivi_dettes.sql) et délai d'alerte.</summary>
+/// <summary>
+/// Sommes dues de tous les tiers (vue v_suivi_dettes, 039_suivi_dettes.sql), dettes des financements (v_dette_financement,
+/// 078_financements.sql : prêts, compte du titulaire ; filtrées par le cas d'usage selon l'utilisateur) et délai d'alerte.
+/// </summary>
 public sealed class SuiviDettesSql(NpgsqlDataSource db) : ISuiviDettes
 {
     public async Task<IReadOnlyList<SommeDue>> SommesDuesAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand(
-            "SELECT sens, categorie, tiers_id, tiers, libelle, date_reference, echeance, montant, rejetee FROM v_suivi_dettes");
+        await using var cmd = db.CreateCommand("""
+            SELECT sens, categorie, tiers_id, tiers, libelle, date_reference, echeance, montant, rejetee FROM v_suivi_dettes
+            UNION ALL
+            SELECT sens, categorie, tiers_id, tiers, libelle, date_reference, echeance, montant, rejetee FROM v_dette_financement
+            """);
         var liste = new List<SommeDue>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))

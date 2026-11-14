@@ -14,14 +14,15 @@ internal sealed class EmplacementsEnMemoire : IEmplacements
         new(3, "Z-09", "Z", "09", null, null, ZoneEmplacement.Vente, false, 0)
     ];
     public string? CodeCree { get; private set; }
+    public bool? ActifCree { get; private set; }
     public (long Produit, long? Vente, long? Reserve)? Range { get; private set; }
 
     public Task<IReadOnlyList<Emplacement>> ListerAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<Emplacement>>(Liste);
     public Task<bool> CodeExisteAsync(string code, long? saufId, CancellationToken ct = default) =>
         Task.FromResult(Liste.Any(e => e.Code == code && e.Id != saufId));
-    public Task<long> CreerAsync(string code, string r, string? e, string? t, string? l, ZoneEmplacement z, CancellationToken ct = default)
+    public Task<long> CreerAsync(string code, string r, string? e, string? t, string? l, ZoneEmplacement z, bool actif, CancellationToken ct = default)
     {
-        CodeCree = code;
+        (CodeCree, ActifCree) = (code, actif);
         return Task.FromResult(9L);
     }
     public Task<bool> ModifierAsync(long id, string code, string r, string? e, string? t, string? l, ZoneEmplacement z, bool a, CancellationToken ct = default) =>
@@ -41,6 +42,27 @@ public class EmplacementsApplicationTests
         Assert.Equal("C-03-1", depot.CodeCree);
         Assert.Equal(["emplacement"], journal.Actions);
     }
+
+    [Fact]
+    public async Task Emplacement_cree_inactif_reste_inactif()
+    {
+        var depot = new EmplacementsEnMemoire();
+        await new EnregistrerEmplacement(depot, new DroitsFactices("admin.parametres"), new JournalEspion())
+            .ExecuterAsync(null, new SaisieEmplacement("D", "01", null, null, ZoneEmplacement.Reserve, false), 1);
+        Assert.False(depot.ActifCree);
+    }
+
+    [Theory]
+    [InlineData("vente", ZoneEmplacement.Vente)]
+    [InlineData("reserve", ZoneEmplacement.Reserve)]
+    public void Zone_connue_acceptee(string code, ZoneEmplacement attendue) => Assert.Equal(attendue, RegleEmplacement.ZoneDepuisCode(code));
+
+    [Theory]
+    [InlineData("vitrine")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void Zone_inconnue_refusee(string? code) =>
+        Assert.Throws<RegleMetierException>(() => RegleEmplacement.ZoneDepuisCode(code));
 
     [Fact]
     public async Task Code_deja_pris_refuse() =>

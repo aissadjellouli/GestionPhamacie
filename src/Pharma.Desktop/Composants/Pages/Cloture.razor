@@ -77,6 +77,17 @@
                         <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderAsync">@(Intermediaire ? "Valider le comptage intermédiaire" : Releve ? "Valider la relève" : "Valider le comptage")</button>
                     }
                 </div>
+                @if (confirmationZero && resultat is null)
+                {
+                    @* Clôture (ou relève) avec 0 DA compté : souvent un oubli de saisie ; le serveur la refuse sans confirmation explicite *@
+                    <div class="bandeau-attention" role="alert" style="margin-top: 12px">
+                        Vous @(Releve ? "faites la relève" : "clôturez") avec 0 DA compté : confirmez.
+                        <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap">
+                            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ConfirmerZeroAsync">Confirmer avec 0 DA compté</button>
+                            <button type="button" class="btn" disabled="@enCours" @onclick="() => confirmationZero = false">Reprendre le comptage</button>
+                        </div>
+                    </div>
+                }
             </section>
 
             <aside class="panneau colonne-laterale" aria-label="Résultat">
@@ -192,19 +203,35 @@
         saisies[code] = decimal.TryParse(valeur?.ToString(), System.Globalization.NumberStyles.Number,
             System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= 0 ? v : 0;
 
+    // Clôture ou relève à 0 DA compté : confirmation demandée avant l'envoi
+    private bool confirmationZero;
+
     private async Task ValiderAsync()
     {
+        if (!Intermediaire && TotalCompte == 0)
+        {
+            (confirmationZero, erreur) = (true, null);
+            return;
+        }
+        await EnvoyerAsync(false);
+    }
+
+    private Task ConfirmerZeroAsync() => EnvoyerAsync(true);
+
+    private async Task EnvoyerAsync(bool confirmerZero)
+    {
         enCours = true;
+        confirmationZero = false;
         if (Intermediaire)
             (resultat, erreur) = await Api.ComptageIntermediaireAsync(new Dictionary<string, decimal>(saisies));
         else if (Releve)
         {
-            var (releve, err) = await Api.ReleveCaisseAsync(new Dictionary<string, decimal>(saisies));
+            var (releve, err) = await Api.ReleveCaisseAsync(new Dictionary<string, decimal>(saisies), confirmerZero);
             (resultat, nouvelleSession, erreur) = (releve?.Cloture, releve?.NouvelleSessionId, err);
             if (err is null) Session.MarquerReleveFaite();   // « ⇄ Changer » ne repropose pas la relève
         }
         else
-            (resultat, erreur) = await Api.CloturerCaisseAsync(new Dictionary<string, decimal>(saisies));
+            (resultat, erreur) = await Api.CloturerCaisseAsync(new Dictionary<string, decimal>(saisies), confirmerZero);
         enCours = false;
     }
 

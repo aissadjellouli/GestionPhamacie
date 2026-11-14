@@ -1,0 +1,69 @@
+@inject ApiClient Api
+
+@* Usage d'un prêt ou d'un apport du titulaire dans la trésorerie : argent versé au coffre ou en banque, ou dépense payée (inscrite
+   sur le compte choisi avec l'entrée qui la couvre : le solde du compte ne change pas). *@
+@if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+<div class="filtres" role="tablist" aria-label="Usage">
+    <button type="button" role="tab" class="puce" aria-selected="@(usage == "tresorerie" ? "true" : "false")" @onclick='() => usage = "tresorerie"'>Verser au coffre ou en banque</button>
+    <button type="button" role="tab" class="puce" aria-selected="@(usage == "depense" ? "true" : "false")" @onclick='() => usage = "depense"'>Payer une dépense</button>
+</div>
+<div class="achats-ligne">
+    <div class="champ" style="flex: 1 1 200px"><label for="us-compte" class="requis">@(usage == "depense" ? "Inscrite sur le compte" : "Versé sur")</label>
+        <select id="us-compte" data-champ="compte" @bind="compteId">
+            @foreach (var c in Comptes.Where(c => c.Actif)) { <option value="@c.Id">@c.Nom</option> }
+        </select></div>
+    <div class="champ" style="flex: 0 0 170px"><label for="us-date" class="requis">Date</label>
+        <input id="us-date" data-champ="date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="date" /></div>
+    <div class="champ" style="flex: 0 0 180px"><label for="us-montant" class="requis">Montant (DA)</label>
+        <input id="us-montant" data-champ="montant source" type="number" min="0.01" step="0.01" @bind="montant" /></div>
+    @if (usage == "depense")
+    {
+        <div class="champ" style="flex: 1 1 200px"><label for="us-cat" class="requis">Catégorie</label>
+            <select id="us-cat" data-champ="categorie" @bind="categorie"><option value="">— choisir —</option>@foreach (var c in Categories) { <option value="@c.Code">@c.Libelle</option> }</select></div>
+    }
+</div>
+<div class="achats-ligne">
+    <div class="champ" style="flex: 1 1 260px"><label for="us-lib" class="@(usage == "depense" ? "requis" : null)">Libellé</label>
+        <input id="us-lib" data-champ="libelle usage" type="text" maxlength="200" @bind="libelle"
+               placeholder="@(usage == "depense" ? "Ex. Facture Sonelgaz octobre" : "Facultatif")" /></div>
+    <div class="champ" style="flex: 1 1 160px"><label for="us-ref">Référence</label><input id="us-ref" type="text" maxlength="100" @bind="reference" /></div>
+</div>
+@if (usage == "depense")
+{
+    <p class="detail" style="margin: 0">La dépense est inscrite sur ce compte avec l’entrée qui la couvre : son solde ne change pas, la dépense compte dans sa catégorie.</p>
+}
+<div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button></div>
+
+@code {
+    /// <summary>« titulaire » ou « pret:ID ».</summary>
+    [Parameter, EditorRequired] public string Source { get; set; } = "titulaire";
+    [Parameter] public List<CompteTresorerieDto> Comptes { get; set; } = [];
+    [Parameter] public List<CodeLibelleDto> Categories { get; set; } = [];
+    /// <summary>Appelé avec le message de réussite.</summary>
+    [Parameter] public EventCallback<string> OnEnregistre { get; set; }
+
+    private string usage = "tresorerie";
+    private long compteId;
+    private DateOnly date = DateOnly.FromDateTime(DateTime.Today);
+    private decimal montant;
+    private string? categorie, libelle, reference, erreur;
+    private bool enCours;
+
+    protected override void OnParametersSet()
+    {
+        if (!Comptes.Any(c => c.Id == compteId && c.Actif)) compteId = Comptes.FirstOrDefault(c => c.Type == "coffre")?.Id ?? Comptes.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        (enCours, erreur) = (true, null);
+        var m = montant;
+        var e = await Api.UtiliserFinancementAsync(new UtilisationRequete(Source, usage, date, m, compteId,
+            usage == "depense" && !string.IsNullOrEmpty(categorie) ? categorie : null, libelle, reference));
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        var nom = Comptes.FirstOrDefault(c => c.Id == compteId)?.Nom;
+        (montant, libelle, reference, categorie) = (0, null, null, null);
+        await OnEnregistre.InvokeAsync(usage == "depense" ? $"Dépense de {Libelles.Dinars(m, 2)} payée et inscrite sur {nom}." : $"{Libelles.Dinars(m, 2)} versés sur {nom}.");
+    }
+}

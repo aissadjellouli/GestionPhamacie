@@ -28,7 +28,7 @@
                     <div class="champ" style="flex: 2 1 240px"><label for="e-libelle">Libellé</label><input id="e-libelle" type="text" placeholder="ex. Antibiotiques, Réfrigérateur" @bind="fiche.Libelle" /></div>
                     <div class="champ" style="flex: 0 0 160px">
                         <label for="e-zone">Zone</label>
-                        <select id="e-zone" @bind="fiche.Zone"><option value="vente">Vente</option><option value="reserve">Réserve</option></select>
+                        <select id="e-zone" data-champ="zone" @bind="fiche.Zone"><option value="vente">Vente</option><option value="reserve">Réserve</option></select>
                     </div>
                 </div>
                 <p class="detail" style="margin: 0">Code : <strong>@Apercu</strong></p>

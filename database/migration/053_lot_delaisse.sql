@@ -62,12 +62,16 @@ BEGIN
 END $garde$;
 
 -- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « lot_delaisse »
+-- Les destinataires des alertes de lot reçoivent aussi celle-ci : une seule fois, quand le type est ajouté
+-- (un rejeu ne recoche pas le type retiré ensuite par le titulaire)
 DO $garde$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'destinataire_notification_types_check' AND pg_get_constraintdef(oid) LIKE '%''lot_delaisse''%') THEN
         ALTER TABLE destinataire_notification DROP CONSTRAINT IF EXISTS destinataire_notification_types_check;
         ALTER TABLE destinataire_notification ADD CONSTRAINT destinataire_notification_types_check
             CHECK (types <@ ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'lot_delaisse']);
+        UPDATE destinataire_notification SET types = types || 'lot_delaisse'::text
+        WHERE 'lot_bloque' = ANY (types) AND NOT 'lot_delaisse' = ANY (types);
     END IF;
 END $garde$;
 -- Rejouable sur une base plus récente : la liste n'est refaite que si elle n'a pas encore « lot_delaisse »
@@ -79,9 +83,6 @@ BEGIN
             CHECK (type = ANY (ARRAY['rapport_quotidien', 'ecart_caisse', 'lot_bloque', 'sauvegarde', 'ecart_inventaire', 'lot_delaisse', 'test']));
     END IF;
 END $garde$;
--- Les destinataires des alertes de lot reçoivent aussi celle-ci
-UPDATE destinataire_notification SET types = types || 'lot_delaisse'::text
-WHERE 'lot_bloque' = ANY (types) AND NOT 'lot_delaisse' = ANY (types);
 
 -- 4. Inventaire d'un produit
 ALTER TABLE inventaire ADD COLUMN IF NOT EXISTS produit_id bigint REFERENCES produit (id);

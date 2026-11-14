@@ -15,7 +15,9 @@ fictives (produits, patients, grossistes, factures). Rien n'est envoyé sur Inte
        powershell -ExecutionPolicy Bypass -File .\installer.ps1
    - Saisissez le mot de passe du compte « postgres ».
    - Le script crée la base « pharmacie_essai » et la configuration. Il ne touche à aucune autre base.
-   - Pour repartir de zéro plus tard : .\installer.ps1 -Recreer (efface la base d'essai).
+   - Pour repartir de zéro plus tard : .\installer.ps1 -Recreer (efface la base d'essai et tout ce qui
+     a été saisi pendant l'essai ; le script demande de retaper le nom de la base, pharmacie_essai,
+     pour confirmer).
 
 3. LANCER
    - Double-cliquez sur demarrer.cmd. Une fenêtre « serveur » s'ouvre (réduite) : ne la fermez pas

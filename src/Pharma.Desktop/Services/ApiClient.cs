@@ -218,8 +218,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> EffacerCodeComptoirAsync(long utilisateurId) =>
         (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/admin/utilisateurs/{utilisateurId}/code-comptoir", null)).Item2;
 
-    public Task<(ReleveDto?, string?)> ReleveCaisseAsync(Dictionary<string, decimal> saisies) =>
-        PostAsync<ClotureRequete, ReleveDto>("api/caisse/releve", new(saisies));
+    public Task<(ReleveDto?, string?)> ReleveCaisseAsync(Dictionary<string, decimal> saisies, bool confirmerZero = false) =>
+        PostAsync<ClotureRequete, ReleveDto>("api/caisse/releve", new(saisies, confirmerZero));
 
     // ---- Annulation d'une vente ----
     /// <summary>Remboursement sans ticket : ventes retrouvées par la boîte rapportée (sans patient, ou de ce patient).</summary>
@@ -352,6 +352,39 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> VerserCaisseDuPosteAsync(decimal montant) =>
         (await PostAsync<MontantRequete, IdentifiantDto>("api/tresorerie/caisse-du-poste/versement", new(montant))).Item2;
     public Task<(List<CompteBancaireDto>, string?)> BanquesReglementAsync() => GetAsync<List<CompteBancaireDto>>("api/achats/reglements/banques", []);
+
+    // ---- Financements (titulaire seul) ----
+    public Task<(PageDto<PretDto>?, string?)> PretsAsync(string? etat, string? texte, long? banque, int page, int taille) =>
+        GetAsync<PageDto<PretDto>?>("api/financements/prets?" + Requete(("etat", etat), ("q", texte), ("banque", banque), ("page", page), ("taille", taille)), null);
+    public Task<(PretDetailDto?, string?)> PretAsync(long id) => GetAsync<PretDetailDto?>($"api/financements/prets/{id}", null);
+    public Task<(IdentifiantDto?, string?)> CreerPretAsync(PretRequete r) => PostAsync<PretRequete, IdentifiantDto>("api/financements/prets", r);
+    public async Task<string?> ModifierPretAsync(long id, PretRequete r) =>
+        (await EnvoyerCorpsAsync<PretRequete, object>(HttpMethod.Put, $"api/financements/prets/{id}", r)).Item2;
+    public async Task<string?> JoindreDocumentPretAsync(long id, string chemin) =>
+        (await EnvoyerCorpsAsync<DocumentPretRequete, object>(HttpMethod.Put, $"api/financements/prets/{id}/document", new(chemin))).Item2;
+    public Task<(List<AnomalieEcheancierDto>?, string?)> ControlerEcheancierAsync(long pretId, EcheancierRequete r) =>
+        PostAsync<EcheancierRequete, List<AnomalieEcheancierDto>>($"api/financements/prets/{pretId}/echeancier/controle", r);
+    public async Task<string?> EnregistrerEcheancierAsync(long pretId, EcheancierRequete r) =>
+        (await EnvoyerCorpsAsync<EcheancierRequete, object>(HttpMethod.Put, $"api/financements/prets/{pretId}/echeancier", r)).Item2;
+    public Task<(TableauLuDto?, string?)> LireTableauFichierAsync(long pretId, TableauFichierRequete r) =>
+        PostAsync<TableauFichierRequete, TableauLuDto>($"api/financements/prets/{pretId}/tableau/fichier", r);
+    public Task<(TableauLuDto?, string?)> LireTableauTexteAsync(long pretId, TableauTexteRequete r) =>
+        PostAsync<TableauTexteRequete, TableauLuDto>($"api/financements/prets/{pretId}/tableau/texte", r);
+    public Task<(ApercuEcheancierDto?, string?)> ApercuEcheancierAsync(long pretId, ApercuRequete r) =>
+        PostAsync<ApercuRequete, ApercuEcheancierDto>($"api/financements/prets/{pretId}/tableau/apercu", r);
+    public async Task<string?> RetenirCorrespondanceAsync(long pretId, CorrespondanceDto c) =>
+        (await EnvoyerCorpsAsync<CorrespondanceDto, object>(HttpMethod.Put, $"api/financements/prets/{pretId}/correspondance", c)).Item2;
+    public Task<(PageDto<EcheancePretDto>?, string?)> EcheancesPretsAsync(string? etat, string? texte, int page, int taille) =>
+        GetAsync<PageDto<EcheancePretDto>?>("api/financements/echeances?" + Requete(("etat", etat), ("q", texte), ("page", page), ("taille", taille)), null);
+    public async Task<string?> PayerEcheancePretAsync(long echeanceId, PaiementEcheanceRequete r) =>
+        (await PostAsync<PaiementEcheanceRequete, IdentifiantDto>($"api/financements/echeances/{echeanceId}/paiement", r)).Item2;
+    public Task<(List<SourceFinancementDto>, string?)> SourcesFinancementAsync() => GetAsync<List<SourceFinancementDto>>("api/financements/sources", []);
+    public async Task<string?> UtiliserFinancementAsync(UtilisationRequete r) =>
+        (await PostAsync<UtilisationRequete, IdentifiantDto>("api/financements/utilisations", r)).Item2;
+    public Task<(CompteTitulaireDto?, string?)> CompteTitulaireAsync(string? sens, DateOnly? du, DateOnly? au, int page, int taille) =>
+        GetAsync<CompteTitulaireDto?>("api/financements/titulaire?" + Requete(("sens", sens), ("du", du), ("au", au), ("page", page), ("taille", taille)), null);
+    public async Task<string?> RembourserTitulaireAsync(RemboursementTitulaireRequete r) =>
+        (await PostAsync<RemboursementTitulaireRequete, IdentifiantDto>("api/financements/titulaire/remboursements", r)).Item2;
 
     // ---- Règlements des grossistes et crédits clients ----
     public Task<(List<GrossisteAReglementDto>, string?)> GrossistesAReglerAsync() => GetAsync<List<GrossisteAReglementDto>>("api/achats/reglements", []);
@@ -515,8 +548,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(VenteEncaisseeDto?, string?)> EncaisserAsync(CommandeVenteDto commande) =>
         PostAsync<CommandeVenteDto, VenteEncaisseeDto>("api/caisse/encaisser", commande);
 
-    public Task<(ClotureDto?, string?)> CloturerCaisseAsync(Dictionary<string, decimal> saisies) =>
-        PostAsync<ClotureRequete, ClotureDto>("api/caisse/cloturer", new(saisies));
+    /// <param name="confirmerZero">Clôture avec 0 DA compté confirmée par l'employé (sinon refusée par le serveur).</param>
+    public Task<(ClotureDto?, string?)> CloturerCaisseAsync(Dictionary<string, decimal> saisies, bool confirmerZero = false) =>
+        PostAsync<ClotureRequete, ClotureDto>("api/caisse/cloturer", new(saisies, confirmerZero));
 
     /// <summary>Rapport de clôture PDF : contenu et nom de fichier proposé par le serveur.</summary>
     public async Task<(byte[]?, string?, string?)> RapportClotureAsync(long sessionId)
@@ -581,13 +615,22 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(List<VendeurComptoirDto>, string?)> ValidateursBlocageAsync() =>
         GetAsync<List<VendeurComptoirDto>>("api/produits/validateurs-blocage", []);
     public Task<(FicheProduitModifiableDto?, string?)> FicheProduitAsync(long id) => GetAsync<FicheProduitModifiableDto?>($"api/produits/{id}/fiche", null);
-    public async Task<string?> ModifierProduitAsync(FicheProduitModifiableDto f) =>
-        (await EnvoyerCorpsAsync<FicheProduitModifiableDto, object>(HttpMethod.Put, $"api/produits/{f.Id}", f)).Item2;
+    /// <summary>Information : message à afficher (classe imposée, produit à vérifier), sinon null ; Erreur : refus.</summary>
+    public async Task<(string? Information, string? Erreur)> ModifierProduitAsync(FicheProduitModifiableDto f)
+    {
+        var (r, e) = await EnvoyerCorpsAsync<FicheProduitModifiableDto, ProduitEnregistreDto>(HttpMethod.Put, $"api/produits/{f.Id}", f);
+        return (r?.Information, e);
+    }
     public Task<(List<LotEnStockDto>, string?)> LotsEnStockAsync(long produitId) => GetAsync<List<LotEnStockDto>>($"api/stock/produits/{produitId}/lots", []);
     public Task<(LotEnStockDto?, string?)> LotEnStockAsync(long lotId) => GetAsync<LotEnStockDto?>($"api/stock/lots/{lotId}", null);
     public Task<(NombreDto?, string?)> SortirDuStockAsync(SortieStockRequete r) => PostAsync<SortieStockRequete, NombreDto>("api/stock/sorties", r);
-    public Task<(List<VendeurComptoirDto>, string?)> ValideursAsync(string? permission) =>
-        GetAsync<List<VendeurComptoirDto>>($"api/auth/valideurs{(permission is null ? "" : "?permission=" + Uri.EscapeDataString(permission))}", []);
+    /// <param name="remise">Remise refusée (pourcentage) : seuls les employés dont le maximum de remise la couvre.</param>
+    public Task<(List<VendeurComptoirDto>, string?)> ValideursAsync(string? permission, decimal? remise = null) =>
+        GetAsync<List<VendeurComptoirDto>>("api/auth/valideurs?" + string.Join("&", new[]
+        {
+            permission is null ? null : "permission=" + Uri.EscapeDataString(permission),
+            remise is null ? null : "remise=" + remise.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        }.Where(p => p is not null)), []);
     public Task<(List<BlocageProduitDto>, string?)> ProduitsBloquesAsync() => GetAsync<List<BlocageProduitDto>>("api/produits/bloques", []);
     public Task<(BlocageProduitDto?, string?)> BlocageProduitAsync(long produitId) => GetAsync<BlocageProduitDto?>($"api/produits/{produitId}/blocage", null);
     public async Task<string?> ModifierBlocageProduitAsync(long produitId, BlocageProduitRequete r) =>
@@ -685,6 +728,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> VerifierCodeDestinataireAsync(long id, string code) =>
         (await PostAsync<CodeVerificationDto, object>($"api/admin/notifications/destinataires/{id}/verification", new(code))).Item2;
     public Task<(NombreDto?, string?)> EnvoyerRapportMaintenantAsync() => PostAsync<object, NombreDto>("api/admin/notifications/rapport", new());
+    /// <summary>Alertes qui n'ont pas pu partir, non encore vues (bandeau de l'accueil du titulaire).</summary>
+    public Task<(AlertesNonEnvoyeesDto?, string?)> AlertesNonEnvoyeesAsync() => GetAsync<AlertesNonEnvoyeesDto?>("api/admin/notifications/non-envoyees", null);
+    public Task<(NombreDto?, string?)> MarquerAlertesNonEnvoyeesVuesAsync(long jusquA) =>
+        PostAsync<AlertesVuesRequete, NombreDto>("api/admin/notifications/non-envoyees/vues", new(jusquA));
     /// <summary>File des messages, paginée ; filtres : type (objet), statut, période de création.</summary>
     public Task<(PageDto<MessageSortantDto>?, string?)> FileMessagesAsync(int page, int taille, string? type = null, string? statut = null, DateOnly? du = null, DateOnly? au = null) =>
         GetAsync<PageDto<MessageSortantDto>?>("api/admin/notifications/file?" + Requete(("type", type), ("statut", statut), ("du", du), ("au", au), ("page", page), ("taille", taille)), null);
@@ -773,7 +820,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> RangerProduitAsync(long produitId, long? emplacementId, long? reserveId) =>
         (await EnvoyerCorpsAsync<RangementDto, object>(HttpMethod.Put, $"api/produits/{produitId}/emplacement", new(emplacementId, reserveId))).Item2;
 
-    public Task<(IdentifiantDto?, string?)> CreerProduitAsync(NouveauProduitDto p) => PostAsync<NouveauProduitDto, IdentifiantDto>("api/produits", p);
+    public Task<(ProduitEnregistreDto?, string?)> CreerProduitAsync(NouveauProduitDto p) => PostAsync<NouveauProduitDto, ProduitEnregistreDto>("api/produits", p);
     public Task<(List<string>, string?)> DciAsync(string q) => GetAsync<List<string>>($"api/dci?q={Uri.EscapeDataString(q)}", []);
 
     public Task<(List<ProduitAlternatifDto>, string?)> AlternativesAsync(long produitId) =>
@@ -968,7 +1015,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             + (string.IsNullOrWhiteSpace(employe) ? "" : $"&employe={Uri.EscapeDataString(employe)}")
             + (string.IsNullOrWhiteSpace(poste) ? "" : $"&poste={Uri.EscapeDataString(poste)}") + (avecEcart ? "&ecart=true" : ""), null);
     public Task<(byte[]?, string?, string?)> ExporterRapportAsync(string periode, DateOnly date, DateOnly du, DateOnly au, string format) =>
-        FichierAsync(HttpMethod.Get, $"api/rapports/export?{FiltreRapport(periode, date, du, au)}&format={format}", $"rapport.{(format == "excel" ? "csv" : "pdf")}");
+        // « csv » ou « excel » : fichier CSV ; « pdf » : PDF (mêmes formats que le serveur)
+        FichierAsync(HttpMethod.Get, $"api/rapports/export?{FiltreRapport(periode, date, du, au)}&format={format}", $"rapport.{(format is "excel" or "csv" ? "csv" : "pdf")}");
     public async Task<string?> EnregistrerAvoirAsync(long id, decimal montant) => (await PostAsync<AvoirRequete, object>($"api/achats/retours/{id}/avoir", new(montant))).Item2;
     public async Task<string?> RefuserRetourAsync(long id, string? motif) => (await PostAsync<RefusRetourRequete, object>($"api/achats/retours/{id}/refuser", new(motif))).Item2;
 
@@ -1068,10 +1116,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             var rep = await http.SendAsync(req);
             if (rep.StatusCode != HttpStatusCode.Forbidden || autorisations is null || !proposer || essai >= 3) return rep;
             var corps = await rep.Content.ReadAsStringAsync();
-            var (message, autorisable, permission) = LireRefus(corps);
+            var (message, autorisable, permission, seuil) = LireRefus(corps);
             HttpResponseMessage Garder() { var n = new HttpResponseMessage(rep.StatusCode) { Content = new StringContent(corps, System.Text.Encoding.UTF8, "application/json") }; rep.Dispose(); return n; }
             if (!autorisable) return Garder();
-            accord = await autorisations.DemanderAsync(message, permission);
+            accord = await autorisations.DemanderAsync(message, permission, seuil);
             if (accord is null) return Garder();
             var demande = permission ?? "role.titulaire";
             if (!droits.Contains(demande)) droits.Add(demande);
@@ -1079,7 +1127,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         }
     }
 
-    private static (string Message, bool Autorisable, string? Permission) LireRefus(string corps)
+    /// <returns>Seuil : remise refusée (pourcentage demandé), pour ne proposer que les employés dont le maximum la couvre.</returns>
+    private static (string Message, bool Autorisable, string? Permission, decimal? Seuil) LireRefus(string corps)
     {
         try
         {
@@ -1087,9 +1136,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             var racine = doc.RootElement;
             string? Texte(string nom) => racine.TryGetProperty(nom, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() : null;
             var autorisable = racine.TryGetProperty("autorisable", out var a) && a.ValueKind == System.Text.Json.JsonValueKind.True;
-            return (Texte("message") ?? Texte("detail") ?? "Action non autorisée.", autorisable, Texte("permission"));
+            decimal? seuil = racine.TryGetProperty("seuil", out var s) && s.ValueKind == System.Text.Json.JsonValueKind.Number && s.TryGetDecimal(out var d) ? d : null;
+            return (Texte("message") ?? Texte("detail") ?? "Action non autorisée.", autorisable, Texte("permission"), seuil);
         }
-        catch (System.Text.Json.JsonException) { return ("Action non autorisée.", false, null); }
+        catch (System.Text.Json.JsonException) { return ("Action non autorisée.", false, null, null); }
     }
 
     private string SessionExpiree()

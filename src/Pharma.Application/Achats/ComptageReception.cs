@@ -231,7 +231,7 @@ public sealed class FacturerComptage(IComptagesReception comptages, Receptionner
 /// est alors prévenu (SMS ou e-mail selon ses réglages).
 /// </summary>
 public sealed class DeciderEcartReception(IComptagesReception comptages, Receptionner receptionner, IPermissionService droits, IJournal journal,
-    IAlertesTitulaire? alertes = null)
+    IAlertesTitulaire? alertes = null, ITraceErreurs? trace = null)
 {
     public async Task<ReceptionEnregistree?> ExecuterAsync(long comptageId, bool valider, long utilisateurId, CancellationToken ct = default)
     {
@@ -249,8 +249,11 @@ public sealed class DeciderEcartReception(IComptagesReception comptages, Recepti
                 throw new RegleMetierException("Cet écart vient d’être traité sur un autre poste.");
             await journal.EcrireAsync(utilisateurId, "ecart_reception_recompter", "comptage_reception", comptageId,
                 new Dictionary<string, object?> { ["bl"] = c.NumeroBl, ["grossiste"] = c.Fournisseur }, Permissions.AchatsValiderEcart, ct);
+            // Décision enregistrée : l'alerte ne la fait jamais échouer (journal du serveur, bandeau du titulaire)
             if (!titulaire && alertes is not null)
-                await alertes.SurveillanceAsync($"Ecart de reception BL {c.NumeroBl} ({c.Fournisseur}) : recomptage demande par un employe habilite.", false, ct);
+                await Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.SurveillanceAsync(
+                    $"Ecart de reception BL {c.NumeroBl} ({c.Fournisseur}) : recomptage demande par un employe habilite.", false, ct),
+                    $"écart de réception BL {c.NumeroBl}", trace);
             return null;
         }
 
@@ -279,9 +282,9 @@ public sealed class DeciderEcartReception(IComptagesReception comptages, Recepti
                 ["facture_par"] = c.Factureur, ["manquantes"] = fusion.BoitesManquantes, ["en_trop"] = fusion.BoitesEnTrop, ["a_reclamer"] = aReclamer
             }, Permissions.AchatsValiderEcart, CancellationToken.None);   // livraison déjà en stock : le journal va jusqu'au bout
         if (!titulaire && alertes is not null)
-            await alertes.SurveillanceAsync(
+            await Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.SurveillanceAsync(
                 $"Ecart de reception BL {c.NumeroBl} ({c.Fournisseur}) valide par un employe habilite : {fusion.BoitesManquantes} boite(s) manquante(s) a reclamer ({aReclamer:0.00} DA), {fusion.BoitesEnTrop} en trop.",
-                fusion.BoitesManquantes > 0, CancellationToken.None);
+                fusion.BoitesManquantes > 0, CancellationToken.None), $"écart de réception BL {c.NumeroBl}", trace);
         // Boîtes réellement entrées : sans les manquantes (ni leurs étiquettes, qui ne s'impriment pas)
         var lots = r.Lots.ToList();
         foreach (var m in fusion.Manquants)
