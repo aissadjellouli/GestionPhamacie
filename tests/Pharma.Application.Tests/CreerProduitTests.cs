@@ -19,6 +19,9 @@ internal sealed class CatalogueEcritureEnMemoire : ICatalogueEcriture
     public Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default) =>
         Task.FromResult<string?>(dci.Contains("alprazolam", StringComparison.OrdinalIgnoreCase) ? "psychotrope"
             : dci.Contains("morphine", StringComparison.OrdinalIgnoreCase) ? "stupefiant" : null);
+    /// <summary>Nomenclature : n° 12/34/A (psychotrope), 56/78/B (stupéfiant).</summary>
+    public Task<string?> ClasseNomenclatureAsync(string num, CancellationToken ct = default) =>
+        Task.FromResult<string?>(num switch { "12/34/A" => "psychotrope", "56/78/B" => "stupefiant", _ => null });
 }
 
 public class CreerProduitTests
@@ -55,6 +58,36 @@ public class CreerProduitTests
         Assert.Equal(true, journal.Details.Single()["a_verifier"]);
         Assert.Equal("libre", journal.Details.Single()["classe_choisie"]);
     }
+
+    [Theory]
+    [InlineData("Acénocoumarol", "12/34/A", ClasseReglementaire.Psychotrope)]   // DCI anodine : la nomenclature suffit
+    [InlineData("Alprazolam", "56/78/B", ClasseReglementaire.Stupefiant)]       // DCI psychotrope, nomenclature stupéfiant : la plus stricte
+    public async Task Classe_proposee_par_la_nomenclature_pour_le_numero_d_enregistrement_imposee_a_un_employe(string dci, string num,
+        ClasseReglementaire attendue)
+    {
+        var (catalogue, journal) = (new CatalogueEcritureEnMemoire(), new JournalEspion());
+        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer"), journal)
+            .ExecuterAsync(Psychotrope(ClasseReglementaire.Libre, dci) with { NumEnregistrement = num }, 3);
+        Assert.Equal((attendue, true), (catalogue.Crees.Single().Classe, catalogue.AVerifier.Single()));
+        Assert.Contains($"n° d’enregistrement {num}", cree.Information);
+        Assert.Contains("nomenclature nationale", cree.Information);
+
+        // Le titulaire décide lui-même
+        var titulaire = new CatalogueEcritureEnMemoire();
+        var r = await new CreerProduit(titulaire, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
+            .ExecuterAsync(Psychotrope(ClasseReglementaire.Libre, dci) with { NumEnregistrement = num }, 1);
+        Assert.Equal((ClasseReglementaire.Libre, null), (titulaire.Crees.Single().Classe, r.Information));
+    }
+
+    [Theory]
+    [InlineData(null, null, null)]
+    [InlineData("psychotrope", null, "psychotrope")]
+    [InlineData(null, "psychotrope", "psychotrope")]
+    [InlineData("psychotrope", "stupefiant", "stupefiant")]
+    [InlineData("stupefiant", "psychotrope", "stupefiant")]
+    [InlineData(null, "liste_i", null)]
+    public void Classe_sous_registre_la_plus_stricte_des_deux_sources(string? parDci, string? parNomenclature, string? attendue) =>
+        Assert.Equal(attendue, RegleProduit.ClasseSurveilleeRetenue(parDci, parNomenclature));
 
     [Fact]
     public async Task Titulaire_ou_classe_deja_sous_registre_ou_dci_non_surveillee_non_concernes()

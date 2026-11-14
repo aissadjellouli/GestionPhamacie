@@ -44,6 +44,24 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
         return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
+    public Task<string?> ClasseNomenclatureAsync(string numEnregistrement, CancellationToken ct = default) => ClasseNomenclatureAsync(db, numEnregistrement, ct);
+
+    /// <summary>
+    /// Classe proposée par la nomenclature nationale (v_nomenclature, version la plus récente) pour ce n° d'enregistrement, seulement
+    /// si elle est sous registre ; stupéfiant avant psychotrope si plusieurs lignes portent ce numéro.
+    /// </summary>
+    internal static async Task<string?> ClasseNomenclatureAsync(NpgsqlDataSource db, string numEnregistrement, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT n.classe_proposee FROM v_nomenclature n
+            WHERE n.num_enregistrement = $1 AND n.classe_proposee IN ('psychotrope', 'stupefiant')
+              AND n.version_id = (SELECT max(x.version_id) FROM nomenclature_produit x WHERE x.num_enregistrement = $1)
+            ORDER BY n.classe_proposee DESC LIMIT 1
+            """);
+        cmd.Parameters.AddWithValue(numEnregistrement.Trim());
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
     public async Task<long> CreerAsync(FicheProduit f, bool aVerifier, CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);

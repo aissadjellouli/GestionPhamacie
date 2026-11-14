@@ -321,15 +321,19 @@ public sealed record EtiquettesDto(IReadOnlyList<string> Codes, string PdfBase64
 
 // ---- Notifications (titulaire seulement) -------------------------------------
 
-/// <summary>Le mot de passe SMTP n'est jamais renvoyé : seul son enregistrement est indiqué.</summary>
+/// <summary>
+/// Le mot de passe SMTP n'est jamais renvoyé : seul son enregistrement est indiqué. SignalerSansDestinataire : alerte (ou rapport du
+/// soir) partie vers aucun destinataire vérifié signalée au bandeau de l'accueil du titulaire (défaut : oui).
+/// </summary>
 public sealed record ReglagesNotificationDto(
     string? SmtpServeur, int SmtpPort, bool SmtpTls, string? SmtpExpediteur, string? SmtpIdentifiant, bool MotDePasseEnregistre,
-    string? ModemPort, TimeOnly HeureRapport, DateOnly? DernierRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde);
+    string? ModemPort, TimeOnly HeureRapport, DateOnly? DernierRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde,
+    bool SignalerSansDestinataire = true);
 
 /// <summary>NouveauMotDePasse : null = inchangé, chaîne vide = effacé.</summary>
 public sealed record ModificationReglagesNotificationDto(
     string? SmtpServeur, int SmtpPort, bool SmtpTls, string? SmtpExpediteur, string? SmtpIdentifiant, string? NouveauMotDePasse,
-    string? ModemPort, TimeOnly HeureRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde);
+    string? ModemPort, TimeOnly HeureRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde, bool SignalerSansDestinataire = true);
 
 /// <summary>Types : rapport_quotidien, ecart_caisse, lot_bloque, sauvegarde.</summary>
 public sealed record DestinataireDto(
@@ -357,6 +361,15 @@ public sealed record AlertesNonEnvoyeesDto(int Nombre, IReadOnlyList<AlerteNonEn
 
 /// <summary>Marque vues les alertes non envoyées jusqu’à cet identifiant (le plus récent affiché).</summary>
 public sealed record AlertesVuesRequete(long JusquA);
+
+/// <summary>
+/// Écart de caisse d'une session clôturée (accueil du titulaire) : Ecart négatif = manque, positif = excédent. Employe : celui qui a
+/// clôturé la caisse si ClotureePar, sinon (clôture sans trace au journal) celui qui l'a ouverte.
+/// </summary>
+public sealed record EcartCaisseRecentDto(long SessionId, string Poste, string Employe, DateTime ClotureLe, decimal Ecart, bool ClotureePar = true);
+
+/// <summary>Écarts de caisse récents non vus : nombre total et les plus récents.</summary>
+public sealed record EcartsCaisseRecentsDto(int Nombre, IReadOnlyList<EcartCaisseRecentDto> Derniers);
 
 // ---- Sauvegardes ------------------------------------------------------------
 

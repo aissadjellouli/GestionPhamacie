@@ -6,9 +6,12 @@ using Pharma.Domain.Securite;
 
 namespace Pharma.Application.Catalogue;
 
-/// <summary>Fiche modifiable d'un produit du catalogue (la classe réglementaire se confirme à part, par le titulaire).</summary>
+/// <summary>
+/// Fiche modifiable d'un produit du catalogue (la classe réglementaire se confirme à part, par le titulaire). NumEnregistrement : lu
+/// en base, jamais modifié ici.
+/// </summary>
 public sealed record FicheProduitModifiable(long Id, string NomCommercial, string? Dci, string? Dosage, string? Forme, string? CodeBarre,
-    decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre");
+    decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre", string? NumEnregistrement = null);
 
 public interface IProduitsModification
 {
@@ -16,6 +19,8 @@ public interface IProduitsModification
     Task<bool> CodeBarreAutreProduitAsync(string codeBarre, long id, CancellationToken ct = default);
     /// <summary>Classe (psychotrope ou stupefiant) de la substance surveillée qui correspond à la DCI (table substance_surveillee), sinon null.</summary>
     Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default);
+    /// <summary>Classe sous registre proposée par la nomenclature nationale pour ce n° d'enregistrement (voir ICatalogueEcriture), sinon null.</summary>
+    Task<string?> ClasseNomenclatureAsync(string numEnregistrement, CancellationToken ct = default);
     /// <summary>
     /// Enregistre la fiche ; la DCI est créée si elle n'existe pas encore. La classe n'est écrite que si elle est imposée
     /// (<paramref name="classeImposee"/>) : le produit devient alors « à vérifier » et, s'il a du stock, reçoit son solde
@@ -33,8 +38,9 @@ public sealed class LireFicheProduit(IProduitsModification produits)
 /// <summary>
 /// Modification d'un produit (droit de créer un produit) ; changer le prix public demande en plus le droit de modifier un prix de
 /// vente. Un produit désactivé n'est plus proposé à la vente ni aux commandes. Chaque champ changé est inscrit au journal.
-/// Un autre que le titulaire qui donne au produit une nouvelle DCI de substance surveillée alors que sa classe est hors registre :
-/// classe imposée (psychotrope ou stupéfiant) et produit « à vérifier » ; renvoie alors le message à lui afficher (sinon null).
+/// Un autre que le titulaire qui modifie un produit dont la classe est hors registre (que la DCI change ou non) : si sa DCI est celle
+/// d'une substance surveillée, ou si la nomenclature nationale classe sous registre le n° d'enregistrement du produit, classe imposée
+/// (psychotrope ou stupéfiant, la plus stricte) et produit « à vérifier » ; renvoie alors le message à lui afficher (sinon null).
 /// </summary>
 public sealed class ModifierProduit(IProduitsModification produits, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null)
 {
@@ -44,7 +50,7 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         var actuel = await produits.LireAsync(saisie.Id, ct) ?? throw new RegleMetierException("Produit introuvable.");
         static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         var f = saisie with { NomCommercial = saisie.NomCommercial?.Trim() ?? "", Dci = N(saisie.Dci), Dosage = N(saisie.Dosage), Forme = N(saisie.Forme),
-            CodeBarre = N(saisie.CodeBarre), Classe = actuel.Classe };
+            CodeBarre = N(saisie.CodeBarre), Classe = actuel.Classe, NumEnregistrement = actuel.NumEnregistrement };
         if (f.NomCommercial.Length == 0) throw new RegleMetierException("Nom commercial obligatoire.", "nom_commercial");
         if (f.NomCommercial.Length > 120) throw new RegleMetierException("Nom commercial : 120 caractères au plus.", "nom_commercial");
         if (f.PrixPublic <= 0) throw new RegleMetierException("Le prix public doit être supérieur à 0.", "prix_public");
@@ -62,18 +68,21 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         if (f.PrixPublic != actuel.PrixPublic)
             await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "modifier un prix de vente", ct);
 
-        // Nouvelle DCI de psychotrope ou de stupéfiant donnée par un employé à un produit hors registre : classe imposée, à vérifier
+        // Toute modification par un autre que le titulaire d'un produit hors registre (DCI changée ou non) : DCI de psychotrope ou de
+        // stupéfiant, ou n° d'enregistrement classé sous registre par la nomenclature (une DCI anodine ne suffit pas à l'en sortir),
+        // la plus stricte l'emportant : classe imposée, à vérifier, comme à la création
         string? information = null;
-        if (f.Dci is { } dci && !string.Equals(dci, actuel.Dci, StringComparison.OrdinalIgnoreCase)
-            && actuel.Classe is not ("psychotrope" or "stupefiant"))
+        if (actuel.Classe is not ("psychotrope" or "stupefiant") && !await droits.EstTitulaireAsync(utilisateurId, ct))
         {
             ClasseReglementaire choisie;
             try { choisie = CodesMetier.ClasseDepuisCode(actuel.Classe); }
             catch (ArgumentException) { choisie = ClasseReglementaire.Libre; }
-            if (RegleProduit.ClasseImposee(choisie, await produits.ClasseSurveilleeAsync(dci, ct), await droits.EstTitulaireAsync(utilisateurId, ct)) is { } imposee)
+            var parDci = f.Dci is { } dci ? await produits.ClasseSurveilleeAsync(dci, ct) : null;
+            var parNomenclature = actuel.NumEnregistrement is { Length: > 0 } num ? await produits.ClasseNomenclatureAsync(num, ct) : null;
+            if (RegleProduit.ClasseImposee(choisie, RegleProduit.ClasseSurveilleeRetenue(parDci, parNomenclature), false) is { } imposee)
             {
                 f = f with { Classe = imposee.Code() };
-                information = RegleProduit.MessageClasseImposee(dci, imposee);
+                information = RegleProduit.MessageClasseImposee(f.Dci ?? "", imposee, parDci == imposee.Code() ? null : actuel.NumEnregistrement);
             }
         }
 

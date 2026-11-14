@@ -10,7 +10,7 @@ using Pharma.Infrastructure.Tresorerie;
 
 namespace Pharma.Infrastructure.Financements;
 
-/// <summary>Prêts bancaires, échéances, compte du titulaire et usage des sources (078_financements.sql).</summary>
+/// <summary>Prêts bancaires (banque de la trésorerie ou prêteur hors trésorerie), échéances, compte du titulaire et usage des sources (078, 079).</summary>
 public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
 {
     private const string ColonnesPret = """
@@ -76,8 +76,8 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
     public async Task<long> CreerPretAsync(PretAEcrire p, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            INSERT INTO pret_bancaire (compte_id, reference, objet, montant, date_pret, utilisateur_id)
-            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+            INSERT INTO pret_bancaire (compte_id, reference, objet, montant, date_pret, preteur, utilisateur_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
             """);
         Parametres(cmd, p);
         cmd.Parameters.AddWithValue(p.UtilisateurId);
@@ -87,25 +87,62 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {
-            throw new RegleMetierException($"Un prêt de cette banque porte déjà la référence « {p.Reference} ».", "reference");
+            throw new RegleMetierException($"Un prêt de ce prêteur porte déjà la référence « {p.Reference} ».", "reference");
         }
     }
 
+    /// <summary>
+    /// Nom d'un prêteur hors trésorerie corrigé : ses colonnes d'import retenues (correspondance_echeancier_preteur, nom en clé) sont
+    /// reportées sur le nouveau nom s'il n'en a pas déjà, et l'ancienne entrée retirée si plus aucun prêt ne porte l'ancien nom.
+    /// </summary>
     public async Task ModifierPretAsync(long id, PretAEcrire p, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
-            UPDATE pret_bancaire SET compte_id = $1, reference = $2, objet = $3, montant = $4, date_pret = $5 WHERE id = $6
-            """);
-        Parametres(cmd, p);
-        cmd.Parameters.AddWithValue(id);
-        try
+        await using var cx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cx.BeginTransactionAsync(ct);
+        string? ancien;
+        await using (var lecture = new NpgsqlCommand("SELECT preteur FROM pret_bancaire WHERE id = $1 FOR UPDATE", cx, tx))
         {
-            await cmd.ExecuteNonQueryAsync(ct);
+            lecture.Parameters.AddWithValue(id);
+            ancien = await lecture.ExecuteScalarAsync(ct) as string;
         }
-        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
+        await using (var cmd = new NpgsqlCommand("""
+            UPDATE pret_bancaire SET compte_id = $1, reference = $2, objet = $3, montant = $4, date_pret = $5, preteur = $6 WHERE id = $7
+            """, cx, tx))
         {
-            throw new RegleMetierException($"Un prêt de cette banque porte déjà la référence « {p.Reference} ».", "reference");
+            Parametres(cmd, p);
+            cmd.Parameters.AddWithValue(id);
+            try
+            {
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                throw new RegleMetierException($"Un prêt de ce prêteur porte déjà la référence « {p.Reference} ».", "reference");
+            }
         }
+        if (ancien is not null && p.Preteur is { } nouveau && PreteurPret.Cle(ancien) != PreteurPret.Cle(nouveau))
+        {
+            await using (var report = new NpgsqlCommand("""
+                INSERT INTO correspondance_echeancier_preteur (preteur, col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours,
+                                                               lignes_ignorees, utilisateur_id)
+                SELECT $2, col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours, lignes_ignorees, $3
+                FROM correspondance_echeancier_preteur WHERE preteur = $1
+                ON CONFLICT (preteur) DO NOTHING
+                """, cx, tx))
+            {
+                report.Parameters.AddWithValue(PreteurPret.Cle(ancien));
+                report.Parameters.AddWithValue(PreteurPret.Cle(nouveau));
+                report.Parameters.AddWithValue(p.UtilisateurId);
+                await report.ExecuteNonQueryAsync(ct);
+            }
+            await using var retrait = new NpgsqlCommand("""
+                DELETE FROM correspondance_echeancier_preteur c
+                WHERE c.preteur = $1 AND NOT EXISTS (SELECT 1 FROM pret_bancaire b WHERE b.compte_id IS NULL AND lower(b.preteur) = $1)
+                """, cx, tx);
+            retrait.Parameters.AddWithValue(PreteurPret.Cle(ancien));
+            await retrait.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
     }
 
     public async Task JoindreDocumentAsync(long id, string chemin, CancellationToken ct = default)
@@ -165,30 +202,38 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         await tx.CommitAsync(ct);
     }
 
-    public async Task<CorrespondanceColonnes?> CorrespondanceAsync(long compteId, CancellationToken ct = default)
+    /// <summary>Banque de la trésorerie : correspondance_echeancier ; prêteur hors trésorerie : correspondance_echeancier_preteur (nom en clé).</summary>
+    private static (string Table, string Cle, object Valeur) CleCorrespondance(long? compteId, string? preteur) =>
+        compteId is { } id ? ("correspondance_echeancier", "compte_id", id)
+        : !string.IsNullOrWhiteSpace(preteur) ? ("correspondance_echeancier_preteur", "preteur", PreteurPret.Cle(preteur))
+        : throw new RegleMetierException("Prêteur du prêt introuvable.");
+
+    public async Task<CorrespondanceColonnes?> CorrespondanceAsync(long? compteId, string? preteur, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
+        var (table, cle, valeur) = CleCorrespondance(compteId, preteur);
+        await using var cmd = db.CreateCommand($"""
             SELECT col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours, lignes_ignorees
-            FROM correspondance_echeancier WHERE compte_id = $1
+            FROM {table} WHERE {cle} = $1
             """);
-        cmd.Parameters.AddWithValue(compteId);
+        cmd.Parameters.AddWithValue(valeur);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         int? Col(int i) => r.IsDBNull(i) ? null : r.GetInt32(i);
         return new CorrespondanceColonnes(r.GetInt32(0), Col(1), Col(2), Col(3), Col(4), Col(5), Col(6), r.GetInt32(7));
     }
 
-    public async Task EnregistrerCorrespondanceAsync(long compteId, CorrespondanceColonnes c, long utilisateurId, CancellationToken ct = default)
+    public async Task EnregistrerCorrespondanceAsync(long? compteId, string? preteur, CorrespondanceColonnes c, long utilisateurId, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
-            INSERT INTO correspondance_echeancier (compte_id, col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours,
-                                                   lignes_ignorees, utilisateur_id)
+        var (table, cle, valeur) = CleCorrespondance(compteId, preteur);
+        await using var cmd = db.CreateCommand($"""
+            INSERT INTO {table} ({cle}, col_date, col_capital, col_interets, col_tva, col_marge, col_montant, col_encours,
+                                 lignes_ignorees, utilisateur_id)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (compte_id) DO UPDATE SET col_date = EXCLUDED.col_date, col_capital = EXCLUDED.col_capital,
+            ON CONFLICT ({cle}) DO UPDATE SET col_date = EXCLUDED.col_date, col_capital = EXCLUDED.col_capital,
                 col_interets = EXCLUDED.col_interets, col_tva = EXCLUDED.col_tva, col_marge = EXCLUDED.col_marge, col_montant = EXCLUDED.col_montant,
                 col_encours = EXCLUDED.col_encours, lignes_ignorees = EXCLUDED.lignes_ignorees, utilisateur_id = EXCLUDED.utilisateur_id, modifie_le = now()
             """);
-        cmd.Parameters.AddWithValue(compteId);
+        cmd.Parameters.AddWithValue(valeur);
         cmd.Parameters.AddWithValue(c.Date);
         foreach (var col in new[] { c.Capital, c.Interets, c.Tva, c.Marge, c.Montant, c.Encours })
             cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)col ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
@@ -440,7 +485,11 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
     internal static async Task<string> LibelleSourceAsync(NpgsqlConnection cx, NpgsqlTransaction tx, SourceFinancement source, CancellationToken ct)
     {
         if (source.PretId is not { } id) return "Apport du titulaire";
-        await using var cmd = new NpgsqlCommand("SELECT 'Prêt ' || p.reference || ' (' || c.nom || ')' FROM pret_bancaire p JOIN compte_tresorerie c ON c.id = p.compte_id WHERE p.id = $1", cx, tx);
+        // Banque de la trésorerie, sinon prêteur hors trésorerie : la source reste nommée dans chaque écriture
+        await using var cmd = new NpgsqlCommand("""
+            SELECT 'Prêt ' || p.reference || ' (' || COALESCE(c.nom, p.preteur) || ')'
+            FROM pret_bancaire p LEFT JOIN compte_tresorerie c ON c.id = p.compte_id WHERE p.id = $1
+            """, cx, tx);
         cmd.Parameters.AddWithValue(id);
         return await cmd.ExecuteScalarAsync(ct) as string ?? throw new RegleMetierException("Ce prêt est introuvable.", "source");
     }
@@ -490,14 +539,15 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
 
     private static void Parametres(NpgsqlCommand cmd, PretAEcrire p)
     {
-        cmd.Parameters.AddWithValue(p.CompteId);
+        cmd.Parameters.Add(Long(p.CompteId));
         cmd.Parameters.AddWithValue(p.Reference);
         cmd.Parameters.Add(Texte(p.Objet));
         cmd.Parameters.AddWithValue(p.Montant);
         cmd.Parameters.AddWithValue(p.DatePret);
+        cmd.Parameters.Add(Texte(p.Preteur));
     }
 
-    private static PretResume LirePret(NpgsqlDataReader r) => new(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), Txt(r, 4), r.GetDecimal(5),
+    private static PretResume LirePret(NpgsqlDataReader r) => new(r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), r.GetString(2), r.GetString(3), Txt(r, 4), r.GetDecimal(5),
         r.GetFieldValue<DateOnly>(6), Txt(r, 7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetInt32(11), r.GetInt32(12), r.GetInt32(13),
         r.IsDBNull(14) ? null : r.GetFieldValue<DateOnly>(14), r.IsDBNull(15) ? null : r.GetDecimal(15), r.GetString(16));
 

@@ -4,7 +4,10 @@
    sur le compte choisi avec l'entrée qui la couvre : le solde du compte ne change pas). *@
 @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
 <div class="filtres" role="tablist" aria-label="Usage">
-    <button type="button" role="tab" class="puce" aria-selected="@(usage == "tresorerie" ? "true" : "false")" @onclick='() => usage = "tresorerie"'>Verser au coffre ou en banque</button>
+    @if (VersementPermis)
+    {
+        <button type="button" role="tab" class="puce" aria-selected="@(usage == "tresorerie" ? "true" : "false")" @onclick='() => usage = "tresorerie"'>Verser au coffre ou en banque</button>
+    }
     <button type="button" role="tab" class="puce" aria-selected="@(usage == "depense" ? "true" : "false")" @onclick='() => usage = "depense"'>Payer une dépense</button>
 </div>
 <div class="achats-ligne">
@@ -41,6 +44,8 @@
     [Parameter] public List<CodeLibelleDto> Categories { get; set; } = [];
     /// <summary>Appelé avec le message de réussite.</summary>
     [Parameter] public EventCallback<string> OnEnregistre { get; set; }
+    /// <summary>Faux pour un prêt d'un prêteur hors trésorerie : son argent ne se verse sur aucun compte, il paie seulement une dépense.</summary>
+    [Parameter] public bool VersementPermis { get; set; } = true;
 
     private string usage = "tresorerie";
     private long compteId;
@@ -51,6 +56,7 @@
 
     protected override void OnParametersSet()
     {
+        if (!VersementPermis) usage = "depense";
         if (!Comptes.Any(c => c.Id == compteId && c.Actif)) compteId = Comptes.FirstOrDefault(c => c.Type == "coffre")?.Id ?? Comptes.FirstOrDefault()?.Id ?? 0;
     }
 

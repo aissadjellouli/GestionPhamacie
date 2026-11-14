@@ -31,6 +31,8 @@ internal sealed class NotificationsEnMemoire : INotificationsDepot
         Task.FromResult<IReadOnlyList<MessageEnFile>>(File);
     public Task MarquerEnvoyeAsync(long id, DateTime quandUtc, CancellationToken ct = default) { Envoyes.Add(id); return Task.CompletedTask; }
     public Task MarquerEchecAsync(long id, string erreur, DateTime? prochaine, CancellationToken ct = default) { Echecs.Add((id, erreur, prochaine)); return Task.CompletedTask; }
+    public List<long> Signales { get; } = [];
+    public Task MarquerSignaleAsync(long id, DateTime quandUtc, CancellationToken ct = default) { Signales.Add(id); return Task.CompletedTask; }
     public Task<IReadOnlyList<MessageEnFile>> FileAsync(int limite, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<MessageEnFile>>(File);
 }
 

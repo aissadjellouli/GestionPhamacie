@@ -155,6 +155,13 @@ public interface IAchats
     /// false si elle a été modifiée entre-temps (émise, annulée ou reçue sur un autre poste).
     /// </summary>
     Task<bool> ChangerStatutCommandeAsync(long commandeId, string statutAttendu, string statut, CancellationToken ct = default);
+    /// <summary>
+    /// Émission en une transaction : commande verrouillée (comme pour l'ajout, la modification ou la suppression d'une ligne), statut
+    /// et lignes relus sous ce verrou, refus (<see cref="RegleCommande.ModifieeEntreTemps"/>) si elle n'est plus un brouillon ou si
+    /// ses lignes diffèrent de celles contrôlées (<paramref name="lignesControlees"/>), puis passage à « envoyee ». Renvoie la commande
+    /// relue dans la transaction : le bon de commande est fait à partir d'elle.
+    /// </summary>
+    Task<CommandeDetail> EmettreCommandeAsync(long commandeId, IReadOnlyList<LigneCommandeAchat> lignesControlees, CancellationToken ct = default);
 
     Task<IReadOnlyDictionary<long, decimal>> TauxTvaAsync(IEnumerable<long> produitIds, CancellationToken ct = default);
     /// <summary>Liste du médicament (pour le SHP), prix public du catalogue et TVA de chaque produit.</summary>
@@ -277,6 +284,17 @@ public static class RegleCommande
 {
     /// <summary>Statut changé par un autre poste entre la lecture et l'écriture (émise, annulée, reçue).</summary>
     public const string ModifieeEntreTemps = "Commande modifiée entre-temps : rechargez.";
+
+    /// <summary>
+    /// Mêmes lignes (identifiant, produit, quantité commandée, prix) dans les deux listes, quel que soit leur ordre : la commande relue
+    /// sous verrou à l'émission est bien celle qui a été contrôlée.
+    /// </summary>
+    public static bool MemesLignes(IReadOnlyList<LigneCommandeAchat> a, IReadOnlyList<LigneCommandeAchat> b)
+    {
+        static IEnumerable<(long, long, int, decimal)> Cle(IEnumerable<LigneCommandeAchat> l) =>
+            l.Select(x => (x.Id, x.ProduitId, x.QteCommandee, x.PrixAchatHt)).OrderBy(x => x.Item1);
+        return a.Count == b.Count && Cle(a).SequenceEqual(Cle(b));
+    }
 }
 
 /// <summary>Modification d'une ligne, uniquement sur un brouillon (revérifié en base). Quantité 0 : la ligne est retirée.</summary>
@@ -295,7 +313,11 @@ public sealed class ModifierLigneCommande(IAchats achats, IPermissionService dro
     }
 }
 
-/// <summary>Brouillon → envoyée ; renvoie le bon de commande PDF à transmettre au grossiste.</summary>
+/// <summary>
+/// Brouillon → envoyée ; renvoie le bon de commande PDF à transmettre au grossiste. Les lignes contrôlées sont relues sous le verrou de
+/// la commande, dans la transaction qui l'émet : une ligne changée sur un autre poste entre-temps fait refuser l'émission (« rechargez ») ;
+/// le bon de commande est fait à partir des lignes relues, celles qui sont réellement émises.
+/// </summary>
 public sealed class EmettreCommande(IAchats achats, IPermissionService droits, IDocumentsAchats documents, Administration.IPharmacie pharmacie, IJournal journal)
 {
     public async Task<DocumentGenere> ExecuterAsync(long commandeId, long utilisateurId, CancellationToken ct = default)
@@ -307,13 +329,13 @@ public sealed class EmettreCommande(IAchats achats, IPermissionService droits, I
         RegleAchats.VerifierCommande(c.Lignes.Select(l => new LigneCommandeSaisie(l.ProduitId, l.Produit, l.QteCommandee, l.PrixAchatHt)).ToList());
         var f = await achats.FournisseurAsync(c.Entete.FournisseurId, ct) ?? throw new RegleMetierException("Grossiste introuvable.");
 
-        if (!await achats.ChangerStatutCommandeAsync(commandeId, "brouillon", "envoyee", ct))
-            throw new RegleMetierException(RegleCommande.ModifieeEntreTemps);
+        // Verrou, relecture et changement de statut dans une même transaction ; refus si les lignes ne sont plus celles contrôlées
+        var emise = await achats.EmettreCommandeAsync(commandeId, c.Lignes, ct);
         await journal.EcrireAsync(utilisateurId, "commande_emise", "commande_fournisseur", commandeId,
-            new Dictionary<string, object?> { ["numero"] = c.Entete.Numero, ["montant_ht"] = c.Entete.MontantHt }, Permissions.AchatsCommander, ct);
-        var detail = c with { Entete = c.Entete with { Statut = "envoyee" } };
+            new Dictionary<string, object?> { ["numero"] = emise.Entete.Numero, ["montant_ht"] = emise.Entete.MontantHt, ["lignes"] = emise.Lignes.Count },
+            Permissions.AchatsCommander, ct);
         var nom = (await pharmacie.LireAsync(ct)).Nom;
-        return new DocumentGenere(documents.BonCommande(detail, f, nom), $"{c.Entete.Numero}.pdf");
+        return new DocumentGenere(documents.BonCommande(emise, f, nom), $"{emise.Entete.Numero}.pdf");
     }
 }
 

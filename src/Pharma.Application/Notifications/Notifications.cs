@@ -7,11 +7,15 @@ namespace Pharma.Application.Notifications;
 
 // ---- Modèles ----------------------------------------------------------------
 
-/// <summary>Réglages lus en base ; le mot de passe SMTP n'en sort jamais, seul son existence est indiquée.</summary>
+/// <summary>
+/// Réglages lus en base ; le mot de passe SMTP n'en sort jamais, seul son existence est indiquée. SignalerSansDestinataire (défaut :
+/// oui) : une alerte, ou le rapport du soir, qui ne part vers aucun destinataire vérifié est signalée au bandeau de l'accueil du
+/// titulaire ; les pannes (mise en file impossible, envoi en échec) le sont toujours.
+/// </summary>
 public sealed record ReglagesNotification(
     string? SmtpServeur, int SmtpPort, bool SmtpTls, string? SmtpExpediteur, string? SmtpIdentifiant, bool MotDePasseEnregistre,
     string? ModemPort, TimeOnly HeureRapport, DateOnly? DernierRapport,
-    decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde)
+    decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde, bool SignalerSansDestinataire = true)
 {
     public bool SmtpConfigure => !string.IsNullOrWhiteSpace(SmtpServeur) && !string.IsNullOrWhiteSpace(SmtpExpediteur);
     public bool SmsActifs => !string.IsNullOrWhiteSpace(ModemPort);
@@ -20,7 +24,7 @@ public sealed record ReglagesNotification(
 /// <summary>Nouveau mot de passe : null = inchangé, chaîne vide = effacé.</summary>
 public sealed record ModificationReglagesNotification(
     string? SmtpServeur, int SmtpPort, bool SmtpTls, string? SmtpExpediteur, string? SmtpIdentifiant, string? NouveauMotDePasse,
-    string? ModemPort, TimeOnly HeureRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde);
+    string? ModemPort, TimeOnly HeureRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde, bool SignalerSansDestinataire = true);
 
 /// <summary>Paramètres de connexion passés à l'adaptateur d'envoi, mot de passe déchiffré en mémoire seulement.</summary>
 public sealed record ConnexionSmtp(string Serveur, int Port, bool Tls, string Expediteur, string? Identifiant, string? MotDePasse);
@@ -28,9 +32,11 @@ public sealed record ConnexionSmtp(string Serveur, int Port, bool Tls, string Ex
 public sealed record NouveauMessage(
     CanalNotification Canal, long DestinataireId, string Adresse, TypeNotification Type, string? Objet, string Corps, string? CorpsHtml);
 
+/// <summary>Signale : envoi en échec déjà signalé au titulaire (bandeau de l'accueil), une seule fois par message.</summary>
 public sealed record MessageEnFile(
     long Id, CanalNotification Canal, string Destinataire, string Adresse, TypeNotification Type, string? Objet, string Corps,
-    string? CorpsHtml, string Statut, int Tentatives, DateTime? ProchaineTentative, string? DerniereErreur, DateTime CreeLe, DateTime? EnvoyeLe);
+    string? CorpsHtml, string Statut, int Tentatives, DateTime? ProchaineTentative, string? DerniereErreur, DateTime CreeLe, DateTime? EnvoyeLe,
+    bool Signale = false);
 
 /// <summary>Contenu d'une notification : texte détaillé pour l'e-mail, texte court pour le SMS (null = pas de SMS).</summary>
 public sealed record ContenuNotification(TypeNotification Type, string Objet, string TexteEmail, string? HtmlEmail, string? TexteSms);
@@ -58,6 +64,8 @@ public interface INotificationsDepot
     Task MarquerEnvoyeAsync(long id, DateTime quandUtc, CancellationToken ct = default);
     /// <param name="prochaineTentativeUtc">Null : abandon, le message passe au statut « echec ».</param>
     Task MarquerEchecAsync(long id, string erreur, DateTime? prochaineTentativeUtc, CancellationToken ct = default);
+    /// <summary>Envoi en échec signalé au titulaire : il ne l'est plus aux essais suivants.</summary>
+    Task MarquerSignaleAsync(long id, DateTime quandUtc, CancellationToken ct = default);
     Task<IReadOnlyList<MessageEnFile>> FileAsync(int limite, CancellationToken ct = default);
 }
 
@@ -205,11 +213,22 @@ public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail em
                 var prochaine = RegleNouvelleTentative.Prochaine(maintenantUtc, m.CreeLe, m.Tentatives + 1);
                 await depot.MarquerEchecAsync(m.Id, ex.Message, prochaine, ct);
                 echecs++;
-                // Abandon (trop ancien) : signalé au titulaire par le bandeau de l'accueil
-                if (prochaine is null)
+                // Encore en échec après un jour d'essais (ou abandonné) : signalé une fois au titulaire par le bandeau de l'accueil ;
+                // les essais continuent jusqu'à la durée maximale
+                if (RegleNouvelleTentative.ASignaler(maintenantUtc, m.CreeLe, m.Signale, prochaine is null))
+                {
+                    try { await depot.MarquerSignaleAsync(m.Id, maintenantUtc, ct); }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        trace?.Erreur($"Envoi en échec non marqué comme signalé (message {m.Id})", e);
+                    }
                     await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, m.Type,
                         $"{(m.Canal == CanalNotification.Email ? "E-mail" : "SMS")} à {m.Destinataire} : {m.Objet ?? Accord.Texte(m.Corps)}",
-                        $"Envoi abandonné après {m.Tentatives + 1} tentative(s) : {ex.Message}");
+                        prochaine is null
+                            ? $"Envoi abandonné après {m.Tentatives + 1} tentative(s) : {ex.Message}"
+                            : $"Envoi en échec depuis plus d’un jour ({m.Tentatives + 1} tentative(s)) : {ex.Message}. Le logiciel réessaie jusqu’à "
+                              + $"{RegleNouvelleTentative.DureeMaximale.TotalDays:0} jours après la création du message.");
+                }
             }
         }
         return new BilanEnvoi(envoyes, echecs);
@@ -219,16 +238,22 @@ public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail em
 // ---- Rapport quotidien ---------------------------------------------------------
 
 public sealed class EnvoyerRapportQuotidien(INotificationsDepot depot, IDonneesRapport donnees, INotificationService notifications, Administration.IPharmacie pharmacie,
-    Alertes.IMoteurAlertes? alertes = null)
+    Alertes.IMoteurAlertes? alertes = null, IAlertesNonEnvoyees? nonEnvoyees = null, ITraceErreurs? trace = null)
 {
-    /// <summary>Envoie le rapport du jour une fois l'heure réglée passée, une seule fois par jour.</summary>
+    /// <summary>
+    /// Envoie le rapport du jour une fois l'heure réglée passée, une seule fois par jour. Parti vers aucun destinataire vérifié : signalé
+    /// au bandeau de l'accueil du titulaire, si le réglage « signaler les alertes sans destinataire » est actif (défaut).
+    /// </summary>
     public async Task<bool> ExecuterAsync(DateTime maintenantLocal, CancellationToken ct = default)
     {
         var reglages = await depot.ReglagesAsync(ct);
         var jour = DateOnly.FromDateTime(maintenantLocal);
         if (TimeOnly.FromDateTime(maintenantLocal) < reglages.HeureRapport || reglages.DernierRapport >= jour) return false;
-        await EnvoyerAsync(jour, ct);
+        var envoyes = await EnvoyerAsync(jour, ct);
         await depot.NoterRapportEnvoyeAsync(jour, ct);
+        if (envoyes == 0 && reglages.SignalerSansDestinataire)
+            await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, TypeNotification.RapportQuotidien,
+                $"Rapport du {jour:dd/MM/yyyy}", AlertesTitulaire.AucunDestinataire);
         return true;
     }
 
@@ -344,8 +369,9 @@ public interface IAlertesTitulaire
 
 /// <summary>
 /// Jamais bloquant : l'opération (clôture, rappel, inventaire, sauvegarde…) est déjà enregistrée. Une alerte qui ne peut pas être
-/// mise en file (erreur, base indisponible) ou qu'aucun destinataire vérifié ne reçoit est inscrite au journal du serveur
-/// (erreur seulement) et mémorisée pour le bandeau de l'accueil du titulaire (alerte_non_envoyee).
+/// mise en file (erreur, base indisponible) est inscrite au journal du serveur et toujours mémorisée pour le bandeau de l'accueil du
+/// titulaire (alerte_non_envoyee) ; une alerte qu'aucun destinataire vérifié ne reçoit l'est si le titulaire l'a demandé (réglage
+/// « signaler les alertes sans destinataire », actif par défaut).
 /// </summary>
 public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationService notifications,
     IAlertesNonEnvoyees? nonEnvoyees = null, ITraceErreurs? trace = null) : IAlertesTitulaire
@@ -459,18 +485,22 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
     /// <param name="mise">Nombre de messages mis en file (négatif : rien à envoyer, pas un échec).</param>
     private async Task ProtegerAsync(TypeNotification type, string objet, Func<Task<int>> mise)
     {
-        string raison;
+        int misEnFile;
         try
         {
-            if (await mise() != 0) return;
-            raison = AucunDestinataire;
+            misEnFile = await mise();
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
+            // Panne : toujours signalée
             trace?.Erreur($"Alerte au titulaire non mise en file : {objet}", e);
-            raison = $"Mise en file impossible : {e.Message}";
+            await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, type, objet, $"Mise en file impossible : {e.Message}");
+            return;
         }
-        await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, type, objet, raison);
+        if (misEnFile != 0) return;
+        // Faute de destinataire : signalée seulement si le titulaire l'a demandé (réglage, actif par défaut ; illisible : signalée)
+        if (!await AlerteNonEnvoyeeSignalee.SansDestinataireASignalerAsync(depot, trace)) return;
+        await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, type, objet, AucunDestinataire);
     }
 }
 
@@ -500,6 +530,20 @@ public static class AlerteNonEnvoyeeSignalee
         catch (Exception e) when (e is not OperationCanceledException)
         {
             trace?.Erreur($"Alerte non envoyée non mémorisée pour le titulaire : {objet} ({raison})", e);
+        }
+    }
+
+    /// <summary>
+    /// Réglage du titulaire : signaler une alerte partie vers aucun destinataire vérifié (actif par défaut). Réglages illisibles : oui
+    /// (mieux vaut un signalement de trop qu'une alerte perdue en silence).
+    /// </summary>
+    public static async Task<bool> SansDestinataireASignalerAsync(INotificationsDepot depot, ITraceErreurs? trace)
+    {
+        try { return (await depot.ReglagesAsync(CancellationToken.None)).SignalerSansDestinataire; }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            trace?.Erreur("Réglages des notifications illisibles : alerte sans destinataire signalée par prudence", e);
+            return true;
         }
     }
 
@@ -577,7 +621,11 @@ public sealed partial class ModifierReglagesNotification(INotificationsDepot dep
         try { copieSuperAdmin?.Recopier(r with { NouveauMotDePasse = m.NouveauMotDePasse }); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or PlatformNotSupportedException) { }
         await journal.EcrireAsync(utilisateurId, "reglages_notification", "parametre_notification", 1,
-            new Dictionary<string, object?> { ["smtp"] = r.SmtpServeur, ["modem"] = r.ModemPort, ["mot_de_passe_modifie"] = changer },
+            new Dictionary<string, object?>
+            {
+                ["smtp"] = r.SmtpServeur, ["modem"] = r.ModemPort, ["mot_de_passe_modifie"] = changer,
+                ["signaler_sans_destinataire"] = r.SignalerSansDestinataire
+            },
             Domain.Securite.Permissions.AdminParametres, ct);
     }
 }

@@ -9,14 +9,17 @@ using Pharma.Domain.Tresorerie;
 namespace Pharma.Application.Financements;
 
 /// <summary>
-/// Prêt bancaire. Banque : compte de trésorerie de type banque. CapitalRembourse : capital des échéances payées ; ResteDu : capital
+/// Prêt bancaire. CompteId : banque suivie en trésorerie (compte de type banque), null pour un prêteur hors trésorerie ; Banque : nom
+/// du compte, sinon nom du prêteur. CapitalRembourse : capital des échéances payées ; ResteDu : capital
 /// restant dû ; Utilise : part du prêt déjà employée (versée sur un compte, dépense, facture ou traite payée) ; Document : chemin GED.
 /// </summary>
-public sealed record PretResume(long Id, long CompteId, string Banque, string Reference, string? Objet, decimal Montant, DateOnly DatePret,
+public sealed record PretResume(long Id, long? CompteId, string Banque, string Reference, string? Objet, decimal Montant, DateOnly DatePret,
     string? Document, decimal CapitalRembourse, decimal ResteDu, decimal Utilise, int Echeances, int EcheancesPayees, int EchuesNonPayees,
     DateOnly? ProchaineEcheance, decimal? ProchainMontant, string Employe)
 {
     public decimal AUtiliser => Montant - Utilise;
+    /// <summary>Prêteur hors trésorerie : son argent n'entre dans aucun compte suivi, il ne sert que directement.</summary>
+    public bool HorsTresorerie => CompteId is null;
 }
 
 /// <summary>Échéance d'un prêt ; PayeeLe / Moyen / Compte / ReferencePaiement : paiement confirmé par le titulaire, null sinon.</summary>
@@ -64,7 +67,8 @@ public sealed record CompteTitulaire(decimal SoldeDu, decimal TotalApports, deci
 /// <summary>Source utilisable (choix d'une liste) : Code « titulaire » ou « pret:ID » ; Disponible : reste du prêt à employer (null : apport).</summary>
 public sealed record SourceDisponible(string Code, string Libelle, decimal? Disponible);
 
-public sealed record PretAEcrire(long CompteId, string Reference, string? Objet, decimal Montant, DateOnly DatePret, long UtilisateurId);
+/// <summary>CompteId (banque de la trésorerie) ou Preteur (nom libre, hors trésorerie) : exactement l'un des deux.</summary>
+public sealed record PretAEcrire(long? CompteId, string? Preteur, string Reference, string? Objet, decimal Montant, DateOnly DatePret, long UtilisateurId);
 
 /// <summary>Paiement d'une échéance. PartTiroir (espèces) : argent du tiroir de la caisse ouverte porté au coffre avant le paiement.</summary>
 public sealed record PaiementEcheanceAEcrire(long EcheanceId, DateOnly Date, string Moyen, long? CompteId, string? Reference, decimal PartTiroir,
@@ -84,14 +88,16 @@ public interface IFinancements
 {
     Task<Page<PretResume>> PretsAsync(FiltrePrets filtre, DemandePage page, CancellationToken ct = default);
     Task<PretDetail?> PretAsync(long id, CancellationToken ct = default);
-    /// <summary>Refuse une référence déjà prise pour la même banque.</summary>
+    /// <summary>Refuse une référence déjà prise pour la même banque (ou le même prêteur hors trésorerie).</summary>
     Task<long> CreerPretAsync(PretAEcrire p, CancellationToken ct = default);
+    /// <summary>Nom d'un prêteur hors trésorerie corrigé : ses colonnes d'import retenues sont reportées sur le nouveau nom.</summary>
     Task ModifierPretAsync(long id, PretAEcrire p, CancellationToken ct = default);
     Task JoindreDocumentAsync(long id, string chemin, CancellationToken ct = default);
     /// <summary>Remplace les échéances non payées (les payées, en tête, restent telles quelles) par les lignes qui suivent.</summary>
     Task RemplacerEcheancierAsync(long pretId, int payees, IReadOnlyList<LigneEcheancier> lignes, CancellationToken ct = default);
-    Task<CorrespondanceColonnes?> CorrespondanceAsync(long compteId, CancellationToken ct = default);
-    Task EnregistrerCorrespondanceAsync(long compteId, CorrespondanceColonnes c, long utilisateurId, CancellationToken ct = default);
+    /// <summary>Colonnes retenues pour la banque de la trésorerie (<paramref name="compteId"/>), sinon pour le prêteur hors trésorerie.</summary>
+    Task<CorrespondanceColonnes?> CorrespondanceAsync(long? compteId, string? preteur, CancellationToken ct = default);
+    Task EnregistrerCorrespondanceAsync(long? compteId, string? preteur, CorrespondanceColonnes c, long utilisateurId, CancellationToken ct = default);
     /// <summary>Échéances selon l'état, filtrées, paginées, de la plus ancienne à la plus récente (payées : la plus récente d'abord).</summary>
     Task<Page<EcheancePret>> EcheancesAsync(FiltreEcheances filtre, DemandePage page, CancellationToken ct = default);
     Task<EcheancePret?> EcheanceAsync(long id, CancellationToken ct = default);
@@ -151,37 +157,50 @@ public sealed class ConsulterFinancements(IFinancements financements, IPermissio
         return [new SourceDisponible(SourceFinancement.Titulaire.Code, "Apport du titulaire", null), .. await financements.SourcesAsync(ct)];
     }
 
-    public async Task<CorrespondanceColonnes?> CorrespondanceAsync(long utilisateurId, long compteId, CancellationToken ct = default)
+    /// <summary>Colonnes retenues pour le prêteur du prêt : sa banque de la trésorerie, ou son nom s'il est hors trésorerie.</summary>
+    public async Task<CorrespondanceColonnes?> CorrespondanceAsync(long utilisateurId, PretResume pret, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "importer un échéancier", ct);
-        return await financements.CorrespondanceAsync(compteId, ct);
+        return await financements.CorrespondanceAsync(pret.CompteId, pret.HorsTresorerie ? pret.Banque : null, ct);
     }
 }
 
-/// <summary>Création et modification d'un prêt (titulaire seul), document joint ; journalisés.</summary>
+/// <summary>
+/// Création et modification d'un prêt (titulaire seul), document joint ; journalisés. Prêteur : une banque suivie en trésorerie
+/// (compteId) ou un autre prêteur, hors trésorerie (nom libre) ; exactement l'un des deux (PreteurPret).
+/// </summary>
 public sealed class EnregistrerPret(IFinancements financements, IPermissionService droits, IHorloge horloge, IJournal journal, ITresorerie tresorerie)
 {
-    public async Task<long> CreerAsync(long? compteId, string? reference, string? objet, decimal montant, DateOnly? date, long utilisateurId,
-        CancellationToken ct = default)
+    public async Task<long> CreerAsync(long? compteId, string? preteur, string? reference, string? objet, decimal montant, DateOnly? date,
+        long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "enregistrer un prêt", ct);
-        var p = await VerifierAsync(compteId, reference, objet, montant, date, utilisateurId, ct);
+        var p = await VerifierAsync(compteId, preteur, reference, objet, montant, date, utilisateurId, ct);
         var id = await financements.CreerPretAsync(p, ct);
         await journal.EcrireAsync(utilisateurId, "pret_cree", "pret_bancaire", id, Details(p), null, ct);
         return id;
     }
 
-    /// <summary>Banque, montant et date ne changent plus dès qu'une échéance est payée ou qu'une part du prêt est employée.</summary>
-    public async Task ModifierAsync(long id, long? compteId, string? reference, string? objet, decimal montant, DateOnly? date, long utilisateurId,
-        CancellationToken ct = default)
+    /// <summary>
+    /// Banque suivie, type de prêteur (banque suivie ou prêteur hors trésorerie), montant et date ne changent plus dès qu'une échéance est
+    /// payée ou qu'une part du prêt est employée ; le nom d'un prêteur hors trésorerie se corrige à tout moment (faute de frappe), l'ancien
+    /// et le nouveau nom inscrits au journal, et ses colonnes d'import retenues suivent le nouveau nom.
+    /// </summary>
+    public async Task ModifierAsync(long id, long? compteId, string? preteur, string? reference, string? objet, decimal montant, DateOnly? date,
+        long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "modifier un prêt", ct);
         var avant = (await financements.PretAsync(id, ct) ?? throw new RegleMetierException("Prêt introuvable.")).Pret;
-        var p = await VerifierAsync(compteId, reference, objet, montant, date, utilisateurId, ct, avant.CompteId);
+        var p = await VerifierAsync(compteId, preteur, reference, objet, montant, date, utilisateurId, ct, avant.CompteId);
+        // Autre banque, ou passage banque suivie ↔ prêteur hors trésorerie : CompteId différent (null pour un prêteur hors trésorerie)
         if ((avant.EcheancesPayees > 0 || avant.Utilise > 0) && (p.CompteId != avant.CompteId || p.Montant != avant.Montant || p.DatePret != avant.DatePret))
-            throw new RegleMetierException("Une échéance est payée ou une part du prêt est employée : la banque, le montant et la date ne changent plus.", "montant");
+            throw new RegleMetierException("Une échéance est payée ou une part du prêt est employée : la banque, le type de prêteur, le montant "
+                + "et la date ne changent plus (le nom d’un prêteur hors trésorerie se corrige).", "montant");
+        var renomme = avant.CompteId is null && p.CompteId is null && p.Preteur != avant.Banque ? avant.Banque : null;
         await financements.ModifierPretAsync(id, p, ct);
-        await journal.EcrireAsync(utilisateurId, "pret_modifie", "pret_bancaire", id, Details(p), null, ct);
+        var details = Details(p);
+        if (renomme is not null) details["preteur_avant"] = renomme;
+        await journal.EcrireAsync(utilisateurId, "pret_modifie", "pret_bancaire", id, details, null, ct);
     }
 
     public async Task JoindreDocumentAsync(long id, string? chemin, long utilisateurId, CancellationToken ct = default)
@@ -193,24 +212,26 @@ public sealed class EnregistrerPret(IFinancements financements, IPermissionServi
         await journal.EcrireAsync(utilisateurId, "pret_document", "pret_bancaire", id, new Dictionary<string, object?> { ["document"] = chemin.Trim() }, null, ct);
     }
 
-    private async Task<PretAEcrire> VerifierAsync(long? compteId, string? reference, string? objet, decimal montant, DateOnly? date, long utilisateurId,
-        CancellationToken ct, long? banqueActuelle = null)
+    private async Task<PretAEcrire> VerifierAsync(long? compteId, string? preteur, string? reference, string? objet, decimal montant, DateOnly? date,
+        long utilisateurId, CancellationToken ct, long? banqueActuelle = null)
     {
-        if (compteId is not > 0) throw new RegleMetierException("Choisissez la banque qui accorde le prêt.", "compte");
+        // Banque suivie en trésorerie, ou autre prêteur (nom libre) : exactement l'un des deux
+        var nomPreteur = PreteurPret.Verifier(compteId, preteur);
         // Banque de la trésorerie ; une banque devenue inactive reste admise pour un prêt qu'elle portait déjà
-        if (!(await tresorerie.ComptesAsync(ct)).Any(c => c.Id == compteId && c.Type == "banque" && (c.Actif || c.Id == banqueActuelle)))
-            throw new RegleMetierException("Choisissez une banque active de la trésorerie (Finances, Trésorerie, Comptes et soldes).", "compte");
+        if (nomPreteur is null
+            && !(await tresorerie.ComptesAsync(ct)).Any(c => c.Id == compteId && c.Type == "banque" && (c.Actif || c.Id == banqueActuelle)))
+            throw new RegleMetierException("Choisissez une banque active de la trésorerie (Finances, Trésorerie, Comptes et soldes), ou saisissez le nom d’un autre prêteur.", "compte");
         if (string.IsNullOrWhiteSpace(reference)) throw new RegleMetierException("Indiquez la référence du prêt (n° du contrat).", "reference");
         if (montant <= 0) throw new RegleMetierException("Le montant du prêt doit être supérieur à 0.", "montant");
         if (!Arrondi.AuCentime(montant)) throw new RegleMetierException("Le montant se saisit au centime près (2 décimales au plus).", "montant");
         var jour = date ?? horloge.Aujourdhui;
         if (jour > horloge.Aujourdhui) throw new RegleMetierException("La date du prêt ne peut pas être dans le futur.", "date");
-        return new PretAEcrire(compteId.Value, reference.Trim(), string.IsNullOrWhiteSpace(objet) ? null : objet.Trim(), montant, jour, utilisateurId);
+        return new PretAEcrire(nomPreteur is null ? compteId : null, nomPreteur, reference.Trim(), string.IsNullOrWhiteSpace(objet) ? null : objet.Trim(), montant, jour, utilisateurId);
     }
 
     private static Dictionary<string, object?> Details(PretAEcrire p) => new()
     {
-        ["compte_id"] = p.CompteId, ["reference"] = p.Reference, ["objet"] = p.Objet, ["montant"] = p.Montant, ["date"] = p.DatePret
+        ["compte_id"] = p.CompteId, ["preteur"] = p.Preteur, ["reference"] = p.Reference, ["objet"] = p.Objet, ["montant"] = p.Montant, ["date"] = p.DatePret
     };
 }
 
@@ -283,15 +304,20 @@ public sealed class EnregistrerEcheancier(IFinancements financements, IPermissio
             [.. lu.Illisibles, .. ControlePayees(detail, lu.Lignes), .. RegleEcheancier.Controler(detail.Pret.Montant, detail.Pret.DatePret, lu.Lignes)]);
     }
 
-    /// <summary>Correspondance retenue pour la banque du prêt : proposée au prochain import d'un tableau de cette banque.</summary>
+    /// <summary>
+    /// Correspondance retenue pour le prêteur du prêt (sa banque de la trésorerie, ou son nom s'il est hors trésorerie) : proposée au
+    /// prochain import d'un tableau de ce prêteur.
+    /// </summary>
     public async Task RetenirCorrespondanceAsync(long pretId, CorrespondanceColonnes correspondance, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "importer un échéancier", ct);
         correspondance.Verifier();
         var detail = await financements.PretAsync(pretId, ct) ?? throw new RegleMetierException("Prêt introuvable.");
-        await financements.EnregistrerCorrespondanceAsync(detail.Pret.CompteId, correspondance, utilisateurId, ct);
-        await journal.EcrireAsync(utilisateurId, "correspondance_echeancier", "correspondance_echeancier", detail.Pret.CompteId,
-            new Dictionary<string, object?> { ["banque"] = detail.Pret.Banque }, null, ct);
+        var pret = detail.Pret;
+        await financements.EnregistrerCorrespondanceAsync(pret.CompteId, pret.HorsTresorerie ? pret.Banque : null, correspondance, utilisateurId, ct);
+        await journal.EcrireAsync(utilisateurId, "correspondance_echeancier",
+            pret.HorsTresorerie ? "correspondance_echeancier_preteur" : "correspondance_echeancier", pret.CompteId,
+            new Dictionary<string, object?> { ["banque"] = pret.Banque, ["hors_tresorerie"] = pret.HorsTresorerie, ["pret_id"] = pretId }, null, ct);
     }
 
     /// <summary>Échéances déjà payées : elles restent en tête de l'échéancier, identiques (date et montants).</summary>
@@ -367,6 +393,7 @@ public sealed class PayerEcheancePret(IFinancements financements, ISessionsCaiss
 /// Usage d'un prêt ou d'un apport du titulaire dans la trésorerie : argent versé au coffre ou en banque, ou dépense payée (inscrite
 /// sur le compte choisi avec l'entrée qui la couvre : le solde du compte ne change pas). Titulaire seul ; journalisé.
 /// Les factures et traites des grossistes se paient par la source depuis Achats (règlements, traites à payer).
+/// Prêt d'un prêteur hors trésorerie : son argent n'entre dans aucun compte suivi, il ne se verse pas ; il ne sert que directement.
 /// </summary>
 public sealed class UtiliserFinancement(IFinancements financements, IPermissionService droits, IHorloge horloge, IJournal journal, ITresorerie tresorerie)
 {
@@ -376,6 +403,9 @@ public sealed class UtiliserFinancement(IFinancements financements, IPermissionS
         await droits.ExigerTitulaireAsync(utilisateurId, "utiliser un prêt ou un apport", ct);
         var s = SourceFinancement.Lire(source) ?? throw new RegleMetierException("Choisissez la source : un prêt ou l’apport du titulaire.", "source");
         if (usage is not ("tresorerie" or "depense")) throw new RegleMetierException("Usage inconnu : versement sur un compte ou dépense payée.", "usage");
+        if (usage == "tresorerie" && s.PretId is { } pretId && (await financements.PretAsync(pretId, ct))?.Pret is { HorsTresorerie: true } horsTresorerie)
+            throw new RegleMetierException($"Le prêt {horsTresorerie.Reference} vient d’un prêteur hors trésorerie ({horsTresorerie.Banque}) : son argent n’entre "
+                + "dans aucun compte suivi. Employez-le directement : facture ou traite d’un grossiste (Achats), ou dépense payée.", "usage");
         var compte = (await tresorerie.ComptesAsync(ct)).FirstOrDefault(c => c.Id == compteId && c.Actif)
                      ?? throw new RegleMetierException("Compte introuvable ou inactif.", "compte");
         var jour = date ?? horloge.Aujourdhui;

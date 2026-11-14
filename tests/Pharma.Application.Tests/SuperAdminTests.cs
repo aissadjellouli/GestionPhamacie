@@ -53,6 +53,7 @@ internal sealed class DepotInjoignable : INotificationsDepot
     public Task<IReadOnlyList<MessageEnFile>> MessagesAEnvoyerAsync(DateTime m, int l, CancellationToken ct = default) => Panne<IReadOnlyList<MessageEnFile>>();
     public Task MarquerEnvoyeAsync(long id, DateTime q, CancellationToken ct = default) => Panne<bool>();
     public Task MarquerEchecAsync(long id, string e, DateTime? p, CancellationToken ct = default) => Panne<bool>();
+    public Task MarquerSignaleAsync(long id, DateTime q, CancellationToken ct = default) => Panne<bool>();
     public Task<IReadOnlyList<MessageEnFile>> FileAsync(int limite, CancellationToken ct = default) => Panne<IReadOnlyList<MessageEnFile>>();
 }
 

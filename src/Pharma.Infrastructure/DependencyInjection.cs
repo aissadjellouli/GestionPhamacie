@@ -94,6 +94,7 @@ public static class DependencyInjection
         services.AddScoped<IRemisesAutomatiques>(sp => sp.GetRequiredService<RemisesAutomatiquesSql>());
         services.AddScoped<IRemisesAutomatiquesAdmin>(sp => sp.GetRequiredService<RemisesAutomatiquesSql>());
         services.AddScoped<ISessionsCaisse, SessionsCaisseSql>();
+        services.AddScoped<IEcartsCaisseRecents, EcartsCaisseRecentsSql>();
         services.AddSingleton<IDocumentsPdf, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Rapports.IDocumentsRapports, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Stock.IDocumentsRegistre, DocumentsPdf>();

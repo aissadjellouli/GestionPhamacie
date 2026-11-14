@@ -11,7 +11,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
     {
         await using var cmd = db.CreateCommand("""
             SELECT p.id, p.nom_commercial, d.nom, p.dosage, p.forme, p.code_barre, p.prix_public, p.tarif_reference, p.remboursable,
-                   p.taux_tva, p.actif, p.classe
+                   p.taux_tva, p.actif, p.classe, p.num_enregistrement
             FROM produit p LEFT JOIN dci d ON d.id = p.dci_id WHERE p.id = $1
             """);
         cmd.Parameters.AddWithValue(id);
@@ -19,7 +19,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         if (!await r.ReadAsync(ct)) return null;
         string? T(int i) => r.IsDBNull(i) ? null : r.GetString(i);
         return new FicheProduitModifiable(r.GetInt64(0), r.GetString(1), T(2), T(3), T(4), T(5), r.GetDecimal(6),
-            r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetBoolean(8), r.GetDecimal(9), r.GetBoolean(10), r.GetString(11));
+            r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetBoolean(8), r.GetDecimal(9), r.GetBoolean(10), r.GetString(11), T(12));
     }
 
     public async Task<bool> CodeBarreAutreProduitAsync(string codeBarre, long id, CancellationToken ct = default)
@@ -31,6 +31,9 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
     }
 
     public Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default) => CatalogueEcritureSql.ClasseSurveilleeAsync(db, dci, ct);
+
+    public Task<string?> ClasseNomenclatureAsync(string numEnregistrement, CancellationToken ct = default) =>
+        CatalogueEcritureSql.ClasseNomenclatureAsync(db, numEnregistrement, ct);
 
     public async Task ModifierAsync(FicheProduitModifiable f, bool classeImposee, long utilisateurId, CancellationToken ct = default)
     {
@@ -67,7 +70,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         {
             throw new Pharma.Domain.Commun.RegleMetierException("Un autre produit porte déjà ce nom, ce dosage et cette forme (ou ce code-barres).");
         }
-        // Classe imposée (DCI de substance surveillée saisie par un employé) : produit « à vérifier », invendable jusqu'à la
+        // Classe imposée (produit modifié par un employé, DCI de substance surveillée ou n° classé par la nomenclature) : produit « à vérifier », invendable jusqu'à la
         // confirmation du titulaire ; avec du stock, solde d'ouverture au registre, comme un classement par le titulaire.
         // Seulement si la classe en base est encore hors registre (pas de classement du titulaire entre-temps).
         if (classeImposee)

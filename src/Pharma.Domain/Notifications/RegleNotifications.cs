@@ -45,6 +45,16 @@ public static class RegleNouvelleTentative
     /// <summary>Au-delà, le message est abandonné (statut « echec ») : une alerte vieille d'une semaine n'a plus de sens.</summary>
     public static readonly TimeSpan DureeMaximale = TimeSpan.FromDays(7);
 
+    /// <summary>Un envoi encore en échec au bout d'un jour d'essais est signalé au titulaire (les essais continuent jusqu'à DureeMaximale).</summary>
+    public static readonly TimeSpan DelaiSignalement = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// Échec à signaler au titulaire : une seule fois par message (<paramref name="dejaSignale"/>), dès un jour d'essais, ou à
+    /// l'abandon s'il n'a pas été signalé avant (serveur arrêté plusieurs jours, par exemple).
+    /// </summary>
+    public static bool ASignaler(DateTime maintenantUtc, DateTime creeLeUtc, bool dejaSignale, bool abandon) =>
+        !dejaSignale && (abandon || maintenantUtc - creeLeUtc >= DelaiSignalement);
+
     /// <param name="tentativesEchouees">Nombre d'échecs déjà constatés, celui-ci compris (1 après le premier échec).</param>
     public static TimeSpan Delai(int tentativesEchouees)
     {

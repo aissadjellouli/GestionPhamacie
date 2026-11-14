@@ -44,7 +44,8 @@
     private static readonly Dictionary<string, Aide> Textes = new()
     {
         ["accueil"] = new("Tableau de bord", ["Chaque tuile ouvre l’écran concerné.", "Le logo en haut à gauche ramène ici.",
-            "Ctrl + K : chercher un écran, un produit ou un patient."]),
+            "Ctrl + K : chercher un écran, un produit ou un patient.",
+            "Titulaire : alertes qui n’ont pas pu partir et écarts de caisse des 7 derniers jours, jusqu’à « Marquer comme vus »."]),
         [""] = new("Alertes", ["Urgentes : à traiter aujourd’hui (périmé, rupture…).", "Une alerte se traite ou se reporte à une date ; elle reste tracée.",
             "Péremption : lots qui périment bientôt, à vendre en priorité ou à retourner."]),
         ["stock"] = new("Stock", ["Recherche par nom, DCI, code-barres, lot ou emplacement.", "Filtres : à commander, péremption proche, psychotropes ; rayon.",
@@ -71,6 +72,7 @@
             "Les sommes en retard passent en alerte.",
             "Titulaire : aussi le capital restant dû des prêts (alerte 7 jours avant une échéance) et les apports à se rembourser."]),
         ["financements"] = new("Financements", ["Réservé au titulaire : prêts bancaires, échéances à payer, compte du titulaire.",
+            "Prêteur : une banque suivie en trésorerie, ou un autre prêteur (nom libre) ; l’argent d’un autre prêteur n’entre dans aucun compte, il paie directement une facture, une traite ou une dépense.",
             "Échéancier d’un prêt : saisi ligne par ligne, ou importé (Excel, CSV, PDF ou scan) ; les colonnes de chaque banque sont retenues.",
             "Rien n’est enregistré tant qu’une ligne est incohérente (capital + intérêts + TVA + marge = échéance, total du capital = prêt, dates croissantes, encours en baisse).",
             "Échéance payée : le capital diminue la dette envers la banque, les intérêts (TVA, marge) vont en charges financières.",

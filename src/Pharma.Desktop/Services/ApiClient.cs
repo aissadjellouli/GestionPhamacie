@@ -732,6 +732,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(AlertesNonEnvoyeesDto?, string?)> AlertesNonEnvoyeesAsync() => GetAsync<AlertesNonEnvoyeesDto?>("api/admin/notifications/non-envoyees", null);
     public Task<(NombreDto?, string?)> MarquerAlertesNonEnvoyeesVuesAsync(long jusquA) =>
         PostAsync<AlertesVuesRequete, NombreDto>("api/admin/notifications/non-envoyees/vues", new(jusquA));
+    /// <summary>Écarts de caisse récents non vus (titulaire seul) ; marqués vus jusqu'à la session la plus récente affichée.</summary>
+    public Task<(EcartsCaisseRecentsDto?, string?)> EcartsCaisseRecentsAsync() => GetAsync<EcartsCaisseRecentsDto?>("api/caisse/ecarts-recents", null);
+    public Task<(NombreDto?, string?)> MarquerEcartsCaisseVusAsync(long jusquA) =>
+        PostAsync<AlertesVuesRequete, NombreDto>("api/caisse/ecarts-recents/vus", new(jusquA));
     /// <summary>File des messages, paginée ; filtres : type (objet), statut, période de création.</summary>
     public Task<(PageDto<MessageSortantDto>?, string?)> FileMessagesAsync(int page, int taille, string? type = null, string? statut = null, DateOnly? du = null, DateOnly? au = null) =>
         GetAsync<PageDto<MessageSortantDto>?>("api/admin/notifications/file?" + Requete(("type", type), ("statut", statut), ("du", du), ("au", au), ("page", page), ("taille", taille)), null);

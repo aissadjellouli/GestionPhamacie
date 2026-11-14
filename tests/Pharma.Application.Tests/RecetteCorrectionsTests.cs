@@ -37,6 +37,9 @@ internal sealed class ProduitsModifEnMemoire : IProduitsModification
     /// <summary>Substance surveillée : alprazolam (psychotrope).</summary>
     public Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default) =>
         Task.FromResult<string?>(dci.Contains("alprazolam", StringComparison.OrdinalIgnoreCase) ? "psychotrope" : null);
+    /// <summary>Nomenclature : n° 12/34/A (stupéfiant).</summary>
+    public Task<string?> ClasseNomenclatureAsync(string num, CancellationToken ct = default) =>
+        Task.FromResult<string?>(num == "12/34/A" ? "stupefiant" : null);
 }
 
 public class RecetteCorrectionsTests
@@ -100,17 +103,84 @@ public class RecetteCorrectionsTests
     }
 
     [Fact]
-    public async Task Titulaire_ou_dci_inchangee_classe_non_imposee()
+    public async Task Nouvelle_dci_anodine_produit_classe_sous_registre_par_la_nomenclature_classe_d_office()
+    {
+        // Le n° d'enregistrement du produit est un stupéfiant pour la nomenclature : une DCI anodine ne l'en fait pas sortir
+        var p = new ProduitsModifEnMemoire();
+        p.Fiche = p.Fiche with { NumEnregistrement = "12/34/A" };
+        var information = await new ModifierProduit(p, new DroitsFactices("catalogue.creer"), new JournalEspion())
+            .ExecuterAsync(p.Fiche with { Dci = "Paracétamol", NumEnregistrement = null }, 3);
+        Assert.Equal(("stupefiant", true), (p.Modifiee!.Classe, p.ClasseImposee));
+        Assert.Contains("n° d’enregistrement 12/34/A", information);
+
+        // Titulaire : non imposée
+        var t = new ProduitsModifEnMemoire();
+        t.Fiche = t.Fiche with { NumEnregistrement = "12/34/A" };
+        Assert.Null(await new ModifierProduit(t, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
+            .ExecuterAsync(t.Fiche with { Dci = "Paracétamol" }, 1));
+        Assert.Equal(("liste_i", false), (t.Modifiee!.Classe, t.ClasseImposee));
+    }
+
+    [Fact]
+    public async Task Titulaire_classe_non_imposee_meme_dci_surveillee()
     {
         var p = new ProduitsModifEnMemoire();
         Assert.Null(await new ModifierProduit(p, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
             .ExecuterAsync(p.Fiche with { Dci = "Alprazolam" }, 1));
         Assert.Equal(("liste_i", false), (p.Modifiee!.Classe, p.ClasseImposee));
 
-        // DCI déjà surveillée et inchangée (signalée au titulaire par « Produits à vérifier ») : une autre modification ne la reclasse pas
+        // DCI surveillée inchangée, autre champ modifié par le titulaire : toujours rien d'imposé
         p.Fiche = p.Fiche with { Dci = "Alprazolam" };
+        Assert.Null(await new ModifierProduit(p, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
+            .ExecuterAsync(p.Fiche with { NomCommercial = "Autre nom" }, 1));
+        Assert.Equal(("liste_i", false), (p.Modifiee!.Classe, p.ClasseImposee));
+    }
+
+    [Fact]
+    public async Task Dci_surveillee_inchangee_toute_modification_par_un_employe_impose_la_classe()
+    {
+        // DCI déjà surveillée et inchangée : modifier un autre champ suffit, comme à la création
+        var p = new ProduitsModifEnMemoire();
+        p.Fiche = p.Fiche with { Dci = "Alprazolam" };
+        var journal = new JournalEspion();
+        var information = await new ModifierProduit(p, new DroitsFactices("catalogue.creer"), journal)
+            .ExecuterAsync(p.Fiche with { NomCommercial = "Autre nom" }, 3);
+        Assert.Equal(("psychotrope", true), (p.Modifiee!.Classe, p.ClasseImposee));
+        Assert.Contains("La DCI « Alprazolam »", information);
+        Assert.Equal(true, journal.Details.Single()["a_verifier"]);
+    }
+
+    [Fact]
+    public async Task Numero_classe_par_la_nomenclature_toute_modification_par_un_employe_impose_la_plus_stricte()
+    {
+        // DCI psychotrope, n° d'enregistrement stupéfiant pour la nomenclature : stupéfiant, sans toucher à la DCI
+        var p = new ProduitsModifEnMemoire();
+        p.Fiche = p.Fiche with { Dci = "Alprazolam", NumEnregistrement = "12/34/A" };
+        var information = await new ModifierProduit(p, new DroitsFactices("catalogue.creer"), new JournalEspion())
+            .ExecuterAsync(p.Fiche with { Dosage = "0,5 mg" }, 3);
+        Assert.Equal(("stupefiant", true), (p.Modifiee!.Classe, p.ClasseImposee));
+        Assert.Contains("n° d’enregistrement 12/34/A", information);
+
+        // Produit sans DCI : la nomenclature suffit
+        var s = new ProduitsModifEnMemoire();
+        s.Fiche = s.Fiche with { Dci = null, NumEnregistrement = "12/34/A" };
+        Assert.NotNull(await new ModifierProduit(s, new DroitsFactices("catalogue.creer"), new JournalEspion())
+            .ExecuterAsync(s.Fiche with { Actif = false }, 3));
+        Assert.Equal(("stupefiant", true), (s.Modifiee!.Classe, s.ClasseImposee));
+    }
+
+    [Fact]
+    public async Task Produit_deja_sous_registre_ou_dci_anodine_classe_non_imposee()
+    {
+        var p = new ProduitsModifEnMemoire();
         Assert.Null(await new ModifierProduit(p, new DroitsFactices("catalogue.creer"), new JournalEspion())
             .ExecuterAsync(p.Fiche with { NomCommercial = "Autre nom" }, 3));
         Assert.Equal(("liste_i", false), (p.Modifiee!.Classe, p.ClasseImposee));
+
+        var d = new ProduitsModifEnMemoire();
+        d.Fiche = d.Fiche with { Dci = "Alprazolam", Classe = "psychotrope" };
+        Assert.Null(await new ModifierProduit(d, new DroitsFactices("catalogue.creer"), new JournalEspion())
+            .ExecuterAsync(d.Fiche with { NomCommercial = "Autre nom" }, 3));
+        Assert.Equal(("psychotrope", false), (d.Modifiee!.Classe, d.ClasseImposee));
     }
 }

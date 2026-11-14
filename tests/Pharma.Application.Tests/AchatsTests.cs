@@ -68,6 +68,16 @@ internal sealed class AchatsEnMemoire : IAchats
         StatutEnBase = statut;
         return Task.FromResult(true);
     }
+    /// <summary>Lignes de la commande en base au moment de l'émission (null : celles de <see cref="Commande"/>), changées par un autre poste dans les tests.</summary>
+    public IReadOnlyList<LigneCommandeAchat>? LignesEnBase { get; set; }
+    public Task<CommandeDetail> EmettreCommandeAsync(long commandeId, IReadOnlyList<LigneCommandeAchat> lignesControlees, CancellationToken ct = default)
+    {
+        var lignes = LignesEnBase ?? Commande!.Lignes;
+        if ((StatutEnBase ?? Commande!.Entete.Statut) != "brouillon" || !RegleCommande.MemesLignes(lignes, lignesControlees))
+            throw new RegleMetierException(RegleCommande.ModifieeEntreTemps);
+        StatutEnBase = "envoyee";
+        return Task.FromResult(new CommandeDetail(Commande!.Entete with { Statut = "envoyee" }, lignes));
+    }
     public Task<IReadOnlyList<ReceptionResume>> ReceptionsAvecDocumentAsync(long f, string n, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<ReceptionResume>>(n == "26/F-015695" ? [new ReceptionResume(9, "Qouds", n, null, null, DateTime.UtcNow, 0, 0, 100, f)] : []);
     public Task<Pharma.Application.Commun.Page<ReceptionResume>> ReceptionsAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
@@ -255,6 +265,55 @@ public class AchatsApplicationTests
         Assert.Equal(RegleCommande.ModifieeEntreTemps, e.Message);
         Assert.Empty(journal.Actions);
         Assert.Equal("envoyee", achats.StatutEnBase);
+    }
+
+    /// <summary>Bon de commande : garde la commande reçue pour le PDF.</summary>
+    private sealed class DocumentsEspion : IDocumentsAchats
+    {
+        public CommandeDetail? Bon { get; private set; }
+        public byte[] BonCommande(CommandeDetail commande, Fournisseur fournisseur, string? pharmacie) { Bon = commande; return [1]; }
+        public byte[] BonRetour(RetourResume retour, string? pharmacie) => [];
+        public byte[] PlancheEtiquettes(IReadOnlyList<EtiquetteBoite> etiquettes) => [];
+        public string EtiquettesZpl(IReadOnlyList<EtiquetteBoite> etiquettes) => "";
+    }
+
+    private static CommandeDetail Brouillon(params LigneCommandeAchat[] lignes) =>
+        new(new CommandeResume(3, "C-000003", 2, "Grossiste 2", DateTime.UtcNow, "brouillon", lignes.Length, lignes.Sum(l => l.QteCommandee * l.PrixAchatHt)), lignes);
+
+    [Fact]
+    public async Task Emission_refusee_si_une_ligne_a_change_sur_un_autre_poste_entre_la_lecture_et_l_emission()
+    {
+        // Lue avec 5 boîtes ; un autre poste a mis 7 avant l'émission : refus, rien n'est émis ni journalisé
+        var achats = new AchatsEnMemoire
+        {
+            Commande = Brouillon(new LigneCommandeAchat(1, 4, "Metformine", 5, 0, 100m)),
+            LignesEnBase = [new LigneCommandeAchat(1, 4, "Metformine", 7, 0, 100m)]
+        };
+        var (journal, documents) = (new JournalEspion(), new DocumentsEspion());
+        var e = await Assert.ThrowsAsync<RegleMetierException>(() =>
+            new EmettreCommande(achats, new DroitsFactices("achats.commander"), documents, new PharmacieFactice(), journal).ExecuterAsync(3, 5));
+        Assert.Equal(RegleCommande.ModifieeEntreTemps, e.Message);
+        Assert.Null(achats.StatutEnBase);
+        Assert.Empty(journal.Actions);
+        Assert.Null(documents.Bon);
+    }
+
+    [Fact]
+    public async Task Emission_bon_de_commande_fait_des_lignes_relues_sous_verrou()
+    {
+        var ligne = new LigneCommandeAchat(1, 4, "Metformine", 5, 0, 100m);
+        var achats = new AchatsEnMemoire { Commande = Brouillon(ligne) };
+        var (journal, documents) = (new JournalEspion(), new DocumentsEspion());
+        var doc = await new EmettreCommande(achats, new DroitsFactices("achats.commander"), documents, new PharmacieFactice(), journal).ExecuterAsync(3, 5);
+        Assert.Equal("C-000003.pdf", doc.NomFichier);
+        Assert.Equal("envoyee", achats.StatutEnBase);
+        Assert.Equal(("envoyee", 5), (documents.Bon!.Entete.Statut, documents.Bon.Lignes.Single().QteCommandee));
+        Assert.Equal(["commande_emise"], journal.Actions);
+        // Mêmes lignes dans un autre ordre : identiques ; une ligne en plus ou un prix changé : différentes
+        var autre = new LigneCommandeAchat(2, 6, "Amoxicilline", 3, 0, 50m);
+        Assert.True(RegleCommande.MemesLignes([ligne, autre], [autre, ligne]));
+        Assert.False(RegleCommande.MemesLignes([ligne], [ligne, autre]));
+        Assert.False(RegleCommande.MemesLignes([ligne], [ligne with { PrixAchatHt = 101m }]));
     }
 
     [Fact]

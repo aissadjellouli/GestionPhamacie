@@ -39,6 +39,8 @@ public static class DependencyInjection
         services.AddScoped<ObtenirEtatCaisse>();
         services.AddScoped<OuvrirSessionCaisse>();
         services.AddScoped<CloturerSessionCaisse>();
+        services.AddScoped<ConsulterEcartsCaisseRecents>();
+        services.AddScoped<MarquerEcartsCaisseVus>();
         services.AddScoped<ObtenirRapportCloture>();
         services.AddScoped<ObtenirParametresCaisse>();
         services.AddScoped<ModifierParametresCaisse>();

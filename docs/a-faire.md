@@ -72,6 +72,12 @@ récemment »). Restent :
 - [x] Notification d'écart de caisse : seulement au-delà du seuil (la règle dit « tout écart non nul est signalé »). (Tranché et corrigé le 2026-11-14 : tout écart non nul est inscrit au journal des actions et envoyé par e-mail ; le SMS seulement au-delà du seuil.)
 - [x] Valeurs au prix d'achat visibles avec le seul droit `stock.consulter` (alertes), alors que les rapports les réservent à `rapports.marges`. (Tranché et corrigé le 2026-11-14 : réservées à `rapports.marges` ou au titulaire — alertes, péremption, valeur du stock ; non envoyées par le serveur sans le droit.)
 
+**Lot 6 (2026-11-14) : points tranchés par le titulaire**
+- [x] **Écarts de caisse à l'accueil**. (Tranché et livré le 2026-11-14 : 7 jours gardés ; l'employé affiché est celui qui a clôturé (compté) la caisse, lu au journal des actions (`ecart_caisse`) ; sans trace de la clôture, « ouverte par … ».)
+- [x] **Classe imposée à la modification d'un produit**. (Tranché et livré le 2026-11-14 : à toute modification par un employé non titulaire, DCI changée ou non, classe de la substance surveillée ou de la nomenclature, la plus stricte, produit « à vérifier » ; comme à la création.)
+- [x] **Prêteur hors trésorerie**. (Tranché et livré le 2026-11-14 : son nom se corrige à tout moment, ancien et nouveau nom au journal, colonnes d'import retenues reportées sur le nouveau nom ; banque suivie et type de prêteur toujours figés une fois le prêt utilisé.)
+- [x] **Envoi en échec signalé à l'accueil**. (Tranché le 2026-11-14 : un seul signalement, après un jour ; pas de second à l'abandon — comportement vérifié et couvert par un test.)
+
 ## À confirmer avec le comptable
 
 - [ ] **TVA sur les pertes et dons** (script 061, Rapports › « TVA à reverser sur les pertes et dons ») : pour quels motifs la TVA d'achat déjà déduite doit-elle être reversée ? Boîtes périmées détruites (avec ou sans procès-verbal), casses, dons et échantillons. Le réglage est à « non » pour les trois motifs tant que la règle n'est pas confirmée ; le titulaire l'active motif par motif.
@@ -84,7 +90,7 @@ récemment »). Restent :
 
 - [ ] **Tableaux d'amortissement réels** : aucun exemple d'une banque algérienne n'a été fourni. Obtenir de chaque banque du titulaire un tableau (Excel, CSV ou PDF) pour vérifier l'import : colonnes, ligne d'en-tête, format des dates et des montants, lignes de total, PDF scanné ou texte. La correspondance des colonnes est réglée par le titulaire et retenue par banque ; la lecture d'un PDF ou d'un scan est approximative et toujours vérifiée.
 - [ ] **Capital restant dû** : selon la banque, le tableau peut l'indiquer avant ou après l'échéance ; le logiciel le reprend tel quel (contrôle : jamais en hausse). Si une banque l'indique avant l'échéance, préciser s'il faut le recalculer.
-- [ ] **Prêt d'une banque qui n'est pas un compte de la trésorerie** : aujourd'hui la banque prêteuse doit être déclarée dans Trésorerie › Comptes et soldes (choix prudent). À confirmer : faut-il pouvoir saisir un prêteur libre ?
+- [x] **Prêt d'une banque qui n'est pas un compte de la trésorerie**. (Tranché et livré le 2026-11-14, script 079 : « Autre prêteur (nom) », nom saisi librement ; son argent n'entre dans aucun compte suivi et ne sert que directement — facture, traite, dépense ; échéances payées depuis le compte choisi ; colonnes d'import retenues par prêteur.)
 - [ ] **Remboursement anticipé, renégociation, échéance payée en partie** : non prévus (une échéance se paie en entier, dans l'ordre). À préciser si besoin.
 - [ ] **Dettes des financements dans Dettes et créances** : montrées au titulaire seul (prudence) ; à dire si un employé qui gère la trésorerie doit les voir.
 

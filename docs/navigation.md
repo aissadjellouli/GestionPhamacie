@@ -23,7 +23,9 @@
   d'inventaire à valider ; chaque tuile ouvre son écran et n'apparaît que si l'employé peut l'ouvrir) ; les autres (vendeur,
   stagiaire) arrivent directement sur la **Caisse**. Le logo ramène à cet accueil ; un écran refusé aussi. Titulaire : bandeau
   « N alerte(s) n'ont pas pu être envoyées » en tête du tableau de bord (5 plus récentes, « Marquer comme vues »,
-  « Vérifier les destinataires » vers Administration › Notifications) (2026-11-14).
+  « Vérifier les destinataires » vers Administration › Notifications) (2026-11-14) ; puis bandeau « Écarts de caisse récents »
+  (caisses clôturées depuis 7 jours avec un écart non nul, pas encore vues : date, poste, employé, montant ; 5 plus récents,
+  « Marquer comme vus ») ; les autres employés ne voient ni l'un ni l'autre (2026-11-14).
 - **Recherche partout : Ctrl + K** (ou « ⌕ Rechercher… » dans l'en-tête) : écrans et rubriques permis, produits (ouverts dans
   le Stock filtré sur leur nom), patients (fiche contact). Dès 2 lettres, sans majuscules ni accents ; ↑ ↓, Entrée, Échap.
   Composant `RechercheGlobale`.

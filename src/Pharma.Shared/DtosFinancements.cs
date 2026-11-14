@@ -2,8 +2,11 @@ namespace Pharma.Shared;
 
 // ---- Financements : prêts bancaires, échéances, compte du titulaire (titulaire seul) ----
 
-/// <summary>Prêt : ResteDu = capital restant dû ; Utilise = part employée (versée, dépense, facture, traite) ; Document : chemin GED.</summary>
-public sealed record PretDto(long Id, long CompteId, string Banque, string Reference, string? Objet, decimal Montant, DateOnly DatePret, string? Document,
+/// <summary>
+/// Prêt : CompteId = banque suivie en trésorerie, null pour un prêteur hors trésorerie (Banque : son nom) ; ResteDu = capital restant dû ;
+/// Utilise = part employée (versée, dépense, facture, traite) ; Document : chemin GED.
+/// </summary>
+public sealed record PretDto(long Id, long? CompteId, string Banque, string Reference, string? Objet, decimal Montant, DateOnly DatePret, string? Document,
     decimal CapitalRembourse, decimal ResteDu, decimal Utilise, int Echeances, int EcheancesPayees, int EchuesNonPayees, DateOnly? ProchaineEcheance,
     decimal? ProchainMontant, string Employe);
 
@@ -19,7 +22,8 @@ public sealed record UtilisationFinancementDto(long Id, string Source, long? Pre
 
 public sealed record PretDetailDto(PretDto Pret, IReadOnlyList<EcheancePretDto> Echeances, IReadOnlyList<UtilisationFinancementDto> Utilisations);
 
-public sealed record PretRequete(long? CompteId, string? Reference, string? Objet, decimal Montant, DateOnly? Date);
+/// <summary>CompteId : banque suivie en trésorerie ; ou Preteur : nom d'un prêteur hors trésorerie (CompteId null) ; exactement l'un des deux.</summary>
+public sealed record PretRequete(long? CompteId, string? Reference, string? Objet, decimal Montant, DateOnly? Date, string? Preteur = null);
 
 /// <summary>Chemin « Type\nom » du document déposé dans la GED.</summary>
 public sealed record DocumentPretRequete(string? Chemin);

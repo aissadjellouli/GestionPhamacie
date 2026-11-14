@@ -33,13 +33,17 @@ internal sealed class FinancementsEnMemoire : IFinancements
     public Task<Page<PretResume>> PretsAsync(FiltrePrets f, DemandePage p, CancellationToken ct = default) => Task.FromResult(new Page<PretResume>([Pret], 1, 1, p.Taille));
     public Task<PretDetail?> PretAsync(long id, CancellationToken ct = default) =>
         Task.FromResult(id == Pret.Id ? new PretDetail(Pret, Echeances, []) : null);
-    public Task<long> CreerPretAsync(PretAEcrire p, CancellationToken ct = default) => Task.FromResult(6L);
-    public Task ModifierPretAsync(long id, PretAEcrire p, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<long> CreerPretAsync(PretAEcrire p, CancellationToken ct = default) { PretsEcrits.Add(p); return Task.FromResult(6L); }
+    public Task ModifierPretAsync(long id, PretAEcrire p, CancellationToken ct = default) { PretsEcrits.Add(p); return Task.CompletedTask; }
     public Task JoindreDocumentAsync(long id, string chemin, CancellationToken ct = default) => Task.CompletedTask;
     public Task RemplacerEcheancierAsync(long pretId, int payees, IReadOnlyList<LigneEcheancier> lignes, CancellationToken ct = default)
     { Remplace = (payees, lignes); return Task.CompletedTask; }
-    public Task<CorrespondanceColonnes?> CorrespondanceAsync(long compteId, CancellationToken ct = default) => Task.FromResult<CorrespondanceColonnes?>(null);
-    public Task EnregistrerCorrespondanceAsync(long compteId, CorrespondanceColonnes c, long u, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<CorrespondanceColonnes?> CorrespondanceAsync(long? compteId, string? preteur, CancellationToken ct = default) => Task.FromResult<CorrespondanceColonnes?>(null);
+    /// <summary>Banque ou prêteur hors trésorerie pour lequel les colonnes ont été retenues.</summary>
+    public (long? CompteId, string? Preteur)? CorrespondanceRetenue { get; private set; }
+    public Task EnregistrerCorrespondanceAsync(long? compteId, string? preteur, CorrespondanceColonnes c, long u, CancellationToken ct = default)
+    { CorrespondanceRetenue = (compteId, preteur); return Task.CompletedTask; }
+    public List<PretAEcrire> PretsEcrits { get; } = [];
     public Task<Page<EcheancePret>> EcheancesAsync(FiltreEcheances f, DemandePage p, CancellationToken ct = default) =>
         Task.FromResult(new Page<EcheancePret>(Echeances, Echeances.Count, 1, p.Taille));
     public Task<EcheancePret?> EcheanceAsync(long id, CancellationToken ct = default) => Task.FromResult(Echeances.FirstOrDefault(e => e.Id == id));
@@ -204,19 +208,103 @@ public class FinancementsTests
     }
 
     [Fact]
+    public async Task Pret_d_un_preteur_hors_tresorerie_nom_libre_exactement_un_des_deux()
+    {
+        var f = new FinancementsEnMemoire();
+        var cas = new EnregistrerPret(f, Titulaire, Horloge, new JournalEspion(), new TresorerieEnMemoire());
+        // Ni banque ni nom, les deux à la fois, nom trop long : refus sur le champ du prêteur
+        Assert.Equal("preteur", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(null, "  ", "PR-9", null, 1000, null, 1))).Champ);
+        Assert.Equal("preteur", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(2, "Banque du Sud", "PR-9", null, 1000, null, 1))).Champ);
+        Assert.Equal("preteur", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(null, new string('a', 121), "PR-9", null, 1000, null, 1))).Champ);
+        Assert.Equal("compte", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(0, null, "PR-9", null, 1000, null, 1))).Champ);
+        Assert.Empty(f.PretsEcrits);
+
+        // Nom libre nettoyé, aucun compte de la trésorerie
+        await cas.CreerAsync(null, "  Banque   du Sud ", "PR-9", null, 1000, null, 1);
+        Assert.Equal(((long?)null, "Banque du Sud"), (f.PretsEcrits[0].CompteId, f.PretsEcrits[0].Preteur));
+
+        // Une part employée : le prêteur ne passe pas vers une banque de la trésorerie
+        f.Pret = f.Pret with { CompteId = null, Banque = "Banque du Sud", Utilise = 1000 };
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierAsync(5, 2, null, "PR-1", null, 300000, f.Pret.DatePret, 1));
+        await cas.ModifierAsync(5, null, "Banque du Sud", "PR-1 bis", null, 300000, f.Pret.DatePret, 1);
+        Assert.Equal(((long?)null, "Banque du Sud", "PR-1 bis"), (f.PretsEcrits[^1].CompteId, f.PretsEcrits[^1].Preteur, f.PretsEcrits[^1].Reference));
+    }
+
+    [Fact]
+    public async Task Nom_d_un_preteur_hors_tresorerie_corrige_meme_pret_utilise_ancien_et_nouveau_nom_au_journal()
+    {
+        var f = new FinancementsEnMemoire();
+        var journal = new JournalEspion();
+        var cas = new EnregistrerPret(f, Titulaire, Horloge, journal, new TresorerieEnMemoire());
+        // Échéance payée et part employée : la faute de frappe se corrige quand même
+        f.Pret = f.Pret with { CompteId = null, Banque = "Banqe du Sud", Utilise = 1000, EcheancesPayees = 1 };
+        await cas.ModifierAsync(5, null, " Banque  du Sud ", "PR-1", null, 300000, f.Pret.DatePret, 1);
+        Assert.Equal(((long?)null, "Banque du Sud"), (f.PretsEcrits[^1].CompteId, f.PretsEcrits[^1].Preteur));
+        Assert.Equal(["pret_modifie"], journal.Actions);
+        Assert.Equal(("Banqe du Sud", "Banque du Sud"), ((string?)journal.Details[0]["preteur_avant"], (string?)journal.Details[0]["preteur"]));
+
+        // Même nom : pas d'ancien nom au journal ; montant et date toujours figés
+        await cas.ModifierAsync(5, null, "Banqe du Sud", "PR-1", "Objet", 300000, f.Pret.DatePret, 1);
+        Assert.False(journal.Details[1].ContainsKey("preteur_avant"));
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierAsync(5, null, "Banque du Sud", "PR-1", null, 250000, f.Pret.DatePret, 1));
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierAsync(5, null, "Banque du Sud", "PR-1", null, 300000, f.Pret.DatePret.AddDays(1), 1));
+    }
+
+    [Fact]
+    public async Task Pret_utilise_d_une_banque_suivie_ni_autre_banque_ni_preteur_hors_tresorerie()
+    {
+        var f = new FinancementsEnMemoire();
+        var tresorerie = new TresorerieEnMemoire();
+        tresorerie.Comptes.Add(new(3, "banque", "Autre banque", "Banque", null, true, true, 0, new DateOnly(2026, 11, 1), 0));
+        var cas = new EnregistrerPret(f, Titulaire, Horloge, new JournalEspion(), tresorerie);
+        f.Pret = f.Pret with { EcheancesPayees = 1 };
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierAsync(5, 3, null, "PR-1", null, 300000, f.Pret.DatePret, 1));
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierAsync(5, null, "Banque du Sud", "PR-1", null, 300000, f.Pret.DatePret, 1));
+        Assert.Empty(f.PretsEcrits);
+
+        // Prêt pas encore utilisé : la banque change librement
+        f.Pret = f.Pret with { EcheancesPayees = 0 };
+        await cas.ModifierAsync(5, 3, null, "PR-1", null, 300000, f.Pret.DatePret, 1);
+        Assert.Equal((long?)3, f.PretsEcrits[^1].CompteId);
+    }
+
+    [Fact]
+    public async Task Argent_d_un_preteur_hors_tresorerie_jamais_verse_sur_un_compte_mais_paie_une_depense()
+    {
+        var f = new FinancementsEnMemoire();
+        f.Pret = f.Pret with { CompteId = null, Banque = "Banque du Sud" };
+        var cas = new UtiliserFinancement(f, Titulaire, Horloge, new JournalEspion(), new TresorerieEnMemoire());
+        Assert.Equal("usage", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync("pret:5", "tresorerie", null, 1000, 1, null, null, null, 1))).Champ);
+        Assert.Empty(f.Utilisations);
+        // Dépense payée directement : l'entrée et la dépense sur le compte choisi, solde inchangé, source tracée
+        await cas.ExecuterAsync("pret:5", "depense", null, 1000, 1, "loyer", "Loyer", null, 1);
+        Assert.Equal(("depense", (long?)5), (f.Utilisations[0].Usage, f.Utilisations[0].Source.PretId));
+    }
+
+    [Fact]
+    public async Task Colonnes_d_import_retenues_par_preteur_hors_tresorerie()
+    {
+        var f = new FinancementsEnMemoire();
+        f.Pret = f.Pret with { CompteId = null, Banque = "Banque du Sud" };
+        await new EnregistrerEcheancier(f, Titulaire, new JournalEspion()).RetenirCorrespondanceAsync(5, new CorrespondanceColonnes(0, 1, 2, null, null, 3, null, 1), 1);
+        Assert.Equal(((long?)null, "Banque du Sud"), f.CorrespondanceRetenue);
+        Assert.Equal("banque du sud", PreteurPret.Cle("  Banque   DU Sud "));
+    }
+
+    [Fact]
     public async Task Pret_accorde_par_une_banque_de_la_tresorerie()
     {
         var f = new FinancementsEnMemoire();
         var cas = new EnregistrerPret(f, Titulaire, Horloge, new JournalEspion(), new TresorerieEnMemoire());
-        Assert.Equal("compte", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(1, "PR-2", null, 1000, null, 1))).Champ);   // le coffre n'accorde pas de prêt
-        Assert.Equal("reference", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(2, " ", null, 1000, null, 1))).Champ);
-        Assert.Equal("date", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(2, "PR-2", null, 1000, Horloge.Aujourdhui.AddDays(1), 1))).Champ);
-        Assert.Equal(6L, await cas.CreerAsync(2, "PR-2", null, 1000, null, 1));
+        Assert.Equal("compte", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(1, null, "PR-2", null, 1000, null, 1))).Champ);   // le coffre n'accorde pas de prêt
+        Assert.Equal("reference", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(2, null, " ", null, 1000, null, 1))).Champ);
+        Assert.Equal("date", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.CreerAsync(2, null, "PR-2", null, 1000, Horloge.Aujourdhui.AddDays(1), 1))).Champ);
+        Assert.Equal(6L, await cas.CreerAsync(2, null, "PR-2", null, 1000, null, 1));
 
         // Une part employée : le montant ne change plus
         f.Pret = f.Pret with { Utilise = 1000 };
-        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierAsync(5, 2, "PR-1", null, 250000, f.Pret.DatePret, 1));
-        await cas.ModifierAsync(5, 2, "PR-1 bis", "Objet", 300000, f.Pret.DatePret, 1);
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierAsync(5, 2, null, "PR-1", null, 250000, f.Pret.DatePret, 1));
+        await cas.ModifierAsync(5, 2, null, "PR-1 bis", "Objet", 300000, f.Pret.DatePret, 1);
     }
 
     [Fact]

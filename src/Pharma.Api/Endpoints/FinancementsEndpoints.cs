@@ -31,11 +31,11 @@ internal static class FinancementsEndpoints
             });
 
         f.MapPost("/prets", async (PretRequete r, EnregistrerPret e, ClaimsPrincipal user, CancellationToken ct) =>
-            Results.Ok(new IdentifiantDto(await e.CreerAsync(r.CompteId, r.Reference, r.Objet, r.Montant, r.Date, user.UtilisateurId(), ct))));
+            Results.Ok(new IdentifiantDto(await e.CreerAsync(r.CompteId, r.Preteur, r.Reference, r.Objet, r.Montant, r.Date, user.UtilisateurId(), ct))));
 
         f.MapPut("/prets/{id:long}", async (long id, PretRequete r, EnregistrerPret e, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await e.ModifierAsync(id, r.CompteId, r.Reference, r.Objet, r.Montant, r.Date, user.UtilisateurId(), ct);
+                await e.ModifierAsync(id, r.CompteId, r.Preteur, r.Reference, r.Objet, r.Montant, r.Date, user.UtilisateurId(), ct);
                 return Results.NoContent();
             });
 
@@ -122,7 +122,7 @@ internal static class FinancementsEndpoints
     private static async Task<CorrespondanceDto?> CorrespondanceAsync(ConsulterFinancements c, long pretId, long utilisateurId, CancellationToken ct)
     {
         var pret = await c.PretAsync(utilisateurId, pretId, ct);
-        return await c.CorrespondanceAsync(utilisateurId, pret.Pret.CompteId, ct) is { } x
+        return await c.CorrespondanceAsync(utilisateurId, pret.Pret, ct) is { } x
             ? new CorrespondanceDto(x.Date, x.Capital, x.Interets, x.Tva, x.Marge, x.Montant, x.Encours, x.LignesIgnorees)
             : null;
     }

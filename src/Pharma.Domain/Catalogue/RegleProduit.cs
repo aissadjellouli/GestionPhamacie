@@ -48,8 +48,9 @@ public static class RegleProduit
     }
 
     /// <summary>
-    /// Classe imposée quand un autre que le titulaire crée un produit (ou lui donne une nouvelle DCI) dont la DCI correspond à une
-    /// substance surveillée (<paramref name="classeSurveillee"/> : psychotrope ou stupefiant, table substance_surveillee) alors que
+    /// Classe imposée quand un autre que le titulaire crée ou modifie un produit dont la DCI correspond à une
+    /// substance surveillée, ou dont le n° d'enregistrement est classé sous registre par la nomenclature nationale
+    /// (<paramref name="classeSurveillee"/> : psychotrope ou stupefiant, voir <see cref="ClasseSurveilleeRetenue"/>) alors que
     /// la classe choisie n'est pas soumise au registre : la classe de la substance. Null sinon (titulaire, DCI non surveillée,
     /// classe déjà sous registre). Le produit est alors « à vérifier » : invendable jusqu'à la confirmation du titulaire.
     /// </summary>
@@ -60,11 +61,27 @@ public static class RegleProduit
         return CodesMetier.ClasseDepuisCode(classeSurveillee);
     }
 
-    /// <summary>Message au créateur (ou à l'auteur de la modification) quand la classe a été imposée.</summary>
-    public static string MessageClasseImposee(string dci, ClasseReglementaire classe)
+    /// <summary>
+    /// Classe sous registre retenue entre celle de la substance surveillée qui correspond à la DCI (<paramref name="parDci"/>) et celle
+    /// que propose la nomenclature nationale pour le n° d'enregistrement du produit (<paramref name="parNomenclature"/>) : la plus
+    /// stricte (stupéfiant avant psychotrope), null si aucune des deux n'est sous registre.
+    /// </summary>
+    public static string? ClasseSurveilleeRetenue(string? parDci, string? parNomenclature) =>
+        parDci == "stupefiant" || parNomenclature == "stupefiant" ? "stupefiant"
+        : parDci == "psychotrope" || parNomenclature == "psychotrope" ? "psychotrope"
+        : null;
+
+    /// <summary>
+    /// Message au créateur (ou à l'auteur de la modification) quand la classe a été imposée. <paramref name="numEnregistrement"/> : la
+    /// classe vient de la nomenclature nationale (n° d'enregistrement du produit), et non de la DCI saisie.
+    /// </summary>
+    public static string MessageClasseImposee(string dci, ClasseReglementaire classe, string? numEnregistrement = null)
     {
         var libelle = classe == ClasseReglementaire.Stupefiant ? "stupéfiant" : "psychotrope";
-        return $"La DCI « {dci} » correspond à une substance classée {libelle} : le produit est enregistré en classe « {libelle} » "
+        var origine = numEnregistrement is null
+            ? $"La DCI « {dci} » correspond à une substance classée {libelle}"
+            : $"Le n° d’enregistrement {numEnregistrement} correspond, dans la nomenclature nationale, à un produit classé {libelle}";
+        return $"{origine} : le produit est enregistré en classe « {libelle} » "
             + "(registre obligatoire) et reste invendable jusqu’à ce que le titulaire confirme sa classe "
             + "(Administration › Nomenclature nationale, « Produits à vérifier »).";
     }

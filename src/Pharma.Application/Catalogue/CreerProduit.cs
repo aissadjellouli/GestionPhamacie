@@ -16,6 +16,11 @@ public interface ICatalogueEcriture
     /// </summary>
     Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default);
     /// <summary>
+    /// Classe proposée par la nomenclature nationale (version la plus récente, vue v_nomenclature) pour ce n° d'enregistrement,
+    /// seulement si elle est sous registre (psychotrope ou stupefiant, la plus stricte s'il y a plusieurs lignes) ; null sinon.
+    /// </summary>
+    Task<string?> ClasseNomenclatureAsync(string numEnregistrement, CancellationToken ct = default);
+    /// <summary>
     /// Crée le produit ; la DCI est créée si elle n'existe pas encore. <paramref name="aVerifier"/> : produit invendable jusqu'à la
     /// confirmation de sa classe par le titulaire.
     /// </summary>
@@ -28,7 +33,8 @@ public sealed record ProduitCree(long Id, string? Information = null);
 
 /// <summary>
 /// Création d'un produit absent du catalogue (droit catalogue.creer), inscrite au journal. Créé par un autre que le titulaire avec
-/// une DCI de substance surveillée et une classe hors registre : classe imposée (psychotrope ou stupéfiant), produit « à vérifier ».
+/// une DCI de substance surveillée, ou un n° d'enregistrement que la nomenclature nationale classe sous registre, et une classe hors
+/// registre : classe imposée (psychotrope ou stupéfiant, la plus stricte des deux sources), produit « à vérifier ».
 /// </summary>
 public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionService droits, IJournal journal)
 {
@@ -45,12 +51,16 @@ public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionServic
         // Psychotrope créé en classe libre (ou liste I, II) par un employé : il serait vendable sans registre jusqu'à la vérification
         var choisie = f.Classe;
         string? information = null;
-        if (f.Classe is not (ClasseReglementaire.Psychotrope or ClasseReglementaire.Stupefiant)
-            && RegleProduit.ClasseImposee(f.Classe, await catalogue.ClasseSurveilleeAsync(f.Dci, ct),
-                   await droits.EstTitulaireAsync(utilisateurId, ct)) is { } imposee)
+        if (f.Classe is not (ClasseReglementaire.Psychotrope or ClasseReglementaire.Stupefiant) && !await droits.EstTitulaireAsync(utilisateurId, ct))
         {
-            f = f with { Classe = imposee, ListePsychotrope = null };
-            information = RegleProduit.MessageClasseImposee(f.Dci, imposee);
+            // DCI saisie, et classe que propose la nomenclature nationale pour le n° d'enregistrement : la plus stricte
+            var parDci = await catalogue.ClasseSurveilleeAsync(f.Dci, ct);
+            var parNomenclature = f.NumEnregistrement is { } num ? await catalogue.ClasseNomenclatureAsync(num, ct) : null;
+            if (RegleProduit.ClasseImposee(f.Classe, RegleProduit.ClasseSurveilleeRetenue(parDci, parNomenclature), false) is { } imposee)
+            {
+                f = f with { Classe = imposee, ListePsychotrope = null };
+                information = RegleProduit.MessageClasseImposee(f.Dci, imposee, parDci == imposee.Code() ? null : f.NumEnregistrement);
+            }
         }
 
         var id = await catalogue.CreerAsync(f, information is not null, ct);

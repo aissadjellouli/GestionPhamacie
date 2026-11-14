@@ -26,7 +26,8 @@ internal static class NotificationsEndpoints
         n.MapPut("/reglages", async (ModificationReglagesNotificationDto d, ModifierReglagesNotification modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await modifier.ExecuterAsync(new ModificationReglagesNotification(d.SmtpServeur, d.SmtpPort, d.SmtpTls, d.SmtpExpediteur,
-                    d.SmtpIdentifiant, d.NouveauMotDePasse, d.ModemPort, d.HeureRapport, d.SmsSeuilEcart, d.SmsLotBloque, d.SmsSauvegarde),
+                    d.SmtpIdentifiant, d.NouveauMotDePasse, d.ModemPort, d.HeureRapport, d.SmsSeuilEcart, d.SmsLotBloque, d.SmsSauvegarde,
+                    d.SignalerSansDestinataire),
                     user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
@@ -141,7 +142,7 @@ internal static class NotificationsEndpoints
 
     private static ReglagesNotificationDto VersDto(ReglagesNotification r) =>
         new(r.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur, r.SmtpIdentifiant, r.MotDePasseEnregistre,
-            r.ModemPort, r.HeureRapport, r.DernierRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde);
+            r.ModemPort, r.HeureRapport, r.DernierRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde, r.SignalerSansDestinataire);
 
     private static DestinataireDto VersDto(Destinataire d) =>
         new(d.Id, d.Nom, d.Email, d.Telephone, d.CanalEmail, d.CanalSms,

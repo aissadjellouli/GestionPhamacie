@@ -156,6 +156,7 @@
     <File Path="database/migration/076_journaux_non_vidables.sql" />
     <File Path="database/migration/077_alertes_non_envoyees_doublons.sql" />
     <File Path="database/migration/078_financements.sql" />
+    <File Path="database/migration/079_preteur_libre_alertes_ecarts.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

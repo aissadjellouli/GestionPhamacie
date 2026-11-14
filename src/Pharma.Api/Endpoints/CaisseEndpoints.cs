@@ -228,6 +228,20 @@ internal static class CaisseEndpoints
                     ? Results.File(r.Contenu, "application/pdf", r.NomFichier)
                     : Results.NotFound(new ErreurDto("Session de caisse introuvable.")))
            .ExigerPermission(Permissions.CaisseVendre);
+
+        // Écarts de caisse récents : tuile de l'accueil du titulaire, marqués vus par lui (les autres employés ne voient rien)
+        caisse.MapGet("/ecarts-recents", async (ConsulterEcartsCaisseRecents consulter, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var e = await consulter.ExecuterAsync(user.UtilisateurId(), ct);
+                return Results.Ok(new EcartsCaisseRecentsDto(e.Nombre,
+                    e.Derniers.Select(x => new EcartCaisseRecentDto(x.SessionId, x.Poste, x.Employe, x.ClotureLe, x.Ecart, x.ClotureePar)).ToList()));
+            })
+           .ExigerTitulaire();
+
+        caisse.MapPost("/ecarts-recents/vus", async (AlertesVuesRequete d, MarquerEcartsCaisseVus marquer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new NombreDto(await marquer.ExecuterAsync(d.JusquA, user.UtilisateurId(), ct))))
+           .ExigerTitulaire()
+           .GererErreursMetier();
     }
 
     /// <summary>Ce que l'annulation rendrait (retours déjà rendus déduits, part d'un crédit déjà remboursée).</summary>

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 078 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 079 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 078 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 079 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict 53ZnnHZ4uievkv2KiKrS0hNVfWl6FO9QLkMHbWEDdwXCvJyrEtrhtqNIACj3XDD
+\restrict fcRt7Ap1fQy2yVVTpMJsVBcLEf6Tnx4QV5tteeyKEkGIqcqMJqHQfApGLiD31Ep
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -998,9 +998,12 @@ CREATE FUNCTION public.interdire_vidage() RETURNS trigger
 BEGIN
     RAISE EXCEPTION '% ne peut pas être vidé (TRUNCATE refusé) : ses lignes sont conservées',
         CASE TG_TABLE_NAME
-            WHEN 'journal_audit'        THEN 'Le journal des actions'
-            WHEN 'registre_psychotrope' THEN 'Le registre des psychotropes'
-            WHEN 'journal_sauvegarde'   THEN 'Le journal des sauvegardes'
+            WHEN 'journal_audit'         THEN 'Le journal des actions'
+            WHEN 'registre_psychotrope'  THEN 'Le registre des psychotropes'
+            WHEN 'journal_sauvegarde'    THEN 'Le journal des sauvegardes'
+            WHEN 'boite_evenement'       THEN 'L''historique des boîtes'
+            WHEN 'credit_mouvement'      THEN 'Le relevé de la dette des patients'
+            WHEN 'fournisseur_mouvement' THEN 'Le relevé de la dette envers les grossistes'
             ELSE 'La table ' || TG_TABLE_NAME
         END;
 END;
@@ -2968,6 +2971,34 @@ CREATE TABLE public.correspondance_echeancier (
 
 
 --
+-- Name: correspondance_echeancier_preteur; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.correspondance_echeancier_preteur (
+    preteur text NOT NULL,
+    col_date integer NOT NULL,
+    col_capital integer,
+    col_interets integer,
+    col_tva integer,
+    col_marge integer,
+    col_montant integer,
+    col_encours integer,
+    lignes_ignorees integer DEFAULT 0 NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT correspondance_echeancier_preteur_col_capital_check CHECK ((col_capital >= 0)),
+    CONSTRAINT correspondance_echeancier_preteur_col_date_check CHECK ((col_date >= 0)),
+    CONSTRAINT correspondance_echeancier_preteur_col_encours_check CHECK ((col_encours >= 0)),
+    CONSTRAINT correspondance_echeancier_preteur_col_interets_check CHECK ((col_interets >= 0)),
+    CONSTRAINT correspondance_echeancier_preteur_col_marge_check CHECK ((col_marge >= 0)),
+    CONSTRAINT correspondance_echeancier_preteur_col_montant_check CHECK ((col_montant >= 0)),
+    CONSTRAINT correspondance_echeancier_preteur_col_tva_check CHECK ((col_tva >= 0)),
+    CONSTRAINT correspondance_echeancier_preteur_lignes_ignorees_check CHECK ((lignes_ignorees >= 0)),
+    CONSTRAINT correspondance_echeancier_preteur_preteur_check CHECK (((preteur = lower(btrim(preteur))) AND (preteur <> ''::text)))
+);
+
+
+--
 -- Name: credit_mouvement; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3071,6 +3102,17 @@ ALTER TABLE public.destinataire_notification ALTER COLUMN id ADD GENERATED ALWAY
     NO MINVALUE
     NO MAXVALUE
     CACHE 1
+);
+
+
+--
+-- Name: ecart_caisse_vu; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ecart_caisse_vu (
+    session_id bigint NOT NULL,
+    vu_le timestamp with time zone DEFAULT now() NOT NULL,
+    vu_par bigint NOT NULL
 );
 
 
@@ -3717,6 +3759,7 @@ CREATE TABLE public.message_sortant (
     derniere_erreur text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     envoye_le timestamp with time zone,
+    signale_le timestamp with time zone,
     CONSTRAINT message_sortant_canal_check CHECK ((canal = ANY (ARRAY['email'::text, 'sms'::text]))),
     CONSTRAINT message_sortant_statut_check CHECK ((statut = ANY (ARRAY['en_attente'::text, 'envoye'::text, 'echec'::text]))),
     CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'test'::text])))
@@ -4172,6 +4215,7 @@ CREATE TABLE public.parametre_notification (
     sms_seuil_ecart numeric(12,2),
     sms_lot_bloque boolean DEFAULT true NOT NULL,
     sms_sauvegarde boolean DEFAULT true NOT NULL,
+    signaler_sans_destinataire boolean DEFAULT true NOT NULL,
     CONSTRAINT parametre_notification_id_check CHECK ((id = 1)),
     CONSTRAINT parametre_notification_sms_seuil_ecart_check CHECK ((sms_seuil_ecart >= (0)::numeric)),
     CONSTRAINT parametre_notification_smtp_port_check CHECK (((smtp_port >= 1) AND (smtp_port <= 65535)))
@@ -4340,7 +4384,7 @@ CREATE TABLE public.pharmacie (
 
 CREATE TABLE public.pret_bancaire (
     id bigint NOT NULL,
-    compte_id bigint NOT NULL,
+    compte_id bigint,
     reference text NOT NULL,
     objet text,
     montant numeric(12,2) NOT NULL,
@@ -4348,7 +4392,9 @@ CREATE TABLE public.pret_bancaire (
     document text,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT pret_bancaire_montant_check CHECK ((montant > (0)::numeric))
+    preteur text,
+    CONSTRAINT pret_bancaire_montant_check CHECK ((montant > (0)::numeric)),
+    CONSTRAINT pret_bancaire_preteur_check CHECK ((((compte_id IS NOT NULL) AND (preteur IS NULL)) OR ((compte_id IS NULL) AND (btrim(preteur) <> ''::text))))
 );
 
 
@@ -5388,7 +5434,7 @@ CREATE VIEW public.v_echeance_pret AS
     e.pret_id,
     p.reference AS pret,
     p.compte_id AS banque_id,
-    c.nom AS banque,
+    COALESCE(c.nom, p.preteur) AS banque,
     e.rang,
     e.date_echeance,
     e.capital,
@@ -5406,7 +5452,7 @@ CREATE VIEW public.v_echeance_pret AS
     u.nom_complet AS employe
    FROM (((((public.echeance_pret e
      JOIN public.pret_bancaire p ON ((p.id = e.pret_id)))
-     JOIN public.compte_tresorerie c ON ((c.id = p.compte_id)))
+     LEFT JOIN public.compte_tresorerie c ON ((c.id = p.compte_id)))
      LEFT JOIN public.paiement_echeance_pret pe ON ((pe.echeance_id = e.id)))
      LEFT JOIN public.compte_tresorerie cp ON ((cp.id = pe.compte_id)))
      LEFT JOIN public.utilisateur u ON ((u.id = pe.utilisateur_id)));
@@ -5419,7 +5465,7 @@ CREATE VIEW public.v_echeance_pret AS
 CREATE VIEW public.v_pret_bancaire AS
  SELECT p.id,
     p.compte_id,
-    c.nom AS banque,
+    COALESCE(c.nom, p.preteur) AS banque,
     p.reference,
     p.objet,
     p.montant,
@@ -5446,7 +5492,7 @@ CREATE VIEW public.v_pret_bancaire AS
     u.nom_complet AS employe,
     p.cree_le
    FROM (((public.pret_bancaire p
-     JOIN public.compte_tresorerie c ON ((c.id = p.compte_id)))
+     LEFT JOIN public.compte_tresorerie c ON ((c.id = p.compte_id)))
      JOIN public.utilisateur u ON ((u.id = p.utilisateur_id)))
      LEFT JOIN LATERAL ( SELECT count(*) AS nombre,
             count(v.date_paiement) AS payees,
@@ -6501,6 +6547,14 @@ ALTER TABLE ONLY public.correspondance_echeancier
 
 
 --
+-- Name: correspondance_echeancier_preteur correspondance_echeancier_preteur_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correspondance_echeancier_preteur
+    ADD CONSTRAINT correspondance_echeancier_preteur_pkey PRIMARY KEY (preteur);
+
+
+--
 -- Name: credit_mouvement credit_mouvement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6538,6 +6592,14 @@ ALTER TABLE ONLY public.dci
 
 ALTER TABLE ONLY public.destinataire_notification
     ADD CONSTRAINT destinataire_notification_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ecart_caisse_vu ecart_caisse_vu_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ecart_caisse_vu
+    ADD CONSTRAINT ecart_caisse_vu_pkey PRIMARY KEY (session_id);
 
 
 --
@@ -7878,6 +7940,13 @@ CREATE UNIQUE INDEX ux_paiement_numero_recu ON public.paiement USING btree (nume
 
 
 --
+-- Name: ux_pret_bancaire_preteur_reference; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_pret_bancaire_preteur_reference ON public.pret_bancaire USING btree (lower(btrim(preteur)), reference) WHERE (preteur IS NOT NULL);
+
+
+--
 -- Name: ux_produit_nom_dosage_forme; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8090,6 +8159,13 @@ CREATE TRIGGER trg_boite_evenement_immuable BEFORE DELETE OR UPDATE ON public.bo
 
 
 --
+-- Name: boite_evenement trg_boite_evenement_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_boite_evenement_non_vidable BEFORE TRUNCATE ON public.boite_evenement FOR EACH STATEMENT EXECUTE FUNCTION public.interdire_vidage();
+
+
+--
 -- Name: boite trg_boite_reception; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8153,6 +8229,13 @@ CREATE TRIGGER trg_credit_mouvement_immuable BEFORE DELETE OR UPDATE ON public.c
 
 
 --
+-- Name: credit_mouvement trg_credit_mouvement_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_credit_mouvement_non_vidable BEFORE TRUNCATE ON public.credit_mouvement FOR EACH STATEMENT EXECUTE FUNCTION public.interdire_vidage();
+
+
+--
 -- Name: credit_mouvement trg_credit_ouverture; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8171,6 +8254,13 @@ CREATE TRIGGER trg_fournisseur_dette AFTER INSERT OR UPDATE OF solde ON public.f
 --
 
 CREATE TRIGGER trg_fournisseur_mouvement_immuable BEFORE DELETE OR UPDATE ON public.fournisseur_mouvement FOR EACH ROW EXECUTE FUNCTION public.proteger_fournisseur_mouvement();
+
+
+--
+-- Name: fournisseur_mouvement trg_fournisseur_mouvement_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_fournisseur_mouvement_non_vidable BEFORE TRUNCATE ON public.fournisseur_mouvement FOR EACH STATEMENT EXECUTE FUNCTION public.interdire_vidage();
 
 
 --
@@ -8741,6 +8831,14 @@ ALTER TABLE ONLY public.correspondance_echeancier
 
 
 --
+-- Name: correspondance_echeancier_preteur correspondance_echeancier_preteur_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correspondance_echeancier_preteur
+    ADD CONSTRAINT correspondance_echeancier_preteur_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: correspondance_echeancier correspondance_echeancier_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8778,6 +8876,22 @@ ALTER TABLE ONLY public.credit_mouvement
 
 ALTER TABLE ONLY public.credit_ouverture
     ADD CONSTRAINT credit_ouverture_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: ecart_caisse_vu ecart_caisse_vu_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ecart_caisse_vu
+    ADD CONSTRAINT ecart_caisse_vu_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.session_caisse(id);
+
+
+--
+-- Name: ecart_caisse_vu ecart_caisse_vu_vu_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ecart_caisse_vu
+    ADD CONSTRAINT ecart_caisse_vu_vu_par_fkey FOREIGN KEY (vu_par) REFERENCES public.utilisateur(id);
 
 
 --
@@ -9912,5 +10026,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 53ZnnHZ4uievkv2KiKrS0hNVfWl6FO9QLkMHbWEDdwXCvJyrEtrhtqNIACj3XDD
+\unrestrict fcRt7Ap1fQy2yVVTpMJsVBcLEf6Tnx4QV5tteeyKEkGIqcqMJqHQfApGLiD31Ep
 

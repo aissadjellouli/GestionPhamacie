@@ -15,7 +15,7 @@ public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot,
     {
         await using var cmd = db.CreateCommand("""
             SELECT smtp_serveur, smtp_port, smtp_tls, smtp_expediteur, smtp_identifiant, smtp_mot_de_passe IS NOT NULL,
-                   modem_port, heure_rapport, dernier_rapport, sms_seuil_ecart, sms_lot_bloque, sms_sauvegarde
+                   modem_port, heure_rapport, dernier_rapport, sms_seuil_ecart, sms_lot_bloque, sms_sauvegarde, signaler_sans_destinataire
             FROM parametre_notification WHERE id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -24,7 +24,7 @@ public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot,
         return new ReglagesNotification(
             Texte(r, 0), r.GetInt32(1), r.GetBoolean(2), Texte(r, 3), Texte(r, 4), r.GetBoolean(5),
             Texte(r, 6), TimeOnly.FromTimeSpan(r.GetTimeSpan(7)), r.IsDBNull(8) ? null : r.GetFieldValue<DateOnly>(8),
-            r.IsDBNull(9) ? null : r.GetDecimal(9), r.GetBoolean(10), r.GetBoolean(11));
+            r.IsDBNull(9) ? null : r.GetDecimal(9), r.GetBoolean(10), r.GetBoolean(11), r.GetBoolean(12));
     }
 
     public async Task EnregistrerReglagesAsync(ModificationReglagesNotification m, bool changerMotDePasse, byte[]? motDePasseChiffre, CancellationToken ct = default)
@@ -33,7 +33,8 @@ public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot,
             UPDATE parametre_notification SET
                 smtp_serveur = $1, smtp_port = $2, smtp_tls = $3, smtp_expediteur = $4, smtp_identifiant = $5,
                 smtp_mot_de_passe = CASE WHEN $6 THEN $7 ELSE smtp_mot_de_passe END,
-                modem_port = $8, heure_rapport = $9, sms_seuil_ecart = $10, sms_lot_bloque = $11, sms_sauvegarde = $12
+                modem_port = $8, heure_rapport = $9, sms_seuil_ecart = $10, sms_lot_bloque = $11, sms_sauvegarde = $12,
+                signaler_sans_destinataire = $13
             WHERE id = 1
             """);
         cmd.Parameters.Add(Nul(m.SmtpServeur, NpgsqlDbType.Text));
@@ -48,6 +49,7 @@ public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot,
         cmd.Parameters.Add(Nul(m.SmsSeuilEcart, NpgsqlDbType.Numeric));
         cmd.Parameters.AddWithValue(m.SmsLotBloque);
         cmd.Parameters.AddWithValue(m.SmsSauvegarde);
+        cmd.Parameters.AddWithValue(m.SignalerSansDestinataire);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -147,7 +149,7 @@ public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot,
 
     private const string SelectMessage = """
         SELECT m.id, m.canal, d.nom, m.adresse, m.type, m.objet, m.corps, m.corps_html, m.statut, m.tentatives,
-               m.prochaine_tentative, m.derniere_erreur, m.cree_le, m.envoye_le
+               m.prochaine_tentative, m.derniere_erreur, m.cree_le, m.envoye_le, m.signale_le IS NOT NULL
         FROM message_sortant m JOIN destinataire_notification d ON d.id = m.destinataire_id
         """;
 
@@ -196,11 +198,20 @@ public sealed class NotificationsSql(NpgsqlDataSource db) : INotificationsDepot,
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task MarquerSignaleAsync(long id, DateTime quandUtc, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("UPDATE message_sortant SET signale_le = $2 WHERE id = $1 AND signale_le IS NULL");
+        cmd.Parameters.AddWithValue(id);
+        cmd.Parameters.AddWithValue(quandUtc);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static async Task<IReadOnlyList<MessageEnFile>> LireMessages(NpgsqlCommand cmd, CancellationToken ct)
     {
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<MessageEnFile>();
-        while (await r.ReadAsync(ct)) liste.Add(LireMessage(r));
+        // SelectMessage : colonne 14 = envoi en échec déjà signalé au titulaire
+        while (await r.ReadAsync(ct)) liste.Add(LireMessage(r) with { Signale = r.GetBoolean(14) });
         return liste;
     }
 

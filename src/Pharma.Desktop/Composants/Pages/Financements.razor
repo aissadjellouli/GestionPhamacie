@@ -44,14 +44,26 @@
             case "prets" when creation:
                 <section class="panneau" aria-labelledby="t-nouveau-pret">
                     <h2 id="t-nouveau-pret">Nouveau prêt</h2>
+                    <div class="filtres" role="tablist" aria-label="Prêteur">
+                        <button type="button" role="tab" class="puce" aria-selected="@(nouveauHorsTresorerie ? "false" : "true")" @onclick="() => nouveauHorsTresorerie = false">Banque suivie en trésorerie</button>
+                        <button type="button" role="tab" class="puce" aria-selected="@(nouveauHorsTresorerie ? "true" : "false")" @onclick="() => nouveauHorsTresorerie = true">Autre prêteur (nom)</button>
+                    </div>
                     <div class="achats-ligne">
-                        <div class="champ" style="flex: 1 1 200px"><label for="np-banque" class="requis">Banque</label>
-                            <select id="np-banque" data-champ="compte" @bind="nouveauCompte">
-                                <option value="0">— choisir la banque —</option>
-                                @foreach (var b in Banques) { <option value="@b.Id">@b.Nom</option> }
-                            </select>
-                            @if (!Banques.Any()) { <span class="detail">Aucune banque active : déclarez-la dans Finances, Trésorerie, Comptes et soldes.</span> }
-                        </div>
+                        @if (nouveauHorsTresorerie)
+                        {
+                            <div class="champ" style="flex: 1 1 200px"><label for="np-preteur" class="requis">Prêteur</label>
+                                <input id="np-preteur" data-champ="preteur" type="text" maxlength="120" @bind="nouveauPreteur" placeholder="Ex. banque non suivie en trésorerie" /></div>
+                        }
+                        else
+                        {
+                            <div class="champ" style="flex: 1 1 200px"><label for="np-banque" class="requis">Banque</label>
+                                <select id="np-banque" data-champ="compte" @bind="nouveauCompte">
+                                    <option value="0">— choisir la banque —</option>
+                                    @foreach (var b in Banques) { <option value="@b.Id">@b.Nom</option> }
+                                </select>
+                                @if (!Banques.Any()) { <span class="detail">Aucune banque active : déclarez-la dans Finances, Trésorerie, Comptes et soldes, ou choisissez « Autre prêteur ».</span> }
+                            </div>
+                        }
                         <div class="champ" style="flex: 1 1 180px"><label for="np-ref" class="requis">Référence (n° du contrat)</label>
                             <input id="np-ref" data-champ="reference" type="text" maxlength="60" @bind="nouvelleReference" /></div>
                         <div class="champ" style="flex: 0 0 180px"><label for="np-montant" class="requis">Montant (DA)</label>
@@ -61,6 +73,10 @@
                     </div>
                     <div class="champ"><label for="np-objet">Objet</label><input id="np-objet" type="text" maxlength="200" @bind="nouvelObjet" placeholder="Ex. Achat du stock d’ouverture, travaux" /></div>
                     <p class="detail" style="margin: 0">Ensuite, dans la fiche du prêt : l’échéancier (saisi ou importé), le document joint, et l’usage de l’argent reçu.</p>
+                    @if (nouveauHorsTresorerie)
+                    {
+                        <p class="detail" style="margin: 0">Prêteur hors trésorerie : l’argent reçu n’entre dans aucun compte suivi ; il sert directement à payer une facture, une traite ou une dépense. Les échéances se paient depuis le coffre, le tiroir ou une banque, comme les autres.</p>
+                    }
                     <div class="filtres">
                         <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CreerPretAsync">Enregistrer le prêt</button>
                         <button type="button" class="btn" @onclick="() => creation = false">Annuler</button>
@@ -101,7 +117,7 @@
                                 {
                                     <tr>
                                         <td><strong>@p.Reference</strong><br /><span class="detail">du @p.DatePret.ToString("dd/MM/yyyy")@(p.Objet is { } o ? $" · {o}" : "")</span></td>
-                                        <td>@p.Banque</td>
+                                        <td>@p.Banque@if (p.CompteId is null) { <br /><span class="detail">hors trésorerie</span> }</td>
                                         <td class="nombre">@Libelles.Dinars(p.Montant, 2)</td>
                                         <td class="nombre"><strong>@Libelles.Dinars(p.ResteDu, 2)</strong></td>
                                         <td>
@@ -324,7 +340,8 @@
     private bool FiltrePretsActif => fpTexte.Trim() != "" || fpEtat != "en_cours" || fpBanque > 0;
     private bool creation;
     private long nouveauCompte;
-    private string? nouvelleReference, nouvelObjet;
+    private bool nouveauHorsTresorerie;
+    private string? nouvelleReference, nouvelObjet, nouveauPreteur;
     private decimal nouveauMontant;
     private DateOnly nouvelleDate = DateOnly.FromDateTime(DateTime.Today);
 
@@ -456,12 +473,17 @@
     {
         (creation, erreur, message) = (true, null, null);
         (nouveauCompte, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate) = (Banques.FirstOrDefault()?.Id ?? 0, null, null, 0, DateOnly.FromDateTime(DateTime.Today));
+        (nouveauHorsTresorerie, nouveauPreteur) = (false, null);
     }
 
     private async Task CreerPretAsync()
     {
         (enCours, erreur, message) = (true, null, null);
-        var (id, e) = await Api.CreerPretAsync(new PretRequete(nouveauCompte > 0 ? nouveauCompte : null, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate));
+        // Banque suivie en trésorerie, ou autre prêteur (nom libre) : un seul des deux est envoyé
+        var requete = nouveauHorsTresorerie
+            ? new PretRequete(null, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate, nouveauPreteur)
+            : new PretRequete(nouveauCompte, nouvelleReference, nouvelObjet, nouveauMontant, nouvelleDate);
+        var (id, e) = await Api.CreerPretAsync(requete);
         enCours = false;
         if (e is not null || id is null) { erreur = e; return; }
         creation = false;

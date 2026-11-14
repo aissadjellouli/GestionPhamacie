@@ -233,6 +233,33 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         if (statut != "brouillon") throw new RegleMetierException(RegleCommande.ModifieeEntreTemps);
     }
 
+    public async Task<CommandeDetail> EmettreCommandeAsync(long commandeId, IReadOnlyList<LigneCommandeAchat> lignesControlees, CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        // Commande verrouillée : un ajout, une modification ou une suppression de ligne sur un autre poste attend la fin de l'émission
+        // (puis est refusé : la commande n'est plus un brouillon) ; une modification déjà enregistrée se voit à la relecture
+        await VerrouillerBrouillonAsync(cnx, tx, commandeId, ct);
+        CommandeDetail relue;
+        await using (var entete = new NpgsqlCommand(SelectCommande + " WHERE c.id = $1", cnx, tx))
+        {
+            entete.Parameters.AddWithValue(commandeId);
+            var e = (await Lister(entete, LireCommande, ct)).FirstOrDefault() ?? throw new RegleMetierException("Commande introuvable.");
+            await using var lignes = new NpgsqlCommand("""
+                SELECT l.id, l.produit_id, p.nom_commercial, l.qte_commandee, l.qte_recue, l.prix_achat_ht
+                FROM ligne_commande l JOIN produit p ON p.id = l.produit_id
+                WHERE l.commande_id = $1 ORDER BY p.nom_commercial
+                """, cnx, tx);
+            lignes.Parameters.AddWithValue(commandeId);
+            relue = new CommandeDetail(e, await Lister(lignes, r => new LigneCommandeAchat(
+                r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetInt32(3), r.GetInt32(4), r.GetDecimal(5)), ct));
+        }
+        if (!RegleCommande.MemesLignes(relue.Lignes, lignesControlees)) throw new RegleMetierException(RegleCommande.ModifieeEntreTemps);
+        await Executer(cnx, tx, "UPDATE commande_fournisseur SET statut = 'envoyee' WHERE id = $1 AND statut = 'brouillon'", ct, commandeId);
+        await tx.CommitAsync(ct);
+        return relue with { Entete = relue.Entete with { Statut = "envoyee" } };
+    }
+
     public async Task<bool> ChangerStatutCommandeAsync(long commandeId, string statutAttendu, string statut, CancellationToken ct = default)
     {
         // Statut revérifié en base : un autre poste a pu émettre, annuler ou réceptionner la commande depuis sa lecture

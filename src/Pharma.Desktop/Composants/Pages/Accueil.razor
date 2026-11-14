@@ -39,6 +39,25 @@
             </div>
         }
 
+        @if (ecartsCaisse is { Nombre: > 0 } ec)
+        {
+            @* Titulaire seul : écarts de caisse des 7 derniers jours pas encore vus (aussi au journal des actions et par e-mail) *@
+            <div class="bandeau-attention" role="status" style="margin-bottom: 16px">
+                <strong>Écarts de caisse récents : @ec.Nombre</strong>
+                <ul style="margin: 6px 0">
+                    @foreach (var e in ec.Derniers)
+                    {
+                        <li>@e.ClotureLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @e.Poste · @(e.ClotureePar ? "clôturée par" : "ouverte par") @e.Employe : <strong>@((e.Ecart > 0 ? "+" : "") + Libelles.Dinars(e.Ecart, 2))</strong> (@(e.Ecart < 0 ? "manque" : "excédent"))</li>
+                    }
+                </ul>
+                @if (ec.Nombre > ec.Derniers.Count) { <div class="detail">… et @(ec.Nombre - ec.Derniers.Count) plus ancien(s).</div> }
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px">
+                    <button type="button" class="btn" disabled="@marquageEcarts" @onclick="MarquerEcartsVusAsync">Marquer comme vus</button>
+                </div>
+                @if (erreurEcarts is not null) { <div class="erreur" role="alert">@erreurEcarts</div> }
+            </div>
+        }
+
         @if (charge)
         {
             <div class="tuiles-accueil">
@@ -103,8 +122,28 @@
         }
         var (tableau, _) = await Api.TableauInventaireAsync();
         ecartsAValider = tableau?.EcartsAValider.Count;
-        if (Session.A("role.titulaire")) (nonEnvoyees, _) = await Api.AlertesNonEnvoyeesAsync();
+        if (Session.A("role.titulaire"))
+        {
+            (nonEnvoyees, _) = await Api.AlertesNonEnvoyeesAsync();
+            (ecartsCaisse, _) = await Api.EcartsCaisseRecentsAsync();
+        }
         charge = true;
+    }
+
+    // ---- Écarts de caisse récents (titulaire) ----
+    private EcartsCaisseRecentsDto? ecartsCaisse;
+    private string? erreurEcarts;
+    private bool marquageEcarts;
+
+    private async Task MarquerEcartsVusAsync()
+    {
+        if (ecartsCaisse is not { Derniers.Count: > 0 } ec) return;
+        marquageEcarts = true;
+        // Jusqu'à la clôture la plus récente affichée : un écart arrivé entre-temps reste signalé
+        var (_, err) = await Api.MarquerEcartsCaisseVusAsync(ec.Derniers[0].SessionId);
+        erreurEcarts = err;
+        if (err is null) (ecartsCaisse, _) = await Api.EcartsCaisseRecentsAsync();
+        marquageEcarts = false;
     }
 
     // ---- Alertes non envoyées (titulaire) ----

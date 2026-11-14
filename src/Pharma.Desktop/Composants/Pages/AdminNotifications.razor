@@ -79,6 +79,7 @@
                 </div>
                 <label class="case"><input type="checkbox" @bind="r.SmsLotBloque" /><span>SMS quand un lot est bloqué ou rappelé</span></label>
                 <label class="case"><input type="checkbox" @bind="r.SmsSauvegarde" /><span>SMS quand une sauvegarde échoue ou que le disque externe est absent</span></label>
+                <label class="case"><input type="checkbox" @bind="r.SignalerSansDestinataire" /><span>Signaler à mon accueil une alerte (ou le rapport du soir) partie vers aucun destinataire vérifié ; une alerte bloquée par une panne y est toujours signalée</span></label>
                 <p class="detail" style="margin: 0">Dernier rapport envoyé : @(dernierRapport is { } d ? Libelles.Date(d) : "jamais") ·
                     <button type="button" class="lien" disabled="@enCours" @onclick="RapportMaintenantAsync">envoyer le rapport du jour maintenant</button></p>
             </section>
@@ -241,6 +242,7 @@
         public decimal? SmsSeuilEcart { get; set; }
         public bool SmsLotBloque { get; set; } = true;
         public bool SmsSauvegarde { get; set; } = true;
+        public bool SignalerSansDestinataire { get; set; } = true;
     }
 
     private sealed class Fiche
@@ -292,7 +294,8 @@
         r = new Reglages
         {
             SmtpServeur = d!.SmtpServeur, SmtpPort = d.SmtpPort, SmtpTls = d.SmtpTls, SmtpExpediteur = d.SmtpExpediteur, SmtpIdentifiant = d.SmtpIdentifiant,
-            ModemPort = d.ModemPort, HeureRapport = d.HeureRapport, SmsSeuilEcart = d.SmsSeuilEcart, SmsLotBloque = d.SmsLotBloque, SmsSauvegarde = d.SmsSauvegarde
+            ModemPort = d.ModemPort, HeureRapport = d.HeureRapport, SmsSeuilEcart = d.SmsSeuilEcart, SmsLotBloque = d.SmsLotBloque, SmsSauvegarde = d.SmsSauvegarde,
+            SignalerSansDestinataire = d.SignalerSansDestinataire
         };
         (motDePasseEnregistre, dernierRapport) = (d.MotDePasseEnregistre, d.DernierRapport);
     }
@@ -337,7 +340,8 @@
         if (ServeurManquant) { await champServeur.FocusAsync(); return smtpIncomplet; }
         if (ExpediteurManquant) { await champExpediteur.FocusAsync(); return smtpIncomplet; }
         var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
-            r.SmtpIdentifiant, string.IsNullOrEmpty(nouveauMotDePasse) ? null : nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde));
+            r.SmtpIdentifiant, string.IsNullOrEmpty(nouveauMotDePasse) ? null : nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde,
+            r.SignalerSansDestinataire));
         if (e is not null) return e;
         (nouveauMotDePasse, changementMotDePasse) = (null, false);
         controleSmtp = false;
@@ -365,7 +369,7 @@
         if (string.IsNullOrEmpty(nouveauMotDePasse)) return "Saisissez le mot de passe du compte d’envoi.";
         // Les autres réglages sont renvoyés tels qu'ils sont à l'écran : seul le mot de passe change
         var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
-            r.SmtpIdentifiant, nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde));
+            r.SmtpIdentifiant, nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde, r.SignalerSansDestinataire));
         if (e is not null) return e;
         (nouveauMotDePasse, changementMotDePasse) = (null, false);
         await ChargerReglagesAsync();
