@@ -100,11 +100,11 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Tant que le mot de passe provisoire n'est pas changé, le code comptoir ne vaut rien** : ni pour se connecter au comptoir, ni pour autoriser un collègue ; choisir son code est refusé. — `src/Pharma.Application/Securite/ConnexionComptoir.cs`
 - **Connecté par code comptoir, le code d'un collègue n'ouvre aucun écran hors du comptoir** (règlements, paramètres…) ni aucune action du titulaire : la portée de la connexion est gardée. — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 - **Une action autorisée par le code d'un collègue garde ce collègue comme validateur** (annulation d'une vente ancienne, retour client), pas l'employé connecté. — `src/Pharma.Application/Caisse/AnnulerVente.cs`, `src/Pharma.Application/Caisse/RetourClient.cs`
-- **Caisse : le rendu de la vente en cours est mis en avant** (à côté du montant reçu, en grand, sur fond ambre dès qu'il y a de la monnaie à rendre) ; jamais de cumul de la session (comptage aveugle). — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **Code comptoir de 4 à 6 chiffres**. — `src/Pharma.Domain/Securite/CodeComptoir.cs`
 - **L'écran de connexion s'ouvre directement dans le bon mode** : « Code comptoir » si la caisse du poste est ouverte, sinon « Mot de passe » ; au premier lancement du poste, il attend la réponse du serveur avant d'afficher le formulaire (pas de bascule d'un mode à l'autre), au plus 3 secondes, puis « Mot de passe » si le serveur ne répond pas ; ensuite (changement d'utilisateur), il affiche aussitôt le formulaire du dernier état connu et relit l'état en arrière-plan. L'autre mode reste à un clic quand la caisse est ouverte. — `src/Pharma.Desktop/Composants/Pages/Connexion.razor`
 - **5 erreurs bloquent le code 5 minutes** ; le blocage est inscrit au journal (`code_comptoir_bloque`). — `src/Pharma.Domain/Securite/CodeComptoir.cs`, `src/Pharma.Application/Securite/ConnexionComptoir.cs`
 - **Une action refusée faute de droit peut être autorisée par le code d'un autre employé qui a ce droit** : seulement pour les droits que le valideur a acceptés au poste (un code donné pour vendre sans ordonnance n'autorise pas un dépassement de plafond) ; jamais par l'employé lui-même ; inscrit au journal (« autorisé par »). — `src/Pharma.Api/Securite/AutorisationParCode.cs`
+- **La fenêtre « Faire autoriser » ne propose jamais l'employé qui demande** (2026-11-14) : seulement les autres employés actifs qui ont un code comptoir et le droit. — `src/Pharma.Application/Securite/ConnexionComptoir.cs` (`ListerValidateurs`)
 
 ### Panier et produits vendus
 - **Panier vide : encaissement refusé**. — `src/Pharma.Domain/Ventes/Vente.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`
@@ -134,12 +134,26 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Prix d'une boîte = PPA du lot (prix vignette), à défaut prix public du catalogue, plus le SHP par boîte**. — `src/Pharma.Domain/Ventes/Vente.cs`
 - **Les prix et le stock sont toujours recalculés par le serveur** (aperçu et encaissement), y compris à la reprise d'une vente en attente. — `src/Pharma.Application/Caisse/Encaisser.cs`, `database/migration/026_ventes_attente.sql`
 
-### Remise
-- **Remise en pourcentage sur la part du patient, hors SHP** (le SHP, honoraire du pharmacien, n'est jamais remisé) ; montant arrondi au centime. — `src/Pharma.Domain/Ventes/Vente.cs`
-- **Remise comprise entre 0 et 100 %** (aussi en base) ; **à la caisse, nombre entier** (2026-11-14) : chiffres seulement, 2 au plus sauf 100, une frappe qui dépasserait 100 est refusée ; 0 par défaut, effacé dès qu'on tape (contenu sélectionné à l'entrée dans le champ), et remis si le champ est vidé ; recalcul en quittant le champ. — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/009_caisse.sql`
-- **Toute remise demande le droit `caisse.remise`** ; le champ remise n'est affiché qu'avec ce droit. — `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
-- **Remise plafonnée par le maximum du rôle** : à l'installation, titulaire 100 %, pharmacien assistant 10 %, vendeur 0 %, stagiaire 0 %. — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/006_droits_utilisateurs.sql`
-- **Chaque remise est inscrite au journal** (`remise` : ticket, pourcentage, montant). — `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
+### Remise, remise automatique et don partiel (2026-11-14)
+- **Réductions calculées ligne par ligne, sur la part du patient hors SHP** (le SHP, honoraire du pharmacien, n'est jamais réduit) ; chaque montant arrondi au centime. — `src/Pharma.Domain/Ventes/LigneVente.cs`, `src/Pharma.Domain/Ventes/Vente.cs`
+- **Sur un produit hors médicaments, la réduction est une remise ; sur un produit de la catégorie « médicament », c'est un don partiel du reste à charge**, jamais une remise (remboursable ou non). Vente : `montant_remise` (remises) et `montant_don` (dons partiels) ; ligne : `reduction_auto`, `reduction_manuelle`, `don_partiel`. — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/072_remises_automatiques.sql`
+- **Remise automatique** : décidée pour un produit ou une catégorie sur une période (Stock › Remises automatiques), elle s'applique d'elle-même en **vente libre** seulement, **jamais sur un produit remboursable** ; celle du produit l'emporte sur celle de sa catégorie. Elle ne demande ni droit ni validation au vendeur. — `src/Pharma.Domain/Ventes/Vente.cs` (`AppliquerRemisesAutomatiques`), `src/Pharma.Infrastructure/Caisse/RemisesAutomatiquesSql.cs`
+- **Remise du vendeur : un pourcentage entier de 0 à 100 % sur toute la vente** (aussi en base) ; à la caisse, chiffres seulement, 2 au plus sauf 100, une frappe qui dépasserait 100 est refusée ; 0 par défaut, effacé dès qu'on tape (contenu sélectionné à l'entrée dans le champ), et remis si le champ est vidé ; recalcul en quittant le champ. — `src/Pharma.Domain/Ventes/Vente.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Remise du vendeur et remise automatique** : case « + remise auto » (proposée quand un produit du panier a une remise automatique). Cochée, les pourcentages s'additionnent (10 % + 5 % = 15 %, au plus 100 %) ; décochée (par défaut), la remise du vendeur ne vaut que pour les produits sans remise automatique. — `src/Pharma.Domain/Ventes/LigneVente.cs` (`CalculerReductions`)
+- **Le champ remise est proposé à tout vendeur.** Remise du vendeur sur un produit hors médicaments : dans son **maximum** (réglé sur l'employé par le titulaire), sinon le code d'un collègue **dont le maximum couvre ce pourcentage** est demandé à l'encaissement. Le maximum porte sur la part du vendeur, pas sur la remise automatique. — `src/Pharma.Application/Caisse/Encaisser.cs` (`ExigerReductionsAsync`), `src/Pharma.Api/Securite/PermissionsComptoir.cs`
+- **Remise du vendeur sur un médicament (don partiel)** : droit de **don** de l'employé, sinon code d'un collègue qui l'a. — `src/Pharma.Application/Caisse/Encaisser.cs`
+- **L'aperçu (calcul du panier) ne refuse jamais une remise** : le contrôle du droit se fait à l'encaissement, qui propose alors l'autorisation sur place. — `src/Pharma.Application/Caisse/Encaisser.cs`
+- **Caisse : chaque ligne réduite montre le montant initial barré, « remise » ou « don », le pourcentage (« auto » pour une remise automatique) et le net** ; les totaux montrent le total, les remises (dont automatiques) et le don partiel, puis la part du patient. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Journal** : `remise` (pourcentage, montant de la remise du vendeur, additionnée ou non), `don_partiel` (remise du vendeur sur des médicaments), `remise_automatique_appliquee` (montant, dont don partiel), chacun avec « autorisé par » s'il y a lieu. — `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
+
+### Remises automatiques (gestion)
+- **Écran Stock › Remises automatiques** : liste ouverte à qui consulte le stock (ou vend) ; filtres (en cours et à venir par défaut, en cours, à venir, terminées ou arrêtées, toutes ; texte) et pagination sur le poste. — `src/Pharma.Desktop/Composants/Mise/RemisesAutomatiques.razor`
+- **Créer, modifier, arrêter : titulaire, ou employé à qui il a donné le droit « Peut gérer les remises automatiques »** (`caisse.remises_auto`, réglé sur l'employé). — `src/Pharma.Application/Caisse/RemisesAutomatiques.cs`
+- **Un produit OU une catégorie ; pourcentage entier de 1 à 100 ; du … au … inclus (fin au plus tôt le jour du début, et pas déjà passée) ; motif facultatif de 200 caractères au plus.** — `src/Pharma.Application/Caisse/RemisesAutomatiques.cs`, `database/migration/072_remises_automatiques.sql`
+- **Jamais sur un produit remboursable** (refusé à la création). Une catégorie peut être « médicament » : la réduction y est alors un don partiel. — `src/Pharma.Application/Caisse/RemisesAutomatiques.cs`
+- **Deux remises non arrêtées sur la même cible ne peuvent pas se chevaucher dans le temps.** — `src/Pharma.Infrastructure/Caisse/RemisesAutomatiquesSql.cs` (`ChevaucheAsync`)
+- **Une remise arrêtée ne s'applique plus aux ventes suivantes ; elle reste dans la liste (« Arrêtée par … ») et ne se modifie plus.** — `src/Pharma.Application/Caisse/RemisesAutomatiques.cs`
+- **Création, modification (avec l'avant) et arrêt sont inscrits au journal** (`remise_automatique_creee`, `remise_automatique_modifiee`, `remise_automatique_arretee`). — `src/Pharma.Application/Caisse/RemisesAutomatiques.cs`
 
 ### Tiers payant (Chifa) au comptoir
 - **Tiers payant : l'assuré (patient) et l'organisme (CNAS, CASNOS) sont obligatoires** (aussi en base : contrainte sur `vente`). — `src/Pharma.Domain/Ventes/Vente.cs`, `database/migration/001_schema.sql`
@@ -156,9 +170,14 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Carte ou chèque : le montant réglé est exactement la part du patient**. — `src/Pharma.Domain/Ventes/Reglement.cs`
 - **La vente, le stock, le paiement, l'ordonnance, le registre et la dette sont enregistrés ensemble ou pas du tout**. — `src/Pharma.Infrastructure/Caisse/VentesEcritureSql.cs`
 - **Après chaque vente, la surveillance de la caisse est recalculée** (ventes hors horaires, remises en série). — `src/Pharma.Application/Caisse/Encaisser.cs`
+- **Caisse : « À payer par le patient » est mis en avant** (2026-11-14) : encadré vert sur toute la largeur de la colonne de paiement, montant en très grand. — `src/Pharma.Desktop/wwwroot/css/app.css`
+- **Caisse : le rendu de la vente en cours est mis en avant** (à côté du montant reçu, en grand, sur fond ambre dès qu'il y a de la monnaie à rendre) ; jamais de cumul de la session (comptage aveugle). — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Colonne de paiement de la caisse : large de 460 px environ, sans défilement** (la zone des produits prend le reste) ; boutons « Encaisser » et « Mettre en crédit » jamais écrasés. — `src/Pharma.Desktop/wwwroot/css/app.css`
+- **F7 place le curseur dans la recherche de produit de la caisse.** — `src/Pharma.Desktop/wwwroot/js/poste.js`
 
 ### Ticket
 - **Aucune donnée du patient sur le ticket** ; il porte le nom, l'adresse, le téléphone et le NIF de la pharmacie, le vendeur, le poste, l'organisme et le taux, les lignes, la remise, les parts organisme/patient et le mode. — `src/Pharma.Application/Caisse/Ticket.cs`
+- **Remise par produit sur le ticket** (2026-11-14) : sous chaque ligne réduite, « Remise » ou « Don » avec le pourcentage et le montant ; en bas, « Montant initial », « Remises », « Don partiel », puis « À PAYER ». — `src/Pharma.Desktop/Services/ImprimanteTickets.cs`, `src/Pharma.Infrastructure/Caisse/TicketSql.cs`
 
 ### Ventes en attente
 - **Quitter la Caisse avec un panier rempli (menu, lien, « ← Retour », Alt + ←) le met en attente automatiquement**, comme le bouton « Mettre en attente » : rien n'est perdu ni signalé « retiré ». « ← Retour » sur la Caisse reprend cette vente, sauf si un autre poste l'a déjà reprise (message). Si la mise en attente échoue (20 ventes déjà en attente sur le poste, serveur injoignable) ou pendant un encaissement, on reste sur la Caisse avec le message. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor` (`QuitterAsync`, `ReprendreAuRetourAsync`)
@@ -244,6 +263,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Pour chaque produit, le pharmacien choisit : remis en stock (même lot) ou à détruire**. — `src/Pharma.Domain/Ventes/RegleRetour.cs`
 - **Boîtes identifiées : cocher exactement les boîtes rendues parmi celles vendues**. — `src/Pharma.Application/Caisse/RetourClient.cs`
 - **Montant rendu au prorata de ce que le patient a payé (remise comprise), arrondi au centime** ; jamais plus que ce qui reste de la part payée ; au dernier retour, le solde exact. — `src/Pharma.Domain/Ventes/RegleRetour.cs`
+- **Depuis les réductions par ligne (2026-11-14), chaque produit rendu est remboursé sur sa part nette** (part du patient de la ligne moins sa remise ou son don partiel) ; les ventes antérieures gardent le prorata de la remise de la vente. — `src/Pharma.Infrastructure/Caisse/RetoursClientSql.cs`
 - **Droit `caisse.retour_especes`, sinon validation par le code comptoir d'un employé qui l'a**. — `src/Pharma.Application/Caisse/RetourClient.cs`
 - **Exception : remboursement entièrement retiré de la dette avec l'accord du client** (rien ne sort de la caisse) : le caissier valide seul. — `src/Pharma.Application/Caisse/RetourClient.cs`
 - **Vente à crédit : la dette diminue ; ce que le patient a déjà remboursé lui est rendu en espèces**. — `src/Pharma.Application/Caisse/RetourClient.cs`
@@ -372,7 +392,8 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 ### Sorties de stock : périmé, cassé, don
 - **La liste des lots d'un produit et la lecture d'un lot sont ouvertes à `stock.consulter`, `stock.donner` ou `stock.declarer_perime`** : un vendeur qui a seulement le droit de donner peut choisir le lot. — `src/Pharma.Api/Endpoints/CatalogueEndpoints.cs`
 - **Trois motifs de sortie seulement : périmé, cassé, échantillon/gratuité/don**. — `src/Pharma.Application/Stock/SortieStock.cs`
-- **Déclarer des boîtes périmées ou cassées exige le droit `stock.declarer_perime` ; un don (échantillon, gratuité, personne dans le besoin) exige le droit `stock.donner`** (accordé par défaut au titulaire et à l'assistant). — `src/Pharma.Application/Stock/SortieStock.cs`, `database/migration/056_droit_don.sql`
+- **Déclarer des boîtes périmées ou cassées exige le droit `stock.declarer_perime` ; un don (échantillon, gratuité, personne dans le besoin) exige le droit de don** (`stock.donner`, réglé sur chaque employé par le titulaire depuis le 2026-11-14). — `src/Pharma.Application/Stock/SortieStock.cs`, `database/migration/071_don_remise_par_personne.sql`
+- **Le motif « don » est proposé à tout employé qui ouvre la sortie de stock** : sans le droit de don, le code d'un employé qui l'a est demandé à l'enregistrement (autorisation sur place) ; la sortie est ouverte aux droits `stock.consulter`, `stock.declarer_perime` ou `stock.donner`. — `src/Pharma.Desktop/Composants/Mise/SortieStock.razor`, `src/Pharma.Api/Endpoints/CatalogueEndpoints.cs`
 - **La quantité sortie va de 1 au stock du lot**. — `src/Pharma.Application/Stock/SortieStock.cs`
 - **Commentaire limité à 200 caractères ; obligatoire pour une casse (ce qui s'est passé) et pour un don (à qui et pourquoi)**. — `src/Pharma.Application/Stock/SortieStock.cs`
 - **Un produit sous registre (psychotrope, stupéfiant) n'est jamais donné en échantillon**. — `src/Pharma.Application/Stock/SortieStock.cs`
@@ -525,7 +546,13 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Un produit bloqué ne passe en caisse ou en réception qu'avec la validation d'une personne qui a le droit `produits.bloquer`** : l'employé lui-même s'il l'a, sinon le pharmacien ou l'assistant avec son code comptoir. — `src/Pharma.Application/Catalogue/BlocageProduit.cs`
 
 ### Équivalents et recherche
-- **Quand un produit manque, on propose d'abord les équivalents exacts (même DCI, dosage, forme) actifs et en stock** ; à défaut, la même DCI dans un autre dosage ou une autre forme, à valider par le pharmacien ; tri par stock décroissant. — `src/Pharma.Application/Catalogue/ListerAlternatives.cs`
+- **Quand un produit manque, on propose d'abord les équivalents exacts (même DCI, dosage, forme) actifs et en stock** ; à défaut, la même DCI dans un autre dosage ou une autre forme, à valider par le pharmacien ; **tri du moins cher au plus cher** (2026-11-14), puis par stock décroissant. — `src/Pharma.Application/Catalogue/ListerAlternatives.cs`
+- **Prix comparé : prix servi** = prix d'une boîte du lot qui serait servi (premier à périmer, vendable : PPA du lot, sinon prix du catalogue) plus le SHP du produit. — `src/Pharma.Infrastructure/Lecture/EquivalentsComptoirSql.cs`
+- **Recherche de la caisse par nom ou DCI** (2026-11-14) : produits en stock d'abord (ordre de pertinence gardé) ; **produits sans stock vendable en bas, grisés, non sélectionnables, marqués « Rupture de stock »**, avec dessous leur **remplaçant** cliquable (équivalent exact le moins cher, sinon autre dosage ou forme « à valider par le pharmacien »), ou « Aucun remplaçant en stock ». — `src/Pharma.Application/Catalogue/RechercherAuComptoir.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Même produit d'un autre laboratoire moins cher** (même DCI, dosage et forme, en stock) : suggéré sous le produit cherché, sans répéter le nom du médicament (« Moins cher · laboratoire · stock · prix (− N DA) », « autre laboratoire » si le laboratoire n'est pas renseigné), cliquable ; le produit cherché garde sa place et reste sélectionnable (demande explicite du client). — `src/Pharma.Application/Catalogue/RechercherAuComptoir.cs`
+- **Entrée dans la recherche ajoute le premier produit seulement s'il est en stock** ; sinon la liste reste ouverte avec la rupture et son remplaçant. Une boîte identifiée scannée (étiquette interne, Data Matrix) est servie comme avant. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Ligne en rupture au panier** (vente en attente reprise, par exemple) : toujours « Rupture de stock » ; les lots périmés ou bloqués encore en stock sont cités en petit (« lot A2391 périmé : à retirer du stock ») ; plus de bandeau rouge pour une rupture. — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
+- **Le bandeau qui explique un lot écarté (périmé, bloqué) s'efface dès qu'on tape une nouvelle recherche, ou quand le produit concerné quitte le panier.** — `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **Recherche au comptoir : code-barres exact, puis nom ou DCI, 20 résultats par défaut, 50 au plus**. — `src/Pharma.Application/Catalogue/RechercherProduits.cs`
 
 ### Nomenclature nationale
@@ -547,6 +574,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Avancement de l'étiquetage = boîtes identifiées en stock ÷ boîtes en stock** (plafonné à 100 %). — `src/Pharma.Application/Tracabilite/ObtenirEtatEtiquetage.cs` (droit `stock.consulter`)
 
 ### Étiquettes et codes internes
+- **L'écran Étiquettes internes est dans le domaine Stock** (`/stock/etiquettes`), ouvert aux droits `stock.consulter` ou `achats.receptionner` ; l'ancienne adresse des Achats y ramène. — `src/Pharma.Desktop/Composants/Pages/StockEtiquettes.razor`, `src/Pharma.Desktop/Services/Domaines.cs`
 - **Les codes internes (boîte ou lot) sont des EAN-13 commençant par 20, suivis d'un numéro séquentiel sur 10 chiffres et d'une clé de contrôle**. — fonctions `creer_boites_internes`, `generer_code_interne`, `src/Pharma.Domain/Commun/Ean13.cs`
 - **Un lot n'a qu'un seul code interne** : il est créé à la première demande puis toujours réutilisé. — fonction `generer_code_interne`
 - **Lecture d'un code : d'abord étiquette de boîte, puis code interne de lot (même périmé, pour afficher le blocage), puis code-barres fabricant d'un produit actif**. — fonction `rechercher_par_code`
@@ -793,6 +821,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Une vente n'est facturée qu'une fois par part** (patient / organisme), tant que la facture n'est pas remplacée ; une vente sans rien à facturer pour cette part est refusée. — `src/Pharma.Application/Factures/Factures.cs`, `src/Pharma.Infrastructure/Factures/FacturesSql.cs`
 - **Une ligne par produit vendu ; les lignes à montant nul pour la part concernée sont omises.** — `src/Pharma.Domain/Factures/RegleFacture.cs`
 - **La remise de la vente devient une ou plusieurs lignes négatives (part patient), réparties par taux de TVA au prorata**, pour que la TVA baisse avec la remise. — `src/Pharma.Domain/Factures/RegleFacture.cs`
+- **Le don partiel d'une vente (réductions sur des médicaments) devient de même des lignes négatives « Don partiel (vente …) »**, et le montant proposé à la facturation le déduit. — `src/Pharma.Domain/Factures/RegleFacture.cs`, `src/Pharma.Infrastructure/Factures/FacturesSql.cs`, `src/Pharma.Api/Endpoints/FacturesEndpoints.cs`
 - **Ligne libre : désignation obligatoire, quantité et prix TTC supérieurs à 0, TVA de 0 à 100 %.** — `src/Pharma.Domain/Factures/RegleFacture.cs`
 - **Les prix sont TTC : HT = TTC ÷ (1 + taux), arrondi ligne par ligne ; TVA = TTC − HT.** — `src/Pharma.Domain/Factures/RegleFacture.cs`
 - **« Déjà payé » = ce qui a été payé au comptoir pour ces ventes (hors crédit, moins les remboursements de retours), au plus la part patient ; 0 pour un organisme.** — `src/Pharma.Infrastructure/Factures/FacturesSql.cs`, `src/Pharma.Application/Factures/Factures.cs`
@@ -922,13 +951,21 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **La base refuse toute modification des droits du titulaire.** : déclencheur `trg_proteger_role_systeme` (« Les droits du titulaire ne peuvent pas être modifiés »). — `database/migration/006_droits_utilisateurs.sql`
 - **La base refuse de modifier ou de supprimer le rôle titulaire lui-même.** : déclencheur `trg_role_systeme`. — `database/migration/010_administration.sql`
 - **Il doit toujours rester au moins un titulaire actif.** : la base refuse de désactiver, de changer de rôle ou de supprimer le dernier titulaire actif (déclencheur `trg_garder_un_titulaire`). — `database/migration/006_droits_utilisateurs.sql`
-- **Chaque rôle a une remise maximale (en %) : titulaire 100 %, assistant 10 %, vendeur 0 %, stagiaire 0 %.** — `database/init/seed_referentiel.sql`
-- **La remise maximale d'un rôle doit être comprise entre 0 et 100 %.** — `src/Pharma.Application/Administration/Utilisateurs.cs`
+- **La remise maximale n'est plus réglée par rôle mais sur chaque employé** (2026-11-14) ; `role.remise_max_pct` reste en base pour le rejeu des scripts mais n'est plus lu. À la mise à jour, chaque employé a reçu le maximum de son rôle (assistant 10 %, vendeur et stagiaire 0 %). — `database/migration/071_don_remise_par_personne.sql`
 - **Les droits de départ ne sont posés qu'à la première installation (aucun compte encore créé).** : une réexécution du script ne touche jamais aux droits modifiés ensuite par le titulaire. — `database/init/seed_referentiel.sql`
 
 ### Matrice des droits
 
-- **Le titulaire (ou toute personne ayant le droit `admin.utilisateurs`) règle, rôle par rôle, la liste des droits et la remise maximale.** — `src/Pharma.Api/Endpoints/AdminEndpoints.cs`
+- **Le titulaire (ou toute personne ayant le droit `admin.utilisateurs`) règle, rôle par rôle, la liste des droits**, sauf les droits réglés par personne (ci-dessous), absents de la matrice et refusés s'ils y sont envoyés. — `src/Pharma.Api/Endpoints/AdminEndpoints.cs`, `src/Pharma.Application/Administration/Utilisateurs.cs`
+
+### Don et remise réglés par personne (2026-11-14)
+
+- **Le don, la remise maximale et la gestion des remises automatiques se règlent employé par employé, par le titulaire seul** (fiche de l'employé, Utilisateurs et droits) : « Peut faire un don » (`stock.donner`), « Remise maximale (%) » (entier de 0 à 100 ; 0 = pas de remise, `caisse.remise` accordé dès 1 %), « Peut gérer les remises automatiques » (`caisse.remises_auto`). — `src/Pharma.Application/Administration/Utilisateurs.cs` (`ReglerDonRemise`), `database/migration/071_don_remise_par_personne.sql`
+- **Le titulaire a toujours le don, 100 % de remise et la gestion des remises automatiques**, sans réglage (refusé si on tente de le changer). — `src/Pharma.Application/Administration/Utilisateurs.cs`, fonction `a_permission`
+- **Ces trois droits sont lus sur l'employé, les autres sur son rôle** (fonction `a_permission`, colonne `permission.par_personne`) ; un employé désactivé n'en a aucun. — `database/migration/071_don_remise_par_personne.sql`
+- **Reprise à la mise à jour : chaque employé a reçu ce que son rôle lui donnait** (don pour l'assistant, maximum du rôle) ; rien n'a changé le jour de la mise à jour. — `database/migration/071_don_remise_par_personne.sql`
+- **La liste des employés affiche « Don · remise » de chacun ; chaque changement est inscrit au journal avec l'avant et l'après** (`don_remise_employe`). — `src/Pharma.Desktop/Composants/Pages/AdminDroits.razor`, `src/Pharma.Application/Administration/Utilisateurs.cs`
+- **Sans le droit, ou au-delà de son maximum, l'employé fait valider par le code d'un collègue qui l'a** (remise : jusqu'au maximum de ce collègue). — `src/Pharma.Api/Securite/AutorisationParCode.cs`
 - **Le rôle titulaire est ignoré lors de l'enregistrement de la matrice.** : il garde toujours tous les droits. — `src/Pharma.Application/Administration/Utilisateurs.cs`
 - **Un droit inconnu du logiciel est refusé dans la matrice.** : « Permission inconnue ». — `src/Pharma.Application/Administration/Utilisateurs.cs`
 - **Chaque modification de la matrice est inscrite au journal, avec les droits ajoutés et retirés de chaque rôle.** : action `droits_modifies`. — `src/Pharma.Application/Administration/Utilisateurs.cs`
@@ -940,14 +977,13 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 
 ### Droits par défaut
 
-Valeurs posées à la première installation ; le titulaire peut ensuite les changer (sauf pour le rôle titulaire). 33 droits au total.
+Valeurs posées à la première installation ; le titulaire peut ensuite les changer (sauf pour le rôle titulaire). Depuis le 2026-11-14, `caisse.remise`, `stock.donner` et `caisse.remises_auto` ne sont plus dans cette matrice : ils se règlent sur chaque employé (section précédente) ; à la première installation, seul le titulaire les a.
 
 | Droit | Libellé | Titulaire | Assistant | Vendeur | Stagiaire |
 | --- | --- | :-: | :-: | :-: | :-: |
 | `caisse.vendre` | Encaisser une vente | ✔ | ✔ | ✔ | ✔ |
 | `caisse.supprimer_ligne` | Supprimer une ligne après scan | ✔ | ✔ | – | – |
 | `caisse.annuler_vente` | Annuler une vente validée | ✔ | ✔ | – | – |
-| `caisse.remise` | Accorder une remise | ✔ | ✔ | – | – |
 | `caisse.retour_especes` | Rembourser un retour en espèces | ✔ | ✔ | – | – |
 | `caisse.ouvrir_tiroir` | Ouvrir le tiroir sans vente | ✔ | ✔ | – | – |
 | `caisse.voir_ecart` | Voir le montant attendu et les écarts | ✔ | – | – | – |
@@ -959,7 +995,6 @@ Valeurs posées à la première installation ; le titulaire peut ensuite les cha
 | `stock.consulter` | Consulter le stock | ✔ | ✔ | ✔ | ✔ |
 | `stock.ajuster` | Corriger le stock (inventaire) | ✔ | ✔ | – | – |
 | `stock.declarer_perime` | Déclarer un produit périmé ou cassé | ✔ | ✔ | – | – |
-| `stock.donner` | Donner un échantillon ou une gratuité (don à un nécessiteux) | ✔ | ✔ | – | – |
 | `prix.modifier` | Modifier un prix de vente | ✔ | – | – | – |
 | `produits.bloquer` | Bloquer un produit à l'achat ou à la vente | ✔ | ✔ | – | – |
 | `catalogue.creer` | Créer un produit au catalogue | ✔ | ✔ | – | – |
@@ -978,7 +1013,7 @@ Valeurs posées à la première installation ; le titulaire peut ensuite les cha
 | `admin.utilisateurs` | Gérer les utilisateurs et les droits | ✔ | – | – | – |
 | `admin.sauvegardes` | Gérer les sauvegardes | ✔ | – | – | – |
 
-Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Permissions.cs`. Remarque : `docs/securite-et-droits.md` annonce « 26 permissions » ; le code et le script en comptent 32 (document à mettre à jour).
+Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Permissions.cs`. Remarque : `docs/securite-et-droits.md` annonce « 26 permissions » ; le code et le script en comptent 34 depuis le script 071 (dont 3 réglés par personne) (document à mettre à jour).
 
 ### Comptes des employés
 
@@ -1038,7 +1073,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Le code comptoir sert à reprendre la caisse d'un poste sans la fermer (changement d'employé au comptoir).** — `src/Pharma.Application/Securite/ConnexionComptoir.cs`
 - **La connexion par code n'est possible que sur un poste dont la caisse est ouverte.** : sinon il faut le mot de passe. — `src/Pharma.Application/Securite/ConnexionComptoir.cs`
 - **La connexion par code exige le droit `caisse.vendre`.** — `src/Pharma.Application/Securite/ConnexionComptoir.cs`
-- **Connecté par code, l'employé ne garde que les droits du comptoir : tous les droits `caisse.*` et `credit.*`, plus `psychotropes.delivrer` et `stock.consulter`.** : jamais les écrans réservés au titulaire ; pour le reste, il doit se reconnecter avec son mot de passe. — `src/Pharma.Domain/Securite/CodeComptoir.cs`
+- **Connecté par code, l'employé ne garde que les droits du comptoir : tous les droits `caisse.*` et `credit.*`, plus `psychotropes.delivrer`, `stock.consulter` et `stock.donner`** (le don partiel du reste à charge se fait à la caisse, 2026-11-14). : jamais les écrans réservés au titulaire ; pour le reste, il doit se reconnecter avec son mot de passe. — `src/Pharma.Domain/Securite/CodeComptoir.cs`
 - **Après 5 codes faux, le code est bloqué 5 minutes.** : l'employé peut toujours se connecter avec son mot de passe. — `src/Pharma.Domain/Securite/CodeComptoir.cs`
 - **Les essais simultanés sont comptés un par un : ils ne peuvent pas dépasser le nombre d'essais permis.** — `src/Pharma.Infrastructure/Securite/CodesComptoirSql.cs`
 - **Le blocage d'un code comptoir est inscrit au journal, avec le nom du poste.** : action `code_comptoir_bloque`. — `src/Pharma.Application/Securite/ConnexionComptoir.cs`
@@ -1054,7 +1089,8 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Seuls les droits acceptés par le valideur au poste sont accordés.** : un code saisi pour vendre sans ordonnance n'autorise pas, dans la même opération, un dépassement du plafond de crédit. — `src/Pharma.Api/Securite/AutorisationParCode.cs`
 - **Le code du valideur est vérifié une seule fois par opération, avec les mêmes règles d'erreurs et de blocage que le code comptoir.** — `src/Pharma.Api/Securite/AutorisationParCode.cs`
 - **Si le valideur n'a pas le droit demandé, le refus le dit clairement.** : « … n'a pas ce droit : choisissez un employé qui l'a ». — `src/Pharma.Api/Securite/AutorisationParCode.cs`
-- **Le poste propose uniquement les employés actifs qui ont un code comptoir et le droit demandé.** — `src/Pharma.Application/Securite/ConnexionComptoir.cs`
+- **Le poste propose uniquement les employés actifs qui ont un code comptoir et le droit demandé, jamais l'employé qui demande.** — `src/Pharma.Application/Securite/ConnexionComptoir.cs`
+- **Remise au-delà du maximum de l'employé : le valideur doit avoir un maximum qui couvre ce pourcentage** ; sinon « … peut accorder jusqu'à N % : choisissez un employé dont le maximum le permet ». — `src/Pharma.Api/Securite/AutorisationParCode.cs`, `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 - **L'autorisation sur place est inscrite au journal (droit, action, nom du valideur), et l'action elle-même porte « autorisé par ».** : action `autorisation_code`. — `src/Pharma.Api/Securite/AutorisationParCode.cs`
 - **Un employé au mot de passe provisoire ne peut pas bénéficier d'une autorisation sur place.** — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 
@@ -1397,7 +1433,9 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Un retour diminue le chiffre du jour où la caisse a repris les boîtes, pas celui du jour de la vente.** — `src/Pharma.Application/Rapports/Rapports.cs`
 - **Seuls les retours sur des ventes non annulées sont déduits.** — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`
 - **Le nombre de retours ne compte que les retours qui comportent des boîtes rendues** ; le montant déduit est la somme remboursée. — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`
-- **Le rapport donne aussi : nombre de ventes, part organismes (Chifa) à recevoir, crédits clients accordés, remises accordées.** — `src/Pharma.Application/Rapports/Rapports.cs`
+- **Le rapport donne aussi : nombre de ventes, part organismes (Chifa) à recevoir, crédits clients accordés, remises accordées (produits hors médicaments), dons partiels du reste à charge (médicaments) et la part des remises automatiques** (écran, PDF, CSV). — `src/Pharma.Application/Rapports/Rapports.cs`, `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`
+- **Clôtures de caisse : une vente compte « avec remise » si elle a une remise ou un don partiel.** — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`
+- **Le don partiel est une réduction de prix, pas une sortie de stock** : il n'entre pas dans « Sorties de stock sans vente » ni dans la TVA à reverser (question posée au comptable, voir `docs/a-faire.md`). — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`
 - **Les crédits accordés sont les paiements « à crédit » des ventes validées de la période.** — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`
 - **Ventes de médicaments et ventes d'autres produits sont séparées selon la catégorie du produit** ; un produit sans catégorie est compté comme médicament ; montants avant remises et retours. — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`
 - **Le SHP (honoraire du pharmacien) est totalisé à part.** — `src/Pharma.Infrastructure/Lecture/RapportsSql.cs`

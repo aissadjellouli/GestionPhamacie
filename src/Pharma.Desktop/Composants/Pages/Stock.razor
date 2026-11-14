@@ -169,6 +169,7 @@
     @if (rubrique == "modifier") { <ModificationProduit /> }
     @if (rubrique == "sortie") { <SortieStock LotInitial="Sortie" /> }
     @if (rubrique == "blocage") { <BlocageProduits /> }
+    @if (rubrique == "remises") { <RemisesAutomatiques /> }
     </div>
 </div>
 
@@ -187,7 +188,8 @@
         new("nouveau", "Nouveau produit", "Ajouter un produit au catalogue", Session.A("catalogue.creer")),
         new("modifier", "Modifier un produit", "Nom, DCI, dosage, forme, code-barres, prix, TVA, remboursement, activation", Session.A("catalogue.creer")),
         new("sortie", "Sortie de stock", "Périmés, boîtes cassées, dons et échantillons"),
-        new("blocage", "Blocage des produits", "Produits bloqués à l’achat ou à la vente")
+        new("blocage", "Blocage des produits", "Produits bloqués à l’achat ou à la vente"),
+        new("remises", "Remises automatiques", "Remise en % par produit ou par catégorie, sur une période, appliquée par la caisse")
     ];
     private string rubrique = "produits";
     private RubriqueStock RubriqueCourante => Rubriques.First(r => r.Id == rubrique);

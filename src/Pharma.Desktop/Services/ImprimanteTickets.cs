@@ -175,6 +175,8 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         {
             P(l.Produit, gras: true);
             Montant($"  {l.Quantite} × {Da(l.PrixUnitaire)}", l.Montant);
+            // Remise par produit (ou don partiel sur un médicament) : pourcentage et montant sous la ligne
+            if (l.Reduction > 0) Montant($"  {(l.DonPartiel ? "Don" : "Remise")} {l.PctReduction:0} %", -l.Reduction);
         }
         Separateur();
         // Médicaments et autres produits (parapharmacie…), SHP compris dans les prix
@@ -186,8 +188,10 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         }
         var shp = t.Lignes.Sum(l => l.Shp * l.Quantite);
         if (shp > 0) Montant("dont SHP", shp);
-        if (t.Remise > 0 || t.PartOrganisme > 0) Montant("Total", t.MontantBrut);
-        if (t.Remise > 0) Montant("Remise", -t.Remise);
+        // Montant initial, remises (produits) et don partiel (médicaments), puis le net
+        if (t.Remise > 0 || t.DonPartiel > 0 || t.PartOrganisme > 0) Montant(t.Remise > 0 || t.DonPartiel > 0 ? "Montant initial" : "Total", t.MontantBrut);
+        if (t.Remise > 0) Montant("Remises", -t.Remise);
+        if (t.DonPartiel > 0) Montant("Don partiel", -t.DonPartiel);
         if (t.PartOrganisme > 0)
             Montant($"Part {t.Organisme ?? "organisme"}{(t.TauxTiersPayant is { } taux ? $" ({taux:0.##} %)" : "")}", -t.PartOrganisme);
         Montant("À PAYER", t.PartPatient, gras: true);

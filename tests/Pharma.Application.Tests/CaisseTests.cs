@@ -5,6 +5,7 @@ using Pharma.Application.Securite;
 using Pharma.Domain.Caisse;
 using Pharma.Domain.Catalogue;
 using Pharma.Domain.Commun;
+using Pharma.Domain.Securite;
 using Pharma.Domain.Stock;
 using Pharma.Domain.Ventes;
 
@@ -27,13 +28,15 @@ internal sealed class CatalogueEnMemoire : IPreparationVente
     public static readonly Produit Amoxicilline = new() { Id = 2, NomCommercial = "Amoxicilline", PrixPublic = 350, Remboursable = true, TarifReference = 350 };
     public static readonly Produit Alprazolam = new() { Id = 7, NomCommercial = "Alprazolam", PrixPublic = 190, Classe = ClasseReglementaire.Psychotrope };
     public static readonly Produit Sintrom = new() { Id = 9, NomCommercial = "Sintrom", PrixPublic = 280, Classe = ClasseReglementaire.ListeI };
+    public static readonly Produit Creme = new() { Id = 11, NomCommercial = "Crème solaire", PrixPublic = 1000, EstMedicament = false, Categorie = "dermo_cosmetique" };
 
-    private readonly Dictionary<long, Produit> produits = new() { [2] = Amoxicilline, [7] = Alprazolam, [9] = Sintrom };
+    private readonly Dictionary<long, Produit> produits = new() { [2] = Amoxicilline, [7] = Alprazolam, [9] = Sintrom, [11] = Creme };
     private readonly Dictionary<long, Lot> lots = new()
     {
         [20] = new Lot { Id = 20, ProduitId = 2, NumeroLot = "B1182", QuantiteDisponible = 20, DatePeremption = Aujourdhui.AddDays(140) },
         [70] = new Lot { Id = 70, ProduitId = 7, NumeroLot = "AL25", QuantiteDisponible = 14, DatePeremption = Aujourdhui.AddDays(330) },
-        [90] = new Lot { Id = 90, ProduitId = 9, NumeroLot = "SI40", QuantiteDisponible = 30, DatePeremption = Aujourdhui.AddDays(400) }
+        [90] = new Lot { Id = 90, ProduitId = 9, NumeroLot = "SI40", QuantiteDisponible = 30, DatePeremption = Aujourdhui.AddDays(400) },
+        [110] = new Lot { Id = 110, ProduitId = 11, NumeroLot = "CR1", QuantiteDisponible = 30, DatePeremption = Aujourdhui.AddDays(400) }
     };
 
     public Task<IReadOnlyDictionary<long, Produit>> ProduitsAsync(IEnumerable<long> ids, CancellationToken ct = default) =>
@@ -276,9 +279,60 @@ public class CaisseApplicationTests
     }
 
     [Fact]
-    public async Task Remise_sans_le_droit_refusee() =>
-        await Assert.ThrowsAsync<DroitRefuseException>(() =>
-            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20, remise: 5), 5, "Caisse 1"));
+    public async Task Remise_sans_le_droit_refusee()
+    {
+        var ex = await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre") { RemiseMax = 0 }, new VentesEspion()).ExecuterAsync(Commande(11, 110, remise: 5), 5, "Caisse 1"));
+        Assert.Equal(Permissions.CaisseRemise, ex.Permission);
+    }
+
+    [Theory]
+    [InlineData(10, false)]
+    [InlineData(15, true)]
+    public async Task Remise_dans_le_maximum_de_l_employe_sinon_validation(int remise, bool refusee)
+    {
+        var ventes = new VentesEspion();
+        var cas = Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "caisse.remise") { RemiseMax = 10 }, ventes);
+        if (refusee)
+        {
+            var ex = await Assert.ThrowsAsync<DroitRefuseException>(() => cas.ExecuterAsync(Commande(11, 110, remise: remise), 5, "Caisse 1"));
+            Assert.Contains("maximum est de 10 %", ex.Message);
+            return;
+        }
+        await cas.ExecuterAsync(Commande(11, 110, remise: remise), 5, "Caisse 1");
+        Assert.Equal(100m, ventes.Recu!.Vente.MontantRemise);
+    }
+
+    [Fact]
+    public async Task Reduction_sur_un_medicament_don_partiel_exige_le_droit_de_don()
+    {
+        var ex = await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "caisse.remise"), new VentesEspion()).ExecuterAsync(Commande(2, 20, remise: 5), 5, "Caisse 1"));
+        Assert.Equal(Permissions.StockDonner, ex.Permission);
+
+        var ventes = new VentesEspion();
+        await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "stock.donner") { RemiseMax = 0 }, ventes).ExecuterAsync(Commande(2, 20, remise: 50), 5, "Caisse 1");
+        Assert.Equal((0m, 175m), (ventes.Recu!.Vente.MontantRemise, ventes.Recu.Vente.MontantDon));
+    }
+
+    private sealed class RemisesAutoFactices(Dictionary<long, decimal> pct) : IRemisesAutomatiques
+    {
+        public Task<IReadOnlyDictionary<long, decimal>> PourcentagesAsync(IReadOnlyCollection<long> ids, DateOnly jour, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyDictionary<long, decimal>>(pct);
+    }
+
+    [Fact]
+    public async Task Remise_automatique_appliquee_sans_droit_ni_validation()
+    {
+        var ventes = new VentesEspion();
+        var cas = new Encaisser(new CatalogueEnMemoire(), new PatientsEnMemoire(), ventes, new SessionsEnMemoire(), new DroitsFactices("caisse.vendre") { RemiseMax = 0 },
+            new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire(), remisesAuto: new RemisesAutoFactices(new() { [11] = 20 }));
+        var apercu = await cas.CalculerAsync(Commande(11, 110), 5);
+        Assert.Equal((200m, 200m, 800m), (apercu.MontantRemise, apercu.ReductionsAuto, apercu.PartPatient));
+        Assert.Equal(20m, apercu.Reductions![0].RemiseAutoPct);
+        await cas.ExecuterAsync(Commande(11, 110), 5, "Caisse 1");
+        Assert.Equal(800m, ventes.Recu!.Vente.PartPatient);
+    }
 
     [Fact]
     public async Task Credit_sans_patient_refuse() =>

@@ -76,7 +76,7 @@
             <div class="tuile">
                 <span class="tuile-libelle">Chiffre d’affaires</span>
                 <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.ChiffreAffaires)</span>
-                <span class="tuile-pied">@r.Synthese.NombreVentes vente(s) · remises @Libelles.Dinars(r.Synthese.Remises)</span>
+                <span class="tuile-pied">@r.Synthese.NombreVentes vente(s) · remises @Libelles.Dinars(r.Synthese.Remises)@(r.Synthese.DonsPartiels > 0 ? $" · dons partiels {Libelles.Dinars(r.Synthese.DonsPartiels)}" : "")@(r.Synthese.RemisesAutomatiques > 0 ? $" (dont automatiques {Libelles.Dinars(r.Synthese.RemisesAutomatiques)})" : "")</span>
                 @if (r.Synthese.VentesAutres > 0)
                 {
                     <span class="tuile-pied">médicaments @Libelles.Dinars(r.Synthese.VentesMedicaments) · autres produits @Libelles.Dinars(r.Synthese.VentesAutres)</span>

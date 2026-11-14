@@ -24,15 +24,15 @@ internal sealed class UtilisateursEnMemoire : IUtilisateursAdmin
     public EtatDroits Etat { get; } = new(
         [
             new UtilisateurAdmin(1, "Dr Titulaire", "titulaire", 1, "Pharmacien titulaire", true, true, null),
-            new UtilisateurAdmin(3, "Vendeur", "vendeur", 3, "Vendeur", false, true, null)
+            new UtilisateurAdmin(3, "Vendeur", "vendeur", 3, "Vendeur", false, true, null, RemiseMaxPct: 0)
         ],
         [
-            new RoleAdmin(1, "titulaire", "Pharmacien titulaire", true, 100, ["caisse.vendre", "admin.utilisateurs"]),
-            new RoleAdmin(3, "vendeur", "Vendeur", false, 0, ["caisse.vendre"])
+            new RoleAdmin(1, "titulaire", "Pharmacien titulaire", true, ["caisse.vendre", "admin.utilisateurs"]),
+            new RoleAdmin(3, "vendeur", "Vendeur", false, ["caisse.vendre"])
         ],
         [
             new PermissionAdmin("caisse.vendre", "Caisse", "Encaisser", false),
-            new PermissionAdmin("caisse.remise", "Caisse", "Remise", true),
+            new PermissionAdmin("caisse.remise", "Caisse", "Remise", true, ParPersonne: true),
             new PermissionAdmin("admin.utilisateurs", "Administration", "Utilisateurs", true)
         ]);
 
@@ -45,6 +45,8 @@ internal sealed class UtilisateursEnMemoire : IUtilisateursAdmin
     public Task<long> CreerAsync(string n, string i, string h, long r, string? t, string? e, CancellationToken ct = default) { Cree = (n, i, h, r); Coordonnees = (t, e); return Task.FromResult(10L); }
     public Task ModifierAsync(long id, string n, long r, bool a, string? h, string? t, string? e, CancellationToken ct = default) { Modifie = (id, r, a, h); Coordonnees = (t, e); return Task.CompletedTask; }
     public Task EnregistrerDroitsAsync(IReadOnlyList<DroitsRole> d, CancellationToken ct = default) { Droits = d; return Task.CompletedTask; }
+    public (long Id, DonRemiseEmploye Reglage)? DonRemise { get; private set; }
+    public Task ReglerDonRemiseAsync(long id, DonRemiseEmploye r, CancellationToken ct = default) { DonRemise = (id, r); return Task.CompletedTask; }
 }
 
 internal sealed class HacheurFactice : IHacheurMotDePasse
@@ -155,23 +157,50 @@ public class AdministrationTests
         var admin = new UtilisateursEnMemoire();
         await new EnregistrerDroits(admin, new JournalEspion()).ExecuterAsync(
         [
-            new DroitsRole(1, 0, []),                                  // titulaire : ignoré
-            new DroitsRole(3, 5, ["caisse.vendre", "caisse.remise"])
+            new DroitsRole(1, []),                                     // titulaire : ignoré
+            new DroitsRole(3, ["caisse.vendre"])
         ], 1);
         Assert.Equal([3L], admin.Droits!.Select(d => d.RoleId));
+    }
+
+    [Fact]
+    public async Task Droit_regle_par_personne_refuse_dans_la_matrice_des_roles()
+    {
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => new EnregistrerDroits(new UtilisateursEnMemoire(), new JournalEspion())
+            .ExecuterAsync([new DroitsRole(3, ["caisse.vendre", "caisse.remise"])], 1));
+        Assert.Contains("chaque employé", ex.Message);
+    }
+
+    [Fact]
+    public async Task Permission_inconnue_refusee() =>
+        await Assert.ThrowsAsync<RegleMetierException>(() => new EnregistrerDroits(new UtilisateursEnMemoire(), new JournalEspion())
+            .ExecuterAsync([new DroitsRole(3, ["n.existe.pas"])], 1));
+
+    [Fact]
+    public async Task Don_et_remise_d_un_employe_regles_par_le_titulaire_seul()
+    {
+        var admin = new UtilisateursEnMemoire();
+        var journal = new JournalEspion();
+        await Assert.ThrowsAsync<DroitRefuseException>(() => new ReglerDonRemise(admin, journal, new DroitsFactices("admin.utilisateurs"))
+            .ExecuterAsync(3, new DonRemiseEmploye(true, 10, false), 2));
+
+        await new ReglerDonRemise(admin, journal, new DroitsFactices { Titulaire = true }).ExecuterAsync(3, new DonRemiseEmploye(true, 10, false), 1);
+        Assert.Equal((3L, new DonRemiseEmploye(true, 10, false)), admin.DonRemise);
+        Assert.Equal(["don_remise_employe"], journal.Actions);
     }
 
     [Theory]
     [InlineData(150)]
     [InlineData(-1)]
-    public async Task Remise_maximale_hors_limites_refusee(int remise) =>
-        await Assert.ThrowsAsync<RegleMetierException>(() => new EnregistrerDroits(new UtilisateursEnMemoire(), new JournalEspion())
-            .ExecuterAsync([new DroitsRole(3, remise, ["caisse.vendre"])], 1));
+    [InlineData(7.5)]
+    public async Task Remise_maximale_d_un_employe_entier_de_0_a_100(decimal remise) =>
+        await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerDonRemise(new UtilisateursEnMemoire(), new JournalEspion(), new DroitsFactices { Titulaire = true })
+            .ExecuterAsync(3, new DonRemiseEmploye(false, remise, false), 1));
 
     [Fact]
-    public async Task Permission_inconnue_refusee() =>
-        await Assert.ThrowsAsync<RegleMetierException>(() => new EnregistrerDroits(new UtilisateursEnMemoire(), new JournalEspion())
-            .ExecuterAsync([new DroitsRole(3, 0, ["n.existe.pas"])], 1));
+    public async Task Le_titulaire_a_toujours_don_et_remise() =>
+        await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerDonRemise(new UtilisateursEnMemoire(), new JournalEspion(), new DroitsFactices { Titulaire = true })
+            .ExecuterAsync(1, new DonRemiseEmploye(false, 0, false), 1));
 
     [Fact]
     public async Task Pharmacie_enregistree_nettoyee()

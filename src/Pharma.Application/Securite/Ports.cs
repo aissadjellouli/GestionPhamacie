@@ -10,8 +10,15 @@ public interface IPermissionService
     /// <summary>Codes des permissions de l'employé (pour adapter l'écran ; le serveur revérifie toujours).</summary>
     Task<IReadOnlyList<string>> ListerAsync(long utilisateurId, CancellationToken ct = default);
 
-    /// <summary>Remise maximale (%) autorisée par le rôle de l'employé.</summary>
+    /// <summary>Remise maximale (%) que l'employé accorde seul : réglée sur l'employé par le titulaire (titulaire : 100).</summary>
     Task<decimal> RemiseMaxAsync(long utilisateurId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Remise de ce pourcentage permise : dans le maximum de l'employé, sinon autorisée sur place par le code d'un employé dont le
+    /// maximum la couvre (le poste le demande après un refus du droit caisse.remise).
+    /// </summary>
+    async Task<bool> RemiseAutoriseeAsync(long utilisateurId, decimal pourcentage, CancellationToken ct = default) =>
+        await RemiseMaxAsync(utilisateurId, ct) >= pourcentage;
 
     /// <summary>Vrai pour le pharmacien titulaire (rôle système, que la matrice des droits ne peut pas attribuer).</summary>
     Task<bool> EstTitulaireAsync(long utilisateurId, CancellationToken ct = default);

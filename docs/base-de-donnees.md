@@ -7,6 +7,8 @@
 | `068_verification_destinataire.sql` | Vérification d'un destinataire des notifications par un code : `destinataire_notification.code_verification_hash` (haché), `code_verification_expire` (15 minutes), `code_verification_essais` (5 au plus). |
 | `069_receptions_attente.sql` | Réceptions en attente : table `reception_attente` (saisie de l'écran Réceptions en JSON, mode `reception` / `facture` / `comptage` / `recompte`, scans du mobile repris) ; mise en attente par bouton, en quittant l'écran ou en se déconnectant, reprise depuis n'importe quel poste. |
 | `070_comptage_intermediaire.sql` | Comptage intermédiaire de la caisse : table `comptage_intermediaire` (tiroir compté sans clôturer : compté, attendu et écart au moment du comptage, détail des coupures) ; attendu et écart réservés au droit de voir les écarts. |
+| `071_don_remise_par_personne.sql` | Don et remise réglés par personne : `utilisateur.peut_donner`, `utilisateur.remise_max_pct` (entier de 0 à 100, `ck_utilisateur_remise_max`), `utilisateur.gere_remises_auto` ; `permission.par_personne` ; nouveau droit `caisse.remises_auto` ; `stock.donner`, `caisse.remise` et `caisse.remises_auto` retirés des rôles non système et lus sur l'employé par `a_permission` ; reprise à la première exécution depuis le rôle de chaque employé. `role.remise_max_pct` n'est plus lu. |
+| `072_remises_automatiques.sql` | Remises automatiques et don partiel : table `remise_automatique` (produit OU catégorie, pourcentage entier 1 à 100, période, motif, créée / modifiée / arrêtée par) ; `ligne_vente.remise_auto_pct`, `reduction_auto`, `reduction_manuelle`, `don_partiel` ; `vente.remise_additionnee`, `vente.montant_don` (`montant_remise` : remises hors médicaments). |
 | `061_tva_sorties.sql` | TVA à reverser sur les pertes et dons : table `parametre_rapport` (une ligne : `tva_reversee_perime`, `tva_reversee_casse`, `tva_reversee_don`, « non » par défaut), réglée par le titulaire selon l'avis de son comptable ; les rapports en tirent la marge après pertes et dons. |
 # Base de données
 
@@ -135,7 +137,7 @@ L'API emporte ces scripts numérotés dans le sous-dossier `database` de son dos
 
 | Fichier | Rôle |
 | --- | --- |
-| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 070, régénéré à chaque nouveau script) ; base vide uniquement |
+| `init/schema.sql` | Toute la structure en un fichier (équivaut aux scripts 001 à 072, régénéré à chaque nouveau script) ; base vide uniquement |
 | `init/seed_referentiel.sql` | Référentiel de départ pour la mise en production : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte `titulaire` au mot de passe provisoire `Provisoire-2026` (changement obligatoire) |
 | `init/clean.sql` | Remise à vierge (tout est supprimé) ; exige `-v confirmer=<nom de la base>` |
 

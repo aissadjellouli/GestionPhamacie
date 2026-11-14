@@ -7,14 +7,18 @@ namespace Pharma.Application.Administration;
 
 public sealed record UtilisateurAdmin(
     long Id, string NomComplet, string Identifiant, long RoleId, string Role, bool RoleSysteme,
-    bool Actif, DateTime? DerniereConnexion, bool CodeComptoir = false, string? Telephone = null, string? Email = null);
+    bool Actif, DateTime? DerniereConnexion, bool CodeComptoir = false, string? Telephone = null, string? Email = null,
+    bool PeutDonner = false, decimal RemiseMaxPct = 0, bool GereRemisesAuto = false);
 
-public sealed record RoleAdmin(long Id, string Code, string Nom, bool Systeme, decimal RemiseMaxPct, IReadOnlyList<string> Permissions);
-public sealed record PermissionAdmin(string Code, string Module, string Libelle, bool Sensible);
+public sealed record RoleAdmin(long Id, string Code, string Nom, bool Systeme, IReadOnlyList<string> Permissions);
+/// <summary>ParPersonne : droit réglé sur chaque employé par le titulaire (don, remise, remises automatiques), pas par rôle.</summary>
+public sealed record PermissionAdmin(string Code, string Module, string Libelle, bool Sensible, bool ParPersonne = false);
+/// <summary>Don et remise d'un employé : peut faire un don, remise maximale (% entier), gère les remises automatiques.</summary>
+public sealed record DonRemiseEmploye(bool PeutDonner, decimal RemiseMaxPct, bool GereRemisesAuto);
 public sealed record EtatDroits(IReadOnlyList<UtilisateurAdmin> Utilisateurs, IReadOnlyList<RoleAdmin> Roles, IReadOnlyList<PermissionAdmin> Permissions);
 
-/// <summary>Droits voulus pour un rôle : remise maximale et liste complète des permissions.</summary>
-public sealed record DroitsRole(long RoleId, decimal RemiseMaxPct, IReadOnlyList<string> Permissions);
+/// <summary>Droits voulus pour un rôle : liste complète des permissions (hors droits réglés par personne).</summary>
+public sealed record DroitsRole(long RoleId, IReadOnlyList<string> Permissions);
 
 public interface IUtilisateursAdmin
 {
@@ -25,6 +29,8 @@ public interface IUtilisateursAdmin
     Task ModifierAsync(long id, string nomComplet, long roleId, bool actif, string? nouveauHash, string? telephone, string? email, CancellationToken ct = default);
     /// <summary>Remplace les droits des rôles donnés (jamais le rôle système), en une transaction.</summary>
     Task EnregistrerDroitsAsync(IReadOnlyList<DroitsRole> droits, CancellationToken ct = default);
+    /// <summary>Don et remise d'un employé (jamais d'un titulaire : il a toujours tout).</summary>
+    Task ReglerDonRemiseAsync(long utilisateurId, DonRemiseEmploye reglage, CancellationToken ct = default);
 }
 
 public interface IHacheurMotDePasse
@@ -102,22 +108,50 @@ public sealed class ModifierUtilisateur(IUtilisateursAdmin admin, IHacheurMotDeP
     }
 }
 
-/// <summary>Matrice des droits et remises maximales. Le rôle titulaire n'est jamais modifié.</summary>
+/// <summary>
+/// Don et remise d'un employé, décidés par le pharmacien titulaire seul : peut faire un don, remise maximale (entier de 0 à 100 %),
+/// gère les remises automatiques. Le titulaire a toujours tout, sans réglage. Inscrit au journal (avant, après).
+/// </summary>
+public sealed class ReglerDonRemise(IUtilisateursAdmin admin, IJournal journal, IPermissionService droits)
+{
+    public async Task ExecuterAsync(long utilisateurId, DonRemiseEmploye reglage, long auteurId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(auteurId, "régler le don et la remise d’un employé", ct);
+        if (reglage.RemiseMaxPct is < 0 or > 100 || reglage.RemiseMaxPct != Math.Truncate(reglage.RemiseMaxPct))
+            throw new RegleMetierException("La remise maximale est un nombre entier de 0 à 100 %.", "remise_max");
+        var cible = (await admin.LireAsync(ct)).Utilisateurs.FirstOrDefault(u => u.Id == utilisateurId)
+                    ?? throw new RegleMetierException("Utilisateur introuvable.");
+        if (cible.RoleSysteme)
+            throw new RegleMetierException("Le pharmacien titulaire peut toujours faire un don et accorder une remise jusqu’à 100 %.");
+        var avant = new DonRemiseEmploye(cible.PeutDonner, cible.RemiseMaxPct, cible.GereRemisesAuto);
+        if (avant == reglage) return;
+        await admin.ReglerDonRemiseAsync(utilisateurId, reglage, ct);
+        await journal.EcrireAsync(auteurId, "don_remise_employe", "utilisateur", utilisateurId,
+            new Dictionary<string, object?>
+            {
+                ["identifiant"] = cible.Identifiant,
+                ["avant"] = new { peut_donner = avant.PeutDonner, remise_max = avant.RemiseMaxPct, remises_auto = avant.GereRemisesAuto },
+                ["apres"] = new { peut_donner = reglage.PeutDonner, remise_max = reglage.RemiseMaxPct, remises_auto = reglage.GereRemisesAuto }
+            }, Permissions.AdminUtilisateurs, ct);
+    }
+}
+
+/// <summary>Matrice des droits par rôle (hors droits réglés par personne). Le rôle titulaire n'est jamais modifié.</summary>
 public sealed class EnregistrerDroits(IUtilisateursAdmin admin, IJournal journal)
 {
     public async Task ExecuterAsync(IReadOnlyList<DroitsRole> droits, long auteurId, CancellationToken ct = default)
     {
         var etat = await admin.LireAsync(ct);
-        var codes = etat.Permissions.Select(p => p.Code).ToHashSet();
+        var codes = etat.Permissions.Where(p => !p.ParPersonne).Select(p => p.Code).ToHashSet();
         var aEnregistrer = new List<DroitsRole>();
         foreach (var d in droits)
         {
             var role = etat.Roles.FirstOrDefault(r => r.Id == d.RoleId) ?? throw new RegleMetierException("Rôle inconnu.");
             if (role.Systeme) continue;   // titulaire : toujours tous les droits
-            if (d.RemiseMaxPct is < 0 or > 100)
-                throw new RegleMetierException($"{role.Nom} : la remise maximale doit être comprise entre 0 et 100 %.");
             if (d.Permissions.FirstOrDefault(p => !codes.Contains(p)) is { } inconnue)
-                throw new RegleMetierException($"Permission inconnue : {inconnue}.");
+                throw new RegleMetierException(etat.Permissions.Any(p => p.Code == inconnue)
+                    ? $"« {inconnue} » se règle sur chaque employé (Utilisateurs), pas par rôle."
+                    : $"Permission inconnue : {inconnue}.");
             aEnregistrer.Add(d with { Permissions = d.Permissions.Distinct().ToList() });
         }
 
@@ -128,7 +162,6 @@ public sealed class EnregistrerDroits(IUtilisateursAdmin admin, IJournal journal
                 ["roles"] = aEnregistrer.Select(d => new
                 {
                     role = etat.Roles.First(r => r.Id == d.RoleId).Nom,
-                    remise_max = d.RemiseMaxPct,
                     ajoutes = d.Permissions.Except(etat.Roles.First(r => r.Id == d.RoleId).Permissions).ToList(),
                     retires = etat.Roles.First(r => r.Id == d.RoleId).Permissions.Except(d.Permissions).ToList()
                 }).ToList()

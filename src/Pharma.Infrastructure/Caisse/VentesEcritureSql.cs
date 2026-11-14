@@ -55,8 +55,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO vente (numero, utilisateur_id, patient_id, ordonnance_id, type, organisme_id,
                                montant_total, part_organisme, part_patient, statut, session_caisse_id,
-                               remise_pct, montant_remise, taux_tiers_payant, reste_saisi)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'en_cours', $10, $11, $12, $13, $14)
+                               remise_pct, montant_remise, taux_tiers_payant, reste_saisi, remise_additionnee, montant_don)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'en_cours', $10, $11, $12, $13, $14, $15, $16)
             RETURNING id
             """, cx, tx))
         {
@@ -74,6 +74,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             cmd.Parameters.AddWithValue(v.MontantRemise);
             cmd.Parameters.Add(Valeur(v.TauxTiersPayant, NpgsqlDbType.Numeric));
             cmd.Parameters.AddWithValue(v.ResteSaisi is not null);
+            cmd.Parameters.AddWithValue(v.RemiseAdditionnee);
+            cmd.Parameters.AddWithValue(v.MontantDon);
             venteId = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
 
@@ -99,8 +101,9 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             long ligneId;
             await using (var cmd = new NpgsqlCommand("""
                 INSERT INTO ligne_vente (vente_id, produit_id, lot_id, quantite, prix_unitaire,
-                                         base_remboursement, taux_remboursement, montant_organisme, montant_patient, shp, raison_lot)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
+                                         base_remboursement, taux_remboursement, montant_organisme, montant_patient, shp, raison_lot,
+                                         remise_auto_pct, reduction_auto, reduction_manuelle, don_partiel)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id
                 """, cx, tx))
             {
                 cmd.Parameters.AddWithValue(venteId);
@@ -114,6 +117,10 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                 cmd.Parameters.AddWithValue(l.MontantPatient);
                 cmd.Parameters.AddWithValue(l.Shp);
                 cmd.Parameters.Add(Valeur(l.RaisonLot, NpgsqlDbType.Text));
+                cmd.Parameters.AddWithValue(l.RemiseAutoPct);
+                cmd.Parameters.AddWithValue(l.ReductionAuto);
+                cmd.Parameters.AddWithValue(l.ReductionManuelle);
+                cmd.Parameters.AddWithValue(l.Medicament && l.Reduction > 0);
                 ligneId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
 
@@ -219,10 +226,27 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         }
 
         // 7. Journal des actions sensibles
-        if (v.RemisePct > 0)
+        // Remise du vendeur (hors médicaments), don partiel sur des médicaments, remises automatiques : chacun inscrit au journal
+        var remiseVendeur = v.Lignes.Where(l => !l.Medicament).Sum(l => l.ReductionManuelle);
+        var donVendeur = v.Lignes.Where(l => l.Medicament).Sum(l => l.ReductionManuelle);
+        if (remiseVendeur > 0)
             await JournalSql.EcrireAsync(cx, tx, v.UtilisateurId, "remise", "vente", venteId,
-                new Dictionary<string, object?> { ["ticket"] = numero, ["pourcentage"] = v.RemisePct, ["montant"] = v.MontantRemise },
+                new Dictionary<string, object?>
+                {
+                    ["ticket"] = numero, ["pourcentage"] = v.RemisePct, ["montant"] = remiseVendeur, ["additionnee"] = v.RemiseAdditionnee
+                },
                 Permissions.CaisseRemise, ct, autorisation?.AutoriseParId);
+        if (donVendeur > 0)
+            await JournalSql.EcrireAsync(cx, tx, v.UtilisateurId, "don_partiel", "vente", venteId,
+                new Dictionary<string, object?> { ["ticket"] = numero, ["pourcentage"] = v.RemisePct, ["montant"] = donVendeur },
+                Permissions.StockDonner, ct, autorisation?.AutoriseParId);
+        if (v.MontantReductionsAuto > 0)
+            await JournalSql.EcrireAsync(cx, tx, v.UtilisateurId, "remise_automatique_appliquee", "vente", venteId,
+                new Dictionary<string, object?>
+                {
+                    ["ticket"] = numero, ["montant"] = v.MontantReductionsAuto,
+                    ["dont_don_partiel"] = v.Lignes.Where(l => l.Medicament).Sum(l => l.ReductionAuto)
+                }, null, ct);
         if (a.ProduitsSousRegistre.Count > 0 && v.Lignes.Any(l => a.ProduitsSousRegistre.Contains(l.ProduitId)))
             await JournalSql.EcrireAsync(cx, tx, v.UtilisateurId, "delivrance_psychotrope", "vente", venteId,
                 new Dictionary<string, object?> { ["ticket"] = numero, ["ordonnance_id"] = ordonnanceId },

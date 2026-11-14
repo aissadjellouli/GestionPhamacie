@@ -61,13 +61,16 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
                     LEFT JOIN categorie_produit cat ON cat.code = p.categorie
                     WHERE v.statut = 'validee' AND {Periode}),
                    (SELECT COALESCE(SUM(l.shp * l.quantite), 0) FROM ligne_vente l JOIN vente v ON v.id = l.vente_id
+                    WHERE v.statut = 'validee' AND {Periode}),
+                   COALESCE(SUM(v.montant_don) FILTER (WHERE v.statut = 'validee'), 0),
+                   (SELECT COALESCE(SUM(l.reduction_auto), 0) FROM ligne_vente l JOIN vente v ON v.id = l.vente_id
                     WHERE v.statut = 'validee' AND {Periode})
             FROM vente v WHERE {Periode}
             """, du, au);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
         return new SyntheseVentes(r.GetInt32(0), r.GetDecimal(1), r.GetDecimal(2), r.GetDecimal(5), r.GetDecimal(3), r.GetInt32(4),
-            r.GetInt32(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10));
+            r.GetInt32(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetDecimal(11), r.GetDecimal(12));
     }
 
     public async Task<IReadOnlyList<VentesJour>> ParJourAsync(DateOnly du, DateOnly au, CancellationToken ct = default)
@@ -141,7 +144,7 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
         await using var cmd = Commande("""
             SELECT u.nom_complet, s.poste, s.ouverte_le, s.fermee_le, s.montant_attendu, s.montant_compte, s.ecart,
                    (SELECT count(*) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'annulee')::int,
-                   (SELECT count(*) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'validee' AND v.montant_remise > 0)::int,
+                   (SELECT count(*) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'validee' AND (v.montant_remise > 0 OR v.montant_don > 0))::int,
                    (SELECT count(*) FROM retour_client rc WHERE rc.session_caisse_id = s.id
                       AND EXISTS (SELECT 1 FROM retour_client_ligne rl WHERE rl.retour_id = rc.id))::int,
                    u.id

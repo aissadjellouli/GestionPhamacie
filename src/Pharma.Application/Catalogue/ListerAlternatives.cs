@@ -1,11 +1,11 @@
 namespace Pharma.Application.Catalogue;
 
 /// <summary>
-/// Produit de même DCI disponible en stock. <see cref="Exact"/> : même dosage et même forme (substituable) ;
+/// Produit de même DCI disponible en stock (PrixPublic : prix servi, SHP compris). <see cref="Exact"/> : même dosage et même forme (substituable) ;
 /// sinon autre dosage ou autre forme, à valider par le pharmacien.
 /// </summary>
 public sealed record ProduitAlternatif(long ProduitId, string NomCommercial, decimal PrixPublic, int Stock,
-    bool Exact = true, string? Dosage = null, string? Forme = null);
+    bool Exact = true, string? Dosage = null, string? Forme = null, string? Laboratoire = null);
 
 public interface IAlternativesLecture
 {
@@ -23,7 +23,8 @@ public sealed class ListerAlternatives(IAlternativesLecture alternatives)
     {
         var tous = await alternatives.AlternativesAsync(produitId, ct);
         var exacts = tous.Where(a => a.Exact).ToList();
+        // Le moins cher d'abord (prix servi : lot qui serait servi, SHP compris), puis le plus de stock (2026-11-14)
         return (exacts.Count > 0 ? exacts : tous.Where(a => !a.Exact))
-            .OrderByDescending(a => a.Stock).ToList();
+            .OrderBy(a => a.PrixPublic).ThenByDescending(a => a.Stock).ToList();
     }
 }

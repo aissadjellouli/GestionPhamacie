@@ -25,10 +25,7 @@ public sealed class PermissionService(NpgsqlDataSource db) : IPermissionService
     public async Task<IReadOnlyList<string>> ListerAsync(long utilisateurId, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT rp.permission_code
-            FROM utilisateur u JOIN role_permission rp ON rp.role_id = u.role_id
-            WHERE u.id = $1 AND u.actif
-            ORDER BY 1
+            SELECT p.code FROM permission p WHERE a_permission($1, p.code) ORDER BY 1
             """);
         cmd.Parameters.AddWithValue(utilisateurId);
         await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -40,7 +37,7 @@ public sealed class PermissionService(NpgsqlDataSource db) : IPermissionService
     public async Task<decimal> RemiseMaxAsync(long utilisateurId, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(
-            "SELECT r.remise_max_pct FROM utilisateur u JOIN role r ON r.id = u.role_id WHERE u.id = $1 AND u.actif");
+            "SELECT CASE WHEN r.systeme THEN 100 ELSE u.remise_max_pct END FROM utilisateur u JOIN role r ON r.id = u.role_id WHERE u.id = $1 AND u.actif");
         cmd.Parameters.AddWithValue(utilisateurId);
         return await cmd.ExecuteScalarAsync(ct) is decimal d ? d : 0m;
     }

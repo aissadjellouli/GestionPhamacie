@@ -101,7 +101,8 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
     {
         var utilisateurs = new List<UtilisateurAdmin>();
         await using (var cmd = db.CreateCommand("""
-            SELECT u.id, u.nom_complet, u.identifiant, r.id, r.nom, r.systeme, u.actif, u.derniere_connexion, u.pin_hash IS NOT NULL, u.telephone, u.email
+            SELECT u.id, u.nom_complet, u.identifiant, r.id, r.nom, r.systeme, u.actif, u.derniere_connexion, u.pin_hash IS NOT NULL, u.telephone, u.email,
+                   r.systeme OR u.peut_donner, CASE WHEN r.systeme THEN 100 ELSE u.remise_max_pct END, r.systeme OR u.gere_remises_auto
             FROM utilisateur u JOIN role r ON r.id = u.role_id
             ORDER BY r.systeme DESC, u.actif DESC, u.nom_complet
             """))
@@ -109,24 +110,24 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
             while (await r.ReadAsync(ct))
                 utilisateurs.Add(new UtilisateurAdmin(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetInt64(3), r.GetString(4),
                     r.GetBoolean(5), r.GetBoolean(6), r.IsDBNull(7) ? null : r.GetDateTime(7), r.GetBoolean(8),
-                    r.IsDBNull(9) ? null : r.GetString(9), r.IsDBNull(10) ? null : r.GetString(10)));
+                    r.IsDBNull(9) ? null : r.GetString(9), r.IsDBNull(10) ? null : r.GetString(10), r.GetBoolean(11), r.GetDecimal(12), r.GetBoolean(13)));
 
         var roles = new List<RoleAdmin>();
         await using (var cmd = db.CreateCommand("""
-            SELECT r.id, r.code, r.nom, r.systeme, r.remise_max_pct,
+            SELECT r.id, r.code, r.nom, r.systeme,
                    COALESCE(array_agg(rp.permission_code ORDER BY rp.permission_code) FILTER (WHERE rp.permission_code IS NOT NULL), '{}')
             FROM role r LEFT JOIN role_permission rp ON rp.role_id = r.id
             GROUP BY r.id ORDER BY r.systeme DESC, r.id
             """))
         await using (var r = await cmd.ExecuteReaderAsync(ct))
             while (await r.ReadAsync(ct))
-                roles.Add(new RoleAdmin(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetBoolean(3), r.GetDecimal(4), r.GetFieldValue<string[]>(5)));
+                roles.Add(new RoleAdmin(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetBoolean(3), r.GetFieldValue<string[]>(4)));
 
         var permissions = new List<PermissionAdmin>();
-        await using (var cmd = db.CreateCommand("SELECT code, module, libelle, sensible FROM permission ORDER BY module, code"))
+        await using (var cmd = db.CreateCommand("SELECT code, module, libelle, sensible, par_personne FROM permission ORDER BY module, code"))
         await using (var r = await cmd.ExecuteReaderAsync(ct))
             while (await r.ReadAsync(ct))
-                permissions.Add(new PermissionAdmin(r.GetString(0), r.GetString(1), r.GetString(2), r.GetBoolean(3)));
+                permissions.Add(new PermissionAdmin(r.GetString(0), r.GetString(1), r.GetString(2), r.GetBoolean(3), r.GetBoolean(4)));
 
         return new EtatDroits(utilisateurs, roles, permissions);
     }
@@ -179,7 +180,7 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
         {
             var codes = d.Permissions.ToArray();
             await using (var cmd = new NpgsqlCommand(
-                "DELETE FROM role_permission WHERE role_id = $1 AND NOT (permission_code = ANY($2))", cx, tx))
+                "DELETE FROM role_permission WHERE role_id = $1 AND NOT (permission_code = ANY($2)) AND permission_code NOT IN (SELECT code FROM permission WHERE par_personne)", cx, tx))
             {
                 cmd.Parameters.AddWithValue(d.RoleId);
                 cmd.Parameters.AddWithValue(codes);
@@ -195,14 +196,21 @@ public sealed class AdministrationSql(NpgsqlDataSource db) : ISeuilsAdmin, IUtil
                 cmd.Parameters.AddWithValue(codes);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
-            await using (var cmd = new NpgsqlCommand("UPDATE role SET remise_max_pct = $2 WHERE id = $1 AND NOT systeme", cx, tx))
-            {
-                cmd.Parameters.AddWithValue(d.RoleId);
-                cmd.Parameters.AddWithValue(d.RemiseMaxPct);
-                await cmd.ExecuteNonQueryAsync(ct);
-            }
         }
         await tx.CommitAsync(ct);
+    }
+
+    public async Task ReglerDonRemiseAsync(long utilisateurId, DonRemiseEmploye reglage, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            UPDATE utilisateur u SET peut_donner = $2, remise_max_pct = $3, gere_remises_auto = $4
+            FROM role r WHERE r.id = u.role_id AND u.id = $1 AND NOT r.systeme
+            """);
+        cmd.Parameters.AddWithValue(utilisateurId);
+        cmd.Parameters.AddWithValue(reglage.PeutDonner);
+        cmd.Parameters.AddWithValue(reglage.RemiseMaxPct);
+        cmd.Parameters.AddWithValue(reglage.GereRemisesAuto);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     // ---- Pharmacie -----------------------------------------------------------

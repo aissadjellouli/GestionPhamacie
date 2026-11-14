@@ -80,11 +80,11 @@ public class CaisseTests
     public void Remise_hors_SHP()
     {
         // 352,50 dont 2,50 de SHP : 10 % de remise sur 350 seulement
-        var produit = new Produit { Id = 3, NomCommercial = "P", PrixPublic = 350m, Classe = ClasseReglementaire.ListeI };
+        var produit = new Produit { Id = 3, NomCommercial = "P", PrixPublic = 350m, Classe = ClasseReglementaire.ListeI, EstMedicament = false };
         var v = new Vente();
         v.AjouterProduit(produit, LotDe(produit), 1, Aujourdhui);
-        v.AppliquerRemise(10, 20);
-        Assert.Equal((35m, 317.50m), (v.MontantRemise, v.PartPatient));
+        v.AppliquerRemise(10);
+        Assert.Equal((35m, 317.50m, 0m), (v.MontantRemise, v.PartPatient, v.MontantDon));
     }
 
     [Fact]
@@ -135,16 +135,65 @@ public class CaisseTests
     {
         var v = new Vente { Type = TypeVente.TiersPayant, TauxTiersPayant = 80 };
         v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 2, Aujourdhui);
-        v.AppliquerRemise(10, remiseMaxPct: 10);
-        Assert.Equal(22m, v.MontantRemise);           // 10 % de 220
+        v.AppliquerRemise(10);
+        // Médicament : la réduction est un don partiel du reste à charge, pas une remise
+        Assert.Equal((0m, 22m), (v.MontantRemise, v.MontantDon));   // 10 % de 220
         Assert.Equal(480m, v.PartOrganisme);          // inchangée
         Assert.Equal(198m, v.PartPatient);
         Assert.Equal(678m, v.MontantTotal);
+        Assert.True(v.DonManuelSurMedicaments);
+        Assert.False(v.RemiseManuelleSurProduits);
+    }
+
+    [Theory]
+    [InlineData(101)]
+    [InlineData(-1)]
+    [InlineData(12.5)]
+    public void Remise_nombre_entier_de_0_a_100(decimal pct) =>
+        Assert.Throws<RegleMetierException>(() => new Vente().AppliquerRemise(pct));
+
+    private static readonly Produit Creme = new() { Id = 11, NomCommercial = "Crème", PrixPublic = 1000m, EstMedicament = false, Categorie = "dermo_cosmetique" };
+
+    [Fact]
+    public void Remise_automatique_en_vente_libre_puis_remise_du_vendeur_additionnee_ou_non()
+    {
+        var v = new Vente();
+        v.AjouterProduit(Creme, LotDe(Creme), 1, Aujourdhui);
+        v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 1, Aujourdhui);   // remboursable : jamais de remise automatique
+        v.AppliquerRemisesAutomatiques(new Dictionary<long, decimal> { [11] = 10, [Amoxicilline.Id] = 20 });
+        Assert.Equal((10m, 0m), (v.Lignes[0].RemiseAutoPct, v.Lignes[1].RemiseAutoPct));
+        Assert.Equal(100m, v.MontantRemise);
+
+        // Remise du vendeur non additionnée : seulement sur la ligne sans remise automatique (don partiel : médicament)
+        v.AppliquerRemise(5);
+        Assert.Equal((100m, 17.50m), (v.MontantRemise, v.MontantDon));
+        Assert.False(v.RemiseManuelleSurProduits);
+
+        // Additionnée : 10 + 5 = 15 % sur la crème
+        v.AppliquerRemise(5, additionner: true);
+        Assert.Equal((150m, 17.50m, 100m), (v.MontantRemise, v.MontantDon, v.MontantReductionsAuto));
+        Assert.True(v.RemiseManuelleSurProduits);
+        Assert.Equal(1350m - 150m - 17.50m, v.PartPatient);
     }
 
     [Fact]
-    public void Remise_au_dela_du_maximum_du_role_refusee() =>
-        Assert.Throws<RegleMetierException>(() => new Vente().AppliquerRemise(15, remiseMaxPct: 10));
+    public void Pas_de_remise_automatique_en_tiers_payant()
+    {
+        var v = new Vente { Type = TypeVente.TiersPayant, TauxTiersPayant = 80 };
+        v.AjouterProduit(Creme, LotDe(Creme), 1, Aujourdhui);
+        v.AppliquerRemisesAutomatiques(new Dictionary<long, decimal> { [11] = 10 });
+        Assert.Equal(0m, v.MontantRemise);
+    }
+
+    [Fact]
+    public void Remises_additionnees_au_plus_100_pour_cent()
+    {
+        var v = new Vente();
+        v.AjouterProduit(Creme, LotDe(Creme), 1, Aujourdhui);
+        v.AppliquerRemisesAutomatiques(new Dictionary<long, decimal> { [11] = 70 });
+        v.AppliquerRemise(50, additionner: true);
+        Assert.Equal((100m, 1000m, 0m), (v.Lignes[0].PctApplique, v.MontantRemise, v.PartPatient));
+    }
 
     [Fact]
     public void Tiers_payant_exige_assure_organisme_et_taux()

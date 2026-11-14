@@ -20,6 +20,7 @@ public static class DependencyInjection
         services.AddScoped<RechercherProduits>();
         services.AddScoped<ObtenirLotFefo>();
         services.AddScoped<ListerAlternatives>();
+        services.AddScoped<RechercherAuComptoir>();
         services.AddScoped<ConsulterStock>();
         services.AddScoped<ObtenirEtatEtiquetage>();
         services.AddScoped<ListerAlertesOuvertes>();
@@ -31,6 +32,8 @@ public static class DependencyInjection
         services.AddScoped<ConsulterRappelLot>();
         services.AddScoped<ListerMesPermissions>();
         services.AddScoped<Encaisser>();
+        services.AddScoped<Caisse.ListerRemisesAutomatiques>();
+        services.AddScoped<Caisse.GererRemisesAutomatiques>();
         services.AddScoped<LireVoletChifa>();
         services.AddScoped<AssocierCodeChifa>();
         services.AddScoped<ObtenirEtatCaisse>();
@@ -54,6 +57,7 @@ public static class DependencyInjection
         services.AddScoped<Administration.CreerUtilisateur>();
         services.AddScoped<Administration.ModifierUtilisateur>();
         services.AddScoped<Administration.EnregistrerDroits>();
+        services.AddScoped<Administration.ReglerDonRemise>();
         services.AddScoped<Administration.ObtenirPharmacie>();
         services.AddScoped<Administration.ModifierPharmacie>();
         services.AddScoped<ConsulterParcoursBoite>();

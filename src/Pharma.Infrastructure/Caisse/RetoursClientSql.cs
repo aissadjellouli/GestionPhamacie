@@ -17,7 +17,9 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         await using (var cmd = db.CreateCommand("""
             SELECT l.id, l.lot_id, p.nom_commercial, lo.numero_lot, l.quantite,
                    COALESCE((SELECT SUM(r.quantite) FROM retour_client_ligne r WHERE r.ligne_vente_id = l.id), 0)::int,
-                   l.montant_patient
+                   -- Part du patient de la ligne, réductions de la ligne déduites (remise automatique, remise du vendeur, don partiel) :
+                   -- le retour rend ce que le patient a payé pour ce produit-là (ventes antérieures : prorata de la remise de la vente)
+                   l.montant_patient - l.reduction_auto - l.reduction_manuelle
             FROM ligne_vente l JOIN produit p ON p.id = l.produit_id JOIN lot lo ON lo.id = l.lot_id
             WHERE l.vente_id = $1 ORDER BY l.id
             """))

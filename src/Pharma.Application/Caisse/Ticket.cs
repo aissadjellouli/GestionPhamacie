@@ -3,15 +3,19 @@ using Pharma.Domain.Commun;
 
 namespace Pharma.Application.Caisse;
 
-/// <summary>Shp : par boîte, compris dans PrixUnitaire ; Medicament : catégorie comptée dans « médicaments ».</summary>
-public sealed record LigneTicket(string Produit, int Quantite, decimal PrixUnitaire, decimal Montant, decimal PartOrganisme, decimal Shp = 0, bool Medicament = true);
+/// <summary>
+/// Shp : par boîte, compris dans PrixUnitaire ; Medicament : catégorie comptée dans « médicaments » ; Reduction : remise (ou don partiel
+/// sur un médicament) de la ligne, au pourcentage PctReduction.
+/// </summary>
+public sealed record LigneTicket(string Produit, int Quantite, decimal PrixUnitaire, decimal Montant, decimal PartOrganisme, decimal Shp = 0, bool Medicament = true,
+    decimal Reduction = 0, decimal PctReduction = 0, bool DonPartiel = false);
 
 /// <summary>Contenu du ticket de caisse ; le poste le met en page et l'imprime.</summary>
 public sealed record TicketVente(
     string Numero, DateTime Date, string Vendeur, string? Poste, string Statut,
     string? Organisme, decimal? TauxTiersPayant, IReadOnlyList<LigneTicket> Lignes,
     decimal MontantBrut, decimal Remise, decimal PartOrganisme, decimal PartPatient, string? Mode,
-    string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null);
+    string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null, decimal DonPartiel = 0);
 
 public interface ITicketLecture
 {

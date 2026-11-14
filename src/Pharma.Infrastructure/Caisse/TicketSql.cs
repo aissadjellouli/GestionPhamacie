@@ -10,8 +10,8 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
         TicketVente? t;
         await using (var cmd = db.CreateCommand("""
             SELECT v.numero, v.date_vente, u.nom_complet, s.poste, v.statut, o.code, CASE WHEN v.reste_saisi THEN NULL ELSE v.taux_tiers_payant END,
-                   v.montant_total + v.montant_remise, v.montant_remise, v.part_organisme, v.part_patient,
-                   (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id ORDER BY p.id LIMIT 1)
+                   v.montant_total + v.montant_remise + v.montant_don, v.montant_remise, v.part_organisme, v.part_patient,
+                   (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id ORDER BY p.id LIMIT 1), v.montant_don
             FROM vente v
             JOIN utilisateur u ON u.id = v.utilisateur_id
             LEFT JOIN session_caisse s ON s.id = v.session_caisse_id
@@ -25,21 +25,25 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
             t = new TicketVente(r.GetString(0), r.GetDateTime(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4),
                 r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetDecimal(6), [],
                 r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.IsDBNull(11) ? null : r.GetString(11),
-                null, null, null, null);
+                null, null, null, null, null, r.GetDecimal(12));
         }
 
         var lignes = new List<LigneTicket>();
         await using (var cmd = db.CreateCommand("""
             SELECT p.nom_commercial, l.quantite, l.prix_unitaire, l.prix_unitaire * l.quantite, l.montant_organisme, l.shp,
-                   COALESCE((SELECT c.medicament FROM categorie_produit c WHERE c.code = p.categorie), true)
-            FROM ligne_vente l JOIN produit p ON p.id = l.produit_id
+                   COALESCE((SELECT c.medicament FROM categorie_produit c WHERE c.code = p.categorie), true),
+                   l.reduction_auto + l.reduction_manuelle,
+                   CASE WHEN l.reduction_manuelle > 0 THEN LEAST(l.remise_auto_pct + COALESCE(NULLIF(v.remise_pct, 0), 0), 100) ELSE l.remise_auto_pct END,
+                   l.don_partiel
+            FROM ligne_vente l JOIN produit p ON p.id = l.produit_id JOIN vente v ON v.id = l.vente_id
             WHERE l.vente_id = $1 ORDER BY l.id
             """))
         {
             cmd.Parameters.AddWithValue(venteId);
             await using var r = await cmd.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct))
-                lignes.Add(new LigneTicket(r.GetString(0), r.GetInt32(1), r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), r.GetBoolean(6)));
+                lignes.Add(new LigneTicket(r.GetString(0), r.GetInt32(1), r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), r.GetBoolean(6),
+                    r.GetDecimal(7), r.GetDecimal(8), r.GetBoolean(9)));
         }
         // Retours clients déjà enregistrés sur cette vente : rappelés sur le ticket réimprimé
         var retours = new List<string>();

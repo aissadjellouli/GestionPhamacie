@@ -88,7 +88,9 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         Ligne(synthese, "Nombre de ventes", r.Synthese.NombreVentes.ToString(Fr));
         Ligne(synthese, "Part organismes (Chifa) à recevoir", Da(r.Synthese.PartOrganismes));
         Ligne(synthese, "Crédits clients accordés", Da(r.Synthese.CreditsAccordes));
-        Ligne(synthese, "Remises accordées", Da(r.Synthese.Remises));
+        Ligne(synthese, "Remises accordées (produits hors médicaments)", Da(r.Synthese.Remises));
+        if (r.Synthese.DonsPartiels > 0) Ligne(synthese, "Dons partiels du reste à charge (médicaments)", Da(r.Synthese.DonsPartiels));
+        if (r.Synthese.RemisesAutomatiques > 0) Ligne(synthese, "dont remises automatiques", Da(r.Synthese.RemisesAutomatiques));
         if (r.Synthese.VentesAutres > 0)
         {
             Ligne(synthese, "Ventes de médicaments (avant remises et retours)", Da(r.Synthese.VentesMedicaments));

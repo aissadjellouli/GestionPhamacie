@@ -68,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Administration.ISeuilsStock, Administration.SeuilsStockSql>();
         services.AddScoped<ILotsLecture, LotsLecture>();
         services.AddScoped<IAlternativesLecture, AlternativesLecture>();
+        services.AddScoped<IEquivalentsComptoir, EquivalentsComptoirSql>();
         services.AddScoped<IStockLecture, StockLecture>();
         services.AddScoped<IEtiquetageLecture, EtiquetageLecture>();
         services.AddScoped<IAlertesLecture, AlertesLecture>();
@@ -89,6 +90,9 @@ public static class DependencyInjection
         services.AddScoped<IOrganismes>(sp => sp.GetRequiredService<PatientsSql>());
         services.AddScoped<IPreparationVente, PreparationVenteSql>();
         services.AddScoped<IVentesEcriture, VentesEcritureSql>();
+        services.AddScoped<RemisesAutomatiquesSql>();
+        services.AddScoped<IRemisesAutomatiques>(sp => sp.GetRequiredService<RemisesAutomatiquesSql>());
+        services.AddScoped<IRemisesAutomatiquesAdmin>(sp => sp.GetRequiredService<RemisesAutomatiquesSql>());
         services.AddScoped<ISessionsCaisse, SessionsCaisseSql>();
         services.AddSingleton<IDocumentsPdf, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Rapports.IDocumentsRapports, DocumentsPdf>();

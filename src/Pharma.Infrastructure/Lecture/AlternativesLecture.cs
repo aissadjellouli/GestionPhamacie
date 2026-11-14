@@ -3,29 +3,35 @@ using Pharma.Application.Catalogue;
 
 namespace Pharma.Infrastructure.Lecture;
 
-/// <summary>Produits de même DCI avec du stock ; « exact » = même dosage et même forme (comme la vue v_alternatives).</summary>
+/// <summary>
+/// Équivalents en stock d'un produit (même DCI) : PrixPublic porte le prix servi (PPA du lot qui serait servi, sinon prix du catalogue,
+/// SHP compris), pour proposer d'abord le moins cher (2026-11-14).
+/// </summary>
 public sealed class AlternativesLecture(NpgsqlDataSource db) : IAlternativesLecture
 {
     public async Task<IReadOnlyList<ProduitAlternatif>> AlternativesAsync(long produitId, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
-            SELECT alt.id, alt.nom_commercial, alt.prix_public, e.stock::int,
-                   (alt.dosage IS NOT DISTINCT FROM p.dosage AND alt.forme IS NOT DISTINCT FROM p.forme) AS exact,
-                   alt.dosage, alt.forme
-            FROM produit p
-            JOIN produit alt    ON alt.dci_id = p.dci_id AND alt.id <> p.id AND alt.actif
-            -- Stock vendable (même calcul que v_etat_stock), lu pour chaque alternative seulement
-            CROSS JOIN LATERAL (SELECT COALESCE(sum(l.quantite_disponible), 0) AS stock FROM lot l
-                                WHERE l.produit_id = alt.id AND l.date_peremption > current_date AND NOT l.bloque) e
-            WHERE p.id = $1 AND e.stock > 0
-            ORDER BY exact DESC, e.stock DESC, alt.nom_commercial
+        await using var cmd = db.CreateCommand(EquivalentsComptoirSql.Selection + """
+             JOIN produit ref ON ref.id = $1
+            WHERE p.dci_id = ref.dci_id AND p.id <> ref.id AND p.actif AND COALESCE(e.stock, 0) > 0
             """);
         cmd.Parameters.AddWithValue(produitId);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        var liste = new List<ProduitAlternatif>();
-        while (await r.ReadAsync(ct))
-            liste.Add(new ProduitAlternatif(r.GetInt64(0), r.GetString(1), r.GetDecimal(2), r.GetInt32(3), r.GetBoolean(4),
-                r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6)));
-        return liste;
+        await using (var refCmd = db.CreateCommand("SELECT dosage, forme FROM produit WHERE id = $1"))
+        {
+            refCmd.Parameters.AddWithValue(produitId);
+            await using var rr = await refCmd.ExecuteReaderAsync(ct);
+            if (!await rr.ReadAsync(ct)) return [];
+            var (dosage, forme) = (rr.IsDBNull(0) ? null : rr.GetString(0), rr.IsDBNull(1) ? null : rr.GetString(1));
+            await rr.DisposeAsync();
+            var liste = new List<ProduitAlternatif>();
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+            {
+                var e = EquivalentsComptoirSql.Lire(r);
+                liste.Add(new ProduitAlternatif(e.Id, e.NomCommercial, e.PrixServi, e.Stock,
+                    string.Equals(e.Dosage, dosage, StringComparison.Ordinal) && string.Equals(e.Forme, forme, StringComparison.Ordinal), e.Dosage, e.Forme, e.Laboratoire));
+            }
+            return liste;
+        }
     }
 }

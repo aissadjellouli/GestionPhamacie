@@ -64,7 +64,7 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         RegleRetour.VerifierVente(v.Statut, v.DansUnBordereau, v.PartOrganisme);
         if (demandees.Count == 0) throw new RegleMetierException("Choisissez au moins un produit rendu.");
 
-        // Les lignes portent le prix avant la remise de la vente : on rend au prorata de ce que le patient a payé
+        // Lignes nettes de leurs réductions (remise, don partiel) ; ventes antérieures sans réduction par ligne : prorata de ce que le patient a payé
         var brutPatient = vr.Lignes.Sum(l => l.MontantPatient);
         var lignes = new List<LigneRetourAEcrire>();
         foreach (var d in demandees)

@@ -79,15 +79,16 @@ internal static class AdminEndpoints
             {
                 var e = await obtenir.ExecuterAsync(ct);
                 return Results.Ok(new EtatDroitsDto(
-                    e.Utilisateurs.Select(u => new UtilisateurAdminDto(u.Id, u.NomComplet, u.Identifiant, u.RoleId, u.Role, u.RoleSysteme, u.Actif, u.DerniereConnexion, u.CodeComptoir, u.Telephone, u.Email)).ToList(),
-                    e.Roles.Select(r => new RoleAdminDto(r.Id, r.Code, r.Nom, r.Systeme, r.RemiseMaxPct, r.Permissions)).ToList(),
-                    e.Permissions.Select(p => new PermissionAdminDto(p.Code, p.Module, p.Libelle, p.Sensible)).ToList()));
+                    e.Utilisateurs.Select(u => new UtilisateurAdminDto(u.Id, u.NomComplet, u.Identifiant, u.RoleId, u.Role, u.RoleSysteme, u.Actif, u.DerniereConnexion, u.CodeComptoir, u.Telephone, u.Email,
+                        u.PeutDonner, u.RemiseMaxPct, u.GereRemisesAuto)).ToList(),
+                    e.Roles.Select(r => new RoleAdminDto(r.Id, r.Code, r.Nom, r.Systeme, r.Permissions)).ToList(),
+                    e.Permissions.Select(p => new PermissionAdminDto(p.Code, p.Module, p.Libelle, p.Sensible, p.ParPersonne)).ToList()));
             })
            .ExigerPermission(Permissions.AdminUtilisateurs);
 
         admin.MapPut("/droits", async (List<DroitsRoleDto> req, EnregistrerDroits enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await enregistrer.ExecuterAsync(req.Select(d => new DroitsRole(d.RoleId, d.RemiseMaxPct, d.Permissions)).ToList(), user.UtilisateurId(), ct);
+                await enregistrer.ExecuterAsync(req.Select(d => new DroitsRole(d.RoleId, d.Permissions)).ToList(), user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.AdminUtilisateurs);
@@ -99,6 +100,14 @@ internal static class AdminEndpoints
         admin.MapPut("/utilisateurs/{id:long}", async (long id, ModificationUtilisateurDto req, ModifierUtilisateur modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await modifier.ExecuterAsync(id, req.NomComplet, req.RoleId, req.Actif, req.MotDePasse, user.UtilisateurId(), req.Telephone, req.Email, ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.AdminUtilisateurs);
+
+        // Don et remise d'un employé : réglés par le titulaire seul (le cas d'usage le revérifie)
+        admin.MapPut("/utilisateurs/{id:long}/don-remise", async (long id, DonRemiseEmployeDto req, ReglerDonRemise regler, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await regler.ExecuterAsync(id, new DonRemiseEmploye(req.PeutDonner, req.RemiseMaxPct, req.GereRemisesAuto), user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.AdminUtilisateurs);

@@ -26,9 +26,12 @@ public static class CodeComptoir
             throw new RegleMetierException("Code trop simple : évitez les suites (1234, 9876…).");
     }
 
-    /// <summary>Droits utilisables avec une connexion par code : vente, crédit, délivrance, consultation du stock.</summary>
+    /// <summary>
+    /// Droits utilisables avec une connexion par code : vente, crédit, délivrance, consultation du stock, et don (le don partiel du reste
+    /// à charge d'un médicament se fait à la caisse).
+    /// </summary>
     public static bool Autorise(string permission) =>
         permission.StartsWith("caisse.", StringComparison.Ordinal)
         || permission.StartsWith("credit.", StringComparison.Ordinal)
-        || permission is Permissions.PsychotropesDelivrer or Permissions.StockConsulter;
+        || permission is Permissions.PsychotropesDelivrer or Permissions.StockConsulter or Permissions.StockDonner;
 }

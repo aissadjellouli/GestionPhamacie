@@ -32,13 +32,23 @@ public sealed record CommandeVente(
     bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
     long? PatientId, OrdonnanceSaisie? Ordonnance,
     decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null,
-    string? VoletChifa = null);
+    string? VoletChifa = null, bool RemiseAdditionnee = false);
+
+/// <summary>Réductions d'une ligne (ordre des lignes envoyées) : remise automatique, pourcentage appliqué, montant ; DonPartiel pour un médicament.</summary>
+public sealed record ReductionLigne(decimal RemiseAutoPct, decimal PctApplique, decimal Montant, bool DonPartiel);
+
+/// <summary>Remises automatiques en cours (décidées par le titulaire) : pourcentage par produit, celui du produit l'emportant sur sa catégorie.</summary>
+public interface IRemisesAutomatiques
+{
+    Task<IReadOnlyDictionary<long, decimal>> PourcentagesAsync(IReadOnlyCollection<long> produitIds, DateOnly jour, CancellationToken ct = default);
+}
 
 /// <summary>PrixLignes : prix de vente d'une boîte (PPA du lot + SHP), dans l'ordre des lignes envoyées.</summary>
 public sealed record ApercuVente(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
     decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
-    IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false, IReadOnlyList<SituationLotVente>? Situations = null);
+    IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false, IReadOnlyList<SituationLotVente>? Situations = null,
+    decimal MontantDon = 0, decimal ReductionsAuto = 0, IReadOnlyList<ReductionLigne>? Reductions = null);
 
 public sealed record VenteEncaissee(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
@@ -74,7 +84,7 @@ public sealed class Encaisser(
     IDetenteursDroit? detenteurs = null, Stock.ICampagnesInventaire? campagnes = null,
     VerificationCodeComptoir? codesComptoir = null, IJournal? journal = null,
     Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null,
-    Surveillance.Surveiller? surveillance = null)
+    Surveillance.Surveiller? surveillance = null, IRemisesAutomatiques? remisesAuto = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
@@ -82,12 +92,33 @@ public sealed class Encaisser(
         var (vente, produits) = await ConstruireAsync(commande, utilisateurId, sessionId: null, ct);
         var situations = await RaisonsAsync(commande, vente, produits, exiger: false, ct);
         return new ApercuVente(
-            vente.MontantTotal + vente.MontantRemise, vente.PartOrganisme, vente.MontantRemise,
+            vente.MontantTotal + vente.MontantRemise + vente.MontantDon, vente.PartOrganisme, vente.MontantRemise,
             vente.PartPatient, vente.MontantTotal, vente.ContientSousRegistre,
             vente.Lignes.Select(l => l.PrixUnitaire).ToList(), vente.Lignes.Sum(l => l.Shp * l.Quantite),
             vente.Lignes.Where(l => produits.TryGetValue(l.ProduitId, out var p) && p.EstMedicament).Sum(l => l.PrixUnitaire * l.Quantite),
             Bloques(produits), vente.ContientSurOrdonnance,
-            commande.Lignes.Select(l => situations.GetValueOrDefault(l.LotId) ?? new SituationLotVente(l.LotId, SituationLot.Aucune)).ToList());
+            commande.Lignes.Select(l => situations.GetValueOrDefault(l.LotId) ?? new SituationLotVente(l.LotId, SituationLot.Aucune)).ToList(),
+            vente.MontantDon, vente.MontantReductionsAuto,
+            vente.Lignes.Select(l => new ReductionLigne(l.RemiseAutoPct, l.PctApplique, l.Reduction, l.Medicament && l.Reduction > 0)).ToList());
+    }
+
+    /// <summary>
+    /// Remise du vendeur sur des produits hors médicaments : dans son maximum, sinon validée sur place par le code d'un employé dont le
+    /// maximum la couvre. Sur des médicaments, c'est un don partiel du reste à charge : droit de don, sinon code d'un employé qui l'a.
+    /// Les remises automatiques, décidées par le titulaire, ne demandent rien.
+    /// </summary>
+    private async Task ExigerReductionsAsync(Vente vente, long utilisateurId, CancellationToken ct)
+    {
+        if (vente.RemiseManuelleSurProduits && !await droits.RemiseAutoriseeAsync(utilisateurId, vente.RemisePct, ct))
+        {
+            var max = await droits.RemiseMaxAsync(utilisateurId, ct);
+            throw new DroitRefuseException(Permissions.CaisseRemise, "accorder une remise", max <= 0
+                ? $"Remise de {vente.RemisePct:0.##} % : vous n’avez pas le droit d’accorder une remise. Faites valider par un employé qui l’a."
+                : $"Remise de {vente.RemisePct:0.##} % : votre maximum est de {max:0.##} %. Faites valider par un employé dont le maximum le permet.");
+        }
+        if (vente.DonManuelSurMedicaments && !await droits.APermissionAsync(utilisateurId, Permissions.StockDonner, ct))
+            throw new DroitRefuseException(Permissions.StockDonner, "faire un don partiel du reste à charge sur un médicament",
+                $"Remise de {vente.RemisePct:0.##} % sur un médicament : c’est un don partiel du reste à charge, et vous n’avez pas le droit de don. Faites valider par un employé qui l’a.");
     }
 
     /// <summary>
@@ -157,8 +188,7 @@ public sealed class Encaisser(
 
         if (vente.ContientSousRegistre && !await droits.APermissionAsync(utilisateurId, Permissions.PsychotropesDelivrer, ct))
             throw new DroitRefuseException(Permissions.PsychotropesDelivrer, "délivrer un psychotrope", await MessagePsychotropeAsync(ct));
-        if (commande.RemisePct > 0)
-            await droits.ExigerAsync(utilisateurId, Permissions.CaisseRemise, "accorder une remise", ct);
+        await ExigerReductionsAsync(vente, utilisateurId, ct);
         // Produit bloqué à la vente : validé par l'employé s'il en a le droit, sinon par le code d'un pharmacien ou assistant
         var bloques = Bloques(produits);
         var validePar = await Catalogue.AutorisationBlocage.ExigerAsync(droits, codesComptoir, utilisateurId, commande.Blocage, poste, "à la vente", bloques, ct);
@@ -283,8 +313,10 @@ public sealed class Encaisser(
         if (c.TiersPayant && c.ResteACharge is { } reste)
             vente.SaisirResteACharge(reste);
 
-        if (c.RemisePct > 0)
-            vente.AppliquerRemise(c.RemisePct, await droits.RemiseMaxAsync(utilisateurId, ct));
+        // Remises automatiques du jour (vente libre, produits non remboursables), puis remise du vendeur
+        if (remisesAuto is not null && vente.Type == TypeVente.Libre)
+            vente.AppliquerRemisesAutomatiques(await remisesAuto.PourcentagesAsync(produits.Keys.ToList(), aujourdhui, ct));
+        vente.AppliquerRemise(c.RemisePct, c.RemiseAdditionnee);
 
         return (vente, produits);
     }

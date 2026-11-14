@@ -148,6 +148,8 @@
     <File Path="database/migration/068_verification_destinataire.sql" />
     <File Path="database/migration/069_receptions_attente.sql" />
     <File Path="database/migration/070_comptage_intermediaire.sql" />
+    <File Path="database/migration/071_don_remise_par_personne.sql" />
+    <File Path="database/migration/072_remises_automatiques.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

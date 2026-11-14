@@ -131,6 +131,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Administration › Alertes et seuils | `seuils`, `seuils-produits` | grossistes (nom, délai à renseigner, page) ; seuils saisis (produit, état, page) |
 | Administration › Nomenclature | `nomenclature` | produits à vérifier : texte, motif, page |
 | Stock › Blocage des produits | `blocages` | produit ou motif, achat ou vente, page |
+| Stock › Remises automatiques | `remises-auto` | texte, état (en cours et à venir par défaut), page, taille |
 | Contrôle interne | `surveillance` | rubrique dans l'adresse (à examiner, `?onglet=traitees`, `?onglet=sensibles`) ; page des anomalies |
 | Guide et retours | `guide` | rubrique dans l'adresse (à essayer, `?rubrique=remarque`, `?rubrique=remarques`) ; écran, genre et page des remarques |
 | Factures | `factures`, `editeur-facture` | recherche, destinataire, période, page, facture ouverte (et sa version), éditeur ouvert et sa saisie (destinataire, ventes cochées, lignes libres, dates, commentaire) ; onglet dans l’adresse |

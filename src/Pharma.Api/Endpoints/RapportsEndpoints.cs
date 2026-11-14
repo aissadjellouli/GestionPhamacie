@@ -71,7 +71,7 @@ internal static class RapportsEndpoints
         var s = r.Synthese;
         return new(r.Periode.Type.ToString().ToLowerInvariant(), r.Periode.Du, r.Periode.Au, r.Periode.Libelle,
             new SyntheseVentesDto(s.NombreVentes, s.ChiffreAffaires, s.PartOrganismes, s.CreditsAccordes, s.Remises, s.Annulations, s.Retours, s.MontantRetours,
-                s.VentesMedicaments, s.VentesAutres, s.Shp),
+                s.VentesMedicaments, s.VentesAutres, s.Shp, s.DonsPartiels, s.RemisesAutomatiques),
             r.Marge is { } m ? new MargeBruteDto(m.ChiffreAffairesHt, m.CoutAchat, m.Montant, m.Taux) : null,
             r.ParJour.Select(j => new VentesJourDto(j.Date, j.NombreVentes, j.ChiffreAffaires)).ToList(),
             r.TopProduits.Select(p => new ProduitVenduDto(p.Produit, p.Quantite, p.ChiffreAffaires)).ToList(),

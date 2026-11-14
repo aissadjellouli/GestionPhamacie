@@ -10,7 +10,7 @@ public sealed record LigneFacture(long? VenteId, long? LigneVenteId, string Part
 
 /// <summary>Ligne de vente facturable (quantité nette des retours, parts au prorata).</summary>
 public sealed record LigneVendue(long VenteId, string NumeroVente, long LigneVenteId, string Designation, decimal TauxTva, decimal Quantite,
-    decimal MontantPatient, decimal MontantOrganisme, decimal RemiseVente);
+    decimal MontantPatient, decimal MontantOrganisme, decimal RemiseVente, decimal DonVente = 0);
 
 public sealed record Totaux(decimal Ht, decimal Tva, decimal Ttc);
 
@@ -58,8 +58,13 @@ public static class RegleFacture
                     decimal.Round(montant / l.Quantite, 2), l.TauxTva, montant));
             }
             var remise = vente.First().RemiseVente;
+            var lignesVente = resultat.Where(r => r.VenteId == vente.Key.VenteId).ToList();
             if (part == "patient" && remise > 0)
-                resultat.AddRange(Remises(vente.Key.VenteId, vente.Key.NumeroVente, remise, resultat.Where(r => r.VenteId == vente.Key.VenteId).ToList()));
+                resultat.AddRange(Remises(vente.Key.VenteId, vente.Key.NumeroVente, remise, lignesVente));
+            // Don partiel du reste à charge (réductions sur des médicaments) : lignes négatives « Don partiel », réparties comme la remise
+            var don = vente.First().DonVente;
+            if (part == "patient" && don > 0)
+                resultat.AddRange(Remises(vente.Key.VenteId, vente.Key.NumeroVente, don, lignesVente, "Don partiel"));
         }
         return resultat;
     }
@@ -69,7 +74,8 @@ public static class RegleFacture
     /// facturés (une ligne négative par taux), sinon la TVA de la facture ne baisserait pas avec la remise. Le dernier
     /// taux reçoit le reste : la somme des lignes est exactement la remise.
     /// </summary>
-    private static IEnumerable<LigneFacture> Remises(long venteId, string numeroVente, decimal remise, IReadOnlyList<LigneFacture> lignesVente)
+    private static IEnumerable<LigneFacture> Remises(long venteId, string numeroVente, decimal remise, IReadOnlyList<LigneFacture> lignesVente,
+        string nature = "Remise")
     {
         var parTaux = lignesVente.GroupBy(l => l.TauxTva).Select(g => (Taux: g.Key, Montant: g.Sum(l => l.MontantTtc))).OrderBy(t => t.Taux).ToList();
         var total = parTaux.Sum(t => t.Montant);
@@ -80,7 +86,7 @@ public static class RegleFacture
             var montant = i == parTaux.Count - 1 ? reste : decimal.Round(remise * parTaux[i].Montant / total, 2);
             reste -= montant;
             if (montant == 0) continue;
-            var libelle = parTaux.Count == 1 ? $"Remise (vente {numeroVente})" : $"Remise (vente {numeroVente}, TVA {parTaux[i].Taux:0.##} %)";
+            var libelle = parTaux.Count == 1 ? $"{nature} (vente {numeroVente})" : $"{nature} (vente {numeroVente}, TVA {parTaux[i].Taux:0.##} %)";
             yield return new LigneFacture(venteId, null, "patient", libelle, 1, -montant, parTaux[i].Taux, -montant);
         }
     }

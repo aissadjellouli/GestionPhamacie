@@ -16,7 +16,8 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
                f.ordonnance_id, f.ordonnance_numero,
                EXISTS (SELECT 1 FROM facture_client_ligne fl JOIN facture_client fc ON fc.id = fl.facture_id
                        WHERE fl.ligne_vente_id = f.ligne_vente_id AND fl.part = $1 AND fc.type = 'facture'
-                         AND fc.statut IN ('emise', 'rejetee') AND fc.id IS DISTINCT FROM $2)
+                         AND fc.statut IN ('emise', 'rejetee') AND fc.id IS DISTINCT FROM $2),
+               (SELECT v.montant_don FROM vente v WHERE v.id = f.vente_id)
         FROM v_ligne_vente_facturable f
         LEFT JOIN patient p ON p.id = f.patient_id
         """;
@@ -61,7 +62,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         while (await r.ReadAsync(ct))
             liste.Add(new LigneVenteSource(
                 new LigneVendue(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetString(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6),
-                    r.GetDecimal(7), r.GetDecimal(8)),
+                    r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(16)),
                 r.GetDateTime(9), Nl(r, 10), Txt(r, 11), Nl(r, 12), Nl(r, 13), Txt(r, 14), r.GetBoolean(15)));
         return liste;
     }

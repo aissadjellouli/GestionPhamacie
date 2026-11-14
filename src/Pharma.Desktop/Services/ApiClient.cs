@@ -587,6 +587,18 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> EnvoyerRetourEssaiAsync(NouveauRetourEssaiDto d) =>
         (await EnvoyerCorpsAsync<NouveauRetourEssaiDto, object>(HttpMethod.Post, "api/retours-essai", d)).Item2;
     public Task<(List<CategorieProduitDto>, string?)> CategoriesProduitsAsync() => GetAsync<List<CategorieProduitDto>>("api/categories-produits", []);
+
+    // Remises automatiques (produit ou catégorie, sur une période)
+    public Task<(List<RemiseAutomatiqueDto>, string?)> RemisesAutomatiquesAsync() => GetAsync<List<RemiseAutomatiqueDto>>("api/remises-automatiques", []);
+
+    public Task<(IdentifiantDto?, string?)> CreerRemiseAutomatiqueAsync(RemiseAutomatiqueSaisieDto saisie) =>
+        PostAsync<RemiseAutomatiqueSaisieDto, IdentifiantDto>("api/remises-automatiques", saisie);
+
+    public async Task<string?> ModifierRemiseAutomatiqueAsync(long id, RemiseAutomatiqueSaisieDto saisie) =>
+        (await EnvoyerCorpsAsync<RemiseAutomatiqueSaisieDto, object>(HttpMethod.Put, $"api/remises-automatiques/{id}", saisie)).Item2;
+
+    public async Task<string?> ArreterRemiseAutomatiqueAsync(long id) =>
+        (await PostAsync<object, object>($"api/remises-automatiques/{id}/arreter", new { })).Item2;
     public Task<(ClassementProduitDto?, string?)> ClassementProduitAsync(long produitId) => GetAsync<ClassementProduitDto?>($"api/produits/{produitId}/classement", null);
     public async Task<string?> ModifierClassementProduitAsync(long produitId, string categorie, string? listePsychotrope) =>
         (await EnvoyerCorpsAsync<ClassementProduitRequete, object>(HttpMethod.Put, $"api/produits/{produitId}/classement", new(categorie, listePsychotrope))).Item2;
@@ -632,6 +644,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public async Task<string?> ModifierUtilisateurAsync(long id, ModificationUtilisateurDto modification) =>
         (await EnvoyerCorpsAsync<ModificationUtilisateurDto, object>(HttpMethod.Put, $"api/admin/utilisateurs/{id}", modification)).Item2;
+
+    /// <summary>Don et remise d'un employé (titulaire seul).</summary>
+    public async Task<string?> ReglerDonRemiseAsync(long id, DonRemiseEmployeDto reglage) =>
+        (await EnvoyerCorpsAsync<DonRemiseEmployeDto, object>(HttpMethod.Put, $"api/admin/utilisateurs/{id}/don-remise", reglage)).Item2;
 
     public Task<(ParametresCaisseDto?, string?)> ParametresCaisseAsync() =>
         GetAsync<ParametresCaisseDto?>("api/admin/caisse", null);
@@ -692,6 +708,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(IndicateursAlertesDto?, string?)> IndicateursAlertesAsync() => GetAsync<IndicateursAlertesDto?>("api/alertes/indicateurs", null);
     public Task<(CompteDto?, string?)> AlertesUrgentesAsync() => GetAsync<CompteDto?>("api/alertes/urgentes", null);
 
+    /// <summary>Recherche de la caisse : en stock d'abord, ruptures en bas avec leur remplaçant, équivalent moins cher.</summary>
+    public Task<(List<ProduitComptoirDto>, string?)> RechercherAuComptoirAsync(string q) =>
+        GetAsync<List<ProduitComptoirDto>>($"api/caisse/produits?q={Uri.EscapeDataString(q)}", []);
     public Task<(List<ProduitDto>, string?)> RechercherProduitsAsync(string q, bool inclureInactifs = false) =>
         GetAsync<List<ProduitDto>>($"api/produits?q={Uri.EscapeDataString(q)}{(inclureInactifs ? "&inactifs=true" : "")}", []);
 

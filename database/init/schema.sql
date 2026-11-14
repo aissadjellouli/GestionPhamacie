@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 070 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 072 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 070 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 072 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict qtbgQGLYk3kLCjrXkHI6RtBwFFWLpMz8qUNlSMPxlW3udz6TrxI9ZCd3Jj2ohmV
+\restrict nBYhyXBwSLDzughAm0gApHkBM7Yt3IDoozvtsQAZ66b1FnRMj1KhK7XorZDFbLm
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -558,14 +558,25 @@ $$;
 CREATE FUNCTION public.a_permission(p_utilisateur_id bigint, p_code text) RETURNS boolean
     LANGUAGE sql STABLE
     AS $$
-    SELECT EXISTS (
-        SELECT 1
-        FROM utilisateur u
-        JOIN role_permission rp ON rp.role_id = u.role_id
-        WHERE u.id = p_utilisateur_id
-          AND u.actif
-          AND rp.permission_code = p_code
-    );
+    SELECT CASE
+        WHEN p_code IN ('stock.donner', 'caisse.remise', 'caisse.remises_auto') THEN EXISTS (
+            SELECT 1
+            FROM utilisateur u
+            JOIN role r ON r.id = u.role_id
+            WHERE u.id = p_utilisateur_id
+              AND u.actif
+              AND (r.systeme
+                   OR (p_code = 'stock.donner' AND u.peut_donner)
+                   OR (p_code = 'caisse.remise' AND u.remise_max_pct > 0)
+                   OR (p_code = 'caisse.remises_auto' AND u.gere_remises_auto)))
+        ELSE EXISTS (
+            SELECT 1
+            FROM utilisateur u
+            JOIN role_permission rp ON rp.role_id = u.role_id
+            WHERE u.id = p_utilisateur_id
+              AND u.actif
+              AND rp.permission_code = p_code)
+    END;
 $$;
 
 
@@ -3425,7 +3436,14 @@ CREATE TABLE public.ligne_vente (
     montant_patient numeric(12,2) DEFAULT 0 NOT NULL,
     shp numeric(8,2) DEFAULT 0 NOT NULL,
     raison_lot text,
+    remise_auto_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    reduction_auto numeric(12,2) DEFAULT 0 NOT NULL,
+    reduction_manuelle numeric(12,2) DEFAULT 0 NOT NULL,
+    don_partiel boolean DEFAULT false NOT NULL,
     CONSTRAINT ck_ligne_vente_raison_lot CHECK (((raison_lot IS NULL) OR (raison_lot = ANY (ARRAY['peremption'::text, 'introuvable'::text, 'abimee'::text, 'demande_client'::text])))),
+    CONSTRAINT ck_ligne_vente_reduction_auto CHECK ((reduction_auto >= (0)::numeric)),
+    CONSTRAINT ck_ligne_vente_reduction_manuelle CHECK ((reduction_manuelle >= (0)::numeric)),
+    CONSTRAINT ck_ligne_vente_remise_auto CHECK (((remise_auto_pct >= (0)::numeric) AND (remise_auto_pct <= (100)::numeric))),
     CONSTRAINT ck_ligne_vente_shp CHECK ((shp >= (0)::numeric)),
     CONSTRAINT ligne_vente_quantite_check CHECK ((quantite > 0)),
     CONSTRAINT ligne_vente_taux_remboursement_check CHECK (((taux_remboursement >= (0)::numeric) AND (taux_remboursement <= (100)::numeric)))
@@ -4046,7 +4064,8 @@ CREATE TABLE public.permission (
     code text NOT NULL,
     module text NOT NULL,
     libelle text NOT NULL,
-    sensible boolean DEFAULT false NOT NULL
+    sensible boolean DEFAULT false NOT NULL,
+    par_personne boolean DEFAULT false NOT NULL
 );
 
 
@@ -4351,6 +4370,45 @@ CREATE TABLE public.reglement_fournisseur (
 
 ALTER TABLE public.reglement_fournisseur ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.reglement_fournisseur_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: remise_automatique; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.remise_automatique (
+    id bigint NOT NULL,
+    produit_id bigint,
+    categorie text,
+    pourcentage numeric(5,2) NOT NULL,
+    date_debut date NOT NULL,
+    date_fin date NOT NULL,
+    motif text,
+    cree_par bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifiee_par bigint,
+    modifiee_le timestamp with time zone,
+    arretee_par bigint,
+    arretee_le timestamp with time zone,
+    CONSTRAINT ck_remise_auto_cible CHECK (((produit_id IS NULL) <> (categorie IS NULL))),
+    CONSTRAINT ck_remise_auto_dates CHECK ((date_fin >= date_debut)),
+    CONSTRAINT ck_remise_auto_motif CHECK (((motif IS NULL) OR (length(motif) <= 200))),
+    CONSTRAINT ck_remise_auto_pct CHECK (((pourcentage > (0)::numeric) AND (pourcentage <= (100)::numeric) AND (pourcentage = trunc(pourcentage))))
+);
+
+
+--
+-- Name: remise_automatique_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.remise_automatique ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.remise_automatique_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -4709,7 +4767,11 @@ CREATE TABLE public.utilisateur (
     telephone text,
     email text,
     jetons_revoques_le timestamp with time zone,
-    CONSTRAINT ck_utilisateur_affichage CHECK ((affichage = ANY (ARRAY['auto'::text, 'clair'::text, 'sombre'::text])))
+    peut_donner boolean DEFAULT false NOT NULL,
+    remise_max_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    gere_remises_auto boolean DEFAULT false NOT NULL,
+    CONSTRAINT ck_utilisateur_affichage CHECK ((affichage = ANY (ARRAY['auto'::text, 'clair'::text, 'sombre'::text]))),
+    CONSTRAINT ck_utilisateur_remise_max CHECK (((remise_max_pct >= (0)::numeric) AND (remise_max_pct <= (100)::numeric) AND (remise_max_pct = trunc(remise_max_pct))))
 );
 
 
@@ -4754,6 +4816,9 @@ CREATE TABLE public.vente (
     chifa_facture text,
     chifa_date date,
     chifa_qr text,
+    remise_additionnee boolean DEFAULT false NOT NULL,
+    montant_don numeric(12,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_vente_montant_don CHECK ((montant_don >= (0)::numeric)),
     CONSTRAINT vente_check CHECK (((type = 'libre'::text) OR ((organisme_id IS NOT NULL) AND (patient_id IS NOT NULL)))),
     CONSTRAINT vente_montant_remise_check CHECK ((montant_remise >= (0)::numeric)),
     CONSTRAINT vente_remise_pct_check CHECK (((remise_pct >= (0)::numeric) AND (remise_pct <= (100)::numeric))),
@@ -6379,6 +6444,14 @@ ALTER TABLE ONLY public.reglement_fournisseur
 
 
 --
+-- Name: remise_automatique remise_automatique_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remise_automatique
+    ADD CONSTRAINT remise_automatique_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: remise_cheque_paiement remise_cheque_paiement_paiement_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7080,6 +7153,20 @@ CREATE INDEX ix_connexion_employe ON public.connexion_employe USING btree (utili
 --
 
 CREATE INDEX ix_evenement_caisse_employe ON public.evenement_caisse USING btree (utilisateur_id, cree_le);
+
+
+--
+-- Name: ix_remise_auto_categorie; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_remise_auto_categorie ON public.remise_automatique USING btree (categorie) WHERE (categorie IS NOT NULL);
+
+
+--
+-- Name: ix_remise_auto_produit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (produit_id) WHERE (produit_id IS NOT NULL);
 
 
 --
@@ -8656,6 +8743,46 @@ ALTER TABLE ONLY public.reglement_fournisseur
 
 
 --
+-- Name: remise_automatique remise_automatique_arretee_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remise_automatique
+    ADD CONSTRAINT remise_automatique_arretee_par_fkey FOREIGN KEY (arretee_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: remise_automatique remise_automatique_categorie_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remise_automatique
+    ADD CONSTRAINT remise_automatique_categorie_fkey FOREIGN KEY (categorie) REFERENCES public.categorie_produit(code);
+
+
+--
+-- Name: remise_automatique remise_automatique_cree_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remise_automatique
+    ADD CONSTRAINT remise_automatique_cree_par_fkey FOREIGN KEY (cree_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: remise_automatique remise_automatique_modifiee_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remise_automatique
+    ADD CONSTRAINT remise_automatique_modifiee_par_fkey FOREIGN KEY (modifiee_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: remise_automatique remise_automatique_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remise_automatique
+    ADD CONSTRAINT remise_automatique_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
 -- Name: remise_cheque_paiement remise_cheque_paiement_paiement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8859,5 +8986,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict qtbgQGLYk3kLCjrXkHI6RtBwFFWLpMz8qUNlSMPxlW3udz6TrxI9ZCd3Jj2ohmV
+\unrestrict nBYhyXBwSLDzughAm0gApHkBM7Yt3IDoozvtsQAZ66b1FnRMj1KhK7XorZDFbLm
 

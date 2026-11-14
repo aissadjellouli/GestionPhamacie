@@ -47,8 +47,16 @@ public class Vente
     public decimal PartOrganisme { get; private set; }
     /// <summary>Ce que paie le patient, remise déduite.</summary>
     public decimal PartPatient { get; private set; }
+    /// <summary>Remise saisie par le vendeur (%), sur toute la vente.</summary>
     public decimal RemisePct { get; private set; }
+    /// <summary>Le vendeur additionne sa remise aux remises automatiques des lignes qui en ont (sinon elle ne vaut que pour les autres lignes).</summary>
+    public bool RemiseAdditionnee { get; private set; }
+    /// <summary>Remises accordées sur les produits hors médicaments (automatiques et du vendeur), en DA.</summary>
     public decimal MontantRemise { get; private set; }
+    /// <summary>Don partiel du reste à charge : réductions sur les médicaments (automatiques et du vendeur), en DA.</summary>
+    public decimal MontantDon { get; private set; }
+    /// <summary>Part des réductions due aux remises automatiques (remises et dons), en DA.</summary>
+    public decimal MontantReductionsAuto => _lignes.Sum(l => l.ReductionAuto);
     /// <summary>Tiers payant : reste à charge du patient saisi par le caissier (le taux n'est pas appliqué).</summary>
     public decimal? ResteSaisi { get; private set; }
     public StatutVente Statut { get; private set; } = StatutVente.EnCours;
@@ -89,7 +97,8 @@ public class Vente
         var ligne = new LigneVente
         {
             ProduitId = produit.Id, LotId = lot.Id, Quantite = quantite,
-            PrixUnitaire = PrixVente.Unitaire(produit, lot), Shp = produit.ShpParBoite
+            PrixUnitaire = PrixVente.Unitaire(produit, lot), Shp = produit.ShpParBoite,
+            Medicament = produit.EstMedicament, Remboursable = produit.Remboursable
         };
         if (Type == TypeVente.TiersPayant && produit.Remboursable && produit.TarifReference is { } tarif)
             ligne.CalculerTiersPayant(tarif, TauxTiersPayant ?? 0);
@@ -103,16 +112,35 @@ public class Vente
         return ligne;
     }
 
-    /// <summary>Remise en pourcentage sur la part du patient, plafonnée par la remise maximale du rôle.</summary>
-    public void AppliquerRemise(decimal pourcentage, decimal remiseMaxPct)
+    /// <summary>
+    /// Remise du vendeur en pourcentage entier sur la part du patient, hors SHP. Le droit et le maximum de l'employé (ou de celui qui
+    /// valide sur place) sont contrôlés par l'encaissement.
+    /// </summary>
+    /// <param name="additionner">Vrai : s'ajoute aux remises automatiques ; faux : ne vaut que pour les lignes sans remise automatique.</param>
+    public void AppliquerRemise(decimal pourcentage, bool additionner = false)
     {
-        if (pourcentage is < 0 or > 100)
-            throw new RegleMetierException("La remise doit être comprise entre 0 et 100 %.");
-        if (pourcentage > remiseMaxPct)
-            throw new RegleMetierException($"Remise de {pourcentage:0.##} % refusée : votre maximum est de {remiseMaxPct:0.##} %.");
+        if (pourcentage is < 0 or > 100 || pourcentage != Math.Truncate(pourcentage))
+            throw new RegleMetierException("La remise est un nombre entier de 0 à 100 %.", "remise");
         RemisePct = pourcentage;
+        RemiseAdditionnee = additionner;
         RecalculerTotaux();
     }
+
+    /// <summary>
+    /// Remises automatiques décidées par le titulaire (pourcentage par produit, déjà choisi entre produit et catégorie) : en vente libre
+    /// seulement, jamais sur un produit remboursable.
+    /// </summary>
+    public void AppliquerRemisesAutomatiques(IReadOnlyDictionary<long, decimal> pctParProduit)
+    {
+        foreach (var l in _lignes)
+            l.FixerRemiseAuto(Type == TypeVente.Libre ? pctParProduit.GetValueOrDefault(l.ProduitId) : 0);
+        RecalculerTotaux();
+    }
+
+    /// <summary>La remise du vendeur réduit au moins une ligne hors médicament (remise : droit et maximum de remise).</summary>
+    public bool RemiseManuelleSurProduits => _lignes.Any(l => !l.Medicament && l.ReductionManuelle > 0);
+    /// <summary>La remise du vendeur réduit au moins un médicament (don partiel : droit de don).</summary>
+    public bool DonManuelSurMedicaments => _lignes.Any(l => l.Medicament && l.ReductionManuelle > 0);
 
     /// <summary>
     /// Tiers payant : le caissier fixe le reste à charge du patient. La part de l'organisme est la différence, répartie sur les
@@ -146,11 +174,13 @@ public class Vente
         }
         PartOrganisme = _lignes.Sum(l => l.MontantOrganisme);
         var partPatientBrute = brut - PartOrganisme;
-        // La remise ne porte pas sur le SHP (honoraire du pharmacien) : base = part du patient moins le SHP qu'il paie
-        var shpPatient = Math.Min(_lignes.Sum(l => l.Shp * l.Quantite), Math.Max(partPatientBrute, 0));
-        MontantRemise = Math.Round((partPatientBrute - shpPatient) * RemisePct / 100m, 2, MidpointRounding.AwayFromZero);
-        PartPatient = partPatientBrute - MontantRemise;
-        MontantTotal = brut - MontantRemise;
+        // Réductions ligne par ligne, sur la part du patient hors SHP (honoraire du pharmacien, jamais réduit) :
+        // remise sur les produits hors médicaments, don partiel sur les médicaments
+        foreach (var l in _lignes) l.CalculerReductions(RemisePct, RemiseAdditionnee);
+        MontantRemise = _lignes.Where(l => !l.Medicament).Sum(l => l.Reduction);
+        MontantDon = _lignes.Where(l => l.Medicament).Sum(l => l.Reduction);
+        PartPatient = partPatientBrute - MontantRemise - MontantDon;
+        MontantTotal = brut - MontantRemise - MontantDon;
     }
 
     /// <summary>Contrôles avant l'encaissement (mêmes règles que les contraintes et déclencheurs en base).</summary>

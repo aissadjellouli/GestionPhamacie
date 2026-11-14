@@ -7,6 +7,8 @@ public static class Permissions
     public const string CaisseSupprimerLigne = "caisse.supprimer_ligne";
     public const string CaisseAnnulerVente = "caisse.annuler_vente";
     public const string CaisseRemise = "caisse.remise";
+    /// <summary>Créer, modifier et arrêter les remises automatiques (réglé sur l'employé par le titulaire).</summary>
+    public const string CaisseRemisesAuto = "caisse.remises_auto";
     public const string CaisseRetourEspeces = "caisse.retour_especes";
     public const string CaisseOuvrirTiroir = "caisse.ouvrir_tiroir";
     public const string CaisseVoirEcart = "caisse.voir_ecart";

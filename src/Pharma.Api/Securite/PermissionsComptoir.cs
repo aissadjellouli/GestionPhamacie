@@ -41,7 +41,15 @@ public sealed class PermissionsComptoir(PermissionService droits, IHttpContextAc
         return ParCode ? liste.Where(CodeComptoir.Autorise).ToList() : liste;
     }
 
-    public Task<decimal> RemiseMaxAsync(long utilisateurId, CancellationToken ct = default) => droits.RemiseMaxAsync(utilisateurId, ct);
+    public async Task<decimal> RemiseMaxAsync(long utilisateurId, CancellationToken ct = default) =>
+        MotDePasseAChanger ? 0 : await droits.RemiseMaxAsync(utilisateurId, ct);
+
+    // Au-delà de son maximum : code d'un collègue dont le maximum couvre ce pourcentage (jamais le sien)
+    public async Task<bool> RemiseAutoriseeAsync(long utilisateurId, decimal pourcentage, CancellationToken ct = default) =>
+        await RemiseMaxAsync(utilisateurId, ct) >= pourcentage
+        || (autorisation is not null && !MotDePasseAChanger && EstUtilisateurCourant(utilisateurId)
+            && http.HttpContext?.User is { } u && AutorisableSurPlace(u, Permissions.CaisseRemise)
+            && await autorisation.AutoriseAsync(utilisateurId, Permissions.CaisseRemise, ct, remisePct: pourcentage));
 
     public async Task<bool> EstTitulaireAsync(long utilisateurId, CancellationToken ct = default) =>
         (!ParCode && !MotDePasseAChanger && await droits.EstTitulaireAsync(utilisateurId, ct))

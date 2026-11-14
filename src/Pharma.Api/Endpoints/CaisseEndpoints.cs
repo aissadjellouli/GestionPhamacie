@@ -44,7 +44,8 @@ internal static class CaisseEndpoints
                 var a = await encaisser.CalculerAsync(VersCommande(req), user.UtilisateurId(), ct);
                 return Results.Ok(new ApercuVenteDto(a.MontantBrut, a.PartOrganisme, a.MontantRemise, a.PartPatient, a.MontantTotal, a.OrdonnanceRequise,
                     a.PrixLignes, a.Shp, a.TotalMedicaments, a.ProduitsBloques, a.SurOrdonnance,
-                    a.Situations?.Select(s => new SituationLotDto(s.LotId, s.Situation, s.LotDelaisse, s.PeremptionDelaisse)).ToList()));
+                    a.Situations?.Select(s => new SituationLotDto(s.LotId, s.Situation, s.LotDelaisse, s.PeremptionDelaisse)).ToList(),
+                    a.MontantDon, a.ReductionsAuto, a.Reductions?.Select(r => new ReductionLigneDto(r.RemiseAutoPct, r.PctApplique, r.Montant, r.DonPartiel)).ToList()));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -84,8 +85,9 @@ internal static class CaisseEndpoints
             {
                 var t = await obtenir.ExecuterAsync(id, ct);
                 return Results.Ok(new TicketDto(t.Numero, t.Date, t.Vendeur, t.Poste, t.Statut, t.Organisme, t.TauxTiersPayant,
-                    t.Lignes.Select(l => new LigneTicketDto(l.Produit, l.Quantite, l.PrixUnitaire, l.Montant, l.PartOrganisme, l.Shp, l.Medicament)).ToList(),
-                    t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif, t.Retours));
+                    t.Lignes.Select(l => new LigneTicketDto(l.Produit, l.Quantite, l.PrixUnitaire, l.Montant, l.PartOrganisme, l.Shp, l.Medicament,
+                        l.Reduction, l.PctReduction, l.DonPartiel)).ToList(),
+                    t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif, t.Retours, t.DonPartiel));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -176,8 +178,8 @@ internal static class CaisseEndpoints
            .ExigerPermission(Permissions.CaisseVendre);
 
         // Qui peut autoriser sur place une action refusée faute de droit (droit donné, ou « role.titulaire »)
-        api.MapGet("/auth/valideurs", async (string? permission, Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(permission ?? Pharma.Application.Securite.PermissionServiceExtensions.MarqueTitulaire, ct))
+        api.MapGet("/auth/valideurs", async (string? permission, Pharma.Application.Securite.ListerValidateurs lister, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok((await lister.ExecuterAsync(permission ?? Pharma.Application.Securite.PermissionServiceExtensions.MarqueTitulaire, ct, user.UtilisateurId()))
                     .Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet)).ToList()))
            .ExigerConnexion();
 
@@ -252,6 +254,6 @@ internal static class CaisseEndpoints
                 o.PorteurNom is null && o.PorteurAdresse is null && o.PorteurPiece is null ? null : new PorteurOrdonnance(o.PorteurNom, o.PorteurAdresse, o.PorteurPiece)) : null,
             d.RemisePct, mode, d.MontantRecu, d.ResteACharge,
             d.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null,
-            d.VoletChifa);
+            d.VoletChifa, d.RemiseAdditionnee);
     }
 }

@@ -76,6 +76,8 @@ récemment »). Restent :
 
 - [ ] **TVA sur les pertes et dons** (script 061, Rapports › « TVA à reverser sur les pertes et dons ») : pour quels motifs la TVA d'achat déjà déduite doit-elle être reversée ? Boîtes périmées détruites (avec ou sans procès-verbal), casses, dons et échantillons. Le réglage est à « non » pour les trois motifs tant que la règle n'est pas confirmée ; le titulaire l'active motif par motif.
 - [ ] **Base de calcul** : le logiciel prend le prix d'achat HT retenu le jour de la sortie × le taux de TVA de la fiche produit. Aujourd'hui tous les produits des bases d'essai sont à 0 % : vérifier les taux de la parapharmacie dans le catalogue réel.
+- [ ] **TVA sur le don partiel du reste à charge** (2026-11-14, scripts 071-072) : une réduction de prix sur un médicament est enregistrée comme don partiel (`vente.montant_don`), pas comme sortie de stock ; aucune TVA n'est calculée dessus. À confirmer avec le comptable : faut-il en reverser une, et sur quelle base ?
+- [ ] **Remise automatique et médicaments** (2026-11-14) : la remise automatique est refusée sur un produit remboursable ; sur un médicament non remboursable, elle est enregistrée comme don partiel. Règle à confirmer avec l'Ordre ou la CNAS avant de l'utiliser sur des médicaments.
 
 ## À vérifier sur le terrain
 

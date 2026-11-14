@@ -19,7 +19,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 070 (vérifié : permissions, rôles,
+-- Valeurs identiques à celles posées par les scripts 001 à 072 (vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
@@ -90,6 +90,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('caisse.annuler_vente', 'Caisse', 'Annuler une vente validée', true),
     ('caisse.ouvrir_tiroir', 'Caisse', 'Ouvrir le tiroir sans vente', true),
     ('caisse.remise', 'Caisse', 'Accorder une remise', true),
+    ('caisse.remises_auto', 'Caisse', 'Gérer les remises automatiques', true),
     ('caisse.retour_especes', 'Caisse', 'Rembourser un retour en espèces', true),
     ('caisse.supprimer_ligne', 'Caisse', 'Supprimer une ligne après scan', true),
     ('caisse.vendre', 'Caisse', 'Encaisser une vente', false),
@@ -115,6 +116,10 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
 
 ON CONFLICT (code) DO NOTHING;
 
+-- Droits réglés sur chaque employé par le titulaire (071) : don, remise maximale, remises automatiques
+UPDATE permission SET par_personne = true
+WHERE code IN ('caisse.remise', 'stock.donner', 'caisse.remises_auto') AND NOT par_personne;
+
 -- Les droits du rôle système (titulaire) sont protégés par un déclencheur : levé le temps de l'insertion
 ALTER TABLE role_permission DISABLE TRIGGER trg_proteger_role_systeme;
 INSERT INTO role_permission (role_id, permission_code)
@@ -130,6 +135,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'caisse.annuler_vente'),
     ('titulaire', 'caisse.ouvrir_tiroir'),
     ('titulaire', 'caisse.remise'),
+    ('titulaire', 'caisse.remises_auto'),
     ('titulaire', 'caisse.retour_especes'),
     ('titulaire', 'caisse.supprimer_ligne'),
     ('titulaire', 'caisse.vendre'),
@@ -159,7 +165,6 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'achats.valider_ecart'),
     ('assistant', 'caisse.annuler_vente'),
     ('assistant', 'caisse.ouvrir_tiroir'),
-    ('assistant', 'caisse.remise'),
     ('assistant', 'caisse.retour_especes'),
     ('assistant', 'caisse.supprimer_ligne'),
     ('assistant', 'caisse.vendre'),
@@ -176,7 +181,6 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'stock.ajuster'),
     ('assistant', 'stock.consulter'),
     ('assistant', 'stock.declarer_perime'),
-    ('assistant', 'stock.donner'),
     ('vendeur', 'achats.receptionner'),
     ('vendeur', 'caisse.vendre'),
     ('vendeur', 'chifa.importer'),
@@ -201,8 +205,8 @@ INSERT INTO compte_tresorerie (type, nom) SELECT 'coffre', 'Coffre' WHERE NOT EX
 -- ---------------------------------------------------------------------
 -- 6. Compte titulaire initial : mot de passe provisoire, à changer à la première connexion
 -- ---------------------------------------------------------------------
-INSERT INTO utilisateur (nom_complet, identifiant, mot_de_passe_hash, role_id, doit_changer_mot_de_passe)
-SELECT 'Pharmacien titulaire', 'titulaire', crypt('Provisoire-2026', gen_salt('bf', 10)), r.id, true
+INSERT INTO utilisateur (nom_complet, identifiant, mot_de_passe_hash, role_id, doit_changer_mot_de_passe, peut_donner, remise_max_pct, gere_remises_auto)
+SELECT 'Pharmacien titulaire', 'titulaire', crypt('Provisoire-2026', gen_salt('bf', 10)), r.id, true, true, 100, true
 FROM role r
 WHERE r.code = 'titulaire' AND NOT EXISTS (SELECT 1 FROM utilisateur WHERE identifiant = 'titulaire');
 

@@ -40,8 +40,9 @@ public sealed class DeclarerSortieStock(ISortiesStock sorties, IPermissionServic
         if (m is null || !Motifs.Contains(m)) throw new RegleMetierException("Choisissez le motif : périmé, cassé, ou échantillon.", "motif_sortie");
         // Don (échantillon, gratuité, nécessiteux) : droit spécial ; périmé ou cassé : droit de déclaration
         var permission = m == "echantillon" ? Permissions.StockDonner : Permissions.StockDeclarerPerime;
-        await droits.ExigerAsync(utilisateurId, permission,
-            m == "echantillon" ? "donner un échantillon ou une gratuité" : "déclarer des boîtes périmées ou cassées", ct);
+        if (!await droits.APermissionAsync(utilisateurId, permission, ct))
+            throw new DroitRefuseException(permission, m == "echantillon" ? "donner un échantillon ou une gratuité" : "déclarer des boîtes périmées ou cassées",
+                m == "echantillon" ? "Don : vous n’avez pas le droit de don (réglé par le titulaire). Faites valider par un employé qui l’a." : null);
         var lot = await sorties.LotAsync(lotId, ct) ?? throw new RegleMetierException("Lot introuvable.");
         if (quantite < 1 || quantite > lot.Quantite)
             throw new RegleMetierException($"{lot.Produit}, lot {lot.NumeroLot} : de 1 à {lot.Quantite} boîte(s).", "quantite_sortie");

@@ -19,7 +19,7 @@ internal static class FacturesEndpoints
                 ConsulterFactures c, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok((await c.CandidatesAsync(destinataire, patientId, organismeId, du, au, q, user.UtilisateurId(), ct)).Select(s => new LigneVenteSourceDto(
                 s.Ligne.VenteId, s.Ligne.NumeroVente, s.DateVente, s.Ligne.LigneVenteId, s.Ligne.Designation, s.Ligne.Quantite, s.Ligne.MontantPatient,
-                s.Ligne.MontantOrganisme, s.Ligne.RemiseVente, s.PatientId, s.Patient, s.OrganismeId, s.OrdonnanceId, s.OrdonnanceNumero, s.DejaFacturee))));
+                s.Ligne.MontantOrganisme, s.Ligne.RemiseVente + s.Ligne.DonVente, s.PatientId, s.Patient, s.OrganismeId, s.OrdonnanceId, s.OrdonnanceNumero, s.DejaFacturee))));
 
         f.MapGet("", async (string? q, string? destinataire, string? suivi, DateOnly? du, DateOnly? au, ConsulterFactures c, ClaimsPrincipal user,
                 CancellationToken ct) =>

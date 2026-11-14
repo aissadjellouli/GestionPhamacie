@@ -51,7 +51,8 @@ public sealed class AutorisationParCode(IHttpContextAccessor http, VerificationC
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>Le valideur de la requête a-t-il ce droit ? (null : marque du titulaire)</summary>
-    public async Task<bool> AutoriseAsync(long utilisateurId, string? permission, CancellationToken ct)
+    /// <param name="remisePct">Remise à valider : le maximum de remise du valideur doit la couvrir.</param>
+    public async Task<bool> AutoriseAsync(long utilisateurId, string? permission, CancellationToken ct, decimal? remisePct = null)
     {
         var droit = permission ?? PermissionServiceExtensions.MarqueTitulaire;
         // Droit non demandé au valideur : refusé (le poste le lui présentera s'il le faut)
@@ -61,6 +62,11 @@ public sealed class AutorisationParCode(IHttpContextAccessor http, VerificationC
             ? await droits.EstTitulaireAsync(v.Id, ct)
             : await droits.APermissionAsync(v.Id, permission, ct);
         if (!ok) { Erreur ??= $"{v.NomComplet} n’a pas ce droit : choisissez un employé qui l’a."; return false; }
+        if (remisePct is { } pct && await droits.RemiseMaxAsync(v.Id, ct) is var max && max < pct)
+        {
+            Erreur ??= $"{v.NomComplet} peut accorder jusqu’à {max:0.##} % : pour {pct:0.##} %, choisissez un employé dont le maximum le permet.";
+            return false;
+        }
         (courante.AutoriseParId, courante.AutoriseParNom) = (v.Id, v.NomComplet);
         if (journalises.Add(droit))
         {

@@ -121,10 +121,11 @@ public sealed class VerificationCodeComptoir(ICodesComptoir codes, IVerificateur
 /// <summary>Employés présents pouvant valider une action sur place par leur code (ex. annulation d'une vente ancienne).</summary>
 public sealed class ListerValidateurs(ICodesComptoir codes, IPermissionService droits)
 {
-    public async Task<IReadOnlyList<VendeurComptoir>> ExecuterAsync(string permission, CancellationToken ct = default)
+    /// <param name="sauf">Employé qui demande l'autorisation : jamais proposé (on ne s'autorise pas soi-même).</param>
+    public async Task<IReadOnlyList<VendeurComptoir>> ExecuterAsync(string permission, CancellationToken ct = default, long? sauf = null)
     {
         var liste = new List<VendeurComptoir>();
-        foreach (var c in await codes.AvecCodeAsync(ct))
+        foreach (var c in (await codes.AvecCodeAsync(ct)).Where(c => c.Id != sauf))
             if (permission == PermissionServiceExtensions.MarqueTitulaire ? await droits.EstTitulaireAsync(c.Id, ct)
                 : await droits.APermissionAsync(c.Id, permission, ct))
                 liste.Add(new VendeurComptoir(c.Identifiant, c.NomComplet));

@@ -26,6 +26,8 @@ public class CodeComptoirTests
     [InlineData("caisse.remise", true)]
     [InlineData("credit.accorder", true)]
     [InlineData("stock.consulter", true)]
+    [InlineData("stock.donner", true)]
+    [InlineData("stock.declarer_perime", false)]
     [InlineData("admin.utilisateurs", false)]
     [InlineData("achats.commander", false)]
     [InlineData("rapports.ventes", false)]
