@@ -102,11 +102,29 @@ public class ModifierPatientTests
 internal sealed class VentesEspion : IVentesEcriture
 {
     public VenteAEnregistrer? Recu { get; private set; }
+    public int Enregistrements { get; private set; }
+    /// <summary>Ventes enregistrées, par clé d'encaissement.</summary>
+    public Dictionary<Guid, VenteDejaEncaissee> ParCle { get; } = [];
+    /// <summary>Envoi simultané du même panier : l'autre envoi enregistre cette vente au moment de l'écriture.</summary>
+    public VenteDejaEncaissee? EnregistreeParUnAutreEnvoi { get; set; }
+
     public Task<(long Id, string Numero)> EnregistrerAsync(VenteAEnregistrer vente, CancellationToken ct = default)
     {
+        if (vente.CleEncaissement is { } prise && EnregistreeParUnAutreEnvoi is { } autre)
+        {
+            ParCle[prise] = autre;
+            throw new EncaissementDejaEnregistreException(prise);
+        }
         Recu = vente;
+        Enregistrements++;
+        if (vente.CleEncaissement is { } cle)
+            ParCle[cle] = new VenteDejaEncaissee(1, "T-000001", vente.Vente.MontantTotal, vente.Vente.PartOrganisme, vente.Vente.PartPatient,
+                vente.Reglement.Montant > 0 ? vente.Reglement.Mode : null, false,
+                vente.Vente.Lignes.Select(l => new LigneDejaEncaissee(l.ProduitId, l.LotId, l.Quantite)).ToList());
         return Task.FromResult((1L, "T-000001"));
     }
+
+    public Task<VenteDejaEncaissee?> VenteParCleAsync(Guid cle, CancellationToken ct = default) => Task.FromResult(ParCle.GetValueOrDefault(cle));
 }
 
 internal sealed class SessionsEnMemoire : ISessionsCaisse
@@ -174,6 +192,98 @@ public class CaisseApplicationTests
         Assert.Equal(1L, ventes.Recu!.Vente.SessionCaisseId);
         Assert.Equal(StatutVente.Validee, ventes.Recu.Vente.Statut);
         Assert.Empty(ventes.Recu.ProduitsSousRegistre);
+    }
+
+    [Fact]
+    public async Task Meme_panier_renvoye_avec_sa_cle_rend_la_vente_deja_enregistree_sans_doublon()
+    {
+        var ventes = new VentesEspion();
+        var cas = Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes);
+        var commande = Commande(2, 20) with { MontantRecu = 500, CleEncaissement = Guid.NewGuid() };
+
+        var premiere = await cas.ExecuterAsync(commande, 5, "Caisse 1");
+        var nouvelEssai = await cas.ExecuterAsync(commande, 5, "Caisse 1");
+
+        Assert.Equal(1, ventes.Enregistrements);
+        Assert.Equal(commande.CleEncaissement, ventes.Recu!.CleEncaissement);
+        Assert.Equal((premiere.VenteId, premiere.Numero, premiere.PartPatient, premiere.Mode, premiere.Rendu),
+            (nouvelEssai.VenteId, nouvelEssai.Numero, nouvelEssai.PartPatient, nouvelEssai.Mode, nouvelEssai.Rendu));
+        Assert.Equal(150m, nouvelEssai.Rendu);
+    }
+
+    [Theory]
+    [InlineData(2, 0)]    // quantité différente
+    [InlineData(1, 10)]   // même ligne, montant à payer différent (remise)
+    public async Task Meme_cle_avec_un_contenu_different_refusee(int quantite, decimal remise)
+    {
+        var ventes = new VentesEspion();
+        var cas = Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "stock.donner"), ventes);
+        var cle = Guid.NewGuid();
+        await cas.ExecuterAsync(Commande(2, 20) with { CleEncaissement = cle }, 5, "Caisse 1");
+
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() =>
+            cas.ExecuterAsync(Commande(2, 20, qte: quantite, remise: remise) with { CleEncaissement = cle }, 5, "Caisse 1"));
+        Assert.Equal("Cette vente a déjà été enregistrée (ticket N° T-000001) avec un contenu différent : vérifiez avant de réencaisser.", ex.Message);
+        Assert.Equal(1, ventes.Enregistrements);
+    }
+
+    [Fact]
+    public async Task Meme_cle_avec_un_autre_produit_refusee()
+    {
+        var ventes = new VentesEspion();
+        var cas = Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes);
+        var cle = Guid.NewGuid();
+        await cas.ExecuterAsync(Commande(2, 20) with { CleEncaissement = cle }, 5, "Caisse 1");
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(Commande(11, 110) with { CleEncaissement = cle }, 5, "Caisse 1"));
+        Assert.Equal(1, ventes.Enregistrements);
+    }
+
+    [Fact]
+    public async Task Meme_panier_retrouve_meme_caisse_cloturee_entre_temps()
+    {
+        var ventes = new VentesEspion();
+        var sessions = new SessionsEnMemoire();
+        var commande = Commande(2, 20) with { CleEncaissement = Guid.NewGuid() };
+        await Cas(sessions, new DroitsFactices("caisse.vendre"), ventes).ExecuterAsync(commande, 5, "Caisse 1");
+        sessions.Ouverte = null;
+        var r = await Cas(sessions, new DroitsFactices("caisse.vendre"), ventes).ExecuterAsync(commande, 5, "Caisse 1");
+        Assert.Equal("T-000001", r.Numero);
+        Assert.Equal(1, ventes.Enregistrements);
+    }
+
+    [Fact]
+    public async Task Sans_cle_chaque_encaissement_cree_une_vente()
+    {
+        var ventes = new VentesEspion();
+        var cas = Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes);
+        await cas.ExecuterAsync(Commande(2, 20), 5, "Caisse 1");
+        await cas.ExecuterAsync(Commande(2, 20), 5, "Caisse 1");
+        Assert.Equal(2, ventes.Enregistrements);
+    }
+
+    [Fact]
+    public async Task Envoi_simultane_du_meme_panier_rend_la_vente_enregistree_par_l_autre()
+    {
+        var ventes = new VentesEspion
+        {
+            EnregistreeParUnAutreEnvoi = new VenteDejaEncaissee(42, "T-000042", 350, 0, 350, ModePaiement.Especes, false)
+        };
+        var r = await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes)
+            .ExecuterAsync(Commande(2, 20) with { MontantRecu = 400, CleEncaissement = Guid.NewGuid() }, 5, "Caisse 1");
+        Assert.Equal((42L, "T-000042", 50m), (r.VenteId, r.Numero, r.Rendu));
+        Assert.Equal(0, ventes.Enregistrements);
+    }
+
+    [Fact]
+    public async Task Panier_deja_encaisse_puis_annule_refuse_clairement()
+    {
+        var cle = Guid.NewGuid();
+        var ventes = new VentesEspion();
+        ventes.ParCle[cle] = new VenteDejaEncaissee(42, "T-000042", 350, 0, 350, ModePaiement.Especes, true);
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes)
+            .ExecuterAsync(Commande(2, 20) with { CleEncaissement = cle }, 5, "Caisse 1"));
+        Assert.Contains("T-000042", ex.Message);
+        Assert.Equal(0, ventes.Enregistrements);
     }
 
     [Fact]

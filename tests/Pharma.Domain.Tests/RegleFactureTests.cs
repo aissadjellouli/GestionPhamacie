@@ -109,5 +109,43 @@ public class RegleFactureTests
     [InlineData(1250.5, "Mille deux cent cinquante dinars et cinquante centimes")]
     [InlineData(80000, "Quatre-vingt mille dinars")]
     [InlineData(2_300_021, "Deux millions trois cent mille vingt et un dinars")]
+    [InlineData(200_000_000, "Deux cents millions de dinars")]
+    [InlineData(80_000_000, "Quatre-vingts millions de dinars")]
+    [InlineData(280_000_000, "Deux cent quatre-vingts millions de dinars")]
+    [InlineData(2_000_000_000, "Deux milliards de dinars")]
+    [InlineData(200_000_000_000, "Deux cents milliards de dinars")]
+    [InlineData(1_000_000, "Un million de dinars")]
+    [InlineData(2_500_000, "Deux millions cinq cent mille dinars")]
+    [InlineData(2_000_000.50, "Deux millions de dinars et cinquante centimes")]
+    [InlineData(3_000_000_007, "Trois milliards sept dinars")]
+    [InlineData(200_000, "Deux cent mille dinars")]
+    [InlineData(0.125, "Zéro dinar et treize centimes")]   // arrondi au centime : la moitié vers le haut
     public void Montant_en_lettres(decimal montant, string attendu) => Assert.Equal(attendu, MontantEnLettres.Dinars(montant));
+
+    [Theory]
+    [InlineData(2.345, 2.35)]
+    [InlineData(2.335, 2.34)]
+    [InlineData(0.005, 0.01)]
+    [InlineData(-2.345, -2.35)]
+    [InlineData(10, 10)]
+    public void Arrondi_au_centime_la_moitie_vers_le_haut(decimal montant, decimal attendu) => Assert.Equal(attendu, Arrondi.Centime(montant));
+
+    [Fact]
+    public void Ligne_libre_arrondie_la_moitie_vers_le_haut()
+    {
+        var l = RegleFacture.Libre("Frais", 1, 2.345m, 0);
+        Assert.Equal((2.35m, 2.35m), (l.PrixUnitaireTtc, l.MontantTtc));   // l'arrondi bancaire donnerait 2,34
+    }
+
+    [Theory]
+    [InlineData(100.005)]
+    [InlineData(0.001)]
+    public void Avoir_a_plus_de_deux_decimales_refuse(decimal montant)
+    {
+        var ex = Assert.Throws<RegleMetierException>(() => RegleFacture.VerifierAvoir("facture", "emise", 1000, 0, montant, "Retour"));
+        Assert.Contains("deux décimales", ex.Message);
+    }
+
+    [Fact]
+    public void Avoir_au_centime_accepte() => RegleFacture.VerifierAvoir("facture", "emise", 1000, 0, 100.05m, "Retour");
 }

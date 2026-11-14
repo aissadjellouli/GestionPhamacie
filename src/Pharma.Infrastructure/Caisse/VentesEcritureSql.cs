@@ -51,12 +51,15 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         }
 
         // 2. Vente (en cours jusqu'à la fin : le contrôle de traçabilité s'applique au passage à « validee »)
+        // Clé d'encaissement : un même panier n'est enregistré qu'une fois (ux_vente_cle_encaissement). Un envoi simultané du même
+        // panier attend ici la fin de l'autre transaction, puis est refusé par l'index : l'encaissement rend alors la vente enregistrée
         long venteId;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO vente (numero, utilisateur_id, patient_id, ordonnance_id, type, organisme_id,
                                montant_total, part_organisme, part_patient, statut, session_caisse_id,
-                               remise_pct, montant_remise, taux_tiers_payant, reste_saisi, remise_additionnee, montant_don)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'en_cours', $10, $11, $12, $13, $14, $15, $16)
+                               remise_pct, montant_remise, taux_tiers_payant, reste_saisi, remise_additionnee, montant_don,
+                               cle_encaissement)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'en_cours', $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING id
             """, cx, tx))
         {
@@ -76,7 +79,13 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             cmd.Parameters.AddWithValue(v.ResteSaisi is not null);
             cmd.Parameters.AddWithValue(v.RemiseAdditionnee);
             cmd.Parameters.AddWithValue(v.MontantDon);
-            venteId = (long)(await cmd.ExecuteScalarAsync(ct))!;
+            cmd.Parameters.Add(Valeur(a.CleEncaissement, NpgsqlDbType.Uuid));
+            try { venteId = (long)(await cmd.ExecuteScalarAsync(ct))!; }
+            catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation && e.ConstraintName == "ux_vente_cle_encaissement"
+                                              && a.CleEncaissement is { } cle)
+            {
+                throw new EncaissementDejaEnregistreException(cle);
+            }
         }
 
         // Volet Chifa repris : n° de facture, date et QR brut ; un même volet n'est repris qu'une fois (ux_vente_chifa_facture)
@@ -95,6 +104,14 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         }
 
         // 3. Lignes, stock, mouvements, registre
+        // Lots du panier verrouillés d'emblée, toujours dans le même ordre (id croissant) : deux postes qui vendent les mêmes lots
+        // s'attendent au lieu de s'interbloquer
+        await using (var cmd = new NpgsqlCommand("SELECT id FROM lot WHERE id = ANY($1) ORDER BY id FOR UPDATE", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(v.Lignes.Select(l => l.LotId).Distinct().Order().ToArray());
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
         var boitesRattachees = new HashSet<long>();
         foreach (var l in v.Lignes)
         {
@@ -254,6 +271,33 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
 
         await tx.CommitAsync(ct);
         return (venteId, numero);
+    }
+
+    public async Task<VenteDejaEncaissee?> VenteParCleAsync(Guid cle, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT v.id, v.numero, v.montant_total, v.part_organisme, v.part_patient,
+                   (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id ORDER BY p.id LIMIT 1),
+                   v.statut = 'annulee'
+            FROM vente v
+            WHERE v.cle_encaissement = $1 AND v.statut IN ('validee', 'annulee')
+            """);
+        cmd.Parameters.AddWithValue(cle);
+        VenteDejaEncaissee vente;
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            if (!await r.ReadAsync(ct)) return null;
+            vente = new VenteDejaEncaissee(r.GetInt64(0), r.GetString(1), r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4),
+                r.IsDBNull(5) ? null : CodesMetier.ModePaiementDepuisCode(r.GetString(5)), r.GetBoolean(6));
+        }
+        // Lignes enregistrées : comparées au panier renvoyé (contenu différent : refus)
+        await using var lignes = db.CreateCommand("SELECT produit_id, lot_id, quantite FROM ligne_vente WHERE vente_id = $1 ORDER BY id");
+        lignes.Parameters.AddWithValue(vente.VenteId);
+        var liste = new List<LigneDejaEncaissee>();
+        await using (var r = await lignes.ExecuteReaderAsync(ct))
+            while (await r.ReadAsync(ct))
+                liste.Add(new LigneDejaEncaissee(r.GetInt64(0), r.GetInt64(1), r.GetInt32(2)));
+        return vente with { Lignes = liste };
     }
 
     private static async Task<object?> Scalaire(NpgsqlConnection cx, NpgsqlTransaction tx, string sql, CancellationToken ct)

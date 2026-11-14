@@ -7,11 +7,17 @@ public sealed record DemandePage(int Page = 1, int Taille = DemandePage.TaillePa
     public const int TailleMin = 5;
     public const int TailleMax = 200;
 
-    /// <summary>Valeurs remises dans les bornes : page au moins 1, taille entre <see cref="TailleMin"/> et <see cref="TailleMax"/>.</summary>
-    public static DemandePage Lire(int? page, int? taille) =>
-        new(Math.Max(page ?? 1, 1), Math.Clamp(taille ?? TailleParDefaut, TailleMin, TailleMax));
+    /// <summary>Numéro de page le plus grand accepté (au-delà, la page est ramenée à cette valeur : liste vide, sans erreur).</summary>
+    public const int PageMax = 1_000_000;
 
-    public int Decalage => (Page - 1) * Taille;
+    /// <summary>
+    /// Valeurs remises dans les bornes : page entre 1 et <see cref="PageMax"/>, taille entre <see cref="TailleMin"/> et <see cref="TailleMax"/>.
+    /// </summary>
+    public static DemandePage Lire(int? page, int? taille) =>
+        new(Math.Clamp(page ?? 1, 1, PageMax), Math.Clamp(taille ?? TailleParDefaut, TailleMin, TailleMax));
+
+    /// <summary>Nombre de lignes à sauter, calculé sans débordement même pour une page construite hors bornes.</summary>
+    public int Decalage => (int)Math.Clamp(((long)Math.Max(Page, 1) - 1) * Math.Max(Taille, 0), 0, int.MaxValue);
 }
 
 /// <summary>Filtre d'un relevé de dette (patient ou grossiste) : période sur la date du mouvement, type de mouvement.</summary>

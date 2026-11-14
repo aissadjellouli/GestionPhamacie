@@ -114,6 +114,8 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        // Dépense : solde relu sous verrou (deux dépenses simultanées ne passent pas toutes deux sur un solde qui ne couvre qu'une)
+        if (m.Sens == "sortie") await SoldeTresorerie.ExigerAsync(cx, tx, m.CompteId, m.Montant, ct);
         long id;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO mouvement_tresorerie (compte_id, date_mouvement, sens, montant, nature, categorie, libelle, reference, organisme_id, bordereau_id, utilisateur_id)
@@ -159,14 +161,90 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
                 if (await reste.ExecuteScalarAsync(ct) is not decimal r || r < part)
                     throw new RegleMetierException("Une facture vient d’être réglée entre-temps : rechargez la liste.");
             }
-            await using var cmd = new NpgsqlCommand("INSERT INTO reglement_facture_client (mouvement_id, facture_id, montant) VALUES ($1, $2, $3)", cx, tx);
+            var partCredit = await SolderDettePatientsAsync(cx, tx, factureId, part, m.UtilisateurId, ct);
+            await using var cmd = new NpgsqlCommand(
+                "INSERT INTO reglement_facture_client (mouvement_id, facture_id, montant, part_credit) VALUES ($1, $2, $3, $4)", cx, tx);
             cmd.Parameters.AddWithValue(id);
             cmd.Parameters.AddWithValue(factureId);
             cmd.Parameters.AddWithValue(part);
+            cmd.Parameters.AddWithValue(partCredit);
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
         return id;
+    }
+
+    /// <summary>
+    /// Facture client encaissée alors qu'elle couvre des ventes à crédit : la dette des patients concernés diminue du reste encore dû
+    /// de ces ventes (v_vente_credit), au plus le montant encaissé sur la facture, ventes les plus anciennes d'abord. Inscrit au relevé
+    /// de dette du patient (remboursement, référence de la facture). Renvoie la part de l'encaissement qui a soldé de la dette.
+    /// </summary>
+    private static async Task<decimal> SolderDettePatientsAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long factureId, decimal encaisse,
+        long utilisateurId, CancellationToken ct)
+    {
+        // Patients verrouillés : un remboursement au comptoir en même temps ne solde pas deux fois la même dette
+        await using (var verrou = new NpgsqlCommand("""
+            SELECT 1 FROM patient WHERE id IN (
+                SELECT v.patient_id FROM facture_client_ligne fl JOIN vente v ON v.id = fl.vente_id
+                WHERE fl.facture_id = $1 AND fl.part = 'patient' AND v.patient_id IS NOT NULL)
+            ORDER BY id FOR UPDATE
+            """, cx, tx))
+        {
+            verrou.Parameters.AddWithValue(factureId);
+            await verrou.ExecuteNonQueryAsync(ct);
+        }
+        var restes = new List<(long Patient, decimal Reste)>();
+        string numero;
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT c.patient_id, c.reste, (SELECT numero FROM facture_client WHERE id = $1)
+            FROM v_vente_credit c
+            WHERE c.reste > 0 AND c.vente_id IN (SELECT fl.vente_id FROM facture_client_ligne fl
+                                                 WHERE fl.facture_id = $1 AND fl.part = 'patient' AND fl.vente_id IS NOT NULL)
+            ORDER BY c.date_vente, c.vente_id
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(factureId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            numero = "";
+            while (await r.ReadAsync(ct))
+            {
+                restes.Add((r.GetInt64(0), r.GetDecimal(1)));
+                numero = r.GetString(2);
+            }
+        }
+        var parPatient = new Dictionary<long, decimal>();
+        var disponible = encaisse;
+        foreach (var (patient, reste) in restes)
+        {
+            if (disponible <= 0) break;
+            var part = Math.Min(reste, disponible);
+            parPatient[patient] = parPatient.GetValueOrDefault(patient) + part;
+            disponible -= part;
+        }
+        foreach (var (patient, montant) in parPatient.OrderBy(p => p.Key))
+        {
+            await Caisse.ReleveCredit.ContexteAsync(cx, tx, Caisse.ReleveCredit.Remboursement, null, utilisateurId, null,
+                $"Facture {numero} encaissée (trésorerie)", ct);
+            await using var cmd = new NpgsqlCommand("UPDATE patient SET solde_credit = solde_credit - $2 WHERE id = $1 AND solde_credit >= $2", cx, tx);
+            cmd.Parameters.AddWithValue(patient);
+            cmd.Parameters.AddWithValue(montant);
+            if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+                throw new RegleMetierException("La dette d’un patient de cette facture vient de changer : rechargez la liste.");
+        }
+        return encaisse - disponible;
+    }
+
+    public async Task<IReadOnlyList<(string Facture, decimal Montant)>> DettesSoldeesAsync(long mouvementId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT f.numero, r.part_credit FROM reglement_facture_client r JOIN facture_client f ON f.id = r.facture_id
+            WHERE r.mouvement_id = $1 AND r.part_credit > 0 ORDER BY f.numero
+            """);
+        cmd.Parameters.AddWithValue(mouvementId);
+        var liste = new List<(string, decimal)>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) liste.Add((r.GetString(0), r.GetDecimal(1)));
+        return liste;
     }
 
     public async Task<long> TransfererAsync(long de, long vers, DateOnly date, decimal montant, string libelle, string? reference, long utilisateurId,
@@ -174,6 +252,8 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        // Compte de départ verrouillé, solde relu : deux transferts simultanés ne le vident pas deux fois
+        await SoldeTresorerie.ExigerAsync(cx, tx, de, montant, ct);
         long sortie;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO mouvement_tresorerie (compte_id, date_mouvement, sens, montant, nature, libelle, reference, utilisateur_id)

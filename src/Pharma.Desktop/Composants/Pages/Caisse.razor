@@ -769,12 +769,17 @@
     private long? bandeauProduit;
     private string? erreur;
     private int requete;
+    /// <summary>Une Entrée à la fois : deux scans rapprochés sont traités l'un après l'autre, chacun avec son propre code.</summary>
+    private readonly SemaphoreSlim scansEnCours = new(1, 1);
 
     // Règlement
     private List<OrganismeDto> organismes = [];
     private bool tiersPayant;
     private long organismeId;
-    private int taux = 80;
+    /// <summary>Organisme proposé à l'ouverture de la caisse et à chaque nouveau panier : le premier de la liste.</summary>
+    private long OrganismeParDefaut => organismes.FirstOrDefault()?.Id ?? 0;
+    private const int TauxParDefaut = 80;
+    private int taux = TauxParDefaut;
     /// <summary>Tiers payant : reste à charge fixé par le caissier (null : selon le taux).</summary>
     private decimal? resteSaisi;
     private PatientDto? patient;
@@ -818,6 +823,12 @@
     private string? erreurCalcul, erreurEncaissement;
     private int requeteCalcul;
     private VenteEncaisseeDto? venteFaite;
+    /// <summary>
+    /// Clé du panier envoyée avec l'encaissement : renouvelée seulement après une vente réussie, un panier vidé ou mis en attente.
+    /// Après une réponse trop lente du serveur, un nouvel essai garde la même clé : le serveur rend la vente déjà enregistrée
+    /// au lieu d'en créer une seconde.
+    /// </summary>
+    private Guid cleEncaissement = Guid.NewGuid();
     private DotNetObjectReference<Caisse>? reference;
 
     // Ordonnance scannée
@@ -916,7 +927,7 @@
         var retour = Historique.Restaurer("caisse");
         var aReprendre = retour?.Long("attente");
         (organismes, _) = await Api.OrganismesAsync();
-        organismeId = organismes.FirstOrDefault()?.Id ?? 0;
+        organismeId = OrganismeParDefaut;
         await ChargerEtatAsync();
         if (aReprendre is { } id) await ReprendreAuRetourAsync(id);
         // Vente laissée en attente au « Changer d'utilisateur » : reprise par l'employé qui se connecte ensuite sur ce poste
@@ -981,6 +992,9 @@
     [JSInvokable]
     public async Task SurF12()
     {
+        // F12 n'encaisse que depuis la vente elle-même : jamais derrière une rubrique (annulation, crédit), l'ordonnance agrandie,
+        // la caméra ou le formulaire d'un nouveau patient
+        if (rubrique != "" || imageAgrandie || cameraOuverte || nouveauPatient) return;
         if (PeutEncaisser) await EncaisserAsync(mode);
         StateHasChanged();
     }
@@ -1028,31 +1042,52 @@
     {
         if (e.Key == "Escape") { suggestions = []; return; }
         if (e.Key != "Enter") return;
-        // Étiquette interne ou Data Matrix : la boîte désigne son lot, servi tel quel (contrôle de péremption)
+        // Le code lu est pris et la saisie vidée tout de suite, avant toute attente : le scan suivant peut déjà arriver.
+        // La recherche de frappe en cours n'a plus d'objet.
         var code = texte.Trim();
+        texte = "";
+        ++requete;
+        // Scans rapprochés : traités un par un, dans l'ordre, chacun avec son propre code
+        await scansEnCours.WaitAsync();
+        try { await TraiterCodeAsync(code); }
+        finally { scansEnCours.Release(); }
+    }
+
+    /// <summary>Code lu (scan ou saisie suivie d'Entrée) : ne dépend ni de la saisie en cours ni des recherches de frappe.</summary>
+    private async Task TraiterCodeAsync(string code)
+    {
         // QR d'un volet Chifa (champs séparés par « ; », ou scanné en clavier QWERTY sur un poste AZERTY)
         if (code.Length >= 20 && (code.Contains(';') || code.Count(c => "&é\"'(-è_çà".Contains(c)) >= 5))
         {
             var (v, ev) = await Api.LireVoletChifaAsync(code);
-            if (v is not null) { (texte, suggestions) = ("", []); await ReprendreVoletAsync(v); return; }
-            if (code.Contains(';')) { (texte, suggestions, erreur) = ("", [], ev); return; }
+            if (v is not null) { suggestions = []; await ReprendreVoletAsync(v); return; }
+            if (code.Contains(';')) { (suggestions, erreur) = ([], ev); return; }
         }
+        // Étiquette interne ou Data Matrix : la boîte désigne son lot, servi tel quel (contrôle de péremption)
         if (code.Length >= 8 && !code.Contains(' '))
         {
             var (boite, errBoite) = await Api.BoiteCaisseAsync(code);
-            if (errBoite is not null) { (texte, suggestions, erreur, bandeau) = ("", [], errBoite, null); return; }
-            if (boite is not null) { await AjouterBoiteAsync(boite); return; }
+            if (errBoite is not null) { (suggestions, erreur, bandeau) = ([], errBoite, null); return; }
+            if (boite is not null) { await AjouterBoiteAsync(boite, viderSaisie: false); return; }
         }
-        // Au scan, le lecteur envoie le code-barres puis Entrée : on attend la recherche en cours
         // Premier produit trouvé, s'il est en stock ; en rupture, la liste reste ouverte avec son remplaçant
-        await RechercherAsync();
-        if (suggestions.FirstOrDefault() is { Produit.Stock: > 0 } c)
-            await AjouterAsync(c.Produit.Id, c.Produit.NomCommercial, c.PrixServi);
+        if (code.Length < 2) { suggestions = []; return; }
+        var (trouves, err) = await Api.RechercherAuComptoirAsync(code);
+        if (trouves.FirstOrDefault() is { Produit.Stock: > 0 } c)
+        {
+            await AjouterAsync(c.Produit.Id, c.Produit.NomCommercial, c.PrixServi, viderSaisie: false);
+            return;
+        }
+        (suggestions, erreur) = (trouves, err);
+        // Rien d'ajouté : la saisie revient pour être corrigée (sauf si un autre code est déjà en cours de saisie)
+        if (texte.Length == 0) texte = code;
     }
 
-    private async Task AjouterAsync(long produitId, string nom, decimal prix, int quantite = 1)
+    /// <param name="viderSaisie">Faux pour un code scanné : la saisie a déjà été vidée à l'Entrée et contient peut-être le scan suivant.</param>
+    private async Task AjouterAsync(long produitId, string nom, decimal prix, int quantite = 1, bool viderSaisie = true)
     {
-        (texte, suggestions, erreur, bandeau, venteFaite) = ("", [], null, null, null);
+        if (viderSaisie) texte = "";
+        (suggestions, erreur, bandeau, venteFaite) = ([], null, null, null);
         quantite = Math.Max(1, quantite);
 
         // Lignes du produit déjà au panier (une par lot) : on y ajoute d'abord, dans la limite de chaque lot.
@@ -1109,9 +1144,10 @@
         await RecalculerAsync();
     }
 
-    private async Task AjouterBoiteAsync(BoiteCaisseDto b)
+    private async Task AjouterBoiteAsync(BoiteCaisseDto b, bool viderSaisie = true)
     {
-        (texte, suggestions, erreur, bandeau, venteFaite) = ("", [], null, null, null);
+        if (viderSaisie) texte = "";
+        (suggestions, erreur, bandeau, venteFaite) = ([], null, null, null);
         if (b.BoiteId is { } dejaVue && lignes.Any(l => l.Boites.Contains(dejaVue)))
         {
             erreur = $"{b.Produit} : cette boîte est déjà au panier (même étiquette scannée deux fois).";
@@ -1470,7 +1506,7 @@
         foreach (var l in v.Lignes)
         {
             if (l.ProduitId is not { } id) { codesAAssocier.Add(l); continue; }
-            await AjouterAsync(id, l.Produit!, l.PrixCatalogue ?? l.PrixUnitaire, l.Quantite);
+            await AjouterAsync(id, l.Produit!, l.PrixCatalogue ?? l.PrixUnitaire, l.Quantite, viderSaisie: false);
             if (l.PrixCatalogue is { } pc && pc != l.PrixUnitaire)
                 ecartsVolet.Add($"{l.Produit} : {Libelles.Dinars(l.PrixUnitaire, 2)} sur le volet, {Libelles.Dinars(pc, 2)} au catalogue.");
         }
@@ -1564,7 +1600,7 @@
                 PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null)
             : null,
         remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null, tiersPayant ? resteSaisi : null,
-        accordBlocage.VersDto(Session.A("produits.bloquer")), voletBrut, remiseAdditionnee);
+        accordBlocage.VersDto(Session.A("produits.bloquer")), voletBrut, remiseAdditionnee, cleEncaissement);
 
     /// <summary>Les totaux viennent du serveur : mêmes règles que l'encaissement (tiers payant, remise).</summary>
     // Raison du lot servi quand un lot plus ancien est en stock (codes de Pharma.Domain.Ventes.RaisonLot)
@@ -1588,7 +1624,13 @@
     private async Task RecalculerAsync()
     {
         var numero = ++requeteCalcul;
-        if (!lignes.Any(l => l.Lot is not null)) { (apercu, erreurCalcul) = (null, null); Afficheur.Accueil(); return; }
+        if (!lignes.Any(l => l.Lot is not null))
+        {
+            (apercu, erreurCalcul) = (null, null);
+            Afficheur.Accueil();
+            if (lignes.Count == 0) cleEncaissement = Guid.NewGuid();   // panier vidé : le prochain panier est une autre vente
+            return;
+        }
         var (resultat, err) = await Api.CalculerVenteAsync(Commande("especes"));
         if (numero != requeteCalcul) return;
         (apercu, erreurCalcul) = (resultat, err);
@@ -1646,10 +1688,21 @@
         erreurEncaissement = null;
         var (vente, err) = await Api.EncaisserAsync(Commande(modePaiement));
         enCours = false;
-        if (err is not null) { erreurEncaissement = err; return; }
+        if (err is not null)
+        {
+            // Réponse trop lente : la vente est peut-être enregistrée. La clé du panier est gardée : un nouvel essai rend la vente
+            // déjà enregistrée au lieu d'en créer une seconde
+            erreurEncaissement = err == ApiClient.MessageDelaiDepasse
+                ? "Le serveur met trop de temps à répondre : la vente est peut-être déjà enregistrée. Vérifiez les dernières ventes, "
+                  + "ou encaissez de nouveau sans rien changer au panier : il ne sera jamais encaissé deux fois."
+                : err;
+            return;
+        }
 
         venteFaite = vente;
-        Afficheur.Paiement(vente!.PartPatient, vente.Mode == "especes" ? montantRecu : null, vente.Mode == "especes" ? vente.Rendu : 0);
+        // Vente à crédit : rien n'est payé au comptoir, l'afficheur client remercie sans montant
+        Afficheur.Paiement(vente!.PartPatient, vente.Mode == "especes" ? montantRecu : null, vente.Mode == "especes" ? vente.Rendu : 0,
+            credit: vente.Mode == "credit");
         // Réglage du poste : ticket imprimé sans clic après chaque vente
         if (Tickets.Automatique) _ = InvokeAsync(async () => { await ImprimerTicketAsync(); StateHasChanged(); });
         ViderPanier();
@@ -1719,6 +1772,7 @@
         venteFaite = null;
         ViderPanier();
         await ChargerAttentesAsync();
+        Afficheur.Accueil();   // le panier mis de côté ne reste pas affiché devant le client suivant
     }
 
     /// <summary>Reprise : le panier en cours (s'il y en a un) part d'abord en attente, rien n'est perdu.</summary>
@@ -1764,12 +1818,19 @@
         await ChargerAttentesAsync();
     }
 
-    /// <summary>Panier et règlement remis à zéro (après une vente ou une mise en attente).</summary>
+    /// <summary>
+    /// Panier et règlement remis à zéro (après une vente ou une mise en attente) : rien du client précédent ne reste (patient,
+    /// formulaire de nouveau patient, médecin, ordonnance), taux et organisme reviennent à ceux de l'ouverture de la caisse, et le
+    /// nouveau panier a sa propre clé d'encaissement. L'afficheur client n'est pas touché (écran « Payé » après un encaissement).
+    /// </summary>
     private void ViderPanier()
     {
         lignes.Clear();
+        cleEncaissement = Guid.NewGuid();
         (apercu, bandeau, erreur, montantRecu, remisePct, remiseAdditionnee) = (null, null, null, null, 0, false);
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
+        (nouveauPatient, np, controlePatient, patientTexte, patients, medecins) = (false, new(), false, "", [], []);
+        (datePrescription, erreurScan, taux, organismeId) = (DateOnly.FromDateTime(DateTime.Today), null, TauxParDefaut, OrganismeParDefaut);
         (volet, voletBrut, codesAAssocier, ecartsVolet) = (null, null, [], []);
         accordBlocage.Effacer();
         (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
@@ -1802,7 +1863,11 @@
         Session.AvantFermeture -= PanierAbandonne;
         Historique.Oublier("caisse");
         PanierAbandonne();
+        // Écran quitté : l'afficheur client revient à l'accueil, la caméra s'éteint (même si elle était encore en train de démarrer)
+        Afficheur.Accueil();
         try { await JS.InvokeVoidAsync("pharma.arreterF12"); }
+        catch (JSDisconnectedException) { }
+        try { await JS.InvokeVoidAsync("pharma.camera.arreter"); }
         catch (JSDisconnectedException) { }
         reference?.Dispose();
     }

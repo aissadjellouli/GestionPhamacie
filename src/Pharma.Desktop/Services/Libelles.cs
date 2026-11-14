@@ -258,6 +258,8 @@ public static class Libelles
         "reception_produit_bloque" => "Réception d’un produit bloqué",
         "reglement_credit" => "Règlement d’un crédit",
         "reglement_grossiste" => "Règlement d’un grossiste",
+        "traite_payee" => "Traite payée à un grossiste",
+        "dette_soldee_par_facture" => "Dette d’un patient soldée par une facture encaissée",
         "releve_caisse" => "Relève de caisse",
         "remise_cheques" => "Remise de chèques en banque",
         "reprise_chargement" => "Reprise de données chargée",
@@ -475,7 +477,7 @@ public static class Libelles
     /// <summary>Codes enregistrés tels quels dans le journal (moyens de paiement, motifs) : remis en français.</summary>
     private static readonly Dictionary<string, string> ValeursCodees = new()
     {
-        ["especes"] = "espèces", ["cheque"] = "chèque", ["carte"] = "carte", ["virement"] = "virement", ["effet"] = "effet", ["credit"] = "crédit",
+        ["especes"] = "espèces", ["cheque"] = "chèque", ["carte"] = "carte", ["virement"] = "virement", ["effet"] = "traite", ["prelevement"] = "prélèvement", ["credit"] = "crédit",
         ["perime"] = "périmé", ["casse"] = "cassé", ["echantillon"] = "échantillon ou don", ["peremption_proche"] = "péremption proche",
         ["erreur_livraison"] = "erreur de livraison"
     };

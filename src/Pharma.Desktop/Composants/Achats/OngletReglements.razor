@@ -84,20 +84,32 @@
                         <label for="r-moyen" class="requis">Moyen</label>
                         <select data-champ="moyen" id="r-moyen" @bind="moyen">
                             <option value="especes">Espèces</option><option value="cheque">Chèque</option>
-                            <option value="virement">Virement</option><option value="effet">Effet / traite</option>
+                            <option value="virement">Virement</option><option value="prelevement">Prélèvement</option><option value="effet">Traite</option>
                         </select>
                     </div>
                     @if (moyen != "especes")
                     {
-                        <div class="champ" style="flex: 1 1 180px"><label for="r-ref" class="requis">@(moyen == "cheque" ? "N° du chèque" : moyen == "virement" ? "Référence du virement" : "N° de l’effet")</label>
+                        <div class="champ" style="flex: 1 1 180px"><label for="r-ref" class="requis">@(moyen switch { "cheque" => "N° du chèque", "virement" => "Référence du virement", "prelevement" => "Référence du prélèvement", _ => "N° de la traite" })</label>
                             <input id="r-ref" type="text" @bind="reference" @bind:event="oninput" class="@Obligatoire.Classe(ReferenceManque)" aria-invalid="@Obligatoire.Aria(ReferenceManque)" /></div>
                     }
-                    @if (moyen != "especes" && banques.Count > 0)
+                    @if (BanqueObligatoire)
                     {
+                        @* Chèque, virement, prélèvement : la banque débitée est obligatoire (plus de règlement « hors trésorerie ») *@
                         <div class="champ" style="flex: 1 1 180px">
-                            <label for="r-compte">Compte débité</label>
+                            <label for="r-compte" class="requis">Banque débitée</label>
+                            <select id="r-compte" data-champ="compte" @bind="compteId" class="@Obligatoire.Classe(BanqueManque)" aria-invalid="@Obligatoire.Aria(BanqueManque)">
+                                <option value="0">— choisir la banque —</option>
+                                @foreach (var b in banques) { <option value="@b.Id">@b.Nom</option> }
+                            </select>
+                            @if (banques.Count == 0) { <span class="detail">Aucune banque active : déclarez-la dans Finances, Trésorerie.</span> }
+                        </div>
+                    }
+                    else if (moyen == "effet")
+                    {
+                        <div class="champ" style="flex: 1 1 220px">
+                            <label for="r-compte">Banque débitée à l’échéance</label>
                             <select id="r-compte" @bind="compteId">
-                                <option value="0">— hors trésorerie —</option>
+                                <option value="0">— sans banque : paiement confirmé à l’échéance —</option>
                                 @foreach (var b in banques) { <option value="@b.Id">@b.Nom</option> }
                             </select>
                         </div>
@@ -243,8 +255,14 @@
     private bool MontantManque => controle && montant <= 0;
     private bool ReferenceManque => controle && moyen != "especes" && string.IsNullOrWhiteSpace(reference);
     private bool EcheanceManque => controle && moyen == "effet" && echeance is null;
+    private bool BanqueObligatoire => moyen is "cheque" or "virement" or "prelevement";
+    private bool BanqueManque => controle && BanqueObligatoire && compteId <= 0;
 
-    private static string Moyen(string m) => m switch { "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", _ => "Effet" };
+    /// <summary>Moyen lu par l'employé : le code « effet » s'affiche « Traite ».</summary>
+    private static string Moyen(string m) => m switch
+    {
+        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", "prelevement" => "Prélèvement", _ => "Traite"
+    };
 
     /// <summary>Grossiste ouvert directement (depuis sa fiche contact).</summary>
     [Parameter] public long? Grossiste { get; set; }
@@ -316,7 +334,8 @@
         (controle, erreur, message) = (true, null, null);
         erreur = MontantManque ? "Le montant réglé doit être supérieur à 0."
             : ReferenceManque ? "Indiquez la référence du paiement."
-            : EcheanceManque ? "Indiquez la date d’échéance de l’effet." : null;
+            : EcheanceManque ? "Indiquez la date d’échéance de la traite."
+            : BanqueManque ? "Choisissez la banque débitée." : null;
         if (erreur is not null || situation is null) return;
         enCours = true;
         var nom = situation.Nom;

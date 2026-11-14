@@ -42,7 +42,7 @@ public sealed record ProduitAlternatifDto(long ProduitId, string NomCommercial, 
     bool Exact = true, string? Dosage = null, string? Forme = null, string? Laboratoire = null);
 
 /// <summary>Lots qui périment dans les N jours (cumulé), au prix d'achat.</summary>
-public sealed record HorizonPeremptionDto(int Jours, int Lots, int Boites, decimal Valeur);
+public sealed record HorizonPeremptionDto(int Jours, int Lots, int Boites, decimal? Valeur);
 /// <summary>ReglementsAPreparer et MontantAPreparer : null sans le droit de régler les grossistes.</summary>
 public sealed record IndicateursAlertesDto(IReadOnlyList<HorizonPeremptionDto> Peremption, int? ReglementsAPreparer, decimal? MontantAPreparer);
 
@@ -52,9 +52,9 @@ public sealed record AlerteDto(
     string Produit, string? NumeroLot, string? Emplacement = null);
 
 /// <summary>Page d'alertes (filtrée par le serveur) ; nombre par onglet et par type, et valeur à risque, sur toutes les alertes ouvertes.</summary>
-public sealed record AlertesPageDto(PageDto<AlerteDto> Page, Dictionary<string, int> ParFiltre, Dictionary<string, int> ParType, decimal ValeurARisque);
+public sealed record AlertesPageDto(PageDto<AlerteDto> Page, Dictionary<string, int> ParFiltre, Dictionary<string, int> ParType, decimal? ValeurARisque);
 
-public sealed record IndicateursStockDto(int ReferencesEnStock, decimal ValeurAchat, int LotsDateAVerifier);
+public sealed record IndicateursStockDto(int ReferencesEnStock, decimal? ValeurAchat, int LotsDateAVerifier);
 
 /// <summary>Statut : ok, rupture, critique, dormant ou surstock.</summary>
 public sealed record LigneStockDto(
@@ -113,11 +113,14 @@ public sealed record OrdonnanceDto(long? MedecinId, DateOnly DatePrescription, s
     string? JetonScan = null, string? TexteReconnu = null,
     string? PorteurNom = null, string? PorteurAdresse = null, string? PorteurPiece = null);
 
-/// <summary>Mode : especes, carte, cheque ou credit.</summary>
+/// <summary>
+/// Mode : especes, carte, cheque ou credit. CleEncaissement : clé du panier créée par le poste ; renvoyée à l'identique lors d'un
+/// nouvel essai, elle rend la vente déjà enregistrée au lieu d'en créer une seconde.
+/// </summary>
 public sealed record CommandeVenteDto(
     IReadOnlyList<LigneCommandeDto> Lignes, bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
     long? PatientId, OrdonnanceDto? Ordonnance, decimal RemisePct, string Mode, decimal? MontantRecu, decimal? ResteACharge = null,
-    ValidationBlocageDto? Blocage = null, string? VoletChifa = null, bool RemiseAdditionnee = false);
+    ValidationBlocageDto? Blocage = null, string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null);
 
 /// <summary>Accord pour un produit bloqué : confirmé par l'employé habilité, sinon validé par le code comptoir d'un habilité.</summary>
 public sealed record ValidationBlocageDto(bool Accepte, string? ValidateurIdentifiant = null, string? ValidateurCode = null);
@@ -657,7 +660,7 @@ public sealed record GrossisteAReglementDto(long Id, string Nom, decimal Solde, 
 
 public sealed record FactureFournisseurDto(long ReceptionId, string? NumeroFacture, string? NumeroBl, DateTime Date, decimal Montant, decimal Regle, decimal Reste);
 
-/// <summary>Moyen : especes, cheque, virement ou effet.</summary>
+/// <summary>Moyen : especes, cheque, virement, prelevement ou effet (affiché « traite »).</summary>
 public sealed record ReglementPasseDto(long Id, DateOnly Date, decimal Montant, string Moyen, string? Reference, DateOnly? Echeance, decimal PartTiroir, string Employe,
     long? EmployeId = null);
 
@@ -672,6 +675,19 @@ public sealed record ImputationDto(long ReceptionId, decimal Montant);
 /// <summary>Imputations vides : réparties sur les factures les plus anciennes. PartTiroir : complément en espèces pris dans la caisse ouverte.</summary>
 public sealed record ReglementRequete(DateOnly? Date, decimal Montant, string Moyen, string? Reference, string? Banque, DateOnly? Echeance,
     decimal PartTiroir, string? Commentaire, IReadOnlyList<ImputationDto>? Imputations, long? CompteId = null);
+
+/// <summary>
+/// Traite remise à un grossiste. CompteId / Banque : banque choisie à la remise (débitée à l'échéance sans action). PayeeLe /
+/// MoyenPaiement : payée (moyen especes, cheque, virement, prelevement, ou debit_echeance), null sinon.
+/// </summary>
+public sealed record TraiteAPayerDto(long ReglementId, string? Numero, long FournisseurId, string Grossiste, string? Reference, string? BanqueGrossiste,
+    DateOnly DateRemise, DateOnly Echeance, decimal Montant, long? CompteId, string? Banque, DateOnly? PayeeLe = null, string? MoyenPaiement = null);
+
+/// <summary>Une page de traites (filtrée par le serveur) ; SoldeCoffre : pour le titulaire seulement (complément du tiroir proposé).</summary>
+public sealed record TraitesAPayerDto(PageDto<TraiteAPayerDto> Traites, decimal? SoldeCoffre);
+
+/// <summary>Moyen : especes, cheque, virement ou prelevement ; CompteId obligatoire hors espèces ; PartTiroir : complément pris dans la caisse ouverte.</summary>
+public sealed record PaiementTraiteRequete(DateOnly? Date, string? Moyen, long? CompteId, string? Reference, decimal PartTiroir);
 
 // ---- Crédits clients -------------------------------------------------------------------
 

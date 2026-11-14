@@ -34,9 +34,37 @@ public static class ErreursMetier
             {
                 return Refus(ctx.HttpContext, StatusCodes.Status422UnprocessableEntity, e.MessageText, e);
             }
+            catch (PostgresException e) when (Traduire(e) is { } refus)
+            {
+                // Le détail technique (code, contrainte, table) reste au journal du serveur, jamais dans la réponse au poste
+                ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus")
+                    .LogInformation("{Chemin} : refus de la base {Code} (contrainte {Contrainte}, table {Table}) : {Detail}",
+                        ctx.HttpContext.Request.Path, e.SqlState, e.ConstraintName, e.TableName, e.MessageText);
+                return Refus(ctx.HttpContext, refus.Statut, refus.Message, e);
+            }
         });
         return builder;
     }
+
+    /// <summary>
+    /// Refus techniques prévisibles de la base, traduits en message clair pour le poste (sans détail technique) :
+    /// conflit avec un autre poste (interblocage, sérialisation) → 409, à réessayer ; doublon, valeur non permise
+    /// ou hors limites → 422. Null pour les autres erreurs (vraies pannes).
+    /// </summary>
+    public static (int Statut, string Message)? Traduire(PostgresException e) => e.SqlState switch
+    {
+        PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure =>
+            (StatusCodes.Status409Conflict, "Opération en conflit avec un autre poste : réessayez."),
+        PostgresErrorCodes.UniqueViolation =>
+            (StatusCodes.Status422UnprocessableEntity, "Enregistrement refusé : cette donnée existe déjà. Vérifiez la saisie."),
+        PostgresErrorCodes.CheckViolation =>
+            (StatusCodes.Status422UnprocessableEntity, "Enregistrement refusé : une valeur saisie n’est pas permise. Vérifiez la saisie."),
+        PostgresErrorCodes.NumericValueOutOfRange =>
+            (StatusCodes.Status422UnprocessableEntity, "Enregistrement refusé : un nombre saisi est trop grand. Vérifiez la saisie."),
+        PostgresErrorCodes.InvalidRowCountInResultOffsetClause =>
+            (StatusCodes.Status422UnprocessableEntity, "Recherche refusée : numéro de page hors limites."),
+        _ => null
+    };
 
     private static IResult Refus(HttpContext http, int statut, string message, Exception e, string? champ = null)
     {

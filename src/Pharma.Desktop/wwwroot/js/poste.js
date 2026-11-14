@@ -23,7 +23,8 @@ document.addEventListener('keydown', function (e) {
   window.pharma._derniereActivite = Date.now();
   if (e.key === 'F12' && window.pharma._caisse) {
     e.preventDefault();
-    window.pharma._caisse.invokeMethodAsync('SurF12');
+    // Fenêtre ouverte par-dessus la caisse (confirmation, validation, ordonnance agrandie…) : F12 n'encaisse pas derrière elle
+    if (!document.querySelector('.voile, [aria-modal="true"]')) window.pharma._caisse.invokeMethodAsync('SurF12');
   }
   // Caisse : F7 place le curseur dans « Scanner ou rechercher un produit », d'où qu'on soit sur l'écran de vente
   if (e.key === 'F7' && window.pharma._caisse) {
@@ -82,11 +83,20 @@ document.addEventListener('keydown', function (e) {
 // Caméra au comptoir : photo de l'ordonnance (l'autorisation est accordée par la fenêtre du poste)
 window.pharma.camera = {
   _flux: null,
+  // Numéro de la dernière demande : un arrêt demandé pendant l'attente de la caméra rend la demande en cours caduque
+  _demande: 0,
   demarrer: async function (idVideo) {
-    const video = document.getElementById(idVideo);
-    this._flux = await navigator.mediaDevices.getUserMedia({
+    const demande = ++this._demande;
+    const flux = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'environment' }, audio: false });
-    video.srcObject = this._flux;
+    const video = document.getElementById(idVideo);
+    // Caméra fermée (ou écran quitté) pendant l'attente : les pistes sont coupées aussitôt, la caméra ne reste pas allumée
+    if (demande !== this._demande || !video) {
+      flux.getTracks().forEach(function (t) { t.stop(); });
+      return;
+    }
+    this._flux = flux;
+    video.srcObject = flux;
     await video.play();
   },
   // Image JPEG en base64 (sans l'en-tête data:)
@@ -98,6 +108,7 @@ window.pharma.camera = {
     return toile.toDataURL('image/jpeg', 0.92).split(',')[1];
   },
   arreter: function () {
+    this._demande++;
     if (this._flux) this._flux.getTracks().forEach(function (t) { t.stop(); });
     this._flux = null;
   }

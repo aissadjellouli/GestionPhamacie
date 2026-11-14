@@ -116,9 +116,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     private static bool EstEchecAppel(Exception ex) =>
         ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException;
 
+    /// <summary>Délai d'attente dépassé (SuiviAppels) : l'écran peut le reconnaître pour adapter son message (ex. encaissement).</summary>
+    public const string MessageDelaiDepasse =
+        "Le serveur met trop de temps à répondre : l’opération continue peut-être sur le serveur. Attendez un instant, puis rechargez l’écran avant de recommencer.";
+
     private static string MessageEchec(Exception ex) => ex switch
     {
-        TaskCanceledException => "Le serveur met trop de temps à répondre : l’opération continue peut-être sur le serveur. Attendez un instant, puis rechargez l’écran avant de recommencer.",
+        TaskCanceledException => MessageDelaiDepasse,
         System.Text.Json.JsonException => "Réponse du serveur illisible : le poste et le serveur n’ont peut-être pas la même version du logiciel.",
         IOException or UnauthorizedAccessException => $"Fichier inaccessible : {ex.Message}",
         _ => Injoignable
@@ -354,6 +358,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(SituationGrossisteDto?, string?)> SituationGrossisteAsync(long id) => GetAsync<SituationGrossisteDto?>($"api/achats/reglements/{id}", null);
     public async Task<string?> EnregistrerReglementAsync(long fournisseurId, ReglementRequete r) =>
         (await PostAsync<ReglementRequete, IdentifiantDto>($"api/achats/reglements/{fournisseurId}", r)).Item2;
+    /// <summary>Traites filtrées (état, grossiste ou n°) et paginées par le serveur (solde du coffre pour le titulaire).</summary>
+    public Task<(TraitesAPayerDto?, string?)> TraitesAPayerAsync(string? etat, string? texte, int page, int taille) =>
+        GetAsync<TraitesAPayerDto?>("api/achats/traites?" + Requete(("etat", etat), ("q", texte), ("page", page), ("taille", taille)), null);
+    /// <summary>Paiement d’une traite confirmé par le titulaire.</summary>
+    public async Task<string?> PayerTraiteAsync(long reglementId, PaiementTraiteRequete r) =>
+        (await PostAsync<PaiementTraiteRequete, IdentifiantDto>($"api/achats/traites/{reglementId}/paiement", r)).Item2;
 
     public Task<(List<PatientEnCreditDto>, string?)> PatientsEnCreditAsync(string? recherche) =>
         GetAsync<List<PatientEnCreditDto>>($"api/caisse/credits{(string.IsNullOrWhiteSpace(recherche) ? "" : $"?q={Uri.EscapeDataString(recherche.Trim())}")}", []);

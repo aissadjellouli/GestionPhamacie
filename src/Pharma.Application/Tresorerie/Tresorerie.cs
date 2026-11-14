@@ -48,6 +48,8 @@ public interface ITresorerie
     Task<long> RemettreChequesAsync(long compteId, DateOnly date, string? reference, IReadOnlyList<long> paiements, long utilisateurId, CancellationToken ct = default);
     Task<long> VerserCaisseAsync(long sessionId, long coffreId, decimal montant, DateOnly date, bool pendantSession, bool automatique, long utilisateurId,
         CancellationToken ct = default);
+    /// <summary>Factures clients encaissées par ce mouvement dont l'encaissement a soldé la dette de patients (ventes à crédit), et le montant soldé.</summary>
+    Task<IReadOnlyList<(string Facture, decimal Montant)>> DettesSoldeesAsync(long mouvementId, CancellationToken ct = default);
 }
 
 public sealed class ConsulterTresorerie(ITresorerie tresorerie, IPermissionService droits)
@@ -125,6 +127,7 @@ public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissio
         if (n != NatureMouvement.VersementOrganisme) (organismeId, bordereauId) = (null, null);
         if (bordereauId is not null && statutBordereau is not ("paye" or "rejet_partiel"))
             throw new RegleMetierException("Bordereau : indiquez s’il est payé en entier ou en rejet partiel.", "statut_bordereau");
+        // Premier contrôle (message immédiat) ; refait sous verrou à l'écriture, pour deux dépenses simultanées
         if (n == NatureMouvement.Depense && compte.Solde < montant)
             throw new RegleMetierException($"Solde insuffisant sur {compte.Nom} ({compte.Solde:N2} DA).", "montant");
 
@@ -148,6 +151,11 @@ public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissio
         await journal.EcrireAsync(utilisateurId, "mouvement_tresorerie", "mouvement_tresorerie", id,
             new Dictionary<string, object?> { ["compte"] = compte.Nom, ["nature"] = n.Code(), ["montant"] = montant, ["categorie"] = categorie, ["libelle"] = libelle },
             Permissions.TresorerieGerer, ct);
+        // Facture couvrant des ventes à crédit : la dette des patients a été soldée dans la même transaction (règle « facture et crédit »)
+        if (imputations is { Count: > 0 })
+            foreach (var (facture, solde) in await tresorerie.DettesSoldeesAsync(id, ct))
+                await journal.EcrireAsync(utilisateurId, "dette_soldee_par_facture", "mouvement_tresorerie", id,
+                    new Dictionary<string, object?> { ["facture"] = facture, ["dette_diminuee"] = solde }, Permissions.TresorerieGerer, ct);
         return id;
     }
 

@@ -133,6 +133,8 @@ public static class DependencyInjection
         services.AddScoped<Caisse.EnregistrerRetourClient>();
         services.AddScoped<Achats.ConsulterReglements>();
         services.AddScoped<Achats.EnregistrerReglement>();
+        services.AddScoped<Achats.ConsulterTraites>();
+        services.AddScoped<Achats.PayerTraite>();
         services.AddScoped<Caisse.ConsulterCredits>();
         services.AddScoped<Caisse.EncaisserReglementCredit>();
         services.AddScoped<Caisse.ImprimerReleveCredit>();

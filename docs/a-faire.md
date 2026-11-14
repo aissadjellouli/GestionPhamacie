@@ -48,29 +48,29 @@ récemment »). Restent :
 
 **Défauts mineurs**
 - [ ] Alerte immédiate perdue sans trace quand l'envoi est refusé (destinataire non vérifié, base indisponible) : l'erreur est avalée (`RappelerLot`, clôture, inventaire…) ; à inscrire au journal du serveur et à signaler au titulaire.
-- [ ] Erreurs techniques (500) au lieu d'un message clair : lot d'un autre produit à l'encaissement, règlement grossiste au millième, liste à null dans une requête, pagination très grande, reprise « Autre » sans produit.
+- [ ] Erreurs techniques (500) au lieu d'un message clair : reprise « Autre » sans produit. (Corrigé le 2026-11-14 : lot d'un autre produit à l'encaissement, règlement grossiste au millième, liste à null dans une requête, pagination très grande, refus techniques de la base — doublon, contrainte, nombre trop grand, conflit entre postes — traduits en message clair.)
 - [ ] Remise négative acceptée sans message (ramenée à 0) ; coupure inconnue ignorée à la clôture (caisse fermée avec 0 compté) ; saisie énorme au comptage.
 - [ ] Doublons selon les majuscules : client facturé, compte de trésorerie ; zone d'emplacement inconnue enregistrée « vente » ; emplacement créé « inactif » enregistré actif.
 - [ ] Recherche d'un patient par téléphone : numéro exact, espaces compris (l'écran des crédits cherche par début de numéro).
 - [ ] « Dernier prix d'achat » repris à 0 DA quand la dernière entrée est une unité gratuite.
-- [ ] Concurrence : deux ventes sur les mêmes lots dans un ordre différent (erreur technique au lieu de « réessayez ») ; double clic sur « Encaisser » si le serveur répond très lentement ; deux dépenses de trésorerie simultanées ; un lot pris par deux inventaires créés au même instant ; statut de commande non revérifié en base.
-- [ ] Poste : données du client précédent (formulaire « nouveau patient », taux) gardées à la vente suivante ; caméra jamais coupée ; afficheur client figé sur le dernier panier et « Payé » affiché pour une vente à crédit ; F12 encaisse sous un volet ouvert ; scan double rapide ; essai de l'afficheur appliqué sans enregistrer ; fermer le logiciel avec l'écran client ne l'arrête pas.
-- [ ] Montant en lettres : « deux cents millions », « quatre-vingts millions » ; arrondi bancaire à quelques endroits (centime d'écart) ; avoir non arrondi au centime.
+- [ ] Concurrence : un lot pris par deux inventaires créés au même instant ; statut de commande non revérifié en base. (Corrigé le 2026-11-14 : deux ventes sur les mêmes lots — lots verrouillés dans un ordre fixe, « réessayez » en cas de conflit ; double encaissement si le serveur répond très lentement — clé d'encaissement, script 073 ; deux dépenses ou transferts de trésorerie simultanés — compte verrouillé, solde relu, refus s'il ne suffit pas.)
+- [x] Poste : données du client précédent (formulaire « nouveau patient », taux) gardées à la vente suivante ; caméra jamais coupée ; afficheur client figé sur le dernier panier et « Payé » affiché pour une vente à crédit ; F12 encaisse sous un volet ouvert ; scan double rapide ; essai de l'afficheur appliqué sans enregistrer ; fermer le logiciel avec l'écran client ne l'arrête pas.
+- [x] Montant en lettres : « deux cents millions », « quatre-vingts millions » ; arrondi bancaire à quelques endroits (centime d'écart) ; avoir non arrondi au centime. (Corrigé le 2026-11-14 : million et milliard s'accordent ; tous les arrondis monétaires au centime, la moitié vers le haut — `Pharma.Domain.Commun.Arrondi` ; avoir client ou grossiste à plus de 2 décimales refusé.)
 - [ ] Export : `format=csv` des rapports renvoie un PDF (seul `excel` donne le CSV) ; message « Toutes les boîtes ont déjà une identité » pour un lot inexistant.
 - [ ] Journal des actions vidable par `TRUNCATE` (UPDATE et DELETE sont bien refusés) ; journal fichier arrêté à la première erreur d'écriture.
 - [ ] Scripts : contraintes CHECK de 024 et 025 recréées sans garde ; rejeu de 053/054 qui remet les types de notification retirés ; `v_nomenclature` en `n.*` ; `initialiser_base_locale.ps1 -Recreer` sans confirmation.
 
 **Points à trancher**
-- [ ] Facture encaissée en trésorerie : la dette du patient (vente à crédit facturée) reste due → risque de double encaissement.
-- [ ] Banque « carte » changée : l'historique des paiements par carte passe sur la nouvelle banque (soldes faux).
-- [ ] Règlement grossiste par chèque sans banque choisie : accepté, aucun compte débité.
+- [x] Facture encaissée en trésorerie : la dette du patient (vente à crédit facturée) reste due → risque de double encaissement. (Tranché et corrigé le 2026-11-14 : l'encaissement solde la dette du patient pour ces ventes, même transaction, relevé de dette et journal ; une vente à crédit facturée n'est comptée qu'une fois dans le suivi des dettes.)
+- [x] Banque « carte » changée : l'historique des paiements par carte passe sur la nouvelle banque (soldes faux). (Corrigé le 2026-11-14 : banque des cartes par période, `compte_carte_periode`, script 074 ; le changement vaut à partir du jour même.)
+- [x] Règlement grossiste par chèque sans banque choisie : accepté, aucun compte débité. (Tranché et corrigé le 2026-11-14 : banque obligatoire pour chèque, virement et nouveau moyen prélèvement ; traite : banque facultative, paiement à l'échéance confirmé par le titulaire dans Achats › Traites à payer.)
 - [ ] Rappel de lot : boîtes rendues ou détruites encore comptées dans les patients à contacter.
 - [ ] Registre des psychotropes : balance mensuelle (une délivrance antérieure au solde d'ouverture comptée en plus, données de démo).
 - [ ] Lot délaissé jamais détecté si une boîte de l'ancien lot a été vendue après l'arrivée du nouveau ; écart d'inventaire égal au seuil corrigé sans validation (« sous les seuils » ?).
 - [ ] Psychotrope créé en classe « libre » par l'assistant (droit `catalogue.creer`) : vendable sans registre jusqu'à vérification.
-- [ ] Produit non remboursable dans une vente en tiers payant avec reste à charge saisi : part organisme répartie aussi sur lui.
+- [x] Produit non remboursable dans une vente en tiers payant avec reste à charge saisi : part organisme répartie aussi sur lui. (Tranché et corrigé le 2026-11-14 : part de l'organisme sur les seules lignes remboursables avec tarif de référence ; reste saisi au moins égal aux lignes non remboursables.)
 - [ ] Notification d'écart de caisse : seulement au-delà du seuil (la règle dit « tout écart non nul est signalé »).
-- [ ] Valeurs au prix d'achat visibles avec le seul droit `stock.consulter` (alertes), alors que les rapports les réservent à `rapports.marges`.
+- [x] Valeurs au prix d'achat visibles avec le seul droit `stock.consulter` (alertes), alors que les rapports les réservent à `rapports.marges`. (Tranché et corrigé le 2026-11-14 : réservées à `rapports.marges` ou au titulaire — alertes, péremption, valeur du stock ; non envoyées par le serveur sans le droit.)
 
 ## À confirmer avec le comptable
 

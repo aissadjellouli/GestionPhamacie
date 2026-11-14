@@ -61,10 +61,21 @@ public sealed record ImputationDemandee(long ReceptionId, decimal Montant);
 /// <summary>
 /// Règlement d'un grossiste (droit « achats.regler »), imputé facture par facture : les factures choisies, ou les plus anciennes
 /// si aucune n'est choisie. La dette du grossiste diminue du montant réglé (le surplus éventuel réduit l'ancien solde, sans facture).
-/// Espèces : un coffre à part ; le complément pris dans le tiroir sort de la caisse ouverte du poste.
+/// Espèces : le coffre, et le complément pris dans le tiroir de la caisse ouverte du poste quand le coffre ne suffit pas.
+/// Chèque, virement, prélèvement : banque de la trésorerie obligatoire (active), débitée à la date du règlement. Traite : banque
+/// facultative (avec une banque, débitée à l'échéance ; sans, payée à l'échéance sur confirmation du titulaire, « Traites à payer »).
 /// </summary>
-public sealed class EnregistrerReglement(IReglementsFournisseurs reglements, ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, IJournal journal)
+public sealed class EnregistrerReglement(IReglementsFournisseurs reglements, ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, IJournal journal,
+    Tresorerie.ITresorerie? tresorerie = null)
 {
+    /// <summary>Banque choisie : un compte de type banque, actif (contrôlé quand la trésorerie est connue).</summary>
+    internal static async Task VerifierBanqueAsync(Tresorerie.ITresorerie? tresorerie, long compteId, CancellationToken ct)
+    {
+        if (tresorerie is null) return;
+        if (!(await tresorerie.ComptesAsync(ct)).Any(c => c.Id == compteId && c.Type == "banque" && c.Actif))
+            throw new RegleMetierException("La banque choisie n’existe plus ou n’est plus active : choisissez une banque de la trésorerie.", "compte");
+    }
+
     public async Task<long> ExecuterAsync(long fournisseurId, DateOnly? date, decimal montant, string? moyen, string? reference, string? banque,
         DateOnly? echeance, decimal partTiroir, string? commentaire, IReadOnlyList<ImputationDemandee>? imputations, long utilisateurId, string? poste,
         long? compteId = null, CancellationToken ct = default)
@@ -73,8 +84,12 @@ public sealed class EnregistrerReglement(IReglementsFournisseurs reglements, ISe
         var m = RegleReglement.Moyen(moyen);
         var jour = date ?? horloge.Aujourdhui;
         RegleReglement.Verifier(montant, m, reference, echeance, partTiroir, jour, horloge.Aujourdhui);
+        // Plus de règlement « hors trésorerie » par chèque, virement ou prélèvement : la banque débitée est obligatoire
+        RegleReglement.VerifierBanque(m, compteId);
+        if (m != MoyenReglement.Especes && compteId is > 0 and var banqueId) await VerifierBanqueAsync(tresorerie, banqueId, ct);
         var situation = await reglements.SituationAsync(fournisseurId, ct) ?? throw new RegleMetierException("Grossiste introuvable.");
-        if (montant > Math.Max(situation.Solde, 0) + 0.005m)
+        // Montant au centime près (vérifié ci-dessus) : comparaison exacte avec la dette arrondie au centime
+        if (montant > Arrondi.Centime(Math.Max(situation.Solde, 0)))
             throw new RegleMetierException($"Le montant dépasse la dette envers {situation.Nom} ({situation.Solde:N2} DA).", "montant");
 
         var restes = situation.Factures.ToDictionary(f => f.ReceptionId, f => f.Reste);
@@ -91,7 +106,7 @@ public sealed class EnregistrerReglement(IReglementsFournisseurs reglements, ISe
         var id = await reglements.EnregistrerAsync(new ReglementAEcrire(fournisseurId, jour, montant, m,
             string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), string.IsNullOrWhiteSpace(banque) ? null : banque.Trim(),
             m == MoyenReglement.Effet ? echeance : null, partTiroir, sessionId, utilisateurId,
-            string.IsNullOrWhiteSpace(commentaire) ? null : commentaire.Trim(), lignes, m == MoyenReglement.Especes ? null : compteId), ct);
+            string.IsNullOrWhiteSpace(commentaire) ? null : commentaire.Trim(), lignes, m == MoyenReglement.Especes || compteId is not > 0 ? null : compteId), ct);
         await journal.EcrireAsync(utilisateurId, "reglement_grossiste", "reglement_fournisseur", id,
             new Dictionary<string, object?>
             {

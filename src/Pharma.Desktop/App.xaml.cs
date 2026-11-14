@@ -58,8 +58,23 @@ public partial class App : Application
             args.Handled = true;
         };
 
-        Resources.Add("services", services.BuildServiceProvider());
+        fournisseur = services.BuildServiceProvider();
+        Resources.Add("services", fournisseur);
         base.OnStartup(e);
+    }
+
+    private ServiceProvider? fournisseur;
+
+    /// <summary>
+    /// Fermeture du logiciel : les services créés sont libérés, dont l'afficheur client (port série refermé, fenêtre client fermée)
+    /// pour que le port soit libre au prochain démarrage.
+    /// </summary>
+    protected override void OnExit(ExitEventArgs e)
+    {
+        try { fournisseur?.Dispose(); }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.IO.IOException) { NoterErreur(ex); }
+        fournisseur = null;
+        base.OnExit(e);
     }
 
     /// <summary>Journal local des erreurs imprévues du poste : %LOCALAPPDATA%\PharmaOfficine\erreurs.log.</summary>

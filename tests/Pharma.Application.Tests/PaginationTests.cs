@@ -24,6 +24,24 @@ public class PaginationTests
     [Fact]
     public void Le_decalage_suit_la_page_et_la_taille() => Assert.Equal(40, DemandePage.Lire(3, 20).Decalage);
 
+    [Theory]
+    [InlineData(int.MaxValue, DemandePage.PageMax)]
+    [InlineData(0, 1)]
+    [InlineData(-5, 1)]
+    public void La_page_reste_dans_ses_bornes_sans_debordement(int demandee, int attendue)
+    {
+        var p = DemandePage.Lire(demandee, 200);
+        Assert.Equal(attendue, p.Page);
+        Assert.Equal((attendue - 1) * 200, p.Decalage);
+    }
+
+    [Fact]
+    public void Decalage_sans_debordement_pour_une_page_construite_hors_bornes()
+    {
+        Assert.Equal(int.MaxValue, new DemandePage(int.MaxValue, 200).Decalage);
+        Assert.Equal(0, new DemandePage(-3, 20).Decalage);
+    }
+
     [Fact]
     public void Un_critere_vide_ne_filtre_pas()
     {

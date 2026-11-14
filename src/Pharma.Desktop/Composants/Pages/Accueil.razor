@@ -32,7 +32,7 @@
                     <a href="./?rubrique=peremption" class="tuile tuile-lien">
                         <span class="tuile-libelle">Lots périmant dans les @(p.Jours / 30) mois</span>
                         <span class="tuile-valeur">@p.Lots</span>
-                        <span class="detail">@p.Boites boîte(s) · @Libelles.Dinars(p.Valeur, 2)</span>
+                        <span class="detail">@p.Boites boîte(s)@if (p.Valeur is { } valeurPeremption) { <text> · @Libelles.Dinars(valeurPeremption, 2)</text> }</span>
                         <span class="tuile-aller">Voir les alertes →</span>
                     </a>
                 }

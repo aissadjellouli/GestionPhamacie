@@ -11,9 +11,10 @@
         {
             <a href="@($"stock?rubrique={r.Id}")" class="@(r.Id == rubrique ? "active" : null)" aria-current="@(r.Id == rubrique ? "page" : null)">@r.Libelle</a>
         }
-        @if (etat is not null)
+        @* Valeur au prix d'achat : envoyée seulement avec le droit « rapports.marges » (titulaire : toujours) *@
+        @if (etat?.Indicateurs.ValeurAchat is { } valeurStock)
         {
-            <div class="nav-resume"><span class="detail">Valeur du stock</span><strong>@Libelles.Dinars(etat.Indicateurs.ValeurAchat)</strong></div>
+            <div class="nav-resume"><span class="detail">Valeur du stock</span><strong>@Libelles.Dinars(valeurStock)</strong></div>
         }
     </NavDomaine>
 
@@ -53,11 +54,14 @@
                 <span class="tuile-libelle">Références en stock</span>
                 <span class="tuile-valeur petite">@etat.Indicateurs.ReferencesEnStock.ToString("N0")</span>
             </div>
-            <div class="tuile">
-                <span class="tuile-libelle">Valeur du stock (prix d’achat)</span>
-                <span class="tuile-valeur petite">@Libelles.Dinars(etat.Indicateurs.ValeurAchat)</span>
-                <span class="tuile-note">hors lots périmés</span>
-            </div>
+            @if (etat.Indicateurs.ValeurAchat is { } valeurAchat)
+            {
+                <div class="tuile">
+                    <span class="tuile-libelle">Valeur du stock (prix d’achat)</span>
+                    <span class="tuile-valeur petite">@Libelles.Dinars(valeurAchat)</span>
+                    <span class="tuile-note">hors lots périmés</span>
+                </div>
+            }
             <div class="tuile">
                 <span class="tuile-libelle">Lots à date à vérifier</span>
                 <span class="tuile-valeur petite @(etat.Indicateurs.LotsDateAVerifier > 0 ? "attention" : null)">@etat.Indicateurs.LotsDateAVerifier</span>

@@ -277,7 +277,7 @@
     private bool Disponible(long venteId) => ventesOrigine.Contains(venteId) || candidates.FirstOrDefault(c => c.VenteId == venteId)?.DejaFacturee != true;
     private IEnumerable<IGrouping<(long? Id, string? Numero), VenteAffichee>> ParOrdonnance =>
         candidates.GroupBy(v => (v.OrdonnanceId, v.OrdonnanceNumero)).OrderBy(g => g.Key.OrdonnanceId is null).ThenBy(g => g.Min(v => v.Date));
-    private decimal TotalEstime => candidates.Where(c => ventes.Contains(c.VenteId)).Sum(c => c.Montant) + libres.Sum(l => decimal.Round(l.Quantite * l.Prix, 2));
+    private decimal TotalEstime => candidates.Where(c => ventes.Contains(c.VenteId)).Sum(c => c.Montant) + libres.Sum(l => decimal.Round(l.Quantite * l.Prix, 2, MidpointRounding.AwayFromZero));
 
     protected override async Task OnInitializedAsync()
     {

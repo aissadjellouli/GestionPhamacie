@@ -13,7 +13,7 @@ internal static class OrdonnancesEndpoints
         // Lignes lues par l'OCR du poste → produits du catalogue à faire valider par le caissier
         api.MapPost("/ordonnances/analyser", async (AnalyseOrdonnanceRequete req, AnalyserOrdonnance analyser, CancellationToken ct) =>
             {
-                var a = await analyser.ExecuterAsync(req.Lignes, ct);
+                var a = await analyser.ExecuterAsync(req.Lignes.Requise(), ct);
                 return Results.Ok(new AnalyseOrdonnanceDto(
                     a.Lignes.Select(l => new LigneOrdonnanceDto(l.Texte, l.Candidats.Select(c => new ProduitCandidatDto(
                         c.ProduitId, c.NomCommercial, c.Dci, c.Dosage, c.Forme, c.PrixPublic, c.Stock, c.Classe.Code(), c.Score)).ToList(), l.NombreBoites)).ToList(),

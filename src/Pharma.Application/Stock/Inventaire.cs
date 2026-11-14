@@ -216,7 +216,7 @@ public sealed class TerminerInventaire(IInventaires inventaires, IPermissionServ
         var decisions = d.Lignes.Select(l =>
         {
             var ecart = l.Compte!.Value - (l.Theorique ?? 0);
-            var valeur = Math.Round(ecart * l.PrixAchatHt, 2);
+            var valeur = Arrondi.Centime(ecart * l.PrixAchatHt);
             return new DecisionLigne(l.Id, ecart, valeur, RegleInventaire.Decider(ecart, valeur, p.SeuilBoites, p.SeuilMontant));
         }).ToList();
 

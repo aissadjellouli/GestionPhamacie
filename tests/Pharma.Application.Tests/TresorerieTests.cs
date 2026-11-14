@@ -29,6 +29,8 @@ internal sealed class TresorerieEnMemoire : ITresorerie
     public Task<long> RemettreChequesAsync(long c, DateOnly d, string? r, IReadOnlyList<long> p, long u, CancellationToken ct = default) => Task.FromResult(12L);
     public Task<long> VerserCaisseAsync(long s, long coffre, decimal m, DateOnly d, bool pendant, bool auto, long u, CancellationToken ct = default)
     { Versements.Add((s, m, pendant, auto)); return Task.FromResult(13L); }
+    public Task<IReadOnlyList<(string Facture, decimal Montant)>> DettesSoldeesAsync(long mouvementId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<(string, decimal)>>([]);
 }
 
 public class TresorerieTests

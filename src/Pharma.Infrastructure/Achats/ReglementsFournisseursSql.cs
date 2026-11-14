@@ -4,6 +4,7 @@ using Pharma.Application.Commun;
 using Pharma.Application.Achats;
 using Pharma.Domain.Achats;
 using Pharma.Domain.Commun;
+using Pharma.Infrastructure.Tresorerie;
 
 namespace Pharma.Infrastructure.Achats;
 
@@ -103,6 +104,10 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
             if (await cmd.ExecuteScalarAsync(ct) is not decimal solde || g.Montant > Math.Max(solde, 0) + 0.005m)
                 throw new RegleMetierException("La dette envers ce grossiste vient de changer : rechargez sa situation.");
         }
+        // Espèces : la part du coffre doit y être (solde relu sous verrou) ; sinon le complément se prend dans le tiroir de la caisse
+        if (g.Moyen == MoyenReglement.Especes && g.Montant > g.PartTiroir)
+            await SoldeTresorerie.ExigerAsync(cx, tx, await CoffreAsync(cx, tx, ct), g.Montant - g.PartTiroir, ct,
+                " : prenez le complément dans le tiroir de la caisse (« Compléter avec le tiroir »)");
         foreach (var (receptionId, montant) in g.Imputations)
         {
             await using var cmd = new NpgsqlCommand("SELECT reste FROM v_facture_fournisseur WHERE reception_id = $1 AND fournisseur_id = $2", cx, tx);
@@ -157,11 +162,17 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
         return id;
     }
 
+    internal static async Task<long> CoffreAsync(NpgsqlConnection cx, NpgsqlTransaction tx, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand("SELECT id FROM compte_tresorerie WHERE type = 'coffre' ORDER BY id LIMIT 1", cx, tx);
+        return await cmd.ExecuteScalarAsync(ct) as long? ?? throw new RegleMetierException("Le coffre de la trésorerie est introuvable.");
+    }
+
     private static NpgsqlParameter Texte(string? v) => new() { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text };
 
     /// <summary>Moyen de règlement tel qu'il s'écrit dans le relevé du grossiste.</summary>
     private static string MoyenEnClair(string code) => code switch
     {
-        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", "effet" => "Effet", _ => code
+        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", "effet" => "Traite", "prelevement" => "Prélèvement", _ => code
     };
 }

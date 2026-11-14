@@ -69,8 +69,22 @@ public interface IMoteurAlertes
 
 public sealed class ListerAlertesOuvertes(IAlertesLecture alertes, Securite.IPermissionService droits)
 {
-    public async Task<IReadOnlyList<Alerte>> ExecuterAsync(long utilisateurId, CancellationToken ct = default) =>
-        await alertes.ListerOuvertesAsync(await AlertesSelonDroits.TypesVisiblesAsync(droits, utilisateurId, ct), ct);
+    /// <summary>
+    /// Alertes que l'employé peut traiter. Sans le droit de voir les prix d'achat (rapports.marges, titulaire), la valeur au prix
+    /// d'achat n'est pas envoyée : ni ValeurDzd, ni le montant cité dans le message.
+    /// </summary>
+    public async Task<IReadOnlyList<Alerte>> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        var liste = await alertes.ListerOuvertesAsync(await AlertesSelonDroits.TypesVisiblesAsync(droits, utilisateurId, ct), ct);
+        return await Securite.PermissionServiceExtensions.VoitPrixAchatAsync(droits, utilisateurId, ct) ? liste : liste.Select(SansValeur).ToList();
+    }
+
+    /// <summary>Alerte sans sa valeur au prix d'achat (« (1 234,00 DA au prix d'achat) » retiré du message).</summary>
+    public static Alerte SansValeur(Alerte a) => a with
+    {
+        ValeurDzd = null,
+        Message = System.Text.RegularExpressions.Regex.Replace(a.Message, @"\s*\([^()]*DA au prix d['’]achat\)", "")
+    };
 
     public async Task<int> CompterUrgentesAsync(long utilisateurId, CancellationToken ct = default) =>
         await alertes.CompterUrgentesAsync(await AlertesSelonDroits.TypesVisiblesAsync(droits, utilisateurId, ct), ct);
@@ -87,7 +101,7 @@ public sealed class ListerAlertesOuvertes(IAlertesLecture alertes, Securite.IPer
             new Commun.Page<Alerte>(retenues.Skip(page.Decalage).Take(page.Taille).ToList(), retenues.Count, page.Page, page.Taille),
             Filtres.ToDictionary(f => f, f => toutes.Count(a => Correspond(a, f))),
             toutes.GroupBy(a => a.Type).ToDictionary(g => g.Key, g => g.Count()),
-            toutes.Where(EstPeremption).Sum(a => a.ValeurDzd ?? 0));
+            await Securite.PermissionServiceExtensions.VoitPrixAchatAsync(droits, utilisateurId, ct) ? toutes.Where(EstPeremption).Sum(a => a.ValeurDzd ?? 0) : null);
     }
 
     public static readonly IReadOnlyList<string> Filtres = ["toutes", "urgent", "peremption", "stock"];
@@ -103,9 +117,9 @@ public sealed class ListerAlertesOuvertes(IAlertesLecture alertes, Securite.IPer
     };
 }
 
-/// <summary>Page d'alertes ; nombre par onglet et par type, et valeur à risque (péremption), sur toutes les alertes ouvertes.</summary>
+/// <summary>Page d'alertes ; nombre par onglet et par type, et valeur à risque (péremption, prix d'achat : null sans le droit), sur toutes les alertes ouvertes.</summary>
 public sealed record PageAlertes(Commun.Page<Alerte> Page, IReadOnlyDictionary<string, int> ParFiltre, IReadOnlyDictionary<string, int> ParType,
-    decimal ValeurARisque);
+    decimal? ValeurARisque);
 
 /// <summary>Crée, met à jour ou clôt les alertes. Renvoie le nombre d'alertes créées ou mises à jour.</summary>
 public sealed class GenererAlertes(IMoteurAlertes moteur)

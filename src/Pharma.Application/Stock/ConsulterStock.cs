@@ -4,7 +4,8 @@ using Pharma.Domain.Catalogue;
 
 namespace Pharma.Application.Stock;
 
-public sealed record IndicateursStock(int ReferencesEnStock, decimal ValeurAchat, int LotsDateAVerifier);
+/// <summary>ValeurAchat : valeur du stock au prix d'achat, null sans le droit de la voir (rapports.marges, titulaire).</summary>
+public sealed record IndicateursStock(int ReferencesEnStock, decimal? ValeurAchat, int LotsDateAVerifier);
 
 /// <summary>
 /// Une ligne du tableau de stock. <see cref="Statut"/> vient de la vue v_etat_stock :
@@ -36,18 +37,25 @@ public sealed class ConsulterStock(IStockLecture stock, IEmplacements? emplaceme
     private static readonly CompareInfo Fr = CultureInfo.GetCultureInfo("fr-FR").CompareInfo;
     private const CompareOptions SansCasseNiAccent = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
 
-    public async Task<EtatStock> ExecuterAsync(CancellationToken ct = default) =>
-        new(await stock.IndicateursAsync(ct), await stock.LignesAsync(ct));
+    public async Task<EtatStock> ExecuterAsync(CancellationToken ct = default, bool voirValeurAchat = false) =>
+        new(await IndicateursAsync(voirValeurAchat, ct), await stock.LignesAsync(ct));
+
+    /// <summary>Valeur au prix d'achat retirée sans le droit de la voir (le serveur ne l'envoie pas).</summary>
+    private async Task<IndicateursStock> IndicateursAsync(bool voirValeurAchat, CancellationToken ct)
+    {
+        var i = await stock.IndicateursAsync(ct);
+        return voirValeurAchat ? i : i with { ValeurAchat = null };
+    }
 
     /// <summary>Tableau filtré et paginé par le serveur ; la recherche ignore majuscules et accents.</summary>
-    public async Task<PageStock> PageAsync(FiltreStock filtre, DemandePage page, CancellationToken ct = default)
+    public async Task<PageStock> PageAsync(FiltreStock filtre, DemandePage page, CancellationToken ct = default, bool voirValeurAchat = false)
     {
         var lignes = await stock.LignesAsync(ct);
         var rayon = filtre.Rayon?.Trim() ?? "";
         var lieux = rayon is "" or "-" || emplacements is null ? [] : await emplacements.ListerAsync(ct);
         var texte = filtre.Recherche?.Trim() ?? "";
         var retenues = lignes.Where(l => PasseFiltre(l, filtre.Filtre) && PasseRecherche(l, texte) && PasseRayon(l, rayon, lieux)).ToList();
-        return new PageStock(await stock.IndicateursAsync(ct),
+        return new PageStock(await IndicateursAsync(voirValeurAchat, ct),
             new Page<LigneStock>(retenues.Skip(page.Decalage).Take(page.Taille).ToList(), retenues.Count, page.Page, page.Taille),
             Suggestions(lignes, texte));
     }

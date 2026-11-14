@@ -39,7 +39,7 @@ public interface ISuiviDettes
 /// <summary>Ancienneté, tranches (échéancier) et alertes, à partir des sommes dues : calcul sans base, testable.</summary>
 public static class RegleSuiviDettes
 {
-    /// <summary>Un effet est signalé quand son échéance arrive dans ce nombre de jours.</summary>
+    /// <summary>Une traite (code « effet ») est signalée quand son échéance arrive dans ce nombre de jours, ou est passée sans paiement.</summary>
     public const int JoursAvantEcheance = 7;
     public static readonly string[] Tranches = ["0-30", "31-60", "61+"];
 
@@ -84,7 +84,7 @@ public static class RegleSuiviDettes
             "facture_organisme" => $"{nombre} facture(s) d'organismes échue(s){rejet} : {da} à encaisser.",
             "bordereau" => $"{nombre} bordereau(x) d'organismes envoyés depuis plus de {delai} jours ou rejetés en partie : {da} à recevoir.",
             "grossiste" => $"{nombre} facture(s) de {tiers} grossiste(s) à payer depuis plus de {delai} jours : {da}.",
-            "effet" => $"{nombre} effet(s) à payer dans les {JoursAvantEcheance} jours : {da} à prévoir en banque.",
+            "effet" => $"{nombre} traite(s) échue(s) ou à payer dans les {JoursAvantEcheance} jours : {da} à prévoir.",
             _ => $"{nombre} somme(s) due(s) : {da}."
         };
     }

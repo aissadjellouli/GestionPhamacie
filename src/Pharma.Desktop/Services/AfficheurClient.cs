@@ -52,11 +52,22 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
         Vfd($"{d.Quantite}x {d.Nom}", Aligner("TOTAL", Montant(aPayer)), Aligner($"{d.Quantite}x {d.Nom}", Montant(d.Montant)));
     }
 
-    /// <summary>Après l'encaissement : payé, reçu et rendu ; retour à l'accueil après 20 secondes.</summary>
-    public void Paiement(decimal aPayer, decimal? recu, decimal rendu)
+    /// <summary>
+    /// Après l'encaissement : payé, reçu et rendu ; retour à l'accueil après 20 secondes. Vente à crédit : « Merci » seulement,
+    /// sans montant (rien n'est payé au comptoir, la dette du patient ne s'affiche pas côté client).
+    /// </summary>
+    public void Paiement(decimal aPayer, decimal? recu, decimal rendu, bool credit = false)
     {
-        Ecran(f => f.Paiement(aPayer, recu, rendu));
-        Vfd(recu is { } r ? Aligner("RECU", Montant(r)) : Aligner("PAYE", Montant(aPayer)), rendu > 0 ? Aligner("RENDU", Montant(rendu)) : "Merci, a bientot");
+        if (credit)
+        {
+            Ecran(f => f.Merci());
+            Vfd("Merci de votre", "visite, a bientot");
+        }
+        else
+        {
+            Ecran(f => f.Paiement(aPayer, recu, rendu));
+            Vfd(recu is { } r ? Aligner("RECU", Montant(r)) : Aligner("PAYE", Montant(aPayer)), rendu > 0 ? Aligner("RENDU", Montant(rendu)) : "Merci, a bientot");
+        }
         AnnulerRetour();
         var jeton = (retourAccueil = new CancellationTokenSource()).Token;
         _ = Task.Delay(TimeSpan.FromSeconds(20), jeton).ContinueWith(t => { if (!t.IsCanceled) Accueil(); }, TaskScheduler.Default);
@@ -186,7 +197,18 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
 
     public void Dispose()
     {
+        AnnulerRetour();
         lock (verrou) { FermerPort(); }
+        // Fenêtre client fermée par son propre fil d'affichage (WPF refuse qu'un autre fil la touche)
+        if (fenetre is { } f)
+        {
+            try
+            {
+                if (!f.Dispatcher.HasShutdownStarted) f.Dispatcher.Invoke(f.Close);
+            }
+            catch (Exception e) when (e is InvalidOperationException or TaskCanceledException) { /* application déjà en cours d'arrêt */ }
+            fenetre = null;
+        }
     }
 
     // ---- Moniteurs (Win32) : WPF ne liste pas les écrans --------------------------------
@@ -287,6 +309,14 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
                 lignes.Children.Add(new TextBlock { Text = $"Reçu : {r.ToString("N2", Fr)} DA", FontSize = 34, Foreground = Brushes.White, Margin = new Thickness(0, 24, 0, 0) });
             sousTotal.Text = rendu > 0 ? $"Payé : {aPayer.ToString("N2", Fr)} DA · rendu" : "Payé";
             total.Text = $"{(rendu > 0 ? rendu : aPayer).ToString("N2", Fr)} DA";
+        }
+
+        /// <summary>Vente à crédit : remerciement seul, sans montant.</summary>
+        public void Merci()
+        {
+            lignes.Children.Clear();
+            lignes.Children.Add(new TextBlock { Text = "Merci de votre visite", FontSize = 48, Foreground = Brushes.White, Margin = new Thickness(0, 40, 0, 0) });
+            (sousTotal.Text, total.Text) = ("", "");
         }
     }
 }

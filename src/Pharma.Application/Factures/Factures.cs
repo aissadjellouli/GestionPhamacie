@@ -209,7 +209,7 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "émettre un avoir", ct);
         var f = await Detail(factureId, ct);
         RegleFacture.VerifierAvoir(f.Resume.Type, f.Resume.Statut, f.Resume.Ttc, f.Resume.Avoirs, montant, motif);
-        var ht = f.Resume.Ttc == 0 ? montant : decimal.Round(montant * f.Ht / f.Resume.Ttc, 2);
+        var ht = f.Resume.Ttc == 0 ? montant : Arrondi.Centime(montant * f.Ht / f.Resume.Ttc);
         var ligne = new LigneFacture(null, null, "libre", $"Avoir sur la facture {f.Resume.Numero} : {motif!.Trim()}", 1, montant, 0, montant);
         var avoir = new FactureAEcrire("avoir", RegleFacture.Lire(f.Resume.Destinataire), f.PatientId, f.ClientId, f.Resume.OrganismeId,
             f.Resume.DestinataireNom, f.DestinataireInfos, horloge.Aujourdhui, null, null, new Totaux(ht, montant - ht, montant), 0, [ligne],

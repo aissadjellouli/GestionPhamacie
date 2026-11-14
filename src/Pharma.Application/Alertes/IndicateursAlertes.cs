@@ -4,8 +4,8 @@ using Pharma.Domain.Securite;
 
 namespace Pharma.Application.Alertes;
 
-/// <summary>Lots vendables qui périment dans les N jours (cumulé : « 60 jours » compte aussi ceux de 30 jours), au prix d'achat.</summary>
-public sealed record HorizonPeremption(int Jours, int Lots, int Boites, decimal Valeur);
+/// <summary>Lots vendables qui périment dans les N jours (cumulé : « 60 jours » compte aussi ceux de 30 jours) ; Valeur au prix d'achat, null sans le droit de la voir.</summary>
+public sealed record HorizonPeremption(int Jours, int Lots, int Boites, decimal? Valeur);
 
 /// <summary>
 /// Indicateurs de l'écran Alertes, en plus des alertes ouvertes. ReglementsAPreparer : sommes dues aux grossistes en alerte
@@ -27,6 +27,8 @@ public sealed class ObtenirIndicateursAlertes(IIndicateursAlertes indicateurs, I
     {
         await droits.ExigerAsync(utilisateurId, Permissions.StockConsulter, "consulter les alertes", ct);
         var horizons = await indicateurs.HorizonsAsync(horloge.Aujourdhui, Horizons, ct);
+        // Valeur au prix d'achat : droit « rapports.marges » ou titulaire
+        if (!await droits.VoitPrixAchatAsync(utilisateurId, ct)) horizons = horizons.Select(h => h with { Valeur = null }).ToList();
         if (!await droits.APermissionAsync(utilisateurId, Permissions.AchatsRegler, ct)) return new IndicateursAlertes(horizons, null, null);
 
         // Même calcul que l'écran Dettes et créances : rien à recompter ici

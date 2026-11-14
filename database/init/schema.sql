@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 072 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 074 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 072 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 074 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict nBYhyXBwSLDzughAm0gApHkBM7Yt3IDoozvtsQAZ66b1FnRMj1KhK7XorZDFbLm
+\restrict f1QcYt1Btlys2uSnckWmRkkNm1k5FNYIygWqcwmIrMrn2NSk9ydyqAIxJjovwAS
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1421,6 +1421,28 @@ $$;
 
 
 --
+-- Name: suivre_compte_carte(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.suivre_compte_carte() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.recoit_carte AND NOT NEW.recoit_carte THEN
+        UPDATE compte_carte_periode SET au = current_date - 1 WHERE compte_id = NEW.id AND au IS NULL AND du < current_date;
+        -- Période ouverte le jour même : elle n'a duré aucun jour
+        DELETE FROM compte_carte_periode WHERE compte_id = NEW.id AND au IS NULL AND du >= current_date;
+    ELSIF NEW.recoit_carte AND (TG_OP = 'INSERT' OR NOT OLD.recoit_carte) THEN
+        -- Une seule banque à la fois : une autre période encore ouverte est close (le logiciel retire d'abord la case à l'ancienne)
+        UPDATE compte_carte_periode SET au = current_date - 1 WHERE compte_id <> NEW.id AND au IS NULL AND du < current_date;
+        DELETE FROM compte_carte_periode WHERE compte_id <> NEW.id AND au IS NULL AND du >= current_date;
+        INSERT INTO compte_carte_periode (compte_id, du) VALUES (NEW.id, current_date);
+    END IF;
+    RETURN NEW;
+END $$;
+
+
+--
 -- Name: surveillance_candidats(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2776,6 +2798,33 @@ ALTER TABLE public.comptage_reception_ligne ALTER COLUMN id ADD GENERATED ALWAYS
 
 
 --
+-- Name: compte_carte_periode; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.compte_carte_periode (
+    id bigint NOT NULL,
+    compte_id bigint NOT NULL,
+    du date NOT NULL,
+    au date,
+    CONSTRAINT compte_carte_periode_check CHECK (((au IS NULL) OR (au >= du)))
+);
+
+
+--
+-- Name: compte_carte_periode_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.compte_carte_periode ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.compte_carte_periode_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: compte_tresorerie; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3801,6 +3850,42 @@ CREATE TABLE public.paiement (
 
 
 --
+-- Name: paiement_effet; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.paiement_effet (
+    id bigint NOT NULL,
+    reglement_id bigint NOT NULL,
+    date_paiement date NOT NULL,
+    moyen text NOT NULL,
+    compte_id bigint,
+    reference text,
+    part_tiroir numeric(12,2) DEFAULT 0 NOT NULL,
+    versement_id bigint,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT paiement_effet_check CHECK (((moyen = 'especes'::text) OR (compte_id IS NOT NULL))),
+    CONSTRAINT paiement_effet_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (versement_id IS NOT NULL)))),
+    CONSTRAINT paiement_effet_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text]))),
+    CONSTRAINT paiement_effet_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
+);
+
+
+--
+-- Name: paiement_effet_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.paiement_effet ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.paiement_effet_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: paiement_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -4331,6 +4416,8 @@ CREATE TABLE public.reglement_facture_client (
     mouvement_id bigint NOT NULL,
     facture_id bigint NOT NULL,
     montant numeric(12,2) NOT NULL,
+    part_credit numeric(12,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT reglement_facture_client_check CHECK (((part_credit >= (0)::numeric) AND (part_credit <= montant))),
     CONSTRAINT reglement_facture_client_montant_check CHECK ((montant > (0)::numeric))
 );
 
@@ -4359,7 +4446,7 @@ CREATE TABLE public.reglement_fournisseur (
     CONSTRAINT reglement_fournisseur_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (session_caisse_id IS NOT NULL)))),
     CONSTRAINT reglement_fournisseur_check2 CHECK (((moyen <> 'effet'::text) OR (echeance IS NOT NULL))),
     CONSTRAINT reglement_fournisseur_montant_check CHECK ((montant > (0)::numeric)),
-    CONSTRAINT reglement_fournisseur_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'effet'::text]))),
+    CONSTRAINT reglement_fournisseur_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'effet'::text, 'prelevement'::text]))),
     CONSTRAINT reglement_fournisseur_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
 );
 
@@ -4818,6 +4905,7 @@ CREATE TABLE public.vente (
     chifa_qr text,
     remise_additionnee boolean DEFAULT false NOT NULL,
     montant_don numeric(12,2) DEFAULT 0 NOT NULL,
+    cle_encaissement uuid,
     CONSTRAINT ck_vente_montant_don CHECK ((montant_don >= (0)::numeric)),
     CONSTRAINT vente_check CHECK (((type = 'libre'::text) OR ((organisme_id IS NOT NULL) AND (patient_id IS NOT NULL)))),
     CONSTRAINT vente_montant_remise_check CHECK ((montant_remise >= (0)::numeric)),
@@ -5064,7 +5152,7 @@ CREATE VIEW public.v_facture_client AS
             WHEN ((f.type = 'avoir'::text) OR (f.statut = 'remplacee'::text)) THEN (0)::numeric
             ELSE GREATEST(((((f.montant_ttc - f.deja_paye) - COALESCE(( SELECT sum(a.montant_ttc) AS sum
                FROM public.facture_client a
-              WHERE ((a.facture_origine_id = f.id) AND (a.type = 'avoir'::text))), (0)::numeric)) - COALESCE(( SELECT sum(r.montant) AS sum
+              WHERE ((a.facture_origine_id = f.id) AND (a.type = 'avoir'::text))), (0)::numeric)) - COALESCE(( SELECT sum((r.montant - r.part_credit)) AS sum
                FROM public.reglement_facture_client r
               WHERE (r.facture_id = f.id)), (0)::numeric)) - COALESCE(( SELECT sum(c.regle) AS sum
                FROM public.v_vente_credit c
@@ -5513,21 +5601,18 @@ CREATE VIEW public.v_solde_tresorerie AS
     actif,
     solde_initial,
     date_initiale,
-    (((((solde_initial + COALESCE(( SELECT sum(
+    ((((((solde_initial + COALESCE(( SELECT sum(
                 CASE
                     WHEN (m.sens = 'entree'::text) THEN m.montant
                     ELSE (- m.montant)
                 END) AS sum
            FROM public.mouvement_tresorerie m
-          WHERE ((m.compte_id = c.id) AND (m.date_mouvement >= c.date_initiale))), (0)::numeric)) +
-        CASE
-            WHEN recoit_carte THEN COALESCE(( SELECT sum(p.montant) AS sum
-               FROM public.paiement p
-              WHERE ((p.mode = 'carte'::text) AND (p.cree_le >= c.date_initiale) AND ((p.vente_id IS NULL) OR (EXISTS ( SELECT 1
-                       FROM public.vente v
-                      WHERE ((v.id = p.vente_id) AND (v.statut = ANY (ARRAY['validee'::text, 'annulee'::text])))))))), (0)::numeric)
-            ELSE (0)::numeric
-        END) + COALESCE(( SELECT sum(p.montant) AS sum
+          WHERE ((m.compte_id = c.id) AND (m.date_mouvement >= c.date_initiale))), (0)::numeric)) + COALESCE(( SELECT sum(p.montant) AS sum
+           FROM (public.paiement p
+             JOIN public.compte_carte_periode h ON (((h.compte_id = c.id) AND ((p.cree_le)::date >= h.du) AND ((h.au IS NULL) OR ((p.cree_le)::date <= h.au)))))
+          WHERE ((p.mode = 'carte'::text) AND (p.cree_le >= c.date_initiale) AND ((p.vente_id IS NULL) OR (EXISTS ( SELECT 1
+                   FROM public.vente v
+                  WHERE ((v.id = p.vente_id) AND (v.statut = ANY (ARRAY['validee'::text, 'annulee'::text])))))))), (0)::numeric)) + COALESCE(( SELECT sum(p.montant) AS sum
            FROM ((public.remise_cheques r
              JOIN public.remise_cheque_paiement rp ON ((rp.remise_id = r.id)))
              JOIN public.paiement p ON ((p.id = rp.paiement_id)))
@@ -5541,15 +5626,21 @@ CREATE VIEW public.v_solde_tresorerie AS
                 CASE
                     WHEN (g.moyen = 'effet'::text) THEN g.echeance
                     ELSE g.date_reglement
-                END >= c.date_initiale) AND ((g.moyen <> 'effet'::text) OR (g.echeance <= CURRENT_DATE)))), (0)::numeric)) -
-        CASE
-            WHEN recoit_carte THEN (COALESCE(( SELECT sum(annulation_vente.montant_rembourse) AS sum
-               FROM public.annulation_vente
-              WHERE ((annulation_vente.mode = 'carte'::text) AND (annulation_vente.montant_rembourse > (0)::numeric) AND (annulation_vente.cree_le >= c.date_initiale))), (0)::numeric) + COALESCE(( SELECT sum(retour_client.montant_rembourse) AS sum
-               FROM public.retour_client
-              WHERE ((retour_client.mode = 'carte'::text) AND (retour_client.montant_rembourse > (0)::numeric) AND (retour_client.cree_le >= c.date_initiale))), (0)::numeric))
-            ELSE (0)::numeric
-        END) AS solde
+                END >= c.date_initiale) AND ((g.moyen <> 'effet'::text) OR (g.echeance <= CURRENT_DATE)))), (0)::numeric)) - COALESCE(( SELECT sum(g.montant) AS sum
+           FROM (public.paiement_effet pe
+             JOIN public.reglement_fournisseur g ON ((g.id = pe.reglement_id)))
+          WHERE ((g.compte_id IS NULL) AND (((pe.moyen = 'especes'::text) AND (c.type = 'coffre'::text)) OR ((pe.moyen <> 'especes'::text) AND (pe.compte_id = c.id))) AND (pe.date_paiement >= c.date_initiale))), (0)::numeric)) - COALESCE(( SELECT sum(x.montant_rembourse) AS sum
+           FROM (( SELECT a.cree_le,
+                    a.montant_rembourse
+                   FROM public.annulation_vente a
+                  WHERE ((a.mode = 'carte'::text) AND (a.montant_rembourse > (0)::numeric))
+                UNION ALL
+                 SELECT rc.cree_le,
+                    rc.montant_rembourse
+                   FROM public.retour_client rc
+                  WHERE ((rc.mode = 'carte'::text) AND (rc.montant_rembourse > (0)::numeric))) x
+             JOIN public.compte_carte_periode h ON (((h.compte_id = c.id) AND ((x.cree_le)::date >= h.du) AND ((h.au IS NULL) OR ((x.cree_le)::date <= h.au)))))
+          WHERE (x.cree_le >= c.date_initiale)), (0)::numeric)) AS solde
    FROM public.compte_tresorerie c;
 
 
@@ -5588,7 +5679,10 @@ CREATE VIEW public.v_suivi_dettes AS
     false AS rejetee
    FROM (public.v_vente_credit c
      JOIN public.patient p ON ((p.id = c.patient_id)))
-  WHERE (c.reste > (0)::numeric)
+  WHERE ((c.reste > (0)::numeric) AND (NOT (EXISTS ( SELECT 1
+           FROM (public.facture_client_ligne fl
+             JOIN public.v_facture_client vf ON ((vf.id = fl.facture_id)))
+          WHERE ((fl.vente_id = c.vente_id) AND (fl.part = 'patient'::text) AND (vf.type = 'facture'::text) AND (vf.statut <> 'remplacee'::text) AND (NOT vf.hors_suivi) AND (vf.reste > (0)::numeric))))))
 UNION ALL
  SELECT 'creance'::text AS sens,
     'patient'::text AS categorie,
@@ -5676,14 +5770,20 @@ UNION ALL
     'effet'::text AS categorie,
     g.fournisseur_id AS tiers_id,
     f.raison_sociale AS tiers,
-    (('Effet '::text || COALESCE(g.reference, ''::text)) || COALESCE(((' ('::text || g.banque) || ')'::text), ''::text)) AS libelle,
+    ((('Traite '::text || COALESCE(g.reference, ''::text)) || COALESCE(((' ('::text || g.banque) || ')'::text), ''::text)) ||
+        CASE
+            WHEN (g.echeance < CURRENT_DATE) THEN ' · échue, non payée'::text
+            ELSE ''::text
+        END) AS libelle,
     g.date_reglement AS date_reference,
     g.echeance,
     g.montant,
     false AS rejetee
    FROM (public.reglement_fournisseur g
      JOIN public.fournisseur f ON ((f.id = g.fournisseur_id)))
-  WHERE ((g.moyen = 'effet'::text) AND (g.echeance >= CURRENT_DATE));
+  WHERE ((g.moyen = 'effet'::text) AND (NOT (EXISTS ( SELECT 1
+           FROM public.paiement_effet pe
+          WHERE (pe.reglement_id = g.id)))) AND ((g.echeance >= CURRENT_DATE) OR (g.compte_id IS NULL)));
 
 
 --
@@ -5937,6 +6037,14 @@ ALTER TABLE ONLY public.comptage_reception_ligne
 
 ALTER TABLE ONLY public.comptage_reception
     ADD CONSTRAINT comptage_reception_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: compte_carte_periode compte_carte_periode_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compte_carte_periode
+    ADD CONSTRAINT compte_carte_periode_pkey PRIMARY KEY (id);
 
 
 --
@@ -6241,6 +6349,22 @@ ALTER TABLE ONLY public.organisme
 
 ALTER TABLE ONLY public.organisme
     ADD CONSTRAINT organisme_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: paiement_effet paiement_effet_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_effet
+    ADD CONSTRAINT paiement_effet_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: paiement_effet paiement_effet_reglement_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_effet
+    ADD CONSTRAINT paiement_effet_reglement_id_key UNIQUE (reglement_id);
 
 
 --
@@ -6663,6 +6787,13 @@ CREATE INDEX idx_boite_reception ON public.boite USING btree (reception_id);
 --
 
 CREATE INDEX idx_comptage_intermediaire_session ON public.comptage_intermediaire USING btree (session_caisse_id, cree_le);
+
+
+--
+-- Name: idx_compte_carte_periode; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_compte_carte_periode ON public.compte_carte_periode USING btree (compte_id, du);
 
 
 --
@@ -7275,6 +7406,13 @@ CREATE UNIQUE INDEX ux_vente_chifa_facture ON public.vente USING btree (chifa_fa
 
 
 --
+-- Name: ux_vente_cle_encaissement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_vente_cle_encaissement ON public.vente USING btree (cle_encaissement) WHERE (cle_encaissement IS NOT NULL);
+
+
+--
 -- Name: v_mouvement_tresorerie _RETURN; Type: RULE; Schema: public; Owner: -
 --
 
@@ -7294,7 +7432,7 @@ CREATE OR REPLACE VIEW public.v_mouvement_tresorerie AS
    FROM (public.mouvement_tresorerie m
      JOIN public.utilisateur u ON ((u.id = m.utilisateur_id)))
 UNION ALL
- SELECT c.id AS compte_id,
+ SELECT h.compte_id,
     (p.cree_le)::date AS date,
     'entree'::text AS sens,
     sum(p.montant) AS montant,
@@ -7307,10 +7445,10 @@ UNION ALL
     NULL::bigint AS source_id,
     max(p.cree_le) AS cree_le
    FROM ((public.paiement p
-     JOIN public.compte_tresorerie c ON (c.recoit_carte))
+     JOIN public.compte_carte_periode h ON ((((p.cree_le)::date >= h.du) AND ((h.au IS NULL) OR ((p.cree_le)::date <= h.au)))))
      LEFT JOIN public.vente v ON ((v.id = p.vente_id)))
   WHERE ((p.mode = 'carte'::text) AND ((p.vente_id IS NULL) OR (v.statut = ANY (ARRAY['validee'::text, 'annulee'::text]))))
-  GROUP BY c.id, ((p.cree_le)::date)
+  GROUP BY h.compte_id, ((p.cree_le)::date)
 UNION ALL
  SELECT r.compte_id,
     r.date_remise AS date,
@@ -7359,7 +7497,31 @@ UNION ALL
      JOIN public.utilisateur u ON ((u.id = g.utilisateur_id)))
   WHERE ((g.montant > g.part_tiroir) AND ((g.moyen = 'especes'::text) OR (g.compte_id IS NOT NULL)))
 UNION ALL
- SELECT c.id AS compte_id,
+ SELECT
+        CASE
+            WHEN (pe.moyen = 'especes'::text) THEN ( SELECT compte_tresorerie.id
+               FROM public.compte_tresorerie
+              WHERE (compte_tresorerie.type = 'coffre'::text))
+            ELSE pe.compte_id
+        END AS compte_id,
+    pe.date_paiement AS date,
+    'sortie'::text AS sens,
+    g.montant,
+    'reglement_grossiste'::text AS nature,
+    NULL::text AS categorie,
+    ((('Traite '::text || COALESCE((g.reference || ' '::text), ''::text)) || 'payée · '::text) || f.raison_sociale) AS libelle,
+    pe.reference,
+    u.nom_complet AS employe,
+    'calcule'::text AS origine,
+    pe.id AS source_id,
+    pe.cree_le
+   FROM (((public.paiement_effet pe
+     JOIN public.reglement_fournisseur g ON ((g.id = pe.reglement_id)))
+     JOIN public.fournisseur f ON ((f.id = g.fournisseur_id)))
+     JOIN public.utilisateur u ON ((u.id = pe.utilisateur_id)))
+  WHERE (g.compte_id IS NULL)
+UNION ALL
+ SELECT h.compte_id,
     (x.cree_le)::date AS date,
     'sortie'::text AS sens,
     x.montant_rembourse AS montant,
@@ -7382,7 +7544,7 @@ UNION ALL
             'Remboursement carte (retour)'::text AS libelle
            FROM public.retour_client
           WHERE ((retour_client.mode = 'carte'::text) AND (retour_client.montant_rembourse > (0)::numeric))) x
-     JOIN public.compte_tresorerie c ON (c.recoit_carte));
+     JOIN public.compte_carte_periode h ON ((((x.cree_le)::date >= h.du) AND ((h.au IS NULL) OR ((x.cree_le)::date <= h.au)))));
 
 
 --
@@ -7446,6 +7608,13 @@ CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.retour_client FOR EACH
 --
 
 CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.vente FOR EACH ROW EXECUTE FUNCTION public.verifier_caisse_ouverte();
+
+
+--
+-- Name: compte_tresorerie trg_compte_carte; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_compte_carte AFTER INSERT OR UPDATE OF recoit_carte ON public.compte_tresorerie FOR EACH ROW EXECUTE FUNCTION public.suivre_compte_carte();
 
 
 --
@@ -7991,6 +8160,14 @@ ALTER TABLE ONLY public.comptage_reception
 
 
 --
+-- Name: compte_carte_periode compte_carte_periode_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compte_carte_periode
+    ADD CONSTRAINT compte_carte_periode_compte_id_fkey FOREIGN KEY (compte_id) REFERENCES public.compte_tresorerie(id);
+
+
+--
 -- Name: connexion_employe connexion_employe_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8476,6 +8653,38 @@ ALTER TABLE ONLY public.ordonnance
 
 ALTER TABLE ONLY public.ordonnance
     ADD CONSTRAINT ordonnance_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: paiement_effet paiement_effet_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_effet
+    ADD CONSTRAINT paiement_effet_compte_id_fkey FOREIGN KEY (compte_id) REFERENCES public.compte_tresorerie(id);
+
+
+--
+-- Name: paiement_effet paiement_effet_reglement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_effet
+    ADD CONSTRAINT paiement_effet_reglement_id_fkey FOREIGN KEY (reglement_id) REFERENCES public.reglement_fournisseur(id);
+
+
+--
+-- Name: paiement_effet paiement_effet_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_effet
+    ADD CONSTRAINT paiement_effet_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: paiement_effet paiement_effet_versement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.paiement_effet
+    ADD CONSTRAINT paiement_effet_versement_id_fkey FOREIGN KEY (versement_id) REFERENCES public.mouvement_tresorerie(id);
 
 
 --
@@ -8986,5 +9195,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict nBYhyXBwSLDzughAm0gApHkBM7Yt3IDoozvtsQAZ66b1FnRMj1KhK7XorZDFbLm
+\unrestrict f1QcYt1Btlys2uSnckWmRkkNm1k5FNYIygWqcwmIrMrn2NSk9ydyqAIxJjovwAS
 

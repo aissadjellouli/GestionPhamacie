@@ -79,18 +79,22 @@ public class Vente
     /// part de l'organisme en tiers payant pour un produit remboursable.
     /// </summary>
     /// <param name="autoriserBloque">Vrai quand la vente d'un produit bloqué est validée par une personne habilitée (contrôlé par l'encaissement).</param>
-    public LigneVente AjouterProduit(Produit produit, Lot lot, int quantite, DateOnly aujourdhui, bool autoriserBloque = false)
+    /// <param name="controlerLot">
+    /// Faux seulement pour recalculer les montants d'une vente déjà enregistrée (même panier renvoyé) : son stock a déjà été sorti,
+    /// le lot n'est pas contrôlé.
+    /// </param>
+    public LigneVente AjouterProduit(Produit produit, Lot lot, int quantite, DateOnly aujourdhui, bool autoriserBloque = false, bool controlerLot = true)
     {
         if (quantite <= 0)
             throw new RegleMetierException("La quantité doit être d’au moins une boîte.");
         if (lot.ProduitId != produit.Id)
-            throw new ArgumentException("Ce lot n'appartient pas à ce produit.", nameof(lot));
+            throw new RegleMetierException($"{produit.NomCommercial} : ce lot n’appartient pas à ce produit, rescannez la boîte.");
 
         if (produit.BloqueVente && !autoriserBloque)
             throw new RegleMetierException($"{produit.NomCommercial} : produit bloqué à la vente{(produit.MotifBlocage is { } m ? $" ({m})" : "")}. Retirez-le du panier.");
-        lot.VerifierVendable(aujourdhui);
+        if (controlerLot) lot.VerifierVendable(aujourdhui);
         var demandee = _lignes.Where(l => l.LotId == lot.Id).Sum(l => l.Quantite) + quantite;
-        if (demandee > lot.QuantiteDisponible)
+        if (controlerLot && demandee > lot.QuantiteDisponible)
             throw new RegleMetierException(
                 $"{produit.NomCommercial}, lot {lot.NumeroLot} : {lot.QuantiteDisponible} boîte(s) disponible(s), {demandee} demandée(s).");
 
@@ -101,7 +105,10 @@ public class Vente
             Medicament = produit.EstMedicament, Remboursable = produit.Remboursable
         };
         if (Type == TypeVente.TiersPayant && produit.Remboursable && produit.TarifReference is { } tarif)
+        {
+            ligne.PriseEnCharge = true;
             ligne.CalculerTiersPayant(tarif, TauxTiersPayant ?? 0);
+        }
         else
             ligne.SansTiersPayant();
 
@@ -143,17 +150,24 @@ public class Vente
     public bool DonManuelSurMedicaments => _lignes.Any(l => l.Medicament && l.ReductionManuelle > 0);
 
     /// <summary>
-    /// Tiers payant : le caissier fixe le reste à charge du patient. La part de l'organisme est la différence, répartie sur les
-    /// lignes au prorata de leur montant (le taux de prise en charge choisi n'est pas appliqué).
+    /// Tiers payant : le caissier fixe le reste à charge du patient. La part de l'organisme est la différence, répartie au prorata
+    /// de leur montant sur les seules lignes prises en charge (produit remboursable avec un tarif de référence), sans plafond par ligne
+    /// au tarif de référence ; les autres lignes restent entièrement à la charge du patient : le reste saisi est donc au moins leur
+    /// montant. Le taux de prise en charge choisi n'est pas appliqué.
     /// </summary>
     public void SaisirResteACharge(decimal reste)
     {
         if (Type != TypeVente.TiersPayant)
             throw new RegleMetierException("Le reste à charge ne se saisit qu’en tiers payant.", "reste_a_charge");
         var brut = _lignes.Sum(l => l.PrixUnitaire * l.Quantite);
+        var nonPrisEnCharge = _lignes.Where(l => !l.PriseEnCharge).Sum(l => l.PrixUnitaire * l.Quantite);
         if (reste < 0 || reste > brut)
             throw new RegleMetierException($"Le reste à charge doit être compris entre 0 et {brut:N2} DA (montant de la vente).", "reste_a_charge");
-        ResteSaisi = Math.Round(reste, 2, MidpointRounding.AwayFromZero);
+        if (reste < nonPrisEnCharge)
+            throw new RegleMetierException(
+                $"Le reste à charge doit être d’au moins {nonPrisEnCharge:N2} DA : montant des produits non remboursables (ou sans tarif de référence), que l’organisme ne prend pas en charge.",
+                "reste_a_charge");
+        ResteSaisi = Arrondi.Centime(reste);
         RecalculerTotaux();
     }
 
@@ -162,13 +176,16 @@ public class Vente
         var brut = _lignes.Sum(l => l.PrixUnitaire * l.Quantite);
         if (ResteSaisi is { } reste && brut > 0)
         {
-            var organisme = brut - Math.Min(reste, brut);
+            // Part de l'organisme : seulement sur les lignes prises en charge ; les autres restent à 0 (SansTiersPayant)
+            var prises = _lignes.Where(l => l.PriseEnCharge).ToList();
+            var basePrise = prises.Sum(l => l.PrixUnitaire * l.Quantite);
+            var organisme = Math.Min(brut - Math.Min(reste, brut), basePrise);
             var reparti = 0m;
-            for (var i = 0; i < _lignes.Count; i++)
+            for (var i = 0; i < prises.Count; i++)
             {
-                var montant = _lignes[i].PrixUnitaire * _lignes[i].Quantite;
-                var part = i == _lignes.Count - 1 ? organisme - reparti : Math.Round(organisme * montant / brut, 2, MidpointRounding.AwayFromZero);
-                _lignes[i].ImposerPartOrganisme(part);
+                var montant = prises[i].PrixUnitaire * prises[i].Quantite;
+                var part = i == prises.Count - 1 ? organisme - reparti : basePrise == 0 ? 0 : Arrondi.Centime(organisme * montant / basePrise);
+                prises[i].ImposerPartOrganisme(part);
                 reparti += part;
             }
         }

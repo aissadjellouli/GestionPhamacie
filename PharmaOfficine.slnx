@@ -150,6 +150,8 @@
     <File Path="database/migration/070_comptage_intermediaire.sql" />
     <File Path="database/migration/071_don_remise_par_personne.sql" />
     <File Path="database/migration/072_remises_automatiques.sql" />
+    <File Path="database/migration/073_cle_encaissement.sql" />
+    <File Path="database/migration/074_tresorerie_traites.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

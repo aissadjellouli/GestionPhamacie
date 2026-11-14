@@ -27,12 +27,16 @@ public sealed record OrdonnanceSaisie(long? MedecinId, DateOnly DatePrescription
 public sealed record PorteurOrdonnance(string? Nom, string? Adresse, string? PieceIdentite);
 
 /// <summary>Panier envoyé par le poste, avec le règlement choisi.</summary>
+/// <param name="CleEncaissement">
+/// Clé du panier créée par le poste (renouvelée après une vente réussie, un panier vidé ou mis en attente) : un nouvel essai du
+/// même encaissement rend la vente déjà enregistrée au lieu d'en créer une seconde.
+/// </param>
 public sealed record CommandeVente(
     IReadOnlyList<LigneCommande> Lignes,
     bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
     long? PatientId, OrdonnanceSaisie? Ordonnance,
     decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null,
-    string? VoletChifa = null, bool RemiseAdditionnee = false);
+    string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null);
 
 /// <summary>Réductions d'une ligne (ordre des lignes envoyées) : remise automatique, pourcentage appliqué, montant ; DonPartiel pour un médicament.</summary>
 public sealed record ReductionLigne(decimal RemiseAutoPct, decimal PctApplique, decimal Montant, bool DonPartiel);
@@ -59,7 +63,27 @@ public sealed record VenteEncaissee(
 public sealed record VenteAEnregistrer(
     Vente Vente, Reglement Reglement, OrdonnanceSaisie? Ordonnance,
     IReadOnlySet<long> ProduitsSousRegistre, bool CreditAccorde, IReadOnlyDictionary<long, IReadOnlyList<long>>? BoitesParLot = null,
-    Pharma.Domain.Ventes.QrChifa? VoletChifa = null);
+    Pharma.Domain.Ventes.QrChifa? VoletChifa = null, Guid? CleEncaissement = null);
+
+/// <summary>
+/// Vente déjà enregistrée avec une clé d'encaissement. Mode : celui du paiement enregistré (null si le patient n'avait rien à payer) ;
+/// Annulee : la vente a été annulée depuis. Lignes : produits, lots et quantités enregistrés (null : non relus, pas comparés).
+/// </summary>
+public sealed record VenteDejaEncaissee(long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
+    ModePaiement? Mode, bool Annulee, IReadOnlyList<LigneDejaEncaissee>? Lignes = null);
+
+/// <summary>Ligne d'une vente déjà enregistrée avec une clé d'encaissement.</summary>
+public sealed record LigneDejaEncaissee(long ProduitId, long LotId, int Quantite);
+
+/// <summary>
+/// Un autre encaissement du même panier (même clé) vient d'enregistrer la vente : l'adaptateur a tout annulé de son côté,
+/// l'encaissement rend la vente déjà enregistrée.
+/// </summary>
+public sealed class EncaissementDejaEnregistreException(Guid cle)
+    : Exception("Ce panier vient d’être encaissé par un autre envoi du poste.")
+{
+    public Guid Cle { get; } = cle;
+}
 
 public interface IPreparationVente
 {
@@ -73,9 +97,13 @@ public interface IVentesEcriture
 {
     /// <summary>
     /// Vente, lignes, stock, mouvements, paiement, ordonnance, registre des psychotropes, crédit et journal,
-    /// en une seule transaction. Renvoie l'identifiant et le numéro de ticket.
+    /// en une seule transaction. Renvoie l'identifiant et le numéro de ticket. Clé d'encaissement déjà prise par une vente
+    /// enregistrée entre-temps : <see cref="EncaissementDejaEnregistreException"/>, rien n'est enregistré.
     /// </summary>
     Task<(long Id, string Numero)> EnregistrerAsync(VenteAEnregistrer vente, CancellationToken ct = default);
+
+    /// <summary>Vente enregistrée avec cette clé d'encaissement, ou null.</summary>
+    Task<VenteDejaEncaissee?> VenteParCleAsync(Guid cle, CancellationToken ct = default);
 }
 
 public sealed class Encaisser(
@@ -171,6 +199,11 @@ public sealed class Encaisser(
     /// <summary>La vente est enregistrée sur la caisse du poste, au nom de l'employé connecté.</summary>
     public async Task<VenteEncaissee> ExecuterAsync(CommandeVente commande, long utilisateurId, string? poste, CancellationToken ct = default)
     {
+        // Même panier renvoyé par le poste (réponse arrivée après son délai d'attente, nouvel essai) : la vente déjà enregistrée,
+        // jamais une seconde
+        if (commande.CleEncaissement is { } cleDeja && await DejaEncaisseeAsync(cleDeja, commande, ct) is { } deja)
+            return deja;
+
         var session = await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct)
                       ?? throw new RegleMetierException("Ouvrez la caisse du poste avant d’encaisser.");
 
@@ -240,8 +273,20 @@ public sealed class Encaisser(
 
         vente.Valider();
         var sousRegistre = produits.Values.Where(p => p.EstSousRegistre).Select(p => p.Id).ToHashSet();
-        var (id, numero) = await ventes.EnregistrerAsync(
-            new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit, BoitesParLot(commande), volet), ct);
+        long id;
+        string numero;
+        try
+        {
+            (id, numero) = await ventes.EnregistrerAsync(
+                new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit, BoitesParLot(commande), volet,
+                    commande.CleEncaissement), ct);
+        }
+        catch (EncaissementDejaEnregistreException e)
+        {
+            // Deux envois simultanés du même panier : l'autre a enregistré la vente, celui-ci la rend
+            return await DejaEncaisseeAsync(e.Cle, commande, ct)
+                   ?? throw new RegleMetierException("Ce panier vient d’être encaissé par un autre envoi : vérifiez les dernières ventes avant de réessayer.");
+        }
 
         if (validePar is { } vp && journal is not null)
             await journal.EcrireAsync(utilisateurId, "vente_produit_bloque", "vente", id,
@@ -262,6 +307,50 @@ public sealed class Encaisser(
     }
 
     /// <summary>
+    /// Vente déjà enregistrée avec cette clé : rendue telle quelle (monnaie recalculée sur le montant reçu renvoyé par le poste).
+    /// Annulée depuis : refus clair, le caissier recommence avec un nouveau panier.
+    /// </summary>
+    private async Task<VenteEncaissee?> DejaEncaisseeAsync(Guid cle, CommandeVente commande, CancellationToken ct)
+    {
+        if (await ventes.VenteParCleAsync(cle, ct) is not { } v) return null;
+        if (v.Annulee)
+            throw new RegleMetierException($"Ce panier a déjà été encaissé (ticket {v.Numero}) puis la vente a été annulée : videz le panier et recommencez.");
+        if (!await MemeContenuAsync(v, commande, ct))
+            throw new RegleMetierException(
+                $"Cette vente a déjà été enregistrée (ticket N° {v.Numero}) avec un contenu différent : vérifiez avant de réencaisser.");
+        var mode = v.Mode ?? commande.Mode;
+        var rendu = mode == ModePaiement.Especes && commande.MontantRecu is { } recu && recu > v.PartPatient ? recu - v.PartPatient : 0;
+        return new VenteEncaissee(v.VenteId, v.Numero, v.MontantTotal, v.PartOrganisme, v.PartPatient, mode, rendu);
+    }
+
+    /// <summary>
+    /// Le panier renvoyé avec la clé est-il celui de la vente enregistrée ? Mêmes produits, lots et quantités, et même montant à payer
+    /// par le patient, recalculé sans contrôler le stock (déjà sorti par la vente enregistrée). Montant impossible à recalculer
+    /// (produit retiré entre-temps…) : seules les lignes sont comparées.
+    /// </summary>
+    private async Task<bool> MemeContenuAsync(VenteDejaEncaissee v, CommandeVente commande, CancellationToken ct)
+    {
+        if (v.Lignes is { } enregistrees)
+        {
+            static Dictionary<(long, long), int> ParLot(IEnumerable<(long Produit, long Lot, int Quantite)> lignes) =>
+                lignes.GroupBy(l => (l.Produit, l.Lot)).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantite));
+            var avant = ParLot(enregistrees.Select(l => (l.ProduitId, l.LotId, l.Quantite)));
+            var envoye = ParLot(commande.Lignes.Select(l => (l.ProduitId, l.LotId, l.Quantite)));
+            if (avant.Count != envoye.Count || avant.Any(a => envoye.GetValueOrDefault(a.Key) != a.Value)) return false;
+        }
+        Vente recalculee;
+        try
+        {
+            (recalculee, _) = await ConstruireAsync(commande, 0, sessionId: null, ct, controlerLots: false);
+        }
+        catch (RegleMetierException)
+        {
+            return true;
+        }
+        return recalculee.PartPatient == v.PartPatient;
+    }
+
+    /// <summary>
     /// Après la vente : ancien lot délaissé au profit d'un lot plus récent (seuil atteint par un vendeur) ; alerte au titulaire, prévenu
     /// par SMS ou e-mail. La vente est enregistrée : un échec ici ne l'annule pas.
     /// </summary>
@@ -277,7 +366,7 @@ public sealed class Encaisser(
     }
 
     private async Task<(Vente, IReadOnlyDictionary<long, Produit>)> ConstruireAsync(
-        CommandeVente c, long utilisateurId, long? sessionId, CancellationToken ct)
+        CommandeVente c, long utilisateurId, long? sessionId, CancellationToken ct, bool controlerLots = true)
     {
         if (c.Lignes.Count == 0)
             throw new RegleMetierException("Le panier est vide.");
@@ -306,7 +395,7 @@ public sealed class Encaisser(
                     $"{produit.NomCommercial} : produit repris de l’ancien logiciel, à vérifier par le titulaire avant la vente (Administration, Nomenclature nationale, « Produits à vérifier »).");
             if (!lots.TryGetValue(ligne.LotId, out var lot))
                 throw new RegleMetierException($"{produit.NomCommercial} : lot introuvable, rescannez la boîte.");
-            vente.AjouterProduit(produit, lot, ligne.Quantite, aujourdhui, autoriserBloque: true);   // blocage contrôlé à l'encaissement
+            vente.AjouterProduit(produit, lot, ligne.Quantite, aujourdhui, autoriserBloque: true, controlerLot: controlerLots);   // blocage contrôlé à l'encaissement
         }
 
         // Tiers payant : reste à charge fixé par le caissier, au lieu du taux de prise en charge

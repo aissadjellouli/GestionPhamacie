@@ -74,7 +74,7 @@ internal static class CaisseEndpoints
         caisse.MapPost("/cloturer", async (ClotureRequete req, CloturerSessionCaisse cloturer, Pharma.Application.Tresorerie.VerserCaisseAuCoffre verser,
                 ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
-                var vue = await cloturer.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies, ct);
+                var vue = await cloturer.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct);
                 var verse = await verser.ApresClotureAutomatiqueAsync(vue.SessionId, user.UtilisateurId(), ct);
                 return Results.Ok(VersDto(vue) with { VerseAuCoffre = verse });
             })
@@ -161,7 +161,7 @@ internal static class CaisseEndpoints
                 HttpRequest requete, CancellationToken ct) =>
             {
                 var r = await enregistrer.ExecuterAsync(id, req.Motif,
-                    req.Lignes.Select(l => new LigneRetourDemandee(l.LigneVenteId, l.Quantite, l.Destination, l.Boites)).ToList(),
+                    req.Lignes.Requise().Select(l => new LigneRetourDemandee(l.LigneVenteId, l.Quantite, l.Destination, l.Boites)).ToList(),
                     user.UtilisateurId(), requete.Poste(), req.ValidateurIdentifiant, req.ValidateurCode, req.SolderDette, req.PatientDetteId, ct,
                     req.AccordClient);
                 return Results.Ok(new RetourClientDto(r.Numero, r.ARendre, r.Mode, r.RemisEnStock, r.ADetruire, r.ValidePar, r.DetteDiminuee));
@@ -207,7 +207,7 @@ internal static class CaisseEndpoints
         caisse.MapPost("/comptage-intermediaire", async (ClotureRequete req, GererEtatIntermediaire gerer, ClaimsPrincipal user, HttpRequest requete,
                 CancellationToken ct) =>
             {
-                var r = await gerer.CompterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies, ct);
+                var r = await gerer.CompterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct);
                 // Même présentation que la clôture (écart seulement avec le droit de voir les écarts)
                 return Results.Ok(new ClotureDto(r.SessionId, r.Compte, r.FondCaisse, r.VentesEspeces, r.Attendu, r.Ecart, r.AuDelaDuSeuil, r.SeuilEcart));
             })
@@ -215,7 +215,7 @@ internal static class CaisseEndpoints
 
         caisse.MapPost("/releve", async (ClotureRequete req, ReleverCaisse relever, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
-                var r = await relever.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies, ct);
+                var r = await relever.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct);
                 return Results.Ok(new ReleveDto(VersDto(r.Cloture), r.NouvelleSessionId));
             })
            .ExigerPermission(Permissions.CaisseVendre);
@@ -248,12 +248,12 @@ internal static class CaisseEndpoints
         catch (ArgumentException) { throw new RegleMetierException($"Mode de paiement inconnu : {d.Mode}."); }
 
         return new CommandeVente(
-            d.Lignes.Select(l => new LigneCommande(l.ProduitId, l.LotId, l.Quantite, l.Boites, l.RaisonLot)).ToList(),
+            d.Lignes.Requise().Select(l => new LigneCommande(l.ProduitId, l.LotId, l.Quantite, l.Boites, l.RaisonLot)).ToList(),
             d.TiersPayant, d.OrganismeId, d.TauxTiersPayant, d.PatientId,
             d.Ordonnance is { } o ? new OrdonnanceSaisie(o.MedecinId, o.DatePrescription, o.Numero, o.JetonScan, o.TexteReconnu,
                 o.PorteurNom is null && o.PorteurAdresse is null && o.PorteurPiece is null ? null : new PorteurOrdonnance(o.PorteurNom, o.PorteurAdresse, o.PorteurPiece)) : null,
             d.RemisePct, mode, d.MontantRecu, d.ResteACharge,
             d.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null,
-            d.VoletChifa, d.RemiseAdditionnee);
+            d.VoletChifa, d.RemiseAdditionnee, d.CleEncaissement);
     }
 }

@@ -41,6 +41,25 @@ internal static class ReglementsEndpoints
                     req.Echeance, req.PartTiroir, req.Commentaire, req.Imputations?.Select(i => new ImputationDemandee(i.ReceptionId, i.Montant)).ToList(),
                     user.UtilisateurId(), requete.Poste(), req.CompteId, ct))));
 
+        // Traites à payer (échues ou à 7 jours) ; le paiement est confirmé par le titulaire
+        var traites = api.MapGroup("/achats/traites").ExigerPermission(Permissions.AchatsRegler);
+
+        // Filtrée et paginée par le serveur : état (a_payer par défaut, echues, a_venir, payees, toutes), grossiste ou n° de traite
+        traites.MapGet("", async (string? etat, string? q, int? page, int? taille, ConsulterTraites consulter, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var t = await consulter.ExecuterAsync(user.UtilisateurId(), etat, q, Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                var p = t.Traites;
+                return Results.Ok(new TraitesAPayerDto(new PageDto<TraiteAPayerDto>(p.Lignes.Select(x => new TraiteAPayerDto(x.ReglementId, x.Numero,
+                    x.FournisseurId, x.Grossiste, x.Reference, x.BanqueGrossiste, x.DateRemise, x.Echeance, x.Montant, x.CompteId, x.Banque,
+                    x.PayeeLe, x.MoyenPaiement)).ToList(), p.Total, p.Numero, p.Taille), t.SoldeCoffre));
+            });
+
+        traites.MapPost("/{id:long}/paiement", async (long id, PaiementTraiteRequete req, PayerTraite payer, ClaimsPrincipal user,
+                HttpRequest requete, CancellationToken ct) =>
+                Results.Ok(new IdentifiantDto(await payer.ExecuterAsync(id, req.Date, req.Moyen, req.CompteId, req.Reference, req.PartTiroir,
+                    user.UtilisateurId(), requete.Poste(), ct))))
+           .ExigerTitulaire();
+
         var credits = api.MapGroup("/caisse/credits").ExigerPermission(Permissions.CaisseVendre);
 
         credits.MapGet("", async (string? q, ConsulterCredits consulter, CancellationToken ct) =>

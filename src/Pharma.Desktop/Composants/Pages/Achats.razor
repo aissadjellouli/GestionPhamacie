@@ -53,6 +53,9 @@
             case "reglements":
                 <OngletReglements Grossiste="Grossiste" />
                 break;
+            case "traites":
+                <OngletTraites />
+                break;
             default:
                 <OngletGrossistes />
                 break;
@@ -93,6 +96,7 @@
         new("retours", "liste", "Retours fournisseurs", "Retours préparés, envoyés, et leurs avoirs", Session.A("achats.retour_fournisseur"), true),
         new("", null, "", "", Groupe: "Autres"),
         new("reglements", null, "Règlements", "Dette et relevé de chaque grossiste, règlements", Session.A("achats.regler"), true),
+        new("traites", null, "Traites à payer", "Traites échues ou à 7 jours ; paiement confirmé par le titulaire", Session.A("achats.regler"), true),
         new("grossistes", null, "Grossistes", "Fiches des grossistes, dette et délai de reprise", true, true)
     ];
 

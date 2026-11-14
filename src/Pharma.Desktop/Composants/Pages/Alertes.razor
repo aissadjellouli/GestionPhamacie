@@ -14,7 +14,8 @@
                 @f.Libelle<span class="@(f.Id == "urgent" && f.Nombre > 0 ? "compteur" : "compteur neutre")">@f.Nombre</span>
             </a>
         }
-        @if (donnees is not null)
+        @* Valeur au prix d'achat : envoyée seulement avec le droit « rapports.marges » (titulaire : toujours) *@
+        @if (donnees?.ValeurARisque is not null)
         {
             <div class="nav-resume"><span class="detail">Valeur à risque</span><strong class="@(ValeurARisque > 0 ? "montant-du" : null)">@Libelles.Dinars(ValeurARisque)</strong></div>
         }
@@ -47,11 +48,14 @@
     else if (rubrique == "ensemble")
     {
         <section class="tuiles" aria-label="Indicateurs">
-            <div class="tuile">
-                <span class="tuile-libelle">Valeur à risque (péremption)</span>
-                <span class="tuile-valeur @(ValeurARisque > 0 ? "urgent" : null)">@Libelles.Dinars(ValeurARisque)</span>
-                <span class="tuile-note">au prix d’achat</span>
-            </div>
+            @if (donnees?.ValeurARisque is not null)
+            {
+                <div class="tuile">
+                    <span class="tuile-libelle">Valeur à risque (péremption)</span>
+                    <span class="tuile-valeur @(ValeurARisque > 0 ? "urgent" : null)">@Libelles.Dinars(ValeurARisque)</span>
+                    <span class="tuile-note">au prix d’achat</span>
+                </div>
+            }
             <div class="tuile">
                 <span class="tuile-libelle">Lots périmés à retirer</span>
                 <span class="tuile-valeur">@Compter("perime")</span>
@@ -77,7 +81,7 @@
                     <div class="tuile">
                         <span class="tuile-libelle">Périment dans @h.Jours jours</span>
                         <span class="tuile-valeur @(h.Jours <= 30 && h.Lots > 0 ? "urgent" : null)">@h.Lots lot(s)</span>
-                        <span class="tuile-note">@h.Boites boîte(s) · @Libelles.Dinars(h.Valeur) au prix d’achat</span>
+                        <span class="tuile-note">@h.Boites boîte(s)@if (h.Valeur is { } valeurHorizon) { <text> · @Libelles.Dinars(valeurHorizon) au prix d’achat</text> }</span>
                     </div>
                 }
                 @if (ind.ReglementsAPreparer is { } nb)
@@ -85,7 +89,7 @@
                     <div class="tuile">
                         <span class="tuile-libelle">Règlements grossistes à préparer</span>
                         <span class="tuile-valeur @(nb > 0 ? "urgent" : null)">@nb</span>
-                        <span class="tuile-note">@Libelles.Dinars(ind.MontantAPreparer ?? 0) · factures en retard et effets à payer sous 7 jours
+                        <span class="tuile-note">@Libelles.Dinars(ind.MontantAPreparer ?? 0) · factures en retard et traites échues ou à payer sous 7 jours
                             @if (nb > 0) { <br /><a href="achats?onglet=reglements">Préparer les règlements</a> }</span>
                     </div>
                 }

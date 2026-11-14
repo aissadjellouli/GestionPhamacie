@@ -55,7 +55,7 @@ public static class RegleFacture
                 var montant = part == "organisme" ? l.MontantOrganisme : l.MontantPatient;
                 if (montant <= 0) continue;
                 resultat.Add(new LigneFacture(l.VenteId, l.LigneVenteId, part, $"{l.Designation} (vente {vente.Key.NumeroVente})", l.Quantite,
-                    decimal.Round(montant / l.Quantite, 2), l.TauxTva, montant));
+                    Arrondi.Centime(montant / l.Quantite), l.TauxTva, montant));
             }
             var remise = vente.First().RemiseVente;
             var lignesVente = resultat.Where(r => r.VenteId == vente.Key.VenteId).ToList();
@@ -83,7 +83,7 @@ public static class RegleFacture
         var reste = remise;
         for (var i = 0; i < parTaux.Count; i++)
         {
-            var montant = i == parTaux.Count - 1 ? reste : decimal.Round(remise * parTaux[i].Montant / total, 2);
+            var montant = i == parTaux.Count - 1 ? reste : Arrondi.Centime(remise * parTaux[i].Montant / total);
             reste -= montant;
             if (montant == 0) continue;
             var libelle = parTaux.Count == 1 ? $"{nature} (vente {numeroVente})" : $"{nature} (vente {numeroVente}, TVA {parTaux[i].Taux:0.##} %)";
@@ -98,7 +98,7 @@ public static class RegleFacture
         if (quantite <= 0) throw new RegleMetierException($"« {designation.Trim()} » : la quantité doit être supérieure à 0.");
         if (prixTtc <= 0) throw new RegleMetierException($"« {designation.Trim()} » : le prix doit être supérieur à 0.");
         if (tauxTva is < 0 or > 100) throw new RegleMetierException($"« {designation.Trim()} » : taux de TVA invalide.");
-        return new LigneFacture(null, null, "libre", designation.Trim(), quantite, decimal.Round(prixTtc, 2), tauxTva, decimal.Round(quantite * prixTtc, 2));
+        return new LigneFacture(null, null, "libre", designation.Trim(), quantite, Arrondi.Centime(prixTtc), tauxTva, Arrondi.Centime(quantite * prixTtc));
     }
 
     /// <summary>Prix TTC : HT = TTC / (1 + taux), arrondi ligne par ligne ; TVA = TTC - HT.</summary>
@@ -108,7 +108,7 @@ public static class RegleFacture
         foreach (var l in lignes)
         {
             ttc += l.MontantTtc;
-            ht += decimal.Round(l.MontantTtc / (1 + l.TauxTva / 100m), 2);
+            ht += Arrondi.Centime(l.MontantTtc / (1 + l.TauxTva / 100m));
         }
         return new Totaux(ht, ttc - ht, ttc);
     }
@@ -156,12 +156,17 @@ public static class RegleFacture
     /// <summary>État affiché d'une facture rejetée : « soldée » dès qu'elle est payée en entier (le rejet reste dans son historique).</summary>
     public static bool RejetLeve(string statut, decimal reste, bool horsSuivi) => statut == "rejetee" && reste <= 0 && !horsSuivi;
 
-    /// <summary>Avoir : sur une facture émise, motif obligatoire, au plus le montant encore non couvert par d'autres avoirs.</summary>
+    /// <summary>
+    /// Avoir : sur une facture émise, motif obligatoire, montant au centime (plus de deux décimales : refusé), au plus le montant encore
+    /// non couvert par d'autres avoirs.
+    /// </summary>
     public static void VerifierAvoir(string type, string statut, decimal montantFacture, decimal avoirsDeja, decimal montant, string? motif)
     {
         if (type != "facture" || statut == "remplacee") throw new RegleMetierException("Un avoir se fait sur une facture en vigueur.");
         if (string.IsNullOrWhiteSpace(motif)) throw new RegleMetierException("Indiquez le motif de l’avoir.", "motif");
         if (montant <= 0) throw new RegleMetierException("Le montant de l’avoir doit être supérieur à 0.", "montant_avoir");
+        if (!Arrondi.AuCentime(montant))
+            throw new RegleMetierException("Le montant de l’avoir compte au plus deux décimales (centimes) : corrigez la saisie.", "montant_avoir");
         if (montant > montantFacture - avoirsDeja)
             throw new RegleMetierException($"L’avoir dépasse ce qui reste de la facture ({montantFacture - avoirsDeja:N2} DA).", "montant_avoir");
     }

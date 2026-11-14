@@ -556,7 +556,7 @@ public sealed class PreparerRetour(IAchats achats, IPermissionService droits, IJ
         if (fournisseurs.Count > 1)
             throw new RegleMetierException("Ces lots viennent de grossistes différents : faites un retour par grossiste.");
 
-        var attendu = lignes.Sum(l => Math.Round(l.Item2 * l.Item1.PrixAchatHt, 2));
+        var attendu = lignes.Sum(l => Arrondi.Centime(l.Item2 * l.Item1.PrixAchatHt));
         var id = await achats.CreerRetourAsync(new NouveauRetour(fournisseurs[0], motif, lignes, attendu, utilisateurId), ct);
         await journal.EcrireAsync(utilisateurId, "retour_prepare", "retour_fournisseur", id,
             new Dictionary<string, object?> { ["motif"] = motif.Code(), ["boites"] = lignes.Sum(l => l.Item2), ["montant_attendu"] = attendu },
@@ -581,6 +581,8 @@ public sealed class SuivreRetour(IAchats achats, IPermissionService droits, IDoc
     public async Task EnregistrerAvoirAsync(long retourId, decimal montant, long utilisateurId, CancellationToken ct = default)
     {
         if (montant < 0) throw new RegleMetierException("Le montant de l’avoir ne peut pas être négatif.");
+        if (!Arrondi.AuCentime(montant))
+            throw new RegleMetierException("Le montant de l’avoir compte au plus deux décimales (centimes) : corrigez la saisie.");
         var r = await Charger(retourId, utilisateurId, StatutRetour.AvoirRecu, ct);
         await achats.EnregistrerAvoirAsync(retourId, montant, ct);
         await Journaliser(utilisateurId, "avoir_recu", r, montant, ct);

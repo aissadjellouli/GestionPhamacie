@@ -14,10 +14,12 @@ public static class MontantEnLettres
     public static string Dinars(decimal montant)
     {
         if (montant < 0) return "moins " + Dinars(-montant);
-        var arrondi = decimal.Round(montant, 2);
+        var arrondi = Commun.Arrondi.Centime(montant);
         var entier = (long)decimal.Truncate(arrondi);
         var centimes = (int)((arrondi - entier) * 100);
-        var texte = $"{Nombre(entier)} dinar{(entier > 1 ? "s" : "")}";
+        // Nombre rond de millions ou de milliards : « deux cents millions de dinars » (mais « deux millions cinq cent mille dinars »)
+        var de = entier >= 1_000_000 && entier % 1_000_000 == 0 ? "de " : "";
+        var texte = $"{Nombre(entier)} {de}dinar{(entier > 1 ? "s" : "")}";
         if (centimes > 0) texte += $" et {Nombre(centimes)} centime{(centimes > 1 ? "s" : "")}";
         return char.ToUpperInvariant(texte[0]) + texte[1..];
     }
@@ -29,8 +31,9 @@ public static class MontantEnLettres
         var milliards = n / 1_000_000_000; n %= 1_000_000_000;
         var millions = n / 1_000_000; n %= 1_000_000;
         var milliers = n / 1000; n %= 1000;
-        if (milliards > 0) morceaux.Add($"{Centaines((int)milliards, false)} milliard{(milliards > 1 ? "s" : "")}");
-        if (millions > 0) morceaux.Add($"{Centaines((int)millions, false)} million{(millions > 1 ? "s" : "")}");
+        // Million et milliard sont des noms : « deux cents millions », « quatre-vingts milliards » ; mille, adjectif, reste invariable
+        if (milliards > 0) morceaux.Add($"{Centaines((int)milliards, true)} milliard{(milliards > 1 ? "s" : "")}");
+        if (millions > 0) morceaux.Add($"{Centaines((int)millions, true)} million{(millions > 1 ? "s" : "")}");
         if (milliers > 0) morceaux.Add(milliers == 1 ? "mille" : $"{Centaines((int)milliers, false)} mille");
         if (n > 0) morceaux.Add(Centaines((int)n, true));
         return string.Join(" ", morceaux);

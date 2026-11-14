@@ -110,7 +110,7 @@ internal static class AchatsEndpoints
         achats.MapPost("/receptions", async (ReceptionRequete req, Receptionner receptionner, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 var r = await receptionner.ExecuterAsync(new SaisieReception(req.FournisseurId, req.CommandeId, req.NumeroBl, req.NumeroFacture,
-                    req.Lignes.Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
+                    req.Lignes.Requise().Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
                         l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp,
                         l.Ug, l.UgCoutReparti, l.RemplacerPrixCatalogue)).ToList(), req.Timbre,
                     req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null),
@@ -131,7 +131,7 @@ internal static class AchatsEndpoints
 
         achats.MapPost("/receptions/conflits", async (ReceptionRequete req, AnalyserReception analyser, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok((await analyser.ExecuterAsync(req.FournisseurId,
-                    req.Lignes.Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.PrixAchatHt)).ToList(),
+                    req.Lignes.Requise().Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.PrixAchatHt)).ToList(),
                     user.UtilisateurId(), ct)).Select(c => new ConflitReceptionDto(c.Index,
                         c.Type == Pharma.Domain.Stock.ConflitLot.DateDifferente ? "date_differente" : "lot_bloque", c.Message, c.Peremptions))))
            .ExigerPermission(Permissions.AchatsReceptionner);
@@ -157,7 +157,7 @@ internal static class AchatsEndpoints
                 try { motif = CodesMetier.MotifRetourDepuisCode(req.Motif); }
                 catch (ArgumentException) { throw new RegleMetierException("Motif de retour inconnu.", "motif_retour"); }
                 return Results.Ok(new IdentifiantDto(await preparer.ExecuterAsync(motif,
-                    req.Lots.Select(l => new LotARetourner(l.LotId, l.Quantite, l.CodesBoites ?? [])).ToList(), user.UtilisateurId(), ct)));
+                    req.Lots.Requise().Select(l => new LotARetourner(l.LotId, l.Quantite, l.CodesBoites ?? [])).ToList(), user.UtilisateurId(), ct)));
             })
            .ExigerPermission(Permissions.AchatsRetourFournisseur);
 
@@ -235,7 +235,7 @@ internal static class AchatsEndpoints
 
         achats.MapPost("/receptions/comptages", async (CompterLivraisonRequete req, CompterLivraison compter, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await compter.ExecuterAsync(req.FournisseurId, req.NumeroBl,
-                    req.Lignes.Select(l => new LigneComptee(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.Gtin, l.NumerosSerie)).ToList(),
+                    req.Lignes.Requise().Select(l => new LigneComptee(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.Gtin, l.NumerosSerie)).ToList(),
                     req.ScansMobile, user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.AchatsReceptionner);
 
@@ -270,7 +270,7 @@ internal static class AchatsEndpoints
         achats.MapPost("/receptions/comptages/{id:long}/recompter", async (long id, RecompterLivraisonRequete req, RecompterLivraison recompter,
                 ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new NombreDto(await recompter.ExecuterAsync(id,
-                    req.Lignes.Select(l => new LigneComptee(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.Gtin, l.NumerosSerie)).ToList(),
+                    req.Lignes.Requise().Select(l => new LigneComptee(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite, l.Gtin, l.NumerosSerie)).ToList(),
                     user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.AchatsReceptionner);
 
@@ -317,7 +317,7 @@ internal static class AchatsEndpoints
             r.MontantAttendu, r.MontantAvoir, r.Lignes.Select(l => new LigneRetourDto(l.Produit, l.NumeroLot, l.Quantite)).ToList());
 
     private static SaisieReception VersSaisie(ReceptionRequete req) => new(req.FournisseurId, req.CommandeId, req.NumeroBl, req.NumeroFacture,
-        req.Lignes.Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
+        req.Lignes.Requise().Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
             l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp,
             l.Ug, l.UgCoutReparti, l.RemplacerPrixCatalogue)).ToList(), req.Timbre,
         req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null);

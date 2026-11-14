@@ -262,18 +262,30 @@
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
     private string rubrique => NavAdmin.RubriqueCourante("admin/imprimantes", Rubrique);
 
-    /// <summary>Essai avec la saisie affichée : accueil, puis un panier fictif, puis le paiement.</summary>
+    /// <summary>
+    /// Essai avec la saisie affichée : accueil, puis un panier fictif, puis le paiement. Comme les essais de ticket et d'étiquette,
+    /// la saisie n'est appliquée que le temps de l'essai : les réglages enregistrés sont remis ensuite, et l'afficheur avec.
+    /// </summary>
     private async Task EssaiAfficheurAsync()
     {
         (erreur, message) = (null, null);
-        Reglages.Appliquer(Saisie());
-        Afficheur.Reappliquer();
-        await Task.Delay(1500);
-        Afficheur.Panier([("Produit d’essai", 2, 450m), ("Autre produit d’essai", 1, 120m)], 570m);
-        await Task.Delay(2500);
-        Afficheur.Paiement(570m, 1000m, 430m);
-        await Task.Delay(800);
-        if (Afficheur.DerniereErreur is { } e) erreur = e;
-        else message = "Essai envoyé : accueil, panier (570 DA) puis rendu (430 DA). Enregistrez pour garder ces réglages.";
+        var avant = Reglages.Actuelles;
+        try
+        {
+            Reglages.Appliquer(Saisie());
+            Afficheur.Reappliquer();
+            await Task.Delay(1500);
+            Afficheur.Panier([("Produit d’essai", 2, 450m), ("Autre produit d’essai", 1, 120m)], 570m);
+            await Task.Delay(2500);
+            Afficheur.Paiement(570m, 1000m, 430m);
+            await Task.Delay(3000);   // le rendu reste visible avant le retour aux réglages enregistrés
+            if (Afficheur.DerniereErreur is { } e) erreur = e;
+            else message = "Essai envoyé : accueil, panier (570 DA) puis rendu (430 DA). Enregistrez pour garder ces réglages.";
+        }
+        finally
+        {
+            Reglages.Appliquer(avant);
+            Afficheur.Reappliquer();
+        }
     }
 }

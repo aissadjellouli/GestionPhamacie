@@ -17,6 +17,8 @@ public class LigneVente
     public bool Medicament { get; init; }
     /// <summary>Produit remboursable : jamais de remise automatique.</summary>
     public bool Remboursable { get; init; }
+    /// <summary>Tiers payant : produit remboursable avec un tarif de référence, seule ligne qui reçoit une part de l'organisme.</summary>
+    public bool PriseEnCharge { get; internal set; }
     /// <summary>Remise automatique (%) du produit ou de sa catégorie, en vente libre seulement ; 0 sinon.</summary>
     public decimal RemiseAutoPct { get; private set; }
     /// <summary>Réduction due à la remise automatique, en DA (remise, ou don partiel pour un médicament).</summary>

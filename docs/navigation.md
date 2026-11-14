@@ -12,7 +12,7 @@
   |---|---|
   | Caisse (Ctrl + Maj + V) | Caisse (vente, annulation, crédit, tiroir, état, relève, clôture) |
   | Stock (Ctrl + Maj + S) | Alertes, Stock, Inventaire, Registre des psychotropes, Étiquettes internes (`stock/etiquettes`), Traçabilité et rappel de lot |
-  | Achats (Ctrl + Maj + H) | Achats (commandes, réceptions et réimpression des étiquettes d'une livraison, retours, règlements, grossistes) |
+  | Achats (Ctrl + Maj + H) | Achats (commandes, réceptions et réimpression des étiquettes d'une livraison, retours, règlements, traites à payer, grossistes) |
   | Finances (Ctrl + Maj + F) | Factures, Trésorerie, Dettes et créances (Chifa : à venir) |
   | Pilotage (Ctrl + Maj + P) | Rapports, Contrôle interne |
 
@@ -123,6 +123,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Achats › Réceptions | `receptions` | partie dans l'adresse (`&vue=saisie`, `attente`, `historique`) ; filtres et page des listes (en attente : grossiste ou n° de BL, mode, employé) ; la réception en cours de saisie, mise en attente en partant, est reprise |
 | Achats › Grossistes | `grossistes` | recherche (nom, téléphone, e-mail), état, dette, e-mail manquant, page |
 | Achats › Règlements | `reglements` | grossiste ouvert, filtres et page de son relevé |
+| Achats › Traites à payer | `traites` | recherche (grossiste ou n° de traite), état (échues et à 7 jours par défaut, échues, à venir, payées, toutes), page ; liste filtrée et paginée par le serveur ; paiement confirmé par le titulaire (depuis Dettes et créances, rubrique Traites à payer : « Payer » y mène) |
 | Achats › Retours | `retours` | grossiste, statut, période, page ; retour en préparation (lots, quantités, boîtes scannées, motif, avant « Préparer le retour ») |
 | Rapports | `rapports` | rubrique dans l'adresse (`synthese`, `ventes`, `clotures`, `retours`, `pertes`, `pertes-detail`, `tva`) ; période, date, tableau par jour |
 | Administration | (adresse) | sous-rubrique dans l'adresse (`admin/seuils?rubrique=exceptions`, `admin/notifications?rubrique=fiche`…) ; voir `NavAdmin` |

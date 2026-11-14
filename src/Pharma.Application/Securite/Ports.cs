@@ -40,6 +40,13 @@ public static class PermissionServiceExtensions
             throw new Commun.DroitRefuseException(MarqueTitulaire, action);
     }
 
+    /// <summary>
+    /// Valeurs au prix d'achat (stock, péremption, pertes) : réservées au droit « rapports.marges » (comme la marge), le titulaire
+    /// voit tout. Sans le droit, le serveur ne les envoie pas (null).
+    /// </summary>
+    public static async Task<bool> VoitPrixAchatAsync(this IPermissionService droits, long utilisateurId, CancellationToken ct = default) =>
+        await droits.EstTitulaireAsync(utilisateurId, ct) || await droits.APermissionAsync(utilisateurId, Permissions.RapportsMarges, ct);
+
     /// <summary>Ajouté à la liste des droits envoyée au poste, pour afficher les écrans du titulaire.</summary>
     public const string MarqueTitulaire = "role.titulaire";
 }

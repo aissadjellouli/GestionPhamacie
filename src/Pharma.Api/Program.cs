@@ -106,6 +106,7 @@ app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
         RegleMetierException r => (StatusCodes.Status422UnprocessableEntity, r.Message),
         Pharma.Application.Commun.DroitRefuseException d => (StatusCodes.Status403Forbidden, d.Message),
         PostgresException { SqlState: "P0001" } p => (StatusCodes.Status422UnprocessableEntity, p.MessageText),
+        PostgresException p when ErreursMetier.Traduire(p) is { } refus => refus,
         BadHttpRequestException b => (b.StatusCode, "Requête invalide : données mal formées."),
         _ => (StatusCodes.Status500InternalServerError, "Erreur interne : voir le journal du serveur.")
     };

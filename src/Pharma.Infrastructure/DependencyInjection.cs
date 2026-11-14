@@ -118,6 +118,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Tresorerie.ITresorerie, Tresorerie.TresorerieSql>();
         services.AddScoped<Pharma.Application.Factures.IFactures, Factures.FacturesSql>();
         services.AddScoped<Pharma.Application.Achats.IReglementsFournisseurs, Achats.ReglementsFournisseursSql>();
+        services.AddScoped<Pharma.Application.Achats.ITraites, Achats.TraitesSql>();
         services.AddScoped<Pharma.Application.Rapports.IRapports, RapportsSql>();
         services.AddSingleton<Pharma.Application.Reprise.ISourceReprise, Reprise.SourceOdbc>();
         services.AddScoped<Pharma.Application.Reprise.IRepriseImport, Reprise.RepriseSql>();

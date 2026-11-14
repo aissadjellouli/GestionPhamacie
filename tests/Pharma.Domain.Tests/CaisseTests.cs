@@ -50,11 +50,45 @@ public class CaisseTests
         var autre = new Produit { Id = 5, NomCommercial = "B", PrixPublic = 300m, Remboursable = false };
         v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 1, Aujourdhui);   // 350
         v.AjouterProduit(autre, LotDe(autre), 1, Aujourdhui);                 // 300, non remboursable
-        v.SaisirResteACharge(150m);
-        Assert.Equal((150m, 500m, 650m), (v.PartPatient, v.PartOrganisme, v.MontantTotal));
-        Assert.Equal(500m, v.Lignes.Sum(l => l.MontantOrganisme));
-        Assert.Equal(269.23m, v.Lignes[0].MontantOrganisme);                  // 500 × 350 / 650
+        v.SaisirResteACharge(320m);
+        Assert.Equal((320m, 330m, 650m), (v.PartPatient, v.PartOrganisme, v.MontantTotal));
+        Assert.Equal(330m, v.Lignes[0].MontantOrganisme);                     // tout sur la ligne remboursable (pas de plafond au tarif de 300)
+        Assert.Equal(0m, v.Lignes[1].MontantOrganisme);                       // non remboursable : rien pour l'organisme
         v.VerifierAvantEncaissement(ordonnanceSaisie: false);                  // taux non exigé quand le reste est saisi
+    }
+
+    [Fact]
+    public void Reste_a_charge_au_moins_le_montant_des_produits_non_remboursables()
+    {
+        var v = new Vente { Type = TypeVente.TiersPayant, PatientId = 1, OrganismeId = 1 };
+        var autre = new Produit { Id = 5, NomCommercial = "B", PrixPublic = 300m, Remboursable = false };
+        var sansTarif = new Produit { Id = 6, NomCommercial = "C", PrixPublic = 100m, Remboursable = true, TarifReference = null };
+        v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 2, Aujourdhui);  // 700, pris en charge
+        v.AjouterProduit(autre, LotDe(autre), 1, Aujourdhui);                 // 300, non remboursable
+        v.AjouterProduit(sansTarif, LotDe(sansTarif), 1, Aujourdhui);         // 100, sans tarif de référence
+        var ex = Assert.Throws<RegleMetierException>(() => v.SaisirResteACharge(399.99m));
+        Assert.Contains("non remboursables", ex.Message);
+        Assert.Equal("reste_a_charge", ex.Champ);
+        v.SaisirResteACharge(400m);
+        Assert.Equal((400m, 700m), (v.PartPatient, v.PartOrganisme));
+        Assert.Equal([700m, 0m, 0m], v.Lignes.Select(l => l.MontantOrganisme));
+    }
+
+    [Fact]
+    public void Reste_a_charge_saisi_reparti_sur_les_lignes_prises_en_charge_et_reductions_gardees()
+    {
+        var v = new Vente { Type = TypeVente.TiersPayant, PatientId = 1, OrganismeId = 1 };
+        var autreRemb = new Produit { Id = 8, NomCommercial = "D", PrixPublic = 650m, Remboursable = true, TarifReference = 600m };
+        var creme = new Produit { Id = 9, NomCommercial = "Crème", PrixPublic = 200m, Remboursable = false, EstMedicament = false };
+        v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 1, Aujourdhui);   // 350
+        v.AjouterProduit(autreRemb, LotDe(autreRemb), 1, Aujourdhui);         // 650
+        v.AjouterProduit(creme, LotDe(creme), 1, Aujourdhui);                 // 200
+        v.SaisirResteACharge(300m);                                            // organisme : 900 sur 1 000 pris en charge
+        Assert.Equal([315m, 585m, 0m], v.Lignes.Select(l => l.MontantOrganisme));
+        v.AppliquerRemise(10);                                                  // remise du vendeur sur la part du patient de chaque ligne
+        Assert.Equal(20m, v.Lignes[2].Reduction);                              // crème : 10 % de 200 (part du patient entière)
+        Assert.Equal(900m, v.PartOrganisme);
+        Assert.Equal(300m - v.MontantRemise - v.MontantDon, v.PartPatient);
     }
 
     [Theory]
@@ -66,6 +100,13 @@ public class CaisseTests
         v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 1, Aujourdhui);
         Assert.Throws<RegleMetierException>(() => v.SaisirResteACharge(reste));
         Assert.Throws<RegleMetierException>(() => new Vente().SaisirResteACharge(0));   // vente libre
+    }
+
+    [Fact]
+    public void Lot_d_un_autre_produit_refuse_avec_un_message_clair()
+    {
+        var ex = Assert.Throws<RegleMetierException>(() => new Vente().AjouterProduit(Amoxicilline, LotDe(Alprazolam), 1, Aujourdhui));
+        Assert.Equal("Amoxicilline 1 g : ce lot n’appartient pas à ce produit, rescannez la boîte.", ex.Message);
     }
 
     [Fact]

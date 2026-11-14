@@ -114,7 +114,7 @@ public sealed class CorrigerDetteCredit(ICreditsClients credits, Securite.IPermi
         if (texte.Length < MotifMin) throw new RegleMetierException("Indiquez le motif de la correction (5 caractères au moins).", "motif_correction");
         if (texte.Length > 300) throw new RegleMetierException("Motif : 300 caractères au plus.", "motif_correction");
         if (nouvelleDette < 0) throw new RegleMetierException("La dette ne peut pas être négative.", "nouvelle_dette");
-        nouvelleDette = decimal.Round(nouvelleDette, 2);
+        nouvelleDette = Arrondi.Centime(nouvelleDette);
         var s = await credits.SituationAsync(patientId, ct) ?? throw new RegleMetierException("Patient introuvable.");
         if (s.Patient.Solde == nouvelleDette) throw new RegleMetierException("La dette est déjà de ce montant : rien à corriger.", "nouvelle_dette");
         await credits.CorrigerAsync(patientId, s.Patient.Solde, nouvelleDette, texte, utilisateurId, string.IsNullOrWhiteSpace(poste) ? null : poste.Trim(), ct);

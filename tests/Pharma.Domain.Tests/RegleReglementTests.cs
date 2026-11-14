@@ -44,6 +44,19 @@ public class RegleReglementTests
     }
 
     [Fact]
+    public void Montants_au_centime_pres_seulement()
+    {
+        RegleReglement.Verifier(1000.25m, MoyenReglement.Especes, null, null, 300.10m, Jour, Jour);
+        Assert.Equal("montant", Assert.Throws<RegleMetierException>(() =>
+            RegleReglement.Verifier(1000.255m, MoyenReglement.Especes, null, null, 0, Jour, Jour)).Champ);
+        Assert.Equal("tiroir", Assert.Throws<RegleMetierException>(() =>
+            RegleReglement.Verifier(1000, MoyenReglement.Especes, null, null, 300.001m, Jour, Jour)).Champ);
+        var restes = new Dictionary<long, decimal> { [1] = 300 };
+        Assert.Throws<RegleMetierException>(() => RegleReglement.VerifierImputations(700, [(1, 100.005m)], restes));
+        RegleReglement.VerifierImputations(700, [(1, 100.50m)], restes);
+    }
+
+    [Fact]
     public void Credit_rembourse_au_plus_la_dette()
     {
         RegleReglementCredit.Verifier(200, 210, "especes");

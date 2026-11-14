@@ -37,7 +37,7 @@ internal static class RepriseEndpoints
         reprise.MapPost("/extraire", async (ExtractionRepriseRequete req, ExtraireReprise extraire, ITitulaireLecture titulaire, CancellationToken ct) =>
             {
                 var r = await extraire.ExecuterAsync(req.ChaineConnexion, req.Logiciel,
-                    req.Correspondances.Select(c => new CorrespondanceTable(Cible(c.Cible), c.Table, c.Colonnes)).ToList(), await Titulaire(titulaire, ct), ct);
+                    req.Correspondances.Requise().Select(c => new CorrespondanceTable(Cible(c.Cible), c.Table, c.Colonnes)).ToList(), await Titulaire(titulaire, ct), ct);
                 return Results.Ok(new ExtractionRepriseDto(r.SessionId, r.Lignes.ToDictionary(kv => Code(kv.Key), kv => kv.Value), r.Doublons, r.Bloquants));
             })
             .ValidationSuperAdmin(ActionsSuperAdmin.RepriseExtraire);
