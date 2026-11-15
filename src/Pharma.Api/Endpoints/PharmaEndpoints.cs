@@ -25,6 +25,7 @@ public static class PharmaEndpoints
         api.MapAchats();
         api.MapNotifications();
         api.MapEmplacements();
+        api.MapMotifsReglables();
         api.MapInventaire();
         api.MapMobile();
         api.MapRapports();

@@ -380,7 +380,8 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
         }
 
-        var note = section.AddParagraph("Les règlements soldent les dettes les plus anciennes d’abord.");
+        var note = section.AddParagraph("Un règlement solde les ventes choisies par le patient, sinon les dettes les plus anciennes d’abord ; "
+            + "un avoir ou le règlement d’une facture s’impute sur les ventes de cette facture.");
         note.Format.SpaceBefore = Unit.FromPoint(12);
         note.Format.Font.Size = 8;
         return Rendre(doc);

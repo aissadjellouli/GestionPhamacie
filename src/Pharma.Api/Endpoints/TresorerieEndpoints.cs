@@ -43,7 +43,11 @@ internal static class TresorerieEndpoints
                     a.Bordereaux.Select(x => new BordereauEnvoyeDto(x.Id, x.OrganismeId, x.Organisme, x.Numero, x.Montant)).ToList()));
             });
 
-        t.MapGet("/categories", () => Results.Ok(RegleTresorerie.Categories.Select(c => new CodeLibelleDto(c.Code, c.Libelle))));
+        // Types de charges réglés par le titulaire (Administration › Motifs et catégories, script 094) : actives seulement ;
+        // « tous=true » : aussi les désactivées, pour afficher le libellé des anciennes dépenses
+        t.MapGet("/categories", async (bool? tous, Pharma.Application.Referentiels.IMotifsReglables motifs, CancellationToken ct) =>
+            Results.Ok((await motifs.ListerAsync(Pharma.Domain.Referentiels.RegleMotifs.Charge, ct))
+                .Where(m => m.Actif || tous == true).Select(c => new CodeLibelleDto(c.Code, c.Libelle))));
 
         t.MapPost("/mouvements", async (MouvementTresorerieRequete r, SaisirMouvementTresorerie s, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok(new IdentifiantDto(await s.ExecuterAsync(r.CompteId, r.Date, r.Nature, r.Montant, r.Categorie, r.Libelle, r.Reference,

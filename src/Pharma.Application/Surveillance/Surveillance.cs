@@ -78,25 +78,33 @@ public sealed class Surveiller(ISurveillance surveillance, IAlertesTitulaire? al
 /// <summary>
 /// Le poste signale ce qui ne laisse pas de vente : ligne retirée du panier (boîtes, montant) ou tiroir ouvert sans vente
 /// (droit caisse.ouvrir_tiroir). L'employé, le poste et sa caisse sont ceux de la requête.
+/// Tiroir : motif obligatoire, choisi parmi les motifs actifs (« Autre » avec texte, script 094), inscrit avec l'événement et au journal.
 /// </summary>
-public sealed class SignalerEvenementCaisse(ISurveillance surveillance, Caisse.ISessionsCaisse sessions, IPermissionService droits, Surveiller surveiller, IJournal? journal = null)
+public sealed class SignalerEvenementCaisse(ISurveillance surveillance, Caisse.ISessionsCaisse sessions, IPermissionService droits, Surveiller surveiller,
+    IJournal? journal = null, Referentiels.MotifsActifs? motifs = null)
 {
     public async Task ExecuterAsync(string? type, long? produitId, long? lotId, int? quantite, decimal? montant, long utilisateurId, string? poste,
-        CancellationToken ct = default)
+        CancellationToken ct = default, string? motifCode = null, string? motifTexte = null)
     {
         if (type is not (TypesEvenementCaisse.LigneRetiree or TypesEvenementCaisse.TiroirOuvert))
             throw new RegleMetierException("Événement de caisse inconnu.");
+        (string Code, string Libelle, string? Texte)? motif = null;
         if (type == TypesEvenementCaisse.TiroirOuvert)
+        {
             await droits.ExigerAsync(utilisateurId, Permissions.CaisseOuvrirTiroir, "ouvrir le tiroir sans vente", ct);
+            if (motifs is null) throw new RegleMetierException("Motifs d’ouverture du tiroir indisponibles.");
+            motif = await motifs.ChoisirAsync(Pharma.Domain.Referentiels.RegleMotifs.Tiroir, motifCode, motifTexte, "de l’ouverture du tiroir", ct);
+        }
         if (type == TypesEvenementCaisse.LigneRetiree && (produitId is null || quantite is not > 0))
             throw new RegleMetierException("Ligne retirée : produit et nombre de boîtes manquants.");
         var session = string.IsNullOrWhiteSpace(poste) ? null : await sessions.SessionDuPosteAsync(poste.Trim(), ct);
         await surveillance.EnregistrerAsync(new EvenementCaisse(type, utilisateurId, poste?.Trim(), session?.Id,
             type == TypesEvenementCaisse.LigneRetiree ? produitId : null, type == TypesEvenementCaisse.LigneRetiree ? lotId : null,
-            quantite, montant is >= 0 ? montant : null), ct);
+            quantite, montant is >= 0 ? montant : null, motif?.Libelle), ct);
         if (type == TypesEvenementCaisse.TiroirOuvert && journal is not null)
             await journal.EcrireAsync(utilisateurId, "tiroir_ouvert", "session_caisse", session?.Id,
-                new Dictionary<string, object?> { ["poste"] = poste?.Trim() }, Permissions.CaisseOuvrirTiroir, ct);
+                new Dictionary<string, object?> { ["poste"] = poste?.Trim(), ["motif"] = motif?.Libelle, ["motif_code"] = motif?.Code },
+                Permissions.CaisseOuvrirTiroir, ct);
         await surveiller.ExecuterAsync(ct);
     }
 }

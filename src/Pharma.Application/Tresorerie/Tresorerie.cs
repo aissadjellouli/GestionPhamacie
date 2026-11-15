@@ -113,7 +113,7 @@ public sealed class EnregistrerCompteTresorerie(ITresorerie tresorerie, IPermiss
 
 /// <summary>Dépense, encaissement divers ou versement d'un organisme (bordereau facultatif, marqué payé ou rejet partiel).</summary>
 public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissionService droits, IHorloge horloge, IJournal journal,
-    Factures.IFactures? factures = null)
+    Factures.IFactures? factures = null, Referentiels.MotifsActifs? motifs = null)
 {
     public async Task<long> ExecuterAsync(long compteId, DateOnly? date, string? nature, decimal montant, string? categorie, string? libelle,
         string? reference, long? organismeId, long? bordereauId, string? statutBordereau, long utilisateurId,
@@ -123,7 +123,10 @@ public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissio
         var n = RegleTresorerie.Nature(nature);
         var compte = await CompteActif(tresorerie, compteId, ct);
         var jour = date ?? horloge.Aujourdhui;
-        RegleTresorerie.VerifierMouvement(n, montant, libelle, categorie, organismeId, jour, horloge.Aujourdhui, compte.DateInitiale);
+        // Types de charges réglables (script 094) : seules les catégories actives sont acceptées
+        var actives = motifs is null || n != NatureMouvement.Depense ? null
+            : (await motifs.ExecuterAsync(Pharma.Domain.Referentiels.RegleMotifs.Charge, ct)).Select(m => m.Code).ToList();
+        RegleTresorerie.VerifierMouvement(n, montant, libelle, categorie, organismeId, jour, horloge.Aujourdhui, compte.DateInitiale, actives);
         if (n != NatureMouvement.VersementOrganisme) (organismeId, bordereauId) = (null, null);
         if (bordereauId is not null && statutBordereau is not ("paye" or "rejet_partiel"))
             throw new RegleMetierException("Bordereau : indiquez s’il est payé en entier ou en rejet partiel.", "statut_bordereau");

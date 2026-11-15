@@ -6,13 +6,15 @@ namespace Pharma.Application.Tests;
 internal sealed class AttenteEnMemoire : IVentesEnAttente
 {
     public List<(long Id, string Poste, string Contenu)> Paniers { get; } = [];
+    public Dictionary<long, MotifAttente?> Motifs { get; } = [];
     public Task<IReadOnlyList<VenteEnAttente>> ListerAsync(string poste, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<VenteEnAttente>>(Paniers.Where(p => p.Poste == poste)
             .Select(p => new VenteEnAttente(p.Id, "x", 1, 0, "E", DateTime.UtcNow)).ToList());
-    public Task<long> EnregistrerAsync(string poste, long u, string l, int n, decimal t, string c, CancellationToken ct = default)
+    public Task<long> EnregistrerAsync(string poste, long u, string l, int n, decimal t, string c, MotifAttente? motif, CancellationToken ct = default)
     {
         var id = Paniers.Count + 1L;
         Paniers.Add((id, poste, c));
+        Motifs[id] = motif;
         return Task.FromResult(id);
     }
     public Task<string?> ReprendreAsync(long id, string poste, CancellationToken ct = default)

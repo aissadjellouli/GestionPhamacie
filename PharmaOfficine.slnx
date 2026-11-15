@@ -13,6 +13,7 @@
     <File Path="docs/notifications.md" />
     <File Path="docs/poste-de-developpement.md" />
     <File Path="docs/regles-metier.md" />
+    <File Path="docs/idees-wasfa.md" />
     <File Path="docs/scanner-mobile.md" />
     <File Path="docs/securite-et-droits.md" />
     <File Path="docs/tracabilite.md" />
@@ -171,6 +172,7 @@
     <File Path="database/migration/091_vente_remis_a_pour.sql" />
     <File Path="database/migration/092_import_patients_doublons.sql" />
     <File Path="database/migration/093_droit_doublons_import.sql" />
+    <File Path="database/migration/094_motifs_reglables.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

@@ -162,7 +162,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
         string id;
         await using (var num = new NpgsqlCommand("SELECT 'RC-' || lpad(nextval('seq_numero_recu')::text, 6, '0')", cx, tx))
             id = (string)(await num.ExecuteScalarAsync(ct))!;
-        await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Remboursement, null, utilisateurId, null, $"Encaissement de dette ({mode}) · reçu {id}", ct, sessionCaisseId);
+        await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Remboursement, null, utilisateurId, null, $"Encaissement de dette ({mode switch { "especes" => "espèces", "cheque" => "chèque", _ => mode }}) · reçu {id}", ct, sessionCaisseId);
         // Dette diminuée seulement si elle couvre encore le montant (deux postes ne peuvent pas encaisser deux fois)
         await using (var cmd = new NpgsqlCommand(
             "UPDATE patient SET solde_credit = solde_credit - $2 WHERE id = $1 AND solde_credit >= $2", cx, tx))

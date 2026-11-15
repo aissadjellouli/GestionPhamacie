@@ -43,12 +43,12 @@
                     <select id="so-motif" data-champ="motif_sortie" @bind="motif">
                         @if (Declarer)
                         {
-                            <option value="perime">Périmé</option>
-                            <option value="casse">Cassé ou abîmé</option>
+                            <option value="perime">@LibelleMotif("perime", "Périmé")</option>
+                            <option value="casse">@LibelleMotif("casse", "Cassé ou abîmé")</option>
                         }
                         @if (Donner)
                         {
-                            <option value="echantillon">Échantillon, gratuité ou don</option>
+                            <option value="echantillon">@LibelleMotif("echantillon", "Échantillon, gratuité ou don")</option>
                         }
                     </select>
                 </div>
@@ -79,8 +79,17 @@
     private bool enCours;
     private long? lotCharge;
 
+    // Libellés réglés par le titulaire (Administration › Motifs et catégories, script 094) ; codes fixes
+    private Dictionary<string, string>? libellesMotifs;
+    private string LibelleMotif(string code, string defaut) => libellesMotifs?.GetValueOrDefault(code) ?? defaut;
+
     protected override async Task OnParametersSetAsync()
     {
+        if (libellesMotifs is null)
+        {
+            var (liste, _) = await Api.MotifsAsync("sortie_stock");
+            libellesMotifs = liste.ToDictionary(m => m.Code, m => m.Libelle);
+        }
         if (motif == "") motif = Declarer ? "perime" : "echantillon";
         if (LotInitial is not { } id || id == lotCharge || !Declarer) return;
         lotCharge = id;

@@ -40,6 +40,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{
 		docs\notifications.md = docs\notifications.md
 		docs\poste-de-developpement.md = docs\poste-de-developpement.md
 		docs\regles-metier.md = docs\regles-metier.md
+		docs\idees-wasfa.md = docs\idees-wasfa.md
 		docs\scanner-mobile.md = docs\scanner-mobile.md
 		docs\securite-et-droits.md = docs\securite-et-droits.md
 		docs\tracabilite.md = docs\tracabilite.md
@@ -223,6 +224,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\091_vente_remis_a_pour.sql = database\migration\091_vente_remis_a_pour.sql
 		database\migration\092_import_patients_doublons.sql = database\migration\092_import_patients_doublons.sql
 		database\migration\093_droit_doublons_import.sql = database\migration\093_droit_doublons_import.sql
+		database\migration\094_motifs_reglables.sql = database\migration\094_motifs_reglables.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"

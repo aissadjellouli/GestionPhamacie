@@ -1,0 +1,172 @@
+@page "/admin/motifs"
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Motifs et catégories réglables (2026-11-15, script 094) : tiroir, mise en attente, charges, sorties de stock, retours.
+   Ajout, libellé, désactivation ; jamais de suppression. Écran fixe : seul le tableau défile (docs/charte-graphique.md). *@
+<div class="page admin">
+    <NavAdmin Actif="admin/motifs" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Motifs et catégories</h1>
+                <p class="sous-titre">Listes proposées à la saisie. Un motif utilisé n’est jamais supprimé : désactivé, il n’est plus proposé et les anciennes saisies le gardent.</p>
+            </div>
+            <button type="button" class="btn btn-principal" @onclick="Ajouter">Ajouter un motif</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (fiche is not null)
+        {
+            <section class="panneau" aria-labelledby="t-fiche-motif">
+                <h2 id="t-fiche-motif">@(fiche.Id is null ? "Nouveau motif" : $"Modifier « {fiche.LibelleInitial} »")</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 260px">
+                        <label for="m-liste" class="requis">Liste</label>
+                        <select id="m-liste" data-champ="liste" @bind="fiche.Liste" disabled="@(fiche.Id is not null)">
+                            @foreach (var (cl, libelle) in ListesAjout(fiche.Id is null)) { <option value="@cl">@libelle</option> }
+                        </select>
+                    </div>
+                    <div class="champ" style="flex: 2 1 280px"><label for="m-libelle" class="requis">Libellé</label>
+                        <input id="m-libelle" data-champ="libelle" type="text" maxlength="80" @bind="fiche.Libelle" @bind:event="oninput" /></div>
+                </div>
+                @if (fiche.Id is not null)
+                {
+                    @if (fiche.Systeme)
+                    {
+                        <p class="detail" style="margin: 0">Motif indispensable : il reste toujours proposé (seul le libellé se règle).</p>
+                    }
+                    else
+                    {
+                        <label class="case"><input type="checkbox" data-champ="actif" @bind="fiche.Actif" /><span>Motif proposé (décoché : désactivé, plus proposé à la saisie)</span></label>
+                    }
+                }
+                <div style="display: flex; gap: 8px">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">@(fiche.Id is null ? "Créer" : "Enregistrer")</button>
+                    <button type="button" class="btn" @onclick="() => fiche = null">Annuler</button>
+                </div>
+            </section>
+        }
+
+        @if (fiche is null)
+        {
+        <div class="filtres-liste" role="search" aria-label="Filtrer les motifs">
+            <div class="champ" style="flex: 0 0 260px"><label for="fm-liste">Liste</label>
+                <select id="fm-liste" @bind="fListe" @bind:after="PremierePageAsync">
+                    <option value="">Toutes</option>
+                    @foreach (var (cl, libelle) in Listes) { <option value="@cl">@libelle</option> }
+                </select></div>
+            <div class="champ" style="flex: 1 1 220px"><label for="fm-texte">Libellé</label>
+                <input id="fm-texte" type="search" autocomplete="off" placeholder="Ex. monnaie, loyer" value="@fTexte" @oninput="RechercheAsync" /></div>
+            <div class="champ" style="flex: 0 0 170px"><label for="fm-etat">État</label>
+                <select id="fm-etat" @bind="fEtat" @bind:after="PremierePageAsync"><option value="">Tous</option><option value="actif">Proposés</option><option value="inactif">Désactivés</option></select></div>
+            @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+        </div>
+        <section class="tableau-cadre" aria-label="Motifs et catégories">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Liste</th><th scope="col">Libellé</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                <tbody>
+                    @foreach (var m in motifs)
+                    {
+                        <tr>
+                            <td>@NomListe(m.Liste)</td>
+                            <td>@m.Libelle <span class="detail">@(m.Systeme ? "(indispensable)" : "")</span></td>
+                            <td><span class="pastille @(m.Actif ? "ok" : "info")">@(m.Actif ? "Proposé" : "Désactivé")</span></td>
+                            <td><button type="button" class="btn" @onclick="() => Editer(m)">Modifier</button></td>
+                        </tr>
+                    }
+                    @if (motifs.Count == 0 && erreur is null)
+                    {
+                        <tr><td colspan="4" class="vide">Aucun motif pour ces filtres.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+        <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des motifs" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly (string Code, string Libelle)[] Listes =
+    [
+        ("tiroir", "Ouverture du tiroir sans vente"), ("attente", "Mise en attente d’une vente"), ("charge", "Catégories de dépenses"),
+        ("sortie_stock", "Sorties de stock"), ("retour_fournisseur", "Retours au fournisseur")
+    ];
+
+    /// <summary>Ajout : tiroir, attente et charges seulement (sorties et retours : codes fixés par la base, libellé et activation réglables).</summary>
+    private static IEnumerable<(string Code, string Libelle)> ListesAjout(bool ajout) =>
+        ajout ? Listes.Where(l => l.Code is "tiroir" or "attente" or "charge") : Listes;
+
+    private static string NomListe(string code) => Listes.FirstOrDefault(l => l.Code == code).Libelle ?? code;
+
+    private sealed class Fiche
+    {
+        public long? Id { get; init; }
+        public string? LibelleInitial { get; init; }
+        public string Liste { get; set; } = "tiroir";
+        public string? Libelle { get; set; }
+        public bool Actif { get; set; } = true;
+        public bool Systeme { get; init; }
+    }
+
+    private List<MotifReglableDto> motifs = [];
+    private Fiche? fiche;
+    private bool enCours;
+    private string? erreur, message;
+    private int total, page = 1, taille = Pagination.TailleParDefaut, saisie;
+    private string fListe = "", fTexte = "", fEtat = "";
+    private bool FiltreActif => fListe != "" || fTexte.Trim() != "" || fEtat != "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("motifs", e => { e.Mettre("liste", fListe); e.Mettre("texte", fTexte); e.Mettre("etat", fEtat); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("motifs") is { } h)
+            (fListe, fTexte, fEtat, page, taille) = (h.Texte("liste") ?? "", h.Texte("texte") ?? "", h.Texte("etat") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        await ChargerAsync(page, taille);
+    }
+
+    private Task PremierePageAsync() => ChargerAsync(1, taille);
+    private Task ToutAfficherAsync() { (fListe, fTexte, fEtat) = ("", "", ""); return PremierePageAsync(); }
+
+    private async Task RechercheAsync(ChangeEventArgs a)
+    {
+        fTexte = a.Value?.ToString() ?? "";
+        var n = ++saisie;
+        await Task.Delay(250);
+        if (n == saisie) await PremierePageAsync();
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.MotifsPageAsync(fListe, fEtat, fTexte.Trim(), numero, nouvelleTaille);
+        if (p is null) { erreur ??= e; return; }
+        (motifs, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    private void Ajouter() =>
+        (fiche, erreur, message) = (new Fiche { Liste = fListe is "tiroir" or "attente" or "charge" ? fListe : "tiroir" }, null, null);
+
+    private void Editer(MotifReglableDto m) => (fiche, erreur, message) = (new Fiche
+    {
+        Id = m.Id, LibelleInitial = m.Libelle, Liste = m.Liste, Libelle = m.Libelle, Actif = m.Actif, Systeme = m.Systeme
+    }, null, null);
+
+    private async Task EnregistrerAsync()
+    {
+        if (string.IsNullOrWhiteSpace(fiche?.Libelle)) { (erreur, message) = ("Indiquez le libellé.", null); return; }
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var (_, e) = await Api.EnregistrerMotifAsync(fiche.Id, new SaisieMotifReglableDto(fiche.Liste, fiche.Libelle.Trim(), fiche.Systeme || fiche.Actif));
+            if (e is not null) { erreur = e; return; }
+            message = $"« {fiche.Libelle.Trim()} » enregistré ({NomListe(fiche.Liste)}).";
+            fiche = null;
+            await ChargerAsync(page, taille);
+        }
+        finally { enCours = false; }
+    }
+}

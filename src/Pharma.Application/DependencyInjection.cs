@@ -205,6 +205,9 @@ public static class DependencyInjection
         services.AddScoped<ModifierBlocageProduit>();
         services.AddScoped<ListerEmplacements>();
         services.AddScoped<EnregistrerEmplacement>();
+        services.AddScoped<Referentiels.MotifsActifs>();
+        services.AddScoped<Referentiels.ListerMotifsReglables>();
+        services.AddScoped<Referentiels.EnregistrerMotifReglable>();
         services.AddScoped<RangerProduit>();
         services.AddScoped<ObtenirTableauInventaire>();
         services.AddScoped<ConsulterHistoriqueInventaires>();

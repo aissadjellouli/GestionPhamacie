@@ -580,11 +580,14 @@ public sealed class ListerRetours(IAchats achats)
 /// Prépare un retour au grossiste d'origine des lots. Les boîtes sortent du stock dès la préparation.
 /// Une boîte identifiée (étiquette ou Data Matrix) doit être scannée ; les autres sont prises dans le reste du lot.
 /// </summary>
-public sealed class PreparerRetour(IAchats achats, IPermissionService droits, IJournal journal)
+public sealed class PreparerRetour(IAchats achats, IPermissionService droits, IJournal journal, Referentiels.MotifsActifs? motifs = null)
 {
     public async Task<long> ExecuterAsync(MotifRetour motif, IReadOnlyList<LotARetourner> lots, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsRetourFournisseur, "faire un retour fournisseur", ct);
+        // Motif désactivé par le titulaire (Administration › Motifs et catégories, script 094) : refusé
+        if (motifs is not null && !(await motifs.ExecuterAsync(Pharma.Domain.Referentiels.RegleMotifs.RetourFournisseur, ct)).Any(m => m.Code == motif.Code()))
+            throw new RegleMetierException("Ce motif de retour a été désactivé : choisissez-en un autre.", "motif_retour");
         if (lots.Count == 0) throw new RegleMetierException("Aucun lot à retourner.");
         if (lots.Select(l => l.LotId).Distinct().Count() != lots.Count)
             throw new RegleMetierException("Un même lot figure deux fois sur le retour.");

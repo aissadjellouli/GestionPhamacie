@@ -821,6 +821,15 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // ---- Surveillance de la caisse ----
     /// <summary>Ligne retirée du panier ou tiroir ouvert : signalé au serveur (surveillance du titulaire).</summary>
     public async Task<string?> SignalerCaisseAsync(EvenementCaisseRequete e) => (await PostAsync<EvenementCaisseRequete, object>("api/caisse/evenements", e)).Item2;
+
+    // ---- Motifs réglables (script 094) ----
+    /// <summary>Motifs actifs d'une liste (tiroir, attente, charge, sortie_stock, retour_fournisseur), proposés à la saisie.</summary>
+    public Task<(List<MotifReglableDto>, string?)> MotifsAsync(string liste) => GetAsync<List<MotifReglableDto>>($"api/motifs/{Uri.EscapeDataString(liste)}", []);
+    public Task<(PageDto<MotifReglableDto>?, string?)> MotifsPageAsync(string? liste, string? etat, string? texte, int page, int taille) =>
+        GetAsync<PageDto<MotifReglableDto>?>("api/motifs?" + Requete(("liste", liste), ("etat", etat), ("q", texte), ("page", page), ("taille", taille)), null);
+    public Task<(IdentifiantDto?, string?)> EnregistrerMotifAsync(long? id, SaisieMotifReglableDto m) => id is null
+        ? PostAsync<SaisieMotifReglableDto, IdentifiantDto>("api/motifs", m)
+        : EnvoyerCorpsAsync<SaisieMotifReglableDto, IdentifiantDto>(HttpMethod.Put, $"api/motifs/{id}", m);
     public Task<(List<AlerteSurveillanceDto>, string?)> SurveillanceAsync(bool traitees) =>
         GetAsync<List<AlerteSurveillanceDto>>($"api/surveillance?traitees={(traitees ? "true" : "false")}", []);
     public async Task<string?> TraiterSurveillanceAsync(long id, string? action) =>

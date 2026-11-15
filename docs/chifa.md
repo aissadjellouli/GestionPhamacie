@@ -46,3 +46,10 @@ Rien ci-dessous n'est confirmé.
 - **Data Matrix** : le ministère prépare la sérialisation des boîtes. Le logiciel lit déjà le format GS1. Calendrier d’obligation à suivre ; prévoir des scanners 2D.
 - **Psychotropes** : registre numérique non modifiable, délivrance réservée aux rôles autorisés, patient obligatoire.
 - **Données de santé** : données conservées dans la pharmacie, accès par rôle, journal d’audit ; respect de la loi 18-07 à intégrer au contrat avec chaque pharmacie.
+
+## Circuit de travail souhaité par le titulaire (2026-11-15)
+
+1. **La caisse d'abord** : le vendeur scanne les boîtes et l'ordonnance dans Pharma Officine (stock, lots, prix, patient).
+2. **Transmission à CHIFA-Officine, si c'est possible** : seule la liste des produits (codes Chifa, quantités) est transmise à CHIFA-Officine, pour éviter la recherche manuelle des produits dans Chifa. **L'assuré est identifié par CHIFA-Officine, qui lit la carte Chifa** (précision du titulaire, 2026-11-15) : notre logiciel ne transmet pas l'identité de l'assuré ; il la récupère ensuite par le QR du volet. **Dépend du format d'échange de CHIFA-Officine, inconnu** : demandé à la CNAS (docs/taches/2026-11-15-recette-complete/demande-cnas.md). Aucune solution par simulation du clavier ou modification de CHIFA-Officine.
+3. **Chifa édite la facture** : lecture de la carte, signature, impression du volet (rôle de la CNAS, inchangé).
+4. **Le logiciel scanne le volet** : le QR est rapproché de la vente déjà faite à la caisse (produits, quantités, prix Chifa, écarts signalés), au lieu de créer une nouvelle vente. **À concevoir** : aujourd'hui, le scan du volet reprend la vente à partir du QR (circuit « Chifa d'abord »). Les deux circuits doivent coexister tant que la transmission (étape 2) n'existe pas.

@@ -30,7 +30,7 @@
         <div class="champ" style="flex: 1 1 200px">
             <label for="rt-motif" class="requis">Motif</label>
             <select data-champ="motif_retour" id="rt-motif" @bind="motif">
-                @foreach (var (codeMotif, libelle) in Libelles.MotifsRetour)
+                @foreach (var (codeMotif, libelle) in MotifsProposes)
                 {
                     <option value="@codeMotif">@libelle</option>
                 }
@@ -243,8 +243,16 @@
     private bool controle;
     private bool QuantiteInvalide(Ligne l) => controle && (l.Quantite <= 0 || l.Quantite > l.Lot.Disponible);
 
+    // Motifs actifs et libellés réglés par le titulaire (Administration › Motifs et catégories, script 094) ;
+    // liste de départ si la lecture échoue (le serveur refuse de toute façon un motif désactivé)
+    private List<(string Code, string Libelle)>? motifsActifs;
+    private IEnumerable<(string Code, string Libelle)> MotifsProposes => motifsActifs is { Count: > 0 } m ? m : Libelles.MotifsRetour;
+
     protected override async Task OnInitializedAsync()
     {
+        var (actifs, _) = await Api.MotifsAsync("retour_fournisseur");
+        motifsActifs = actifs.Select(m => (m.Code, m.Libelle)).ToList();
+        if (motifsActifs.Count > 0 && !motifsActifs.Any(m => m.Code == motif)) motif = motifsActifs[0].Code;
         if (Motif is not null && Libelles.MotifsRetour.Any(m => m.Code == Motif)) motif = Motif;
         Session.AvantFermeture += LaisserAuSuivant;
         // « ← Retour » : filtres et page de la liste des retours retrouvés tels qu'ils étaient

@@ -73,6 +73,7 @@ public static class DependencyInjection
         services.AddScoped<IProduitsModification, ProduitsModificationSql>();
         services.AddScoped<Pharma.Application.Essai.IRetoursEssai, Securite.RetoursEssaiSql>();
         services.AddScoped<IEmplacements, EmplacementsSql>();
+        services.AddScoped<Pharma.Application.Referentiels.IMotifsReglables, Referentiels.MotifsReglablesSql>();
         services.AddScoped<IInventaires, InventairesSql>();
         services.AddScoped<Pharma.Application.Mobile.IMobile, MobileSql>();
         services.AddScoped<Pharma.Application.Securite.ICodesComptoir, Securite.CodesComptoirSql>();

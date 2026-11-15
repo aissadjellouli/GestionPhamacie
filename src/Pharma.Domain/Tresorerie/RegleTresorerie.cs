@@ -47,10 +47,11 @@ public static class RegleTresorerie
 
     /// <summary>Montant positif, libellé, date ni future ni antérieure au départ du compte ; catégorie (dépense) ou organisme (versement).</summary>
     public static void VerifierMouvement(NatureMouvement nature, decimal montant, string? libelle, string? categorie, long? organismeId,
-        DateOnly date, DateOnly aujourdhui, DateOnly departCompte)
+        DateOnly date, DateOnly aujourdhui, DateOnly departCompte, IReadOnlyCollection<string>? categoriesActives = null)
     {
         VerifierMontantEtDate(montant, date, aujourdhui, departCompte);
-        if (nature == NatureMouvement.Depense && !Categories.Any(c => c.Code == categorie))
+        // Catégories réglées par le titulaire (motif_reglable, liste « charge », script 094) ; à défaut, la liste de départ
+        if (nature == NatureMouvement.Depense && !(categoriesActives ?? Categories.Select(c => c.Code).ToList()).Contains(categorie ?? ""))
             throw new RegleMetierException("Choisissez la catégorie de la dépense.", "categorie");
         if (nature == NatureMouvement.VersementOrganisme && organismeId is null)
             throw new RegleMetierException("Choisissez l’organisme qui a versé (CNAS, CASNOS…).", "organisme");

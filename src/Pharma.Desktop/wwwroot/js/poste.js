@@ -303,7 +303,7 @@ window.pharma.zoom.appliquer(window.pharma.zoom.lire());
 // sous ce qui le précède et au-dessus de ce qui le suit de près (pagination, total, note) et de la barre d'état.
 window.pharma.tableaux = (function () {
   // Le panier de la caisse (cadre prioritaire) peut descendre plus bas : le bloc client ouvert passe avant lui, un temps
-  const BARRE_ETAT = 32, MARGE = 24, MIN = 240, MIN_PRIORITAIRE = 140;
+  const BARRE_ETAT = 32, MARGE = 24, MIN = 240, MIN_PRIORITAIRE = 110;   // 110 (2026-11-15) : volet sur deux lots avec carte « lot plus ancien », page à 0
   function minimum(c) { return c.classList.contains("cadre-prioritaire") ? MIN_PRIORITAIRE : MIN; }
   // Hauteur d'un cadre : plafonnée ; le cadre prioritaire (panier de la caisse) prend en plus toute cette hauteur, vide ou non
   function poser(c, h) {

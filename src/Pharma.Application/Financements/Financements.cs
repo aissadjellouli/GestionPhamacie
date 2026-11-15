@@ -406,7 +406,8 @@ public sealed class PayerEcheancePret(IFinancements financements, ISessionsCaiss
 /// Les factures et traites des grossistes se paient par la source depuis Achats (règlements, traites à payer).
 /// Prêt d'un prêteur hors trésorerie : son argent n'entre dans aucun compte suivi, il ne se verse pas ; il ne sert que directement.
 /// </summary>
-public sealed class UtiliserFinancement(IFinancements financements, IPermissionService droits, IHorloge horloge, IJournal journal, ITresorerie tresorerie)
+public sealed class UtiliserFinancement(IFinancements financements, IPermissionService droits, IHorloge horloge, IJournal journal, ITresorerie tresorerie,
+    Referentiels.MotifsActifs? motifs = null)
 {
     public async Task<long> ExecuterAsync(string? source, string? usage, DateOnly? date, decimal montant, long compteId, string? categorie, string? libelle,
         string? reference, long utilisateurId, CancellationToken ct = default)
@@ -423,7 +424,10 @@ public sealed class UtiliserFinancement(IFinancements financements, IPermissionS
         RegleTresorerie.VerifierMontantEtDate(montant, jour, horloge.Aujourdhui, compte.DateInitiale);
         if (usage == "depense")
         {
-            if (categorie == RegleTresorerie.ChargesFinancieres || !RegleTresorerie.Categories.Any(c => c.Code == categorie))
+            // Types de charges réglables (script 094) : catégories actives ; à défaut, la liste de départ
+            var actives = motifs is null ? RegleTresorerie.Categories.Select(c => c.Code).ToList()
+                : (await motifs.ExecuterAsync(Pharma.Domain.Referentiels.RegleMotifs.Charge, ct)).Select(m => m.Code).ToList();
+            if (categorie == RegleTresorerie.ChargesFinancieres || !actives.Contains(categorie ?? ""))
                 throw new RegleMetierException("Choisissez la catégorie de la dépense.", "categorie");
             if (string.IsNullOrWhiteSpace(libelle)) throw new RegleMetierException("Indiquez le libellé de la dépense.", "libelle");
         }

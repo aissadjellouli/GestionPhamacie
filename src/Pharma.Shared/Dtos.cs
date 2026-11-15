@@ -673,10 +673,16 @@ public sealed record AffichageDto(string Affichage);
 
 // ---- Ventes en attente -------------------------------------------------------------
 
-public sealed record VenteEnAttenteDto(long Id, string Libelle, int Lignes, decimal Total, string Employe, DateTime CreeLe);
+/// <summary>Motif : texte du motif de mise en attente (null : automatique ou ancienne) ; ProduitsDus : motif « produit manquant ».</summary>
+public sealed record VenteEnAttenteDto(long Id, string Libelle, int Lignes, decimal Total, string Employe, DateTime CreeLe,
+    string? Motif = null, IReadOnlyList<ProduitDuDto>? ProduitsDus = null);
 
-/// <summary>Contenu : panier du poste en JSON (PanierAttenteDto), rendu tel quel à la reprise.</summary>
-public sealed record MiseEnAttenteRequete(string? Libelle, int Lignes, decimal Total, string Contenu);
+/// <summary>
+/// Contenu : panier du poste en JSON (PanierAttenteDto), rendu tel quel à la reprise. Motif (script 094) : obligatoire au bouton « Attente »,
+/// absent des mises en attente automatiques (départ de la caisse, changement d'utilisateur).
+/// </summary>
+public sealed record MiseEnAttenteRequete(string? Libelle, int Lignes, decimal Total, string Contenu,
+    string? MotifCode = null, string? MotifTexte = null, IReadOnlyList<ProduitDuDto>? ProduitsDus = null);
 
 /// <summary>Réception mise en attente. Mode : reception, facture, comptage ou recompte (ces deux-là repris par EmployeId seul).</summary>
 public sealed record ReceptionEnAttenteDto(long Id, string Libelle, string Mode, int Lignes, long EmployeId, string Employe, string Poste, DateTime CreeLe);
@@ -742,7 +748,9 @@ public static class DetailAutorisationChifa
             if (!e.AChoisir || !choix.TryGetValue(e.ProduitId, out var c)) continue;
             var libelle = c switch { "aligne" => "S’aligner sur Chifa", "garde" => "Garder notre prix", _ => null };
             if (libelle is null) continue;
-            lignes.Add([e.Produit, dinars(e.PrixChifa), dinars(e.NotrePrix), dinars(Math.Abs(e.PrixChifa - e.NotrePrix)), libelle]);
+            IReadOnlyList<string> ligne = [e.Produit, dinars(e.PrixChifa), dinars(e.NotrePrix), dinars(Math.Abs(e.PrixChifa - e.NotrePrix)), libelle];
+            // Produit servi sur plusieurs lots au même prix : une seule ligne
+            if (!lignes.Any(l => l.SequenceEqual(ligne))) lignes.Add(ligne);
         }
         return lignes.Count == 0 ? null
             : new DetailAutorisationDto("Prix des lignes du volet Chifa", ["Produit", "Prix Chifa", "Notre prix", "Écart par boîte", "Choix demandé"], lignes, "prix.modifier");
@@ -913,8 +921,9 @@ public sealed record RestaurationBaseRequete(string Fichier);
 public sealed record EtatRestaurationDto(bool EnCours, string? Type, DateTime? Debut, DateTime? Fin, List<string> Etapes, string? Resultat, string? Erreur);
 
 // ---- Surveillance de la caisse (titulaire) ----
-/// <summary>Signalé par le poste : ligne_retiree (produit, lot, boîtes, montant) ou tiroir_ouvert.</summary>
-public sealed record EvenementCaisseRequete(string Type, long? ProduitId = null, long? LotId = null, int? Quantite = null, decimal? Montant = null);
+/// <summary>Signalé par le poste : ligne_retiree (produit, lot, boîtes, montant) ou tiroir_ouvert (motif obligatoire, « autre » avec texte).</summary>
+public sealed record EvenementCaisseRequete(string Type, long? ProduitId = null, long? LotId = null, int? Quantite = null, decimal? Montant = null,
+    string? MotifCode = null, string? MotifTexte = null);
 public sealed record AlerteSurveillanceDto(long Id, string Type, string Niveau, long? UtilisateurId, string? Employe, DateOnly Jour, string Message,
     decimal? Valeur, string Statut, DateTime MiseAJourLe, string? TraiteePar, DateTime? TraiteeLe, string? ActionPrise);
 public sealed record ParametresSurveillanceDto(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,

@@ -31,7 +31,7 @@
                 <div class="champ" style="flex: 0 0 220px"><label for="fd-statut">Statut</label>
                     <select id="fd-statut" @bind="fStatut" @bind:after="() => ChargerAsync(1, taille)">
                         <option value="">Tous</option>
-                        @foreach (var (code, libelle) in Statuts) { <option value="@code">@libelle</option> }
+                        @foreach (var (codeStatut, libelle) in Statuts) { <option value="@codeStatut">@libelle</option> }
                     </select></div>
                 @if (fTexte != "" || fStatut != "a_valider") { <button type="button" class="btn" @onclick="ToutAfficherAsync">À valider seulement</button> }
             </div>

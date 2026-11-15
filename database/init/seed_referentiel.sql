@@ -12,15 +12,16 @@
 --     de départ de chaque rôle ;
 --   * organismes CNAS, CASNOS et MDN ; substances surveillées (arrêté du
 --     11 août 2021) ; coffre de la trésorerie ; catégories de produits
---     (médicament, dermo-cosmétique, hygiène…) ;
+--     (médicament, dermo-cosmétique, hygiène…) ; motifs et catégories réglables
+--     (tiroir, mise en attente, charges, sorties de stock, retours ; 094) ;
 --   * compte « titulaire » avec le mot de passe provisoire « Provisoire-2026 » :
 --     changement obligatoire à la première connexion (rien d'autre n'est
 --     possible avant).
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 093 (vérifié : permissions, rôles,
--- droits de départ, substances, organismes, coffre, catégories de produits). Règle : tout script numéroté qui ajoute
+-- Valeurs identiques à celles posées par les scripts 001 à 094 (vérifié : permissions, rôles,
+-- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
 
@@ -219,6 +220,37 @@ INSERT INTO utilisateur (nom_complet, identifiant, mot_de_passe_hash, role_id, d
 SELECT 'Pharmacien titulaire', 'titulaire', crypt('Provisoire-2026', gen_salt('bf', 10)), r.id, true, true, 100, true
 FROM role r
 WHERE r.code = 'titulaire' AND NOT EXISTS (SELECT 1 FROM utilisateur WHERE identifiant = 'titulaire');
+
+-- ---------------------------------------------------------------------
+-- 7. Motifs et catégories réglables par le titulaire (094) : valeurs de départ, insérées si absentes
+-- ---------------------------------------------------------------------
+INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre) VALUES
+    ('tiroir', 'monnaie',            'Faire de la monnaie',                   false, 10),
+    ('tiroir', 'erreur_rendu',       'Erreur de rendu de monnaie',            false, 20),
+    ('tiroir', 'depot_especes',      'Dépôt ou retrait d''espèces',           false, 30),
+    ('tiroir', 'verification',       'Vérification du contenu',               false, 40),
+    ('tiroir', 'autre',              'Autre (préciser)',                      true,  999),
+    ('attente', 'produit_manquant',  'Produit manquant à commander',          false, 10),
+    ('attente', 'patient_revient',   'Patient revient payer',                 false, 20),
+    ('attente', 'attente_ordonnance','Attente de l''ordonnance',              false, 30),
+    ('attente', 'autre',             'Autre (préciser)',                      true,  999),
+    ('charge', 'loyer',              'Loyer et charges',                      false, 10),
+    ('charge', 'energie',            'Électricité, eau, gaz',                 false, 20),
+    ('charge', 'salaires',           'Salaires et cotisations',               false, 30),
+    ('charge', 'impots',             'Impôts et taxes',                       false, 40),
+    ('charge', 'fournitures',        'Fournitures et consommables',           false, 50),
+    ('charge', 'entretien',          'Entretien et réparations',              false, 60),
+    ('charge', 'charges_financieres','Charges financières (intérêts d’emprunt)', true, 70),
+    ('charge', 'autre',              'Autre dépense',                         true,  999),
+    ('sortie_stock', 'perime',       'Périmé',                                true,  10),
+    ('sortie_stock', 'casse',        'Cassé ou abîmé',                        true,  20),
+    ('sortie_stock', 'echantillon',  'Échantillon, gratuité ou don',          true,  30),
+    ('retour_fournisseur', 'peremption_proche', 'Péremption proche',          false, 10),
+    ('retour_fournisseur', 'perime',            'Périmé',                     true,  20),
+    ('retour_fournisseur', 'defaut',            'Défaut',                     false, 30),
+    ('retour_fournisseur', 'erreur_livraison',  'Erreur de livraison',        false, 40),
+    ('retour_fournisseur', 'rappel_lot',        'Rappel de lot',              true,  50)
+ON CONFLICT (liste, code) DO NOTHING;
 
 COMMIT;
 

@@ -49,7 +49,9 @@
         }
         else
         {
-            <div class="carte">
+            @* Situation du patient dans un cadre défilant (2026-11-15) : relevé déplié, ventes et correction défilent ici, la page reste à 0
+               et le montant, le mode et « Encaisser » restent visibles dessous *@
+            <div class="carte cadre-defilant">
                 <strong><LienContact Type="patient" Id="s.Patient.Id" Nom="@s.Patient.Nom" /></strong>@(s.Patient.Telephone is { } t ? $" · {t}" : "")
                 · doit <strong class="montant-du">@Libelles.Dinars(s.Patient.Solde, 2)</strong>@(s.Patient.Plafond > 0 ? $" (plafond {Libelles.Dinars(s.Patient.Plafond)})" : "")
                 <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => situation = null">Changer de patient</button>
@@ -133,7 +135,7 @@
                                     {
                                         <tr>
                                             <td>@Libelles.DateHeureLocale(m.Date)</td>
-                                            <td>@LibelleMouvement(m.Type, m.Employe)@if (m.Vente is { } ticket) { <span class="detail"> · @ticket</span> }@if (m.Remise is { } rm) { <span class="detail"> · @rm</span> }@if (m.Reference is { } reference && reference != LibelleMouvement(m.Type, m.Employe)) { <br /><span class="detail">@reference</span> }</td>
+                                            <td>@LibelleMouvement(m.Type, m.Employe)@if (m.Vente is { } ticket) { <span class="detail"> · @ticket</span> }@if (m.Remise is { } rm) { <span class="detail"> · @rm</span> }@if (m.Reference is { } reference && reference != LibelleMouvement(m.Type, m.Employe)) { <br /><span class="detail">@Libelles.ReferenceReleve(reference)</span> }</td>
                                             <td class="@(m.Montant > 0 ? "texte-urgent" : null)"><strong>@(m.Montant > 0 ? "+" : "−") @Libelles.Dinars(Math.Abs(m.Montant), 2)</strong></td>
                                             <td>@Libelles.Dinars(m.SoldeApres, 2)</td>
                                             <td><LienContact Type="employe" Id="m.EmployeId" Nom="@(m.Employe ?? "—")" />@if (m.Poste is { } poste) { <br /><span class="detail">@poste</span> }</td>

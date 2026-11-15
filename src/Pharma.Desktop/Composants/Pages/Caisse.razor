@@ -253,7 +253,7 @@
                         }
                     </div>
                     <div class="actions-attente">
-                        <button type="button" class="btn" disabled="@(enCours || lignes.Count == 0)" @onclick="MettreEnAttenteAsync" title="Mettre ce panier de côté pour servir un autre patient">⏸ Attente</button>
+                        <button type="button" class="btn" disabled="@(enCours || lignes.Count == 0)" @onclick="DemanderMotifAttenteAsync" title="Mettre ce panier de côté pour servir un autre patient (motif demandé)">⏸ Attente</button>
                         @if (attentes.Count > 0)
                         {
                             <button type="button" class="btn bouton-attentes" aria-expanded="@(attentesOuvertes ? "true" : "false")" @onclick="() => attentesOuvertes = !attentesOuvertes">
@@ -271,6 +271,14 @@
                                         <span>
                                             <strong>@v.Libelle</strong> · @v.Lignes produit(s) · <strong>@Libelles.Dinars(v.Total, 2)</strong><br />
                                             <span class="detail">mise en attente à @v.CreeLe.ToLocalTime().ToString("HH:mm") par @v.Employe</span>
+                                            @* Motif (2026-11-15, script 094) ; « produit manquant » : produits dus au patient (aucune commande créée) *@
+                                            @if (v.Motif is { } motifV) { <span class="motif-attente">Motif : @motifV</span> }
+                                            @if (v.ProduitsDus is { Count: > 0 } dus)
+                                            {
+                                                <ul class="produits-dus" aria-label="Produits dus au patient">
+                                                    @foreach (var d in dus) { <li>@d.Nom × @d.Quantite</li> }
+                                                </ul>
+                                            }
                                         </span>
                                         @if (aAbandonner == v.Id)
                                         {
@@ -288,6 +296,44 @@
                         }
                     </div>
                 </div>
+                @if (motifAttenteOuvert)
+                {
+                    @* Motif de mise en attente (2026-11-15, script 094) : liste réglée par le titulaire ; « Autre » avec texte ;
+                       « produit manquant » : produits dus cochés parmi le panier (aucune commande créée) *@
+                    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-motif-attente">
+                        <section class="panneau attente-motif-panneau" style="max-width: 520px; width: 100%">
+                            <h2 id="t-motif-attente">Mettre la vente en attente</h2>
+                            <div class="champ">
+                                <label for="ma-motif" class="requis">Motif</label>
+                                <select id="ma-motif" data-champ="motif" @bind="motifAttente" autofocus>
+                                    <option value="">— choisir —</option>
+                                    @foreach (var m in motifsAttente) { <option value="@m.Code">@m.Libelle</option> }
+                                </select>
+                            </div>
+                            @if (motifAttente == "autre")
+                            {
+                                <div class="champ"><label for="ma-texte" class="requis">Précisez</label>
+                                    <input id="ma-texte" data-champ="motif_texte" type="text" maxlength="200" @bind="texteAttente" @bind:event="oninput" /></div>
+                            }
+                            @if (motifAttente == "produit_manquant")
+                            {
+                                <fieldset class="produits-a-cocher" data-champ="produits_dus">
+                                    <legend class="requis">Produits dus au patient</legend>
+                                    @foreach (var l in lignes.DistinctBy(x => x.ProduitId))
+                                    {
+                                        <label class="case"><input type="checkbox" checked="@produitsDus.Contains(l.ProduitId)"
+                                            @onchange="e => CocherDu(l.ProduitId, e.Value is true)" /><span>@l.Nom × @lignes.Where(x => x.ProduitId == l.ProduitId).Sum(x => x.Quantite)</span></label>
+                                    }
+                                </fieldset>
+                            }
+                            @if (erreurMotifAttente is not null) { <div class="erreur" role="alert">@erreurMotifAttente</div> }
+                            <div style="display: flex; gap: 8px">
+                                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="MettreEnAttenteAsync">Mettre en attente</button>
+                                <button type="button" class="btn" @onclick="() => motifAttenteOuvert = false">Annuler</button>
+                            </div>
+                        </section>
+                    </div>
+                }
                 @if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
                 @if (messageRetour is not null) { <div class="info-bandeau" role="status">@messageRetour</div> }
 
@@ -353,7 +399,13 @@
                 @if (volet is not null)
                 {
                     @* Volet Chifa scanné : vente reprise en tiers payant ; format du QR à confirmer avec l'éditeur de Chifa *@
-                    <div class="info-bandeau" role="status">
+                    @* Nombre de vignettes attendu en grand (2026-11-15) : somme des boîtes du volet, pour contrôler les vignettes collées *@
+                    <div style="display: flex; gap: 8px; align-items: stretch">
+                    <div class="vignettes-chifa" role="status" aria-label="@($"{VignettesChifa.Nombre(volet)} vignette(s) attendue(s)")"
+                         title="Vignettes à coller : somme des boîtes des lignes du volet">
+                        <span class="vignettes-nombre">@VignettesChifa.Nombre(volet)</span><span class="detail">vignette(s)</span>
+                    </div>
+                    <div class="info-bandeau" role="status" style="flex: 1 1 auto">
                         <strong>Volet Chifa n° @volet.NumeroFacture du @Libelles.Date(volet.DateFacture)</strong> · assuré @volet.Assure
                         · @(volet.Patient is { } nomPatient ? $"patient {nomPatient}" : patient is { } pv ? $"patient {pv.Nom}" : "patient inconnu")
                         · ordonnance @Libelles.Dinars(volet.MontantOrdonnance, 2)@(volet.DateSecondaire is { } dOrd ? $" du {Libelles.Date(dOrd)}" : "")
@@ -366,12 +418,13 @@
                         }
                         <button type="button" class="lien-bouton" @onclick="RetirerVoletAsync">Retirer le volet</button>
                     </div>
+                    </div>
                     @* Prix Chifa différent du nôtre (prix du lot servi) : ligne orange ; sous le seuil, aligné d'office ; au-delà, choix d'un ayant
                        droit prix.modifier, sinon le plus élevé d'office (le code d'un ayant droit permet de choisir, à l'encaissement) *@
-                    @if (apercu?.EcartsChifa is { Count: > 0 } ecarts)
+                    @if (EcartsChifaAffiches is { Count: > 0 } ecarts)
                     {
                         <div class="bandeau-attention" role="status" data-champ="prix_chifa" style="display: flex; flex-direction: column; gap: 4px">
-                            @if (ecarts.Count(e => e.AChoisir) > 1)
+                            @if (ecarts.Where(e => e.AChoisir).Select(e => e.ProduitId).Distinct().Count() > 1)
                             {
                                 <div style="display: flex; gap: 8px; flex-wrap: wrap">
                                     <button type="button" class="lien-bouton" @onclick="@(() => ChoisirToutChifaAsync(ChoixAligne))">Tout aligner sur Chifa</button>
@@ -845,8 +898,10 @@
                                 <div class="champ champ-ligne">
                                     <label for="facture-chifa">N° de facture Chifa *</label>
                                     <input id="facture-chifa" data-champ="facture_chifa" type="text" maxlength="30" placeholder="Obligatoire"
-                                           @bind="numeroFactureChifa" />
+                                           class="@Obligatoire.Classe(FactureChifaManquante)" aria-invalid="@Obligatoire.Aria(FactureChifaManquante)"
+                                           @bind="numeroFactureChifa" @bind:event="oninput" />
                                 </div>
+                                @if (FactureChifaManquante) { <p class="texte-urgent" role="alert" style="margin: 0">Saisissez le n° de facture Chifa pour encaisser.</p> }
                             }
                         }
                     </div>
@@ -1123,6 +1178,7 @@
         : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
         : MedecinParLeTaux && medecin is null ? "Tiers payant : l’organisme paie une partie, indiquez le médecin prescripteur"
         : PorteurIncomplet ? "Porteur de l’ordonnance : nom, adresse et pièce d’identité obligatoires"
+        : FactureChifaManquante ? "Vente facturée par Chifa : saisissez le n° de facture Chifa"
         : lignes.FirstOrDefault(l => l.Lot is not null && l.Situation is { Situation: not "aucune" } && l.RaisonLot is null) is { } sansRaison
             ? $"{sansRaison.Nom} : un lot plus ancien est en stock, indiquez ou validez la raison sous la ligne"
         : apercu?.ProduitsBloques is { Count: > 0 } && !accordBlocage.Complet(Session.A("produits.bloquer"))
@@ -2145,6 +2201,10 @@
     private string? numeroFactureChifa;
     private bool OrganismeChifa => tiersPayant && OrganismeCode is "CNAS" or "CASNOS";
     private bool FactureeChifaEnvoyee => factureeChifa && volet is null && OrganismeChifa;
+    /// <summary>Écarts Chifa affichés : une ligne par produit et par prix (un produit servi sur deux lots au même prix n'apparaît qu'une fois).</summary>
+    private List<EcartChifaLigneDto>? EcartsChifaAffiches => apercu?.EcartsChifa?.DistinctBy(e => (e.ProduitId, e.PrixChifa, e.NotrePrix, e.Choix, e.AChoisir)).ToList();
+    /// <summary>« Facturée par Chifa » cochée sans n° de facture : signalé avant l'envoi (bouton grisé, champ en rouge) ; le serveur refuse aussi.</summary>
+    private bool FactureChifaManquante => FactureeChifaEnvoyee && string.IsNullOrWhiteSpace(numeroFactureChifa);
 
     /// <summary>Les totaux viennent du serveur : mêmes règles que l'encaissement (tiers payant, remise).</summary>
     // Raison du lot servi quand un lot plus ancien est en stock (codes de Pharma.Domain.Ventes.RaisonLot)
@@ -2293,13 +2353,47 @@
         (attentes, erreurAttente) = (liste, e);
     }
 
-    /// <summary>Le panier et le règlement en cours de saisie partent sur le serveur ; la caisse est libérée.</summary>
+    // ---- Motif de mise en attente (2026-11-15, script 094) : au bouton « Attente » seulement ;
+    //      les mises en attente automatiques (départ de la caisse, changement d'utilisateur) restent sans motif ----
+    private bool motifAttenteOuvert;
+    private List<MotifReglableDto> motifsAttente = [];
+    private string motifAttente = "";
+    private string? texteAttente, erreurMotifAttente;
+    private readonly HashSet<long> produitsDus = [];
+
+    private async Task DemanderMotifAttenteAsync()
+    {
+        if (enCours || lignes.Count == 0) return;
+        (motifAttenteOuvert, motifAttente, texteAttente, erreurMotifAttente) = (true, "", null, null);
+        produitsDus.Clear();
+        var (liste, e) = await Api.MotifsAsync("attente");
+        (motifsAttente, erreurMotifAttente) = (liste, e);
+    }
+
+    private void CocherDu(long produitId, bool coche)
+    {
+        if (coche) produitsDus.Add(produitId); else produitsDus.Remove(produitId);
+    }
+
+    /// <summary>Le panier et le règlement en cours de saisie partent sur le serveur, avec le motif choisi ; la caisse est libérée.</summary>
     private async Task MettreEnAttenteAsync()
     {
         // Double clic : une seule mise en attente (sinon deux ventes en attente identiques)
         if (enCours) return;
+        // Contrôles aussi faits par le serveur (motif actif, « Autre » avec texte, produits dus)
+        if (motifAttente == "") { erreurMotifAttente = "Choisissez le motif de la mise en attente."; return; }
+        if (motifAttente == "autre" && string.IsNullOrWhiteSpace(texteAttente)) { erreurMotifAttente = "Motif « Autre » : précisez le motif."; return; }
+        if (motifAttente == "produit_manquant" && produitsDus.Count == 0) { erreurMotifAttente = "Cochez le ou les produits dus au patient."; return; }
+        var dus = motifAttente != "produit_manquant" ? null
+            : lignes.Where(l => produitsDus.Contains(l.ProduitId)).GroupBy(l => l.ProduitId)
+                .Select(g => new ProduitDuDto(g.Key, g.First().Nom, g.Sum(l => l.Quantite))).ToList();
         enCours = true;
-        try { await MettreDeCoteAsync(); }
+        try
+        {
+            await MettreDeCoteAsync(DemandeAttente() with { MotifCode = motifAttente, MotifTexte = texteAttente, ProduitsDus = dus });
+            if (erreurAttente is not null) (erreurMotifAttente, erreurAttente) = (erreurAttente, null);
+            else motifAttenteOuvert = false;
+        }
         finally { enCours = false; }
     }
 
@@ -2321,11 +2415,11 @@
         return new MiseEnAttenteRequete(libelle, lignes.Count, total, System.Text.Json.JsonSerializer.Serialize(panier));
     }
 
-    private async Task MettreDeCoteAsync()
+    private async Task MettreDeCoteAsync(MiseEnAttenteRequete? demande = null)
     {
         if (lignes.Count == 0) return;
         erreurAttente = null;
-        var (id, e) = await Api.MettreEnAttenteAsync(DemandeAttente());
+        var (id, e) = await Api.MettreEnAttenteAsync(demande ?? DemandeAttente());
         if (e is not null) { erreurAttente = e; return; }
         derniereMiseEnAttente = id;
         venteFaite = null;

@@ -44,7 +44,8 @@ public class SurveillanceTests
         params AnomalieNouvelle[] nouvelles)
     {
         var (depot, titulaire) = (new SurveillanceEnMemoire(nouvelles), new AlertesTitulaireEspion());
-        var cas = new SignalerEvenementCaisse(depot, new SessionsEnMemoire(), droits, new Surveiller(depot, titulaire), new JournalEspion());
+        var cas = new SignalerEvenementCaisse(depot, new SessionsEnMemoire(), droits, new Surveiller(depot, titulaire), new JournalEspion(),
+            new Referentiels.MotifsActifs(new MotifsEnMemoire()));
         return (cas, depot, titulaire);
     }
 
@@ -64,11 +65,11 @@ public class SurveillanceTests
     public async Task Tiroir_sans_vente_demande_le_droit()
     {
         var (sans, depot, _) = Signaler(new DroitsFactices("caisse.vendre"));
-        await Assert.ThrowsAsync<DroitRefuseException>(() => sans.ExecuterAsync("tiroir_ouvert", null, null, null, null, 5, "Caisse 1"));
+        await Assert.ThrowsAsync<DroitRefuseException>(() => sans.ExecuterAsync("tiroir_ouvert", null, null, null, null, 5, "Caisse 1", default, "monnaie"));
         Assert.Empty(depot.Evenements);
 
         var (avec, depot2, _) = Signaler(new DroitsFactices("caisse.vendre", "caisse.ouvrir_tiroir"));
-        await avec.ExecuterAsync("tiroir_ouvert", 2, 20, 1, 100, 5, "Caisse 1");
+        await avec.ExecuterAsync("tiroir_ouvert", 2, 20, 1, 100, 5, "Caisse 1", default, "monnaie");
         Assert.Equal(("tiroir_ouvert", (long?)null), (depot2.Evenements.Single().Type, depot2.Evenements.Single().ProduitId));
     }
 

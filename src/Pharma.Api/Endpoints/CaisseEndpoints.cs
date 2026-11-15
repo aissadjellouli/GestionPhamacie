@@ -125,11 +125,13 @@ internal static class CaisseEndpoints
         // Ventes en attente du poste : mises de côté, reprises par n'importe quel employé du poste
         caisse.MapGet("/attente", async (GererVentesEnAttente gerer, HttpRequest requete, CancellationToken ct) =>
                 Results.Ok((await gerer.ListerAsync(requete.Poste(), ct))
-                    .Select(v => new VenteEnAttenteDto(v.Id, v.Libelle, v.Lignes, v.Total, v.Employe, v.CreeLe))))
+                    .Select(v => new VenteEnAttenteDto(v.Id, v.Libelle, v.Lignes, v.Total, v.Employe, v.CreeLe, v.Motif,
+                        v.ProduitsDus?.Select(d => new ProduitDuDto(d.ProduitId, d.Nom, d.Quantite)).ToList()))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         caisse.MapPost("/attente", async (MiseEnAttenteRequete req, GererVentesEnAttente gerer, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
-                Results.Ok(new IdentifiantDto(await gerer.MettreEnAttenteAsync(requete.Poste(), user.UtilisateurId(), req.Libelle, req.Lignes, req.Total, req.Contenu, ct))))
+                Results.Ok(new IdentifiantDto(await gerer.MettreEnAttenteAsync(requete.Poste(), user.UtilisateurId(), req.Libelle, req.Lignes, req.Total, req.Contenu, ct,
+                    req.MotifCode, req.MotifTexte, req.ProduitsDus?.Select(d => new ProduitDu(d.ProduitId, d.Nom, d.Quantite)).ToList()))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         caisse.MapPost("/attente/{id:long}/reprendre", async (long id, GererVentesEnAttente gerer, HttpRequest requete, CancellationToken ct) =>

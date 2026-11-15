@@ -179,7 +179,8 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
         var lignes = new List<InfoContact>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
-            lignes.Add(new InfoContact("Vente remise / pour", $"{r.GetString(0)} · {Date(r.GetDateTime(1))} · "
+            // Un titre pour le bloc (première ligne), puis des lignes simples (recette 2026-11-15)
+            lignes.Add(new InfoContact(lignes.Count == 0 ? "Ventes remises à / pour" : "", $"{r.GetString(0)} · {Date(r.GetDateTime(1))} · "
                 + Pharma.Application.Caisse.RemiseVente.Libelle(T(r, 2), T(r, 3), T(r, 4))));
         return lignes;
     }

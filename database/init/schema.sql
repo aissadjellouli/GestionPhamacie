@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 093 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 094 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 093 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 094 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -24,7 +24,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict l8CrTZ3t6B4Oi6t3OxcTIAP9xeiDuE8Ge81Pwx149dvFscpPbDzBglnXeu1MdIB
+\restrict cE16I4VTfXg9G566yOsYDDBYCdBKzzyidxIBA4rSBT3olGXsxtSiIGRxi1lsuUq
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -46,7 +46,6 @@ SET row_security = off;
 --
 
 CREATE SCHEMA import;
-
 
 
 --
@@ -1194,70 +1193,70 @@ $$;
 
 CREATE FUNCTION public.lots_delaisses(p_produit_id bigint DEFAULT NULL::bigint) RETURNS TABLE(o_type text, o_niveau text, o_produit_id bigint, o_lot_id bigint, o_message text, o_valeur_dzd numeric)
     LANGUAGE sql STABLE
-    AS $$
-    WITH p AS (SELECT seuil_lot_delaisse AS seuil, seuil_lot_delaisse_collectif AS collectif, jours_rouge FROM parametre_alerte WHERE id = 1),
-    lots AS (
-        SELECT l.id, l.produit_id, l.numero_lot, l.date_peremption, l.quantite_disponible, l.prix_achat_ht, l.bloque, r.date_reception
-        FROM lot l JOIN reception r ON r.id = l.reception_id
-        WHERE p_produit_id IS NULL OR l.produit_id = p_produit_id
-    ),
-    -- Ancien lot A, encore en stock et vendable ; dernière vente validée d'une de ses boîtes
-    delaisses AS (
-        SELECT a.*,
-               (SELECT max(t.traitee_le) FROM alerte t
-                WHERE t.type = 'lot_delaisse' AND t.lot_id = a.id AND t.statut = 'traitee') AS traitee_le,
-               (SELECT max(va.date_vente) FROM ligne_vente la JOIN vente va ON va.id = la.vente_id
-                WHERE la.lot_id = a.id AND va.statut = 'validee') AS derniere_vente
-        FROM lots a
-        WHERE a.quantite_disponible > 0 AND a.date_peremption > current_date AND NOT a.bloque
-    ),
-    -- Lot B plus récent (reçu après, ou périmant après) qui ne périme pas avant A ; compté depuis l'arrivée
-    -- des deux lots, la dernière alerte traitée par le titulaire ou la dernière vente d'une boîte de A
-    paires AS (
-        SELECT a.id AS a_id, b.id AS b_id,
-               greatest(a.date_reception, b.date_reception, a.traitee_le, a.derniere_vente) AS depuis,
-               a.derniere_vente
-        FROM delaisses a
-        JOIN lots b ON b.produit_id = a.produit_id AND b.id <> a.id
-        WHERE (b.date_reception > a.date_reception OR b.date_peremption > a.date_peremption)
-          AND b.date_peremption >= a.date_peremption
-    ),
-    ventes AS (
-        SELECT pa.a_id, v.utilisateur_id, sum(lv.quantite)::int AS boites, bool_or(lv.raison_lot = 'introuvable') AS introuvable
-        FROM paires pa
-        JOIN ligne_vente lv ON lv.lot_id = pa.b_id
-        JOIN vente v ON v.id = lv.vente_id AND v.statut = 'validee' AND v.date_vente >= pa.depuis
-        WHERE lv.raison_lot IS DISTINCT FROM 'peremption'
-          -- Strictement après la dernière vente de A (une vente qui contient aussi une boîte de A ne compte pas)
-          AND (pa.derniere_vente IS NULL OR v.date_vente > pa.derniere_vente)
-        GROUP BY pa.a_id, v.utilisateur_id
-    ),
-    -- Par ancien lot : seuil d'un vendeur atteint, ou seuil collectif atteint par plusieurs vendeurs
-    par_lot AS (
-        SELECT ve.a_id, max(ve.boites) AS max_vendeur, sum(ve.boites) AS total, count(*) AS vendeurs, bool_or(ve.introuvable) AS introuvable
-        FROM ventes ve GROUP BY ve.a_id
-    ),
-    retenus AS (
-        SELECT pl.*, (pl.vendeurs >= 2 AND pl.total >= p.collectif) AS collectif
-        FROM par_lot pl, p
-        WHERE pl.max_vendeur >= p.seuil OR (pl.vendeurs >= 2 AND pl.total >= p.collectif)
-    )
-    SELECT 'lot_delaisse'::text,
-           CASE WHEN rt.collectif OR rt.introuvable OR a.date_peremption <= current_date + (SELECT jours_rouge FROM p) THEN 'urgent' ELSE 'attention' END,
-           a.produit_id,
-           a.id,
-           format('%s, lot %s : %s boîte(s) en stock, délaissées : un lot plus récent est vendu à leur place. %s%s. Risque de péremption ou de perte des boîtes du lot %s : faites l''inventaire de ce produit.',
-                  pr.nom_commercial, a.numero_lot, a.quantite_disponible,
-                  CASE WHEN rt.collectif THEN format('%s vendeurs ont vendu ensemble %s boîte(s) d''un lot plus récent : ', rt.vendeurs, rt.total) ELSE '' END,
-                  (SELECT string_agg(format('%s a vendu %s boîte(s) d''un lot plus récent%s', u.nom_complet, ve.boites,
-                                            CASE WHEN ve.introuvable THEN ' (dont « boîte de l''ancien lot introuvable »)' ELSE '' END),
-                                     ' ; ' ORDER BY ve.boites DESC)
-                   FROM ventes ve JOIN utilisateur u ON u.id = ve.utilisateur_id WHERE ve.a_id = a.id),
-                  a.numero_lot),
-           round(a.quantite_disponible * a.prix_achat_ht, 2)
-    FROM retenus rt
-    JOIN delaisses a ON a.id = rt.a_id
-    JOIN produit pr ON pr.id = a.produit_id;
+    AS $$
+    WITH p AS (SELECT seuil_lot_delaisse AS seuil, seuil_lot_delaisse_collectif AS collectif, jours_rouge FROM parametre_alerte WHERE id = 1),
+    lots AS (
+        SELECT l.id, l.produit_id, l.numero_lot, l.date_peremption, l.quantite_disponible, l.prix_achat_ht, l.bloque, r.date_reception
+        FROM lot l JOIN reception r ON r.id = l.reception_id
+        WHERE p_produit_id IS NULL OR l.produit_id = p_produit_id
+    ),
+    -- Ancien lot A, encore en stock et vendable ; dernière vente validée d'une de ses boîtes
+    delaisses AS (
+        SELECT a.*,
+               (SELECT max(t.traitee_le) FROM alerte t
+                WHERE t.type = 'lot_delaisse' AND t.lot_id = a.id AND t.statut = 'traitee') AS traitee_le,
+               (SELECT max(va.date_vente) FROM ligne_vente la JOIN vente va ON va.id = la.vente_id
+                WHERE la.lot_id = a.id AND va.statut = 'validee') AS derniere_vente
+        FROM lots a
+        WHERE a.quantite_disponible > 0 AND a.date_peremption > current_date AND NOT a.bloque
+    ),
+    -- Lot B plus récent (reçu après, ou périmant après) qui ne périme pas avant A ; compté depuis l'arrivée
+    -- des deux lots, la dernière alerte traitée par le titulaire ou la dernière vente d'une boîte de A
+    paires AS (
+        SELECT a.id AS a_id, b.id AS b_id,
+               greatest(a.date_reception, b.date_reception, a.traitee_le, a.derniere_vente) AS depuis,
+               a.derniere_vente
+        FROM delaisses a
+        JOIN lots b ON b.produit_id = a.produit_id AND b.id <> a.id
+        WHERE (b.date_reception > a.date_reception OR b.date_peremption > a.date_peremption)
+          AND b.date_peremption >= a.date_peremption
+    ),
+    ventes AS (
+        SELECT pa.a_id, v.utilisateur_id, sum(lv.quantite)::int AS boites, bool_or(lv.raison_lot = 'introuvable') AS introuvable
+        FROM paires pa
+        JOIN ligne_vente lv ON lv.lot_id = pa.b_id
+        JOIN vente v ON v.id = lv.vente_id AND v.statut = 'validee' AND v.date_vente >= pa.depuis
+        WHERE lv.raison_lot IS DISTINCT FROM 'peremption'
+          -- Strictement après la dernière vente de A (une vente qui contient aussi une boîte de A ne compte pas)
+          AND (pa.derniere_vente IS NULL OR v.date_vente > pa.derniere_vente)
+        GROUP BY pa.a_id, v.utilisateur_id
+    ),
+    -- Par ancien lot : seuil d'un vendeur atteint, ou seuil collectif atteint par plusieurs vendeurs
+    par_lot AS (
+        SELECT ve.a_id, max(ve.boites) AS max_vendeur, sum(ve.boites) AS total, count(*) AS vendeurs, bool_or(ve.introuvable) AS introuvable
+        FROM ventes ve GROUP BY ve.a_id
+    ),
+    retenus AS (
+        SELECT pl.*, (pl.vendeurs >= 2 AND pl.total >= p.collectif) AS collectif
+        FROM par_lot pl, p
+        WHERE pl.max_vendeur >= p.seuil OR (pl.vendeurs >= 2 AND pl.total >= p.collectif)
+    )
+    SELECT 'lot_delaisse'::text,
+           CASE WHEN rt.collectif OR rt.introuvable OR a.date_peremption <= current_date + (SELECT jours_rouge FROM p) THEN 'urgent' ELSE 'attention' END,
+           a.produit_id,
+           a.id,
+           format('%s, lot %s : %s boîte(s) en stock, délaissées : un lot plus récent est vendu à leur place. %s%s. Risque de péremption ou de perte des boîtes du lot %s : faites l''inventaire de ce produit.',
+                  pr.nom_commercial, a.numero_lot, a.quantite_disponible,
+                  CASE WHEN rt.collectif THEN format('%s vendeurs ont vendu ensemble %s boîte(s) d''un lot plus récent : ', rt.vendeurs, rt.total) ELSE '' END,
+                  (SELECT string_agg(format('%s a vendu %s boîte(s) d''un lot plus récent%s', u.nom_complet, ve.boites,
+                                            CASE WHEN ve.introuvable THEN ' (dont « boîte de l''ancien lot introuvable »)' ELSE '' END),
+                                     ' ; ' ORDER BY ve.boites DESC)
+                   FROM ventes ve JOIN utilisateur u ON u.id = ve.utilisateur_id WHERE ve.a_id = a.id),
+                  a.numero_lot),
+           round(a.quantite_disponible * a.prix_achat_ht, 2)
+    FROM retenus rt
+    JOIN delaisses a ON a.id = rt.a_id
+    JOIN produit pr ON pr.id = a.produit_id;
 $$;
 
 
@@ -2139,22 +2138,22 @@ $$;
 
 CREATE FUNCTION public.ventes_lot(p_produit_id bigint, p_numero_lot text) RETURNS TABLE(o_patient text, o_telephone text, o_date_vente timestamp with time zone, o_ticket text, o_boites bigint)
     LANGUAGE sql STABLE
-    AS $$
-    -- Aussi les ventes d'avant l'étiquetage par boîte ; une vente dont toutes les boîtes du lot ont été rendues est masquée
-    SELECT COALESCE(NULLIF(btrim(COALESCE(pt.nom, '') || ' ' || COALESCE(pt.prenom, '')), ''),
-                    'Vente anonyme'),
-           pt.telephone, v.date_vente, v.numero, SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0))::bigint
-    FROM ligne_vente lv
-    JOIN vente v     ON v.id = lv.vente_id
-    JOIN lot l       ON l.id = lv.lot_id
-    LEFT JOIN patient pt ON pt.id = v.patient_id
-    LEFT JOIN LATERAL (SELECT sum(rl.quantite) AS rendues
-                       FROM retour_client_ligne rl WHERE rl.ligne_vente_id = lv.id) rd ON true
-    WHERE l.produit_id = p_produit_id AND l.numero_lot = p_numero_lot
-      AND v.statut = 'validee'
-    GROUP BY pt.nom, pt.prenom, pt.telephone, v.date_vente, v.numero
-    HAVING SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0)) > 0
-    ORDER BY v.date_vente DESC;
+    AS $$
+    -- Aussi les ventes d'avant l'étiquetage par boîte ; une vente dont toutes les boîtes du lot ont été rendues est masquée
+    SELECT COALESCE(NULLIF(btrim(COALESCE(pt.nom, '') || ' ' || COALESCE(pt.prenom, '')), ''),
+                    'Vente anonyme'),
+           pt.telephone, v.date_vente, v.numero, SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0))::bigint
+    FROM ligne_vente lv
+    JOIN vente v     ON v.id = lv.vente_id
+    JOIN lot l       ON l.id = lv.lot_id
+    LEFT JOIN patient pt ON pt.id = v.patient_id
+    LEFT JOIN LATERAL (SELECT sum(rl.quantite) AS rendues
+                       FROM retour_client_ligne rl WHERE rl.ligne_vente_id = lv.id) rd ON true
+    WHERE l.produit_id = p_produit_id AND l.numero_lot = p_numero_lot
+      AND v.statut = 'validee'
+    GROUP BY pt.nom, pt.prenom, pt.telephone, v.date_vente, v.numero
+    HAVING SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0)) > 0
+    ORDER BY v.date_vente DESC;
 $$;
 
 
@@ -4017,6 +4016,41 @@ ALTER TABLE public.message_sortant ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
 
 
 --
+-- Name: motif_reglable; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.motif_reglable (
+    id bigint NOT NULL,
+    liste text NOT NULL,
+    code text NOT NULL,
+    libelle text NOT NULL,
+    actif boolean DEFAULT true NOT NULL,
+    systeme boolean DEFAULT false NOT NULL,
+    ordre integer DEFAULT 100 NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_motif_reglable_systeme_actif CHECK ((actif OR (NOT systeme))),
+    CONSTRAINT motif_reglable_code_check CHECK ((code ~ '^[a-z0-9_]{1,40}$'::text)),
+    CONSTRAINT motif_reglable_libelle_check CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 80))),
+    CONSTRAINT motif_reglable_liste_check CHECK ((liste = ANY (ARRAY['tiroir'::text, 'attente'::text, 'charge'::text, 'sortie_stock'::text, 'retour_fournisseur'::text])))
+);
+
+
+--
+-- Name: motif_reglable_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.motif_reglable ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.motif_reglable_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: mouvement_stock; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4350,6 +4384,9 @@ CREATE TABLE public.panier_attente (
     total numeric(12,2) DEFAULT 0 NOT NULL,
     contenu jsonb NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    motif_code text,
+    motif_texte text,
+    produits_dus jsonb,
     CONSTRAINT panier_attente_lignes_check CHECK ((lignes > 0))
 );
 
@@ -7166,6 +7203,14 @@ ALTER TABLE ONLY public.message_sortant
 
 
 --
+-- Name: motif_reglable motif_reglable_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.motif_reglable
+    ADD CONSTRAINT motif_reglable_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: mouvement_stock mouvement_stock_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7587,6 +7632,14 @@ ALTER TABLE ONLY public.session_caisse
 
 ALTER TABLE ONLY public.substance_surveillee
     ADD CONSTRAINT substance_surveillee_pkey PRIMARY KEY (motif);
+
+
+--
+-- Name: motif_reglable uq_motif_reglable_code; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.motif_reglable
+    ADD CONSTRAINT uq_motif_reglable_code UNIQUE (liste, code);
 
 
 --
@@ -10525,5 +10578,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict l8CrTZ3t6B4Oi6t3OxcTIAP9xeiDuE8Ge81Pwx149dvFscpPbDzBglnXeu1MdIB
+\unrestrict cE16I4VTfXg9G566yOsYDDBYCdBKzzyidxIBA4rSBT3olGXsxtSiIGRxi1lsuUq
 

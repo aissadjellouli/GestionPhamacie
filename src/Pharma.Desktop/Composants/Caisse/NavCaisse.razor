@@ -17,12 +17,23 @@
     else if (!confirmation)
     {
         <a href="" class="sous-rubrique" data-raccourci="tiroir" title="Ouverture sans vente, inscrite au contrôle interne (tiroir-caisse : matériel à brancher) · raccourci F8"
-           @onclick="() => (confirmation, messageTiroir) = (true, null)" @onclick:preventDefault="true">Ouvrir le tiroir <span class="detail">F8</span></a>
+           @onclick="DemanderTiroirAsync" @onclick:preventDefault="true">Ouvrir le tiroir <span class="detail">F8</span></a>
     }
     else
     {
+        @* Motif obligatoire (2026-11-15, script 094) : liste réglée par le titulaire ; « Autre » demande un texte *@
         <div class="nav-confirmation" role="alertdialog" aria-labelledby="t-tiroir">
             <span id="t-tiroir">Ouvrir le tiroir sans vente ? Ce sera inscrit au contrôle interne.</span>
+            <label for="ti-motif" class="requis">Motif</label>
+            <select id="ti-motif" data-champ="motif" @bind="motifTiroir" autofocus>
+                <option value="">— choisir —</option>
+                @foreach (var m in motifsTiroir) { <option value="@m.Code">@m.Libelle</option> }
+            </select>
+            @if (motifTiroir == "autre")
+            {
+                <label for="ti-texte" class="requis">Précisez</label>
+                <input id="ti-texte" data-champ="motif_texte" type="text" maxlength="200" @bind="texteTiroir" @bind:event="oninput" />
+            }
             <div style="display: flex; gap: 6px">
                 <button type="button" class="btn" @onclick="() => confirmation = false">Annuler</button>
                 <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="OuvrirTiroirAsync">Ouvrir</button>
@@ -69,13 +80,29 @@
         <a href="@adresse" class="sous-rubrique @(actif ? "active" : null)" aria-current="@(actif ? "page" : null)">@libelle</a>
     };
 
+    private List<MotifReglableDto> motifsTiroir = [];
+    private string motifTiroir = "";
+    private string? texteTiroir;
+
+    /// <summary>F8 ou clic : la confirmation s'ouvre avec les motifs actifs (rechargés à chaque fois : le titulaire a pu les changer).</summary>
+    private async Task DemanderTiroirAsync()
+    {
+        (confirmation, messageTiroir, motifTiroir, texteTiroir) = (true, null, "", null);
+        var (liste, e) = await Api.MotifsAsync("tiroir");
+        (motifsTiroir, messageTiroir) = (liste, e);
+    }
+
     private async Task OuvrirTiroirAsync()
     {
+        // Contrôle aussi fait par le serveur (motif actif, « Autre » avec texte)
+        if (motifTiroir == "") { messageTiroir = "Choisissez le motif de l’ouverture du tiroir."; return; }
+        if (motifTiroir == "autre" && string.IsNullOrWhiteSpace(texteTiroir)) { messageTiroir = "Motif « Autre » : précisez le motif."; return; }
         enCours = true;
         try
         {
-            var e = await Api.SignalerCaisseAsync(new EvenementCaisseRequete("tiroir_ouvert"));
-            (messageTiroir, confirmation) = (e ?? $"Ouverture du tiroir sans vente enregistrée à {DateTime.Now:HH:mm}.", false);
+            var e = await Api.SignalerCaisseAsync(new EvenementCaisseRequete("tiroir_ouvert", MotifCode: motifTiroir, MotifTexte: texteTiroir));
+            if (e is not null) { messageTiroir = e; return; }
+            (messageTiroir, confirmation) = ($"Ouverture du tiroir sans vente enregistrée à {DateTime.Now:HH:mm}.", false);
         }
         finally { enCours = false; }
     }

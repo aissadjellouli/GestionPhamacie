@@ -515,6 +515,14 @@ public class VoletChifaTests
     }
 
     [Fact]
+    public void Produit_servi_sur_deux_lots_au_meme_prix_une_seule_ligne_d_autorisation()
+    {
+        S.EcartChifaLigneDto E(int index) => new(index, 2, "Amoxicilline", 300, 350, 350, "plus_eleve", true);
+        var detail = S.DetailAutorisationChifa.Construire([E(0), E(1)], new Dictionary<long, string> { [2] = "aligne" }, m => $"{m}")!;
+        Assert.Single(detail.Lignes);
+    }
+
+    [Fact]
     public void Message_au_vendeur()
     {
         var m = CatalogueVoletChifa.Message("06930126", [new MajCatalogueChifa(2, "VIT D3", false, 150m, 156.48m)]);

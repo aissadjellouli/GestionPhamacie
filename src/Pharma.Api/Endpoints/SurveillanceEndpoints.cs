@@ -18,7 +18,8 @@ internal static class SurveillanceEndpoints
         api.MapPost("/caisse/evenements", async (EvenementCaisseRequete req, SignalerEvenementCaisse signaler, ClaimsPrincipal user, HttpRequest requete,
                 CancellationToken ct) =>
             {
-                await signaler.ExecuterAsync(req.Type, req.ProduitId, req.LotId, req.Quantite, req.Montant, user.UtilisateurId(), requete.Poste(), ct);
+                await signaler.ExecuterAsync(req.Type, req.ProduitId, req.LotId, req.Quantite, req.Montant, user.UtilisateurId(), requete.Poste(), ct,
+                    req.MotifCode, req.MotifTexte);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.CaisseVendre);

@@ -176,6 +176,10 @@ public static class Libelles
         _ => "—"
     };
 
+    /// <summary>Référence d'un mouvement du relevé de dette : mode de règlement accentué (« (especes) » des mouvements anciens).</summary>
+    public static string ReferenceReleve(string reference) =>
+        reference.Replace("(especes)", "(espèces)", StringComparison.Ordinal).Replace("(cheque)", "(chèque)", StringComparison.Ordinal);
+
     public static string Classe(string? classe) => classe switch
     {
         "liste_i" => "Liste I",
@@ -301,6 +305,26 @@ public static class Libelles
         "medecin_modifie" => "Médecin modifié",
         "autorisation_code" => "Action autorisée par code",
         "annulations_excessives" => "Annulations au-delà du seuil",
+        "catalogue_maj_volet_chifa" => "Catalogue mis à jour d’après un volet Chifa",
+        "ecart_prix_chifa" => "Écart de prix avec Chifa (volet)",
+        "code_chifa_associe" => "Code Chifa associé à un produit",
+        "reprise_doublon_patient" => "Doublon de patient traité (reprise de données)",
+        "reprise_annulation" => "Reprise de données annulée",
+        "code_comptoir_demandeur_bloque" => "Code comptoir bloqué (demande d’autorisation)",
+        "comptage_intermediaire" => "État intermédiaire de la caisse (comptage)",
+        "comptage_recompte" => "Livraison recomptée",
+        "reception_attente_abandonnee" => "Réception en attente abandonnée",
+        "tiroir_ouvert" => "Tiroir ouvert sans vente",
+        "restauration_base" => "Base de données restaurée",
+        "restauration_ged" => "Documents restaurés",
+        "pret_cree" => "Prêt créé",
+        "pret_modifie" => "Prêt modifié",
+        "pret_document" => "Document de prêt ajouté",
+        "echeancier_pret" => "Échéancier de prêt enregistré",
+        "echeance_pret_payee" => "Échéance de prêt payée",
+        "correspondance_echeancier" => "Correspondance d’échéancier de prêt enregistrée",
+        "financement_utilise" => "Financement utilisé",
+        "titulaire_rembourse" => "Titulaire remboursé",
         _ => Humaniser(action)
     };
 
