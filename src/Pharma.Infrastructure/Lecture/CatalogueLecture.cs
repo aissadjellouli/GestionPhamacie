@@ -56,4 +56,41 @@ public sealed class CatalogueLecture(NpgsqlDataSource db) : ICatalogueLecture
                 r.GetDecimal(5), r.GetInt32(6), CodesMetier.ClasseDepuisCode(r.GetString(7))));
         return liste;
     }
+
+    // Produits actifs d'une indication active (script 104) : par identifiant, ou libellé commençant par le texte (accents ignorés).
+    // Même ordre qu'au comptoir : disponible, puis rupture avec remplaçant, puis sans remplaçant ; puis le nom.
+    private const string SqlParIndication = """
+        SELECT p.id, p.nom_commercial, d.nom, p.dosage, p.forme, p.prix_public, COALESCE(e.stock, 0)::int, p.classe
+        FROM produit p
+        LEFT JOIN dci d ON d.id = p.dci_id
+        LEFT JOIN LATERAL (SELECT sum(l.quantite_disponible) AS stock FROM lot l
+                           WHERE l.produit_id = p.id AND l.date_peremption > current_date AND NOT l.bloque) e ON true
+        WHERE p.actif AND EXISTS (
+            SELECT 1 FROM produit_indication pi JOIN indication i ON i.id = pi.indication_id
+            WHERE pi.produit_id = p.id AND i.actif
+              AND (i.id = $2 OR ($2 IS NULL AND sans_accent(i.libelle) ILIKE sans_accent($1) || '%')))
+        ORDER BY CASE WHEN COALESCE(e.stock, 0) > 0 THEN 0
+                      WHEN p.dci_id IS NOT NULL AND EXISTS (
+                           SELECT 1 FROM produit a JOIN lot la ON la.produit_id = a.id
+                           WHERE a.dci_id = p.dci_id AND a.id <> p.id AND a.actif
+                             AND la.quantite_disponible > 0 AND la.date_peremption > current_date AND NOT la.bloque) THEN 1
+                      ELSE 2 END, p.nom_commercial
+        LIMIT $3
+        """;
+
+    public async Task<IReadOnlyList<ProduitResume>> ParIndicationAsync(string? texte, long? indicationId, int limite, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand(SqlParIndication);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)texte ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)indicationId ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bigint });
+        cmd.Parameters.AddWithValue(limite);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var liste = new List<ProduitResume>();
+        while (await r.ReadAsync(ct))
+            liste.Add(new ProduitResume(
+                r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2),
+                r.IsDBNull(3) ? null : r.GetString(3), r.IsDBNull(4) ? null : r.GetString(4),
+                r.GetDecimal(5), r.GetInt32(6), CodesMetier.ClasseDepuisCode(r.GetString(7))));
+        return liste;
+    }
 }

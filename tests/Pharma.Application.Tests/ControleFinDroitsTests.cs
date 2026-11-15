@@ -118,4 +118,41 @@ public class ControleFinDroitsTests
         Assert.Empty(journal.Actions);
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(99, Aujourdhui, 5));
     }
+
+    [Theory]
+    [InlineData(-3, "expires")]
+    [InlineData(10, "bientot")]   // dans les 30 jours
+    public async Task Credit_sans_tiers_payant_droits_expires_ou_bientot_journal_renforce(int jours, string etat)
+    {
+        var journal = new JournalEspion();
+        await DroitsChifa.JournaliserCreditSansTiersPayantAsync(Patient(Aujourdhui.AddDays(jours)), journal, 12, Aujourdhui, 30, 5, 1, "V1", CancellationToken.None);
+        Assert.Equal([DroitsChifa.ActionJournalCredit], journal.Actions);
+        Assert.Equal((etat, false), ((string)journal.Details[0]["etat"]!, (bool)journal.Details[0]["tiers_payant"]!));
+        Assert.Equal(EtatDroitsChifa.MessageCredit, "Droits expirés et vente à crédit : risque de non-paiement.");
+        Assert.Equal(etat, EtatDroitsChifa.EtatCreditSansTiersPayant(Aujourdhui.AddDays(jours), Aujourdhui, 30));
+    }
+
+    [Fact]
+    public async Task Credit_sans_tiers_payant_droits_valables_ou_absents_aucun_journal()
+    {
+        var journal = new JournalEspion();
+        await DroitsChifa.JournaliserCreditSansTiersPayantAsync(Patient(Aujourdhui.AddDays(60)), journal, 12, Aujourdhui, 30, 5, 1, "V1", CancellationToken.None);
+        await DroitsChifa.JournaliserCreditSansTiersPayantAsync(Patient(null), journal, 12, Aujourdhui, 30, 5, 1, "V1", CancellationToken.None);
+        Assert.Empty(journal.Actions);
+    }
+
+    [Fact]
+    public async Task Encaissement_a_credit_sans_tiers_payant_droits_expires_non_bloque_et_journalise()
+    {
+        var ventes = new VentesEspion();
+        var journal = new JournalEspion();
+        var cas = new Encaisser(new CatalogueEnMemoire(), Patient(CatalogueEnMemoire.Aujourdhui.AddDays(-1)), ventes, new SessionsEnMemoire(),
+            new DroitsFactices("caisse.vendre", "credit.accorder", "credit.depasser_plafond"), new HorlogeFixe(CatalogueEnMemoire.Aujourdhui),
+            new ScansEnMemoire(), journal: journal);
+        await cas.ExecuterAsync(new CommandeVente([new LigneCommande(2, 20, 1)], false, null, null, 12,
+            new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, null), 0, ModePaiement.Credit, null), 5, "Caisse 1");
+        Assert.NotNull(ventes.Recu);
+        Assert.Contains(DroitsChifa.ActionJournalCredit, journal.Actions);
+        Assert.DoesNotContain(DroitsChifa.ActionJournal, journal.Actions);
+    }
 }

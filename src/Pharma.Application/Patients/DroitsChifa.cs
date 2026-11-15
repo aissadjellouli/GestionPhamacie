@@ -17,6 +17,10 @@ public static class DroitsChifa
 
     public static bool Expires(DateOnly? dateFinDroit, DateOnly aujourdhui) => dateFinDroit is { } f && f < aujourdhui;
 
+    /// <summary>Crédit sans tiers payant : « expires » (date dépassée), « bientot » (dans les N jours, aujourd'hui compris), sinon null.</summary>
+    public static string? EtatCreditSansTiersPayant(DateOnly fin, DateOnly aujourdhui, int joursAlerte) =>
+        fin < aujourdhui ? "expires" : fin.DayNumber - aujourdhui.DayNumber <= Math.Max(0, joursAlerte) ? "bientot" : null;
+
     public static string Message(DateOnly dateFinDroit) =>
         $"Droits Chifa expirés depuis le {dateFinDroit:dd/MM/yyyy} : vérifiez la carte du patient (vente non bloquée).";
 
@@ -33,6 +37,26 @@ public static class DroitsChifa
         if (credit)
             await journal.EcrireAsync(utilisateurId, ActionJournalCredit, "vente", venteId,
                 new Dictionary<string, object?>(details) { ["mode"] = "credit" }, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);
+    }
+
+    /// <summary>
+    /// Vente à crédit SANS tiers payant Chifa (décision du titulaire, 2026-11-15) : un patient dont la date de fin de droits est
+    /// dépassée ou dans les N jours (seuil « bientôt expirés ») reçoit le même avertissement renforcé (MessageCredit) ; journal
+    /// droits_chifa_expires_credit (état expires ou bientot) ; jamais de blocage.
+    /// </summary>
+    public static async Task JournaliserCreditSansTiersPayantAsync(IPatients patients, IJournal? journal, long? patientId,
+        DateOnly aujourdhui, int joursAlerte, long utilisateurId, long venteId, string numero, CancellationToken ct)
+    {
+        if (patientId is not { } pid || journal is null) return;
+        var fiche = await patients.FicheAsync(pid, ct);
+        if (fiche?.DateFinDroit is not { } fin) return;
+        var etat = EtatCreditSansTiersPayant(fin, aujourdhui, joursAlerte);
+        if (etat is null) return;
+        await journal.EcrireAsync(utilisateurId, ActionJournalCredit, "vente", venteId,
+            new Dictionary<string, object?>
+            {
+                ["vente"] = numero, ["patient_id"] = pid, ["date_fin_droit"] = fin, ["mode"] = "credit", ["tiers_payant"] = false, ["etat"] = etat
+            }, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);
     }
 }
 

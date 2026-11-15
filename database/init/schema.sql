@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 107 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 108 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 107 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 108 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -24,10 +24,13 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
+--
+--
 -- PostgreSQL database dump
 --
 
-\restrict kuIANX02DHUbXPAycdiz1R1ceAcrpCZq6VbwkXIOteBQHhruWVqPQolhqydgroW
+\restrict 9pCGRB2YZEy2NsnoyGBbf3wQkIB3DRdCOPQGyT7OBpjgcfLSgFU7NGZnShZB6yw
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -765,6 +768,40 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+
+--
+-- Name: avoir_mouvement_controle_solde(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.avoir_mouvement_controle_solde() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_solde numeric(12,2);
+BEGIN
+    PERFORM 1 FROM patient WHERE id = NEW.patient_id FOR UPDATE;
+    IF NEW.sens = 'debit' THEN
+        SELECT COALESCE(SUM(CASE WHEN sens = 'credit' THEN montant ELSE -montant END), 0) INTO v_solde
+        FROM avoir_mouvement WHERE patient_id = NEW.patient_id;
+        IF v_solde < NEW.montant THEN
+            RAISE EXCEPTION 'Avoir insuffisant (solde : % DA)', v_solde USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+
+
+--
+-- Name: avoir_mouvement_immuable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.avoir_mouvement_immuable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Un mouvement d''avoir ne se modifie pas et ne se supprime pas.';
+END $$;
 
 
 --
@@ -2761,6 +2798,44 @@ ALTER TABLE public.annulation_vente ALTER COLUMN id ADD GENERATED ALWAYS AS IDEN
 
 
 --
+-- Name: avoir_mouvement; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.avoir_mouvement (
+    id bigint NOT NULL,
+    patient_id bigint NOT NULL,
+    sens text NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    origine text NOT NULL,
+    vente_id bigint,
+    paiement_id bigint,
+    mouvement_tiroir_id bigint,
+    motif text,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_avoir_mouvement_liens CHECK ((((origine <> ALL (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text])) OR (vente_id IS NOT NULL)) AND ((origine <> 'paiement'::text) OR (paiement_id IS NOT NULL)) AND ((origine <> 'remboursement'::text) OR (mouvement_tiroir_id IS NOT NULL)))),
+    CONSTRAINT ck_avoir_mouvement_montant CHECK ((montant > (0)::numeric)),
+    CONSTRAINT ck_avoir_mouvement_origine CHECK ((origine = ANY (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'saisie'::text, 'paiement'::text, 'remboursement'::text]))),
+    CONSTRAINT ck_avoir_mouvement_sens CHECK ((sens = ANY (ARRAY['credit'::text, 'debit'::text]))),
+    CONSTRAINT ck_avoir_mouvement_sens_origine CHECK ((((origine = ANY (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'saisie'::text])) AND (sens = 'credit'::text)) OR ((origine = ANY (ARRAY['paiement'::text, 'remboursement'::text])) AND (sens = 'debit'::text))))
+);
+
+
+--
+-- Name: avoir_mouvement_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.avoir_mouvement ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.avoir_mouvement_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: boite; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3784,6 +3859,33 @@ ALTER TABLE public.fournisseur_mouvement ALTER COLUMN id ADD GENERATED ALWAYS AS
 
 
 --
+-- Name: indication; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.indication (
+    id bigint NOT NULL,
+    libelle text NOT NULL,
+    actif boolean DEFAULT true NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_indication_libelle CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 80)))
+);
+
+
+--
+-- Name: indication_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.indication ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.indication_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: inventaire; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4027,7 +4129,7 @@ CREATE TABLE public.ligne_vente (
     taux_tva numeric(5,2),
     CONSTRAINT ck_ligne_vente_choix_prix_chifa CHECK (((choix_prix_chifa IS NULL) OR ((prix_chifa IS NOT NULL) AND (choix_prix_chifa = ANY (ARRAY['aligne_auto'::text, 'aligne'::text, 'garde'::text, 'plus_eleve'::text]))))),
     CONSTRAINT ck_ligne_vente_prix_chifa CHECK (((prix_chifa IS NULL) OR (prix_chifa >= (0)::numeric))),
-    CONSTRAINT ck_ligne_vente_produit_ou_prestation CHECK ((((produit_id IS NOT NULL) AND (lot_id IS NOT NULL) AND (type_prestation_id IS NULL) AND (libelle IS NULL) AND (taux_tva IS NULL)) OR ((type_prestation_id IS NOT NULL) AND (produit_id IS NULL) AND (lot_id IS NULL) AND (libelle IS NOT NULL) AND (taux_tva IS NOT NULL) AND (taux_tva >= (0)::numeric) AND (taux_tva <= (100)::numeric) AND (shp = (0)::numeric) AND (montant_organisme = (0)::numeric) AND (prix_chifa IS NULL) AND (raison_lot IS NULL)))),
+    CONSTRAINT ck_ligne_vente_produit_ou_prestation CHECK ((((produit_id IS NOT NULL) AND (lot_id IS NOT NULL) AND (type_prestation_id IS NULL) AND (libelle IS NULL) AND (taux_tva IS NULL)) OR ((type_prestation_id IS NOT NULL) AND (produit_id IS NULL) AND (lot_id IS NULL) AND (libelle IS NOT NULL) AND (taux_tva IS NOT NULL) AND (taux_tva >= (0)::numeric) AND (taux_tva <= (100)::numeric) AND (shp = (0)::numeric) AND (prix_chifa IS NULL) AND (raison_lot IS NULL)))),
     CONSTRAINT ck_ligne_vente_raison_lot CHECK (((raison_lot IS NULL) OR (raison_lot = ANY (ARRAY['peremption'::text, 'introuvable'::text, 'abimee'::text, 'demande_client'::text])))),
     CONSTRAINT ck_ligne_vente_reduction_auto CHECK ((reduction_auto >= (0)::numeric)),
     CONSTRAINT ck_ligne_vente_reduction_manuelle CHECK ((reduction_manuelle >= (0)::numeric)),
@@ -4485,7 +4587,7 @@ CREATE TABLE public.paiement (
     session_caisse_id bigint,
     numero_recu text,
     CONSTRAINT paiement_check CHECK (((vente_id IS NOT NULL) OR (patient_id IS NOT NULL))),
-    CONSTRAINT paiement_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text, 'remboursement_credit'::text]))),
+    CONSTRAINT paiement_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text, 'remboursement_credit'::text, 'avoir'::text]))),
     CONSTRAINT paiement_montant_check CHECK ((montant > (0)::numeric))
 );
 
@@ -4976,6 +5078,17 @@ ALTER TABLE public.produit ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: produit_indication; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.produit_indication (
+    produit_id bigint NOT NULL,
+    indication_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: reception; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5393,6 +5506,9 @@ CREATE TABLE public.retour_client (
     session_caisse_id bigint,
     poste text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    motif_code text,
+    motif_texte text,
+    CONSTRAINT ck_retour_client_motif_texte CHECK (((motif_texte IS NULL) OR ((motif_code IS NOT NULL) AND ((length(btrim(motif_texte)) >= 1) AND (length(btrim(motif_texte)) <= 200))))),
     CONSTRAINT retour_client_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text]))),
     CONSTRAINT retour_client_montant_rembourse_check CHECK ((montant_rembourse >= (0)::numeric)),
     CONSTRAINT retour_client_motif_check CHECK ((length(btrim(motif)) >= 3))
@@ -5693,9 +5809,12 @@ CREATE TABLE public.type_prestation (
     taux_tva numeric(5,2) DEFAULT 0 NOT NULL,
     actif boolean DEFAULT true NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    remboursable boolean DEFAULT false NOT NULL,
+    tarif_reference numeric(12,2),
     CONSTRAINT ck_type_prestation_code CHECK (((length(btrim(code)) >= 1) AND (length(btrim(code)) <= 20))),
     CONSTRAINT ck_type_prestation_libelle CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 120))),
     CONSTRAINT ck_type_prestation_prix CHECK ((prix >= (0)::numeric)),
+    CONSTRAINT ck_type_prestation_remboursable CHECK (((remboursable AND (tarif_reference IS NOT NULL) AND (tarif_reference > (0)::numeric)) OR ((NOT remboursable) AND (tarif_reference IS NULL)))),
     CONSTRAINT ck_type_prestation_tva CHECK (((taux_tva >= (0)::numeric) AND (taux_tva <= (100)::numeric)))
 );
 
@@ -5857,6 +5976,7 @@ CREATE TABLE public.vente (
     CONSTRAINT ck_vente_chifa_ecart_motif CHECK (((chifa_ecart_motif IS NULL) OR ((char_length(btrim(chifa_ecart_motif)) >= 1) AND (char_length(btrim(chifa_ecart_motif)) <= 500)))),
     CONSTRAINT ck_vente_chifa_exclusion CHECK ((((chifa_exclue_le IS NULL) AND (chifa_exclue_par IS NULL) AND (chifa_exclusion_motif_code IS NULL) AND (chifa_exclusion_texte IS NULL)) OR ((chifa_exclue_le IS NOT NULL) AND (chifa_exclue_par IS NOT NULL) AND (chifa_exclusion_motif_code IS NOT NULL)))),
     CONSTRAINT ck_vente_chifa_exclusion_texte CHECK (((chifa_exclusion_texte IS NULL) OR ((char_length(btrim(chifa_exclusion_texte)) >= 1) AND (char_length(btrim(chifa_exclusion_texte)) <= 200)))),
+    CONSTRAINT ck_vente_chifa_facture_format CHECK (((chifa_facture IS NULL) OR (chifa_facture ~ '^[0-9]{8}$'::text))),
     CONSTRAINT ck_vente_chifa_majoration CHECK (((chifa_majoration_montant >= (0)::numeric) AND ((chifa_majoration_montant = (0)::numeric) OR (chifa_majoration_code IS NOT NULL)))),
     CONSTRAINT ck_vente_montant_don CHECK ((montant_don >= (0)::numeric)),
     CONSTRAINT ck_vente_pour_nom CHECK (((pour_nom IS NULL) OR ((char_length(btrim(pour_nom)) >= 1) AND (char_length(btrim(pour_nom)) <= 200)))),
@@ -5976,6 +6096,22 @@ CREATE VIEW public.v_alternatives AS
      JOIN public.produit alt ON (((alt.dci_id = p.dci_id) AND (NOT (alt.dosage IS DISTINCT FROM p.dosage)) AND (NOT (alt.forme IS DISTINCT FROM p.forme)) AND (alt.id <> p.id) AND alt.actif)))
      JOIN public.v_etat_stock e ON ((e.produit_id = alt.id)))
   WHERE (e.stock > 0);
+
+
+--
+-- Name: v_avoir_patient; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_avoir_patient AS
+ SELECT patient_id,
+    (sum(
+        CASE
+            WHEN (sens = 'credit'::text) THEN montant
+            ELSE (- montant)
+        END))::numeric(12,2) AS solde,
+    max(cree_le) AS dernier_mouvement
+   FROM public.avoir_mouvement
+  GROUP BY patient_id;
 
 
 --
@@ -6492,7 +6628,7 @@ CREATE VIEW public.v_parcours_boite AS
     l.bloque,
     v.numero AS ticket,
     v.date_vente,
-    v.num_facture_chifa,
+    v.chifa_facture,
     NULLIF(btrim(((COALESCE(pt.nom, ''::text) || ' '::text) || COALESCE(pt.prenom, ''::text))), ''::text) AS patient,
     pt.telephone
    FROM (((((((public.boite b
@@ -6988,6 +7124,22 @@ CREATE VIEW public.v_vente_part_organisme AS
 
 
 --
+-- Name: vente_chifa_facture_conflit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vente_chifa_facture_conflit (
+    vente_id bigint NOT NULL,
+    num_facture_chifa text NOT NULL,
+    chifa_facture text,
+    constate_le timestamp with time zone DEFAULT now() NOT NULL,
+    tranche_le timestamp with time zone,
+    tranche_par bigint,
+    valeur_retenue text,
+    CONSTRAINT ck_vente_chifa_facture_conflit_tranche CHECK ((((tranche_le IS NULL) AND (valeur_retenue IS NULL)) OR ((tranche_le IS NOT NULL) AND (valeur_retenue IS NOT NULL))))
+);
+
+
+--
 -- Name: vente_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -7118,6 +7270,14 @@ ALTER TABLE ONLY public.annulation_vente
 
 ALTER TABLE ONLY public.annulation_vente
     ADD CONSTRAINT annulation_vente_vente_id_key UNIQUE (vente_id);
+
+
+--
+-- Name: avoir_mouvement avoir_mouvement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avoir_mouvement
+    ADD CONSTRAINT avoir_mouvement_pkey PRIMARY KEY (id);
 
 
 --
@@ -7481,6 +7641,14 @@ ALTER TABLE ONLY public.fournisseur
 
 
 --
+-- Name: indication indication_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.indication
+    ADD CONSTRAINT indication_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: inventaire inventaire_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7833,6 +8001,14 @@ ALTER TABLE ONLY public.produit
 
 
 --
+-- Name: produit_indication produit_indication_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.produit_indication
+    ADD CONSTRAINT produit_indication_pkey PRIMARY KEY (produit_id, indication_id);
+
+
+--
 -- Name: produit produit_num_enregistrement_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8113,6 +8289,14 @@ ALTER TABLE ONLY public.regularisation_part_organisme
 
 
 --
+-- Name: vente_chifa_facture_conflit vente_chifa_facture_conflit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente_chifa_facture_conflit
+    ADD CONSTRAINT vente_chifa_facture_conflit_pkey PRIMARY KEY (vente_id);
+
+
+--
 -- Name: vente vente_numero_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8161,6 +8345,20 @@ CREATE INDEX idx_annulation_session ON public.annulation_vente USING btree (sess
 --
 
 CREATE INDEX idx_audit_date ON public.journal_audit USING btree (cree_le);
+
+
+--
+-- Name: idx_avoir_mouvement_patient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_avoir_mouvement_patient ON public.avoir_mouvement USING btree (patient_id, cree_le);
+
+
+--
+-- Name: idx_avoir_mouvement_vente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_avoir_mouvement_vente ON public.avoir_mouvement USING btree (vente_id) WHERE (vente_id IS NOT NULL);
 
 
 --
@@ -8521,6 +8719,13 @@ CREATE INDEX idx_produit_emplacement ON public.produit USING btree (emplacement_
 
 
 --
+-- Name: idx_produit_indication_indication; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_produit_indication_indication ON public.produit_indication USING btree (indication_id);
+
+
+--
 -- Name: idx_produit_nom_sans_accent; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8829,6 +9034,13 @@ CREATE INDEX ix_vente_chifa_exclue ON public.vente USING btree (chifa_exclue_le 
 
 
 --
+-- Name: ix_vente_chifa_facture_conflit_a_trancher; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_vente_chifa_facture_conflit_a_trancher ON public.vente_chifa_facture_conflit USING btree (constate_le) WHERE (tranche_le IS NULL);
+
+
+--
 -- Name: ix_vente_pour_patient; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8882,6 +9094,13 @@ CREATE UNIQUE INDEX ux_client_facture_raison_sociale_ci ON public.client_facture
 --
 
 CREATE UNIQUE INDEX ux_compte_tresorerie_nom_ci ON public.compte_tresorerie USING btree (lower(btrim(nom)));
+
+
+--
+-- Name: ux_indication_libelle; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_indication_libelle ON public.indication USING btree (lower(btrim(libelle)));
 
 
 --
@@ -9122,6 +9341,20 @@ UNION ALL
            FROM public.retour_client
           WHERE ((retour_client.mode = 'carte'::text) AND (retour_client.montant_rembourse > (0)::numeric))) x
      JOIN public.compte_carte_periode h ON ((((x.cree_le)::date >= h.du) AND ((h.au IS NULL) OR ((x.cree_le)::date <= h.au)))));
+
+
+--
+-- Name: avoir_mouvement tg_avoir_mouvement_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tg_avoir_mouvement_immuable BEFORE DELETE OR UPDATE ON public.avoir_mouvement FOR EACH ROW EXECUTE FUNCTION public.avoir_mouvement_immuable();
+
+
+--
+-- Name: avoir_mouvement tg_avoir_mouvement_solde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tg_avoir_mouvement_solde BEFORE INSERT ON public.avoir_mouvement FOR EACH ROW EXECUTE FUNCTION public.avoir_mouvement_controle_solde();
 
 
 --
@@ -9612,6 +9845,46 @@ ALTER TABLE ONLY public.annulation_vente
 
 ALTER TABLE ONLY public.annulation_vente
     ADD CONSTRAINT annulation_vente_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
+
+
+--
+-- Name: avoir_mouvement avoir_mouvement_mouvement_tiroir_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avoir_mouvement
+    ADD CONSTRAINT avoir_mouvement_mouvement_tiroir_id_fkey FOREIGN KEY (mouvement_tiroir_id) REFERENCES public.mouvement_tiroir(id);
+
+
+--
+-- Name: avoir_mouvement avoir_mouvement_paiement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avoir_mouvement
+    ADD CONSTRAINT avoir_mouvement_paiement_id_fkey FOREIGN KEY (paiement_id) REFERENCES public.paiement(id);
+
+
+--
+-- Name: avoir_mouvement avoir_mouvement_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avoir_mouvement
+    ADD CONSTRAINT avoir_mouvement_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: avoir_mouvement avoir_mouvement_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avoir_mouvement
+    ADD CONSTRAINT avoir_mouvement_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: avoir_mouvement avoir_mouvement_vente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avoir_mouvement
+    ADD CONSTRAINT avoir_mouvement_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
 
 
 --
@@ -10735,6 +11008,22 @@ ALTER TABLE ONLY public.produit
 
 
 --
+-- Name: produit_indication produit_indication_indication_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.produit_indication
+    ADD CONSTRAINT produit_indication_indication_id_fkey FOREIGN KEY (indication_id) REFERENCES public.indication(id);
+
+
+--
+-- Name: produit_indication produit_indication_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.produit_indication
+    ADD CONSTRAINT produit_indication_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
 -- Name: produit produit_laboratoire_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11295,6 +11584,22 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: vente_chifa_facture_conflit vente_chifa_facture_conflit_tranche_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente_chifa_facture_conflit
+    ADD CONSTRAINT vente_chifa_facture_conflit_tranche_par_fkey FOREIGN KEY (tranche_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: vente_chifa_facture_conflit vente_chifa_facture_conflit_vente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente_chifa_facture_conflit
+    ADD CONSTRAINT vente_chifa_facture_conflit_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
+
+
+--
 -- Name: vente vente_chifa_rattache_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11354,5 +11659,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict kuIANX02DHUbXPAycdiz1R1ceAcrpCZq6VbwkXIOteBQHhruWVqPQolhqydgroW
+\unrestrict 9pCGRB2YZEy2NsnoyGBbf3wQkIB3DRdCOPQGyT7OBpjgcfLSgFU7NGZnShZB6yw
 

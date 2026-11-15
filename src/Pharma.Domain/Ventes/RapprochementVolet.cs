@@ -20,10 +20,15 @@ public sealed record LigneComparee(string? Code, long? ProduitId, string Produit
 /// Comparaison d'un volet avec une vente : lignes, part de l'organisme enregistrée sur la vente et part recalculée sur le prix Chifa
 /// (null : taux de la vente inconnu, reste à charge saisi à la main).
 /// </summary>
-public sealed record ComparaisonVolet(IReadOnlyList<LigneComparee> Lignes, decimal PartOrganismeVente, decimal? PartOrganismeChifa)
+public sealed record ComparaisonVolet(IReadOnlyList<LigneComparee> Lignes, decimal PartOrganismeVente, decimal? PartOrganismeChifa, decimal Majoration = 0)
 {
     /// <summary>Aucune différence en rouge : seuls des écarts de prix sous le seuil, ou rien.</summary>
     public bool Concorde => Lignes.All(l => !l.EnRouge);
+    /// <summary>
+    /// Part Chifa sans la majoration (2026-11-15) : base de la régularisation (regularisation_part_organisme.part_organisme_chifa), la
+    /// créance retenue y ajoutant la majoration (v_vente_part_organisme).
+    /// </summary>
+    public decimal? PartOrganismeChifaHorsMajoration => PartOrganismeChifa - Majoration;
     /// <summary>Part de l'organisme de la vente moins celle calculée sur le prix Chifa (0 si elle ne se calcule pas).</summary>
     public decimal EcartPartOrganisme => PartOrganismeChifa is { } c ? PartOrganismeVente - c : 0;
     /// <summary>Proximité avec le volet : +2 par produit présent des deux côtés, +1 si même quantité, −1 par produit d'un seul côté.</summary>
@@ -75,7 +80,7 @@ public static class RapprochementVolet
     /// du volet), l'écart de quantité restant une différence en rouge.
     /// </param>
     public static ComparaisonVolet Comparer(IEnumerable<LigneVoletRapprochee> volet, IEnumerable<LigneVenteRapprochee> vente, decimal seuil,
-        decimal? taux, decimal partOrganismeVente)
+        decimal? taux, decimal partOrganismeVente, decimal majoration = 0)
     {
         var servis = vente.GroupBy(l => l.ProduitId)
             .Select(g => (Id: g.Key, Nom: g.First().Produit, Qte: g.Sum(l => l.Quantite),
@@ -118,7 +123,9 @@ public static class RapprochementVolet
         }
         foreach (var s in servis.Values.Where(s => !vus.Contains(s.Id)))
             lignes.Add(new LigneComparee(null, s.Id, s.Nom, null, s.Qte, null, s.Prix, AbsentVolet));
-        return new ComparaisonVolet(lignes, partOrganismeVente, taux is null ? null : partChifa);
+        // Majoration Chifa de la vente (2026-11-15) : comprise des DEUX côtés de la part organisme comparée (vente et volet), elle ne crée
+        // jamais d'écart à elle seule
+        return new ComparaisonVolet(lignes, partOrganismeVente + majoration, taux is null ? null : partChifa + majoration, majoration);
     }
 
     /// <summary>Résumé des différences en rouge, pour le journal et la liste « Volets avec écart ».</summary>
@@ -169,8 +176,11 @@ public sealed record RegularisationCalculee(string Sort, decimal Ecart, decimal 
 /// </summary>
 public sealed record AnnulationRegularisation(decimal DetteAnnulee, decimal TropPaye);
 
-/// <summary>Choix du patient sur le trop-payé : parts imputées sur ses autres ventes à crédit, et remboursement par le tiroir.</summary>
-public sealed record RepartitionTropPaye(IReadOnlyList<(long VenteId, decimal Montant)> Imputations, decimal Rembourse)
+/// <summary>
+/// Choix du patient sur le trop-payé : parts imputées sur ses autres ventes à crédit, remboursement par le tiroir, et part laissée en
+/// avoir (script 106).
+/// </summary>
+public sealed record RepartitionTropPaye(IReadOnlyList<(long VenteId, decimal Montant)> Imputations, decimal Rembourse, decimal Avoir = 0)
 {
     public decimal Impute => Imputations.Sum(i => i.Montant);
 }
@@ -243,18 +253,19 @@ public static class RegularisationPartOrganisme
     }
 
     /// <summary>
-    /// Choix obligatoire du patient sur le trop-payé : solder ses autres dettes (ventes choisies, chacune au plus son reste) et/ou être
-    /// remboursé par le tiroir ; répartition partielle possible, somme exactement égale au trop-payé. Sans autre dette : seul le
-    /// remboursement. Jamais de remboursement au-delà de ce qui a été encaissé.
+    /// Choix obligatoire du vendeur avec le patient sur le trop-payé (2026-11-15, scripts 098 et 106) : solder ses autres dettes (ventes
+    /// choisies, chacune au plus son reste), être remboursé par le tiroir et/ou le laisser en avoir ; répartition partielle possible,
+    /// somme exactement égale au trop-payé. Sans autre dette : remboursement ou avoir. Vente sans patient : pas d'avoir.
+    /// Jamais de remboursement au-delà de ce qui a été encaissé.
     /// </summary>
     /// <param name="autresDettes">Restes des autres ventes à crédit du patient (hors vente annulée).</param>
     public static RepartitionTropPaye Repartir(decimal tropPaye, IReadOnlyList<(long VenteId, decimal Montant)>? imputations, decimal? rembourse,
-        IReadOnlyDictionary<long, decimal> autresDettes, long venteAnnulee)
+        IReadOnlyDictionary<long, decimal> autresDettes, long venteAnnulee, decimal? avoir = null, bool patientConnu = true)
     {
         if (tropPaye <= 0) return new RepartitionTropPaye([], 0);
-        if (imputations is null && rembourse is null)
+        if (imputations is null && rembourse is null && avoir is null)
             throw new Commun.RegleMetierException(
-                $"Ce patient a payé {tropPaye:N2} DA de cette régularisation : choisissez avec lui de solder ses autres dettes ou de le rembourser.",
+                $"Ce patient a payé {tropPaye:N2} DA : choisissez avec lui de solder ses autres dettes, de le rembourser ou de laisser un avoir.",
                 "trop_paye");
         var parts = (imputations ?? []).Where(p => p.Montant != 0).ToList();
         foreach (var (vente, montant) in parts)
@@ -267,9 +278,13 @@ public static class RegularisationPartOrganisme
         if (parts.GroupBy(p => p.VenteId).Any(g => g.Count() > 1)) throw new Commun.RegleMetierException("Une vente est choisie deux fois.", "trop_paye");
         var r = rembourse ?? 0;
         if (r < 0) throw new Commun.RegleMetierException("Le remboursement est négatif.", "trop_paye");
-        if (parts.Sum(p => p.Montant) + r != tropPaye)
-            throw new Commun.RegleMetierException($"Répartissez exactement {tropPaye:N2} DA entre les autres dettes et le remboursement.", "trop_paye");
-        return new RepartitionTropPaye(parts, r);
+        var a = avoir ?? 0;
+        if (a < 0) throw new Commun.RegleMetierException("L’avoir est négatif.", "trop_paye");
+        if (a > 0 && !patientConnu) throw new Commun.RegleMetierException("Vente sans patient : aucun avoir possible.", "trop_paye");
+        if (parts.Sum(p => p.Montant) + r + a != tropPaye)
+            throw new Commun.RegleMetierException(
+                $"Répartissez exactement {tropPaye:N2} DA entre les autres dettes, le remboursement et l’avoir.", "trop_paye");
+        return new RepartitionTropPaye(parts, r, a);
     }
 
     public static string Libelle(string sort, decimal montantPatient, decimal detteDiminuee, decimal aRendre, decimal montantPharmacie) => sort switch

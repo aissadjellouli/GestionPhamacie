@@ -165,7 +165,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
         string id;
         await using (var num = new NpgsqlCommand("SELECT 'RC-' || lpad(nextval('seq_numero_recu')::text, 6, '0')", cx, tx))
             id = (string)(await num.ExecuteScalarAsync(ct))!;
-        await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Remboursement, null, utilisateurId, null, $"Encaissement de dette ({mode switch { "especes" => "espèces", "cheque" => "chèque", _ => mode }}) · reçu {id}", ct, sessionCaisseId);
+        await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Remboursement, null, utilisateurId, null, $"Encaissement de dette ({mode switch { "especes" => "espèces", "cheque" => "chèque", "avoir" => "avoir du patient", _ => mode }}) · reçu {id}", ct, sessionCaisseId);
         // Dette diminuée seulement si elle couvre encore le montant (deux postes ne peuvent pas encaisser deux fois)
         await using (var cmd = new NpgsqlCommand(
             "UPDATE patient SET solde_credit = solde_credit - $2 WHERE id = $1 AND solde_credit >= $2", cx, tx))
@@ -177,7 +177,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
         foreach (var (vente, part) in parts) await ReleveCredit.ImputerAsync(cx, tx, vente, part, ct);
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO paiement (patient_id, mode, montant, utilisateur_id, session_caisse_id, numero_recu)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
             """, cx, tx))
         {
             cmd.Parameters.AddWithValue(patientId);
@@ -186,7 +186,11 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
             cmd.Parameters.AddWithValue(utilisateurId);
             cmd.Parameters.AddWithValue(sessionCaisseId);
             cmd.Parameters.AddWithValue(id);
-            await cmd.ExecuteNonQueryAsync(ct);
+            var paiement = (long)(await cmd.ExecuteScalarAsync(ct))!;
+            // Dette payée avec l'avoir du patient (script 106) : débit de l'avoir sous verrou du patient, jamais au-delà du solde
+            if (mode == Pharma.Domain.Ventes.RegleAvoir.Mode)
+                await EcritureAvoir.DebiterAsync(cx, tx, patientId, montant, Pharma.Domain.Ventes.RegleAvoir.OriginePaiement, null, paiement, null,
+                    $"Encaissement de dette · reçu {id}", utilisateurId, ct);
         }
         await tx.CommitAsync(ct);
         return id;

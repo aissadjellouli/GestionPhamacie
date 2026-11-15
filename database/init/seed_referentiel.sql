@@ -21,7 +21,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 107 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 108 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -287,6 +287,22 @@ INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre) VALUES
     ('chifa_exclusion', 'autre',              'Autre (préciser)',       true,  999),
     ('majoration_chifa', 'garde',             'Garde',                  false, 10)
 ON CONFLICT (liste, code) DO NOTHING;
+
+-- Motifs du retour client (104) ; « Autre » demande un texte et ne se désactive pas
+INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre) VALUES
+    ('retour_client', 'erreur_delivrance', 'Erreur de délivrance', false, 10),
+    ('retour_client', 'non_utilise',       'Produit non utilisé',  false, 20),
+    ('retour_client', 'effet_indesirable', 'Effet indésirable',    false, 30),
+    ('retour_client', 'autre',             'Autre (préciser)',     true,  999)
+ON CONFLICT (liste, code) DO NOTHING;
+
+-- Indications thérapeutiques de départ (104), à valider par le titulaire (Administration › Indications thérapeutiques) ;
+-- ajoutées seulement si le libellé est absent
+INSERT INTO indication (libelle)
+SELECT x.libelle
+FROM (VALUES ('Toux'), ('Fièvre'), ('Douleur'), ('Rhume'), ('Mal de gorge'), ('Allergie'),
+             ('Diarrhée'), ('Constipation'), ('Brûlures d''estomac'), ('Nausées')) AS x(libelle)
+WHERE NOT EXISTS (SELECT 1 FROM indication i WHERE lower(btrim(i.libelle)) = lower(btrim(x.libelle)));
 
 -- Prestations de départ (105) : prix et taux de TVA à fixer par le titulaire (Administration › Prestations) ;
 -- à 0 DA, une prestation ne peut pas être vendue

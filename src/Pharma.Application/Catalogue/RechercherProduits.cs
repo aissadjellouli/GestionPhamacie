@@ -14,6 +14,13 @@ public interface ICatalogueLecture
     /// (même DCI en stock), en dernier ceux en rupture sans remplaçant ; le code-barres exact reste en tête.
     /// </summary>
     Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false, bool auComptoir = false);
+
+    /// <summary>
+    /// Produits actifs d'une indication active (script 104) : celle d'identifiant donné, sinon celles dont le libellé commence par le
+    /// texte (accents ignorés : « fievre » trouve « Fièvre »).
+    /// </summary>
+    Task<IReadOnlyList<ProduitResume>> ParIndicationAsync(string? texte, long? indicationId, int limite, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<ProduitResume>>([]);
 }
 
 /// <summary>Recherche au comptoir (scan ou saisie).</summary>

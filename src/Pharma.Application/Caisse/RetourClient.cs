@@ -25,7 +25,7 @@ public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quant
 /// </summary>
 public sealed record RetourAEcrire(long VenteId, string Numero, string Motif, long UtilisateurId, long ValidePar, string? Mode, decimal Montant,
     long? SessionCaisseId, string Poste, IReadOnlyList<LigneRetourAEcrire> Lignes, decimal ReductionDette = 0, long? PatientDetteId = null,
-    bool AccordClient = false);
+    bool AccordClient = false, string? MotifCode = null, string? MotifTexte = null);
 
 public interface IRetoursClient
 {
@@ -51,14 +51,30 @@ public sealed class LireVenteRetournable(IRetoursClient retours)
 /// caissier valide seul.
 /// </summary>
 public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCaisse sessions, IPermissionService droits,
-    VerificationCodeComptoir codes, IJournal journal, Patients.IPatients? patients = null, Securite.AutorisationCourante? autorisation = null)
+    VerificationCodeComptoir codes, IJournal journal, Patients.IPatients? patients = null, Securite.AutorisationCourante? autorisation = null,
+    Referentiels.MotifsActifs? motifs = null)
 {
     public async Task<ResultatRetour> ExecuterAsync(long venteId, string? motif, IReadOnlyList<LigneRetourDemandee> demandees, long utilisateurId,
         string? poste, string? validateurIdentifiant, string? validateurCode, bool solderDette = false, long? patientDetteId = null,
-        CancellationToken ct = default, bool accordClient = false)
+        CancellationToken ct = default, bool accordClient = false, string? motifCode = null)
     {
         var nomPoste = PosteCaisse.Exiger(poste);
-        var texte = RegleAnnulation.Motif(motif);
+        // Motif choisi dans la liste réglable « retour_client » (script 104), obligatoire ; « Autre » avec un texte, sinon le texte
+        // est une précision facultative. Sans la liste (anciens appels internes) : motif libre comme avant.
+        string? code = null, precision = null;
+        string texte;
+        if (motifs is not null)
+        {
+            (code, texte, precision) = await motifs.ChoisirAsync(Domain.Referentiels.RegleMotifs.RetourClient, motifCode, motif, "du retour", ct);
+            var detail = string.IsNullOrWhiteSpace(motif) ? null : motif.Trim();
+            if (code != Domain.Referentiels.RegleMotifs.Autre && detail is not null)
+            {
+                if (detail.Length > Domain.Referentiels.RegleMotifs.TexteMax)
+                    throw new RegleMetierException($"Motif : {Domain.Referentiels.RegleMotifs.TexteMax} caractères au plus.", "motif_texte");
+                (texte, precision) = ($"{texte} : {detail}", detail);
+            }
+        }
+        else texte = RegleAnnulation.Motif(motif);
         var vr = await retours.LireAsync(venteId, ct) ?? throw new RegleMetierException("Vente introuvable.");
         var v = vr.Vente;
         RegleRetour.VerifierVente(v.Statut, v.DansUnBordereau, v.PartOrganisme);
@@ -141,11 +157,11 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             throw new RegleMetierException("Ouvrez la caisse du poste : l’argent rendu au patient doit en sortir.");
 
         await retours.EnregistrerAsync(new RetourAEcrire(v.Id, v.Numero, texte, utilisateurId, validePar, v.Mode, montant, session?.Id, nomPoste, lignes,
-            reductionDette, reductionDette > 0 ? patientDette : null, deduitAuChoix), ct);
+            reductionDette, reductionDette > 0 ? patientDette : null, deduitAuChoix, code, precision), ct);
         await journal.EcrireAsync(utilisateurId, "retour_client", "vente", v.Id,
             new Dictionary<string, object?>
             {
-                ["ticket"] = v.Numero, ["motif"] = texte, ["montant"] = montant, ["mode"] = v.Mode,
+                ["ticket"] = v.Numero, ["motif"] = texte, ["motif_code"] = code, ["montant"] = montant, ["mode"] = v.Mode,
                 ["dette_diminuee"] = reductionDette, ["rendu"] = aRendre, ["dette_soldee_au_choix"] = solderDette && v.Mode != "credit" && reductionDette > 0,
                 ["patient_dette"] = reductionDette > 0 ? patientDette : null, ["accord_client"] = deduitAuChoix ? true : null,
                 ["remis_en_stock"] = lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),

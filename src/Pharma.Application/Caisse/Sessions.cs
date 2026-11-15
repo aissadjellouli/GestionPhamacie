@@ -17,7 +17,7 @@ public sealed record DetailSession(
     long Id, long UtilisateurId, string Employe, string Poste, DateTime OuverteLe, decimal FondCaisse,
     DateTime? FermeeLe, decimal? VentesEspeces, decimal? Attendu, decimal? Compte, decimal? Ecart,
     int NombreVentes, decimal TotalVentes, IReadOnlyList<LigneComptage> Comptage, IReadOnlyList<string>? Vendeurs = null, bool Releve = false,
-    IReadOnlyList<LigneTiroir>? LignesTiroir = null)
+    IReadOnlyList<LigneTiroir>? LignesTiroir = null, decimal AvoirsUtilises = 0)
 {
     /// <summary>Titre du rapport PDF : une relève laisse la caisse ouverte (une nouvelle session la suit), ce n'est pas une clôture.</summary>
     public string TitreRapport => Releve ? "Rapport de relève de caisse" : "Rapport de clôture de caisse";

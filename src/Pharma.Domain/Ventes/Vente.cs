@@ -62,7 +62,8 @@ public class Vente
     /// <summary>Reste à charge saisi : part de l'organisme telle que calculée avant la saisie (prix Chifa pour les lignes d'un volet).</summary>
     public decimal? PartOrganismeCalculee { get; private set; }
     public StatutVente Statut { get; private set; } = StatutVente.EnCours;
-    public string? NumFactureChifa { get; init; }
+    /// <summary>N° de facture Chifa (8 chiffres, colonne chifa_facture ; seule colonne depuis le script 101).</summary>
+    public string? ChifaFacture { get; init; }
     public IReadOnlyList<LigneVente> Lignes => _lignes;
 
     /// <summary>Vrai si la vente contient un psychotrope ou un stupéfiant (registre, ordonnance).</summary>
@@ -123,7 +124,7 @@ public class Vente
 
     /// <summary>
     /// Prestation (script 105, 2026-11-15) : ligne sans produit ni lot, au prix et au taux de TVA du type de prestation, figés avec son
-    /// libellé ; jamais prise en charge par l'organisme (le patient paie tout, même en tiers payant), pas de SHP. Type désactivé ou
+    /// libellé ; pas de SHP. Prise en charge par l'organisme seulement si elle est remboursable (script 108). Type désactivé ou
     /// sans prix fixé (0) : refusée.
     /// </summary>
     public LigneVente AjouterPrestation(TypePrestation prestation, int quantite)
@@ -133,13 +134,21 @@ public class Vente
         if (!prestation.Actif)
             throw new RegleMetierException($"{prestation.Libelle} : prestation désactivée. Retirez-la du panier.");
         if (prestation.Prix <= 0)
-            throw new RegleMetierException($"{prestation.Libelle} : prix de la prestation non fixé (Administration › Prestations).");
+            throw new RegleMetierException(TypePrestation.MessagePrixAFixer(prestation.Libelle), "prestation");
         var ligne = new LigneVente
         {
             TypePrestationId = prestation.Id, Libelle = prestation.Libelle, TauxTva = prestation.TauxTva,
-            Quantite = quantite, PrixUnitaire = prestation.Prix, Shp = 0
+            Quantite = quantite, PrixUnitaire = prestation.Prix, Shp = 0, Remboursable = prestation.Remboursable
         };
-        ligne.SansTiersPayant();
+        // Prestation remboursable (script 108, 2026-11-15) : en tiers payant, part de l'organisme comme un produit
+        // (taux × min(prix, tarif de référence)) ; non remboursable : le patient paie tout
+        if (Type == TypeVente.TiersPayant && prestation.Remboursable && prestation.TarifReference is { } tarif && tarif > 0)
+        {
+            ligne.PriseEnCharge = true;
+            ligne.CalculerTiersPayant(tarif, TauxTiersPayant ?? 0);
+        }
+        else
+            ligne.SansTiersPayant();
         _lignes.Add(ligne);
         RecalculerTotaux();
         return ligne;

@@ -37,5 +37,17 @@ public static class EtatDroitsChifa
 
     public static string MessageExpires(DateOnly fin) => $"Droits Chifa expirés depuis le {fin:dd/MM/yyyy} : vérifiez la carte (vente non bloquée).";
 
-    public const string MessageCredit = "Droits expirés et vente à crédit : risque de non-paiement.";
+    /// <summary>
+    /// Vente à crédit sans tiers payant Chifa (2026-11-15) : « expires » (date dépassée), « bientot » (dans les N jours, aujourd'hui
+    /// compris), sinon null (rien à signaler). Avertissement renforcé MessageCredit, jamais bloquant.
+    /// </summary>
+    public static string? EtatCreditSansTiersPayant(DateOnly? dateFinDroit, DateOnly aujourdhui, int joursAlerte) =>
+        Etat(true, dateFinDroit, aujourdhui, joursAlerte) switch
+        {
+            EtatDroits.Expires => "expires",
+            EtatDroits.BientotExpires => "bientot",
+            _ => null
+        };
+
+    public const string MessageCredit ="Droits expirés et vente à crédit : risque de non-paiement.";
 }

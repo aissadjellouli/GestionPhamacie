@@ -59,7 +59,8 @@ public sealed record CommandeVente(
     decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null,
     string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null,
     IReadOnlyList<ChoixPrixChifa>? ChoixChifa = null, bool FactureeParChifa = false, string? NumeroFactureChifa = null,
-    PersonneVente? RemisA = null, PersonneVente? Pour = null, string? MotifSansVoletCode = null, string? MotifSansVoletTexte = null);
+    PersonneVente? RemisA = null, PersonneVente? Pour = null, string? MotifSansVoletCode = null, string? MotifSansVoletTexte = null,
+    decimal MontantAvoir = 0);
 
 /// <summary>
 /// Volet Chifa, écart de prix d'au moins le seuil : choix du vendeur pour un produit (« aligne » : prix Chifa ; « garde » : notre prix,
@@ -103,7 +104,7 @@ public sealed record ApercuVente(
 /// <summary>EcartChifaPatient : écart Chifa payé par le patient (notre prix au-dessus du prix Chifa), compris dans PartPatient.</summary>
 public sealed record VenteEncaissee(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
-    ModePaiement Mode, decimal Rendu, decimal EcartChifaPatient = 0, string? CatalogueChifa = null);
+    ModePaiement Mode, decimal Rendu, decimal EcartChifaPatient = 0, string? CatalogueChifa = null, decimal PayeParAvoir = 0);
 
 /// <summary>Ce que l'adaptateur enregistre en une transaction.</summary>
 /// <summary>BoitesParLot : boîtes identifiées vendues, rattachées à la ligne de leur lot (pour les retrouver au remboursement).</summary>
@@ -180,7 +181,7 @@ public sealed class Encaisser(
     Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null,
     Surveillance.Surveiller? surveillance = null, IRemisesAutomatiques? remisesAuto = null, ITraceErreurs? trace = null,
     IVoletsChifa? voletsChifa = null, Securite.AutorisationCourante? autorisation = null,
-    Referentiels.IMotifsReglables? motifs = null)
+    Referentiels.IMotifsReglables? motifs = null, IAvoirs? avoirs = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
@@ -362,6 +363,8 @@ public sealed class Encaisser(
         if (!string.IsNullOrWhiteSpace(commande.VoletChifa))
         {
             volet = LectureVoletChifa.Lire(commande.VoletChifa) ?? throw new RegleMetierException("Le QR du volet Chifa n’est pas reconnu.", "volet_chifa");
+            if (!FormatFactureChifa.EstValide(volet.NumeroFacture))   // script 101 : chifa_facture sur 8 chiffres
+                throw new RegleMetierException($"Le n° de facture du volet ({volet.NumeroFacture}) ne compte pas 8 chiffres : volet non repris.", "volet_chifa");
             if (!commande.TiersPayant) throw new RegleMetierException("Un volet Chifa se reprend en tiers payant.", "volet_chifa");
             // Organisme d'un volet (2026-11-15) : CNAS ou CASNOS seulement (même carte Chifa), choisi par le vendeur
             if (voletsChifa is not null && !OrganismeVoletChifa.Accepte(commande.OrganismeId is { } org ? await voletsChifa.CodeOrganismeAsync(org, ct) : null))
@@ -458,7 +461,17 @@ public sealed class Encaisser(
             reglement = new Reglement(ModePaiement.Credit, vente.PartPatient, null);
         }
         else
-            reglement = Reglement.Pour(vente, commande.Mode, commande.MontantRecu);
+        {
+            // Avoir du patient (script 106) : combinable avec espèces, carte ou chèque ; solde revérifié sous verrou à l'écriture
+            if (commande.MontantAvoir > 0)
+            {
+                var solde = commande.PatientId is { } pa && avoirs is not null ? await avoirs.SoldeAsync(pa, ct) : 0;
+                RegleAvoir.VerifierUtilisation(commande.MontantAvoir, solde, vente.PartPatient, commande.PatientId is not null);
+            }
+            reglement = Reglement.Pour(vente, commande.Mode, commande.MontantRecu, Math.Max(commande.MontantAvoir, 0));
+        }
+        if (commande.Mode == ModePaiement.Credit && commande.MontantAvoir > 0)
+            throw new RegleMetierException("L’avoir ne se combine pas avec le crédit : utilisez-le avec espèces, carte ou chèque.", "avoir");
 
         vente.Valider();
         var sousRegistre = produits.Values.Where(p => p.EstSousRegistre).Select(p => p.Id).ToHashSet();
@@ -511,6 +524,10 @@ public sealed class Encaisser(
         await DroitsChifa.JournaliserSiExpiresAsync(patients, journal, commande.PatientId,
             commande.TiersPayant && OrganismeVoletChifa.Accepte(codeOrganisme), horloge.Aujourdhui, utilisateurId, id, numero, ct,
             credit: commande.Mode == ModePaiement.Credit);
+        // Vente à crédit sans tiers payant Chifa (2026-11-15) : droits expirés ou bientôt expirés, même avertissement renforcé, jamais bloquant
+        if (commande.Mode == ModePaiement.Credit && !(commande.TiersPayant && OrganismeVoletChifa.Accepte(codeOrganisme)))
+            await DroitsChifa.JournaliserCreditSansTiersPayantAsync(patients, journal, commande.PatientId, horloge.Aujourdhui,
+                (await sessions.ParametresAsync(ct)).JoursAlerteFinDroit, utilisateurId, id, numero, ct);
 
         // Catalogue d'après le volet (règle du titulaire, 2026-11-15) : après l'enregistrement de la vente seulement (vente abandonnée
         // ou refusée : catalogue intact), quel que soit le vendeur ; la vente déjà enregistrée n'en dépend pas
@@ -531,7 +548,7 @@ public sealed class Encaisser(
         if (surveillance is not null) await surveillance.ExecuterAsync(CancellationToken.None);
 
         return new VenteEncaissee(id, numero, vente.MontantTotal, vente.PartOrganisme, vente.PartPatient,
-            reglement.Mode, reglement.Rendu, vente.EcartChifaPatient, catalogueChifa);
+            reglement.Mode, reglement.Rendu, vente.EcartChifaPatient, catalogueChifa, reglement.Avoir);
     }
 
     /// <summary>

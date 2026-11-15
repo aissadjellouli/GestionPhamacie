@@ -62,7 +62,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `107` (les n° `101`, `104` et `106` sont réservés aux lots à venir : fusion du n° de facture Chifa, indications, avoir patient), sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `108`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -284,6 +284,22 @@ L'ancienne base n'est jamais modifiée : on travaille sur une copie, ce qui rend
    - avec `psql -v ON_ERROR_STOP=1 -f`, hors transaction ;
    - ils sont réexécutables sans dégât ;
    - **ne jamais** relancer `init/schema.sql` ni `init/clean.sql` sur une base en service.
+   - **Avant `101_fusion_facture_chifa.sql`** (fusion du n° de facture Chifa, 2026-11-15) : sur la base de l'officine, lancer ces vérifications (lecture seule) et garder le résultat :
+     ```sql
+     -- n° de facture Chifa non conformes (8 chiffres) : s'il y en a, 101 ne pose pas le contrôle « 8 chiffres » (il les affiche) ;
+     -- les corriger avec le titulaire, puis relancer 101
+     SELECT id, numero, date_vente, chifa_facture, num_facture_chifa FROM vente
+     WHERE chifa_facture !~ '^[0-9]{8}$' OR num_facture_chifa !~ '^[0-9]{8}$' ORDER BY id;
+     -- conflits : les deux colonnes remplies et différentes (101 les range dans vente_chifa_facture_conflit,
+     -- à trancher par le titulaire dans Administration › Conflits de n° de facture Chifa)
+     SELECT id, numero, date_vente, num_facture_chifa, chifa_facture FROM vente
+     WHERE num_facture_chifa IS NOT NULL AND chifa_facture IS NOT NULL AND btrim(num_facture_chifa) <> btrim(chifa_facture) ORDER BY id;
+     -- recopie impossible : n° de l'ancienne colonne déjà porté par une autre vente non annulée
+     SELECT v.id, v.numero, v.num_facture_chifa, a.numero AS deja_sur FROM vente v
+     JOIN vente a ON a.id <> v.id AND a.statut <> 'annulee' AND a.chifa_facture = btrim(v.num_facture_chifa)
+     WHERE v.chifa_facture IS NULL AND v.statut <> 'annulee';
+     ```
+     Après 101 : `SELECT count(*) FROM vente_chifa_facture_conflit WHERE tranche_le IS NULL;` doit valoir 0 avant d'envisager la partie B (suppression de l'ancienne colonne `num_facture_chifa`, script 101b), qui n'est lancée qu'après validation explicite du titulaire.
 4. Remplacer les fichiers de l'API et des postes, puis redémarrer le service.
    Les publications étant autonomes (.NET inclus), Windows Update ne corrige pas .NET : à chaque correctif de sécurité .NET important,
    republier l'API et les postes avec le SDK à jour et les remplacer de la même façon, même sans nouvelle fonction.

@@ -26,15 +26,15 @@ internal static class PrestationsEndpoints
            .GererErreursMetier();
 
         api.MapPost("/types-prestation", async (TypePrestationSaisie s, TypesPrestation types, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok(Dto(await types.EnregistrerAsync(null, s.Code, s.Libelle, s.Prix, s.TauxTva, s.Actif, user.UtilisateurId(), ct))))
+                Results.Ok(Dto(await types.EnregistrerAsync(null, s.Code, s.Libelle, s.Prix, s.TauxTva, s.Actif, user.UtilisateurId(), ct, s.Remboursable, s.TarifReference))))
            .ExigerPermission(Permissions.CatalogueCreer)
            .GererErreursMetier();
 
         api.MapPut("/types-prestation/{id:long}", async (long id, TypePrestationSaisie s, TypesPrestation types, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok(Dto(await types.EnregistrerAsync(id, s.Code, s.Libelle, s.Prix, s.TauxTva, s.Actif, user.UtilisateurId(), ct))))
+                Results.Ok(Dto(await types.EnregistrerAsync(id, s.Code, s.Libelle, s.Prix, s.TauxTva, s.Actif, user.UtilisateurId(), ct, s.Remboursable, s.TarifReference))))
            .ExigerPermission(Permissions.CatalogueCreer)
            .GererErreursMetier();
     }
 
-    private static TypePrestationDto Dto(TypePrestation t) => new(t.Id, t.Code, t.Libelle, t.Prix, t.TauxTva, t.Actif);
+    private static TypePrestationDto Dto(TypePrestation t) => new(t.Id, t.Code, t.Libelle, t.Prix, t.TauxTva, t.Actif, t.Remboursable, t.TarifReference);
 }

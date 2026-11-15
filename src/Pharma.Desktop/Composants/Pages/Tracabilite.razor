@@ -348,7 +348,7 @@
             {
                 "reception" => Joindre(p.Fournisseur, p.NumeroBl is null ? null : $"BL {p.NumeroBl}", e.Commentaire),
                 "vente" => Joindre(p.Ticket is null ? null : $"Ticket {p.Ticket}",
-                                   p.NumFactureChifa is null ? null : $"facture Chifa {p.NumFactureChifa}", e.Commentaire),
+                                   p.ChifaFacture is null ? null : $"facture Chifa {p.ChifaFacture}", e.Commentaire),
                 _ => e.Commentaire
             };
             liste.Add(new Etape(titre, detail));

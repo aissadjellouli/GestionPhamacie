@@ -33,7 +33,10 @@
                         <input id="p-prix" data-champ="prix" type="number" min="0" step="0.01" @bind="fiche.Prix" /></div>
                     <div class="champ" style="flex: 0 0 130px"><label for="p-tva" class="requis">TVA (%)</label>
                         <input id="p-tva" data-champ="taux_tva" type="number" min="0" max="100" step="0.01" @bind="fiche.TauxTva" /></div>
+                    <div class="champ" style="flex: 0 0 150px"><label for="p-tarif">Tarif de référence (DA)</label>
+                        <input id="p-tarif" data-champ="tarif_reference" type="number" min="0" step="0.01" @bind="fiche.TarifReference" disabled="@(!fiche.Remboursable)" /></div>
                 </div>
+                <label class="case"><input type="checkbox" data-champ="remboursable" @bind="fiche.Remboursable" /><span>Remboursable par l’organisme (tiers payant : taux × le plus petit du prix et du tarif de référence)</span></label>
                 @if (fiche.Id is not null)
                 {
                     <label class="case"><input type="checkbox" data-champ="actif" @bind="fiche.Actif" /><span>Prestation proposée à la caisse (décoché : désactivée)</span></label>
@@ -56,7 +59,7 @@
             </div>
             <section class="tableau-cadre" aria-label="Prestations">
                 <table class="tableau" style="min-width: 0">
-                    <thead><tr><th scope="col">Code</th><th scope="col">Libellé</th><th scope="col">Prix TTC</th><th scope="col">TVA</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                    <thead><tr><th scope="col">Code</th><th scope="col">Libellé</th><th scope="col">Prix TTC</th><th scope="col">TVA</th><th scope="col">Remboursement</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
                     <tbody>
                         @foreach (var p in liste)
                         {
@@ -65,11 +68,12 @@
                                 <td>@p.Libelle</td>
                                 <td>@(p.Prix > 0 ? Libelles.Dinars(p.Prix, 2) : "à fixer")</td>
                                 <td>@p.TauxTva.ToString("0.##") %</td>
+                                <td>@(p.Remboursable && p.TarifReference is { } tr ? $"Remboursable, tarif {Libelles.Dinars(tr, 2)}" : "Non remboursable")</td>
                                 <td><span class="pastille @(p.Actif ? "ok" : "info")">@(p.Actif ? "Proposée" : "Désactivée")</span></td>
                                 <td><button type="button" class="btn" @onclick="() => Editer(p)">Modifier</button></td>
                             </tr>
                         }
-                        @if (liste.Count == 0 && erreur is null) { <tr><td colspan="6" class="vide">Aucune prestation pour ces filtres.</td></tr> }
+                        @if (liste.Count == 0 && erreur is null) { <tr><td colspan="7" class="vide">Aucune prestation pour ces filtres.</td></tr> }
                     </tbody>
                 </table>
             </section>
@@ -88,6 +92,8 @@
         public decimal Prix { get; set; }
         public decimal TauxTva { get; set; }
         public bool Actif { get; set; } = true;
+        public bool Remboursable { get; set; }
+        public decimal? TarifReference { get; set; }
     }
 
     private List<TypePrestationDto> liste = [];
@@ -126,7 +132,7 @@
     private void Ajouter() => (fiche, erreur, message) = (new Fiche(), null, null);
 
     private void Editer(TypePrestationDto p) => (fiche, erreur, message) =
-        (new Fiche { Id = p.Id, CodeInitial = p.Code, Code = p.Code, Libelle = p.Libelle, Prix = p.Prix, TauxTva = p.TauxTva, Actif = p.Actif }, null, null);
+        (new Fiche { Id = p.Id, CodeInitial = p.Code, Code = p.Code, Libelle = p.Libelle, Prix = p.Prix, TauxTva = p.TauxTva, Actif = p.Actif, Remboursable = p.Remboursable, TarifReference = p.TarifReference }, null, null);
 
     private async Task EnregistrerAsync()
     {
@@ -135,7 +141,8 @@
         (enCours, erreur, message) = (true, null, null);
         try
         {
-            var e = await Api.EnregistrerTypePrestationAsync(fiche.Id, new TypePrestationSaisie(fiche.Code.Trim(), fiche.Libelle.Trim(), fiche.Prix, fiche.TauxTva, fiche.Actif));
+            var e = await Api.EnregistrerTypePrestationAsync(fiche.Id, new TypePrestationSaisie(fiche.Code.Trim(), fiche.Libelle.Trim(), fiche.Prix, fiche.TauxTva, fiche.Actif,
+                fiche.Remboursable, fiche.Remboursable ? fiche.TarifReference : null));
             if (e is not null) { erreur = e; return; }
             message = $"Prestation {fiche.Code.Trim().ToUpperInvariant()} enregistrée.";
             fiche = null;

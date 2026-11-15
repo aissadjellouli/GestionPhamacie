@@ -152,7 +152,9 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
                    s.ventes_especes, s.montant_attendu, s.montant_compte, s.ecart,
                    (SELECT count(*) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'validee')::int,
                    (SELECT COALESCE(SUM(v.montant_total), 0) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'validee'),
-                   EXISTS (SELECT 1 FROM session_caisse n WHERE n.releve_de = s.id)
+                   EXISTS (SELECT 1 FROM session_caisse n WHERE n.releve_de = s.id),
+                   -- Avoirs des patients utilisés en paiement (script 106) : jamais des espèces, hors attendu
+                   (SELECT COALESCE(SUM(p.montant), 0) FROM paiement p WHERE p.session_caisse_id = s.id AND p.mode = 'avoir')
             FROM session_caisse s JOIN utilisateur u ON u.id = s.utilisateur_id
             WHERE s.id = $1
             """);
@@ -164,7 +166,7 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
             decimal? Dec(int i) => r.IsDBNull(i) ? null : r.GetDecimal(i);
             detail = new DetailSession(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetDateTime(4),
                 r.GetDecimal(5), r.IsDBNull(6) ? null : r.GetDateTime(6), Dec(7), Dec(8), Dec(9), Dec(10),
-                r.GetInt32(11), r.GetDecimal(12), [], Releve: r.GetBoolean(13));
+                r.GetInt32(11), r.GetDecimal(12), [], Releve: r.GetBoolean(13), AvoirsUtilises: r.GetDecimal(14));
         }
 
         await using var cmdComptage = db.CreateCommand(

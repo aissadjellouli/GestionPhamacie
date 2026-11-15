@@ -156,6 +156,30 @@
                         <Pagination Total="mouvementsTotal" Numero="mouvementsPage" Taille="mouvementsTaille" Libelle="Pages du relevé" OnChange="p => ChargerMouvementsAsync(p.Numero, p.Taille)" />
                     </details>
                 }
+                @if (avoirMouvements.Count > 0)
+                {
+                    @* Avoir du patient (script 106) : relevé séparé de la dette, jamais confondu avec elle *@
+                    <details style="margin-top: 8px">
+                        <summary>Avoir du patient : @Libelles.Dinars(soldeAvoir, 2) (@avoirTotal mouvement@(avoirTotal > 1 ? "s" : ""))</summary>
+                        <div class="tableau-cadre" style="margin-top: 4px">
+                            <table class="tableau" style="min-width: 0">
+                                <thead><tr><th scope="col">Date</th><th scope="col">Mouvement</th><th scope="col">Montant</th><th scope="col">Avoir après</th></tr></thead>
+                                <tbody>
+                                    @foreach (var m in avoirMouvements)
+                                    {
+                                        <tr>
+                                            <td>@Libelles.DateHeureLocale(m.CreeLe.UtcDateTime)</td>
+                                            <td class="nom">@LibelleAvoir(m.Origine)@(m.NumeroVente is { } nv ? $" · {nv}" : "")@(m.BonSortie is { } b ? $" · bon {b}" : "")</td>
+                                            <td>@(m.Type == "credit" ? "+ " : "− ")@Libelles.Dinars(m.Montant, 2)</td>
+                                            <td>@Libelles.Dinars(m.SoldeApres, 2)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <Pagination Total="avoirTotal" Numero="avoirPage" Taille="avoirTaille" Libelle="Pages de l’avoir" OnChange="p => ChargerAvoirAsync(p.Numero, p.Taille)" />
+                    </details>
+                }
                 <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px">
                     <button type="button" class="btn" disabled="@enCours" @onclick="ImprimerReleveAsync">Imprimer le relevé (PDF)</button>
                     @if (Session.A("role.titulaire"))
@@ -184,8 +208,18 @@
                     {
                         <button type="button" role="radio" class="puce" aria-pressed="@(mode == code ? "true" : "false")" aria-checked="@(mode == code ? "true" : "false")" @onclick="() => mode = code">@libelle</button>
                     }
+                    @* Avoir du patient (script 106) : jamais confondu avec la dette ; utilisable jusqu'à son solde *@
+                    @if (soldeAvoir > 0)
+                    {
+                        <button type="button" role="radio" class="puce" aria-pressed="@(mode == "avoir" ? "true" : "false")" aria-checked="@(mode == "avoir" ? "true" : "false")"
+                                @onclick="ChoisirAvoir">Avoir (@Libelles.Dinars(soldeAvoir, 2))</button>
+                    }
                 </div>
             </div>
+            @if (soldeAvoir > 0)
+            {
+                <p class="detail" style="margin: 0">Avoir du patient : <strong>@Libelles.Dinars(soldeAvoir, 2)</strong> (argent que la pharmacie lui doit, séparé de sa dette).</p>
+            }
             @if (MessageSurplus is { } surplus) { <div class="info-bandeau" role="status">@surplus</div> }
             @* Patient sans dette (2026-11-15) : rien à encaisser, bouton grisé avec l'explication *@
             @if (s.Patient.Solde <= 0)
@@ -224,6 +258,30 @@
     private string? recherche, erreur, messageImpression;
     private string mode = "especes";
     private decimal montant;
+    private decimal soldeAvoir;
+    private List<AvoirMouvementDto> avoirMouvements = [];
+    private int avoirTotal, avoirPage = 1, avoirTaille = Pagination.TailleParDefaut;
+
+    private async Task ChargerAvoirAsync(int numero, int taille)
+    {
+        if (situation is null) { (soldeAvoir, avoirMouvements, avoirTotal) = (0, [], 0); return; }
+        var (a, _) = await Api.AvoirPatientAsync(situation.Patient.Id, numero, taille);
+        soldeAvoir = a?.Solde ?? 0;
+        (avoirMouvements, avoirTotal, avoirPage, avoirTaille) = (a?.Mouvements.Lignes.ToList() ?? [], a?.Mouvements.Total ?? 0, numero, taille);
+    }
+
+    private static string LibelleAvoir(string origine) => origine switch
+    {
+        "annulation_vente" => "Annulation de vente", "trop_paye_regularisation" => "Trop-payé de régularisation", "saisie" => "Saisie",
+        "paiement" => "Utilisé en paiement", "remboursement" => "Remboursé", _ => origine
+    };
+
+    /// <summary>Payer avec l'avoir : le montant proposé est au plus le solde de l'avoir.</summary>
+    private void ChoisirAvoir()
+    {
+        mode = "avoir";
+        if (montant > soldeAvoir) { montant = soldeAvoir; CocherParDefaut(); }
+    }
     private List<PatientEnCreditDto> patients = [];
     private SituationCreditDto? situation;
     private RecuCreditDto? recu;
@@ -359,6 +417,9 @@
         (mouvements, mouvementsTotal, mouvementsPage) = (s?.Mouvements?.ToList() ?? [], s?.MouvementsTotal ?? 0, 1);
         releveTotal = s?.MouvementsTotal ?? 0;
         CocherParDefaut();
+        // Avoir du patient (script 106), affiché à part de la dette
+        await ChargerAvoirAsync(1, avoirTaille);
+        if (mode == "avoir" && soldeAvoir <= 0) mode = "especes";
         // La fiche apporte la première page sans filtre : rechargée avec les filtres et la taille de page en cours
         if (s is not null && (FiltreReleveActif || mouvementsTaille != Pagination.TailleParDefaut)) await ChargerMouvementsAsync(1, mouvementsTaille);
     }
@@ -420,6 +481,7 @@
     {
         if (situation is null) return;
         if (montant <= 0 || montant > situation.Patient.Solde) { erreur = Api.SignalerChamp("montant", $"Montant entre 0,01 et {Libelles.Dinars(situation.Patient.Solde, 2)}."); return; }
+        if (mode == "avoir" && montant > soldeAvoir) { erreur = Api.SignalerChamp("montant", $"Avoir insuffisant (solde : {Libelles.Dinars(soldeAvoir, 2)})."); return; }
         enCours = true;
         var (r, e) = await Api.ReglerCreditAsync(situation.Patient.Id, new ReglementCreditRequete(montant, mode, cochees.ToList()));
         enCours = false;

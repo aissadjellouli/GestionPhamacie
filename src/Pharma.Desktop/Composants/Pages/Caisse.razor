@@ -58,6 +58,7 @@
                 @if (venteFaite.EcartChifaPatient > 0) { <span>Écart Chifa payé par le patient : @Libelles.Dinars(venteFaite.EcartChifaPatient, 2)</span> }
                 @if (venteFaite.Mode == "especes" && venteFaite.Rendu > 0) { <span style="font-size: 18px; font-weight: 600">Rendu : @Libelles.Dinars(venteFaite.Rendu, 2)</span> }
                 @if (venteFaite.Mode == "credit") { <span>mise en crédit</span> }
+                @if (venteFaite.PayeParAvoir > 0) { <span>payé par avoir : @Libelles.Dinars(venteFaite.PayeParAvoir, 2)</span> }
                 <button type="button" class="btn" disabled="@impressionEnCours" @onclick="ImprimerTicketAsync">@(impressionEnCours ? "Impression…" : "Imprimer le ticket")</button>
                 <button type="button" class="lien-bouton" @onclick="() => OuvrirAnnulation(venteFaite.Numero)">Annuler ou retour</button>
             </div>
@@ -342,10 +343,10 @@
                                         @foreach (var tp in prestations)
                                         {
                                             <tr>
-                                                <td>@tp.Libelle <span class="detail">@tp.Code</span></td>
+                                                <td>@tp.Libelle <span class="detail">@tp.Code@(tp.Remboursable ? " · remboursable" : "")</span></td>
                                                 <td>@tp.TauxTva.ToString("0.##") %</td>
                                                 <td>@(tp.Prix > 0 ? Libelles.Dinars(tp.Prix, 2) : "à fixer")</td>
-                                                <td><button type="button" class="btn btn-principal" disabled="@(tp.Prix <= 0)"
+                                                <td><button type="button" class="btn btn-principal"
                                                             title="@(tp.Prix <= 0 ? "Prix à fixer dans Administration › Prestations" : null)"
                                                             @onclick="() => AjouterPrestationAsync(tp)">Ajouter</button></td>
                                             </tr>
@@ -1023,7 +1024,8 @@
                             {
                                 <div class="champ champ-ligne">
                                     <label for="facture-chifa">N° de facture Chifa</label>
-                                    <input id="facture-chifa" data-champ="facture_chifa" type="text" maxlength="30" placeholder="Vide : volet à scanner ensuite"
+                                    <input id="facture-chifa" data-champ="facture_chifa" type="text" inputmode="numeric" maxlength="8" placeholder="8 chiffres · vide : volet à scanner ensuite"
+                                           class="@Obligatoire.Classe(FactureChifaInvalide)" aria-invalid="@Obligatoire.Aria(FactureChifaInvalide)"
                                            @bind="numeroFactureChifa" @bind:event="oninput" />
                                 </div>
                                 @if (FactureChifaEnAttente)
@@ -1087,6 +1089,23 @@
                     <button type="button" class="puce" aria-pressed="@(mode == "credit" ? "true" : "false")" disabled="@(patient is null)"
                             title="@(patient is null ? "Choisissez d’abord le patient à qui la vente est accordée" : "Mettre la vente au crédit du patient")" @onclick="@(() => mode = "credit")">Crédit</button>
                 </div>
+                @* Avoir du patient (script 106) : affiché dès que le patient est choisi ; combinable avec espèces, carte ou chèque *@
+                @if (AvoirDisponible)
+                {
+                    <div class="champ-ligne" data-champ="avoir" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+                        <label class="case" title="@(mode == "credit" ? "L’avoir ne se combine pas avec le crédit" : null)">
+                            <input type="checkbox" checked="@utiliserAvoir" disabled="@(mode == "credit")" @onchange="e => utiliserAvoir = e.Value is true" />
+                            <span>Avoir du patient : <strong>@Libelles.Dinars(soldeAvoirPatient, 2)</strong></span>
+                        </label>
+                        @if (utiliserAvoir && mode != "credit")
+                        {
+                            <input aria-label="Montant payé par l’avoir" type="number" min="0.01" step="0.01" style="width: 110px"
+                                   value="@AvoirUtilise.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                   @onchange="e => montantAvoirSaisi = decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var m) ? m : null" />
+                            <span class="detail">reste @Libelles.Dinars(Math.Max((apercu?.PartPatient ?? 0) - AvoirUtilise, 0), 2) en @Libelles.ModePaiement(mode)</span>
+                        }
+                    </div>
+                }
                 @if (mode == "credit" && patient is not null)
                 {
                     <div class="credit-resume" role="status">
@@ -1097,7 +1116,7 @@
                             <span class="texte-attention">Au-delà du plafond : le droit de dépasser le plafond (ou le code d’un collègue qui l’a) sera demandé.</span>
                         }
                         @* Contrôle de fin de droits (2026-11-15) : avertissement renforcé, journalisé par le serveur, jamais bloquant *@
-                        @if (DroitsChifaExpires is not null)
+                        @if (AlerteCreditDroits)
                         {
                             <strong role="alert" data-champ="droits_chifa_credit" style="color: var(--danger, #b42318)">@EtatDroitsChifa.MessageCredit</strong>
                         }
@@ -1319,13 +1338,34 @@
 
     /// <summary>Liste I ou II sans ordonnance saisie (ni psychotrope, déjà soumis à l'ordonnance obligatoire).</summary>
     private bool SansOrdonnanceListe => apercu is { SurOrdonnance: true, OrdonnanceRequise: false } && medecin is null && jetonScan is null;
-    private decimal Rendu => montantRecu is { } r && apercu is { } a && r > a.PartPatient ? r - a.PartPatient : 0;
+    private decimal Rendu => montantRecu is { } r && apercu is { } a && r > a.PartPatient - AvoirUtilise ? r - (a.PartPatient - AvoirUtilise) : 0;
+
+    // ---- Avoir du patient (script 106) : utilisable jusqu'à son solde, combinable avec espèces, carte ou chèque (jamais avec le crédit) ----
+    private decimal soldeAvoirPatient;
+    private long? avoirPatientId;
+    private bool utiliserAvoir;
+    private decimal? montantAvoirSaisi;
+
+    private bool AvoirDisponible => patient is not null && avoirPatientId == patient.Id && soldeAvoirPatient > 0;
+
+    /// <summary>Part payée par l'avoir : au plus le solde et au plus ce que paie le patient ; revérifiée par le serveur sous verrou.</summary>
+    private decimal AvoirUtilise => AvoirDisponible && utiliserAvoir && mode != "credit"
+        ? Math.Max(0, Math.Min(montantAvoirSaisi ?? soldeAvoirPatient, Math.Min(soldeAvoirPatient, apercu?.PartPatient ?? 0)))
+        : 0;
+
+    private async Task ChargerAvoirPatientAsync(long patientId)
+    {
+        (utiliserAvoir, montantAvoirSaisi) = (false, null);
+        var (a, _) = await Api.AvoirPatientAsync(patientId, 1, 1);
+        (soldeAvoirPatient, avoirPatientId) = (a?.Solde ?? 0, patientId);
+    }
 
     private string? RaisonBlocage =>
         lignes.Count == 0 ? "Panier vide"
         : lignes.Any(l => !l.Envoyee) ? "Retirez ou remplacez les produits sans lot vendable"
         : erreurCalcul is not null ? erreurCalcul
         : ChoixChifaManquant ? "Volet Chifa : choisissez le prix de chaque ligne en écart (s’aligner sur Chifa ou garder notre prix)"
+        : FactureChifaInvalide ? SaisieFactureChifa.Message
         : MotifSansVoletManquant ? "Facturée par Chifa sans n° de facture : choisissez le motif (« Autre » : précisez-le)"
         : assureConflit is not null ? "Volet Chifa d’un autre assuré : prenez l’assuré du volet ou gardez le patient choisi"
         : PsychotropeInterdit ?"Psychotrope : délivrance réservée aux employés qui en ont le droit"
@@ -1409,6 +1449,13 @@
     /// <summary>Fin de droits Chifa dépassée du patient, en tiers payant CNAS/CASNOS (script 102, D-4 : avertissement seul).</summary>
     private DateOnly? DroitsChifaExpires =>
         tiersPayant && OrganismeCode is "CNAS" or "CASNOS" && patient?.DateFinDroit is { } fin && fin < DateOnly.FromDateTime(DateTime.Now) ? fin : null;
+    /// <summary>
+    /// Vente à crédit : avertissement renforcé « Droits expirés et vente à crédit » en tiers payant CNAS/CASNOS aux droits expirés, et
+    /// SANS tiers payant Chifa (2026-11-15) dès que la date de fin de droits du patient est dépassée ou dans les N jours ; jamais bloquant.
+    /// </summary>
+    private bool AlerteCreditDroits => DroitsChifaExpires is not null
+        || (!(tiersPayant && EtatDroitsChifa.OrganismeChifa(OrganismeCode)) && EtatDroitsChifa.EtatCreditSansTiersPayant(patient?.DateFinDroit,
+            DateOnly.FromDateTime(DateTime.Now), etat?.JoursAlerteFinDroit ?? EtatDroitsChifa.JoursAlerteParDefaut) is not null);
     /// <summary>Contrôle de fin de droits (2026-11-15) : absente, bientôt expirés (N jours, Administration › Caisse), expirés ; jamais bloquant.</summary>
     private EtatDroits EtatDroitsPatient => EtatDroitsChifa.Etat(tiersPayant && EtatDroitsChifa.OrganismeChifa(OrganismeCode) && patient is not null,
         patient?.DateFinDroit, DateOnly.FromDateTime(DateTime.Now), etat?.JoursAlerteFinDroit ?? EtatDroitsChifa.JoursAlerteParDefaut);
@@ -2040,6 +2087,8 @@
     /// <summary>Même prestation déjà au panier : une de plus ; sinon nouvelle ligne (prix et TVA recalculés par le serveur).</summary>
     private async Task AjouterPrestationAsync(TypePrestationDto tp)
     {
+        // Garde-fou (2026-11-15) : une prestation à 0 DA n'est jamais vendue ; la liste reste ouverte avec le message
+        if (tp.Prix <= 0) { erreurPrestations = $"{tp.Libelle} : prix à fixer dans Administration › Prestations."; return; }
         prestationsOuvert = false;
         if (lignes.FirstOrDefault(l => l.TypePrestationId == tp.Id) is { } deja) deja.Quantite++;
         else lignes.Add(new LignePanier { ProduitId = 0, TypePrestationId = tp.Id, TauxTva = tp.TauxTva, Nom = tp.Libelle, Prix = tp.Prix });
@@ -2332,6 +2381,7 @@
     {
         (patient, patients, patientTexte, clientEdition) = (p, [], "", true);
         if (tiersPayant && p.OrganismeId is { } org && OrganismeAdmis(org)) organismeId = org;
+        await ChargerAvoirPatientAsync(p.Id);
         await RecalculerAsync();
     }
 
@@ -2494,7 +2544,8 @@
         FactureeChifaEnvoyee, FactureeChifaEnvoyee ? numeroFactureChifa?.Trim() : null,
         AvecOrdonnance ? RemiseEnvoyee : null, AvecOrdonnance ? null : RemiseEnvoyee,
         MotifSansVoletCode: FactureChifaEnAttente ? motifSansVolet : null,
-        MotifSansVoletTexte: FactureChifaEnAttente && motifSansVolet == "autre" ? texteSansVolet?.Trim() : null);
+        MotifSansVoletTexte: FactureChifaEnAttente && motifSansVolet == "autre" ? texteSansVolet?.Trim() : null,
+        MontantAvoir: modePaiement == "credit" ? 0 : AvoirUtilise);
 
     // ---- Vente Chifa sans volet (script 089) : case « facturée par Chifa » et n° de facture Chifa ----
     private bool factureeChifa;
@@ -2505,6 +2556,8 @@
     private List<EcartChifaLigneDto>? EcartsChifaAffiches => apercu?.EcartsChifa?.DistinctBy(e => (e.ProduitId, e.PrixChifa, e.NotrePrix, e.Choix, e.AChoisir)).ToList();
     /// <summary>« Facturée par Chifa » cochée sans n° de facture : permis (2026-11-15), la vente attend son volet (rattaché au scan du QR).</summary>
     private bool FactureChifaEnAttente => FactureeChifaEnvoyee && string.IsNullOrWhiteSpace(numeroFactureChifa);
+    /// <summary>N° de facture Chifa saisi mais pas sur 8 chiffres (script 101, 2026-11-15) : vente bloquée, le serveur refuse aussi.</summary>
+    private bool FactureChifaInvalide => FactureeChifaEnvoyee && !string.IsNullOrWhiteSpace(numeroFactureChifa) && !SaisieFactureChifa.EstValide(numeroFactureChifa);
     // Sans n° de facture Chifa (décision du titulaire, 2026-11-15) : motif obligatoire, liste réglable « volet_absent » (script 097)
     private string? motifSansVolet, texteSansVolet;
     private List<MotifReglableDto> motifsSansVolet = [];
@@ -2823,6 +2876,7 @@
         (volet, voletBrut, codesAAssocier, choixChifa) = (null, null, [], []);
         (factureeChifa, numeroFactureChifa, patientExistant) = (false, null, null);
         (motifSansVolet, texteSansVolet) = (null, null);
+        (utiliserAvoir, montantAvoirSaisi, soldeAvoirPatient, avoirPatientId) = (false, null, 0, null);
         accordBlocage.Effacer();
         (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
         lectureAjouts.Clear();

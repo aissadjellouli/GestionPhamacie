@@ -28,6 +28,7 @@ public static class PharmaEndpoints
         api.MapMotifsReglables();
         api.MapChifaComplements();
         api.MapPrestations();
+        api.MapIndications();
         api.MapInventaire();
         api.MapMobile();
         api.MapRapports();

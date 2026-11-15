@@ -127,7 +127,7 @@ internal static class CaisseEndpoints
             {
                 var v = await encaisser.ExecuterAsync(VersCommande(req), user.UtilisateurId(), requete.Poste(), ct);
                 return Results.Ok(new VenteEncaisseeDto(v.VenteId, v.Numero, v.MontantTotal, v.PartOrganisme, v.PartPatient, v.Mode.Code(), v.Rendu,
-                    v.EcartChifaPatient, v.CatalogueChifa));
+                    v.EcartChifaPatient, v.CatalogueChifa, v.PayeParAvoir));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -166,7 +166,7 @@ internal static class CaisseEndpoints
                 return Results.Ok(new TicketDto(t.Numero, t.Date, t.Vendeur, t.Poste, t.Statut, t.Organisme, t.TauxTiersPayant,
                     t.Lignes.Select(l => new LigneTicketDto(l.Produit, l.Quantite, l.PrixUnitaire, l.Montant, l.PartOrganisme, l.Shp, l.Medicament,
                         l.Reduction, l.PctReduction, l.DonPartiel, l.TauxTva)).ToList(),
-                    t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif, t.Retours, t.DonPartiel, t.EcartChifa, t.Client, t.MajorationChifa));
+                    t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif, t.Retours, t.DonPartiel, t.EcartChifa, t.Client, t.MajorationChifa, t.PayeParAvoir));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -221,9 +221,9 @@ internal static class CaisseEndpoints
                 HttpRequest requete, CancellationToken ct) =>
             {
                 var r = await annuler.ExecuterAsync(id, req.Motif, user.UtilisateurId(), requete.Poste(), req.ValidateurIdentifiant, req.ValidateurCode, ct,
-                    req.SolderDette, req.PatientDetteId, req.AccordClient, req.TropPayeImputations?.Select(i => (i.VenteId, i.Montant)).ToList(), req.TropPayeRembourse);
+                    req.SolderDette, req.PatientDetteId, req.AccordClient, req.TropPayeImputations?.Select(i => (i.VenteId, i.Montant)).ToList(), req.TropPayeRembourse, req.TropPayeAvoir);
                 return Results.Ok(new AnnulationVenteDto(r.Numero, r.ARendre, r.Mode, r.ValidePar, r.DetteDiminuee,
-                    r.RegularisationDetteAnnulee, r.RegularisationImputee, r.RegularisationRembourse, r.BonSortie?.Id, r.BonSortie?.Numero));
+                    r.RegularisationDetteAnnulee, r.RegularisationImputee, r.RegularisationRembourse, r.BonSortie?.Id, r.BonSortie?.Numero, r.TropPayeImpute, r.AvoirCree));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -245,7 +245,7 @@ internal static class CaisseEndpoints
                 var r = await enregistrer.ExecuterAsync(id, req.Motif,
                     req.Lignes.Requise().Select(l => new LigneRetourDemandee(l.LigneVenteId, l.Quantite, l.Destination, l.Boites)).ToList(),
                     user.UtilisateurId(), requete.Poste(), req.ValidateurIdentifiant, req.ValidateurCode, req.SolderDette, req.PatientDetteId, ct,
-                    req.AccordClient);
+                    req.AccordClient, req.MotifCode);
                 return Results.Ok(new RetourClientDto(r.Numero, r.ARendre, r.Mode, r.RemisEnStock, r.ADetruire, r.ValidePar, r.DetteDiminuee));
             })
            .ExigerPermission(Permissions.CaisseVendre);
@@ -285,7 +285,7 @@ internal static class CaisseEndpoints
                 return Results.Ok(new EtatIntermediaireDto(e.SessionId, e.Poste, e.OuverteLe, e.OuvertePar, e.FondCaisse, e.Resume.NombreVentes,
                     e.Resume.Carte, e.Resume.Cheque, e.Resume.Credit, e.Resume.TiersPayant,
                     e.Resume.ParEmploye.Select(x => new VentesEmployeDto(x.Employe, x.Ventes)).ToList(),
-                    e.Comptages.Select(c => new ComptageIntermediaireDto(c.Le, c.Employe, c.Compte, c.Ecart)).ToList(), e.PeutVoirEcart));
+                    e.Comptages.Select(c => new ComptageIntermediaireDto(c.Le, c.Employe, c.Compte, c.Ecart)).ToList(), e.PeutVoirEcart, e.Resume.Avoir));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -328,7 +328,7 @@ internal static class CaisseEndpoints
 
     /// <summary>Ce que l'annulation rendrait (retours déjà rendus déduits, part d'un crédit déjà remboursée).</summary>
     private static decimal ARendre(Pharma.Application.Caisse.VenteAnnulable v) =>
-        Pharma.Domain.Ventes.RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, v.SoldeCreditPatient).ARendre;
+        Pharma.Domain.Ventes.RegleAnnulation.Remboursement(v.Mode, v.PartPatient - Math.Min(v.PayeParAvoir, Math.Max(v.PartPatient - v.DejaRendu, 0)), v.DejaRendu, v.SoldeCreditPatient).ARendre;
 
     private static ClotureDto VersDto(ClotureVue c) =>
         new(c.SessionId, c.Compte, c.FondCaisse, c.VentesEspeces, c.Attendu, c.Ecart, c.AuDelaDuSeuil, c.SeuilEcart,
@@ -340,7 +340,10 @@ internal static class CaisseEndpoints
         v.CaisseOuverte, v.DansUnBordereau, v.Lignes.Select(l => new LigneVenteAnnulableDto(l.Produit, l.Quantite, l.Montant, l.Lot)).ToList(),
         ARendre(v), v.FactureNumero, v.SoldeCreditPatient, v.VendeurId, v.PatientId,
         RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, v.SoldeCreditPatient).ReductionDette, v.Remise,
-        v.Regularisation?.Sort, v.Regularisation is { } g ? Math.Max(0, g.MontantPatient - g.PayeParLePatient) : 0, v.Regularisation?.PayeParLePatient ?? 0);
+        v.Regularisation?.Sort, v.Regularisation is { } g ? Math.Max(0, g.MontantPatient - g.PayeParLePatient) : 0, v.Regularisation?.PayeParLePatient ?? 0,
+        // Vente à crédit en partie payée : trop-payé réellement encaissé, à répartir (2026-11-15) ; part payée par avoir (script 106)
+        v.Mode == "credit" ? RegleAnnulation.RemboursementCredit(Math.Max(v.PartPatient - v.DejaRendu, 0), Math.Max(v.PartPatient - v.DejaRendu, 0), v.PayeSurVente, v.SoldeCreditPatient).ARendre : 0,
+        v.PayeParAvoir);
 
     private static CommandeVente VersCommande(CommandeVenteDto d)
     {
@@ -358,6 +361,6 @@ internal static class CaisseEndpoints
             d.VoletChifa, d.RemiseAdditionnee, d.CleEncaissement,
             d.ChoixChifa?.Select(x => new ChoixPrixChifa(x.ProduitId, x.Choix, x.PrixAttendu)).ToList(), d.FactureeParChifa, d.NumeroFactureChifa,
             d.RemisA is { } ra ? new PersonneVente(ra.PatientId, ra.Nom) : null, d.Pour is { } po ? new PersonneVente(po.PatientId, po.Nom) : null,
-            d.MotifSansVoletCode, d.MotifSansVoletTexte);
+            d.MotifSansVoletCode, d.MotifSansVoletTexte, d.MontantAvoir);
     }
 }

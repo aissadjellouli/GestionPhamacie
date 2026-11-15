@@ -21,6 +21,7 @@ public class ListesTests
         ["Mise/FenetreAutorisation.razor"] = (1, "détail d'une demande d'autorisation : lignes du panier concernées (détail d'un document)"),
         ["Factures/EditeurFacture.razor"] = (1, "ventes à cocher pour une facture (période et destinataire choisis)"),
         ["Factures/PanneauMedecins.razor"] = (1, "résultats d'une recherche (dès 2 lettres, plafonnée par le serveur)"),
+        ["Pages/AdminConflitsFactureChifa.razor"] = (1, "conflits du script 101 (2026-11-15) : liste figée par une reprise unique, bornée par nature (0 attendu)"),
         ["Pages/AdminDroits.razor"] = (2, "utilisateurs : exception choisie le 2026-11-13 ; droits par rôle (bornés)"),
         ["Pages/AdminNotifications.razor"] = (1, "destinataires des notifications (quelques personnes)"),
         ["Pages/AdminReprise.razor"] = (2, "champs d'une cible de reprise et vérification après chargement (bornés)"),

@@ -155,8 +155,8 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         CancellationToken ct)
     {
         await using var cmd = new NpgsqlCommand("""
-            INSERT INTO retour_client (vente_id, motif, utilisateur_id, valide_par, mode, montant_rembourse, session_caisse_id, poste)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id
+            INSERT INTO retour_client (vente_id, motif, utilisateur_id, valide_par, mode, montant_rembourse, session_caisse_id, poste, motif_code, motif_texte)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
             """, cx, tx);
         cmd.Parameters.AddWithValue(a.VenteId);
         cmd.Parameters.AddWithValue(a.Motif);
@@ -166,6 +166,8 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         cmd.Parameters.AddWithValue(montant);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.SessionCaisseId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
         cmd.Parameters.AddWithValue(a.Poste);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.MotifCode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.MotifTexte ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         return (long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 

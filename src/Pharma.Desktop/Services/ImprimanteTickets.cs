@@ -220,7 +220,9 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         // Majoration Chifa (D-3) : ajoutée à la part de l'organisme, jamais payée par le patient
         if (t.MajorationChifa > 0) P($"Majoration Chifa à la charge de {t.Organisme ?? "l’organisme"} : {Da(t.MajorationChifa)}");
         Montant("À PAYER", t.PartPatient, gras: true);
-        if (t.Mode is { } mode) P($"Réglé : {Mode(mode)}");
+        // Part payée par l'avoir du patient (script 106)
+        if (t.PayeParAvoir > 0) Montant("Payé par avoir", t.PayeParAvoir);
+        if (t.Mode is { } mode && t.PayeParAvoir < t.PartPatient) P($"Réglé : {Mode(mode)}");
         if (rendu is > 0) Montant("Rendu", rendu.Value);
         if (t.Retours is { Count: > 0 } retours)
         {
@@ -238,6 +240,7 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         "carte" => "carte",
         "cheque" => "chèque",
         "credit" => "crédit (à régler)",
+        "avoir" => "avoir du patient",
         _ => mode
     };
 

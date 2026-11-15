@@ -1,0 +1,135 @@
+@page "/admin/indications"
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Indications thérapeutiques (2026-11-15, script 104) : « Toux », « Fièvre »… associées aux produits sur leur fiche (Stock › Modifier un
+   produit) pour la recherche au comptoir. Droit de créer au catalogue. Jamais de suppression : désactivée, elle n'est plus proposée.
+   Écran fixe : seul le tableau défile (docs/charte-graphique.md). *@
+<div class="page admin">
+    <NavAdmin Actif="admin/indications" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Indications thérapeutiques</h1>
+                <p class="sous-titre">Associées aux produits sur leur fiche : à la caisse, taper « toux » ou « fièvre » propose les produits de l’indication, disponibles d’abord. Une indication désactivée n’est plus proposée.</p>
+            </div>
+            <button type="button" class="btn btn-principal" @onclick="Ajouter">Ajouter une indication</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (fiche is not null)
+        {
+            <section class="panneau" aria-labelledby="t-fiche-indication">
+                <h2 id="t-fiche-indication">@(fiche.Id is null ? "Nouvelle indication" : $"Modifier l’indication « {fiche.LibelleInitial} »")</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 1 420px"><label for="i-libelle" class="requis">Libellé</label>
+                        <input id="i-libelle" data-champ="libelle" type="text" maxlength="80" @bind="fiche.Libelle" @bind:event="oninput" /></div>
+                </div>
+                @if (fiche.Id is not null)
+                {
+                    <label class="case"><input type="checkbox" data-champ="actif" @bind="fiche.Actif" /><span>Indication proposée (décoché : désactivée)</span></label>
+                }
+                <div style="display: flex; gap: 8px">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">@(fiche.Id is null ? "Créer" : "Enregistrer")</button>
+                    <button type="button" class="btn" @onclick="() => fiche = null">Annuler</button>
+                </div>
+            </section>
+        }
+
+        @if (fiche is null)
+        {
+            <div class="filtres-liste" role="search" aria-label="Filtrer les indications">
+                <div class="champ" style="flex: 1 1 220px"><label for="fi-texte">Libellé</label>
+                    <input id="fi-texte" type="search" autocomplete="off" value="@fTexte" @oninput="RechercheAsync" /></div>
+                <div class="champ" style="flex: 0 0 170px"><label for="fi-etat">État</label>
+                    <select id="fi-etat" @bind="fEtat" @bind:after="PremierePageAsync"><option value="">Toutes</option><option value="actif">Proposées</option><option value="inactif">Désactivées</option></select></div>
+                @if (fTexte.Trim() != "" || fEtat != "") { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+            </div>
+            <section class="tableau-cadre" aria-label="Indications">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Libellé</th><th scope="col">Produits associés</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var i in liste)
+                        {
+                            <tr>
+                                <td>@i.Libelle</td>
+                                <td>@i.NbProduits</td>
+                                <td><span class="pastille @(i.Actif ? "ok" : "info")">@(i.Actif ? "Proposée" : "Désactivée")</span></td>
+                                <td><button type="button" class="btn" @onclick="() => Editer(i)">Modifier</button></td>
+                            </tr>
+                        }
+                        @if (liste.Count == 0 && erreur is null) { <tr><td colspan="4" class="vide">Aucune indication pour ces filtres.</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+            <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des indications" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
+    </div>
+</div>
+
+@code {
+    private sealed class Fiche
+    {
+        public long? Id { get; init; }
+        public string? LibelleInitial { get; init; }
+        public string? Libelle { get; set; }
+        public bool Actif { get; set; } = true;
+    }
+
+    private List<IndicationDto> liste = [];
+    private Fiche? fiche;
+    private bool enCours;
+    private string? erreur, message;
+    private int total, page = 1, taille = Pagination.TailleParDefaut, saisie;
+    private string fTexte = "", fEtat = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("indications", e => { e.Mettre("texte", fTexte); e.Mettre("etat", fEtat); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("indications") is { } h)
+            (fTexte, fEtat, page, taille) = (h.Texte("texte") ?? "", h.Texte("etat") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        await ChargerAsync(page, taille);
+    }
+
+    private Task PremierePageAsync() => ChargerAsync(1, taille);
+    private Task ToutAfficherAsync() { (fTexte, fEtat) = ("", ""); return PremierePageAsync(); }
+
+    private async Task RechercheAsync(ChangeEventArgs a)
+    {
+        fTexte = a.Value?.ToString() ?? "";
+        var n = ++saisie;
+        await Task.Delay(250);
+        if (n == saisie) await PremierePageAsync();
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.IndicationsAsync(fEtat switch { "actif" => true, "inactif" => false, _ => null }, fTexte.Trim(), numero, nouvelleTaille);
+        if (p is null) { erreur ??= e; return; }
+        (liste, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    private void Ajouter() => (fiche, erreur, message) = (new Fiche(), null, null);
+
+    private void Editer(IndicationDto i) => (fiche, erreur, message) =
+        (new Fiche { Id = i.Id, LibelleInitial = i.Libelle, Libelle = i.Libelle, Actif = i.Actif }, null, null);
+
+    private async Task EnregistrerAsync()
+    {
+        if (fiche is null) return;
+        if (string.IsNullOrWhiteSpace(fiche.Libelle)) { (erreur, message) = ("Indiquez le libellé.", null); return; }
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var e = await Api.EnregistrerIndicationAsync(fiche.Id, new IndicationSaisie(fiche.Libelle.Trim(), fiche.Actif));
+            if (e is not null) { erreur = e; return; }
+            message = $"Indication « {fiche.Libelle.Trim()} » enregistrée.";
+            fiche = null;
+            await ChargerAsync(page, taille);
+        }
+        finally { enCours = false; }
+    }
+}

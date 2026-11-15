@@ -36,6 +36,27 @@ internal static class PatientsEndpoints
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
+        // Avoir du patient (script 106) : solde (jamais négatif) et mouvements, séparés de sa dette
+        api.MapGet("/patients/{id:long}/avoir", async (long id, int? page, int? taille, Pharma.Application.Caisse.ConsulterAvoir consulter, CancellationToken ct) =>
+            {
+                var s = await consulter.ExecuterAsync(id, Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new AvoirPatientDto(s.Solde, new PageDto<AvoirMouvementDto>(s.Mouvements.Lignes.Select(m => new AvoirMouvementDto(
+                        m.Id, m.Sens, m.Montant, m.SoldeApres, m.VenteId, m.NumeroVente, m.Motif, new DateTimeOffset(DateTime.SpecifyKind(m.CreeLe, DateTimeKind.Utc)),
+                        m.CreePar, m.Origine, m.BonSortie)).ToList(),
+                    s.Mouvements.Total, s.Mouvements.Numero, s.Mouvements.Taille)));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        // Remboursement d'un avoir (D-10) : sortie du tiroir « Remboursement d'un client », même droit et même seuil que les sorties
+        api.MapPost("/patients/{id:long}/avoir/remboursement", async (long id, RemboursementAvoirRequete req, Pharma.Application.Caisse.RembourserAvoir rembourser,
+                ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
+            {
+                var bon = await rembourser.ExecuterAsync(id, req.Montant, req.Motif, user.UtilisateurId(), requete.Poste(), ct);
+                return Results.Created($"/api/caisse/tiroir/mouvements/{bon.Id}", new OuvertureTiroirDto(bon.Id, bon.Numero));
+            })
+           .ExigerPermission(Permissions.CaisseOuvrirTiroir)
+           .GererErreursMetier();
+
         // Membres de la famille (script 090) proposés en priorité pour « Remis à » / « Pour » à la caisse (2026-11-15)
         api.MapGet("/patients/{id:long}/proches", async (long id, LireFichePatient lire, CancellationToken ct) =>
                 Results.Ok((await lire.ProchesAsync(id, ct)).Where(p => p.Id != id).Select(p => new ProchePatientDto(p.Id, p.Nom, p.NumAssure, p.Lien)).ToList()))

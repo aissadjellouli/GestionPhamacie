@@ -104,10 +104,11 @@ internal sealed class TypesPrestationEnMemoire : ITypesPrestation
     public Task<Page<TypePrestation>> ListerAsync(bool? actif, string? recherche, DemandePage page, CancellationToken ct = default) =>
         Task.FromResult(new Page<TypePrestation>(Types.Values.Where(t => actif is null || t.Actif == actif).ToList(), Types.Count, page.Page, page.Taille));
     public Task<TypePrestation?> LireAsync(long id, CancellationToken ct = default) => Task.FromResult(Types.GetValueOrDefault(id));
-    public Task<long> EnregistrerAsync(long? id, string code, string libelle, decimal prix, decimal tauxTva, bool actif, CancellationToken ct = default)
+    public Task<long> EnregistrerAsync(long? id, string code, string libelle, decimal prix, decimal tauxTva, bool actif,
+        bool remboursable, decimal? tarifReference, CancellationToken ct = default)
     {
         var n = id ?? Types.Count + 1;
-        Types[n] = new TypePrestation(n, code, libelle, prix, tauxTva, actif);
+        Types[n] = new TypePrestation(n, code, libelle, prix, tauxTva, actif, remboursable, tarifReference);
         return Task.FromResult(n);
     }
 }

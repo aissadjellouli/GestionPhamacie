@@ -80,6 +80,20 @@ internal static class ChifaEndpoints
             })
            .ExigerPermission(Permissions.ChifaExclure)
            .GererErreursMetier();
+
+        // Conflits de n° de facture Chifa (script 101, fusion vers chifa_facture) : titulaire
+        api.MapGet("/chifa/conflits-facture", async (bool? aTrancher, ConflitsFactureChifa conflits, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok((await conflits.ListerAsync(aTrancher ?? true, user.UtilisateurId(), ct))
+                    .Select(c => new ConflitFactureDto(c.VenteId, c.NumeroVente, c.DateVente, c.AncienNumero, c.NumeroActuel, c.ValeurRetenue,
+                        c.TrancheLe, c.TranchePar)).ToList()))
+           .ExigerTitulaire()
+           .GererErreursMetier();
+
+        api.MapPost("/chifa/conflits-facture/{venteId:long}", async (long venteId, TrancherConflitFactureRequete r, ConflitsFactureChifa conflits,
+                ClaimsPrincipal user, CancellationToken ct) =>
+                await conflits.TrancherAsync(venteId, r.ValeurRetenue, user.UtilisateurId(), ct) ? Results.NoContent() : Results.NotFound())
+           .ExigerTitulaire()
+           .GererErreursMetier();
     }
 
     private static CentrePayeurDto Dto(CentrePayeur c) => new(c.Id, c.OrganismeId, c.OrganismeCode, c.Code, c.Nom, c.Actif);

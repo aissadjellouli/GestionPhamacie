@@ -10,7 +10,7 @@ namespace Pharma.Infrastructure.Caisse;
 /// <summary>Types de prestation (script 105) : jamais supprimés ; code unique sans tenir compte de la casse (ux_type_prestation_code).</summary>
 public sealed class TypesPrestationSql(NpgsqlDataSource db) : ITypesPrestation
 {
-    private const string Colonnes = "t.id, t.code, t.libelle, t.prix, t.taux_tva, t.actif FROM type_prestation t";
+    private const string Colonnes = "t.id, t.code, t.libelle, t.prix, t.taux_tva, t.actif, t.remboursable, t.tarif_reference FROM type_prestation t";
 
     public async Task<Page<TypePrestation>> ListerAsync(bool? actif, string? recherche, DemandePage page, CancellationToken ct = default)
     {
@@ -59,16 +59,19 @@ public sealed class TypesPrestationSql(NpgsqlDataSource db) : ITypesPrestation
         return types;
     }
 
-    public async Task<long> EnregistrerAsync(long? id, string code, string libelle, decimal prix, decimal tauxTva, bool actif, CancellationToken ct = default)
+    public async Task<long> EnregistrerAsync(long? id, string code, string libelle, decimal prix, decimal tauxTva, bool actif,
+        bool remboursable, decimal? tarifReference, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(id is null
-            ? "INSERT INTO type_prestation (code, libelle, prix, taux_tva, actif) VALUES ($1, $2, $3, $4, $5) RETURNING id"
-            : "UPDATE type_prestation SET code = $1, libelle = $2, prix = $3, taux_tva = $4, actif = $5 WHERE id = $6 RETURNING id");
+            ? "INSERT INTO type_prestation (code, libelle, prix, taux_tva, actif, remboursable, tarif_reference) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"
+            : "UPDATE type_prestation SET code = $1, libelle = $2, prix = $3, taux_tva = $4, actif = $5, remboursable = $6, tarif_reference = $7 WHERE id = $8 RETURNING id");
         cmd.Parameters.AddWithValue(code);
         cmd.Parameters.AddWithValue(libelle);
         cmd.Parameters.AddWithValue(prix);
         cmd.Parameters.AddWithValue(tauxTva);
         cmd.Parameters.AddWithValue(actif);
+        cmd.Parameters.AddWithValue(remboursable);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)tarifReference ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Numeric });
         if (id is { } i) cmd.Parameters.AddWithValue(i);
         try
         {
@@ -81,5 +84,6 @@ public sealed class TypesPrestationSql(NpgsqlDataSource db) : ITypesPrestation
     }
 
     private static TypePrestation Lire(NpgsqlDataReader r) =>
-        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetDecimal(3), r.GetDecimal(4), r.GetBoolean(5));
+        new(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetDecimal(3), r.GetDecimal(4), r.GetBoolean(5),
+            r.GetBoolean(6), r.IsDBNull(7) ? null : r.GetDecimal(7));
 }

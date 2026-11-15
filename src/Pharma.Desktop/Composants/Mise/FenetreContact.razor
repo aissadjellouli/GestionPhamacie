@@ -177,6 +177,28 @@
                     </dl>
                 }
 
+                @* Remboursement de l'avoir (script 106, D-10) : sortie du tiroir « Remboursement d'un client », même droit et même seuil que les sorties *@
+                @if (fiche.Type == "patient" && fiche.Situation.Any(i => i.Libelle == "Avoir du patient") && Session.A("caisse.ouvrir_tiroir"))
+                {
+                    @if (rembourserAvoir)
+                    {
+                        <div class="achats-ligne" style="align-items: flex-end">
+                            <div class="champ" style="flex: 0 0 160px"><label for="fc-avoir-montant" class="requis">Montant rendu (DA)</label>
+                                <input id="fc-avoir-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montantAvoir" /></div>
+                            <div class="champ" style="flex: 1 1 200px"><label for="fc-avoir-motif">Motif</label>
+                                <input id="fc-avoir-motif" data-champ="motif" type="text" maxlength="300" @bind="motifAvoir" /></div>
+                            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="RembourserAvoirAsync">Rendre par le tiroir</button>
+                            <button type="button" class="btn" disabled="@enCours" @onclick="() => rembourserAvoir = false">Annuler</button>
+                        </div>
+                        <p class="detail" style="margin: 0">Sortie « Remboursement d’un client » de la caisse ouverte du poste, avec un bon de sortie ; au-delà du seuil des sorties, un ayant droit valide.</p>
+                    }
+                    else
+                    {
+                        <div class="filtres"><button type="button" class="btn" disabled="@enCours" @onclick="OuvrirRemboursementAvoirAsync">Rembourser l’avoir…</button></div>
+                    }
+                    @if (erreurAvoir is not null) { <div class="erreur" role="alert">@erreurAvoir</div> }
+                }
+
                 @if (Raccourcis.Count > 0 || fiche.Modifiable || FichePatientModifiable)
                 {
                     <div class="filtres">
@@ -240,6 +262,34 @@
     private List<OrganismeDto> organismes = [];
 
     private bool FichePatientModifiable => fiche?.Type == "patient" && Session.A("caisse.vendre");
+
+    // ---- Avoir du patient (script 106) : remboursement par le tiroir ----
+    private bool rembourserAvoir;
+    private decimal montantAvoir;
+    private string? motifAvoir, erreurAvoir;
+
+    private async Task OuvrirRemboursementAvoirAsync()
+    {
+        if (fiche is null) return;
+        var (a, e) = await Api.AvoirPatientAsync(fiche.Id, 1, 1);
+        (montantAvoir, motifAvoir, erreurAvoir, rembourserAvoir) = (a?.Solde ?? 0, null, e, e is null);
+    }
+
+    private async Task RembourserAvoirAsync()
+    {
+        if (fiche is null) return;
+        if (montantAvoir <= 0) { erreurAvoir = Api.SignalerChamp("montant", "Indiquez le montant à rendre."); return; }
+        (enCours, erreurAvoir) = (true, null);
+        try
+        {
+            var (bon, e) = await Api.RembourserAvoirAsync(fiche.Id, montantAvoir, motifAvoir);
+            if (e is not null) { erreurAvoir = e; return; }
+            var (f, err) = await Api.ContactAsync(fiche.Type, fiche.Id);
+            (fiche, erreur, rembourserAvoir) = (f ?? fiche, err, false);
+            message = $"Avoir remboursé : {Libelles.Dinars(montantAvoir, 2)} rendus par le tiroir (bon {bon?.Numero}).";
+        }
+        finally { enCours = false; }
+    }
 
     private async Task ModifierPatientAsync()
     {

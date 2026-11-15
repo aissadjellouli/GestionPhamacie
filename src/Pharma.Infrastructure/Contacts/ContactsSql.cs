@@ -34,7 +34,9 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             SELECT trim(concat_ws(' ', p.nom, p.prenom)), p.telephone, p.num_assure, o.nom, o.code, p.date_naissance, p.est_chronique,
                    p.plafond_credit, p.solde_credit, p.cree_le,
                    (SELECT max(v.date_vente) FROM vente v WHERE v.patient_id = p.id AND v.statut = 'validee'),
-                   o.id, p.email, p.assure_principal_id, rang_assure(p.num_assure), p.date_fin_droit
+                   o.id, p.email, p.assure_principal_id, rang_assure(p.num_assure), p.date_fin_droit,
+                   -- Avoir du patient (script 106), séparé de la dette
+                   COALESCE((SELECT a.solde FROM v_avoir_patient a WHERE a.patient_id = p.id), 0)
             FROM patient p LEFT JOIN organisme o ON o.id = p.organisme_id
             WHERE p.id = $1
             """);
@@ -48,6 +50,8 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             Ajouter(coord, "Téléphone", T(r, 1), "telephone");
             Email(coord, T(r, 12));
             var situation = new List<InfoContact> { new("Dette en cours", Da(r.GetDecimal(8)), r.GetDecimal(8) > 0 ? "montant_du" : null) };
+            // Avoir (script 106) : argent que la pharmacie doit au patient, jamais confondu avec la dette
+            if (r.GetDecimal(16) > 0) situation.Add(new("Avoir du patient", Da(r.GetDecimal(16))));
             if (r.GetDecimal(7) > 0) situation.Add(new("Plafond de crédit", Da(r.GetDecimal(7))));
             Ajouter(situation, "Organisme", r.IsDBNull(3) ? null : $"{r.GetString(3)} ({r.GetString(4)})");
             // Rang = suffixe « /NN » du n° d'assuré (script 102) ; fin de droits dépassée : signalée, sans blocage (D-4)

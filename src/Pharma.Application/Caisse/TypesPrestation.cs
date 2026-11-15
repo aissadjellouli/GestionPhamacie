@@ -13,7 +13,8 @@ public interface ITypesPrestation
     Task<Page<TypePrestation>> ListerAsync(bool? actif, string? recherche, DemandePage page, CancellationToken ct = default);
     Task<TypePrestation?> LireAsync(long id, CancellationToken ct = default);
     /// <summary>Crée (id null) ou modifie le type ; code déjà pris : RegleMetierException (409).</summary>
-    Task<long> EnregistrerAsync(long? id, string code, string libelle, decimal prix, decimal tauxTva, bool actif, CancellationToken ct = default);
+    Task<long> EnregistrerAsync(long? id, string code, string libelle, decimal prix, decimal tauxTva, bool actif,
+        bool remboursable, decimal? tarifReference, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -30,19 +31,20 @@ public sealed class TypesPrestation(ITypesPrestation types, IPermissionService d
     }
 
     public async Task<TypePrestation> EnregistrerAsync(long? id, string? code, string? libelle, decimal prix, decimal tauxTva, bool actif,
-        long utilisateurId, CancellationToken ct = default)
+        long utilisateurId, CancellationToken ct = default, bool remboursable = false, decimal? tarifReference = null)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.CatalogueCreer, "gérer les prestations", ct);
         var (c, l) = RegleTypePrestation.Verifier(code, libelle, prix, tauxTva);
+        var tarif = RegleTypePrestation.VerifierRemboursement(remboursable, tarifReference);
         TypePrestation? avant = null;
         if (id is { } i)
             avant = await types.LireAsync(i, ct) ?? throw new RegleMetierException("Prestation introuvable.", "prestation");
-        var nouvelId = await types.EnregistrerAsync(id, c, l, prix, tauxTva, actif, ct);
+        var nouvelId = await types.EnregistrerAsync(id, c, l, prix, tauxTva, actif, remboursable, tarif, ct);
         await journal.EcrireAsync(utilisateurId, id is null ? "type_prestation_cree" : "type_prestation_modifie", "type_prestation", nouvelId,
             new Dictionary<string, object?>
             {
-                ["code"] = c, ["libelle"] = l, ["prix"] = prix, ["taux_tva"] = tauxTva, ["actif"] = actif,
-                ["avant"] = avant is null ? null : new { code = avant.Code, libelle = avant.Libelle, prix = avant.Prix, taux_tva = avant.TauxTva, actif = avant.Actif }
+                ["code"] = c, ["libelle"] = l, ["prix"] = prix, ["taux_tva"] = tauxTva, ["actif"] = actif, ["remboursable"] = remboursable, ["tarif_reference"] = tarif,
+                ["avant"] = avant is null ? null : new { code = avant.Code, libelle = avant.Libelle, prix = avant.Prix, taux_tva = avant.TauxTva, actif = avant.Actif, remboursable = avant.Remboursable, tarif_reference = avant.TarifReference }
             }, Permissions.CatalogueCreer, ct);
         return (await types.LireAsync(nouvelId, ct))!;
     }

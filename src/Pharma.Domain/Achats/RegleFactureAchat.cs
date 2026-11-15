@@ -29,6 +29,31 @@ public static class RegleShp
         Catalogue.ClasseReglementaire.Psychotrope => ParBoite("psychotrope", listePsychotrope),
         _ => 0m
     };
+
+    /// <summary>Classe du produit telle qu'écrite dans le contrôle du SHP de la réception (hors liste : parapharmacie).</summary>
+    public static string LibelleClasse(string? classe) => classe switch
+    {
+        "liste_i" => "liste I",
+        "liste_ii" => "liste II",
+        "psychotrope" => "psychotrope",
+        "stupefiant" => "stupéfiant (liste I)",
+        _ => "parapharmacie"
+    };
+
+    /// <summary>
+    /// Contrôle du SHP d'une ligne de réception (décision du 2026-11-15) : le SHP de la facture du grossiste (à part du PPA) doit être
+    /// celui de la classe du produit. Écart : la ligne est signalée, sans bloquer l'entrée en stock ; le lot garde le SHP de la facture.
+    /// Null si le SHP n'est pas saisi ou s'il est conforme.
+    /// </summary>
+    public static EcartShp? Controler(long produitId, string produit, string? classe, decimal? shpFacture, decimal shpAttendu) =>
+        shpFacture is { } f && Math.Abs(f - shpAttendu) >= 0.01m ? new EcartShp(produitId, produit, classe ?? "", f, shpAttendu) : null;
+}
+
+/// <summary>SHP de la facture différent du SHP attendu pour la classe du produit (signalement non bloquant).</summary>
+public sealed record EcartShp(long ProduitId, string Produit, string Classe, decimal ShpFacture, decimal ShpAttendu)
+{
+    public string Message =>
+        $"{Produit} : SHP facture {ShpFacture:0.00} DA ≠ SHP attendue {ShpAttendu:0.00} DA pour un produit {RegleShp.LibelleClasse(Classe)} : vérifier la classe du produit ou la facture.";
 }
 
 /// <summary>Totaux d'une facture d'achat, calculés comme sur les factures des grossistes.</summary>

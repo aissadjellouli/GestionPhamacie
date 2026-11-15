@@ -127,6 +127,19 @@ public sealed class TiroirSql(NpgsqlDataSource db) : ITiroir
         {
             throw new RegleMetierException("Ce mouvement vient d’être corrigé depuis un autre poste.");
         }
+        // Remboursement d'un avoir corrigé (script 106) : l'argent revient au tiroir, l'avoir est rendu au patient (mouvement lié au bon)
+        await using (var cmd = new NpgsqlCommand(
+            "SELECT patient_id, montant FROM avoir_mouvement WHERE mouvement_tiroir_id = $1 AND origine = 'remboursement'", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(o.Id);
+            long? patient = null;
+            decimal montant = 0;
+            await using (var r = await cmd.ExecuteReaderAsync(ct))
+                if (await r.ReadAsync(ct)) (patient, montant) = (r.GetInt64(0), r.GetDecimal(1));
+            if (patient is { } p)
+                await EcritureAvoir.CrediterAsync(cx, tx, p, montant, Pharma.Domain.Ventes.RegleAvoir.OrigineSaisie, null,
+                    $"Correction du bon {o.Numero} (remboursement de l’avoir annulé) : {motif}", utilisateurId, ct);
+        }
         await tx.CommitAsync(ct);
         return ecrit;
     }

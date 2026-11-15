@@ -30,9 +30,12 @@ internal sealed class AchatsEnMemoire : IAchats
     public Task<CommandeDetail?> CommandeAsync(long id, CancellationToken ct = default) => Task.FromResult(Commande?.Entete.Id == id ? Commande : null);
     /// <summary>Produits bloqués à l'achat.</summary>
     public HashSet<long> BloquesAchat { get; } = [];
+    /// <summary>Classe imposée d'un produit (par défaut : 2 liste II, les autres liste I).</summary>
+    public Dictionary<long, string> Classes { get; } = [];
+    private string ClasseDe(long id) => Classes.TryGetValue(id, out var c) ? c : id == 2 ? "liste_ii" : "liste_i";
     public Task<IReadOnlyList<InfoAchatProduit>> InfosAchatAsync(IEnumerable<long> produitIds, CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<InfoAchatProduit>>(produitIds.Select(id => new InfoAchatProduit(id, id == 2 ? "liste_ii" : "liste_i", 100, 0,
-            id == 2 ? Pharma.Domain.Achats.RegleShp.ListeII : Pharma.Domain.Achats.RegleShp.ListeI, BloquesAchat.Contains(id), BloquesAchat.Contains(id) ? "litige" : null)).ToList());
+        Task.FromResult<IReadOnlyList<InfoAchatProduit>>(produitIds.Select(id => new InfoAchatProduit(id, ClasseDe(id), 100, 0,
+            Pharma.Domain.Achats.RegleShp.ParBoite(ClasseDe(id)), BloquesAchat.Contains(id), BloquesAchat.Contains(id) ? "litige" : null)).ToList());
     public Task<IReadOnlyDictionary<long, decimal>> TauxTvaAsync(IEnumerable<long> produitIds, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<long, decimal>>(produitIds.Where(p => p != 99).ToDictionary(p => p, p => p == 2 ? 19m : 0m));
     public Task<ReceptionEnregistree> ReceptionnerAsync(NouvelleReception reception, CancellationToken ct = default)

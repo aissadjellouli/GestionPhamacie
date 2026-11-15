@@ -77,7 +77,11 @@ public sealed record ReceptionResume(
 public sealed record LotRecu(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int Etiquettes, bool LotExistant = false);
 
 /// <summary>AReclamer : valeur des boîtes facturées absentes du carton (réception à l'aveugle, écart validé).</summary>
-public sealed record ReceptionEnregistree(long ReceptionId, decimal MontantTtc, IReadOnlyList<LotRecu> Lots, decimal AReclamer = 0);
+public sealed record ReceptionEnregistree(long ReceptionId, decimal MontantTtc, IReadOnlyList<LotRecu> Lots, decimal AReclamer = 0)
+{
+    /// <summary>Lignes dont le SHP facturé diffère du SHP de la classe du produit (signalées, non bloquantes ; 2026-11-15).</summary>
+    public IReadOnlyList<EcartShp> EcartsShp { get; init; } = [];
+}
 
 /// <summary>MontantTtc : net à payer au grossiste (dette) ; Totaux : détail de la facture (044).</summary>
 public sealed record NouvelleReception(
@@ -469,6 +473,10 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
         var bloques = lignes.Where(l => infos.TryGetValue(l.ProduitId, out var i) && i.BloqueAchat)
             .Select(l => infos[l.ProduitId].MotifBlocage is { } m ? $"{l.Nom} ({m})" : l.Nom).Distinct().ToList();
         var validePar = await Catalogue.AutorisationBlocage.ExigerAsync(droits, codesComptoir, utilisateurId, s.Blocage, null, "à l’achat", bloques, ct);
+        // SHP de la facture contrôlé contre la classe du produit : écart signalé et journalisé, jamais bloquant ; le lot garde le SHP facturé
+        var ecartsShp = lignes.Select(l => infos.TryGetValue(l.ProduitId, out var info)
+                ? RegleShp.Controler(l.ProduitId, l.Nom, info.Classe, l.Shp, info.ShpParBoite) : null)
+            .OfType<EcartShp>().DistinctBy(e => (e.ProduitId, e.ShpFacture)).ToList();
         for (var i = 0; i < lignes.Count; i++)
             if (lignes[i].Shp is null)
                 lignes[i] = lignes[i] with { Shp = infos.TryGetValue(lignes[i].ProduitId, out var info) ? info.ShpParBoite : 0 };
@@ -497,7 +505,14 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
                 await journal.EcrireAsync(utilisateurId, "prix_modifie", "produit", l.ProduitId,
                     new Dictionary<string, object?> { ["produit"] = l.Nom, ["avant"] = info.PrixPublic, ["apres"] = l.Ppa, ["source"] = $"réception BL {s.NumeroBl}" },
                     Permissions.PrixModifier, ct);
-        return r;
+        foreach (var e in ecartsShp)
+            await journal.EcrireAsync(utilisateurId, "ecart_shp_reception", "reception", r.ReceptionId,
+                new Dictionary<string, object?>
+                {
+                    ["produit_id"] = e.ProduitId, ["produit"] = e.Produit, ["classe"] = e.Classe, ["shp_facture"] = e.ShpFacture,
+                    ["shp_attendue"] = e.ShpAttendu, ["bl"] = s.NumeroBl
+                }, Permissions.AchatsReceptionner, ct);
+        return ecartsShp.Count > 0 ? r with { EcartsShp = ecartsShp } : r;
     }
 }
 

@@ -226,6 +226,8 @@ public sealed class LireVoletChifa(IVoletsChifa volets, IPermissionService droit
         await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendre, "reprendre un volet Chifa", ct);
         var qr = LectureVoletChifa.Lire(texte)
                  ?? throw new RegleMetierException("Ce code n’est pas un QR de volet Chifa reconnu.", "volet_chifa");
+        if (!FormatFactureChifa.EstValide(qr.NumeroFacture))
+            throw new RegleMetierException($"Le n° de facture du volet ({qr.NumeroFacture}) ne compte pas 8 chiffres : volet non repris.", "volet_chifa");
         if (await volets.VenteDuVoletAsync(qr.NumeroFacture, ct) is { } vente)
             throw new RegleMetierException($"Le volet Chifa n° {qr.NumeroFacture} a déjà été repris par la vente {vente}.", "volet_chifa");
         var produits = await volets.ProduitsAsync(qr.Lignes.Select(l => l.Code).Distinct(), ct);
@@ -289,6 +291,9 @@ public static class CanalOrganisme
         if (n.Length == 0) throw new RegleMetierException("Vente facturée par Chifa : saisissez le n° de facture Chifa.", "facture_chifa");
         if (n.Length > NumeroFactureMax)
             throw new RegleMetierException($"N° de facture Chifa : {NumeroFactureMax} caractères au plus.", "facture_chifa");
+        // Script 101 (2026-11-15) : chifa_facture compte exactement 8 chiffres (contrôle ck_vente_chifa_facture_format)
+        if (!FormatFactureChifa.EstValide(n))
+            throw new RegleMetierException("N° de facture Chifa : 8 chiffres exactement.", "facture_chifa");
         return n;
     }
 }

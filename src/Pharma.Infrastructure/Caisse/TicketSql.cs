@@ -11,13 +11,15 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
         await using (var cmd = db.CreateCommand($"""
             SELECT v.numero, v.date_vente, u.nom_complet, s.poste, v.statut, o.code, CASE WHEN v.reste_saisi THEN NULL ELSE v.taux_tiers_payant END,
                    v.montant_total + v.montant_remise + v.montant_don, v.montant_remise, v.part_organisme, v.part_patient,
-                   (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id ORDER BY p.id LIMIT 1), v.montant_don,
+                   (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id AND p.mode <> 'avoir' ORDER BY p.id LIMIT 1), v.montant_don,
                    -- Écart Chifa payé par le patient : notre prix gardé au-dessus du prix du volet
                    (SELECT COALESCE(SUM((l.prix_unitaire - l.prix_chifa) * l.quantite), 0) FROM ligne_vente l
                     WHERE l.vente_id = v.id AND l.prix_chifa IS NOT NULL AND l.prix_unitaire > l.prix_chifa),
                    {RemiseVenteSql.Titulaire}, {RemiseVenteSql.RemisA}, {RemiseVenteSql.Pour},
                    -- Majoration Chifa (script 100, D-3) : à la charge de l'organisme, ajoutée à sa part
-                   v.chifa_majoration_montant
+                   v.chifa_majoration_montant,
+                   -- Part payée par l'avoir du patient (script 106)
+                   (SELECT COALESCE(SUM(p.montant), 0) FROM paiement p WHERE p.vente_id = v.id AND p.mode = 'avoir')
             FROM vente v
             JOIN utilisateur u ON u.id = v.utilisateur_id
             LEFT JOIN session_caisse s ON s.id = v.session_caisse_id
@@ -34,7 +36,7 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
                 null, null, null, null, null, r.GetDecimal(12), r.GetDecimal(13),
                 // « Remis à » / « Pour » (script 091) : seul cas où un nom figure sur le ticket
                 Pharma.Application.Caisse.RemiseVente.Complement(S(r, 15), S(r, 16)) is null ? null : Pharma.Application.Caisse.RemiseVente.Libelle(S(r, 14), S(r, 15), S(r, 16)),
-                r.GetDecimal(17));
+                r.GetDecimal(17), r.GetDecimal(18));
             static string? S(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
         }
 

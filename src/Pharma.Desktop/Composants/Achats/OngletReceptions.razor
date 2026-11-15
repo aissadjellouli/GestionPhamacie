@@ -221,6 +221,10 @@ else if (resultat is not null)
         <div class="succes" role="status">
             @resultat.Lots.Count lot(s), @resultat.Lots.Sum(l => l.Quantite) boîte(s) entrées en stock · @Libelles.Dinars(resultat.MontantTtc, 2) TTC ajoutés à la dette du grossiste.
         </div>
+        @foreach (var e in resultat.EcartsShp ?? [])
+        {
+            <p class="texte-attention" style="margin: 0">@e</p>
+        }
         @foreach (var l in resultat.Lots.Where(l => l.LotExistant))
         {
             <p class="detail" style="margin: 0">@l.Produit, lot @l.NumeroLot : déjà en stock chez ce grossiste, les @l.Quantite boîte(s) ont été ajoutées au même lot.</p>
@@ -376,6 +380,10 @@ else
                                     {
                                         <br /><span class="pastille urgent">Bloqué à l’achat@(infoBloque.MotifBlocage is { } mb ? $" : {mb}" : "")</span>
                                     }
+                                    @if (l.EcartShp is { } shpAttendu)
+                                    {
+                                        <br /><span class="texte-attention">SHP facture @Libelles.Dinars(l.Shp!.Value, 2) ≠ SHP attendue @Libelles.Dinars(shpAttendu, 2) pour un produit @ClasseShp(l.Info!.Classe) : vérifier la classe du produit ou la facture</span>
+                                    }
                                     @if (l.EcartPpa is { } prixCatalogue)
                                     {
                                         <br /><span class="texte-attention">PPA facturé @Libelles.Dinars(l.Ppa!.Value, 2) ≠ prix public du catalogue @Libelles.Dinars(prixCatalogue, 2)</span>
@@ -409,7 +417,7 @@ else
                                 <td style="white-space: nowrap">@(l.PaTtc is { } pa ? Libelles.Dinars(pa, 2) : "—")</td>
                                 <td><input type="number" min="0" step="0.01" style="width: 100px" aria-label="PPA facturé de @l.Nom" @bind="l.Ppa" /></td>
                                 <td style="white-space: nowrap">@(l.PvHt is { } pv ? Libelles.Dinars(pv, 2) : "—")</td>
-                                <td><input type="number" min="0" step="0.01" style="width: 70px" aria-label="SHP par boîte de @l.Nom" title="@(l.Info is { } inf ? $"Proposé selon la liste du produit ({Libelles.Classe(inf.Classe)})" : null)" @bind="l.Shp" /></td>
+                                <td><input type="number" min="0" step="0.01" style="width: 70px@(l.EcartShp is not null ? "; border-color: var(--avert-bord); background: var(--avert-fond)" : "")" aria-label="SHP par boîte de @l.Nom" title="@(l.Info is { } inf ? $"Proposé selon la liste du produit ({Libelles.Classe(inf.Classe)})" : null)" @bind="l.Shp" /></td>
                                 <td style="white-space: nowrap">@(l.MargePct is { } m ? $"{m:0.00} %" : "—")</td>
                                 }
                                 @if (aFacturer is null)
@@ -593,6 +601,8 @@ else
         public decimal? PvHt => Info is { } i && Ppa is > 0 ? Math.Round(Ppa.Value / (1 + i.TauxTva / 100m), 2, MidpointRounding.AwayFromZero) : null;
         public decimal? MargePct => Ppa is > 0 && Prix > 0 ? Math.Round((Ppa.Value / Prix - 1) * 100, 2, MidpointRounding.AwayFromZero) : null;
         /// <summary>Prix public du catalogue quand le PPA facturé en diffère (à vérifier : le prix de vente n'est pas changé).</summary>
+        /// <summary>SHP attendu pour la classe du produit quand le SHP saisi (celui de la facture) en diffère : ligne signalée, non bloquant.</summary>
+        public decimal? EcartShp => Shp is { } s && Info is { } i && Math.Abs(i.ShpParBoite - s) >= 0.01m ? i.ShpParBoite : null;
         public decimal? EcartPpa => Ppa is > 0 && Info is { PrixPublic: > 0 } i && Math.Abs(i.PrixPublic - Ppa.Value) >= 0.01m ? i.PrixPublic : null;
         public int? Commandee { get; init; }
         public string? Gtin { get; set; }
@@ -642,6 +652,12 @@ else
     private string texteProduit = "";
     private ChoixProduit? choixProduit;
     private ReceptionEnregistreeDto? resultat;
+
+    // Classe du produit dans le contrôle du SHP (même libellé que RegleShp.LibelleClasse côté serveur)
+    private static string ClasseShp(string? classe) => classe switch
+    {
+        "liste_i" => "liste I", "liste_ii" => "liste II", "psychotrope" => "psychotrope", "stupefiant" => "stupéfiant (liste I)", _ => "parapharmacie"
+    };
     private bool enCours;
 
     // ---- Réception à l'aveugle : comptage (Comptage), puis facture saisie sur ce comptage (aFacturer) ----

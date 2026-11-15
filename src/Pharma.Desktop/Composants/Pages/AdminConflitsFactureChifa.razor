@@ -1,0 +1,104 @@
+@page "/admin/conflits-facture-chifa"
+@inject ApiClient Api
+
+@* Fusion du n° de facture Chifa (script 101, 2026-11-15) : ventes dont l'ancienne colonne et chifa_facture différaient.
+   Le titulaire retient un n° (8 chiffres), écrit dans chifa_facture ; décision inscrite au journal. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/conflits-facture-chifa" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Conflits de n° de facture Chifa</h1>
+                <p class="sous-titre">Réservé au titulaire · deux n° différents pour une même vente : choisissez celui à garder · chaque décision est inscrite au journal</p>
+            </div>
+            <label class="case"><input type="checkbox" @bind="tous" @bind:after="ChargerAsync" /><span>Afficher aussi les conflits tranchés</span></label>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (conflits is null)
+        {
+            <p class="sous-titre">Chargement…</p>
+        }
+        else if (conflits.Count == 0)
+        {
+            <p class="vide">Aucun conflit @(tous ? "" : "à trancher") : le n° de facture Chifa est unique pour chaque vente.</p>
+        }
+        else
+        {
+            <div class="tableau-cadre">
+                <table class="tableau">
+                    <thead>
+                        <tr><th>Vente</th><th>Date</th><th>Ancien n°</th><th>N° actuel</th><th>N° retenu</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in conflits)
+                        {
+                            <tr>
+                                <td>@c.NumeroVente</td>
+                                <td>@Libelles.DateHeureLocale(c.DateVente)</td>
+                                <td>@c.AncienNumero</td>
+                                <td>@(c.NumeroActuel ?? "— (déjà porté par une autre vente)")</td>
+                                @if (c.ValeurRetenue is not null)
+                                {
+                                    <td>@c.ValeurRetenue</td>
+                                    <td class="detail">Tranché@(c.TrancheLe is { } t ? $" le {Libelles.DateHeureLocale(t)}" : "")@(c.TranchePar is null ? "" : $" par {c.TranchePar}")</td>
+                                }
+                                else
+                                {
+                                    <td>
+                                        <input type="text" data-champ="valeur_retenue" inputmode="numeric" maxlength="8" aria-label="N° retenu pour la vente @c.NumeroVente"
+                                               value="@Saisie(c)" @oninput="@(e => Saisir(c, e))"
+                                               class="@Obligatoire.Classe(!SaisieFactureChifa.EstValide(Saisie(c)))" />
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn" disabled="@(enCours || !SaisieFactureChifa.EstValide(Saisie(c)))"
+                                                title="@(SaisieFactureChifa.EstValide(Saisie(c)) ? null : SaisieFactureChifa.Message)"
+                                                @onclick="() => TrancherAsync(c)">Retenir</button>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<ConflitFactureDto>? conflits;
+    private readonly Dictionary<long, string> saisies = [];
+    private bool tous, enCours;
+    private string? erreur, message;
+
+    protected override Task OnInitializedAsync() => ChargerAsync();
+
+    private void Saisir(ConflitFactureDto c, ChangeEventArgs e) => saisies[c.VenteId] = e.Value?.ToString() ?? "";
+
+    /// <summary>Proposé par défaut : le n° actuel s'il compte 8 chiffres, sinon l'ancien.</summary>
+    private string Saisie(ConflitFactureDto c) => saisies.TryGetValue(c.VenteId, out var s) ? s
+        : SaisieFactureChifa.EstValide(c.NumeroActuel) ? c.NumeroActuel! : c.AncienNumero;
+
+    private async Task ChargerAsync()
+    {
+        (conflits, erreur) = await Api.ConflitsFactureChifaAsync(!tous);
+    }
+
+    private async Task TrancherAsync(ConflitFactureDto c)
+    {
+        enCours = true;
+        message = null;
+        var valeur = Saisie(c).Trim();
+        erreur = await Api.TrancherConflitFactureAsync(c.VenteId, valeur);
+        if (erreur is null)
+        {
+            message = $"Vente {c.NumeroVente} : n° de facture Chifa {valeur} retenu.";
+            saisies.Remove(c.VenteId);
+            await ChargerAsync();
+        }
+        enCours = false;
+    }
+}

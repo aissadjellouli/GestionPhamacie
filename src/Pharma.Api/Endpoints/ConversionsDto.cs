@@ -54,6 +54,6 @@ internal static class ConversionsDto
     public static ParcoursBoiteDto VersDto(this ParcoursBoite p) =>
         new(p.BoiteId, p.Identifiant, p.Produit, p.NumeroLot, p.DatePeremption,
             p.Fournisseur, p.NumeroBl, p.DateReception, p.Statut, p.LotBloque,
-            p.Ticket, p.DateVente, p.NumFactureChifa, p.Patient,
+            p.Ticket, p.DateVente, p.ChifaFacture, p.Patient,
             p.Etapes.Select(e => new EtapeParcoursDto(e.Type, e.Date, e.Commentaire)).ToList(), p.ProduitId);
 }

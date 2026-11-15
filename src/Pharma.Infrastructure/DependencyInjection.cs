@@ -96,8 +96,10 @@ public static class DependencyInjection
         services.AddScoped<Application.Caisse.IVoletsChifa, Caisse.VoletsChifaSql>();
         services.AddScoped<Application.Caisse.IRapprochementsVolet, Caisse.RapprochementsVoletSql>();
         services.AddScoped<Application.Chifa.IVentesChifa, Chifa.VentesChifaSql>();
+        services.AddScoped<Application.Chifa.IConflitsFactureChifa, Chifa.ConflitsFactureChifaSql>();
         services.AddScoped<Application.Chifa.ICentresPayeurs, Chifa.CentresPayeursSql>();
         services.AddScoped<Application.Caisse.ITypesPrestation, Caisse.TypesPrestationSql>();
+        services.AddScoped<Application.Catalogue.IIndications, Lecture.IndicationsSql>();
         services.AddSingleton<Application.Commun.ITraceErreurs, Systeme.TraceErreurs>();
         services.AddScoped<IAlertesEcriture, AlertesEcriture>();
         services.AddScoped<IRappelLot, RappelLotSql>();
@@ -139,6 +141,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Caisse.IVentesParBoite, Caisse.AnnulationsVenteSql>();
         services.AddScoped<Pharma.Application.Caisse.IRetoursClient, Caisse.RetoursClientSql>();
         services.AddScoped<Pharma.Application.Caisse.ICreditsClients, Caisse.CreditsClientsSql>();
+        services.AddScoped<Pharma.Application.Caisse.IAvoirs, Caisse.AvoirsSql>();
         services.AddScoped<Pharma.Application.Suivi.ISuiviDettes, Suivi.SuiviDettesSql>();
         services.AddScoped<Pharma.Application.Contacts.IContacts, Contacts.ContactsSql>();
         services.AddScoped<Pharma.Application.Securite.IDetenteursDroit, Securite.DetenteursDroitSql>();

@@ -27,3 +27,13 @@ public sealed record VenteChifaDto(long Id, string Numero, DateTime Date, string
 
 /// <summary>Employé proposé pour « saisi dans Chifa par ».</summary>
 public sealed record EmployeChoixDto(long Id, string Nom);
+
+/// <summary>
+/// Conflit de n° de facture Chifa (script 101, 2026-11-15) : ancien n° (colonne obsolète) et chifa_facture différentes
+/// (NumeroActuel null : recopie impossible, n° déjà porté par une autre vente). ValeurRetenue null : à trancher par le titulaire.
+/// </summary>
+public sealed record ConflitFactureDto(long VenteId, string NumeroVente, DateTime DateVente, string AncienNumero, string? NumeroActuel,
+    string? ValeurRetenue, DateTime? TrancheLe, string? TranchePar);
+
+/// <summary>N° de facture Chifa retenu par le titulaire (8 chiffres).</summary>
+public sealed record TrancherConflitFactureRequete(string ValeurRetenue);

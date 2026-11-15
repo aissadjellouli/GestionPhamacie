@@ -64,7 +64,7 @@ public sealed class ConsulterCredits(ICreditsClients credits)
 }
 
 /// <summary>Le patient rembourse tout ou partie de sa dette : l'argent entre dans la caisse ouverte du poste.</summary>
-public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsCaisse sessions, IJournal journal)
+public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsCaisse sessions, IJournal journal, IAvoirs? avoirs = null)
 {
     public async Task<RecuCredit> ExecuterAsync(long patientId, decimal montant, string? mode, long utilisateurId, string? poste,
         IReadOnlyList<long>? ventes = null, CancellationToken ct = default)
@@ -73,6 +73,9 @@ public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsC
                       ?? throw new RegleMetierException("Ouvrez la caisse du poste avant d’encaisser un règlement.");
         var s = await credits.SituationAsync(patientId, ct) ?? throw new RegleMetierException("Patient introuvable.");
         RegleReglementCredit.Verifier(montant, s.Patient.Solde, mode);
+        // Dette payée avec l'avoir du patient (script 106) : au plus son solde, revérifié sous verrou du patient à l'écriture
+        if (mode == RegleAvoir.Mode && (avoirs is null ? 0 : await avoirs.SoldeAsync(patientId, ct)) is var soldeAvoir && montant > soldeAvoir)
+            throw RegleAvoir.Insuffisant(soldeAvoir);
         var numero = await credits.EncaisserAsync(patientId, montant, mode!, session.Id, utilisateurId, ventes, ct);
         await journal.EcrireAsync(utilisateurId, "reglement_credit", "patient", patientId,
             new Dictionary<string, object?> { ["montant"] = montant, ["mode"] = mode, ["reste_du"] = s.Patient.Solde - montant, ["recu"] = numero, ["ventes"] = ventes,
@@ -85,11 +88,13 @@ public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsC
 public interface IDocumentsCredit
 {
     /// <summary>Relevé de la dette d'un patient, à lui remettre : ventes à crédit (réglé, reste dû) et mouvements.</summary>
-    byte[] ReleveCredit(SituationCredit situation, string? pharmacie);
+    /// <remarks>Avoir du patient (script 106) : section séparée, jamais confondue avec la dette.</remarks>
+    byte[] ReleveCredit(SituationCredit situation, string? pharmacie, IReadOnlyList<MouvementAvoir>? avoir = null, decimal soldeAvoir = 0);
 }
 
 /// <summary>Relevé PDF de la dette d'un patient (droit caisse.vendre, comme la consultation des crédits).</summary>
-public sealed class ImprimerReleveCredit(ICreditsClients credits, IDocumentsCredit documents, Administration.IPharmacie pharmacie)
+public sealed class ImprimerReleveCredit(ICreditsClients credits, IDocumentsCredit documents, Administration.IPharmacie pharmacie,
+    IAvoirs? avoirs = null)
 {
     public async Task<(byte[] Contenu, string NomFichier)> ExecuterAsync(long patientId, CancellationToken ct = default)
     {
@@ -103,7 +108,20 @@ public sealed class ImprimerReleveCredit(ICreditsClients credits, IDocumentsCred
             if (page.Lignes.Count < DemandePage.TailleMax) break;
         }
         s = s with { Mouvements = tous, MouvementsTotal = tous.Count };
-        return (documents.ReleveCredit(s, (await pharmacie.LireAsync(ct)).Nom), $"releve_credit_{patientId}_{DateTime.Now:yyyyMMdd}.pdf");
+        // Avoir du patient (script 106) : tous ses mouvements, en section séparée de la dette
+        var avoir = new List<MouvementAvoir>();
+        var soldeAvoir = 0m;
+        if (avoirs is not null)
+        {
+            soldeAvoir = await avoirs.SoldeAsync(patientId, ct);
+            for (var numero = 1; ; numero++)
+            {
+                var page = await avoirs.MouvementsAsync(patientId, new DemandePage(numero, DemandePage.TailleMax), ct);
+                avoir.AddRange(page.Lignes);
+                if (page.Lignes.Count < DemandePage.TailleMax) break;
+            }
+        }
+        return (documents.ReleveCredit(s, (await pharmacie.LireAsync(ct)).Nom, avoir, soldeAvoir), $"releve_credit_{patientId}_{DateTime.Now:yyyyMMdd}.pdf");
     }
 }
 

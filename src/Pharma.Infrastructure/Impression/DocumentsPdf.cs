@@ -37,6 +37,8 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         infos.AddText($"Ouverture : {s.OuverteLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr)}   ·   ");
         infos.AddText($"{s.LibelleFin} : {s.FermeeLe?.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr) ?? "—"}\n");
         infos.AddText($"Ventes de la session : {s.NombreVentes}, pour {Da(s.TotalVentes)} (tous modes de paiement)");
+        // Avoirs des patients utilisés en paiement (script 106) : séparés des espèces, jamais dans l'attendu
+        if (s.AvoirsUtilises > 0) infos.AddText($"\nPayé par avoir des patients : {Da(s.AvoirsUtilises)} (hors tiroir, non compté dans les espèces attendues)");
         if (s.Releve) infos.AddText("\nRelève : la caisse reste ouverte ; le montant compté devient le fond de la session suivante.");
 
         SousTitre(section, "Espèces comptées");
@@ -421,9 +423,11 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         // Majoration Chifa (D-3) : ajoutée à la part de l'organisme, jamais payée par le patient
         if (t.MajorationChifa > 0) Paire(totaux, $"Majoration Chifa ({t.Organisme ?? "organisme"})", Da(t.MajorationChifa));
         Paire(totaux, recu ? "Montant réglé" : "À payer par le patient", Da(t.PartPatient), gras: true);
-        if (t.Mode is { } mode) Paire(totaux, "Règlement", mode switch
+        // Part payée par l'avoir du patient (script 106)
+        if (t.PayeParAvoir > 0) Paire(totaux, "Payé par avoir", Da(t.PayeParAvoir));
+        if (t.Mode is { } mode && (t.PayeParAvoir <= 0 || t.PayeParAvoir < t.PartPatient)) Paire(totaux, "Règlement", mode switch
         {
-            "especes" => "Espèces", "carte" => "Carte", "cheque" => "Chèque", "credit" => "Crédit", "virement" => "Virement", _ => mode
+            "especes" => "Espèces", "carte" => "Carte", "cheque" => "Chèque", "credit" => "Crédit", "virement" => "Virement", "avoir" => "Avoir du patient", _ => mode
         });
         if (rendu is > 0) Paire(totaux, "Rendu", Da(rendu.Value), gras: true);
         foreach (var retour in t.Retours ?? []) Paire(totaux, "Retour", retour);
@@ -434,7 +438,8 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         return doc;
     }
 
-    public byte[] ReleveCredit(Pharma.Application.Caisse.SituationCredit s, string? pharmacie)
+    public byte[] ReleveCredit(Pharma.Application.Caisse.SituationCredit s, string? pharmacie,
+        IReadOnlyList<Pharma.Application.Caisse.MouvementAvoir>? avoir = null, decimal soldeAvoir = 0)
     {
         var doc = NouveauDocument("Relevé de crédit", pharmacie);
         var section = doc.LastSection;
@@ -474,6 +479,23 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             };
             string[] cellules = [Quand(m.Date), m.Vente is null || regularisation is not null ? libelle : $"{libelle} · {m.Vente}" + (m.Remise is { } rm ? $" · {rm}" : ""), (m.Montant > 0 ? "+ " : "- ") + Da(Math.Abs(m.Montant)), Da(m.SoldeApres)];
             for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+        }
+
+        // Avoir du patient (script 106) : argent que la pharmacie lui doit, toujours séparé de sa dette (jamais déduit du reste dû)
+        if (soldeAvoir > 0 || avoir is { Count: > 0 })
+        {
+            SousTitre(section, $"Avoir du patient (à sa disposition) : {Da(Math.Max(soldeAvoir, 0))}");
+            var lignesAvoir = Tableau(section, 3, 6.5, 3.5, 3.5);
+            Entete(lignesAvoir, "Date", "Mouvement", "Montant", "Avoir après");
+            foreach (var m in (avoir ?? []).OrderBy(m => m.CreeLe).ThenBy(m => m.Id))
+            {
+                var row = lignesAvoir.AddRow();
+                row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
+                var libelle = Pharma.Domain.Ventes.RegleAvoir.LibelleOrigine(m.Origine) + (m.NumeroVente is { } nv ? $" · {nv}" : "")
+                              + (m.BonSortie is { } b ? $" · bon {b}" : "");
+                string[] cellules = [Quand(m.CreeLe), libelle, (m.Sens == Pharma.Domain.Ventes.RegleAvoir.Credit ? "+ " : "- ") + Da(m.Montant), Da(m.SoldeApres)];
+                for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+            }
         }
 
         var note = section.AddParagraph("Un règlement solde les ventes choisies par le patient, sinon les dettes les plus anciennes d’abord ; "

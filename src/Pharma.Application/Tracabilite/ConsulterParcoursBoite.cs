@@ -9,7 +9,7 @@ public sealed record EtapeParcours(string Type, DateTime Date, string? Commentai
 public sealed record ParcoursBoite(
     long BoiteId, string Identifiant, string Produit, string NumeroLot, DateOnly DatePeremption,
     string Fournisseur, string? NumeroBl, DateTime DateReception, string Statut, bool LotBloque,
-    string? Ticket, DateTime? DateVente, string? NumFactureChifa, string? Patient,
+    string? Ticket, DateTime? DateVente, string? ChifaFacture, string? Patient,
     IReadOnlyList<EtapeParcours> Etapes, long ProduitId = 0, bool SousRegistre = false);
 
 public interface ITracabiliteLecture

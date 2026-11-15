@@ -113,12 +113,15 @@ public partial class AnnulationTests
     public async Task Credit_deja_rembourse_en_partie_rendu_en_especes_et_dette_diminuee_du_reste()
     {
         var (cas, stock, _) = Monter(Vente(true, "credit", solde: 170));
-        var r = await cas.ExecuterAsync(12, "Erreur", 5, "Caisse 1", null, null);
+        // Trop-payé (300 DA réellement payés) : choix obligatoire depuis le 2026-11-15 (solder / rembourser / avoir)
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(12, "Erreur", 5, "Caisse 1", null, null));
+        var r = await cas.ExecuterAsync(12, "Erreur", 5, "Caisse 1", null, null, tropPayeRembourse: 300);
         Assert.Equal((300m, "especes"), (r.ARendre, r.Mode));
         Assert.Equal((170m, 300m, "especes"), (stock.Ecrite!.ReductionDette, stock.Ecrite.MontantRembourse, stock.Ecrite.Mode));
         // Rendre de l'argent exige la caisse ouverte du poste
         await Assert.ThrowsAsync<RegleMetierException>(() =>
-            Monter(Vente(true, "credit", solde: 170), new SessionsEnMemoire { Ouverte = null }).Cas.ExecuterAsync(12, "Erreur", 5, "Caisse 1", null, null));
+            Monter(Vente(true, "credit", solde: 170), new SessionsEnMemoire { Ouverte = null }).Cas.ExecuterAsync(12, "Erreur", 5, "Caisse 1", null, null,
+                tropPayeRembourse: 300));
     }
 
     [Fact]

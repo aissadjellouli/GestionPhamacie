@@ -377,4 +377,35 @@ public class RapprochementVoletTests
         Assert.Equal(80m + 40m, c.PartOrganismeChifa);   // Doliprane non servi : aucune part (quantité servie, 2026-11-15)
         Assert.Equal(3 - 1 - 1 - 1, c.Score);
     }
+
+    [Fact]
+    public void Majoration_comprise_des_deux_cotes_sans_faux_ecart()
+    {
+        // 2026-11-15 : majoration de garde 150 DA ; parts concordantes hors majoration → aucun écart
+        var c = RapprochementVolet.Comparer([new LigneVoletRapprochee("07607", 3, 156.48m, 18, "VIT D3")],
+            [new LigneVenteRapprochee(18, "VIT D3", 3, 156.48m)], 5m, 80, 375.55m, 150m);
+        Assert.Equal((525.55m, 525.55m, 0m), (c.PartOrganismeVente, c.PartOrganismeChifa, c.EcartPartOrganisme));
+        Assert.Equal(375.55m, c.PartOrganismeChifaHorsMajoration);
+    }
+
+    [Fact]
+    public async Task Majoration_rattachement_sans_regularisation_quand_les_parts_concordent()
+    {
+        var (cas, ventes, _, _) = Cas("caisse.vendre");
+        ventes.Ventes.Add(Vente(2, "690755003842/80", 3) with { Majoration = 150m });
+        var r = await cas.RattacherAsync(Volet, 2, null, 5);
+        Assert.Equal(0m, r.EcartPartOrganisme);
+        Assert.Null(ventes.Rattaches.Single().Regularisation);
+    }
+
+    [Fact]
+    public async Task Majoration_regularisation_sur_la_part_chifa_hors_majoration()
+    {
+        var (cas, ventes, _, _) = Cas("caisse.vendre", "prix.modifier");
+        ventes.Ventes.Add(Vente(2, "690755003842/80", 3, prix: 160m, part: 384m) with { Majoration = 150m });
+        var r = await cas.RattacherAsync(Volet, 2, null, 5, RegularisationPartOrganisme.PertePharmacie);
+        Assert.Equal(8.45m, r.EcartPartOrganisme);   // même écart qu'en l'absence de majoration
+        var g = ventes.Rattaches.Single().Regularisation!;
+        Assert.Equal((375.55m, 8.45m), (g.PartOrganismeChifa, g.Ecart));   // la vue v_vente_part_organisme y ajoute la majoration
+    }
 }

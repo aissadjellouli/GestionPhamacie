@@ -10,7 +10,7 @@ public sealed class TracabiliteLecture(NpgsqlDataSource db) : ITracabiliteLectur
         const string sqlBoite = """
             SELECT p.boite_id, p.identifiant, p.nom_commercial, p.numero_lot, p.date_peremption,
                    p.fournisseur, p.numero_bl, p.date_reception, p.statut, p.bloque,
-                   p.ticket, p.date_vente, p.num_facture_chifa, p.patient, l.produit_id,
+                   p.ticket, p.date_vente, p.chifa_facture, p.patient, l.produit_id,
                    pr.classe IN ('psychotrope', 'stupefiant')
             FROM v_parcours_boite p
             JOIN boite b ON b.id = p.boite_id

@@ -133,8 +133,7 @@ internal static class AchatsEndpoints
                         l.Ug, l.UgCoutReparti, l.RemplacerPrixCatalogue)).ToList(), req.Timbre,
                     req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null, req.DateFacture),
                     user.UtilisateurId(), ct);
-                return Results.Ok(new ReceptionEnregistreeDto(r.ReceptionId, r.MontantTtc,
-                    r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList()));
+                return Results.Ok(VersDto(r));
             })
            .ExigerPermission(Permissions.AchatsReceptionner);
 
@@ -348,7 +347,8 @@ internal static class AchatsEndpoints
         req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null, req.DateFacture);
 
     private static ReceptionEnregistreeDto VersDto(ReceptionEnregistree r) => new(r.ReceptionId, r.MontantTtc,
-        r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList());
+        r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList(),
+        r.EcartsShp.Select(e => e.Message).ToList());
 
     private static EcartComptageDto VersDto(EcartComptage e, bool quantites) =>
         new(e.ProduitId, e.Nom, e.NumeroLot, quantites ? e.Facture : null, quantites ? e.Compte : null);

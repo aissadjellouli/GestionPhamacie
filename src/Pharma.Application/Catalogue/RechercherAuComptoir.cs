@@ -31,11 +31,28 @@ public sealed record ProduitComptoir(ProduitResume Produit, decimal PrixServi, P
 /// </summary>
 public sealed class RechercherAuComptoir(ICatalogueLecture catalogue, IEquivalentsComptoir equivalents)
 {
-    public async Task<IReadOnlyList<ProduitComptoir>> ExecuterAsync(string? texte, int? limite, CancellationToken ct = default)
+    /// <summary>Texte d'au moins ce nombre de caractères : les produits des indications dont le libellé commence par ce texte s'ajoutent.</summary>
+    public const int IndicationTexteMin = 3;
+
+    /// <summary>
+    /// Par indication (2026-11-15, script 104) : indicationId donné, seuls les produits de cette indication ; sinon un texte comme
+    /// « toux » ou « fièvre » ajoute, après les produits trouvés par nom ou DCI, ceux des indications qui commencent par ce texte.
+    /// L'ordre reste le même : disponibles d'abord, puis ruptures avec remplaçant, puis sans remplaçant.
+    /// </summary>
+    public async Task<IReadOnlyList<ProduitComptoir>> ExecuterAsync(string? texte, int? limite, CancellationToken ct = default, long? indicationId = null)
     {
         var recherche = texte?.Trim() ?? "";
-        if (recherche.Length == 0) return [];
-        var trouves = await catalogue.RechercherAsync(recherche, Math.Clamp(limite ?? RechercherProduits.LimiteParDefaut, 1, RechercherProduits.LimiteMax), ct, auComptoir: true);
+        var max = Math.Clamp(limite ?? RechercherProduits.LimiteParDefaut, 1, RechercherProduits.LimiteMax);
+        if (recherche.Length == 0 && indicationId is null) return [];
+        IReadOnlyList<ProduitResume> trouves;
+        if (indicationId is { } ind)
+            trouves = await catalogue.ParIndicationAsync(null, ind, max, ct);
+        else
+        {
+            var parNom = await catalogue.RechercherAsync(recherche, max, ct, auComptoir: true);
+            var parIndication = recherche.Length >= IndicationTexteMin ? await catalogue.ParIndicationAsync(recherche, null, max, ct) : [];
+            trouves = parNom.Concat(parIndication.Where(p => parNom.All(n => n.Id != p.Id))).ToList();
+        }
         if (trouves.Count == 0) return [];
 
         var infos = (await equivalents.ProduitsAsync(trouves.Select(p => p.Id).ToList(), ct)).ToDictionary(p => p.Id);
@@ -47,6 +64,7 @@ public sealed class RechercherAuComptoir(ICatalogueLecture catalogue, IEquivalen
             .Select((p, rang) => (Proposition: Proposer(p, infos.GetValueOrDefault(p.Id), enStock), Rang: rang))
             .OrderBy(x => x.Proposition.Produit.Stock > 0 ? 0 : x.Proposition.Remplacant is not null ? 1 : 2).ThenBy(x => x.Rang)
             .Select(x => x.Proposition)
+            .Take(max)
             .ToList();
     }
 

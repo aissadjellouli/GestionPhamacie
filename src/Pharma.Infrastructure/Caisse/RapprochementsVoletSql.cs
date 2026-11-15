@@ -29,7 +29,9 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
              WHEN v.chifa_attente_motif_code = 'autre' AND v.chifa_attente_motif_texte IS NOT NULL THEN 'Autre : ' || v.chifa_attente_motif_texte
              ELSE COALESCE((SELECT mr.libelle FROM motif_reglable mr WHERE mr.liste = 'volet_absent' AND mr.code = v.chifa_attente_motif_code),
                            v.chifa_attente_motif_code) END,
-        v.date_vente < now() - make_interval(days => COALESCE((SELECT pc.delai_volet_chifa_jours FROM parametre_caisse pc WHERE pc.id = 1), 7))
+        v.date_vente < now() - make_interval(days => COALESCE((SELECT pc.delai_volet_chifa_jours FROM parametre_caisse pc WHERE pc.id = 1), 7)),
+        -- Majoration Chifa (script 100) : ajoutée des deux côtés de la comparaison de part organisme (2026-11-15)
+        v.chifa_majoration_montant
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient p ON p.id = v.patient_id
@@ -199,7 +201,7 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
             liste.Add(new VenteAttenteVolet(r.GetInt64(0), r.GetString(1), r.GetDateTime(2), r.IsDBNull(3) ? null : r.GetInt64(3),
                 r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6),
                 r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetString(10), [],
-                r.GetDecimal(11), r.GetDecimal(12), r.IsDBNull(13) ? null : r.GetString(13), r.GetBoolean(14)));
+                r.GetDecimal(11), r.GetDecimal(12), r.IsDBNull(13) ? null : r.GetString(13), r.GetBoolean(14), r.GetDecimal(15)));
         return liste;
     }
 

@@ -16,7 +16,7 @@ public sealed class VentesChifaSql(NpgsqlDataSource db) : IVentesChifa
     private const string Colonnes = """
         v.id, v.numero, v.date_vente, v.canal_organisme, v.statut, v.bordereau_id IS NOT NULL, v.chifa_rattache_le IS NOT NULL,
         v.patient_id, trim(p.nom || ' ' || COALESCE(p.prenom, '')), p.num_assure, v.organisme_id, o.code, u.nom_complet, v.utilisateur_id,
-        v.montant_total, v.part_organisme, COALESCE(v.chifa_facture, v.num_facture_chifa),
+        v.montant_total, v.part_organisme, v.chifa_facture,
         v.chifa_date_soins, v.centre_payeur_id, v.chifa_saisi_par, v.chifa_majoration_code, v.chifa_majoration_montant,
         cp.code || ' · ' || cp.nom, sp.nom_complet,
         COALESCE((SELECT mr.libelle FROM motif_reglable mr WHERE mr.liste = 'majoration_chifa' AND mr.code = v.chifa_majoration_code), v.chifa_majoration_code),

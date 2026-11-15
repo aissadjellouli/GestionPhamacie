@@ -28,6 +28,8 @@ public static partial class RegleMotifs
     public const string ChifaExclusion = "chifa_exclusion";
     /// <summary>Types de majoration Chifa (script 100, D-3).</summary>
     public const string MajorationChifa = "majoration_chifa";
+    /// <summary>Motif du retour client (script 104) ; « Autre » avec un texte.</summary>
+    public const string RetourClient = "retour_client";
     public const string Autre = "autre";
     /// <summary>Mise en attente pour un produit manquant : les produits dus au patient sont gardés avec la vente en attente.</summary>
     public const string ProduitManquant = "produit_manquant";
@@ -38,13 +40,13 @@ public static partial class RegleMotifs
         (Tiroir, "Ouverture du tiroir sans vente"), (Attente, "Mise en attente d’une vente"), (Charge, "Catégories de dépenses"),
         (SortieStock, "Sorties de stock"), (RetourFournisseur, "Retours au fournisseur"),
         (VoletAbsent, "Vente Chifa sans n° de facture"), (ChifaExclusion, "Exclusion d’une vente Chifa"),
-        (MajorationChifa, "Types de majoration Chifa")
+        (MajorationChifa, "Types de majoration Chifa"), (RetourClient, "Retour d’un produit par le patient")
     ];
 
     public static bool ListeConnue(string? liste) => Listes.Any(l => l.Code == liste);
 
     /// <summary>Ajout de motifs : tiroir, attente et charges ; pas les sorties ni les retours (codes fixés par la base).</summary>
-    public static bool AjoutPermis(string liste) => liste is Tiroir or Attente or Charge or VoletAbsent or ChifaExclusion or MajorationChifa;
+    public static bool AjoutPermis(string liste) => liste is Tiroir or Attente or Charge or VoletAbsent or ChifaExclusion or MajorationChifa or RetourClient;
 
     public static string ExigerListe(string? liste) =>
         ListeConnue(liste) ? liste! : throw new RegleMetierException("Liste de motifs inconnue.", "liste");

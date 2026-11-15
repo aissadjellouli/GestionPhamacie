@@ -271,6 +271,27 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             cmd.Parameters.Add(Valeur(v.SessionCaisseId, NpgsqlDbType.Bigint));
             await cmd.ExecuteNonQueryAsync(ct);
         }
+        // 4 bis. Part payée par l'avoir du patient (script 106) : ligne de paiement « avoir » (jamais dans les espèces) et débit de l'avoir,
+        //        solde relu sous verrou du patient (deux caisses ne consomment pas le même avoir)
+        if (a.Reglement.Avoir > 0)
+        {
+            var patientAvoir = v.PatientId ?? throw new RegleMetierException("Paiement par avoir : choisissez le patient.");
+            long paiementAvoir;
+            await using (var cmd = new NpgsqlCommand("""
+                INSERT INTO paiement (vente_id, patient_id, mode, montant, utilisateur_id, session_caisse_id)
+                VALUES ($1, $2, 'avoir', $3, $4, $5) RETURNING id
+                """, cx, tx))
+            {
+                cmd.Parameters.AddWithValue(venteId);
+                cmd.Parameters.AddWithValue(patientAvoir);
+                cmd.Parameters.AddWithValue(a.Reglement.Avoir);
+                cmd.Parameters.AddWithValue(v.UtilisateurId);
+                cmd.Parameters.Add(Valeur(v.SessionCaisseId, NpgsqlDbType.Bigint));
+                paiementAvoir = (long)(await cmd.ExecuteScalarAsync(ct))!;
+            }
+            await EcritureAvoir.DebiterAsync(cx, tx, patientAvoir, a.Reglement.Avoir, Pharma.Domain.Ventes.RegleAvoir.OriginePaiement, venteId,
+                paiementAvoir, null, $"Vente {numero}", v.UtilisateurId, ct);
+        }
 
         // 5. Crédit : la dette du patient augmente
         if (a.CreditAccorde)
@@ -337,7 +358,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
     {
         await using var cmd = db.CreateCommand("""
             SELECT v.id, v.numero, v.montant_total, v.part_organisme, v.part_patient,
-                   (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id ORDER BY p.id LIMIT 1),
+                   (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id AND p.mode <> 'avoir' ORDER BY p.id LIMIT 1),
                    v.statut = 'annulee'
             FROM vente v
             WHERE v.cle_encaissement = $1 AND v.statut IN ('validee', 'annulee')

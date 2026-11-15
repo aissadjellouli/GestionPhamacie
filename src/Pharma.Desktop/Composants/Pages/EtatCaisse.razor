@@ -33,6 +33,11 @@
             <div class="tuile"><span class="tuile-libelle">Chèque</span><span class="tuile-valeur">@Libelles.Dinars(e.Cheque, 2)</span><span class="tuile-note">net des remboursements</span></div>
             <div class="tuile"><span class="tuile-libelle">Crédit</span><span class="tuile-valeur">@Libelles.Dinars(e.Credit, 2)</span><span class="tuile-note">ventes à crédit</span></div>
             <div class="tuile"><span class="tuile-libelle">Tiers payant</span><span class="tuile-valeur">@Libelles.Dinars(e.TiersPayant, 2)</span><span class="tuile-note">part des organismes</span></div>
+            @if (e.Avoir != 0)
+            {
+                @* Avoirs des patients (script 106) : jamais des espèces, hors tiroir *@
+                <div class="tuile"><span class="tuile-libelle">Avoir</span><span class="tuile-valeur">@Libelles.Dinars(e.Avoir, 2)</span><span class="tuile-note">payé par avoir, hors tiroir</span></div>
+            }
         </section>
         <div class="info-bandeau" role="note">
             Comptage aveugle : les espèces, le total et le montant attendu dans le tiroir ne sont pas affichés.

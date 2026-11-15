@@ -151,14 +151,26 @@
                         <div class="info-bandeau" role="note">Vente portée sur la facture @facture : retirez-la d’abord de la facture (Factures : rejet puis correction), ou faites un retour.</div>
                     }
                     @ChampDette
-                    @if (v.RegularisationSort == "charge_patient")
+                    @if (v.PayeParAvoir > 0)
+                    {
+                        <div class="info-bandeau" role="note">Payé par l’avoir du patient : @Libelles.Dinars(v.PayeParAvoir, 2), rendu à son avoir (jamais en espèces).</div>
+                    }
+                    @if (v.RegularisationSort == "charge_patient" || TropPayeTotal > 0)
                     {
                         <div class="avertissement" role="note" style="display: flex; flex-direction: column; gap: 4px">
-                            <div>Part organisme régularisée à la charge du patient : @(v.RegularisationDue > 0 ? $"{Libelles.Dinars(v.RegularisationDue, 2)} encore dus, annulés (jamais remboursés)." : "rien n’est encore dû.")</div>
-                            @if (v.RegularisationTropPaye > 0)
+                            @if (v.RegularisationSort == "charge_patient")
                             {
-                                <div><strong>Ce patient a payé @Libelles.Dinars(v.RegularisationTropPaye, 2) de cette régularisation.</strong>
-                                    @(autresDettes.Count > 0 ? $" Il doit encore {Libelles.Dinars(autresDettes.Sum(d => d.Reste), 2)} sur d’autres ventes : choisissez avec lui." : " Il n’a pas d’autre dette : il est remboursé par le tiroir.")</div>
+                                <div>Part organisme régularisée à la charge du patient : @(v.RegularisationDue > 0 ? $"{Libelles.Dinars(v.RegularisationDue, 2)} encore dus, annulés (jamais remboursés)." : "rien n’est encore dû.")</div>
+                            }
+                            @if (v.TropPayeCredit > 0)
+                            {
+                                <div>Vente à crédit : ce qui reste dû est annulé (jamais remboursé) ; le patient en a déjà payé @Libelles.Dinars(v.TropPayeCredit, 2).</div>
+                            }
+                            @if (TropPayeTotal > 0)
+                            {
+                                @* Trois choix avec le patient (2026-11-15) : solder d'autres dettes / rembourser par le tiroir / laisser en avoir ; somme = trop-payé *@
+                                <div><strong>Trop-payé à répartir avec le patient : @Libelles.Dinars(TropPayeTotal, 2).</strong>
+                                    @(autresDettes.Count > 0 ? $" Il doit encore {Libelles.Dinars(autresDettes.Sum(d => d.Reste), 2)} sur d’autres ventes." : "")</div>
                                 @foreach (var d in autresDettes)
                                 {
                                     <label style="display: flex; gap: 8px; align-items: center">
@@ -167,7 +179,15 @@
                                                value="@(imputationsTropPaye.GetValueOrDefault(d.Id))" @onchange="e => ImputerTropPaye(d.Id, e.Value)" />
                                     </label>
                                 }
-                                <div>Rembourser le patient par le tiroir (« Remboursement d’un client », bon de sortie) : <strong>@Libelles.Dinars(RembourseTropPaye, 2)</strong></div>
+                                @if (v.PatientId is not null)
+                                {
+                                    <label style="display: flex; gap: 8px; align-items: center">
+                                        <span style="flex: 1">Laisser en avoir (utilisable à la caisse ou remboursable plus tard)</span>
+                                        <input type="number" min="0" step="0.01" style="width: 110px" aria-label="Montant laissé en avoir"
+                                               value="@avoirTropPaye" @onchange="e => ChoisirAvoirTropPaye(e.Value)" />
+                                    </label>
+                                }
+                                <div>Rembourser le patient par le tiroir : <strong>@Libelles.Dinars(RembourseTropPaye, 2)</strong></div>
                             }
                         </div>
                     }
@@ -249,6 +269,9 @@
     }
 
     private string? numero, motif, validateur, code, erreur, message;
+    // Retour client (script 104) : motif choisi dans la liste réglable « retour_client », « Autre » avec un texte
+    private string? motifCode;
+    private List<MotifReglableDto> motifsRetour = [];
     private string? mode;   // null : choix ; « annulation » ; « retour »
     private List<VenteAnnulableDto> ventes = [];
     private List<VendeurComptoirDto> validateurs = [];
@@ -297,7 +320,9 @@
     }
 
     private void ChoisirClientBoite(PatientDto c) => (clientBoite, saisieClientBoite, clientsBoite, ventes, recherche, resultatBoite) = (c, false, [], [], false, null);
-    private bool MotifManque => controle && (motif?.Trim().Length ?? 0) < 3;
+    private bool MotifManque => controle && (mode == "retour"
+        ? string.IsNullOrEmpty(motifCode) || (motifCode == "autre" && string.IsNullOrWhiteSpace(motif))
+        : (motif?.Trim().Length ?? 0) < 3);
     private bool ValidateurManque => controle && ValidationRequise && string.IsNullOrEmpty(validateur);
     private bool CodeManque => controle && ValidationRequise && CodeComptoirSaisie.Erreur(code, nouveauCode: false) is not null;
 
@@ -338,7 +363,8 @@
     private bool DetteAProposer => ModeVente is not null and not "credit" && DetteConnue > 0 && MontantARendre is > 0;
     /// <summary>Argent rendu au patient, affiché sur le bouton : le surplus si la dette est soldée ; vente à crédit : calcul du serveur.</summary>
     private decimal? ARenduAffiche => MontantARendre is not { } a || ModeVente is null ? null
-        : ModeVente == "credit" ? (EnAnnulation ? a : null)
+        // Vente à crédit annulée : seul le remboursement choisi sur le trop-payé est rendu (script 106)
+        : ModeVente == "credit" ? (EnAnnulation ? (TropPayeTotal > 0 ? RembourseTropPaye : 0) : null)
         : DetteAProposer && solderDette == true ? Math.Max(a - DetteConnue, 0) : a;
 
     /// <summary>
@@ -406,11 +432,30 @@
 
     private RenderFragment ChampMotif => __builder =>
     {
-        <div class="champ">
-            <label for="a-motif" class="requis">Motif</label>
-            <input id="a-motif" type="text" maxlength="300" placeholder="@(mode == "retour" ? "ex. traitement arrêté, mauvais dosage" : "ex. erreur de produit, patient a renoncé")"
-                   @bind="motif" @bind:event="oninput" class="@Obligatoire.Classe(MotifManque)" aria-invalid="@Obligatoire.Aria(MotifManque)" />
-        </div>
+        @if (mode == "retour")
+        {
+            <div class="champ">
+                <label for="a-motif-code" class="requis">Motif du retour</label>
+                <select id="a-motif-code" @bind="motifCode" class="@Obligatoire.Classe(controle && string.IsNullOrEmpty(motifCode))"
+                        aria-invalid="@Obligatoire.Aria(controle && string.IsNullOrEmpty(motifCode))">
+                    <option value="">Choisir…</option>
+                    @foreach (var m in motifsRetour) { <option value="@m.Code">@m.Libelle</option> }
+                </select>
+            </div>
+            <div class="champ">
+                <label for="a-motif" class="@(motifCode == "autre" ? "requis" : null)">@(motifCode == "autre" ? "Préciser le motif" : "Précision (facultatif)")</label>
+                <input id="a-motif" type="text" maxlength="200" placeholder="ex. traitement arrêté, mauvais dosage"
+                       @bind="motif" @bind:event="oninput" class="@Obligatoire.Classe(MotifManque && motifCode == "autre")" aria-invalid="@Obligatoire.Aria(MotifManque && motifCode == "autre")" />
+            </div>
+        }
+        else
+        {
+            <div class="champ">
+                <label for="a-motif" class="requis">Motif</label>
+                <input id="a-motif" type="text" maxlength="300" placeholder="ex. erreur de produit, patient a renoncé"
+                       @bind="motif" @bind:event="oninput" class="@Obligatoire.Classe(MotifManque)" aria-invalid="@Obligatoire.Aria(MotifManque)" />
+            </div>
+        }
     };
 
     private RenderFragment ChampValidation => __builder =>
@@ -447,6 +492,8 @@
         if (r is not null) (pageVentes, tailleVentes) = (r.Entier("page") ?? 1, r.Entier("taille") ?? tailleVentes);
         await ChargerVentesAsync(NumeroInitial is null ? pageVentes : 1, tailleVentes);
         if (ventes.Count == 1 && NumeroInitial is not null && ventes[0].Statut == "validee") Choisir(ventes[0]);
+        var (motifs, _) = await Api.MotifsAsync("retour_client");
+        motifsRetour = motifs;
     }
 
     private async Task ToucheRecherche(KeyboardEventArgs e) { if (e.Key == "Enter") await RechercherAsync(); }
@@ -466,6 +513,7 @@
     private void Choisir(VenteAnnulableDto v)
     {
         (choisie, mode, retour, saisies, motif, validateur, code, controle, erreur) = (v, null, null, [], null, null, null, false, null);
+        motifCode = null;
         (solderDette, patientDette, rechercheDette, patientsTrouves, rechercheDetteFaite, accordClient) = (null, null, null, [], false, false);
     }
 
@@ -481,25 +529,35 @@
     // Trop-payé d'une régularisation annulée (script 098) : choix du patient, autres dettes soldées (plus anciennes par défaut) et le reste remboursé
     private List<VenteACreditDto> autresDettes = [];
     private readonly Dictionary<long, decimal> imputationsTropPaye = [];
-    private decimal RembourseTropPaye => Math.Max(0, (choisie?.RegularisationTropPaye ?? 0) - imputationsTropPaye.Values.Sum());
+    // Trop-payé réellement encaissé (régularisation annulée + vente à crédit en partie payée) : trois choix, somme = trop-payé (script 106)
+    private decimal TropPayeTotal => (choisie?.RegularisationTropPaye ?? 0) + (choisie?.TropPayeCredit ?? 0);
+    private decimal avoirTropPaye;
+    private decimal RembourseTropPaye => Math.Max(0, TropPayeTotal - imputationsTropPaye.Values.Sum() - avoirTropPaye);
 
     private void ImputerTropPaye(long vente, object? valeur)
     {
         var reste = autresDettes.FirstOrDefault(d => d.Id == vente)?.Reste ?? 0;
-        var autres = imputationsTropPaye.Where(i => i.Key != vente).Sum(i => i.Value);
+        var autres = imputationsTropPaye.Where(i => i.Key != vente).Sum(i => i.Value) + avoirTropPaye;
         var m = decimal.TryParse(valeur?.ToString()?.Replace(',', '.'), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var x) ? x : 0;
-        imputationsTropPaye[vente] = Math.Clamp(m, 0, Math.Min(reste, Math.Max(0, (choisie?.RegularisationTropPaye ?? 0) - autres)));
+        imputationsTropPaye[vente] = Math.Clamp(m, 0, Math.Min(reste, Math.Max(0, TropPayeTotal - autres)));
+    }
+
+    private void ChoisirAvoirTropPaye(object? valeur)
+    {
+        var m = decimal.TryParse(valeur?.ToString()?.Replace(',', '.'), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var x) ? x : 0;
+        avoirTropPaye = Math.Clamp(m, 0, Math.Max(0, TropPayeTotal - imputationsTropPaye.Values.Sum()));
     }
 
     private async Task ChargerAutresDettesAsync()
     {
         autresDettes = [];
         imputationsTropPaye.Clear();
-        if (choisie is not { RegularisationTropPaye: > 0, PatientId: { } patient } v) return;
+        avoirTropPaye = 0;
+        if (TropPayeTotal <= 0 || choisie is not { PatientId: { } patient } v) return;
         var (s, _) = await Api.SituationCreditAsync(patient);
         autresDettes = (s?.Ventes ?? []).Where(d => d.Id != v.Id && d.Reste > 0).OrderBy(d => d.Date).ToList();
         // Par défaut (comme « Encaisser une dette ») : les plus anciennes soldées jusqu'à couvrir le trop-payé
-        var reste = v.RegularisationTropPaye;
+        var reste = TropPayeTotal;
         foreach (var d in autresDettes)
         {
             if (reste <= 0) break;
@@ -537,7 +595,7 @@
     private string? Controler()
     {
         controle = true;
-        return MotifManque ? "Indiquez le motif."
+        return MotifManque ? (mode == "retour" && !string.IsNullOrEmpty(motifCode) ? "Motif « Autre » : précisez le motif." : mode == "retour" ? "Choisissez le motif du retour." : "Indiquez le motif.")
             : AccordManque ? "Pour déduire le remboursement de sa dette, le client doit l’accepter : cochez son accord, ou rendez-lui l’argent."
             : ValidateurManque ? "Choisissez le pharmacien ou l’assistant qui valide."
             : CodeManque ? "Tapez son code comptoir (4 à 6 chiffres)." : null;
@@ -550,8 +608,8 @@
         if (DetteAProposer && solderDette is null) { erreur = "Ce patient doit de l’argent : choisissez de déduire le remboursement de sa dette, ou de le rendre."; enCours = false; return; }
         var (r, e) = await Api.AnnulerVenteAsync(choisie.Id, new AnnulationVenteRequete(motif, ValidationRequise ? validateur : null, ValidationRequise ? code : null,
             DetteAProposer && solderDette == true, DetteAProposer && solderDette == true ? patientDette?.Id : null, DetteAProposer && solderDette == true && accordClient,
-            choisie.RegularisationTropPaye > 0 ? imputationsTropPaye.Where(i => i.Value > 0).Select(i => new ImputationTropPayeDto(i.Key, i.Value)).ToList() : null,
-            choisie.RegularisationTropPaye > 0 ? RembourseTropPaye : null));
+            TropPayeTotal > 0 ? imputationsTropPaye.Where(i => i.Value > 0).Select(i => new ImputationTropPayeDto(i.Key, i.Value)).ToList() : null,
+            TropPayeTotal > 0 ? RembourseTropPaye : null, TropPayeTotal > 0 ? avoirTropPaye : null));
         (enCours, code) = (false, null);
         if (e is not null) { erreur = e; return; }
         message = $"Vente {r!.Numero} annulée{(r.ValidePar is { } p ? $", validée par {p}" : "")}."
@@ -560,6 +618,8 @@
                   + (r.RegularisationDetteAnnulee > 0 ? $" Régularisation de part organisme annulée : {Libelles.Dinars(r.RegularisationDetteAnnulee, 2)} retirés de sa dette." : "")
                   + (r.RegularisationImputee > 0 ? $" Trop-payé de la régularisation déduit de ses autres dettes : {Libelles.Dinars(r.RegularisationImputee, 2)}." : "")
                   + (r.RegularisationRembourse > 0 ? $" Trop-payé de la régularisation rendu par le tiroir : {Libelles.Dinars(r.RegularisationRembourse, 2)} (bon {r.BonSortieNumero})." : "")
+                  + (r.TropPayeImpute > 0 ? $" Trop-payé déduit de ses autres dettes : {Libelles.Dinars(r.TropPayeImpute, 2)}." : "")
+                  + (r.AvoirCree > 0 ? $" Porté à l’avoir du patient : {Libelles.Dinars(r.AvoirCree, 2)}." : "")
                   + " Stock remis sur les mêmes lots.";
         await OnAnnulee.InvokeAsync();
     }
@@ -573,7 +633,8 @@
         if (DetteAProposer && solderDette is null) { erreur = "Ce patient doit de l’argent : choisissez de déduire le remboursement de sa dette, ou de le rendre."; return; }
         enCours = true;
         var (r, e) = await Api.RetourClientAsync(choisie.Id, new RetourClientRequete(motif, lignes, ValidationRequise ? validateur : null, ValidationRequise ? code : null,
-            DetteAProposer && solderDette == true, DetteAProposer && solderDette == true ? patientDette?.Id : null, DetteAProposer && solderDette == true && accordClient));
+            DetteAProposer && solderDette == true, DetteAProposer && solderDette == true ? patientDette?.Id : null, DetteAProposer && solderDette == true && accordClient,
+            motifCode));
         (enCours, code) = (false, null);
         if (e is not null) { erreur = e; return; }
         message = $"Retour enregistré sur la vente {r!.Numero}{(r.ValidePar is { } p ? $", validé par {p}" : "")} : "

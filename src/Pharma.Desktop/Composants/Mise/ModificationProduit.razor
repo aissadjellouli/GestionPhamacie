@@ -37,6 +37,29 @@
                 <label class="case" style="align-self: center"><input type="checkbox" @bind="f.Actif" /><span>Actif</span></label>
             </div>
             <p class="detail" style="margin: 0">Classe : @Libelles.Classe(f.Classe) (se confirme dans Administration › Nomenclature).</p>
+            @* Indications thérapeutiques (script 104) : recherche au comptoir par indication (« toux », « fièvre ») *@
+            <div class="achats-ligne" style="align-items: flex-end">
+                <div class="champ" style="flex: 0 1 280px; position: relative">
+                    <label for="mp-indication">Ajouter une indication</label>
+                    <input id="mp-indication" data-champ="indications" type="search" autocomplete="off" placeholder="ex. toux, fièvre" value="@texteIndication" @oninput="ChercherIndicationsAsync" />
+                    @if (propositions.Count > 0)
+                    {
+                        <ul class="suggestions" aria-label="Indications proposées">
+                            @foreach (var i in propositions)
+                            {
+                                <li><button type="button" @onclick="() => AjouterIndication(i)">@i.Libelle</button></li>
+                            }
+                        </ul>
+                    }
+                </div>
+                <div style="flex: 1 1 320px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 44px" aria-label="Indications du produit">
+                    @if (indications.Count == 0) { <span class="detail">Aucune indication.</span> }
+                    @foreach (var i in indications)
+                    {
+                        <button type="button" class="puce" aria-pressed="true" title="Retirer cette indication" @onclick="() => indications.Remove(i)">@i.Libelle@(i.Actif ? "" : " (désactivée)") ×</button>
+                    }
+                </div>
+            </div>
             <div class="filtres">
                 <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
                 <button type="button" class="btn" @onclick="() => fiche = null">Annuler</button>
@@ -65,12 +88,42 @@
     private Fiche? fiche;
     private string? erreur, message;
     private bool enCours;
+    private List<IndicationDto> indications = [], propositions = [];
+    private string texteIndication = "";
+    private int saisieIndication;
+
+    private async Task ChercherIndicationsAsync(ChangeEventArgs a)
+    {
+        texteIndication = a.Value?.ToString() ?? "";
+        var n = ++saisieIndication;
+        if (texteIndication.Trim().Length == 0) { propositions = []; return; }
+        await Task.Delay(250);
+        if (n != saisieIndication) return;
+        var (p, e) = await Api.IndicationsAsync(true, texteIndication.Trim(), 1, 8);
+        if (n != saisieIndication) return;
+        propositions = p?.Lignes.Where(i => indications.All(x => x.Id != i.Id)).ToList() ?? [];
+        if (p is null) erreur = e;
+    }
+
+    private void AjouterIndication(IndicationDto i)
+    {
+        if (indications.All(x => x.Id != i.Id)) indications.Add(i);
+        (propositions, texteIndication) = ([], "");
+        saisieIndication++;
+    }
 
     private async Task ChoisirAsync(ProduitDto p)
     {
         (erreur, message) = (null, null);
+        (indications, propositions, texteIndication) = ([], [], "");
         var (f, e) = await Api.FicheProduitAsync(p.Id);
         erreur = e;
+        if (f is not null)
+        {
+            var (liste, ei) = await Api.IndicationsDuProduitAsync(p.Id);
+            indications = liste;
+            erreur ??= ei;
+        }
         fiche = f is null ? null : new Fiche
         {
             Id = f.Id, NomCommercial = f.NomCommercial, Dci = f.Dci, Dosage = f.Dosage, Forme = f.Forme, CodeBarre = f.CodeBarre, PrixPublic = f.PrixPublic,
@@ -87,6 +140,11 @@
             var (information, e) = await Api.ModifierProduitAsync(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic,
                 f.TarifReference, f.Remboursable, f.TauxTva, f.Actif, f.Classe));
             if (e is not null) { erreur = e; return; }
+            if (await Api.AssocierIndicationsAsync(f.Id, indications.Select(i => i.Id).ToList()) is { } ei)
+            {
+                erreur = $"Produit enregistré, mais pas ses indications : {ei}";
+                return;
+            }
             message = $"« {f.NomCommercial.Trim()} » enregistré.{(information is null ? "" : " " + information)}";
             fiche = null;
         }

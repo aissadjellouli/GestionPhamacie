@@ -11,7 +11,7 @@ namespace Pharma.Application.Caisse;
 /// l'attendu). Carte, chèque, crédit et tiers payant : montants nets des remboursements.
 /// </summary>
 public sealed record ResumeCaisse(int NombreVentes, decimal Carte, decimal Cheque, decimal Credit, decimal TiersPayant,
-    IReadOnlyList<(string Employe, int Ventes)> ParEmploye);
+    IReadOnlyList<(string Employe, int Ventes)> ParEmploye, decimal Avoir = 0);
 
 /// <summary>Comptage intermédiaire enregistré : l'écart n'est rendu qu'avec le droit de voir les écarts.</summary>
 public sealed record ComptageIntermediaire(DateTime Le, string Employe, decimal Compte, decimal Attendu, decimal Ecart);

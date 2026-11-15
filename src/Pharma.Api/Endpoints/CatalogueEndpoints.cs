@@ -15,8 +15,9 @@ internal static class CatalogueEndpoints
            .ExigerPermission(Permissions.StockConsulter);
 
         // Recherche de la caisse : en stock d'abord, ruptures en bas avec leur remplaçant, même produit moins cher d'un autre laboratoire
-        api.MapGet("/caisse/produits", async (string q, int? limite, RechercherAuComptoir rechercher, CancellationToken ct) =>
-                Results.Ok((await rechercher.ExecuterAsync(q, limite, ct)).Select(c => new ProduitComptoirDto(c.Produit.VersDto(), c.PrixServi,
+        // Par indication (script 104) : « toux » ajoute les produits de l'indication ; indicationId : seulement ceux de cette indication
+        api.MapGet("/caisse/produits", async (string? q, int? limite, long? indicationId, RechercherAuComptoir rechercher, CancellationToken ct) =>
+                Results.Ok((await rechercher.ExecuterAsync(q, limite, ct, indicationId)).Select(c => new ProduitComptoirDto(c.Produit.VersDto(), c.PrixServi,
                     c.Remplacant?.VersDto(), c.MoinsCher?.VersDto())).ToList()))
            .ExigerPermission(Permissions.CaisseVendre, Permissions.StockConsulter);
 

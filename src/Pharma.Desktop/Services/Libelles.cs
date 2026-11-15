@@ -173,6 +173,7 @@ public static class Libelles
         "carte" => "carte",
         "cheque" => "chèque",
         "credit" => "crédit",
+        "avoir" => "avoir du patient",
         _ => "—"
     };
 
@@ -320,6 +321,9 @@ public static class Libelles
         "tiroir_ouvert" => "Tiroir ouvert sans vente",
         "correction_tiroir" => "Correction d’une sortie du tiroir (écriture inverse)",
         "motif_reglable" => "Motif ou catégorie modifié",
+        "indication_creee" => "Indication thérapeutique ajoutée",
+        "indication_modifiee" => "Indication thérapeutique modifiée",
+        "produit_indications" => "Indications d’un produit modifiées",
         "volet_chifa_rattache" => "Volet Chifa rattaché à une vente",
         "regularisation_part_organisme" => "Régularisation de la part organisme (volet Chifa)",
         "volet_chifa_patient_garde" => "Volet Chifa d’un autre assuré : patient choisi gardé",
@@ -665,6 +669,7 @@ public static class Libelles
         "retour_fournisseur" => "Motifs de retour fournisseur",
         "volet_absent" => "Motifs de vente Chifa sans n° de facture",
         "chifa_exclusion" => "Motifs d’exclusion d’une vente Chifa",
+        "retour_client" => "Motifs de retour d’un produit par le patient",
         "majoration_chifa" => "Types de majoration Chifa",
         _ => Humaniser(liste)
     };

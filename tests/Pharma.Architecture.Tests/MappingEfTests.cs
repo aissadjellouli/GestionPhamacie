@@ -22,7 +22,7 @@ public class MappingEfTests
     [Theory]
     [InlineData(typeof(Lot), nameof(Lot.DateAVerifier), "date_a_verifier")]
     [InlineData(typeof(Lot), nameof(Lot.PrixAchatHt), "prix_achat_ht")]
-    [InlineData(typeof(Vente), nameof(Vente.NumFactureChifa), "num_facture_chifa")]
+    [InlineData(typeof(Vente), nameof(Vente.ChifaFacture), "chifa_facture")]
     public void Colonnes_en_minuscules_avec_soulignes(Type entite, string propriete, string colonne) =>
         Assert.Equal(colonne, Modele.FindEntityType(entite)!.FindProperty(propriete)!.GetColumnName());
 

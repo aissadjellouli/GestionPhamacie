@@ -19,7 +19,7 @@ namespace Pharma.Application.Caisse;
 /// </remarks>
 public sealed record VenteAttenteVolet(long Id, string Numero, DateTime Date, long? PatientId, string? Patient, string? NumAssure, string? Organisme,
     decimal? Taux, decimal Total, decimal PartOrganisme, string Vendeur, IReadOnlyList<LigneVenteRapprochee> Lignes,
-    decimal PartPatient = 0, decimal DettePatient = 0, string? MotifAttente = null, bool EnRetard = false);
+    decimal PartPatient = 0, decimal DettePatient = 0, string? MotifAttente = null, bool EnRetard = false, decimal Majoration = 0);
 
 /// <summary>
 /// Volet rattaché malgré des différences ou avec une régularisation de part organisme : motif, résumé des différences, écart de part
@@ -103,7 +103,7 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
             {
                 var meme = assure.Length > 0 && RegleNumAssure.Chiffres(v.NumAssure) == assure;
                 return new CandidateVolet(v, meme,
-                    RapprochementVolet.AvecAssure(RapprochementVolet.Comparer(lignesVolet, v.Lignes, seuil, v.Taux, v.PartOrganisme), lu.Qr.AssureComplet, v.NumAssure, v.Patient),
+                    RapprochementVolet.AvecAssure(RapprochementVolet.Comparer(lignesVolet, v.Lignes, seuil, v.Taux, v.PartOrganisme, v.Majoration), lu.Qr.AssureComplet, v.NumAssure, v.Patient),
                     !meme && RapprochementVolet.MemeCarte(lu.Qr.NumeroAssure, v.NumAssure), DateTime.SpecifyKind(v.Date, DateTimeKind.Utc) < limite);
             })
             .ToList();
@@ -124,7 +124,7 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
         var vente = await ventes.VenteAsync(venteId, ct)
                     ?? throw new RegleMetierException("Cette vente n’attend plus de volet Chifa (déjà rattachée, annulée ou hors Chifa).", "vente");
         var seuil = (await sessions.ParametresAsync(ct)).SeuilEcartChifa;
-        var comparaison = RapprochementVolet.AvecAssure(RapprochementVolet.Comparer(LignesVolet(lu), vente.Lignes, seuil, vente.Taux, vente.PartOrganisme),
+        var comparaison = RapprochementVolet.AvecAssure(RapprochementVolet.Comparer(LignesVolet(lu), vente.Lignes, seuil, vente.Taux, vente.PartOrganisme, vente.Majoration),
             lu.Qr.AssureComplet, vente.NumAssure, vente.Patient);
         var m = string.IsNullOrWhiteSpace(motif) ? null : string.Join(' ', motif.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         string? resume = null;
@@ -141,7 +141,9 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
         // Écart de part organisme (décision du titulaire, 2026-11-15) : créance ramenée à la part Chifa ; la caisse paiera moins :
         // choix d'un ayant droit (prix.modifier ou code comptoir) entre « à la charge du patient » et « perte pharmacie »
         RegularisationCalculee? regul = null;
-        if (ecartPart != 0 && comparaison.PartOrganismeChifa is { } partChifa)
+        // Majoration comprise des deux côtés (2026-11-15) : jamais d'écart dû à elle ; la régularisation garde la part Chifa HORS majoration
+        // (v_vente_part_organisme y ajoute la majoration)
+        if (ecartPart != 0 && comparaison.PartOrganismeChifaHorsMajoration is { } partChifa)
         {
             if (RegularisationPartOrganisme.ChoixExige(ecartPart))
                 await ExigerPrixAsync(utilisateurId, "régulariser l’écart de part organisme du volet Chifa", ct);
@@ -176,7 +178,7 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
                     .Select(l => new { produit = l.Produit, code = l.Code, ecart = l.Ecart, qte_volet = l.QuantiteVolet, qte_vente = l.QuantiteVente, prix_chifa = l.PrixChifa, notre_prix = l.NotrePrix })
                     .ToList(),
                 ["part_organisme_vente"] = comparaison.PartOrganismeVente, ["part_organisme_chifa"] = comparaison.PartOrganismeChifa,
-                ["ecart_part_organisme"] = ecartPart
+                ["ecart_part_organisme"] = ecartPart, ["majoration"] = comparaison.Majoration
             }, comparaison.Concorde ? Permissions.CaisseVendre : Permissions.PrixModifier, ct);
 
         // Catalogue d'après le volet (règle existante) : un échec n'annule pas le rattachement

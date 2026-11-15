@@ -438,6 +438,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(RecuCreditDto?, string?)> ReglerCreditAsync(long patientId, ReglementCreditRequete r) =>
         PostAsync<ReglementCreditRequete, RecuCreditDto>($"api/caisse/credits/{patientId}/reglement", r);
 
+    // ---- Avoir du patient (script 106) ----
+    public Task<(AvoirPatientDto?, string?)> AvoirPatientAsync(long patientId, int page = 1, int taille = 10) =>
+        GetAsync<AvoirPatientDto?>($"api/patients/{patientId}/avoir?page={page}&taille={taille}", null);
+    public Task<(OuvertureTiroirDto?, string?)> RembourserAvoirAsync(long patientId, decimal montant, string? motif) =>
+        PostAsync<RemboursementAvoirRequete, OuvertureTiroirDto>($"api/patients/{patientId}/avoir/remboursement", new(montant, motif));
+
     // ---- Ventes en attente du poste ----
     public Task<(List<VenteEnAttenteDto>, string?)> VentesEnAttenteAsync() => GetAsync<List<VenteEnAttenteDto>>("api/caisse/attente", []);
 
@@ -648,6 +654,17 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(List<VendeurComptoirDto>, string?)> ValidateursBlocageAsync() =>
         GetAsync<List<VendeurComptoirDto>>("api/produits/validateurs-blocage", []);
     public Task<(FicheProduitModifiableDto?, string?)> FicheProduitAsync(long id) => GetAsync<FicheProduitModifiableDto?>($"api/produits/{id}/fiche", null);
+
+    // ---- Indications thérapeutiques (script 104) ----
+    public Task<(PageDto<IndicationDto>?, string?)> IndicationsAsync(bool? actif, string? q, int page, int taille) =>
+        GetAsync<PageDto<IndicationDto>?>($"api/indications?page={page}&taille={taille}&" + Requete(("actif", actif), ("q", q)), null);
+    public async Task<string?> EnregistrerIndicationAsync(long? id, IndicationSaisie s) => id is { } i
+        ? (await EnvoyerCorpsAsync<IndicationSaisie, IndicationDto>(HttpMethod.Put, $"api/indications/{i}", s)).Item2
+        : (await PostAsync<IndicationSaisie, IndicationDto>("api/indications", s)).Item2;
+    public Task<(List<IndicationDto>, string?)> IndicationsDuProduitAsync(long produitId) =>
+        GetAsync<List<IndicationDto>>($"api/produits/{produitId}/indications", []);
+    public async Task<string?> AssocierIndicationsAsync(long produitId, IReadOnlyList<long> ids) =>
+        (await EnvoyerCorpsAsync<IndicationsProduitRequete, object>(HttpMethod.Put, $"api/produits/{produitId}/indications", new(ids))).Item2;
     /// <summary>Information : message à afficher (classe imposée, produit à vérifier), sinon null ; Erreur : refus.</summary>
     public async Task<(string? Information, string? Erreur)> ModifierProduitAsync(FicheProduitModifiableDto f)
     {
@@ -1049,6 +1066,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         (await EnvoyerCorpsAsync<ChifaInfosSaisie, object>(HttpMethod.Put, $"api/ventes/{venteId}/chifa", s)).Item2;
     public async Task<string?> ExclureVenteChifaAsync(long venteId, string motifCode, string? texte) =>
         (await PostAsync<ExclusionChifaRequete, object>($"api/ventes/{venteId}/chifa/exclusion", new(motifCode, texte))).Item2;
+    public Task<(List<ConflitFactureDto>, string?)> ConflitsFactureChifaAsync(bool aTrancher) =>
+        GetAsync<List<ConflitFactureDto>>($"api/chifa/conflits-facture?aTrancher={(aTrancher ? "true" : "false")}", []);
+    public async Task<string?> TrancherConflitFactureAsync(long venteId, string valeurRetenue) =>
+        (await PostAsync<TrancherConflitFactureRequete, object>($"api/chifa/conflits-facture/{venteId}", new(valeurRetenue))).Item2;
     public async Task<string?> RetablirVenteChifaAsync(long venteId) =>
         (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/ventes/{venteId}/chifa/exclusion", null)).Item2;
 

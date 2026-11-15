@@ -40,8 +40,10 @@ public static class DependencyInjection
         services.AddScoped<ConsulterVoletsChifa>();
         services.AddScoped<Chifa.CentresPayeurs>();
         services.AddScoped<Caisse.TypesPrestation>();
+        services.AddScoped<Catalogue.Indications>();
         services.AddScoped<Chifa.EnregistrerInfosChifa>();
         services.AddScoped<Chifa.ExclureVenteChifa>();
+        services.AddScoped<Chifa.ConflitsFactureChifa>();
         services.AddScoped<Chifa.ConsulterVentesChifa>();
         services.AddScoped<GarderPatientVoletChifa>();
         services.AddScoped<AssocierCodeChifa>();
@@ -162,6 +164,8 @@ public static class DependencyInjection
         services.AddScoped<Financements.RembourserTitulaire>();
         services.AddScoped<Caisse.ConsulterCredits>();
         services.AddScoped<Caisse.EncaisserReglementCredit>();
+        services.AddScoped<Caisse.ConsulterAvoir>();
+        services.AddScoped<Caisse.RembourserAvoir>();
         services.AddScoped<Caisse.ImprimerReleveCredit>();
         services.AddScoped<Caisse.CorrigerDetteCredit>();
         services.AddScoped<Suivi.ObtenirSuiviDettes>();
