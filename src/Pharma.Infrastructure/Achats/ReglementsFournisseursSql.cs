@@ -9,7 +9,7 @@ using Pharma.Infrastructure.Tresorerie;
 namespace Pharma.Infrastructure.Achats;
 
 /// <summary>Règlements des grossistes (029_reglements.sql).</summary>
-public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglementsFournisseurs
+public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglementsFournisseurs, Pharma.Application.Caisse.IAnnulationsReglementTiroir
 {
     public async Task<IReadOnlyList<GrossisteAReglement>> GrossistesAsync(CancellationToken ct = default)
     {
@@ -54,7 +54,8 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
 
         var reglements = new List<ReglementPasse>();
         await using (var cmd = db.CreateCommand("""
-            SELECT g.id, g.date_reglement, g.montant, g.moyen, g.reference, g.echeance, g.part_tiroir, u.nom_complet, g.utilisateur_id
+            SELECT g.id, g.date_reglement, g.montant, g.moyen, g.reference, g.echeance, g.part_tiroir, u.nom_complet, g.utilisateur_id,
+                   g.statut = 'annule', g.annule_le, g.motif_annulation
             FROM reglement_fournisseur g JOIN utilisateur u ON u.id = g.utilisateur_id
             WHERE g.fournisseur_id = $1 ORDER BY g.date_reglement DESC, g.id DESC LIMIT 20
             """))
@@ -63,7 +64,8 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
             await using var r = await cmd.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct))
                 reglements.Add(new ReglementPasse(r.GetInt64(0), DateOnly.FromDateTime(r.GetDateTime(1)), r.GetDecimal(2), r.GetString(3),
-                    r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : DateOnly.FromDateTime(r.GetDateTime(5)), r.GetDecimal(6), r.GetString(7), r.GetInt64(8)));
+                    r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : DateOnly.FromDateTime(r.GetDateTime(5)), r.GetDecimal(6), r.GetString(7), r.GetInt64(8),
+                    r.GetBoolean(9), r.IsDBNull(10) ? null : r.GetDateTime(10), r.IsDBNull(11) ? null : r.GetString(11)));
         }
 
         // Relevé de la dette (039) : première page des mouvements, du plus récent au plus ancien
@@ -172,6 +174,88 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
             await Financements.FinancementsSql.EnregistrerUtilisationAsync(cx, tx, source, "reglement", g.Date, g.Montant, $"Règlement {numero}",
                 null, null, id, null, g.UtilisateurId, ct);
         return id;
+    }
+
+    public async Task<Pharma.Application.Caisse.ReglementTiroir?> LireAsync(long reglementId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT g.id, COALESCE(g.numero, 'RG-' || g.id), g.fournisseur_id, f.raison_sociale, g.montant, g.part_tiroir, g.moyen, g.statut = 'annule',
+                   g.session_caisse_id, COALESCE(s.fermee_le IS NULL, false)
+            FROM reglement_fournisseur g JOIN fournisseur f ON f.id = g.fournisseur_id
+            LEFT JOIN session_caisse s ON s.id = g.session_caisse_id
+            WHERE g.id = $1
+            """);
+        cmd.Parameters.AddWithValue(reglementId);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        return await r.ReadAsync(ct)
+            ? new Pharma.Application.Caisse.ReglementTiroir(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetString(3), r.GetDecimal(4), r.GetDecimal(5),
+                r.GetString(6), r.GetBoolean(7), r.IsDBNull(8) ? null : r.GetInt64(8), r.GetBoolean(9))
+            : null;
+    }
+
+    /// <summary>
+    /// Annulation d'un règlement payé depuis le tiroir (script 098), une transaction : règlement verrouillé et passé à « annulé » (jamais
+    /// supprimé ; ses imputations restent, v_facture_fournisseur ne les compte plus : factures rouvertes), dette du grossiste rétablie
+    /// (relevé « annulation_reglement »), entrée de correction au tiroir dans la caisse d'origine (liée au mouvement d'origine).
+    /// </summary>
+    public async Task<Pharma.Application.Caisse.MouvementTiroirEcrit> AnnulerAsync(Pharma.Application.Caisse.AnnulationReglementAEcrire a, CancellationToken ct = default)
+    {
+        await using var cx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cx.BeginTransactionAsync(ct);
+        long fournisseur, session;
+        decimal montant;
+        string numero;
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT g.fournisseur_id, g.montant, COALESCE(g.numero, 'RG-' || g.id), g.session_caisse_id
+            FROM reglement_fournisseur g WHERE g.id = $1 AND g.statut = 'valide' AND g.moyen = 'especes' AND g.part_tiroir = g.montant
+              AND g.session_caisse_id IS NOT NULL
+            FOR UPDATE
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(a.ReglementId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (!await r.ReadAsync(ct)) throw new RegleMetierException("Ce règlement vient d’être annulé ou ne s’annule pas depuis le tiroir.");
+            (fournisseur, montant, numero, session) = (r.GetInt64(0), r.GetDecimal(1), r.GetString(2), r.GetInt64(3));
+        }
+        // Caisse d'origine verrouillée : refus si elle vient d'être clôturée (une clôture en cours attend)
+        await using (var cmd = new NpgsqlCommand("SELECT 1 FROM session_caisse WHERE id = $1 AND fermee_le IS NULL FOR UPDATE", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(session);
+            if (await cmd.ExecuteScalarAsync(ct) is null)
+                throw new RegleMetierException("La caisse d’origine vient d’être clôturée : le titulaire corrige ce règlement en trésorerie.");
+        }
+        await using (var cmd = new NpgsqlCommand("""
+            UPDATE reglement_fournisseur SET statut = 'annule', annule_le = now(), annule_par = $2, motif_annulation = $3, annulation_valide_par = $4
+            WHERE id = $1
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(a.ReglementId);
+            cmd.Parameters.AddWithValue(a.UtilisateurId);
+            cmd.Parameters.AddWithValue(a.Motif);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.ValidePar ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await ReleveGrossiste.ContexteAsync(cx, tx, ReleveGrossiste.AnnulationReglement, a.UtilisateurId, $"Annulation du règlement {numero} : {a.Motif}", ct);
+        await using (var cmd = new NpgsqlCommand("UPDATE fournisseur SET solde = solde + $2 WHERE id = $1", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(fournisseur);
+            cmd.Parameters.AddWithValue(montant);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        var o = a.Mouvement;
+        Pharma.Application.Caisse.MouvementTiroirEcrit ecrit;
+        try
+        {
+            ecrit = await Caisse.TiroirSql.InsererAsync(cx, tx, null, session, a.UtilisateurId, a.Poste, o.MotifCode, o.Motif, Pharma.Domain.Caisse.RegleTiroir.Entree,
+                o.Detail, montant, null, null, fournisseur, null, null, null, null, null, null, a.ValidePar, o.Id,
+                $"Annulation du règlement {numero} : {a.Motif}", ct);
+        }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new RegleMetierException("Ce paiement vient d’être annulé depuis un autre poste.");
+        }
+        await tx.CommitAsync(ct);
+        return ecrit;
     }
 
     internal static async Task<long> CoffreAsync(NpgsqlConnection cx, NpgsqlTransaction tx, CancellationToken ct)

@@ -34,11 +34,18 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                    SELECT LEAST(GREATEST((SELECT COALESCE(-sum(montant), 0) FROM m WHERE type = 'remboursement') - c.avant, 0), c.net)
                    FROM cumul c WHERE c.vente_id = v.id), 0),
                -- « Remis à » / « Pour » (script 091)
-               {RemiseVenteSql.RemisA}, {RemiseVenteSql.Pour}
+               {RemiseVenteSql.RemisA}, {RemiseVenteSql.Pour},
+               -- Régularisation de part organisme active (097, 098) ; à la charge du patient : part déjà payée, la part à crédit de la
+               -- vente étant réputée payée d'abord (v_vente_credit : crédit accordé de la vente = part à crédit + régularisation)
+               g.id, g.sort, g.montant_patient,
+               CASE WHEN g.sort = 'charge_patient' THEN COALESCE((
+                   SELECT LEAST(g.montant_patient, GREATEST(0, vc.regle - (vc.montant - g.montant_patient)))
+                   FROM v_vente_credit vc WHERE vc.vente_id = v.id), 0) ELSE 0 END
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient pa ON pa.id = v.patient_id
         LEFT JOIN session_caisse s ON s.id = v.session_caisse_id
+        LEFT JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active'
         """;
 
     public async Task<VenteAnnulable?> TrouverAsync(long? venteId, string? numero, CancellationToken ct = default)
@@ -129,7 +136,8 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                     r.IsDBNull(4) ? null : r.GetString(4), r.GetDecimal(5), r.GetDecimal(6), r.GetDecimal(7),
                     r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9), r.GetBoolean(10), r.GetBoolean(11), [],
                     r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16), r.GetDecimal(17),
-                    RemiseVente.Complement(r.IsDBNull(18) ? null : r.GetString(18), r.IsDBNull(19) ? null : r.GetString(19)))));
+                    RemiseVente.Complement(r.IsDBNull(18) ? null : r.GetString(18), r.IsDBNull(19) ? null : r.GetString(19)),
+                    r.IsDBNull(20) ? null : new RegularisationVente(r.GetInt64(20), r.GetString(21), r.GetDecimal(22), r.GetDecimal(23)))));
         if (ventes.Count == 0) return [];
 
         var lignes = new Dictionary<long, List<LigneVenteAnnulable>>();
@@ -165,7 +173,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
-    public async Task AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default)
+    public async Task<MouvementTiroirEcrit?> AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default)
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
@@ -247,6 +255,11 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                 throw new RegleMetierException("La dette du patient vient de changer : rechargez la vente avant d’annuler.");
         }
 
+        // 4 bis. Régularisation de part organisme (script 098) : jamais supprimée, passée à « annulée » (date, auteur, effet)
+        MouvementTiroirEcrit? bon = null;
+        if (a.Regularisation is { } g)
+            bon = await AnnulerRegularisationAsync(cx, tx, g, a, numero, patientId, ct);
+
         // 5. Trace de l'annulation et de l'argent rendu (caisse ouverte du poste)
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO annulation_vente (vente_id, motif, utilisateur_id, valide_par, ancienne, mode, montant_rembourse, session_caisse_id, poste)
@@ -265,5 +278,108 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
+        return bon;
+    }
+
+    public async Task<IReadOnlyDictionary<long, decimal>> AutresDettesAsync(long patientId, long venteId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT vente_id, reste FROM v_vente_credit WHERE patient_id = $1 AND vente_id <> $2 AND reste > 0");
+        cmd.Parameters.AddWithValue(patientId);
+        cmd.Parameters.AddWithValue(venteId);
+        var d = new Dictionary<long, decimal>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) d[r.GetInt64(0)] = r.GetDecimal(1);
+        return d;
+    }
+
+    /// <summary>
+    /// À la charge du patient : 1) écriture inverse au relevé de la part encore due (rattachée à la vente) ; 2) trop-payé réparti au choix
+    /// du patient : déduit de ses autres ventes choisies (mouvement « correction » imputé sur chacune, 087, restes relus ici) et/ou rendu par
+    /// le tiroir (sortie « Remboursement d'un client » de la caisse du poste, bon de sortie). Toute dette changée entre-temps : refus.
+    /// </summary>
+    private static async Task<MouvementTiroirEcrit?> AnnulerRegularisationAsync(NpgsqlConnection cx, NpgsqlTransaction tx, RegularisationAAnnuler g,
+        AnnulationAEcrire a, string numero, long? patientId, CancellationToken ct)
+    {
+        long? mouvement = null;
+        if (patientId is { } patient)
+        {
+            if (g.DetteAnnulee > 0)
+            {
+                await DiminuerDetteAsync(cx, tx, patient, g.DetteAnnulee, a, $"Annulation de la vente {numero} : régularisation de part organisme annulée", ct);
+                await using var lu = new NpgsqlCommand("SELECT currval(pg_get_serial_sequence('credit_mouvement', 'id'))", cx, tx);
+                mouvement = (long)(await lu.ExecuteScalarAsync(ct))!;
+            }
+            if (g.Impute > 0)
+            {
+                foreach (var (vente, montant) in g.Imputations)
+                {
+                    await using var cmd = new NpgsqlCommand("SELECT reste FROM v_vente_credit WHERE vente_id = $1 AND patient_id = $2", cx, tx);
+                    cmd.Parameters.AddWithValue(vente);
+                    cmd.Parameters.AddWithValue(patient);
+                    if (await cmd.ExecuteScalarAsync(ct) is not decimal reste || reste < montant)
+                        throw new RegleMetierException("Une autre dette du patient vient de changer : rechargez la vente avant d’annuler.");
+                }
+                await DiminuerDetteAsync(cx, tx, patient, g.Impute, a,
+                    $"Annulation de la vente {numero} : trop-payé de la régularisation déduit des autres dettes (choix du patient)", ct);
+                foreach (var (vente, montant) in g.Imputations) await ReleveCredit.ImputerAsync(cx, tx, vente, montant, ct);
+            }
+        }
+        else if (g.Impute > 0) throw new RegleMetierException("Vente sans patient : aucune autre dette à solder.");
+
+        MouvementTiroirEcrit? bon = null;
+        if (g.Rembourse > 0)
+        {
+            var session = a.SessionCaisseId ?? throw new RegleMetierException("Ouvrez la caisse du poste : le remboursement du patient sort du tiroir.");
+            await TiroirSql.ExigerDansTiroirAsync(cx, tx, session, g.Rembourse, ct);
+            string libelle;
+            await using (var cmd = new NpgsqlCommand(
+                "SELECT libelle FROM motif_reglable WHERE liste = 'tiroir' AND code = 'remboursement_client'", cx, tx))
+                libelle = await cmd.ExecuteScalarAsync(ct) as string ?? "Remboursement d’un client";
+            long evenement;
+            await using (var cmd = new NpgsqlCommand("""
+                INSERT INTO evenement_caisse (type, utilisateur_id, poste, session_caisse_id, montant, detail)
+                VALUES ('tiroir_ouvert', $1, $2, $3, $4, $5) RETURNING id
+                """, cx, tx))
+            {
+                cmd.Parameters.AddWithValue(a.UtilisateurId);
+                cmd.Parameters.AddWithValue(a.Poste);
+                cmd.Parameters.AddWithValue(session);
+                cmd.Parameters.AddWithValue(g.Rembourse);
+                cmd.Parameters.AddWithValue(libelle);
+                evenement = (long)(await cmd.ExecuteScalarAsync(ct))!;
+            }
+            bon = await TiroirSql.InsererAsync(cx, tx, evenement, session, a.UtilisateurId, a.Poste, "remboursement_client", libelle,
+                Pharma.Domain.Caisse.RegleTiroir.Sortie, "patient", g.Rembourse, null, null, null, null, null, patientId,
+                $"Trop-payé de la régularisation de part organisme, vente {numero} annulée", null, null, g.ValidePar, null, null, ct);
+        }
+
+        await using var maj = new NpgsqlCommand("""
+            UPDATE regularisation_part_organisme
+            SET statut = 'annulee', annulee_le = now(), annulee_par = $2, motif_annulation = $3, annulation_credit_mouvement_id = $4,
+                annulation_dette_annulee = $5, annulation_trop_paye_impute = $6, annulation_rembourse = $7, annulation_mouvement_tiroir_id = $8
+            WHERE id = $1 AND statut = 'active'
+            """, cx, tx);
+        maj.Parameters.AddWithValue(g.Id);
+        maj.Parameters.AddWithValue(a.UtilisateurId);
+        maj.Parameters.AddWithValue($"Annulation de la vente {numero} : {a.Motif}");
+        maj.Parameters.Add(new NpgsqlParameter { Value = (object?)mouvement ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        maj.Parameters.AddWithValue(g.DetteAnnulee);
+        maj.Parameters.AddWithValue(g.Impute);
+        maj.Parameters.AddWithValue(g.Rembourse);
+        maj.Parameters.Add(new NpgsqlParameter { Value = (object?)bon?.Id ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        if (await maj.ExecuteNonQueryAsync(ct) == 0)
+            throw new RegleMetierException("La régularisation de part organisme de cette vente vient d’être annulée : rechargez la vente.");
+        return bon;
+    }
+
+    private static async Task DiminuerDetteAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long patient, decimal montant, AnnulationAEcrire a, string texte,
+        CancellationToken ct)
+    {
+        await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Correction, a.VenteId, a.UtilisateurId, a.Poste, texte, ct);
+        await using var cmd = new NpgsqlCommand("UPDATE patient SET solde_credit = solde_credit - $2 WHERE id = $1 AND solde_credit >= $2", cx, tx);
+        cmd.Parameters.AddWithValue(patient);
+        cmd.Parameters.AddWithValue(montant);
+        if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+            throw new RegleMetierException("La dette du patient vient de changer : rechargez la vente avant d’annuler.");
     }
 }

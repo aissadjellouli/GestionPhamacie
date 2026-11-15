@@ -23,7 +23,7 @@ internal static class ReglementsEndpoints
                 var s = await consulter.SituationAsync(id, user.UtilisateurId(), ct);
                 return Results.Ok(new SituationGrossisteDto(s.Id, s.Nom, s.Solde,
                     s.Factures.Select(f => new FactureFournisseurDto(f.ReceptionId, f.NumeroFacture, f.NumeroBl, f.Date, f.Montant, f.Regle, f.Reste)).ToList(),
-                    s.Reglements.Select(r => new ReglementPasseDto(r.Id, r.Date, r.Montant, r.Moyen, r.Reference, r.Echeance, r.PartTiroir, r.Employe, r.EmployeId)).ToList(),
+                    s.Reglements.Select(r => new ReglementPasseDto(r.Id, r.Date, r.Montant, r.Moyen, r.Reference, r.Echeance, r.PartTiroir, r.Employe, r.EmployeId, r.Annule, r.AnnuleLe, r.MotifAnnulation)).ToList(),
                     (s.Mouvements ?? []).Select(m => new MouvementGrossisteDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Employe, m.Reference, m.EmployeId)).ToList(), s.MouvementsTotal));
             });
 

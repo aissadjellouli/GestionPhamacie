@@ -16,7 +16,24 @@ public sealed record VenteAnnulable(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulable> Lignes,
     decimal DejaRendu = 0, decimal SoldeCreditPatient = 0, string? FactureNumero = null, long? VendeurId = null, long? PatientId = null,
-    decimal PayeSurVente = 0, string? Remise = null);
+    decimal PayeSurVente = 0, string? Remise = null, RegularisationVente? Regularisation = null);
+
+/// <summary>
+/// Régularisation de part organisme active de la vente (script 097) : sort, montant mis à la charge du patient et part qu'il en a déjà
+/// payée (lue sur v_vente_credit : la part à crédit de la vente est réputée payée d'abord, la régularisation ensuite).
+/// </summary>
+public sealed record RegularisationVente(long Id, string Sort, decimal MontantPatient, decimal PayeParLePatient);
+
+/// <summary>
+/// Régularisation à annuler dans la transaction de l'annulation (script 098) : jamais supprimée, statut annulée. DetteAnnulee : part due
+/// annulée par écriture inverse ; Imputations : trop-payé déduit des autres ventes choisies ; Rembourse : trop-payé rendu par le tiroir
+/// (sortie « Remboursement d'un client » dans la caisse ouverte du poste, bon de sortie) ; ValidePar : ayant droit au-delà du seuil.
+/// </summary>
+public sealed record RegularisationAAnnuler(long Id, string Sort, decimal DetteAnnulee, IReadOnlyList<(long VenteId, decimal Montant)> Imputations,
+    decimal Rembourse, long? ValidePar = null)
+{
+    public decimal Impute => Imputations.Sum(i => i.Montant);
+}
 
 /// <summary>
 /// Annulation à écrire en une transaction : vente, stock (hors boîtes déjà rendues), boîtes, crédit, argent rendu.
@@ -25,7 +42,7 @@ public sealed record VenteAnnulable(
 public sealed record AnnulationAEcrire(
     long VenteId, string Motif, long UtilisateurId, long? ValidePar, bool Ancienne, string? Mode, decimal MontantRembourse,
     long? SessionCaisseId, string Poste, decimal ReductionDette = 0, long? PatientDetteId = null, bool AccordClient = false,
-    decimal? DejaRenduLu = null);
+    decimal? DejaRenduLu = null, RegularisationAAnnuler? Regularisation = null);
 
 public interface IAnnulationsVente
 {
@@ -34,12 +51,17 @@ public interface IAnnulationsVente
     Task<IReadOnlyList<VenteAnnulable>> DernieresAsync(long sessionCaisseId, int limite, CancellationToken ct = default);
     /// <summary>Ventes encaissées ou annulées sur la caisse ouverte du poste, par page (les plus récentes d'abord).</summary>
     Task<Pharma.Application.Commun.Page<VenteAnnulable>> VentesSessionAsync(long sessionCaisseId, Pharma.Application.Commun.DemandePage page, CancellationToken ct = default);
-    Task AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default);
+    /// <summary>Annulation écrite en une transaction ; bon de sortie du tiroir si le trop-payé d'une régularisation est remboursé, sinon null.</summary>
+    Task<MouvementTiroirEcrit?> AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default);
+    /// <summary>Reste dû de chaque autre vente à crédit du patient (hors vente donnée), v_vente_credit (087).</summary>
+    Task<IReadOnlyDictionary<long, decimal>> AutresDettesAsync(long patientId, long venteId, CancellationToken ct = default);
     /// <summary>Ventes de la session de caisse annulées (pour l'alerte au-delà du seuil).</summary>
     Task<int> AnnulationsSessionAsync(long sessionCaisseId, CancellationToken ct = default);
 }
 
-public sealed record ResultatAnnulation(string Numero, decimal ARendre, string? Mode, string? ValidePar, decimal DetteDiminuee = 0);
+/// <summary>Regularisation* : effet de l'annulation de la régularisation de part organisme (dû annulé, trop-payé imputé, remboursé et son bon).</summary>
+public sealed record ResultatAnnulation(string Numero, decimal ARendre, string? Mode, string? ValidePar, decimal DetteDiminuee = 0,
+    decimal RegularisationDetteAnnulee = 0, decimal RegularisationImputee = 0, decimal RegularisationRembourse = 0, MouvementTiroirEcrit? BonSortie = null);
 
 /// <summary>Recherche d'une vente à annuler : par n° de ticket, ou les dernières ventes de la caisse du poste.</summary>
 public sealed class RechercherVenteAnnulable(IAnnulationsVente annulations, ISessionsCaisse sessions)
@@ -80,9 +102,12 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
     VerificationCodeComptoir codes, IJournal journal, Notifications.IAlertesTitulaire? alertes = null, Patients.IPatients? patients = null,
     Securite.AutorisationCourante? autorisation = null, ITraceErreurs? trace = null)
 {
+    /// <summary>Journal de l'annulation d'une régularisation de part organisme (script 098).</summary>
+    public const string ActionRegularisationAnnulee = "regularisation_part_organisme_annulee";
+
     public async Task<ResultatAnnulation> ExecuterAsync(long venteId, string? motif, long utilisateurId, string? poste,
         string? validateurIdentifiant, string? validateurCode, CancellationToken ct = default, bool solderDette = false, long? patientDetteId = null,
-        bool accordClient = false)
+        bool accordClient = false, IReadOnlyList<(long VenteId, decimal Montant)>? tropPayeImputations = null, decimal? tropPayeRembourse = null)
     {
         var nomPoste = PosteCaisse.Exiger(poste);
         var texte = RegleAnnulation.Motif(motif);
@@ -129,8 +154,35 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
         if (modeRemboursement == "especes" && rembourse > 0 && session is null)
             throw new RegleMetierException("Ouvrez la caisse du poste : l’argent rendu au patient doit en sortir.");
 
-        await annulations.AnnulerAsync(new AnnulationAEcrire(v.Id, texte, utilisateurId, validePar, !v.CaisseOuverte, modeRemboursement, rembourse,
-            session?.Id, nomPoste, reductionDette, patientDette, solder && reductionDette > 0, v.DejaRendu), ct);
+        // Régularisation de part organisme (règles du titulaire 2026-11-15, script 098), annulée dans la même transaction. À la charge du
+        // patient : 1) la part encore due (elle concerne cette vente) est annulée par écriture inverse, jamais remboursée ; 2) la part
+        // réellement payée est répartie au choix du patient (obligatoire) : ses autres dettes et/ou un remboursement par le tiroir.
+        RegularisationAAnnuler? regul = null;
+        if (v.Regularisation is { } g)
+        {
+            var detteRegul = v.PatientId is null ? 0 : Math.Max(0, v.SoldeCreditPatient - (patientDette is null ? reductionDette : 0));
+            var e = Pharma.Domain.Ventes.RegularisationPartOrganisme.Annuler(g.Sort, g.MontantPatient, g.PayeParLePatient, detteRegul);
+            var autres = e.TropPaye > 0 && v.PatientId is { } pat
+                ? await annulations.AutresDettesAsync(pat, v.Id, ct)
+                : (IReadOnlyDictionary<long, decimal>)new Dictionary<long, decimal>();
+            var choix = Pharma.Domain.Ventes.RegularisationPartOrganisme.Repartir(e.TropPaye, tropPayeImputations, tropPayeRembourse, autres, v.Id);
+            long? valideSortie = null;
+            if (choix.Rembourse > 0)
+            {
+                if (session is null) throw new RegleMetierException("Ouvrez la caisse du poste : le remboursement du patient sort du tiroir.");
+                Pharma.Domain.Caisse.RegleTiroir.VerifierDansTiroir(choix.Rembourse, session.FondCaisse + await sessions.VentesEspecesAsync(session.Id, ct));
+                var seuilSortie = (await sessions.ParametresAsync(ct)).SeuilSortieTiroir;
+                if (Pharma.Domain.Caisse.RegleTiroir.ValidationRequise(Pharma.Domain.Caisse.RegleTiroir.Sortie, choix.Rembourse, seuilSortie))
+                {
+                    await droits.ExigerAsync(utilisateurId, Permissions.CaisseCloturer, $"valider une sortie de caisse de plus de {seuilSortie:N2} DA", ct);
+                    valideSortie = autorisation?.AutoriseParId ?? utilisateurId;
+                }
+            }
+            regul = new RegularisationAAnnuler(g.Id, g.Sort, e.DetteAnnulee, choix.Imputations, choix.Rembourse, valideSortie);
+        }
+
+        var bon = await annulations.AnnulerAsync(new AnnulationAEcrire(v.Id, texte, utilisateurId, validePar, !v.CaisseOuverte, modeRemboursement, rembourse,
+            session?.Id, nomPoste, reductionDette, patientDette, solder && reductionDette > 0, v.DejaRendu, regul), ct);
         await journal.EcrireAsync(utilisateurId, "vente_annulee", "vente", v.Id,
             new Dictionary<string, object?>
             {
@@ -140,6 +192,17 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
                 ["dette_soldee_au_choix"] = solder && reductionDette > 0, ["patient_dette"] = reductionDette > 0 ? patientDette : null,
                 ["accord_client"] = solder && reductionDette > 0 ? true : null
             }, validePar is null ? null : Permissions.CaisseAnnulerVente, ct);
+
+        if (regul is not null)
+            await journal.EcrireAsync(utilisateurId, ActionRegularisationAnnulee, "vente", v.Id,
+                new Dictionary<string, object?>
+                {
+                    ["ticket"] = v.Numero, ["regularisation"] = regul.Id, ["sort"] = regul.Sort, ["montant_patient"] = v.Regularisation!.MontantPatient,
+                    ["paye_par_le_patient"] = v.Regularisation.PayeParLePatient, ["dette_annulee"] = regul.DetteAnnulee,
+                    ["choix"] = regul.Impute > 0 && regul.Rembourse > 0 ? "reparti" : regul.Impute > 0 ? "solder_autres_dettes" : regul.Rembourse > 0 ? "rembourser" : null,
+                    ["trop_paye_impute"] = regul.Impute, ["ventes_soldees"] = regul.Imputations.Select(i => new { vente = i.VenteId, montant = i.Montant }).ToList(),
+                    ["rembourse"] = regul.Rembourse, ["bon"] = bon?.Numero, ["valide_par"] = regul.ValidePar, ["motif"] = texte
+                }, null, ct);
 
         // Au-delà du seuil réglé par le titulaire : journal et notification, une fois quand le seuil est franchi
         if (session is not null && (await sessions.ParametresAsync(ct)).SeuilAnnulations is var seuil and > 0
@@ -152,6 +215,7 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
                 await Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.AnnulationsAsync(nomPoste, nombre, seuil, ct),
                     $"annulations sur la caisse {nomPoste}", trace);
         }
-        return new ResultatAnnulation(v.Numero, rembourse, modeRemboursement, nomValidateur, reductionDette);
+        return new ResultatAnnulation(v.Numero, rembourse, modeRemboursement, nomValidateur, reductionDette,
+            regul?.DetteAnnulee ?? 0, regul?.Impute ?? 0, regul?.Rembourse ?? 0, bon);
     }
 }

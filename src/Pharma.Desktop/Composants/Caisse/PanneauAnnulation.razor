@@ -151,6 +151,26 @@
                         <div class="info-bandeau" role="note">Vente portée sur la facture @facture : retirez-la d’abord de la facture (Factures : rejet puis correction), ou faites un retour.</div>
                     }
                     @ChampDette
+                    @if (v.RegularisationSort == "charge_patient")
+                    {
+                        <div class="avertissement" role="note" style="display: flex; flex-direction: column; gap: 4px">
+                            <div>Part organisme régularisée à la charge du patient : @(v.RegularisationDue > 0 ? $"{Libelles.Dinars(v.RegularisationDue, 2)} encore dus, annulés (jamais remboursés)." : "rien n’est encore dû.")</div>
+                            @if (v.RegularisationTropPaye > 0)
+                            {
+                                <div><strong>Ce patient a payé @Libelles.Dinars(v.RegularisationTropPaye, 2) de cette régularisation.</strong>
+                                    @(autresDettes.Count > 0 ? $" Il doit encore {Libelles.Dinars(autresDettes.Sum(d => d.Reste), 2)} sur d’autres ventes : choisissez avec lui." : " Il n’a pas d’autre dette : il est remboursé par le tiroir.")</div>
+                                @foreach (var d in autresDettes)
+                                {
+                                    <label style="display: flex; gap: 8px; align-items: center">
+                                        <span style="flex: 1">Solder @d.Numero du @d.Date.ToLocalTime().ToString("dd/MM/yyyy") (reste @Libelles.Dinars(d.Reste, 2))</span>
+                                        <input type="number" min="0" max="@d.Reste" step="0.01" style="width: 110px" aria-label="Montant imputé sur @d.Numero"
+                                               value="@(imputationsTropPaye.GetValueOrDefault(d.Id))" @onchange="e => ImputerTropPaye(d.Id, e.Value)" />
+                                    </label>
+                                }
+                                <div>Rembourser le patient par le tiroir (« Remboursement d’un client », bon de sortie) : <strong>@Libelles.Dinars(RembourseTropPaye, 2)</strong></div>
+                            }
+                        </div>
+                    }
                     <button type="button" class="btn btn-danger" disabled="@(enCours || v.FactureNumero is not null)" @onclick="AnnulerAsync">
                         Annuler la vente@(ARenduAffiche is > 0 ? $" et rendre {Libelles.Dinars(ARenduAffiche.Value, 2)}" + (v.Mode is "credit" or "especes" ? " en espèces" : "") : DetteAProposer && solderDette == true ? " (déduite de la dette, rien à rendre)" : "")
                     </button>
@@ -458,10 +478,42 @@
         (validateurs, _) = mode == "retour" ? await Api.ValidateursRetourAsync() : await Api.ValidateursAnnulationAsync();
     }
 
+    // Trop-payé d'une régularisation annulée (script 098) : choix du patient, autres dettes soldées (plus anciennes par défaut) et le reste remboursé
+    private List<VenteACreditDto> autresDettes = [];
+    private readonly Dictionary<long, decimal> imputationsTropPaye = [];
+    private decimal RembourseTropPaye => Math.Max(0, (choisie?.RegularisationTropPaye ?? 0) - imputationsTropPaye.Values.Sum());
+
+    private void ImputerTropPaye(long vente, object? valeur)
+    {
+        var reste = autresDettes.FirstOrDefault(d => d.Id == vente)?.Reste ?? 0;
+        var autres = imputationsTropPaye.Where(i => i.Key != vente).Sum(i => i.Value);
+        var m = decimal.TryParse(valeur?.ToString()?.Replace(',', '.'), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var x) ? x : 0;
+        imputationsTropPaye[vente] = Math.Clamp(m, 0, Math.Min(reste, Math.Max(0, (choisie?.RegularisationTropPaye ?? 0) - autres)));
+    }
+
+    private async Task ChargerAutresDettesAsync()
+    {
+        autresDettes = [];
+        imputationsTropPaye.Clear();
+        if (choisie is not { RegularisationTropPaye: > 0, PatientId: { } patient } v) return;
+        var (s, _) = await Api.SituationCreditAsync(patient);
+        autresDettes = (s?.Ventes ?? []).Where(d => d.Id != v.Id && d.Reste > 0).OrderBy(d => d.Date).ToList();
+        // Par défaut (comme « Encaisser une dette ») : les plus anciennes soldées jusqu'à couvrir le trop-payé
+        var reste = v.RegularisationTropPaye;
+        foreach (var d in autresDettes)
+        {
+            if (reste <= 0) break;
+            var part = Math.Min(d.Reste, reste);
+            imputationsTropPaye[d.Id] = part;
+            reste -= part;
+        }
+    }
+
     private async void ChoisirMode(string m)
     {
         mode = m;
         (solderDette, patientDette, rechercheDette, patientsTrouves, rechercheDetteFaite, accordClient) = (null, null, null, [], false, false);
+        if (m == "annulation") await ChargerAutresDettesAsync();
         await ChargerValidateursAsync();
         await InvokeAsync(StateHasChanged);
     }
@@ -497,12 +549,17 @@
         enCours = true;
         if (DetteAProposer && solderDette is null) { erreur = "Ce patient doit de l’argent : choisissez de déduire le remboursement de sa dette, ou de le rendre."; enCours = false; return; }
         var (r, e) = await Api.AnnulerVenteAsync(choisie.Id, new AnnulationVenteRequete(motif, ValidationRequise ? validateur : null, ValidationRequise ? code : null,
-            DetteAProposer && solderDette == true, DetteAProposer && solderDette == true ? patientDette?.Id : null, DetteAProposer && solderDette == true && accordClient));
+            DetteAProposer && solderDette == true, DetteAProposer && solderDette == true ? patientDette?.Id : null, DetteAProposer && solderDette == true && accordClient,
+            choisie.RegularisationTropPaye > 0 ? imputationsTropPaye.Where(i => i.Value > 0).Select(i => new ImputationTropPayeDto(i.Key, i.Value)).ToList() : null,
+            choisie.RegularisationTropPaye > 0 ? RembourseTropPaye : null));
         (enCours, code) = (false, null);
         if (e is not null) { erreur = e; return; }
         message = $"Vente {r!.Numero} annulée{(r.ValidePar is { } p ? $", validée par {p}" : "")}."
                   + (r.DetteDiminuee > 0 ? $" Dette du patient diminuée de {Libelles.Dinars(r.DetteDiminuee, 2)}." : "")
                   + (r.ARendre > 0 ? $" À rendre au patient : {Libelles.Dinars(r.ARendre, 2)} ({Libelles.ModePaiement(r.Mode)})." : r.DetteDiminuee > 0 ? " Rien à rendre." : "")
+                  + (r.RegularisationDetteAnnulee > 0 ? $" Régularisation de part organisme annulée : {Libelles.Dinars(r.RegularisationDetteAnnulee, 2)} retirés de sa dette." : "")
+                  + (r.RegularisationImputee > 0 ? $" Trop-payé de la régularisation déduit de ses autres dettes : {Libelles.Dinars(r.RegularisationImputee, 2)}." : "")
+                  + (r.RegularisationRembourse > 0 ? $" Trop-payé de la régularisation rendu par le tiroir : {Libelles.Dinars(r.RegularisationRembourse, 2)} (bon {r.BonSortieNumero})." : "")
                   + " Stock remis sur les mêmes lots.";
         await OnAnnulee.InvokeAsync();
     }

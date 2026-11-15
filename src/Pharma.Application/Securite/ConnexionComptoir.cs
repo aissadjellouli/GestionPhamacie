@@ -205,7 +205,7 @@ public sealed class ListerValidateurs(ICodesComptoir codes, IPermissionService d
         var liste = new List<VendeurComptoir>();
         foreach (var c in (await codes.AvecCodeAsync(ct)).Where(c => c.Id != sauf))
             if ((permission == PermissionServiceExtensions.MarqueTitulaire ? await droits.EstTitulaireAsync(c.Id, ct)
-                    : await droits.APermissionAsync(c.Id, permission, ct))
+                    : await droits.APermissionAsync(c.Id, CodeComptoir.DroitDuValideur(permission), ct))
                 && (remisePct is not { } pct || await droits.RemiseMaxAsync(c.Id, ct) >= pct))
                 liste.Add(new VendeurComptoir(c.Identifiant, c.NomComplet, c.Id));
         return liste.OrderBy(v => v.NomComplet).ToList();

@@ -43,7 +43,24 @@ public static class CodeComptoir
         Permissions.AchatsReceptionner, Permissions.AchatsValiderEcart, Permissions.AchatsRetourFournisseur,
     };
 
-    public static bool AutorisableParCollegue(string? permission) => permission is not null && AutorisablesParCollegue.Contains(permission);
+    public static bool AutorisableParCollegue(string? permission) =>
+        permission is not null && (AutorisablesParCollegue.Contains(permission) || ActionsAutorisables.ContainsKey(permission));
+
+    /// <summary>
+    /// Droit d'une seule action accordable par le code d'un collègue (décision du titulaire, 2026-11-15) : payer un grossiste depuis le
+    /// tiroir, ou annuler ce paiement, avec le code d'un ayant droit « achats.regler ». Le droit achats.regler lui-même reste hors de la
+    /// liste blanche : le reste du module Achats n'est jamais ouvert par code.
+    /// </summary>
+    public const string ActionReglementGrossisteTiroir = "achats.regler:tiroir_reglement_grossiste";
+
+    /// <summary>Action accordable par code → droit que le valideur doit avoir.</summary>
+    public static readonly IReadOnlyDictionary<string, string> ActionsAutorisables = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        [ActionReglementGrossisteTiroir] = Permissions.AchatsRegler
+    };
+
+    /// <summary>Droit que le valideur doit détenir : celui de l'action, sinon la permission elle-même.</summary>
+    public static string DroitDuValideur(string permission) => ActionsAutorisables.GetValueOrDefault(permission) ?? permission;
 
     /// <summary>Nom de la revendication du jeton : connexion par code, limitée au comptoir.</summary>
     public const string Revendication = "portee";

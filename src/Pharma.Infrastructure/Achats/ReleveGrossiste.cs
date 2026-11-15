@@ -12,6 +12,7 @@ internal static class ReleveGrossiste
     public const string Reception = "reception";
     public const string Reglement = "reglement";
     public const string Avoir = "avoir";
+    public const string AnnulationReglement = "annulation_reglement";
 
     public static async Task ContexteAsync(NpgsqlConnection cx, NpgsqlTransaction tx, string type, long? utilisateurId, string? reference, CancellationToken ct)
     {

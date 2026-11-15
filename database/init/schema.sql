@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 097 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 098 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 097 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 098 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict fGy4yTWAV3SA2y2Sre1h6JO6pmUQITp4IjQH1TCcAWUKAmxGWpSiw1PQn9AnDZ5
+\restrict fovbJOShLntRb7V9qAnfN2E0seSNoxYtnV1ksL8KMS1a4kWS1dWmUrQepEgCuA1
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1450,7 +1450,16 @@ CREATE FUNCTION public.proteger_regularisation_part_organisme() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    RAISE EXCEPTION 'Une régularisation de part organisme ne se modifie pas et ne se supprime pas';
+    IF TG_OP = 'UPDATE' AND OLD.statut = 'active' AND NEW.statut = 'annulee'
+       AND (NEW.id, NEW.vente_id, NEW.organisme_id, NEW.part_organisme_vente, NEW.part_organisme_chifa, NEW.ecart, NEW.sort, NEW.montant_patient,
+            NEW.montant_dette_diminuee, NEW.montant_a_rendre, NEW.montant_pharmacie, NEW.credit_mouvement_id, NEW.utilisateur_id, NEW.valide_par, NEW.cree_le)
+           IS NOT DISTINCT FROM
+           (OLD.id, OLD.vente_id, OLD.organisme_id, OLD.part_organisme_vente, OLD.part_organisme_chifa, OLD.ecart, OLD.sort, OLD.montant_patient,
+            OLD.montant_dette_diminuee, OLD.montant_a_rendre, OLD.montant_pharmacie, OLD.credit_mouvement_id, OLD.utilisateur_id, OLD.valide_par, OLD.cree_le)
+    THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Une régularisation de part organisme ne se modifie pas et ne se supprime pas (seule l''annulation de sa vente la marque annulée)';
 END $$;
 
 
@@ -3660,7 +3669,7 @@ CREATE TABLE public.fournisseur_mouvement (
     reference text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT fournisseur_mouvement_montant_check CHECK ((montant <> (0)::numeric)),
-    CONSTRAINT fournisseur_mouvement_type_check CHECK ((type = ANY (ARRAY['ouverture'::text, 'reprise'::text, 'reception'::text, 'reglement'::text, 'avoir'::text, 'correction'::text])))
+    CONSTRAINT fournisseur_mouvement_type_check CHECK ((type = ANY (ARRAY['ouverture'::text, 'reprise'::text, 'reception'::text, 'reglement'::text, 'avoir'::text, 'correction'::text, 'annulation_reglement'::text])))
 );
 
 
@@ -5065,6 +5074,12 @@ CREATE TABLE public.reglement_fournisseur (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     compte_id bigint,
     numero text,
+    statut text DEFAULT 'valide'::text NOT NULL,
+    annule_le timestamp with time zone,
+    annule_par bigint,
+    motif_annulation text,
+    annulation_valide_par bigint,
+    CONSTRAINT ck_reglement_fournisseur_statut CHECK ((((statut = 'valide'::text) AND (annule_le IS NULL) AND (annule_par IS NULL) AND (motif_annulation IS NULL)) OR ((statut = 'annule'::text) AND (annule_le IS NOT NULL) AND (annule_par IS NOT NULL) AND ((char_length(btrim(motif_annulation)) >= 3) AND (char_length(btrim(motif_annulation)) <= 300)) AND (moyen = 'especes'::text) AND (part_tiroir = montant)))),
     CONSTRAINT reglement_fournisseur_check CHECK ((part_tiroir <= montant)),
     CONSTRAINT reglement_fournisseur_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (session_caisse_id IS NOT NULL)))),
     CONSTRAINT reglement_fournisseur_check2 CHECK (((moyen <> 'effet'::text) OR (echeance IS NOT NULL))),
@@ -5108,9 +5123,20 @@ CREATE TABLE public.regularisation_part_organisme (
     utilisateur_id bigint NOT NULL,
     valide_par bigint,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    statut text DEFAULT 'active'::text NOT NULL,
+    annulee_le timestamp with time zone,
+    annulee_par bigint,
+    motif_annulation text,
+    annulation_credit_mouvement_id bigint,
+    annulation_dette_annulee numeric(12,2) DEFAULT 0 NOT NULL,
+    annulation_trop_paye_impute numeric(12,2) DEFAULT 0 CONSTRAINT regularisation_part_organis_annulation_trop_paye_imput_not_null NOT NULL,
+    annulation_rembourse numeric(12,2) DEFAULT 0 NOT NULL,
+    annulation_mouvement_tiroir_id bigint,
+    CONSTRAINT ck_regularisation_annulation_montants CHECK (((annulation_dette_annulee >= (0)::numeric) AND (annulation_trop_paye_impute >= (0)::numeric) AND (annulation_rembourse >= (0)::numeric) AND (((annulation_dette_annulee + annulation_trop_paye_impute) + annulation_rembourse) <= montant_patient))),
     CONSTRAINT ck_regularisation_avoir CHECK (((sort <> 'avoir_patient'::text) OR ((montant_patient > (0)::numeric) AND (montant_patient = (montant_dette_diminuee + montant_a_rendre))))),
     CONSTRAINT ck_regularisation_patient CHECK (((sort <> 'charge_patient'::text) OR ((montant_patient = ecart) AND (credit_mouvement_id IS NOT NULL)))),
     CONSTRAINT ck_regularisation_sens CHECK ((((ecart > (0)::numeric) AND (sort = ANY (ARRAY['charge_patient'::text, 'perte_pharmacie'::text]))) OR ((ecart < (0)::numeric) AND (sort = ANY (ARRAY['avoir_patient'::text, 'gain_organisme'::text]))))),
+    CONSTRAINT ck_regularisation_statut CHECK ((((statut = 'active'::text) AND (annulee_le IS NULL) AND (annulee_par IS NULL)) OR ((statut = 'annulee'::text) AND (annulee_le IS NOT NULL) AND (annulee_par IS NOT NULL)))),
     CONSTRAINT regularisation_part_organisme_ecart_check CHECK ((ecart <> (0)::numeric)),
     CONSTRAINT regularisation_part_organisme_montant_a_rendre_check CHECK ((montant_a_rendre >= (0)::numeric)),
     CONSTRAINT regularisation_part_organisme_montant_dette_diminuee_check CHECK ((montant_dette_diminuee >= (0)::numeric)),
@@ -5887,7 +5913,7 @@ CREATE VIEW public.v_credit_accorde AS
                    FROM public.paiement p
                   WHERE ((p.vente_id = v.id) AND (p.mode = 'credit'::text))), (0)::numeric) + COALESCE(( SELECT sum(r.montant_patient) AS sum
                    FROM public.regularisation_part_organisme r
-                  WHERE ((r.vente_id = v.id) AND (r.sort = 'charge_patient'::text))), (0)::numeric)) AS montant) x ON ((x.montant > (0)::numeric)))
+                  WHERE ((r.vente_id = v.id) AND (r.sort = 'charge_patient'::text) AND (r.statut = 'active'::text))), (0)::numeric)) AS montant) x ON ((x.montant > (0)::numeric)))
   WHERE ((v.statut = 'validee'::text) AND (v.patient_id IS NOT NULL));
 
 
@@ -6148,11 +6174,13 @@ CREATE VIEW public.v_facture_fournisseur AS
     r.date_reception,
     COALESCE(r.montant_ttc, (0)::numeric) AS montant,
     COALESCE(( SELECT sum(x.montant) AS sum
-           FROM public.reglement_facture x
-          WHERE (x.reception_id = r.id)), (0)::numeric) AS regle,
+           FROM (public.reglement_facture x
+             JOIN public.reglement_fournisseur g ON ((g.id = x.reglement_id)))
+          WHERE ((x.reception_id = r.id) AND (g.statut = 'valide'::text))), (0)::numeric) AS regle,
     (COALESCE(r.montant_ttc, (0)::numeric) - COALESCE(( SELECT sum(x.montant) AS sum
-           FROM public.reglement_facture x
-          WHERE (x.reception_id = r.id)), (0)::numeric)) AS reste
+           FROM (public.reglement_facture x
+             JOIN public.reglement_fournisseur g ON ((g.id = x.reglement_id)))
+          WHERE ((x.reception_id = r.id) AND (g.statut = 'valide'::text))), (0)::numeric)) AS reste
    FROM (public.reception r
      JOIN public.fournisseur f ON ((f.id = r.fournisseur_id)));
 
@@ -6801,7 +6829,7 @@ CREATE VIEW public.v_vente_part_organisme AS
     v.part_organisme AS part_organisme_caisse,
     COALESCE(r.part_organisme_chifa, v.part_organisme) AS part_organisme_retenue
    FROM (public.vente v
-     LEFT JOIN public.regularisation_part_organisme r ON ((r.vente_id = v.id)));
+     LEFT JOIN public.regularisation_part_organisme r ON (((r.vente_id = v.id) AND (r.statut = 'active'::text))));
 
 
 --
@@ -10568,6 +10596,22 @@ ALTER TABLE ONLY public.reglement_facture
 
 
 --
+-- Name: reglement_fournisseur reglement_fournisseur_annulation_valide_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reglement_fournisseur
+    ADD CONSTRAINT reglement_fournisseur_annulation_valide_par_fkey FOREIGN KEY (annulation_valide_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: reglement_fournisseur reglement_fournisseur_annule_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reglement_fournisseur
+    ADD CONSTRAINT reglement_fournisseur_annule_par_fkey FOREIGN KEY (annule_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: reglement_fournisseur reglement_fournisseur_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10597,6 +10641,30 @@ ALTER TABLE ONLY public.reglement_fournisseur
 
 ALTER TABLE ONLY public.reglement_fournisseur
     ADD CONSTRAINT reglement_fournisseur_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: regularisation_part_organisme regularisation_part_organisme_annulation_credit_mouvement__fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_annulation_credit_mouvement__fkey FOREIGN KEY (annulation_credit_mouvement_id) REFERENCES public.credit_mouvement(id);
+
+
+--
+-- Name: regularisation_part_organisme regularisation_part_organisme_annulation_mouvement_tiroir__fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_annulation_mouvement_tiroir__fkey FOREIGN KEY (annulation_mouvement_tiroir_id) REFERENCES public.mouvement_tiroir(id);
+
+
+--
+-- Name: regularisation_part_organisme regularisation_part_organisme_annulee_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_annulee_par_fkey FOREIGN KEY (annulee_par) REFERENCES public.utilisateur(id);
 
 
 --
@@ -10963,5 +11031,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fGy4yTWAV3SA2y2Sre1h6JO6pmUQITp4IjQH1TCcAWUKAmxGWpSiw1PQn9AnDZ5
+\unrestrict fovbJOShLntRb7V9qAnfN2E0seSNoxYtnV1ksL8KMS1a4kWS1dWmUrQepEgCuA1
 

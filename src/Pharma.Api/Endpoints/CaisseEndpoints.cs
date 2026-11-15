@@ -220,8 +220,9 @@ internal static class CaisseEndpoints
                 HttpRequest requete, CancellationToken ct) =>
             {
                 var r = await annuler.ExecuterAsync(id, req.Motif, user.UtilisateurId(), requete.Poste(), req.ValidateurIdentifiant, req.ValidateurCode, ct,
-                    req.SolderDette, req.PatientDetteId, req.AccordClient);
-                return Results.Ok(new AnnulationVenteDto(r.Numero, r.ARendre, r.Mode, r.ValidePar, r.DetteDiminuee));
+                    req.SolderDette, req.PatientDetteId, req.AccordClient, req.TropPayeImputations?.Select(i => (i.VenteId, i.Montant)).ToList(), req.TropPayeRembourse);
+                return Results.Ok(new AnnulationVenteDto(r.Numero, r.ARendre, r.Mode, r.ValidePar, r.DetteDiminuee,
+                    r.RegularisationDetteAnnulee, r.RegularisationImputee, r.RegularisationRembourse, r.BonSortie?.Id, r.BonSortie?.Numero));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -337,7 +338,8 @@ internal static class CaisseEndpoints
         v.Id, v.Numero, v.Date, v.Vendeur, v.Patient, v.Total, v.PartPatient, v.PartOrganisme, v.Mode, v.Statut,
         v.CaisseOuverte, v.DansUnBordereau, v.Lignes.Select(l => new LigneVenteAnnulableDto(l.Produit, l.Quantite, l.Montant, l.Lot)).ToList(),
         ARendre(v), v.FactureNumero, v.SoldeCreditPatient, v.VendeurId, v.PatientId,
-        RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, v.SoldeCreditPatient).ReductionDette, v.Remise);
+        RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, v.SoldeCreditPatient).ReductionDette, v.Remise,
+        v.Regularisation?.Sort, v.Regularisation is { } g ? Math.Max(0, g.MontantPatient - g.PayeParLePatient) : 0, v.Regularisation?.PayeParLePatient ?? 0);
 
     private static CommandeVente VersCommande(CommandeVenteDto d)
     {

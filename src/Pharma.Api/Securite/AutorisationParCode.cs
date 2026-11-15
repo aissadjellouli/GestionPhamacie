@@ -65,7 +65,7 @@ public sealed class AutorisationParCode(IHttpContextAccessor http, VerificationC
         if (await ValideurAsync(ct) is not { } v || v.Id == utilisateurId) return false;
         var ok = permission is null || permission == PermissionServiceExtensions.MarqueTitulaire
             ? await droits.EstTitulaireAsync(v.Id, ct)
-            : await droits.APermissionAsync(v.Id, permission, ct);
+            : await droits.APermissionAsync(v.Id, Pharma.Domain.Securite.CodeComptoir.DroitDuValideur(permission), ct);
         if (!ok) { Erreur ??= $"{v.NomComplet} n’a pas ce droit : choisissez un employé qui l’a."; return false; }
         if (remisePct is { } pct && await droits.RemiseMaxAsync(v.Id, ct) is var max && max < pct)
         {

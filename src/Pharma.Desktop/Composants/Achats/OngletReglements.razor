@@ -166,7 +166,7 @@
                                     <td>@r.Date.ToString("dd/MM/yyyy")</td>
                                     <td class="nombre">@Libelles.Dinars(r.Montant, 2)@(r.PartTiroir > 0 ? $" (dont tiroir {Libelles.Dinars(r.PartTiroir, 2)})" : "")</td>
                                     <td>@Moyen(r.Moyen)@(r.Echeance is { } e ? $" · échéance {e:dd/MM/yyyy}" : "")</td>
-                                    <td>@(r.Reference ?? "—")</td>
+                                    <td>@(r.Reference ?? "—")@if (r.Annule) { <br /><span class="pastille attention">annulé@(r.AnnuleLe is { } al ? $" le {al.ToLocalTime():dd/MM/yyyy}" : "")</span> <span class="detail">@r.MotifAnnulation</span> }</td>
                                     <td><LienContact Type="employe" Id="r.EmployeId" Nom="@r.Employe" /></td>
                                 </tr>
                             }
@@ -239,7 +239,7 @@
     private static readonly (string, string)[] TypesMouvement =
     [
         ("reception", "Réception (facture)"), ("reglement", "Règlement"), ("avoir", "Avoir sur un retour"), ("correction", "Correction hors logiciel"),
-        ("reprise", "Dette reprise de l’ancien logiciel"), ("ouverture", "Dette à la mise en place du relevé")
+        ("reprise", "Dette reprise de l’ancien logiciel"), ("ouverture", "Dette à la mise en place du relevé"), ("annulation_reglement", "Règlement annulé")
     ];
 
     /// <summary>Choix du grossiste depuis le filtre du relevé : on change de grossiste sans quitter le relevé.</summary>
@@ -256,7 +256,7 @@
     private static string LibelleMouvement(string type) => type switch
     {
         "ouverture" => "Dette à la mise en place du relevé", "reprise" => "Dette reprise de l’ancien logiciel", "reception" => "Réception (facture)",
-        "reglement" => "Règlement", "avoir" => "Avoir sur un retour", _ => "Correction hors logiciel"
+        "reglement" => "Règlement", "avoir" => "Avoir sur un retour", "annulation_reglement" => "Règlement annulé", _ => "Correction hors logiciel"
     };
     private readonly Dictionary<long, decimal> imputations = [];
     private DateOnly date = DateOnly.FromDateTime(DateTime.Today);

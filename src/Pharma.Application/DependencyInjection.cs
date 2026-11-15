@@ -116,6 +116,7 @@ public static class DependencyInjection
         // Sorties et entrées d'argent par le tiroir (script 096)
         services.AddScoped<Caisse.OuvrirTiroirAvecEffet>();
         services.AddScoped<Caisse.CorrigerMouvementTiroir>();
+        services.AddScoped<Caisse.AnnulerReglementGrossisteTiroir>();
         services.AddScoped<Caisse.ListerMouvementsTiroir>();
         services.AddScoped<Caisse.ObtenirBonSortie>();
         services.AddScoped<Securite.ChoisirAffichage>();

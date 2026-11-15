@@ -19,7 +19,8 @@ public sealed class PermissionsComptoir(PermissionService droits, IHttpContextAc
     // l'administration, la trésorerie, les financements, la surveillance, ni la délivrance d'un psychotrope) ; sur une connexion par
     // code comptoir, en plus, un droit du comptoir (portée de la connexion conservée).
     public static bool AutorisableSurPlace(ClaimsPrincipal user, string permission) =>
-        CodeComptoir.AutorisableParCollegue(permission) && (!user.ParCodeComptoir() || CodeComptoir.Autorise(permission));
+        CodeComptoir.AutorisableParCollegue(permission)
+        && (!user.ParCodeComptoir() || CodeComptoir.Autorise(permission) || CodeComptoir.ActionsAutorisables.ContainsKey(permission));
 
     private async Task<bool> AutoriseSurPlaceAsync(long utilisateurId, string permission, CancellationToken ct) =>
         autorisation is not null && !MotDePasseAChanger && EstUtilisateurCourant(utilisateurId)

@@ -243,7 +243,7 @@ public class TiroirTests
     {
         var c = Creer(Vendeur());
         var refus = await Assert.ThrowsAsync<DroitRefuseException>(() => Ouvrir(c, "paiement_fournisseur", new SaisieTiroir(500, FournisseurId: 7, Reference: "BL-1")));
-        Assert.Equal("achats.regler", refus.Permission);
+        Assert.Equal(Pharma.Domain.Securite.CodeComptoir.ActionReglementGrossisteTiroir, refus.Permission);   // « Faire autoriser » pour cette seule action
         Assert.Empty(c.Tiroir.Ecrits);
         // Un livreur payé sans grossiste ne demande pas ce droit
         await Ouvrir(c, "paiement_fournisseur", new SaisieTiroir(500, Beneficiaire: "Livreur"));

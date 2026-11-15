@@ -95,9 +95,10 @@ public sealed class OuvrirTiroirAvecEffet(ITiroir tiroir, ISessionsCaisse sessio
         // Paiement d'un grossiste : droit achats.regler, dette relue, imputé aux factures les plus anciennes
         Achats.ReglementAEcrire? reglement = null;
         string? grossiste = null;
+        long? valideurReglement = null;
         if (motif.Detail == RegleTiroir.Fournisseur && s.FournisseurId is { } fournisseurId)
         {
-            await droits.ExigerAsync(utilisateurId, Permissions.AchatsRegler, "payer un grossiste avec l’argent du tiroir", ct);
+            valideurReglement = await DroitReglementGrossiste.ExigerAsync(droits, autorisation, utilisateurId, "payer un grossiste avec l’argent du tiroir", ct);
             if (reglements is null) throw new InvalidOperationException("Service des règlements absent.");
             var situation = await reglements.SituationAsync(fournisseurId, ct) ?? throw new RegleMetierException("Grossiste introuvable.", "fournisseur");
             if (montant > Arrondi.Centime(Math.Max(situation.Solde, 0)))
@@ -140,9 +141,27 @@ public sealed class OuvrirTiroirAvecEffet(ITiroir tiroir, ISessionsCaisse sessio
                 new Dictionary<string, object?>
                 {
                     ["grossiste"] = grossiste, ["montant"] = montant, ["moyen"] = "especes", ["reference"] = s.Reference, ["part_tiroir"] = montant,
-                    ["factures"] = reglement.Imputations.Count, ["bon"] = ecrit.Numero
+                    ["factures"] = reglement.Imputations.Count, ["bon"] = ecrit.Numero, ["vendeur"] = utilisateurId, ["valide_par"] = valideurReglement
                 }, Permissions.AchatsRegler, ct);
         return ecrit;
+    }
+}
+
+/// <summary>
+/// Droit de payer un grossiste depuis le tiroir, ou d'annuler ce paiement (décision du titulaire, 2026-11-15) : achats.regler de
+/// l'employé, sinon le code comptoir d'un collègue qui l'a, accordé pour cette seule action (CodeComptoir.ActionReglementGrossisteTiroir ;
+/// achats.regler n'est pas dans la liste blanche, le reste du module Achats reste fermé au code). Rend le valideur (null : droit propre).
+/// </summary>
+public static class DroitReglementGrossiste
+{
+    public static async Task<long?> ExigerAsync(IPermissionService droits, AutorisationCourante? autorisation, long utilisateurId, string action,
+        CancellationToken ct)
+    {
+        if (await droits.APermissionAsync(utilisateurId, Permissions.AchatsRegler, ct)) return null;
+        if (await droits.APermissionAsync(utilisateurId, CodeComptoir.ActionReglementGrossisteTiroir, ct))
+            return autorisation?.AutoriseParId ?? throw new DroitRefuseException(CodeComptoir.ActionReglementGrossisteTiroir, action);
+        throw new DroitRefuseException(CodeComptoir.ActionReglementGrossisteTiroir, action,
+            $"Le droit « Régler les grossistes » est nécessaire pour {action} : faites autoriser avec le code d’un collègue qui l’a.");
     }
 }
 
@@ -175,6 +194,61 @@ public sealed class CorrigerMouvementTiroir(ITiroir tiroir, ISessionsCaisse sess
                 ["bon_corrige"] = original.Numero, ["bon"] = ecrit.Numero, ["motif_initial"] = original.Motif, ["montant"] = original.Montant,
                 ["sens_initial"] = original.Sens, ["motif"] = m, ["poste"] = nomPoste
             }, Permissions.CaisseCloturer, ct);
+        return ecrit;
+    }
+}
+
+/// <summary>Règlement d'un grossiste payé depuis le tiroir, vu pour son annulation (script 098).</summary>
+public sealed record ReglementTiroir(long Id, string Numero, long FournisseurId, string Grossiste, decimal Montant, decimal PartTiroir, string Moyen,
+    bool Annule, long? SessionId, bool SessionOuverte);
+
+/// <summary>Annulation à écrire en une transaction : règlement annulé, dette rétablie, factures rouvertes, entrée de correction au tiroir.</summary>
+public sealed record AnnulationReglementAEcrire(long ReglementId, MouvementTiroir Mouvement, string Motif, long UtilisateurId, string Poste, long? ValidePar);
+
+public interface IAnnulationsReglementTiroir
+{
+    Task<ReglementTiroir?> LireAsync(long reglementId, CancellationToken ct = default);
+    /// <summary>Écrit l'annulation ; rend l'entrée de correction du tiroir (bon).</summary>
+    Task<MouvementTiroirEcrit> AnnulerAsync(AnnulationReglementAEcrire a, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Annulation d'un règlement de grossiste en espèces payé depuis le tiroir (décision du titulaire, 2026-11-15, script 098) : droit
+/// achats.regler ou code d'un collègue qui l'a (pour cette seule action), motif obligatoire, seulement tant que la caisse d'origine est
+/// ouverte (sinon : correction en trésorerie par le titulaire). Le règlement n'est jamais supprimé (statut annulé) ; la dette du
+/// grossiste revient, ses factures sont rouvertes selon l'imputation d'origine, l'argent revient au tiroir (entrée de correction liée
+/// au mouvement d'origine) ; journal reglement_grossiste_annule (vendeur et valideur).
+/// </summary>
+public sealed class AnnulerReglementGrossisteTiroir(ITiroir tiroir, IAnnulationsReglementTiroir reglements, IPermissionService droits, IJournal journal,
+    AutorisationCourante? autorisation = null)
+{
+    public const string Action = "reglement_grossiste_annule";
+
+    public async Task<MouvementTiroirEcrit> ExecuterAsync(long mouvementTiroirId, string? motif, long utilisateurId, string? poste, CancellationToken ct = default)
+    {
+        var valideur = await DroitReglementGrossiste.ExigerAsync(droits, autorisation, utilisateurId, "annuler le paiement d’un grossiste fait depuis le tiroir", ct);
+        var texte = string.IsNullOrWhiteSpace(motif) ? throw new RegleMetierException("Indiquez le motif de l’annulation.", "motif_correction") : motif.Trim();
+        if (texte.Length < 3) throw new RegleMetierException("Motif : 3 caractères au moins.", "motif_correction");
+        if (texte.Length > RegleTiroir.TexteMax) throw new RegleMetierException($"Motif : {RegleTiroir.TexteMax} caractères au plus.", "motif_correction");
+        var nomPoste = PosteCaisse.Exiger(poste);
+        var m = await tiroir.LireAsync(mouvementTiroirId, ct) ?? throw new RegleMetierException("Mouvement du tiroir introuvable.");
+        if (m.ReglementFournisseurId is not { } reglementId) throw new RegleMetierException("Ce mouvement n’est pas le paiement d’un grossiste.");
+        if (m.Corrigee) throw new RegleMetierException("Ce paiement est déjà annulé.");
+        var r = await reglements.LireAsync(reglementId, ct) ?? throw new RegleMetierException("Règlement introuvable.");
+        if (r.Annule) throw new RegleMetierException($"Le règlement {r.Numero} est déjà annulé.");
+        if (r.Moyen != "especes" || r.PartTiroir != r.Montant)
+            throw new RegleMetierException("Seul un règlement en espèces payé entièrement depuis le tiroir s’annule ici.");
+        if (!r.SessionOuverte)
+            throw new RegleMetierException($"La caisse où le règlement {r.Numero} a été payé est clôturée : l’annulation ne se fait plus depuis la caisse. "
+                + "Le titulaire la corrige en trésorerie (entrée d’argent au coffre et correction de la dette du grossiste).");
+
+        var ecrit = await reglements.AnnulerAsync(new AnnulationReglementAEcrire(reglementId, m, texte, utilisateurId, nomPoste, valideur), ct);
+        await journal.EcrireAsync(utilisateurId, Action, "reglement_fournisseur", reglementId,
+            new Dictionary<string, object?>
+            {
+                ["reglement"] = r.Numero, ["grossiste"] = r.Grossiste, ["montant"] = r.Montant, ["motif"] = texte, ["bon_origine"] = m.Numero,
+                ["bon"] = ecrit.Numero, ["poste"] = nomPoste, ["vendeur"] = utilisateurId, ["valide_par"] = valideur
+            }, Permissions.AchatsRegler, ct);
         return ecrit;
     }
 }

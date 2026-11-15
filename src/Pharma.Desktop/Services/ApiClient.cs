@@ -829,6 +829,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         FichierAsync(HttpMethod.Get, $"api/caisse/tiroir/{id}/bon.pdf?largeur={largeurMm}", "bon_sortie.pdf");
     public Task<(OuvertureTiroirDto?, string?)> CorrigerTiroirAsync(long id, string? motif) =>
         PostAsync<CorrectionTiroirRequete, OuvertureTiroirDto>($"api/caisse/tiroir/{id}/correction", new(motif));
+    /// <summary>Annulation d'un règlement de grossiste payé depuis le tiroir (script 098) : entrée de correction rendue.</summary>
+    public Task<(OuvertureTiroirDto?, string?)> AnnulerReglementTiroirAsync(long id, string? motif) =>
+        PostAsync<CorrectionTiroirRequete, OuvertureTiroirDto>($"api/caisse/tiroir/{id}/annulation-reglement", new(motif));
     public Task<(PageMouvementsTiroirDto?, string?)> MouvementsTiroirAsync(DateOnly? du, DateOnly? au, long? employe, string? motif, string? sens, int page, int taille) =>
         GetAsync<PageMouvementsTiroirDto?>("api/surveillance/tiroir?" + Requete(("du", du?.ToString("yyyy-MM-dd")), ("au", au?.ToString("yyyy-MM-dd")),
             ("employe", employe), ("motif", motif), ("sens", sens), ("page", page), ("taille", taille)), null);

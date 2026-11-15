@@ -152,6 +152,18 @@ public sealed record RegularisationCalculee(string Sort, decimal Ecart, decimal 
 /// (total − part Chifa, jamais négative), au plus le surplus : sa dette est d'abord diminuée, le reste est « à rendre » ; le surplus non
 /// rendu est un gain organisme tracé. Écart nul : aucune régularisation.
 /// </summary>
+/// <summary>
+/// Effet de l'annulation d'une régularisation « à la charge du patient » : DetteAnnulee (part impayée, annulée par écriture inverse),
+/// TropPaye (part réellement payée, soumise au choix du patient).
+/// </summary>
+public sealed record AnnulationRegularisation(decimal DetteAnnulee, decimal TropPaye);
+
+/// <summary>Choix du patient sur le trop-payé : parts imputées sur ses autres ventes à crédit, et remboursement par le tiroir.</summary>
+public sealed record RepartitionTropPaye(IReadOnlyList<(long VenteId, decimal Montant)> Imputations, decimal Rembourse)
+{
+    public decimal Impute => Imputations.Sum(i => i.Montant);
+}
+
 public static class RegularisationPartOrganisme
 {
     public const string ChargePatient = "charge_patient";
@@ -184,6 +196,50 @@ public static class RegularisationPartOrganisme
         if (rendu <= 0) return new RegularisationCalculee(GainOrganisme, ecart, partOrganismeChifa, 0, 0, 0, surplus);
         var dette = Math.Min(rendu, Math.Max(0, dettePatient));
         return new RegularisationCalculee(AvoirPatient, ecart, partOrganismeChifa, rendu, dette, rendu - dette, surplus - rendu);
+    }
+
+    /// <summary>
+    /// Annulation de la vente régularisée (règles du titulaire, 2026-11-15, script 098). « À la charge du patient » : 1) la part encore due
+    /// (elle concerne la vente annulée) est simplement annulée par écriture inverse, jamais remboursée ; 2) seule la part réellement payée
+    /// (trop-payé) est soumise au choix du patient (<see cref="Repartir"/>). Autres sorts : neutralisée, sans mouvement d'argent ni de dette.
+    /// </summary>
+    /// <param name="payeSurRegularisation">Part de la régularisation réellement payée par le patient (bornée à 0 et au montant).</param>
+    /// <param name="dettePatient">Dette du patient au moment d'annuler la régularisation (part impayée de la régularisation comprise).</param>
+    public static AnnulationRegularisation Annuler(string sort, decimal montantPatient, decimal payeSurRegularisation, decimal dettePatient)
+    {
+        if (sort != ChargePatient || montantPatient <= 0) return new AnnulationRegularisation(0, 0);
+        var paye = Math.Clamp(payeSurRegularisation, 0, montantPatient);
+        return new AnnulationRegularisation(Math.Min(montantPatient - paye, Math.Max(0, dettePatient)), paye);
+    }
+
+    /// <summary>
+    /// Choix obligatoire du patient sur le trop-payé : solder ses autres dettes (ventes choisies, chacune au plus son reste) et/ou être
+    /// remboursé par le tiroir ; répartition partielle possible, somme exactement égale au trop-payé. Sans autre dette : seul le
+    /// remboursement. Jamais de remboursement au-delà de ce qui a été encaissé.
+    /// </summary>
+    /// <param name="autresDettes">Restes des autres ventes à crédit du patient (hors vente annulée).</param>
+    public static RepartitionTropPaye Repartir(decimal tropPaye, IReadOnlyList<(long VenteId, decimal Montant)>? imputations, decimal? rembourse,
+        IReadOnlyDictionary<long, decimal> autresDettes, long venteAnnulee)
+    {
+        if (tropPaye <= 0) return new RepartitionTropPaye([], 0);
+        if (imputations is null && rembourse is null)
+            throw new Commun.RegleMetierException(
+                $"Ce patient a payé {tropPaye:N2} DA de cette régularisation : choisissez avec lui de solder ses autres dettes ou de le rembourser.",
+                "trop_paye");
+        var parts = (imputations ?? []).Where(p => p.Montant != 0).ToList();
+        foreach (var (vente, montant) in parts)
+        {
+            if (montant < 0) throw new Commun.RegleMetierException("Un montant imputé est négatif.", "trop_paye");
+            if (vente == venteAnnulee || !autresDettes.TryGetValue(vente, out var reste))
+                throw new Commun.RegleMetierException("Le trop-payé ne solde que d’autres ventes à crédit de ce patient.", "trop_paye");
+            if (montant > reste) throw new Commun.RegleMetierException($"Le montant imputé dépasse le reste dû de la vente ({reste:N2} DA).", "trop_paye");
+        }
+        if (parts.GroupBy(p => p.VenteId).Any(g => g.Count() > 1)) throw new Commun.RegleMetierException("Une vente est choisie deux fois.", "trop_paye");
+        var r = rembourse ?? 0;
+        if (r < 0) throw new Commun.RegleMetierException("Le remboursement est négatif.", "trop_paye");
+        if (parts.Sum(p => p.Montant) + r != tropPaye)
+            throw new Commun.RegleMetierException($"Répartissez exactement {tropPaye:N2} DA entre les autres dettes et le remboursement.", "trop_paye");
+        return new RepartitionTropPaye(parts, r);
     }
 
     public static string Libelle(string sort, decimal montantPatient, decimal detteDiminuee, decimal aRendre, decimal montantPharmacie) => sort switch

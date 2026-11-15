@@ -43,6 +43,16 @@ internal static class SurveillanceEndpoints
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
+        // Annulation d'un règlement de grossiste payé depuis le tiroir (script 098) : droit achats.regler ou code d'un collègue qui l'a
+        // (pour cette seule action), vérifié par le cas d'usage
+        api.MapPost("/caisse/tiroir/{id:long}/annulation-reglement", async (long id, CorrectionTiroirRequete req,
+                Pharma.Application.Caisse.AnnulerReglementGrossisteTiroir annuler, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
+            {
+                var e = await annuler.ExecuterAsync(id, req.Motif, user.UtilisateurId(), requete.Poste(), ct);
+                return Results.Ok(new OuvertureTiroirDto(e.Id, e.Numero));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
         var surveillance = api.MapGroup("/surveillance").ExigerTitulaire();
 
         surveillance.MapGet("", async (bool? traitees, ListerSurveillance lister, ClaimsPrincipal user, CancellationToken ct) =>
@@ -83,7 +93,7 @@ internal static class SurveillanceEndpoints
                     Pharma.Application.Commun.DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
                 return Results.Ok(new PageMouvementsTiroirDto(p.Page.Lignes.Select(m => new MouvementTiroirDto(m.Id, m.Numero, m.Le, m.UtilisateurId, m.Employe,
                         m.Poste, m.Motif, m.Sens, m.Montant, m.Categorie, m.Libelle, m.Beneficiaire, m.Reference, m.Patient, m.Raison, m.ValidePar,
-                        m.CorrigeId, m.MotifCorrection, m.Corrigee)).ToList(), p.Page.Total, p.Page.Numero, p.Page.Taille, p.TotalSorties, p.TotalEntrees));
+                        m.CorrigeId, m.MotifCorrection, m.Corrigee, m.ReglementFournisseurId)).ToList(), p.Page.Total, p.Page.Numero, p.Page.Taille, p.TotalSorties, p.TotalEntrees));
             });
 
         // Produits sensibles : comptés à part et régulièrement

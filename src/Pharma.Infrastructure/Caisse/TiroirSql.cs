@@ -88,7 +88,7 @@ public sealed class TiroirSql(NpgsqlDataSource db) : ITiroir
         return ecrit;
     }
 
-    private static async Task<MouvementTiroirEcrit> InsererAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long? evenement, long sessionId, long utilisateurId,
+    internal static async Task<MouvementTiroirEcrit> InsererAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long? evenement, long sessionId, long utilisateurId,
         string poste, string motifCode, string motifLibelle, string sens, string detail, decimal montant, string? categorie, string? libelle, long? fournisseurId,
         string? beneficiaire, string? reference, long? patientId, string? raison, long? reglement, long? tresorerie, long? validePar, long? corrige,
         string? motifCorrection, CancellationToken ct)
@@ -137,7 +137,7 @@ public sealed class TiroirSql(NpgsqlDataSource db) : ITiroir
     }
 
     /// <summary>Sortie : au plus les espèces attendues dans le tiroir, relues sous verrou de la session.</summary>
-    private static async Task ExigerDansTiroirAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long sessionId, decimal montant, CancellationToken ct)
+    internal static async Task ExigerDansTiroirAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long sessionId, decimal montant, CancellationToken ct)
     {
         var fond = await VerrouillerSessionAsync(cx, tx, sessionId, ct);
         await using var cmd = new NpgsqlCommand(SessionsCaisseSql.SqlVentesEspeces, cx, tx);

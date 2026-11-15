@@ -12,7 +12,7 @@ public sealed record GrossisteAReglement(long Id, string Nom, decimal Solde, dec
 public sealed record FactureFournisseur(long ReceptionId, string? NumeroFacture, string? NumeroBl, DateTime Date, decimal Montant, decimal Regle, decimal Reste);
 
 public sealed record ReglementPasse(long Id, DateOnly Date, decimal Montant, string Moyen, string? Reference, DateOnly? Echeance, decimal PartTiroir, string Employe,
-    long? EmployeId = null);
+    long? EmployeId = null, bool Annule = false, DateTime? AnnuleLe = null, string? MotifAnnulation = null);
 
 /// <summary>Dette du grossiste (solde, avoirs et reprise compris), factures encore à payer, derniers règlements.</summary>
 /// <summary>Ligne du relevé de la dette envers un grossiste ; Montant positif : la dette augmente, négatif : elle diminue.</summary>

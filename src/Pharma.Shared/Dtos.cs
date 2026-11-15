@@ -773,14 +773,19 @@ public sealed record VenteAnnulableDto(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulableDto> Lignes,
     decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null, decimal DetteEffaceeAnnulation = 0,
-    string? Remise = null);
+    string? Remise = null, string? RegularisationSort = null, decimal RegularisationDue = 0, decimal RegularisationTropPaye = 0);
 
 /// <summary>Validateur* : identifiant et code comptoir du pharmacien ou de l'assistant (vente ancienne).</summary>
 /// <summary>SolderDette : l'argent à rendre est retiré de la dette du patient (PatientDetteId : patient nommé, pour une vente sans patient).</summary>
 public sealed record AnnulationVenteRequete(string? Motif, string? ValidateurIdentifiant, string? ValidateurCode, bool SolderDette = false, long? PatientDetteId = null,
-    bool AccordClient = false);
+    bool AccordClient = false, List<ImputationTropPayeDto>? TropPayeImputations = null, decimal? TropPayeRembourse = null);
 
-public sealed record AnnulationVenteDto(string Numero, decimal ARendre, string? Mode, string? ValidePar, decimal DetteDiminuee = 0);
+/// <summary>Trop-payé d'une régularisation annulée imputé sur une autre vente à crédit du patient (choix du patient, script 098).</summary>
+public sealed record ImputationTropPayeDto(long VenteId, decimal Montant);
+
+public sealed record AnnulationVenteDto(string Numero, decimal ARendre, string? Mode, string? ValidePar, decimal DetteDiminuee = 0,
+    decimal RegularisationDetteAnnulee = 0, decimal RegularisationImputee = 0, decimal RegularisationRembourse = 0, long? BonSortieId = null,
+    string? BonSortieNumero = null);
 
 // ---- Retour client ----------------------------------------------------------------
 
@@ -811,7 +816,7 @@ public sealed record FactureFournisseurDto(long ReceptionId, string? NumeroFactu
 
 /// <summary>Moyen : especes, cheque, virement, prelevement ou effet (affiché « traite »).</summary>
 public sealed record ReglementPasseDto(long Id, DateOnly Date, decimal Montant, string Moyen, string? Reference, DateOnly? Echeance, decimal PartTiroir, string Employe,
-    long? EmployeId = null);
+    long? EmployeId = null, bool Annule = false, DateTime? AnnuleLe = null, string? MotifAnnulation = null);
 
 /// <summary>Ligne du relevé de la dette envers un grossiste ; Montant positif : la dette augmente, négatif : elle diminue.</summary>
 public sealed record MouvementGrossisteDto(DateTime Date, string Type, decimal Montant, decimal SoldeApres, string? Employe, string? Reference, long? EmployeId = null);
@@ -935,7 +940,7 @@ public sealed record OuvertureTiroirDto(long? MouvementId, string? Numero);
 /// <summary>Sortie ou entrée du tiroir (contrôle interne). Corrigee : une écriture inverse existe ; CorrigeId : ce mouvement en est une.</summary>
 public sealed record MouvementTiroirDto(long Id, string Numero, DateTime Le, long UtilisateurId, string Employe, string? Poste, string Motif, string Sens,
     decimal Montant, string? Categorie, string? Libelle, string? Beneficiaire, string? Reference, string? Patient, string? Raison, string? ValidePar,
-    long? CorrigeId, string? MotifCorrection, bool Corrigee);
+    long? CorrigeId, string? MotifCorrection, bool Corrigee, long? ReglementFournisseurId = null);
 public sealed record PageMouvementsTiroirDto(List<MouvementTiroirDto> Lignes, int Total, int Numero, int Taille, decimal TotalSorties, decimal TotalEntrees);
 public sealed record CorrectionTiroirRequete(string? Motif);
 public sealed record AlerteSurveillanceDto(long Id, string Type, string Niveau, long? UtilisateurId, string? Employe, DateOnly Jour, string Message,

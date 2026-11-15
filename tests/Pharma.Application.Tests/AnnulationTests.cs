@@ -14,7 +14,14 @@ internal sealed class AnnulationsEnMemoire(VenteAnnulable vente) : IAnnulationsV
         throw new NotSupportedException();
     public Task<IReadOnlyList<VenteAnnulable>> DernieresAsync(long s, int l, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<VenteAnnulable>>([vente]);
-    public Task AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default) { Ecrite = a; return Task.CompletedTask; }
+    public Dictionary<long, decimal> AutresDettes { get; } = [];
+    public Task<MouvementTiroirEcrit?> AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default)
+    {
+        Ecrite = a;
+        return Task.FromResult(a.Regularisation is { Rembourse: > 0 } ? new MouvementTiroirEcrit(41, "BS-000041") : null);
+    }
+    public Task<IReadOnlyDictionary<long, decimal>> AutresDettesAsync(long p, long v, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<long, decimal>>(AutresDettes);
     public int Annulations { get; set; }
     public Task<int> AnnulationsSessionAsync(long s, CancellationToken ct = default) => Task.FromResult(Annulations);
 }
