@@ -22,3 +22,6 @@ autorite-pharmacie.crt
 *.3gp
 *.m4v
 *.wmv
+
+# Fichiers temporaires de la compilation WPF (Visual Studio)
+*_wpftmp.csproj
