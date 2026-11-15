@@ -49,6 +49,8 @@ public partial class App : Application
         // Historique des écrans pour « ← Retour » (un par fenêtre du poste)
         services.AddScoped<HistoriqueNavigation>();
         services.AddSingleton<DemandesAutorisation>();
+        // « Rembourser » le trop-payé d'une régularisation Chifa : demande reprise par la colonne d'actions de la caisse (2026-11-15)
+        services.AddSingleton<RemboursementsTiroir>();
 
         // Dernier filet : une erreur imprévue hors d'un écran est notée et signalée, sans arrêter le poste en pleine vente
         DispatcherUnhandledException += (_, args) =>

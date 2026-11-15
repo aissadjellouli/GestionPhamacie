@@ -59,6 +59,24 @@ public interface ITiroir
     Task<PageMouvementsTiroir> ListerAsync(FiltreMouvementsTiroir filtre, DemandePage page, CancellationToken ct = default);
     /// <summary>Écriture inverse (sens opposé, même montant) dans la session ouverte du poste ; refusée si le mouvement est déjà corrigé.</summary>
     Task<MouvementTiroirEcrit> CorrigerAsync(MouvementTiroir original, long sessionId, string poste, string motif, long utilisateurId, CancellationToken ct = default);
+    /// <summary>Régularisation Chifa de la vente, vue pour le remboursement de son trop-payé (script 099) ; null : aucune.</summary>
+    Task<RegularisationARendre?> RegularisationARendreAsync(long venteId, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Sortie bornée par les espèces du tiroir (recette du 2026-11-15, D2) : l'attendu n'est cité dans le refus que hors comptage à
+/// l'aveugle et pour un employé qui voit les écarts de caisse (caisse.voir_ecart) ; sinon message neutre.
+/// </summary>
+public static class EspecesTiroir
+{
+    public static async Task VerifierAsync(ISessionsCaisse sessions, IPermissionService droits, SessionCaisse session, decimal montant, long utilisateurId,
+        CancellationToken ct)
+    {
+        var dans = session.FondCaisse + await sessions.VentesEspecesAsync(session.Id, ct);
+        if (montant <= dans) return;
+        var montrer = !(await sessions.ParametresAsync(ct)).ComptageAveugle && await droits.APermissionAsync(utilisateurId, Permissions.CaisseVoirEcart, ct);
+        RegleTiroir.VerifierDansTiroir(montant, dans, montrer);
+    }
 }
 
 public interface IDocumentsBonSortie
@@ -85,12 +103,24 @@ public sealed class OuvrirTiroirAvecEffet(ITiroir tiroir, ISessionsCaisse sessio
         var session = await sessions.SessionDuPosteAsync(nomPoste, ct)
                       ?? throw new RegleMetierException("Ouvrez la caisse du poste : une sortie ou une entrée d’argent est rattachée à la caisse.");
         if (motif.Effet == RegleTiroir.Sortie)
-            RegleTiroir.VerifierDansTiroir(montant, session.FondCaisse + await sessions.VentesEspecesAsync(session.Id, ct));
+            await EspecesTiroir.VerifierAsync(sessions, droits, session, montant, utilisateurId, ct);
 
-        // Catégorie de charge : liste réglable existante (catégories actives seulement)
-        if (motif.Detail == RegleTiroir.Depense
-            && !(await motifs.ExecuterAsync(Pharma.Domain.Referentiels.RegleMotifs.Charge, ct)).Any(c => c.Code == s.Categorie))
-            throw new RegleMetierException("Catégorie de dépense inconnue ou désactivée.", "categorie");
+        // Catégorie de charge : liste réglable existante (catégories actives seulement) ; son libellé va au journal
+        string? categorie = null;
+        if (motif.Detail == RegleTiroir.Depense)
+            categorie = (await motifs.ExecuterAsync(Pharma.Domain.Referentiels.RegleMotifs.Charge, ct)).FirstOrDefault(c => c.Code == s.Categorie)?.Libelle
+                        ?? throw new RegleMetierException("Catégorie de dépense inconnue ou désactivée.", "categorie");
+
+        // Remboursement du trop-payé d'une régularisation Chifa (D4, script 099) : lié à la régularisation, montant et patient imposés
+        RegularisationARendre? regularisation = null;
+        if (s.RegularisationVenteId is { } venteRegularisee)
+        {
+            if (motif.Detail != RegleTiroir.Patient)
+                throw new RegleMetierException("Le trop-payé d’une régularisation Chifa se rend avec un motif « remboursement d’un client ».", "motif");
+            regularisation = await tiroir.RegularisationARendreAsync(venteRegularisee, ct)
+                             ?? throw new RegleMetierException("Aucune régularisation Chifa sur cette vente.", "regularisation");
+            RegleTiroir.VerifierRemboursementRegularisation(regularisation, montant, s.PatientId);
+        }
 
         // Paiement d'un grossiste : droit achats.regler, dette relue, imputé aux factures les plus anciennes
         Achats.ReglementAEcrire? reglement = null;
@@ -133,8 +163,9 @@ public sealed class OuvrirTiroirAvecEffet(ITiroir tiroir, ISessionsCaisse sessio
             new Dictionary<string, object?>
             {
                 ["poste"] = nomPoste, ["motif"] = libelleMotif, ["motif_code"] = motif.Code, ["sens"] = motif.Effet, ["montant"] = montant,
-                ["bon"] = ecrit.Numero, ["categorie"] = s.Categorie, ["libelle"] = s.Libelle, ["grossiste"] = grossiste, ["beneficiaire"] = s.Beneficiaire,
-                ["reference"] = s.Reference, ["patient_id"] = s.PatientId, ["raison"] = s.Raison
+                ["bon"] = ecrit.Numero, ["categorie"] = categorie, ["libelle"] = s.Libelle, ["grossiste"] = grossiste, ["beneficiaire"] = s.Beneficiaire,
+                ["reference"] = s.Reference, ["patient_id"] = s.PatientId, ["patient"] = regularisation?.Patient, ["raison"] = s.Raison,
+                ["regularisation_chifa"] = regularisation?.Vente
             }, Permissions.CaisseOuvrirTiroir, ct);
         if (reglement is not null)
             await journal.EcrireAsync(utilisateurId, "reglement_grossiste", "mouvement_tiroir", ecrit.Id,
@@ -186,7 +217,7 @@ public sealed class CorrigerMouvementTiroir(ITiroir tiroir, ISessionsCaisse sess
         var session = await sessions.SessionDuPosteAsync(nomPoste, ct) ?? throw new RegleMetierException("Ouvrez la caisse du poste pour corriger.");
         // L'inverse d'une entrée sort de l'argent : pas plus que le tiroir n'en contient
         if (original.Sens == RegleTiroir.Entree)
-            RegleTiroir.VerifierDansTiroir(original.Montant, session.FondCaisse + await sessions.VentesEspecesAsync(session.Id, ct));
+            await EspecesTiroir.VerifierAsync(sessions, droits, session, original.Montant, utilisateurId, ct);
         var ecrit = await tiroir.CorrigerAsync(original, session.Id, nomPoste, m, utilisateurId, ct);
         await journal.EcrireAsync(utilisateurId, "correction_tiroir", "mouvement_tiroir", ecrit.Id,
             new Dictionary<string, object?>

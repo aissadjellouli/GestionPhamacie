@@ -8,6 +8,7 @@
 @inject ImprimanteTickets Tickets
 @inject HistoriqueNavigation Historique
 @inject NavigationManager Nav
+@inject RemboursementsTiroir Remboursements
 
 @* Écran fixe (docs/charte-graphique.md) : colonne d'actions de caisse à gauche (NavCaisse), une partie à la fois dans l'adresse :
    la vente (caisse), l'annulation ou le retour (caisse?rubrique=annulation), le règlement d'un crédit (caisse?rubrique=credit).
@@ -67,7 +68,12 @@
         {
             <div class="succes" role="status" data-champ="volet_rattache" style="display: flex; gap: 12px; align-items: center">
                 <span>@messageRattachement</span>
-                <button type="button" class="lien-bouton" @onclick="() => messageRattachement = catalogueRattachement = null">Fermer</button>
+                @* Trop-payé « à rendre » (recette du 2026-11-15, D4) : sortie du tiroir pré-remplie, liée à la régularisation *@
+                @if (rattacheARendre is { ARendre: > 0, PatientId: { } pid } ar && Session.A("caisse.ouvrir_tiroir"))
+                {
+                    <button type="button" class="btn" @onclick="() => RembourserRattachement(ar, pid)">Rembourser @Libelles.Dinars(ar.ARendre, 2)</button>
+                }
+                <button type="button" class="lien-bouton" @onclick="() => (messageRattachement, catalogueRattachement, rattacheARendre) = (null, null, null)">Fermer</button>
             </div>
             @if (catalogueRattachement is { } majCat) { <div class="info-bandeau" role="status" data-champ="catalogue_chifa">@majCat</div> }
         }
@@ -2125,9 +2131,17 @@
             $"Volet rattaché à la vente {r.Vente}" + (r.AvecEcart ? " avec écart (motif enregistré, liste « Volets avec écart »)" : "")
             + (r.Regularisation is { } g ? $" ; créance de l’organisme ramenée à la part Chifa (écart {r.EcartPartOrganisme:N2} DA) — {g}" : "") + ".",
             r.Catalogue);
+        rattacheARendre = r.ARendre > 0 ? r : null;
     }
 
     private string? messageRattachement, catalogueRattachement;
+    private VoletRattacheDto? rattacheARendre;
+
+    private void RembourserRattachement(VoletRattacheDto r, long patientId)
+    {
+        rattacheARendre = null;
+        Remboursements.Deposer(new RemboursementsTiroir.Demande(r.VenteId, r.Vente, patientId, r.Patient ?? "Patient", r.ARendre));
+    }
 
     private async Task RetirerVoletAsync()
     {

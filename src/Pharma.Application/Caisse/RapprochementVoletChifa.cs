@@ -24,9 +24,11 @@ public sealed record VenteAttenteVolet(long Id, string Numero, DateTime Date, lo
 /// <summary>
 /// Volet rattaché malgré des différences ou avec une régularisation de part organisme : motif, résumé des différences, écart de part
 /// organisme, qui et quand ; Regularisation : libellé de la régularisation (script 097), null sans régularisation.
+/// ARendre : trop-payé à rendre au patient (avoir) ; BonRendu : bon du tiroir qui l'a rendu (script 099), null tant qu'il ne l'est pas.
 /// </summary>
 public sealed record VoletAvecEcart(long VenteId, string Numero, DateTime DateVente, string? Patient, string NumeroFacture, DateTime? RattacheLe,
-    string? RattachePar, string Motif, string? Detail, decimal? EcartPartOrganisme, string? Regularisation = null);
+    string? RattachePar, string Motif, string? Detail, decimal? EcartPartOrganisme, string? Regularisation = null,
+    long? PatientId = null, decimal ARendre = 0, string? BonRendu = null);
 
 /// <summary>Ce qui s'écrit sur la vente au rattachement (n° de facture, date, QR, date d'ordonnance, qui, motif et différences éventuels).</summary>
 /// <param name="Regularisation">Écart de part organisme régularisé (script 097), écrit dans la même transaction ; null : écart nul.</param>
@@ -56,8 +58,12 @@ public sealed record CandidateVolet(VenteAttenteVolet Vente, bool MemeAssure, Co
 /// <summary>Volet lu et ventes candidates, la meilleure d'abord (même assuré, même carte, dans le délai, proximité, la plus récente).</summary>
 public sealed record PropositionRapprochement(VoletChifaLu Volet, decimal Seuil, IReadOnlyList<CandidateVolet> Candidates, int DelaiJours = RapprocherVoletChifa.DelaiParDefaut);
 
-/// <summary>Résultat du rattachement : n° de la vente, différences acceptées (motif), message de mise à jour du catalogue, régularisation (libellé).</summary>
-public sealed record VoletRattacheResultat(string Vente, bool AvecEcart, decimal EcartPartOrganisme, string? Catalogue, string? Regularisation = null);
+/// <summary>
+/// Résultat du rattachement : n° de la vente, différences acceptées (motif), message de mise à jour du catalogue, régularisation (libellé) ;
+/// ARendre : trop-payé à rendre au patient par le tiroir (« Rembourser », recette du 2026-11-15, D4), avec la vente et le patient.
+/// </summary>
+public sealed record VoletRattacheResultat(string Vente, bool AvecEcart, decimal EcartPartOrganisme, string? Catalogue, string? Regularisation = null,
+    decimal ARendre = 0, long VenteId = 0, long? PatientId = null, string? Patient = null);
 
 /// <summary>
 /// Rapprochement d'un volet Chifa avec une vente déjà encaissée (règle du titulaire, 2026-11-15). Candidates : ventes en attente de volet
@@ -125,7 +131,7 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
         if (!comparaison.Concorde)
         {
             // Différences : ayant droit prix.modifier (ou son code comptoir), motif obligatoire ; la vente n'est pas modifiée
-            await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "rattacher un volet Chifa qui ne correspond pas à la vente", ct);
+            await ExigerPrixAsync(utilisateurId, "rattacher un volet Chifa qui ne correspond pas à la vente", ct);
             if (m is null) throw new RegleMetierException("Le volet ne correspond pas à la vente : saisissez le motif du rattachement.", "motif");
             if (m.Length > MotifMax) throw new RegleMetierException($"Motif : {MotifMax} caractères au plus.", "motif");
             resume = RapprochementVolet.Resume(comparaison);
@@ -138,11 +144,11 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
         if (ecartPart != 0 && comparaison.PartOrganismeChifa is { } partChifa)
         {
             if (RegularisationPartOrganisme.ChoixExige(ecartPart))
-                await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "régulariser l’écart de part organisme du volet Chifa", ct);
+                await ExigerPrixAsync(utilisateurId, "régulariser l’écart de part organisme du volet Chifa", ct);
             regul = RegularisationPartOrganisme.Calculer(ecartPart, partChifa, vente.Total, vente.PartPatient, vente.PatientId is not null,
                 vente.DettePatient, regularisation?.Trim());
         }
-        var reference = $"Régularisation part organisme Chifa · vente {vente.Numero} · volet {lu.Qr.NumeroFacture}";
+        var reference = $"{RegularisationPartOrganisme.PrefixeReference} · vente {vente.Numero} · volet {lu.Qr.NumeroFacture}";
         if (!await ventes.RattacherAsync(new RattachementVolet(vente.Id, lu.Qr, utilisateurId, m, resume, ecartPart == 0 ? null : ecartPart,
                 regul, vente.PatientId, null, reference), ct))
             throw new RegleMetierException("Cette vente vient de recevoir un volet ou d’être annulée : rescannez le volet.", "vente");
@@ -180,7 +186,20 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
         {
             trace?.Erreur($"Mise à jour du catalogue d’après le volet Chifa n° {lu.Qr.NumeroFacture} impossible (rattachement)", e);
         }
-        return new VoletRattacheResultat(vente.Numero, !comparaison.Concorde, ecartPart, catalogue, libelleRegul);
+        return new VoletRattacheResultat(vente.Numero, !comparaison.Concorde, ecartPart, catalogue, libelleRegul,
+            regul?.ARendre ?? 0, vente.Id, vente.PatientId, vente.Patient);
+    }
+
+    /// <summary>
+    /// Droit « modifier les prix » de l'employé, sinon le code comptoir d'un ayant droit accordé pour cette seule action
+    /// (<see cref="CodeComptoir.ActionEcartVoletChifa"/>, recette du 2026-11-15, D1) : le poste ouvre « Faire autoriser ».
+    /// </summary>
+    private async Task ExigerPrixAsync(long utilisateurId, string action, CancellationToken ct)
+    {
+        if (await droits.APermissionAsync(utilisateurId, Permissions.PrixModifier, ct)) return;
+        if (await droits.APermissionAsync(utilisateurId, CodeComptoir.ActionEcartVoletChifa, ct)) return;
+        throw new DroitRefuseException(CodeComptoir.ActionEcartVoletChifa, action,
+            $"Le droit « Modifier un prix de vente » est nécessaire pour {action} : faites autoriser avec le code d’un collègue qui l’a.");
     }
 
     private static List<LigneVoletRapprochee> LignesVolet(VoletChifaLu lu) =>

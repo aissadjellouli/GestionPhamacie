@@ -18,6 +18,11 @@ internal sealed class TiroirEnMemoire(SessionsEnMemoire sessions) : ITiroir
 {
     public List<MouvementTiroirAEcrire> Ecrits { get; } = [];
     public List<MouvementTiroir> Mouvements { get; } = [];
+    /// <summary>Régularisations Chifa par vente (script 099) : le bon qui rend le trop-payé y est noté.</summary>
+    public Dictionary<long, RegularisationARendre> Regularisations { get; } = [];
+
+    public Task<RegularisationARendre?> RegularisationARendreAsync(long venteId, CancellationToken ct = default) =>
+        Task.FromResult(Regularisations.GetValueOrDefault(venteId));
 
     public Task<MouvementTiroirEcrit> EnregistrerAsync(MouvementTiroirAEcrire m, CancellationToken ct = default)
     {
@@ -27,6 +32,7 @@ internal sealed class TiroirEnMemoire(SessionsEnMemoire sessions) : ITiroir
         Mouvements.Add(new MouvementTiroir(id, $"BS-{id:000000}", DateTime.UtcNow, m.UtilisateurId, $"Employé {m.UtilisateurId}", m.Poste, m.SessionId,
             m.MotifCode, m.MotifLibelle, m.Sens, m.Detail, m.Montant, m.Saisie.Categorie, m.Saisie.Libelle, m.Saisie.Beneficiaire, m.Saisie.Reference,
             m.Saisie.PatientId?.ToString(), m.Saisie.Raison, m.ValidePar?.ToString(), null, null, false, m.Reglement is null ? null : 99));
+        if (m.Saisie.RegularisationVenteId is { } v && Regularisations.TryGetValue(v, out var g)) Regularisations[v] = g with { BonRendu = $"BS-{id:000000}" };
         return Task.FromResult(new MouvementTiroirEcrit(id, $"BS-{id:000000}"));
     }
 
@@ -204,6 +210,64 @@ public class TiroirTests
         Assert.Single(c.Tiroir.Ecrits);
         // Une entrée n'est pas bornée par le tiroir (le solde du coffre est contrôlé à l'écriture)
         await Ouvrir(c, "remise_fond", new SaisieTiroir(9000));
+    }
+
+    [Theory]
+    [InlineData(true, true, false)]     // comptage à l'aveugle : jamais l'attendu, même pour qui voit les écarts
+    [InlineData(false, false, false)]   // sans caisse.voir_ecart : jamais l'attendu
+    [InlineData(false, true, true)]     // hors aveugle et avec le droit : l'attendu est cité
+    public async Task Refus_d_une_sortie_trop_forte_ne_revele_pas_l_attendu(bool aveugle, bool voirEcart, bool attenduCite)
+    {
+        // Recette 2026-11-15 (D2) : fond 5 000 + espèces 1 000 = 6 000 DA attendus
+        var c = Creer(voirEcart ? Vendeur("caisse.voir_ecart") : Vendeur(), especes: 1000);
+        c.Sessions.Parametres = c.Sessions.Parametres with { ComptageAveugle = aveugle };
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => Ouvrir(c, "petite_depense", new SaisieTiroir(999999, "fournitures", "Café")));
+        Assert.Equal("montant", ex.Champ);
+        Assert.Equal(attenduCite, ex.Message.Contains("6 000") || ex.Message.Contains("6 000") || ex.Message.Contains("6 000"));
+        if (!attenduCite) Assert.Equal(RegleTiroir.MessageEspecesInsuffisantes, ex.Message);
+        Assert.Empty(c.Tiroir.Ecrits);
+    }
+
+    private static RegularisationARendre Regul(decimal aRendre = 15.55m, bool active = true, string? bon = null) =>
+        new(9, 30, "T-005928", 12, "Recette4 Chifa", aRendre, active, bon);
+
+    [Fact]
+    public async Task Remboursement_du_trop_paye_d_une_regularisation_lie_et_journalise()
+    {
+        // Recette 2026-11-15 (D4) : « Rembourser » ouvre la sortie « Remboursement d'un client » liée à la régularisation
+        var c = Creer(Vendeur());
+        c.Tiroir.Regularisations[30] = Regul();
+        var bon = await Ouvrir(c, "remboursement_client", new SaisieTiroir(15.55m, PatientId: 12, Raison: RegleTiroir.RaisonRegularisation("T-005928"), RegularisationVenteId: 30));
+        var e = c.Tiroir.Ecrits.Single();
+        Assert.Equal((30L, "Régularisation Chifa T-005928"), (e.Saisie.RegularisationVenteId!.Value, e.Saisie.Raison));
+        Assert.Equal(bon!.Numero, c.Tiroir.Regularisations[30].BonRendu);                 // montant marqué rendu
+        var i = c.Journal.Actions.IndexOf("tiroir_ouvert");
+        Assert.Equal("T-005928", c.Journal.Details[i]["regularisation_chifa"]);
+
+        // Pas deux fois
+        var deux = await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Ouvrir(c, "remboursement_client", new SaisieTiroir(15.55m, PatientId: 12, Raison: "x", RegularisationVenteId: 30)));
+        Assert.Contains(bon.Numero, deux.Message);
+    }
+
+    [Fact]
+    public async Task Remboursement_d_une_regularisation_montant_patient_et_motif_imposes()
+    {
+        var c = Creer(Vendeur());
+        c.Tiroir.Regularisations[30] = Regul();
+        c.Tiroir.Regularisations[31] = Regul(active: false) with { VenteId = 31 };
+        Assert.Equal("montant", (await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Ouvrir(c, "remboursement_client", new SaisieTiroir(20m, PatientId: 12, Raison: "x", RegularisationVenteId: 30)))).Champ);
+        Assert.Equal("patient", (await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Ouvrir(c, "remboursement_client", new SaisieTiroir(15.55m, PatientId: 13, Raison: "x", RegularisationVenteId: 30)))).Champ);
+        Assert.Equal("regularisation", (await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Ouvrir(c, "remboursement_client", new SaisieTiroir(15.55m, PatientId: 12, Raison: "x", RegularisationVenteId: 31)))).Champ);   // annulée
+        Assert.Equal("regularisation", (await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Ouvrir(c, "remboursement_client", new SaisieTiroir(15.55m, PatientId: 12, Raison: "x", RegularisationVenteId: 99)))).Champ);   // inconnue
+        // Un autre motif ne porte pas le lien (le détail « patient » seul le garde)
+        await Ouvrir(c, "petite_depense", new SaisieTiroir(15.55m, "fournitures", "Café", RegularisationVenteId: 30));
+        Assert.Null(c.Tiroir.Ecrits.Single().Saisie.RegularisationVenteId);
+        Assert.Null(c.Tiroir.Regularisations[30].BonRendu);
     }
 
     [Fact]

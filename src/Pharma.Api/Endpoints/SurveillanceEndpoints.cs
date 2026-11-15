@@ -19,7 +19,7 @@ internal static class SurveillanceEndpoints
                 CancellationToken ct) =>
             {
                 var s = req.Tiroir is { } d
-                    ? new Pharma.Domain.Caisse.SaisieTiroir(d.Montant, d.Categorie, d.Libelle, d.FournisseurId, d.Beneficiaire, d.Reference, d.PatientId, d.Raison)
+                    ? new Pharma.Domain.Caisse.SaisieTiroir(d.Montant, d.Categorie, d.Libelle, d.FournisseurId, d.Beneficiaire, d.Reference, d.PatientId, d.Raison, d.RegularisationVenteId)
                     : null;
                 var bon = await signaler.ExecuterAsync(req.Type, req.ProduitId, req.LotId, req.Quantite, req.Montant, user.UtilisateurId(), requete.Poste(), ct,
                     req.MotifCode, req.MotifTexte, s);

@@ -934,3 +934,7 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 .liste-attentes .produits-dus { margin: 4px 0 0; padding-left: 18px; font-size: 13px; max-height: 96px; overflow-y: auto; }
 .attente-motif-panneau { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; }
 .attente-motif-panneau .produits-a-cocher { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+
+/* Résultat de la relève ou de la clôture (recette du 2026-11-15, D6) : montants jamais coupés en deux lignes */
+.resultat-releve .ligne-total > :last-child, .resultat-releve .a-payer > :last-child { white-space: nowrap; }
+.resultat-releve .ligne-total { gap: 12px; }

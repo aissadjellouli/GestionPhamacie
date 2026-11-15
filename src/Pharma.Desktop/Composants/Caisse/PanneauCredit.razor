@@ -40,7 +40,7 @@
                 @foreach (var p in patients)
                 {
                     <button type="button" class="ligne-vente" @onclick="() => ChoisirAsync(p.Id)">
-                        <span><strong>@p.Nom</strong>@(p.Telephone is { } t ? $" · {t}" : "")<br /><span class="detail">@(p.DerniereVente is { } d ? $"dernier crédit le {Libelles.DateHeureLocale(d)}" : "crédit repris de l’ancien logiciel")</span></span>
+                        <span><strong>@p.Nom</strong>@(p.Telephone is { } t ? $" · {t}" : "")<br /><span class="detail">@(p.DerniereVente is { } d ? $"dernier crédit le {Libelles.DateHeureLocale(d)}" : p.Regularisation is { } rg ? $"Régularisation Chifa ({rg})" : "crédit repris de l’ancien logiciel")</span></span>
                         <span class="montant-du">@Libelles.Dinars(p.Solde, 2)</span>
                     </button>
                 }
@@ -136,7 +136,14 @@
                                     {
                                         <tr>
                                             <td>@Libelles.DateHeureLocale(m.Date)</td>
-                                            <td>@LibelleMouvement(m.Type, m.Employe)@if (m.Vente is { } ticket) { <span class="detail"> · @ticket</span> }@if (m.Remise is { } rm) { <span class="detail"> · @rm</span> }@if (m.Reference is { } reference && reference != LibelleMouvement(m.Type, m.Employe)) { <br /><span class="detail">@Libelles.ReferenceReleve(reference)</span> }</td>
+                                            @if (RegularisationChifa(m) is { } regul)
+                                            {
+                                                <td>@regul</td>
+                                            }
+                                            else
+                                            {
+                                                <td>@LibelleMouvement(m.Type, m.Employe)@if (m.Vente is { } ticket) { <span class="detail"> · @ticket</span> }@if (m.Remise is { } rm) { <span class="detail"> · @rm</span> }@if (m.Reference is { } reference && reference != LibelleMouvement(m.Type, m.Employe)) { <br /><span class="detail">@Libelles.ReferenceReleve(reference)</span> }</td>
+                                            }
                                             <td class="@(m.Montant > 0 ? "texte-urgent" : null)"><strong>@(m.Montant > 0 ? "+" : "−") @Libelles.Dinars(Math.Abs(m.Montant), 2)</strong></td>
                                             <td>@Libelles.Dinars(m.SoldeApres, 2)</td>
                                             <td><LienContact Type="employe" Id="m.EmployeId" Nom="@(m.Employe ?? "—")" />@if (m.Poste is { } poste) { <br /><span class="detail">@poste</span> }</td>
@@ -197,6 +204,13 @@
         "remboursement" => "Encaissement de dette", "retour" => "Retour de produits", "annulation" => "Vente annulée",
         _ => employe is null ? "Correction hors logiciel" : "Correction par le titulaire"
     };
+
+    // Mouvement né d'une régularisation Chifa (recette du 2026-11-15, D7) : « Régularisation Chifa (T-…) », ni reprise ni correction
+    // du titulaire (même règle que RegularisationPartOrganisme.LibelleReleve côté serveur, relevé PDF)
+    private static string? RegularisationChifa(MouvementCreditDto m) =>
+        m.Reference is { } r && r.StartsWith("Régularisation part organisme Chifa", StringComparison.Ordinal)
+            ? m.Vente is { } v ? $"Régularisation Chifa ({v})" : "Régularisation Chifa"
+            : null;
 
     /// <summary>Patient à ouvrir directement (depuis sa fiche contact) ; sinon la liste des patients en crédit.</summary>
     [Parameter] public long? PatientId { get; set; }

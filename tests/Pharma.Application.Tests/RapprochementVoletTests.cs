@@ -193,7 +193,7 @@ public class RapprochementVoletTests
         var (cas, ventes, _, _) = Cas("caisse.vendre");
         ventes.Ventes.Add(Vente(2, "690755003842/80", 3, part: 400m));
         var ex = await Assert.ThrowsAsync<DroitRefuseException>(() => cas.RattacherAsync(Volet, 2, null, 5, RegularisationPartOrganisme.ChargePatient));
-        Assert.Equal("prix.modifier", ex.Permission);
+        Assert.Equal(Pharma.Domain.Securite.CodeComptoir.ActionEcartVoletChifa, ex.Permission);   // « Faire autoriser » (D1)
         Assert.Empty(ventes.Rattaches);
     }
 
@@ -248,15 +248,47 @@ public class RapprochementVoletTests
         var (cas, ventes, _, _) = Cas("caisse.vendre");
         ventes.Ventes.Add(Vente(2, "690755003842/80", 2));
         var ex = await Assert.ThrowsAsync<DroitRefuseException>(() => cas.RattacherAsync(Volet, 2, "Quantité corrigée par Chifa", 5));
-        Assert.Equal("prix.modifier", ex.Permission);
+        // Refus autorisable par le code d'un ayant droit « prix.modifier », pour cette seule action, même sur une connexion par code (D1)
+        Assert.Equal(Pharma.Domain.Securite.CodeComptoir.ActionEcartVoletChifa, ex.Permission);
+        Assert.True(Pharma.Domain.Securite.CodeComptoir.AutorisableParCollegue(ex.Permission));
+        Assert.Equal("prix.modifier", Pharma.Domain.Securite.CodeComptoir.DroitDuValideur(ex.Permission));
         Assert.Empty(ventes.Rattaches);
+    }
+
+    [Fact]
+    public async Task Ecarts_rattaches_avec_le_code_d_un_ayant_droit()
+    {
+        // Le code comptoir d'un collègue accorde l'action (PermissionsComptoir) : le rattachement et la régularisation passent
+        var (cas, ventes, _, journal) = Cas("caisse.vendre", Pharma.Domain.Securite.CodeComptoir.ActionEcartVoletChifa);
+        ventes.Ventes.Add(Vente(2, "690755003842/80", 2, part: 260m));   // part Chifa sur 2 boîtes servies : 250,37 ; la caisse paiera 9,63 de moins
+        var r = await cas.RattacherAsync(Volet, 2, "Quantité corrigée par Chifa", 5, RegularisationPartOrganisme.PertePharmacie);
+        Assert.True(r.AvecEcart);
+        Assert.Equal(RegularisationPartOrganisme.PertePharmacie, ventes.Rattaches.Single().Regularisation!.Sort);
+        Assert.Contains(RapprocherVoletChifa.ActionRegularisation, journal.Actions);
+    }
+
+    [Fact]
+    public void Part_chifa_sur_la_quantite_servie_jamais_une_boite_non_servie()
+    {
+        // Décision du titulaire (2026-11-15) : volet de 3 boîtes, vente de 2 → part Chifa sur 2 boîtes (250,37 et non 375,55),
+        // l'écart de quantité reste une différence en rouge
+        var c = RapprochementVolet.Comparer([new LigneVoletRapprochee("07607", 3, 156.48m, 18, "VIT D3")],
+            [new LigneVenteRapprochee(18, "VIT D3", 2, 156.48m)], 5m, 80, 250.37m);
+        Assert.Equal(250.37m, c.PartOrganismeChifa);
+        Assert.Equal(0m, c.EcartPartOrganisme);
+        Assert.Equal(RapprochementVolet.Quantite, c.Lignes.Single().Ecart);
+        Assert.False(c.Concorde);
+        // Volet de 1 boîte, vente de 2 : la part reste celle du volet (l'organisme ne paie que ce qu'il a facturé)
+        var moins = RapprochementVolet.Comparer([new LigneVoletRapprochee("07607", 1, 156.48m, 18, "VIT D3")],
+            [new LigneVenteRapprochee(18, "VIT D3", 2, 156.48m)], 5m, 80, 250.37m);
+        Assert.Equal(125.18m, moins.PartOrganismeChifa);
     }
 
     [Fact]
     public async Task Ecarts_avec_le_droit_motif_obligatoire_puis_rattachement_journalise()
     {
         var (cas, ventes, _, journal) = Cas("caisse.vendre", "prix.modifier");
-        ventes.Ventes.Add(Vente(2, "690755003842/80", 2));
+        ventes.Ventes.Add(Vente(2, "690755003842/80", 2, part: 250.37m));   // part Chifa sur les 2 boîtes servies : aucun écart de part
         var sansMotif = await Assert.ThrowsAsync<RegleMetierException>(() => cas.RattacherAsync(Volet, 2, "  ", 5));
         Assert.Equal("motif", sansMotif.Champ);
         Assert.Empty(ventes.Rattaches);
@@ -342,7 +374,7 @@ public class RapprochementVoletTests
         Assert.Equal([RapprochementVolet.Concorde, RapprochementVolet.CodeNonAssocie, RapprochementVolet.AbsentVente, RapprochementVolet.AbsentVolet],
             c.Lignes.Select(l => l.Ecart));
         Assert.False(c.Concorde);
-        Assert.Equal(80m + 40m + 128m, c.PartOrganismeChifa);
+        Assert.Equal(80m + 40m, c.PartOrganismeChifa);   // Doliprane non servi : aucune part (quantité servie, 2026-11-15)
         Assert.Equal(3 - 1 - 1 - 1, c.Score);
     }
 }

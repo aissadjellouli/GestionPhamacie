@@ -1,6 +1,8 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject ImprimanteTickets Tickets
+@inject RemboursementsTiroir Remboursements
+@implements IDisposable
 
 @* Colonne d'actions de la Caisse, commune à la vente, à l'annulation, au règlement d'un crédit, à l'état de la caisse,
    à la relève et à la clôture (écran fixe, docs/charte-graphique.md). Chaque entrée est une adresse, « ← Retour » y revient ;
@@ -44,9 +46,14 @@
                 }
                 @if (Choisi is { Effet: not "aucun" } choisi)
                 {
+                    @if (remboursement is { } rb)
+                    {
+                        @* Trop-payé d'une régularisation Chifa (D4, script 099) : patient et montant imposés, le bon est lié à la régularisation *@
+                        <div class="info-bandeau" role="status" data-champ="regularisation">Trop-payé de la régularisation Chifa de la vente @rb.Vente à rendre à @rb.Patient : le bon sera lié à la régularisation (montant marqué rendu).</div>
+                    }
                     <div class="champ">
                         <label for="ti-montant" class="requis">Montant (DA) · @(choisi.Effet == "sortie" ? "sortie du tiroir" : "entrée au tiroir")</label>
-                        <input id="ti-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montantTiroir" />
+                        <input id="ti-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montantTiroir" disabled="@(remboursement is not null)" />
                     </div>
                     @switch (choisi.Detail)
                     {
@@ -80,7 +87,7 @@
                         case "patient":
                             <div class="champ recherche"><label for="ti-patient" class="requis">Patient remboursé</label>
                                 <input id="ti-patient" data-champ="patient" type="search" autocomplete="off" @bind="recherchePatient" @bind:event="oninput"
-                                       @bind:after="RechercherPatientAsync" placeholder="Nom, téléphone ou n° d’assuré" />
+                                       @bind:after="RechercherPatientAsync" placeholder="Nom, téléphone ou n° d’assuré" disabled="@(remboursement is not null)" />
                                 @if (patients.Count > 0)
                                 {
                                     <ul class="suggestions" aria-label="Patients trouvés">
@@ -106,7 +113,7 @@
                 @if (messageTiroir is not null && confirmation) { <div class="erreur" role="alert">@messageTiroir</div> }
                 <div style="display: flex; gap: 8px">
                     <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="OuvrirTiroirAsync">Ouvrir</button>
-                    <button type="button" class="btn" @onclick="() => (confirmation, messageTiroir) = (false, null)">Annuler</button>
+                    <button type="button" class="btn" @onclick="() => (confirmation, messageTiroir, remboursement) = (false, null, null)">Annuler</button>
                 </div>
             </section>
         </div>
@@ -177,10 +184,38 @@
     {
         (confirmation, messageTiroir, motifTiroir, texteTiroir, bonTiroir) = (true, null, "", null, null);
         (montantTiroir, categorieTiroir, libelleTiroir, referenceTiroir, beneficiaireTiroir, raisonTiroir) = (null, "", null, null, null, null);
-        (grossisteTiroir, patientTiroir, patients, recherchePatient) = (0, null, [], null);
+        (grossisteTiroir, patientTiroir, patients, recherchePatient, remboursement) = (0, null, [], null, null);
         var (liste, e) = await Api.MotifsAsync("tiroir");
         (motifsTiroir, messageTiroir) = (liste, e);
     }
+
+    // « Rembourser » le trop-payé d'une régularisation Chifa (recette du 2026-11-15, D4) : la sortie « Remboursement d'un client »
+    // s'ouvre pré-remplie (patient, montant, raison « Régularisation Chifa T-… ») et liée à la régularisation
+    private RemboursementsTiroir.Demande? remboursement;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Remboursements.Deposee += Deposee;
+        if (Remboursements.EnAttente is not null) await OuvrirRemboursementAsync();
+    }
+
+    private void Deposee() => _ = InvokeAsync(async () => { await OuvrirRemboursementAsync(); StateHasChanged(); });
+
+    private async Task OuvrirRemboursementAsync()
+    {
+        if (!Session.A("caisse.ouvrir_tiroir") || Remboursements.Prendre() is not { } d) return;
+        await DemanderTiroirAsync();
+        if (motifsTiroir.FirstOrDefault(m => m.Effet == "sortie" && m.Detail == "patient") is not { } motif)
+        {
+            messageTiroir = "Aucun motif « Remboursement d’un client » n’est actif (Administration › Motifs et catégories).";
+            return;
+        }
+        motifTiroir = motif.Code;
+        (montantTiroir, raisonTiroir, recherchePatient, remboursement) = (d.Montant, d.Raison, d.Patient, d);
+        patientTiroir = new PatientDto(d.PatientId, d.Patient, null, null, null, null, null, 0, 0);
+    }
+
+    public void Dispose() => Remboursements.Deposee -= Deposee;
 
     /// <summary>Listes du détail chargées seulement quand le motif les demande (catégories de charge, grossistes).</summary>
     private async Task ChoisirMotif()
@@ -212,16 +247,21 @@
         var effet = Choisi?.Effet ?? "aucun";
         if (effet != "aucun" && montantTiroir is not > 0) { messageTiroir = Api.SignalerChamp("montant", "Indiquez le montant (supérieur à 0)."); return; }
         var saisie = effet == "aucun" ? null : new SaisieTiroirDto(montantTiroir, categorieTiroir == "" ? null : categorieTiroir, libelleTiroir,
-            grossisteTiroir > 0 ? grossisteTiroir : null, grossisteTiroir > 0 ? null : beneficiaireTiroir, referenceTiroir, patientTiroir?.Id, raisonTiroir);
+            grossisteTiroir > 0 ? grossisteTiroir : null, grossisteTiroir > 0 ? null : beneficiaireTiroir, referenceTiroir, patientTiroir?.Id, raisonTiroir,
+            Choisi?.Detail == "patient" ? remboursement?.VenteId : null);
+        var libelleMotif = motifTiroir == "autre" ? (texteTiroir ?? "").Trim() : Choisi?.Libelle ?? motifTiroir;
         enCours = true;
         try
         {
             var (bon, e) = await Api.OuvrirTiroirAsync(new EvenementCaisseRequete("tiroir_ouvert", MotifCode: motifTiroir, MotifTexte: texteTiroir, Tiroir: saisie));
             if (e is not null) { messageTiroir = e; return; }
             bonTiroir = bon?.MouvementId is not null ? bon : null;
+            // Confirmation pour chaque motif, « Faire de la monnaie » compris (recette du 2026-11-15, D8)
             (messageTiroir, confirmation) = (bonTiroir is null
-                ? $"Ouverture du tiroir sans vente enregistrée à {DateTime.Now:HH:mm}."
-                : $"{(effet == "sortie" ? "Sortie" : "Entrée")} de {Libelles.Dinars(montantTiroir ?? 0, 2)} enregistrée à {DateTime.Now:HH:mm} (bon {bonTiroir.Numero}).", false);
+                ? $"Tiroir ouvert : {libelleMotif} (à {DateTime.Now:HH:mm}, inscrit au contrôle interne)."
+                : $"Tiroir ouvert : {libelleMotif} — {(effet == "sortie" ? "sortie" : "entrée")} de {Libelles.Dinars(montantTiroir ?? 0, 2)} enregistrée à {DateTime.Now:HH:mm} (bon {bonTiroir.Numero}).", false);
+            if (bonTiroir is not null && saisie?.RegularisationVenteId is { } venteRendue) Remboursements.Annoncer(venteRendue, bonTiroir.Numero!);
+            remboursement = null;
         }
         finally { enCours = false; }
     }

@@ -70,7 +70,10 @@ public static class RapprochementVolet
         _ => ecart
     };
 
-    /// <param name="taux">Taux de prise en charge de la vente (%) ; null : part Chifa non calculée.</param>
+    /// <param name="taux">
+    /// Taux de prise en charge de la vente (%) ; null : part Chifa non calculée. Part Chifa : prix Chifa × boîtes servies (au plus celles
+    /// du volet), l'écart de quantité restant une différence en rouge.
+    /// </param>
     public static ComparaisonVolet Comparer(IEnumerable<LigneVoletRapprochee> volet, IEnumerable<LigneVenteRapprochee> vente, decimal seuil,
         decimal? taux, decimal partOrganismeVente)
     {
@@ -86,18 +89,26 @@ public static class RapprochementVolet
             var qteVolet = g.Sum(l => l.Quantite);
             var prixChifa = g.First().PrixChifa;
             var produitId = g.First().ProduitId;
-            if (taux is { } t) partChifa += Math.Round(prixChifa * qteVolet * t / 100m, 2, MidpointRounding.AwayFromZero);
+            // Part Chifa sur la quantité SERVIE (décision du titulaire, 2026-11-15) : jamais facturer à l'organisme une boîte non servie ;
+            // code non associé : produit inconnu, quantité du volet (rien ne permet de dire qu'il n'a pas été servi)
+            void AjouterPart(int quantite)
+            {
+                if (taux is { } t) partChifa += Math.Round(prixChifa * quantite * t / 100m, 2, MidpointRounding.AwayFromZero);
+            }
             if (produitId is not { } id)
             {
+                AjouterPart(qteVolet);
                 lignes.Add(new LigneComparee(g.Key, null, $"Code Chifa {g.Key}", qteVolet, null, prixChifa, null, CodeNonAssocie));
                 continue;
             }
             var nom = g.First().Produit ?? $"Code Chifa {g.Key}";
             if (!servis.TryGetValue(id, out var s))
             {
+                // Sur le volet, pas dans la vente : aucune boîte servie, aucune part pour l'organisme
                 lignes.Add(new LigneComparee(g.Key, id, nom, qteVolet, null, prixChifa, null, AbsentVente));
                 continue;
             }
+            AjouterPart(Math.Min(qteVolet, s.Qte));
             vus.Add(id);
             var ecart = s.Qte != qteVolet ? Quantite
                 : s.Prix == prixChifa ? Concorde
@@ -170,6 +181,25 @@ public static class RegularisationPartOrganisme
     public const string PertePharmacie = "perte_pharmacie";
     public const string AvoirPatient = "avoir_patient";
     public const string GainOrganisme = "gain_organisme";
+
+    /// <summary>Début de la référence du mouvement de dette écrit par une régularisation (relevé de la dette).</summary>
+    public const string PrefixeReference = "Régularisation part organisme Chifa";
+
+    /// <summary>
+    /// Libellé du relevé de la dette pour un mouvement issu d'une régularisation Chifa (recette du 2026-11-15, D7) : « Régularisation
+    /// Chifa (T-…) » ; null pour un autre mouvement (libellé habituel).
+    /// </summary>
+    public static string? LibelleReleve(string? reference, string? vente) =>
+        reference is not null && reference.StartsWith(PrefixeReference, StringComparison.Ordinal)
+            ? vente is null ? "Régularisation Chifa" : $"Régularisation Chifa ({vente})"
+            : null;
+
+    /// <summary>Sort en clair (journal, listes).</summary>
+    public static string LibelleSort(string sort) => sort switch
+    {
+        ChargePatient => "à la charge du patient", PertePharmacie => "perte pharmacie", AvoirPatient => "rendu au patient",
+        GainOrganisme => "gain organisme", _ => sort
+    };
 
     /// <summary>Choix exigé de l'ayant droit : la caisse paiera moins que la part enregistrée.</summary>
     public static bool ChoixExige(decimal ecart) => ecart > 0;

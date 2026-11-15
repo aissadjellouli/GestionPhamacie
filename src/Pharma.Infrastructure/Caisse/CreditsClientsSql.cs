@@ -14,7 +14,10 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
 {
     private const string Select = """
         SELECT p.id, trim(concat_ws(' ', p.nom, p.prenom)), p.telephone, p.solde_credit, p.plafond_credit,
-               (SELECT max(v.date_vente) FROM vente v JOIN paiement x ON x.vente_id = v.id WHERE v.patient_id = p.id AND x.mode = 'credit' AND v.statut = 'validee')
+               (SELECT max(v.date_vente) FROM vente v JOIN paiement x ON x.vente_id = v.id WHERE v.patient_id = p.id AND x.mode = 'credit' AND v.statut = 'validee'),
+               -- Dette née d'une régularisation Chifa (recette du 2026-11-15, D7) : « Régularisation Chifa (T-…) », pas « crédit repris »
+               (SELECT v.numero FROM regularisation_part_organisme g JOIN vente v ON v.id = g.vente_id
+                 WHERE v.patient_id = p.id AND g.sort = 'charge_patient' AND g.statut = 'active' ORDER BY g.id DESC LIMIT 1)
         FROM patient p
         """;
 
@@ -212,7 +215,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
             liste.Add(new PatientEnCredit(r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetDecimal(3), r.GetDecimal(4),
-                r.IsDBNull(5) ? null : r.GetDateTime(5)));
+                r.IsDBNull(5) ? null : r.GetDateTime(5), r.IsDBNull(6) ? null : r.GetString(6)));
         return liste;
     }
 }

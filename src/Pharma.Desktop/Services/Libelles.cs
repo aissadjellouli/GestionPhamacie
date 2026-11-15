@@ -395,6 +395,8 @@ public static class Libelles
             string T(string nom) => d.TryGetProperty(nom, out var v) && v.ValueKind != System.Text.Json.JsonValueKind.Null ? Valeur(v) : "—";
             decimal N(string nom) => d.TryGetProperty(nom, out var v) && v.TryGetDecimal(out var n) ? n : 0;
             bool B(string nom) => d.TryGetProperty(nom, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True;
+            // Rubrique facultative : rien si elle est vide (pas de « — »)
+            string Sauf(string nom, string libelle) => T(nom) is "—" or "" ? "" : $" · {libelle} : {T(nom)}";
 
             return action switch
             {
@@ -447,6 +449,26 @@ public static class Libelles
                                       + (N("ecart_patient") != 0 ? $" · écart pour le patient {Dinars(N("ecart_patient"), 2)}" : "")
                                       + (T("valideur") is "—" ? "" : $" · autorisé par {T("valideur")}"),
                 "reglement_credit" => $"{Dinars(N("montant"), 2)} en {T("mode")} · reçu n° {T("recu")} · reste dû {Dinars(N("reste_du"), 2)}" + VentesReglees(d),
+                // Recette 2026-11-15 (7e passage, D5) : plus de codes bruts (charge_patient, assure_different, entree…) ni de rubriques vides
+                "regularisation_part_organisme" => $"Ticket {T("ticket")} · volet n° {T("volet")} · {SortRegularisation(T("sort"))} · écart {Dinars(N("ecart"), 2)}"
+                                      + $" (part de la vente {Dinars(N("part_organisme_vente"), 2)}, selon Chifa {Dinars(N("part_organisme_chifa"), 2)})"
+                                      + (N("montant_patient") != 0 ? $" · pour le patient {Dinars(N("montant_patient"), 2)}" : "")
+                                      + (N("dette_diminuee") != 0 ? $" · dette diminuée de {Dinars(N("dette_diminuee"), 2)}" : "")
+                                      + (N("a_rendre") != 0 ? $" · à rendre {Dinars(N("a_rendre"), 2)}" : "")
+                                      + (N("montant_pharmacie") < 0 ? $" · perte pharmacie {Dinars(-N("montant_pharmacie"), 2)}"
+                                         : N("montant_pharmacie") > 0 ? $" · gain organisme {Dinars(N("montant_pharmacie"), 2)}" : "")
+                                      + (T("patient") is "—" ? "" : $" · {T("patient")}"),
+                "volet_chifa_rattache" => $"Ticket {T("ticket")} · volet n° {T("volet")}"
+                                      + (B("concorde") ? " · concorde avec la vente" : $" · différences : {T("ecarts")}" + (T("motif") is "—" ? "" : $" · motif : {T("motif")}"))
+                                      + (N("ecart_part_organisme") != 0 ? $" · écart de part organisme {Dinars(N("ecart_part_organisme"), 2)}" : ""),
+                "tiroir_ouvert" => $"{T("motif")}" + (N("montant") != 0 ? $" · {(T("sens") == "entrée" ? "entrée" : "sortie")} de {Dinars(N("montant"), 2)}" : "")
+                                      + (T("bon") is "—" ? "" : $" · bon {T("bon")}") + Sauf("categorie", "catégorie") + Sauf("libelle", "libellé")
+                                      + Sauf("grossiste", "grossiste") + Sauf("beneficiaire", "bénéficiaire") + Sauf("reference", "BL / facture")
+                                      + Sauf("patient", "patient") + Sauf("raison", "raison") + Sauf("regularisation_chifa", "régularisation Chifa de la vente")
+                                      + Sauf("poste", "poste"),
+                "correction_tiroir" => $"Bon {T("bon")} : écriture inverse du bon {T("bon_corrige")} ({T("motif_initial")}, {T("sens_initial")} de {Dinars(N("montant"), 2)})"
+                                      + $" · motif : {T("motif")}" + Sauf("poste", "poste"),
+                "releve_caisse" => $"Relève · fond reporté {Dinars(N("fond"), 2)}" + Sauf("poste", "poste"),
                 _ => Generique(d)
             };
         }
@@ -512,6 +534,8 @@ public static class Libelles
             {
                 // Identifiants techniques (produit_id, ordonnance_id…) : rien à lire pour le titulaire
                 if (p.Name == "id" || p.Name.EndsWith("_id", StringComparison.Ordinal)) continue;
+                // Rubrique vide : pas listée (recette 2026-11-15, D5 : plus de « Raison : — » sur chaque ligne)
+                if (p.Value.ValueKind == System.Text.Json.JsonValueKind.Null) continue;
                 // Code d'un motif : seul le libellé du motif se lit, quand il est là
                 if (p.Name == "motif_code" && e.TryGetProperty("motif", out var motif) && motif.ValueKind == System.Text.Json.JsonValueKind.String) continue;
                 // Identifiants de ventes quand les n° de ticket sont là
@@ -550,7 +574,25 @@ public static class Libelles
         ["erreur_livraison"] = "erreur de livraison",
         ["depense"] = "dépense", ["encaissement"] = "encaissement", ["autre"] = "autre", ["defini"] = "défini", ["medicament"] = "médicament",
         ["dermo_cosmetique"] = "dermo-cosmétique", ["fermee"] = "fermée", ["ouverte"] = "ouverte", ["probleme"] = "problème", ["libre"] = "libre",
-        ["versement_organisme"] = "versement d’un organisme", ["transfert"] = "transfert"
+        ["versement_organisme"] = "versement d’un organisme", ["transfert"] = "transfert",
+        // Recette 2026-11-15 (7e passage, D5) : régularisation Chifa, écarts du volet, sens du tiroir, catégories de dépenses du départ
+        ["charge_patient"] = "à la charge du patient", ["perte_pharmacie"] = "perte pharmacie", ["avoir_patient"] = "rendu au patient",
+        ["gain_organisme"] = "gain organisme", ["prix_sous_seuil"] = "écart de prix sous le seuil", ["assure_different"] = "assuré différent",
+        ["quantite"] = "quantité différente", ["absent_vente"] = "sur le volet, pas dans la vente", ["absent_volet"] = "dans la vente, pas sur le volet",
+        ["code_non_associe"] = "code Chifa non associé", ["concorde"] = "concorde", ["entree"] = "entrée", ["sortie"] = "sortie",
+        ["entretien"] = "Entretien et réparations", ["fournitures"] = "Fournitures et consommables", ["energie"] = "Électricité, eau, gaz",
+        ["impots"] = "Impôts et taxes", ["loyer"] = "Loyer et charges", ["salaires"] = "Salaires et cotisations",
+        ["charges_financieres"] = "Charges financières (intérêts d’emprunt)"
+    };
+
+    /// <summary>Sort d'une régularisation Chifa en clair (même texte que RegularisationPartOrganisme.LibelleSort côté serveur).</summary>
+    private static string SortRegularisation(string sort) => sort switch
+    {
+        "charge_patient" or "à la charge du patient" => "à la charge du patient",
+        "perte_pharmacie" or "perte pharmacie" => "perte pharmacie",
+        "avoir_patient" or "rendu au patient" => "rendu au patient",
+        "gain_organisme" or "gain organisme" => "gain organisme",
+        _ => sort
     };
 
     /// <summary>Clés entières du journal dont la forme mot à mot serait fausse.</summary>
@@ -569,13 +611,19 @@ public static class Libelles
         ["ecarts"] = "Écarts", ["qte_volet"] = "Quantité du volet", ["qte_vente"] = "Quantité vendue",
         ["assure_volet"] = "Assuré du volet", ["num_assure_patient"] = "N° d’assuré du patient", ["tarif_reference"] = "Tarif de référence",
         ["remboursable"] = "Remboursable", ["montant_dette"] = "Montant de la dette", ["decision"] = "Décision", ["dette"] = "Dette",
-        ["liste"] = "Liste", ["libelle"] = "Libellé", ["actif"] = "Actif", ["origine"] = "Origine", ["poste"] = "Poste"
+        ["liste"] = "Liste", ["libelle"] = "Libellé", ["actif"] = "Actif", ["origine"] = "Origine", ["poste"] = "Poste",
+        // Recette 2026-11-15 (7e passage, D5)
+        ["session_precedente"] = "Session précédente n°", ["bon_corrige"] = "Bon corrigé", ["beneficiaire"] = "Bénéficiaire", ["a_rendre"] = "À rendre",
+        ["sort"] = "Sort", ["sens"] = "Sens", ["sens_initial"] = "Sens d’origine", ["motif_initial"] = "Motif d’origine", ["bon"] = "Bon",
+        ["montant_patient"] = "Pour le patient", ["montant_pharmacie"] = "Effet pour la pharmacie", ["ecart_part_organisme"] = "Écart de part organisme",
+        ["regularisation_chifa"] = "Régularisation Chifa de la vente", ["grossiste"] = "Grossiste", ["raison"] = "Raison", ["reference"] = "Référence",
+        ["categorie"] = "Catégorie", ["fond"] = "Fond", ["bon_origine"] = "Bon d’origine"
     };
 
     /// <summary>Clés dont la valeur est un numéro (vente, ticket, volet, reçu) : jamais formatée comme un montant (3306236, pas 3 306 236).</summary>
     private static readonly HashSet<string> ClesNumeros = new(StringComparer.Ordinal)
     {
-        "ventes", "vente", "ticket", "tickets", "volet", "recu", "numero", "bl", "facture"
+        "ventes", "vente", "ticket", "tickets", "volet", "recu", "numero", "bl", "facture", "session_precedente", "bon", "bon_corrige", "bon_origine"
     };
 
     /// <summary>Valeur telle quelle (numéros) : tableau joint par des virgules, nombre sans séparateur de milliers.</summary>

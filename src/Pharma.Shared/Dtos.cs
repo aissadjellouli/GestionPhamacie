@@ -851,7 +851,8 @@ public sealed record PaiementTraiteRequete(DateOnly? Date, string? Moyen, long? 
 
 // ---- Crédits clients -------------------------------------------------------------------
 
-public sealed record PatientEnCreditDto(long Id, string Nom, string? Telephone, decimal Solde, decimal Plafond, DateTime? DerniereVente);
+/// <summary>Regularisation : ticket de la dernière régularisation Chifa mise à la charge du patient (« Régularisation Chifa (T-…) »).</summary>
+public sealed record PatientEnCreditDto(long Id, string Nom, string? Telephone, decimal Solde, decimal Plafond, DateTime? DerniereVente, string? Regularisation = null);
 
 public sealed record VenteACreditDto(string Numero, DateTime Date, decimal Montant, decimal Regle = 0, decimal Reste = 0, long Id = 0, string? Facture = null,
     string? Remise = null);
@@ -934,7 +935,7 @@ public sealed record EvenementCaisseRequete(string Type, long? ProduitId = null,
     string? MotifCode = null, string? MotifTexte = null, SaisieTiroirDto? Tiroir = null);
 /// <summary>Motif du tiroir à effet (script 096) : montant et détail exigé (catégorie et libellé, grossiste et BL ou nom, patient et raison).</summary>
 public sealed record SaisieTiroirDto(decimal? Montant, string? Categorie = null, string? Libelle = null, long? FournisseurId = null,
-    string? Beneficiaire = null, string? Reference = null, long? PatientId = null, string? Raison = null);
+    string? Beneficiaire = null, string? Reference = null, long? PatientId = null, string? Raison = null, long? RegularisationVenteId = null);
 /// <summary>Bon de sortie (ou d'entrée) créé par un motif à effet ; vide pour un motif sans effet.</summary>
 public sealed record OuvertureTiroirDto(long? MouvementId, string? Numero);
 /// <summary>Sortie ou entrée du tiroir (contrôle interne). Corrigee : une écriture inverse existe ; CorrigeId : ce mouvement en est une.</summary>
@@ -1009,8 +1010,11 @@ public sealed record RapprochementVoletDto(string NumeroFacture, DateOnly DateFa
 /// <summary>Volet d'un autre assuré que le patient choisi : le vendeur garde le patient (journalisé).</summary>
 public sealed record GarderPatientVoletRequete(string Texte, long PatientId, string? Patient, string? NumAssure);
 public sealed record RattacherVoletRequete(string Texte, long VenteId, string? Motif, string? Regularisation = null);
-public sealed record VoletRattacheDto(string Vente, bool AvecEcart, decimal EcartPartOrganisme, string? Catalogue, string? Regularisation = null);
+/// <summary>ARendre : trop-payé à rendre au patient par le tiroir (« Rembourser », 2026-11-15), avec la vente et le patient.</summary>
+public sealed record VoletRattacheDto(string Vente, bool AvecEcart, decimal EcartPartOrganisme, string? Catalogue, string? Regularisation = null,
+    decimal ARendre = 0, long VenteId = 0, long? PatientId = null, string? Patient = null);
 public sealed record VenteAttenteVoletDto(long Id, string Numero, DateTime Date, string? Patient, string? NumAssure, string? Organisme, string Vendeur,
     decimal Total, decimal PartOrganisme, string? Motif = null, bool EnRetard = false);
 public sealed record VoletAvecEcartDto(long VenteId, string Numero, DateTime DateVente, string? Patient, string NumeroFacture, DateTime? RattacheLe,
-    string? RattachePar, string Motif, string? Detail, decimal? EcartPartOrganisme, string? Regularisation = null);
+    string? RattachePar, string Motif, string? Detail, decimal? EcartPartOrganisme, string? Regularisation = null,
+    long? PatientId = null, decimal ARendre = 0, string? BonRendu = null);

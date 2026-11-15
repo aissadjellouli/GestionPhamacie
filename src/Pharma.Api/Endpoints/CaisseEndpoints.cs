@@ -89,7 +89,8 @@ internal static class CaisseEndpoints
         caisse.MapPost("/volet-chifa/rattacher", async (RattacherVoletRequete req, RapprocherVoletChifa rapprocher, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 var r = await rapprocher.RattacherAsync(req.Texte, req.VenteId, req.Motif, user.UtilisateurId(), req.Regularisation, ct);
-                return Results.Ok(new VoletRattacheDto(r.Vente, r.AvecEcart, r.EcartPartOrganisme, r.Catalogue, r.Regularisation));
+                return Results.Ok(new VoletRattacheDto(r.Vente, r.AvecEcart, r.EcartPartOrganisme, r.Catalogue, r.Regularisation,
+                    r.ARendre, r.VenteId, r.PatientId, r.Patient));
             })
            .ExigerPermission(Permissions.CaisseVendre)
            .GererErreursMetier();
@@ -114,7 +115,7 @@ internal static class CaisseEndpoints
                 var p = Pharma.Application.Commun.DemandePage.Lire(page, taille);
                 var (lignes, total) = await consulter.AvecEcartAsync(q, p, user.UtilisateurId(), ct);
                 return Results.Ok(new PageDto<VoletAvecEcartDto>(lignes.Select(v => new VoletAvecEcartDto(v.VenteId, v.Numero, v.DateVente, v.Patient, v.NumeroFacture,
-                    v.RattacheLe, v.RattachePar, v.Motif, v.Detail, v.EcartPartOrganisme, v.Regularisation)).ToList(), total, p.Page, p.Taille));
+                    v.RattacheLe, v.RattachePar, v.Motif, v.Detail, v.EcartPartOrganisme, v.Regularisation, v.PatientId, v.ARendre, v.BonRendu)).ToList(), total, p.Page, p.Taille));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 

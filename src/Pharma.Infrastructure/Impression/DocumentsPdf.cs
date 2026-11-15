@@ -462,13 +462,15 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         {
             var row = mouvements.AddRow();
             row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
-            var libelle = m.Type switch
+            // Régularisation Chifa (recette du 2026-11-15, D7) : « Régularisation Chifa (T-…) », ni reprise ni correction du titulaire
+            var regularisation = Pharma.Domain.Ventes.RegularisationPartOrganisme.LibelleReleve(m.Reference, m.Vente);
+            var libelle = regularisation ?? m.Type switch
             {
                 "ouverture" => "Dette à la mise en place du relevé", "reprise" => "Dette reprise de l’ancien logiciel", "vente_credit" => "Vente à crédit",
                 "remboursement" => "Encaissement de dette", "retour" => "Retour de produits", "annulation" => "Vente annulée",
                 _ => m.Employe is null ? "Correction hors logiciel" : "Correction par le titulaire"
             };
-            string[] cellules = [Quand(m.Date), m.Vente is null ? libelle : $"{libelle} · {m.Vente}" + (m.Remise is { } rm ? $" · {rm}" : ""), (m.Montant > 0 ? "+ " : "- ") + Da(Math.Abs(m.Montant)), Da(m.SoldeApres)];
+            string[] cellules = [Quand(m.Date), m.Vente is null || regularisation is not null ? libelle : $"{libelle} · {m.Vente}" + (m.Remise is { } rm ? $" · {rm}" : ""), (m.Montant > 0 ? "+ " : "- ") + Da(Math.Abs(m.Montant)), Da(m.SoldeApres)];
             for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
         }
 

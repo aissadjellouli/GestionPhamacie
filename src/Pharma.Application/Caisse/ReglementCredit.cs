@@ -5,7 +5,8 @@ using Pharma.Domain.Ventes;
 
 namespace Pharma.Application.Caisse;
 
-public sealed record PatientEnCredit(long Id, string Nom, string? Telephone, decimal Solde, decimal Plafond, DateTime? DerniereVente);
+/// <remarks>Regularisation : ticket de la dernière régularisation Chifa mise à la charge du patient (recette du 2026-11-15, D7).</remarks>
+public sealed record PatientEnCredit(long Id, string Nom, string? Telephone, decimal Solde, decimal Plafond, DateTime? DerniereVente, string? Regularisation = null);
 
 /// <summary>
 /// Vente à crédit (montant net des retours). Regle et Reste : les remboursements soldent la dette la plus ancienne d'abord

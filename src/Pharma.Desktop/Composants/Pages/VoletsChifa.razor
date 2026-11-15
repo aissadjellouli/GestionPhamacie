@@ -1,6 +1,9 @@
 @page "/chifa"
 @inject ApiClient Api
 @inject HistoriqueNavigation Historique
+@inject SessionPoste Session
+@inject RemboursementsTiroir Remboursements
+@inject NavigationManager Nav
 
 @* Circuit « la caisse d'abord » (règle du titulaire, 2026-11-15) : ventes Chifa encaissées qui attendent leur volet (ancienneté), et
    volets rattachés malgré des différences (motif, différences, écart de part organisme). Listes filtrées et paginées par le serveur ;
@@ -75,7 +78,21 @@
                                     <td>@e.Motif</td>
                                     <td class="texte-urgent">@e.Detail</td>
                                     <td class="nombre">@(e.EcartPartOrganisme is { } x ? x.ToString("N2") : "—")</td>
-                                    <td>@(e.Regularisation ?? "—")</td>
+                                    <td>@(e.Regularisation ?? "—")
+                                        @* Trop-payé « à rendre » (D4) : rendu par le tiroir, bon lié à la régularisation *@
+                                        @if (e.ARendre > 0)
+                                        {
+                                            @if (e.BonRendu is { } bon) { <br /><span class="pastille ok">rendu (bon @bon)</span> }
+                                            else
+                                            {
+                                                <br /><span class="pastille attention">à rendre @Libelles.Dinars(e.ARendre, 2)</span>
+                                                @if (e.PatientId is { } pid && Session.A("caisse.ouvrir_tiroir"))
+                                                {
+                                                    <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => Rembourser(e, pid)">Rembourser</button>
+                                                }
+                                            }
+                                        }
+                                    </td>
                                 </tr>
                             }
                             @if (ecarts.Lignes.Count == 0) { <tr><td colspan="8" class="vide">Aucun volet rattaché avec écart.</td></tr> }
@@ -129,6 +146,13 @@
         if (onglet == "attente") (attente, erreur) = await Api.VentesAttenteVoletAsync(q, numero, t);
         else (ecarts, erreur) = await Api.VoletsAvecEcartAsync(q, numero, t);
         enCours = false;
+    }
+
+    /// <summary>« Rembourser » : la caisse s'ouvre avec la sortie « Remboursement d'un client » pré-remplie et liée à la régularisation.</summary>
+    private void Rembourser(VoletAvecEcartDto e, long patientId)
+    {
+        Remboursements.Deposer(new RemboursementsTiroir.Demande(e.VenteId, e.Numero, patientId, e.Patient ?? "Patient", e.ARendre));
+        Nav.NavigateTo("caisse");
     }
 
     private static int Anciennete(DateTime date) =>

@@ -167,7 +167,11 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
         await using var cmd = new NpgsqlCommand($"""
             SELECT v.id, v.numero, v.date_vente, trim(p.nom || ' ' || COALESCE(p.prenom, '')), v.chifa_facture, v.chifa_rattache_le, r.nom_complet,
                    COALESCE(v.chifa_ecart_motif, 'Lignes concordantes'), v.chifa_ecart_detail, v.chifa_ecart_part_organisme,
-                   g.sort, g.montant_patient, g.montant_dette_diminuee, g.montant_a_rendre, g.montant_pharmacie
+                   g.sort, g.montant_patient, g.montant_dette_diminuee, g.montant_a_rendre, g.montant_pharmacie,
+                   v.patient_id, CASE WHEN g.sort = 'avoir_patient' AND g.statut = 'active' THEN g.montant_a_rendre ELSE 0 END,
+                   -- Trop-payé rendu par le tiroir (script 099) : bon actif, non corrigé
+                   (SELECT t.numero FROM mouvement_tiroir t WHERE t.regularisation_id = g.id AND t.corrige_id IS NULL
+                      AND NOT EXISTS (SELECT 1 FROM mouvement_tiroir c WHERE c.corrige_id = t.id) ORDER BY t.id DESC LIMIT 1)
             {Base} AND ({filtre})
             ORDER BY v.chifa_rattache_le DESC NULLS LAST, v.id DESC LIMIT $2 OFFSET $3
             """, cx);
@@ -180,7 +184,8 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
             liste.Add(new VoletAvecEcart(rd.GetInt64(0), rd.GetString(1), rd.GetDateTime(2), rd.IsDBNull(3) ? null : rd.GetString(3), rd.GetString(4),
                 rd.IsDBNull(5) ? null : rd.GetDateTime(5), rd.IsDBNull(6) ? null : rd.GetString(6), rd.GetString(7),
                 rd.IsDBNull(8) ? null : rd.GetString(8), rd.IsDBNull(9) ? null : rd.GetDecimal(9),
-                rd.IsDBNull(10) ? null : RegularisationPartOrganisme.Libelle(rd.GetString(10), rd.GetDecimal(11), rd.GetDecimal(12), rd.GetDecimal(13), rd.GetDecimal(14))));
+                rd.IsDBNull(10) ? null : RegularisationPartOrganisme.Libelle(rd.GetString(10), rd.GetDecimal(11), rd.GetDecimal(12), rd.GetDecimal(13), rd.GetDecimal(14)),
+                rd.IsDBNull(15) ? null : rd.GetInt64(15), rd.IsDBNull(16) ? 0 : rd.GetDecimal(16), rd.IsDBNull(17) ? null : rd.GetString(17)));
         return (liste, total);
     }
 

@@ -25,7 +25,7 @@
         }
         else
         {
-            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (erreur is not null && aCorriger is null) { <div class="erreur" role="alert">@erreur</div> }
             @if (message is not null) { <div class="succes" role="status">@message</div> }
 
             <div class="filtres-liste" role="search" aria-label="Filtrer les sorties du tiroir">
@@ -51,15 +51,22 @@
                 }
             </div>
 
+            @* Correction dans une fenêtre au-dessus de l'écran (recette du 2026-11-15, D3) : l'écran garde sa hauteur, la page ne défile pas *@
             @if (aCorriger is { } c)
             {
-                <section class="panneau" aria-labelledby="t-correction" style="display: flex; gap: 8px; align-items: flex-end">
-                    <h2 id="t-correction" class="visuellement-cache">Corriger le bon @c.Numero</h2>
-                    <div class="champ" style="flex: 1"><label for="st-motif-correction" class="requis">@(c.ReglementFournisseurId is null ? "Motif de la correction du bon" : "Annuler le paiement du grossiste, bon") @c.Numero (@c.Motif, @Libelles.Dinars(c.Montant, 2))@(c.ReglementFournisseurId is null ? "" : " : la dette du grossiste revient, l’argent revient au tiroir")</label>
-                        <input id="st-motif-correction" data-champ="motif_correction" type="text" maxlength="200" @bind="motifCorrection" @bind:event="oninput" /></div>
-                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CorrigerAsync">@(c.ReglementFournisseurId is null ? "Écriture inverse" : "Annuler le règlement")</button>
-                    <button type="button" class="btn" @onclick="() => aCorriger = null">Annuler</button>
-                </section>
+                <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-correction">
+                    <section class="panneau" style="max-width: 640px; width: 100%; display: flex; flex-direction: column; gap: 10px">
+                        <h2 id="t-correction" style="margin: 0">@(c.ReglementFournisseurId is null ? "Corriger le bon" : "Annuler le paiement du grossiste, bon") @c.Numero</h2>
+                        <p class="detail" style="margin: 0">@c.Motif, @Libelles.Dinars(c.Montant, 2)@(c.ReglementFournisseurId is null ? " : une écriture inverse (même montant, sens opposé) est ajoutée, rien n’est supprimé." : " : la dette du grossiste revient, l’argent revient au tiroir.")</p>
+                        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+                        <div class="champ"><label for="st-motif-correction" class="requis">Motif</label>
+                            <input id="st-motif-correction" data-champ="motif_correction" type="text" maxlength="200" @bind="motifCorrection" @bind:event="oninput" autofocus /></div>
+                        <div style="display: flex; gap: 8px; justify-content: flex-end">
+                            <button type="button" class="btn" @onclick="() => (aCorriger, erreur) = (null, null)">Annuler</button>
+                            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CorrigerAsync">@(c.ReglementFournisseurId is null ? "Écriture inverse" : "Annuler le règlement")</button>
+                        </div>
+                    </section>
+                </div>
             }
 
             <section class="tableau-cadre" aria-label="Sorties et entrées du tiroir">
@@ -77,12 +84,15 @@
                                 <td style="white-space: nowrap; color: @(m.Sens == "sortie" ? "var(--urgent)" : "var(--accent)")">@(m.Sens == "sortie" ? "− " : "+ ")@Libelles.Dinars(m.Montant, 2)</td>
                                 <td class="detail">@Detail(m)</td>
                                 <td>@(m.ValidePar ?? "—")</td>
+                                @* Actions espacées (recette du 2026-11-15, D9) *@
                                 <td style="white-space: nowrap">
-                                    <button type="button" class="lien-bouton" @onclick="() => BonAsync(m)">Bon</button>
-                                    @if (!m.Corrigee && m.CorrigeId is null)
-                                    {
-                                        <button type="button" class="lien-bouton" @onclick="() => (aCorriger, motifCorrection) = (m, null)">Corriger</button>
-                                    }
+                                    <span style="display: inline-flex; gap: 16px">
+                                        <button type="button" class="lien-bouton" @onclick="() => BonAsync(m)">Bon</button>
+                                        @if (!m.Corrigee && m.CorrigeId is null)
+                                        {
+                                            <button type="button" class="lien-bouton" @onclick="() => (aCorriger, motifCorrection) = (m, null)">Corriger</button>
+                                        }
+                                    </span>
                                 </td>
                             </tr>
                         }

@@ -2,9 +2,18 @@ using Pharma.Domain.Commun;
 
 namespace Pharma.Domain.Caisse;
 
-/// <summary>Détail saisi avec une sortie ou une entrée d'argent par le tiroir (F8, script 096).</summary>
+/// <summary>
+/// Détail saisi avec une sortie ou une entrée d'argent par le tiroir (F8, script 096). RegularisationVenteId : remboursement du trop-payé
+/// de la régularisation Chifa de cette vente (script 099).
+/// </summary>
 public sealed record SaisieTiroir(decimal? Montant, string? Categorie = null, string? Libelle = null, long? FournisseurId = null,
-    string? Beneficiaire = null, string? Reference = null, long? PatientId = null, string? Raison = null);
+    string? Beneficiaire = null, string? Reference = null, long? PatientId = null, string? Raison = null, long? RegularisationVenteId = null);
+
+/// <summary>
+/// Régularisation Chifa vue pour le remboursement de son trop-payé : vente, patient, montant à rendre, active (non annulée), bon du tiroir
+/// qui l'a déjà rendu (non corrigé), null sinon.
+/// </summary>
+public sealed record RegularisationARendre(long Id, long VenteId, string Vente, long? PatientId, string? Patient, decimal ARendre, bool Active, string? BonRendu);
 
 /// <summary>
 /// Sorties et entrées d'argent par le tiroir (règle du titulaire, 2026-11-15) : chaque motif du tiroir porte un effet (aucun, sortie,
@@ -60,12 +69,41 @@ public static class RegleTiroir
         return montant;
     }
 
-    /// <summary>Une sortie ne dépasse pas les espèces attendues dans le tiroir (fond et espèces de la session).</summary>
-    public static void VerifierDansTiroir(decimal montant, decimal dansTiroir)
+    /// <summary>Refus d'une sortie trop forte sans révéler l'attendu (comptage à l'aveugle, ou employé sans caisse.voir_ecart).</summary>
+    public const string MessageEspecesInsuffisantes = "Montant supérieur aux espèces disponibles dans le tiroir.";
+
+    /// <summary>
+    /// Une sortie ne dépasse pas les espèces attendues dans le tiroir (fond et espèces de la session). L'attendu n'est cité que si
+    /// <paramref name="montrerAttendu"/> (caisse hors comptage à l'aveugle et employé qui voit les écarts, recette du 2026-11-15, D2) :
+    /// sinon message neutre, l'employé ne doit pas connaître l'attendu avant sa relève.
+    /// </summary>
+    public static void VerifierDansTiroir(decimal montant, decimal dansTiroir, bool montrerAttendu = false)
     {
         if (montant > dansTiroir)
-            throw new RegleMetierException($"Le tiroir ne contient en principe que {dansTiroir.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))} DA.", "montant");
+            throw new RegleMetierException(montrerAttendu
+                ? $"Le tiroir ne contient en principe que {dansTiroir.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))} DA."
+                : MessageEspecesInsuffisantes, "montant");
     }
+
+    /// <summary>
+    /// Remboursement du trop-payé d'une régularisation Chifa par le tiroir (recette du 2026-11-15, D4, script 099) : régularisation
+    /// « rendu au patient » encore active, montant « à rendre » positif, pas déjà rendu par un bon non corrigé, même patient, montant
+    /// égal au montant à rendre.
+    /// </summary>
+    public static void VerifierRemboursementRegularisation(RegularisationARendre r, decimal montant, long? patientId)
+    {
+        if (!r.Active || r.ARendre <= 0)
+            throw new RegleMetierException($"La régularisation Chifa de la vente {r.Vente} n’a rien à rendre au patient.", "regularisation");
+        if (r.BonRendu is { } bon)
+            throw new RegleMetierException($"Le trop-payé de la vente {r.Vente} est déjà rendu (bon {bon}).", "regularisation");
+        if (r.PatientId is null || r.PatientId != patientId)
+            throw new RegleMetierException($"Le trop-payé de la vente {r.Vente} se rend au patient de la vente.", "patient");
+        if (montant != r.ARendre)
+            throw new RegleMetierException($"Le montant à rendre pour la vente {r.Vente} est de {r.ARendre.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))} DA.", "montant");
+    }
+
+    /// <summary>Raison pré-remplie du remboursement : « Régularisation Chifa T-… ».</summary>
+    public static string RaisonRegularisation(string vente) => $"Régularisation Chifa {vente}";
 
     /// <summary>Au-delà du seuil (Administration › Caisse) : validation d'un ayant droit. Un seuil de 0 fait valider toute sortie.</summary>
     public static bool ValidationRequise(string effet, decimal montant, decimal seuil) => effet == Sortie && montant > seuil;
@@ -92,7 +130,8 @@ public static class RegleTiroir
                     Reference: T(s.Reference) is { Length: > TexteMax } ? throw new RegleMetierException($"{TexteMax} caractères au plus.", "reference") : T(s.Reference));
             case Patient:
                 if (s.PatientId is not > 0) throw new RegleMetierException("Choisissez le patient remboursé.", "patient");
-                return new SaisieTiroir(s.Montant, PatientId: s.PatientId, Raison: Exiger(s.Raison, "Indiquez la raison du remboursement.", "raison"));
+                return new SaisieTiroir(s.Montant, PatientId: s.PatientId, Raison: Exiger(s.Raison, "Indiquez la raison du remboursement.", "raison"),
+                    RegularisationVenteId: s.RegularisationVenteId is > 0 ? s.RegularisationVenteId : null);
             case Coffre:
             case Fond:
                 return new SaisieTiroir(s.Montant);

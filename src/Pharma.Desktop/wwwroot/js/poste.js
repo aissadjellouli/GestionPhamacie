@@ -386,6 +386,8 @@ window.pharma.tableaux = (function () {
   function demarrer() {
     new MutationObserver(planifier).observe(document.body, { subtree: true, childList: true });
     window.addEventListener("resize", planifier);
+    // Dépliage d'un <details> (relevé de la dette, 2026-11-15) : aucun nœud ajouté, l'observateur ne voit rien ; recalcul au dépliage
+    document.addEventListener("toggle", planifier, true);
     planifier();
   }
   if (document.body) demarrer(); else document.addEventListener("DOMContentLoaded", demarrer);

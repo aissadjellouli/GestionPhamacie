@@ -114,5 +114,5 @@ internal static class ReglementsEndpoints
             });
     }
 
-    private static PatientEnCreditDto VersDto(PatientEnCredit p) => new(p.Id, p.Nom, p.Telephone, p.Solde, p.Plafond, p.DerniereVente);
+    private static PatientEnCreditDto VersDto(PatientEnCredit p) => new(p.Id, p.Nom, p.Telephone, p.Solde, p.Plafond, p.DerniereVente, p.Regularisation);
 }

@@ -60,7 +60,7 @@
                         Part organisme de la vente : @Libelles.Dinars(v.PartOrganisme, 2)
                         @if (v.PartOrganismeChifa is { } pChifa)
                         {
-                            <span> · calculée sur le prix Chifa : @Libelles.Dinars(pChifa, 2)</span>
+                            <span> · calculée sur le prix Chifa et les boîtes servies : @Libelles.Dinars(pChifa, 2)</span>
                             @if (v.EcartPartOrganisme > 0) { <span class="texte-urgent"> · la caisse paiera @Libelles.Dinars(v.EcartPartOrganisme, 2) de moins : créance ramenée à la part Chifa</span> }
                             else if (v.EcartPartOrganisme < 0) { <span class="texte-urgent"> · la caisse paiera @Libelles.Dinars(-v.EcartPartOrganisme, 2) de plus : créance portée à la part Chifa, trop-payé du patient rendu (dette diminuée, sinon à rendre)</span> }
                         }
@@ -74,7 +74,7 @@
                                                        @onchange="@(() => regularisation = "charge_patient")" /><span>À la charge du patient (ajouté à sa dette, rattaché à cette vente)</span></label>
                             <label class="case"><input type="radio" name="regul" checked="@(regularisation == "perte_pharmacie")"
                                                        @onchange="@(() => regularisation = "perte_pharmacie")" /><span>Perte pharmacie</span></label>
-                            @if (!Session.A("prix.modifier")) { <p class="detail" style="margin: 0">Réservé au droit « modifier les prix » : un employé qui l’a validera avec son code.</p> }
+                            @if (!Session.A("prix.modifier")) { <p class="detail" style="margin: 0">Réservé au droit « modifier les prix » : au rattachement, « Faire autoriser » demande le code d’un employé qui l’a.</p> }
                         </fieldset>
                     }
                     @if (!v.Concorde)
@@ -86,7 +86,7 @@
                                       placeholder="Ex. : boîte remplacée par un générique, quantité corrigée par Chifa"></textarea>
                             <p class="detail" style="margin: 0">
                                 La vente n’est pas modifiée (stock et argent inchangés) ; le volet est rattaché avec ce motif, journalisé, et la vente apparaît dans « Volets avec écart ».
-                                @(Session.A("prix.modifier") ? "" : "Réservé au droit « modifier les prix » : un employé qui l’a validera avec son code.")
+                                @(Session.A("prix.modifier") ? "" : "Réservé au droit « modifier les prix » : au rattachement, « Faire autoriser » demande le code d’un employé qui l’a.")
                             </p>
                         </div>
                     }
@@ -134,10 +134,33 @@
         erreur = null;
         try
         {
+            // Sans le droit « modifier les prix » (recette du 2026-11-15, D1) : le serveur refuse en proposant « Faire autoriser » (code d'un
+            // ayant droit, pour cette seule action) ; le valideur voit les écarts, le motif et le choix de régularisation, puis l'appel est rejoué
+            if (!Session.A("prix.modifier") && (!v.Concorde || v.EcartPartOrganisme > 0))
+                Api.DetaillerProchaineAutorisation(DetailAutorisation(v));
             var (r, e) = await Api.RattacherVoletAsync(Texte, v.VenteId, v.Concorde ? null : motif?.Trim(), v.EcartPartOrganisme > 0 ? regularisation : null);
             if (e is not null || r is null) { erreur = e ?? "Rattachement impossible."; return; }
             await OnRattache.InvokeAsync(r);
         }
         finally { enCours = false; }
+    }
+
+    /// <summary>Action accordée par le code d'un ayant droit « prix.modifier » (CodeComptoir.ActionEcartVoletChifa côté serveur).</summary>
+    private const string ActionEcartVolet = "prix.modifier:volet_chifa_ecart";
+
+    /// <summary>Tableau montré au valideur : lignes en écart, motif, écart de part organisme et choix demandé.</summary>
+    private DetailAutorisationDto DetailAutorisation(VenteCandidateDto v)
+    {
+        var lignes = new List<IReadOnlyList<string>>();
+        foreach (var l in v.Lignes.Where(l => l.EnRouge))
+            lignes.Add([l.Produit, l.QuantiteVolet?.ToString() ?? "—", l.QuantiteVente?.ToString() ?? "—",
+                l.PrixChifa is { } pc ? Libelles.Dinars(pc, 2) : "—", l.NotrePrix is { } np ? Libelles.Dinars(np, 2) : "—", l.Libelle]);
+        if (!v.Concorde && !string.IsNullOrWhiteSpace(motif))
+            lignes.Add(["Motif du rattachement", "", "", "", "", motif.Trim()]);
+        if (v.EcartPartOrganisme > 0 && v.PartOrganismeChifa is not null)
+            lignes.Add([$"Part organisme : la caisse paiera {Libelles.Dinars(v.EcartPartOrganisme, 2)} de moins", "", "", "", "",
+                regularisation == "charge_patient" ? "À la charge du patient" : regularisation == "perte_pharmacie" ? "Perte pharmacie" : "—"]);
+        return new DetailAutorisationDto($"Volet Chifa n° {Rapprochement.NumeroFacture} rattaché à la vente {v.Numero}",
+            ["Produit", "Qté volet", "Qté servie", "Prix Chifa", "Notre prix", "Constat"], lignes, ActionEcartVolet);
     }
 }

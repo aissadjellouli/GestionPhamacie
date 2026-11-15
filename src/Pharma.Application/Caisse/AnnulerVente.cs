@@ -170,7 +170,7 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
             if (choix.Rembourse > 0)
             {
                 if (session is null) throw new RegleMetierException("Ouvrez la caisse du poste : le remboursement du patient sort du tiroir.");
-                Pharma.Domain.Caisse.RegleTiroir.VerifierDansTiroir(choix.Rembourse, session.FondCaisse + await sessions.VentesEspecesAsync(session.Id, ct));
+                await EspecesTiroir.VerifierAsync(sessions, droits, session, choix.Rembourse, utilisateurId, ct);
                 var seuilSortie = (await sessions.ParametresAsync(ct)).SeuilSortieTiroir;
                 if (Pharma.Domain.Caisse.RegleTiroir.ValidationRequise(Pharma.Domain.Caisse.RegleTiroir.Sortie, choix.Rembourse, seuilSortie))
                 {

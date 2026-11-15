@@ -177,6 +177,7 @@
     <File Path="database/migration/096_sorties_tiroir.sql" />
     <File Path="database/migration/097_rapprochement_decisions.sql" />
     <File Path="database/migration/098_annulations_regularisation_reglement.sql" />
+    <File Path="database/migration/099_remboursement_regularisation.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

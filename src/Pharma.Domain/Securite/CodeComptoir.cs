@@ -53,10 +53,18 @@ public static class CodeComptoir
     /// </summary>
     public const string ActionReglementGrossisteTiroir = "achats.regler:tiroir_reglement_grossiste";
 
+    /// <summary>
+    /// Rattacher un volet Chifa malgré des différences, ou choisir le sort de l'écart de part organisme (recette du 2026-11-15, D1) :
+    /// accordable par le code d'un ayant droit « prix.modifier » pour cette seule action, y compris sur une connexion par code comptoir
+    /// (où prix.modifier, hors comptoir, n'est jamais proposé).
+    /// </summary>
+    public const string ActionEcartVoletChifa = "prix.modifier:volet_chifa_ecart";
+
     /// <summary>Action accordable par code → droit que le valideur doit avoir.</summary>
     public static readonly IReadOnlyDictionary<string, string> ActionsAutorisables = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        [ActionReglementGrossisteTiroir] = Permissions.AchatsRegler
+        [ActionReglementGrossisteTiroir] = Permissions.AchatsRegler,
+        [ActionEcartVoletChifa] = Permissions.PrixModifier
     };
 
     /// <summary>Droit que le valideur doit détenir : celui de l'action, sinon la permission elle-même.</summary>

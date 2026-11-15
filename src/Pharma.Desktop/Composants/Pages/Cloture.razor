@@ -90,7 +90,7 @@
                 }
             </section>
 
-            <aside class="panneau colonne-laterale" aria-label="Résultat">
+            <aside class="panneau colonne-laterale" aria-label="Résultat" style="flex: 0 1 480px; min-width: 420px">
                 <h2>Résultat</h2>
                 @if (resultat is null)
                 {
@@ -103,7 +103,8 @@
                 }
                 else
                 {
-                    <div class="reglement">
+                    @* Résultat : seul ce bloc défile s’"+"il est long (lignes du tiroir) ; montants sur une ligne (recette du 2026-11-15, D3/D6) *@
+                    <div class="reglement cadre-defilant resultat-releve">
                         @if (resultat.LignesTiroir is { Count: > 0 } tiroir)
                         {
                             @* Sorties et entrées du tiroir (script 096) : lignes séparées, comprises dans l'attendu (aucun écart dû à elles) *@
@@ -125,7 +126,8 @@
                         <div class="ligne-total"><span>Compté</span><span>@Libelles.Dinars(resultat.Compte, 2)</span></div>
                         <div class="a-payer">
                             <span>Écart</span>
-                            <span style="color: @(resultat.Ecart < 0 ? "var(--urgent)" : "var(--accent)")">@(resultat.Ecart > 0 ? "+" : "")@Libelles.Dinars(resultat.Ecart ?? 0, 2)</span>
+                            @* Valeur lisible sur le fond de la carte (avant : couleur d’"+"accent sur fond d’"+"accent, invisible) *@
+                            <span data-champ="ecart">@(resultat.Ecart > 0 ? "+" : resultat.Ecart < 0 ? "−" : "")@Libelles.Dinars(Math.Abs(resultat.Ecart ?? 0), 2)@(resultat.Ecart < 0 ? " (manque)" : resultat.Ecart > 0 ? " (excédent)" : "")</span>
                         </div>
                         @if (resultat.AuDelaDuSeuil == true)
                         {

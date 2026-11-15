@@ -46,10 +46,53 @@ public sealed class TiroirSql(NpgsqlDataSource db) : ITiroir
         };
 
         var s = m.Saisie;
+        long? regularisation = s.RegularisationVenteId is { } venteRegularisee ? await RegularisationNonRendueAsync(cx, tx, venteRegularisee, ct) : null;
         var ecrit = await InsererAsync(cx, tx, evenement, m.SessionId, m.UtilisateurId, m.Poste, m.MotifCode, m.MotifLibelle, m.Sens, m.Detail, m.Montant,
-            s.Categorie, s.Libelle, s.FournisseurId, s.Beneficiaire, s.Reference, s.PatientId, s.Raison, reglement, tresorerie, m.ValidePar, null, null, ct);
+            s.Categorie, s.Libelle, s.FournisseurId, s.Beneficiaire, s.Reference, s.PatientId, s.Raison, reglement, tresorerie, m.ValidePar, null, null, ct,
+            regularisation);
         await tx.CommitAsync(ct);
         return ecrit;
+    }
+
+    /// <summary>Bon actif (non corrigé) qui a rendu le trop-payé d'une régularisation (script 099).</summary>
+    private const string BonRendu = """
+        (SELECT t.numero FROM mouvement_tiroir t
+          WHERE t.regularisation_id = g.id AND t.corrige_id IS NULL
+            AND NOT EXISTS (SELECT 1 FROM mouvement_tiroir c WHERE c.corrige_id = t.id)
+          ORDER BY t.id DESC LIMIT 1)
+        """;
+
+    public async Task<RegularisationARendre?> RegularisationARendreAsync(long venteId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand($"""
+            SELECT g.id, v.id, v.numero, v.patient_id, trim(concat_ws(' ', p.nom, p.prenom)), g.montant_a_rendre,
+                   g.statut = 'active' AND g.sort = 'avoir_patient' AND v.statut <> 'annulee', {BonRendu}
+            FROM regularisation_part_organisme g
+            JOIN vente v ON v.id = g.vente_id
+            LEFT JOIN patient p ON p.id = v.patient_id
+            WHERE g.vente_id = $1
+            """);
+        cmd.Parameters.AddWithValue(venteId);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return null;
+        return new RegularisationARendre(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetInt64(3),
+            r.IsDBNull(4) ? null : r.GetString(4), r.GetDecimal(5), r.GetBoolean(6), r.IsDBNull(7) ? null : r.GetString(7));
+    }
+
+    /// <summary>
+    /// Régularisation verrouillée et relue dans la transaction de la sortie : deux postes ne rendent pas deux fois le même trop-payé
+    /// (vérifié avant par le cas d'usage, revérifié ici sous verrou).
+    /// </summary>
+    private static async Task<long> RegularisationNonRendueAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long venteId, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand($"""
+            SELECT g.id, {BonRendu} FROM regularisation_part_organisme g WHERE g.vente_id = $1 FOR UPDATE OF g
+            """, cx, tx);
+        cmd.Parameters.AddWithValue(venteId);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) throw new RegleMetierException("Aucune régularisation Chifa sur cette vente.", "regularisation");
+        if (!r.IsDBNull(1)) throw new RegleMetierException($"Ce trop-payé vient d’être rendu (bon {r.GetString(1)}).", "regularisation");
+        return r.GetInt64(0);
     }
 
     public async Task<MouvementTiroirEcrit> CorrigerAsync(MouvementTiroir o, long sessionId, string poste, string motif, long utilisateurId,
@@ -91,14 +134,14 @@ public sealed class TiroirSql(NpgsqlDataSource db) : ITiroir
     internal static async Task<MouvementTiroirEcrit> InsererAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long? evenement, long sessionId, long utilisateurId,
         string poste, string motifCode, string motifLibelle, string sens, string detail, decimal montant, string? categorie, string? libelle, long? fournisseurId,
         string? beneficiaire, string? reference, long? patientId, string? raison, long? reglement, long? tresorerie, long? validePar, long? corrige,
-        string? motifCorrection, CancellationToken ct)
+        string? motifCorrection, CancellationToken ct, long? regularisation = null)
     {
         await using var cmd = new NpgsqlCommand("""
             INSERT INTO mouvement_tiroir (numero, evenement_caisse_id, session_caisse_id, utilisateur_id, poste, motif_code, motif_libelle, sens, detail,
                 montant, categorie, libelle, fournisseur_id, beneficiaire, reference, patient_id, raison, reglement_fournisseur_id, mouvement_tresorerie_id,
-                valide_par, corrige_id, motif_correction)
+                valide_par, corrige_id, motif_correction, regularisation_id)
             VALUES ('BS-' || lpad(nextval('seq_numero_bon_sortie')::text, 6, '0'), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                $17, $18, $19, $20, $21)
+                $17, $18, $19, $20, $21, $22)
             RETURNING id, numero
             """, cx, tx);
         cmd.Parameters.Add(V(evenement, NpgsqlDbType.Bigint));
@@ -122,6 +165,7 @@ public sealed class TiroirSql(NpgsqlDataSource db) : ITiroir
         cmd.Parameters.Add(V(validePar, NpgsqlDbType.Bigint));
         cmd.Parameters.Add(V(corrige, NpgsqlDbType.Bigint));
         cmd.Parameters.Add(V(motifCorrection, NpgsqlDbType.Text));
+        cmd.Parameters.Add(V(regularisation, NpgsqlDbType.Bigint));
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
         return new MouvementTiroirEcrit(r.GetInt64(0), r.GetString(1));

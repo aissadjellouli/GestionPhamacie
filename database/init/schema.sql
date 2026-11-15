@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 098 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 099 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 098 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 099 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict fovbJOShLntRb7V9qAnfN2E0seSNoxYtnV1ksL8KMS1a4kWS1dWmUrQepEgCuA1
+\restrict dFFRQGoLz0LEZ5mTitRrqqVVvzgQIKYzhC4lrIf1M5XonZ7PxnZPVZOoClcbLmU
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -4161,10 +4161,12 @@ CREATE TABLE public.mouvement_tiroir (
     corrige_id bigint,
     motif_correction text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    regularisation_id bigint,
     CONSTRAINT ck_mouvement_tiroir_correction CHECK (((corrige_id IS NULL) = (motif_correction IS NULL))),
     CONSTRAINT ck_mouvement_tiroir_depense CHECK (((detail <> 'depense'::text) OR (corrige_id IS NOT NULL) OR ((categorie IS NOT NULL) AND (libelle IS NOT NULL)))),
     CONSTRAINT ck_mouvement_tiroir_fournisseur CHECK (((detail <> 'fournisseur'::text) OR (corrige_id IS NOT NULL) OR (fournisseur_id IS NOT NULL) OR (beneficiaire IS NOT NULL))),
     CONSTRAINT ck_mouvement_tiroir_patient CHECK (((detail <> 'patient'::text) OR (corrige_id IS NOT NULL) OR ((patient_id IS NOT NULL) AND (raison IS NOT NULL)))),
+    CONSTRAINT ck_mouvement_tiroir_regularisation CHECK (((regularisation_id IS NULL) OR ((detail = 'patient'::text) AND (sens = 'sortie'::text) AND (corrige_id IS NULL)))),
     CONSTRAINT mouvement_tiroir_detail_check CHECK ((detail = ANY (ARRAY['depense'::text, 'fournisseur'::text, 'patient'::text, 'coffre'::text, 'fond'::text]))),
     CONSTRAINT mouvement_tiroir_montant_check CHECK ((montant > (0)::numeric)),
     CONSTRAINT mouvement_tiroir_sens_check CHECK ((sens = ANY (ARRAY['sortie'::text, 'entree'::text])))
@@ -8558,6 +8560,13 @@ CREATE INDEX ix_mouvement_tiroir_employe ON public.mouvement_tiroir USING btree 
 
 
 --
+-- Name: ix_mouvement_tiroir_regularisation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_mouvement_tiroir_regularisation ON public.mouvement_tiroir USING btree (regularisation_id) WHERE (regularisation_id IS NOT NULL);
+
+
+--
 -- Name: ix_mouvement_tiroir_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -10156,6 +10165,14 @@ ALTER TABLE ONLY public.mouvement_tiroir
 
 
 --
+-- Name: mouvement_tiroir mouvement_tiroir_regularisation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_regularisation_id_fkey FOREIGN KEY (regularisation_id) REFERENCES public.regularisation_part_organisme(id);
+
+
+--
 -- Name: mouvement_tiroir mouvement_tiroir_session_caisse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11031,5 +11048,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict fovbJOShLntRb7V9qAnfN2E0seSNoxYtnV1ksL8KMS1a4kWS1dWmUrQepEgCuA1
+\unrestrict dFFRQGoLz0LEZ5mTitRrqqVVvzgQIKYzhC4lrIf1M5XonZ7PxnZPVZOoClcbLmU
 
