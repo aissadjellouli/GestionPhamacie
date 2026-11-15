@@ -6,7 +6,7 @@ using Pharma.Domain.Ventes;
 
 namespace Pharma.Application.Caisse;
 
-// ---- Prestations sans stock (2026-11-15, modèle Wasfa, lot 6, script 105) ----
+// ---- Prestations sans stock (2026-11-15, modèle Pharma, lot 6, script 105) ----
 
 public interface ITypesPrestation
 {

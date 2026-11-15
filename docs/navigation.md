@@ -58,7 +58,7 @@
 - **En-tête toujours sur une ligne**, menu des domaines toujours entier : selon la largeur utile (fenêtre ÷ zoom du poste, classes
   `largeur-*` posées par `poste.js`), d'abord les lettres de raccourci disparaissent (≤ 1 850 px), puis « Rechercher… » devient la loupe
   (≤ 1 650 px), puis le nom du logiciel et l'écran précédent se réduisent (≤ 1 450 px, ≤ 1 250 px).
-- **Caisse : F7** remet le curseur dans « Scanner ou rechercher un produit » (repris de l'exemple Wasfa) ; F12 encaisse.
+- **Caisse : F7** remet le curseur dans « Scanner ou rechercher un produit » (repris de l'exemple Pharma) ; F12 encaisse.
 
 ## Retour à l'écran précédent
 

@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Stock : SHP par lot, correction tracée d'une entrée de stock,
--- date de la facture fournisseur (2026-11-15, modèle Wasfa, lot 4)
+-- date de la facture fournisseur (2026-11-15, modèle Pharma, lot 4)
 --   * lot.shp : SHP par boîte du lot (numeric(10,2), 0 par défaut), repris
 --     à l'ajout de la colonne depuis les lignes de réception du lot (aucun
 --     lot n'a de SHP différente d'une ligne à l'autre : constat du lot 0) ;

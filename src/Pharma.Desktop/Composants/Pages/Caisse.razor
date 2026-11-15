@@ -968,7 +968,7 @@
                                 else
                                 {
                                     <select id="remise-vente" class="selection" data-champ="remis_a pour" @bind="RemiseChoix">
-                                        <option value="">@(AvecOrdonnance ? "le patient lui-même" : "lui-même")</option>
+                                        <option value="">@($"{patient?.Nom} {patient?.Prenom}".Trim()) @(AvecOrdonnance ? "(lui-même)" : "(pour lui-même)")</option>
                                         @foreach (var pr in proches) { <option value="@pr.Id">@pr.Nom@LienLibelle(pr.Lien)</option> }
                                         <option value="@RemiseAutreValeur">Autre personne…</option>
                                     </select>
@@ -1118,7 +1118,7 @@
                         @* Contrôle de fin de droits (2026-11-15) : avertissement renforcé, journalisé par le serveur, jamais bloquant *@
                         @if (AlerteCreditDroits)
                         {
-                            <strong role="alert" data-champ="droits_chifa_credit" style="color: var(--danger, #b42318)">@EtatDroitsChifa.MessageCredit</strong>
+                            <strong role="alert" data-champ="droits_chifa_credit" style="color: var(--danger, #b42318)">@EtatDroitsChifa.MessageCreditSelon(patient?.DateFinDroit, DateOnly.FromDateTime(DateTime.Now))</strong>
                         }
                         @if (!Session.A("credit.accorder"))
                         {

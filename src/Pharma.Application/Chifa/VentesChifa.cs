@@ -8,7 +8,7 @@ using Pharma.Domain.Ventes;
 
 namespace Pharma.Application.Chifa;
 
-// ---- Volet Chifa : compléments (2026-11-15, modèle Wasfa, lot 1, script 100) ----
+// ---- Volet Chifa : compléments (2026-11-15, modèle Pharma, lot 1, script 100) ----
 
 /// <summary>Centre payeur d'un organisme Chifa (CNAS ou CASNOS).</summary>
 public sealed record CentrePayeur(long Id, long OrganismeId, string OrganismeCode, string Code, string Nom, bool Actif);

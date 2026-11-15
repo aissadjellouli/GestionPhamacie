@@ -24,7 +24,7 @@ Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livr�
 
 ## Questions pour la V2
 
-- [ ] **Wasfa** : de quoi s'agit-il exactement (ordonnance préparée à l'avance ?), et qui l'envoie ?
+- [ ] **Pharma** : de quoi s'agit-il exactement (ordonnance préparée à l'avance ?), et qui l'envoie ?
 - Autres sujets V2 déjà notés : commandes intelligentes (Ramadan, classement ABC), fidélisation parapharmacie, messagerie interne.
 
 ## À confirmer avec l'éditeur de Chifa (CNAS)

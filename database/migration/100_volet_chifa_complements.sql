@@ -1,5 +1,5 @@
 -- =====================================================================
--- Volet Chifa : compléments (2026-11-15, modèle Wasfa, lot 1)
+-- Volet Chifa : compléments (2026-11-15, modèle Pharma, lot 1)
 --   1. vente.chifa_date_soins : date des soins (saisie au volet ou au
 --      rattachement). La 2e date du QR n'y est PAS rangée automatiquement
 --      (décision D-1 : à confirmer sur un volet réel ; docs/chifa.md).

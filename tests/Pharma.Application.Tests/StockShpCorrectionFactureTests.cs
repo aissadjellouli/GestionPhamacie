@@ -39,7 +39,7 @@ internal sealed class EntreesStockEnMemoire : IEntreesStock
     }
 }
 
-/// <summary>Lot 4 du modèle Wasfa (2026-11-15) : SHP par lot, péremption MM/AA, correction tracée d'une entrée de stock, date de facture.</summary>
+/// <summary>Lot 4 du modèle Pharma (2026-11-15) : SHP par lot, péremption MM/AA, correction tracée d'une entrée de stock, date de facture.</summary>
 public class StockShpCorrectionFactureTests
 {
     private static readonly DateOnly Aujourdhui = new(2026, 11, 15);

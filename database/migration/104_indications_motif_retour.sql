@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Indications thérapeutiques et motif réglable du retour client
--- (modèle Wasfa, 2026-11-15, lot 5)
+-- (modèle Pharma, 2026-11-15, lot 5)
 --   indication : libellé (unique sans tenir compte de la casse ni des
 --   espaces autour), actif ; jamais supprimée (désactivée, elle n'est
 --   plus proposée). Gérée dans Administration › Indications avec le droit

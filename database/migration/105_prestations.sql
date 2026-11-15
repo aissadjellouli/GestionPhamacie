@@ -1,5 +1,5 @@
 -- =====================================================================
--- Prestations sans stock (modèle Wasfa, 2026-11-15, lot 6)
+-- Prestations sans stock (modèle Pharma, 2026-11-15, lot 6)
 --   type_prestation : prestations vendues à la caisse (prise de tension,
 --   glycémie, injection…) : code unique, libellé, prix TTC, taux de TVA,
 --   actif. Gérées dans Administration › Prestations avec le droit

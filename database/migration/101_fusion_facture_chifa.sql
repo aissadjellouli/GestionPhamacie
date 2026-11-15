@@ -1,5 +1,5 @@
 -- =====================================================================
--- Fusion du n° de facture Chifa (2026-11-15, modèle Wasfa, lot 2, partie A)
+-- Fusion du n° de facture Chifa (2026-11-15, modèle Pharma, lot 2, partie A)
 -- Deux colonnes portaient la même notion : vente.num_facture_chifa (script
 -- 007, jamais alimentée par le logiciel) et vente.chifa_facture (script
 -- 060, volet Chifa). chifa_facture devient la seule colonne lue et écrite.

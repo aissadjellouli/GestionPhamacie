@@ -1,5 +1,5 @@
 -- =====================================================================
--- Patient : rang de l'assuré et date de fin de droits (modèle Wasfa,
+-- Patient : rang de l'assuré et date de fin de droits (modèle Pharma,
 -- 2026-11-15, lot 3)
 --   rang_assure(num_assure) : les 2 chiffres du suffixe « /NN » du n°
 --   d'assuré (« 690755008888/02 » -> « 02 ») ; NULL sans erreur pour un

@@ -43,7 +43,7 @@ public sealed class EntreesStockSql(NpgsqlDataSource db) : IEntreesStock
     public async Task<Page<EntreeStock>> PageAsync(FiltreEntreesStock filtre, DemandePage page, CancellationToken ct = default)
     {
         var lignes = new List<EntreeStock>();
-        await using (var cmd = db.CreateCommand(Colonnes + Tables + Filtre + " ORDER BY p.nom_commercial, l.date_peremption, l.id LIMIT $3 OFFSET $4"))
+        await using (var cmd = db.CreateCommand(Colonnes + " " + Tables + " " + Filtre + " ORDER BY p.nom_commercial, l.date_peremption, l.id LIMIT $3 OFFSET $4"))
         {
             Parametres(cmd, filtre);
             cmd.Parameters.AddWithValue(page.Taille);
@@ -51,14 +51,14 @@ public sealed class EntreesStockSql(NpgsqlDataSource db) : IEntreesStock
             await using var r = await cmd.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct)) lignes.Add(Lire(r));
         }
-        await using var compte = db.CreateCommand("SELECT count(*)::int " + Tables + Filtre);
+        await using var compte = db.CreateCommand("SELECT count(*)::int " + Tables + " " + Filtre);
         Parametres(compte, filtre);
         return new Page<EntreeStock>(lignes, (int)(await compte.ExecuteScalarAsync(ct))!, page.Page, page.Taille);
     }
 
     public async Task<EntreeStock?> LotAsync(long lotId, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand(Colonnes + Tables + " WHERE l.id = $1");
+        await using var cmd = db.CreateCommand(Colonnes + " " + Tables + " WHERE l.id = $1");
         cmd.Parameters.AddWithValue(lotId);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         return await r.ReadAsync(ct) ? Lire(r) : null;

@@ -1,5 +1,5 @@
 -- =====================================================================
--- Avoir patient (modèle Wasfa, 2026-11-15, lot 7)
+-- Avoir patient (modèle Pharma, 2026-11-15, lot 7)
 --   avoir_mouvement : argent que la pharmacie doit au patient, séparé de
 --   sa dette (patient.solde_credit n'est jamais rendu négatif).
 --   Chaque ligne : sens « credit » (l'avoir augmente) ou « debit » (il

@@ -6,7 +6,7 @@ using Pharma.Domain.Securite;
 
 namespace Pharma.Application.Catalogue;
 
-// ---- Indications thérapeutiques (2026-11-15, modèle Wasfa, lot 5, script 104) ----
+// ---- Indications thérapeutiques (2026-11-15, modèle Pharma, lot 5, script 104) ----
 
 public interface IIndications
 {

@@ -50,4 +50,15 @@ public static class EtatDroitsChifa
         };
 
     public const string MessageCredit ="Droits expirés et vente à crédit : risque de non-paiement.";
+
+    /// <summary>
+    /// Avertissement de vente à crédit selon la date (décision du titulaire, 2026-11-15) : date dépassée → « expirés le … » ;
+    /// sinon (dans les N jours) → « bientôt expirés (jusqu'au …) ». Sans date connue : message générique MessageCredit.
+    /// </summary>
+    public static string MessageCreditSelon(DateOnly? dateFinDroit, DateOnly aujourdhui) => dateFinDroit switch
+    {
+        { } fin when fin < aujourdhui => $"Droits Chifa expirés le {fin:dd/MM/yyyy} et vente à crédit : risque de non-paiement.",
+        { } fin => $"Droits Chifa bientôt expirés (jusqu’au {fin:dd/MM/yyyy}) et vente à crédit : risque de non-paiement.",
+        _ => MessageCredit
+    };
 }

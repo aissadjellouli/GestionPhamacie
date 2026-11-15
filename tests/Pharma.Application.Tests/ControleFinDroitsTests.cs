@@ -155,4 +155,14 @@ public class ControleFinDroitsTests
         Assert.Contains(DroitsChifa.ActionJournalCredit, journal.Actions);
         Assert.DoesNotContain(DroitsChifa.ActionJournal, journal.Actions);
     }
+
+    [Fact]
+    public void Message_credit_selon_la_date_expires_ou_bientot()
+    {
+        var jour = new DateOnly(2026, 11, 15);
+        Assert.Equal("Droits Chifa expirés le 14/11/2026 et vente à crédit : risque de non-paiement.", EtatDroitsChifa.MessageCreditSelon(jour.AddDays(-1), jour));
+        Assert.Equal("Droits Chifa bientôt expirés (jusqu’au 15/11/2026) et vente à crédit : risque de non-paiement.", EtatDroitsChifa.MessageCreditSelon(jour, jour));
+        Assert.Equal("Droits Chifa bientôt expirés (jusqu’au 25/11/2026) et vente à crédit : risque de non-paiement.", EtatDroitsChifa.MessageCreditSelon(jour.AddDays(10), jour));
+        Assert.Equal(EtatDroitsChifa.MessageCredit, EtatDroitsChifa.MessageCreditSelon(null, jour));
+    }
 }

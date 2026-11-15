@@ -6,7 +6,7 @@ using Pharma.Domain.Ventes;
 
 namespace Pharma.Application.Chifa;
 
-// ---- Fusion du n° de facture Chifa (2026-11-15, modèle Wasfa, lot 2, script 101) ----
+// ---- Fusion du n° de facture Chifa (2026-11-15, modèle Pharma, lot 2, script 101) ----
 
 /// <summary>
 /// Vente dont l'ancien n° (colonne obsolète) et chifa_facture différaient au passage du script 101 (ou dont la recopie créait
