@@ -10,7 +10,9 @@ namespace Pharma.Application.Caisse;
 public sealed record ParametresCaisse(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string VersementCloture = "manuel",
     decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true,
     decimal SeuilEcartChifa = Pharma.Domain.Ventes.EcartPrixChifa.SeuilParDefaut, decimal SeuilSortieTiroir = 2000,
-    int DelaiVoletChifaJours = RapprocherVoletChifa.DelaiParDefaut, int JoursAlerteFinDroit = 30);
+    int DelaiVoletChifaJours = RapprocherVoletChifa.DelaiParDefaut, int JoursAlerteFinDroit = 30,
+    int DelaiDepotChifaJours = Pharma.Domain.Ventes.RegleBordereau.DelaiDepotParDefaut,
+    int DelaiPaiementBordereauJours = Pharma.Domain.Ventes.RegleBordereau.DelaiPaiementParDefaut);
 
 /// <summary>Données d'une session pour l'écran et le rapport.</summary>
 public sealed record DetailSession(
@@ -222,6 +224,10 @@ public sealed class ModifierParametresCaisse(ISessionsCaisse sessions, IJournal 
             throw new RegleMetierException("Le seuil d’écart de prix Chifa doit être positif ou nul (DA par boîte).", "seuil_ecart_chifa");
         if (p.DelaiVoletChifaJours is < 1 or > 365)
             throw new RegleMetierException("Le délai des ventes en attente de volet Chifa doit être compris entre 1 et 365 jours.", "delai_volet_chifa");
+        if (p.DelaiDepotChifaJours is < 1 or > 365)
+            throw new RegleMetierException("Le délai de dépôt des ventes Chifa doit être compris entre 1 et 365 jours.", "delai_depot_chifa");
+        if (p.DelaiPaiementBordereauJours is < 1 or > 365)
+            throw new RegleMetierException("Le délai de paiement d’un bordereau doit être compris entre 1 et 365 jours.", "delai_paiement_bordereau");
         if (p.JoursAlerteFinDroit is < 0 or > 365)
             throw new RegleMetierException("L’alerte de fin de droits Chifa doit être comprise entre 0 et 365 jours.", "jours_alerte_fin_droit");
         if (p.DeconnexionMinutes is < 0 or > 240)

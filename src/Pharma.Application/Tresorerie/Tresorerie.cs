@@ -23,17 +23,22 @@ public sealed record ChequeARemettre(long PaiementId, DateTime Date, decimal Mon
 /// <summary>Caisse clôturée dont l'argent n'est pas encore au coffre ; Propose = compté moins le fond par défaut.</summary>
 public sealed record CaisseAVerser(long SessionId, string Poste, DateTime FermeeLe, string OuvertePar, decimal Compte, decimal Propose);
 
-public sealed record BordereauEnvoye(long Id, long OrganismeId, string Organisme, string Numero, decimal Montant);
+/// <summary>Bordereau Chifa / MDN déposé, en attente de paiement (script 110) : Montant = reste à recevoir (attendu − versé − rejeté).</summary>
+public sealed record BordereauEnvoye(long Id, long OrganismeId, string Organisme, string Numero, decimal Montant,
+    decimal Attendu = 0, decimal Verse = 0, decimal Rejete = 0, DateOnly? DateDepot = null, string? Centre = null);
 
 public sealed record AVerser(IReadOnlyList<ChequeARemettre> Cheques, IReadOnlyList<CaisseAVerser> Caisses, IReadOnlyList<BordereauEnvoye> Bordereaux);
 
 public sealed record CompteAEcrire(long? Id, string Nom, string? Banque, string? NumeroCompte, bool RecoitCarte, decimal SoldeInitial,
     DateOnly DateInitiale, bool Actif);
 
-/// <summary>StatutBordereau : paye ou rejet_partiel, appliqué au bordereau rattaché.</summary>
+/// <summary>
+/// BordereauId : bordereau unique payé (libellé du mouvement) ; Bordereaux : parts du versement imputées aux bordereaux Chifa / MDN
+/// (script 110, statut recalculé). StatutBordereau : ancien choix « payé / rejet partiel », plus utilisé (statut calculé).
+/// </summary>
 public sealed record MouvementAEcrire(long CompteId, DateOnly Date, string Sens, decimal Montant, string Nature, string? Categorie, string? Libelle,
     string? Reference, long? OrganismeId, long? BordereauId, string? StatutBordereau, long UtilisateurId,
-    IReadOnlyList<(long FactureId, decimal Montant)>? Factures = null);
+    IReadOnlyList<(long FactureId, decimal Montant)>? Factures = null, IReadOnlyList<(long BordereauId, decimal Montant)>? Bordereaux = null);
 
 public interface ITresorerie
 {
@@ -111,13 +116,18 @@ public sealed class EnregistrerCompteTresorerie(ITresorerie tresorerie, IPermiss
     internal static string? Vide(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }
 
-/// <summary>Dépense, encaissement divers ou versement d'un organisme (bordereau facultatif, marqué payé ou rejet partiel).</summary>
+/// <summary>
+/// Dépense, encaissement divers ou versement d'un organisme : imputé aux factures d'organisme du logiciel (canal logiciel) ou à un ou
+/// plusieurs bordereaux Chifa / MDN, en entier ou en partie (script 110 ; le statut des bordereaux est recalculé, soldé quand plus rien
+/// n'est à recevoir hors rejets). bordereauId seul (ancien appel) : tout le versement, au plus son reste, sur ce bordereau.
+/// </summary>
 public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissionService droits, IHorloge horloge, IJournal journal,
-    Factures.IFactures? factures = null, Referentiels.MotifsActifs? motifs = null)
+    Factures.IFactures? factures = null, Referentiels.MotifsActifs? motifs = null, Chifa.IBordereaux? bordereaux = null)
 {
     public async Task<long> ExecuterAsync(long compteId, DateOnly? date, string? nature, decimal montant, string? categorie, string? libelle,
         string? reference, long? organismeId, long? bordereauId, string? statutBordereau, long utilisateurId,
-        IReadOnlyList<long>? facturesASolder = null, CancellationToken ct = default)
+        IReadOnlyList<long>? facturesASolder = null, IReadOnlyList<(long BordereauId, decimal Montant)>? bordereauxAPayer = null,
+        CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.TresorerieGerer, "saisir un mouvement de trésorerie", ct);
         var n = RegleTresorerie.Nature(nature);
@@ -127,9 +137,32 @@ public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissio
         var actives = motifs is null || n != NatureMouvement.Depense ? null
             : (await motifs.ExecuterAsync(Pharma.Domain.Referentiels.RegleMotifs.Charge, ct)).Select(m => m.Code).ToList();
         RegleTresorerie.VerifierMouvement(n, montant, libelle, categorie, organismeId, jour, horloge.Aujourdhui, compte.DateInitiale, actives);
-        if (n != NatureMouvement.VersementOrganisme) (organismeId, bordereauId) = (null, null);
-        if (bordereauId is not null && statutBordereau is not ("paye" or "rejet_partiel"))
-            throw new RegleMetierException("Bordereau : indiquez s’il est payé en entier ou en rejet partiel.", "statut_bordereau");
+        if (n != NatureMouvement.VersementOrganisme) (organismeId, bordereauId, bordereauxAPayer) = (null, null, null);
+        _ = statutBordereau;   // ancien choix « payé / rejet partiel » : le statut se calcule (script 110)
+
+        // Bordereaux Chifa / MDN payés par ce versement
+        var aPayer = (bordereauxAPayer ?? []).Where(x => x.BordereauId > 0).ToList();
+        IReadOnlyList<(long, decimal)>? imputationsBordereaux = null;
+        if (aPayer.Count > 0 || bordereauId is not null)
+        {
+            if (bordereaux is null) throw new InvalidOperationException("Service des bordereaux absent.");
+            if (facturesASolder is { Count: > 0 })
+                throw new RegleMetierException("Un versement s’impute aux factures d’organisme du logiciel ou aux bordereaux Chifa, pas aux deux.", "bordereaux");
+            var lus = new List<(long Id, string Numero, long OrganismeId, string Statut, decimal Reste, decimal Montant)>();
+            if (aPayer.Count == 0 && bordereauId is { } seul)
+            {
+                var b = await bordereaux.LireAsync(seul, ct) ?? throw new RegleMetierException("Bordereau introuvable.", "bordereaux");
+                lus.Add((b.Id, b.Numero, b.OrganismeId, b.Statut, b.Reste, Math.Min(montant, b.Reste)));
+            }
+            foreach (var (bid, part) in aPayer)
+            {
+                var b = await bordereaux.LireAsync(bid, ct) ?? throw new RegleMetierException("Bordereau introuvable.", "bordereaux");
+                lus.Add((b.Id, b.Numero, b.OrganismeId, b.Statut, b.Reste, part));
+            }
+            Pharma.Domain.Ventes.RegleBordereau.VerifierImputations(montant, organismeId ?? 0, lus);
+            imputationsBordereaux = lus.Select(x => (x.Id, x.Montant)).ToList();
+            bordereauId = lus.Count == 1 ? lus[0].Id : null;
+        }
         // Premier contrôle (message immédiat) ; refait sous verrou à l'écriture, pour deux dépenses simultanées
         if (n == NatureMouvement.Depense && compte.Solde < montant)
             throw new RegleMetierException($"Solde insuffisant sur {compte.Nom} ({compte.Solde:N2} DA).", "montant");
@@ -150,9 +183,13 @@ public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissio
 
         var id = await tresorerie.AjouterMouvementAsync(new MouvementAEcrire(compteId, jour, n == NatureMouvement.Depense ? "sortie" : "entree", montant,
             n.Code(), n == NatureMouvement.Depense ? categorie : null, EnregistrerCompteTresorerie.Vide(libelle), EnregistrerCompteTresorerie.Vide(reference),
-            organismeId, bordereauId, bordereauId is null ? null : statutBordereau, utilisateurId, imputations), ct);
+            organismeId, bordereauId, null, utilisateurId, imputations, imputationsBordereaux), ct);
         await journal.EcrireAsync(utilisateurId, "mouvement_tresorerie", "mouvement_tresorerie", id,
-            new Dictionary<string, object?> { ["compte"] = compte.Nom, ["nature"] = n.Code(), ["montant"] = montant, ["categorie"] = categorie, ["libelle"] = libelle },
+            new Dictionary<string, object?>
+            {
+                ["compte"] = compte.Nom, ["nature"] = n.Code(), ["montant"] = montant, ["categorie"] = categorie, ["libelle"] = libelle,
+                ["bordereaux"] = imputationsBordereaux?.Select(x => new { bordereau = x.Item1, montant = x.Item2 }).ToList()
+            },
             Permissions.TresorerieGerer, ct);
         // Facture couvrant des ventes à crédit : la dette des patients a été soldée dans la même transaction (règle « facture et crédit »)
         if (imputations is { Count: > 0 })

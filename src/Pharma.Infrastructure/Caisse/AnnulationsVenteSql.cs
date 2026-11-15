@@ -12,7 +12,9 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         SELECT v.id, v.numero, v.date_vente, u.nom_complet, NULLIF(trim(concat_ws(' ', pa.nom, pa.prenom)), ''),
                v.montant_total, v.part_patient, v.part_organisme,
                (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id AND p.mode <> 'avoir' ORDER BY p.id LIMIT 1),
-               v.statut, COALESCE(s.fermee_le IS NULL, false), v.bordereau_id IS NOT NULL,
+               v.statut, COALESCE(s.fermee_le IS NULL, false),
+            v.bordereau_id IS NOT NULL OR EXISTS (SELECT 1 FROM bordereau_vente bv JOIN bordereau bb ON bb.id = bv.bordereau_id
+                                                  WHERE bv.vente_id = v.id AND bb.statut <> 'preparation'),
                -- Déjà rendu par des retours (argent ou dette diminuée), dette actuelle du patient, facture en vigueur
                (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id),
                COALESCE(pa.solde_credit, 0),

@@ -186,18 +186,34 @@
             {
                 <div class="achats-ligne">
                     <div class="champ" style="flex: 0 0 160px"><label for="m-org" class="requis">Organisme</label>
-                        <select id="m-org" data-champ="organisme" @bind="organismeId" @bind:after="() => bordereauId = 0"><option value="0">— choisir —</option>@foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }</select></div>
-                    <div class="champ" style="flex: 1 1 220px"><label for="m-bord">Bordereau payé (facultatif)</label>
-                        <select id="m-bord" @bind="bordereauId" @bind:after="ProposerMontantBordereau">
-                            <option value="0">— aucun —</option>
-                            @foreach (var b in (aVerser?.Bordereaux ?? []).Where(b => b.OrganismeId == organismeId)) { <option value="@b.Id">@b.Numero · @Libelles.Dinars(b.Montant, 2)</option> }
-                        </select></div>
-                    @if (bordereauId > 0)
-                    {
-                        <div class="champ" style="flex: 0 0 180px"><label for="m-statut">Bordereau</label>
-                            <select id="m-statut" data-champ="statut_bordereau" @bind="statutBordereau"><option value="paye">Payé en entier</option><option value="rejet_partiel">Rejet partiel</option></select></div>
-                    }
+                        <select id="m-org" data-champ="organisme" @bind="organismeId" @bind:after="() => bordereauxChoisis.Clear()"><option value="0">— choisir —</option>@foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }</select></div>
                 </div>
+                @if (BordereauxProposes.Any())
+                {
+                    @* Bordereaux Chifa / MDN déposés de cet organisme (script 110) : en entier ou en partie ; l'écart (rejets, retenue) reste à justifier *@
+                    <fieldset class="champ" data-champ="bordereaux" style="border: 0; padding: 0; margin: 0">
+                        <legend class="etiquette-champ">Bordereaux payés par ce versement (facultatif ; montant modifiable pour un paiement partiel)</legend>
+                        <div style="max-height: 150px; overflow-y: auto">
+                            @foreach (var b in BordereauxProposes)
+                            {
+                                <div class="achats-ligne" style="align-items: center">
+                                    <label class="case" style="flex: 1 1 auto"><input type="checkbox" checked="@bordereauxChoisis.ContainsKey(b.Id)" @onchange="e => CocherBordereau(b, e)" />
+                                        <span>@b.Numero@(b.Centre is { } c ? $" · {c}" : "") · déposé @(b.DateDepot?.ToString("dd/MM/yyyy") ?? "—") · reste @Libelles.Dinars(b.Montant, 2)</span></label>
+                                    @if (bordereauxChoisis.ContainsKey(b.Id))
+                                    {
+                                        <input type="number" min="0.01" step="0.01" max="@b.Montant" style="width: 130px" aria-label="Montant imputé au bordereau @b.Numero"
+                                               value="@bordereauxChoisis[b.Id]" @onchange="e => MontantBordereau(b, e)" />
+                                    }
+                                </div>
+                            }
+                        </div>
+                        @if (bordereauxChoisis.Count > 0 && montant > 0 && bordereauxChoisis.Values.Sum() != montant)
+                        {
+                            <p class="detail">Imputé aux bordereaux : @Libelles.Dinars(bordereauxChoisis.Values.Sum(), 2) sur @Libelles.Dinars(montant, 2) reçus
+                                (écart @Libelles.Dinars(montant - bordereauxChoisis.Values.Sum(), 2) : rejets ou retenue à justifier).</p>
+                        }
+                    </fieldset>
+                }
             }
             @if (nature != "transfert")
             {
@@ -357,9 +373,27 @@
         if (e.Value is true) facturesChoisies.Add(f.Id);
         if (montant <= 0) montant = facturesOuvertes.Where(x => facturesChoisies.Contains(x.Id)).Sum(x => x.Reste);
     }
-    private string nature = "depense", statutBordereau = "paye";
+    private string nature = "depense";
     private string? categorie, libelle, reference, referenceRemise, erreur, message;
-    private long compteSaisie, compteDe, compteVers, organismeId, bordereauId, banqueRemise, compteVu;
+    private long compteSaisie, compteDe, compteVers, organismeId, banqueRemise, compteVu;
+    // Bordereaux Chifa / MDN cochés et montant imputé à chacun (script 110)
+    private readonly Dictionary<long, decimal> bordereauxChoisis = [];
+    private IEnumerable<BordereauEnvoyeDto> BordereauxProposes => (aVerser?.Bordereaux ?? []).Where(b => b.OrganismeId == organismeId && organismeId > 0);
+
+    private void CocherBordereau(BordereauEnvoyeDto b, ChangeEventArgs e)
+    {
+        bordereauxChoisis.Remove(b.Id);
+        if (e.Value is true) bordereauxChoisis[b.Id] = b.Montant;
+        if (bordereauxChoisis.Count > 0 && (montant <= 0 || e.Value is true && montant < bordereauxChoisis.Values.Sum()))
+            montant = bordereauxChoisis.Values.Sum();
+    }
+
+    private void MontantBordereau(BordereauEnvoyeDto b, ChangeEventArgs e)
+    {
+        if (decimal.TryParse(Convert.ToString(e.Value, System.Globalization.CultureInfo.InvariantCulture), System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out var m) && m > 0)
+            bordereauxChoisis[b.Id] = Math.Round(m, 2);
+    }
     private decimal montant, prelevement;
     private DateOnly dateSaisie = DateOnly.FromDateTime(DateTime.Today);
     private DateOnly du = new(DateTime.Today.Year, DateTime.Today.Month, 1), au = DateOnly.FromDateTime(DateTime.Today);
@@ -390,7 +424,9 @@
         else if (Bordereau is { Length: > 0 } nb)
         {
             if ((aVerser?.Bordereaux ?? []).FirstOrDefault(b => b.Numero == nb) is not { } b) { erreur = $"Bordereau {nb} : déjà réglé ou introuvable."; return; }
-            (nature, organismeId, bordereauId, montant, libelle) = ("versement_organisme", b.OrganismeId, b.Id, b.Montant, $"Versement du bordereau {b.Numero}");
+            (nature, organismeId, montant, libelle) = ("versement_organisme", b.OrganismeId, b.Montant, $"Versement du bordereau {b.Numero}");
+            bordereauxChoisis.Clear();
+            bordereauxChoisis[b.Id] = b.Montant;
         }
         else return;
         message = "Règlement préparé depuis « Dettes et créances » : vérifiez le compte, le montant et la référence, puis enregistrez.";
@@ -436,8 +472,9 @@
         if (initialise && avant != rubrique) (erreur, message) = (null, null);
         if (!initialise || reglementPrepare == (Facture, Bordereau)) return;
         reglementPrepare = (Facture, Bordereau);
-        (erreur, message, organismeId, bordereauId, montant, libelle, reference) = (null, null, 0, 0, 0, null, null);
+        (erreur, message, organismeId, montant, libelle, reference) = (null, null, 0, 0, null, null);
         facturesChoisies.Clear();
+        bordereauxChoisis.Clear();
         PreparerReglement();
     }
 
@@ -529,11 +566,6 @@
         }, $"{n} chèque(s) remis en banque.");
     }
 
-    private void ProposerMontantBordereau()
-    {
-        if ((aVerser?.Bordereaux ?? []).FirstOrDefault(b => b.Id == bordereauId) is { } b && montant <= 0) montant = b.Montant;
-    }
-
     private Task SaisirAsync()
     {
         var m = montant;
@@ -541,12 +573,13 @@
             ? () => Api.TransfererAsync(new TransfertRequete(compteDe, compteVers, dateSaisie, m, reference))
             : () => Api.SaisirMouvementTresorerieAsync(new MouvementTresorerieRequete(compteSaisie, dateSaisie, nature, m,
                 nature == "depense" && !string.IsNullOrEmpty(categorie) ? categorie : null, libelle, reference,
-                organismeId > 0 ? organismeId : null, bordereauId > 0 ? bordereauId : null, bordereauId > 0 ? statutBordereau : null,
-                FacturesProposees.Where(f => facturesChoisies.Contains(f.Id)).Select(f => f.Id).ToList()));
+                organismeId > 0 ? organismeId : null, null, null,
+                FacturesProposees.Where(f => facturesChoisies.Contains(f.Id)).Select(f => f.Id).ToList(),
+                nature == "versement_organisme" ? bordereauxChoisis.Select(x => new ImputationBordereauDto(x.Key, x.Value)).ToList() : null));
         return Executer(async () =>
         {
             var e = await action();
-            if (e is null) { (montant, libelle, reference, bordereauId) = (0, null, null, 0); facturesChoisies.Clear(); }
+            if (e is null) { (montant, libelle, reference) = (0, null, null); facturesChoisies.Clear(); bordereauxChoisis.Clear(); }
             return e;
         }, $"{Types.First(t => t.Item1 == nature).Item2} de {Libelles.Dinars(m, 2)} : {(nature == "depense" ? "enregistrée" : "enregistré")}.");
     }

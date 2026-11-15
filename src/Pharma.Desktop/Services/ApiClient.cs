@@ -1073,6 +1073,35 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> RetablirVenteChifaAsync(long venteId) =>
         (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/ventes/{venteId}/chifa/exclusion", null)).Item2;
 
+    // ---- Bordereaux Chifa / MDN (script 110) ----
+    public Task<(PageDto<BordereauDto>?, string?)> BordereauxAsync(long? organismeId, string? etat, string? q, int page, int taille) =>
+        GetAsync<PageDto<BordereauDto>?>($"api/chifa/bordereaux?page={page}&taille={taille}&" + Requete(("organismeId", organismeId), ("etat", etat), ("q", q)), null);
+    public Task<(CompteursBordereauxDto?, string?)> CompteursBordereauxAsync() => GetAsync<CompteursBordereauxDto?>("api/chifa/bordereaux/compteurs", null);
+    public Task<(PageDto<VenteADeposerDto>?, string?)> VentesADeposerAsync(long? organismeId, long? centrePayeurId, string? q, bool retard, int page, int taille,
+        bool sansCentre = false) =>
+        GetAsync<PageDto<VenteADeposerDto>?>($"api/chifa/bordereaux/a-deposer?page={page}&taille={taille}&"
+            + Requete(("organismeId", organismeId), ("centrePayeurId", centrePayeurId), ("q", q), ("retard", retard ? true : null),
+                ("sansCentre", sansCentre ? true : null)), null);
+    public Task<(FicheBordereauDto?, string?)> BordereauAsync(long id) => GetAsync<FicheBordereauDto?>($"api/chifa/bordereaux/{id}", null);
+    public Task<(List<HistoriqueBordereauDto>, string?)> HistoriqueBordereauAsync(long id) =>
+        GetAsync<List<HistoriqueBordereauDto>>($"api/chifa/bordereaux/{id}/historique", []);
+    public Task<(byte[]?, string?, string?)> BordereauPdfAsync(long id) => FichierAsync(HttpMethod.Get, $"api/chifa/bordereaux/{id}/pdf", "bordereau.pdf");
+    public Task<(BordereauDto?, string?)> CreerBordereauAsync(BordereauSaisie s) => PostAsync<BordereauSaisie, BordereauDto>("api/chifa/bordereaux", s);
+    public async Task<string?> ModifierBordereauAsync(long id, BordereauSaisie s) =>
+        (await EnvoyerCorpsAsync<BordereauSaisie, object>(HttpMethod.Put, $"api/chifa/bordereaux/{id}", s)).Item2;
+    public Task<(IdentifiantDto?, string?)> AjouterVentesBordereauAsync(long id, AjoutVentesBordereauRequete r) =>
+        PostAsync<AjoutVentesBordereauRequete, IdentifiantDto>($"api/chifa/bordereaux/{id}/ventes", r);
+    public Task<(CodeLibelleDto?, string?)> AjouterFactureBordereauAsync(long id, string facture) =>
+        PostAsync<AjoutFactureBordereauRequete, CodeLibelleDto>($"api/chifa/bordereaux/{id}/factures", new(facture));
+    public async Task<string?> RetirerVenteBordereauAsync(long id, long venteId) =>
+        (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/chifa/bordereaux/{id}/ventes/{venteId}", null)).Item2;
+    public async Task<string?> DeposerBordereauAsync(long id, DateOnly? date) =>
+        (await PostAsync<DepotBordereauRequete, object>($"api/chifa/bordereaux/{id}/depot", new(date))).Item2;
+    public async Task<string?> RejeterFactureChifaAsync(long id, long venteId, RejetChifaRequete r) =>
+        (await PostAsync<RejetChifaRequete, object>($"api/chifa/bordereaux/{id}/ventes/{venteId}/rejet", r)).Item2;
+    public async Task<string?> TraiterRejetChifaAsync(long id, long venteId, string suite) =>
+        (await PostAsync<SuiteRejetRequete, object>($"api/chifa/bordereaux/{id}/ventes/{venteId}/suite", new(suite))).Item2;
+
     public Task<(RapprochementVoletDto?, string?)> RapprochementVoletAsync(string texte) =>
         PostAsync<LireVoletChifaRequete, RapprochementVoletDto>("api/caisse/volet-chifa/rapprochement", new(texte));
     public async Task<string?> GarderPatientVoletAsync(string texte, long patientId, string? patient, string? numAssure) =>

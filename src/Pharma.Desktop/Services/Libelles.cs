@@ -671,6 +671,7 @@ public static class Libelles
         "chifa_exclusion" => "Motifs d’exclusion d’une vente Chifa",
         "retour_client" => "Motifs de retour d’un produit par le patient",
         "majoration_chifa" => "Types de majoration Chifa",
+        "rejet_chifa" => "Motifs de rejet d’une facture Chifa",
         _ => Humaniser(liste)
     };
 

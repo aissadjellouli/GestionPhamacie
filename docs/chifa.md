@@ -37,6 +37,21 @@ Rien ci-dessous n'est confirmé.
 - **Méthode de vérification** : comparer un volet CASNOS, deux volets CNAS d'agences différentes et deux volets du même assuré ; regarder le centre payeur affiché par CHIFA-Officine ou Chifa Plus ; demander le format à la CNAS.
 - **Suite** : quand l'organisme sera identifiable dans le QR, le choix de l'organisme pourra devenir automatique.
 
+## Bordereaux, rejets et paiements (2026-11-15, script 110)
+
+Décisions du titulaire (« go bordereaux complet ») ; écran **Finances › Bordereaux Chifa** (droit `chifa.bordereaux`, titulaire et assistant par défaut) :
+
+- **Le n° de bordereau est attribué par CHIFA-Officine** : saisi tel quel dans notre logiciel (jamais numéroté par lui), unique par organisme. Le QR du volet ne contient pas ce n° (voir plus haut).
+- **Un bordereau par organisme (CNAS, CASNOS) et par centre payeur** ; MDN : même mécanisme, canal `mdn`, centre facultatif. Il contient plusieurs factures Chifa, **une par ordonnance, donc par vente** ; une vente n'est que sur un seul bordereau.
+- **Ventes « à déposer »** : ventes Chifa rattachées à leur volet (n° de facture Chifa) ou ventes MDN, sur aucun bordereau ; signalées en retard au-delà de 7 jours (réglable, Administration › Caisse). On les rattache cochées, « toutes », ou en scannant / saisissant le n° de facture Chifa.
+- **Montant attendu** = somme des parts organisme retenues (après régularisation du volet, majoration comprise) ; **montant déclaré** = total de CHIFA-Officine, saisi ; l'écart s'affiche en rouge.
+- **Statuts** : en préparation → déposé (ventes figées, plus d'annulation : régularisation Chifa) → payé en partie / payé → soldé.
+- **Rejets** : facture rejetée (motif réglable, montant ≤ part organisme), puis redéposer (vente de nouveau « à déposer »), passer en perte, ou réclamer au patient (sa dette).
+- **Paiement** : la CNAS / CASNOS paie **par bordereau**, en entier ou en partie (factures rejetées retenues), environ un mois après le dépôt (information du titulaire). Trésorerie › « Versement d'un organisme » impute un virement à un ou plusieurs bordereaux ; l'écart reste à justifier ; un bordereau dont rien ne reste à recevoir (hors rejets) passe à « soldé ». Alerte au-delà de 45 jours après le dépôt (réglable).
+- **Non fait** : import d'un export de bordereaux ou de factures de CHIFA-Officine (format inconnu, voir « Coexistence »).
+
+Règles détaillées : `docs/regles-metier.md` (section « Bordereaux »).
+
 ## Démarche officielle à mener
 
 - Créer la société (registre de commerce, NIF).

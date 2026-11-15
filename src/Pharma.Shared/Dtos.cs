@@ -219,7 +219,8 @@ public sealed record ComptageIntermediaireDto(DateTime Le, string Employe, decim
 /// <summary>VersementCloture : manuel ou automatique (argent des caisses clôturées vers le coffre).</summary>
 public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel",
     decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true, decimal SeuilEcartChifa = 5,
-    int DelaiVoletChifaJours = 7, decimal SeuilSortieTiroir = 2000, int JoursAlerteFinDroit = EtatDroitsChifa.JoursAlerteParDefaut);
+    int DelaiVoletChifaJours = 7, decimal SeuilSortieTiroir = 2000, int JoursAlerteFinDroit = EtatDroitsChifa.JoursAlerteParDefaut,
+    int DelaiDepotChifaJours = 7, int DelaiPaiementBordereauJours = 45);
 
 /// <summary>Date de fin de droits Chifa saisie à la caisse ou dans la liste de suivi (vide : effacée).</summary>
 public sealed record FinDroitDto(DateOnly? DateFinDroit);

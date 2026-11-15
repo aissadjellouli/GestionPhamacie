@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 109 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 110 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 109 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 110 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -28,10 +28,11 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
 -- PostgreSQL database dump
 --
 
-\restrict UqvaH5fxMBepVzH7mw7ue38foWoKuDHzdcA7gya98qKk2ipep4nvzKVtfIhudUo
+\restrict n4MqO8nrz4tdATAWHuZqVYgTz7vgi0grvCppkMhsScgWh6S1GP4zE1qa2gsagEr
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -2916,10 +2917,20 @@ CREATE TABLE public.bordereau (
     periode_debut date NOT NULL,
     periode_fin date NOT NULL,
     montant_total numeric(12,2) DEFAULT 0 NOT NULL,
-    statut text DEFAULT 'ouvert'::text NOT NULL,
+    statut text DEFAULT 'preparation'::text NOT NULL,
     date_envoi date,
+    canal text DEFAULT 'chifa'::text NOT NULL,
+    centre_payeur_id bigint,
+    montant_declare numeric(12,2),
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    cree_par bigint,
+    depose_le timestamp with time zone,
+    depose_par bigint,
     CONSTRAINT bordereau_check CHECK ((periode_fin >= periode_debut)),
-    CONSTRAINT bordereau_statut_check CHECK ((statut = ANY (ARRAY['ouvert'::text, 'envoye'::text, 'paye'::text, 'rejet_partiel'::text])))
+    CONSTRAINT bordereau_statut_check CHECK ((statut = ANY (ARRAY['preparation'::text, 'depose'::text, 'paye_partiel'::text, 'paye'::text, 'solde'::text]))),
+    CONSTRAINT ck_bordereau_canal CHECK ((canal = ANY (ARRAY['chifa'::text, 'mdn'::text]))),
+    CONSTRAINT ck_bordereau_depot CHECK (((statut = 'preparation'::text) OR (date_envoi IS NOT NULL))),
+    CONSTRAINT ck_bordereau_montant_declare CHECK (((montant_declare IS NULL) OR (montant_declare >= (0)::numeric)))
 );
 
 
@@ -2929,6 +2940,45 @@ CREATE TABLE public.bordereau (
 
 ALTER TABLE public.bordereau ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.bordereau_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: bordereau_vente; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bordereau_vente (
+    id bigint NOT NULL,
+    bordereau_id bigint NOT NULL,
+    vente_id bigint NOT NULL,
+    part_organisme numeric(12,2) NOT NULL,
+    ajoute_le timestamp with time zone DEFAULT now() NOT NULL,
+    ajoute_par bigint NOT NULL,
+    rejete_le timestamp with time zone,
+    rejete_par bigint,
+    rejet_motif_code text,
+    rejet_texte text,
+    montant_rejete numeric(12,2) DEFAULT 0 NOT NULL,
+    suite text,
+    suite_le timestamp with time zone,
+    suite_par bigint,
+    credit_mouvement_id bigint,
+    CONSTRAINT ck_bordereau_vente_rejet CHECK ((((rejete_le IS NULL) AND (rejete_par IS NULL) AND (rejet_motif_code IS NULL) AND (rejet_texte IS NULL) AND (montant_rejete = (0)::numeric) AND (suite IS NULL)) OR ((rejete_le IS NOT NULL) AND (rejete_par IS NOT NULL) AND (rejet_motif_code IS NOT NULL) AND (montant_rejete > (0)::numeric) AND (montant_rejete <= (part_organisme + 0.01))))),
+    CONSTRAINT ck_bordereau_vente_suite CHECK ((((suite IS NULL) AND (suite_le IS NULL) AND (suite_par IS NULL) AND (credit_mouvement_id IS NULL)) OR ((suite = ANY (ARRAY['redeposer'::text, 'perte'::text, 'patient'::text])) AND (suite_le IS NOT NULL) AND (suite_par IS NOT NULL) AND ((suite = 'patient'::text) = (credit_mouvement_id IS NOT NULL)))))
+);
+
+
+--
+-- Name: bordereau_vente_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bordereau_vente ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.bordereau_vente_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -4284,7 +4334,7 @@ CREATE TABLE public.motif_reglable (
     detail text DEFAULT 'aucun'::text NOT NULL,
     CONSTRAINT ck_motif_reglable_effet CHECK ((((effet = 'aucun'::text) AND (detail = 'aucun'::text)) OR ((effet = 'sortie'::text) AND (detail = ANY (ARRAY['depense'::text, 'fournisseur'::text, 'patient'::text, 'coffre'::text]))) OR ((effet = 'entree'::text) AND (detail = 'fond'::text)))),
     CONSTRAINT ck_motif_reglable_effet_tiroir CHECK (((effet = 'aucun'::text) OR (liste = 'tiroir'::text))),
-    CONSTRAINT ck_motif_reglable_liste CHECK ((liste = ANY ('{attente,charge,chifa_exclusion,majoration_chifa,retour_client,retour_fournisseur,sortie_stock,tiroir,volet_absent}'::text[]))),
+    CONSTRAINT ck_motif_reglable_liste CHECK ((liste = ANY ('{attente,charge,chifa_exclusion,majoration_chifa,rejet_chifa,retour_client,retour_fournisseur,sortie_stock,tiroir,volet_absent}'::text[]))),
     CONSTRAINT ck_motif_reglable_systeme_actif CHECK ((actif OR (NOT systeme))),
     CONSTRAINT motif_reglable_code_check CHECK ((code ~ '^[a-z0-9_]{1,40}$'::text)),
     CONSTRAINT motif_reglable_libelle_check CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 80)))
@@ -4759,7 +4809,11 @@ CREATE TABLE public.parametre_caisse (
     seuil_sortie_tiroir numeric(12,2) DEFAULT 2000 NOT NULL,
     delai_volet_chifa_jours integer DEFAULT 7 NOT NULL,
     jours_alerte_fin_droit integer DEFAULT 30 NOT NULL,
+    chifa_delai_depot_jours integer DEFAULT 7 NOT NULL,
+    chifa_delai_paiement_jours integer DEFAULT 45 NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
+    CONSTRAINT ck_parametre_caisse_chifa_delai_depot CHECK (((chifa_delai_depot_jours >= 1) AND (chifa_delai_depot_jours <= 365))),
+    CONSTRAINT ck_parametre_caisse_chifa_delai_paiement CHECK (((chifa_delai_paiement_jours >= 1) AND (chifa_delai_paiement_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_delai_volet_chifa CHECK (((delai_volet_chifa_jours >= 1) AND (delai_volet_chifa_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_jours_alerte_fin_droit CHECK (((jours_alerte_fin_droit >= 0) AND (jours_alerte_fin_droit <= 365))),
     CONSTRAINT ck_parametre_caisse_seuil_sortie_tiroir CHECK ((seuil_sortie_tiroir >= (0)::numeric)),
@@ -6116,6 +6170,77 @@ CREATE VIEW public.v_avoir_patient AS
 
 
 --
+-- Name: v_vente_part_organisme; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_vente_part_organisme AS
+ SELECT v.id AS vente_id,
+    v.organisme_id,
+    v.part_organisme AS part_organisme_caisse,
+    ((COALESCE(r.part_organisme_chifa, v.part_organisme) + v.chifa_majoration_montant))::numeric(12,2) AS part_organisme_retenue,
+    v.chifa_majoration_montant AS majoration_chifa
+   FROM (public.vente v
+     LEFT JOIN public.regularisation_part_organisme r ON (((r.vente_id = v.id) AND (r.statut = 'active'::text))));
+
+
+--
+-- Name: versement_bordereau; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.versement_bordereau (
+    id bigint NOT NULL,
+    mouvement_id bigint NOT NULL,
+    bordereau_id bigint NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    CONSTRAINT versement_bordereau_montant_check CHECK ((montant > (0)::numeric))
+);
+
+
+--
+-- Name: v_bordereau; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_bordereau AS
+ SELECT b.id,
+    b.organisme_id,
+    o.code AS organisme,
+    b.canal,
+    b.centre_payeur_id,
+    b.numero,
+    b.periode_debut,
+    b.periode_fin,
+    b.date_envoi AS date_depot,
+    b.statut,
+    b.montant_declare,
+    (COALESCE(x.ventes, (0)::bigint))::integer AS ventes,
+    (
+        CASE
+            WHEN (COALESCE(x.ventes, (0)::bigint) > 0) THEN x.attendu
+            ELSE b.montant_total
+        END)::numeric(12,2) AS attendu,
+    (COALESCE(x.rejete, (0)::numeric))::numeric(12,2) AS rejete,
+    (COALESCE(x.rejets_a_traiter, (0)::bigint))::integer AS rejets_a_traiter,
+    (COALESCE(y.verse, (0)::numeric))::numeric(12,2) AS verse,
+    (((
+        CASE
+            WHEN (COALESCE(x.ventes, (0)::bigint) > 0) THEN x.attendu
+            ELSE b.montant_total
+        END - COALESCE(x.rejete, (0)::numeric)) - COALESCE(y.verse, (0)::numeric)))::numeric(12,2) AS reste
+   FROM (((public.bordereau b
+     JOIN public.organisme o ON ((o.id = b.organisme_id)))
+     LEFT JOIN LATERAL ( SELECT count(*) AS ventes,
+            sum(po.part_organisme_retenue) AS attendu,
+            sum(bv.montant_rejete) AS rejete,
+            count(*) FILTER (WHERE ((bv.rejete_le IS NOT NULL) AND (bv.suite IS NULL))) AS rejets_a_traiter
+           FROM (public.bordereau_vente bv
+             JOIN public.v_vente_part_organisme po ON ((po.vente_id = bv.vente_id)))
+          WHERE (bv.bordereau_id = b.id)) x ON (true))
+     LEFT JOIN LATERAL ( SELECT sum(vb.montant) AS verse
+           FROM public.versement_bordereau vb
+          WHERE (vb.bordereau_id = b.id)) y ON (true));
+
+
+--
 -- Name: v_caisse_a_verser; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -6200,11 +6325,13 @@ CREATE VIEW public.v_credit_accorde AS
            FROM public.retour_client rc
           WHERE (rc.vente_id = v.id)), (0)::numeric)) AS montant
    FROM (public.vente v
-     JOIN LATERAL ( SELECT (COALESCE(( SELECT sum(p.montant) AS sum
+     JOIN LATERAL ( SELECT ((COALESCE(( SELECT sum(p.montant) AS sum
                    FROM public.paiement p
                   WHERE ((p.vente_id = v.id) AND (p.mode = 'credit'::text))), (0)::numeric) + COALESCE(( SELECT sum(r.montant_patient) AS sum
                    FROM public.regularisation_part_organisme r
-                  WHERE ((r.vente_id = v.id) AND (r.sort = 'charge_patient'::text) AND (r.statut = 'active'::text))), (0)::numeric)) AS montant) x ON ((x.montant > (0)::numeric)))
+                  WHERE ((r.vente_id = v.id) AND (r.sort = 'charge_patient'::text) AND (r.statut = 'active'::text))), (0)::numeric)) + COALESCE(( SELECT sum(bv.montant_rejete) AS sum
+                   FROM public.bordereau_vente bv
+                  WHERE ((bv.vente_id = v.id) AND (bv.suite = 'patient'::text))), (0)::numeric)) AS montant) x ON ((x.montant > (0)::numeric)))
   WHERE ((v.statut = 'validee'::text) AND (v.patient_id IS NOT NULL));
 
 
@@ -6988,6 +7115,30 @@ CREATE VIEW public.v_stock_par_fournisseur AS
 
 
 --
+-- Name: v_vente_chifa_a_deposer; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_vente_chifa_a_deposer AS
+ SELECT v.id AS vente_id,
+    v.numero,
+    v.date_vente,
+    v.organisme_id,
+    v.canal_organisme AS canal,
+    v.centre_payeur_id,
+    v.patient_id,
+    v.chifa_facture,
+    po.part_organisme_retenue AS part_organisme,
+    (EXISTS ( SELECT 1
+           FROM public.bordereau_vente bv
+          WHERE ((bv.vente_id = v.id) AND (bv.suite = 'redeposer'::text)))) AS redeposee
+   FROM (public.vente v
+     JOIN public.v_vente_part_organisme po ON ((po.vente_id = v.id)))
+  WHERE ((v.canal_organisme = ANY (ARRAY['chifa'::text, 'mdn'::text])) AND (v.statut = 'validee'::text) AND (v.bordereau_id IS NULL) AND (v.chifa_exclue_le IS NULL) AND ((v.canal_organisme = 'mdn'::text) OR (v.chifa_facture IS NOT NULL)) AND (po.part_organisme_retenue > (0)::numeric) AND (NOT (EXISTS ( SELECT 1
+           FROM public.bordereau_vente bv
+          WHERE ((bv.vente_id = v.id) AND (bv.suite IS DISTINCT FROM 'redeposer'::text))))));
+
+
+--
 -- Name: v_suivi_dettes; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -7048,17 +7199,44 @@ UNION ALL
     b.organisme_id AS tiers_id,
     o.nom AS tiers,
     ('Bordereau '::text || b.numero) AS libelle,
-    COALESCE(b.date_envoi, b.periode_fin) AS date_reference,
-    NULL::date AS echeance,
-    (b.montant_total - COALESCE(( SELECT sum(m.montant) AS sum
-           FROM public.mouvement_tresorerie m
-          WHERE ((m.bordereau_id = b.id) AND (m.sens = 'entree'::text))), (0)::numeric)) AS montant,
-    (b.statut = 'rejet_partiel'::text) AS rejetee
-   FROM (public.bordereau b
+    COALESCE(b.date_depot, b.periode_fin) AS date_reference,
+    (COALESCE(b.date_depot, b.periode_fin) + COALESCE(( SELECT pc.chifa_delai_paiement_jours
+           FROM public.parametre_caisse pc
+          WHERE (pc.id = 1)), 45)) AS echeance,
+    b.reste AS montant,
+    (b.rejets_a_traiter > 0) AS rejetee
+   FROM (public.v_bordereau b
      JOIN public.organisme o ON ((o.id = b.organisme_id)))
-  WHERE ((b.statut = ANY (ARRAY['envoye'::text, 'rejet_partiel'::text])) AND ((b.montant_total - COALESCE(( SELECT sum(m.montant) AS sum
-           FROM public.mouvement_tresorerie m
-          WHERE ((m.bordereau_id = b.id) AND (m.sens = 'entree'::text))), (0)::numeric)) > (0)::numeric))
+  WHERE ((b.statut = ANY (ARRAY['depose'::text, 'paye_partiel'::text])) AND (b.reste > (0)::numeric))
+UNION ALL
+ SELECT 'creance'::text AS sens,
+    'bordereau'::text AS categorie,
+    b.organisme_id AS tiers_id,
+    o.nom AS tiers,
+    ((('Rejet à traiter · vente '::text || v.numero) || ' · bordereau '::text) || b.numero) AS libelle,
+    (bv.rejete_le)::date AS date_reference,
+    NULL::date AS echeance,
+    bv.montant_rejete AS montant,
+    true AS rejetee
+   FROM (((public.bordereau_vente bv
+     JOIN public.bordereau b ON ((b.id = bv.bordereau_id)))
+     JOIN public.organisme o ON ((o.id = b.organisme_id)))
+     JOIN public.vente v ON ((v.id = bv.vente_id)))
+  WHERE ((bv.rejete_le IS NOT NULL) AND (bv.suite IS NULL))
+UNION ALL
+ SELECT 'creance'::text AS sens,
+    'chifa_a_deposer'::text AS categorie,
+    a.organisme_id AS tiers_id,
+    o.nom AS tiers,
+    ((('Vente '::text || a.numero) || ' à déposer'::text) || COALESCE((' · facture Chifa '::text || a.chifa_facture), ''::text)) AS libelle,
+    (a.date_vente)::date AS date_reference,
+    ((a.date_vente)::date + COALESCE(( SELECT pc.chifa_delai_depot_jours
+           FROM public.parametre_caisse pc
+          WHERE (pc.id = 1)), 7)) AS echeance,
+    a.part_organisme AS montant,
+    false AS rejetee
+   FROM (public.v_vente_chifa_a_deposer a
+     JOIN public.organisme o ON ((o.id = a.organisme_id)))
 UNION ALL
  SELECT 'dette'::text AS sens,
     'grossiste'::text AS categorie,
@@ -7111,20 +7289,6 @@ UNION ALL
 
 
 --
--- Name: v_vente_part_organisme; Type: VIEW; Schema: public; Owner: -
---
-
-CREATE VIEW public.v_vente_part_organisme AS
- SELECT v.id AS vente_id,
-    v.organisme_id,
-    v.part_organisme AS part_organisme_caisse,
-    ((COALESCE(r.part_organisme_chifa, v.part_organisme) + v.chifa_majoration_montant))::numeric(12,2) AS part_organisme_retenue,
-    v.chifa_majoration_montant AS majoration_chifa
-   FROM (public.vente v
-     LEFT JOIN public.regularisation_part_organisme r ON (((r.vente_id = v.id) AND (r.statut = 'active'::text))));
-
-
---
 -- Name: vente_chifa_facture_conflit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7146,6 +7310,20 @@ CREATE TABLE public.vente_chifa_facture_conflit (
 
 ALTER TABLE public.vente ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.vente_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: versement_bordereau_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.versement_bordereau ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.versement_bordereau_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -7314,19 +7492,19 @@ ALTER TABLE ONLY public.boite
 
 
 --
--- Name: bordereau bordereau_numero_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bordereau
-    ADD CONSTRAINT bordereau_numero_key UNIQUE (numero);
-
-
---
 -- Name: bordereau bordereau_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bordereau
     ADD CONSTRAINT bordereau_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bordereau_vente bordereau_vente_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau_vente
+    ADD CONSTRAINT bordereau_vente_pkey PRIMARY KEY (id);
 
 
 --
@@ -8234,6 +8412,22 @@ ALTER TABLE ONLY public.type_prestation
 
 
 --
+-- Name: bordereau uq_bordereau_organisme_numero; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau
+    ADD CONSTRAINT uq_bordereau_organisme_numero UNIQUE (organisme_id, numero);
+
+
+--
+-- Name: bordereau_vente uq_bordereau_vente; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau_vente
+    ADD CONSTRAINT uq_bordereau_vente UNIQUE (bordereau_id, vente_id);
+
+
+--
 -- Name: centre_payeur uq_centre_payeur_code; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8247,6 +8441,14 @@ ALTER TABLE ONLY public.centre_payeur
 
 ALTER TABLE ONLY public.motif_reglable
     ADD CONSTRAINT uq_motif_reglable_code UNIQUE (liste, code);
+
+
+--
+-- Name: versement_bordereau uq_versement_bordereau; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.versement_bordereau
+    ADD CONSTRAINT uq_versement_bordereau UNIQUE (mouvement_id, bordereau_id);
 
 
 --
@@ -8314,6 +8516,14 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: versement_bordereau versement_bordereau_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.versement_bordereau
+    ADD CONSTRAINT versement_bordereau_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ix_doublon_patient_statut; Type: INDEX; Schema: import; Owner: -
 --
 
@@ -8339,6 +8549,13 @@ CREATE INDEX idx_alerte_ouverte_tri ON public.alerte USING btree (niveau, valeur
 --
 
 CREATE INDEX idx_annulation_session ON public.annulation_vente USING btree (session_caisse_id);
+
+
+--
+-- Name: idx_audit_cible; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_cible ON public.journal_audit USING btree (table_cible, enregistrement_id) WHERE (table_cible IS NOT NULL);
 
 
 --
@@ -8402,6 +8619,20 @@ CREATE INDEX idx_boite_numero_serie ON public.boite USING btree (numero_serie);
 --
 
 CREATE INDEX idx_boite_reception ON public.boite USING btree (reception_id);
+
+
+--
+-- Name: idx_bordereau_statut; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bordereau_statut ON public.bordereau USING btree (statut, organisme_id);
+
+
+--
+-- Name: idx_bordereau_vente_vente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bordereau_vente_vente ON public.bordereau_vente USING btree (vente_id);
 
 
 --
@@ -8909,6 +9140,13 @@ CREATE INDEX idx_vente_session ON public.vente USING btree (session_caisse_id);
 
 
 --
+-- Name: idx_versement_bordereau_bordereau; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_versement_bordereau_bordereau ON public.versement_bordereau USING btree (bordereau_id);
+
+
+--
 -- Name: ix_comptage_reception_ligne; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9074,6 +9312,13 @@ CREATE UNIQUE INDEX ux_alerte_surveillance ON public.alerte_surveillance USING b
 --
 
 CREATE UNIQUE INDEX ux_boite_vue_inventaire ON public.boite_evenement USING btree (boite_id, inventaire_id) WHERE (type = 'inventaire'::text);
+
+
+--
+-- Name: ux_bordereau_vente_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_bordereau_vente_active ON public.bordereau_vente USING btree (vente_id) WHERE (suite IS DISTINCT FROM 'redeposer'::text);
 
 
 --
@@ -9969,11 +10214,83 @@ ALTER TABLE ONLY public.boite
 
 
 --
+-- Name: bordereau bordereau_centre_payeur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau
+    ADD CONSTRAINT bordereau_centre_payeur_id_fkey FOREIGN KEY (centre_payeur_id) REFERENCES public.centre_payeur(id);
+
+
+--
+-- Name: bordereau bordereau_cree_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau
+    ADD CONSTRAINT bordereau_cree_par_fkey FOREIGN KEY (cree_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: bordereau bordereau_depose_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau
+    ADD CONSTRAINT bordereau_depose_par_fkey FOREIGN KEY (depose_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: bordereau bordereau_organisme_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.bordereau
     ADD CONSTRAINT bordereau_organisme_id_fkey FOREIGN KEY (organisme_id) REFERENCES public.organisme(id);
+
+
+--
+-- Name: bordereau_vente bordereau_vente_ajoute_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau_vente
+    ADD CONSTRAINT bordereau_vente_ajoute_par_fkey FOREIGN KEY (ajoute_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: bordereau_vente bordereau_vente_bordereau_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau_vente
+    ADD CONSTRAINT bordereau_vente_bordereau_id_fkey FOREIGN KEY (bordereau_id) REFERENCES public.bordereau(id);
+
+
+--
+-- Name: bordereau_vente bordereau_vente_credit_mouvement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau_vente
+    ADD CONSTRAINT bordereau_vente_credit_mouvement_id_fkey FOREIGN KEY (credit_mouvement_id) REFERENCES public.credit_mouvement(id);
+
+
+--
+-- Name: bordereau_vente bordereau_vente_rejete_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau_vente
+    ADD CONSTRAINT bordereau_vente_rejete_par_fkey FOREIGN KEY (rejete_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: bordereau_vente bordereau_vente_suite_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau_vente
+    ADD CONSTRAINT bordereau_vente_suite_par_fkey FOREIGN KEY (suite_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: bordereau_vente bordereau_vente_vente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bordereau_vente
+    ADD CONSTRAINT bordereau_vente_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
 
 
 --
@@ -11657,8 +11974,24 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: versement_bordereau versement_bordereau_bordereau_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.versement_bordereau
+    ADD CONSTRAINT versement_bordereau_bordereau_id_fkey FOREIGN KEY (bordereau_id) REFERENCES public.bordereau(id);
+
+
+--
+-- Name: versement_bordereau versement_bordereau_mouvement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.versement_bordereau
+    ADD CONSTRAINT versement_bordereau_mouvement_id_fkey FOREIGN KEY (mouvement_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
-\unrestrict UqvaH5fxMBepVzH7mw7ue38foWoKuDHzdcA7gya98qKk2ipep4nvzKVtfIhudUo
+\unrestrict n4MqO8nrz4tdATAWHuZqVYgTz7vgi0grvCppkMhsScgWh6S1GP4zE1qa2gsagEr
 

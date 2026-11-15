@@ -27,7 +27,7 @@ public static class RegleAnnulation
         if (statut == "annulee") throw new RegleMetierException("Cette vente est déjà annulée.");
         if (statut != "validee") throw new RegleMetierException("Seule une vente encaissée peut être annulée.");
         if (dansUnBordereau)
-            throw new RegleMetierException("Cette vente figure déjà sur un bordereau envoyé à l’organisme : l’annulation doit passer par la régularisation Chifa.");
+            throw new RegleMetierException("Cette vente figure sur un bordereau Chifa : en préparation, retirez-la d’abord du bordereau ; déposé à l’organisme, l’annulation doit passer par la régularisation Chifa.");
         // Sinon la facture continuerait de facturer des produits remboursés
         if (factureNumero is not null)
             throw new RegleMetierException($"Cette vente figure sur la facture {factureNumero} : retirez-la d’abord de la facture (Factures : rejet puis correction), ou faites un retour client.");

@@ -107,13 +107,30 @@ public class TresorerieTests
     }
 
     [Fact]
-    public async Task Versement_organisme_avec_bordereau_demande_son_statut()
+    public async Task Versement_organisme_impute_aux_bordereaux_en_entier_ou_en_partie()
     {
         var t = new TresorerieEnMemoire();
-        var cas = new SaisirMouvementTresorerie(t, new DroitsFactices("tresorerie.gerer"), Horloge, new JournalEspion());
-        await cas.ExecuterAsync(2, null, "versement_organisme", 48000, null, null, "VIR-1", 1, 7, "paye", 5);
-        Assert.Equal(("entree", 1L, 7L, "paye"), (t.Mouvements[0].Sens, t.Mouvements[0].OrganismeId!.Value, t.Mouvements[0].BordereauId!.Value, t.Mouvements[0].StatutBordereau!));
-        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(2, null, "versement_organisme", 48000, null, null, null, 1, 7, null, 5));
+        var b = new BordereauxEnMemoire();
+        b.Ajouter(7, organisme: 1, statut: "depose", attendu: 48000);
+        b.Ajouter(8, organisme: 1, statut: "paye_partiel", attendu: 10000, verse: 4000);
+        b.Ajouter(9, organisme: 2, statut: "depose", attendu: 5000);
+        var cas = new SaisirMouvementTresorerie(t, new DroitsFactices("tresorerie.gerer"), Horloge, new JournalEspion(), bordereaux: b);
+
+        // Ancien appel (un bordereau, statut ignoré) : tout le versement sur ce bordereau
+        await cas.ExecuterAsync(2, null, "versement_organisme", 48000, null, null, "VIR-1", 1, 7, null, 5);
+        Assert.Equal([(7L, 48000m)], t.Mouvements[0].Bordereaux!);
+        Assert.Equal(7L, t.Mouvements[0].BordereauId);
+
+        // Un virement pour deux bordereaux, le second en partie ; l'écart reste à justifier
+        await cas.ExecuterAsync(2, null, "versement_organisme", 20000, null, null, "VIR-2", 1, null, null, 5, null, [(7L, 15000m), (8L, 3000m)]);
+        Assert.Equal([(7L, 15000m), (8L, 3000m)], t.Mouvements[1].Bordereaux!);
+        Assert.Null(t.Mouvements[1].BordereauId);
+
+        // Au-delà du reste, autre organisme, total supérieur au versement, ou factures et bordereaux ensemble : refusés
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(2, null, "versement_organisme", 9000, null, null, null, 1, null, null, 5, null, [(8L, 7000m)]));
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(2, null, "versement_organisme", 5000, null, null, null, 1, null, null, 5, null, [(9L, 5000m)]));
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(2, null, "versement_organisme", 1000, null, null, null, 1, null, null, 5, null, [(7L, 2000m)]));
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(2, null, "versement_organisme", 1000, null, null, null, 1, null, null, 5, [3L], [(7L, 1000m)]));
     }
 
     [Fact]

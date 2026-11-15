@@ -31,6 +31,23 @@ public class SuiviDettesTests
     }
 
     [Fact]
+    public void Chifa_ventes_a_deposer_et_bordereaux_impayes_selon_leur_echeance()
+    {
+        // Échéance calculée par v_suivi_dettes (script 110) : vente + délai de dépôt, dépôt + délai de paiement ; le délai général n'y joue pas
+        var s = RegleSuiviDettes.Construire(
+        [
+            Somme("creance", "chifa_a_deposer", "CNAS", 8, 800, echeanceDans: -1),     // 7 jours de délai dépassés
+            Somme("creance", "chifa_a_deposer", "CNAS", 3, 500, echeanceDans: 4),      // dans le délai
+            Somme("creance", "bordereau", "CNAS", 50, 9000, echeanceDans: -5),         // déposé il y a 50 jours, 45 de délai
+            Somme("creance", "bordereau", "CASNOS", 40, 3000, echeanceDans: 5)         // dans le délai, même au-delà des 30 jours généraux
+        ], delaiJours: 30, Jour);
+
+        Assert.Equal((1, 800m), s.Alertes.Where(a => a.Categorie == "chifa_a_deposer").Select(a => (a.Nombre, a.Montant)).Single());
+        Assert.Equal((1, 9000m), s.Alertes.Where(a => a.Categorie == "bordereau").Select(a => (a.Nombre, a.Montant)).Single());
+        Assert.Contains("à déposer en retard", s.Alertes.Single(a => a.Categorie == "chifa_a_deposer").Message);
+    }
+
+    [Fact]
     public void Echeancier_par_tranche_et_totaux_sans_les_effets()
     {
         var s = RegleSuiviDettes.Construire(

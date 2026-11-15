@@ -53,6 +53,9 @@ public static class RegleSuiviDettes
 
     public static bool EstFacture(string categorie) => categorie.StartsWith("facture_", StringComparison.Ordinal);
 
+    /// <summary>Créance Chifa / MDN à délai propre (script 110) : bordereau déposé, vente à déposer.</summary>
+    public static bool EstChifa(string categorie) => categorie is "bordereau" or "chifa_a_deposer";
+
     /// <summary>Dettes des financements (prêts bancaires, compte du titulaire) : réservées au titulaire.</summary>
     public static readonly string[] CategoriesFinancement = ["pret", "titulaire"];
     public static bool EstFinancement(string categorie) => CategoriesFinancement.Contains(categorie);
@@ -70,7 +73,8 @@ public static class RegleSuiviDettes
             {
                 "effet" or "pret" => s.Echeance is { } e && e.DayNumber - aujourdhui.DayNumber <= JoursAvantEcheance,
                 "titulaire" => false,
-                _ => s.Rejetee || (EstFacture(s.Categorie) && s.Echeance is { } due ? due < aujourdhui : jours > delaiJours)
+                // Bordereau Chifa / MDN (échéance = dépôt + délai de paiement) et vente à déposer (vente + délai de dépôt) : script 110
+                _ => s.Rejetee || ((EstFacture(s.Categorie) || EstChifa(s.Categorie)) && s.Echeance is { } due ? due < aujourdhui : jours > delaiJours)
             };
             return new LigneSuivi(s, jours, Tranche(jours), alerte);
         }).OrderByDescending(l => l.EnAlerte).ThenByDescending(l => l.Jours).ThenBy(l => l.Somme.Tiers, StringComparer.CurrentCulture).ToList();
@@ -99,7 +103,8 @@ public static class RegleSuiviDettes
             "facture_patient" => $"{nombre} facture(s) de patients échue(s){rejet} : {da} à encaisser.",
             "facture_entreprise" => $"{nombre} facture(s) d'entreprises échue(s){rejet} : {da} à encaisser.",
             "facture_organisme" => $"{nombre} facture(s) d'organismes échue(s){rejet} : {da} à encaisser.",
-            "bordereau" => $"{nombre} bordereau(x) d'organismes envoyés depuis plus de {delai} jours ou rejetés en partie : {da} à recevoir.",
+            "bordereau" => $"{nombre} bordereau(x) Chifa / MDN impayé(s) au-delà du délai, ou rejet(s) à traiter{rejet} : {da} à recevoir.",
+            "chifa_a_deposer" => $"{nombre} vente(s) Chifa / MDN à déposer en retard : {da} à mettre sur un bordereau.",
             "grossiste" => $"{nombre} facture(s) de {tiers} grossiste(s) à payer depuis plus de {delai} jours : {da}.",
             "effet" => $"{nombre} traite(s) échue(s) ou à payer dans les {JoursAvantEcheance} jours : {da} à prévoir.",
             "pret" => $"{nombre} prêt(s) avec une échéance échue ou à payer dans les {JoursAvantEcheance} jours (capital restant dû : {da}).",
@@ -118,7 +123,7 @@ public static class RegleSuiviDettes
 public sealed record FiltreSuiviDettes(string? Categorie = null, string? Tiers = null, string? Etat = null, DateOnly? Du = null, DateOnly? Au = null,
     string? Recherche = null)
 {
-    public static readonly string[] Categories = ["patient", "facture", "bordereau", "grossiste", "effet", "pret", "titulaire"];
+    public static readonly string[] Categories = ["patient", "facture", "bordereau", "chifa_a_deposer", "grossiste", "effet", "pret", "titulaire"];
     public static readonly string[] Etats = ["alerte", "delai", "rejetee"];
 
     /// <summary>Valeurs inconnues ignorées (pas d'erreur : un lien ancien ou modifié affiche simplement tout).</summary>

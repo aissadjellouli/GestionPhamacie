@@ -52,6 +52,14 @@
                         <label for="delai-volet">Délai d’attente du volet Chifa (jours)</label>
                         <input id="delai-volet" data-champ="delai_volet_chifa" type="number" min="1" max="365" @bind="parametres.DelaiVoletChifaJours" />
                     </div>
+                    <div class="champ" title="Vente Chifa ou MDN rattachée à son volet (n° de facture) mais sur aucun bordereau : signalée « à déposer en retard » au-delà de ce délai (Finances › Chifa › Bordereaux, Dettes et créances, Accueil).">
+                        <label for="delai-depot">Ventes Chifa à déposer : retard au-delà de (jours)</label>
+                        <input id="delai-depot" data-champ="delai_depot_chifa" type="number" min="1" max="365" @bind="parametres.DelaiDepotChifaJours" />
+                    </div>
+                    <div class="champ" title="Bordereau déposé à la CNAS, à la CASNOS ou au MDN et pas encore soldé : signalé « impayé » au-delà de ce délai après son dépôt.">
+                        <label for="delai-paiement">Bordereau impayé au-delà de (jours après le dépôt)</label>
+                        <input id="delai-paiement" data-champ="delai_paiement_bordereau" type="number" min="1" max="365" @bind="parametres.DelaiPaiementBordereauJours" />
+                    </div>
                     <div class="champ" title="Patient CNAS/CASNOS dont la date de fin de droits Chifa tombe dans ce nombre de jours : la caisse affiche « Droits Chifa jusqu’au … : prévenir le patient » (orange). Jamais de blocage.">
                         <label for="jours-fin-droit">Prévenir la fin des droits Chifa (jours avant)</label>
                         <input id="jours-fin-droit" data-champ="jours_alerte_fin_droit" type="number" min="0" max="365" @bind="parametres.JoursAlerteFinDroit" />
@@ -144,6 +152,8 @@
         public decimal SeuilEcartChifa { get; set; } = 5;
         public int DelaiVoletChifaJours { get; set; } = 7;
         public int JoursAlerteFinDroit { get; set; } = EtatDroitsChifa.JoursAlerteParDefaut;
+        public int DelaiDepotChifaJours { get; set; } = 7;
+        public int DelaiPaiementBordereauJours { get; set; } = 45;
         public decimal SeuilSortieTiroir { get; set; } = 2000;
     }
 
@@ -214,7 +224,8 @@
                 ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
                 SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut,
                 SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode, SeuilEcartChifa = p.SeuilEcartChifa,
-                DelaiVoletChifaJours = p.DelaiVoletChifaJours, SeuilSortieTiroir = p.SeuilSortieTiroir, JoursAlerteFinDroit = p.JoursAlerteFinDroit
+                DelaiVoletChifaJours = p.DelaiVoletChifaJours, SeuilSortieTiroir = p.SeuilSortieTiroir, JoursAlerteFinDroit = p.JoursAlerteFinDroit,
+                DelaiDepotChifaJours = p.DelaiDepotChifaJours, DelaiPaiementBordereauJours = p.DelaiPaiementBordereauJours
             };
         (employesJournal, _) = await Api.EmployesJournalAsync();
         await ChargerJournalAsync(retour?.Entier("page") ?? 1, retour?.Entier("taille"));
@@ -234,7 +245,8 @@
         erreur = await Api.ModifierParametresCaisseAsync(new ParametresCaisseDto(
             parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture, parametres.PlafondCreditDefaut,
             parametres.SeuilAnnulations, parametres.AutorisationParCode, parametres.SeuilEcartChifa, DelaiVoletChifaJours: parametres.DelaiVoletChifaJours, SeuilSortieTiroir: parametres.SeuilSortieTiroir,
-            JoursAlerteFinDroit: parametres.JoursAlerteFinDroit));
+            JoursAlerteFinDroit: parametres.JoursAlerteFinDroit, DelaiDepotChifaJours: parametres.DelaiDepotChifaJours,
+            DelaiPaiementBordereauJours: parametres.DelaiPaiementBordereauJours));
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";

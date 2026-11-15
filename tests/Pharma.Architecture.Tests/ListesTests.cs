@@ -25,6 +25,7 @@ public class ListesTests
         ["Pages/AdminDroits.razor"] = (2, "utilisateurs : exception choisie le 2026-11-13 ; droits par rôle (bornés)"),
         ["Pages/AdminNotifications.razor"] = (1, "destinataires des notifications (quelques personnes)"),
         ["Pages/AdminReprise.razor"] = (2, "champs d'une cible de reprise et vérification après chargement (bornés)"),
+        ["Pages/BordereauxChifa.razor"] = (2, "fiche d'un bordereau (détail d'un document) : ses paiements (quelques virements) et son historique (200 dernières entrées) ; ses factures sont paginées"),
         ["Pages/Dettes.razor"] = (1, "échéancier par ancienneté (synthèse de trois tranches)"),
         ["Pages/EtatCaisse.razor"] = (2, "ventes par employé et comptages intermédiaires d'une session de caisse"),
         ["Pages/Factures.razor"] = (2, "lignes d'une facture et ses versions (détail d'un document)"),

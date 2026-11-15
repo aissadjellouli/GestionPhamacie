@@ -108,12 +108,13 @@
         ("tiroir", "Ouverture du tiroir sans vente"), ("attente", "Mise en attente d’une vente"), ("charge", "Catégories de dépenses"),
         ("sortie_stock", "Sorties de stock"), ("retour_fournisseur", "Retours au fournisseur"),
         ("volet_absent", "Vente Chifa sans n° de facture"), ("chifa_exclusion", "Exclusion d’une vente Chifa"),
-        ("majoration_chifa", "Types de majoration Chifa"), ("retour_client", "Retour d’un produit par le patient")
+        ("majoration_chifa", "Types de majoration Chifa"), ("retour_client", "Retour d’un produit par le patient"),
+        ("rejet_chifa", "Rejet d’une facture Chifa")
     ];
 
     /// <summary>Ajout : tiroir, attente, charges et listes Chifa (sorties et retours : codes fixés par la base, libellé et activation réglables).</summary>
     private static IEnumerable<(string Code, string Libelle)> ListesAjout(bool ajout) =>
-        ajout ? Listes.Where(l => l.Code is "tiroir" or "attente" or "charge" or "volet_absent" or "chifa_exclusion" or "majoration_chifa" or "retour_client") : Listes;
+        ajout ? Listes.Where(l => l.Code is "tiroir" or "attente" or "charge" or "volet_absent" or "chifa_exclusion" or "majoration_chifa" or "retour_client" or "rejet_chifa") : Listes;
 
     private static string NomListe(string code) => Listes.FirstOrDefault(l => l.Code == code).Libelle ?? code;
 

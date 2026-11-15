@@ -30,6 +30,8 @@ public static partial class RegleMotifs
     public const string MajorationChifa = "majoration_chifa";
     /// <summary>Motif du retour client (script 104) ; « Autre » avec un texte.</summary>
     public const string RetourClient = "retour_client";
+    /// <summary>Motif du rejet d'une facture Chifa par l'organisme (script 110) ; « Autre » avec un texte.</summary>
+    public const string RejetChifa = "rejet_chifa";
     public const string Autre = "autre";
     /// <summary>Mise en attente pour un produit manquant : les produits dus au patient sont gardés avec la vente en attente.</summary>
     public const string ProduitManquant = "produit_manquant";
@@ -40,13 +42,14 @@ public static partial class RegleMotifs
         (Tiroir, "Ouverture du tiroir sans vente"), (Attente, "Mise en attente d’une vente"), (Charge, "Catégories de dépenses"),
         (SortieStock, "Sorties de stock"), (RetourFournisseur, "Retours au fournisseur"),
         (VoletAbsent, "Vente Chifa sans n° de facture"), (ChifaExclusion, "Exclusion d’une vente Chifa"),
-        (MajorationChifa, "Types de majoration Chifa"), (RetourClient, "Retour d’un produit par le patient")
+        (MajorationChifa, "Types de majoration Chifa"), (RetourClient, "Retour d’un produit par le patient"),
+        (RejetChifa, "Rejet d’une facture Chifa")
     ];
 
     public static bool ListeConnue(string? liste) => Listes.Any(l => l.Code == liste);
 
     /// <summary>Ajout de motifs : tiroir, attente et charges ; pas les sorties ni les retours (codes fixés par la base).</summary>
-    public static bool AjoutPermis(string liste) => liste is Tiroir or Attente or Charge or VoletAbsent or ChifaExclusion or MajorationChifa or RetourClient;
+    public static bool AjoutPermis(string liste) => liste is Tiroir or Attente or Charge or VoletAbsent or ChifaExclusion or MajorationChifa or RetourClient or RejetChifa;
 
     public static string ExigerListe(string? liste) =>
         ListeConnue(liste) ? liste! : throw new RegleMetierException("Liste de motifs inconnue.", "liste");

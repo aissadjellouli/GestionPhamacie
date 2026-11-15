@@ -45,6 +45,8 @@ public static class Domaines
             new("Financements", "financements", ["financements"], ["role.titulaire"]),
             // Circuit « la caisse d'abord » (2026-11-15) : ventes Chifa en attente de volet, volets rattachés avec écart
             new("Chifa", "chifa", ["chifa"], ["caisse.vendre"]),
+            // Bordereaux Chifa / MDN (script 110) : dépôt, rejets, paiements
+            new("Bordereaux Chifa", "bordereaux-chifa", ["bordereaux-chifa"], ["chifa.bordereaux"]),
         ]),
         // Contrôle de fin de droits Chifa (2026-11-15) : suivi des patients CNAS/CASNOS aux droits expirés ou bientôt expirés
         new("patients", "Patients", 'T',

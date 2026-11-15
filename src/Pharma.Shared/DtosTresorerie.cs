@@ -15,12 +15,21 @@ public sealed record MouvementsTresoreriePageDto(PageDto<MouvementTresorerieDto>
 
 public sealed record ChequeARemettreDto(long PaiementId, DateTime Date, decimal Montant, string Origine, string? Patient, long? PatientId = null);
 public sealed record CaisseAVerserDto(long SessionId, string Poste, DateTime FermeeLe, string OuvertePar, decimal Compte, decimal Propose);
-public sealed record BordereauEnvoyeDto(long Id, long OrganismeId, string Organisme, string Numero, decimal Montant);
+/// <summary>Bordereau Chifa / MDN déposé en attente de paiement : Montant = reste à recevoir (script 110).</summary>
+public sealed record BordereauEnvoyeDto(long Id, long OrganismeId, string Organisme, string Numero, decimal Montant,
+    decimal Attendu = 0, decimal Verse = 0, decimal Rejete = 0, DateOnly? DateDepot = null, string? Centre = null);
+
+/// <summary>Part d'un versement d'organisme imputée à un bordereau (script 110).</summary>
+public sealed record ImputationBordereauDto(long BordereauId, decimal Montant);
 public sealed record AVerserDto(IReadOnlyList<ChequeARemettreDto> Cheques, IReadOnlyList<CaisseAVerserDto> Caisses, IReadOnlyList<BordereauEnvoyeDto> Bordereaux);
 
-/// <summary>Nature : depense, encaissement ou versement_organisme. StatutBordereau : paye ou rejet_partiel.</summary>
+/// <summary>
+/// Nature : depense, encaissement ou versement_organisme. Bordereaux : parts du versement imputées aux bordereaux Chifa / MDN (script 110) ;
+/// BordereauId seul : tout le versement sur ce bordereau ; StatutBordereau : ignoré (statut calculé).
+/// </summary>
 public sealed record MouvementTresorerieRequete(long CompteId, DateOnly? Date, string Nature, decimal Montant, string? Categorie, string? Libelle,
-    string? Reference, long? OrganismeId, long? BordereauId, string? StatutBordereau, IReadOnlyList<long>? Factures = null);
+    string? Reference, long? OrganismeId, long? BordereauId, string? StatutBordereau, IReadOnlyList<long>? Factures = null,
+    IReadOnlyList<ImputationBordereauDto>? Bordereaux = null);
 
 public sealed record TransfertRequete(long De, long Vers, DateOnly? Date, decimal Montant, string? Reference);
 public sealed record RemiseChequesRequete(long CompteId, DateOnly? Date, string? Reference, IReadOnlyList<long> Paiements);

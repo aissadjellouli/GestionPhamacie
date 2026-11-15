@@ -240,6 +240,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\107_controle_fin_droits.sql = database\migration\107_controle_fin_droits.sql
 		database\migration\108_prestations_remboursables.sql = database\migration\108_prestations_remboursables.sql
 		database\migration\109_retour_avoir.sql = database\migration\109_retour_avoir.sql
+		database\migration\110_bordereaux_chifa.sql = database\migration\110_bordereaux_chifa.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"

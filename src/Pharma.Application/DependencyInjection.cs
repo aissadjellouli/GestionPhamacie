@@ -45,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<Chifa.ExclureVenteChifa>();
         services.AddScoped<Chifa.ConflitsFactureChifa>();
         services.AddScoped<Chifa.ConsulterVentesChifa>();
+        services.AddScoped<Chifa.GererBordereaux>();
         services.AddScoped<GarderPatientVoletChifa>();
         services.AddScoped<AssocierCodeChifa>();
         services.AddScoped<CreerPatientVoletChifa>();

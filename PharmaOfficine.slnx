@@ -188,6 +188,7 @@
     <File Path="database/migration/107_controle_fin_droits.sql" />
     <File Path="database/migration/108_prestations_remboursables.sql" />
     <File Path="database/migration/109_retour_avoir.sql" />
+    <File Path="database/migration/110_bordereaux_chifa.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

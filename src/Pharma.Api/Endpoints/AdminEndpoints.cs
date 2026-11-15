@@ -19,7 +19,8 @@ internal static class AdminEndpoints
                 var p = await obtenir.ExecuterAsync(ct);
                 return Results.Ok(new ParametresCaisseDto(p.ComptageAveugle, p.FondCaisseDefaut, p.SeuilEcart, p.DeconnexionMinutes, p.VersementCloture, p.PlafondCreditDefaut,
                     p.SeuilAnnulations, p.AutorisationParCode, p.SeuilEcartChifa, DelaiVoletChifaJours: p.DelaiVoletChifaJours, SeuilSortieTiroir: p.SeuilSortieTiroir,
-                    JoursAlerteFinDroit: p.JoursAlerteFinDroit));
+                    JoursAlerteFinDroit: p.JoursAlerteFinDroit, DelaiDepotChifaJours: p.DelaiDepotChifaJours,
+                    DelaiPaiementBordereauJours: p.DelaiPaiementBordereauJours));
             })
            .ExigerPermission(Permissions.AdminParametres);
 
@@ -27,7 +28,8 @@ internal static class AdminEndpoints
             {
                 await modifier.ExecuterAsync(new ParametresCaisse(req.ComptageAveugle, req.FondCaisseDefaut, req.SeuilEcart, req.DeconnexionMinutes, req.VersementCloture ?? "manuel", req.PlafondCreditDefaut,
                     req.SeuilAnnulations, req.AutorisationParCode, req.SeuilEcartChifa, DelaiVoletChifaJours: req.DelaiVoletChifaJours, SeuilSortieTiroir: req.SeuilSortieTiroir,
-                    JoursAlerteFinDroit: req.JoursAlerteFinDroit),
+                    JoursAlerteFinDroit: req.JoursAlerteFinDroit, DelaiDepotChifaJours: req.DelaiDepotChifaJours,
+                    DelaiPaiementBordereauJours: req.DelaiPaiementBordereauJours),
                     user.UtilisateurId(), ct);
                 return Results.NoContent();
             })

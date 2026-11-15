@@ -1,0 +1,638 @@
+@page "/bordereaux-chifa"
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+@inject SessionPoste Session
+
+@* Bordereaux Chifa / MDN (décisions du titulaire, 2026-11-15, script 110) : n° de CHIFA-Officine saisi ; un bordereau par organisme et
+   centre payeur ; ventes « à déposer » rattachées (liste ou scan du n° de facture Chifa) ; dépôt, rejets et leurs suites ; paiements
+   imputés en Trésorerie › Versement d'un organisme. Écran fixe : seul le tableau défile ; listes filtrées et paginées par le serveur. *@
+<div class="page avec-menu">
+    <NavDomaine Libelle="Écrans des finances" />
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Bordereaux Chifa</h1>
+                <p class="sous-titre">Bordereaux de CHIFA-Officine (CNAS, CASNOS) et du MDN : ventes à déposer, dépôt, rejets et paiements.
+                    @if (compteurs is { } cpt)
+                    {
+                        <span>@cpt.VentesADeposer vente(s) à déposer (@Libelles.Dinars(cpt.MontantADeposer, 2))@if (cpt.VentesEnRetard > 0) { <span class="texte-urgent"> dont @cpt.VentesEnRetard en retard</span> }
+                            · @if (cpt.BordereauxImpayes > 0) { <span class="texte-urgent">@cpt.BordereauxImpayes bordereau(x) impayé(s) au-delà du délai (@Libelles.Dinars(cpt.MontantImpaye, 2))</span> } else { <span>aucun bordereau impayé en retard</span> }
+                            @if (cpt.RejetsATraiter > 0) { <span class="texte-urgent"> · @cpt.RejetsATraiter rejet(s) à traiter</span> }</span>
+                    }
+                </p>
+            </div>
+            <div style="display: flex; gap: 8px">
+                @if (fiche is not null)
+                {
+                    <button type="button" class="btn" @onclick="FermerFiche">← Liste des bordereaux</button>
+                }
+                <button type="button" class="btn btn-principal" @onclick="NouveauBordereau">Nouveau bordereau</button>
+            </div>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (fiche is { } f)
+        {
+            var b = f.Bordereau;
+            @* ---- Fiche d'un bordereau ---- *@
+            <div class="achats-ligne" data-champ="bordereau" style="gap: 18px; flex-wrap: wrap; align-items: flex-start">
+                <div><span class="detail">Bordereau</span><br /><strong>@b.Organisme n° @b.Numero</strong></div>
+                <div><span class="detail">Centre payeur</span><br />@(b.CentrePayeur ?? "—")</div>
+                <div><span class="detail">Période</span><br />@Libelles.Date(b.PeriodeDebut) → @Libelles.Date(b.PeriodeFin)</div>
+                <div><span class="detail">Statut</span><br /><span class="pastille @(Pastille(b.Statut))">@b.StatutLibelle</span>@if (b.DateDepot is { } d) { <span class="detail"> déposé le @Libelles.Date(d)</span> }</div>
+                <div><span class="detail">Attendu (@b.Ventes facture(s))</span><br /><strong>@Libelles.Dinars(b.Attendu, 2)</strong></div>
+                <div><span class="detail">Déclaré (CHIFA-Officine)</span><br />@Libelles.Dinars(b.MontantDeclare, 2)
+                    @if (b.Ecart is { } e && e != 0) { <br /><span class="texte-urgent">écart @Libelles.Dinars(e, 2)</span> }</div>
+                <div><span class="detail">Rejeté</span><br />@Libelles.Dinars(b.Rejete, 2)</div>
+                <div><span class="detail">Reçu</span><br />@Libelles.Dinars(b.Verse, 2)</div>
+                <div><span class="detail">Reste à recevoir</span><br /><strong class="@(b.Impaye ? "texte-urgent" : null)">@Libelles.Dinars(b.Reste, 2)</strong></div>
+            </div>
+            <div class="filtres" style="margin-top: 8px">
+                @if (b.Statut == "preparation")
+                {
+                    <button type="button" class="btn" @onclick="() => ModifierEntete(b)">Modifier l’en-tête</button>
+                    <button type="button" class="btn" @onclick="OuvrirAjout">Ajouter des ventes</button>
+                    <div class="champ" style="flex: 0 1 260px; margin: 0">
+                        <label for="bc-scan">Scan ou n° de facture Chifa</label>
+                        <input id="bc-scan" data-champ="facture" autocomplete="off" @bind="scan" @bind:event="oninput" @onkeydown="ScanToucheAsync" />
+                    </div>
+                    <div class="champ" style="flex: 0 0 160px; margin: 0">
+                        <label for="bc-depot">Date de dépôt</label>
+                        <input id="bc-depot" data-champ="date_depot" type="date" @bind="dateDepot" />
+                    </div>
+                    <button type="button" class="btn btn-principal" disabled="@(enCours || b.Ventes == 0)" @onclick="DeposerAsync">Déposer le bordereau</button>
+                }
+                <button type="button" class="btn" disabled="@enCours" @onclick="PdfAsync">PDF (liste de contrôle)</button>
+            </div>
+            <div class="filtres" role="tablist" aria-label="Fiche du bordereau">
+                <button type="button" role="tab" class="puce" aria-selected="@(ongletFiche == "factures" ? "true" : "false")" @onclick="@(() => ongletFiche = "factures")">Factures (@f.Lignes.Count)</button>
+                <button type="button" role="tab" class="puce" aria-selected="@(ongletFiche == "paiements" ? "true" : "false")" @onclick="@(() => ongletFiche = "paiements")">Paiements (@f.Versements.Count)</button>
+                <button type="button" role="tab" class="puce" aria-selected="@(ongletFiche == "historique" ? "true" : "false")" @onclick="ChargerHistoriqueAsync">Historique</button>
+            </div>
+            <div class="tableau-cadre">
+                @if (ongletFiche == "factures")
+                {
+                    <table class="tableau" style="min-width: 1100px">
+                        <thead><tr><th scope="col">Vente</th><th scope="col">Facture Chifa</th><th scope="col">Patient</th><th scope="col" class="nombre">Part organisme</th><th scope="col">Rejet</th><th scope="col">Suite</th><th scope="col">Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var l in f.Lignes.Skip((pageFactures - 1) * tailleFactures).Take(tailleFactures))
+                            {
+                                <tr>
+                                    <td>@l.NumeroVente<br /><span class="detail">@Libelles.DateHeureLocale(l.DateVente)</span></td>
+                                    <td>@(l.FactureChifa ?? "—")</td>
+                                    <td>@(l.Patient ?? "—")</td>
+                                    <td class="nombre">@l.PartOrganisme.ToString("N2")</td>
+                                    <td>@if (l.RejeteLe is { } r) { <span class="texte-urgent">@l.MontantRejete.ToString("N2") DA</span><br /><span class="detail">@l.Motif · @Libelles.DateHeureLocale(r)</span> } else { <span>—</span> }</td>
+                                    <td>@if (l.RejeteLe is not null) { <span class="pastille @(l.Suite is null ? "attention" : "ok")">@l.SuiteLibelle</span>@if (l.SuitePar is { } sp) { <br /><span class="detail">@sp</span> } }</td>
+                                    <td>
+                                        @if (b.Statut == "preparation")
+                                        {
+                                            <button type="button" class="lien-bouton" disabled="@enCours" @onclick="() => RetirerAsync(l)">Retirer</button>
+                                        }
+                                        else if (l.RejeteLe is null && b.Statut is "depose" or "paye_partiel" or "paye")
+                                        {
+                                            <button type="button" class="lien-bouton" @onclick="() => OuvrirRejet(l, false)">Rejet…</button>
+                                        }
+                                        else if (l.RejeteLe is not null && l.Suite is null)
+                                        {
+                                            <button type="button" class="lien-bouton" @onclick="() => OuvrirRejet(l, true)">Traiter le rejet…</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            @if (f.Lignes.Count == 0) { <tr><td colspan="7" class="vide">Aucune facture : « Ajouter des ventes » ou scannez un n° de facture Chifa.</td></tr> }
+                        </tbody>
+                    </table>
+                }
+                else if (ongletFiche == "paiements")
+                {
+                    <table class="tableau">
+                        <thead><tr><th scope="col">Date</th><th scope="col">Compte</th><th scope="col">Référence</th><th scope="col" class="nombre">Montant imputé</th></tr></thead>
+                        <tbody>
+                            @foreach (var v in f.Versements)
+                            {
+                                <tr><td>@Libelles.Date(v.Date)</td><td>@v.Compte</td><td>@(v.Reference ?? "—")</td><td class="nombre">@v.Montant.ToString("N2")</td></tr>
+                            }
+                            @if (f.Versements.Count == 0) { <tr><td colspan="4" class="vide">Aucun paiement : Trésorerie › Versement d’un organisme, en cochant ce bordereau.</td></tr> }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <table class="tableau">
+                        <thead><tr><th scope="col">Date</th><th scope="col">Employé</th><th scope="col">Action</th><th scope="col">Détails</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in historique)
+                            {
+                                <tr><td>@Libelles.DateHeureLocale(h.Date)</td><td>@h.Employe</td><td>@Action(h.Action)</td><td class="detail" style="max-width: 600px; overflow-wrap: anywhere">@h.Details</td></tr>
+                            }
+                            @if (historique.Count == 0) { <tr><td colspan="4" class="vide">Aucune entrée.</td></tr> }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            @if (ongletFiche == "factures")
+            {
+                <Pagination Total="@f.Lignes.Count" Numero="pageFactures" Taille="tailleFactures" Occupe="enCours"
+                            Libelle="Pages des factures du bordereau" OnChange="p => { (pageFactures, tailleFactures) = (p.Numero, p.Taille); }" />
+            }
+        }
+        else
+        {
+            <div class="filtres" role="tablist" aria-label="Listes des bordereaux">
+                <button type="button" role="tab" class="puce" aria-selected="@(onglet == "bordereaux" ? "true" : "false")" @onclick="@(() => ChoisirAsync("bordereaux"))">Bordereaux</button>
+                <button type="button" role="tab" class="puce" aria-selected="@(onglet == "a-deposer" ? "true" : "false")" @onclick="@(() => ChoisirAsync("a-deposer"))">Ventes à déposer</button>
+            </div>
+            <div class="filtres-liste" role="search" aria-label="Filtrer la liste">
+                <div class="champ" style="flex: 0 1 160px"><label for="bc-org">Organisme</label>
+                    <select id="bc-org" @bind="organismeFiltre" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="0">Tous</option>
+                        @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                    </select></div>
+                @if (onglet == "bordereaux")
+                {
+                    <div class="champ" style="flex: 0 1 220px"><label for="bc-etat">État</label>
+                        <select id="bc-etat" @bind="etat" @bind:after="() => ChargerAsync(1, taille)">
+                            <option value="">Tous</option><option value="impayes">Déposés non soldés</option><option value="preparation">En préparation</option>
+                            <option value="depose">Déposés</option><option value="paye_partiel">Payés en partie</option><option value="paye">Payés (rejets à traiter)</option><option value="solde">Soldés</option>
+                        </select></div>
+                }
+                else
+                {
+                    <div class="champ" style="flex: 0 1 260px"><label for="bc-centre">Centre payeur</label>
+                        <select id="bc-centre" @bind="centreFiltre" @bind:after="() => ChargerAsync(1, taille)">
+                            <option value="">Tous</option><option value="0">Sans centre</option>
+                            @foreach (var c in centres.Where(c => organismeFiltre == 0 || c.OrganismeId == organismeFiltre)) { <option value="@c.Id">@c.OrganismeCode · @c.Code · @c.Nom</option> }
+                        </select></div>
+                    <label class="case" style="align-self: flex-end"><input type="checkbox" @bind="retardSeulement" @bind:after="() => ChargerAsync(1, taille)" /> En retard seulement</label>
+                }
+                <div class="champ" style="flex: 1 1 240px"><label for="bc-q">@(onglet == "bordereaux" ? "N° de bordereau, de vente ou de facture Chifa" : "N° de vente, de facture Chifa ou patient")</label>
+                    <input id="bc-q" type="search" autocomplete="off" @bind="recherche" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" /></div>
+            </div>
+            <div class="tableau-cadre">
+                @if (onglet == "bordereaux")
+                {
+                    <table class="tableau" style="min-width: 1100px">
+                        <thead><tr><th scope="col">Bordereau</th><th scope="col">Centre payeur</th><th scope="col">Période</th><th scope="col">Statut</th><th scope="col" class="nombre">Factures</th><th scope="col" class="nombre">Attendu</th><th scope="col" class="nombre">Écart déclaré</th><th scope="col" class="nombre">Reçu</th><th scope="col" class="nombre">Reste</th></tr></thead>
+                        <tbody>
+                            @if (bordereaux is null) { <tr><td colspan="9"><Chargement /></td></tr> }
+                            else
+                            {
+                                @foreach (var b in bordereaux.Lignes)
+                                {
+                                    <tr class="cliquable" style="cursor: pointer" @onclick="() => OuvrirFicheAsync(b.Id)">
+                                        <td><button type="button" class="lien-bouton" @onclick:stopPropagation="true" @onclick="() => OuvrirFicheAsync(b.Id)">@b.Organisme n° @b.Numero</button></td>
+                                        <td>@(b.CentrePayeur ?? "—")</td>
+                                        <td>@Libelles.Date(b.PeriodeDebut) → @Libelles.Date(b.PeriodeFin)</td>
+                                        <td><span class="pastille @(Pastille(b.Statut))">@b.StatutLibelle</span>@if (b.DateDepot is { } d) { <br /><span class="detail @(b.Impaye ? "texte-urgent" : null)">déposé le @Libelles.Date(d)@(b.Impaye ? " · impayé" : "")</span> }</td>
+                                        <td class="nombre">@b.Ventes</td>
+                                        <td class="nombre">@b.Attendu.ToString("N2")</td>
+                                        <td class="nombre @(b.Ecart is { } e && e != 0 ? "texte-urgent" : null)">@(b.Ecart is { } x ? x.ToString("N2") : "—")</td>
+                                        <td class="nombre">@b.Verse.ToString("N2")</td>
+                                        <td class="nombre">@b.Reste.ToString("N2")</td>
+                                    </tr>
+                                }
+                                @if (bordereaux.Lignes.Count == 0) { <tr><td colspan="9" class="vide">Aucun bordereau.</td></tr> }
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <table class="tableau" style="min-width: 1000px">
+                        <thead><tr><th scope="col">Vente</th><th scope="col">Organisme · centre</th><th scope="col">Facture Chifa</th><th scope="col">Patient</th><th scope="col" class="nombre">Part organisme</th><th scope="col">Ancienneté</th></tr></thead>
+                        <tbody>
+                            @if (aDeposer is null) { <tr><td colspan="6"><Chargement /></td></tr> }
+                            else
+                            {
+                                @foreach (var v in aDeposer.Lignes)
+                                {
+                                    <tr>
+                                        <td>@v.Numero<br /><span class="detail">@Libelles.DateHeureLocale(v.Date)</span></td>
+                                        <td>@v.Organisme@if (v.CentrePayeur is { } c) { <br /><span class="detail">@c</span> }</td>
+                                        <td>@(v.FactureChifa ?? "—")@if (v.Redeposee) { <br /><span class="pastille attention">à redéposer (rejet)</span> }</td>
+                                        <td>@(v.Patient ?? "—")</td>
+                                        <td class="nombre">@v.PartOrganisme.ToString("N2")</td>
+                                        <td class="@(v.EnRetard ? "texte-urgent" : null)">@Anciennete(v.Date)@(v.EnRetard ? " · en retard" : "")</td>
+                                    </tr>
+                                }
+                                @if (aDeposer.Lignes.Count == 0) { <tr><td colspan="6" class="vide">Aucune vente à déposer.</td></tr> }
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            @if (onglet == "bordereaux")
+            {
+                <Pagination Total="@(bordereaux?.Total ?? 0)" Numero="@(bordereaux?.Numero ?? 1)" Taille="taille" Occupe="enCours"
+                            Libelle="Pages des bordereaux" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+            }
+            else
+            {
+                <Pagination Total="@(aDeposer?.Total ?? 0)" Numero="@(aDeposer?.Numero ?? 1)" Taille="taille" Occupe="enCours"
+                            Libelle="Pages des ventes à déposer" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+            }
+        }
+    </div>
+</div>
+
+@if (edition is { } ed)
+{
+    @* ---- Nouveau bordereau / en-tête ---- *@
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-bordereau">
+        <section class="panneau" style="width: min(620px, 96vw); display: flex; flex-direction: column; gap: 10px">
+            <h2 id="t-bordereau" style="margin: 0">@(ed.Id is null ? "Nouveau bordereau" : "En-tête du bordereau")</h2>
+            <p class="detail" style="margin: 0">N° du bordereau de CHIFA-Officine (ou du MDN), saisi tel quel : le logiciel n’en attribue jamais. Un bordereau par organisme et par centre payeur.</p>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 0 0 140px"><label for="ed-org" class="requis">Organisme</label>
+                    <select id="ed-org" data-champ="organisme" @bind="ed.OrganismeId" disabled="@(ed.Id is not null)" @bind:after="() => ed.CentrePayeurId = 0">
+                        <option value="0">— choisir —</option>
+                        @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                    </select></div>
+                <div class="champ" style="flex: 1 1 240px"><label for="ed-centre" class="@(EstMdn(ed.OrganismeId) ? null : "requis")">Centre payeur@(EstMdn(ed.OrganismeId) ? " (facultatif)" : "")</label>
+                    <select id="ed-centre" data-champ="centre_payeur" @bind="ed.CentrePayeurId" disabled="@(ed.Id is not null)">
+                        <option value="0">— @(EstMdn(ed.OrganismeId) ? "aucun" : "choisir") —</option>
+                        @foreach (var c in centres.Where(c => c.OrganismeId == ed.OrganismeId && c.Actif)) { <option value="@c.Id">@c.Code · @c.Nom</option> }
+                    </select></div>
+            </div>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 1 1 180px"><label for="ed-num" class="requis">N° du bordereau</label>
+                    <input id="ed-num" data-champ="numero" maxlength="30" @bind="ed.Numero" @bind:event="oninput" /></div>
+                <div class="champ" style="flex: 0 0 150px"><label for="ed-du" class="requis">Période du</label><input id="ed-du" data-champ="periode" type="date" @bind="ed.Debut" /></div>
+                <div class="champ" style="flex: 0 0 150px"><label for="ed-au" class="requis">au</label><input id="ed-au" data-champ="periode_fin" type="date" @bind="ed.Fin" /></div>
+            </div>
+            <div class="champ" style="max-width: 260px"><label for="ed-decl">Montant déclaré par CHIFA-Officine (DA)</label>
+                <input id="ed-decl" data-champ="montant_declare" type="number" min="0" step="0.01" @bind="ed.Declare" /></div>
+            @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
+            <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end">
+                <button type="button" class="btn" disabled="@enCours" @onclick="() => edition = null">Annuler</button>
+                <button type="button" class="btn btn-principal" disabled="@(enCours || ed.OrganismeId == 0 || string.IsNullOrWhiteSpace(ed.Numero))" @onclick="EnregistrerEnteteAsync">Enregistrer</button>
+            </div>
+        </section>
+    </div>
+}
+
+@if (ajout && fiche is { } fa)
+{
+    @* ---- Ajout de ventes à déposer (même organisme et centre) ---- *@
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-ajout">
+        <section class="panneau" style="width: min(1100px, 96vw); height: min(760px, 92vh); display: flex; flex-direction: column; gap: 8px">
+            <h2 id="t-ajout" style="margin: 0">Ventes à déposer · @fa.Bordereau.Organisme@(fa.Bordereau.CentrePayeur is { } cp ? $" · {cp}" : "")</h2>
+            <div class="filtres-liste">
+                <div class="champ" style="flex: 1 1 240px"><label for="aj-q">N° de vente, de facture Chifa ou patient</label>
+                    <input id="aj-q" type="search" autocomplete="off" @bind="rechercheAjout" @bind:event="oninput" @bind:after="() => ChargerAjoutAsync(1)" /></div>
+                <label class="case" style="align-self: flex-end"><input type="checkbox" @bind="retardAjout" @bind:after="() => ChargerAjoutAsync(1)" /> En retard seulement</label>
+            </div>
+            <div class="tableau-cadre" data-champ="ventes" style="flex: 1 1 auto">
+                <table class="tableau">
+                    <thead><tr><th scope="col"><input type="checkbox" aria-label="Cocher la page" checked="@(candidats?.Lignes.Count > 0 && candidats.Lignes.All(v => coches.Contains(v.VenteId)))" @onchange="CocherPage" /></th>
+                        <th scope="col">Vente</th><th scope="col">Facture Chifa</th><th scope="col">Patient</th><th scope="col">Centre</th><th scope="col" class="nombre">Part organisme</th></tr></thead>
+                    <tbody>
+                        @if (candidats is null) { <tr><td colspan="6"><Chargement /></td></tr> }
+                        else
+                        {
+                            @foreach (var v in candidats.Lignes)
+                            {
+                                <tr>
+                                    <td><input type="checkbox" aria-label="Cocher la vente @v.Numero" checked="@coches.Contains(v.VenteId)" @onchange="e => Cocher(v.VenteId, e)" /></td>
+                                    <td>@v.Numero<br /><span class="detail">@Libelles.DateHeureLocale(v.Date)</span></td>
+                                    <td>@(v.FactureChifa ?? "—")</td>
+                                    <td>@(v.Patient ?? "—")</td>
+                                    <td>@(v.CentrePayeur ?? "sans centre")</td>
+                                    <td class="nombre">@v.PartOrganisme.ToString("N2")</td>
+                                </tr>
+                            }
+                            @if (candidats.Lignes.Count == 0) { <tr><td colspan="6" class="vide">Aucune vente à déposer pour cet organisme et ce centre.</td></tr> }
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <Pagination Total="@(candidats?.Total ?? 0)" Numero="@(candidats?.Numero ?? 1)" Taille="tailleAjout" Occupe="enCours"
+                        Libelle="Pages des ventes à déposer" OnChange="p => { tailleAjout = p.Taille; return ChargerAjoutAsync(p.Numero); }" />
+            @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
+            <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end; align-items: center">
+                <span class="detail">@coches.Count cochée(s)</span>
+                <button type="button" class="btn" disabled="@enCours" @onclick="() => ajout = false">Fermer</button>
+                <button type="button" class="btn" disabled="@(enCours || (candidats?.Total ?? 0) == 0)" @onclick="() => AjouterAsync(true)">Ajouter toutes (@(candidats?.Total ?? 0))</button>
+                <button type="button" class="btn btn-principal" disabled="@(enCours || coches.Count == 0)" @onclick="() => AjouterAsync(false)">Ajouter les cochées</button>
+            </div>
+        </section>
+    </div>
+}
+
+@if (rejet is { } rj && fiche is { } fr)
+{
+    @* ---- Rejet d'une facture et sa suite ---- *@
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-rejet">
+        <section class="panneau" style="width: min(600px, 96vw); display: flex; flex-direction: column; gap: 10px">
+            <h2 id="t-rejet" style="margin: 0">@(rj.Traiter ? "Traiter le rejet" : "Rejet de la facture") · vente @rj.Ligne.NumeroVente</h2>
+            <p class="detail" style="margin: 0">Facture Chifa @(rj.Ligne.FactureChifa ?? "—") · part organisme @Libelles.Dinars(rj.Ligne.PartOrganisme, 2)@(rj.Traiter ? $" · rejeté {Libelles.Dinars(rj.Ligne.MontantRejete, 2)} ({rj.Ligne.Motif})" : "")</p>
+            @if (!rj.Traiter)
+            {
+                <div class="champ"><label for="rj-motif" class="requis">Motif</label>
+                    <select id="rj-motif" data-champ="motif" @bind="rejetMotif"><option value="">— choisir —</option>@foreach (var m in motifsRejet) { <option value="@m.Code">@m.Libelle</option> }</select></div>
+                @if (rejetMotif == "autre")
+                {
+                    <div class="champ"><label for="rj-texte" class="requis">Précisez</label><input id="rj-texte" data-champ="motif_texte" maxlength="200" @bind="rejetTexte" @bind:event="oninput" /></div>
+                }
+                <div class="champ" style="max-width: 240px"><label for="rj-montant" class="requis">Montant rejeté (DA)</label>
+                    <input id="rj-montant" data-champ="montant_rejete" type="number" min="0.01" step="0.01" max="@rj.Ligne.PartOrganisme" @bind="rejetMontant" /></div>
+            }
+            <fieldset class="champ" style="border: 0; padding: 0; margin: 0">
+                <legend class="etiquette-champ" data-champ="suite">Suite@(rj.Traiter ? "" : " (facultative : à choisir plus tard)")</legend>
+                @if (!rj.Traiter) { <label class="case"><input type="radio" name="suite" checked="@(rejetSuite == "")" @onchange="@(() => rejetSuite = "")" /> Plus tard</label> }
+                <label class="case"><input type="radio" name="suite" checked="@(rejetSuite == "redeposer")" @onchange="@(() => rejetSuite = "redeposer")" /> Redéposer (la vente redevient « à déposer », sur un futur bordereau)</label>
+                <label class="case"><input type="radio" name="suite" checked="@(rejetSuite == "perte")" @onchange="@(() => rejetSuite = "perte")" /> Passer en perte</label>
+                <label class="case"><input type="radio" name="suite" checked="@(rejetSuite == "patient")" disabled="@(rj.Ligne.PatientId is null)" @onchange="@(() => rejetSuite = "patient")" /> Réclamer au patient (ajouté à sa dette)@(rj.Ligne.PatientId is null ? " : vente sans patient" : "")</label>
+            </fieldset>
+            @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
+            <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end">
+                <button type="button" class="btn" disabled="@enCours" @onclick="() => rejet = null">Annuler</button>
+                <button type="button" class="btn btn-principal" disabled="@(enCours || (rj.Traiter ? rejetSuite == "" : string.IsNullOrEmpty(rejetMotif) || rejetMontant <= 0))"
+                        @onclick="() => EnregistrerRejetAsync(fr.Bordereau.Id, rj)">Enregistrer</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+
+    private sealed class Edition
+    {
+        public long? Id { get; set; }
+        public long OrganismeId { get; set; }
+        public long CentrePayeurId { get; set; }
+        public string Numero { get; set; } = "";
+        public DateOnly Debut { get; set; } = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+        public DateOnly Fin { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public decimal? Declare { get; set; }
+    }
+
+    private sealed record Rejet(LigneBordereauDto Ligne, bool Traiter);
+
+    private string onglet = "bordereaux", recherche = "", etat = "", ongletFiche = "factures", scan = "";
+    private string? centreFiltre;
+    private long organismeFiltre;
+    private bool retardSeulement;
+    private PageDto<BordereauDto>? bordereaux;
+    private PageDto<VenteADeposerDto>? aDeposer;
+    private CompteursBordereauxDto? compteurs;
+    private FicheBordereauDto? fiche;
+    private List<HistoriqueBordereauDto> historique = [];
+    private List<OrganismeDto> organismes = [];
+    private List<CentrePayeurDto> centres = [];
+    private List<MotifReglableDto> motifsRejet = [];
+    private Edition? edition;
+    private Rejet? rejet;
+    private string rejetSuite = "";
+    private string? rejetMotif, rejetTexte;
+    private decimal rejetMontant;
+    private DateOnly dateDepot = DateOnly.FromDateTime(DateTime.Today);
+    private bool ajout, retardAjout;
+    private string rechercheAjout = "";
+    private PageDto<VenteADeposerDto>? candidats;
+    private readonly HashSet<long> coches = [];
+    private int taille = Pagination.TailleParDefaut, tailleAjout = Pagination.TailleParDefaut, tailleFactures = Pagination.TailleParDefaut, pageFactures = 1;
+    private bool enCours;
+    private string? erreur, erreurFenetre, message;
+
+    private static readonly string[] CodesOrganismes = ["CNAS", "CASNOS", "MDN"];
+    private bool EstMdn(long organismeId) => organismes.FirstOrDefault(o => o.Id == organismeId)?.Code.Trim().ToUpperInvariant() == "MDN";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var (o, _) = await Api.OrganismesAsync();
+        organismes = o.Where(x => CodesOrganismes.Contains(x.Code.Trim().ToUpperInvariant())).ToList();
+        var (c, _) = await Api.CentresPayeursAsync(null, null, null, 1, 200);
+        centres = c?.Lignes.ToList() ?? [];
+        Historique.Suivre("bordereaux-chifa", e =>
+        {
+            e.Mettre("onglet", onglet); e.Mettre("texte", recherche); e.Mettre("etat", etat); e.Mettre("organisme", organismeFiltre);
+            e.Mettre("page", (onglet == "bordereaux" ? bordereaux?.Numero : aDeposer?.Numero) ?? 1); e.Mettre("taille", taille);
+            e.Mettre("fiche", fiche?.Bordereau.Id ?? 0);
+        });
+        var numero = 1;
+        if (Historique.Restaurer("bordereaux-chifa") is { } h)
+        {
+            (onglet, recherche, etat, numero, taille) = (h.Texte("onglet") == "a-deposer" ? "a-deposer" : "bordereaux", h.Texte("texte") ?? "", h.Texte("etat") ?? "",
+                h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+            organismeFiltre = h.Long("organisme") ?? 0;
+            if (h.Long("fiche") is long id and > 0) await OuvrirFicheAsync(id);
+        }
+        else if (Rubrique == "a-deposer") onglet = "a-deposer";
+        await ChargerAsync(numero, taille);
+    }
+
+    private async Task ChargerCompteursAsync() => (compteurs, _) = await Api.CompteursBordereauxAsync();
+
+    private Task ChoisirAsync(string o)
+    {
+        if (o == onglet) return Task.CompletedTask;
+        onglet = o;
+        return ChargerAsync(1, taille);
+    }
+
+    private async Task ChargerAsync(int numero, int t)
+    {
+        enCours = true;
+        taille = t;
+        var q = recherche.Trim() == "" ? null : recherche.Trim();
+        long? org = organismeFiltre > 0 ? organismeFiltre : null;
+        if (onglet == "bordereaux") (bordereaux, erreur) = await Api.BordereauxAsync(org, etat == "" ? null : etat, q, numero, t);
+        else (aDeposer, erreur) = await Api.VentesADeposerAsync(org, long.TryParse(centreFiltre, out var c) ? c : null, q, retardSeulement, numero, t);
+        await ChargerCompteursAsync();
+        enCours = false;
+    }
+
+    private async Task OuvrirFicheAsync(long id)
+    {
+        (erreur, message) = (null, null);
+        var (f, e) = await Api.BordereauAsync(id);
+        if (f is null) { erreur = e; return; }
+        if (fiche?.Bordereau.Id != id) pageFactures = 1;
+        fiche = f;
+        pageFactures = Math.Clamp(pageFactures, 1, Math.Max(1, (f.Lignes.Count + tailleFactures - 1) / tailleFactures));
+        if (ongletFiche == "historique") (historique, _) = await Api.HistoriqueBordereauAsync(id);
+    }
+
+    private async Task RechargerFicheAsync()
+    {
+        if (fiche is { } f) await OuvrirFicheAsync(f.Bordereau.Id);
+        await ChargerCompteursAsync();
+    }
+
+    private Task FermerFiche()
+    {
+        (fiche, message, ongletFiche) = (null, null, "factures");
+        return ChargerAsync(bordereaux?.Numero ?? 1, taille);
+    }
+
+    private async Task ChargerHistoriqueAsync()
+    {
+        ongletFiche = "historique";
+        if (fiche is { } f) (historique, erreur) = await Api.HistoriqueBordereauAsync(f.Bordereau.Id);
+    }
+
+    private void NouveauBordereau()
+    {
+        erreurFenetre = null;
+        edition = new Edition { OrganismeId = organismeFiltre };
+    }
+
+    private void ModifierEntete(BordereauDto b)
+    {
+        erreurFenetre = null;
+        edition = new Edition
+        {
+            Id = b.Id, OrganismeId = b.OrganismeId, CentrePayeurId = b.CentrePayeurId ?? 0, Numero = b.Numero, Debut = b.PeriodeDebut, Fin = b.PeriodeFin,
+            Declare = b.MontantDeclare
+        };
+    }
+
+    private async Task EnregistrerEnteteAsync()
+    {
+        if (edition is not { } ed) return;
+        enCours = true;
+        var s = new BordereauSaisie(ed.OrganismeId, ed.CentrePayeurId > 0 ? ed.CentrePayeurId : null, ed.Numero.Trim(), ed.Debut, ed.Fin, ed.Declare);
+        if (ed.Id is { } id)
+        {
+            erreurFenetre = await Api.ModifierBordereauAsync(id, s);
+            if (erreurFenetre is null) { edition = null; message = "En-tête enregistré."; await RechargerFicheAsync(); }
+        }
+        else
+        {
+            var (b, e) = await Api.CreerBordereauAsync(s);
+            erreurFenetre = e;
+            if (b is not null) { edition = null; message = $"Bordereau {b.Organisme} n° {b.Numero} créé : ajoutez ses ventes."; await OuvrirFicheAsync(b.Id); }
+        }
+        enCours = false;
+    }
+
+    private Task OuvrirAjout()
+    {
+        (ajout, erreurFenetre, rechercheAjout, retardAjout) = (true, null, "", false);
+        coches.Clear();
+        return ChargerAjoutAsync(1);
+    }
+
+    private long? CentreAjout => fiche?.Bordereau is { } b ? b.CentrePayeurId : null;
+
+    private async Task ChargerAjoutAsync(int numero)
+    {
+        if (fiche is not { } f) return;
+        var q = rechercheAjout.Trim() == "" ? null : rechercheAjout.Trim();
+        // Centre du bordereau : ses ventes et celles sans centre (le centre du bordereau leur est donné au rattachement)
+        (candidats, erreurFenetre) = await Api.VentesADeposerAsync(f.Bordereau.OrganismeId, CentreAjout, q, retardAjout, numero, tailleAjout,
+            sansCentre: CentreAjout is not null);
+    }
+
+    private void Cocher(long id, ChangeEventArgs e) { if (e.Value is true) coches.Add(id); else coches.Remove(id); }
+
+    private void CocherPage(ChangeEventArgs e)
+    {
+        foreach (var v in candidats?.Lignes ?? []) { if (e.Value is true) coches.Add(v.VenteId); else coches.Remove(v.VenteId); }
+    }
+
+    private async Task AjouterAsync(bool toutes)
+    {
+        if (fiche is not { } f) return;
+        enCours = true;
+        var q = rechercheAjout.Trim() == "" ? null : rechercheAjout.Trim();
+        // « Toutes » : le serveur reprend le filtre (organisme et centre du bordereau, ventes sans centre comprises)
+        var (n, e) = await Api.AjouterVentesBordereauAsync(f.Bordereau.Id, toutes
+            ? new AjoutVentesBordereauRequete(null, new FiltreVentesADeposerDto(CentreAjout, q, retardAjout))
+            : new AjoutVentesBordereauRequete(coches.ToList()));
+        erreurFenetre = e;
+        enCours = false;
+        if (e is null)
+        {
+            (ajout, message) = (false, $"{n?.Id ?? 0} vente(s) ajoutée(s) au bordereau.");
+            coches.Clear();
+            await RechargerFicheAsync();
+        }
+    }
+
+    private async Task ScanToucheAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || fiche is not { } f || string.IsNullOrWhiteSpace(scan)) return;
+        enCours = true;
+        var (r, err) = await Api.AjouterFactureBordereauAsync(f.Bordereau.Id, scan.Trim());
+        (erreur, message) = (err, r is null ? null : $"Facture {scan.Trim()} (vente {r.Libelle}) ajoutée.");
+        scan = "";
+        enCours = false;
+        if (err is null) await RechargerFicheAsync();
+    }
+
+    private async Task RetirerAsync(LigneBordereauDto l)
+    {
+        if (fiche is not { } f) return;
+        enCours = true;
+        erreur = await Api.RetirerVenteBordereauAsync(f.Bordereau.Id, l.VenteId);
+        enCours = false;
+        if (erreur is null) { message = $"Vente {l.NumeroVente} retirée du bordereau."; await RechargerFicheAsync(); }
+    }
+
+    private async Task DeposerAsync()
+    {
+        if (fiche is not { } f) return;
+        enCours = true;
+        erreur = await Api.DeposerBordereauAsync(f.Bordereau.Id, dateDepot);
+        enCours = false;
+        if (erreur is null) { message = "Bordereau déposé : ses ventes ne s’annulent plus (régularisation Chifa)."; await RechargerFicheAsync(); }
+    }
+
+    private async Task OuvrirRejet(LigneBordereauDto l, bool traiter)
+    {
+        (erreurFenetre, rejetMotif, rejetTexte, rejetMontant, rejetSuite) = (null, null, null, l.PartOrganisme, "");
+        if (motifsRejet.Count == 0) (motifsRejet, _) = await Api.MotifsAsync("rejet_chifa");
+        rejet = new Rejet(l, traiter);
+    }
+
+    private async Task EnregistrerRejetAsync(long bordereauId, Rejet r)
+    {
+        enCours = true;
+        erreurFenetre = r.Traiter
+            ? await Api.TraiterRejetChifaAsync(bordereauId, r.Ligne.VenteId, rejetSuite)
+            : await Api.RejeterFactureChifaAsync(bordereauId, r.Ligne.VenteId,
+                new RejetChifaRequete(rejetMotif ?? "", rejetMotif == "autre" ? rejetTexte?.Trim() : null, rejetMontant, rejetSuite == "" ? null : rejetSuite));
+        enCours = false;
+        if (erreurFenetre is null)
+        {
+            rejet = null;
+            message = $"Vente {r.Ligne.NumeroVente} : rejet enregistré.";
+            await RechargerFicheAsync();
+        }
+    }
+
+    private async Task PdfAsync()
+    {
+        if (fiche is not { } f) return;
+        enCours = true;
+        var (contenu, nom, e) = await Api.BordereauPdfAsync(f.Bordereau.Id);
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        try { Documents.OuvrirSurCePoste("Rapports", nom!, contenu!); }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { erreur = $"PDF non enregistré : {ex.Message}"; }
+    }
+
+    private static string Pastille(string statut) => statut switch
+    {
+        "solde" => "ok", "preparation" => "", "paye_partiel" or "paye" => "attention", _ => "info"
+    };
+
+    private static string Action(string a) => a switch
+    {
+        "bordereau_cree" => "Création", "bordereau_modifie" => "En-tête modifié", "bordereau_ventes_ajoutees" => "Ventes ajoutées",
+        "bordereau_vente_retiree" => "Vente retirée", "bordereau_depose" => "Dépôt", "facture_chifa_rejetee" => "Rejet",
+        "rejet_chifa_traite" => "Suite du rejet", "versement_bordereau" => "Paiement reçu", _ => a
+    };
+
+    private static string Anciennete(DateTime date)
+    {
+        var jours = Math.Max(0, DateOnly.FromDateTime(DateTime.Now).DayNumber - DateOnly.FromDateTime(date.Kind == DateTimeKind.Utc ? date.ToLocalTime() : date).DayNumber);
+        return jours == 0 ? "aujourd’hui" : jours == 1 ? "1 jour" : $"{jours} jours";
+    }
+}

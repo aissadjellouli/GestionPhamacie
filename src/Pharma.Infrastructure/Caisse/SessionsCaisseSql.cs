@@ -192,13 +192,13 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
             """
             SELECT comptage_aveugle, fond_caisse_defaut, seuil_ecart, deconnexion_minutes, versement_cloture, plafond_credit_defaut,
                    seuil_annulations, autorisation_par_code, seuil_ecart_chifa, seuil_sortie_tiroir, delai_volet_chifa_jours,
-                   jours_alerte_fin_droit
+                   jours_alerte_fin_droit, chifa_delai_depot_jours, chifa_delai_paiement_jours
             FROM parametre_caisse WHERE id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         return await r.ReadAsync(ct)
             ? new ParametresCaisse(r.GetBoolean(0), r.GetDecimal(1), r.GetDecimal(2), r.GetInt32(3), r.GetString(4), r.GetDecimal(5), r.GetInt32(6), r.GetBoolean(7), r.GetDecimal(8), r.GetDecimal(9),
-                DelaiVoletChifaJours: r.GetInt32(10), JoursAlerteFinDroit: r.GetInt32(11))
+                DelaiVoletChifaJours: r.GetInt32(10), JoursAlerteFinDroit: r.GetInt32(11), DelaiDepotChifaJours: r.GetInt32(12), DelaiPaiementBordereauJours: r.GetInt32(13))
             : new ParametresCaisse(true, 0, 0, 0);
     }
 
@@ -208,7 +208,7 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
             UPDATE parametre_caisse
             SET comptage_aveugle = $1, fond_caisse_defaut = $2, seuil_ecart = $3, deconnexion_minutes = $4, versement_cloture = $5,
                 plafond_credit_defaut = $6, seuil_annulations = $7, autorisation_par_code = $8, seuil_ecart_chifa = $9, seuil_sortie_tiroir = $10,
-                delai_volet_chifa_jours = $11, jours_alerte_fin_droit = $12
+                delai_volet_chifa_jours = $11, jours_alerte_fin_droit = $12, chifa_delai_depot_jours = $13, chifa_delai_paiement_jours = $14
             WHERE id = 1
             """);
         cmd.Parameters.AddWithValue(p.ComptageAveugle);
@@ -223,6 +223,8 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
         cmd.Parameters.AddWithValue(p.SeuilSortieTiroir);
         cmd.Parameters.AddWithValue(p.DelaiVoletChifaJours);
         cmd.Parameters.AddWithValue(p.JoursAlerteFinDroit);
+        cmd.Parameters.AddWithValue(p.DelaiDepotChifaJours);
+        cmd.Parameters.AddWithValue(p.DelaiPaiementBordereauJours);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

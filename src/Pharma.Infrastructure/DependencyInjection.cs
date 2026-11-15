@@ -98,6 +98,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Chifa.IVentesChifa, Chifa.VentesChifaSql>();
         services.AddScoped<Application.Chifa.IConflitsFactureChifa, Chifa.ConflitsFactureChifaSql>();
         services.AddScoped<Application.Chifa.ICentresPayeurs, Chifa.CentresPayeursSql>();
+        services.AddScoped<Application.Chifa.IBordereaux, Chifa.BordereauxSql>();
         services.AddScoped<Application.Caisse.ITypesPrestation, Caisse.TypesPrestationSql>();
         services.AddScoped<Application.Catalogue.IIndications, Lecture.IndicationsSql>();
         services.AddSingleton<Application.Commun.ITraceErreurs, Systeme.TraceErreurs>();
@@ -128,6 +129,7 @@ public static class DependencyInjection
         // Sorties et entrées d'argent par le tiroir (script 096) : écritures et bon de sortie
         services.AddScoped<Pharma.Application.Caisse.ITiroir, TiroirSql>();
         services.AddSingleton<Pharma.Application.Caisse.IDocumentsBonSortie, DocumentsPdf>();
+        services.AddSingleton<Pharma.Application.Chifa.IDocumentsBordereau, DocumentsPdf>();
         services.AddScoped<Pharma.Application.Stock.ICampagnesInventaire, Lecture.CampagnesInventaireSql>();
         services.AddScoped<Pharma.Application.Pilotage.IPilotage, Lecture.PilotageSql>();
         services.AddScoped<Pharma.Application.Stock.IRegistrePsychotropes, RegistreSql>();

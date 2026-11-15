@@ -187,6 +187,20 @@
                         <span class="detail">@Libelles.Dinars(montantReglements) à préparer</span>
                     </a>
                 }
+                @if (bordereauxChifa is { } bc)
+                {
+                    @* Bordereaux Chifa / MDN (script 110) : ventes à déposer (en retard au-delà du délai réglé), bordereaux impayés *@
+                    <a href="bordereaux-chifa?rubrique=a-deposer" class="tuile tuile-lien @(bc.VentesEnRetard > 0 ? "tuile-urgente" : null)">
+                        <span class="tuile-libelle">Ventes Chifa à déposer</span>
+                        <span class="tuile-valeur">@bc.VentesADeposer</span>
+                        <span class="detail">@(bc.VentesEnRetard > 0 ? $"dont {bc.VentesEnRetard} en retard" : "aucune en retard")</span>
+                    </a>
+                    <a href="bordereaux-chifa" class="tuile tuile-lien @(bc.BordereauxImpayes > 0 ? "tuile-urgente" : null)">
+                        <span class="tuile-libelle">Bordereaux impayés</span>
+                        <span class="tuile-valeur">@bc.BordereauxImpayes</span>
+                        <span class="detail">@(bc.BordereauxImpayes > 0 ? Libelles.Dinars(bc.MontantImpaye) + " en retard" : "aucun en retard")</span>
+                    </a>
+                }
             </div>
 
             @if (Titulaire)
@@ -262,6 +276,7 @@
     private (int Ruptures, int Critiques)? stock;
     private PageDto<EcheancePretDto>? echeances;
     private EtatPosteDto? etatPoste;
+    private CompteursBordereauxDto? bordereauxChifa;
     private VentesDuJourDto? jour;
     private string? erreurVentes;
 
@@ -298,6 +313,7 @@
         }
         var (tableau, _) = await Api.TableauInventaireAsync();
         ecartsAValider = tableau?.EcartsAValider.Count;
+        if (Session.A("chifa.bordereaux")) (bordereauxChifa, _) = await Api.CompteursBordereauxAsync();
         if (Titulaire)
         {
             // Échéances à payer (défaut du serveur : non payées, échues ou sous 7 jours), anomalies non traitées, sauvegarde

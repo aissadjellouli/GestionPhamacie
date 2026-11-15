@@ -230,7 +230,8 @@
         new("", "", "", Groupe: "À recevoir"),
         new("patient", "Patients", "Ventes à crédit non soldées et dette antérieure des patients", true, true),
         new("facture", "Factures clients", "Factures clients (patients, entreprises, organismes) restant à encaisser", true, true),
-        new("bordereau", "Bordereaux d’organismes", "Bordereaux d’organismes envoyés et pas encore payés en entier", true, true),
+        new("bordereau", "Bordereaux Chifa / MDN", "Bordereaux déposés pas encore soldés (alerte au-delà du délai de paiement réglé) et rejets à traiter", true, true),
+        new("chifa_a_deposer", "Ventes Chifa à déposer", "Ventes Chifa / MDN sur aucun bordereau (alerte au-delà du délai de dépôt réglé)", true, true),
         new("", "", "", Groupe: "À payer"),
         new("grossiste", "Grossistes", "Factures des grossistes non réglées et ancien solde hors factures", true, true),
         new("effet", "Traites à payer", "Traites remises aux grossistes : à venir, ou échues sans paiement confirmé", true, true),
@@ -391,6 +392,8 @@
             _ when l.Categorie.StartsWith("facture_", StringComparison.Ordinal) && Numero(l.Libelle, "Facture ") is { } f =>
                 ($"tresorerie?facture={Uri.EscapeDataString(f)}", "tresorerie.gerer"),
             "bordereau" when Numero(l.Libelle, "Bordereau ") is { } b => ($"tresorerie?bordereau={Uri.EscapeDataString(b)}", "tresorerie.gerer"),
+            "bordereau" => ("bordereaux-chifa", "chifa.bordereaux"),
+            "chifa_a_deposer" => ("bordereaux-chifa?rubrique=a-deposer", "chifa.bordereaux"),
             "grossiste" when l.TiersId is { } g => ($"achats?onglet=reglements&grossiste={g}", "achats.regler"),
             "effet" => ("achats?onglet=traites", "achats.regler"),
             "pret" => ("financements?rubrique=echeances", "role.titulaire"),
@@ -414,7 +417,7 @@
     private static string LibelleCategorie(string c) => c switch
     {
         "patient" => "Patient", "facture_patient" => "Facture patient", "facture_entreprise" => "Facture entreprise",
-        "facture_organisme" => "Facture organisme", "bordereau" => "Bordereau", "grossiste" => "Grossiste", "effet" => "Traite",
+        "facture_organisme" => "Facture organisme", "bordereau" => "Bordereau", "chifa_a_deposer" => "Vente Chifa à déposer", "grossiste" => "Grossiste", "effet" => "Traite",
         "pret" => "Prêt bancaire", "titulaire" => "Compte du titulaire", _ => c
     };
 }

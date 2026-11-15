@@ -40,7 +40,8 @@ internal static class TresorerieEndpoints
                 return Results.Ok(new AVerserDto(
                     a.Cheques.Select(x => new ChequeARemettreDto(x.PaiementId, x.Date, x.Montant, x.Origine, x.Patient, x.PatientId)).ToList(),
                     a.Caisses.Select(x => new CaisseAVerserDto(x.SessionId, x.Poste, x.FermeeLe, x.OuvertePar, x.Compte, x.Propose)).ToList(),
-                    a.Bordereaux.Select(x => new BordereauEnvoyeDto(x.Id, x.OrganismeId, x.Organisme, x.Numero, x.Montant)).ToList()));
+                    a.Bordereaux.Select(x => new BordereauEnvoyeDto(x.Id, x.OrganismeId, x.Organisme, x.Numero, x.Montant, x.Attendu, x.Verse,
+                        x.Rejete, x.DateDepot, x.Centre)).ToList()));
             });
 
         // Types de charges réglés par le titulaire (Administration › Motifs et catégories, script 094) : actives seulement ;
@@ -51,7 +52,8 @@ internal static class TresorerieEndpoints
 
         t.MapPost("/mouvements", async (MouvementTresorerieRequete r, SaisirMouvementTresorerie s, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok(new IdentifiantDto(await s.ExecuterAsync(r.CompteId, r.Date, r.Nature, r.Montant, r.Categorie, r.Libelle, r.Reference,
-                r.OrganismeId, r.BordereauId, r.StatutBordereau, user.UtilisateurId(), r.Factures, ct))));
+                r.OrganismeId, r.BordereauId, r.StatutBordereau, user.UtilisateurId(), r.Factures,
+                r.Bordereaux?.Select(b => (b.BordereauId, b.Montant)).ToList(), ct))));
 
         t.MapPost("/transferts", async (TransfertRequete r, TransfererTresorerie s, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok(new IdentifiantDto(await s.ExecuterAsync(r.De, r.Vers, r.Date, r.Montant, r.Reference, user.UtilisateurId(), ct))));

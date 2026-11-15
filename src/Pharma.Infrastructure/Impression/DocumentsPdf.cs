@@ -12,7 +12,7 @@ namespace Pharma.Infrastructure.Impression;
 /// <summary>Documents PDF produits avec PDFsharp-MigraDoc (licence MIT), polices Windows du serveur.</summary>
 public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.IDocumentsRapports, Pharma.Application.Stock.IDocumentsRegistre,
     Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire, Pharma.Application.Caisse.IDocumentsCredit, Pharma.Application.Caisse.IDocumentsTicket,
-    Pharma.Application.Caisse.IDocumentsBonSortie
+    Pharma.Application.Caisse.IDocumentsBonSortie, Pharma.Application.Chifa.IDocumentsBordereau
 {
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
 
@@ -501,6 +501,60 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
 
         var note = section.AddParagraph("Un règlement solde les ventes choisies par le patient, sinon les dettes les plus anciennes d’abord ; "
             + "un avoir ou le règlement d’une facture s’impute sur les ventes de cette facture.");
+        note.Format.SpaceBefore = Unit.FromPoint(12);
+        note.Format.Font.Size = 8;
+        return Rendre(doc);
+    }
+
+    // ---- Bordereau Chifa / MDN (liste interne de contrôle, script 110) ---------
+
+    public byte[] Bordereau(Pharma.Application.Chifa.Bordereau b, IReadOnlyList<Pharma.Application.Chifa.LigneBordereau> lignes,
+        IReadOnlyList<Pharma.Application.Chifa.VersementBordereau> versements, string? pharmacie)
+    {
+        var doc = NouveauDocument($"Bordereau {b.Organisme} {b.Numero}", pharmacie);
+        var section = doc.LastSection;
+        Titre(section, $"Bordereau {b.Organisme} n° {b.Numero}");
+
+        var synthese = Tableau(section, 8, 8.5);
+        Ligne(synthese, "Centre payeur", b.CentrePayeur ?? "—");
+        Ligne(synthese, "Période", $"du {b.PeriodeDebut.ToString("dd/MM/yyyy", Fr)} au {b.PeriodeFin.ToString("dd/MM/yyyy", Fr)}");
+        Ligne(synthese, "Statut", Pharma.Domain.Ventes.RegleBordereau.Libelle(b.Statut)
+            + (b.DateDepot is { } d ? $" · déposé le {d.ToString("dd/MM/yyyy", Fr)}" : ""));
+        Ligne(synthese, $"Factures ({b.Ventes})", "");
+        Ligne(synthese, "Montant attendu (parts organisme)", Da(b.Attendu), gras: true);
+        Ligne(synthese, "Montant déclaré (CHIFA-Officine)", b.MontantDeclare is { } md ? Da(md) : "non saisi");
+        if (b.Ecart is { } e && e != 0) Ligne(synthese, "Écart déclaré − attendu", Da(e), gras: true);
+        Ligne(synthese, "Rejeté", Da(b.Rejete));
+        Ligne(synthese, "Reçu", Da(b.Verse));
+        Ligne(synthese, "Reste à recevoir", Da(b.Reste), gras: true);
+
+        SousTitre(section, "Factures");
+        var t = Tableau(section, 2.6, 2.2, 3.2, 4.6, 2.4, 3.2);
+        Entete(t, "Vente", "Date", "Facture Chifa", "Patient", "Part org.", "Rejet");
+        foreach (var l in lignes)
+        {
+            var row = t.AddRow();
+            row.TopPadding = row.BottomPadding = Unit.FromPoint(2);
+            var rejet = l.RejeteLe is null ? "" : $"{Da(l.MontantRejete)} · {l.Motif} · {Pharma.Domain.Ventes.RegleBordereau.LibelleSuite(l.Suite)}";
+            string[] cellules = [l.NumeroVente, l.DateVente.ToLocalTime().ToString("dd/MM/yyyy", Fr), l.FactureChifa ?? "—", l.Patient ?? "—", Da(l.PartOrganisme), rejet];
+            for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+        }
+        if (lignes.Count == 0) Ligne(t, "Aucune facture", "");
+
+        if (versements.Count > 0)
+        {
+            SousTitre(section, "Paiements reçus");
+            var p = Tableau(section, 3, 5, 5, 3.5);
+            Entete(p, "Date", "Compte", "Référence", "Montant");
+            foreach (var v in versements)
+            {
+                var row = p.AddRow();
+                string[] cellules = [v.Date.ToString("dd/MM/yyyy", Fr), v.Compte, v.Reference ?? "—", Da(v.Montant)];
+                for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+            }
+        }
+
+        var note = section.AddParagraph("Liste interne de contrôle : le bordereau officiel est celui de CHIFA-Officine.");
         note.Format.SpaceBefore = Unit.FromPoint(12);
         note.Format.Font.Size = 8;
         return Rendre(doc);

@@ -94,7 +94,113 @@ internal static class ChifaEndpoints
                 await conflits.TrancherAsync(venteId, r.ValeurRetenue, user.UtilisateurId(), ct) ? Results.NoContent() : Results.NotFound())
            .ExigerTitulaire()
            .GererErreursMetier();
+
+        MapBordereaux(api);
     }
+
+    /// <summary>Bordereaux Chifa / MDN (script 110) : droit chifa.bordereaux pour tout (consultation, création, dépôt, rejets).</summary>
+    private static void MapBordereaux(RouteGroupBuilder api)
+    {
+        var b = api.MapGroup("/chifa/bordereaux").ExigerPermission(Permissions.ChifaBordereaux);
+
+        b.MapGet("", async (long? organismeId, string? etat, string? q, int? page, int? taille, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await gerer.ListerAsync(new FiltreBordereaux(organismeId, string.IsNullOrWhiteSpace(etat) ? null : etat.Trim(), q),
+                    DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
+                return Results.Ok(new PageDto<BordereauDto>(p.Lignes.Select(Dto).ToList(), p.Total, p.Numero, p.Taille));
+            }).GererErreursMetier();
+
+        b.MapGet("/compteurs", async (GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var c = await gerer.CompteursAsync(user.UtilisateurId(), ct);
+                return Results.Ok(new CompteursBordereauxDto(c.VentesADeposer, c.VentesEnRetard, c.MontantADeposer, c.BordereauxImpayes, c.MontantImpaye, c.RejetsATraiter));
+            }).GererErreursMetier();
+
+        b.MapGet("/a-deposer", async (long? organismeId, long? centrePayeurId, string? q, bool? retard, bool? sansCentre, int? page, int? taille,
+                GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await gerer.VentesADeposerAsync(new FiltreVentesADeposer(organismeId, centrePayeurId, q, retard == true, sansCentre == true),
+                    DemandePage.Lire(page, taille),
+                    user.UtilisateurId(), ct);
+                return Results.Ok(new PageDto<VenteADeposerDto>(p.Lignes.Select(v => new VenteADeposerDto(v.VenteId, v.Numero, v.Date, v.OrganismeId, v.Organisme,
+                    v.Canal, v.CentrePayeurId, v.CentrePayeur, v.PatientId, v.Patient, v.FactureChifa, v.PartOrganisme, v.Redeposee, v.EnRetard)).ToList(),
+                    p.Total, p.Numero, p.Taille));
+            }).GererErreursMetier();
+
+        b.MapGet("/{id:long}", async (long id, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var (bo, lignes, versements) = await gerer.FicheAsync(id, user.UtilisateurId(), ct);
+                return Results.Ok(new FicheBordereauDto(Dto(bo), lignes.Select(Dto).ToList(),
+                    versements.Select(v => new VersementBordereauDto(v.MouvementId, v.Date, v.Compte, v.Reference, v.Montant)).ToList()));
+            }).GererErreursMetier();
+
+        b.MapGet("/{id:long}/historique", async (long id, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok((await gerer.HistoriqueAsync(id, user.UtilisateurId(), ct))
+                    .Select(h => new HistoriqueBordereauDto(h.Date, h.Employe, h.Action, h.DetailsJson)).ToList()))
+            .GererErreursMetier();
+
+        b.MapGet("/{id:long}/pdf", async (long id, GererBordereaux gerer, IDocumentsBordereau documents,
+                Pharma.Application.Administration.IPharmacie pharmacie, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var (bo, lignes, versements) = await gerer.FicheAsync(id, user.UtilisateurId(), ct);
+                var nom = $"bordereau_{bo.Organisme}_{string.Concat(bo.Numero.Where(char.IsLetterOrDigit))}.pdf";
+                return Results.File(documents.Bordereau(bo, lignes, versements, (await pharmacie.LireAsync(ct))?.Nom), "application/pdf", nom);
+            }).GererErreursMetier();
+
+        b.MapPost("", async (BordereauSaisie s, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(Dto(await gerer.CreerAsync(s.OrganismeId, s.CentrePayeurId, s.Numero, s.PeriodeDebut, s.PeriodeFin, s.MontantDeclare,
+                    user.UtilisateurId(), ct))))
+            .GererErreursMetier();
+
+        b.MapPut("/{id:long}", async (long id, BordereauSaisie s, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await gerer.ModifierAsync(id, s.Numero, s.PeriodeDebut, s.PeriodeFin, s.MontantDeclare, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            }).GererErreursMetier();
+
+        b.MapPost("/{id:long}/ventes", async (long id, AjoutVentesBordereauRequete r, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new IdentifiantDto(await gerer.AjouterVentesAsync(id, r.Ventes,
+                    r.Toutes is { } t ? new FiltreVentesADeposer(null, t.CentrePayeurId, t.Recherche, t.RetardSeulement) : null, user.UtilisateurId(), ct))))
+            .GererErreursMetier();
+
+        b.MapPost("/{id:long}/factures", async (long id, AjoutFactureBordereauRequete r, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new CodeLibelleDto("vente", await gerer.AjouterParFactureAsync(id, r.FactureChifa, user.UtilisateurId(), ct))))
+            .GererErreursMetier();
+
+        b.MapDelete("/{id:long}/ventes/{venteId:long}", async (long id, long venteId, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await gerer.RetirerVenteAsync(id, venteId, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            }).GererErreursMetier();
+
+        b.MapPost("/{id:long}/depot", async (long id, DepotBordereauRequete r, GererBordereaux gerer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await gerer.DeposerAsync(id, r.Date, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            }).GererErreursMetier();
+
+        b.MapPost("/{id:long}/ventes/{venteId:long}/rejet", async (long id, long venteId, RejetChifaRequete r, GererBordereaux gerer, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                await gerer.RejeterAsync(id, venteId, r.MotifCode, r.Texte, r.Montant, r.Suite, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            }).GererErreursMetier();
+
+        b.MapPost("/{id:long}/ventes/{venteId:long}/suite", async (long id, long venteId, SuiteRejetRequete r, GererBordereaux gerer, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                await gerer.TraiterRejetAsync(id, venteId, r.Suite, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            }).GererErreursMetier();
+    }
+
+    private static BordereauDto Dto(Bordereau b) => new(b.Id, b.OrganismeId, b.Organisme, b.Canal, b.CentrePayeurId, b.CentrePayeur, b.Numero,
+        b.PeriodeDebut, b.PeriodeFin, b.DateDepot, b.Statut, RegleBordereau.Libelle(b.Statut), b.MontantDeclare, b.Ventes, b.Attendu, b.Rejete,
+        b.RejetsATraiter, b.Verse, b.Reste, b.Ecart, b.CreeLe, b.CreePar, b.Impaye);
+
+    private static LigneBordereauDto Dto(LigneBordereau l) => new(l.VenteId, l.NumeroVente, l.DateVente, l.PatientId, l.Patient, l.FactureChifa,
+        l.PartOrganisme, l.AjouteLe, l.RejeteLe, l.Motif, l.MontantRejete, l.Suite, l.RejeteLe is null ? null : RegleBordereau.LibelleSuite(l.Suite),
+        l.SuiteLe, l.SuitePar);
 
     private static CentrePayeurDto Dto(CentrePayeur c) => new(c.Id, c.OrganismeId, c.OrganismeCode, c.Code, c.Nom, c.Actif);
 

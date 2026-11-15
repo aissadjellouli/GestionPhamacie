@@ -60,12 +60,15 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
 
         var bordereaux = new List<BordereauEnvoye>();
         await using (var cmd = db.CreateCommand("""
-            SELECT b.id, o.id, o.code, b.numero, b.montant_total FROM bordereau b JOIN organisme o ON o.id = b.organisme_id
-            WHERE b.statut = 'envoye' ORDER BY b.date_envoi NULLS LAST, b.id
+            SELECT b.id, b.organisme_id, b.organisme, b.numero, b.reste, b.attendu, b.verse, b.rejete, b.date_depot, cp.code
+            FROM v_bordereau b LEFT JOIN centre_payeur cp ON cp.id = b.centre_payeur_id
+            WHERE b.statut IN ('depose', 'paye_partiel') AND b.reste > 0 ORDER BY b.date_depot NULLS LAST, b.id
             """))
         await using (var r = await cmd.ExecuteReaderAsync(ct))
             while (await r.ReadAsync(ct))
-                bordereaux.Add(new BordereauEnvoye(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetDecimal(4)));
+                bordereaux.Add(new BordereauEnvoye(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetDecimal(4),
+                    r.GetDecimal(5), r.GetDecimal(6), r.GetDecimal(7), r.IsDBNull(8) ? null : DateOnly.FromDateTime(r.GetDateTime(8)),
+                    r.IsDBNull(9) ? null : r.GetString(9)));
         return new AVerser(cheques, caisses, bordereaux);
     }
 
@@ -148,15 +151,32 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
             cmd.Parameters.AddWithValue(m.UtilisateurId);
             id = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
-        if (m.BordereauId is { } b)
-            await using (var cmd = new NpgsqlCommand("UPDATE bordereau SET statut = $2 WHERE id = $1 AND statut = 'envoye' AND organisme_id = $3", cx, tx))
+        // Bordereaux Chifa / MDN payés par ce versement (script 110) : reste relu sous verrou, imputation, statut recalculé
+        foreach (var (bordereauId, part) in m.Bordereaux ?? [])
+        {
+            await using (var verrou = new NpgsqlCommand(
+                "SELECT 1 FROM bordereau WHERE id = $1 AND organisme_id = $2 AND statut IN ('depose', 'paye_partiel') FOR UPDATE", cx, tx))
             {
-                cmd.Parameters.AddWithValue(b);
-                cmd.Parameters.AddWithValue(m.StatutBordereau!);
-                cmd.Parameters.AddWithValue(m.OrganismeId!.Value);
-                if (await cmd.ExecuteNonQueryAsync(ct) == 0)
-                    throw new RegleMetierException("Ce bordereau n’est plus en attente de paiement pour cet organisme : rechargez la liste.");
+                verrou.Parameters.AddWithValue(bordereauId);
+                verrou.Parameters.AddWithValue(m.OrganismeId!.Value);
+                if (await verrou.ExecuteScalarAsync(ct) is null)
+                    throw new RegleMetierException("Un bordereau n’est plus en attente de paiement pour cet organisme : rechargez la liste.");
             }
+            await using (var reste = new NpgsqlCommand("SELECT reste FROM v_bordereau WHERE id = $1", cx, tx))
+            {
+                reste.Parameters.AddWithValue(bordereauId);
+                if (await reste.ExecuteScalarAsync(ct) is not decimal r || r < part)
+                    throw new RegleMetierException("Un bordereau vient d’être payé entre-temps : rechargez la liste.");
+            }
+            await using (var cmd = new NpgsqlCommand("INSERT INTO versement_bordereau (mouvement_id, bordereau_id, montant) VALUES ($1, $2, $3)", cx, tx))
+            {
+                cmd.Parameters.AddWithValue(id);
+                cmd.Parameters.AddWithValue(bordereauId);
+                cmd.Parameters.AddWithValue(part);
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+            await Chifa.BordereauxSql.RecalculerStatutAsync(cx, tx, bordereauId, ct);
+        }
         // Factures clients soldées : le reste est relu sous verrou (deux encaissements simultanés ne paient pas deux fois)
         foreach (var (factureId, part) in m.Factures ?? [])
         {

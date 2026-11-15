@@ -37,3 +37,45 @@ public sealed record ConflitFactureDto(long VenteId, string NumeroVente, DateTim
 
 /// <summary>N° de facture Chifa retenu par le titulaire (8 chiffres).</summary>
 public sealed record TrancherConflitFactureRequete(string ValeurRetenue);
+
+// ---- Bordereaux Chifa / MDN (script 110) ----
+
+/// <summary>
+/// Bordereau : Statut preparation, depose, paye_partiel, paye (rejets à traiter), solde. Reste = attendu − versé − rejeté ;
+/// Ecart = déclaré − attendu (rouge s'il n'est pas nul) ; Impaye : déposé non soldé au-delà du délai réglé.
+/// </summary>
+public sealed record BordereauDto(long Id, long OrganismeId, string Organisme, string Canal, long? CentrePayeurId, string? CentrePayeur,
+    string Numero, DateOnly PeriodeDebut, DateOnly PeriodeFin, DateOnly? DateDepot, string Statut, string StatutLibelle, decimal? MontantDeclare,
+    int Ventes, decimal Attendu, decimal Rejete, int RejetsATraiter, decimal Verse, decimal Reste, decimal? Ecart, DateTime CreeLe, string? CreePar,
+    bool Impaye);
+
+/// <summary>Facture (vente) d'un bordereau : Suite redeposer, perte, patient, ou null (rejet à traiter).</summary>
+public sealed record LigneBordereauDto(long VenteId, string NumeroVente, DateTime DateVente, long? PatientId, string? Patient, string? FactureChifa,
+    decimal PartOrganisme, DateTime AjouteLe, DateTime? RejeteLe, string? Motif, decimal MontantRejete, string? Suite, string? SuiteLibelle,
+    DateTime? SuiteLe, string? SuitePar);
+
+public sealed record VersementBordereauDto(long MouvementId, DateOnly Date, string Compte, string? Reference, decimal Montant);
+
+/// <summary>Historique d'un bordereau : entrées du journal (action, date, employé, détails lisibles).</summary>
+public sealed record HistoriqueBordereauDto(DateTime Date, string Employe, string Action, string? Details);
+
+public sealed record FicheBordereauDto(BordereauDto Bordereau, IReadOnlyList<LigneBordereauDto> Lignes, IReadOnlyList<VersementBordereauDto> Versements);
+
+public sealed record VenteADeposerDto(long VenteId, string Numero, DateTime Date, long OrganismeId, string Organisme, string Canal,
+    long? CentrePayeurId, string? CentrePayeur, long? PatientId, string? Patient, string? FactureChifa, decimal PartOrganisme, bool Redeposee, bool EnRetard);
+
+public sealed record CompteursBordereauxDto(int VentesADeposer, int VentesEnRetard, decimal MontantADeposer, int BordereauxImpayes, decimal MontantImpaye,
+    int RejetsATraiter);
+
+/// <summary>Nouveau bordereau (n° de CHIFA-Officine) ou modification de son en-tête en préparation.</summary>
+public sealed record BordereauSaisie(long OrganismeId, long? CentrePayeurId, string Numero, DateOnly PeriodeDebut, DateOnly PeriodeFin, decimal? MontantDeclare);
+
+/// <summary>Ventes cochées, ou « toutes » celles du filtre (Toutes non null : centre, recherche, retard).</summary>
+public sealed record AjoutVentesBordereauRequete(IReadOnlyList<long>? Ventes, FiltreVentesADeposerDto? Toutes = null);
+public sealed record FiltreVentesADeposerDto(long? CentrePayeurId, string? Recherche, bool RetardSeulement);
+public sealed record AjoutFactureBordereauRequete(string FactureChifa);
+public sealed record DepotBordereauRequete(DateOnly? Date);
+
+/// <summary>Rejet : motif (liste rejet_chifa, texte pour « Autre »), montant ≤ part organisme ; Suite facultative (redeposer, perte, patient).</summary>
+public sealed record RejetChifaRequete(string MotifCode, string? Texte, decimal Montant, string? Suite);
+public sealed record SuiteRejetRequete(string Suite);
