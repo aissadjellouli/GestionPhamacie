@@ -19,6 +19,7 @@ public static class RegleAvoir
     public const string OrigineSaisie = "saisie";
     public const string OriginePaiement = "paiement";
     public const string OrigineRemboursement = "remboursement";
+    public const string OrigineRetourClient = "retour_client";
 
     public static RegleMetierException Insuffisant(decimal solde) =>
         new($"Avoir insuffisant (solde : {Math.Max(solde, 0):N2} DA).", "avoir");
@@ -53,9 +54,23 @@ public static class RegleAvoir
         return (avoir, reste - avoir);
     }
 
+    /// <summary>
+    /// Retour client d'une vente payée en partie par avoir (2026-11-15, D2, script 109) : le remboursement recrédite d'abord l'avoir, à
+    /// hauteur de ce qui a été payé par avoir et pas encore recrédité par un retour précédent ; le reste suit le mode d'origine de la vente.
+    /// Règle la plus sûre pour la pharmacie : l'argent payé par avoir ne ressort jamais en espèces.
+    /// </summary>
+    public static (decimal AvoirRecredite, decimal ResteAutreMode) RetourPayeParAvoir(decimal montantRetour, decimal avoirUtilise, decimal avoirDejaRecredite)
+    {
+        var montant = Math.Max(montantRetour, 0);
+        var disponible = Math.Max(Math.Max(avoirUtilise, 0) - Math.Max(avoirDejaRecredite, 0), 0);
+        var avoir = Math.Min(montant, disponible);
+        return (avoir, montant - avoir);
+    }
+
     public static string LibelleOrigine(string origine) => origine switch
     {
         OrigineAnnulationVente => "Annulation de vente",
+        OrigineRetourClient => "Retour de produits",
         OrigineTropPayeRegularisation => "Trop-payé de régularisation",
         OrigineSaisie => "Saisie",
         OriginePaiement => "Utilisé en paiement",

@@ -820,7 +820,7 @@ public sealed record VenteAnnulableDto(
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulableDto> Lignes,
     decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null, decimal DetteEffaceeAnnulation = 0,
     string? Remise = null, string? RegularisationSort = null, decimal RegularisationDue = 0, decimal RegularisationTropPaye = 0,
-    decimal TropPayeCredit = 0, decimal PayeParAvoir = 0);
+    decimal TropPayeCredit = 0, decimal PayeParAvoir = 0, decimal AvoirRecreditable = 0);
 
 /// <summary>Validateur* : identifiant et code comptoir du pharmacien ou de l'assistant (vente ancienne).</summary>
 /// <summary>SolderDette : l'argent à rendre est retiré de la dette du patient (PatientDetteId : patient nommé, pour une vente sans patient).</summary>
@@ -854,7 +854,8 @@ public sealed record LigneRetourClientDto(long LigneVenteId, int Quantite, strin
 public sealed record RetourClientRequete(string? Motif, IReadOnlyList<LigneRetourClientDto> Lignes, string? ValidateurIdentifiant, string? ValidateurCode,
     bool SolderDette = false, long? PatientDetteId = null, bool AccordClient = false, string? MotifCode = null);
 
-public sealed record RetourClientDto(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar, decimal DetteDiminuee = 0);
+public sealed record RetourClientDto(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar, decimal DetteDiminuee = 0,
+    decimal AvoirRecredite = 0);
 
 // ---- Règlements des grossistes -------------------------------------------------------
 
@@ -1069,7 +1070,7 @@ public sealed record VoletAvecEcartDto(long VenteId, string Numero, DateTime Dat
 
 // ---- Avoir patient (script 106) -------------------------------------------------------
 
-/// <summary>Mouvement de l'avoir d'un patient. Type : credit (l'avoir augmente) ou debit ; Origine : annulation_vente, trop_paye_regularisation, saisie, paiement, remboursement.</summary>
+/// <summary>Mouvement de l'avoir d'un patient. Type : credit (l'avoir augmente) ou debit ; Origine : annulation_vente, retour_client (script 109), trop_paye_regularisation, saisie, paiement, remboursement.</summary>
 public sealed record AvoirMouvementDto(long Id, string Type, decimal Montant, decimal SoldeApres, long? VenteId, string? NumeroVente, string? Motif,
     DateTimeOffset CreeLe, string CreePar, string Origine = "", string? BonSortie = null);
 /// <summary>Avoir d'un patient : solde (jamais négatif) et une page de mouvements (les plus récents d'abord).</summary>

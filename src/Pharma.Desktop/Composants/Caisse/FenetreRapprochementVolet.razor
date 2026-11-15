@@ -125,8 +125,17 @@
     private bool RegularisationManquante => choisie is { EcartPartOrganisme: > 0, PartOrganismeChifa: not null } && regularisation is null;
 
     // La meilleure candidate (même assuré, même carte, dans le délai, la plus proche) est proposée ; une vente « en retard » se choisit à la main
+    private RapprochementVoletDto? rapprochementAffiche;
+    private string? texteAffiche;
+
     protected override async Task OnParametersSetAsync()
     {
+        // Nouveau scan (D6, 2026-11-15) : la candidate et sa comparaison viennent du nouveau volet, jamais de l'ancien (même vente comprise)
+        if (!ReferenceEquals(rapprochementAffiche, Rapprochement) || texteAffiche != Texte)
+        {
+            (rapprochementAffiche, texteAffiche) = (Rapprochement, Texte);
+            (choisie, motif, erreur, regularisation, venteChifa) = (null, null, null, null, null);
+        }
         if (choisie is null || Rapprochement.Candidates.All(c => c.VenteId != choisie.VenteId))
             choisie = Rapprochement.Candidates.FirstOrDefault() is { EnRetard: false } premiere ? premiere : null;
         await ChargerInfosAsync();

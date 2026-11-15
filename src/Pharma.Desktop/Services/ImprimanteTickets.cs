@@ -222,7 +222,8 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         Montant("À PAYER", t.PartPatient, gras: true);
         // Part payée par l'avoir du patient (script 106)
         if (t.PayeParAvoir > 0) Montant("Payé par avoir", t.PayeParAvoir);
-        if (t.Mode is { } mode && t.PayeParAvoir < t.PartPatient) P($"Réglé : {Mode(mode)}");
+        // D9 (2026-11-15) : montant payé dans chaque mode (avoir ci-dessus, puis le mode de la vente)
+        if (t.Mode is { } mode && t.PayeParAvoir < t.PartPatient) Montant($"Règlement {Mode(mode)}", t.PartPatient - Math.Max(t.PayeParAvoir, 0));
         if (rendu is > 0) Montant("Rendu", rendu.Value);
         if (t.Retours is { Count: > 0 } retours)
         {

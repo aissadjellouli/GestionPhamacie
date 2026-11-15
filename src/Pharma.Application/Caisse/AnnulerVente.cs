@@ -16,7 +16,8 @@ public sealed record VenteAnnulable(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulable> Lignes,
     decimal DejaRendu = 0, decimal SoldeCreditPatient = 0, string? FactureNumero = null, long? VendeurId = null, long? PatientId = null,
-    decimal PayeSurVente = 0, string? Remise = null, RegularisationVente? Regularisation = null, decimal PayeParAvoir = 0);
+    decimal PayeSurVente = 0, string? Remise = null, RegularisationVente? Regularisation = null, decimal PayeParAvoir = 0,
+    decimal AvoirRecrediteParRetours = 0);
 
 /// <summary>
 /// Régularisation de part organisme active de la vente (script 097) : sort, montant mis à la charge du patient et part qu'il en a déjà
@@ -152,7 +153,7 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
         var solder = solderDette && v.Mode != "credit";
         var resteVente = Math.Max(v.PartPatient - v.DejaRendu, 0);
         // Avoir utilisé en paiement (script 106) : il revient à l'avoir du patient, jamais en espèces ; le reste suit le mode de la vente
-        var avoirRendu = v.PatientId is null ? 0 : RegleAvoir.AnnulationPayeeParAvoir(resteVente, v.PayeParAvoir).AvoirRendu;
+        var avoirRendu = v.PatientId is null ? 0 : RegleAvoir.AnnulationPayeeParAvoir(resteVente, Math.Max(v.PayeParAvoir - v.AvoirRecrediteParRetours, 0)).AvoirRendu;
         var (reductionDette, rembourse) = v.Mode == "credit"
             ? RegleAnnulation.RemboursementCredit(resteVente, resteVente, v.PayeSurVente, dette)
             : RegleAnnulation.Remboursement(v.Mode, v.PartPatient - avoirRendu, v.DejaRendu, dette, solder);

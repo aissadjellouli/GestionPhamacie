@@ -63,6 +63,17 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
             await using var r = await cmd.ExecuteReaderAsync(ct);
             if (!await r.ReadAsync(ct) || r.GetString(0) != "validee") throw new RegleMetierException("Cette vente n’est plus encaissée (annulée ?).");
         }
+        // Sous le verrou de la vente : l'avoir recrédité ne dépasse jamais ce qui a été payé par avoir moins ce que les retours ont déjà recrédité
+        if (a.AvoirRecredite > 0)
+        {
+            await using var cmd = new NpgsqlCommand("""
+                SELECT (SELECT COALESCE(SUM(montant), 0) FROM paiement WHERE vente_id = $1 AND mode = 'avoir')
+                     - (SELECT COALESCE(SUM(montant_rembourse), 0) FROM retour_client WHERE vente_id = $1 AND mode = 'avoir')
+                """, cx, tx);
+            cmd.Parameters.AddWithValue(a.VenteId);
+            if ((decimal)(await cmd.ExecuteScalarAsync(ct))! < a.AvoirRecredite)
+                throw new RegleMetierException("Un autre retour vient d’être enregistré sur cette vente : rechargez la vente.");
+        }
         foreach (var l in a.Lignes)
         {
             await using var cmd = new NpgsqlCommand("""
@@ -79,13 +90,21 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         // Dette diminuée (vente à crédit, ou dette soldée au choix du caissier) : une écriture « credit » pour cette part,
         // et une seconde écriture (sans ligne) pour l'argent rendu. Le total des deux reste le « déjà rendu » de la vente ;
         // seule l'écriture de l'argent rendu sort de la caisse ou de la banque.
-        var rendu = a.Montant - a.ReductionDette;
+        // Part recréditée en avoir (script 109, vente payée en partie par avoir) : une écriture « avoir », qui ne sort ni de la caisse
+        // ni de la banque, mais compte dans le « déjà rendu » de la vente.
+        var rendu = a.Montant - a.ReductionDette - a.AvoirRecredite;
         var modeRendu = a.Mode == "credit" ? "especes" : a.Mode;
-        var (modePrincipal, montantPrincipal) = a.ReductionDette > 0 ? ("credit", a.ReductionDette)
-            : (a.Mode == "credit" && rendu == 0 ? "credit" : modeRendu, rendu);
-        var retourId = await InsererRetourAsync(cx, tx, a, modePrincipal, montantPrincipal, ct);
-        if (a.ReductionDette > 0 && rendu > 0)
-            await InsererRetourAsync(cx, tx, a, modeRendu, rendu, ct);
+        var parts = new List<(string? Mode, decimal Montant)>();
+        if (a.AvoirRecredite > 0) parts.Add((RegleAvoir.Mode, a.AvoirRecredite));
+        if (a.ReductionDette > 0) parts.Add(("credit", a.ReductionDette));
+        if (rendu > 0 || parts.Count == 0) parts.Add((a.Mode == "credit" && rendu == 0 ? "credit" : modeRendu, rendu));
+        // Les lignes rendues sont rattachées à la première écriture
+        var retourId = await InsererRetourAsync(cx, tx, a, parts[0].Mode, parts[0].Montant, ct);
+        foreach (var (mode, montant) in parts.Skip(1))
+            await InsererRetourAsync(cx, tx, a, mode, montant, ct);
+        if (a.AvoirRecredite > 0)
+            await EcritureAvoir.CrediterAsync(cx, tx, a.PatientAvoirId ?? throw new RegleMetierException("Vente sans patient : aucun avoir possible."),
+                a.AvoirRecredite, RegleAvoir.OrigineRetourClient, a.VenteId, $"Retour client {a.Numero} : {a.Motif}", a.UtilisateurId, ct);
 
         var reference = $"Retour client {a.Numero}";
         foreach (var l in a.Lignes)

@@ -787,7 +787,7 @@
                                             }
                                             else if (EtatDroitsPatient == EtatDroits.BientotExpires && patient.DateFinDroit is { } bientot)
                                             {
-                                                <br /><span class="detail texte-attention" role="status" data-champ="droits_chifa_bientot">@EtatDroitsChifa.MessageBientot(bientot)</span>
+                                                <br /><span class="detail texte-attention" role="status" data-champ="droits_chifa_bientot" style="color: var(--attention)">@EtatDroitsChifa.MessageBientot(bientot)</span>
                                             }
                                             else if (EtatDroitsPatient == EtatDroits.Absente)
                                             {
@@ -1103,6 +1103,15 @@
                                    value="@AvoirUtilise.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                                    @onchange="e => montantAvoirSaisi = decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var m) ? m : null" />
                             <span class="detail">reste @Libelles.Dinars(Math.Max((apercu?.PartPatient ?? 0) - AvoirUtilise, 0), 2) en @Libelles.ModePaiement(mode)</span>
+                            @* D5 (2026-11-15) : un montant saisi au-delà du solde (ou du montant à payer) est ramené, avec un message visible *@
+                            @if (montantAvoirSaisi is { } saisiAvoir && saisiAvoir > soldeAvoirPatient)
+                            {
+                                <span class="texte-attention" role="alert" data-champ="avoir_ramene" style="flex-basis: 100%">Avoir insuffisant : montant ramené au solde disponible : @Libelles.Dinars(soldeAvoirPatient, 2)@(AvoirUtilise < soldeAvoirPatient ? $" (au plus le montant à payer, {Libelles.Dinars(AvoirUtilise, 2)})" : "").</span>
+                            }
+                            else if (montantAvoirSaisi is { } saisiPlafond && saisiPlafond > AvoirUtilise)
+                            {
+                                <span class="texte-attention" role="alert" data-champ="avoir_ramene" style="flex-basis: 100%">Montant ramené au montant à payer : @Libelles.Dinars(AvoirUtilise, 2).</span>
+                            }
                         }
                     </div>
                 }

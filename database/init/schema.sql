@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 108 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 109 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 108 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 109 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -27,10 +27,11 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
 -- PostgreSQL database dump
 --
 
-\restrict 9pCGRB2YZEy2NsnoyGBbf3wQkIB3DRdCOPQGyT7OBpjgcfLSgFU7NGZnShZB6yw
+\restrict UqvaH5fxMBepVzH7mw7ue38foWoKuDHzdcA7gya98qKk2ipep4nvzKVtfIhudUo
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -2813,11 +2814,11 @@ CREATE TABLE public.avoir_mouvement (
     motif text,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_avoir_mouvement_liens CHECK ((((origine <> ALL (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text])) OR (vente_id IS NOT NULL)) AND ((origine <> 'paiement'::text) OR (paiement_id IS NOT NULL)) AND ((origine <> 'remboursement'::text) OR (mouvement_tiroir_id IS NOT NULL)))),
+    CONSTRAINT ck_avoir_mouvement_liens CHECK ((((origine <> ALL (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'retour_client'::text])) OR (vente_id IS NOT NULL)) AND ((origine <> 'paiement'::text) OR (paiement_id IS NOT NULL)) AND ((origine <> 'remboursement'::text) OR (mouvement_tiroir_id IS NOT NULL)))),
     CONSTRAINT ck_avoir_mouvement_montant CHECK ((montant > (0)::numeric)),
-    CONSTRAINT ck_avoir_mouvement_origine CHECK ((origine = ANY (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'saisie'::text, 'paiement'::text, 'remboursement'::text]))),
+    CONSTRAINT ck_avoir_mouvement_origine CHECK ((origine = ANY (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'saisie'::text, 'paiement'::text, 'remboursement'::text, 'retour_client'::text]))),
     CONSTRAINT ck_avoir_mouvement_sens CHECK ((sens = ANY (ARRAY['credit'::text, 'debit'::text]))),
-    CONSTRAINT ck_avoir_mouvement_sens_origine CHECK ((((origine = ANY (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'saisie'::text])) AND (sens = 'credit'::text)) OR ((origine = ANY (ARRAY['paiement'::text, 'remboursement'::text])) AND (sens = 'debit'::text))))
+    CONSTRAINT ck_avoir_mouvement_sens_origine CHECK ((((origine = ANY (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'saisie'::text, 'retour_client'::text])) AND (sens = 'credit'::text)) OR ((origine = ANY (ARRAY['paiement'::text, 'remboursement'::text])) AND (sens = 'debit'::text))))
 );
 
 
@@ -5509,7 +5510,7 @@ CREATE TABLE public.retour_client (
     motif_code text,
     motif_texte text,
     CONSTRAINT ck_retour_client_motif_texte CHECK (((motif_texte IS NULL) OR ((motif_code IS NOT NULL) AND ((length(btrim(motif_texte)) >= 1) AND (length(btrim(motif_texte)) <= 200))))),
-    CONSTRAINT retour_client_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text]))),
+    CONSTRAINT retour_client_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text, 'avoir'::text]))),
     CONSTRAINT retour_client_montant_rembourse_check CHECK ((montant_rembourse >= (0)::numeric)),
     CONSTRAINT retour_client_motif_check CHECK ((length(btrim(motif)) >= 3))
 );
@@ -11659,5 +11660,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9pCGRB2YZEy2NsnoyGBbf3wQkIB3DRdCOPQGyT7OBpjgcfLSgFU7NGZnShZB6yw
+\unrestrict UqvaH5fxMBepVzH7mw7ue38foWoKuDHzdcA7gya98qKk2ipep4nvzKVtfIhudUo
 

@@ -25,7 +25,7 @@ public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quant
 /// </summary>
 public sealed record RetourAEcrire(long VenteId, string Numero, string Motif, long UtilisateurId, long ValidePar, string? Mode, decimal Montant,
     long? SessionCaisseId, string Poste, IReadOnlyList<LigneRetourAEcrire> Lignes, decimal ReductionDette = 0, long? PatientDetteId = null,
-    bool AccordClient = false, string? MotifCode = null, string? MotifTexte = null);
+    bool AccordClient = false, string? MotifCode = null, string? MotifTexte = null, decimal AvoirRecredite = 0, long? PatientAvoirId = null);
 
 public interface IRetoursClient
 {
@@ -35,7 +35,7 @@ public interface IRetoursClient
 
 /// <summary>DetteDiminuee : part du retour retirée de la dette du patient (vente à crédit, ou dette soldée à la demande du caissier).</summary>
 public sealed record ResultatRetour(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar,
-    decimal DetteDiminuee = 0);
+    decimal DetteDiminuee = 0, decimal AvoirRecredite = 0);
 
 public sealed class LireVenteRetournable(IRetoursClient retours)
 {
@@ -117,6 +117,10 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         // Part payée par le patient pour les boîtes rendues : rendue, ou retirée de sa dette pour une vente à crédit
         // (ce que le patient a déjà remboursé lui est rendu en espèces, comme pour une annulation)
         var montant = lignes.Sum(l => l.Montant);
+        // Vente payée en partie par avoir (2026-11-15, D2, script 109) : l'avoir est recrédité d'abord, à hauteur de ce qui a été payé par
+        // avoir et pas encore recrédité ; seul le reste suit le mode d'origine (espèces, carte, chèque, crédit)
+        var (avoirRecredite, resteAutreMode) = v.PatientId is null ? (0m, montant)
+            : RegleAvoir.RetourPayeParAvoir(montant, v.PayeParAvoir, v.AvoirRecrediteParRetours);
         // Vente payée (espèces, carte, chèque) à un patient qui doit de l'argent par ailleurs : avec l'accord du client, le
         // remboursement est retiré de cette dette (solderDette) ; seul le surplus est alors rendu.
         // Vente sans patient : s'il s'est nommé au retour (patientDetteId), c'est sa dette, relue ici, qui est diminuée.
@@ -130,8 +134,8 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         }
         // Vente à crédit : la dette baisse au plus de ce qui reste impayé sur la vente ; seul ce qui a vraiment été payé est rendu
         var (reductionDette, aRendre) = v.Mode == "credit"
-            ? RegleAnnulation.RemboursementCredit(montant, Math.Max(v.PartPatient - v.DejaRendu, 0), v.PayeSurVente, dette)
-            : solderDette ? (Math.Min(Math.Max(dette, 0), montant), montant - Math.Min(Math.Max(dette, 0), montant)) : (0m, montant);
+            ? RegleAnnulation.RemboursementCredit(resteAutreMode, Math.Max(v.PartPatient - v.PayeParAvoir - (v.DejaRendu - v.AvoirRecrediteParRetours), 0), v.PayeSurVente, dette)
+            : solderDette ? (Math.Min(Math.Max(dette, 0), resteAutreMode), resteAutreMode - Math.Min(Math.Max(dette, 0), resteAutreMode)) : (0m, resteAutreMode);
         var deduitAuChoix = solderDette && v.Mode != "credit" && reductionDette > 0;
         if (deduitAuChoix && !accordClient) throw RegleAnnulation.AccordClientManquant();
 
@@ -157,19 +161,21 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             throw new RegleMetierException("Ouvrez la caisse du poste : l’argent rendu au patient doit en sortir.");
 
         await retours.EnregistrerAsync(new RetourAEcrire(v.Id, v.Numero, texte, utilisateurId, validePar, v.Mode, montant, session?.Id, nomPoste, lignes,
-            reductionDette, reductionDette > 0 ? patientDette : null, deduitAuChoix, code, precision), ct);
+            reductionDette, reductionDette > 0 ? patientDette : null, deduitAuChoix, code, precision, avoirRecredite,
+            avoirRecredite > 0 ? v.PatientId : null), ct);
         await journal.EcrireAsync(utilisateurId, "retour_client", "vente", v.Id,
             new Dictionary<string, object?>
             {
                 ["ticket"] = v.Numero, ["motif"] = texte, ["motif_code"] = code, ["montant"] = montant, ["mode"] = v.Mode,
                 ["dette_diminuee"] = reductionDette, ["rendu"] = aRendre, ["dette_soldee_au_choix"] = solderDette && v.Mode != "credit" && reductionDette > 0,
                 ["patient_dette"] = reductionDette > 0 ? patientDette : null, ["accord_client"] = deduitAuChoix ? true : null,
+                ["avoir_recredite"] = avoirRecredite > 0 ? avoirRecredite : null,
                 ["remis_en_stock"] = lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
                 ["a_detruire"] = lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite),
                 ["valide_par"] = validePar
             }, Permissions.CaisseRetourEspeces, ct);
         return new ResultatRetour(v.Numero, aRendre, v.Mode == "credit" && aRendre > 0 ? "especes" : v.Mode,
             lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
-            lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite), nomValidateur, reductionDette);
+            lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite), nomValidateur, reductionDette, avoirRecredite);
     }
 }

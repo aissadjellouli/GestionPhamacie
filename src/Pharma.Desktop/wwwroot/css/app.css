@@ -438,6 +438,8 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 .ligne-cliquable.choisie { background: var(--accent-clair); }
 .lien { background: none; border: none; padding: 0; color: var(--accent-texte); font-weight: 600; font-size: inherit; cursor: pointer; text-decoration: underline; }
 .texte-attention { color: var(--attention); font-weight: 600; }
+/* Texte d’attention dans un détail (D3, 2026-11-15) : l’orange l’emporte sur le gris de .detail, même dans un conteneur (.tableau .detail…) */
+.detail.texte-attention, * .detail.texte-attention { color: var(--attention); font-weight: 600; }
 .puce:disabled { opacity: 0.5; cursor: not-allowed; }
 /* Listes déroulantes : même aspect partout, dans un panneau ou non (les filtres des Factures étaient restés à l'aspect par défaut du navigateur) ; même taille de texte que les champs de saisie */
 select, .panneau input[type="date"] { height: 44px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--bordure-champ); background: var(--surface); color: var(--texte); font-size: 15px; box-sizing: border-box; }

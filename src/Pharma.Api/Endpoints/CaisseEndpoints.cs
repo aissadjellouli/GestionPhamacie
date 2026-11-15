@@ -246,7 +246,7 @@ internal static class CaisseEndpoints
                     req.Lignes.Requise().Select(l => new LigneRetourDemandee(l.LigneVenteId, l.Quantite, l.Destination, l.Boites)).ToList(),
                     user.UtilisateurId(), requete.Poste(), req.ValidateurIdentifiant, req.ValidateurCode, req.SolderDette, req.PatientDetteId, ct,
                     req.AccordClient, req.MotifCode);
-                return Results.Ok(new RetourClientDto(r.Numero, r.ARendre, r.Mode, r.RemisEnStock, r.ADetruire, r.ValidePar, r.DetteDiminuee));
+                return Results.Ok(new RetourClientDto(r.Numero, r.ARendre, r.Mode, r.RemisEnStock, r.ADetruire, r.ValidePar, r.DetteDiminuee, r.AvoirRecredite));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -328,7 +328,7 @@ internal static class CaisseEndpoints
 
     /// <summary>Ce que l'annulation rendrait (retours déjà rendus déduits, part d'un crédit déjà remboursée).</summary>
     private static decimal ARendre(Pharma.Application.Caisse.VenteAnnulable v) =>
-        Pharma.Domain.Ventes.RegleAnnulation.Remboursement(v.Mode, v.PartPatient - Math.Min(v.PayeParAvoir, Math.Max(v.PartPatient - v.DejaRendu, 0)), v.DejaRendu, v.SoldeCreditPatient).ARendre;
+        Pharma.Domain.Ventes.RegleAnnulation.Remboursement(v.Mode, v.PartPatient - Math.Min(Math.Max(v.PayeParAvoir - v.AvoirRecrediteParRetours, 0), Math.Max(v.PartPatient - v.DejaRendu, 0)), v.DejaRendu, v.SoldeCreditPatient).ARendre;
 
     private static ClotureDto VersDto(ClotureVue c) =>
         new(c.SessionId, c.Compte, c.FondCaisse, c.VentesEspeces, c.Attendu, c.Ecart, c.AuDelaDuSeuil, c.SeuilEcart,
@@ -343,7 +343,7 @@ internal static class CaisseEndpoints
         v.Regularisation?.Sort, v.Regularisation is { } g ? Math.Max(0, g.MontantPatient - g.PayeParLePatient) : 0, v.Regularisation?.PayeParLePatient ?? 0,
         // Vente à crédit en partie payée : trop-payé réellement encaissé, à répartir (2026-11-15) ; part payée par avoir (script 106)
         v.Mode == "credit" ? RegleAnnulation.RemboursementCredit(Math.Max(v.PartPatient - v.DejaRendu, 0), Math.Max(v.PartPatient - v.DejaRendu, 0), v.PayeSurVente, v.SoldeCreditPatient).ARendre : 0,
-        v.PayeParAvoir);
+        v.PayeParAvoir, v.PatientId is null ? 0 : Math.Max(v.PayeParAvoir - v.AvoirRecrediteParRetours, 0));
 
     private static CommandeVente VersCommande(CommandeVenteDto d)
     {

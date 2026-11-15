@@ -19,10 +19,19 @@ public sealed class EtatIntermediaireSql(NpgsqlDataSource db) : IEtatIntermediai
             SELECT (SELECT count(*) FROM vente WHERE session_caisse_id = $1 AND statut = 'validee')::int,
                    COALESCE((SELECT m FROM p WHERE mode = 'carte'), 0) - COALESCE((SELECT m FROM r WHERE mode = 'carte'), 0),
                    COALESCE((SELECT m FROM p WHERE mode = 'cheque'), 0) - COALESCE((SELECT m FROM r WHERE mode = 'cheque'), 0),
-                   COALESCE((SELECT m FROM p WHERE mode = 'credit'), 0) - COALESCE((SELECT m FROM r WHERE mode = 'credit'), 0),
+                   -- Crédit net (D8, 2026-11-15) : ventes à crédit encore encaissées (une vente annulée efface toute sa dette, même si
+                   -- annulation_vente ne porte que l'argent rendu), moins la dette retirée par les retours de ces ventes
+                   COALESCE((SELECT SUM(pc.montant) FROM paiement pc JOIN vente vc ON vc.id = pc.vente_id
+                             WHERE pc.session_caisse_id = $1 AND pc.mode = 'credit' AND vc.statut = 'validee'), 0)
+                     - COALESCE((SELECT SUM(rc.montant_rembourse) FROM retour_client rc JOIN vente vc ON vc.id = rc.vente_id
+                                 WHERE rc.session_caisse_id = $1 AND rc.mode = 'credit' AND vc.statut = 'validee'), 0),
                    COALESCE((SELECT SUM(part_organisme) FROM vente WHERE session_caisse_id = $1 AND statut = 'validee'), 0),
-                   -- Avoirs des patients utilisés en paiement (script 106) : jamais des espèces
-                   COALESCE((SELECT m FROM p WHERE mode = 'avoir'), 0)
+                   -- Avoirs des patients utilisés en paiement (script 106) : jamais des espèces ; net des ventes annulées (avoir rendu) et
+                   -- de la part recréditée par les retours (script 109)
+                   COALESCE((SELECT SUM(pa.montant) FROM paiement pa JOIN vente va ON va.id = pa.vente_id
+                             WHERE pa.session_caisse_id = $1 AND pa.mode = 'avoir' AND va.statut = 'validee'), 0)
+                     - COALESCE((SELECT SUM(ra.montant_rembourse) FROM retour_client ra JOIN vente va ON va.id = ra.vente_id
+                                 WHERE ra.session_caisse_id = $1 AND ra.mode = 'avoir' AND va.statut = 'validee'), 0)
             """);
         cmd.Parameters.AddWithValue(sessionId);
         int nombre; decimal carte, cheque, credit, tiers, avoir;

@@ -72,8 +72,10 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
                     JOIN ligne_vente l ON l.id = rl.ligne_vente_id
                     JOIN produit p ON p.id = l.produit_id
                     WHERE r2.vente_id = v.id AND r2.cree_le = rc.cree_le),
-                   COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode IS DISTINCT FROM 'credit'), 0),
-                   COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode = 'credit'), 0)
+                   COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode IS DISTINCT FROM 'credit' AND rc.mode IS DISTINCT FROM 'avoir'), 0),
+                   COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode = 'credit'), 0),
+                   -- Part recréditée à l'avoir du patient (script 109)
+                   COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode = 'avoir'), 0)
             FROM retour_client rc
             JOIN vente v ON v.id = rc.vente_id
             WHERE v.numero = $1
@@ -85,9 +87,10 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
             await using var r = await cmd.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct))
             {
-                var (rendu, deduit) = (r.GetDecimal(2), r.GetDecimal(3));
+                var (rendu, deduit, avoir) = (r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4));
                 retours.Add($"Retour du {r.GetDateTime(0).ToLocalTime():dd/MM/yyyy HH:mm} : {(r.IsDBNull(1) ? "produits" : r.GetString(1))}"
-                    + (rendu > 0 || deduit == 0 ? $" · rendu {rendu:N2} DA" : "") + (deduit > 0 ? $" · déduit de la dette {deduit:N2} DA" : ""));
+                    + (avoir > 0 ? $" · recrédité en avoir {avoir:N2} DA" : "")
+                    + (rendu > 0 || (deduit == 0 && avoir == 0) ? $" · rendu {rendu:N2} DA" : "") + (deduit > 0 ? $" · déduit de la dette {deduit:N2} DA" : ""));
             }
         }
         return t with { Lignes = lignes, Retours = retours };

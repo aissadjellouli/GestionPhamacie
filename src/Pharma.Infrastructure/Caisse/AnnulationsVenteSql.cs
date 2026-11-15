@@ -42,7 +42,9 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                    SELECT LEAST(g.montant_patient, GREATEST(0, vc.regle - (vc.montant - g.montant_patient)))
                    FROM v_vente_credit vc WHERE vc.vente_id = v.id), 0) ELSE 0 END,
                -- Part payée par l'avoir du patient (script 106)
-               (SELECT COALESCE(SUM(p.montant), 0) FROM paiement p WHERE p.vente_id = v.id AND p.mode = 'avoir')
+               (SELECT COALESCE(SUM(p.montant), 0) FROM paiement p WHERE p.vente_id = v.id AND p.mode = 'avoir'),
+               -- Part déjà recréditée en avoir par des retours (script 109)
+               (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id AND rc.mode = 'avoir')
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient pa ON pa.id = v.patient_id
@@ -139,7 +141,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                     r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9), r.GetBoolean(10), r.GetBoolean(11), [],
                     r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16), r.GetDecimal(17),
                     RemiseVente.Complement(r.IsDBNull(18) ? null : r.GetString(18), r.IsDBNull(19) ? null : r.GetString(19)),
-                    r.IsDBNull(20) ? null : new RegularisationVente(r.GetInt64(20), r.GetString(21), r.GetDecimal(22), r.GetDecimal(23)), r.GetDecimal(24))));
+                    r.IsDBNull(20) ? null : new RegularisationVente(r.GetInt64(20), r.GetString(21), r.GetDecimal(22), r.GetDecimal(23)), r.GetDecimal(24), r.GetDecimal(25))));
         if (ventes.Count == 0) return [];
 
         var lignes = new Dictionary<long, List<LigneVenteAnnulable>>();

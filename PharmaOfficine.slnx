@@ -187,6 +187,7 @@
     <File Path="database/migration/106_avoir_patient.sql" />
     <File Path="database/migration/107_controle_fin_droits.sql" />
     <File Path="database/migration/108_prestations_remboursables.sql" />
+    <File Path="database/migration/109_retour_avoir.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

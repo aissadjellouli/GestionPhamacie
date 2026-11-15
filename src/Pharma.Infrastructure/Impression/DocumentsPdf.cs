@@ -425,10 +425,11 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         Paire(totaux, recu ? "Montant réglé" : "À payer par le patient", Da(t.PartPatient), gras: true);
         // Part payée par l'avoir du patient (script 106)
         if (t.PayeParAvoir > 0) Paire(totaux, "Payé par avoir", Da(t.PayeParAvoir));
-        if (t.Mode is { } mode && (t.PayeParAvoir <= 0 || t.PayeParAvoir < t.PartPatient)) Paire(totaux, "Règlement", mode switch
+        // D9 (2026-11-15) : « Règlement Espèces » suivi du montant payé dans ce mode (l'avoir est sur la ligne au-dessus)
+        if (t.Mode is { } mode && (t.PayeParAvoir <= 0 || t.PayeParAvoir < t.PartPatient)) Paire(totaux, "Règlement " + mode switch
         {
             "especes" => "Espèces", "carte" => "Carte", "cheque" => "Chèque", "credit" => "Crédit", "virement" => "Virement", "avoir" => "Avoir du patient", _ => mode
-        });
+        }, Da(t.PartPatient - Math.Max(t.PayeParAvoir, 0)));
         if (rendu is > 0) Paire(totaux, "Rendu", Da(rendu.Value), gras: true);
         foreach (var retour in t.Retours ?? []) Paire(totaux, "Retour", retour);
 
