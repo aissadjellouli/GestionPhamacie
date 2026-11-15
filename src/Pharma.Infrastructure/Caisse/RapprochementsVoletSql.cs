@@ -16,6 +16,8 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
 {
     private const string EnAttente = """
         v.canal_organisme = 'chifa' AND v.chifa_facture IS NULL AND v.statut = 'validee'
+        -- Vente exclue du traitement (script 100) : ni en attente, ni candidate au rattachement
+        AND v.chifa_exclue_le IS NULL
         AND EXISTS (SELECT 1 FROM organisme oc WHERE oc.id = v.organisme_id AND upper(oc.code) IN ('CNAS', 'CASNOS'))
         """;
 

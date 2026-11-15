@@ -195,7 +195,7 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         Separateur();
         foreach (var l in t.Lignes)
         {
-            P(l.Produit, gras: true);
+            P(l.Designation, gras: true);   // prestation : avec son taux de TVA (script 105)
             Montant($"  {l.Quantite} × {Da(l.PrixUnitaire)}", l.Montant);
             // Remise par produit (ou don partiel sur un médicament) : pourcentage et montant sous la ligne
             if (l.Reduction > 0) Montant($"  {(l.DonPartiel ? "Don" : "Remise")} {l.PctReduction:0} %", -l.Reduction);
@@ -217,6 +217,8 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         if (t.PartOrganisme > 0)
             Montant($"Part {t.Organisme ?? "organisme"}{(t.TauxTiersPayant is { } taux ? $" ({taux:0.##} %)" : "")}", -t.PartOrganisme);
         if (t.EcartChifa > 0) Montant("Écart Chifa payé par le patient", t.EcartChifa);
+        // Majoration Chifa (D-3) : ajoutée à la part de l'organisme, jamais payée par le patient
+        if (t.MajorationChifa > 0) P($"Majoration Chifa à la charge de {t.Organisme ?? "l’organisme"} : {Da(t.MajorationChifa)}");
         Montant("À PAYER", t.PartPatient, gras: true);
         if (t.Mode is { } mode) P($"Réglé : {Mode(mode)}");
         if (rendu is > 0) Montant("Rendu", rendu.Value);

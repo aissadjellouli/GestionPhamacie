@@ -12,7 +12,7 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
     {
         // Téléphone : par début de numéro, à partir de 4 chiffres, séparateurs ignorés, +213 = 0 (même règle que les crédits clients)
         await using var cmd = db.CreateCommand($"""
-            SELECT p.id, p.nom, p.prenom, p.telephone, p.num_assure, p.organisme_id, o.code, p.plafond_credit, p.solde_credit
+            SELECT p.id, p.nom, p.prenom, p.telephone, p.num_assure, p.organisme_id, o.code, p.plafond_credit, p.solde_credit, p.date_fin_droit
             FROM patient p
             LEFT JOIN organisme o ON o.id = p.organisme_id
             WHERE p.nom ILIKE '%' || $1 || '%'
@@ -33,7 +33,8 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         var liste = new List<PatientResume>();
         while (await r.ReadAsync(ct))
             liste.Add(new PatientResume(r.GetInt64(0), r.GetString(1), Texte(r, 2), Texte(r, 3), Texte(r, 4),
-                r.IsDBNull(5) ? null : r.GetInt64(5), Texte(r, 6), r.GetDecimal(7), r.GetDecimal(8)));
+                r.IsDBNull(5) ? null : r.GetInt64(5), Texte(r, 6), r.GetDecimal(7), r.GetDecimal(8),
+                r.IsDBNull(9) ? null : r.GetFieldValue<DateOnly>(9)));
         return liste;
     }
 
@@ -58,7 +59,7 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
     {
         await using var cmd = db.CreateCommand("""
             SELECT id, nom, prenom, date_naissance, telephone, email, num_assure, organisme_id, est_chronique, plafond_credit, solde_credit,
-                   lien, assure_principal_id
+                   lien, assure_principal_id, date_fin_droit
             FROM patient WHERE id = $1
             """);
         cmd.Parameters.AddWithValue(id);
@@ -66,7 +67,7 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         if (!await r.ReadAsync(ct)) return null;
         return new FichePatient(r.GetInt64(0), r.GetString(1), Texte(r, 2), r.IsDBNull(3) ? null : r.GetFieldValue<DateOnly>(3), Texte(r, 4),
             Texte(r, 5), Texte(r, 6), r.IsDBNull(7) ? null : r.GetInt64(7), r.GetBoolean(8), r.GetDecimal(9), r.GetDecimal(10),
-            Texte(r, 11), r.IsDBNull(12) ? null : r.GetInt64(12));
+            Texte(r, 11), r.IsDBNull(12) ? null : r.GetInt64(12), r.IsDBNull(13) ? null : r.GetFieldValue<DateOnly>(13));
     }
 
     public Task<IReadOnlyList<ProchePatient>> ProchesAsync(long id, CancellationToken ct = default) => Proches(db, id, ct);
@@ -100,7 +101,8 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
     {
         await using var cmd = db.CreateCommand("""
             UPDATE patient SET nom = $2, prenom = $3, date_naissance = $4, telephone = $5, email = $6, num_assure = $7,
-                               organisme_id = $8, est_chronique = $9, plafond_credit = $10, lien = $11, assure_principal_id = $12
+                               organisme_id = $8, est_chronique = $9, plafond_credit = $10, lien = $11, assure_principal_id = $12,
+                               date_fin_droit = $13
             WHERE id = $1
             """);
         cmd.Parameters.AddWithValue(f.Id);
@@ -115,6 +117,7 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         cmd.Parameters.AddWithValue(f.PlafondCredit);
         cmd.Parameters.Add(Nullable(f.Lien, NpgsqlDbType.Text));
         cmd.Parameters.Add(Nullable(f.AssurePrincipalId, NpgsqlDbType.Bigint));
+        cmd.Parameters.Add(Nullable(f.DateFinDroit, NpgsqlDbType.Date));
         try { return await cmd.ExecuteNonQueryAsync(ct) > 0; }
         catch (PostgresException e) when (AssureEnDouble(e)) { throw await RefusAssureAsync(f.NumAssure, f.Id, ct); }
     }

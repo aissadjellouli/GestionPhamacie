@@ -46,6 +46,11 @@ public static class Domaines
             // Circuit « la caisse d'abord » (2026-11-15) : ventes Chifa en attente de volet, volets rattachés avec écart
             new("Chifa", "chifa", ["chifa"], ["caisse.vendre"]),
         ]),
+        // Contrôle de fin de droits Chifa (2026-11-15) : suivi des patients CNAS/CASNOS aux droits expirés ou bientôt expirés
+        new("patients", "Patients", 'T',
+        [
+            new("Droits expirés ou bientôt expirés", "patients/droits-chifa", ["patients/droits-chifa"], ["caisse.vendre"]),
+        ]),
         new("pilotage", "Pilotage", 'P',
         [
             new("Rapports", "rapports", ["rapports"], ["rapports.ventes"]),

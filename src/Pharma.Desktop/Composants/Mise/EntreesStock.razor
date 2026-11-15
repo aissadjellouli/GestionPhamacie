@@ -1,0 +1,242 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Stock › Entrées de stock : un lot par ligne (n° de lot, péremption, PPA, SHP, quantité), paginé et filtré par le serveur.
+   « Corriger » (droit stock.corriger_entree) ouvre une fenêtre : correction tracée avec motif obligatoire, historique des corrections. *@
+@if (message is not null) { <div class="succes" role="status">@message</div> }
+@if (erreur is not null && corrige is null) { <div class="erreur" role="alert">@erreur</div> }
+
+<div class="filtres-liste" role="search" aria-label="Filtrer les entrées de stock">
+    <div class="champ" style="flex: 999 1 320px">
+        <label for="es-rech">Rechercher (produit, n° de lot, code-barres)</label>
+        <input id="es-rech" type="search" autocomplete="off" placeholder="Ex. amlodipine ou AM55" value="@recherche" @oninput="RechercheSaisieAsync" />
+    </div>
+    <label class="case" style="align-self: end"><input type="checkbox" @bind="epuises" @bind:after="FiltrerAsync" /> Lots épuisés compris</label>
+    @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+</div>
+
+<section class="tableau-cadre" aria-label="Entrées de stock">
+    <table class="tableau">
+        <thead>
+            <tr>
+                <th scope="col">Produit</th>
+                <th scope="col">N° de lot</th>
+                <th scope="col">Péremption</th>
+                <th scope="col">PPA</th>
+                <th scope="col">SHP</th>
+                <th scope="col">Quantité</th>
+                <th scope="col">Grossiste</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var l in lignes)
+            {
+                <tr>
+                    <td><span class="nom">@l.Produit</span>@if (l.Bloque) { <br /><span class="detail">bloqué</span> }</td>
+                    <td>@l.NumeroLot</td>
+                    <td>@Libelles.Date(l.DatePeremption)</td>
+                    <td>@(l.Ppa is { } p ? Libelles.Dinars(p, 2) : "prix du catalogue")</td>
+                    <td>@Libelles.Dinars(l.Shp, 2)</td>
+                    <td>@l.Quantite</td>
+                    <td>@l.Fournisseur<br /><span class="detail">reçu le @Libelles.DateLocale(l.DateReception)</span></td>
+                    <td>
+                        @if (Session.A("stock.corriger_entree"))
+                        {
+                            <button type="button" class="btn btn-contour" @onclick="() => OuvrirAsync(l)">Corriger</button>
+                        }
+                        else if (l.Corrections > 0)
+                        {
+                            <button type="button" class="lien" @onclick="() => OuvrirAsync(l)">Corrections</button>
+                        }
+                        @if (l.Corrections > 0) { <br /><span class="detail">@l.Corrections correction(s)</span> }
+                    </td>
+                </tr>
+            }
+            @if (lignes.Count == 0 && charge)
+            {
+                <tr><td colspan="8" class="vide">@(FiltreActif ? "Aucune entrée de stock pour ces filtres." : "Aucun lot en stock.")</td></tr>
+            }
+        </tbody>
+    </table>
+</section>
+<Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des entrées de stock" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+
+@if (corrige is { } c)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-correction" tabindex="-1" @onkeydown="Touche">
+        <section class="panneau fenetre-facture" @onclick:stopPropagation="true">
+            <div class="titre-fenetre">
+                <div>
+                    <h2 id="t-correction">@(PeutCorriger ? "Corriger l’entrée de stock" : "Corrections de l’entrée de stock")</h2>
+                    <p class="sous-titre">@c.Produit · lot @c.NumeroLot · @c.Fournisseur, reçu le @Libelles.DateLocale(c.DateReception)</p>
+                </div>
+                <button type="button" class="btn" @onclick="Fermer">Fermer</button>
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (PeutCorriger)
+            {
+                <p class="detail" style="margin: 0">Modifiez seulement ce qui est faux. Chaque changement est inscrit au journal des corrections avec son motif.
+                    Le PPA et le SHP corrigés ne changent pas les ventes déjà faites.</p>
+                <div class="filtres-liste">
+                    <div class="champ" style="flex: 1 1 140px">
+                        <label for="c-lot">N° de lot</label>
+                        <input id="c-lot" data-champ="numero_lot" type="text" @bind="numeroLot" @bind:event="oninput" />
+                    </div>
+                    <div class="champ" style="flex: 0 0 130px">
+                        <label for="c-per">Péremption</label>
+                        <SaisiePeremption Id="c-per" DataChamp="date_peremption" Libelle="Péremption (MM/AA ou JJ/MM/AAAA)" @bind-Value="peremption" />
+                    </div>
+                    <div class="champ" style="flex: 0 0 120px">
+                        <label for="c-ppa">PPA (DA)</label>
+                        <input id="c-ppa" data-champ="ppa" type="number" min="0" step="0.01" @bind="ppa" />
+                    </div>
+                    <div class="champ" style="flex: 0 0 110px">
+                        <label for="c-shp">SHP (DA)</label>
+                        <input id="c-shp" data-champ="shp" type="number" min="0" step="0.01" @bind="shp" />
+                    </div>
+                    <div class="champ" style="flex: 0 0 120px">
+                        <label for="c-qte">Quantité restante</label>
+                        <input id="c-qte" data-champ="quantite" type="number" min="0" @bind="quantite" />
+                    </div>
+                </div>
+                @if (NumeroChange)
+                {
+                    <div class="bandeau-attention" role="note">Nouveau n° de lot : les ventes de ce lot, le rappel de lot et le parcours des boîtes
+                        suivront le nouveau n° (les ventes restent liées à ce lot).</div>
+                }
+                @if (quantite is { } q && q != c.Quantite)
+                {
+                    <p class="detail" style="margin: 0">Quantité : @c.Quantite → @q, inscrite comme un ajustement de stock (@(q > c.Quantite ? "+" : "")@(q - c.Quantite)).</p>
+                }
+                <div class="champ">
+                    <label for="c-motif" class="requis">Motif de la correction</label>
+                    <input id="c-motif" data-champ="motif" type="text" maxlength="200" placeholder="Ex. erreur de saisie à la réception" @bind="motif" @bind:event="oninput"
+                           class="@(motifManquant ? "champ-invalide" : null)" aria-invalid="@(motifManquant ? "true" : "false")" />
+                </div>
+                <div style="display: flex; gap: 8px">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer la correction</button>
+                    <button type="button" class="btn" @onclick="Fermer">Annuler</button>
+                </div>
+            }
+
+            <h3 style="margin: 8px 0 0">Historique des corrections</h3>
+            <div class="tableau-cadre" style="max-height: 260px">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Date</th><th scope="col">Champ</th><th scope="col">Avant</th><th scope="col">Après</th><th scope="col">Motif</th><th scope="col">Par</th></tr></thead>
+                    <tbody>
+                        @foreach (var h in historique.Skip((pageHisto - 1) * tailleHisto).Take(tailleHisto))
+                        {
+                            <tr>
+                                <td>@Libelles.DateHeureLocale(h.CorrigeLe.UtcDateTime)</td>
+                                <td>@Champ(h.Champ)</td>
+                                <td>@(h.AncienneValeur ?? "—")</td>
+                                <td>@(h.NouvelleValeur ?? "—")</td>
+                                <td>@h.Motif</td>
+                                <td>@h.CorrigePar</td>
+                            </tr>
+                        }
+                        @if (historique.Count == 0) { <tr><td colspan="6" class="vide">Aucune correction de ce lot.</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+            <Pagination Total="historique.Count" Numero="pageHisto" Taille="tailleHisto" Libelle="Pages de l’historique des corrections"
+                        OnChange="p => (pageHisto, tailleHisto) = (p.Numero, p.Taille)" />
+        </section>
+    </div>
+}
+
+@code {
+    private List<EntreeStockDto> lignes = [];
+    private int total, page = 1, taille = Pagination.TailleParDefaut;
+    private string recherche = "";
+    private bool epuises, charge;
+    private string? erreur, message;
+    private int requeteRecherche;
+    private bool FiltreActif => recherche.Trim().Length > 0 || epuises;
+
+    // ---- Fenêtre de correction ----
+    private EntreeStockDto? corrige;
+    private string numeroLot = "", motif = "";
+    private DateOnly? peremption;
+    private decimal? ppa, shp;
+    private int? quantite;
+    private bool enCours, motifManquant;
+    private List<CorrectionLotDto> historique = [];
+    private int pageHisto = 1, tailleHisto = Pagination.TailleParDefaut;
+    private bool PeutCorriger => Session.A("stock.corriger_entree");
+    private bool NumeroChange => corrige is { } c && numeroLot.Trim().Length > 0 && !string.Equals(numeroLot.Trim(), c.NumeroLot, StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("stock-entrees", e => { e.Mettre("recherche", recherche); e.Mettre("epuises", epuises); e.Mettre("page", page); e.Mettre("taille", taille); });
+        var r = Historique.Restaurer("stock-entrees");
+        if (r is not null) (recherche, epuises) = (r.Texte("recherche") ?? "", r.Oui("epuises"));
+        await ChargerAsync(r?.Entier("page") ?? 1, r?.Entier("taille") ?? taille);
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.EntreesStockAsync(recherche.Trim(), epuises, numero, nouvelleTaille);
+        if (e is not null) { erreur = e; return; }
+        if (p!.Lignes.Count == 0 && numero > 1) { await ChargerAsync(1, nouvelleTaille); return; }
+        (lignes, total, page, taille, charge) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille, true);
+        if (corrige is null) erreur = null;
+    }
+
+    private Task FiltrerAsync() => ChargerAsync(1, taille);
+    private Task ToutAfficherAsync() { (recherche, epuises) = ("", false); return FiltrerAsync(); }
+
+    private async Task RechercheSaisieAsync(ChangeEventArgs e)
+    {
+        recherche = e.Value?.ToString() ?? "";
+        var n = ++requeteRecherche;
+        await Task.Delay(250);
+        if (n == requeteRecherche) await FiltrerAsync();
+    }
+
+    private async Task OuvrirAsync(EntreeStockDto l)
+    {
+        (corrige, numeroLot, peremption, ppa, shp, quantite, motif, motifManquant, erreur, message) =
+            (l, l.NumeroLot, l.DatePeremption, l.Ppa, l.Shp, l.Quantite, "", false, null, null);
+        (pageHisto, historique) = (1, []);
+        var (h, e) = await Api.CorrectionsLotAsync(l.LotId);
+        (historique, erreur) = (h, e);
+    }
+
+    private void Fermer() => (corrige, erreur) = (null, null);
+
+    private void Touche(KeyboardEventArgs e) { if (e.Key == "Escape") Fermer(); }
+
+    private async Task EnregistrerAsync()
+    {
+        if (corrige is not { } c) return;
+        motifManquant = string.IsNullOrWhiteSpace(motif);
+        if (motifManquant) { erreur = Api.SignalerChamp("motif", "Indiquez le motif de la correction."); return; }
+        if (peremption is null) { erreur = Api.SignalerChamp("date_peremption", "Indiquez la péremption (MM/AA ou JJ/MM/AAAA)."); return; }
+        // Seuls les champs changés sont envoyés : une ligne de journal par champ corrigé
+        var saisie = new CorrectionLotSaisie(
+            ppa != c.Ppa ? ppa : null,
+            NumeroChange ? numeroLot.Trim() : null,
+            peremption != c.DatePeremption ? peremption : null,
+            shp != c.Shp ? shp : null,
+            quantite != c.Quantite ? quantite : null,
+            motif.Trim());
+        enCours = true;
+        try
+        {
+            var (r, e) = await Api.CorrigerEntreeStockAsync(c.LotId, saisie);
+            if (e is not null) { erreur = e; return; }
+            message = $"Entrée de stock corrigée : {r!.Produit}, lot {r.NumeroLot}.";
+            (corrige, erreur) = (null, null);
+            await ChargerAsync(page, taille);
+        }
+        finally { enCours = false; }
+    }
+
+    private static string Champ(string c) => c switch
+    {
+        "ppa" => "PPA", "numero_lot" => "N° de lot", "date_peremption" => "Péremption", "shp" => "SHP", "quantite" => "Quantité", _ => c
+    };
+}

@@ -230,6 +230,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\097_rapprochement_decisions.sql = database\migration\097_rapprochement_decisions.sql
 		database\migration\098_annulations_regularisation_reglement.sql = database\migration\098_annulations_regularisation_reglement.sql
 		database\migration\099_remboursement_regularisation.sql = database\migration\099_remboursement_regularisation.sql
+		database\migration\100_volet_chifa_complements.sql = database\migration\100_volet_chifa_complements.sql
+		database\migration\102_rang_fin_droit.sql =database\migration\102_rang_fin_droit.sql
+		database\migration\103_stock_shp_correction_facture.sql = database\migration\103_stock_shp_correction_facture.sql
+		database\migration\105_prestations.sql = database\migration\105_prestations.sql
+		database\migration\107_controle_fin_droits.sql = database\migration\107_controle_fin_droits.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"

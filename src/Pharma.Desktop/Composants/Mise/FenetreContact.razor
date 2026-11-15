@@ -56,7 +56,7 @@
                                 <option value="@org.Id">@org.Nom</option>
                             }
                         </select></div>
-                    <div class="champ" style="flex: 1 1 180px"><label for="fp-assure">N° d’assuré</label>
+                    <div class="champ" style="flex: 1 1 180px"><label for="fp-assure">N° d’assuré@(RangAssure.Extraire(patient.NumAssure) is { } rang ? $" · rang {rang}" : "")</label>
                         <input id="fp-assure" type="text" maxlength="40" @bind="patient.NumAssure" /></div>
                     <div class="champ" style="flex: 0 1 160px"><label for="fp-plafond">Plafond de crédit (DA)</label>
                         <input id="fp-plafond" data-champ="plafond" type="number" min="0" step="1" @bind="patient.PlafondCredit" /></div>
@@ -80,6 +80,9 @@
                                 <option value="@c.Id">@c.Nom (@c.NumAssure)</option>
                             }
                         </select></div>
+                    @* Fin des droits Chifa (script 102) : dépassée, la vente CNAS/CASNOS est seulement signalée (D-4) *@
+                    <div class="champ" style="flex: 0 1 160px"><label for="fp-fin-droit">Fin de droits Chifa</label>
+                        <input id="fp-fin-droit" data-champ="date_fin_droit" type="date" @bind="patient.DateFinDroit" /></div>
                 </div>
                 @if (patient.Proposition is { } prop && patient.AssurePrincipalId is null && patient.Lien != "assure")
                 {
@@ -229,6 +232,7 @@
         public decimal SoldeCredit { get; init; }
         public string? Lien { get; set; }
         public long? AssurePrincipalId { get; set; }
+        public DateOnly? DateFinDroit { get; set; }
         public IReadOnlyList<ProchePatientDto> Candidats { get; init; } = [];
         public ProchePatientDto? Proposition { get; init; }
     }
@@ -250,7 +254,8 @@
             {
                 Id = f.Id, Nom = f.Nom, Prenom = f.Prenom, DateNaissance = f.DateNaissance, Telephone = f.Telephone, Email = f.Email,
                 NumAssure = f.NumAssure, OrganismeId = f.OrganismeId, Chronique = f.Chronique, PlafondCredit = f.PlafondCredit, SoldeCredit = f.SoldeCredit,
-                Lien = f.Lien, AssurePrincipalId = f.AssurePrincipalId, Candidats = f.Candidats ?? [], Proposition = f.Proposition
+                Lien = f.Lien, AssurePrincipalId = f.AssurePrincipalId, Candidats = f.Candidats ?? [], Proposition = f.Proposition,
+                DateFinDroit = f.DateFinDroit
             };
         }
         finally { enCours = false; }
@@ -264,7 +269,7 @@
         {
             var e = await Api.ModifierPatientAsync(new FichePatientDto(p.Id, p.Nom, p.Prenom, p.DateNaissance, p.Telephone, p.Email, p.NumAssure,
                 p.OrganismeId, p.Chronique, p.PlafondCredit, 0, string.IsNullOrEmpty(p.Lien) ? null : p.Lien,
-                p.Lien == "assure" ? null : p.AssurePrincipalId));
+                p.Lien == "assure" ? null : p.AssurePrincipalId, DateFinDroit: p.DateFinDroit));
             if (e is not null) { erreurSaisie = e; return; }
             var (f, err) = await Api.ContactAsync(fiche.Type, fiche.Id);
             (fiche, erreur, patient, message) = (f ?? fiche, err, null, "Fiche du patient enregistrée.");

@@ -20,6 +20,7 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
                    -- Part du patient de la ligne, réductions de la ligne déduites (remise automatique, remise du vendeur, don partiel) :
                    -- le retour rend ce que le patient a payé pour ce produit-là (ventes antérieures : prorata de la remise de la vente)
                    l.montant_patient - l.reduction_auto - l.reduction_manuelle
+            -- Lignes produit seulement : une prestation (script 105, D-12) ne se rend pas (annulation de la vente ou avoir)
             FROM ligne_vente l JOIN produit p ON p.id = l.produit_id JOIN lot lo ON lo.id = l.lot_id
             WHERE l.vente_id = $1 ORDER BY l.id
             """))
@@ -67,6 +68,7 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
             await using var cmd = new NpgsqlCommand("""
                 SELECT l.quantite - COALESCE((SELECT SUM(quantite) FROM retour_client_ligne WHERE ligne_vente_id = l.id), 0)
                 FROM ligne_vente l WHERE l.id = $1 AND l.vente_id = $2
+                  AND l.lot_id IS NOT NULL   -- prestation (script 105, D-12) : jamais rendue
                 """, cx, tx);
             cmd.Parameters.AddWithValue(l.LigneVenteId);
             cmd.Parameters.AddWithValue(a.VenteId);

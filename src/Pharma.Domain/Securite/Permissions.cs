@@ -25,6 +25,8 @@ public static class Permissions
     public const string StockDeclarerPerime = "stock.declarer_perime";
     /// <summary>Donner un échantillon ou une gratuité (don à un nécessiteux) ; jamais un produit sous registre.</summary>
     public const string StockDonner = "stock.donner";
+    /// <summary>Corriger une entrée de stock (PPA, n° de lot, péremption, SHP, quantité ; 103) ; jamais autorisable par code comptoir.</summary>
+    public const string StockCorrigerEntree = "stock.corriger_entree";
     public const string PrixModifier = "prix.modifier";
     public const string ProduitsBloquer = "produits.bloquer";
     public const string CatalogueCreer = "catalogue.creer";
@@ -38,6 +40,8 @@ public static class Permissions
     public const string AchatsValiderEcart = "achats.valider_ecart";
     public const string ChifaImporter = "chifa.importer";
     public const string ChifaBordereaux = "chifa.bordereaux";
+    /// <summary>Exclure une vente Chifa du traitement, ou la rétablir (script 100) ; jamais autorisable par code comptoir.</summary>
+    public const string ChifaExclure = "chifa.exclure";
     public const string RapportsVentes = "rapports.ventes";
     public const string RapportsMarges = "rapports.marges";
     public const string AdminParametres = "admin.parametres";

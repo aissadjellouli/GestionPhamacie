@@ -214,6 +214,8 @@ public static class Libelles
         "coordonnees_modifiees" => "Coordonnées modifiées",
         "patient_modifie" => "Fiche patient modifiée",
         "patient_cree" => "Patient créé",
+        "droits_chifa_expires" => "Vente Chifa, droits expirés",
+        "droits_chifa_expires_credit" => "Vente à crédit, droits Chifa expirés",
         "reglages_surveillance" => "Réglages du contrôle interne",
         "retour_essai" => "Remarque d’essai",
         "produit_bloque" => "Produit bloqué",
@@ -284,6 +286,7 @@ public static class Libelles
         "vente_sans_ordonnance" => "Vente sans ordonnance (liste I ou II)",
         "versement_caisse_coffre" => "Versement de caisse au coffre",
         "sortie_stock" => "Sortie de stock (périmé, cassé ou don)",
+        "correction_entree_stock" => "Correction d’une entrée de stock",
         "don_partiel" => "Don partiel du reste à charge (médicament)",
         "reste_charge_manuel_volet" => "Reste à charge saisi à la main (volet Chifa)",
         "remise_automatique_appliquee" => "Remise automatique appliquée",
@@ -320,6 +323,11 @@ public static class Libelles
         "volet_chifa_rattache" => "Volet Chifa rattaché à une vente",
         "regularisation_part_organisme" => "Régularisation de la part organisme (volet Chifa)",
         "volet_chifa_patient_garde" => "Volet Chifa d’un autre assuré : patient choisi gardé",
+        "vente_chifa_infos" => "Informations Chifa d’une vente modifiées",
+        "vente_chifa_exclue" => "Vente Chifa exclue du traitement",
+        "vente_chifa_retablie" => "Vente Chifa rétablie dans le traitement",
+        "centre_payeur_cree" => "Centre payeur créé",
+        "centre_payeur_modifie" => "Centre payeur modifié",
         "mot_de_passe_actuel_refuse" => "Mot de passe actuel refusé",
         "restauration_base" => "Base de données restaurée",
         "restauration_ged" => "Documents restaurés",
@@ -369,6 +377,10 @@ public static class Libelles
         ["catalogue.creer"] = "Créer un produit au catalogue",
         ["chifa.bordereaux"] = "Gérer les bordereaux et rejets",
         ["chifa.importer"] = "Importer les factures Chifa",
+        ["chifa.exclure"] = "Exclure une vente Chifa",
+        // Actions accordables par le code d'un ayant droit « prix.modifier » (CodeComptoir.ActionsAutorisables), vues dans « Faire autoriser »
+        ["prix.modifier:volet_chifa_ecart"] = "Rattacher un volet Chifa malgré des différences (ou régulariser l’écart de part organisme)",
+        ["prix.modifier:choix_prix_chifa"] = "Choisir le prix d’une ligne de volet Chifa (s’aligner sur Chifa ou garder notre prix)",
         ["credit.accorder"] = "Mettre une vente en crédit",
         ["credit.depasser_plafond"] = "Dépasser le plafond de crédit d’un client",
         ["prix.modifier"] = "Modifier un prix de vente",
@@ -380,7 +392,8 @@ public static class Libelles
         ["stock.ajuster"] = "Corriger le stock (inventaire)",
         ["stock.consulter"] = "Consulter le stock",
         ["stock.declarer_perime"] = "Déclarer un produit périmé ou cassé",
-        ["stock.donner"] = "Donner un échantillon ou une gratuité (don à un nécessiteux)"
+        ["stock.donner"] = "Donner un échantillon ou une gratuité (don à un nécessiteux)",
+        ["stock.corriger_entree"] = "Corriger une entrée de stock"
     };
 
     /// <summary>Détail d'une action du journal en phrase lisible, sans accolades ni guillemets.</summary>
@@ -403,6 +416,12 @@ public static class Libelles
                 "rappel_lot" => $"Lot {T("numero_lot")} · {T("motif")} · {T("ventes")} vente(s) concernée(s)",
                 "remise" => $"{N("pourcentage"):0.##} % · ticket {T("ticket")} · {Dinars(N("montant"), 2)}",
                 "delivrance_psychotrope" => $"Ticket {T("ticket")}",
+                "vente_chifa_infos" => $"Ticket {T("ticket")}" + Sauf("date_soins", "date des soins") + Sauf("centre_payeur", "centre payeur")
+                                       + Sauf("saisi_par", "saisi dans Chifa par") + Sauf("majoration", "majoration")
+                                       + (N("majoration_montant") > 0 ? $" {Dinars(N("majoration_montant"), 2)}" : ""),
+                "vente_chifa_exclue" => $"Ticket {T("ticket")} · motif : {T("motif")}",
+                "vente_chifa_retablie" => $"Ticket {T("ticket")} · exclue pour : {T("motif")}",
+                "centre_payeur_cree" or "centre_payeur_modifie" => $"{T("organisme")} · centre {T("code")} · {T("nom")}" + (B("actif") ? "" : " · désactivé"),
                 "reste_charge_manuel_volet" => $"Ticket {T("ticket")} · volet n° {T("volet")} · part organisme calculée (prix Chifa) {Dinars(N("part_organisme_calculee"), 2)}"
                                                + $", reste calculé {Dinars(N("reste_calcule"), 2)} · reste saisi {Dinars(N("reste_saisi"), 2)} · écart {Dinars(N("ecart"), 2)}"
                                                + (T("valideur") is "—" ? "" : $" · autorisé par {T("valideur")}"),
@@ -645,6 +664,8 @@ public static class Libelles
         "sortie_stock" => "Motifs de sortie de stock",
         "retour_fournisseur" => "Motifs de retour fournisseur",
         "volet_absent" => "Motifs de vente Chifa sans n° de facture",
+        "chifa_exclusion" => "Motifs d’exclusion d’une vente Chifa",
+        "majoration_chifa" => "Types de majoration Chifa",
         _ => Humaniser(liste)
     };
 

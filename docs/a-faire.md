@@ -31,7 +31,7 @@ Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livr�
 
 - [ ] **QR code du volet Chifa** (reprise de la vente à la caisse, script 060) : le format a été déduit d'**un seul volet réel**, `06930126;11/11/2026;690755003842;80;24;2;09/11/2026;07607,3,156.48;`. À faire confirmer :
   - le sens des champs 5 et 6 (`24`, `2`) et de la seconde date (`09/11/2026` : date de l'ordonnance ?) ;
-  - le suffixe du n° d'assuré (`80`, imprimé « /80 ») : rang de l'ayant droit ?
+  - le suffixe du n° d'assuré (`80`, imprimé « /80 ») : rang de l'ayant droit ? Affiché « rang NN » depuis le script 102 (2026-11-15) : **sens du suffixe = rang de l'ayant droit, à confirmer sur cartes réelles** (deux cartes d'une même famille).
   - le système de codes produits (`07607`) : code CNAS, nomenclature ? Une table officielle permettrait d'associer les produits sans le faire à la main ;
   - le format d'un volet de plusieurs produits (séparateur entre les lignes) ;
   - le taux de remboursement : absent du QR ; peut-il y figurer ?

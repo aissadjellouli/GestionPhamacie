@@ -114,7 +114,7 @@ internal static class AchatsEndpoints
             {
                 var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
                 return Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, null, du, au, q), ct), r => new ReceptionResumeDto(
-                    r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, r.NombreLots, r.NombreBoites, v.Prix(r.MontantTtc), r.FournisseurId)));
+                    r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, r.NombreLots, r.NombreBoites, v.Prix(r.MontantTtc), r.FournisseurId, r.DateFacture)));
             })
            .ExigerPermission(Lecture);
 
@@ -131,7 +131,7 @@ internal static class AchatsEndpoints
                     req.Lignes.Requise().Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
                         l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp,
                         l.Ug, l.UgCoutReparti, l.RemplacerPrixCatalogue)).ToList(), req.Timbre,
-                    req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null),
+                    req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null, req.DateFacture),
                     user.UtilisateurId(), ct);
                 return Results.Ok(new ReceptionEnregistreeDto(r.ReceptionId, r.MontantTtc,
                     r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList()));
@@ -345,7 +345,7 @@ internal static class AchatsEndpoints
         req.Lignes.Requise().Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,
             l.PrixAchatHt, l.Gtin, l.NumerosSerie, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp,
             l.Ug, l.UgCoutReparti, l.RemplacerPrixCatalogue)).ToList(), req.Timbre,
-        req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null);
+        req.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null, req.DateFacture);
 
     private static ReceptionEnregistreeDto VersDto(ReceptionEnregistree r) => new(r.ReceptionId, r.MontantTtc,
         r.Lots.Select(l => new LotRecuDto(l.LotId, l.Produit, l.NumeroLot, l.DatePeremption, l.Quantite, l.Etiquettes, l.LotExistant)).ToList());

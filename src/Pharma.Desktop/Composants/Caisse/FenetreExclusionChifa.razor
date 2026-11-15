@@ -1,0 +1,53 @@
+@inject ApiClient Api
+
+@* « Exclure du traitement » une vente Chifa (2026-11-15, script 100) : droit « Exclure une vente Chifa » ; motif de la liste réglable
+   « chifa_exclusion », « Autre » avec un texte. La vente sort de « Ventes en attente de volet » ; « Rétablir » la remet. *@
+<div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-exclusion-chifa">
+    <section class="panneau" style="width: min(560px, 96vw); display: flex; flex-direction: column; gap: 10px">
+        <h2 id="t-exclusion-chifa" style="margin: 0">Exclure la vente @Numero du traitement Chifa</h2>
+        <p class="detail" style="margin: 0">La vente ne sera plus attendue avec un volet ni mise dans un bordereau. Elle reste encaissée (stock et argent inchangés) et peut être rétablie.</p>
+        <div class="champ">
+            <label for="ex-motif" class="requis">Motif</label>
+            <select id="ex-motif" data-champ="motif" @bind="code" class="@Obligatoire.Classe(string.IsNullOrEmpty(code))">
+                <option value="">— choisir —</option>
+                @foreach (var m in motifs) { <option value="@m.Code">@m.Libelle</option> }
+            </select>
+        </div>
+        @if (code == "autre")
+        {
+            <div class="champ">
+                <label for="ex-texte" class="requis">Précisez</label>
+                <input id="ex-texte" data-champ="motif_texte" maxlength="200" @bind="texte" @bind:event="oninput"
+                       class="@Obligatoire.Classe(string.IsNullOrWhiteSpace(texte))" />
+            </div>
+        }
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end">
+            <button type="button" class="btn" disabled="@enCours" @onclick="OnFerme">Annuler</button>
+            <button type="button" class="btn btn-principal" disabled="@(enCours || string.IsNullOrEmpty(code) || (code == "autre" && string.IsNullOrWhiteSpace(texte)))"
+                    @onclick="ExclureAsync">@(enCours ? "Exclusion…" : "Exclure du traitement")</button>
+        </div>
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public long VenteId { get; set; }
+    [Parameter] public string Numero { get; set; } = "";
+    [Parameter] public EventCallback OnFerme { get; set; }
+    [Parameter] public EventCallback OnExclue { get; set; }
+
+    private List<MotifReglableDto> motifs = [];
+    private string? code, texte, erreur;
+    private bool enCours;
+
+    protected override async Task OnInitializedAsync() => (motifs, erreur) = await Api.MotifsAsync("chifa_exclusion");
+
+    private async Task ExclureAsync()
+    {
+        if (string.IsNullOrEmpty(code)) return;
+        enCours = true;
+        erreur = await Api.ExclureVenteChifaAsync(VenteId, code, code == "autre" ? texte?.Trim() : null);
+        enCours = false;
+        if (erreur is null) await OnExclue.InvokeAsync();
+    }
+}

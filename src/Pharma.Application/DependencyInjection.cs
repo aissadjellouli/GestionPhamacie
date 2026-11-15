@@ -38,6 +38,11 @@ public static class DependencyInjection
         services.AddScoped<LireVoletChifa>();
         services.AddScoped<RapprocherVoletChifa>();
         services.AddScoped<ConsulterVoletsChifa>();
+        services.AddScoped<Chifa.CentresPayeurs>();
+        services.AddScoped<Caisse.TypesPrestation>();
+        services.AddScoped<Chifa.EnregistrerInfosChifa>();
+        services.AddScoped<Chifa.ExclureVenteChifa>();
+        services.AddScoped<Chifa.ConsulterVentesChifa>();
         services.AddScoped<GarderPatientVoletChifa>();
         services.AddScoped<AssocierCodeChifa>();
         services.AddScoped<CreerPatientVoletChifa>();
@@ -162,12 +167,16 @@ public static class DependencyInjection
         services.AddScoped<Suivi.ObtenirSuiviDettes>();
         services.AddScoped<Contacts.ConsulterContact>();
         services.AddScoped<Patients.ModifierPatient>();
+        services.AddScoped<Patients.MettreAJourFinDroit>();
+        services.AddScoped<Patients.ListerSuiviDroitsChifa>();
         services.AddScoped<Patients.LireFichePatient>();
         services.AddScoped<Contacts.ModifierCoordonneesContact>();
         services.AddScoped<Essai.RetoursEssai>();
         services.AddScoped<Factures.MentionsFacture>();
         services.AddScoped<Stock.ListerLotsEnStock>();
         services.AddScoped<Stock.DeclarerSortieStock>();
+        services.AddScoped<Stock.ConsulterEntreesStock>();
+        services.AddScoped<Stock.CorrigerEntreeStock>();
         services.AddScoped<Achats.EnregistrerGrossiste>();
         services.AddScoped<LireFicheProduit>();
         services.AddScoped<ModifierProduit>();

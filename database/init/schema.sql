@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 099 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 107 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 099 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 107 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -22,10 +22,12 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 \endif
 --
 --
+--
+--
 -- PostgreSQL database dump
 --
 
-\restrict dFFRQGoLz0LEZ5mTitRrqqVVvzgQIKYzhC4lrIf1M5XonZ7PxnZPVZOoClcbLmU
+\restrict kuIANX02DHUbXPAycdiz1R1ceAcrpCZq6VbwkXIOteBQHhruWVqPQolhqydgroW
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1498,6 +1500,15 @@ $$;
 
 
 --
+-- Name: rang_assure(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.rang_assure(p_num text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $_$ SELECT substring(p_num FROM '/\s*([0-9]{2})\s*$') $_$;
+
+
+--
 -- Name: rappel_lot(bigint, text, text, bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1546,6 +1557,22 @@ BEGIN
         SELECT p.id, lot_fefo(p.id), 'code_fabricant'::text
         FROM produit p
         WHERE p.code_barre = p_code AND p.actif;
+END;
+$$;
+
+
+--
+-- Name: refuser_retour_prestation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.refuser_retour_prestation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM ligne_vente WHERE id = NEW.ligne_vente_id AND type_prestation_id IS NOT NULL) THEN
+        RAISE EXCEPTION 'Une prestation ne se rend pas : annulez la vente ou faites un avoir';
+    END IF;
+    RETURN NEW;
 END;
 $$;
 
@@ -2163,7 +2190,8 @@ BEGIN
     IF b.statut <> 'en_stock' THEN
         RAISE EXCEPTION 'Boîte déjà %, vente impossible : contrefaçon ou double scan possible', b.statut;
     END IF;
-    IF b.lot_id <> lv.lot_id THEN
+    -- Prestation (script 105) : aucune boîte
+    IF lv.lot_id IS NULL OR b.lot_id <> lv.lot_id THEN
         RAISE EXCEPTION 'Cette boîte n''appartient pas au lot de la ligne de vente';
     END IF;
     SELECT count(*) INTO v_deja FROM boite WHERE ligne_vente_id = p_ligne_vente_id;
@@ -2290,6 +2318,10 @@ CREATE FUNCTION public.verifier_lot_vendable() RETURNS trigger
 DECLARE
     l record;
 BEGIN
+    -- Prestation (script 105) : pas de lot
+    IF NEW.lot_id IS NULL THEN
+        RETURN NEW;
+    END IF;
     SELECT date_peremption, bloque, motif_blocage INTO l FROM lot WHERE id = NEW.lot_id;
     IF l.bloque THEN
         RAISE EXCEPTION 'Lot bloqué (%), vente interdite', COALESCE(l.motif_blocage, 'sans motif');
@@ -2338,9 +2370,10 @@ BEGIN
     END IF;
     SELECT * INTO prm FROM parametre_tracabilite WHERE id = 1;
 
+    -- Boîtes scannées : lignes produit seulement (une prestation n'a pas de boîte, script 105)
     IF prm.boite_obligatoire AND EXISTS (
         SELECT 1 FROM ligne_vente lv
-        WHERE lv.vente_id = NEW.id
+        WHERE lv.vente_id = NEW.id AND lv.lot_id IS NOT NULL
           AND lv.quantite <> (SELECT count(*) FROM boite b WHERE b.ligne_vente_id = lv.id)
     ) THEN
         RAISE EXCEPTION 'Chaque boîte vendue doit être scannée';
@@ -2894,6 +2927,36 @@ CREATE TABLE public.categorie_produit (
 
 
 --
+-- Name: centre_payeur; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.centre_payeur (
+    id bigint NOT NULL,
+    organisme_id bigint NOT NULL,
+    code text NOT NULL,
+    nom text NOT NULL,
+    actif boolean DEFAULT true NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_centre_payeur_code CHECK (((code = btrim(code)) AND ((char_length(code) >= 1) AND (char_length(code) <= 10)))),
+    CONSTRAINT ck_centre_payeur_nom CHECK (((char_length(btrim(nom)) >= 1) AND (char_length(btrim(nom)) <= 120)))
+);
+
+
+--
+-- Name: centre_payeur_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.centre_payeur ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.centre_payeur_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: chifa_code_produit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3171,6 +3234,39 @@ CREATE TABLE public.connexion_employe (
 
 ALTER TABLE public.connexion_employe ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.connexion_employe_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: correction_lot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.correction_lot (
+    id bigint NOT NULL,
+    lot_id bigint NOT NULL,
+    champ text NOT NULL,
+    ancienne_valeur text,
+    nouvelle_valeur text,
+    motif text NOT NULL,
+    mouvement_id bigint,
+    utilisateur_id bigint NOT NULL,
+    corrige_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_correction_lot_champ CHECK ((champ = ANY (ARRAY['ppa'::text, 'numero_lot'::text, 'date_peremption'::text, 'shp'::text, 'quantite'::text]))),
+    CONSTRAINT ck_correction_lot_motif CHECK ((length(btrim(motif)) > 0))
+);
+
+
+--
+-- Name: correction_lot_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.correction_lot ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.correction_lot_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -3910,8 +4006,8 @@ ALTER TABLE public.ligne_retour_fournisseur ALTER COLUMN id ADD GENERATED ALWAYS
 CREATE TABLE public.ligne_vente (
     id bigint NOT NULL,
     vente_id bigint NOT NULL,
-    produit_id bigint NOT NULL,
-    lot_id bigint NOT NULL,
+    produit_id bigint,
+    lot_id bigint,
     quantite integer NOT NULL,
     prix_unitaire numeric(12,2) NOT NULL,
     base_remboursement numeric(12,2) DEFAULT 0 NOT NULL,
@@ -3926,8 +4022,12 @@ CREATE TABLE public.ligne_vente (
     don_partiel boolean DEFAULT false NOT NULL,
     prix_chifa numeric(12,2),
     choix_prix_chifa text,
+    type_prestation_id bigint,
+    libelle text,
+    taux_tva numeric(5,2),
     CONSTRAINT ck_ligne_vente_choix_prix_chifa CHECK (((choix_prix_chifa IS NULL) OR ((prix_chifa IS NOT NULL) AND (choix_prix_chifa = ANY (ARRAY['aligne_auto'::text, 'aligne'::text, 'garde'::text, 'plus_eleve'::text]))))),
     CONSTRAINT ck_ligne_vente_prix_chifa CHECK (((prix_chifa IS NULL) OR (prix_chifa >= (0)::numeric))),
+    CONSTRAINT ck_ligne_vente_produit_ou_prestation CHECK ((((produit_id IS NOT NULL) AND (lot_id IS NOT NULL) AND (type_prestation_id IS NULL) AND (libelle IS NULL) AND (taux_tva IS NULL)) OR ((type_prestation_id IS NOT NULL) AND (produit_id IS NULL) AND (lot_id IS NULL) AND (libelle IS NOT NULL) AND (taux_tva IS NOT NULL) AND (taux_tva >= (0)::numeric) AND (taux_tva <= (100)::numeric) AND (shp = (0)::numeric) AND (montant_organisme = (0)::numeric) AND (prix_chifa IS NULL) AND (raison_lot IS NULL)))),
     CONSTRAINT ck_ligne_vente_raison_lot CHECK (((raison_lot IS NULL) OR (raison_lot = ANY (ARRAY['peremption'::text, 'introuvable'::text, 'abimee'::text, 'demande_client'::text])))),
     CONSTRAINT ck_ligne_vente_reduction_auto CHECK ((reduction_auto >= (0)::numeric)),
     CONSTRAINT ck_ligne_vente_reduction_manuelle CHECK ((reduction_manuelle >= (0)::numeric)),
@@ -3971,7 +4071,9 @@ CREATE TABLE public.lot (
     motif_blocage text,
     date_a_verifier boolean DEFAULT false NOT NULL,
     ppa numeric(12,2),
+    shp numeric(10,2) DEFAULT 0 NOT NULL,
     CONSTRAINT ck_lot_ppa CHECK (((ppa IS NULL) OR (ppa >= (0)::numeric))),
+    CONSTRAINT ck_lot_shp CHECK ((shp >= (0)::numeric)),
     CONSTRAINT lot_quantite_disponible_check CHECK ((quantite_disponible >= 0))
 );
 
@@ -4079,7 +4181,7 @@ CREATE TABLE public.motif_reglable (
     detail text DEFAULT 'aucun'::text NOT NULL,
     CONSTRAINT ck_motif_reglable_effet CHECK ((((effet = 'aucun'::text) AND (detail = 'aucun'::text)) OR ((effet = 'sortie'::text) AND (detail = ANY (ARRAY['depense'::text, 'fournisseur'::text, 'patient'::text, 'coffre'::text]))) OR ((effet = 'entree'::text) AND (detail = 'fond'::text)))),
     CONSTRAINT ck_motif_reglable_effet_tiroir CHECK (((effet = 'aucun'::text) OR (liste = 'tiroir'::text))),
-    CONSTRAINT ck_motif_reglable_liste CHECK ((liste = ANY (ARRAY['tiroir'::text, 'attente'::text, 'charge'::text, 'sortie_stock'::text, 'retour_fournisseur'::text, 'volet_absent'::text]))),
+    CONSTRAINT ck_motif_reglable_liste CHECK ((liste = ANY ('{attente,charge,chifa_exclusion,majoration_chifa,retour_client,retour_fournisseur,sortie_stock,tiroir,volet_absent}'::text[]))),
     CONSTRAINT ck_motif_reglable_systeme_actif CHECK ((actif OR (NOT systeme))),
     CONSTRAINT motif_reglable_code_check CHECK ((code ~ '^[a-z0-9_]{1,40}$'::text)),
     CONSTRAINT motif_reglable_libelle_check CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 80)))
@@ -4553,8 +4655,10 @@ CREATE TABLE public.parametre_caisse (
     seuil_ecart_chifa numeric(12,2) DEFAULT 5 NOT NULL,
     seuil_sortie_tiroir numeric(12,2) DEFAULT 2000 NOT NULL,
     delai_volet_chifa_jours integer DEFAULT 7 NOT NULL,
+    jours_alerte_fin_droit integer DEFAULT 30 NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_delai_volet_chifa CHECK (((delai_volet_chifa_jours >= 1) AND (delai_volet_chifa_jours <= 365))),
+    CONSTRAINT ck_parametre_caisse_jours_alerte_fin_droit CHECK (((jours_alerte_fin_droit >= 0) AND (jours_alerte_fin_droit <= 365))),
     CONSTRAINT ck_parametre_caisse_seuil_sortie_tiroir CHECK ((seuil_sortie_tiroir >= (0)::numeric)),
     CONSTRAINT ck_plafond_credit_defaut CHECK ((plafond_credit_defaut >= (0)::numeric)),
     CONSTRAINT ck_seuil_annulations CHECK (((seuil_annulations >= 0) AND (seuil_annulations <= 100))),
@@ -4715,6 +4819,8 @@ CREATE TABLE public.patient (
     cree_par bigint,
     lien text,
     assure_principal_id bigint,
+    date_fin_droit date,
+    centre_payeur_id bigint,
     CONSTRAINT ck_patient_assure_principal CHECK ((assure_principal_id <> id)),
     CONSTRAINT ck_patient_lien CHECK ((lien = ANY (ARRAY['assure'::text, 'conjoint'::text, 'enfant'::text, 'ascendant'::text, 'autre'::text])))
 );
@@ -4887,6 +4993,7 @@ CREATE TABLE public.reception (
     montant_tva numeric(12,2),
     timbre numeric(12,2) DEFAULT 0 NOT NULL,
     shp_total numeric(12,2) DEFAULT 0 NOT NULL,
+    date_facture date,
     CONSTRAINT ck_reception_montants CHECK (((remise >= (0)::numeric) AND (timbre >= (0)::numeric) AND (shp_total >= (0)::numeric) AND ((montant_ht IS NULL) OR (montant_ht >= (0)::numeric)) AND ((montant_tva IS NULL) OR (montant_tva >= (0)::numeric)))),
     CONSTRAINT reception_montant_ttc_check CHECK ((montant_ttc >= (0)::numeric))
 );
@@ -5575,6 +5682,39 @@ CREATE TABLE public.substance_surveillee (
 
 
 --
+-- Name: type_prestation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.type_prestation (
+    id bigint NOT NULL,
+    code text NOT NULL,
+    libelle text NOT NULL,
+    prix numeric(12,2) DEFAULT 0 NOT NULL,
+    taux_tva numeric(5,2) DEFAULT 0 NOT NULL,
+    actif boolean DEFAULT true NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_type_prestation_code CHECK (((length(btrim(code)) >= 1) AND (length(btrim(code)) <= 20))),
+    CONSTRAINT ck_type_prestation_libelle CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 120))),
+    CONSTRAINT ck_type_prestation_prix CHECK ((prix >= (0)::numeric)),
+    CONSTRAINT ck_type_prestation_tva CHECK (((taux_tva >= (0)::numeric) AND (taux_tva <= (100)::numeric)))
+);
+
+
+--
+-- Name: type_prestation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.type_prestation ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.type_prestation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: utilisateur; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5703,9 +5843,21 @@ CREATE TABLE public.vente (
     chifa_ecart_part_organisme numeric(12,2),
     chifa_attente_motif_code text,
     chifa_attente_motif_texte text,
+    centre_payeur_id bigint,
+    chifa_date_soins date,
+    chifa_saisi_par bigint,
+    chifa_majoration_code text,
+    chifa_majoration_montant numeric(12,2) DEFAULT 0 NOT NULL,
+    chifa_exclue_le timestamp with time zone,
+    chifa_exclue_par bigint,
+    chifa_exclusion_motif_code text,
+    chifa_exclusion_texte text,
     CONSTRAINT ck_vente_canal_organisme CHECK ((canal_organisme = ANY (ARRAY['logiciel'::text, 'chifa'::text, 'mdn'::text]))),
     CONSTRAINT ck_vente_chifa_attente_motif_texte CHECK (((chifa_attente_motif_texte IS NULL) OR ((char_length(btrim(chifa_attente_motif_texte)) >= 1) AND (char_length(btrim(chifa_attente_motif_texte)) <= 200)))),
     CONSTRAINT ck_vente_chifa_ecart_motif CHECK (((chifa_ecart_motif IS NULL) OR ((char_length(btrim(chifa_ecart_motif)) >= 1) AND (char_length(btrim(chifa_ecart_motif)) <= 500)))),
+    CONSTRAINT ck_vente_chifa_exclusion CHECK ((((chifa_exclue_le IS NULL) AND (chifa_exclue_par IS NULL) AND (chifa_exclusion_motif_code IS NULL) AND (chifa_exclusion_texte IS NULL)) OR ((chifa_exclue_le IS NOT NULL) AND (chifa_exclue_par IS NOT NULL) AND (chifa_exclusion_motif_code IS NOT NULL)))),
+    CONSTRAINT ck_vente_chifa_exclusion_texte CHECK (((chifa_exclusion_texte IS NULL) OR ((char_length(btrim(chifa_exclusion_texte)) >= 1) AND (char_length(btrim(chifa_exclusion_texte)) <= 200)))),
+    CONSTRAINT ck_vente_chifa_majoration CHECK (((chifa_majoration_montant >= (0)::numeric) AND ((chifa_majoration_montant = (0)::numeric) OR (chifa_majoration_code IS NOT NULL)))),
     CONSTRAINT ck_vente_montant_don CHECK ((montant_don >= (0)::numeric)),
     CONSTRAINT ck_vente_pour_nom CHECK (((pour_nom IS NULL) OR ((char_length(btrim(pour_nom)) >= 1) AND (char_length(btrim(pour_nom)) <= 200)))),
     CONSTRAINT ck_vente_pour_un_seul CHECK (((pour_patient_id IS NULL) OR (pour_nom IS NULL))),
@@ -5735,7 +5887,7 @@ CREATE VIEW public.v_consommation AS
            FROM ((public.ligne_vente lv
              JOIN public.vente v ON ((v.id = lv.vente_id)))
              CROSS JOIN prm prm_1)
-          WHERE ((v.statut = 'validee'::text) AND (v.date_vente >= (now() - make_interval(days => prm_1.f))))
+          WHERE ((v.statut = 'validee'::text) AND (v.date_vente >= (now() - make_interval(days => prm_1.f))) AND (lv.produit_id IS NOT NULL))
           GROUP BY lv.produit_id
         )
  SELECT p.id AS produit_id,
@@ -5769,7 +5921,7 @@ CREATE VIEW public.v_etat_stock AS
             max(v.date_vente) AS derniere_vente
            FROM (public.ligne_vente lv
              JOIN public.vente v ON ((v.id = lv.vente_id)))
-          WHERE (v.statut = 'validee'::text)
+          WHERE ((v.statut = 'validee'::text) AND (lv.produit_id IS NOT NULL))
           GROUP BY lv.produit_id
         ), base AS (
          SELECT p.id AS produit_id,
@@ -6200,8 +6352,8 @@ CREATE VIEW public.v_ligne_vente_facturable AS
     v.ordonnance_id,
     o.numero AS ordonnance_numero,
     l.id AS ligne_vente_id,
-    p.nom_commercial AS designation,
-    p.taux_tva,
+    COALESCE(p.nom_commercial, l.libelle) AS designation,
+    COALESCE(p.taux_tva, l.taux_tva) AS taux_tva,
     l.prix_unitaire,
     l.quantite,
     (l.quantite - COALESCE(rt.quantite, (0)::bigint)) AS quantite_nette,
@@ -6221,7 +6373,7 @@ CREATE VIEW public.v_ligne_vente_facturable AS
           WHERE ((fl.ligne_vente_id = l.id) AND (fl.part = 'organisme'::text) AND (f.statut = ANY (ARRAY['emise'::text, 'rejetee'::text])) AND (f.type = 'facture'::text)))) AS facturee_organisme
    FROM ((((public.vente v
      JOIN public.ligne_vente l ON ((l.vente_id = v.id)))
-     JOIN public.produit p ON ((p.id = l.produit_id)))
+     LEFT JOIN public.produit p ON ((p.id = l.produit_id)))
      LEFT JOIN public.ordonnance o ON ((o.id = v.ordonnance_id)))
      LEFT JOIN LATERAL ( SELECT sum(r.quantite) AS quantite
            FROM public.retour_client_ligne r
@@ -6829,7 +6981,8 @@ CREATE VIEW public.v_vente_part_organisme AS
  SELECT v.id AS vente_id,
     v.organisme_id,
     v.part_organisme AS part_organisme_caisse,
-    COALESCE(r.part_organisme_chifa, v.part_organisme) AS part_organisme_retenue
+    ((COALESCE(r.part_organisme_chifa, v.part_organisme) + v.chifa_majoration_montant))::numeric(12,2) AS part_organisme_retenue,
+    v.chifa_majoration_montant AS majoration_chifa
    FROM (public.vente v
      LEFT JOIN public.regularisation_part_organisme r ON (((r.vente_id = v.id) AND (r.statut = 'active'::text))));
 
@@ -7040,6 +7193,14 @@ ALTER TABLE ONLY public.categorie_produit
 
 
 --
+-- Name: centre_payeur centre_payeur_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.centre_payeur
+    ADD CONSTRAINT centre_payeur_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: chifa_code_produit chifa_code_produit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7141,6 +7302,14 @@ ALTER TABLE ONLY public.compte_tresorerie
 
 ALTER TABLE ONLY public.connexion_employe
     ADD CONSTRAINT connexion_employe_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: correction_lot correction_lot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correction_lot
+    ADD CONSTRAINT correction_lot_pkey PRIMARY KEY (id);
 
 
 --
@@ -7880,6 +8049,22 @@ ALTER TABLE ONLY public.substance_surveillee
 
 
 --
+-- Name: type_prestation type_prestation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.type_prestation
+    ADD CONSTRAINT type_prestation_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: centre_payeur uq_centre_payeur_code; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.centre_payeur
+    ADD CONSTRAINT uq_centre_payeur_code UNIQUE (organisme_id, code);
+
+
+--
 -- Name: motif_reglable uq_motif_reglable_code; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8165,6 +8350,13 @@ CREATE INDEX idx_ligne_vente_lot ON public.ligne_vente USING btree (lot_id);
 --
 
 CREATE INDEX idx_ligne_vente_produit ON public.ligne_vente USING btree (produit_id);
+
+
+--
+-- Name: idx_ligne_vente_type_prestation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ligne_vente_type_prestation ON public.ligne_vente USING btree (type_prestation_id) WHERE (type_prestation_id IS NOT NULL);
 
 
 --
@@ -8532,6 +8724,13 @@ CREATE INDEX ix_connexion_employe ON public.connexion_employe USING btree (utili
 
 
 --
+-- Name: ix_correction_lot_lot; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_correction_lot_lot ON public.correction_lot USING btree (lot_id, corrige_le);
+
+
+--
 -- Name: ix_credit_imputation_mouvement; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8602,6 +8801,13 @@ CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (pr
 
 
 --
+-- Name: ix_vente_centre_payeur; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_vente_centre_payeur ON public.vente USING btree (centre_payeur_id) WHERE (centre_payeur_id IS NOT NULL);
+
+
+--
 -- Name: ix_vente_chifa_attente; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8613,6 +8819,13 @@ CREATE INDEX ix_vente_chifa_attente ON public.vente USING btree (date_vente) WHE
 --
 
 CREATE INDEX ix_vente_chifa_ecart ON public.vente USING btree (chifa_rattache_le) WHERE (chifa_ecart_motif IS NOT NULL);
+
+
+--
+-- Name: ix_vente_chifa_exclue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_vente_chifa_exclue ON public.vente USING btree (chifa_exclue_le DESC) WHERE (chifa_exclue_le IS NOT NULL);
 
 
 --
@@ -8739,6 +8952,13 @@ CREATE UNIQUE INDEX ux_scan_reception_serie ON public.scan_reception USING btree
 --
 
 CREATE UNIQUE INDEX ux_session_poste_ouverte ON public.session_caisse USING btree (poste) WHERE (fermee_le IS NULL);
+
+
+--
+-- Name: ux_type_prestation_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_type_prestation_code ON public.type_prestation USING btree (upper(btrim(code)));
 
 
 --
@@ -8989,6 +9209,13 @@ CREATE TRIGGER trg_compte_carte AFTER INSERT OR UPDATE OF recoit_carte ON public
 
 
 --
+-- Name: correction_lot trg_correction_lot_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_correction_lot_immuable BEFORE DELETE OR UPDATE ON public.correction_lot FOR EACH ROW EXECUTE FUNCTION public.interdire_modification();
+
+
+--
 -- Name: credit_mouvement trg_credit_mouvement_immuable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9175,6 +9402,13 @@ CREATE TRIGGER trg_regularisation_part_organisme_immuable BEFORE DELETE OR UPDAT
 --
 
 CREATE TRIGGER trg_retour_bon_fournisseur BEFORE INSERT OR UPDATE ON public.ligne_retour_fournisseur FOR EACH ROW EXECUTE FUNCTION public.verifier_retour_bon_fournisseur();
+
+
+--
+-- Name: retour_client_ligne trg_retour_client_ligne_prestation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_retour_client_ligne_prestation BEFORE INSERT ON public.retour_client_ligne FOR EACH ROW EXECUTE FUNCTION public.refuser_retour_prestation();
 
 
 --
@@ -9501,6 +9735,14 @@ ALTER TABLE ONLY public.campagne_inventaire_ligne
 
 
 --
+-- Name: centre_payeur centre_payeur_organisme_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.centre_payeur
+    ADD CONSTRAINT centre_payeur_organisme_id_fkey FOREIGN KEY (organisme_id) REFERENCES public.organisme(id);
+
+
+--
 -- Name: chifa_code_produit chifa_code_produit_associe_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9626,6 +9868,30 @@ ALTER TABLE ONLY public.compte_carte_periode
 
 ALTER TABLE ONLY public.connexion_employe
     ADD CONSTRAINT connexion_employe_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: correction_lot correction_lot_lot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correction_lot
+    ADD CONSTRAINT correction_lot_lot_id_fkey FOREIGN KEY (lot_id) REFERENCES public.lot(id);
+
+
+--
+-- Name: correction_lot correction_lot_mouvement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correction_lot
+    ADD CONSTRAINT correction_lot_mouvement_id_fkey FOREIGN KEY (mouvement_id) REFERENCES public.mouvement_stock(id);
+
+
+--
+-- Name: correction_lot correction_lot_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.correction_lot
+    ADD CONSTRAINT correction_lot_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
 
 
 --
@@ -9850,6 +10116,14 @@ ALTER TABLE ONLY public.facture_client_version
 
 ALTER TABLE ONLY public.facture_client_version
     ADD CONSTRAINT facture_client_version_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: ligne_vente fk_ligne_vente_type_prestation; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ligne_vente
+    ADD CONSTRAINT fk_ligne_vente_type_prestation FOREIGN KEY (type_prestation_id) REFERENCES public.type_prestation(id);
 
 
 --
@@ -10394,6 +10668,14 @@ ALTER TABLE ONLY public.paiement
 
 ALTER TABLE ONLY public.panier_attente
     ADD CONSTRAINT panier_attente_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: patient patient_centre_payeur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.patient
+    ADD CONSTRAINT patient_centre_payeur_id_fkey FOREIGN KEY (centre_payeur_id) REFERENCES public.centre_payeur(id);
 
 
 --
@@ -10997,11 +11279,35 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: vente vente_centre_payeur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente
+    ADD CONSTRAINT vente_centre_payeur_id_fkey FOREIGN KEY (centre_payeur_id) REFERENCES public.centre_payeur(id);
+
+
+--
+-- Name: vente vente_chifa_exclue_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente
+    ADD CONSTRAINT vente_chifa_exclue_par_fkey FOREIGN KEY (chifa_exclue_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: vente vente_chifa_rattache_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.vente
     ADD CONSTRAINT vente_chifa_rattache_par_fkey FOREIGN KEY (chifa_rattache_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: vente vente_chifa_saisi_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente
+    ADD CONSTRAINT vente_chifa_saisi_par_fkey FOREIGN KEY (chifa_saisi_par) REFERENCES public.utilisateur(id);
 
 
 --
@@ -11048,5 +11354,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict dFFRQGoLz0LEZ5mTitRrqqVVvzgQIKYzhC4lrIf1M5XonZ7PxnZPVZOoClcbLmU
+\unrestrict kuIANX02DHUbXPAycdiz1R1ceAcrpCZq6VbwkXIOteBQHhruWVqPQolhqydgroW
 

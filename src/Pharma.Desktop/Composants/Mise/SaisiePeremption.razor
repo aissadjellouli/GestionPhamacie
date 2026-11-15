@@ -1,0 +1,44 @@
+@* Péremption saisie comme sur la boîte : MM/AA (→ dernier jour du mois) ou JJ/MM/AAAA. Réception, comptage, correction d'une entrée de stock. *@
+<input type="text" id="@Id" data-champ="@DataChamp" style="width: @(Largeur)" placeholder="MM/AA" autocomplete="off" aria-label="@Libelle"
+       title="MM/AA (dernier jour du mois) ou JJ/MM/AAAA"
+       class="@(Invalide ? "champ-invalide" : null)" aria-invalid="@(Invalide ? "true" : "false")"
+       value="@texte" @onchange="ChangerAsync" />
+
+@code {
+    [Parameter] public DateOnly? Value { get; set; }
+    [Parameter] public EventCallback<DateOnly?> ValueChanged { get; set; }
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Libelle { get; set; }
+    /// <summary>Nom du champ désigné par une erreur (ErreurDto.Champ), ex. date_peremption.</summary>
+    [Parameter] public string? DataChamp { get; set; }
+    [Parameter] public string Largeur { get; set; } = "110px";
+    /// <summary>Signalé invalide par l'écran (ex. date déjà passée).</summary>
+    [Parameter] public bool Erreur { get; set; }
+
+    private string texte = "";
+    private bool illisible;
+    private DateOnly? derniere;
+    private bool Invalide => illisible || Erreur;
+
+    protected override void OnParametersSet()
+    {
+        // Valeur changée par l'écran (scan Data Matrix, reprise d'une réception) : affichée en JJ/MM/AAAA
+        if (Value != derniere)
+        {
+            derniere = Value;
+            texte = Value?.ToString("dd/MM/yyyy") ?? "";
+            illisible = false;
+        }
+    }
+
+    private async Task ChangerAsync(ChangeEventArgs e)
+    {
+        var saisie = e.Value?.ToString() ?? "";
+        var date = LecturePeremption.Lire(saisie);
+        illisible = date is null && saisie.Trim().Length > 0;
+        texte = date?.ToString("dd/MM/yyyy") ?? saisie;
+        if (illisible) return;
+        derniere = date;
+        await ValueChanged.InvokeAsync(date);
+    }
+}

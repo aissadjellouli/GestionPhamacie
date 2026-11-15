@@ -1,0 +1,124 @@
+@page "/patients/droits-chifa"
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Contrôle de fin de droits Chifa (2026-11-15) : patients CNAS/CASNOS dont la date de fin de droits est dépassée ou dans les N jours
+   (Administration › Caisse). Liste filtrée et paginée par le serveur ; écran fixe, seul le tableau défile. « Mettre à jour la date » :
+   enregistrée tout de suite (journal patient_modifie). Jamais de blocage de vente. *@
+<div class="page avec-menu">
+    <NavDomaine Libelle="Écrans des patients" />
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Droits expirés ou bientôt expirés</h1>
+                <p class="sous-titre">Patients CNAS / CASNOS dont la fin de droits Chifa est dépassée ou proche : prévenez-les, ou mettez à jour la date lue sur leur carte.</p>
+            </div>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+        <div class="filtres-liste" role="search" aria-label="Filtrer la liste">
+            <div class="champ" style="flex: 0 1 220px"><label for="sd-etat">État</label>
+                <select id="sd-etat" data-champ="etat" @bind="filtreEtat" @bind:after="() => ChargerAsync(1, taille)">
+                    <option value="">Expirés et bientôt expirés</option><option value="expires">Expirés</option><option value="bientot">Bientôt expirés</option>
+                </select></div>
+            <div class="champ" style="flex: 0 1 180px"><label for="sd-org">Organisme</label>
+                <select id="sd-org" data-champ="organisme" @bind="filtreOrganisme" @bind:after="() => ChargerAsync(1, taille)">
+                    <option value="">CNAS et CASNOS</option><option value="CNAS">CNAS</option><option value="CASNOS">CASNOS</option>
+                </select></div>
+            <div class="champ" style="flex: 0 1 170px"><label for="sd-du">Fin de droits du</label>
+                <input id="sd-du" data-champ="du" type="date" @bind="du" @bind:after="() => ChargerAsync(1, taille)" /></div>
+            <div class="champ" style="flex: 0 1 170px"><label for="sd-au">au</label>
+                <input id="sd-au" data-champ="au" type="date" @bind="au" @bind:after="() => ChargerAsync(1, taille)" /></div>
+        </div>
+
+        <div class="tableau-cadre">
+            <table class="tableau" style="min-width: 900px">
+                <thead><tr><th scope="col">Patient</th><th scope="col">N° d’assuré</th><th scope="col">Rang</th><th scope="col">Organisme</th><th scope="col">Fin de droits</th><th scope="col">Dernière vente</th><th scope="col">Actions</th></tr></thead>
+                <tbody>
+                    @if (liste is null) { <tr><td colspan="7"><Chargement /></td></tr> }
+                    else
+                    {
+                        @foreach (var l in liste.Lignes)
+                        {
+                            <tr>
+                                <td><LienContact Type="patient" Id="l.PatientId" Nom="@l.Nom" /></td>
+                                <td>@(l.NumAssure ?? "—")</td>
+                                <td>@(l.Rang ?? "—")</td>
+                                <td>@l.Organisme</td>
+                                <td>
+                                    @Libelles.Date(l.DateFinDroit)
+                                    <br /><span class="pastille @(l.Etat == "expires" ? "urgent" : "attention")">@(l.Etat == "expires" ? "expirés" : "bientôt expirés")</span>
+                                </td>
+                                <td>@(l.DerniereVente is { } dv ? Libelles.DateHeureLocale(dv) : "—")</td>
+                                <td>
+                                    @if (edition == l.PatientId)
+                                    {
+                                        <input type="date" aria-label="Nouvelle date de fin de droits" data-champ="maj_fin_droit" style="width: auto" @bind="nouvelleDate" />
+                                        <button type="button" class="lien-bouton" style="margin-left: 6px" disabled="@(nouvelleDate is null || enCours)" @onclick="() => EnregistrerAsync(l.PatientId)">Enregistrer</button>
+                                        <button type="button" class="lien-bouton" style="margin-left: 6px" @onclick="() => edition = null">Annuler</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="lien-bouton" @onclick="() => { edition = l.PatientId; nouvelleDate = null; }">Mettre à jour la date</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        @if (liste.Lignes.Count == 0) { <tr><td colspan="7" class="vide">Aucun patient aux droits expirés ou bientôt expirés.</td></tr> }
+                    }
+                </tbody>
+            </table>
+        </div>
+        <Pagination Total="@(liste?.Total ?? 0)" Numero="@(liste?.Numero ?? 1)" Taille="taille" Occupe="enCours"
+                    Libelle="Pages des patients aux droits expirés" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+    </div>
+</div>
+
+@code {
+    private PageDto<SuiviDroitChifaDto>? liste;
+    private string filtreEtat = "", filtreOrganisme = "";
+    private DateOnly? du, au, nouvelleDate;
+    private long? edition;
+    private int taille = Pagination.TailleParDefaut;
+    private bool enCours;
+    private string? erreur;
+
+    protected override Task OnInitializedAsync()
+    {
+        Historique.Suivre("patients/droits-chifa", e =>
+        {
+            e.Mettre("etat", filtreEtat); e.Mettre("organisme", filtreOrganisme);
+            e.Mettre("du", du); e.Mettre("au", au);
+            e.Mettre("page", liste?.Numero ?? 1); e.Mettre("taille", taille);
+        });
+        var numero = 1;
+        if (Historique.Restaurer("patients/droits-chifa") is { } h)
+        {
+            filtreEtat = h.Texte("etat") is "expires" or "bientot" ? h.Texte("etat")! : "";
+            filtreOrganisme = h.Texte("organisme") is "CNAS" or "CASNOS" ? h.Texte("organisme")! : "";
+            (du, au) = (h.Date("du"), h.Date("au"));
+            (numero, taille) = (h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        }
+        return ChargerAsync(numero, taille);
+    }
+
+    private async Task ChargerAsync(int numero, int t)
+    {
+        enCours = true;
+        taille = t;
+        (liste, erreur) = await Api.SuiviDroitsChifaAsync(filtreEtat == "" ? null : filtreEtat, filtreOrganisme == "" ? null : filtreOrganisme, du, au, numero, t);
+        enCours = false;
+    }
+
+    private async Task EnregistrerAsync(long patientId)
+    {
+        if (nouvelleDate is not { } d) return;
+        enCours = true;
+        erreur = await Api.FinDroitPatientAsync(patientId, d);
+        enCours = false;
+        if (erreur is not null) return;
+        edition = null;
+        await ChargerAsync(liste?.Numero ?? 1, taille);
+    }
+}

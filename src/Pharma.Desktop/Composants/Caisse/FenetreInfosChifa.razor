@@ -1,0 +1,49 @@
+@inject ApiClient Api
+
+@* Informations Chifa d'une vente (Finances › Chifa, 2026-11-15, script 100) : modifiables tant que la vente n'est ni annulée ni dans un
+   bordereau ; enregistrement journalisé. *@
+<div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-infos-chifa">
+    <section class="panneau" style="width: min(980px, 96vw); display: flex; flex-direction: column; gap: 10px">
+        <h2 id="t-infos-chifa" style="margin: 0">Informations Chifa · vente @Numero</h2>
+        @if (vente is null && erreur is null) { <Chargement /> }
+        @if (vente is { } v)
+        {
+            <p class="detail" style="margin: 0">
+                @(v.Patient ?? "Patient inconnu")@(v.NumAssure is { } n ? $" · {n}" : "") · @v.Organisme · encaissée le @Libelles.DateHeureLocale(v.Date)
+                · part organisme @Libelles.Dinars(v.PartOrganisme, 2)@(v.FactureChifa is { } f ? $" · facture Chifa n° {f}" : "")
+            </p>
+            <ChampsInfosChifa Saisie="saisie" OrganismeId="v.OrganismeId" PatientId="v.PatientId" CentreHabituelId="v.CentreHabituelId" />
+        }
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end">
+            <button type="button" class="btn" disabled="@enCours" @onclick="OnFerme">Annuler</button>
+            <button type="button" class="btn btn-principal" disabled="@(enCours || vente is null)" @onclick="EnregistrerAsync">@(enCours ? "Enregistrement…" : "Enregistrer")</button>
+        </div>
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public long VenteId { get; set; }
+    [Parameter] public string Numero { get; set; } = "";
+    [Parameter] public EventCallback OnFerme { get; set; }
+    [Parameter] public EventCallback OnEnregistre { get; set; }
+
+    private VenteChifaDto? vente;
+    private ChampsInfosChifa.SaisieInfosChifa saisie = new();
+    private string? erreur;
+    private bool enCours;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (vente, erreur) = await Api.VenteChifaAsync(VenteId);
+        if (vente is not null) saisie = ChampsInfosChifa.SaisieInfosChifa.Depuis(vente);
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        enCours = true;
+        erreur = await Api.EnregistrerInfosChifaAsync(VenteId, saisie.VersRequete());
+        enCours = false;
+        if (erreur is null) await OnEnregistre.InvokeAsync();
+    }
+}

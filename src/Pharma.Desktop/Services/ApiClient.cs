@@ -637,6 +637,14 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(FichePatientDto?, string?)> FichePatientAsync(long id) => GetAsync<FichePatientDto?>($"api/patients/{id}/fiche", null);
     public async Task<string?> ModifierPatientAsync(FichePatientDto f) =>
         (await EnvoyerCorpsAsync<FichePatientDto, object>(HttpMethod.Put, $"api/patients/{f.Id}", f)).Item2;
+    /// <summary>Date de fin de droits Chifa du patient (journalisée, patient_modifie).</summary>
+    public async Task<string?> FinDroitPatientAsync(long patientId, DateOnly? date) =>
+        (await EnvoyerCorpsAsync<FinDroitDto, object>(HttpMethod.Put, $"api/patients/{patientId}/fin-droit", new(date))).Item2;
+    /// <summary>Patients › « Droits expirés ou bientôt expirés » ; etat : expires, bientot ou null.</summary>
+    public Task<(PageDto<SuiviDroitChifaDto>?, string?)> SuiviDroitsChifaAsync(string? etat, string? organisme, DateOnly? du, DateOnly? au, int page, int taille) =>
+        GetAsync<PageDto<SuiviDroitChifaDto>?>($"api/patients/droits-chifa?page={page}&taille={taille}"
+            + (etat is null ? "" : $"&etat={etat}") + (organisme is null ? "" : $"&organisme={organisme}")
+            + (du is { } d ? $"&du={d:yyyy-MM-dd}" : "") + (au is { } a ? $"&au={a:yyyy-MM-dd}" : ""), null);
     public Task<(List<VendeurComptoirDto>, string?)> ValidateursBlocageAsync() =>
         GetAsync<List<VendeurComptoirDto>>("api/produits/validateurs-blocage", []);
     public Task<(FicheProduitModifiableDto?, string?)> FicheProduitAsync(long id) => GetAsync<FicheProduitModifiableDto?>($"api/produits/{id}/fiche", null);
@@ -891,6 +899,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             + (string.IsNullOrWhiteSpace(filtre) || filtre == "tous" ? "" : $"&filtre={Uri.EscapeDataString(filtre)}")
             + (string.IsNullOrWhiteSpace(rayon) ? "" : $"&rayon={Uri.EscapeDataString(rayon)}"), null);
 
+    /// <summary>Entrées de stock (lots) paginées et filtrées : produit, n° de lot ou code-barres ; épuisés compris ou non.</summary>
+    public Task<(PageDto<EntreeStockDto>?, string?)> EntreesStockAsync(string? recherche, bool epuises, int page, int taille) =>
+        GetAsync<PageDto<EntreeStockDto>?>("api/stock/entrees?" + Requete(("q", recherche), ("epuises", epuises ? "true" : null), ("page", page), ("taille", taille)), null);
+    public Task<(List<CorrectionLotDto>, string?)> CorrectionsLotAsync(long lotId) => GetAsync<List<CorrectionLotDto>>($"api/lots/{lotId}/corrections", []);
+    public Task<(EntreeStockDto?, string?)> CorrigerEntreeStockAsync(long lotId, CorrectionLotSaisie c) =>
+        PostAsync<CorrectionLotSaisie, EntreeStockDto>($"api/lots/{lotId}/corrections", c);
+
     public Task<(EtatEtiquetageDto?, string?)> EtiquetageAsync() =>
         GetAsync<EtatEtiquetageDto?>("api/tracabilite/etiquetage", null);
 
@@ -1014,6 +1029,29 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // ---- Volet Chifa repris par son QR code ----
     public Task<(VoletChifaDto?, string?)> LireVoletChifaAsync(string texte) => PostAsync<LireVoletChifaRequete, VoletChifaDto>("api/caisse/volet-chifa", new(texte));
     // Circuit « la caisse d'abord » (2026-11-15) : ventes candidates au rattachement du volet, rattachement, listes
+    // ---- Volet Chifa : compléments (script 100) ----
+    // Types de prestation (script 105)
+    public Task<(PageDto<TypePrestationDto>?, string?)> TypesPrestationAsync(bool? actif, string? q, int page, int taille) =>
+        GetAsync<PageDto<TypePrestationDto>?>($"api/types-prestation?page={page}&taille={taille}&" + Requete(("actif", actif), ("q", q)), null);
+    public async Task<string?> EnregistrerTypePrestationAsync(long? id, TypePrestationSaisie s) => id is { } i
+        ? (await EnvoyerCorpsAsync<TypePrestationSaisie, TypePrestationDto>(HttpMethod.Put, $"api/types-prestation/{i}", s)).Item2
+        : (await PostAsync<TypePrestationSaisie, TypePrestationDto>("api/types-prestation", s)).Item2;
+    public Task<(PageDto<CentrePayeurDto>?, string?)> CentresPayeursAsync(long? organismeId, bool? actif, string? q, int page, int taille) =>
+        GetAsync<PageDto<CentrePayeurDto>?>($"api/centres-payeurs?page={page}&taille={taille}&" + Requete(("organismeId", organismeId), ("actif", actif), ("q", q)), null);
+    public async Task<string?> EnregistrerCentrePayeurAsync(long? id, CentrePayeurSaisie s) => id is { } i
+        ? (await EnvoyerCorpsAsync<CentrePayeurSaisie, CentrePayeurDto>(HttpMethod.Put, $"api/centres-payeurs/{i}", s)).Item2
+        : (await PostAsync<CentrePayeurSaisie, CentrePayeurDto>("api/centres-payeurs", s)).Item2;
+    public Task<(PageDto<VenteChifaDto>?, string?)> VentesChifaAsync(string? q, long? centrePayeurId, string exclues, int page, int taille) =>
+        GetAsync<PageDto<VenteChifaDto>?>($"api/chifa/ventes?page={page}&taille={taille}&" + Requete(("q", q), ("centrePayeurId", centrePayeurId), ("exclues", exclues)), null);
+    public Task<(VenteChifaDto?, string?)> VenteChifaAsync(long id) => GetAsync<VenteChifaDto?>($"api/chifa/ventes/{id}", null);
+    public Task<(List<EmployeChoixDto>, string?)> EmployesChifaAsync() => GetAsync<List<EmployeChoixDto>>("api/chifa/employes", []);
+    public async Task<string?> EnregistrerInfosChifaAsync(long venteId, ChifaInfosSaisie s) =>
+        (await EnvoyerCorpsAsync<ChifaInfosSaisie, object>(HttpMethod.Put, $"api/ventes/{venteId}/chifa", s)).Item2;
+    public async Task<string?> ExclureVenteChifaAsync(long venteId, string motifCode, string? texte) =>
+        (await PostAsync<ExclusionChifaRequete, object>($"api/ventes/{venteId}/chifa/exclusion", new(motifCode, texte))).Item2;
+    public async Task<string?> RetablirVenteChifaAsync(long venteId) =>
+        (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/ventes/{venteId}/chifa/exclusion", null)).Item2;
+
     public Task<(RapprochementVoletDto?, string?)> RapprochementVoletAsync(string texte) =>
         PostAsync<LireVoletChifaRequete, RapprochementVoletDto>("api/caisse/volet-chifa/rapprochement", new(texte));
     public async Task<string?> GarderPatientVoletAsync(string texte, long patientId, string? patient, string? numAssure) =>

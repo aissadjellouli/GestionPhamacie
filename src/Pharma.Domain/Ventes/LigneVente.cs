@@ -4,8 +4,18 @@ public class LigneVente
 {
     public long Id { get; init; }
     public long VenteId { get; init; }
-    public long ProduitId { get; init; }
-    public long LotId { get; init; }
+    /// <summary>Produit vendu ; null pour une prestation (script 105 : une ligne est soit un produit et son lot, soit une prestation).</summary>
+    public long? ProduitId { get; init; }
+    /// <summary>Lot vendu ; null pour une prestation (aucun stock).</summary>
+    public long? LotId { get; init; }
+    /// <summary>Prestation vendue (script 105) ; null pour une ligne produit.</summary>
+    public long? TypePrestationId { get; init; }
+    /// <summary>Prestation : libellé figé à la vente ; null pour une ligne produit.</summary>
+    public string? Libelle { get; init; }
+    /// <summary>Prestation : taux de TVA figé à la vente ; null pour une ligne produit (TVA du produit).</summary>
+    public decimal? TauxTva { get; init; }
+    /// <summary>Ligne de prestation : ni produit, ni lot, ni stock, ni part de l'organisme, ni retour.</summary>
+    public bool EstPrestation => TypePrestationId is not null;
     public int Quantite { get; init; }
     /// <summary>Prix de vente d'une boîte : PPA du lot (ou prix du catalogue) plus le SHP.</summary>
     public decimal PrixUnitaire { get => _prix; init => _prix = value; }

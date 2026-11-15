@@ -8,7 +8,18 @@ namespace Pharma.Application.Caisse;
 /// sur un médicament) de la ligne, au pourcentage PctReduction.
 /// </summary>
 public sealed record LigneTicket(string Produit, int Quantite, decimal PrixUnitaire, decimal Montant, decimal PartOrganisme, decimal Shp = 0, bool Medicament = true,
-    decimal Reduction = 0, decimal PctReduction = 0, bool DonPartiel = false);
+    decimal Reduction = 0, decimal PctReduction = 0, bool DonPartiel = false, decimal? TauxTva = null)
+{
+    /// <summary>Libellé imprimé : prestation (TauxTva renseigné, script 105) suivie de son taux de TVA.</summary>
+    public string Designation => LibelleTicket.Ligne(Produit, TauxTva);
+}
+
+/// <summary>Libellé d'une ligne de ticket : une prestation (sans stock, script 105) porte son taux de TVA.</summary>
+public static class LibelleTicket
+{
+    public static string Ligne(string produit, decimal? tauxTva) =>
+        tauxTva is { } t ? $"{produit} (prestation, TVA {t.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))} %)" : produit;
+}
 
 /// <summary>Contenu du ticket de caisse ; le poste le met en page et l'imprime.</summary>
 public sealed record TicketVente(
@@ -16,7 +27,7 @@ public sealed record TicketVente(
     string? Organisme, decimal? TauxTiersPayant, IReadOnlyList<LigneTicket> Lignes,
     decimal MontantBrut, decimal Remise, decimal PartOrganisme, decimal PartPatient, string? Mode,
     string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null, decimal DonPartiel = 0,
-    decimal EcartChifa = 0, string? Client = null);
+    decimal EcartChifa = 0, string? Client = null, decimal MajorationChifa = 0);
 
 /// <summary>
 /// Ticket en PDF (2026-11-15) : montré à l'écran quand l'imprimante de tickets du poste enregistre un fichier (Microsoft Print to PDF…)

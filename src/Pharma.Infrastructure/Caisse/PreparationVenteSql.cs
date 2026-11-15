@@ -80,4 +80,8 @@ public sealed class PreparationVenteSql(NpgsqlDataSource db) : IPreparationVente
                 r.IsDBNull(5) ? null : DateOnly.FromDateTime(r.GetDateTime(5)));
         return situations;
     }
+
+    /// <summary>Types de prestation du panier (script 105).</summary>
+    public Task<IReadOnlyDictionary<long, Pharma.Domain.Ventes.TypePrestation>> PrestationsAsync(IEnumerable<long> ids, CancellationToken ct = default) =>
+        TypesPrestationSql.ParIdsAsync(db, ids, ct);
 }

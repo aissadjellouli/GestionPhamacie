@@ -15,7 +15,9 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
                    -- Écart Chifa payé par le patient : notre prix gardé au-dessus du prix du volet
                    (SELECT COALESCE(SUM((l.prix_unitaire - l.prix_chifa) * l.quantite), 0) FROM ligne_vente l
                     WHERE l.vente_id = v.id AND l.prix_chifa IS NOT NULL AND l.prix_unitaire > l.prix_chifa),
-                   {RemiseVenteSql.Titulaire}, {RemiseVenteSql.RemisA}, {RemiseVenteSql.Pour}
+                   {RemiseVenteSql.Titulaire}, {RemiseVenteSql.RemisA}, {RemiseVenteSql.Pour},
+                   -- Majoration Chifa (script 100, D-3) : à la charge de l'organisme, ajoutée à sa part
+                   v.chifa_majoration_montant
             FROM vente v
             JOIN utilisateur u ON u.id = v.utilisateur_id
             LEFT JOIN session_caisse s ON s.id = v.session_caisse_id
@@ -31,18 +33,23 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
                 r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.IsDBNull(11) ? null : r.GetString(11),
                 null, null, null, null, null, r.GetDecimal(12), r.GetDecimal(13),
                 // « Remis à » / « Pour » (script 091) : seul cas où un nom figure sur le ticket
-                Pharma.Application.Caisse.RemiseVente.Complement(S(r, 15), S(r, 16)) is null ? null : Pharma.Application.Caisse.RemiseVente.Libelle(S(r, 14), S(r, 15), S(r, 16)));
+                Pharma.Application.Caisse.RemiseVente.Complement(S(r, 15), S(r, 16)) is null ? null : Pharma.Application.Caisse.RemiseVente.Libelle(S(r, 14), S(r, 15), S(r, 16)),
+                r.GetDecimal(17));
             static string? S(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
         }
 
         var lignes = new List<LigneTicket>();
         await using (var cmd = db.CreateCommand("""
-            SELECT p.nom_commercial, l.quantite, l.prix_unitaire, l.prix_unitaire * l.quantite, l.montant_organisme, l.shp,
-                   COALESCE((SELECT c.medicament FROM categorie_produit c WHERE c.code = p.categorie), true),
+            SELECT COALESCE(p.nom_commercial, l.libelle), l.quantite, l.prix_unitaire, l.prix_unitaire * l.quantite, l.montant_organisme, l.shp,
+                   -- Prestation (script 105) : hors médicaments
+                   CASE WHEN l.produit_id IS NULL THEN false
+                        ELSE COALESCE((SELECT c.medicament FROM categorie_produit c WHERE c.code = p.categorie), true) END,
                    l.reduction_auto + l.reduction_manuelle,
                    CASE WHEN l.reduction_manuelle > 0 THEN LEAST(l.remise_auto_pct + COALESCE(NULLIF(v.remise_pct, 0), 0), 100) ELSE l.remise_auto_pct END,
-                   l.don_partiel
-            FROM ligne_vente l JOIN produit p ON p.id = l.produit_id JOIN vente v ON v.id = l.vente_id
+                   l.don_partiel,
+                   -- Prestation : taux de TVA figé, imprimé sur sa ligne
+                   l.taux_tva
+            FROM ligne_vente l LEFT JOIN produit p ON p.id = l.produit_id JOIN vente v ON v.id = l.vente_id
             WHERE l.vente_id = $1 ORDER BY l.id
             """))
         {
@@ -50,7 +57,7 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
             await using var r = await cmd.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct))
                 lignes.Add(new LigneTicket(r.GetString(0), r.GetInt32(1), r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), r.GetBoolean(6),
-                    r.GetDecimal(7), r.GetDecimal(8), r.GetBoolean(9)));
+                    r.GetDecimal(7), r.GetDecimal(8), r.GetBoolean(9), r.IsDBNull(10) ? null : r.GetDecimal(10)));
         }
         // Retours clients déjà enregistrés sur cette vente : rappelés sur le ticket réimprimé
         var retours = new List<string>();

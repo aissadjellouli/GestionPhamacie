@@ -63,6 +63,23 @@ public static class RegleFactureAchat
         return new TotauxFactureAchat(ht, remise, ht - remise, tva, timbre, ht - remise + tva + timbre, shp, ppa);
     }
 
+    /// <summary>Écart maximal entre la date de la facture du grossiste et la livraison (D-6, 2026-11-15).</summary>
+    public const int JoursMaxFactureAvantLivraison = 90;
+
+    /// <summary>
+    /// Date de la facture du grossiste (facultative, D-6 du 2026-11-15) : jamais dans le futur, jamais plus de 90 jours avant la
+    /// livraison (réception du jour).
+    /// </summary>
+    public static void VerifierDateFacture(DateOnly? dateFacture, DateOnly livraison)
+    {
+        if (dateFacture is not { } d) return;
+        if (d > livraison)
+            throw new RegleMetierException($"Date de facture du {d:dd/MM/yyyy} : elle ne peut pas être dans le futur.", "date_facture");
+        if (d < livraison.AddDays(-JoursMaxFactureAvantLivraison))
+            throw new RegleMetierException(
+                $"Date de facture du {d:dd/MM/yyyy} : plus de {JoursMaxFactureAvantLivraison} jours avant la livraison du {livraison:dd/MM/yyyy}. Vérifiez la date.", "date_facture");
+    }
+
     public static void Verifier(IReadOnlyList<LigneReceptionSaisie> lignes, decimal timbre)
     {
         if (timbre < 0) throw new RegleMetierException("Le timbre ne peut pas être négatif.", "timbre");

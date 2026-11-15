@@ -60,11 +60,19 @@ public static class CodeComptoir
     /// </summary>
     public const string ActionEcartVoletChifa = "prix.modifier:volet_chifa_ecart";
 
+    /// <summary>
+    /// Choisir « S'aligner sur Chifa » ou « Garder notre prix » pour une ligne de volet Chifa dont l'écart atteint le seuil, à
+    /// l'encaissement (2026-11-15) : accordable par le code d'un ayant droit « prix.modifier » pour cette seule action, y compris sur une
+    /// connexion par code comptoir. Le reste de prix.modifier reste fermé au code comptoir.
+    /// </summary>
+    public const string ActionChoixPrixChifa = "prix.modifier:choix_prix_chifa";
+
     /// <summary>Action accordable par code → droit que le valideur doit avoir.</summary>
     public static readonly IReadOnlyDictionary<string, string> ActionsAutorisables = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         [ActionReglementGrossisteTiroir] = Permissions.AchatsRegler,
-        [ActionEcartVoletChifa] = Permissions.PrixModifier
+        [ActionEcartVoletChifa] = Permissions.PrixModifier,
+        [ActionChoixPrixChifa] = Permissions.PrixModifier
     };
 
     /// <summary>Droit que le valideur doit détenir : celui de l'action, sinon la permission elle-même.</summary>

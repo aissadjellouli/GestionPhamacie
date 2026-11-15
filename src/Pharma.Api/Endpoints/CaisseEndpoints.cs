@@ -32,7 +32,7 @@ internal static class CaisseEndpoints
                 return Results.Ok(new EtatCaisseDto(e.SessionId, e.OuverteLe, e.FondCaisse, e.Poste,
                     e.Parametres.ComptageAveugle, e.Parametres.FondCaisseDefaut, e.Parametres.SeuilEcart,
                     e.Parametres.DeconnexionMinutes, e.PeutVoirEcart, e.VentesEspecesVisibles, e.OuvertePar, user.ParCodeComptoir(), e.Parametres.PlafondCreditDefaut,
-                    e.Parametres.SeuilEcartChifa));
+                    e.Parametres.SeuilEcartChifa, e.Parametres.JoursAlerteFinDroit));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -165,8 +165,8 @@ internal static class CaisseEndpoints
                 var t = await obtenir.ExecuterAsync(id, ct);
                 return Results.Ok(new TicketDto(t.Numero, t.Date, t.Vendeur, t.Poste, t.Statut, t.Organisme, t.TauxTiersPayant,
                     t.Lignes.Select(l => new LigneTicketDto(l.Produit, l.Quantite, l.PrixUnitaire, l.Montant, l.PartOrganisme, l.Shp, l.Medicament,
-                        l.Reduction, l.PctReduction, l.DonPartiel)).ToList(),
-                    t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif, t.Retours, t.DonPartiel, t.EcartChifa, t.Client));
+                        l.Reduction, l.PctReduction, l.DonPartiel, l.TauxTva)).ToList(),
+                    t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif, t.Retours, t.DonPartiel, t.EcartChifa, t.Client, t.MajorationChifa));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -349,7 +349,7 @@ internal static class CaisseEndpoints
         catch (ArgumentException) { throw new RegleMetierException($"Mode de paiement inconnu : {d.Mode}."); }
 
         return new CommandeVente(
-            d.Lignes.Requise().Select(l => new LigneCommande(l.ProduitId, l.LotId, l.Quantite, l.Boites, l.RaisonLot)).ToList(),
+            d.Lignes.Requise().Select(l => new LigneCommande(l.ProduitId, l.LotId, l.Quantite, l.Boites, l.RaisonLot, l.TypePrestationId)).ToList(),
             d.TiersPayant, d.OrganismeId, d.TauxTiersPayant, d.PatientId,
             d.Ordonnance is { } o ? new OrdonnanceSaisie(o.MedecinId, o.DatePrescription, o.Numero, o.JetonScan, o.TexteReconnu,
                 o.PorteurNom is null && o.PorteurAdresse is null && o.PorteurPiece is null ? null : new PorteurOrdonnance(o.PorteurNom, o.PorteurAdresse, o.PorteurPiece)) : null,

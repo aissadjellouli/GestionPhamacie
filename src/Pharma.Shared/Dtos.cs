@@ -109,12 +109,22 @@ public sealed record EtatCaisseDto(
     long? SessionId, DateTime? OuverteLe, decimal? FondCaisse, string? Poste,
     bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes,
     bool PeutVoirEcart, decimal? VentesEspeces, string? OuvertePar = null, bool ConnexionParCode = false, decimal PlafondCreditDefaut = 0,
-    decimal SeuilEcartChifa = 5);
+    decimal SeuilEcartChifa = 5, int JoursAlerteFinDroit = EtatDroitsChifa.JoursAlerteParDefaut);
 
 public sealed record OuvrirCaisseRequete(string? Poste, decimal? FondCaisse);
 
 /// <summary>Boites : boîtes identifiées scannées (étiquette interne ou n° de série), rattachées à la vente.</summary>
-public sealed record LigneCommandeDto(long ProduitId, long LotId, int Quantite, IReadOnlyList<long>? Boites = null, string? RaisonLot = null);
+/// <summary>
+/// Ligne du panier : un produit et son lot (ProduitId + LotId), ou une prestation (TypePrestationId seul, script 105) ; exactement l'un des
+/// deux (400 sinon).
+/// </summary>
+public sealed record LigneCommandeDto(long? ProduitId, long? LotId, int Quantite, IReadOnlyList<long>? Boites = null, string? RaisonLot = null,
+    long? TypePrestationId = null);
+
+/// <summary>Type de prestation vendu à la caisse sans stock (script 105) : prix TTC et taux de TVA figés sur la ligne de vente.</summary>
+public sealed record TypePrestationDto(long Id, string Code, string Libelle, decimal Prix, decimal TauxTva, bool Actif);
+/// <summary>Ajout ou modification d'un type de prestation (droit catalogue.creer).</summary>
+public sealed record TypePrestationSaisie(string Code, string Libelle, decimal Prix, decimal TauxTva, bool Actif = true);
 /// <summary>Médecin obligatoire pour un psychotrope ; JetonScan : image envoyée par POST api/ordonnances/scans.</summary>
 /// <summary>Porteur* : à remplir quand le porteur de l'ordonnance n'est pas le patient (psychotrope).</summary>
 public sealed record OrdonnanceDto(long? MedecinId, DateOnly DatePrescription, string? Numero,
@@ -200,7 +210,14 @@ public sealed record ComptageIntermediaireDto(DateTime Le, string Employe, decim
 /// <summary>VersementCloture : manuel ou automatique (argent des caisses clôturées vers le coffre).</summary>
 public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel",
     decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true, decimal SeuilEcartChifa = 5,
-    int DelaiVoletChifaJours = 7, decimal SeuilSortieTiroir = 2000);
+    int DelaiVoletChifaJours = 7, decimal SeuilSortieTiroir = 2000, int JoursAlerteFinDroit = EtatDroitsChifa.JoursAlerteParDefaut);
+
+/// <summary>Date de fin de droits Chifa saisie à la caisse ou dans la liste de suivi (vide : effacée).</summary>
+public sealed record FinDroitDto(DateOnly? DateFinDroit);
+
+/// <summary>Ligne de Patients › « Droits expirés ou bientôt expirés » ; Etat : expires ou bientot.</summary>
+public sealed record SuiviDroitChifaDto(long PatientId, string Nom, string? NumAssure, string? Rang, string? Organisme, DateOnly DateFinDroit,
+    string Etat, DateTime? DerniereVente);
 
 public sealed record EntreeJournalDto(DateTime Date, string Employe, string Action, string? Details, string? AutorisePar, long? EmployeId = null, long? AutoriseParId = null);
 
@@ -208,12 +225,12 @@ public sealed record EntreeJournalDto(DateTime Date, string Employe, string Acti
 
 public sealed record PatientDto(
     long Id, string Nom, string? Prenom, string? Telephone, string? NumAssure,
-    long? OrganismeId, string? Organisme, decimal PlafondCredit, decimal SoldeCredit);
+    long? OrganismeId, string? Organisme, decimal PlafondCredit, decimal SoldeCredit, DateOnly? DateFinDroit = null);
 
 /// <summary>Fiche complète d'un patient (SoldeCredit en lecture seule).</summary>
 public sealed record FichePatientDto(long Id, string Nom, string? Prenom, DateOnly? DateNaissance, string? Telephone, string? Email, string? NumAssure,
     long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0, string? Lien = null, long? AssurePrincipalId = null,
-    IReadOnlyList<ProchePatientDto>? Candidats = null, ProchePatientDto? Proposition = null);
+    IReadOnlyList<ProchePatientDto>? Candidats = null, ProchePatientDto? Proposition = null, DateOnly? DateFinDroit = null);
 /// <summary>
 /// Fiche proche d'un patient (script 090) : Candidats = fiches qui peuvent être son assuré principal (même n° de base, assuré actuel) ;
 /// Proposition = rattachement proposé (même n° de base, suffixe différent), à accepter ou non par le vendeur.
@@ -313,7 +330,7 @@ public sealed record LigneReceptionDto(
 
 public sealed record ReceptionRequete(
     long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionDto> Lignes, decimal Timbre = 0,
-    ValidationBlocageDto? Blocage = null);
+    ValidationBlocageDto? Blocage = null, DateOnly? DateFacture = null);
 
 /// <summary>Liste du médicament, prix public du catalogue, TVA et SHP proposé par boîte.</summary>
 public sealed record InfoAchatProduitDto(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite,
@@ -327,7 +344,17 @@ public sealed record DocumentReceptionDto(string? Numero, IReadOnlyList<Receptio
 
 public sealed record ReceptionResumeDto(
     long Id, string Fournisseur, string? NumeroBl, string? NumeroFacture, string? NumeroCommande,
-    DateTime Date, int NombreLots, int NombreBoites, decimal? MontantTtc, long? FournisseurId = null);
+    DateTime Date, int NombreLots, int NombreBoites, decimal? MontantTtc, long? FournisseurId = null, DateOnly? DateFacture = null);
+
+/// <summary>Entrée de stock (lot) en consultation : SHP par boîte (script 103), PPA du lot (null : prix du catalogue).</summary>
+public sealed record EntreeStockDto(long LotId, long ProduitId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite,
+    decimal? Ppa, decimal Shp, string Fournisseur, DateTime DateReception, bool Bloque, int Corrections);
+
+/// <summary>Correction d'une entrée de stock (droit stock.corriger_entree) : seuls les champs non nuls sont corrigés ; motif obligatoire.</summary>
+public sealed record CorrectionLotSaisie(decimal? Ppa, string? NumeroLot, DateOnly? DatePeremption, decimal? Shp, int? QuantiteRestante, string Motif);
+
+/// <summary>Une ligne du journal des corrections d'une entrée de stock (une par champ corrigé).</summary>
+public sealed record CorrectionLotDto(long Id, string Champ, string? AncienneValeur, string? NouvelleValeur, string? Motif, DateTimeOffset CorrigeLe, string CorrigePar);
 
 public sealed record DataMatrixRequete(string Code);
 public sealed record BoiteLueDto(string Gtin, string? NumeroLot, DateOnly? Peremption, string? NumeroSerie, long? ProduitId, string? Produit);
@@ -659,7 +686,12 @@ public sealed record RegistreDto(DateOnly Du, DateOnly Au, string? Produit, int 
 // ---- Ticket de caisse ------------------------------------------------------------
 
 public sealed record LigneTicketDto(string Produit, int Quantite, decimal PrixUnitaire, decimal Montant, decimal PartOrganisme, decimal Shp = 0, bool Medicament = true,
-    decimal Reduction = 0, decimal PctReduction = 0, bool DonPartiel = false);
+    decimal Reduction = 0, decimal PctReduction = 0, bool DonPartiel = false, decimal? TauxTva = null)
+{
+    /// <summary>Libellé imprimé : une prestation (TauxTva renseigné, script 105) porte son taux de TVA.</summary>
+    public string Designation => TauxTva is { } t
+        ? $"{Produit} (prestation, TVA {t.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))} %)" : Produit;
+}
 
 /// <summary>Mode : especes, carte, cheque ou credit ; Statut : validee ou annulee.</summary>
 public sealed record TicketDto(
@@ -667,7 +699,7 @@ public sealed record TicketDto(
     string? Organisme, decimal? TauxTiersPayant, IReadOnlyList<LigneTicketDto> Lignes,
     decimal MontantBrut, decimal Remise, decimal PartOrganisme, decimal PartPatient, string? Mode,
     string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null, decimal DonPartiel = 0,
-    decimal EcartChifa = 0, string? Client = null);
+    decimal EcartChifa = 0, string? Client = null, decimal MajorationChifa = 0);
 
 // ---- Affichage (clair, sombre, automatique) --------------------------------------
 
@@ -695,7 +727,8 @@ public sealed record MiseEnAttenteReceptionRequete(string? Libelle, string Mode,
 
 /// <summary>Boites : boîtes identifiées scannées (rattachées à la vente) ; RaisonLot et LotConseilleServi : choix du caissier sur le lot.</summary>
 public sealed record LignePanierAttenteDto(long ProduitId, string Nom, decimal Prix, LotFefoDto? Lot, int Quantite, bool BoiteScannee, int StockProduit,
-    IReadOnlyList<long>? Boites = null, string? RaisonLot = null, bool LotConseilleServi = false);
+    IReadOnlyList<long>? Boites = null, string? RaisonLot = null, bool LotConseilleServi = false,
+    long? TypePrestationId = null, decimal? TauxTva = null);   // prestation (script 105) : ProduitId 0, sans lot
 
 /// <summary>Panier mis en attente par le poste : lignes et règlement en cours de saisie.</summary>
 public sealed record PanierAttenteDto(
@@ -756,8 +789,11 @@ public static class DetailAutorisationChifa
             if (!lignes.Any(l => l.SequenceEqual(ligne))) lignes.Add(ligne);
         }
         return lignes.Count == 0 ? null
-            : new DetailAutorisationDto("Prix des lignes du volet Chifa", ["Produit", "Prix Chifa", "Notre prix", "Écart par boîte", "Choix demandé"], lignes, "prix.modifier");
+            : new DetailAutorisationDto("Prix des lignes du volet Chifa", ["Produit", "Prix Chifa", "Notre prix", "Écart par boîte", "Choix demandé"], lignes, ActionChoixPrixChifa);
     }
+
+    /// <summary>Action refusée par le serveur (CodeComptoir.ActionChoixPrixChifa) : le détail ne s'affiche que pour ce refus.</summary>
+    public const string ActionChoixPrixChifa = "prix.modifier:choix_prix_chifa";
 }
 
 // ---- Annulation d'une vente ------------------------------------------------------

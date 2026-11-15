@@ -1,0 +1,112 @@
+@inject ApiClient Api
+
+@* Informations Chifa d'une vente (2026-11-15, script 100) : date des soins, centre payeur, saisi dans Chifa par, majoration.
+   Utilisé au volet (Finances › Chifa) et au rattachement d'un volet. La 2e date du QR n'est jamais rangée d'office en date des soins
+   (décision D-1) : elle est seulement proposée, marquée « à vérifier ». *@
+<div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end" data-bloc="infos-chifa">
+    <div class="champ" style="flex: 0 0 170px">
+        <label for="ic-soins">Date des soins</label>
+        <input id="ic-soins" data-champ="date_soins" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="Saisie.DateSoins" @bind:after="() => Saisie.DateSoinsAVerifier = false" />
+        @if (DateQr is { } dq && Saisie.DateSoins != dq)
+        {
+            <button type="button" class="lien-bouton" @onclick="() => { Saisie.DateSoins = dq; Saisie.DateSoinsAVerifier = true; }">Reprendre la 2e date du QR (@dq.ToString("dd/MM/yyyy"))</button>
+        }
+        @if (Saisie.DateSoinsAVerifier) { <span class="pastille attention">à vérifier sur le volet</span> }
+    </div>
+    <div class="champ" style="flex: 1 1 200px">
+        <label for="ic-centre">Centre payeur</label>
+        <select id="ic-centre" data-champ="centre_payeur" @bind="Saisie.CentrePayeurId">
+            <option value="">—</option>
+            @foreach (var c in centres) { <option value="@c.Id">@c.Code · @c.Nom@(c.Actif ? "" : " (désactivé)")</option> }
+        </select>
+        @if (PatientId is not null && Saisie.CentrePayeurId is { } cp && cp != CentreHabituelId)
+        {
+            <label class="case"><input type="checkbox" @bind="Saisie.RetenirCentre" /><span>Centre habituel du patient</span></label>
+        }
+    </div>
+    <div class="champ" style="flex: 1 1 180px">
+        <label for="ic-saisi">Saisi dans Chifa par</label>
+        <select id="ic-saisi" data-champ="saisi_par" @bind="Saisie.SaisiParId">
+            @foreach (var e in employes) { <option value="@e.Id">@e.Nom</option> }
+        </select>
+    </div>
+    <div class="champ" style="flex: 0 0 170px">
+        <label for="ic-maj">Majoration</label>
+        <select id="ic-maj" data-champ="majoration_type" @bind="Saisie.MajorationType">
+            <option value="">Aucune</option>
+            @foreach (var m in majorations) { <option value="@m.Code">@m.Libelle</option> }
+        </select>
+    </div>
+    <div class="champ" style="flex: 0 0 130px">
+        <label for="ic-maj-m">Montant (DA)</label>
+        <input id="ic-maj-m" data-champ="majoration_montant" type="number" min="0" step="0.01" disabled="@(string.IsNullOrEmpty(Saisie.MajorationType))" @bind="Saisie.MajorationMontant" />
+    </div>
+</div>
+@if (Saisie.MajorationMontant > 0 && !string.IsNullOrEmpty(Saisie.MajorationType))
+{
+    <p class="detail" style="margin: 0">La majoration s’ajoute à la part de l’organisme (jamais payée par le patient).</p>
+}
+@if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+@code {
+    [Parameter, EditorRequired] public SaisieInfosChifa Saisie { get; set; } = default!;
+    [Parameter] public long? OrganismeId { get; set; }
+    [Parameter] public long? PatientId { get; set; }
+    [Parameter] public long? CentreHabituelId { get; set; }
+    /// <summary>2e date du QR du volet, proposée seulement (D-1).</summary>
+    [Parameter] public DateOnly? DateQr { get; set; }
+
+    private List<CentrePayeurDto> centres = [];
+    private List<EmployeChoixDto> employes = [];
+    private List<MotifReglableDto> majorations = [];
+    private long? organismeCharge;
+    private string? erreur;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (employes.Count == 0)
+        {
+            (employes, erreur) = await Api.EmployesChifaAsync();
+            var (m, e) = await Api.MotifsAsync("majoration_chifa");
+            majorations = m;
+            erreur ??= e;
+        }
+        if (OrganismeId != organismeCharge)
+        {
+            organismeCharge = OrganismeId;
+            centres = [];
+            if (OrganismeId is { } o)
+            {
+                var (p, e) = await Api.CentresPayeursAsync(o, null, null, 1, 200);
+                // Centres actifs, et celui déjà choisi s'il a été désactivé depuis
+                centres = p?.Lignes.Where(c => c.Actif || c.Id == Saisie.CentrePayeurId).ToList() ?? [];
+                erreur ??= e;
+            }
+        }
+        // Type de majoration choisi puis désactivé : gardé dans la liste
+        if (Saisie.MajorationType is { Length: > 0 } t && majorations.All(m => m.Code != t))
+            majorations = [.. majorations, new MotifReglableDto(0, "majoration_chifa", t, Saisie.MajorationLibelle ?? t, false, false)];
+    }
+
+    /// <summary>Saisie modifiable des informations Chifa (valeurs de la vente au départ, centre habituel du patient proposé).</summary>
+    public sealed class SaisieInfosChifa
+    {
+        public DateOnly? DateSoins { get; set; }
+        public bool DateSoinsAVerifier { get; set; }
+        public long? CentrePayeurId { get; set; }
+        public bool RetenirCentre { get; set; }
+        public long? SaisiParId { get; set; }
+        public string? MajorationType { get; set; }
+        public string? MajorationLibelle { get; set; }
+        public decimal MajorationMontant { get; set; }
+
+        public static SaisieInfosChifa Depuis(VenteChifaDto v) => new()
+        {
+            DateSoins = v.DateSoins, CentrePayeurId = v.CentrePayeurId ?? v.CentreHabituelId, SaisiParId = v.SaisiParId ?? v.VendeurId,
+            MajorationType = v.MajorationType, MajorationLibelle = v.Majoration, MajorationMontant = v.MajorationMontant
+        };
+
+        public ChifaInfosSaisie VersRequete() => new(DateSoins, CentrePayeurId, SaisiParId,
+            string.IsNullOrEmpty(MajorationType) ? null : MajorationType, string.IsNullOrEmpty(MajorationType) ? 0 : MajorationMontant, RetenirCentre);
+    }
+}

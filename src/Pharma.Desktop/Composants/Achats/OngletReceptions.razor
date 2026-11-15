@@ -295,6 +295,11 @@ else
                     <label for="r-fact">N° de facture (facultatif)</label>
                     <input id="r-fact" type="text" @bind="numeroFacture" @bind:event="oninput" @bind:after="DocumentSaisiAsync" />
                 </div>
+                <div class="champ" style="flex: 0 0 170px">
+                    @* Date de la facture du grossiste (facultative) : ni dans le futur, ni plus de 90 jours avant la livraison (serveur) *@
+                    <label for="r-date-fact">Date de facture</label>
+                    <input id="r-date-fact" data-champ="date_facture" type="date" @bind="dateFacture" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                </div>
             }
         </div>
         <p class="detail" style="margin: 0">Le QR code d’une facture contient son numéro (BL ou facture selon le grossiste) : cliquez dans la case, puis scannez-le avec la douchette.</p>
@@ -384,8 +389,8 @@ else
                                     }</td>
                                 <td><input type="text" style="width: 120px" aria-label="Numéro de lot de @l.Nom" @bind="l.NumeroLot" @bind:event="oninput" @bind:after="l.Reinitialiser"
                                            class="@(LotInvalide(l) ? "champ-invalide" : null)" aria-invalid="@(LotInvalide(l) ? "true" : "false")" /></td>
-                                <td><input type="date" aria-label="Péremption de @l.Nom" @bind="l.Peremption" @bind:after="l.Reinitialiser"
-                                           class="@(DateInvalide(l) ? "champ-invalide" : null)" aria-invalid="@(DateInvalide(l) ? "true" : "false")" /></td>
+                                <td><SaisiePeremption Libelle="@($"Péremption de {l.Nom} (MM/AA ou JJ/MM/AAAA)")" @bind-Value="l.Peremption" @bind-Value:after="l.Reinitialiser"
+                                                      Erreur="DateInvalide(l)" /></td>
                                 <td><input type="number" min="0" style="width: 80px" aria-label="@(Comptage ? $"Boîtes comptées de {l.Nom}" : $"Boîtes reçues de {l.Nom} (UG comprises)")" @bind="l.Quantite" /></td>
                                 @if (!Comptage)
                                 {
@@ -532,7 +537,7 @@ else
                 <tr>
                     <td>@Libelles.DateHeureLocale(r.Date)</td>
                     <td><LienContact Type="grossiste" Id="r.FournisseurId" Nom="@r.Fournisseur" /></td>
-                    <td>@(r.NumeroBl ?? "—")@if (r.NumeroFacture is not null){<br /><span class="detail">facture @r.NumeroFacture</span>}</td>
+                    <td>@(r.NumeroBl ?? "—")@if (r.NumeroFacture is not null || r.DateFacture is not null){<br /><span class="detail">facture @(r.NumeroFacture ?? "")@(r.DateFacture is { } df ? $" du {Libelles.Date(df)}" : "")</span>}</td>
                     <td>@(r.NumeroCommande ?? "sans")</td>
                     <td>@r.NombreLots</td>
                     <td>@(r.NombreBoites > 0 ? r.NombreBoites.ToString() : "—")</td>
@@ -633,6 +638,7 @@ else
     private readonly List<Ligne> lignes = [];
     private long fournisseurId, commandeId;
     private string? numeroBl, numeroFacture, scan, infoScan, erreur;
+    private DateOnly? dateFacture;
     private string texteProduit = "";
     private ChoixProduit? choixProduit;
     private ReceptionEnregistreeDto? resultat;
@@ -1068,7 +1074,7 @@ else
                 aEnvoyer.Select(l => new LigneReceptionDto(l.ProduitId, l.Nom, l.NumeroLot, l.Peremption!.Value, l.Quantite, l.Prix,
                     l.Gtin, l.Series.Count > 0 ? l.Series : null, l.LotSepare, l.EntrerBloque, l.RemisePct, l.Ppa, l.Shp,
                     l.Ug, l.UgCoutReparti, l.EcartPpa is not null && l.RemplacerPrixCatalogue)).ToList(), timbre,
-                accordBlocage.VersDto(Session.A("produits.bloquer")));
+                accordBlocage.VersDto(Session.A("produits.bloquer")), dateFacture);
 
             // Date différente d'un lot en stock ou lot bloqué : l'utilisateur choisit sur la ligne avant d'entrer en stock
             var (conflits, ec) = await Api.ConflitsReceptionAsync(Requete());
@@ -1135,7 +1141,7 @@ else
     {
         var aRemettre = resultat is null ? lignes.SelectMany(l => l.ScansMobile).ToList() : [];
         lignes.Clear();
-        (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
+        (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null); dateFacture = null;
         (dejaRecues, timbre) = ([], 0);
         (aFacturer, ecartFacture, aRecompter, empreinteInitiale) = (null, null, null, null);
         await ChargerComptagesAsync();
@@ -1214,7 +1220,7 @@ else
     private void ViderSaisie()
     {
         lignes.Clear();
-        (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
+        (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null); dateFacture = null;
         (dejaRecues, timbre) = ([], 0);
         (aFacturer, ecartFacture, aRecompter, empreinteInitiale) = (null, null, null, null);
         accordBlocage.Effacer();

@@ -171,6 +171,7 @@
     }
 
     @if (rubrique == "modifier") { <ModificationProduit /> }
+    @if (rubrique == "entrees") { <EntreesStock /> }
     @if (rubrique == "sortie") { <SortieStock LotInitial="Sortie" /> }
     @if (rubrique == "blocage") { <BlocageProduits /> }
     @if (rubrique == "remises") { <RemisesAutomatiques /> }
@@ -188,6 +189,7 @@
     private RubriqueStock[] Rubriques =>
     [
         new("produits", "Produits", "Par produit, avec lots, péremptions, grossistes et emplacement"),
+        new("entrees", "Entrées de stock", "Un lot par ligne : n° de lot, péremption, PPA, SHP, quantité ; correction tracée"),
         new("ensemble", "Vue d’ensemble", "Références, valeur du stock et lots à date à vérifier"),
         new("nouveau", "Nouveau produit", "Ajouter un produit au catalogue", Session.A("catalogue.creer")),
         new("modifier", "Modifier un produit", "Nom, DCI, dosage, forme, code-barres, prix, TVA, remboursement, activation", Session.A("catalogue.creer")),

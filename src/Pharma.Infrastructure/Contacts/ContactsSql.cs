@@ -34,7 +34,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             SELECT trim(concat_ws(' ', p.nom, p.prenom)), p.telephone, p.num_assure, o.nom, o.code, p.date_naissance, p.est_chronique,
                    p.plafond_credit, p.solde_credit, p.cree_le,
                    (SELECT max(v.date_vente) FROM vente v WHERE v.patient_id = p.id AND v.statut = 'validee'),
-                   o.id, p.email, p.assure_principal_id
+                   o.id, p.email, p.assure_principal_id, rang_assure(p.num_assure), p.date_fin_droit
             FROM patient p LEFT JOIN organisme o ON o.id = p.organisme_id
             WHERE p.id = $1
             """);
@@ -50,7 +50,14 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             var situation = new List<InfoContact> { new("Dette en cours", Da(r.GetDecimal(8)), r.GetDecimal(8) > 0 ? "montant_du" : null) };
             if (r.GetDecimal(7) > 0) situation.Add(new("Plafond de crédit", Da(r.GetDecimal(7))));
             Ajouter(situation, "Organisme", r.IsDBNull(3) ? null : $"{r.GetString(3)} ({r.GetString(4)})");
-            Ajouter(situation, "N° d'assuré", T(r, 2));
+            // Rang = suffixe « /NN » du n° d'assuré (script 102) ; fin de droits dépassée : signalée, sans blocage (D-4)
+            Ajouter(situation, "N° d'assuré", T(r, 2) is { } na ? (T(r, 14) is { } rang ? $"{na} · rang {rang}" : na) : null);
+            if (!r.IsDBNull(15))
+            {
+                var fin = r.GetFieldValue<DateOnly>(15);
+                var expires = Pharma.Application.Patients.DroitsChifa.Expires(fin, DateOnly.FromDateTime(DateTime.Now));
+                situation.Add(new InfoContact("Fin de droits Chifa", fin.ToString("dd/MM/yyyy") + (expires ? " (expirés)" : ""), expires ? "manquant" : null));
+            }
             Ajouter(situation, "Date de naissance", r.IsDBNull(5) ? null : r.GetFieldValue<DateOnly>(5).ToString("dd/MM/yyyy"));
             if (r.GetBoolean(6)) situation.Add(new("Malade chronique", "oui"));
             Ajouter(situation, "Dernier achat", r.IsDBNull(10) ? null : Date(r.GetDateTime(10)));

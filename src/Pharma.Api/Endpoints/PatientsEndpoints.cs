@@ -12,7 +12,7 @@ internal static class PatientsEndpoints
     {
         api.MapGet("/patients", async (string? q, RechercherPatients rechercher, CancellationToken ct) =>
                 Results.Ok((await rechercher.ExecuterAsync(q, ct)).Select(p => new PatientDto(
-                    p.Id, p.Nom, p.Prenom, p.Telephone, p.NumAssure, p.OrganismeId, p.Organisme, p.PlafondCredit, p.SoldeCredit))))
+                    p.Id, p.Nom, p.Prenom, p.Telephone, p.NumAssure, p.OrganismeId, p.Organisme, p.PlafondCredit, p.SoldeCredit, p.DateFinDroit))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         api.MapPost("/patients", async (NouveauPatientDto req, CreerPatient creer, ClaimsPrincipal user, CancellationToken ct) =>
@@ -31,7 +31,7 @@ internal static class PatientsEndpoints
                     .Select(Dto).ToList();
                 var proposition = FamillePatient.Proposition(f.Id, f.NumAssure, f.Lien, f.AssurePrincipalId, proches);
                 return Results.Ok(new FichePatientDto(f.Id, f.Nom, f.Prenom, f.DateNaissance, f.Telephone, f.Email, f.NumAssure, f.OrganismeId,
-                    f.Chronique, f.PlafondCredit, f.SoldeCredit, f.Lien, f.AssurePrincipalId, candidats, proposition is null ? null : Dto(proposition)));
+                    f.Chronique, f.PlafondCredit, f.SoldeCredit, f.Lien, f.AssurePrincipalId, candidats, proposition is null ? null : Dto(proposition), f.DateFinDroit));
                 static ProchePatientDto Dto(ProchePatient p) => new(p.Id, p.Nom, p.NumAssure, p.Lien);
             })
            .ExigerPermission(Permissions.CaisseVendre);
@@ -44,8 +44,27 @@ internal static class PatientsEndpoints
         api.MapPut("/patients/{id:long}", async (long id, FichePatientDto d, ModifierPatient modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await modifier.ExecuterAsync(new FichePatient(id, d.Nom, d.Prenom, d.DateNaissance, d.Telephone, d.Email, d.NumAssure, d.OrganismeId,
-                    d.Chronique, d.PlafondCredit, 0, d.Lien, d.AssurePrincipalId), user.UtilisateurId(), ct);
+                    d.Chronique, d.PlafondCredit, 0, d.Lien, d.AssurePrincipalId, d.DateFinDroit), user.UtilisateurId(), ct);
                 return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        // Contrôle de fin de droits Chifa (2026-11-15) : « Mettre à jour la date » (caisse, liste de suivi), journalisé (patient_modifie)
+        api.MapPut("/patients/{id:long}/fin-droit", async (long id, FinDroitDto d, MettreAJourFinDroit maj, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await maj.ExecuterAsync(id, d.DateFinDroit, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        // Patients › « Droits expirés ou bientôt expirés » : paginée, filtrée par état, organisme et période (date de fin)
+        api.MapGet("/patients/droits-chifa", async (string? etat, string? organisme, DateOnly? du, DateOnly? au, int? page, int? taille,
+                ListerSuiviDroitsChifa lister, Pharma.Application.Commun.IHorloge horloge, CancellationToken ct) =>
+            {
+                var p = await lister.ExecuterAsync(etat, organisme, du, au, Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<SuiviDroitChifaDto>(p.Lignes.Select(l => new SuiviDroitChifaDto(l.PatientId, l.Nom, l.NumAssure,
+                    RangAssure.Extraire(l.NumAssure), l.Organisme, l.DateFinDroit, DroitsChifa.Expires(l.DateFinDroit, horloge.Aujourdhui) ? "expires" : "bientot",
+                    l.DerniereVente)).ToList(), p.Total, p.Numero, p.Taille));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 

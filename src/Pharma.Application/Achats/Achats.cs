@@ -71,7 +71,7 @@ public sealed record DernierAchat(decimal PrixAchatHt, long FournisseurId);
 
 public sealed record ReceptionResume(
     long Id, string Fournisseur, string? NumeroBl, string? NumeroFacture, string? NumeroCommande,
-    DateTime Date, int NombreLots, int NombreBoites, decimal MontantTtc, long? FournisseurId = null);
+    DateTime Date, int NombreLots, int NombreBoites, decimal MontantTtc, long? FournisseurId = null, DateOnly? DateFacture = null);
 
 /// <summary>Lot reçu : nouveau ou complété (même lot, même grossiste), avec les étiquettes internes créées pour ses boîtes sans Data Matrix.</summary>
 public sealed record LotRecu(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int Etiquettes, bool LotExistant = false);
@@ -84,7 +84,7 @@ public sealed record NouvelleReception(
     long FournisseurId, long? CommandeId, string NumeroBl, string? NumeroFacture,
     IReadOnlyList<LigneReceptionSaisie> Lignes, IReadOnlyDictionary<long, decimal> TauxTva,
     decimal MontantTtc, long UtilisateurId, TotauxFactureAchat? Totaux = null,
-    long? ComptageId = null, IReadOnlyList<LigneManquante>? Manquants = null);
+    long? ComptageId = null, IReadOnlyList<LigneManquante>? Manquants = null, DateOnly? DateFacture = null);
 
 /// <summary>Ce qu'il faut savoir d'un produit pour lire la facture du grossiste : liste (SHP), prix public du catalogue, TVA.</summary>
 public sealed record InfoAchatProduit(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite,
@@ -380,7 +380,7 @@ public sealed class AnnulerCommande(IAchats achats, IPermissionService droits, I
 
 public sealed record SaisieReception(
     long FournisseurId, long? CommandeId, string? NumeroBl, string? NumeroFacture, IReadOnlyList<LigneReceptionSaisie> Lignes, decimal Timbre = 0,
-    Catalogue.ValidationBlocage? Blocage = null);
+    Catalogue.ValidationBlocage? Blocage = null, DateOnly? DateFacture = null);
 
 /// <summary>
 /// Entrée en stock d'une livraison : un lot par ligne (le même lot déjà livré par ce grossiste est complété),
@@ -434,6 +434,7 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
         }).ToList();
         RegleAchats.VerifierReception(s.NumeroBl, lignes, horloge.Aujourdhui);
         RegleFactureAchat.Verifier(lignes, s.Timbre);
+        RegleFactureAchat.VerifierDateFacture(s.DateFacture, horloge.Aujourdhui);
         if (lignes.GroupBy(l => (l.ProduitId, l.NumeroLot.ToUpperInvariant())).Any(g => g.Count() > 1))
             throw new RegleMetierException("Un même lot figure deux fois : regroupez les quantités sur une ligne.");
         // Data Matrix : le GTIN des boîtes doit être celui du produit de la ligne (sinon boîtes d'un autre produit entrées sous ce nom)
@@ -479,7 +480,7 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
 
         var r = await achats.ReceptionnerAsync(new NouvelleReception(
             s.FournisseurId, s.CommandeId, s.NumeroBl!.Trim(), string.IsNullOrWhiteSpace(s.NumeroFacture) ? null : s.NumeroFacture.Trim(),
-            lignes, tva, ttc, utilisateurId, totaux, comptageId, manquants), ct);
+            lignes, tva, ttc, utilisateurId, totaux, comptageId, manquants, s.DateFacture), ct);
         await journal.EcrireAsync(utilisateurId, "reception", "reception", r.ReceptionId,
             new Dictionary<string, object?>
             {

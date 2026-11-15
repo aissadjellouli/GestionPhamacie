@@ -33,7 +33,7 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
     /// <summary>Lignes des ventes validées de la période, avec leur montant net de remise (« net »).</summary>
     private const string LignesNettes = $"""
         WITH v AS (SELECT v.id, v.montant_total FROM vente v WHERE v.statut = 'validee' AND {Periode}),
-        l AS (SELECT lv.id, lv.produit_id, lv.lot_id, lv.quantite, lv.prix_unitaire * lv.quantite AS brut,
+        l AS (SELECT lv.id, lv.produit_id, lv.lot_id, lv.quantite, lv.taux_tva AS taux_tva_ligne, lv.prix_unitaire * lv.quantite AS brut,
                      SUM(lv.prix_unitaire * lv.quantite) OVER (PARTITION BY lv.vente_id) AS brut_vente, v.montant_total
               FROM ligne_vente lv JOIN v ON v.id = lv.vente_id),
         n AS (SELECT l.*, CASE WHEN l.brut_vente > 0 THEN l.brut * l.montant_total / l.brut_vente ELSE 0 END AS net FROM l)
@@ -70,8 +70,9 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
                     FROM ligne_vente l JOIN vente v ON v.id = l.vente_id JOIN produit p ON p.id = l.produit_id
                     LEFT JOIN categorie_produit cat ON cat.code = p.categorie
                     WHERE v.statut = 'validee' AND {Periode}),
-                   (SELECT COALESCE(SUM(l.prix_unitaire * l.quantite) FILTER (WHERE NOT COALESCE(cat.medicament, true)), 0)
-                    FROM ligne_vente l JOIN vente v ON v.id = l.vente_id JOIN produit p ON p.id = l.produit_id
+                   -- Hors médicaments : prestations comprises (script 105, ligne sans produit)
+                   (SELECT COALESCE(SUM(l.prix_unitaire * l.quantite) FILTER (WHERE l.produit_id IS NULL OR NOT COALESCE(cat.medicament, true)), 0)
+                    FROM ligne_vente l JOIN vente v ON v.id = l.vente_id LEFT JOIN produit p ON p.id = l.produit_id
                     LEFT JOIN categorie_produit cat ON cat.code = p.categorie
                     WHERE v.statut = 'validee' AND {Periode}),
                    (SELECT COALESCE(SUM(l.shp * l.quantite), 0) FROM ligne_vente l JOIN vente v ON v.id = l.vente_id
@@ -134,11 +135,12 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
         // Coût : prix réel des boîtes identifiées vendues sur la ligne, prix du lot pour les autres
         await using var cmd = Commande($"""
             {LignesNettes},
-            c AS (SELECT n.net, p.taux_tva,
-                         COALESCE(b.somme, 0) + GREATEST(n.quantite - COALESCE(b.nb, 0), 0) * lo.prix_achat_ht AS cout
+            -- Prestation (script 105) : sans produit ni lot, TVA figée sur la ligne, aucun coût d'achat
+            c AS (SELECT n.net, COALESCE(p.taux_tva, n.taux_tva_ligne) AS taux_tva,
+                         COALESCE(b.somme, 0) + GREATEST(n.quantite - COALESCE(b.nb, 0), 0) * COALESCE(lo.prix_achat_ht, 0) AS cout
                   FROM n
-                  JOIN produit p ON p.id = n.produit_id
-                  JOIN lot lo ON lo.id = n.lot_id
+                  LEFT JOIN produit p ON p.id = n.produit_id
+                  LEFT JOIN lot lo ON lo.id = n.lot_id
                   LEFT JOIN (SELECT ligne_vente_id, count(*) AS nb, SUM(prix_achat_ht) AS somme
                              FROM boite WHERE ligne_vente_id IS NOT NULL GROUP BY ligne_vente_id) b ON b.ligne_vente_id = n.id)
             ,

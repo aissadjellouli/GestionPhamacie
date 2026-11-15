@@ -1,0 +1,146 @@
+@page "/admin/prestations"
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Prestations (2026-11-15, script 105) : prestations vendues à la caisse sans stock (prise de tension, glycémie, injection…). Code unique,
+   libellé, prix TTC, taux de TVA ; droit de créer au catalogue (D-9). Jamais de suppression : désactivée, elle n'est plus proposée.
+   Écran fixe : seul le tableau défile (docs/charte-graphique.md). *@
+<div class="page admin">
+    <NavAdmin Actif="admin/prestations" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Prestations</h1>
+                <p class="sous-titre">Prestations vendues à la caisse sans stock : jamais de lot, de boîte ni de retour (on annule la vente ou on fait un avoir). Le patient paie tout, même en tiers payant. Une prestation à 0 DA ne peut pas être vendue.</p>
+            </div>
+            <button type="button" class="btn btn-principal" @onclick="Ajouter">Ajouter une prestation</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (fiche is not null)
+        {
+            <section class="panneau" aria-labelledby="t-fiche-prestation">
+                <h2 id="t-fiche-prestation">@(fiche.Id is null ? "Nouvelle prestation" : $"Modifier la prestation {fiche.CodeInitial}")</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 160px"><label for="p-code" class="requis">Code</label>
+                        <input id="p-code" data-champ="code" type="text" maxlength="20" @bind="fiche.Code" @bind:event="oninput" /></div>
+                    <div class="champ" style="flex: 2 1 280px"><label for="p-libelle" class="requis">Libellé</label>
+                        <input id="p-libelle" data-champ="libelle" type="text" maxlength="120" @bind="fiche.Libelle" @bind:event="oninput" /></div>
+                    <div class="champ" style="flex: 0 0 150px"><label for="p-prix" class="requis">Prix TTC (DA)</label>
+                        <input id="p-prix" data-champ="prix" type="number" min="0" step="0.01" @bind="fiche.Prix" /></div>
+                    <div class="champ" style="flex: 0 0 130px"><label for="p-tva" class="requis">TVA (%)</label>
+                        <input id="p-tva" data-champ="taux_tva" type="number" min="0" max="100" step="0.01" @bind="fiche.TauxTva" /></div>
+                </div>
+                @if (fiche.Id is not null)
+                {
+                    <label class="case"><input type="checkbox" data-champ="actif" @bind="fiche.Actif" /><span>Prestation proposée à la caisse (décoché : désactivée)</span></label>
+                }
+                <div style="display: flex; gap: 8px">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">@(fiche.Id is null ? "Créer" : "Enregistrer")</button>
+                    <button type="button" class="btn" @onclick="() => fiche = null">Annuler</button>
+                </div>
+            </section>
+        }
+
+        @if (fiche is null)
+        {
+            <div class="filtres-liste" role="search" aria-label="Filtrer les prestations">
+                <div class="champ" style="flex: 1 1 220px"><label for="fp-texte">Code ou libellé</label>
+                    <input id="fp-texte" type="search" autocomplete="off" value="@fTexte" @oninput="RechercheAsync" /></div>
+                <div class="champ" style="flex: 0 0 170px"><label for="fp-etat">État</label>
+                    <select id="fp-etat" @bind="fEtat" @bind:after="PremierePageAsync"><option value="">Toutes</option><option value="actif">Proposées</option><option value="inactif">Désactivées</option></select></div>
+                @if (fTexte.Trim() != "" || fEtat != "") { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+            </div>
+            <section class="tableau-cadre" aria-label="Prestations">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Code</th><th scope="col">Libellé</th><th scope="col">Prix TTC</th><th scope="col">TVA</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var p in liste)
+                        {
+                            <tr>
+                                <td>@p.Code</td>
+                                <td>@p.Libelle</td>
+                                <td>@(p.Prix > 0 ? Libelles.Dinars(p.Prix, 2) : "à fixer")</td>
+                                <td>@p.TauxTva.ToString("0.##") %</td>
+                                <td><span class="pastille @(p.Actif ? "ok" : "info")">@(p.Actif ? "Proposée" : "Désactivée")</span></td>
+                                <td><button type="button" class="btn" @onclick="() => Editer(p)">Modifier</button></td>
+                            </tr>
+                        }
+                        @if (liste.Count == 0 && erreur is null) { <tr><td colspan="6" class="vide">Aucune prestation pour ces filtres.</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+            <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des prestations" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
+    </div>
+</div>
+
+@code {
+    private sealed class Fiche
+    {
+        public long? Id { get; init; }
+        public string? CodeInitial { get; init; }
+        public string? Code { get; set; }
+        public string? Libelle { get; set; }
+        public decimal Prix { get; set; }
+        public decimal TauxTva { get; set; }
+        public bool Actif { get; set; } = true;
+    }
+
+    private List<TypePrestationDto> liste = [];
+    private Fiche? fiche;
+    private bool enCours;
+    private string? erreur, message;
+    private int total, page = 1, taille = Pagination.TailleParDefaut, saisie;
+    private string fTexte = "", fEtat = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("prestations", e => { e.Mettre("texte", fTexte); e.Mettre("etat", fEtat); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("prestations") is { } h)
+            (fTexte, fEtat, page, taille) = (h.Texte("texte") ?? "", h.Texte("etat") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        await ChargerAsync(page, taille);
+    }
+
+    private Task PremierePageAsync() => ChargerAsync(1, taille);
+    private Task ToutAfficherAsync() { (fTexte, fEtat) = ("", ""); return PremierePageAsync(); }
+
+    private async Task RechercheAsync(ChangeEventArgs a)
+    {
+        fTexte = a.Value?.ToString() ?? "";
+        var n = ++saisie;
+        await Task.Delay(250);
+        if (n == saisie) await PremierePageAsync();
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.TypesPrestationAsync(fEtat switch { "actif" => true, "inactif" => false, _ => null }, fTexte.Trim(), numero, nouvelleTaille);
+        if (p is null) { erreur ??= e; return; }
+        (liste, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    private void Ajouter() => (fiche, erreur, message) = (new Fiche(), null, null);
+
+    private void Editer(TypePrestationDto p) => (fiche, erreur, message) =
+        (new Fiche { Id = p.Id, CodeInitial = p.Code, Code = p.Code, Libelle = p.Libelle, Prix = p.Prix, TauxTva = p.TauxTva, Actif = p.Actif }, null, null);
+
+    private async Task EnregistrerAsync()
+    {
+        if (fiche is null) return;
+        if (string.IsNullOrWhiteSpace(fiche.Code) || string.IsNullOrWhiteSpace(fiche.Libelle)) { (erreur, message) = ("Indiquez le code et le libellé.", null); return; }
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var e = await Api.EnregistrerTypePrestationAsync(fiche.Id, new TypePrestationSaisie(fiche.Code.Trim(), fiche.Libelle.Trim(), fiche.Prix, fiche.TauxTva, fiche.Actif));
+            if (e is not null) { erreur = e; return; }
+            message = $"Prestation {fiche.Code.Trim().ToUpperInvariant()} enregistrée.";
+            fiche = null;
+            await ChargerAsync(page, taille);
+        }
+        finally { enCours = false; }
+    }
+}

@@ -21,7 +21,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 099 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 107 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -108,6 +108,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('caisse.voir_ecart', 'Caisse', 'Voir le montant attendu et les écarts', true),
     ('chifa.bordereaux', 'Chifa', 'Gérer les bordereaux et rejets', false),
     ('chifa.importer', 'Chifa', 'Importer les factures Chifa', false),
+    ('chifa.exclure', 'Chifa', 'Exclure une vente Chifa', true),
     ('credit.accorder', 'Crédits', 'Mettre une vente en crédit', false),
     ('credit.depasser_plafond', 'Crédits', 'Dépasser le plafond de crédit d''un client', true),
     ('factures.gerer', 'Factures', 'Émettre et gérer les factures clients', true),
@@ -122,6 +123,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('stock.consulter', 'Stock', 'Consulter le stock', false),
     ('stock.declarer_perime', 'Stock', 'Déclarer un produit périmé ou cassé', true),
     ('stock.donner', 'Stock', 'Donner un échantillon ou une gratuité (don à un nécessiteux)', true),
+    ('stock.corriger_entree', 'Stock', 'Corriger une entrée de stock', true),
     ('tresorerie.gerer', 'Trésorerie', 'Gérer la trésorerie (coffre, banques, dépenses)', true)
 
 ON CONFLICT (code) DO NOTHING;
@@ -157,6 +159,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'produits.bloquer'),
     ('titulaire', 'chifa.bordereaux'),
     ('titulaire', 'chifa.importer'),
+    ('titulaire', 'chifa.exclure'),
     ('titulaire', 'credit.accorder'),
     ('titulaire', 'credit.depasser_plafond'),
     ('titulaire', 'factures.gerer'),
@@ -169,6 +172,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'stock.consulter'),
     ('titulaire', 'stock.declarer_perime'),
     ('titulaire', 'stock.donner'),
+    ('titulaire', 'stock.corriger_entree'),
     ('titulaire', 'tresorerie.gerer'),
     ('assistant', 'achats.commander'),
     ('assistant', 'achats.receptionner'),
@@ -187,6 +191,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'produits.bloquer'),
     ('assistant', 'chifa.bordereaux'),
     ('assistant', 'chifa.importer'),
+    ('assistant', 'chifa.exclure'),
     ('assistant', 'credit.accorder'),
     ('assistant', 'credit.depasser_plafond'),
     ('assistant', 'psychotropes.delivrer'),
@@ -195,6 +200,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'stock.ajuster'),
     ('assistant', 'stock.consulter'),
     ('assistant', 'stock.declarer_perime'),
+    ('assistant', 'stock.corriger_entree'),
     ('vendeur', 'achats.receptionner'),
     ('vendeur', 'caisse.vendre'),
     ('vendeur', 'chifa.importer'),
@@ -272,6 +278,22 @@ INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre) VALUES
     ('volet_absent', 'volet_plus_tard',    'Volet à éditer plus tard',      false, 30),
     ('volet_absent', 'autre',              'Autre (préciser)',              true,  999)
 ON CONFLICT (liste, code) DO NOTHING;
+
+-- Exclusion d'une vente Chifa du traitement (motifs de départ, D-7) et types de majoration Chifa (100)
+INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre) VALUES
+    ('chifa_exclusion', 'deja_traitee',       'Déjà traitée autrement', false, 10),
+    ('chifa_exclusion', 'ordonnance_annulee', 'Ordonnance annulée',     false, 20),
+    ('chifa_exclusion', 'erreur_saisie',      'Erreur de saisie',       false, 30),
+    ('chifa_exclusion', 'autre',              'Autre (préciser)',       true,  999),
+    ('majoration_chifa', 'garde',             'Garde',                  false, 10)
+ON CONFLICT (liste, code) DO NOTHING;
+
+-- Prestations de départ (105) : prix et taux de TVA à fixer par le titulaire (Administration › Prestations) ;
+-- à 0 DA, une prestation ne peut pas être vendue
+INSERT INTO type_prestation (code, libelle, prix, taux_tva)
+SELECT x.code, x.libelle, 0, 0
+FROM (VALUES ('TENSION', 'Prise de tension'), ('GLYCEMIE', 'Mesure de la glycémie'), ('INJECTION', 'Injection')) AS x(code, libelle)
+WHERE NOT EXISTS (SELECT 1 FROM type_prestation t WHERE upper(btrim(t.code)) = x.code);
 
 COMMIT;
 

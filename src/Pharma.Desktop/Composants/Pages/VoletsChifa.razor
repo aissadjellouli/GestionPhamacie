@@ -4,6 +4,7 @@
 @inject SessionPoste Session
 @inject RemboursementsTiroir Remboursements
 @inject NavigationManager Nav
+@using Pharma.Desktop.Composants.Caisse
 
 @* Circuit « la caisse d'abord » (règle du titulaire, 2026-11-15) : ventes Chifa encaissées qui attendent leur volet (ancienneté), et
    volets rattachés malgré des différences (motif, différences, écart de part organisme). Listes filtrées et paginées par le serveur ;
@@ -21,22 +22,33 @@
         <div class="filtres" role="tablist" aria-label="Listes Chifa">
             <button type="button" role="tab" class="puce" aria-selected="@(onglet == "attente" ? "true" : "false")" @onclick="@(() => ChoisirAsync("attente"))">Ventes en attente de volet</button>
             <button type="button" role="tab" class="puce" aria-selected="@(onglet == "ecart" ? "true" : "false")" @onclick="@(() => ChoisirAsync("ecart"))">Volets avec écart</button>
+            <button type="button" role="tab" class="puce" aria-selected="@(onglet == "ventes" ? "true" : "false")" @onclick="@(() => ChoisirAsync("ventes"))">Ventes Chifa</button>
+            <button type="button" role="tab" class="puce" aria-selected="@(onglet == "exclues" ? "true" : "false")" @onclick="@(() => ChoisirAsync("exclues"))">Ventes exclues</button>
         </div>
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
 
         <div class="filtres-liste" role="search" aria-label="Filtrer la liste">
-            <div class="champ" style="flex: 1 1 260px"><label for="vc-q">N° de vente, patient ou n° d’assuré@(onglet == "ecart" ? ", n° de facture Chifa" : "")</label>
+            <div class="champ" style="flex: 1 1 260px"><label for="vc-q">N° de vente, patient ou n° d’assuré@(onglet != "attente" ? ", n° de facture Chifa" : "")</label>
                 <input id="vc-q" data-champ="recherche" type="search" autocomplete="off" @bind="recherche" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" /></div>
+            @if (onglet is "ventes" or "exclues")
+            {
+                @* Un bordereau par centre payeur (D-2) : filtre par centre *@
+                <div class="champ" style="flex: 0 1 280px"><label for="vc-centre">Centre payeur</label>
+                    <select id="vc-centre" data-champ="centre_payeur" @bind="centreId" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="">Tous</option>
+                        @foreach (var c in centres) { <option value="@c.Id">@c.OrganismeCode · @c.Code · @c.Nom@(c.Actif ? "" : " (désactivé)")</option> }
+                    </select></div>
+            }
         </div>
 
         <div class="tableau-cadre">
             @if (onglet == "attente")
             {
                 <table class="tableau" style="min-width: 900px">
-                    <thead><tr><th scope="col">Vente</th><th scope="col">Encaissée le</th><th scope="col">Ancienneté</th><th scope="col">Patient</th><th scope="col">Organisme</th><th scope="col" class="nombre">Total</th><th scope="col" class="nombre">Part organisme</th><th scope="col">Motif sans n°</th><th scope="col">Vendeur</th></tr></thead>
+                    <thead><tr><th scope="col">Vente</th><th scope="col">Encaissée le</th><th scope="col">Ancienneté</th><th scope="col">Patient</th><th scope="col">Organisme</th><th scope="col" class="nombre">Total</th><th scope="col" class="nombre">Part organisme</th><th scope="col">Motif sans n°</th><th scope="col">Vendeur</th><th scope="col">Actions</th></tr></thead>
                     <tbody>
-                        @if (attente is null) { <tr><td colspan="9"><Chargement /></td></tr> }
+                        @if (attente is null) { <tr><td colspan="10"><Chargement /></td></tr> }
                         else
                         {
                             @foreach (var v in attente.Lignes)
@@ -52,9 +64,64 @@
                                     <td class="nombre">@v.PartOrganisme.ToString("N2")</td>
                                     <td>@(v.Motif ?? "—")</td>
                                     <td>@v.Vendeur</td>
+                                    <td>
+                                        <button type="button" class="lien-bouton" @onclick="() => infos = (v.Id, v.Numero)">Infos Chifa</button>
+                                        @if (Session.A("chifa.exclure")) { <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => exclusion = (v.Id, v.Numero)">Exclure du traitement</button> }
+                                    </td>
                                 </tr>
                             }
-                            @if (attente.Lignes.Count == 0) { <tr><td colspan="9" class="vide">Aucune vente Chifa en attente de volet.</td></tr> }
+                            @if (attente.Lignes.Count == 0) { <tr><td colspan="10" class="vide">Aucune vente Chifa en attente de volet.</td></tr> }
+                        }
+                    </tbody>
+                </table>
+            }
+            else if (onglet is "ventes" or "exclues")
+            {
+                @* Ventes Chifa (informations Chifa) et ventes exclues du traitement (script 100) *@
+                <table class="tableau" style="min-width: 1100px">
+                    <thead><tr><th scope="col">Vente</th><th scope="col">Patient</th><th scope="col">Organisme · centre</th><th scope="col">Facture Chifa</th>
+                        @if (onglet == "ventes") { <th scope="col">Date des soins</th><th scope="col">Saisi par</th><th scope="col" class="nombre">Part organisme</th> }
+                        else { <th scope="col">Exclue le</th><th scope="col">Motif</th><th scope="col" class="nombre">Part organisme</th> }
+                        <th scope="col">Actions</th></tr></thead>
+                    <tbody>
+                        @if (ventes is null) { <tr><td colspan="8"><Chargement /></td></tr> }
+                        else
+                        {
+                            @foreach (var v in ventes.Lignes)
+                            {
+                                <tr>
+                                    <td>@v.Numero<br /><span class="detail">@Libelles.DateHeureLocale(v.Date)@(v.Statut == "annulee" ? " · annulée" : "")</span></td>
+                                    <td>@(v.Patient ?? "—")@if (v.NumAssure is { } n) { <br /><span class="detail">@n</span> }</td>
+                                    <td>@(v.Organisme ?? "—")@if (v.CentrePayeur is { } c) { <br /><span class="detail">@c</span> }</td>
+                                    <td>@(v.FactureChifa ?? "—")</td>
+                                    @if (onglet == "ventes")
+                                    {
+                                        <td>@(v.DateSoins is { } d ? Libelles.Date(d) : "—")</td>
+                                        <td>@(v.SaisiPar ?? v.Vendeur)</td>
+                                    }
+                                    else
+                                    {
+                                        <td>@(v.ExclueLe is { } le ? Libelles.DateHeureLocale(le) : "—")<br /><span class="detail">@v.ExcluePar</span></td>
+                                        <td>@v.Exclusion</td>
+                                    }
+                                    <td class="nombre">@v.PartOrganismeTotale.ToString("N2")@if (v.MajorationMontant > 0) { <br /><span class="detail">dont majoration @v.MajorationMontant.ToString("N2")</span> }</td>
+                                    <td>
+                                        @if (v.Statut == "validee" && !v.DansBordereau)
+                                        {
+                                            @if (onglet == "ventes")
+                                            {
+                                                <button type="button" class="lien-bouton" @onclick="() => infos = (v.Id, v.Numero)">Infos Chifa</button>
+                                                @if (Session.A("chifa.exclure")) { <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => exclusion = (v.Id, v.Numero)">Exclure du traitement</button> }
+                                            }
+                                            else if (Session.A("chifa.exclure"))
+                                            {
+                                                <button type="button" class="lien-bouton" disabled="@enCours" @onclick="() => RetablirAsync(v)">Rétablir</button>
+                                            }
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            @if (ventes.Lignes.Count == 0) { <tr><td colspan="8" class="vide">@(onglet == "ventes" ? "Aucune vente Chifa." : "Aucune vente Chifa exclue du traitement.")</td></tr> }
                         }
                     </tbody>
                 </table>
@@ -106,6 +173,11 @@
             <Pagination Total="@(attente?.Total ?? 0)" Numero="@(attente?.Numero ?? 1)" Taille="taille" Occupe="enCours"
                         Libelle="Pages des ventes en attente de volet" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
         }
+        else if (onglet is "ventes" or "exclues")
+        {
+            <Pagination Total="@(ventes?.Total ?? 0)" Numero="@(ventes?.Numero ?? 1)" Taille="taille" Occupe="enCours"
+                        Libelle="Pages des ventes Chifa" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
         else
         {
             <Pagination Total="@(ecarts?.Total ?? 0)" Numero="@(ecarts?.Numero ?? 1)" Taille="taille" Occupe="enCours"
@@ -114,20 +186,50 @@
     </div>
 </div>
 
+@if (infos is { } inf)
+{
+    <FenetreInfosChifa VenteId="inf.Id" Numero="@inf.Numero" OnFerme="() => infos = null" OnEnregistre="ApresActionAsync" />
+}
+@if (exclusion is { } ex)
+{
+    <FenetreExclusionChifa VenteId="ex.Id" Numero="@ex.Numero" OnFerme="() => exclusion = null" OnExclue="ApresActionAsync" />
+}
+
 @code {
     private string onglet = "attente", recherche = "";
     private PageDto<VenteAttenteVoletDto>? attente;
     private PageDto<VoletAvecEcartDto>? ecarts;
+    private PageDto<VenteChifaDto>? ventes;
+    private List<CentrePayeurDto> centres = [];
+    private long? centreId;
+    private (long Id, string Numero)? infos, exclusion;
     private int taille = Pagination.TailleParDefaut;
     private bool enCours;
     private string? erreur;
 
+    private int? NumeroCourant => onglet switch { "attente" => attente?.Numero, "ecart" => ecarts?.Numero, _ => ventes?.Numero };
+
+    private async Task ApresActionAsync()
+    {
+        (infos, exclusion) = (null, null);
+        await ChargerAsync(NumeroCourant ?? 1, taille);
+    }
+
+    /// <summary>« Rétablir » : la vente revient dans le traitement Chifa (en attente de volet si elle n'en a pas) ; journalisé.</summary>
+    private async Task RetablirAsync(VenteChifaDto v)
+    {
+        enCours = true;
+        erreur = await Api.RetablirVenteChifaAsync(v.Id);
+        enCours = false;
+        if (erreur is null) await ChargerAsync(NumeroCourant ?? 1, taille);
+    }
+
     protected override Task OnInitializedAsync()
     {
-        Historique.Suivre("chifa", e => { e.Mettre("onglet", onglet); e.Mettre("texte", recherche); e.Mettre("page", (onglet == "attente" ? attente?.Numero : ecarts?.Numero) ?? 1); e.Mettre("taille", taille); });
+        Historique.Suivre("chifa", e => { e.Mettre("onglet", onglet); e.Mettre("texte", recherche); e.Mettre("page", NumeroCourant ?? 1); e.Mettre("taille", taille); });
         var numero = 1;
         if (Historique.Restaurer("chifa") is { } h)
-            (onglet, recherche, numero, taille) = (h.Texte("onglet") is "ecart" ? "ecart" : "attente", h.Texte("texte") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+            (onglet, recherche, numero, taille) = (h.Texte("onglet") is "ecart" or "ventes" or "exclues" ? h.Texte("onglet")! : "attente", h.Texte("texte") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
         return ChargerAsync(numero, taille);
     }
 
@@ -144,7 +246,16 @@
         taille = t;
         var q = recherche.Trim() == "" ? null : recherche.Trim();
         if (onglet == "attente") (attente, erreur) = await Api.VentesAttenteVoletAsync(q, numero, t);
-        else (ecarts, erreur) = await Api.VoletsAvecEcartAsync(q, numero, t);
+        else if (onglet == "ecart") (ecarts, erreur) = await Api.VoletsAvecEcartAsync(q, numero, t);
+        else
+        {
+            if (centres.Count == 0)
+            {
+                var (c, _) = await Api.CentresPayeursAsync(null, null, null, 1, 200);
+                centres = c?.Lignes.ToList() ?? [];
+            }
+            (ventes, erreur) = await Api.VentesChifaAsync(q, centreId, onglet == "exclues" ? "oui" : "non", numero, t);
+        }
         enCours = false;
     }
 

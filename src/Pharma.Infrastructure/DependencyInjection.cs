@@ -69,6 +69,7 @@ public static class DependencyInjection
         services.AddScoped<IClassementProduits, ClassementProduitsSql>();
         services.AddScoped<IBlocageProduits, BlocageProduitsSql>();
         services.AddScoped<Pharma.Application.Stock.ISortiesStock, SortiesStockSql>();
+        services.AddScoped<Pharma.Application.Stock.IEntreesStock, EntreesStockSql>();
         services.AddScoped<Pharma.Application.Achats.IGrossistes, Achats.GrossistesSql>();
         services.AddScoped<IProduitsModification, ProduitsModificationSql>();
         services.AddScoped<Pharma.Application.Essai.IRetoursEssai, Securite.RetoursEssaiSql>();
@@ -94,6 +95,9 @@ public static class DependencyInjection
         services.AddScoped<Application.Surveillance.IRisques, Surveillance.RisquesSql>();
         services.AddScoped<Application.Caisse.IVoletsChifa, Caisse.VoletsChifaSql>();
         services.AddScoped<Application.Caisse.IRapprochementsVolet, Caisse.RapprochementsVoletSql>();
+        services.AddScoped<Application.Chifa.IVentesChifa, Chifa.VentesChifaSql>();
+        services.AddScoped<Application.Chifa.ICentresPayeurs, Chifa.CentresPayeursSql>();
+        services.AddScoped<Application.Caisse.ITypesPrestation, Caisse.TypesPrestationSql>();
         services.AddSingleton<Application.Commun.ITraceErreurs, Systeme.TraceErreurs>();
         services.AddScoped<IAlertesEcriture, AlertesEcriture>();
         services.AddScoped<IRappelLot, RappelLotSql>();
@@ -104,6 +108,7 @@ public static class DependencyInjection
         services.AddScoped<IPatients>(sp => sp.GetRequiredService<PatientsSql>());
         services.AddScoped<IMedecins>(sp => sp.GetRequiredService<PatientsSql>());
         services.AddScoped<IOrganismes>(sp => sp.GetRequiredService<PatientsSql>());
+        services.AddScoped<ISuiviDroitsChifa, SuiviDroitsChifaSql>();
         services.AddScoped<IPreparationVente, PreparationVenteSql>();
         services.AddScoped<IVentesEcriture, VentesEcritureSql>();
         services.AddScoped<RemisesAutomatiquesSql>();

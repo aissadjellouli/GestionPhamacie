@@ -52,6 +52,10 @@
                         <label for="delai-volet">Délai d’attente du volet Chifa (jours)</label>
                         <input id="delai-volet" data-champ="delai_volet_chifa" type="number" min="1" max="365" @bind="parametres.DelaiVoletChifaJours" />
                     </div>
+                    <div class="champ" title="Patient CNAS/CASNOS dont la date de fin de droits Chifa tombe dans ce nombre de jours : la caisse affiche « Droits Chifa jusqu’au … : prévenir le patient » (orange). Jamais de blocage.">
+                        <label for="jours-fin-droit">Prévenir la fin des droits Chifa (jours avant)</label>
+                        <input id="jours-fin-droit" data-champ="jours_alerte_fin_droit" type="number" min="0" max="365" @bind="parametres.JoursAlerteFinDroit" />
+                    </div>
                     <div class="champ" title="F8 : une sortie d’argent par le tiroir au-delà de ce montant est validée par un employé qui a le droit de faire la relève et de clôturer (son code comptoir). 0 : toute sortie est validée.">
                         <label for="seuil-sortie">Sortie du tiroir validée au-delà de (DA)</label>
                         <input id="seuil-sortie" data-champ="seuil_sortie_tiroir" type="number" min="0" step="0.01" @bind="parametres.SeuilSortieTiroir" />
@@ -139,6 +143,7 @@
         public bool AutorisationParCode { get; set; } = true;
         public decimal SeuilEcartChifa { get; set; } = 5;
         public int DelaiVoletChifaJours { get; set; } = 7;
+        public int JoursAlerteFinDroit { get; set; } = EtatDroitsChifa.JoursAlerteParDefaut;
         public decimal SeuilSortieTiroir { get; set; } = 2000;
     }
 
@@ -209,7 +214,7 @@
                 ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
                 SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut,
                 SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode, SeuilEcartChifa = p.SeuilEcartChifa,
-                DelaiVoletChifaJours = p.DelaiVoletChifaJours, SeuilSortieTiroir = p.SeuilSortieTiroir
+                DelaiVoletChifaJours = p.DelaiVoletChifaJours, SeuilSortieTiroir = p.SeuilSortieTiroir, JoursAlerteFinDroit = p.JoursAlerteFinDroit
             };
         (employesJournal, _) = await Api.EmployesJournalAsync();
         await ChargerJournalAsync(retour?.Entier("page") ?? 1, retour?.Entier("taille"));
@@ -228,7 +233,8 @@
         message = null;
         erreur = await Api.ModifierParametresCaisseAsync(new ParametresCaisseDto(
             parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture, parametres.PlafondCreditDefaut,
-            parametres.SeuilAnnulations, parametres.AutorisationParCode, parametres.SeuilEcartChifa, DelaiVoletChifaJours: parametres.DelaiVoletChifaJours, SeuilSortieTiroir: parametres.SeuilSortieTiroir));
+            parametres.SeuilAnnulations, parametres.AutorisationParCode, parametres.SeuilEcartChifa, DelaiVoletChifaJours: parametres.DelaiVoletChifaJours, SeuilSortieTiroir: parametres.SeuilSortieTiroir,
+            JoursAlerteFinDroit: parametres.JoursAlerteFinDroit));
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";

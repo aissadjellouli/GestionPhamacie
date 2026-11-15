@@ -52,6 +52,17 @@ internal sealed class CatalogueEnMemoire : IPreparationVente
     public Dictionary<long, SituationLotVente> Situations { get; } = [];
     public Task<IReadOnlyDictionary<long, SituationLotVente>> SituationsAsync(IEnumerable<long> lotIds, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<long, SituationLotVente>>(Situations.Where(s => lotIds.Contains(s.Key)).ToDictionary());
+
+    /// <summary>Prestations (script 105) : 1 prise de tension, 2 sans prix fixé, 3 désactivée.</summary>
+    public static readonly TypePrestation Tension = new(1, "TENSION", "Prise de tension", 200m, 19m, true);
+    private readonly Dictionary<long, TypePrestation> prestations = new()
+    {
+        [1] = Tension,
+        [2] = new(2, "GLYC", "Mesure de la glycémie", 0m, 19m, true),
+        [3] = new(3, "INJ", "Injection", 150m, 19m, false)
+    };
+    public Task<IReadOnlyDictionary<long, TypePrestation>> PrestationsAsync(IEnumerable<long> ids, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<long, TypePrestation>>(prestations.Where(p => ids.Contains(p.Key)).ToDictionary());
 }
 
 internal sealed class PatientsEnMemoire(params Patient[] liste) : IPatients
@@ -178,7 +189,7 @@ internal sealed class VentesEspion : IVentesEcriture
         if (vente.CleEncaissement is { } cle)
             ParCle[cle] = new VenteDejaEncaissee(1, "T-000001", vente.Vente.MontantTotal, vente.Vente.PartOrganisme, vente.Vente.PartPatient,
                 vente.Reglement.Montant > 0 ? vente.Reglement.Mode : null, false,
-                vente.Vente.Lignes.Select(l => new LigneDejaEncaissee(l.ProduitId, l.LotId, l.Quantite)).ToList());
+                vente.Vente.Lignes.Select(l => new LigneDejaEncaissee(l.ProduitId, l.LotId, l.Quantite, l.TypePrestationId)).ToList());
         return Task.FromResult((1L, "T-000001"));
     }
 

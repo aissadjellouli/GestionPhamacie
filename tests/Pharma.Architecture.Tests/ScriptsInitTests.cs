@@ -12,7 +12,7 @@ public partial class ScriptsInitTests
     private static readonly string Base = Path.Combine(RacineDepot(), "database", "migration");
 
     /// <summary>Scripts numérotés, dans leur ordre d'exécution, commentaires SQL retirés.</summary>
-    private static readonly (string Nom, int Numero, string Sql)[] Scripts = Directory.GetFiles(Base, "0*.sql")
+    private static readonly (string Nom, int Numero, string Sql)[] Scripts = Directory.GetFiles(Base, "*.sql")
         .Select(f => (Nom: Path.GetFileName(f), Fichier: f))
         .Where(f => NumeroScript().IsMatch(f.Nom))
         .Select(f => (f.Nom, int.Parse(NumeroScript().Match(f.Nom).Groups[1].Value), SansCommentaires(File.ReadAllText(f.Fichier))))
@@ -119,7 +119,7 @@ public partial class ScriptsInitTests
         return dossier?.FullName ?? throw new DirectoryNotFoundException("Racine du dépôt introuvable.");
     }
 
-    [GeneratedRegex(@"^0(\d\d)_.+\.sql$")] private static partial Regex NumeroScript();
+    [GeneratedRegex(@"^(\d{3})_.+\.sql$")] private static partial Regex NumeroScript();
     [GeneratedRegex(@"--[^\n]*")] private static partial Regex CommentaireLigne();
     [GeneratedRegex(@"/\*.*?\*/", RegexOptions.Singleline)] private static partial Regex CommentaireBloc();
     [GeneratedRegex(@"(?<!TEMP )(?<!TEMPORARY )\bCREATE TABLE (?:IF NOT EXISTS )?([a-z_][a-z0-9_.]*)", RegexOptions.IgnoreCase)] private static partial Regex CreationTable();

@@ -247,12 +247,56 @@ public class VoletChifaTests
         var (cas, ventes, _) = CasChifa();
         var ex = await Assert.ThrowsAsync<DroitRefuseException>(() =>
             cas.ExecuterAsync(CommandeChifa(300, new ChoixPrixChifa(2, EcartPrixChifa.Aligne, 300)), 5, "Caisse 1"));
-        Assert.Equal("prix.modifier", ex.Permission);
+        // Action dédiée, accordable par le code d'un ayant droit « prix.modifier » même sur une connexion par code comptoir
+        Assert.Equal(Pharma.Domain.Securite.CodeComptoir.ActionChoixPrixChifa, ex.Permission);
+        Assert.True(Pharma.Domain.Securite.CodeComptoir.AutorisableParCollegue(ex.Permission));
+        Assert.Equal("prix.modifier", Pharma.Domain.Securite.CodeComptoir.DroitDuValideur(ex.Permission));
         Assert.Null(ventes.Recu);
         // Aperçu : le choix non autorisé est ignoré, le plus élevé s'applique en attendant
         var apercu = await cas.CalculerAsync(CommandeChifa(300, new ChoixPrixChifa(2, EcartPrixChifa.Aligne, 300)), 5);
         Assert.Equal(350m, apercu.PrixLignes![0]);
         Assert.True(apercu.EcartsChifa!.Single().AChoisir);
+    }
+
+    [Fact]
+    public async Task Choix_du_prix_Chifa_accepte_avec_le_code_d_un_ayant_droit_vendeur_et_valideur_journalises()
+    {
+        // Le code d'un collègue accorde l'action (PermissionsComptoir) ; AutorisationCourante nomme le valideur
+        var volets = new VoletsChifaEnMemoire();
+        volets.Codes["07607"] = new ProduitChifa(2, "Amoxicilline", 350);
+        var (ventes, journal) = (new VentesEspion(), new JournalEspion());
+        var cas = new Encaisser(new CatalogueEnMemoire(), new PatientsEnMemoire(), ventes, new SessionsEnMemoire(),
+            new DroitsFactices(["caisse.vendre", Pharma.Domain.Securite.CodeComptoir.ActionChoixPrixChifa]),
+            new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire(), journal: journal, voletsChifa: volets,
+            autorisation: new Pharma.Application.Securite.AutorisationCourante { AutoriseParId = 8, AutoriseParNom = "Assistante Fictive" });
+        await cas.ExecuterAsync(CommandeChifa(300, new ChoixPrixChifa(2, EcartPrixChifa.Aligne, 300)), 5, "Caisse 1");
+        Assert.Equal((300m, EcartPrixChifa.Aligne), (ventes.Recu!.Vente.Lignes[0].PrixUnitaire, ventes.Recu.Vente.Lignes[0].ChoixPrixChifa));
+        var i = journal.Actions.IndexOf("ecart_prix_chifa");
+        var d = journal.Details[i];
+        Assert.Equal((5L, 8L, "Assistante Fictive"), ((long)d["vendeur"]!, (long)d["valide_par"]!, (string)d["valideur"]!));
+    }
+
+    [Fact]
+    public void Prix_modifier_reste_ferme_au_code_comptoir_seule_l_action_du_choix_Chifa_est_ouverte()
+    {
+        // Connexion par code : prix.modifier n'est pas un droit du comptoir ; l'action dédiée exige un valideur qui a prix.modifier
+        Assert.False(Pharma.Domain.Securite.CodeComptoir.Autorise("prix.modifier"));
+        Assert.False(Pharma.Domain.Securite.CodeComptoir.Autorise(Pharma.Domain.Securite.CodeComptoir.ActionChoixPrixChifa));
+        Assert.True(Pharma.Domain.Securite.CodeComptoir.ActionsAutorisables.ContainsKey(Pharma.Domain.Securite.CodeComptoir.ActionChoixPrixChifa));
+        Assert.Equal(Pharma.Domain.Securite.CodeComptoir.ActionChoixPrixChifa, S.DetailAutorisationChifa.ActionChoixPrixChifa);
+    }
+
+    [Fact]
+    public async Task Choix_du_prix_Chifa_valideurs_proposes_seulement_ceux_qui_ont_prix_modifier()
+    {
+        // Code d'un employé sans prix.modifier : jamais proposé (et refusé par AutorisationParCode, même règle DroitDuValideur)
+        var codes = new CodesEnMemoire();
+        codes.Comptes[8] = new Pharma.Application.Securite.CompteComptoir(8, "assistante", "Assistante Fictive", "hash:4826", 0, null);
+        codes.Comptes[9] = new Pharma.Application.Securite.CompteComptoir(9, "vendeur.b", "Vendeur B", "hash:2580", 0, null);
+        var droits = new DroitsParEmploye(new() { [8] = ["prix.modifier"], [9] = ["caisse.vendre"] });
+        var liste = await new Pharma.Application.Securite.ListerValidateurs(codes, droits)
+            .AutorisablesAsync(Pharma.Domain.Securite.CodeComptoir.ActionChoixPrixChifa, 5, null);
+        Assert.Equal(["assistante"], liste.Select(v => v.Identifiant));
     }
 
     [Fact]
@@ -506,7 +550,7 @@ public class VoletChifaTests
         S.EcartChifaLigneDto E(long id, string nom, bool aChoisir) => new(0, id, nom, 300, 350, 350, "plus_eleve", aChoisir);
         var detail = S.DetailAutorisationChifa.Construire([E(2, "Amoxicilline", true), E(3, "Doliprane", true), E(4, "Vit C", false)],
             new Dictionary<long, string> { [2] = "aligne", [3] = "garde", [4] = "aligne" }, m => FormattableString.Invariant($"{m:0.00} DA"))!;
-        Assert.Equal("prix.modifier", detail.Permission);
+        Assert.Equal(Pharma.Domain.Securite.CodeComptoir.ActionChoixPrixChifa, detail.Permission);   // même action que le refus du serveur
         Assert.Equal(["Produit", "Prix Chifa", "Notre prix", "Écart par boîte", "Choix demandé"], detail.Colonnes);
         Assert.Equal(2, detail.Lignes.Count);   // ligne sous le seuil (aligné d'office) : rien à autoriser
         Assert.Equal(["Amoxicilline", "300.00 DA", "350.00 DA", "50.00 DA", "S’aligner sur Chifa"], detail.Lignes[0]);

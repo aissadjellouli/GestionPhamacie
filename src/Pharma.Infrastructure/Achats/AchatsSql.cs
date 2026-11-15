@@ -306,8 +306,8 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         long receptionId;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO reception (fournisseur_id, commande_id, numero_bl, numero_facture, utilisateur_id, montant_ttc,
-                                   montant_ht, remise, montant_tva, timbre, shp_total)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
+                                   montant_ht, remise, montant_tva, timbre, shp_total, date_facture)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id
             """, cnx, tx))
         {
             cmd.Parameters.AddWithValue(n.FournisseurId);
@@ -321,6 +321,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
             cmd.Parameters.Add(Nul(n.Totaux?.Tva, NpgsqlDbType.Numeric));
             cmd.Parameters.AddWithValue(n.Totaux?.Timbre ?? 0m);
             cmd.Parameters.AddWithValue(n.Totaux?.ShpTotal ?? 0m);
+            cmd.Parameters.Add(Nul(n.DateFacture, NpgsqlDbType.Date));
             receptionId = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
 
@@ -353,16 +354,16 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 lotId = e.Id;
                 await Executer(cnx, tx, """
                     UPDATE lot SET quantite_disponible = quantite_disponible + $2, date_peremption = $3, date_a_verifier = false,
-                                   ppa = COALESCE($4, ppa)
+                                   ppa = COALESCE($4, ppa), shp = COALESCE($5, shp)
                     WHERE id = $1
-                    """, ct, lotId, l.Quantite, l.DatePeremption, (object?)l.Ppa ?? DBNull.Value);
+                    """, ct, lotId, l.Quantite, l.DatePeremption, (object?)l.Ppa ?? DBNull.Value, (object?)l.Shp ?? DBNull.Value);
             }
             else
             {
                 await using var cmd = new NpgsqlCommand("""
                     INSERT INTO lot (produit_id, ligne_commande_id, numero_lot, date_peremption, quantite_disponible,
-                                     prix_achat_ht, reception_id, fournisseur_id, bloque, motif_blocage, ppa)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
+                                     prix_achat_ht, reception_id, fournisseur_id, bloque, motif_blocage, ppa, shp)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id
                     """, cnx, tx);
                 cmd.Parameters.AddWithValue(l.ProduitId);
                 cmd.Parameters.Add(Nul(ligneCommandeId, NpgsqlDbType.Bigint));
@@ -375,6 +376,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                 cmd.Parameters.AddWithValue(decision.NouveauBloque);
                 cmd.Parameters.Add(Nul(decision.NouveauBloque ? "Même n° de lot qu'un lot rappelé : entré bloqué à la réception" : null, NpgsqlDbType.Text));
                 cmd.Parameters.Add(Nul(l.Ppa, NpgsqlDbType.Numeric));
+                cmd.Parameters.AddWithValue(l.Shp ?? 0m);
                 lotId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
             // Entrée en stock : boîtes facturées au coût, unités gratuites à 0 DA (ou toutes au coût réparti)
@@ -532,7 +534,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
                         SELECT 1 FROM mouvement_stock m WHERE m.lot_id = l.id AND m.reception_id = r.id AND m.type = 'entree'))::int,
                    COALESCE((SELECT SUM(m.quantite) FROM mouvement_stock m JOIN lot l ON l.id = m.lot_id
                              WHERE COALESCE(m.reception_id, l.reception_id) = r.id AND m.type = 'entree'), 0)::int,
-                   r.montant_ttc, r.fournisseur_id
+                   r.montant_ttc, r.fournisseur_id, r.date_facture
             FROM
             """ + " " + tables + """
 
@@ -544,7 +546,7 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         cmd.Parameters.AddWithValue(page.Decalage);
         var lignes = await Lister(cmd, r => new ReceptionResume(
             r.GetInt64(0), r.GetString(1), Texte(r, 2), Texte(r, 3), Texte(r, 4), r.GetDateTime(5),
-            r.GetInt32(6), r.GetInt32(7), r.IsDBNull(8) ? 0 : r.GetDecimal(8), r.GetInt64(9)), ct);
+            r.GetInt32(6), r.GetInt32(7), r.IsDBNull(8) ? 0 : r.GetDecimal(8), r.GetInt64(9), r.IsDBNull(10) ? null : r.GetFieldValue<DateOnly>(10)), ct);
         return new Page<ReceptionResume>(lignes, await CompterAsync(tables, filtre, ct), page.Page, page.Taille);
     }
 

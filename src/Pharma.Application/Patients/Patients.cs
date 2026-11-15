@@ -5,14 +5,15 @@ namespace Pharma.Application.Patients;
 
 public sealed record PatientResume(
     long Id, string Nom, string? Prenom, string? Telephone, string? NumAssure,
-    long? OrganismeId, string? Organisme, decimal PlafondCredit, decimal SoldeCredit);
+    long? OrganismeId, string? Organisme, decimal PlafondCredit, decimal SoldeCredit, DateOnly? DateFinDroit = null);
 
 public sealed record NouveauPatient(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
 
 /// <summary>Fiche complète d'un patient, telle qu'on la modifie (SoldeCredit en lecture : la dette ne se modifie pas ici).</summary>
 /// <remarks>Lien et AssurePrincipalId : lien avec l'assuré et fiche de l'assuré principal (script 090, règles du titulaire 2026-11-15).</remarks>
 public sealed record FichePatient(long Id, string Nom, string? Prenom, DateOnly? DateNaissance, string? Telephone, string? Email, string? NumAssure,
-    long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0, string? Lien = null, long? AssurePrincipalId = null);
+    long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0, string? Lien = null, long? AssurePrincipalId = null,
+    DateOnly? DateFinDroit = null);
 
 /// <summary>Patient proche d'une fiche : son assuré principal, ses ayants droit ou une fiche de même n° d'assuré de base (12 chiffres).</summary>
 public sealed record ProchePatient(long Id, string Nom, string? NumAssure, string? Lien, long? AssurePrincipalId);
@@ -227,6 +228,7 @@ public sealed class ModifierPatient(IPatients patients, Commun.IJournal journal,
         Comparer("email", actuelle.Email, fiche.Email); Comparer("num_assure", actuelle.NumAssure, fiche.NumAssure);
         Comparer("organisme_id", actuelle.OrganismeId, fiche.OrganismeId); Comparer("chronique", actuelle.Chronique, fiche.Chronique);
         Comparer("plafond_credit", actuelle.PlafondCredit, fiche.PlafondCredit);
+        Comparer("date_fin_droit", actuelle.DateFinDroit, fiche.DateFinDroit);
         Comparer("lien", actuelle.Lien, fiche.Lien); Comparer("assure_principal_id", actuelle.AssurePrincipalId, fiche.AssurePrincipalId);
         if (changes.Count > 0)
             await journal.EcrireAsync(utilisateurId, "patient_modifie", "patient", fiche.Id, changes, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);

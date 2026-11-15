@@ -11,7 +11,28 @@ namespace Pharma.Application.Caisse;
 
 /// <summary>Boites : boîtes identifiées scannées pour cette ligne (étiquette interne ou n° de série), au plus la quantité.</summary>
 /// <param name="RaisonLot">Lot plus récent servi alors qu'un lot plus ancien est en stock : raison choisie ou validée (Domain.Ventes.RaisonLot).</param>
-public sealed record LigneCommande(long ProduitId, long LotId, int Quantite, IReadOnlyList<long>? Boites = null, string? RaisonLot = null);
+/// <param name="TypePrestationId">
+/// Prestation (script 105) : ligne sans produit ni lot (ProduitId et LotId null, ni boîte ni raison de lot) ; sinon null et ProduitId + LotId
+/// obligatoires. Exactement l'un des deux (<see cref="LigneCommandeValide"/>).
+/// </param>
+public sealed record LigneCommande(long? ProduitId, long? LotId, int Quantite, IReadOnlyList<long>? Boites = null, string? RaisonLot = null,
+    long? TypePrestationId = null)
+{
+    public bool EstPrestation => TypePrestationId is not null;
+}
+
+/// <summary>Une ligne du panier est soit un produit et son lot, soit une prestation (jamais les deux, jamais un produit sans lot).</summary>
+public static class LigneCommandeValide
+{
+    public static void Verifier(LigneCommande l)
+    {
+        var produit = l.ProduitId is not null && l.LotId is not null && l.TypePrestationId is null;
+        var prestation = l.TypePrestationId is not null && l.ProduitId is null && l.LotId is null
+                         && l.Boites is not { Count: > 0 } && string.IsNullOrWhiteSpace(l.RaisonLot);
+        if (!produit && !prestation)
+            throw new RegleMetierException("Ligne du panier invalide : un produit et son lot, ou une prestation.", "lignes");
+    }
+}
 
 /// <summary>Raison à demander pour le lot d'une ligne (Domain.Ventes.SituationLot) et lot plus ancien en stock.</summary>
 public sealed record SituationLotVente(long LotId, string Situation, string? NumeroLot = null, long? LotDelaisseId = null, string? LotDelaisse = null,
@@ -114,7 +135,8 @@ public sealed record VenteDejaEncaissee(long VenteId, string Numero, decimal Mon
     ModePaiement? Mode, bool Annulee, IReadOnlyList<LigneDejaEncaissee>? Lignes = null);
 
 /// <summary>Ligne d'une vente déjà enregistrée avec une clé d'encaissement.</summary>
-public sealed record LigneDejaEncaissee(long ProduitId, long LotId, int Quantite);
+/// <summary>Ligne d'une vente déjà enregistrée : produit et lot, ou prestation (TypePrestationId, script 105).</summary>
+public sealed record LigneDejaEncaissee(long? ProduitId, long? LotId, int Quantite, long? TypePrestationId = null);
 
 /// <summary>
 /// Un autre encaissement du même panier (même clé) vient d'enregistrer la vente : l'adaptateur a tout annulé de son côté,
@@ -132,6 +154,9 @@ public interface IPreparationVente
     Task<IReadOnlyDictionary<long, Lot>> LotsAsync(IEnumerable<long> ids, CancellationToken ct = default);
     /// <summary>Pour chaque lot : raison à demander si un lot plus ancien du produit est en stock (fonction SQL situation_lot).</summary>
     Task<IReadOnlyDictionary<long, SituationLotVente>> SituationsAsync(IEnumerable<long> lotIds, CancellationToken ct = default);
+    /// <summary>Types de prestation (script 105), actifs ou non (le contrôle est fait par la vente).</summary>
+    Task<IReadOnlyDictionary<long, TypePrestation>> PrestationsAsync(IEnumerable<long> ids, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyDictionary<long, TypePrestation>>(new Dictionary<long, TypePrestation>());
 }
 
 public interface IVentesEcriture
@@ -166,9 +191,12 @@ public sealed class Encaisser(
             vente.MontantTotal + vente.MontantRemise + vente.MontantDon, vente.PartOrganisme, vente.MontantRemise,
             vente.PartPatient, vente.MontantTotal, vente.ContientSousRegistre,
             vente.Lignes.Select(l => l.PrixUnitaire).ToList(), vente.Lignes.Sum(l => l.Shp * l.Quantite),
-            vente.Lignes.Where(l => produits.TryGetValue(l.ProduitId, out var p) && p.EstMedicament).Sum(l => l.PrixUnitaire * l.Quantite),
+            vente.Lignes.Where(l => l.ProduitId is { } pid && produits.TryGetValue(pid, out var p) && p.EstMedicament).Sum(l => l.PrixUnitaire * l.Quantite),
             Bloques(produits), vente.ContientSurOrdonnance,
-            commande.Lignes.Select(l => situations.GetValueOrDefault(l.LotId) ?? new SituationLotVente(l.LotId, SituationLot.Aucune)).ToList(),
+            // Prestation (sans lot) : aucune raison de lot à demander
+            commande.Lignes.Select(l => l.LotId is { } lid
+                ? situations.GetValueOrDefault(lid) ?? new SituationLotVente(lid, SituationLot.Aucune)
+                : new SituationLotVente(0, SituationLot.Aucune)).ToList(),
             vente.MontantDon, vente.MontantReductionsAuto,
             vente.Lignes.Select(l => new ReductionLigne(l.RemiseAutoPct, l.PctApplique, l.Reduction, l.Medicament && l.Reduction > 0)).ToList(),
             ecarts, vente.EcartChifaPatient, seuil);
@@ -192,14 +220,17 @@ public sealed class Encaisser(
         if (prixChifa.Count == 0) return (ecarts, 0);
 
         var seuil = (await sessions.ParametresAsync(ct)).SeuilEcartChifa;
-        var aChoisir = vente.Lignes.Any(l => prixChifa.TryGetValue(l.ProduitId, out var pc) && EcartPrixChifa.AChoisir(pc, l.PrixUnitaire, seuil));
+        var aChoisir = vente.Lignes.Any(l => l.ProduitId is { } lp && prixChifa.TryGetValue(lp, out var pc) && EcartPrixChifa.AChoisir(pc, l.PrixUnitaire, seuil));
         // Droit vérifié seulement s'il y a un choix à faire (le code comptoir d'un ayant droit l'accorde sur place)
-        var aLeDroit = droitPrix ?? (aChoisir && await droits.APermissionAsync(utilisateurId, Permissions.PrixModifier, ct));
+        // Action dédiée (CodeComptoir.ActionChoixPrixChifa) : accordable par code même sur une connexion par code comptoir
+        var aLeDroit = droitPrix ?? (aChoisir && (await droits.APermissionAsync(utilisateurId, Permissions.PrixModifier, ct)
+            || await droits.APermissionAsync(utilisateurId, CodeComptoir.ActionChoixPrixChifa, ct)));
         for (var i = 0; i < vente.Lignes.Count; i++)
         {
             var ligne = vente.Lignes[i];
-            if (!prixChifa.TryGetValue(ligne.ProduitId, out var pc)) continue;
-            var nom = produits.TryGetValue(ligne.ProduitId, out var produit) ? produit.NomCommercial : "Produit";
+            // Prestation : jamais sur un volet Chifa
+            if (ligne.ProduitId is not { } produitId || !prixChifa.TryGetValue(produitId, out var pc)) continue;
+            var nom = produits.TryGetValue(produitId, out var produit) ? produit.NomCommercial : "Produit";
             var notre = ligne.PrixUnitaire;
             var demande = c.ChoixChifa?.FirstOrDefault(x => x.ProduitId == ligne.ProduitId);
             decimal prix;
@@ -210,7 +241,7 @@ public sealed class Encaisser(
             }
             catch (PrixChifaNonAutoriseException e)
             {
-                throw new DroitRefuseException(Permissions.PrixModifier, "choisir le prix d’une ligne du volet Chifa", e.Message);
+                throw new DroitRefuseException(CodeComptoir.ActionChoixPrixChifa, "choisir le prix d’une ligne du volet Chifa", e.Message);
             }
             if (exiger && demande?.PrixAttendu is { } attendu && attendu != prix)
                 throw new RegleMetierException(
@@ -218,7 +249,7 @@ public sealed class Encaisser(
                     "prix_chifa");
             vente.AppliquerVoletChifa(ligne, pc, prix, choix);
             if (choix is not null)
-                ecarts.Add(new EcartChifaLigne(i, ligne.ProduitId, nom, pc, notre, prix, choix, EcartPrixChifa.AChoisir(pc, notre, seuil)));
+                ecarts.Add(new EcartChifaLigne(i, produitId, nom, pc, notre, prix, choix, EcartPrixChifa.AChoisir(pc, notre, seuil)));
         }
         return (ecarts, seuil);
     }
@@ -270,13 +301,16 @@ public sealed class Encaisser(
     private async Task<IReadOnlyDictionary<long, SituationLotVente>> RaisonsAsync(CommandeVente c, Vente vente,
         IReadOnlyDictionary<long, Produit> produits, bool exiger, CancellationToken ct)
     {
-        var situations = await preparation.SituationsAsync(c.Lignes.Select(l => l.LotId).Distinct(), ct);
+        var lotIds = c.Lignes.Where(l => l.LotId is not null).Select(l => l.LotId!.Value).Distinct().ToList();
+        var situations = lotIds.Count == 0 ? new Dictionary<long, SituationLotVente>() : await preparation.SituationsAsync(lotIds, ct);
         foreach (var ligne in vente.Lignes)
         {
-            if (situations.GetValueOrDefault(ligne.LotId) is not { } s) continue;
-            var choix = c.Lignes.Where(l => l.LotId == ligne.LotId).Select(l => l.RaisonLot).FirstOrDefault(r => !string.IsNullOrWhiteSpace(r));
-            var produit = produits.TryGetValue(ligne.ProduitId, out var p) ? p.NomCommercial : "Produit";
-            var lot = s.NumeroLot ?? ligne.LotId.ToString();
+            // Prestation : pas de lot
+            if (ligne.LotId is not { } lotId || ligne.ProduitId is not { } produitId) continue;
+            if (situations.GetValueOrDefault(lotId) is not { } s) continue;
+            var choix = c.Lignes.Where(l => l.LotId == lotId).Select(l => l.RaisonLot).FirstOrDefault(r => !string.IsNullOrWhiteSpace(r));
+            var produit = produits.TryGetValue(produitId, out var p) ? p.NomCommercial : "Produit";
+            var lot = s.NumeroLot ?? lotId.ToString();
             ligne.RaisonLot = SituationLot.Raison(s.Situation, choix, produit, lot, s.LotDelaisse, exiger);
         }
         return situations;
@@ -285,7 +319,7 @@ public sealed class Encaisser(
     /// <summary>Boîtes identifiées par lot : jamais deux fois la même, au plus autant que de boîtes vendues du lot.</summary>
     private static Dictionary<long, IReadOnlyList<long>>? BoitesParLot(CommandeVente commande)
     {
-        var parLot = commande.Lignes.Where(l => l.Boites is { Count: > 0 }).GroupBy(l => l.LotId).ToDictionary(
+        var parLot = commande.Lignes.Where(l => l.Boites is { Count: > 0 } && l.LotId is not null).GroupBy(l => l.LotId!.Value).ToDictionary(
             g => g.Key, g => (IReadOnlyList<long>)g.SelectMany(l => l.Boites!).ToList());
         foreach (var (lot, boites) in parLot)
         {
@@ -461,6 +495,8 @@ public sealed class Encaisser(
                     ["ticket"] = numero, ["volet"] = volet?.NumeroFacture,
                     ["lignes"] = ecartsChifa.Select(e => new { produit = e.Produit, prix_chifa = e.PrixChifa, notre_prix = e.NotrePrix, prix_applique = e.PrixApplique, choix = e.Choix }).ToList(),
                     ["ecart_patient"] = vente.EcartChifaPatient,
+                    ["vendeur"] = utilisateurId,
+                    ["valide_par"] = autorisation?.AutoriseParId,
                     ["valideur"] = autorisation?.AutoriseParNom
                 },
                 ecartsChifa.Any(e => e.Choix is EcartPrixChifa.Aligne or EcartPrixChifa.Garde) ? Permissions.PrixModifier : Permissions.CaisseVendre, ct);
@@ -470,6 +506,11 @@ public sealed class Encaisser(
         if (volet is not null && vente.ResteSaisi is { } resteSaisi && journal is not null)
             await journal.EcrireAsync(utilisateurId, ResteChargeManuelVolet, "vente", id,
                 DetailResteManuelVolet(numero, volet.NumeroFacture, vente, resteSaisi, autorisation?.AutoriseParNom), Permissions.CaisseVendre, ct);
+
+        // Droits Chifa expirés (script 102, D-4) : avertissement journalisé seulement, la vente n'est jamais bloquée
+        await DroitsChifa.JournaliserSiExpiresAsync(patients, journal, commande.PatientId,
+            commande.TiersPayant && OrganismeVoletChifa.Accepte(codeOrganisme), horloge.Aujourdhui, utilisateurId, id, numero, ct,
+            credit: commande.Mode == ModePaiement.Credit);
 
         // Catalogue d'après le volet (règle du titulaire, 2026-11-15) : après l'enregistrement de la vente seulement (vente abandonnée
         // ou refusée : catalogue intact), quel que soit le vendeur ; la vente déjà enregistrée n'en dépend pas
@@ -519,10 +560,10 @@ public sealed class Encaisser(
     {
         if (v.Lignes is { } enregistrees)
         {
-            static Dictionary<(long, long), int> ParLot(IEnumerable<(long Produit, long Lot, int Quantite)> lignes) =>
-                lignes.GroupBy(l => (l.Produit, l.Lot)).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantite));
-            var avant = ParLot(enregistrees.Select(l => (l.ProduitId, l.LotId, l.Quantite)));
-            var envoye = ParLot(commande.Lignes.Select(l => (l.ProduitId, l.LotId, l.Quantite)));
+            static Dictionary<(long?, long?, long?), int> ParLot(IEnumerable<(long? Produit, long? Lot, long? Prestation, int Quantite)> lignes) =>
+                lignes.GroupBy(l => (l.Produit, l.Lot, l.Prestation)).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantite));
+            var avant = ParLot(enregistrees.Select(l => (l.ProduitId, l.LotId, l.TypePrestationId, l.Quantite)));
+            var envoye = ParLot(commande.Lignes.Select(l => (l.ProduitId, l.LotId, l.TypePrestationId, l.Quantite)));
             if (avant.Count != envoye.Count || avant.Any(a => envoye.GetValueOrDefault(a.Key) != a.Value)) return false;
         }
         Vente recalculee;
@@ -547,7 +588,7 @@ public sealed class Encaisser(
         if (lotsDelaisses is null) return Task.CompletedTask;
         return Notifications.AlerteNonEnvoyeeSignalee.SansBlocageAsync(async () =>
         {
-            foreach (var a in await lotsDelaisses.AlerterAsync(vente.Lignes.Select(l => l.ProduitId).Distinct().ToList(), CancellationToken.None))
+            foreach (var a in await lotsDelaisses.AlerterAsync(vente.Lignes.Where(l => l.ProduitId is not null).Select(l => l.ProduitId!.Value).Distinct().ToList(), CancellationToken.None))
                 if (alertesTitulaire is not null) await alertesTitulaire.LotDelaisseAsync(a.Message, a.Niveau == "urgent", CancellationToken.None);
         }, "lots délaissés après une vente", trace);
     }
@@ -559,8 +600,13 @@ public sealed class Encaisser(
         if (c.Lignes.Count == 0)
             throw new RegleMetierException("Le panier est vide.");
 
-        var produits = await preparation.ProduitsAsync(c.Lignes.Select(l => l.ProduitId).Distinct(), ct);
-        var lots = await preparation.LotsAsync(c.Lignes.Select(l => l.LotId).Distinct(), ct);
+        foreach (var l in c.Lignes) LigneCommandeValide.Verifier(l);
+        var produits = await preparation.ProduitsAsync(c.Lignes.Where(l => l.ProduitId is not null).Select(l => l.ProduitId!.Value).Distinct(), ct);
+        var lots = await preparation.LotsAsync(c.Lignes.Where(l => l.LotId is not null).Select(l => l.LotId!.Value).Distinct(), ct);
+        // Prestations (script 105) : sans produit ni lot
+        var idsPrestations = c.Lignes.Where(l => l.TypePrestationId is not null).Select(l => l.TypePrestationId!.Value).Distinct().ToList();
+        var prestations = idsPrestations.Count == 0
+            ? new Dictionary<long, TypePrestation>() : await preparation.PrestationsAsync(idsPrestations, ct);
 
         var vente = new Vente
         {
@@ -575,7 +621,14 @@ public sealed class Encaisser(
         var aujourdhui = horloge.Aujourdhui;
         foreach (var ligne in c.Lignes)
         {
-            if (!produits.TryGetValue(ligne.ProduitId, out var produit) || !produit.Actif)
+            if (ligne.TypePrestationId is { } tpId)
+            {
+                if (!prestations.TryGetValue(tpId, out var prestation))
+                    throw new RegleMetierException("Une prestation du panier n’existe plus.", "prestation");
+                vente.AjouterPrestation(prestation, ligne.Quantite);
+                continue;
+            }
+            if (!produits.TryGetValue(ligne.ProduitId!.Value, out var produit) || !produit.Actif)
                 throw new RegleMetierException("Un produit du panier n’existe plus ou n’est plus actif.");
             // Repris de l'ancien logiciel sans n° d'enregistrement, ou psychotrope (stupéfiant) créé par un employé :
             // sa classe n'a pas été confirmée par le titulaire
@@ -586,7 +639,7 @@ public sealed class Encaisser(
             if (produit.PrixPublic <= 0)
                 throw new RegleMetierException(
                     $"{produit.NomCommercial} : prix de vente non fixé, à faire fixer par un ayant droit (fiche produit) avant la vente.");
-            if (!lots.TryGetValue(ligne.LotId, out var lot))
+            if (!lots.TryGetValue(ligne.LotId!.Value, out var lot))
                 throw new RegleMetierException($"{produit.NomCommercial} : lot introuvable, rescannez la boîte.");
             vente.AjouterProduit(produit, lot, ligne.Quantite, aujourdhui, autoriserBloque: true, controlerLot: controlerLots);   // blocage contrôlé à l'encaissement
         }

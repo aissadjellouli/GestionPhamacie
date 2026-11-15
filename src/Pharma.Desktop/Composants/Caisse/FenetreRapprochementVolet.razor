@@ -77,6 +77,12 @@
                             @if (!Session.A("prix.modifier")) { <p class="detail" style="margin: 0">Réservé au droit « modifier les prix » : au rattachement, « Faire autoriser » demande le code d’un employé qui l’a.</p> }
                         </fieldset>
                     }
+                    @* Informations Chifa de la vente (script 100), enregistrées avec le rattachement *@
+                    @if (venteChifa is { } vc && vc.Id == v.VenteId)
+                    {
+                        <ChampsInfosChifa Saisie="saisieInfos" OrganismeId="vc.OrganismeId" PatientId="vc.PatientId" CentreHabituelId="vc.CentreHabituelId"
+                                          DateQr="Rapprochement.DateOrdonnance" />
+                    }
                     @if (!v.Concorde)
                     {
                         <div class="champ">
@@ -119,13 +125,31 @@
     private bool RegularisationManquante => choisie is { EcartPartOrganisme: > 0, PartOrganismeChifa: not null } && regularisation is null;
 
     // La meilleure candidate (même assuré, même carte, dans le délai, la plus proche) est proposée ; une vente « en retard » se choisit à la main
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (choisie is null || Rapprochement.Candidates.All(c => c.VenteId != choisie.VenteId))
             choisie = Rapprochement.Candidates.FirstOrDefault() is { EnRetard: false } premiere ? premiere : null;
+        await ChargerInfosAsync();
     }
 
-    private void Choisir(VenteCandidateDto c) => (choisie, motif, erreur, regularisation) = (c, null, null, null);
+    private async Task Choisir(VenteCandidateDto c)
+    {
+        (choisie, motif, erreur, regularisation) = (c, null, null, null);
+        await ChargerInfosAsync();
+    }
+
+    private VenteChifaDto? venteChifa;
+    private ChampsInfosChifa.SaisieInfosChifa saisieInfos = new();
+
+    /// <summary>Informations Chifa de la vente choisie (date des soins, centre, saisi par, majoration), modifiables avant le rattachement.</summary>
+    private async Task ChargerInfosAsync()
+    {
+        if (choisie is not { } c || venteChifa?.Id == c.VenteId) return;
+        var (v, e) = await Api.VenteChifaAsync(c.VenteId);
+        venteChifa = v;
+        saisieInfos = v is null ? new() : ChampsInfosChifa.SaisieInfosChifa.Depuis(v);
+        erreur ??= e;
+    }
 
     private async Task RattacherAsync()
     {
@@ -136,6 +160,12 @@
         {
             // Sans le droit « modifier les prix » (recette du 2026-11-15, D1) : le serveur refuse en proposant « Faire autoriser » (code d'un
             // ayant droit, pour cette seule action) ; le valideur voit les écarts, le motif et le choix de régularisation, puis l'appel est rejoué
+            // Informations Chifa d'abord (la vente attend encore son volet) : une saisie refusée n'engage pas le rattachement
+            if (venteChifa?.Id == v.VenteId && await Api.EnregistrerInfosChifaAsync(v.VenteId, saisieInfos.VersRequete()) is { } e1)
+            {
+                erreur = e1;
+                return;
+            }
             if (!Session.A("prix.modifier") && (!v.Concorde || v.EcartPartOrganisme > 0))
                 Api.DetaillerProchaineAutorisation(DetailAutorisation(v));
             var (r, e) = await Api.RattacherVoletAsync(Texte, v.VenteId, v.Concorde ? null : motif?.Trim(), v.EcartPartOrganisme > 0 ? regularisation : null);

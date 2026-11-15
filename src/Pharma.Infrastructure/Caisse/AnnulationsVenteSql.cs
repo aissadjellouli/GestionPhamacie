@@ -142,8 +142,8 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
 
         var lignes = new Dictionary<long, List<LigneVenteAnnulable>>();
         await using (var c = db.CreateCommand("""
-            SELECT l.vente_id, p.nom_commercial, l.quantite, l.prix_unitaire * l.quantite, lo.numero_lot
-            FROM ligne_vente l JOIN produit p ON p.id = l.produit_id JOIN lot lo ON lo.id = l.lot_id
+            SELECT l.vente_id, COALESCE(p.nom_commercial, l.libelle), l.quantite, l.prix_unitaire * l.quantite, lo.numero_lot
+            FROM ligne_vente l LEFT JOIN produit p ON p.id = l.produit_id LEFT JOIN lot lo ON lo.id = l.lot_id   -- prestation : sans lot
             WHERE l.vente_id = ANY($1) ORDER BY l.id
             """))
         {
@@ -152,7 +152,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
             while (await r.ReadAsync(ct))
             {
                 if (!lignes.TryGetValue(r.GetInt64(0), out var l)) lignes[r.GetInt64(0)] = l = [];
-                l.Add(new LigneVenteAnnulable(r.GetString(1), r.GetInt32(2), r.GetDecimal(3), r.GetString(4)));
+                l.Add(new LigneVenteAnnulable(r.GetString(1), r.GetInt32(2), r.GetDecimal(3), r.IsDBNull(4) ? null : r.GetString(4)));
             }
         }
         return ventes.Select(v => v.V with { Lignes = lignes.GetValueOrDefault(v.Id) ?? [] }).ToList();
@@ -161,7 +161,8 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
     /// <summary>Quantité encore chez le patient par lot : vendue moins déjà rendue (retours clients).</summary>
     private const string RestantParLot = """
         SELECT l.lot_id, SUM(l.quantite - COALESCE((SELECT SUM(r.quantite) FROM retour_client_ligne r WHERE r.ligne_vente_id = l.id), 0))::int AS q
-        FROM ligne_vente l WHERE l.vente_id = $1 GROUP BY l.lot_id
+        FROM ligne_vente l WHERE l.vente_id = $1 AND l.lot_id IS NOT NULL   -- prestation (script 105) : aucun stock à remettre
+        GROUP BY l.lot_id
         HAVING SUM(l.quantite - COALESCE((SELECT SUM(r.quantite) FROM retour_client_ligne r WHERE r.ligne_vente_id = l.id), 0)) > 0
         """;
 

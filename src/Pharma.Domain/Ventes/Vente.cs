@@ -122,6 +122,30 @@ public class Vente
     }
 
     /// <summary>
+    /// Prestation (script 105, 2026-11-15) : ligne sans produit ni lot, au prix et au taux de TVA du type de prestation, figés avec son
+    /// libellé ; jamais prise en charge par l'organisme (le patient paie tout, même en tiers payant), pas de SHP. Type désactivé ou
+    /// sans prix fixé (0) : refusée.
+    /// </summary>
+    public LigneVente AjouterPrestation(TypePrestation prestation, int quantite)
+    {
+        if (quantite <= 0)
+            throw new RegleMetierException("La quantité d’une prestation doit être d’au moins 1.");
+        if (!prestation.Actif)
+            throw new RegleMetierException($"{prestation.Libelle} : prestation désactivée. Retirez-la du panier.");
+        if (prestation.Prix <= 0)
+            throw new RegleMetierException($"{prestation.Libelle} : prix de la prestation non fixé (Administration › Prestations).");
+        var ligne = new LigneVente
+        {
+            TypePrestationId = prestation.Id, Libelle = prestation.Libelle, TauxTva = prestation.TauxTva,
+            Quantite = quantite, PrixUnitaire = prestation.Prix, Shp = 0
+        };
+        ligne.SansTiersPayant();
+        _lignes.Add(ligne);
+        RecalculerTotaux();
+        return ligne;
+    }
+
+    /// <summary>
     /// Remise du vendeur en pourcentage entier sur la part du patient, hors SHP. Le droit et le maximum de l'employé (ou de celui qui
     /// valide sur place) sont contrôlés par l'encaissement.
     /// </summary>
@@ -142,7 +166,7 @@ public class Vente
     public void AppliquerRemisesAutomatiques(IReadOnlyDictionary<long, decimal> pctParProduit)
     {
         foreach (var l in _lignes)
-            l.FixerRemiseAuto(Type == TypeVente.Libre ? pctParProduit.GetValueOrDefault(l.ProduitId) : 0);
+            l.FixerRemiseAuto(Type == TypeVente.Libre && l.ProduitId is { } pid ? pctParProduit.GetValueOrDefault(pid) : 0);
         RecalculerTotaux();
     }
 

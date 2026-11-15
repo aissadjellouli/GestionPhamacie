@@ -404,7 +404,7 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         {
             var nom = lignes.AddRow();
             nom.Cells[0].MergeRight = 1;
-            nom.Cells[0].AddParagraph(l.Reduction > 0 ? $"{l.Produit} ({(l.DonPartiel ? "don" : "remise")} −{l.PctReduction:0.##} %)" : l.Produit);
+            nom.Cells[0].AddParagraph(l.Reduction > 0 ? $"{l.Designation} ({(l.DonPartiel ? "don" : "remise")} −{l.PctReduction:0.##} %)" : l.Designation);
             var montant = lignes.AddRow();
             montant.BottomPadding = Unit.FromPoint(2);
             montant.Cells[0].AddParagraph($"  {l.Quantite.ToString(Fr)} × {Da(l.PrixUnitaire)}");
@@ -418,6 +418,8 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         if (t.DonPartiel > 0) Paire(totaux, "Don partiel", "− " + Da(t.DonPartiel));
         if (t.PartOrganisme > 0) Paire(totaux, $"Part {t.Organisme ?? "organisme"}", Da(t.PartOrganisme));
         if (t.EcartChifa > 0) Paire(totaux, "Écart Chifa payé par le patient", Da(t.EcartChifa));
+        // Majoration Chifa (D-3) : ajoutée à la part de l'organisme, jamais payée par le patient
+        if (t.MajorationChifa > 0) Paire(totaux, $"Majoration Chifa ({t.Organisme ?? "organisme"})", Da(t.MajorationChifa));
         Paire(totaux, recu ? "Montant réglé" : "À payer par le patient", Da(t.PartPatient), gras: true);
         if (t.Mode is { } mode) Paire(totaux, "Règlement", mode switch
         {

@@ -146,7 +146,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         // s'attendent au lieu de s'interbloquer
         await using (var cmd = new NpgsqlCommand("SELECT id FROM lot WHERE id = ANY($1) ORDER BY id FOR UPDATE", cx, tx))
         {
-            cmd.Parameters.AddWithValue(v.Lignes.Select(l => l.LotId).Distinct().Order().ToArray());
+            // Prestations (script 105) : sans lot, rien à verrouiller
+            cmd.Parameters.AddWithValue(v.Lignes.Where(l => l.LotId is not null).Select(l => l.LotId!.Value).Distinct().Order().ToArray());
             await cmd.ExecuteNonQueryAsync(ct);
         }
 
@@ -157,13 +158,14 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             await using (var cmd = new NpgsqlCommand("""
                 INSERT INTO ligne_vente (vente_id, produit_id, lot_id, quantite, prix_unitaire,
                                          base_remboursement, taux_remboursement, montant_organisme, montant_patient, shp, raison_lot,
-                                         remise_auto_pct, reduction_auto, reduction_manuelle, don_partiel, prix_chifa, choix_prix_chifa)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id
+                                         remise_auto_pct, reduction_auto, reduction_manuelle, don_partiel, prix_chifa, choix_prix_chifa,
+                                         type_prestation_id, libelle, taux_tva)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id
                 """, cx, tx))
             {
                 cmd.Parameters.AddWithValue(venteId);
-                cmd.Parameters.AddWithValue(l.ProduitId);
-                cmd.Parameters.AddWithValue(l.LotId);
+                cmd.Parameters.Add(Valeur(l.ProduitId, NpgsqlDbType.Bigint));
+                cmd.Parameters.Add(Valeur(l.LotId, NpgsqlDbType.Bigint));
                 cmd.Parameters.AddWithValue(l.Quantite);
                 cmd.Parameters.AddWithValue(l.PrixUnitaire);
                 cmd.Parameters.AddWithValue(l.BaseRemboursement);
@@ -178,11 +180,17 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                 cmd.Parameters.AddWithValue(l.Medicament && l.Reduction > 0);
                 cmd.Parameters.Add(Valeur(l.PrixChifa, NpgsqlDbType.Numeric));
                 cmd.Parameters.Add(Valeur(l.ChoixPrixChifa, NpgsqlDbType.Text));
+                cmd.Parameters.Add(Valeur(l.TypePrestationId, NpgsqlDbType.Bigint));
+                cmd.Parameters.Add(Valeur(l.Libelle, NpgsqlDbType.Text));
+                cmd.Parameters.Add(Valeur(l.TauxTva, NpgsqlDbType.Numeric));
                 ligneId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
 
+            // Prestation (script 105) : ni boîte, ni stock, ni mouvement, ni registre
+            if (l.LotId is not { } lotId || l.ProduitId is not { } produitId) continue;
+
             // Boîtes identifiées de ce lot : rattachées à la ligne (statut « vendue »), pour retrouver la vente au remboursement
-            if (a.BoitesParLot?.GetValueOrDefault(l.LotId) is { Count: > 0 } boites)
+            if (a.BoitesParLot?.GetValueOrDefault(lotId) is { Count: > 0 } boites)
                 foreach (var boite in boites.Except(boitesRattachees).Take(l.Quantite).ToList())
                 {
                     await using var cmd = new NpgsqlCommand("SELECT vendre_boite($1, $2, $3)", cx, tx);
@@ -204,7 +212,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                 RETURNING quantite_disponible, numero_lot
                 """, cx, tx))
             {
-                cmd.Parameters.AddWithValue(l.LotId);
+                cmd.Parameters.AddWithValue(lotId);
                 cmd.Parameters.AddWithValue(l.Quantite);
                 await using var r = await cmd.ExecuteReaderAsync(ct);
                 if (!await r.ReadAsync(ct))
@@ -217,14 +225,14 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                 VALUES ($1, 'vente', $2, $3, $4)
                 """, cx, tx))
             {
-                cmd.Parameters.AddWithValue(l.LotId);
+                cmd.Parameters.AddWithValue(lotId);
                 cmd.Parameters.AddWithValue(-l.Quantite);
                 cmd.Parameters.AddWithValue(numero);
                 cmd.Parameters.AddWithValue(v.UtilisateurId);
                 await cmd.ExecuteNonQueryAsync(ct);
             }
 
-            if (a.ProduitsSousRegistre.Contains(l.ProduitId))
+            if (a.ProduitsSousRegistre.Contains(produitId))
             {
                 await using var cmd = new NpgsqlCommand("""
                     INSERT INTO registre_psychotrope (lot_id, ligne_vente_id, type_mouvement, quantite, solde_apres,
@@ -232,7 +240,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                                                       porteur_nom, porteur_adresse, porteur_piece)
                     VALUES ($1, $2, 'sortie', $3, $4, $5, $6, $7, $8, $9, $10, $11)
                     """, cx, tx);
-                cmd.Parameters.AddWithValue(l.LotId);
+                cmd.Parameters.AddWithValue(lotId);
                 cmd.Parameters.AddWithValue(ligneId);
                 cmd.Parameters.AddWithValue(l.Quantite);
                 cmd.Parameters.AddWithValue(resteLot);
@@ -316,7 +324,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                     ["ticket"] = numero, ["montant"] = v.MontantReductionsAuto,
                     ["dont_don_partiel"] = v.Lignes.Where(l => l.Medicament).Sum(l => l.ReductionAuto)
                 }, null, ct);
-        if (a.ProduitsSousRegistre.Count > 0 && v.Lignes.Any(l => a.ProduitsSousRegistre.Contains(l.ProduitId)))
+        if (a.ProduitsSousRegistre.Count > 0 && v.Lignes.Any(l => a.ProduitsSousRegistre.Contains(l.ProduitId ?? 0)))
             await JournalSql.EcrireAsync(cx, tx, v.UtilisateurId, "delivrance_psychotrope", "vente", venteId,
                 new Dictionary<string, object?> { ["ticket"] = numero, ["ordonnance_id"] = ordonnanceId },
                 Permissions.PsychotropesDelivrer, ct, autorisation?.AutoriseParId);
@@ -343,12 +351,12 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                 r.IsDBNull(5) ? null : CodesMetier.ModePaiementDepuisCode(r.GetString(5)), r.GetBoolean(6));
         }
         // Lignes enregistrées : comparées au panier renvoyé (contenu différent : refus)
-        await using var lignes = db.CreateCommand("SELECT produit_id, lot_id, quantite FROM ligne_vente WHERE vente_id = $1 ORDER BY id");
+        await using var lignes = db.CreateCommand("SELECT produit_id, lot_id, quantite, type_prestation_id FROM ligne_vente WHERE vente_id = $1 ORDER BY id");
         lignes.Parameters.AddWithValue(vente.VenteId);
         var liste = new List<LigneDejaEncaissee>();
         await using (var r = await lignes.ExecuteReaderAsync(ct))
             while (await r.ReadAsync(ct))
-                liste.Add(new LigneDejaEncaissee(r.GetInt64(0), r.GetInt64(1), r.GetInt32(2)));
+                liste.Add(new LigneDejaEncaissee(r.IsDBNull(0) ? null : r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), r.GetInt32(2), r.IsDBNull(3) ? null : r.GetInt64(3)));
         return vente with { Lignes = liste };
     }
 
