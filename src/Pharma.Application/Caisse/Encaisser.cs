@@ -38,6 +38,17 @@ public sealed record CommandeVente(
     decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null,
     string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null);
 
+/// <summary>
+/// Médecin en tiers payant (2026-11-15) : obligatoire quand l'organisme paie une partie (au taux, ou reste à charge saisi inférieur au
+/// total) ; quand il ne paie rien (part 0 : le patient paie tout), facultatif, mais une vente sans ordonnance se fait avec le droit
+/// « vendre sans ordonnance » ou le code du titulaire ou d'un ayant droit. Volet Chifa scanné : facultatif (montants de Chifa).
+/// </summary>
+public static class RegleMedecinTiersPayant
+{
+    public static bool Exige(bool tiersPayant, decimal partOrganisme, bool voletChifa) => tiersPayant && !voletChifa && partOrganisme > 0;
+    public static bool SansPartOrganisme(bool tiersPayant, decimal partOrganisme, bool voletChifa) => tiersPayant && !voletChifa && partOrganisme <= 0;
+}
+
 /// <summary>Réductions d'une ligne (ordre des lignes envoyées) : remise automatique, pourcentage appliqué, montant ; DonPartiel pour un médicament.</summary>
 public sealed record ReductionLigne(decimal RemiseAutoPct, decimal PctApplique, decimal Montant, bool DonPartiel);
 
@@ -241,13 +252,22 @@ public sealed class Encaisser(
             // Porteur différent du patient : nom, adresse et pièce d'identité au registre (psychotropes seulement)
             commande = commande with { Ordonnance = o with { Porteur = vente.ContientSousRegistre && o.Porteur is { } p ? VerifierPorteur(p) : null } };
         }
+        // Tiers payant : médecin obligatoire quand l'organisme paie une partie (RegleMedecinTiersPayant)
+        var voletScanne = !string.IsNullOrWhiteSpace(commande.VoletChifa);
+        if (RegleMedecinTiersPayant.Exige(commande.TiersPayant, vente.PartOrganisme, voletScanne) && commande.Ordonnance?.MedecinId is null)
+            throw new RegleMetierException("Tiers payant : l’organisme paie une partie, indiquez le médecin prescripteur.", "nom_medecin");
         vente.VerifierAvantEncaissement(commande.Ordonnance is not null);
         // Liste I ou II sans ordonnance : droit « vendre sans ordonnance », sinon autorisation par le code d'un employé qui l'a.
         // Psychotrope ou stupéfiant : l'ordonnance reste obligatoire pour tous (contrôlé ci-dessus)
         var sansOrdonnance = produits.Values.Where(p => p.EstSurOrdonnance).Select(p => p.NomCommercial).ToList();
+        // Tiers payant sans part de l'organisme : vente sans ordonnance des médicaments remboursables, même validation
+        var tiersSansPart = RegleMedecinTiersPayant.SansPartOrganisme(commande.TiersPayant, vente.PartOrganisme, voletScanne);
+        if (tiersSansPart)
+            sansOrdonnance = sansOrdonnance.Union(produits.Values.Where(p => p.Remboursable).Select(p => p.NomCommercial)).ToList();
         if (commande.Ordonnance is { } ord && (ord.MedecinId is not null || ord.JetonScan is not null)) sansOrdonnance.Clear();
         if (sansOrdonnance.Count > 0)
-            await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendreSansOrdonnance, "vendre sans ordonnance un médicament de liste I ou II", ct);
+            await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendreSansOrdonnance,
+                tiersSansPart ? "vendre sans ordonnance en tiers payant sans part de l’organisme" : "vendre sans ordonnance un médicament de liste I ou II", ct);
 
         Reglement reglement;
         var credit = false;

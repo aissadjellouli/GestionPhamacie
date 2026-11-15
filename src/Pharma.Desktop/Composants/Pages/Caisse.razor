@@ -189,7 +189,7 @@
                 <!-- 1 · Panier : recherche du produit, mise en attente, ventes en attente du poste (gardées sur le serveur) -->
                 <div class="ligne-scan">
                     <div class="champ recherche">
-                        <label for="scan">1 · Panier <span class="detail">F7</span></label>
+                        <label for="scan">1 · Panier@(lignes.Count > 0 ? $" · {NombreProduits} produit(s), {lignes.Sum(l => l.Quantite)} boîte(s)" : "") <span class="detail">F7</span></label>
                         <input id="scan" data-champ="volet_chifa" class="grand" type="search" placeholder="Scanner ou rechercher un produit : nom, DCI, code-barres" autofocus autocomplete="off"
                                @bind="texte" @bind:event="oninput" @bind:after="RechercherApresSaisieAsync" @onkeydown="ToucheAsync" />
                         @if (suggestions.Count > 0)
@@ -326,7 +326,7 @@
                         {
                             @if (l.Lot is { } lot)
                             {
-                                <div class="panier-ligne">
+                                <div class="panier-ligne" data-ligne="@lignes.IndexOf(l)">
                                     <div class="panier-produit">
                                         <span>@l.Nom</span>
                                         <span>Lot servi @lot.NumeroLot · exp. @Libelles.Date(lot.DatePeremption) ·
@@ -350,7 +350,7 @@
                                     @if (l.Situation is { Situation: "peremption" or "obligatoire" } sit)
                                     {
                                         @* Lot plus ancien en stock : raison vérifiée (à valider) ou à choisir ; inscrite avec la vente *@
-                                        <div class="avertissement-fefo @(l.RaisonLot is null ? "orange" : null)" role="group" data-champ="raison_lot" aria-label="Raison du lot servi">
+                                        <div class="avertissement-fefo @(l.RaisonLot is null ? "orange" : "compact")" role="group" data-champ="raison_lot" aria-label="Raison du lot servi">
                                             <span>
                                                 Lot plus ancien en stock : @sit.LotDelaisse@(sit.PeremptionDelaisse is { } pd ? $" (exp. {Libelles.Date(pd)})" : "").
                                                 @if (l.RaisonLot is { } r) { <strong> Raison : @RaisonLotLibelle(r).</strong> }
@@ -414,7 +414,7 @@
                             }
                             else
                             {
-                                <div class="panier-ligne rupture">
+                                <div class="panier-ligne rupture" data-ligne="@lignes.IndexOf(l)">
                                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px">
                                         <div class="panier-produit">
                                             <span>@l.Nom</span>
@@ -444,9 +444,19 @@
                 <section class="panneau bloc-client" aria-label="Client et ordonnance">
                     <div class="bloc-client-entete">
                         <strong>2 · Client et ordonnance</strong>
-                        @if (OrdonnanceObligatoire)
+                        @* Bloc réduit : pas d'étiquette (le résumé dit ce qui manque) ; titre et boutons sur une rangée *@
+                        @if (ClientResume) { }
+                        else if (OrdonnanceObligatoire)
                         {
                             <span class="indice requis">psychotrope : ordonnance obligatoire (médecin, patient)</span>
+                        }
+                        else if (TiersSansPart && medecin is null && jetonScan is null)
+                        {
+                            <span class="indice" role="note">
+                                @(Session.A("caisse.vendre_sans_ordonnance")
+                                    ? "L’organisme ne paie rien : médecin facultatif ; sans ordonnance, vente permise par votre droit (inscrite au journal)"
+                                    : "L’organisme ne paie rien : médecin facultatif ; sans ordonnance, validation du titulaire ou d’un ayant droit (son code) à l’encaissement")
+                            </span>
                         }
                         else if (SansOrdonnanceListe)
                         {
@@ -456,15 +466,15 @@
                                     : "Liste I ou II : médecin attendu ; sans ordonnance, validation du titulaire ou d’un ayant droit (son code) à l’encaissement")
                             </span>
                         }
-                        else if (tiersPayant)
-                        {
-                            <span class="indice">tiers payant : patient assuré obligatoire</span>
-                        }
                         else if (!ClientOuvert)
                         {
                             <span class="detail">aucun patient, aucune ordonnance exigée</span>
                         }
                         <span class="espace"></span>
+                        @if (ClientOuvert && !ClientResume && !nouveauPatient && nouveauMedecin is null)
+                        {
+                            <button type="button" class="lien-bouton" title="Résumer le bloc en une ligne ; « Modifier » le rouvre" @onclick="ReduireClient">Réduire ▴</button>
+                        }
                         <div class="filtres" role="group" aria-label="Type de vente">
                             <button type="button" class="puce" aria-pressed="@(!tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(false)">Vente libre</button>
                             <button type="button" class="puce" aria-pressed="@(tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(true)">Tiers payant</button>
@@ -483,36 +493,18 @@
                             @if (lectureEnCours) { <span class="sous-titre" role="status">Lecture de l’ordonnance…</span> }
                         </div>
                     }
+                    else if (ClientResume)
+                    {
+                        @* Tout ce qu'il faut est saisi (2026-11-15) : une ligne, le panier garde la place ; « Modifier » rouvre le bloc *@
+                        <div class="bloc-client-reduit resume-client">
+                            <span><strong>@(patient is null ? "Aucun patient" : $"{patient.Nom} {patient.Prenom}".Trim())</strong>@(tiersPayant ? $" · {OrganismeCode} {(resteSaisi is { } r ? $"reste {Libelles.Dinars(r, 2)}" : $"{taux} %")}" : "")@(medecin is not null ? $" · {medecin.Nom}" : "")@(medecin is not null || jetonScan is not null ? $" · ordonnance{(string.IsNullOrWhiteSpace(numeroOrdonnance) ? "" : " " + numeroOrdonnance.Trim())} du {datePrescription:dd/MM/yyyy}" : "")</span>
+                            @if (ManqueClient is { } manque) { <span class="texte-attention">à compléter : @manque</span> }
+                            <span class="espace"></span>
+                            <button type="button" class="lien-bouton" @onclick="ModifierClient">Modifier ▾</button>
+                        </div>
+                    }
                     else
                     {
-                        @if (tiersPayant)
-                        {
-                            <div style="display: flex; flex-wrap: wrap; gap: 12px">
-                                <div class="champ" style="flex: 1 1 140px">
-                                    <label for="org">Organisme</label>
-                                    <select id="org" class="selection" @bind="organismeId" @bind:after="RecalculerAsync">
-                                        @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
-                                    </select>
-                                </div>
-                                <div class="champ" style="flex: 1 1 140px">
-                                    <span class="etiquette-champ">Taux</span>
-                                    <div class="filtres" role="group" aria-label="Taux de remboursement">
-                                        <button type="button" class="puce" aria-pressed="@(taux == 80 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(80)">80 %</button>
-                                        <button type="button" class="puce" aria-pressed="@(taux == 100 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(100)">100 %</button>
-                                    </div>
-                                </div>
-                                <div class="champ" style="flex: 1 1 180px">
-                                    <label for="reste-saisi">Reste à charge du patient (DA)</label>
-                                    <input id="reste-saisi" data-champ="reste_a_charge" type="number" min="0" step="0.01" placeholder="Selon le taux"
-                                           @bind="resteSaisi" @bind:after="RecalculerAsync" />
-                                </div>
-                            </div>
-                            <p class="detail" style="margin: 0">
-                                @(resteSaisi is null
-                                    ? "Laissez le reste à charge vide pour appliquer le taux de prise en charge."
-                                    : "Reste à charge saisi : le taux n’est pas appliqué, la part de l’organisme est la différence. Videz la case pour revenir au taux.")
-                            </p>
-                        }
 
                         <div class="bloc-client-grille @(AfficherMedecin ? "deux" : null)">
                             <!-- Patient -->
@@ -541,7 +533,7 @@
                                 else if (!nouveauPatient)
                                 {
                                     <input type="search" data-raccourci="patient" aria-label="Rechercher un patient" placeholder="Nom, téléphone ou n° d’assuré" autocomplete="off"
-                                           class="@Obligatoire.Classe(PatientManquant)" aria-invalid="@Obligatoire.Aria(PatientManquant && alerterPatient)"
+                                           class="@Obligatoire.Classe(PatientManquant && !patientTouche)" aria-invalid="@Obligatoire.Aria(PatientManquant && alerterPatient)" @onfocus="() => patientTouche = true"
                                            @bind="patientTexte" @bind:event="oninput" @bind:after="RechercherPatientsAsync" />
                                     @if (patients.Count > 0)
                                     {
@@ -578,7 +570,7 @@
                             @if (AfficherMedecin)
                             {
                                 <div class="champ recherche">
-                                    <span class="etiquette-champ @(OrdonnanceObligatoire ? "requis" : null)">Médecin prescripteur@(OrdonnanceObligatoire ? " (obligatoire)" : jetonScan is not null ? " (ordonnance scannée)" : "") <span class="detail">F5</span></span>
+                                    <span class="etiquette-champ @(MedecinObligatoire ? "requis" : null)" title="@(OrdonnanceObligatoire ? "Psychotrope ou stupéfiant : ordonnance obligatoire" : MedecinParLeTaux ? "Tiers payant : l’organisme paie une partie du médicament" : null)">Médecin@(MedecinObligatoire ? " (obligatoire)" : jetonScan is not null ? " (ordonnance scannée)" : "") <span class="detail">F5</span></span>
                                     @if (medecin is not null)
                                     {
                                         @* Médecin choisi sur une ligne : nom et « Changer » ; la spécialité au survol *@
@@ -589,14 +581,14 @@
                                     }
                                     else
                                     {
-                                        <input type="search" data-raccourci="medecin" aria-label="Rechercher le médecin prescripteur" data-champ="nom_medecin" placeholder="Nom du médecin" autocomplete="off" aria-invalid="@Obligatoire.Aria(MedecinManquant)"
+                                        <input type="search" data-raccourci="medecin" aria-label="Rechercher le médecin prescripteur" data-champ="nom_medecin" placeholder="Nom du médecin" autocomplete="off" aria-invalid="@Obligatoire.Aria(MedecinManquant && !medecinTouche)" @onfocus="() => medecinTouche = true"
                                                @bind="medecinTexte" @bind:event="oninput" @bind:after="RechercherMedecinsAsync" />
                                         @if (medecins.Count > 0)
                                         {
                                             <ul class="suggestions" aria-label="Médecins trouvés">
                                                 @foreach (var m in medecins)
                                                 {
-                                                    <li><button type="button" @onclick="() => (medecin, medecins, medecinTexte) = (m, [], m.Nom)"><span><strong>@m.Nom</strong> <span class="detail">@m.Specialite</span></span></button></li>
+                                                    <li><button type="button" @onclick="() => (medecin, medecins, medecinTexte, clientEdition) = (m, [], m.Nom, true)"><span><strong>@m.Nom</strong> <span class="detail">@m.Specialite</span></span></button></li>
                                                 }
                                             </ul>
                                         }
@@ -671,10 +663,6 @@
                                        class="@Obligatoire.Classe(PorteurPieceManque)" aria-invalid="@Obligatoire.Aria(PorteurPieceManque)" />
                             }
                         }
-                        @if (clientDeplie && !ClientExige)
-                        {
-                            <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="() => clientDeplie = false">Réduire</button>
-                        }
                     }
                 </section>
             </section>
@@ -682,6 +670,35 @@
             <!-- 3 · Paiement -->
             <aside class="panneau colonne-laterale reglement" aria-label="Paiement">
                 <strong>3 · Paiement</strong>
+                @if (tiersPayant)
+                {
+                    @* Tiers payant (2026-11-15) : organisme, taux et reste à charge dans le paiement, au-dessus de la part de l'organisme *@
+                    <div class="tiers-payant-paiement" role="group" aria-label="Tiers payant">
+                        <div class="champ champ-ligne">
+                            <label for="org">Organisme</label>
+                            <select id="org" class="selection" @bind="organismeId" @bind:after="RecalculerAsync">
+                                @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                            </select>
+                        </div>
+                        <div class="champ champ-ligne">
+                            <span class="etiquette-champ">Taux</span>
+                            <div class="filtres" role="group" aria-label="Taux de remboursement">
+                                <button type="button" class="puce" aria-pressed="@(taux == 80 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(80)">80 %</button>
+                                <button type="button" class="puce" aria-pressed="@(taux == 100 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(100)">100 %</button>
+                            </div>
+                        </div>
+                        <div class="champ champ-ligne">
+                            <label for="reste-saisi">Reste à charge (DA)</label>
+                            <input id="reste-saisi" data-champ="reste_a_charge" type="number" min="0" step="0.01" placeholder="Selon le taux"
+                                   title="Laissez vide pour appliquer le taux de prise en charge" @bind="resteSaisi" @bind:after="RecalculerAsync" />
+                        </div>
+                        @if (resteSaisi is not null)
+                        {
+                            <p class="detail" style="margin: 0">Reste à charge saisi : le taux n’est pas appliqué, la part de l’organisme est la différence. Videz la case pour revenir au taux.</p>
+                        }
+                    </div>
+                    <div class="separateur"></div>
+                }
                 <ValidationProduitBloque Produits="@(apercu?.ProduitsBloques ?? [])" Operation="à la vente" Id="caisse" Accord="accordBlocage" OnChange="StateHasChanged" />
                 @if (erreurCalcul is not null) { <div class="erreur" role="alert">@erreurCalcul</div> }
                 <div class="ligne-total"><span>Total</span><span>@Libelles.Dinars(apercu?.MontantBrut ?? 0, 2)</span></div>
@@ -751,7 +768,7 @@
                 @* « + Remise » (2026-11-15) : le champ s'ouvre à la demande, ou de lui-même quand une remise est saisie *@
                 @if (!RemiseOuverte)
                 {
-                    <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="OuvrirRemiseAsync">+ Remise</button>
+                    <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="OuvrirRemiseAsync" title="Sur un produit de parapharmacie : une remise ; sur un médicament : un don partiel du reste à charge">+ Remise ou don</button>
                 }
                 else
                 {
@@ -760,7 +777,7 @@
                        reste à charge (droit de don, sinon code d'un collègue qui l'a). Entier de 0 à 100 ; le 0 s'efface dès qu'on tape ;
                        champ vidé : 0. *@
                     <div class="champ champ-ligne">
-                        <label for="remise" title="Remise sur la part du patient, hors SHP (honoraire du pharmacien)">Remise (%, hors SHP)</label>
+                        <label for="remise" title="Sur la part du patient, hors SHP (honoraire du pharmacien) : remise sur la parapharmacie, don partiel sur un médicament">Remise ou don (%, hors SHP)</label>
                         <input id="remise" data-champ="remise" @ref="champRemise" type="text" inputmode="numeric" maxlength="3" autocomplete="off" value="@RemiseTexte"
                                onfocus="this.select()" onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
                                @oninput="SaisieRemiseAsync" @onchange="RecalculerAsync" />
@@ -946,6 +963,7 @@
         : PsychotropeInterdit ? "Psychotrope : délivrance réservée aux employés qui en ont le droit"
         : PatientObligatoire && patient is null ? "Choisissez le patient"
         : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
+        : MedecinParLeTaux && medecin is null ? "Tiers payant : l’organisme paie une partie, indiquez le médecin prescripteur"
         : PorteurIncomplet ? "Porteur de l’ordonnance : nom, adresse et pièce d’identité obligatoires"
         : lignes.FirstOrDefault(l => l.Lot is not null && l.Situation is { Situation: not "aucune" } && l.RaisonLot is null) is { } sansRaison
             ? $"{sansRaison.Nom} : un lot plus ancien est en stock, indiquez ou validez la raison sous la ligne"
@@ -985,10 +1003,44 @@
     private string? RaisonBlocageMode => mode == "credit" ? RaisonBlocageCredit : RaisonBlocage;
     /// <summary>Psychotrope ou stupéfiant au panier : ordonnance obligatoire, sans exception par validation.</summary>
     private bool OrdonnanceObligatoire => apercu?.OrdonnanceRequise == true;
-    private bool AfficherMedecin => OrdonnanceObligatoire || apercu?.SurOrdonnance == true || jetonScan is not null;
+    /// <summary>
+    /// Tiers payant (2026-11-15, même règle que le serveur, RegleMedecinTiersPayant) : l'organisme paie une partie, médecin obligatoire ;
+    /// il ne paie rien (TiersSansPart), médecin facultatif mais vente sans ordonnance validée ; volet Chifa scanné : facultatif.
+    /// </summary>
+    private bool MedecinParLeTaux => tiersPayant && volet is null && (apercu?.PartOrganisme ?? 0) > 0;
+    private bool TiersSansPart => tiersPayant && volet is null && apercu is not null && apercu.PartOrganisme <= 0;
+    /// <summary>Médecin exigé : psychotrope, ou tiers payant au taux.</summary>
+    private bool MedecinObligatoire => OrdonnanceObligatoire || MedecinParLeTaux;
+    private bool AfficherMedecin => MedecinObligatoire || TiersSansPart || apercu?.SurOrdonnance == true || jetonScan is not null;
     /// <summary>Le panier exige le bloc client (patient, médecin, organisme) : il ne se réduit pas.</summary>
     private bool ClientExige => tiersPayant || patient is not null || nouveauPatient || PatientObligatoire || AfficherMedecin || PsychotropeInterdit;
     private bool clientDeplie;
+    /// <summary>Tout ce que le panier exige du client est saisi (patient, médecin si attendu, organisme), sans saisie en cours.</summary>
+    private bool ClientComplet => patient is not null && !nouveauPatient && nouveauMedecin is null && !PsychotropeInterdit && !PorteurDemande
+        && (!MedecinObligatoire || medecin is not null) && (!tiersPayant || organismeId > 0);
+    /// <summary>Le bloc est en cours de saisie : il reste ouvert jusqu'au produit suivant ou à « Réduire ».</summary>
+    private bool clientEdition;
+    /// <summary>« Réduire » demandé : le bloc se résume même incomplet (ce qui manque est signalé) jusqu'à « Modifier ».</summary>
+    private bool reduitDemande;
+    private bool ClientResume => !clientEdition && (ClientComplet || reduitDemande) && (patient is not null || reduitDemande)
+        && !nouveauPatient && nouveauMedecin is null;
+    private void ReduireClient()
+    {
+        if (!ClientExige) { clientDeplie = false; return; }   // rien d'exigé : retour à la ligne « Ajouter un patient »
+        (clientEdition, reduitDemande) = (false, true);
+    }
+    private void ModifierClient() => (clientEdition, reduitDemande) = (true, false);
+    /// <summary>Ce que le panier exige encore du client (patient, médecin, organisme) ; null : rien.</summary>
+    private string? ManqueClient => string.Join(", ", new[]
+    {
+        PatientObligatoire && patient is null ? "patient" : null,
+        MedecinObligatoire && medecin is null ? "médecin" : AfficherMedecin && medecin is null && jetonScan is null ? "médecin (attendu)" : null,
+        tiersPayant && organismeId <= 0 ? "organisme" : null
+    }.Where(m => m is not null)) is { Length: > 0 } m2 ? m2 : null;
+    private string OrganismeCode => organismes.FirstOrDefault(o => o.Id == organismeId)?.Code ?? "organisme";
+    private int NombreProduits => lignes.Select(l => l.ProduitId).Distinct().Count();
+    /// <summary>Ligne à faire apparaître dans le cadre du panier après le prochain affichage (ajout, scan).</summary>
+    private LignePanier? ligneAVoir, derniereAjoutee;
     private bool ClientOuvert => clientDeplie || ClientExige;
     private bool attentesOuvertes;
     private bool remiseDemandee;
@@ -1116,7 +1168,11 @@
         // la caméra ou le formulaire d'un nouveau patient
         if (rubrique != "" || imageAgrandie || cameraOuverte || nouveauPatient) return;
         if (PeutEncaisserMode) await EncaisserAsync(mode);
-        else if (PatientManquant) alerterPatient = true;   // la bulle « À renseigner » s'ouvre seulement maintenant
+        else
+        {
+            if (PatientManquant) (alerterPatient, patientTouche) = (true, false);   // la bulle « À renseigner » s'ouvre seulement maintenant
+            if (MedecinManquant) medecinTouche = false;                            // champ vide : son rouge revient
+        }
         StateHasChanged();
     }
 
@@ -1256,6 +1312,7 @@
             reste -= prise;
         }
 
+        (ligneAVoir, derniereAjoutee, clientEdition) = (derniere, derniere, false);
         // Tous les lots vendables sont épuisés : toujours un équivalent quand le produit manque
         if (reste > 0 && derniere is not null)
         {
@@ -1297,6 +1354,8 @@
             if (b.BoiteId is { } id) ligne.Boites.Add(id);
             lignes.Add(ligne);
         }
+        (ligneAVoir, clientEdition) = (existante ?? lignes[^1], false);
+        derniereAjoutee = ligneAVoir;
         await RecalculerAsync();
     }
 
@@ -1461,6 +1520,13 @@
 
     protected override async Task OnAfterRenderAsync(bool premierAffichage)
     {
+        // Produit ajouté ou scanné : sa ligne est amenée dans le cadre du panier (les autres restent au-dessus ou au-dessous)
+        if (ligneAVoir is { } aVoir)
+        {
+            ligneAVoir = null;
+            var index = lignes.IndexOf(aVoir);
+            if (index >= 0) await JS.InvokeVoidAsync("pharma.voirLigne", index);
+        }
         if (premierAffichage)
         {
             reference = DotNetObjectReference.Create(this);
@@ -1649,7 +1715,7 @@
 
     private async Task ChoisirPatientAsync(PatientDto p)
     {
-        (patient, patients, patientTexte) = (p, [], "");
+        (patient, patients, patientTexte, clientEdition) = (p, [], "", true);
         if (tiersPayant && p.OrganismeId is { } org) organismeId = org;
         await RecalculerAsync();
     }
@@ -1675,7 +1741,9 @@
     /// (aria-invalid, erreurs.js) n'apparaît qu'à la tentative d'encaisser (F12), pour ne pas cacher le reste de l'ordonnance (2026-11-15).
     /// </summary>
     private bool alerterPatient;
-    private bool MedecinManquant => apercu?.OrdonnanceRequise == true && medecin is null;
+    /// <summary>Champ cliqué (2026-11-15) : son rouge « obligatoire » s’efface ; « Encaisser » reste bloqué tant qu’il est vide.</summary>
+    private bool patientTouche, medecinTouche;
+    private bool MedecinManquant => MedecinObligatoire && medecin is null;
     private bool controlePatient;
     private ElementReference champNomPatient;
     private bool NomPatientManquant => Obligatoire.Manque(controlePatient, np.Nom);
@@ -1734,7 +1802,7 @@
             var dto = nm.VersDto();
             var (cree, err) = await Api.CreerMedecinAsync(dto);
             if (err is not null) { erreurMedecin = err; return; }
-            (medecin, medecins, nouveauMedecin, erreurMedecin) = (new MedecinDto(cree!.Id, dto.Nom, dto.Specialite, dto.Telephone, dto.Adresse, dto.Email,
+            (clientEdition, medecin, medecins, nouveauMedecin, erreurMedecin) = (true, new MedecinDto(cree!.Id, dto.Nom, dto.Specialite, dto.Telephone, dto.Adresse, dto.Email,
                 dto.NumeroOrdre, dto.CodeCnas), [], null, null);
         }
         finally { creationMedecin = false; }
@@ -1745,7 +1813,7 @@
             l.Boites.Count > 0 ? l.Boites.Take(l.Quantite).ToList() : null, l.RaisonLot)).ToList(),
         tiersPayant, tiersPayant ? organismeId : null, tiersPayant ? taux : null,
         patient?.Id,
-        jetonScan is not null || ((apercu?.OrdonnanceRequise == true || apercu?.SurOrdonnance == true) && medecin is not null)
+        jetonScan is not null || ((apercu?.OrdonnanceRequise == true || apercu?.SurOrdonnance == true || MedecinParLeTaux || TiersSansPart) && medecin is not null)
             ? new OrdonnanceDto(medecin?.Id, datePrescription, string.IsNullOrWhiteSpace(numeroOrdonnance) ? null : numeroOrdonnance.Trim(),
                 jetonScan, texteReconnu,
                 PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null)
@@ -1769,6 +1837,7 @@
     private async Task ChoisirRaisonAsync(LignePanier l, string? raison)
     {
         l.RaisonLot = raison;
+        ligneAVoir = derniereAjoutee;   // l'encadré change de hauteur : la dernière ligne ajoutée reste dans le cadre
         await RecalculerAsync();
     }
 
@@ -1981,7 +2050,8 @@
         (apercu, bandeau, erreur, montantRecu, remisePct, remiseAdditionnee) = (null, null, null, null, 0, false);
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
         (nouveauPatient, np, controlePatient, patientTexte, patients, medecins, alerterPatient) = (false, new(), false, "", [], [], false);
-        (clientDeplie, remiseDemandee, attentesOuvertes, nouveauMedecin, erreurMedecin) = (false, false, false, null, null);
+        (clientDeplie, remiseDemandee, attentesOuvertes, nouveauMedecin, erreurMedecin, clientEdition, reduitDemande) = (false, false, false, null, null, false, false);
+        (patientTouche, medecinTouche) = (false, false);
         if (mode == "credit") mode = "especes";
         (datePrescription, erreurScan, taux, organismeId) = (DateOnly.FromDateTime(DateTime.Today), null, TauxParDefaut, OrganismeParDefaut);
         (volet, voletBrut, codesAAssocier, ecartsVolet) = (null, null, [], []);

@@ -6,6 +6,17 @@ window.pharma = {
   // La page Caisse s'abonne au raccourci F12 (Encaisser) et se désabonne en quittant la page
   ecouterF12: function (reference) { this._caisse = reference; },
   arreterF12: function () { this._caisse = null; },
+  // Caisse : amène une ligne du panier dans son cadre (produit ajouté ou scanné), sans faire défiler l'écran
+  voirLigne: function (index) {
+    // Après le calcul de la hauteur du cadre (pharma.tableaux, planifié après chaque changement de l'écran)
+    // et encore après un bandeau apparu dans la foulée (lot périmé remplacé…), qui réduit le cadre une seconde fois
+    function voir() {
+      var ligne = document.querySelector('.panier [data-ligne="' + index + '"]');
+      if (ligne) ligne.scrollIntoView({ block: 'nearest' });
+    }
+    setTimeout(voir, 150);
+    setTimeout(voir, 500);
+  },
 
   // Champ dont la saisie a été corrigée par l'écran (ex. remise : « 05 » → « 5 », champ vidé → « 0 ») : valeur affichée réécrite,
   // curseur en fin de champ
@@ -291,7 +302,15 @@ window.pharma.zoom.appliquer(window.pharma.zoom.lire());
 // (règle des listes, docs/charte-graphique.md). La hauteur de chaque cadre est ajustée à la place qui reste dans la fenêtre,
 // sous ce qui le précède et au-dessus de ce qui le suit de près (pagination, total, note) et de la barre d'état.
 window.pharma.tableaux = (function () {
-  const BARRE_ETAT = 32, MARGE = 24, MIN = 240;
+  // Le panier de la caisse (cadre prioritaire) peut descendre plus bas : le bloc client ouvert passe avant lui, un temps
+  const BARRE_ETAT = 32, MARGE = 24, MIN = 240, MIN_PRIORITAIRE = 140;
+  function minimum(c) { return c.classList.contains("cadre-prioritaire") ? MIN_PRIORITAIRE : MIN; }
+  // Hauteur d'un cadre : plafonnée ; le cadre prioritaire (panier de la caisse) prend en plus toute cette hauteur, vide ou non
+  function poser(c, h) {
+    const valeur = h + "px";
+    if (c.style.maxHeight !== valeur) c.style.maxHeight = valeur;
+    if (c.classList.contains("cadre-prioritaire") && c.style.height !== valeur) c.style.height = valeur;
+  }
   function hautDansPage(el) { let y = 0; for (let e = el; e; e = e.offsetParent) y += e.offsetTop; return y; }
   // Ce qui suit le cadre dans son conteneur et dans le conteneur au-dessus (petits éléments seulement : pagination, pied)
   function dessous(cadre) {
@@ -312,9 +331,8 @@ window.pharma.tableaux = (function () {
     const fenetre = window.innerHeight / zoom;
     document.querySelectorAll(".tableau-cadre, .cadre-defilant").forEach(function (c) {
       if (c.closest(".voile, .suggestions")) return;   // fenêtres au-dessus de l'écran : leur propre défilement
-      const h = Math.max(MIN, Math.floor(fenetre - hautDansPage(c) - dessous(c) - BARRE_ETAT - MARGE));
-      const valeur = h + "px";
-      if (c.style.maxHeight !== valeur) c.style.maxHeight = valeur;
+      const h = Math.max(minimum(c), Math.floor(fenetre - hautDansPage(c) - dessous(c) - BARRE_ETAT - MARGE));
+      poser(c, h);
     });
     // Correction : tant qu'il reste un débordement de l'écran (marges, notes, ligne de filtres ajoutée…), le plus grand cadre le reprend
     const d = document.scrollingElement;
@@ -331,9 +349,21 @@ window.pharma.tableaux = (function () {
       })[0];
       if (!grand) break;
       const actuel = parseFloat(grand.style.maxHeight) || grand.clientHeight;
-      const h = Math.max(MIN, actuel - deborde);
+      const h = Math.max(minimum(grand), actuel - deborde);
       if (h >= actuel) break;   // plus rien à reprendre : l'écran est trop chargé (à découper en rubriques)
-      grand.style.maxHeight = h + "px";
+      poser(grand, h);
+    }
+    // Panier de la caisse : il descend jusqu'au-dessus de la barre d'état (écran fixe, rien d'autre ne défile)
+    const prioritaire = document.querySelector('.cadre-prioritaire');
+    const barre = document.querySelector('.barre-etat');
+    const colonne = prioritaire && prioritaire.closest('.colonnes');
+    if (prioritaire && barre && colonne && !prioritaire.closest('.voile')) {
+      const libre = Math.floor((barre.getBoundingClientRect().top - colonne.getBoundingClientRect().bottom) / zoom) - MARGE;
+      const actuel = parseFloat(prioritaire.style.height) || prioritaire.clientHeight;
+      if (libre > 2) poser(prioritaire, actuel + libre);
+      // Marges sous les colonnes : si la fenêtre déborde encore, le panier rend l'excédent
+      const reste = Math.ceil(Math.max(d.scrollHeight - d.clientHeight, document.documentElement.getBoundingClientRect().height - window.innerHeight) / zoom);
+      if (reste > 0) poser(prioritaire, Math.max(minimum(prioritaire), (parseFloat(prioritaire.style.height) || prioritaire.clientHeight) - reste));
     }
   }
   let prevu = false;

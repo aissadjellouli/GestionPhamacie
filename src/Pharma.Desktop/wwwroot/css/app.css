@@ -871,3 +871,28 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 .sous-formulaire.fiche-medecin { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .fiche-medecin > .actions, .fiche-medecin > .erreur { grid-column: 1 / -1; }
 .sous-formulaire.fiche-medecin.large { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* Caisse (2026-11-15) : lignes du panier visibles quand le bloc client est rempli */
+.avertissement-fefo.compact { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 6px 12px; }
+.avertissement-fefo.compact > span { font-size: 13px; }
+.resume-client { padding: 8px 12px; border-radius: 10px; background: var(--surface-2); }
+.panier.cadre-defilant { box-shadow: inset 0 -12px 10px -10px rgba(0, 0, 0, .18); }
+
+/* Tiers payant dans le paiement (2026-11-15) : trois lignes courtes, libellé à gauche */
+.tiers-payant-paiement { display: flex; flex-direction: column; gap: 8px; }
+.tiers-payant-paiement .champ-ligne { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tiers-payant-paiement .champ-ligne select, .tiers-payant-paiement .champ-ligne input { width: 180px; flex: 0 0 auto; }
+.tiers-payant-paiement .puce { height: 38px; }
+
+/* Le panier défile à la souris (2026-11-15) : .panier { overflow: hidden } l'emportait sur le cadre défilant */
+.panier.cadre-defilant { overflow-y: auto; overflow-x: hidden; }
+/* Reste à charge et rendu mis en avant (2026-11-15) */
+.tiers-payant-paiement label[for="reste-saisi"] { font-weight: 700; color: var(--texte); }
+.tiers-payant-paiement #reste-saisi { height: 48px; font-size: 20px; font-weight: 700; border: 2px solid var(--accent); text-align: right; }
+.paiement-especes .etiquette-champ, .paiement-especes label[for="recu"] { font-weight: 700; color: var(--texte); }
+.paiement-especes .rendu-caisse { font-size: 30px; font-weight: 800; }
+/* Reste à charge : texte réduit (2026-11-15), le cadre vert le signale */
+.tiers-payant-paiement #reste-saisi { height: 40px; font-size: 15px; font-weight: 600; }
+.tiers-payant-paiement label[for="reste-saisi"] { font-weight: 600; }
+/* Patient et médecin alignés par le bas, même si un libellé passe sur deux lignes (2026-11-15) */
+.bloc-client-grille { align-items: end; }
