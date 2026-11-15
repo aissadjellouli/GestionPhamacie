@@ -13,6 +13,12 @@ internal sealed class RapportsEnMemoire : IRapports
         Demande = (du, au);
         return Task.FromResult(new SyntheseVentes(12, 15400.50m, 3200, 800, 150, 1));
     }
+    public (DateOnly Jour, TimeSpan Heure)? DemandeHeure { get; private set; }
+    public Task<SyntheseVentes> SyntheseJusquAAsync(DateOnly jour, TimeSpan heure, CancellationToken ct = default)
+    {
+        DemandeHeure = (jour, heure);
+        return Task.FromResult(new SyntheseVentes(10, 14000m, 3000, 700, 100, 0));
+    }
     public Task<IReadOnlyList<VentesJour>> ParJourAsync(DateOnly du, DateOnly au, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<VentesJour>>([new(du, 12, 15400.50m)]);
     public Task<IReadOnlyList<ProduitVendu>> TopProduitsAsync(DateOnly du, DateOnly au, int limite, CancellationToken ct = default) =>

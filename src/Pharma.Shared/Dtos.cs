@@ -189,8 +189,12 @@ public sealed record FichePatientDto(long Id, string Nom, string? Prenom, DateOn
     long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0);
 
 public sealed record NouveauPatientDto(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
-public sealed record MedecinDto(long Id, string Nom, string? Specialite);
-public sealed record NouveauMedecinDto(string Nom, string? Specialite);
+/// <summary>Médecin prescripteur ; coordonnées facultatives (2026-11-15).</summary>
+public sealed record MedecinDto(long Id, string Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
+    string? NumeroOrdre = null, string? CodeCnas = null);
+/// <summary>Création ou correction d'un médecin : le nom seul est obligatoire.</summary>
+public sealed record NouveauMedecinDto(string Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
+    string? NumeroOrdre = null, string? CodeCnas = null);
 public sealed record OrganismeDto(long Id, string Code, string Nom, int DelaiPaiementJours = 30);
 public sealed record IdentifiantDto(long Id);
 
@@ -498,6 +502,11 @@ public sealed record ConflitReceptionDto(int Index, string Type, string Message,
 public sealed record SyntheseVentesDto(int NombreVentes, decimal ChiffreAffaires, decimal PartOrganismes, decimal CreditsAccordes, decimal Remises, int Annulations,
     int Retours = 0, decimal MontantRetours = 0, decimal VentesMedicaments = 0, decimal VentesAutres = 0, decimal Shp = 0,
     decimal DonsPartiels = 0, decimal RemisesAutomatiques = 0);
+/// <summary>
+/// Ventes du jour de l'accueil (droits rapports.ventes et caisse.voir_ecart) et même jour de la semaine précédente arrêté à la même heure
+/// (Heure, heure du serveur). Marge : null sans rapports.marges.
+/// </summary>
+public sealed record VentesDuJourDto(DateOnly Jour, TimeOnly Heure, SyntheseVentesDto Aujourdhui, DateOnly JourReference, SyntheseVentesDto Reference, MargeBruteDto? Marge);
 /// <summary>Taux en % ; null si le chiffre d'affaires HT est nul.</summary>
 public sealed record MargeBruteDto(decimal ChiffreAffairesHt, decimal CoutAchat, decimal Montant, decimal? Taux);
 public sealed record VentesJourDto(DateOnly Date, int NombreVentes, decimal ChiffreAffaires);

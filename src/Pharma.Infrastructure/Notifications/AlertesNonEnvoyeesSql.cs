@@ -1,4 +1,5 @@
 using Npgsql;
+using Pharma.Application.Commun;
 using Pharma.Application.Notifications;
 using Pharma.Domain.Notifications;
 
@@ -16,14 +17,17 @@ public sealed class AlertesNonEnvoyeesSql(NpgsqlDataSource db) : IAlertesNonEnvo
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<AlertesNonEnvoyeesNonVues> NonVuesAsync(int limite, CancellationToken ct = default)
+    public async Task<AlertesNonEnvoyeesNonVues> NonVuesAsync(string? texte, DemandePage page, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
             SELECT id, type, objet, raison, cree_le, count(*) OVER ()
             FROM alerte_non_envoyee WHERE vue_le IS NULL
-            ORDER BY id DESC LIMIT $1
+              AND ($3::text IS NULL OR objet ILIKE '%' || $3 || '%' OR raison ILIKE '%' || $3 || '%')
+            ORDER BY id DESC LIMIT $1 OFFSET $2
             """);
-        cmd.Parameters.AddWithValue(limite);
+        cmd.Parameters.AddWithValue(page.Taille);
+        cmd.Parameters.AddWithValue(page.Decalage);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)texte ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
         var liste = new List<AlerteNonEnvoyee>();
         var nombre = 0;
         await using var r = await cmd.ExecuteReaderAsync(ct);

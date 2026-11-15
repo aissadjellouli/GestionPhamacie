@@ -39,8 +39,22 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
         n AS (SELECT l.*, CASE WHEN l.brut_vente > 0 THEN l.brut * l.montant_total / l.brut_vente ELSE 0 END AS net FROM l)
         """;
 
-    public async Task<SyntheseVentes> SyntheseAsync(DateOnly du, DateOnly au, CancellationToken ct = default)
+    public Task<SyntheseVentes> SyntheseAsync(DateOnly du, DateOnly au, CancellationToken ct = default) => SyntheseAsync(du, au, null, ct);
+
+    /// <summary>
+    /// Ventes d'un jour jusqu'à une heure (exclue), comptée depuis minuit dans le fuseau de PostgreSQL comme les périodes par date :
+    /// comparaison de l'accueil avec le même jour de la semaine précédente, à la même heure.
+    /// </summary>
+    public Task<SyntheseVentes> SyntheseJusquAAsync(DateOnly jour, TimeSpan heure, CancellationToken ct = default) => SyntheseAsync(jour, jour, heure, ct);
+
+    private async Task<SyntheseVentes> SyntheseAsync(DateOnly du, DateOnly au, TimeSpan? heure, CancellationToken ct)
     {
+        // Période bornée par date, ou par date et heure ($3) : ces deux variables locales masquent les constantes de même nom
+        var Periode = heure is null ? RapportsSql.Periode : "v.date_vente >= $1::date AND v.date_vente < LEAST($2::date + 1, $1::date + $3::interval)";
+        var RetoursPeriode = heure is null ? RapportsSql.RetoursPeriode : """
+            retour_client rc JOIN vente vr ON vr.id = rc.vente_id AND vr.statut = 'validee'
+            WHERE rc.cree_le >= $1::date AND rc.cree_le < LEAST($2::date + 1, $1::date + $3::interval)
+            """;
         await using var cmd = Commande($"""
             SELECT count(*) FILTER (WHERE v.statut = 'validee')::int,
                    COALESCE(SUM(v.montant_total) FILTER (WHERE v.statut = 'validee'), 0)
@@ -67,6 +81,7 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
                     WHERE v.statut = 'validee' AND {Periode})
             FROM vente v WHERE {Periode}
             """, du, au);
+        if (heure is { } h) cmd.Parameters.AddWithValue(h);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
         return new SyntheseVentes(r.GetInt32(0), r.GetDecimal(1), r.GetDecimal(2), r.GetDecimal(5), r.GetDecimal(3), r.GetInt32(4),

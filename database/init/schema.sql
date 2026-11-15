@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 081 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 082 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 081 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 082 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -25,7 +25,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict 3dfgRo1u48Mozn2AnZCUxiIcC38hbkoi76STMGHFcc2CByCOLkvAtiy7AtqTAG3
+\restrict E7QYfnH8rhuGYixEnngB0Jx7bw9vDi8oWzhgIwZeiwnpaj3yac8FgejccaXvhOp
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3728,7 +3728,12 @@ CREATE TABLE public.medecin (
     id bigint NOT NULL,
     nom text NOT NULL,
     specialite text,
-    code_prestataire text
+    code_prestataire text,
+    telephone text,
+    adresse text,
+    email text,
+    numero_ordre text,
+    CONSTRAINT ck_medecin_coordonnees CHECK ((((telephone IS NULL) OR (length(telephone) <= 30)) AND ((adresse IS NULL) OR (length(adresse) <= 300)) AND ((email IS NULL) OR (length(email) <= 120)) AND ((numero_ordre IS NULL) OR (length(numero_ordre) <= 30)) AND ((code_prestataire IS NULL) OR (length(code_prestataire) <= 30))))
 );
 
 
@@ -10118,5 +10123,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 3dfgRo1u48Mozn2AnZCUxiIcC38hbkoi76STMGHFcc2CByCOLkvAtiy7AtqTAG3
+\unrestrict E7QYfnH8rhuGYixEnngB0Jx7bw9vDi8oWzhgIwZeiwnpaj3yac8FgejccaXvhOp
 

@@ -1,12 +1,13 @@
 using Npgsql;
 using Pharma.Application.Caisse;
+using Pharma.Application.Commun;
 
 namespace Pharma.Infrastructure.Caisse;
 
 /// <summary>Écarts de caisse récents non vus par le titulaire (session_caisse, ecart_caisse_vu du script 079) : tuile de son accueil.</summary>
 public sealed class EcartsCaisseRecentsSql(NpgsqlDataSource db) : IEcartsCaisseRecents
 {
-    public async Task<EcartsCaisseNonVus> NonVusAsync(int jours, int limite, CancellationToken ct = default)
+    public async Task<EcartsCaisseNonVus> NonVusAsync(int jours, string? texte, DemandePage page, CancellationToken ct = default)
     {
         // Employé qui a clôturé (compté) : session_caisse ne le garde pas ; la clôture avec écart non nul est inscrite au journal
         // (action « ecart_caisse », au nom de celui qui a compté, relève comprise). Sans cette trace : celui qui a ouvert la caisse.
@@ -23,10 +24,13 @@ public sealed class EcartsCaisseRecentsSql(NpgsqlDataSource db) : IEcartsCaisseR
                 ORDER BY j.cree_le DESC, j.id DESC LIMIT 1) c ON true
             WHERE s.fermee_le IS NOT NULL AND s.fermee_le >= now() - make_interval(days => $1) AND s.ecart <> 0
               AND NOT EXISTS (SELECT 1 FROM ecart_caisse_vu v WHERE v.session_id = s.id)
-            ORDER BY s.fermee_le DESC, s.id DESC LIMIT $2
+              AND ($4::text IS NULL OR s.poste ILIKE '%' || $4 || '%' OR COALESCE(c.nom_complet, u.nom_complet) ILIKE '%' || $4 || '%')
+            ORDER BY s.fermee_le DESC, s.id DESC LIMIT $2 OFFSET $3
             """);
         cmd.Parameters.AddWithValue(jours);
-        cmd.Parameters.AddWithValue(limite);
+        cmd.Parameters.AddWithValue(page.Taille);
+        cmd.Parameters.AddWithValue(page.Decalage);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)texte ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
         var liste = new List<EcartCaisseRecent>();
         var nombre = 0;
         await using var r = await cmd.ExecuteReaderAsync(ct);

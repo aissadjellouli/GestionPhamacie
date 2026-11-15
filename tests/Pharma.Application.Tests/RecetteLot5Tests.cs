@@ -18,9 +18,9 @@ internal sealed class AlertesNonEnvoyeesEnMemoire : IAlertesNonEnvoyees
         Notees.Add((type, objet, raison));
         return Task.CompletedTask;
     }
-    public Task<AlertesNonEnvoyeesNonVues> NonVuesAsync(int limite, CancellationToken ct = default) =>
+    public Task<AlertesNonEnvoyeesNonVues> NonVuesAsync(string? texte, Application.Commun.DemandePage page, CancellationToken ct = default) =>
         Task.FromResult(new AlertesNonEnvoyeesNonVues(Notees.Count,
-            Notees.Select((n, i) => new AlerteNonEnvoyee(i + 1, n.Type.Code(), n.Objet, n.Raison, DateTime.UtcNow)).Reverse().Take(limite).ToList()));
+            Notees.Select((n, i) => new AlerteNonEnvoyee(i + 1, n.Type.Code(), n.Objet, n.Raison, DateTime.UtcNow)).Reverse().Skip(page.Decalage).Take(page.Taille).ToList()));
     public Task<int> MarquerVuesAsync(long jusquA, long utilisateurId, CancellationToken ct = default) => Task.FromResult(Notees.Count);
 }
 

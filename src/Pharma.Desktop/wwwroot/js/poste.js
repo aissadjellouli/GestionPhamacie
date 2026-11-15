@@ -31,6 +31,17 @@ document.addEventListener('keydown', function (e) {
     var scan = document.getElementById('scan');
     if (scan) { e.preventDefault(); scan.focus(); scan.select(); }
   }
+  // Caisse (2026-11-15) : F6 patient, F5 médecin prescripteur (jamais le rechargement de la page : il viderait le panier),
+  // F8 ouvrir le tiroir (la confirmation du menu s'affiche). Un lien « Ajouter un patient » déplie d'abord le bloc client.
+  if ((e.key === 'F5' || e.key === 'F6' || e.key === 'F8') && window.pharma._caisse) {
+    e.preventDefault();
+    if (document.querySelector('.voile, [aria-modal="true"]')) return;
+    var cible = document.querySelector('[data-raccourci="' + (e.key === 'F6' ? 'patient' : e.key === 'F5' ? 'medecin' : 'tiroir') + '"]');
+    if (!cible) return;
+    if (cible.tagName === 'INPUT') { cible.focus(); cible.select(); return; }
+    cible.click();
+    if (e.key === 'F6') setTimeout(function () { var champ = document.querySelector('input[data-raccourci="patient"]'); if (champ) champ.focus(); }, 150);
+  }
   // Navigation (docs/navigation.md) : Ctrl + K ouvre la recherche partout ; Ctrl + Maj + lettre ouvre le domaine qui l'affiche
   // dans le menu du haut (data-touche ; un domaine sans droit n'y est pas, le raccourci ne fait alors rien)
   if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
@@ -313,7 +324,11 @@ window.pharma.tableaux = (function () {
       const deborde = Math.ceil(Math.max(d.scrollHeight - d.clientHeight, hauteurPage - window.innerHeight) / zoom);
       if (deborde <= 0) break;
       const cadres = Array.from(document.querySelectorAll(".tableau-cadre, .cadre-defilant")).filter(function (c) { return !c.closest(".voile, .suggestions"); });
-      const grand = cadres.sort(function (a, b) { return b.clientHeight - a.clientHeight; })[0];
+      // Un cadre marqué « prioritaire » (le panier de la caisse) reprend le débordement avant les autres
+      const grand = cadres.sort(function (a, b) {
+        const pa = a.classList.contains('cadre-prioritaire') ? 1 : 0, pb = b.classList.contains('cadre-prioritaire') ? 1 : 0;
+        return pb - pa || b.clientHeight - a.clientHeight;
+      })[0];
       if (!grand) break;
       const actuel = parseFloat(grand.style.maxHeight) || grand.clientHeight;
       const h = Math.max(MIN, actuel - deborde);

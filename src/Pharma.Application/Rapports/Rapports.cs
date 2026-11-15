@@ -135,6 +135,8 @@ public sealed record RapportActivite(PeriodeRapport Periode, SyntheseVentes Synt
 public interface IRapports
 {
     Task<SyntheseVentes> SyntheseAsync(DateOnly du, DateOnly au, CancellationToken ct = default);
+    /// <summary>Ventes d'un jour depuis minuit jusqu'à <paramref name="heure"/> (exclue).</summary>
+    Task<SyntheseVentes> SyntheseJusquAAsync(DateOnly jour, TimeSpan heure, CancellationToken ct = default);
     /// <summary>Un élément par jour de la période, y compris les jours sans vente.</summary>
     Task<IReadOnlyList<VentesJour>> ParJourAsync(DateOnly du, DateOnly au, CancellationToken ct = default);
     Task<IReadOnlyList<ProduitVendu>> TopProduitsAsync(DateOnly du, DateOnly au, int limite, CancellationToken ct = default);
@@ -351,5 +353,27 @@ public static class RapportCsv
         // Une cellule qui commence par = + - @ serait lue comme une formule par Excel
         if (s.Length > 0 && "=+-@".Contains(s[0]) && v is string) s = "'" + s;
         return s.Contains(';') || s.Contains('"') || s.Contains('\n') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
+    }
+}
+
+/// <summary>
+/// Ventes du jour de l'accueil, comparées au même jour de la semaine précédente (J-7) arrêté à la même heure. Réservé à qui a
+/// « rapports.ventes » et « caisse.voir_ecart » (le chiffre du jour trahirait l'attendu du tiroir : comptage à l'aveugle).
+/// Marge : seulement avec « rapports.marges ».
+/// </summary>
+public sealed record VentesDuJour(DateOnly Jour, TimeSpan Heure, SyntheseVentes Aujourdhui, DateOnly JourReference, SyntheseVentes Reference, MargeBrute? Marge);
+
+public sealed class ObtenirVentesDuJour(IRapports rapports, IPermissionService droits, Commun.IHorloge horloge)
+{
+    public async Task<VentesDuJour> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.RapportsVentes, "consulter les ventes du jour", ct);
+        await droits.ExigerAsync(utilisateurId, Permissions.CaisseVoirEcart, "consulter les ventes du jour", ct);
+        var maintenant = horloge.MaintenantUtc.ToLocalTime();
+        var jour = DateOnly.FromDateTime(maintenant);
+        var reference = jour.AddDays(-7);
+        var marge = await droits.APermissionAsync(utilisateurId, Permissions.RapportsMarges, ct) ? await rapports.MargeAsync(jour, jour, ct) : null;
+        return new VentesDuJour(jour, maintenant.TimeOfDay, await rapports.SyntheseAsync(jour, jour, ct),
+            reference, await rapports.SyntheseJusquAAsync(reference, maintenant.TimeOfDay, ct), marge);
     }
 }

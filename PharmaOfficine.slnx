@@ -159,6 +159,7 @@
     <File Path="database/migration/079_preteur_libre_alertes_ecarts.sql" />
     <File Path="database/migration/080_classe_confirmee_titulaire.sql" />
     <File Path="database/migration/081_conditions_pret_assurance.sql" />
+    <File Path="database/migration/082_medecin_coordonnees.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

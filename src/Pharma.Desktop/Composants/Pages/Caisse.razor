@@ -62,16 +62,10 @@
             @if (messageTicket is not null) { <div class="@(ticketImprime ? "info-bandeau" : "erreur")" role="status">@messageTicket</div> }
         }
 
-        <div class="colonnes" style="gap: 24px">
-            <section class="colonne-principale" aria-label="Panier">
-                <div class="barre-ordonnance" role="group" aria-label="Ordonnance">
-                    <span class="etiquette-champ">Ordonnance :</span>
-                    <button type="button" class="btn" disabled="@lectureEnCours" @onclick="ScannerOrdonnanceAsync">Scanner</button>
-                    <button type="button" class="btn" disabled="@lectureEnCours" @onclick="OuvrirCameraAsync">Caméra</button>
-                    <button type="button" class="btn" disabled="@lectureEnCours" @onclick="ImporterOrdonnanceAsync">Importer un fichier</button>
-                    @if (lectureEnCours) { <span class="sous-titre" role="status">Lecture de l’ordonnance…</span> }
-                </div>
-
+        @* Caisse en trois parties (2026-11-15, maquettes validées) : 1 · le panier, 2 · le client et l'ordonnance (sous le panier,
+           réduit à une ligne quand rien n'est exigé), 3 · le paiement seul à droite. Écran fixe : seul le panier défile. *@
+        <div class="colonnes caisse-vente" style="gap: 20px">
+            <section class="colonne-principale" aria-label="Panier, client et ordonnance">
                 @if (cameraOuverte)
                 {
                     <div class="panneau camera">
@@ -192,95 +186,102 @@
                     }
                 }
 
-                <!-- Ventes en attente du poste (gardées sur le serveur) -->
-                @if (lignes.Count > 0 || attentes.Count > 0)
-                {
-                    <div class="ventes-attente" role="group" aria-label="Ventes en attente">
-                        @if (lignes.Count > 0)
+                <!-- 1 · Panier : recherche du produit, mise en attente, ventes en attente du poste (gardées sur le serveur) -->
+                <div class="ligne-scan">
+                    <div class="champ recherche">
+                        <label for="scan">1 · Panier <span class="detail">F7</span></label>
+                        <input id="scan" data-champ="volet_chifa" class="grand" type="search" placeholder="Scanner ou rechercher un produit : nom, DCI, code-barres" autofocus autocomplete="off"
+                               @bind="texte" @bind:event="oninput" @bind:after="RechercherApresSaisieAsync" @onkeydown="ToucheAsync" />
+                        @if (suggestions.Count > 0)
                         {
-                            <button type="button" class="btn" disabled="@enCours" @onclick="MettreEnAttenteAsync" title="Mettre ce panier de côté pour servir un autre patient">⏸ Mettre en attente</button>
-                        }
-                        @foreach (var v in attentes)
-                        {
-                            <span class="vente-attente">
-                                <button type="button" class="lien-bouton" disabled="@enCours" @onclick="() => ReprendreAsync(v)"
-                                        title="@($"Mise en attente à {v.CreeLe.ToLocalTime():HH:mm} par {v.Employe}")">
-                                    ▶ @v.Libelle · @v.Lignes produit(s) · @Libelles.Dinars(v.Total, 2)
-                                </button>
-                                @if (aAbandonner == v.Id)
+                            @* Recherche au comptoir (2026-11-14) : produits en stock d'abord ; en rupture en bas, non sélectionnables, avec leur remplaçant
+                               (équivalent exact le moins cher, sinon autre dosage ou forme à valider) ; même produit d'un autre laboratoire moins cher
+                               suggéré sous le produit cherché, qui reste sélectionnable (demande explicite du client). Prix : prix servi. *@
+                            <ul class="suggestions suggestions-caisse" aria-label="Produits trouvés">
+                                @foreach (var c in suggestions)
                                 {
-                                    <button type="button" class="lien-bouton danger" @onclick="() => AbandonnerAsync(v)">Confirmer l’abandon</button>
-                                    <button type="button" class="lien-bouton" @onclick="() => aAbandonner = null">Garder</button>
-                                }
-                                else
-                                {
-                                    <button type="button" class="btn-icone" aria-label="@($"Abandonner la vente en attente {v.Libelle}")" title="Abandonner" @onclick="() => aAbandonner = v.Id">×</button>
-                                }
-                            </span>
-                        }
-                    </div>
-                    @if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
-                }
-                @if (messageRetour is not null) { <div class="info-bandeau" role="status">@messageRetour</div> }
-
-                <div class="champ recherche">
-                    <label for="scan">Scanner ou rechercher un produit (nom, DCI, code-barres)</label>
-                    <input id="scan" data-champ="volet_chifa" class="grand" type="search" placeholder="Ex. amoxicilline" autofocus autocomplete="off"
-                           @bind="texte" @bind:event="oninput" @bind:after="RechercherApresSaisieAsync" @onkeydown="ToucheAsync" />
-                    @if (suggestions.Count > 0)
-                    {
-                        @* Recherche au comptoir (2026-11-14) : produits en stock d'abord ; en rupture en bas, non sélectionnables, avec leur remplaçant
-                           (équivalent exact le moins cher, sinon autre dosage ou forme à valider) ; même produit d'un autre laboratoire moins cher
-                           suggéré sous le produit cherché, qui reste sélectionnable (demande explicite du client). Prix : prix servi. *@
-                        <ul class="suggestions suggestions-caisse" aria-label="Produits trouvés">
-                            @foreach (var c in suggestions)
-                            {
-                                var p = c.Produit;
-                                <li class="@(p.Stock <= 0 ? "en-rupture" : null)">
-                                    @if (p.Stock > 0)
-                                    {
-                                        <button type="button" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, c.PrixServi)">
-                                            <span>
-                                                <strong>@p.NomCommercial</strong><br />
-                                                <span class="detail">@p.Dci @p.Dosage · stock @p.Stock@(Libelles.EstSousRegistre(p.Classe) ? " · ordonnance" : "")</span>
-                                            </span>
-                                            <span>@Libelles.Dinars(c.PrixServi, 2)</span>
-                                        </button>
-                                        @if (c.MoinsCher is { } m)
+                                    var p = c.Produit;
+                                    <li class="@(p.Stock <= 0 ? "en-rupture" : null)">
+                                        @if (p.Stock > 0)
                                         {
-                                            @* Étiquette sans le nom du médicament (même produit) : le laboratoire seulement (2026-11-14) *@
-                                            <button type="button" class="suggestion-equivalent" title="@m.NomCommercial" @onclick="() => AjouterAsync(m.ProduitId, m.NomCommercial, m.PrixPublic)">
-                                                <span>Moins cher · <strong>@(m.Laboratoire ?? "autre laboratoire")</strong> · stock @m.Stock</span>
-                                                <span>@Libelles.Dinars(m.PrixPublic, 2) (− @Libelles.Dinars(c.PrixServi - m.PrixPublic, 2))</span>
+                                            <button type="button" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, c.PrixServi)">
+                                                <span>
+                                                    <strong>@p.NomCommercial</strong><br />
+                                                    <span class="detail">@p.Dci @p.Dosage · stock @p.Stock@(Libelles.EstSousRegistre(p.Classe) ? " · ordonnance" : "")</span>
+                                                </span>
+                                                <span>@Libelles.Dinars(c.PrixServi, 2)</span>
                                             </button>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <div class="suggestion-rupture" aria-disabled="true">
-                                            <span>
-                                                <strong>@p.NomCommercial</strong><br />
-                                                <span class="detail">@p.Dci @p.Dosage</span>
-                                            </span>
-                                            <span class="alerte-rupture">Rupture de stock</span>
-                                        </div>
-                                        @if (c.Remplacant is { } r)
-                                        {
-                                            <button type="button" class="suggestion-equivalent" @onclick="() => AjouterAsync(r.ProduitId, r.NomCommercial, r.PrixPublic)">
-                                                <span>Remplaçant : <strong>@r.NomCommercial</strong>@(r.Exact ? "" : $" ({r.Dosage} {r.Forme}, à valider par le pharmacien)") · stock @r.Stock</span>
-                                                <span>@Libelles.Dinars(r.PrixPublic, 2)</span>
-                                            </button>
+                                            @if (c.MoinsCher is { } m)
+                                            {
+                                                @* Étiquette sans le nom du médicament (même produit) : le laboratoire seulement (2026-11-14) *@
+                                                <button type="button" class="suggestion-equivalent" title="@m.NomCommercial" @onclick="() => AjouterAsync(m.ProduitId, m.NomCommercial, m.PrixPublic)">
+                                                    <span>Moins cher · <strong>@(m.Laboratoire ?? "autre laboratoire")</strong> · stock @m.Stock</span>
+                                                    <span>@Libelles.Dinars(m.PrixPublic, 2) (− @Libelles.Dinars(c.PrixServi - m.PrixPublic, 2))</span>
+                                                </button>
+                                            }
                                         }
                                         else
                                         {
-                                            <span class="detail suggestion-aucun">Aucun remplaçant en stock.</span>
+                                            <div class="suggestion-rupture" aria-disabled="true">
+                                                <span>
+                                                    <strong>@p.NomCommercial</strong><br />
+                                                    <span class="detail">@p.Dci @p.Dosage</span>
+                                                </span>
+                                                <span class="alerte-rupture">Rupture de stock</span>
+                                            </div>
+                                            @if (c.Remplacant is { } r)
+                                            {
+                                                <button type="button" class="suggestion-equivalent" @onclick="() => AjouterAsync(r.ProduitId, r.NomCommercial, r.PrixPublic)">
+                                                    <span>Remplaçant : <strong>@r.NomCommercial</strong>@(r.Exact ? "" : $" ({r.Dosage} {r.Forme}, à valider par le pharmacien)") · stock @r.Stock</span>
+                                                    <span>@Libelles.Dinars(r.PrixPublic, 2)</span>
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="detail suggestion-aucun">Aucun remplaçant en stock.</span>
+                                            }
                                         }
-                                    }
-                                </li>
-                            }
-                        </ul>
-                    }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                    <div class="actions-attente">
+                        <button type="button" class="btn" disabled="@(enCours || lignes.Count == 0)" @onclick="MettreEnAttenteAsync" title="Mettre ce panier de côté pour servir un autre patient">⏸ Attente</button>
+                        @if (attentes.Count > 0)
+                        {
+                            <button type="button" class="btn bouton-attentes" aria-expanded="@(attentesOuvertes ? "true" : "false")" @onclick="() => attentesOuvertes = !attentesOuvertes">
+                                En attente (@attentes.Count) @(attentesOuvertes ? "▴" : "▾")
+                            </button>
+                        }
+                        @if (attentesOuvertes && attentes.Count > 0)
+                        {
+                            <div class="liste-attentes" role="group" aria-label="Ventes en attente">
+                                @foreach (var v in attentes)
+                                {
+                                    <div class="vente-attente">
+                                        <span>
+                                            <strong>@v.Libelle</strong> · @v.Lignes produit(s) · <strong>@Libelles.Dinars(v.Total, 2)</strong><br />
+                                            <span class="detail">mise en attente à @v.CreeLe.ToLocalTime().ToString("HH:mm") par @v.Employe</span>
+                                        </span>
+                                        @if (aAbandonner == v.Id)
+                                        {
+                                            <button type="button" class="lien-bouton danger" @onclick="() => AbandonnerAsync(v)">Confirmer l’abandon</button>
+                                            <button type="button" class="lien-bouton" @onclick="() => aAbandonner = null">Garder</button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => ReprendreDepuisListeAsync(v)">Reprendre</button>
+                                            <button type="button" class="btn btn-icone" aria-label="@($"Abandonner la vente en attente {v.Libelle}")" title="Abandonner" @onclick="() => aAbandonner = v.Id">×</button>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                 </div>
+                @if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
+                @if (messageRetour is not null) { <div class="info-bandeau" role="status">@messageRetour</div> }
 
                 @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
 
@@ -320,7 +321,7 @@
                 }
                 else
                 {
-                    <div class="panier cadre-defilant">
+                    <div class="panier cadre-defilant cadre-prioritaire">
                         @foreach (var l in lignes)
                         {
                             @if (l.Lot is { } lot)
@@ -438,152 +439,224 @@
                         }
                     </div>
                 }
-            </section>
 
-            <aside class="panneau colonne-laterale reglement cadre-defilant" aria-label="Règlement">
-                <div class="filtres" role="group" aria-label="Type de vente">
-                    <button type="button" class="puce" aria-pressed="@(!tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(false)">Vente libre</button>
-                    <button type="button" class="puce" aria-pressed="@(tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(true)">Tiers payant</button>
-                </div>
-
-                @if (tiersPayant)
-                {
-                    <div style="display: flex; flex-wrap: wrap; gap: 12px">
-                        <div class="champ" style="flex: 1 1 140px">
-                            <label for="org">Organisme</label>
-                            <select id="org" class="selection" @bind="organismeId" @bind:after="RecalculerAsync">
-                                @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
-                            </select>
-                        </div>
-                        <div class="champ" style="flex: 1 1 140px">
-                            <span class="etiquette-champ">Taux</span>
-                            <div class="filtres" role="group" aria-label="Taux de remboursement">
-                                <button type="button" class="puce" aria-pressed="@(taux == 80 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(80)">80 %</button>
-                                <button type="button" class="puce" aria-pressed="@(taux == 100 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(100)">100 %</button>
-                            </div>
-                        </div>
-                        <div class="champ" style="flex: 1 1 180px">
-                            <label for="reste-saisi">Reste à charge du patient (DA)</label>
-                            <input id="reste-saisi" data-champ="reste_a_charge" type="number" min="0" step="0.01" placeholder="Selon le taux"
-                                   @bind="resteSaisi" @bind:after="RecalculerAsync" />
+                <!-- 2 · Client et ordonnance -->
+                <section class="panneau bloc-client" aria-label="Client et ordonnance">
+                    <div class="bloc-client-entete">
+                        <strong>2 · Client et ordonnance</strong>
+                        @if (OrdonnanceObligatoire)
+                        {
+                            <span class="indice requis">psychotrope : ordonnance obligatoire (médecin, patient)</span>
+                        }
+                        else if (SansOrdonnanceListe)
+                        {
+                            <span class="indice" role="note" data-champ="sans_ordonnance">
+                                @(Session.A("caisse.vendre_sans_ordonnance")
+                                    ? "Liste I ou II : médecin attendu ; sans ordonnance, vente permise par votre droit (inscrite au journal)"
+                                    : "Liste I ou II : médecin attendu ; sans ordonnance, validation du titulaire ou d’un ayant droit (son code) à l’encaissement")
+                            </span>
+                        }
+                        else if (tiersPayant)
+                        {
+                            <span class="indice">tiers payant : patient assuré obligatoire</span>
+                        }
+                        else if (!ClientOuvert)
+                        {
+                            <span class="detail">aucun patient, aucune ordonnance exigée</span>
+                        }
+                        <span class="espace"></span>
+                        <div class="filtres" role="group" aria-label="Type de vente">
+                            <button type="button" class="puce" aria-pressed="@(!tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(false)">Vente libre</button>
+                            <button type="button" class="puce" aria-pressed="@(tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(true)">Tiers payant</button>
                         </div>
                     </div>
-                    <p class="detail" style="margin: 0">
-                        @(resteSaisi is null
-                            ? "Laissez le reste à charge vide pour appliquer le taux de prise en charge."
-                            : "Reste à charge saisi : le taux n’est pas appliqué, la part de l’organisme est la différence. Videz la case pour revenir au taux.")
-                    </p>
-                }
 
-                <!-- Patient -->
-                <div class="champ recherche">
-                    <span class="etiquette-champ @(PatientObligatoire ? "requis" : null)">Patient @(PatientObligatoire ? "(obligatoire)" : "(facultatif)")</span>
-                    @if (patient is not null)
+                    @if (!ClientOuvert)
                     {
-                        <div class="choix">
-                            <div>
-                                <strong><LienContact Type="patient" Id="patient.Id" Nom="@($"{patient.Nom} {patient.Prenom}".Trim())" /></strong><br />
-                                <span class="detail">
-                                    @(patient.NumAssure is null ? "sans n° d’assuré" : $"Assuré {patient.NumAssure}")@if (patient.Organisme is { } org) { <text> · </text><LienContact Type="organisme" Id="patient.OrganismeId" Nom="@org" /> }
-                                    · crédit @Libelles.Dinars(patient.SoldeCredit) / plafond @Libelles.Dinars(patient.PlafondCredit)
-                                </span>
-                            </div>
-                            <button type="button" class="lien-bouton" @onclick="RetirerPatientAsync">Changer</button>
+                        <div class="bloc-client-reduit">
+                            <button type="button" class="lien-bouton" data-raccourci="patient" @onclick="() => clientDeplie = true">Ajouter un patient (F6)</button>
+                            <span class="espace"></span>
+                            <span class="detail">Ordonnance :</span>
+                            <button type="button" class="lien-bouton" disabled="@lectureEnCours" @onclick="ScannerOrdonnanceAsync">Scanner</button>
+                            <button type="button" class="lien-bouton" disabled="@lectureEnCours" @onclick="OuvrirCameraAsync">Caméra</button>
+                            <button type="button" class="lien-bouton" disabled="@lectureEnCours" @onclick="ImporterOrdonnanceAsync">Fichier</button>
+                            @if (lectureEnCours) { <span class="sous-titre" role="status">Lecture de l’ordonnance…</span> }
                         </div>
-                    }
-                    else if (!nouveauPatient)
-                    {
-                        <input type="search" aria-label="Rechercher un patient" placeholder="Nom, téléphone ou n° d’assuré" autocomplete="off" aria-invalid="@Obligatoire.Aria(PatientManquant)"
-                               @bind="patientTexte" @bind:event="oninput" @bind:after="RechercherPatientsAsync" />
-                        @if (patients.Count > 0)
-                        {
-                            <ul class="suggestions" aria-label="Patients trouvés">
-                                @foreach (var p in patients)
-                                {
-                                    <li><button type="button" @onclick="() => ChoisirPatientAsync(p)"><span><strong>@p.Nom @p.Prenom</strong><br /><span class="detail">@p.Telephone @p.NumAssure</span></span></button></li>
-                                }
-                            </ul>
-                        }
-                        <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="OuvrirNouveauPatient">Nouveau patient</button>
                     }
                     else
                     {
-                        <div class="sous-formulaire">
-                            <input type="text" aria-label="Nom (obligatoire)" data-champ="nom_patient" placeholder="Nom *" @ref="champNomPatient" @bind="np.Nom" @bind:event="oninput"
-                                   class="@Obligatoire.Classe(NomPatientManquant)" aria-invalid="@Obligatoire.Aria(NomPatientManquant)" />
-                            @if (NomPatientManquant) { <span class="message-champ">Le nom du patient est obligatoire.</span> }
-                            <input type="text" aria-label="Prénom" placeholder="Prénom" @bind="np.Prenom" />
-                            <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" @bind="np.Telephone" />
-                            <input type="email" aria-label="E-mail (facultatif)" data-champ="email" placeholder="E-mail" maxlength="120" @bind="np.Email" />
-                            <input type="text" aria-label="N° d’assuré" placeholder="N° d’assuré" @bind="np.NumAssure" />
-                            <select class="selection" aria-label="Organisme" @bind="np.OrganismeId">
-                                <option value="0">Sans organisme</option>
-                                @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
-                            </select>
-                            <input type="number" min="0" aria-label="Plafond de crédit (DA)" data-champ="plafond" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
-                            <div class="actions">
-                                <button type="button" class="btn btn-principal" @onclick="CreerPatientAsync">Créer</button>
-                                <button type="button" class="btn" @onclick="() => (nouveauPatient, controlePatient) = (false, false)">Annuler</button>
+                        @if (tiersPayant)
+                        {
+                            <div style="display: flex; flex-wrap: wrap; gap: 12px">
+                                <div class="champ" style="flex: 1 1 140px">
+                                    <label for="org">Organisme</label>
+                                    <select id="org" class="selection" @bind="organismeId" @bind:after="RecalculerAsync">
+                                        @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                                    </select>
+                                </div>
+                                <div class="champ" style="flex: 1 1 140px">
+                                    <span class="etiquette-champ">Taux</span>
+                                    <div class="filtres" role="group" aria-label="Taux de remboursement">
+                                        <button type="button" class="puce" aria-pressed="@(taux == 80 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(80)">80 %</button>
+                                        <button type="button" class="puce" aria-pressed="@(taux == 100 ? "true" : "false")" @onclick="() => ChoisirTauxAsync(100)">100 %</button>
+                                    </div>
+                                </div>
+                                <div class="champ" style="flex: 1 1 180px">
+                                    <label for="reste-saisi">Reste à charge du patient (DA)</label>
+                                    <input id="reste-saisi" data-champ="reste_a_charge" type="number" min="0" step="0.01" placeholder="Selon le taux"
+                                           @bind="resteSaisi" @bind:after="RecalculerAsync" />
+                                </div>
                             </div>
-                        </div>
-                    }
-                </div>
+                            <p class="detail" style="margin: 0">
+                                @(resteSaisi is null
+                                    ? "Laissez le reste à charge vide pour appliquer le taux de prise en charge."
+                                    : "Reste à charge saisi : le taux n’est pas appliqué, la part de l’organisme est la différence. Videz la case pour revenir au taux.")
+                            </p>
+                        }
 
-                @if (PsychotropeInterdit)
-                {
-                    <div class="erreur" role="alert">@MessagePsychotrope</div>
-                }
-
-                <!-- Ordonnance : scannée, obligatoire pour un psychotrope, ou attendue pour un médicament de liste I ou II -->
-                @if (SansOrdonnanceListe)
-                {
-                    <div class="info-bandeau" role="note" data-champ="sans_ordonnance">
-                        @if (Session.A("caisse.vendre_sans_ordonnance"))
-                        {
-                            <text>Médicament de liste I ou II sans ordonnance : vente permise par votre droit, inscrite au journal. Indiquez le médecin si le patient a une ordonnance.</text>
-                        }
-                        else
-                        {
-                            <text>Médicament de liste I ou II : indiquez le médecin prescripteur. Sans ordonnance, un pharmacien ou un assistant devra autoriser la vente avec son code à l’encaissement.</text>
-                        }
-                    </div>
-                }
-                @if (apercu?.OrdonnanceRequise == true || apercu?.SurOrdonnance == true || jetonScan is not null)
-                {
-                    <div class="champ recherche">
-                        <span class="etiquette-champ @(apercu?.OrdonnanceRequise == true ? "requis" : null)">
-                            @(apercu?.OrdonnanceRequise == true ? "Ordonnance (psychotrope : médecin obligatoire)"
-                              : jetonScan is not null ? "Ordonnance scannée (médecin facultatif)" : "Ordonnance (liste I ou II : médecin prescripteur)")
-                        </span>
-                        @if (medecin is not null)
-                        {
-                            <div class="choix">
-                                <div><strong>@medecin.Nom</strong><br /><span class="detail">@medecin.Specialite</span></div>
-                                <button type="button" class="lien-bouton" @onclick="() => medecin = null">Changer</button>
-                            </div>
-                        }
-                        else
-                        {
-                            <input type="search" aria-label="Rechercher le médecin prescripteur" data-champ="nom_medecin" placeholder="Médecin prescripteur" autocomplete="off" aria-invalid="@Obligatoire.Aria(MedecinManquant)"
-                                   @bind="medecinTexte" @bind:event="oninput" @bind:after="RechercherMedecinsAsync" />
-                            @if (medecins.Count > 0)
-                            {
-                                <ul class="suggestions" aria-label="Médecins trouvés">
-                                    @foreach (var m in medecins)
+                        <div class="bloc-client-grille @(AfficherMedecin ? "deux" : null)">
+                            <!-- Patient -->
+                            <div class="champ recherche">
+                                @* « Nouveau patient » à droite du libellé (2026-11-15) : une ligne de moins dans la colonne de paiement *@
+                                <div class="etiquette-ligne">
+                                    <span class="etiquette-champ @(PatientObligatoire ? "requis" : null)">Patient @(PatientObligatoire ? "(obligatoire)" : "(facultatif)") <span class="detail">F6</span></span>
+                                    @if (patient is null && !nouveauPatient)
                                     {
-                                        <li><button type="button" @onclick="() => (medecin, medecins, medecinTexte) = (m, [], m.Nom)"><span><strong>@m.Nom</strong> <span class="detail">@m.Specialite</span></span></button></li>
+                                        <button type="button" class="lien-bouton" @onclick="OuvrirNouveauPatient">Nouveau patient</button>
                                     }
-                                </ul>
-                            }
-                            @if (medecinTexte.Trim().Length >= 2)
+                                </div>
+                                @if (patient is not null)
+                                {
+                                    <div class="choix">
+                                        <div>
+                                            <strong><LienContact Type="patient" Id="patient.Id" Nom="@($"{patient.Nom} {patient.Prenom}".Trim())" /></strong><br />
+                                            <span class="detail">
+                                                @(patient.NumAssure is null ? "sans n° d’assuré" : $"Assuré {patient.NumAssure}")@if (patient.Organisme is { } org) { <text> · </text><LienContact Type="organisme" Id="patient.OrganismeId" Nom="@org" /> }
+                                                · crédit @Libelles.Dinars(patient.SoldeCredit) / plafond @Libelles.Dinars(patient.PlafondCredit)
+                                            </span>
+                                        </div>
+                                        <button type="button" class="lien-bouton" @onclick="RetirerPatientAsync">Changer</button>
+                                    </div>
+                                }
+                                else if (!nouveauPatient)
+                                {
+                                    <input type="search" data-raccourci="patient" aria-label="Rechercher un patient" placeholder="Nom, téléphone ou n° d’assuré" autocomplete="off"
+                                           class="@Obligatoire.Classe(PatientManquant)" aria-invalid="@Obligatoire.Aria(PatientManquant && alerterPatient)"
+                                           @bind="patientTexte" @bind:event="oninput" @bind:after="RechercherPatientsAsync" />
+                                    @if (patients.Count > 0)
+                                    {
+                                        <ul class="suggestions" aria-label="Patients trouvés">
+                                            @foreach (var p in patients)
+                                            {
+                                                <li><button type="button" @onclick="() => ChoisirPatientAsync(p)"><span><strong>@p.Nom @p.Prenom</strong><br /><span class="detail">@p.Telephone @p.NumAssure</span></span></button></li>
+                                            }
+                                        </ul>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="sous-formulaire">
+                                        <input type="text" aria-label="Nom (obligatoire)" data-champ="nom_patient" placeholder="Nom *" @ref="champNomPatient" @bind="np.Nom" @bind:event="oninput"
+                                               class="@Obligatoire.Classe(NomPatientManquant)" aria-invalid="@Obligatoire.Aria(NomPatientManquant)" />
+                                        @if (NomPatientManquant) { <span class="message-champ">Le nom du patient est obligatoire.</span> }
+                                        <input type="text" aria-label="Prénom" placeholder="Prénom" @bind="np.Prenom" />
+                                        <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" @bind="np.Telephone" />
+                                        <input type="email" aria-label="E-mail (facultatif)" data-champ="email" placeholder="E-mail" maxlength="120" @bind="np.Email" />
+                                        <input type="text" aria-label="N° d’assuré" placeholder="N° d’assuré" @bind="np.NumAssure" />
+                                        <select class="selection" aria-label="Organisme" @bind="np.OrganismeId">
+                                            <option value="0">Sans organisme</option>
+                                            @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                                        </select>
+                                        <input type="number" min="0" aria-label="Plafond de crédit (DA)" data-champ="plafond" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
+                                        <div class="actions">
+                                            <button type="button" class="btn btn-principal" @onclick="CreerPatientAsync">Créer</button>
+                                            <button type="button" class="btn" @onclick="() => (nouveauPatient, controlePatient) = (false, false)">Annuler</button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                            @if (AfficherMedecin)
                             {
-                                <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="CreerMedecinAsync">Créer le médecin « @medecinTexte.Trim() »</button>
+                                <div class="champ recherche">
+                                    <span class="etiquette-champ @(OrdonnanceObligatoire ? "requis" : null)">Médecin prescripteur@(OrdonnanceObligatoire ? " (obligatoire)" : jetonScan is not null ? " (ordonnance scannée)" : "") <span class="detail">F5</span></span>
+                                    @if (medecin is not null)
+                                    {
+                                        @* Médecin choisi sur une ligne : nom et « Changer » ; la spécialité au survol *@
+                                        <div class="choix medecin-choisi" title="@(string.IsNullOrWhiteSpace(medecin.Specialite) ? medecin.Nom : $"{medecin.Nom} · {medecin.Specialite}")">
+                                            <strong>@medecin.Nom</strong>
+                                            <button type="button" class="lien-bouton" @onclick="() => medecin = null">Changer</button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <input type="search" data-raccourci="medecin" aria-label="Rechercher le médecin prescripteur" data-champ="nom_medecin" placeholder="Nom du médecin" autocomplete="off" aria-invalid="@Obligatoire.Aria(MedecinManquant)"
+                                               @bind="medecinTexte" @bind:event="oninput" @bind:after="RechercherMedecinsAsync" />
+                                        @if (medecins.Count > 0)
+                                        {
+                                            <ul class="suggestions" aria-label="Médecins trouvés">
+                                                @foreach (var m in medecins)
+                                                {
+                                                    <li><button type="button" @onclick="() => (medecin, medecins, medecinTexte) = (m, [], m.Nom)"><span><strong>@m.Nom</strong> <span class="detail">@m.Specialite</span></span></button></li>
+                                                }
+                                            </ul>
+                                        }
+                                        @if (nouveauMedecin is not null)
+                                        {
+                                            <span class="detail">Nouveau médecin : complétez sa fiche ci-dessous.</span>
+                                        }
+                                        else if (medecinTexte.Trim().Length >= 2)
+                                        {
+                                            <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="OuvrirNouveauMedecin">Créer le médecin « @medecinTexte.Trim() »</button>
+                                        }
+                                    }
+                                </div>
                             }
-                        }
-                        <div style="display: flex; gap: 8px">
-                            <input type="date" aria-label="Date de prescription" @bind="datePrescription" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
-                            <input type="text" aria-label="Numéro d’ordonnance" placeholder="N° d’ordonnance" @bind="numeroOrdonnance" style="flex: 1; min-width: 0" />
                         </div>
+
+                        @if (nouveauMedecin is { } nm)
+                        {
+                            @* Fiche du nouveau médecin (2026-11-15) : nom obligatoire ; spécialité, téléphone, e-mail, adresse, n° d'ordre et
+                               code CNAS facultatifs *@
+                            <div class="sous-formulaire fiche-medecin large" role="group" aria-label="Nouveau médecin">
+                                <input type="text" aria-label="Nom du médecin (obligatoire)" data-champ="nom_medecin" placeholder="Nom *" maxlength="120" @bind="nm.Nom" />
+                                <input type="text" aria-label="Spécialité" data-champ="specialite" placeholder="Spécialité" maxlength="120" @bind="nm.Specialite" />
+                                <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" maxlength="30" @bind="nm.Telephone" />
+                                <input type="email" aria-label="E-mail" data-champ="email" placeholder="E-mail" maxlength="120" @bind="nm.Email" />
+                                <input type="text" aria-label="Adresse" data-champ="adresse_medecin" placeholder="Adresse" maxlength="300" @bind="nm.Adresse" />
+                                <input type="text" aria-label="N° d’inscription à l’Ordre" data-champ="numero_ordre" placeholder="N° d’ordre" maxlength="30" @bind="nm.NumeroOrdre" />
+                                <input type="text" aria-label="Code CNAS (Chifa)" data-champ="code_cnas" placeholder="Code CNAS" maxlength="30" @bind="nm.CodeCnas" />
+                                @if (erreurMedecin is not null) { <div class="erreur" role="alert">@erreurMedecin</div> }
+                                <div class="actions">
+                                    <button type="button" class="btn btn-principal" disabled="@creationMedecin" @onclick="CreerMedecinAsync">Créer</button>
+                                    <button type="button" class="btn" @onclick="() => (nouveauMedecin, erreurMedecin) = (null, null)">Annuler</button>
+                                </div>
+                            </div>
+                        }
+                        @if (PsychotropeInterdit)
+                        {
+                            <div class="erreur" role="alert">@MessagePsychotrope</div>
+                        }
+
+                        <div class="bloc-client-ordonnance">
+                            @if (AfficherMedecin)
+                            {
+                                <div class="champ">
+                                    <label for="date-prescription">Date de prescription</label>
+                                    <input id="date-prescription" type="date" @bind="datePrescription" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                                </div>
+                                <div class="champ">
+                                    <label for="numero-ordonnance">N° d’ordonnance</label>
+                                    <input id="numero-ordonnance" type="text" @bind="numeroOrdonnance" />
+                                </div>
+                            }
+                            <span class="espace"></span>
+                            <span class="detail">Ordonnance :</span>
+                            <button type="button" class="lien-bouton" disabled="@lectureEnCours" @onclick="ScannerOrdonnanceAsync">Scanner</button>
+                            <button type="button" class="lien-bouton" disabled="@lectureEnCours" @onclick="OuvrirCameraAsync">Caméra</button>
+                            <button type="button" class="lien-bouton" disabled="@lectureEnCours" @onclick="ImporterOrdonnanceAsync">Fichier</button>
+                            @if (lectureEnCours) { <span class="sous-titre" role="status">Lecture…</span> }
+                        </div>
+                        <!-- Porteur différent du patient : inscrit au registre (arrêté du 29 juin 2013, art. 7) -->
                         @if (apercu?.OrdonnanceRequise == true)
                         {
                             <!-- Porteur différent du patient : inscrit au registre (arrêté du 29 juin 2013, art. 7) -->
@@ -598,31 +671,18 @@
                                        class="@Obligatoire.Classe(PorteurPieceManque)" aria-invalid="@Obligatoire.Aria(PorteurPieceManque)" />
                             }
                         }
-                    </div>
-                }
-
-                @* Remise du vendeur (2026-11-14) : proposée à tout vendeur ; au-delà de son maximum (réglé par le titulaire) ou sans le droit,
-                   le code d'un collègue dont le maximum la couvre est demandé à l'encaissement. Sur un médicament, c'est un don partiel du
-                   reste à charge (droit de don, sinon code d'un collègue qui l'a). Entier de 0 à 100 ; le 0 s'efface dès qu'on tape ;
-                   champ vidé : 0. *@
-                <div class="champ champ-ligne">
-                    <label for="remise" title="Remise sur la part du patient, hors SHP (honoraire du pharmacien)">Remise (%, hors SHP)</label>
-                    <input id="remise" data-champ="remise" @ref="champRemise" type="text" inputmode="numeric" maxlength="3" autocomplete="off" value="@RemiseTexte"
-                           onfocus="this.select()" onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
-                           @oninput="SaisieRemiseAsync" @onchange="RecalculerAsync" />
-                    @if (remisePct > 0 && apercu?.Reductions?.Any(r => r.RemiseAutoPct > 0) == true)
-                    {
-                        <label class="case" title="Coché : votre remise s’ajoute à la remise automatique. Décoché : elle ne vaut que pour les produits sans remise automatique.">
-                            <input type="checkbox" checked="@remiseAdditionnee" @onchange="ChoisirAdditionAsync" /><span>+ remise auto</span></label>
+                        @if (clientDeplie && !ClientExige)
+                        {
+                            <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="() => clientDeplie = false">Réduire</button>
+                        }
                     }
-                </div>
-                @if (remisePct > 0 && !Session.A("caisse.remise") && !Session.A("stock.donner"))
-                {
-                    <p class="sous-titre">Le code d’un collègue qui en a le droit vous sera demandé à l’encaissement.</p>
-                }
+                </section>
+            </section>
 
+            <!-- 3 · Paiement -->
+            <aside class="panneau colonne-laterale reglement" aria-label="Paiement">
+                <strong>3 · Paiement</strong>
                 <ValidationProduitBloque Produits="@(apercu?.ProduitsBloques ?? [])" Operation="à la vente" Id="caisse" Accord="accordBlocage" OnChange="StateHasChanged" />
-                <div class="separateur"></div>
                 @if (erreurCalcul is not null) { <div class="erreur" role="alert">@erreurCalcul</div> }
                 <div class="ligne-total"><span>Total</span><span>@Libelles.Dinars(apercu?.MontantBrut ?? 0, 2)</span></div>
                 @if (apercu is { } ap && ap.MontantBrut - ap.TotalMedicaments > 0)
@@ -646,18 +706,35 @@
                 {
                     <div class="ligne-total"><span>Don partiel@(apercu!.MontantRemise == 0 && apercu.ReductionsAuto > 0 ? $" (dont auto {Libelles.Dinars(apercu.ReductionsAuto, 2)})" : "")</span><span>− @Libelles.Dinars(apercu.MontantDon, 2)</span></div>
                 }
-                <div class="a-payer"><span>À payer par le patient</span><span>@Libelles.Dinars(apercu?.PartPatient ?? 0, 2)</span></div>
+                <div class="a-payer"><span>@(tiersPayant ? "À payer par le patient" : "À payer")</span><span>@Libelles.Dinars(apercu?.PartPatient ?? 0, 2)</span></div>
 
-                <div class="filtres" role="group" aria-label="Mode de paiement">
+                <div class="filtres modes-paiement" role="group" aria-label="Mode de paiement">
                     @foreach (var (code, libelle) in Modes)
                     {
                         <button type="button" class="puce" aria-pressed="@(mode == code ? "true" : "false")" @onclick="() => mode = code">@libelle</button>
                     }
+                    @* Crédit : un mode comme les autres (2026-11-15), grisé sans patient ; la raison au survol *@
+                    <button type="button" class="puce" aria-pressed="@(mode == "credit" ? "true" : "false")" disabled="@(patient is null)"
+                            title="@(patient is null ? "Choisissez d’abord le patient à qui la vente est accordée" : "Mettre la vente au crédit du patient")" @onclick="@(() => mode = "credit")">Crédit</button>
                 </div>
-                @if (mode == "especes")
+                @if (mode == "credit" && patient is not null)
                 {
-                    @* Rendu mis en avant (2026-11-14), à côté du montant reçu (la colonne garde sa hauteur : écran fixe) : grand chiffre
-                       sur une ligne, encadré coloré dès qu'il y a de la monnaie à rendre. Montant de cette vente seulement (aucun cumul :
+                    <div class="credit-resume" role="status">
+                        <span>Mis au crédit de <strong>@($"{patient.Nom} {patient.Prenom}".Trim())</strong> : <strong>@Libelles.Dinars(apercu?.PartPatient ?? 0, 2)</strong></span>
+                        <span class="detail">Après la vente : @Libelles.Dinars(patient.SoldeCredit + (apercu?.PartPatient ?? 0), 2) / plafond @Libelles.Dinars(patient.PlafondCredit)</span>
+                        @if (patient.SoldeCredit + (apercu?.PartPatient ?? 0) > patient.PlafondCredit)
+                        {
+                            <span class="texte-attention">Au-delà du plafond : le droit de dépasser le plafond (ou le code d’un collègue qui l’a) sera demandé.</span>
+                        }
+                        @if (!Session.A("credit.accorder"))
+                        {
+                            <span class="detail">L’autorisation d’un employé qui a ce droit sera demandée (son code comptoir).</span>
+                        }
+                    </div>
+                }
+                else if (mode == "especes")
+                {
+                    @* Rendu mis en avant (2026-11-14), à côté du montant reçu : montant de cette vente seulement (aucun cumul :
                        comptage aveugle de la caisse) *@
                     <div class="paiement-especes">
                         <div class="champ">
@@ -671,23 +748,39 @@
                     </div>
                 }
 
-                @if (erreurEncaissement is not null) { <div class="erreur" role="alert">@erreurEncaissement</div> }
+                @* « + Remise » (2026-11-15) : le champ s'ouvre à la demande, ou de lui-même quand une remise est saisie *@
+                @if (!RemiseOuverte)
+                {
+                    <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="OuvrirRemiseAsync">+ Remise</button>
+                }
+                else
+                {
+                    @* Remise du vendeur (2026-11-14) : proposée à tout vendeur ; au-delà de son maximum (réglé par le titulaire) ou sans le droit,
+                       le code d'un collègue dont le maximum la couvre est demandé à l'encaissement. Sur un médicament, c'est un don partiel du
+                       reste à charge (droit de don, sinon code d'un collègue qui l'a). Entier de 0 à 100 ; le 0 s'efface dès qu'on tape ;
+                       champ vidé : 0. *@
+                    <div class="champ champ-ligne">
+                        <label for="remise" title="Remise sur la part du patient, hors SHP (honoraire du pharmacien)">Remise (%, hors SHP)</label>
+                        <input id="remise" data-champ="remise" @ref="champRemise" type="text" inputmode="numeric" maxlength="3" autocomplete="off" value="@RemiseTexte"
+                               onfocus="this.select()" onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
+                               @oninput="SaisieRemiseAsync" @onchange="RecalculerAsync" />
+                        @if (remisePct > 0 && apercu?.Reductions?.Any(r => r.RemiseAutoPct > 0) == true)
+                        {
+                            <label class="case" title="Coché : votre remise s’ajoute à la remise automatique. Décoché : elle ne vaut que pour les produits sans remise automatique.">
+                                <input type="checkbox" checked="@remiseAdditionnee" @onchange="ChoisirAdditionAsync" /><span>+ remise auto</span></label>
+                        }
+                    </div>
+                    @if (remisePct > 0 && !Session.A("caisse.remise") && !Session.A("stock.donner"))
+                    {
+                        <p class="sous-titre">Le code d’un collègue qui en a le droit vous sera demandé à l’encaissement.</p>
+                    }
+                }
 
-                <button type="button" class="btn btn-principal btn-large" disabled="@(!PeutEncaisser)" title="@RaisonBlocage" @onclick="() => EncaisserAsync(mode)">
-                    Encaisser (F12)
+                @if (erreurEncaissement is not null) { <div class="erreur" role="alert">@erreurEncaissement</div> }
+                <span class="espace"></span>
+                <button type="button" class="btn btn-principal btn-large" disabled="@(!PeutEncaisserMode)" title="@RaisonBlocageMode" @onclick="() => EncaisserAsync(mode)">
+                    @(mode == "credit" ? "Mettre en crédit (F12)" : "Encaisser (F12)")
                 </button>
-                <button type="button" class="btn" disabled="@(RaisonBlocageCredit is not null)" title="@RaisonBlocageCredit"
-                        @onclick="@(() => EncaisserAsync("credit"))">
-                    Mettre en crédit
-                </button>
-                @if (lignes.Count > 0 && patient is not null && !Session.A("credit.accorder"))
-                {
-                    <span class="sous-titre" style="font-size: 13px">Crédit : l’autorisation d’un employé qui a ce droit sera demandée (son code comptoir).</span>
-                }
-                @if (lignes.Count > 0 && patient is null)
-                {
-                    <span class="sous-titre" style="font-size: 13px">Pour mettre en crédit, choisissez d’abord le patient.</span>
-                }
             </aside>
         </div>
         }
@@ -886,6 +979,33 @@
 
     private bool PeutEncaisser => !enCours && apercu is not null && RaisonBlocage is null;
 
+    // ---- Disposition en trois parties (2026-11-15) ----
+    /// <summary>Le bouton principal suit le mode choisi : « Crédit » demande en plus le patient.</summary>
+    private bool PeutEncaisserMode => mode == "credit" ? RaisonBlocageCredit is null : PeutEncaisser;
+    private string? RaisonBlocageMode => mode == "credit" ? RaisonBlocageCredit : RaisonBlocage;
+    /// <summary>Psychotrope ou stupéfiant au panier : ordonnance obligatoire, sans exception par validation.</summary>
+    private bool OrdonnanceObligatoire => apercu?.OrdonnanceRequise == true;
+    private bool AfficherMedecin => OrdonnanceObligatoire || apercu?.SurOrdonnance == true || jetonScan is not null;
+    /// <summary>Le panier exige le bloc client (patient, médecin, organisme) : il ne se réduit pas.</summary>
+    private bool ClientExige => tiersPayant || patient is not null || nouveauPatient || PatientObligatoire || AfficherMedecin || PsychotropeInterdit;
+    private bool clientDeplie;
+    private bool ClientOuvert => clientDeplie || ClientExige;
+    private bool attentesOuvertes;
+    private bool remiseDemandee;
+    private bool RemiseOuverte => remiseDemandee || remisePct > 0;
+    private async Task OuvrirRemiseAsync()
+    {
+        remiseDemandee = true;
+        StateHasChanged();
+        await Task.Yield();
+        try { await champRemise.FocusAsync(); } catch (InvalidOperationException) { }   // champ pas encore rendu
+    }
+    private async Task ReprendreDepuisListeAsync(VenteEnAttenteDto v)
+    {
+        attentesOuvertes = false;
+        await ReprendreAsync(v);
+    }
+
     /// <summary>Le crédit est rattaché à un patient (sa dette augmente) et demande le droit « credit.accorder ».</summary>
     private string? RaisonBlocageCredit =>
         !PeutEncaisser ? RaisonBlocage ?? "Encaissement en cours"
@@ -995,7 +1115,8 @@
         // F12 n'encaisse que depuis la vente elle-même : jamais derrière une rubrique (annulation, crédit), l'ordonnance agrandie,
         // la caméra ou le formulaire d'un nouveau patient
         if (rubrique != "" || imageAgrandie || cameraOuverte || nouveauPatient) return;
-        if (PeutEncaisser) await EncaisserAsync(mode);
+        if (PeutEncaisserMode) await EncaisserAsync(mode);
+        else if (PatientManquant) alerterPatient = true;   // la bulle « À renseigner » s'ouvre seulement maintenant
         StateHasChanged();
     }
 
@@ -1549,6 +1670,11 @@
 
     // Champs obligatoires : patient (tiers payant, ordonnance), médecin (psychotrope), nom du nouveau patient
     private bool PatientManquant => PatientObligatoire && patient is null && !nouveauPatient;
+    /// <summary>
+    /// Patient devenu obligatoire (médecin choisi, tiers payant…) : le champ passe en rouge tout de suite, mais la bulle « À renseigner »
+    /// (aria-invalid, erreurs.js) n'apparaît qu'à la tentative d'encaisser (F12), pour ne pas cacher le reste de l'ordonnance (2026-11-15).
+    /// </summary>
+    private bool alerterPatient;
     private bool MedecinManquant => apercu?.OrdonnanceRequise == true && medecin is null;
     private bool controlePatient;
     private ElementReference champNomPatient;
@@ -1581,12 +1707,37 @@
         (medecins, _) = await Api.RechercherMedecinsAsync(medecinTexte);
     }
 
+    // ---- Nouveau médecin : fiche ouverte depuis la recherche, nom repris de la saisie ----
+    private sealed class FicheMedecin
+    {
+        public string Nom { get; set; } = "";
+        public string? Specialite { get; set; }
+        public string? Telephone { get; set; }
+        public string? Email { get; set; }
+        public string? Adresse { get; set; }
+        public string? NumeroOrdre { get; set; }
+        public string? CodeCnas { get; set; }
+        public NouveauMedecinDto VersDto() => new(Nom.Trim(), Specialite, Telephone, Adresse, Email, NumeroOrdre, CodeCnas);
+    }
+    private FicheMedecin? nouveauMedecin;
+    private string? erreurMedecin;
+    private bool creationMedecin;
+
+    private void OuvrirNouveauMedecin() => (nouveauMedecin, erreurMedecin, medecins) = (new FicheMedecin { Nom = medecinTexte.Trim() }, null, []);
+
     private async Task CreerMedecinAsync()
     {
-        var nom = medecinTexte.Trim();
-        var (cree, err) = await Api.CreerMedecinAsync(new NouveauMedecinDto(nom, null));
-        if (err is not null) { erreurEncaissement = err; return; }
-        (medecin, medecins) = (new MedecinDto(cree!.Id, nom, null), []);
+        if (nouveauMedecin is not { } nm || creationMedecin) return;   // double clic : une seule fiche
+        creationMedecin = true;
+        try
+        {
+            var dto = nm.VersDto();
+            var (cree, err) = await Api.CreerMedecinAsync(dto);
+            if (err is not null) { erreurMedecin = err; return; }
+            (medecin, medecins, nouveauMedecin, erreurMedecin) = (new MedecinDto(cree!.Id, dto.Nom, dto.Specialite, dto.Telephone, dto.Adresse, dto.Email,
+                dto.NumeroOrdre, dto.CodeCnas), [], null, null);
+        }
+        finally { creationMedecin = false; }
     }
 
     private CommandeVenteDto Commande(string modePaiement) => new(
@@ -1829,7 +1980,9 @@
         cleEncaissement = Guid.NewGuid();
         (apercu, bandeau, erreur, montantRecu, remisePct, remiseAdditionnee) = (null, null, null, null, 0, false);
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
-        (nouveauPatient, np, controlePatient, patientTexte, patients, medecins) = (false, new(), false, "", [], []);
+        (nouveauPatient, np, controlePatient, patientTexte, patients, medecins, alerterPatient) = (false, new(), false, "", [], [], false);
+        (clientDeplie, remiseDemandee, attentesOuvertes, nouveauMedecin, erreurMedecin) = (false, false, false, null, null);
+        if (mode == "credit") mode = "especes";
         (datePrescription, erreurScan, taux, organismeId) = (DateOnly.FromDateTime(DateTime.Today), null, TauxParDefaut, OrganismeParDefaut);
         (volet, voletBrut, codesAAssocier, ecartsVolet) = (null, null, [], []);
         accordBlocage.Effacer();

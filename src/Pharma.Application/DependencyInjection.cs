@@ -173,6 +173,7 @@ public static class DependencyInjection
         services.AddScoped<Stock.GererInventaireComplet>();
         services.AddScoped<Pilotage.ObtenirPilotage>();
         services.AddScoped<Rapports.ObtenirRapport>();
+        services.AddScoped<Rapports.ObtenirVentesDuJour>();
         services.AddScoped<Rapports.ExporterRapport>();
         services.AddScoped<Reprise.ListerSourcesReprise>();
         services.AddScoped<Reprise.ScannerSourceReprise>();

@@ -1,0 +1,15 @@
+@* Évolution d'un indicateur par rapport à une référence (Accueil : même jour de la semaine précédente). Sans référence ou référence
+   nulle : « — » (pas de pourcentage inventé). *@
+<span class="variation @Classe" title="@Titre">@Texte</span>
+
+@code {
+    [Parameter] public decimal? Actuel { get; set; }
+    [Parameter] public decimal? Reference { get; set; }
+    /// <summary>Libellé de la référence affiché après le pourcentage.</summary>
+    [Parameter] public string LibelleReference { get; set; } = "vs J-7";
+
+    private decimal? Pourcentage => Actuel is { } a && Reference is { } r && r != 0 ? Math.Round((a - r) / r * 100, 0, MidpointRounding.AwayFromZero) : null;
+    private string Texte => Pourcentage is { } p ? $"{(p > 0 ? "▲ +" : p < 0 ? "▼ −" : "= ")}{Math.Abs(p)} % {LibelleReference}" : $"— {LibelleReference}";
+    private string? Classe => Pourcentage switch { > 0 => "hausse", < 0 => "baisse", _ => null };
+    private string Titre => Reference is { } r ? $"Référence : {r:N0}" : "Pas de référence";
+}

@@ -20,6 +20,15 @@ internal static class RapportsEndpoints
                 Results.Ok(VersDto(await obtenir.ExecuterAsync(Periode(periode, date, du, au), user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.RapportsVentes);
 
+        // Accueil : ventes du jour comparées au même jour de la semaine précédente, arrêté à la même heure
+        rapports.MapGet("/jour", async (ObtenirVentesDuJour obtenir, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await obtenir.ExecuterAsync(user.UtilisateurId(), ct);
+                return Results.Ok(new VentesDuJourDto(v.Jour, TimeOnly.FromTimeSpan(v.Heure), VersDto(v.Aujourdhui), v.JourReference, VersDto(v.Reference),
+                    v.Marge is { } m ? new MargeBruteDto(m.ChiffreAffairesHt, m.CoutAchat, m.Montant, m.Taux) : null));
+            })
+           .ExigerPermission(Permissions.RapportsVentes);
+
         // Clôtures de la période, paginées et filtrées par le serveur (employé, poste, ecart=true : avec un écart seulement)
         rapports.MapGet("/clotures", async (string? periode, DateOnly? date, DateOnly? du, DateOnly? au, string? employe, string? poste, bool? ecart,
                 int? page, int? taille, ObtenirRapport obtenir, ClaimsPrincipal user, CancellationToken ct) =>
@@ -73,12 +82,14 @@ internal static class RapportsEndpoints
         _ => TypePeriode.Semaine
     };
 
+    private static SyntheseVentesDto VersDto(SyntheseVentes s) =>
+        new(s.NombreVentes, s.ChiffreAffaires, s.PartOrganismes, s.CreditsAccordes, s.Remises, s.Annulations, s.Retours, s.MontantRetours,
+            s.VentesMedicaments, s.VentesAutres, s.Shp, s.DonsPartiels, s.RemisesAutomatiques);
+
     private static RapportActiviteDto VersDto(RapportActivite r)
     {
-        var s = r.Synthese;
         return new(r.Periode.Type.ToString().ToLowerInvariant(), r.Periode.Du, r.Periode.Au, r.Periode.Libelle,
-            new SyntheseVentesDto(s.NombreVentes, s.ChiffreAffaires, s.PartOrganismes, s.CreditsAccordes, s.Remises, s.Annulations, s.Retours, s.MontantRetours,
-                s.VentesMedicaments, s.VentesAutres, s.Shp, s.DonsPartiels, s.RemisesAutomatiques),
+            VersDto(r.Synthese),
             r.Marge is { } m ? new MargeBruteDto(m.ChiffreAffairesHt, m.CoutAchat, m.Montant, m.Taux) : null,
             r.ParJour.Select(j => new VentesJourDto(j.Date, j.NombreVentes, j.ChiffreAffaires)).ToList(),
             r.TopProduits.Select(p => new ProduitVenduDto(p.Produit, p.Quantite, p.ChiffreAffaires)).ToList(),

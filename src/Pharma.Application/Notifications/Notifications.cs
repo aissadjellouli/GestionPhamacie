@@ -518,7 +518,8 @@ public sealed record AlertesNonEnvoyeesNonVues(int Nombre, IReadOnlyList<AlerteN
 public interface IAlertesNonEnvoyees
 {
     Task NoterAsync(TypeNotification type, string objet, string raison, CancellationToken ct = default);
-    Task<AlertesNonEnvoyeesNonVues> NonVuesAsync(int limite, CancellationToken ct = default);
+    /// <summary>Alertes non vues, la plus récente d'abord, par page ; texte : objet ou raison (contient) ; null : toutes.</summary>
+    Task<AlertesNonEnvoyeesNonVues> NonVuesAsync(string? texte, Commun.DemandePage page, CancellationToken ct = default);
     /// <summary>Marque vues les alertes non vues jusqu'à l'identifiant affiché (celles arrivées depuis restent signalées).</summary>
     Task<int> MarquerVuesAsync(long jusquA, long utilisateurId, CancellationToken ct = default);
 }
@@ -567,10 +568,10 @@ public static class AlerteNonEnvoyeeSignalee
 /// <summary>Bandeau de l'accueil : réservé au titulaire.</summary>
 public sealed class ConsulterAlertesNonEnvoyees(IAlertesNonEnvoyees nonEnvoyees, IPermissionService droits)
 {
-    public async Task<AlertesNonEnvoyeesNonVues> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
+    public async Task<AlertesNonEnvoyeesNonVues> ExecuterAsync(long utilisateurId, string? texte = null, Commun.DemandePage? page = null, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "consulter les alertes non envoyées", ct);
-        return await nonEnvoyees.NonVuesAsync(5, ct);
+        return await nonEnvoyees.NonVuesAsync(string.IsNullOrWhiteSpace(texte) ? null : texte.Trim(), page ?? new Commun.DemandePage(), ct);
     }
 }
 

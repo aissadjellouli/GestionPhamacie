@@ -655,8 +655,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(ClassementProduitDto?, string?)> ClassementProduitAsync(long produitId) => GetAsync<ClassementProduitDto?>($"api/produits/{produitId}/classement", null);
     public async Task<string?> ModifierClassementProduitAsync(long produitId, string categorie, string? listePsychotrope) =>
         (await EnvoyerCorpsAsync<ClassementProduitRequete, object>(HttpMethod.Put, $"api/produits/{produitId}/classement", new(categorie, listePsychotrope))).Item2;
-    public async Task<string?> ModifierMedecinAsync(long id, string nom, string? specialite) =>
-        (await EnvoyerCorpsAsync<NouveauMedecinDto, object>(HttpMethod.Put, $"api/medecins/{id}", new(nom, specialite))).Item2;
+    public async Task<string?> ModifierMedecinAsync(long id, NouveauMedecinDto medecin) =>
+        (await EnvoyerCorpsAsync<NouveauMedecinDto, object>(HttpMethod.Put, $"api/medecins/{id}", medecin)).Item2;
     public Task<(List<OrganismeDto>, string?)> OrganismesAsync() => GetAsync<List<OrganismeDto>>("api/organismes", []);
 
     // ---- Administration -------------------------------------------------------
@@ -729,11 +729,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         (await PostAsync<CodeVerificationDto, object>($"api/admin/notifications/destinataires/{id}/verification", new(code))).Item2;
     public Task<(NombreDto?, string?)> EnvoyerRapportMaintenantAsync() => PostAsync<object, NombreDto>("api/admin/notifications/rapport", new());
     /// <summary>Alertes qui n'ont pas pu partir, non encore vues (bandeau de l'accueil du titulaire).</summary>
-    public Task<(AlertesNonEnvoyeesDto?, string?)> AlertesNonEnvoyeesAsync() => GetAsync<AlertesNonEnvoyeesDto?>("api/admin/notifications/non-envoyees", null);
+    public Task<(AlertesNonEnvoyeesDto?, string?)> AlertesNonEnvoyeesAsync(string? texte = null, int page = 1, int taille = 10) =>
+        GetAsync<AlertesNonEnvoyeesDto?>("api/admin/notifications/non-envoyees?" + Requete(("q", texte), ("page", page), ("taille", taille)), null);
     public Task<(NombreDto?, string?)> MarquerAlertesNonEnvoyeesVuesAsync(long jusquA) =>
         PostAsync<AlertesVuesRequete, NombreDto>("api/admin/notifications/non-envoyees/vues", new(jusquA));
     /// <summary>Écarts de caisse récents non vus (titulaire seul) ; marqués vus jusqu'à la session la plus récente affichée.</summary>
-    public Task<(EcartsCaisseRecentsDto?, string?)> EcartsCaisseRecentsAsync() => GetAsync<EcartsCaisseRecentsDto?>("api/caisse/ecarts-recents", null);
+    public Task<(EcartsCaisseRecentsDto?, string?)> EcartsCaisseRecentsAsync(string? texte = null, int page = 1, int taille = 10) =>
+        GetAsync<EcartsCaisseRecentsDto?>("api/caisse/ecarts-recents?" + Requete(("q", texte), ("page", page), ("taille", taille)), null);
     public Task<(NombreDto?, string?)> MarquerEcartsCaisseVusAsync(long jusquA) =>
         PostAsync<AlertesVuesRequete, NombreDto>("api/caisse/ecarts-recents/vus", new(jusquA));
     /// <summary>File des messages, paginée ; filtres : type (objet), statut, période de création.</summary>
@@ -1009,6 +1011,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     /// <summary>Période « dates » : du et au choisis dans le calendrier ; sinon jour, semaine ou mois autour de date.</summary>
     private static string FiltreRapport(string periode, DateOnly date, DateOnly du, DateOnly au) =>
         periode == "dates" ? $"periode=dates&du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}" : $"periode={periode}&date={date:yyyy-MM-dd}";
+    /// <summary>Accueil : ventes du jour et même jour de la semaine précédente à la même heure.</summary>
+    public Task<(VentesDuJourDto?, string?)> VentesDuJourAsync() => GetAsync<VentesDuJourDto?>("api/rapports/jour", null);
     public Task<(RapportActiviteDto?, string?)> RapportAsync(string periode, DateOnly date, DateOnly du, DateOnly au) =>
         GetAsync<RapportActiviteDto?>($"api/rapports?{FiltreRapport(periode, date, du, au)}", null);
 

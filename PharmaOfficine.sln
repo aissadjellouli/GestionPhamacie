@@ -209,6 +209,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\079_preteur_libre_alertes_ecarts.sql = database\migration\079_preteur_libre_alertes_ecarts.sql
 		database\migration\080_classe_confirmee_titulaire.sql = database\migration\080_classe_confirmee_titulaire.sql
 		database\migration\081_conditions_pret_assurance.sql = database\migration\081_conditions_pret_assurance.sql
+		database\migration\082_medecin_coordonnees.sql = database\migration\082_medecin_coordonnees.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"

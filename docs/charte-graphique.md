@@ -150,6 +150,10 @@ saisie n'est jamais en blanc ni plus grosse que le texte qu'elle accompagne.
 | Bandeau d'attention | `.bandeau-attention` | mise en garde |
 | Erreur, réussite | `.erreur`, `.succes` | résultat d'une action |
 
+Thème clair adouci (2026-11-15) : jamais de blanc pur pour les grandes surfaces, qui fatiguait l'œil. Page `--fond` #EEE9E1 (beige),
+panneaux et champs `--surface` #F7F4EE (blanc cassé chaud), en-têtes de tableau `--surface-2` #F0EBE3, bordures `--bordure` #E0D8CB.
+Seuls le logo, les images (ordonnances) et les pastilles de l'en-tête vert restent en blanc. Le thème sombre ne change pas.
+
 Les couleurs passent toujours par les variables (`var(--…)`) : c'est ce qui fait fonctionner les thèmes clair et sombre.
 
 ## Contrôles

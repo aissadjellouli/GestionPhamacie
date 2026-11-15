@@ -37,16 +37,16 @@ internal static class PatientsEndpoints
            .ExigerPermission(Permissions.CaisseVendre);
 
         api.MapGet("/medecins", async (string? q, RechercherMedecins rechercher, CancellationToken ct) =>
-                Results.Ok((await rechercher.ExecuterAsync(q, ct)).Select(m => new MedecinDto(m.Id, m.Nom, m.Specialite))))
+                Results.Ok((await rechercher.ExecuterAsync(q, ct)).Select(m => new MedecinDto(m.Id, m.Nom, m.Specialite, m.Telephone, m.Adresse, m.Email, m.NumeroOrdre, m.CodeCnas))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         api.MapPost("/medecins", async (NouveauMedecinDto req, CreerMedecin creer, CancellationToken ct) =>
-                Results.Ok(new IdentifiantDto(await creer.ExecuterAsync(req.Nom, req.Specialite, ct))))
+                Results.Ok(new IdentifiantDto(await creer.ExecuterAsync(VersSaisie(req), ct))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         api.MapPut("/medecins/{id:long}", async (long id, NouveauMedecinDto req, ModifierMedecin modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await modifier.ExecuterAsync(id, req.Nom, req.Specialite, user.UtilisateurId(), ct);
+                await modifier.ExecuterAsync(id, VersSaisie(req), user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.CaisseVendre);
@@ -55,4 +55,7 @@ internal static class PatientsEndpoints
                 Results.Ok((await lister.ExecuterAsync(ct)).Select(o => new OrganismeDto(o.Id, o.Code, o.Nom, o.DelaiPaiementJours))))
            .ExigerPermission(Permissions.CaisseVendre);
     }
+
+    private static Pharma.Application.Patients.SaisieMedecin VersSaisie(NouveauMedecinDto d) =>
+        new(d.Nom, d.Specialite, d.Telephone, d.Adresse, d.Email, d.NumeroOrdre, d.CodeCnas);
 }

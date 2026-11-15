@@ -10,13 +10,14 @@
 @font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/inter-600.woff2") format("woff2"); }
 
 :root {
-  --fond: #FAF7F2;
-  --surface: #FFFFFF;
-  --surface-2: #FBF8F3;
+  /* Thème clair adouci (2026-11-15) : plus de blanc pur, qui fatiguait l'œil ; fond beige plus soutenu, panneaux blanc cassé chaud */
+  --fond: #EEE9E1;
+  --surface: #F7F4EE;
+  --surface-2: #F0EBE3;
   --texte: #1D2939;
   --texte-2: #475467;
   --texte-3: #344054;
-  --bordure: #ECE5DA;
+  --bordure: #E0D8CB;
   --bordure-2: #F1ECE4;
   --bordure-champ: #CFC6B8;
   --accent: #0E5A32;
@@ -799,3 +800,74 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
   opacity: .6; cursor: not-allowed; }
 .suggestions-caisse button.suggestion-equivalent { font-size: 14px; padding-top: 6px; padding-bottom: 8px; padding-left: 32px; color: var(--accent-texte); }
 .suggestions-caisse .suggestion-aucun { display: block; padding: 0 14px 10px 32px; }
+/* Caisse (2026-11-15) : bloc ordonnance compact — encadré d'une ligne, médecin + date + n° sur une ligne */
+.info-bandeau.compact { padding: 6px 10px; font-size: 13px; }
+.ordonnance-ligne { display: flex; gap: 8px; align-items: stretch; }
+.ordonnance-ligne .ordonnance-medecin { flex: 2 1 0; min-width: 0; }
+.ordonnance-ligne .ordonnance-date { flex: 0 0 140px; min-width: 0; }
+.ordonnance-ligne .ordonnance-numero { flex: 1 1 0; min-width: 0; }
+.ordonnance-ligne .choix.ordonnance-medecin { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 10px; }
+.etiquette-ligne { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+/* Colonne de paiement sans défilement (2026-11-15) : « À payer » sur une ligne, espacements resserrés */
+.colonne-laterale.reglement { gap: 8px; }
+.reglement .a-payer { flex-direction: row; align-items: center; justify-content: space-between; padding: 10px 16px; }
+.reglement .a-payer span:last-child { font-size: 34px; }
+/* Accueil, synthèse du jour (2026-11-15) : tuiles compactes, trois sections tenant dans la fenêtre sans défilement */
+.section-accueil { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--texte-2); margin: 14px 0 8px; }
+.section-accueil .detail { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.tuiles-compactes { grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px; }
+.tuiles-compactes .tuile { padding: 10px 14px; gap: 2px; }
+.tuiles-compactes .tuile-valeur { font-size: 22px; }
+.tuiles-compactes .tuile-valeur.petite { font-size: 18px; }
+.tuiles-compactes .detail, .tuiles-compactes .tuile-aller { font-size: 12px; }
+.ligne-synthese { margin: 8px 0 0; font-size: 13px; color: var(--texte-2); }
+.variation { font-size: 12px; font-weight: 600; color: var(--texte-2); }
+.variation.hausse { color: var(--accent-texte); }
+.variation.baisse { color: var(--urgent); }
+
+/* Médecin choisi sur une ligne et « À payer » resserré (2026-11-15) : la colonne de paiement reste sans défilement */
+.reglement .medecin-choisi { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap; min-width: 0; }
+.reglement .medecin-choisi strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.reglement .medecin-choisi .lien-bouton { flex-shrink: 0; }
+.reglement .a-payer { padding: 6px 14px; }
+.reglement .a-payer span:last-child { font-size: 30px; }
+/* Caisse en trois parties (2026-11-15) : 1 panier, 2 client et ordonnance sous le panier, 3 paiement à droite ; seul le panier défile */
+.caisse-vente { flex-wrap: nowrap; align-items: stretch; }
+.caisse-vente .espace, .bloc-client .espace { flex-grow: 1; }
+.ligne-scan { display: flex; gap: 10px; align-items: flex-end; }
+.ligne-scan > .champ { flex: 1 1 auto; min-width: 0; }
+.ligne-scan label .detail { font-weight: 400; margin-left: 6px; }
+.actions-attente { position: relative; display: flex; gap: 8px; }
+.actions-attente > .btn { height: 48px; white-space: nowrap; }
+.bouton-attentes { font-weight: 600; color: var(--accent-texte); }
+.liste-attentes { position: absolute; right: 0; top: calc(100% + 6px); width: 540px; z-index: 30; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--bordure-champ); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, .18); overflow: hidden; }
+.liste-attentes .vente-attente { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 0; border-bottom: 1px solid var(--bordure-2); border-radius: 0; background: none; }
+.liste-attentes .vente-attente:last-child { border-bottom: 0; }
+.liste-attentes .vente-attente > span:first-child { flex-grow: 1; min-width: 0; }
+.bloc-client { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; flex-shrink: 0; }
+.bloc-client-entete { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bloc-client-entete .puce { height: 36px; }
+.indice { padding: 2px 10px; border-radius: 999px; background: var(--info-fond); color: var(--info); font-size: 13px; }
+.indice.requis { background: var(--urgent-fond); color: var(--urgent); }
+.bloc-client-reduit { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.bloc-client-grille { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.bloc-client-grille.deux { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bloc-client-ordonnance { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.bloc-client-ordonnance .champ input { width: 170px; }
+.bloc-client .medecin-choisi { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.bloc-client .medecin-choisi strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.caisse-vente .reglement { display: flex; flex-direction: column; }
+.modes-paiement { flex-wrap: nowrap; }
+.modes-paiement .puce { flex: 1 1 0; padding: 0 8px; }
+.modes-paiement .puce:disabled { border-style: dashed; }
+.credit-resume { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.ligne-scan > .champ { flex: 1 1 520px; }
+.actions-attente { flex: 0 0 auto; }
+.bloc-client-ordonnance { align-items: center; }
+.bloc-client-ordonnance .champ input { width: 160px; }
+.bloc-client-ordonnance .lien-bouton { align-self: center; }
+/* Fiche d'un médecin (création à la caisse, correction dans Factures) : deux champs par ligne (2026-11-15) */
+.sous-formulaire.fiche-medecin { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.fiche-medecin > .actions, .fiche-medecin > .erreur { grid-column: 1 / -1; }
+.sous-formulaire.fiche-medecin.large { grid-template-columns: repeat(4, minmax(0, 1fr)); }

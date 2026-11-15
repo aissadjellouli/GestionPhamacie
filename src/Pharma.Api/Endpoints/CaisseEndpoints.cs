@@ -230,9 +230,9 @@ internal static class CaisseEndpoints
            .ExigerPermission(Permissions.CaisseVendre);
 
         // Écarts de caisse récents : tuile de l'accueil du titulaire, marqués vus par lui (les autres employés ne voient rien)
-        caisse.MapGet("/ecarts-recents", async (ConsulterEcartsCaisseRecents consulter, ClaimsPrincipal user, CancellationToken ct) =>
+        caisse.MapGet("/ecarts-recents", async (string? q, int? page, int? taille, ConsulterEcartsCaisseRecents consulter, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                var e = await consulter.ExecuterAsync(user.UtilisateurId(), ct);
+                var e = await consulter.ExecuterAsync(user.UtilisateurId(), q, Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
                 return Results.Ok(new EcartsCaisseRecentsDto(e.Nombre,
                     e.Derniers.Select(x => new EcartCaisseRecentDto(x.SessionId, x.Poste, x.Employe, x.ClotureLe, x.Ecart, x.ClotureePar, x.OuverteLe, x.Releve)).ToList()));
             })

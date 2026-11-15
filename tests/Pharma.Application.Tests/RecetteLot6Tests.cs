@@ -10,8 +10,12 @@ internal sealed class EcartsCaisseEnMemoire : IEcartsCaisseRecents
 {
     public List<EcartCaisseRecent> Ecarts { get; } = [];
     public (long JusquA, long Par)? Marque { get; private set; }
-    public Task<EcartsCaisseNonVus> NonVusAsync(int jours, int limite, CancellationToken ct = default) =>
-        Task.FromResult(new EcartsCaisseNonVus(Ecarts.Count, Ecarts.Take(limite).ToList()));
+    public (string? Texte, DemandePage Page)? Demande { get; private set; }
+    public Task<EcartsCaisseNonVus> NonVusAsync(int jours, string? texte, DemandePage page, CancellationToken ct = default)
+    {
+        Demande = (texte, page);
+        return Task.FromResult(new EcartsCaisseNonVus(Ecarts.Count, Ecarts.Skip(page.Decalage).Take(page.Taille).ToList()));
+    }
     public Task<int> MarquerVusAsync(long jusquA, long utilisateurId, CancellationToken ct = default)
     {
         Marque = (jusquA, utilisateurId);

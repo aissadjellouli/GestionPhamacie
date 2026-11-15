@@ -16,8 +16,8 @@
     }
     else if (!confirmation)
     {
-        <a href="" class="sous-rubrique" title="Ouverture sans vente, inscrite au contrôle interne (tiroir-caisse : matériel à brancher)"
-           @onclick="() => (confirmation, messageTiroir) = (true, null)" @onclick:preventDefault="true">Ouvrir le tiroir</a>
+        <a href="" class="sous-rubrique" data-raccourci="tiroir" title="Ouverture sans vente, inscrite au contrôle interne (tiroir-caisse : matériel à brancher) · raccourci F8"
+           @onclick="() => (confirmation, messageTiroir) = (true, null)" @onclick:preventDefault="true">Ouvrir le tiroir <span class="detail">F8</span></a>
     }
     else
     {

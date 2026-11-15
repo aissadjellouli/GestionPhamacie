@@ -83,13 +83,26 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 
-    async Task<bool> IMedecins.ModifierAsync(long id, string nom, string? specialite, CancellationToken ct)
+    async Task<bool> IMedecins.ModifierAsync(Medecin m, CancellationToken ct)
     {
-        await using var cmd = db.CreateCommand("UPDATE medecin SET nom = $2, specialite = $3 WHERE id = $1");
-        cmd.Parameters.AddWithValue(id);
-        cmd.Parameters.AddWithValue(nom);
-        cmd.Parameters.Add(Nullable(specialite, NpgsqlDbType.Text));
+        await using var cmd = db.CreateCommand("""
+            UPDATE medecin SET nom = $2, specialite = $3, telephone = $4, adresse = $5, email = $6, numero_ordre = $7, code_prestataire = $8 WHERE id = $1
+            """);
+        cmd.Parameters.AddWithValue(m.Id);
+        ParametresMedecin(cmd, m);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    /// <summary>Nom, spécialité, téléphone, adresse, e-mail, n° d'ordre et code CNAS (code_prestataire), dans cet ordre, à la suite des paramètres déjà posés.</summary>
+    private static void ParametresMedecin(NpgsqlCommand cmd, Medecin m)
+    {
+        cmd.Parameters.AddWithValue(m.Nom);
+        cmd.Parameters.Add(Nullable(m.Specialite, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(m.Telephone, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(m.Adresse, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(m.Email, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(m.NumeroOrdre, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(m.CodeCnas, NpgsqlDbType.Text));
     }
 
     public async Task<long> CreerAsync(NouveauPatient p, long? creePar, CancellationToken ct = default)
@@ -112,22 +125,24 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
     async Task<IReadOnlyList<Medecin>> IMedecins.RechercherAsync(string texte, int limite, CancellationToken ct)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT id, nom, specialite FROM medecin
+            SELECT id, nom, specialite, telephone, adresse, email, numero_ordre, code_prestataire FROM medecin
             WHERE nom ILIKE '%' || $1 || '%' ORDER BY nom LIMIT $2
             """);
         cmd.Parameters.AddWithValue(texte);
         cmd.Parameters.AddWithValue(limite);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<Medecin>();
-        while (await r.ReadAsync(ct)) liste.Add(new Medecin(r.GetInt64(0), r.GetString(1), Texte(r, 2)));
+        while (await r.ReadAsync(ct))
+            liste.Add(new Medecin(r.GetInt64(0), r.GetString(1), Texte(r, 2), Texte(r, 3), Texte(r, 4), Texte(r, 5), Texte(r, 6), Texte(r, 7)));
         return liste;
     }
 
-    async Task<long> IMedecins.CreerAsync(string nom, string? specialite, CancellationToken ct)
+    async Task<long> IMedecins.CreerAsync(Medecin m, CancellationToken ct)
     {
-        await using var cmd = db.CreateCommand("INSERT INTO medecin (nom, specialite) VALUES ($1, $2) RETURNING id");
-        cmd.Parameters.AddWithValue(nom);
-        cmd.Parameters.Add(Nullable(specialite, NpgsqlDbType.Text));
+        await using var cmd = db.CreateCommand("""
+            INSERT INTO medecin (nom, specialite, telephone, adresse, email, numero_ordre, code_prestataire) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id
+            """);
+        ParametresMedecin(cmd, m);
         return (long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 

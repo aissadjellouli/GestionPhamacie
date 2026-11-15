@@ -1,79 +1,166 @@
-@page "/accueil"
+﻿@page "/accueil"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
-@* Accueil (navigation en deux niveaux, docs/navigation.md) : ce qui attend l'employé aujourd'hui. Chaque tuile ouvre l'écran concerné
-   et n'apparaît que si l'employé peut l'ouvrir. Écran d'arrivée de qui a des droits de gestion (Domaines.Accueil) ;
-   le vendeur arrive directement sur la Caisse. *@
+@* Accueil (navigation en deux niveaux, docs/navigation.md) : synthèse du jour. Écran fixe (règle des listes) : le tableau de bord tient
+   dans la fenêtre ; les deux listes du titulaire (écarts de caisse, alertes non envoyées) sont des rubriques du menu, paginées et
+   filtrées par le serveur. Chaque tuile ouvre l'écran concerné et n'apparaît que si l'employé peut l'ouvrir. Écran d'arrivée de qui a
+   des droits de gestion (Domaines.Accueil) ; le vendeur arrive directement sur la Caisse. *@
 <div class="page avec-menu">
     <NavDomaine Libelle="Accueil">
         <span class="nav-groupe-titre">Accueil</span>
-        <a href="accueil" class="active" aria-current="page">Tableau de bord</a>
+        <a href="accueil" class="@(rubrique == "jour" ? "active" : null)" aria-current="@(rubrique == "jour" ? "page" : null)">Aujourd’hui</a>
+        @if (Titulaire)
+        {
+            <a href="accueil?rubrique=ecarts" class="@(rubrique == "ecarts" ? "active" : null)" aria-current="@(rubrique == "ecarts" ? "page" : null)">
+                <span>Écarts de caisse</span>@if (nbEcarts > 0) { <span class="compteur" aria-label="@($"{nbEcarts} écart(s) non vu(s)")">@nbEcarts</span> }</a>
+            <a href="accueil?rubrique=non-envoyees" class="@(rubrique == "non-envoyees" ? "active" : null)" aria-current="@(rubrique == "non-envoyees" ? "page" : null)">
+                <span>Alertes non envoyées</span>@if (nbNonEnvoyees > 0) { <span class="compteur" aria-label="@($"{nbNonEnvoyees} alerte(s) non vue(s)")">@nbNonEnvoyees</span> }</a>
+        }
     </NavDomaine>
 
     <div class="contenu-rubrique">
         <div class="titre-page">
             <div>
-                <h1>Bonjour @Session.NomComplet<AideEcran Cle="accueil" /></h1>
-                <p class="sous-titre">Ce qui vous attend aujourd’hui. Chaque tuile ouvre l’écran concerné.</p>
+                <h1>@TitreRubrique<AideEcran Cle="accueil" /></h1>
+                <p class="sous-titre">@SousTitre</p>
             </div>
         </div>
 
-        @if (nonEnvoyees is { Nombre: > 0 } ne)
+        @if (rubrique == "ecarts" && Titulaire)
         {
-            @* Titulaire : alertes qui n'ont pas pu partir (aucun destinataire vérifié, mise en file impossible, envoi abandonné) *@
-            <div class="bandeau-attention" role="alert" style="margin-bottom: 16px">
-                <strong>@ne.Nombre alerte(s) n’ont pas pu être envoyées :</strong>
-                <ul style="margin: 6px 0">
-                    @foreach (var a in ne.Dernieres)
-                    {
-                        <li>@a.CreeLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @a.Objet : @a.Raison</li>
-                    }
-                </ul>
-                @if (ne.Nombre > ne.Dernieres.Count) { <div class="detail">… et @(ne.Nombre - ne.Dernieres.Count) plus ancienne(s).</div> }
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px">
-                    <button type="button" class="btn" disabled="@marquage" @onclick="MarquerVuesAsync">Marquer comme vues</button>
-                    <a href="admin/notifications" class="btn">Vérifier les destinataires</a>
-                </div>
-                @if (erreurNonEnvoyees is not null) { <div class="erreur" role="alert">@erreurNonEnvoyees</div> }
+            @* Écarts de caisse des 7 derniers jours pas encore vus (aussi au journal des actions et par e-mail) *@
+            <div class="filtres-liste" role="search" aria-label="Filtrer les écarts de caisse">
+                <div class="champ" style="flex: 0 1 320px"><label for="fe-texte">Poste ou employé</label>
+                    <input id="fe-texte" type="search" @bind="fEcarts" @bind:event="oninput" @bind:after="PremiereSurEcartsAsync" /></div>
+                @if (fEcarts != "") { <button type="button" class="btn" @onclick="ToutesLesEcartsAsync">Tout afficher</button> }
+                <button type="button" class="btn" disabled="@(marquageEcarts || dernierEcart == 0)" @onclick="MarquerEcartsVusAsync">Tout marquer comme vu</button>
             </div>
+            @if (erreurEcarts is not null) { <div class="erreur" role="alert">@erreurEcarts</div> }
+            <section class="tableau-cadre" aria-label="Écarts de caisse récents">
+                <table class="tableau" style="min-width: 860px">
+                    <thead><tr><th scope="col">Date</th><th scope="col">Opération</th><th scope="col">Poste</th><th scope="col">Caisse ouverte le</th>
+                        <th scope="col">Employé</th><th scope="col" class="num">Écart</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in ecarts)
+                        {
+                            @* Date de la clôture (ou de la relève) de la session, pas celle de l'ouverture *@
+                            <tr>
+                                <td>@Libelles.DateHeureLocale(e.ClotureLe)</td>
+                                <td>@(e.Releve ? "Relève" : "Clôture")</td>
+                                <td>@e.Poste</td>
+                                <td>@(e.OuverteLe is { } o ? Libelles.DateHeureLocale(o) : "—")</td>
+                                <td>@e.Employe <span class="detail">(@(e.ClotureePar ? (e.Releve ? "relève faite par" : "clôturée par") : "ouverte par"))</span></td>
+                                <td class="num"><span class="pastille @(e.Ecart < 0 ? "urgent" : "attention")">@((e.Ecart > 0 ? "+" : "") + Libelles.Dinars(e.Ecart, 2)) · @(e.Ecart < 0 ? "manque" : "excédent")</span></td>
+                            </tr>
+                        }
+                        @if (ecarts.Count == 0) { <tr><td colspan="6" class="vide">@(fEcarts != "" ? "Aucun écart pour ce filtre." : "Aucun écart de caisse à examiner sur les 7 derniers jours.")</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+            <Pagination Total="totalEcarts" Numero="pageEcarts" Taille="tailleEcarts" Libelle="Pages des écarts de caisse" OnChange="p => ChargerEcartsAsync(p.Numero, p.Taille)" />
         }
-
-        @if (ecartsCaisse is { Nombre: > 0 } ec)
+        else if (rubrique == "non-envoyees" && Titulaire)
         {
-            @* Titulaire seul : écarts de caisse des 7 derniers jours pas encore vus (aussi au journal des actions et par e-mail) *@
-            <div class="bandeau-attention" role="status" style="margin-bottom: 16px">
-                <strong>Écarts de caisse récents : @ec.Nombre</strong>
-                <ul style="margin: 6px 0">
-                    @foreach (var e in ec.Derniers)
-                    {
-                        @* Date de la clôture (ou de la relève) de la session, pas celle de l'ouverture : la caisse rouverte ensuite est une autre session *@
-                        <li>@(e.Releve ? "Relève" : "Clôture") du @e.ClotureLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm") · @e.Poste@(e.OuverteLe is { } o ? $" (caisse ouverte le {o.ToLocalTime():dd/MM/yyyy HH:mm})" : "") · @(e.ClotureePar ? (e.Releve ? "relève faite par" : "clôturée par") : "ouverte par") @e.Employe : <strong>@((e.Ecart > 0 ? "+" : "") + Libelles.Dinars(e.Ecart, 2))</strong> (@(e.Ecart < 0 ? "manque" : "excédent"))</li>
-                    }
-                </ul>
-                @if (ec.Nombre > ec.Derniers.Count) { <div class="detail">… et @(ec.Nombre - ec.Derniers.Count) plus ancien(s).</div> }
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px">
-                    <button type="button" class="btn" disabled="@marquageEcarts" @onclick="MarquerEcartsVusAsync">Marquer comme vus</button>
-                </div>
-                @if (erreurEcarts is not null) { <div class="erreur" role="alert">@erreurEcarts</div> }
+            @* Alertes au titulaire qui n'ont pas pu partir (aucun destinataire vérifié, mise en file impossible, envoi abandonné) *@
+            <div class="filtres-liste" role="search" aria-label="Filtrer les alertes non envoyées">
+                <div class="champ" style="flex: 0 1 320px"><label for="fa-texte">Objet ou raison</label>
+                    <input id="fa-texte" type="search" @bind="fAlertes" @bind:event="oninput" @bind:after="PremiereSurAlertesAsync" /></div>
+                @if (fAlertes != "") { <button type="button" class="btn" @onclick="ToutesLesAlertesAsync">Tout afficher</button> }
+                <button type="button" class="btn" disabled="@(marquage || derniereAlerte == 0)" @onclick="MarquerVuesAsync">Tout marquer comme vu</button>
+                <a href="admin/notifications" class="btn">Vérifier les destinataires</a>
             </div>
+            @if (erreurNonEnvoyees is not null) { <div class="erreur" role="alert">@erreurNonEnvoyees</div> }
+            <section class="tableau-cadre" aria-label="Alertes non envoyées">
+                <table class="tableau" style="min-width: 760px">
+                    <thead><tr><th scope="col">Date</th><th scope="col">Objet</th><th scope="col">Raison</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in alertes)
+                        {
+                            <tr><td>@Libelles.DateHeureLocale(a.CreeLe)</td><td>@a.Objet</td><td class="detail">@a.Raison</td></tr>
+                        }
+                        @if (alertes.Count == 0) { <tr><td colspan="3" class="vide">@(fAlertes != "" ? "Aucune alerte pour ce filtre." : "Toutes les alertes sont parties.")</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+            <Pagination Total="totalAlertes" Numero="pageAlertes" Taille="tailleAlertes" Libelle="Pages des alertes non envoyées" OnChange="p => ChargerAlertesAsync(p.Numero, p.Taille)" />
         }
-
-        @if (charge)
+        else if (!charge)
         {
-            <div class="tuiles-accueil">
+            <Chargement />
+        }
+        else
+        {
+            @if (jour is { } j)
+            {
+                @* Ventes du jour : droits « rapports.ventes » et « caisse.voir_ecart » (sans lui, le chiffre trahirait l'attendu du tiroir :
+                   comptage à l'aveugle). Comparaison au même jour de la semaine précédente, arrêté à la même heure (serveur). *@
+                var a = j.Aujourdhui;
+                var r7 = j.Reference;
+                <h2 class="section-accueil">Ventes du jour <span class="detail">à @j.Heure.ToString("HH:mm") · comparées au @j.JourReference.ToString("dddd dd/MM", Fr) à la même heure</span></h2>
+                <div class="tuiles-accueil tuiles-compactes">
+                    <a href="rapports" class="tuile tuile-lien">
+                        <span class="tuile-libelle">Chiffre d’affaires</span>
+                        <span class="tuile-valeur">@Libelles.Dinars(a.ChiffreAffaires)</span>
+                        <Variation Actuel="a.ChiffreAffaires" Reference="r7.ChiffreAffaires" />
+                    </a>
+                    <a href="rapports" class="tuile tuile-lien">
+                        <span class="tuile-libelle">Ventes</span>
+                        <span class="tuile-valeur">@a.NombreVentes</span>
+                        <Variation Actuel="a.NombreVentes" Reference="r7.NombreVentes" />
+                    </a>
+                    <a href="rapports" class="tuile tuile-lien">
+                        <span class="tuile-libelle">Panier moyen</span>
+                        <span class="tuile-valeur">@(PanierMoyen(a) is { } pm ? Libelles.Dinars(pm) : "—")</span>
+                        <Variation Actuel="PanierMoyen(a)" Reference="PanierMoyen(r7)" />
+                    </a>
+                    <a href="factures" class="tuile tuile-lien">
+                        <span class="tuile-libelle">Tiers payant</span>
+                        <span class="tuile-valeur">@Libelles.Dinars(a.PartOrganismes)</span>
+                        <span class="detail">à facturer aux organismes</span>
+                    </a>
+                    @if (j.Marge is { } m)
+                    {
+                        <a href="rapports" class="tuile tuile-lien">
+                            <span class="tuile-libelle">Marge brute</span>
+                            <span class="tuile-valeur">@(m.Taux is { } t ? $"{t:0.0} %" : "—")</span>
+                            <span class="detail">@Libelles.Dinars(m.Montant)</span>
+                        </a>
+                    }
+                </div>
+                <p class="ligne-synthese">
+                    Crédits accordés @Libelles.Dinars(a.CreditsAccordes) · Remises @Libelles.Dinars(a.Remises + a.RemisesAutomatiques)
+                    · Dons partiels @Libelles.Dinars(a.DonsPartiels) · Annulations @a.Annulations · Retours @a.Retours
+                    · <a href="rapports">Rapport du jour</a>
+                </p>
+            }
+            else if (erreurVentes is not null)
+            {
+                <div class="erreur" role="alert">Ventes du jour : @erreurVentes</div>
+            }
+
+            <h2 class="section-accueil">À faire aujourd’hui</h2>
+            <div class="tuiles-accueil tuiles-compactes">
                 <a href="./?rubrique=urgent" class="tuile tuile-lien @(urgentes > 0 ? "tuile-urgente" : null)">
                     <span class="tuile-libelle">Alertes urgentes</span>
                     <span class="tuile-valeur">@urgentes</span>
-                    <span class="tuile-aller">Voir les alertes →</span>
+                    <span class="detail">à traiter aujourd’hui</span>
                 </a>
+                @if (stock is { } s)
+                {
+                    <a href="./?rubrique=stock" class="tuile tuile-lien @(s.Ruptures > 0 ? "tuile-urgente" : null)">
+                        <span class="tuile-libelle">Ruptures · critiques</span>
+                        <span class="tuile-valeur">@s.Ruptures · @s.Critiques</span>
+                        <span class="detail">à commander</span>
+                    </a>
+                }
                 @if (peremption is { } p)
                 {
                     <a href="./?rubrique=peremption" class="tuile tuile-lien">
-                        <span class="tuile-libelle">Lots périmant dans les @(p.Jours / 30) mois</span>
-                        <span class="tuile-valeur">@p.Lots</span>
-                        <span class="detail">@p.Boites boîte(s)@if (p.Valeur is { } valeurPeremption) { <text> · @Libelles.Dinars(valeurPeremption, 2)</text> }</span>
-                        <span class="tuile-aller">Voir les alertes →</span>
+                        <span class="tuile-libelle">Périment sous @(p.Jours / 30) mois</span>
+                        <span class="tuile-valeur">@p.Lots lot(s)</span>
+                        <span class="detail">@p.Boites boîte(s)@if (p.Valeur is { } valeurPeremption) { <text> · @Libelles.Dinars(valeurPeremption)</text> }</span>
                     </a>
                 }
                 @if (receptionsEnAttente is { } r)
@@ -81,41 +168,129 @@
                     <a href="achats?onglet=receptions&vue=attente" class="tuile tuile-lien">
                         <span class="tuile-libelle">Réceptions en attente</span>
                         <span class="tuile-valeur">@r</span>
-                        <span class="detail">@(r == 0 ? "Aucune livraison en cours" : "Livraisons commencées, à reprendre")</span>
-                        <span class="tuile-aller">Reprendre →</span>
+                        <span class="detail">@(r == 0 ? "aucune en cours" : "à reprendre")</span>
                     </a>
                 }
                 @if (ecartsAValider is { } e)
                 {
                     <a href="inventaire?rubrique=ecarts" class="tuile tuile-lien">
-                        <span class="tuile-libelle">Écarts d’inventaire à valider</span>
+                        <span class="tuile-libelle">Écarts d’inventaire</span>
                         <span class="tuile-valeur">@e</span>
-                        <span class="detail">@(e == 0 ? "Rien à valider" : "En attente du titulaire")</span>
-                        <span class="tuile-aller">Inventaire →</span>
+                        <span class="detail">@(e == 0 ? "rien à valider" : "à valider")</span>
+                    </a>
+                }
+                @if (reglements is { } nb)
+                {
+                    <a href="achats?onglet=reglements" class="tuile tuile-lien @(nb > 0 ? "tuile-urgente" : null)">
+                        <span class="tuile-libelle">Règlements grossistes</span>
+                        <span class="tuile-valeur">@nb</span>
+                        <span class="detail">@Libelles.Dinars(montantReglements) à préparer</span>
                     </a>
                 }
             </div>
-        }
-        else
-        {
-            <Chargement />
+
+            @if (Titulaire)
+            {
+                <h2 class="section-accueil">Contrôle</h2>
+                <div class="tuiles-accueil tuiles-compactes">
+                    <a href="accueil?rubrique=ecarts" class="tuile tuile-lien @(nbEcarts > 0 ? "tuile-urgente" : null)">
+                        <span class="tuile-libelle">Écarts de caisse</span>
+                        <span class="tuile-valeur">@nbEcarts</span>
+                        <span class="detail">@(nbEcarts == 0 ? "rien sur 7 jours" : "non vus, 7 jours")</span>
+                    </a>
+                    <a href="accueil?rubrique=non-envoyees" class="tuile tuile-lien @(nbNonEnvoyees > 0 ? "tuile-urgente" : null)">
+                        <span class="tuile-libelle">Alertes non envoyées</span>
+                        <span class="tuile-valeur">@nbNonEnvoyees</span>
+                        <span class="detail">@(nbNonEnvoyees == 0 ? "toutes parties" : "non vues")</span>
+                    </a>
+                    @if (echeances is { } ech)
+                    {
+                        <a href="financements?rubrique=echeances" class="tuile tuile-lien @(ech.Total > 0 ? "tuile-urgente" : null)">
+                            <span class="tuile-libelle">Échéances de prêt</span>
+                            <span class="tuile-valeur">@ech.Total</span>
+                            <span class="detail">@(ech.Lignes.FirstOrDefault() is { } premiere ? $"le {premiere.Ligne.Date:dd/MM} · {Libelles.Dinars(premiere.Ligne.Montant)}" : "rien sous 7 jours")</span>
+                        </a>
+                    }
+                    @if (anomalies is { } an)
+                    {
+                        <a href="surveillance" class="tuile tuile-lien @(an > 0 ? "tuile-urgente" : null)">
+                            <span class="tuile-libelle">Contrôle interne</span>
+                            <span class="tuile-valeur">@an</span>
+                            <span class="detail">@(an == 0 ? "aucune anomalie" : "à examiner")</span>
+                        </a>
+                    }
+                    @if (etatPoste is { } ep && Session.A("admin.sauvegardes"))
+                    {
+                        <a href="admin/sauvegardes" class="tuile tuile-lien @(SauvegardeAnormale(ep) ? "tuile-urgente" : null)">
+                            <span class="tuile-libelle">Dernière sauvegarde</span>
+                            <span class="tuile-valeur petite">@(ep.DerniereSauvegarde is { } d ? d.ToLocalTime().ToString("dd/MM HH:mm") : "jamais")</span>
+                            <span class="detail">@LibelleSauvegarde(ep)</span>
+                        </a>
+                    }
+                </div>
+            }
         }
     </div>
 </div>
 
 @code {
+    /// <summary>Rubrique dans l'adresse (accueil?rubrique=…) : jour (défaut), ecarts, non-envoyees.</summary>
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => Rubrique is "ecarts" or "non-envoyees" ? Rubrique : "jour";
+    private bool Titulaire => Session.A("role.titulaire");
+    private static readonly System.Globalization.CultureInfo Fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+
+    private string TitreRubrique => rubrique switch
+    {
+        "ecarts" => "Écarts de caisse récents",
+        "non-envoyees" => "Alertes qui n’ont pas pu être envoyées",
+        _ => $"Bonjour {Session.NomComplet}"
+    };
+    private string SousTitre => rubrique switch
+    {
+        "ecarts" => "Clôtures et relèves des 7 derniers jours avec un écart, jusqu’à « Tout marquer comme vu ».",
+        "non-envoyees" => "Alertes au titulaire restées sans destinataire ou en échec d’envoi.",
+        _ => $"{DateTime.Today.ToString("dddd dd MMMM yyyy", Fr)} · chaque tuile ouvre l’écran concerné."
+    };
+
+    // ---- Tableau de bord ----
     private bool charge;
     private int urgentes;
     private HorizonPeremptionDto? peremption;
-    private int? receptionsEnAttente, ecartsAValider;
+    private int? receptionsEnAttente, ecartsAValider, reglements, anomalies;
+    private decimal montantReglements;
+    private (int Ruptures, int Critiques)? stock;
+    private PageDto<EcheancePretDto>? echeances;
+    private EtatPosteDto? etatPoste;
+    private VentesDuJourDto? jour;
+    private string? erreurVentes;
 
     protected override async Task OnInitializedAsync()
     {
+        Historique.Suivre("accueil", e =>
+        {
+            e.Mettre("ecarts_texte", fEcarts); e.Mettre("ecarts_page", pageEcarts); e.Mettre("ecarts_taille", tailleEcarts);
+            e.Mettre("alertes_texte", fAlertes); e.Mettre("alertes_page", pageAlertes); e.Mettre("alertes_taille", tailleAlertes);
+        });
+        if (Historique.Restaurer("accueil") is { } h)
+        {
+            (fEcarts, pageEcarts, tailleEcarts) = (h.Texte("ecarts_texte") ?? "", h.Entier("ecarts_page") ?? 1, h.Entier("ecarts_taille") ?? tailleEcarts);
+            (fAlertes, pageAlertes, tailleAlertes) = (h.Texte("alertes_texte") ?? "", h.Entier("alertes_page") ?? 1, h.Entier("alertes_taille") ?? tailleAlertes);
+        }
+
+        if (Titulaire) await CompterListesTitulaireAsync();
+        if (Session.A("rapports.ventes") && Session.A("caisse.voir_ecart"))
+            (jour, erreurVentes) = await Api.VentesDuJourAsync();
+
         var (compte, _) = await Api.AlertesUrgentesAsync();
         urgentes = compte?.Nombre ?? 0;
-        // Horizon le plus long des indicateurs de péremption (6 mois aujourd'hui)
+        // Horizon le plus long des indicateurs de péremption (6 mois aujourd'hui) ; règlements grossistes (null sans le droit)
         var (ind, _) = await Api.IndicateursAlertesAsync();
-        peremption = ind?.Peremption.OrderByDescending(h => h.Jours).FirstOrDefault();
+        peremption = ind?.Peremption.OrderByDescending(x => x.Jours).FirstOrDefault();
+        (reglements, montantReglements) = (ind?.ReglementsAPreparer, ind?.MontantAPreparer ?? 0);
+        var (alertesStock, errStock) = await Api.AlertesPageAsync("stock", 1, 5);
+        if (errStock is null && alertesStock is not null)
+            stock = (alertesStock.ParType.GetValueOrDefault("rupture"), alertesStock.ParType.GetValueOrDefault("stock_critique"));
         if (Session.A("achats.receptionner"))
         {
             var (attentes, err) = await Api.ReceptionsEnAttenteAsync();
@@ -123,43 +298,112 @@
         }
         var (tableau, _) = await Api.TableauInventaireAsync();
         ecartsAValider = tableau?.EcartsAValider.Count;
-        if (Session.A("role.titulaire"))
+        if (Titulaire)
         {
-            (nonEnvoyees, _) = await Api.AlertesNonEnvoyeesAsync();
-            (ecartsCaisse, _) = await Api.EcartsCaisseRecentsAsync();
+            // Échéances à payer (défaut du serveur : non payées, échues ou sous 7 jours), anomalies non traitées, sauvegarde
+            (echeances, _) = await Api.EcheancesPretsAsync(null, null, 1, 5);
+            var (surv, errSurv) = await Api.SurveillanceAsync(false);
+            anomalies = errSurv is null ? surv.Count : null;
+            (etatPoste, _) = await Api.EtatPosteAsync();
         }
         charge = true;
+        await ChargerRubriqueAsync();
     }
 
+    protected override Task OnParametersSetAsync() => charge ? ChargerRubriqueAsync() : Task.CompletedTask;
+
+    private Task ChargerRubriqueAsync() => rubrique switch
+    {
+        "ecarts" when Titulaire => ChargerEcartsAsync(pageEcarts, tailleEcarts),
+        "non-envoyees" when Titulaire => ChargerAlertesAsync(pageAlertes, tailleAlertes),
+        _ => Task.CompletedTask
+    };
+
+    /// <summary>Nombres du menu et des tuiles, et ligne la plus récente (sans filtre) pour « Tout marquer comme vu ».</summary>
+    private async Task CompterListesTitulaireAsync()
+    {
+        var (ec, _) = await Api.EcartsCaisseRecentsAsync(null, 1, 5);
+        (nbEcarts, dernierEcart) = (ec?.Nombre ?? 0, ec?.Derniers.FirstOrDefault()?.SessionId ?? 0);
+        var (ne, _) = await Api.AlertesNonEnvoyeesAsync(null, 1, 5);
+        (nbNonEnvoyees, derniereAlerte) = (ne?.Nombre ?? 0, ne?.Dernieres.FirstOrDefault()?.Id ?? 0);
+    }
+
+    private static decimal? PanierMoyen(SyntheseVentesDto s) =>
+        s.NombreVentes > 0 ? Math.Round(s.ChiffreAffaires / s.NombreVentes, 0, MidpointRounding.AwayFromZero) : null;
+
+    // Sauvegarde : mêmes seuils que la barre d'état (échec ou disque absent, jamais faite, désactivée, plus vieille qu'hier)
+    private static bool SauvegardeAnormale(EtatPosteDto e) =>
+        e.StatutSauvegarde is "echouee" or "disque_absent" or null || !e.SauvegardeActive
+        || (e.DerniereSauvegarde is { } d && d.ToLocalTime().Date < DateTime.Today.AddDays(-1));
+    private static string LibelleSauvegarde(EtatPosteDto e) => (e.SauvegardeActive, e.StatutSauvegarde) switch
+    {
+        (_, null) => e.SauvegardeActive ? "jamais faite" : "automatique désactivée",
+        (_, "reussie") => e.SauvegardeActive ? "réussie" : "automatique désactivée",
+        (_, "disque_absent") => "disque absent",
+        _ => "échouée"
+    };
+
     // ---- Écarts de caisse récents (titulaire) ----
-    private EcartsCaisseRecentsDto? ecartsCaisse;
+    private List<EcartCaisseRecentDto> ecarts = [];
+    private int nbEcarts, totalEcarts, pageEcarts = 1, tailleEcarts = Pagination.TailleParDefaut;
+    private long dernierEcart;
+    private string fEcarts = "";
     private string? erreurEcarts;
     private bool marquageEcarts;
+    private int requeteEcarts;
+    private Task PremiereSurEcartsAsync() => ChargerEcartsAsync(1, tailleEcarts);
+    private Task ToutesLesEcartsAsync() { fEcarts = ""; return PremiereSurEcartsAsync(); }
+
+    private async Task ChargerEcartsAsync(int numero, int taille)
+    {
+        var demande = ++requeteEcarts;
+        var (p, e) = await Api.EcartsCaisseRecentsAsync(fEcarts, numero, taille);
+        if (demande != requeteEcarts) return;   // réponse d'un filtre précédent
+        if (p is null) { (erreurEcarts, ecarts, totalEcarts) = (e, [], 0); return; }
+        if (p.Derniers.Count == 0 && numero > 1) { await ChargerEcartsAsync(1, taille); return; }
+        (ecarts, totalEcarts, pageEcarts, tailleEcarts, erreurEcarts) = (p.Derniers.ToList(), p.Nombre, numero, taille, null);
+    }
 
     private async Task MarquerEcartsVusAsync()
     {
-        if (ecartsCaisse is not { Derniers.Count: > 0 } ec) return;
+        if (dernierEcart == 0) return;
         marquageEcarts = true;
-        // Jusqu'à la clôture la plus récente affichée : un écart arrivé entre-temps reste signalé
-        var (_, err) = await Api.MarquerEcartsCaisseVusAsync(ec.Derniers[0].SessionId);
+        // Jusqu'à la clôture la plus récente lue (sans filtre) : un écart arrivé entre-temps reste signalé
+        var (_, err) = await Api.MarquerEcartsCaisseVusAsync(dernierEcart);
         erreurEcarts = err;
-        if (err is null) (ecartsCaisse, _) = await Api.EcartsCaisseRecentsAsync();
+        if (err is null) { await CompterListesTitulaireAsync(); await ChargerEcartsAsync(1, tailleEcarts); }
         marquageEcarts = false;
     }
 
     // ---- Alertes non envoyées (titulaire) ----
-    private AlertesNonEnvoyeesDto? nonEnvoyees;
+    private List<AlerteNonEnvoyeeDto> alertes = [];
+    private int nbNonEnvoyees, totalAlertes, pageAlertes = 1, tailleAlertes = Pagination.TailleParDefaut;
+    private long derniereAlerte;
+    private string fAlertes = "";
     private string? erreurNonEnvoyees;
     private bool marquage;
+    private int requeteAlertes;
+    private Task PremiereSurAlertesAsync() => ChargerAlertesAsync(1, tailleAlertes);
+    private Task ToutesLesAlertesAsync() { fAlertes = ""; return PremiereSurAlertesAsync(); }
+
+    private async Task ChargerAlertesAsync(int numero, int taille)
+    {
+        var demande = ++requeteAlertes;
+        var (p, e) = await Api.AlertesNonEnvoyeesAsync(fAlertes, numero, taille);
+        if (demande != requeteAlertes) return;
+        if (p is null) { (erreurNonEnvoyees, alertes, totalAlertes) = (e, [], 0); return; }
+        if (p.Dernieres.Count == 0 && numero > 1) { await ChargerAlertesAsync(1, taille); return; }
+        (alertes, totalAlertes, pageAlertes, tailleAlertes, erreurNonEnvoyees) = (p.Dernieres.ToList(), p.Nombre, numero, taille, null);
+    }
 
     private async Task MarquerVuesAsync()
     {
-        if (nonEnvoyees is not { Dernieres.Count: > 0 } ne) return;
+        if (derniereAlerte == 0) return;
         marquage = true;
-        // Jusqu'à la plus récente affichée : une alerte arrivée entre-temps reste signalée
-        var (_, err) = await Api.MarquerAlertesNonEnvoyeesVuesAsync(ne.Dernieres.Max(a => a.Id));
+        // Jusqu'à la plus récente lue (sans filtre) : une alerte arrivée entre-temps reste signalée
+        var (_, err) = await Api.MarquerAlertesNonEnvoyeesVuesAsync(derniereAlerte);
         erreurNonEnvoyees = err;
-        if (err is null) (nonEnvoyees, _) = await Api.AlertesNonEnvoyeesAsync();
+        if (err is null) { await CompterListesTitulaireAsync(); await ChargerAlertesAsync(1, tailleAlertes); }
         marquage = false;
     }
 }

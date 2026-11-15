@@ -1,3 +1,4 @@
+using Pharma.Application.Commun;
 using Pharma.Application.Securite;
 using Pharma.Domain.Commun;
 
@@ -18,8 +19,8 @@ public sealed record EcartsCaisseNonVus(int Nombre, IReadOnlyList<EcartCaisseRec
 
 public interface IEcartsCaisseRecents
 {
-    /// <summary>Sessions clôturées depuis <paramref name="jours"/> jours avec un écart non nul, pas encore vues ; la plus récente d'abord.</summary>
-    Task<EcartsCaisseNonVus> NonVusAsync(int jours, int limite, CancellationToken ct = default);
+    /// <summary>Sessions clôturées depuis <paramref name="jours"/> jours avec un écart non nul, pas encore vues ; la plus récente d'abord, par page. Texte : poste ou employé (contient) ; null : toutes.</summary>
+    Task<EcartsCaisseNonVus> NonVusAsync(int jours, string? texte, DemandePage page, CancellationToken ct = default);
     /// <summary>
     /// Marque vus les écarts non vus clôturés au plus tard en même temps que la session <paramref name="jusquA"/> (la plus récente
     /// affichée) : un écart arrivé depuis reste signalé.
@@ -35,10 +36,10 @@ public sealed class ConsulterEcartsCaisseRecents(IEcartsCaisseRecents ecarts, IP
 {
     public const int JoursRecents = 7;
 
-    public async Task<EcartsCaisseNonVus> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
+    public async Task<EcartsCaisseNonVus> ExecuterAsync(long utilisateurId, string? texte = null, DemandePage? page = null, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "consulter les écarts de caisse récents", ct);
-        return await ecarts.NonVusAsync(JoursRecents, 5, ct);
+        return await ecarts.NonVusAsync(JoursRecents, string.IsNullOrWhiteSpace(texte) ? null : texte.Trim(), page ?? new DemandePage(), ct);
     }
 }
 

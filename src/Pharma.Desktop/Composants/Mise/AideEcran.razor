@@ -43,9 +43,10 @@
 
     private static readonly Dictionary<string, Aide> Textes = new()
     {
-        ["accueil"] = new("Tableau de bord", ["Chaque tuile ouvre l’écran concerné.", "Le logo en haut à gauche ramène ici.",
-            "Ctrl + K : chercher un écran, un produit ou un patient.",
-            "Titulaire : alertes qui n’ont pas pu partir et écarts de caisse des 7 derniers jours, jusqu’à « Marquer comme vus »."]),
+        ["accueil"] = new("Accueil", ["Aujourd’hui : ventes du jour, ce qui est à faire et, pour le titulaire, le contrôle. Chaque tuile ouvre l’écran concerné.",
+            "Ventes du jour (droit de voir les écarts de caisse) : comparées au même jour de la semaine précédente, à la même heure.",
+            "Titulaire : rubriques « Écarts de caisse » (7 derniers jours) et « Alertes non envoyées », jusqu’à « Tout marquer comme vu ».",
+            "Le logo en haut à gauche ramène ici ; Ctrl + K : chercher un écran, un produit ou un patient."]),
         [""] = new("Alertes", ["Urgentes : à traiter aujourd’hui (périmé, rupture…).", "Une alerte se traite ou se reporte à une date ; elle reste tracée.",
             "Péremption : lots qui périment bientôt, à vendre en priorité ou à retourner."]),
         ["stock"] = new("Stock", ["Recherche par nom, DCI, code-barres, lot ou emplacement.", "Filtres : à commander, péremption proche, psychotropes ; rayon.",
@@ -59,7 +60,7 @@
             "Chaque étiquette porte un code unique qui suit la boîte jusqu’au patient.", "Imprimer demande le droit de réceptionner ; la réimpression d’une livraison est dans Achats › Historique."]),
         ["tracabilite"] = new("Traçabilité et rappel de lot", ["Scannez une boîte pour voir son parcours, du grossiste au patient.",
             "Rappel de lot : choisissez le produit et le lot ; les boîtes vendues sont retrouvées."]),
-        ["caisse"] = new("Caisse", ["Scannez ou recherchez le produit (F7 : retour à la recherche), puis encaissez (F12).", "Tiers payant : choisissez le patient et l’organisme.",
+        ["caisse"] = new("Caisse", ["1 · Panier : scannez ou recherchez le produit (F7). 2 · Client et ordonnance : patient (F6), médecin (F5), tiers payant. 3 · Paiement : mode, puis Encaisser (F12).", "Crédit : un mode de paiement, une fois le patient choisi. F8 : ouvrir le tiroir.",
             "« ⇄ Changer » : passer la main sans fermer la caisse (relève proposée).",
             "Remise : sur un médicament, c’est un don partiel ; au-delà de votre maximum, un collègue qui en a le droit valide avec son code. Les remises automatiques s’appliquent seules."]),
         ["achats"] = new("Achats", ["Commandes : produits à commander, puis bons par grossiste.",

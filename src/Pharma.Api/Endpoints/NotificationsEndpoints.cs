@@ -87,9 +87,9 @@ internal static class NotificationsEndpoints
            .GererErreursMetier();
 
         // Alertes qui n'ont pas pu partir : bandeau de l'accueil du titulaire, marquées vues par lui
-        n.MapGet("/non-envoyees", async (ConsulterAlertesNonEnvoyees consulter, ClaimsPrincipal user, CancellationToken ct) =>
+        n.MapGet("/non-envoyees", async (string? q, int? page, int? taille, ConsulterAlertesNonEnvoyees consulter, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                var a = await consulter.ExecuterAsync(user.UtilisateurId(), ct);
+                var a = await consulter.ExecuterAsync(user.UtilisateurId(), q, Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
                 return Results.Ok(new AlertesNonEnvoyeesDto(a.Nombre,
                     a.Dernieres.Select(x => new AlerteNonEnvoyeeDto(x.Id, x.Type, x.Objet, x.Raison, x.CreeLe)).ToList()));
             })

@@ -13,7 +13,35 @@ public sealed record NouveauPatient(string Nom, string? Prenom, string? Telephon
 public sealed record FichePatient(long Id, string Nom, string? Prenom, DateOnly? DateNaissance, string? Telephone, string? Email, string? NumAssure,
     long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0);
 
-public sealed record Medecin(long Id, string Nom, string? Specialite);
+/// <summary>Médecin prescripteur ; coordonnées facultatives (script 082).</summary>
+public sealed record Medecin(long Id, string Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
+    string? NumeroOrdre = null, string? CodeCnas = null);
+
+/// <summary>Saisie d'un médecin (création ou correction) : le nom seul est obligatoire.</summary>
+public sealed record SaisieMedecin(string? Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
+    string? NumeroOrdre = null, string? CodeCnas = null)
+{
+    public const int AdresseMax = 300, NumeroOrdreMax = 30, TexteMax = 120;
+
+    /// <summary>Contrôle et met en forme la saisie : nom obligatoire, téléphone et e-mail comme pour un patient, longueurs bornées.</summary>
+    public Medecin Verifier(long id = 0)
+    {
+        if (string.IsNullOrWhiteSpace(Nom)) throw new RegleMetierException("Le nom du médecin est obligatoire.", "nom_medecin");
+        var nom = Nom.Trim();
+        if (nom.Length > TexteMax) throw new RegleMetierException($"Nom du médecin : {TexteMax} caractères au plus.", "nom_medecin");
+        var specialite = Net(Specialite);
+        if (specialite?.Length > TexteMax) throw new RegleMetierException($"Spécialité : {TexteMax} caractères au plus.", "specialite");
+        var adresse = Net(Adresse);
+        if (adresse?.Length > AdresseMax) throw new RegleMetierException($"Adresse du médecin : {AdresseMax} caractères au plus.", "adresse_medecin");
+        var ordre = Net(NumeroOrdre);
+        if (ordre?.Length > NumeroOrdreMax) throw new RegleMetierException($"N° d’ordre : {NumeroOrdreMax} caractères au plus.", "numero_ordre");
+        var cnas = Net(CodeCnas);
+        if (cnas?.Length > NumeroOrdreMax) throw new RegleMetierException($"Code CNAS : {NumeroOrdreMax} caractères au plus.", "code_cnas");
+        return new Medecin(id, nom, specialite, Contacts.RegleContact.Telephone(Telephone), adresse, Contacts.RegleContact.Email(Email), ordre, cnas);
+    }
+
+    private static string? Net(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+}
 public sealed record Organisme(long Id, string Code, string Nom, int DelaiPaiementJours = 30);
 
 public interface IPatients
@@ -70,8 +98,10 @@ public sealed class LireFichePatient(IPatients patients)
 public interface IMedecins
 {
     Task<IReadOnlyList<Medecin>> RechercherAsync(string texte, int limite, CancellationToken ct = default);
-    Task<long> CreerAsync(string nom, string? specialite, CancellationToken ct = default);
-    Task<bool> ModifierAsync(long id, string nom, string? specialite, CancellationToken ct = default);
+    /// <summary>Crée le médecin (son Id est ignoré) et renvoie son identifiant.</summary>
+    Task<long> CreerAsync(Medecin medecin, CancellationToken ct = default);
+    /// <summary>Remplace le nom, la spécialité et les coordonnées ; faux si le médecin n'existe pas.</summary>
+    Task<bool> ModifierAsync(Medecin medecin, CancellationToken ct = default);
 }
 
 public interface IOrganismes
@@ -123,27 +153,29 @@ public sealed class RechercherMedecins(IMedecins medecins)
     }
 }
 
-/// <summary>Correction du nom ou de la spécialité d'un médecin prescripteur (droit de vendre, comme sa création à la caisse).</summary>
+/// <summary>
+/// Correction d'un médecin prescripteur (droit de vendre, comme sa création à la caisse) : nom, spécialité et coordonnées
+/// (téléphone, adresse, e-mail, n° d'ordre, code CNAS, facultatifs) ; inscrite au journal.
+/// </summary>
 public sealed class ModifierMedecin(IMedecins medecins, Commun.IJournal journal)
 {
-    public async Task ExecuterAsync(long id, string? nom, string? specialite, long utilisateurId, CancellationToken ct = default)
+    public async Task ExecuterAsync(long id, SaisieMedecin saisie, long utilisateurId, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(nom)) throw new RegleMetierException("Le nom du médecin est obligatoire.", "nom_medecin");
-        var s = string.IsNullOrWhiteSpace(specialite) ? null : specialite.Trim();
-        if (!await medecins.ModifierAsync(id, nom.Trim(), s, ct)) throw new RegleMetierException("Médecin introuvable.");
+        var m = saisie.Verifier(id);
+        if (!await medecins.ModifierAsync(m, ct)) throw new RegleMetierException("Médecin introuvable.");
         await journal.EcrireAsync(utilisateurId, "medecin_modifie", "medecin", id,
-            new Dictionary<string, object?> { ["nom"] = nom.Trim(), ["specialite"] = s }, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);
+            new Dictionary<string, object?>
+            {
+                ["nom"] = m.Nom, ["specialite"] = m.Specialite, ["telephone"] = m.Telephone, ["adresse"] = m.Adresse,
+                ["email"] = m.Email, ["numero_ordre"] = m.NumeroOrdre, ["code_prestataire"] = m.CodeCnas
+            }, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);
     }
 }
 
+/// <summary>Création d'un médecin prescripteur à la caisse : nom obligatoire, spécialité et coordonnées facultatives.</summary>
 public sealed class CreerMedecin(IMedecins medecins)
 {
-    public Task<long> ExecuterAsync(string? nom, string? specialite, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(nom))
-            throw new RegleMetierException("Le nom du médecin est obligatoire.", "nom_medecin");
-        return medecins.CreerAsync(nom.Trim(), string.IsNullOrWhiteSpace(specialite) ? null : specialite.Trim(), ct);
-    }
+    public Task<long> ExecuterAsync(SaisieMedecin saisie, CancellationToken ct = default) => medecins.CreerAsync(saisie.Verifier(), ct);
 }
 
 public sealed class ListerOrganismes(IOrganismes organismes)
