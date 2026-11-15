@@ -25,7 +25,7 @@ public sealed class DocumentsAchats : IDocumentsAchats
 
     // ---- Bon de commande ------------------------------------------------------
 
-    public byte[] BonCommande(CommandeDetail c, Fournisseur f, string? pharmacie)
+    public byte[] BonCommande(CommandeDetail c, Fournisseur f, string? pharmacie, bool avecPrix)
     {
         var (doc, s) = Nouveau($"Bon de commande {c.Entete.Numero}", pharmacie);
         Titre(s, $"Bon de commande {c.Entete.Numero}");
@@ -40,6 +40,16 @@ public sealed class DocumentsAchats : IDocumentsAchats
             p.Format.Font.Bold = true;
             p.Format.Font.Color = Color.FromRgb(0x91, 0x20, 0x18);
             p.Format.SpaceAfter = Unit.FromPoint(8);
+        }
+
+        // Sans le droit de voir les prix d'achat (rapports.marges), le bon sort sans prix ni montants (décision du 2026-11-15)
+        if (!avecPrix)
+        {
+            var q = Tableau(s, 13.7, 3.3);
+            Entete(q, "Produit", "Quantité");
+            foreach (var l in c.Lignes) Ligne(q, false, l.Produit, l.QteCommandee.ToString(Fr));
+            Ligne(q, true, "Total", c.Lignes.Sum(l => l.QteCommandee).ToString(Fr));
+            return Rendre(doc);
         }
 
         var t = Tableau(s, 8.5, 2.2, 3, 3.3);
@@ -57,7 +67,7 @@ public sealed class DocumentsAchats : IDocumentsAchats
 
     // ---- Bon de retour --------------------------------------------------------
 
-    public byte[] BonRetour(RetourResume r, string? pharmacie)
+    public byte[] BonRetour(RetourResume r, string? pharmacie, bool avecPrix)
     {
         var (doc, s) = Nouveau($"Bon de retour {r.Numero}", pharmacie);
         Titre(s, $"Bon de retour fournisseur {r.Numero}");
@@ -74,8 +84,12 @@ public sealed class DocumentsAchats : IDocumentsAchats
         foreach (var l in r.Lignes) Ligne(t, false, l.Produit, l.NumeroLot, l.Quantite.ToString(Fr));
         Ligne(t, true, "Total", "", r.Lignes.Sum(l => l.Quantite).ToString(Fr));
 
-        var p = s.AddParagraph($"Avoir attendu (au prix d’achat) : {Da(r.MontantAttendu)}");
-        p.Format.SpaceBefore = Unit.FromPoint(10);
+        // Sans le droit de voir les prix d'achat (rapports.marges), le bon sort sans l'avoir attendu (décision du 2026-11-15)
+        if (avecPrix)
+        {
+            var p = s.AddParagraph($"Avoir attendu (au prix d’achat) : {Da(r.MontantAttendu)}");
+            p.Format.SpaceBefore = Unit.FromPoint(10);
+        }
         var sig = s.AddParagraph("Remis par : ____________________        Reçu par le grossiste : ____________________");
         sig.Format.SpaceBefore = Unit.FromCentimeter(2);
         return Rendre(doc);

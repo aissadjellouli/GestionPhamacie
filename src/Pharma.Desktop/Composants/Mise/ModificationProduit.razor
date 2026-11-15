@@ -29,10 +29,11 @@
                     <label for="mp-prix" class="requis">Prix public (DA)</label>
                     <input id="mp-prix" data-champ="prix_public" type="number" min="0" step="0.01" disabled="@(!Session.A("prix.modifier"))" @bind="f.PrixPublic" />
                 </div>
-                <div class="champ" style="flex: 0 1 160px"><label for="mp-tarif" class="@(f.Remboursable ? "requis" : null)">Tarif de référence (DA)</label><input id="mp-tarif" data-champ="tarif_reference" type="number" min="0" step="0.01" @bind="f.TarifReference" /></div>
+                @* Tarif de référence et remboursement : même droit que le prix public (le serveur le revérifie) *@
+                <div class="champ" style="flex: 0 1 160px" title="@(Session.A("prix.modifier") ? null : "Droit « modifier un prix de vente » nécessaire")"><label for="mp-tarif" class="@(f.Remboursable ? "requis" : null)">Tarif de référence (DA)</label><input id="mp-tarif" data-champ="tarif_reference" type="number" min="0" step="0.01" disabled="@(!Session.A("prix.modifier"))" @bind="f.TarifReference" /></div>
                 <div class="champ" style="flex: 0 1 100px"><label for="mp-tva">TVA (%)</label><input id="mp-tva" data-champ="tva" type="number" min="0" max="100" step="0.01" @bind="f.TauxTva" /></div>
                 <div class="champ" style="flex: 0 1 130px"><span class="etiquette-champ">Prix public HT</span><span style="line-height: 44px">@(f.PrixPublic > 0 ? Libelles.Dinars(Math.Round(f.PrixPublic / (1 + f.TauxTva / 100m), 2, MidpointRounding.AwayFromZero), 2) : "—")</span></div>
-                <label class="case" style="align-self: center"><input type="checkbox" @bind="f.Remboursable" /><span>Remboursable</span></label>
+                <label class="case" style="align-self: center" title="@(Session.A("prix.modifier") ? null : "Droit « modifier un prix de vente » nécessaire")"><input type="checkbox" disabled="@(!Session.A("prix.modifier"))" @bind="f.Remboursable" /><span>Remboursable</span></label>
                 <label class="case" style="align-self: center"><input type="checkbox" @bind="f.Actif" /><span>Actif</span></label>
             </div>
             <p class="detail" style="margin: 0">Classe : @Libelles.Classe(f.Classe) (se confirme dans Administration › Nomenclature).</p>

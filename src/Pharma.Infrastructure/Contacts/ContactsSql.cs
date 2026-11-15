@@ -34,7 +34,7 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             SELECT trim(concat_ws(' ', p.nom, p.prenom)), p.telephone, p.num_assure, o.nom, o.code, p.date_naissance, p.est_chronique,
                    p.plafond_credit, p.solde_credit, p.cree_le,
                    (SELECT max(v.date_vente) FROM vente v WHERE v.patient_id = p.id AND v.statut = 'validee'),
-                   o.id, p.email
+                   o.id, p.email, p.assure_principal_id
             FROM patient p LEFT JOIN organisme o ON o.id = p.organisme_id
             WHERE p.id = $1
             """);
@@ -43,6 +43,8 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
         {
             if (!await r.ReadAsync(ct)) return null;
             var coord = new List<InfoContact>();
+            // Patient créé depuis un volet Chifa sans nom saisi : nom provisoire « Assuré n°/suffixe », à compléter (2026-11-15)
+            if (Pharma.Application.Caisse.PatientVoletChifa.EstProvisoire(r.GetString(0))) coord.Add(new InfoContact("Nom", "à compléter", "manquant"));
             Ajouter(coord, "Téléphone", T(r, 1), "telephone");
             Email(coord, T(r, 12));
             var situation = new List<InfoContact> { new("Dette en cours", Da(r.GetDecimal(8)), r.GetDecimal(8) > 0 ? "montant_du" : null) };
@@ -55,8 +57,13 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
             situation.Add(new("Fiche créée le", Date(r.GetDateTime(9))));
             var fiche = new FicheContact(TypesContact.Patient, id, r.GetString(0), "Patient", true, coord, situation,
                 Saisie: new CoordonneesContact(T(r, 1), T(r, 12), null));
+            var (numAssure, principalId) = (T(r, 2), r.IsDBNull(13) ? (long?)null : r.GetInt64(13));
             await r.CloseAsync();
-            return fiche with { Situation = [.. fiche.Situation, .. await FacturesAsync("f.patient_id = $1", id, ct)] };
+            // Famille (2026-11-15, script 090) : « Ayant droit de … », « Famille : … (conjoint) », « Même carte : … » (même n° de base, non rattachées)
+            var famille = Pharma.Application.Patients.FamillePatient.Affichage(id, numAssure, principalId,
+                    await Pharma.Infrastructure.Patients.PatientsSql.Proches(db, id, ct))
+                .Select(l => new InfoContact(l.Libelle, l.Valeur));
+            return fiche with { Situation = [.. fiche.Situation, .. famille, .. await VentesRemisesAsync(id, ct), .. await FacturesAsync("f.patient_id = $1", id, ct)] };
         }
     }
 
@@ -152,6 +159,29 @@ public sealed class ContactsSql(NpgsqlDataSource db) : IContacts
         situation.Add(new("Dernière connexion", r.IsDBNull(4) ? "jamais" : DateHeure(r.GetDateTime(4))));
         situation.Add(new("Compte créé le", Date(r.GetDateTime(7))));
         return new FicheContact(TypesContact.Employe, id, r.GetString(0), r.GetString(2), r.GetBoolean(3), coord, situation, !avecCoordonnees);
+    }
+
+    /// <summary>
+    /// Ventes « Remis à » / « Pour » (script 091, 2026-11-15) : celles au nom du patient avec un complément, et celles d'un autre membre
+    /// qui le désignent ; les 5 plus récentes. Ex. « T-… · 15/11/2026 · Karim · remis à Ali ».
+    /// </summary>
+    private async Task<List<InfoContact>> VentesRemisesAsync(long id, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand($"""
+            SELECT v.numero, v.date_vente, {Caisse.RemiseVenteSql.Titulaire}, {Caisse.RemiseVenteSql.RemisA}, {Caisse.RemiseVenteSql.Pour}
+            FROM vente v
+            WHERE v.statut = 'validee'
+              AND ((v.patient_id = $1 AND (v.remis_a_patient_id IS NOT NULL OR v.remis_a_nom IS NOT NULL OR v.pour_patient_id IS NOT NULL OR v.pour_nom IS NOT NULL))
+                   OR v.remis_a_patient_id = $1 OR v.pour_patient_id = $1)
+            ORDER BY v.date_vente DESC, v.id DESC LIMIT 5
+            """);
+        cmd.Parameters.AddWithValue(id);
+        var lignes = new List<InfoContact>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            lignes.Add(new InfoContact("Vente remise / pour", $"{r.GetString(0)} · {Date(r.GetDateTime(1))} · "
+                + Pharma.Application.Caisse.RemiseVente.Libelle(T(r, 2), T(r, 3), T(r, 4))));
+        return lignes;
     }
 
     private async Task<List<InfoContact>> FacturesAsync(string filtre, long id, CancellationToken ct)

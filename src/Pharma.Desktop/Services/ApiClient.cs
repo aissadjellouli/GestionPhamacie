@@ -32,6 +32,10 @@ public sealed class SessionPoste
     /// <summary>Prévient l'en-tête quand l'employé se connecte, se déconnecte ou que ses droits sont chargés.</summary>
     public event Action? Changee;
 
+    /// <summary>Caisse du poste ouverte, relevée ou clôturée : la barre d'état relit son état tout de suite (2026-11-15).</summary>
+    public event Action? CaisseChangee;
+    public void SignalerCaisse() => CaisseChangee?.Invoke();
+
     /// <summary>Mot de passe provisoire : seul l'écran de changement est ouvert (le serveur refuse tout le reste).</summary>
     public bool DoitChangerMotDePasse { get; private set; }
 
@@ -165,6 +169,18 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     private string? validationEnAttente;
 
     public void ValiderProchaineAction(Guid demande, string code) => validationEnAttente = $"{demande}:{code.Trim()}";
+
+    // Autorisation demandée d'avance (« Faire autoriser » d'un écran, ex. prix à la création d'un produit) : jointe à la requête
+    // suivante seulement (X-Pharma-Autorise-Par), puis oubliée ; un code faux rouvre la fenêtre comme d'habitude
+    private (string Identifiant, string Code, string Droit)? accordEnAttente;
+
+    public void AutoriserProchaineAction(string identifiant, string code, string droit) => accordEnAttente = (identifiant, code, droit);
+
+    // Détail joint à la fenêtre « Faire autoriser » de l'écriture suivante seulement, puis oublié ; montré seulement si le refus
+    // porte sur le droit du détail (DetailAutorisationDto.Permission ; aucun : tout refus)
+    private DetailAutorisationDto? detailEnAttente;
+
+    public void DetaillerProchaineAutorisation(DetailAutorisationDto? detail) => detailEnAttente = detail;
 
     public async Task<string?> ConnecterAsync(string identifiant, string motDePasse)
     {
@@ -411,8 +427,11 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(PageDto<MouvementGrossisteDto>?, string?)> MouvementsGrossisteAsync(long fournisseurId, int page, int taille, DateOnly? du = null, DateOnly? au = null, string? type = null) =>
         GetAsync<PageDto<MouvementGrossisteDto>?>($"api/achats/reglements/{fournisseurId}/mouvements?" + Requete(("du", du), ("au", au), ("type", type), ("page", page), ("taille", taille)), null);
     /// <summary>Ticket en PDF (vue à l'écran quand l'imprimante de tickets enregistre un fichier).</summary>
-    public Task<(byte[]?, string?, string?)> TicketPdfAsync(long venteId, decimal? rendu) =>
-        FichierAsync(HttpMethod.Get, $"api/caisse/ventes/{venteId}/ticket.pdf{(rendu is { } r ? $"?rendu={r.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : "")}", "ticket.pdf");
+    public Task<(byte[]?, string?, string?)> TicketPdfAsync(long venteId, decimal? rendu, int largeurMm) =>
+        FichierAsync(HttpMethod.Get, $"api/caisse/ventes/{venteId}/ticket.pdf?largeur={largeurMm}{(rendu is { } r ? $"&rendu={r.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : "")}", "ticket.pdf");
+    /// <summary>Reçu de règlement de crédit en PDF, format rouleau (2026-11-15).</summary>
+    public Task<(byte[]?, string?, string?)> RecuCreditPdfAsync(string numero, int largeurMm) =>
+        FichierAsync(HttpMethod.Get, $"api/caisse/credits/recus/{Uri.EscapeDataString(numero)}/recu.pdf?largeur={largeurMm}", "recu.pdf");
     public Task<(byte[]?, string?, string?)> ReleveCreditAsync(long patientId) => FichierAsync(HttpMethod.Get, $"api/caisse/credits/{patientId}/releve", "releve_credit.pdf");
     public async Task<string?> CorrigerCreditAsync(long patientId, decimal nouvelleDette, string? motif) =>
         (await PostAsync<CorrectionCreditRequete, object>($"api/caisse/credits/{patientId}/correction", new(nouvelleDette, motif))).Item2;
@@ -614,6 +633,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(IdentifiantDto?, string?)> CreerMedecinAsync(NouveauMedecinDto medecin) =>
         PostAsync<NouveauMedecinDto, IdentifiantDto>("api/medecins", medecin);
 
+    public Task<(List<ProchePatientDto>?, string?)> ProchesPatientAsync(long id) => GetAsync<List<ProchePatientDto>?>($"api/patients/{id}/proches", null);
     public Task<(FichePatientDto?, string?)> FichePatientAsync(long id) => GetAsync<FichePatientDto?>($"api/patients/{id}/fiche", null);
     public async Task<string?> ModifierPatientAsync(FichePatientDto f) =>
         (await EnvoyerCorpsAsync<FichePatientDto, object>(HttpMethod.Put, $"api/patients/{f.Id}", f)).Item2;
@@ -630,8 +650,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(LotEnStockDto?, string?)> LotEnStockAsync(long lotId) => GetAsync<LotEnStockDto?>($"api/stock/lots/{lotId}", null);
     public Task<(NombreDto?, string?)> SortirDuStockAsync(SortieStockRequete r) => PostAsync<SortieStockRequete, NombreDto>("api/stock/sorties", r);
     /// <param name="remise">Remise refusée (pourcentage) : seuls les employés dont le maximum de remise la couvre.</param>
-    public Task<(List<VendeurComptoirDto>, string?)> ValideursAsync(string? permission, decimal? remise = null) =>
-        GetAsync<List<VendeurComptoirDto>>("api/auth/valideurs?" + string.Join("&", new[]
+    public Task<(List<ValideurDto>, string?)> ValideursAsync(string? permission, decimal? remise = null) =>
+        GetAsync<List<ValideurDto>>("api/auth/valideurs?" + string.Join("&", new[]
         {
             permission is null ? null : "permission=" + Uri.EscapeDataString(permission),
             remise is null ? null : "remise=" + remise.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
@@ -777,8 +797,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(CompteDto?, string?)> AlertesUrgentesAsync() => GetAsync<CompteDto?>("api/alertes/urgentes", null);
 
     /// <summary>Recherche de la caisse : en stock d'abord, ruptures en bas avec leur remplaçant, équivalent moins cher.</summary>
-    public Task<(List<ProduitComptoirDto>, string?)> RechercherAuComptoirAsync(string q) =>
-        GetAsync<List<ProduitComptoirDto>>($"api/caisse/produits?q={Uri.EscapeDataString(q)}", []);
+    public Task<(List<ProduitComptoirDto>, string?)> RechercherAuComptoirAsync(string q, int? limite = null) =>
+        GetAsync<List<ProduitComptoirDto>>($"api/caisse/produits?q={Uri.EscapeDataString(q)}{(limite is { } l ? $"&limite={l}" : "")}", []);
     public Task<(List<ProduitDto>, string?)> RechercherProduitsAsync(string q, bool inclureInactifs = false) =>
         GetAsync<List<ProduitDto>>($"api/produits?q={Uri.EscapeDataString(q)}{(inclureInactifs ? "&inactifs=true" : "")}", []);
 
@@ -970,6 +990,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     // ---- Volet Chifa repris par son QR code ----
     public Task<(VoletChifaDto?, string?)> LireVoletChifaAsync(string texte) => PostAsync<LireVoletChifaRequete, VoletChifaDto>("api/caisse/volet-chifa", new(texte));
+    public Task<(PatientVoletDto?, string?)> CreerPatientVoletAsync(string texte, string? nom, long? organismeId, string? lien = null,
+        long? assurePrincipalId = null) =>
+        PostAsync<CreerPatientVoletRequete, PatientVoletDto>("api/caisse/volet-chifa/patient", new(texte, nom, organismeId, lien, assurePrincipalId));
     public async Task<string?> AssocierCodeChifaAsync(string code, long produitId) =>
         (await PostAsync<AssocierCodeChifaRequete, object>("api/caisse/codes-chifa", new(code, produitId))).Item2;
 
@@ -1013,6 +1036,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         PostAsync<DecisionProduitRepriseRequete, NombreDto>($"api/admin/reprise/sessions/{id}/produits", d);
     public Task<(EtatRepriseDto?, string?)> ChargerRepriseAsync(long id) => PostAsync<object, EtatRepriseDto>($"api/admin/reprise/sessions/{id}/charger", new());
     public async Task<string?> AnnulerRepriseAsync(long id) => (await PostAsync<object, object>($"api/admin/reprise/sessions/{id}/annuler", new())).Item2;
+    public Task<(PageDto<DoublonImportDto>?, string?)> DoublonsImportAsync(string? statut, string? texte, int page, int taille) =>
+        GetAsync<PageDto<DoublonImportDto>?>("api/reprise/doublons-patients?" + Requete(("statut", statut), ("q", texte), ("page", page), ("taille", taille)), null);
+    public Task<(IdentifiantDto?, string?)> DeciderDoublonImportAsync(long id, DecisionDoublonImportRequete d) =>
+        PostAsync<DecisionDoublonImportRequete, IdentifiantDto>($"api/reprise/doublons-patients/{id}/decision", d);
 
     // ---- Rapports ----
     /// <summary>Période « dates » : du et au choisis dans le calendrier ; sinon jour, semaine ou mois autour de date.</summary>
@@ -1110,6 +1137,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     /// Envoie la requête ; si le serveur la refuse faute de droit en proposant l'autorisation sur place, la fenêtre « Faire autoriser »
     /// demande l'employé habilité et son code, puis la requête est rejouée avec ce code (nouvel essai si le code est faux).
     /// </summary>
+    private const int MaxEssaisAutorisation = 12;
+
     private async Task<HttpResponseMessage> EnvoyerAutoriseAsync(Func<HttpRequestMessage> creer, bool proposer = true)
     {
         (string Identifiant, string Code)? accord = null;
@@ -1117,6 +1146,15 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         var droits = new List<string>();
         var validation = validationEnAttente;
         validationEnAttente = null;
+        var detail = proposer ? detailEnAttente : null;
+        if (proposer) detailEnAttente = null;
+        // Lectures (proposer = false) : l'autorisation d'avance attend l'écriture suivante
+        if (proposer && accordEnAttente is { } avance)
+        {
+            accord = (avance.Identifiant, avance.Code);
+            droits.Add(avance.Droit);
+            accordEnAttente = null;
+        }
         for (var essai = 0; ; essai++)
         {
             var req = creer();
@@ -1129,12 +1167,15 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
                 req.Headers.Add("X-Pharma-Autorise-Droits", string.Join(",", droits));
             }
             var rep = await http.SendAsync(req);
-            if (rep.StatusCode != HttpStatusCode.Forbidden || autorisations is null || !proposer || essai >= 3) return rep;
+            // Code faux : la fenêtre reste ouverte avec le message du serveur jusqu'au blocage (5 erreurs, refus non autorisable)
+            // ou à l'annulation ; la borne ne sert que de garde-fou (plusieurs droits demandés à la suite)
+            if (rep.StatusCode != HttpStatusCode.Forbidden || autorisations is null || !proposer || essai >= MaxEssaisAutorisation) return rep;
             var corps = await rep.Content.ReadAsStringAsync();
             var (message, autorisable, permission, seuil) = LireRefus(corps);
             HttpResponseMessage Garder() { var n = new HttpResponseMessage(rep.StatusCode) { Content = new StringContent(corps, System.Text.Encoding.UTF8, "application/json") }; rep.Dispose(); return n; }
             if (!autorisable) return Garder();
-            accord = await autorisations.DemanderAsync(message, permission, seuil);
+            accord = await autorisations.DemanderAsync(message, permission, seuil,
+                detail is not null && (detail.Permission is null || detail.Permission == permission) ? detail : null);
             if (accord is null) return Garder();
             var demande = permission ?? "role.titulaire";
             if (!droits.Contains(demande)) droits.Add(demande);

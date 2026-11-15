@@ -98,7 +98,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | D'où | Vers | Ce que « Retour » retrouve |
 |---|---|---|
 | Fiche patient | Relevé de dette (Caisse), Factures du patient | l'écran d'origine, fiche rouverte |
-| Fiche grossiste | Règlements et relevé, Bons de commande | idem |
+| Fiche grossiste | Payer un grossiste et relevé, Bons de commande | idem |
 | Fiche organisme ou client | Factures | idem |
 | Fiche employé | Journal des actions, Utilisateurs et droits | idem |
 | Menu principal (11 onglets), menu Administration (11 écrans) | tout écran | écran précédent avec son état |
@@ -106,9 +106,9 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Stock | Traçabilité, Registre, Étiquettes, Inventaire | Stock : recherche, filtre, rayon |
 | Traçabilité | Stock, Étiquettes, retour fournisseur d'un lot rappelé | Traçabilité |
 | Inventaire, Registre | Stock | l'écran d'origine |
-| Dettes et créances | « Payer » / « Encaisser » (Caisse, Trésorerie › Saisir un mouvement, ou Achats › Règlements) | Dettes : rubrique du tiers, filtres et page de la liste |
+| Dettes et créances | « Payer » / « Encaisser » (Caisse, Trésorerie › Saisir un mouvement, ou Achats › Payer un grossiste) | Dettes : rubrique du tiers, filtres et page de la liste |
 | Achats › Commandes | « Réceptionner » (Achats › Réceptions) | Commandes : filtres, page, bon ouvert |
-| Caisse | Clôture, Relevé | Caisse (vente reprise, partie « Règlement d'un crédit » rouverte) |
+| Caisse | Clôture, Relevé | Caisse (vente reprise, partie « Encaisser une dette » rouverte) |
 | Contrôle interne | Écarts et risques | Contrôle interne (rubrique) |
 | Administration › Caisse | Imprimantes | Administration › Caisse (filtres et page du journal) |
 | Barre d'état (en bas) | Caisse ou Clôture, Sauvegardes | écran précédent |
@@ -120,13 +120,13 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 |---|---|---|
 | Caisse | `caisse` | partie dans l'adresse (vente, `?rubrique=annulation`, `?rubrique=credit`) ; passer d'une partie à l'autre garde le panier ; vente mise en attente en quittant la Caisse (reprise au retour) |
 | Caisse › Annulation ou retour | `annulation` | page de la liste des ventes de la caisse |
-| Caisse › Règlement d'un crédit | `credit` | patient ouvert, recherche, page des patients en crédit, filtres et page du relevé |
+| Caisse › Encaisser une dette | `credit` | patient ouvert, recherche, page des patients en crédit, filtres et page du relevé |
 | Stock | `stock` | rubrique dans l'adresse (`produits`, `ensemble`, `nouveau`, `modifier`, `sortie`, `blocage`) ; recherche, filtre, rayon |
 | Alertes | `alertes` | rubrique dans l'adresse (vue d'ensemble, `toutes`, `urgent`, `peremption`, `stock`) ; page |
 | Achats › Commandes | `commandes` | partie dans l'adresse (`&vue=a-commander`, `&vue=bons`) ; bons : grossiste, statut, période, page, bon ouvert ; produits à commander : produit, état, dernier grossiste, page |
 | Achats › Réceptions | `receptions` | partie dans l'adresse (`&vue=saisie`, `attente`, `historique`) ; filtres et page des listes (en attente : grossiste ou n° de BL, mode, employé) ; la réception en cours de saisie, mise en attente en partant, est reprise |
 | Achats › Grossistes | `grossistes` | recherche (nom, téléphone, e-mail), état, dette, e-mail manquant, page |
-| Achats › Règlements | `reglements` | grossiste ouvert, filtres et page de son relevé |
+| Achats › Payer un grossiste | `reglements` | grossiste ouvert, filtres et page de son relevé |
 | Achats › Traites à payer | `traites` | recherche (grossiste ou n° de traite), état (échues et à 7 jours par défaut, échues, à venir, payées, toutes), page ; liste filtrée et paginée par le serveur ; paiement confirmé par le titulaire (depuis Dettes et créances, rubrique Traites à payer : « Payer » y mène) |
 | Achats › Retours | `retours` | grossiste, statut, période, page ; retour en préparation (lots, quantités, boîtes scannées, motif, avant « Préparer le retour ») |
 | Rapports | `rapports` | rubrique dans l'adresse (`synthese`, `ventes`, `clotures`, `retours`, `pertes`, `pertes-detail`, `tva`) ; période, date, tableau par jour |

@@ -43,7 +43,13 @@ public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionServic
     public async Task<ProduitCree> ExecuterAsync(FicheProduit saisie, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.CatalogueCreer, "créer un produit", ct);
-        var f = RegleProduit.Normaliser(saisie);
+        // Un seul droit pour toute saisie de prix (décision du titulaire, 2026-11-15) : prix public, tarif de référence et caractère
+        // remboursable sont saisis par un ayant droit (prix.modifier) ; sinon le produit est créé sans prix, invendable jusqu'à ce
+        // qu'un ayant droit fixe son prix. Le refus (DroitRefuseException) permet l'autorisation sur place par code comptoir.
+        var sansPrix = saisie.PrixPublic == 0 && saisie.TarifReference is null && !saisie.Remboursable;
+        if (!sansPrix)
+            await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "saisir le prix, le tarif de référence ou le remboursement d’un produit", ct);
+        var f = RegleProduit.Normaliser(saisie, prixFacultatif: sansPrix);
 
         if (f.CodeBarre is { } code && await catalogue.CodeBarreExisteAsync(code, ct))
             throw new RegleMetierException($"Le code-barres {code} est déjà utilisé par un produit du catalogue.");

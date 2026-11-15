@@ -15,6 +15,7 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddSingleton<EssaisConnexion>();
+        services.AddSingleton<Securite.EssaisCodeDemandeur>();
         services.AddScoped<SeConnecter>();
         services.AddScoped<ChangerMonMotDePasse>();
         services.AddScoped<RechercherProduits>();
@@ -36,6 +37,7 @@ public static class DependencyInjection
         services.AddScoped<Caisse.GererRemisesAutomatiques>();
         services.AddScoped<LireVoletChifa>();
         services.AddScoped<AssocierCodeChifa>();
+        services.AddScoped<CreerPatientVoletChifa>();
         services.AddScoped<ObtenirEtatCaisse>();
         services.AddScoped<OuvrirSessionCaisse>();
         services.AddScoped<CloturerSessionCaisse>();
@@ -107,6 +109,7 @@ public static class DependencyInjection
         services.AddScoped<Stock.ListerProduitsRegistre>();
         services.AddScoped<Stock.ExporterRegistre>();
         services.AddScoped<Caisse.ObtenirTicket>();
+        services.AddScoped<Caisse.ImprimerRecuCredit>();
         services.AddScoped<Securite.ChoisirAffichage>();
         services.AddScoped<Securite.LireAffichage>();
         services.AddScoped<Caisse.GererVentesEnAttente>();
@@ -182,6 +185,8 @@ public static class DependencyInjection
         services.AddScoped<Reprise.DeciderProduitReprise>();
         services.AddScoped<Reprise.ChargerReprise>();
         services.AddScoped<Reprise.AnnulerReprise>();
+        services.AddScoped<Reprise.ListerDoublonsImport>();
+        services.AddScoped<Reprise.DeciderDoublonImport>();
         services.AddScoped<Administration.ObtenirSeuilStock>();
         services.AddScoped<Administration.ListerSeuilsStockManuels>();
         services.AddScoped<Administration.DefinirSeuilStock>();

@@ -58,7 +58,8 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
             CodeBarre = N(saisie.CodeBarre), Classe = actuel.Classe, NumEnregistrement = actuel.NumEnregistrement, ClasseConfirmee = actuel.ClasseConfirmee };
         if (f.NomCommercial.Length == 0) throw new RegleMetierException("Nom commercial obligatoire.", "nom_commercial");
         if (f.NomCommercial.Length > 120) throw new RegleMetierException("Nom commercial : 120 caractères au plus.", "nom_commercial");
-        if (f.PrixPublic <= 0) throw new RegleMetierException("Le prix public doit être supérieur à 0.", "prix_public");
+        // Prix encore non fixé (produit créé sans prix) : la fiche reste modifiable sans fixer le prix
+        if (f.PrixPublic < 0 || (f.PrixPublic == 0 && actuel.PrixPublic != 0)) throw new RegleMetierException("Le prix public doit être supérieur à 0.", "prix_public");
         if (f.TarifReference is <= 0) throw new RegleMetierException("Le tarif de référence doit être supérieur à 0.", "tarif_reference");
         if (f.Remboursable && f.TarifReference is null) throw new RegleMetierException("Un produit remboursable a besoin d’un tarif de référence.", "tarif_reference");
         if (f.TauxTva is < 0 or > 100) throw new RegleMetierException("Taux de TVA entre 0 et 100 %.", "tva");
@@ -72,6 +73,9 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         }
         if (f.PrixPublic != actuel.PrixPublic)
             await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "modifier un prix de vente", ct);
+        // Tarif de référence et caractère remboursable : même droit que le prix public (décision du titulaire, 2026-11-15)
+        if (f.TarifReference != actuel.TarifReference || f.Remboursable != actuel.Remboursable)
+            await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "modifier le tarif de référence ou le remboursement", ct);
 
         // Toute modification par un autre que le titulaire d'un produit moins strictement classé que sa substance (DCI changée ou non) :
         // DCI de psychotrope ou de stupéfiant, ou n° d'enregistrement classé sous registre par la nomenclature (une DCI anodine ne suffit

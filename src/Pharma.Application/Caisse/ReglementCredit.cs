@@ -11,14 +11,16 @@ public sealed record PatientEnCredit(long Id, string Nom, string? Telephone, dec
 /// Vente à crédit (montant net des retours). Regle et Reste : les remboursements soldent la dette la plus ancienne d'abord
 /// (dette reprise de l'ancien logiciel, puis ventes à crédit dans l'ordre des dates).
 /// </summary>
-public sealed record VenteACredit(string Numero, DateTime Date, decimal Montant, decimal Regle = 0, decimal Reste = 0);
+/// <param name="Facture">N° de la facture (non remplacée) qui reprend la part patient de la vente, sinon null (2026-11-15).</param>
+public sealed record VenteACredit(string Numero, DateTime Date, decimal Montant, decimal Regle = 0, decimal Reste = 0, long Id = 0, string? Facture = null,
+    string? Remise = null);
 
 /// <summary>
 /// Ligne du relevé de dette. Type : ouverture, reprise, vente_credit, remboursement, retour, annulation, correction.
 /// Montant positif : la dette augmente ; négatif : elle diminue.
 /// </summary>
 public sealed record MouvementCredit(DateTime Date, string Type, decimal Montant, decimal SoldeApres, string? Vente, string? Employe, string? Poste,
-    string? Reference, long? EmployeId = null);
+    string? Reference, long? EmployeId = null, string? Remise = null);
 
 /// <summary>DetteReprise : dette antérieure aux ventes à crédit du logiciel (ancien logiciel), soldée en premier.</summary>
 public sealed record SituationCredit(PatientEnCredit Patient, IReadOnlyList<VenteACredit> Ventes, IReadOnlyList<MouvementCredit>? Mouvements = null,
@@ -34,7 +36,9 @@ public interface ICreditsClients
     Task<Page<MouvementCredit>> MouvementsAsync(long patientId, DemandePage page, FiltreReleve? filtre = null, CancellationToken ct = default);
     /// <summary>Paiement du patient (sans vente) dans la caisse, dette diminuée ; renvoie le n° du reçu.</summary>
     /// <summary>Renvoie le numéro du reçu (RC-000001).</summary>
-    Task<string> EncaisserAsync(long patientId, decimal montant, string mode, long sessionCaisseId, long utilisateurId, CancellationToken ct = default);
+    /// <remarks>Ventes : ventes à crédit choisies par le patient (087), le montant leur est imputé ; le surplus solde la dette la plus ancienne.</remarks>
+    Task<string> EncaisserAsync(long patientId, decimal montant, string mode, long sessionCaisseId, long utilisateurId,
+        IReadOnlyList<long>? ventes = null, CancellationToken ct = default);
     /// <summary>Remplace la dette (attendue : celle lue avant, sinon refus) ; le relevé inscrit une « correction » avec son motif.</summary>
     Task CorrigerAsync(long patientId, decimal detteAttendue, decimal nouvelleDette, string motif, long utilisateurId, string? poste, CancellationToken ct = default);
 }
@@ -61,15 +65,16 @@ public sealed class ConsulterCredits(ICreditsClients credits)
 /// <summary>Le patient rembourse tout ou partie de sa dette : l'argent entre dans la caisse ouverte du poste.</summary>
 public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsCaisse sessions, IJournal journal)
 {
-    public async Task<RecuCredit> ExecuterAsync(long patientId, decimal montant, string? mode, long utilisateurId, string? poste, CancellationToken ct = default)
+    public async Task<RecuCredit> ExecuterAsync(long patientId, decimal montant, string? mode, long utilisateurId, string? poste,
+        IReadOnlyList<long>? ventes = null, CancellationToken ct = default)
     {
         var session = await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct)
                       ?? throw new RegleMetierException("Ouvrez la caisse du poste avant d’encaisser un règlement.");
         var s = await credits.SituationAsync(patientId, ct) ?? throw new RegleMetierException("Patient introuvable.");
         RegleReglementCredit.Verifier(montant, s.Patient.Solde, mode);
-        var numero = await credits.EncaisserAsync(patientId, montant, mode!, session.Id, utilisateurId, ct);
+        var numero = await credits.EncaisserAsync(patientId, montant, mode!, session.Id, utilisateurId, ventes, ct);
         await journal.EcrireAsync(utilisateurId, "reglement_credit", "patient", patientId,
-            new Dictionary<string, object?> { ["montant"] = montant, ["mode"] = mode, ["reste_du"] = s.Patient.Solde - montant, ["recu"] = numero }, null, ct);
+            new Dictionary<string, object?> { ["montant"] = montant, ["mode"] = mode, ["reste_du"] = s.Patient.Solde - montant, ["recu"] = numero, ["ventes"] = ventes }, null, ct);
         return new RecuCredit(numero, s.Patient.Nom, montant, mode!, s.Patient.Solde - montant);
     }
 }

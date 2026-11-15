@@ -36,7 +36,20 @@ public sealed record CommandeVente(
     bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
     long? PatientId, OrdonnanceSaisie? Ordonnance,
     decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null,
-    string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null);
+    string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null,
+    IReadOnlyList<ChoixPrixChifa>? ChoixChifa = null, bool FactureeParChifa = false, string? NumeroFactureChifa = null,
+    PersonneVente? RemisA = null, PersonneVente? Pour = null);
+
+/// <summary>
+/// Volet Chifa, écart de prix d'au moins le seuil : choix du vendeur pour un produit (« aligne » : prix Chifa ; « garde » : notre prix,
+/// écart payé par le patient). PrixAttendu : prix unitaire montré au poste, revérifié par le serveur (refus s'il n'est pas conforme).
+/// </summary>
+public sealed record ChoixPrixChifa(long ProduitId, string Choix, decimal? PrixAttendu = null);
+
+/// <summary>Ligne du panier (ordre des lignes envoyées) reprise d'un volet Chifa dont le prix diffère du nôtre.</summary>
+/// <param name="AChoisir">Écart d'au moins le seuil : à choisir par un employé qui peut modifier les prix (sinon le plus élevé d'office).</param>
+public sealed record EcartChifaLigne(int Index, long ProduitId, string Produit, decimal PrixChifa, decimal NotrePrix, decimal PrixApplique,
+    string Choix, bool AChoisir);
 
 /// <summary>
 /// Médecin en tiers payant (2026-11-15) : obligatoire quand l'organisme paie une partie (au taux, ou reste à charge saisi inférieur au
@@ -63,18 +76,35 @@ public sealed record ApercuVente(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
     decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
     IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false, IReadOnlyList<SituationLotVente>? Situations = null,
-    decimal MontantDon = 0, decimal ReductionsAuto = 0, IReadOnlyList<ReductionLigne>? Reductions = null);
+    decimal MontantDon = 0, decimal ReductionsAuto = 0, IReadOnlyList<ReductionLigne>? Reductions = null,
+    IReadOnlyList<EcartChifaLigne>? EcartsChifa = null, decimal EcartChifaPatient = 0, decimal SeuilEcartChifa = 0);
 
+/// <summary>EcartChifaPatient : écart Chifa payé par le patient (notre prix au-dessus du prix Chifa), compris dans PartPatient.</summary>
 public sealed record VenteEncaissee(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
-    ModePaiement Mode, decimal Rendu);
+    ModePaiement Mode, decimal Rendu, decimal EcartChifaPatient = 0, string? CatalogueChifa = null);
 
 /// <summary>Ce que l'adaptateur enregistre en une transaction.</summary>
 /// <summary>BoitesParLot : boîtes identifiées vendues, rattachées à la ligne de leur lot (pour les retrouver au remboursement).</summary>
 public sealed record VenteAEnregistrer(
     Vente Vente, Reglement Reglement, OrdonnanceSaisie? Ordonnance,
     IReadOnlySet<long> ProduitsSousRegistre, bool CreditAccorde, IReadOnlyDictionary<long, IReadOnlyList<long>>? BoitesParLot = null,
-    Pharma.Domain.Ventes.QrChifa? VoletChifa = null, Guid? CleEncaissement = null);
+    Pharma.Domain.Ventes.QrChifa? VoletChifa = null, Guid? CleEncaissement = null, bool PeutDepasserPlafond = false,
+    string CanalOrganisme = Caisse.CanalOrganisme.Logiciel, string? FactureChifa = null,
+    PersonneVente? RemisA = null, PersonneVente? Pour = null);
+
+/// <summary>
+/// Plafond de crédit revérifié dans la transaction d'encaissement (patient verrouillé, solde relu) : deux ventes à crédit simultanées
+/// ne peuvent pas le dépasser ensemble. Vrai si la dette après la vente reste dans le plafond, ou si l'employé peut le dépasser.
+/// </summary>
+public static class PlafondEncaissement
+{
+    public static bool Respecte(decimal soldeRelu, decimal montant, decimal plafond, bool peutDepasser) =>
+        peutDepasser || montant <= 0 || soldeRelu + montant <= plafond;
+
+    public static string Message(decimal soldeRelu, decimal montant, decimal plafond) =>
+        $"Plafond de crédit dépassé : {soldeRelu + montant:N2} DA pour un plafond de {plafond:N2} DA (une autre vente à crédit vient d’être enregistrée pour ce patient).";
+}
 
 /// <summary>
 /// Vente déjà enregistrée avec une clé d'encaissement. Mode : celui du paiement enregistré (null si le patient n'avait rien à payer) ;
@@ -123,12 +153,13 @@ public sealed class Encaisser(
     IDetenteursDroit? detenteurs = null, Stock.ICampagnesInventaire? campagnes = null,
     VerificationCodeComptoir? codesComptoir = null, IJournal? journal = null,
     Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null,
-    Surveillance.Surveiller? surveillance = null, IRemisesAutomatiques? remisesAuto = null, ITraceErreurs? trace = null)
+    Surveillance.Surveiller? surveillance = null, IRemisesAutomatiques? remisesAuto = null, ITraceErreurs? trace = null,
+    IVoletsChifa? voletsChifa = null, Securite.AutorisationCourante? autorisation = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
     {
-        var (vente, produits) = await ConstruireAsync(commande, utilisateurId, sessionId: null, ct);
+        var (vente, produits, ecarts, seuil) = await ConstruireAsync(commande, utilisateurId, sessionId: null, ct);
         var situations = await RaisonsAsync(commande, vente, produits, exiger: false, ct);
         return new ApercuVente(
             vente.MontantTotal + vente.MontantRemise + vente.MontantDon, vente.PartOrganisme, vente.MontantRemise,
@@ -138,7 +169,57 @@ public sealed class Encaisser(
             Bloques(produits), vente.ContientSurOrdonnance,
             commande.Lignes.Select(l => situations.GetValueOrDefault(l.LotId) ?? new SituationLotVente(l.LotId, SituationLot.Aucune)).ToList(),
             vente.MontantDon, vente.MontantReductionsAuto,
-            vente.Lignes.Select(l => new ReductionLigne(l.RemiseAutoPct, l.PctApplique, l.Reduction, l.Medicament && l.Reduction > 0)).ToList());
+            vente.Lignes.Select(l => new ReductionLigne(l.RemiseAutoPct, l.PctApplique, l.Reduction, l.Medicament && l.Reduction > 0)).ToList(),
+            ecarts, vente.EcartChifaPatient, seuil);
+    }
+
+    /// <summary>
+    /// Volet Chifa (tiers payant) : chaque ligne d'un produit du volet prend le prix Chifa ou le nôtre (EcartPrixChifa : seuil de
+    /// Administration › Caisse, droit prix.modifier, sinon le plus élevé d'office) ; la part de l'organisme se calcule sur le prix Chifa.
+    /// exiger : à l'encaissement, un choix non autorisé ou manquant, ou un prix attendu non conforme, est refusé. droitPrix : imposé
+    /// (vente déjà enregistrée, recalculée pour comparaison) au lieu d'être vérifié.
+    /// </summary>
+    private async Task<(List<EcartChifaLigne> Ecarts, decimal Seuil)> AppliquerVoletChifaAsync(CommandeVente c, Vente vente,
+        IReadOnlyDictionary<long, Produit> produits, long utilisateurId, bool exiger, bool? droitPrix, CancellationToken ct)
+    {
+        var ecarts = new List<EcartChifaLigne>();
+        if (voletsChifa is null || !c.TiersPayant || LectureVoletChifa.Lire(c.VoletChifa) is not { } qr) return (ecarts, 0);
+        var associes = await voletsChifa.ProduitsAsync(qr.Lignes.Select(l => l.Code).Distinct(), ct);
+        var prixChifa = new Dictionary<long, decimal>();
+        foreach (var l in qr.Lignes)
+            if (associes.TryGetValue(l.Code, out var p)) prixChifa.TryAdd(p.Id, l.PrixUnitaire);
+        if (prixChifa.Count == 0) return (ecarts, 0);
+
+        var seuil = (await sessions.ParametresAsync(ct)).SeuilEcartChifa;
+        var aChoisir = vente.Lignes.Any(l => prixChifa.TryGetValue(l.ProduitId, out var pc) && EcartPrixChifa.AChoisir(pc, l.PrixUnitaire, seuil));
+        // Droit vérifié seulement s'il y a un choix à faire (le code comptoir d'un ayant droit l'accorde sur place)
+        var aLeDroit = droitPrix ?? (aChoisir && await droits.APermissionAsync(utilisateurId, Permissions.PrixModifier, ct));
+        for (var i = 0; i < vente.Lignes.Count; i++)
+        {
+            var ligne = vente.Lignes[i];
+            if (!prixChifa.TryGetValue(ligne.ProduitId, out var pc)) continue;
+            var nom = produits.TryGetValue(ligne.ProduitId, out var produit) ? produit.NomCommercial : "Produit";
+            var notre = ligne.PrixUnitaire;
+            var demande = c.ChoixChifa?.FirstOrDefault(x => x.ProduitId == ligne.ProduitId);
+            decimal prix;
+            string? choix;
+            try
+            {
+                (prix, choix) = EcartPrixChifa.Appliquer(pc, notre, seuil, demande?.Choix, aLeDroit, exiger, nom);
+            }
+            catch (PrixChifaNonAutoriseException e)
+            {
+                throw new DroitRefuseException(Permissions.PrixModifier, "choisir le prix d’une ligne du volet Chifa", e.Message);
+            }
+            if (exiger && demande?.PrixAttendu is { } attendu && attendu != prix)
+                throw new RegleMetierException(
+                    $"{nom} : prix {attendu:N2} DA non conforme à la règle des écarts Chifa (prix Chifa {pc:N2} DA, notre prix {notre:N2} DA, prix applicable {prix:N2} DA). Rescannez le volet.",
+                    "prix_chifa");
+            vente.AppliquerVoletChifa(ligne, pc, prix, choix);
+            if (choix is not null)
+                ecarts.Add(new EcartChifaLigne(i, ligne.ProduitId, nom, pc, notre, prix, choix, EcartPrixChifa.AChoisir(pc, notre, seuil)));
+        }
+        return (ecarts, seuil);
     }
 
     /// <summary>
@@ -220,14 +301,30 @@ public sealed class Encaisser(
                       ?? throw new RegleMetierException("Ouvrez la caisse du poste avant d’encaisser.");
 
         await Stock.VentesSuspendues.VerifierAsync(campagnes, ct);
-        var (vente, produits) = await ConstruireAsync(commande, utilisateurId, session.Id, ct);
+        var (vente, produits, ecartsChifa, _) = await ConstruireAsync(commande, utilisateurId, session.Id, ct, exigerChifa: true);
         // Volet Chifa repris par son QR : relu par le serveur, en tiers payant, une seule fois (index unique en base)
         Pharma.Domain.Ventes.QrChifa? volet = null;
         if (!string.IsNullOrWhiteSpace(commande.VoletChifa))
         {
             volet = LectureVoletChifa.Lire(commande.VoletChifa) ?? throw new RegleMetierException("Le QR du volet Chifa n’est pas reconnu.", "volet_chifa");
             if (!commande.TiersPayant) throw new RegleMetierException("Un volet Chifa se reprend en tiers payant.", "volet_chifa");
+            // Organisme d'un volet (2026-11-15) : CNAS ou CASNOS seulement (même carte Chifa), choisi par le vendeur
+            if (voletsChifa is not null && !OrganismeVoletChifa.Accepte(commande.OrganismeId is { } org ? await voletsChifa.CodeOrganismeAsync(org, ct) : null))
+                throw new RegleMetierException("Un volet Chifa se reprend en tiers payant CNAS ou CASNOS seulement.", "organisme");
         }
+        // Canal de la part organisme (script 089) : volet ou case « facturée par Chifa » => chifa ; organisme MDN => mdn ; sinon logiciel
+        var codeOrganisme = commande.TiersPayant && voletsChifa is not null && commande.OrganismeId is { } idOrg
+            ? await voletsChifa.CodeOrganismeAsync(idOrg, ct) : null;
+        string? factureChifa = null;
+        if (commande.FactureeParChifa && volet is null)
+        {
+            if (!commande.TiersPayant || (voletsChifa is not null && !OrganismeVoletChifa.Accepte(codeOrganisme)))
+                throw new RegleMetierException("« Facturée par Chifa » : tiers payant CNAS ou CASNOS seulement.", "organisme");
+            factureChifa = CanalOrganisme.NumeroFacture(commande.NumeroFactureChifa);
+            if (voletsChifa is not null && await voletsChifa.VenteDuVoletAsync(factureChifa, ct) is { } dejaChifa)
+                throw new RegleMetierException($"La facture Chifa n° {factureChifa} est déjà rattachée à la vente {dejaChifa}.", "facture_chifa");
+        }
+        var canal = CanalOrganisme.Determiner(commande.TiersPayant, volet is not null, factureChifa is not null, codeOrganisme);
         // Lot plus récent servi alors qu'un lot plus ancien est en stock : raison obligatoire (ou péremption vérifiée, validée)
         await RaisonsAsync(commande, vente, produits, exiger: true, ct);
 
@@ -252,6 +349,12 @@ public sealed class Encaisser(
             // Porteur différent du patient : nom, adresse et pièce d'identité au registre (psychotropes seulement)
             commande = commande with { Ordonnance = o with { Porteur = vente.ContientSousRegistre && o.Porteur is { } p ? VerifierPorteur(p) : null } };
         }
+        // « Remis à » (avec ordonnance) / « Pour » (sans ordonnance) : la vente et sa dette restent au nom du patient (RemiseVente)
+        var (remisA, pour) = RemiseVente.Verifier(commande.PatientId, commande.Ordonnance is not null, commande.RemisA, commande.Pour,
+            commande.Ordonnance?.Porteur?.Nom);
+        foreach (var lie in new[] { remisA?.PatientId, pour?.PatientId })
+            if (lie is { } lieId && await patients.TrouverAsync(lieId, ct) is null)
+                throw new RegleMetierException("« Remis à » ou « Pour » : patient introuvable.");
         // Tiers payant : médecin obligatoire quand l'organisme paie une partie (RegleMedecinTiersPayant)
         var voletScanne = !string.IsNullOrWhiteSpace(commande.VoletChifa);
         if (RegleMedecinTiersPayant.Exige(commande.TiersPayant, vente.PartOrganisme, voletScanne) && commande.Ordonnance?.MedecinId is null)
@@ -265,12 +368,16 @@ public sealed class Encaisser(
         if (tiersSansPart)
             sansOrdonnance = sansOrdonnance.Union(produits.Values.Where(p => p.Remboursable).Select(p => p.NomCommercial)).ToList();
         if (commande.Ordonnance is { } ord && (ord.MedecinId is not null || ord.JetonScan is not null)) sansOrdonnance.Clear();
+        // Volet Chifa repris (2026-11-15) : ordonnance considérée comme présentée (liste I ou II sans validation « sans ordonnance ») ;
+        // psychotrope : ordonnance et médecin toujours exigés (registre, contrôlés plus haut)
+        if (voletScanne) sansOrdonnance.Clear();
         if (sansOrdonnance.Count > 0)
             await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendreSansOrdonnance,
                 tiersSansPart ? "vendre sans ordonnance en tiers payant sans part de l’organisme" : "vendre sans ordonnance un médicament de liste I ou II", ct);
 
         Reglement reglement;
         var credit = false;
+        var peutDepasser = false;
         if (commande.Mode == ModePaiement.Credit)
         {
             await droits.ExigerAsync(utilisateurId, Permissions.CreditAccorder, "mettre une vente en crédit", ct);
@@ -278,6 +385,7 @@ public sealed class Encaisser(
             if (patient is null)
                 throw new RegleMetierException("Crédit : choisissez le patient à qui la vente est accordée.");
             var depasser = await droits.APermissionAsync(utilisateurId, Permissions.CreditDepasserPlafond, ct);
+            peutDepasser = depasser;
             // Au-delà du plafond : droit « dépasser le plafond », que le code d'un employé habilité peut accorder sur place
             if (vente.PartPatient > 0 && !depasser && patient.SoldeCredit + vente.PartPatient > patient.PlafondCredit)
                 throw new DroitRefuseException(Permissions.CreditDepasserPlafond, "dépasser le plafond de crédit",
@@ -300,7 +408,7 @@ public sealed class Encaisser(
         {
             (id, numero) = await ventes.EnregistrerAsync(
                 new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit, BoitesParLot(commande), volet,
-                    commande.CleEncaissement), ct);
+                    commande.CleEncaissement, peutDepasser, canal, factureChifa, remisA, pour), ct);
         }
         catch (EncaissementDejaEnregistreException e)
         {
@@ -319,12 +427,44 @@ public sealed class Encaisser(
                 new Dictionary<string, object?> { ["ticket"] = numero, ["produits"] = sansOrdonnance },
                 Permissions.CaisseVendreSansOrdonnance, ct);
 
+        // Écarts de prix du volet Chifa : produit, prix Chifa, notre prix, prix appliqué, choix, vendeur et valideur éventuel (code comptoir)
+        if (ecartsChifa.Count > 0 && journal is not null)
+            await journal.EcrireAsync(utilisateurId, "ecart_prix_chifa", "vente", id,
+                new Dictionary<string, object?>
+                {
+                    ["ticket"] = numero, ["volet"] = volet?.NumeroFacture,
+                    ["lignes"] = ecartsChifa.Select(e => new { produit = e.Produit, prix_chifa = e.PrixChifa, notre_prix = e.NotrePrix, prix_applique = e.PrixApplique, choix = e.Choix }).ToList(),
+                    ["ecart_patient"] = vente.EcartChifaPatient,
+                    ["valideur"] = autorisation?.AutoriseParNom
+                },
+                ecartsChifa.Any(e => e.Choix is EcartPrixChifa.Aligne or EcartPrixChifa.Garde) ? Permissions.PrixModifier : Permissions.CaisseVendre, ct);
+
+        // Reste à charge saisi à la main sur une vente avec volet (décision du titulaire, 2026-11-15) : permis, mais journalisé
+        // (n° du volet, part de l'organisme calculée sur le prix Chifa, valeur saisie, écart, vendeur et valideur éventuel)
+        if (volet is not null && vente.ResteSaisi is { } resteSaisi && journal is not null)
+            await journal.EcrireAsync(utilisateurId, ResteChargeManuelVolet, "vente", id,
+                DetailResteManuelVolet(numero, volet.NumeroFacture, vente, resteSaisi, autorisation?.AutoriseParNom), Permissions.CaisseVendre, ct);
+
+        // Catalogue d'après le volet (règle du titulaire, 2026-11-15) : après l'enregistrement de la vente seulement (vente abandonnée
+        // ou refusée : catalogue intact), quel que soit le vendeur ; la vente déjà enregistrée n'en dépend pas
+        string? catalogueChifa = null;
+        if (volet is not null && voletsChifa is not null)
+            try
+            {
+                catalogueChifa = await CatalogueVoletChifa.AppliquerAsync(voletsChifa, journal, volet, utilisateurId, CancellationToken.None);
+            }
+            catch (Exception e)
+            {
+                // La vente est enregistrée : un échec ici ne l'annule pas, il est inscrit au journal du serveur
+                trace?.Erreur($"Mise à jour du catalogue d’après le volet Chifa n° {volet.NumeroFacture} impossible", e);
+            }
+
         await AlerterLotsDelaissesAsync(vente);
         // Surveillance de la caisse : ventes hors horaires, remises en série (anomalies notifiées au titulaire)
         if (surveillance is not null) await surveillance.ExecuterAsync(CancellationToken.None);
 
         return new VenteEncaissee(id, numero, vente.MontantTotal, vente.PartOrganisme, vente.PartPatient,
-            reglement.Mode, reglement.Rendu);
+            reglement.Mode, reglement.Rendu, vente.EcartChifaPatient, catalogueChifa);
     }
 
     /// <summary>
@@ -362,7 +502,7 @@ public sealed class Encaisser(
         Vente recalculee;
         try
         {
-            (recalculee, _) = await ConstruireAsync(commande, 0, sessionId: null, ct, controlerLots: false);
+            (recalculee, _, _, _) = await ConstruireAsync(commande, 0, sessionId: null, ct, controlerLots: false, droitPrixChifa: true);
         }
         catch (RegleMetierException)
         {
@@ -386,8 +526,9 @@ public sealed class Encaisser(
         }, "lots délaissés après une vente", trace);
     }
 
-    private async Task<(Vente, IReadOnlyDictionary<long, Produit>)> ConstruireAsync(
-        CommandeVente c, long utilisateurId, long? sessionId, CancellationToken ct, bool controlerLots = true)
+    private async Task<(Vente, IReadOnlyDictionary<long, Produit>, List<EcartChifaLigne>, decimal)> ConstruireAsync(
+        CommandeVente c, long utilisateurId, long? sessionId, CancellationToken ct, bool controlerLots = true, bool exigerChifa = false,
+        bool? droitPrixChifa = null)
     {
         if (c.Lignes.Count == 0)
             throw new RegleMetierException("Le panier est vide.");
@@ -415,10 +556,17 @@ public sealed class Encaisser(
             if (produit.AVerifier)
                 throw new RegleMetierException(
                     $"{produit.NomCommercial} : produit à vérifier par le titulaire avant la vente (repris de l’ancien logiciel, ou classé d’office psychotrope ou stupéfiant à sa création) : Administration, Nomenclature nationale, « Produits à vérifier ».");
+            // Créé sans prix par un employé sans le droit prix.modifier : invendable tant qu'un ayant droit n'a pas fixé son prix
+            if (produit.PrixPublic <= 0)
+                throw new RegleMetierException(
+                    $"{produit.NomCommercial} : prix de vente non fixé, à faire fixer par un ayant droit (fiche produit) avant la vente.");
             if (!lots.TryGetValue(ligne.LotId, out var lot))
                 throw new RegleMetierException($"{produit.NomCommercial} : lot introuvable, rescannez la boîte.");
             vente.AjouterProduit(produit, lot, ligne.Quantite, aujourdhui, autoriserBloque: true, controlerLot: controlerLots);   // blocage contrôlé à l'encaissement
         }
+
+        // Volet Chifa : prix Chifa ou le nôtre selon l'écart, part de l'organisme sur le prix Chifa (catalogue jamais modifié)
+        var (ecarts, seuil) = await AppliquerVoletChifaAsync(c, vente, produits, utilisateurId, exigerChifa, droitPrixChifa, ct);
 
         // Tiers payant : reste à charge fixé par le caissier, au lieu du taux de prise en charge
         if (c.TiersPayant && c.ResteACharge is { } reste)
@@ -429,7 +577,29 @@ public sealed class Encaisser(
             vente.AppliquerRemisesAutomatiques(await remisesAuto.PourcentagesAsync(produits.Keys.ToList(), aujourdhui, ct));
         vente.AppliquerRemise(c.RemisePct, c.RemiseAdditionnee);
 
-        return (vente, produits);
+        return (vente, produits, ecarts, seuil);
+    }
+
+    /// <summary>Action du journal : reste à charge saisi à la main sur une vente reprise d'un volet Chifa (2026-11-15).</summary>
+    public const string ResteChargeManuelVolet = "reste_charge_manuel_volet";
+
+    /// <summary>
+    /// Détail du journal « reste à charge saisi sur un volet » : part de l'organisme calculée (prix Chifa × taux), reste qu'elle laissait,
+    /// reste saisi, part retenue et écart (reste saisi − reste calculé ; négatif : le patient paie moins que le calcul). Le vendeur est
+    /// l'auteur de l'entrée ; valideur : employé qui a autorisé par son code, s'il y en a un.
+    /// </summary>
+    public static Dictionary<string, object?> DetailResteManuelVolet(string ticket, string volet, Vente vente, decimal resteSaisi, string? valideur)
+    {
+        var brut = vente.Lignes.Sum(l => l.PrixUnitaire * l.Quantite);
+        var partCalculee = vente.PartOrganismeCalculee ?? vente.PartOrganisme;
+        var resteCalcule = brut - partCalculee;
+        return new Dictionary<string, object?>
+        {
+            ["ticket"] = ticket, ["volet"] = volet,
+            ["part_organisme_calculee"] = partCalculee, ["reste_calcule"] = resteCalcule,
+            ["reste_saisi"] = resteSaisi, ["part_organisme_retenue"] = vente.PartOrganisme,
+            ["ecart"] = resteSaisi - resteCalcule, ["valideur"] = valideur
+        };
     }
 
     /// <summary>Les trois informations sont exigées dès qu'un porteur est déclaré (arrêté du 29 juin 2013, art. 7).</summary>

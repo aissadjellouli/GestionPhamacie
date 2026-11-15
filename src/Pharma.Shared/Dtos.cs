@@ -11,6 +11,12 @@ public sealed record ConnexionCodeRequete(string Identifiant, string Code);
 
 public sealed record VendeurComptoirDto(string Identifiant, string NomComplet);
 
+/// <summary>
+/// Employé proposé pour « Faire autoriser » : son nom et une référence opaque (« #numéro ») à renvoyer dans X-Pharma-Autorise-Par,
+/// jamais son identifiant de connexion.
+/// </summary>
+public sealed record ValideurDto(string Reference, string NomComplet);
+
 /// <summary>Écran de connexion : la caisse du poste est ouverte, la reprise par code comptoir est possible.</summary>
 public sealed record ComptoirDto(bool CaisseOuverte);
 
@@ -102,7 +108,8 @@ public sealed record ErreurDto(string Message, string? Champ = null, bool Autori
 public sealed record EtatCaisseDto(
     long? SessionId, DateTime? OuverteLe, decimal? FondCaisse, string? Poste,
     bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes,
-    bool PeutVoirEcart, decimal? VentesEspeces, string? OuvertePar = null, bool ConnexionParCode = false, decimal PlafondCreditDefaut = 0);
+    bool PeutVoirEcart, decimal? VentesEspeces, string? OuvertePar = null, bool ConnexionParCode = false, decimal PlafondCreditDefaut = 0,
+    decimal SeuilEcartChifa = 5);
 
 public sealed record OuvrirCaisseRequete(string? Poste, decimal? FondCaisse);
 
@@ -121,7 +128,22 @@ public sealed record OrdonnanceDto(long? MedecinId, DateOnly DatePrescription, s
 public sealed record CommandeVenteDto(
     IReadOnlyList<LigneCommandeDto> Lignes, bool TiersPayant, long? OrganismeId, decimal? TauxTiersPayant,
     long? PatientId, OrdonnanceDto? Ordonnance, decimal RemisePct, string Mode, decimal? MontantRecu, decimal? ResteACharge = null,
-    ValidationBlocageDto? Blocage = null, string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null);
+    ValidationBlocageDto? Blocage = null, string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null,
+    IReadOnlyList<ChoixPrixChifaDto>? ChoixChifa = null, bool FactureeParChifa = false, string? NumeroFactureChifa = null,
+    PersonneVenteDto? RemisA = null, PersonneVenteDto? Pour = null);
+
+/// <summary>
+/// « Remis à » (vente avec ordonnance) ou « Pour » (vente sans ordonnance), 2026-11-15 : fiche d'un membre de la famille (PatientId)
+/// ou nom libre (Nom, 200 caractères au plus). La vente et sa dette restent au nom du patient de la vente.
+/// </summary>
+public sealed record PersonneVenteDto(long? PatientId, string? Nom);
+
+/// <summary>Volet Chifa, écart d'au moins le seuil : « aligne » (prix Chifa) ou « garde » (notre prix) ; PrixAttendu revérifié par le serveur.</summary>
+public sealed record ChoixPrixChifaDto(long ProduitId, string Choix, decimal? PrixAttendu = null);
+
+/// <summary>Ligne du panier (Index : ordre des lignes) reprise d'un volet Chifa dont le prix diffère du nôtre ; Choix : aligne_auto, aligne, garde, plus_eleve.</summary>
+public sealed record EcartChifaLigneDto(int Index, long ProduitId, string Produit, decimal PrixChifa, decimal NotrePrix, decimal PrixApplique,
+    string Choix, bool AChoisir);
 
 /// <summary>Accord pour un produit bloqué : confirmé par l'employé habilité, sinon validé par le code comptoir d'un habilité.</summary>
 public sealed record ValidationBlocageDto(bool Accepte, string? ValidateurIdentifiant = null, string? ValidateurCode = null);
@@ -131,7 +153,8 @@ public sealed record ApercuVenteDto(
     decimal MontantBrut, decimal PartOrganisme, decimal MontantRemise, decimal PartPatient,
     decimal MontantTotal, bool OrdonnanceRequise, IReadOnlyList<decimal>? PrixLignes = null, decimal Shp = 0, decimal TotalMedicaments = 0,
     IReadOnlyList<string>? ProduitsBloques = null, bool SurOrdonnance = false, IReadOnlyList<SituationLotDto>? Situations = null,
-    decimal MontantDon = 0, decimal ReductionsAuto = 0, IReadOnlyList<ReductionLigneDto>? Reductions = null);
+    decimal MontantDon = 0, decimal ReductionsAuto = 0, IReadOnlyList<ReductionLigneDto>? Reductions = null,
+    IReadOnlyList<EcartChifaLigneDto>? EcartsChifa = null, decimal EcartChifaPatient = 0, decimal SeuilEcartChifa = 0);
 
 /// <summary>
 /// Réductions d'une ligne (ordre des lignes envoyées) : remise automatique (%), pourcentage appliqué, montant ; DonPartiel : médicament,
@@ -147,7 +170,7 @@ public sealed record SituationLotDto(long LotId, string Situation, string? LotDe
 
 public sealed record VenteEncaisseeDto(
     long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
-    string Mode, decimal Rendu);
+    string Mode, decimal Rendu, decimal EcartChifaPatient = 0, string? CatalogueChifa = null);
 
 /// <summary>
 /// Saisies par coupure : b2000, b1000, b500, b200, p100 (nombres), autres (montant total). Coupure inconnue refusée.
@@ -174,7 +197,7 @@ public sealed record ComptageIntermediaireDto(DateTime Le, string Employe, decim
 
 /// <summary>VersementCloture : manuel ou automatique (argent des caisses clôturées vers le coffre).</summary>
 public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel",
-    decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true);
+    decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true, decimal SeuilEcartChifa = 5);
 
 public sealed record EntreeJournalDto(DateTime Date, string Employe, string Action, string? Details, string? AutorisePar, long? EmployeId = null, long? AutoriseParId = null);
 
@@ -186,7 +209,13 @@ public sealed record PatientDto(
 
 /// <summary>Fiche complète d'un patient (SoldeCredit en lecture seule).</summary>
 public sealed record FichePatientDto(long Id, string Nom, string? Prenom, DateOnly? DateNaissance, string? Telephone, string? Email, string? NumAssure,
-    long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0);
+    long? OrganismeId, bool Chronique, decimal PlafondCredit, decimal SoldeCredit = 0, string? Lien = null, long? AssurePrincipalId = null,
+    IReadOnlyList<ProchePatientDto>? Candidats = null, ProchePatientDto? Proposition = null);
+/// <summary>
+/// Fiche proche d'un patient (script 090) : Candidats = fiches qui peuvent être son assuré principal (même n° de base, assuré actuel) ;
+/// Proposition = rattachement proposé (même n° de base, suffixe différent), à accepter ou non par le vendeur.
+/// </summary>
+public sealed record ProchePatientDto(long Id, string Nom, string? NumAssure, string? Lien);
 
 public sealed record NouveauPatientDto(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
 /// <summary>Médecin prescripteur ; coordonnées facultatives (2026-11-15).</summary>
@@ -577,6 +606,13 @@ public sealed record EtatRepriseDto(SessionRepriseDto Session, IReadOnlyDictiona
 /// <summary>Decision : confirmer, autre (ProduitId obligatoire) ou creer.</summary>
 public sealed record DecisionProduitRepriseRequete(string RefSource, string Decision, long? ProduitId);
 
+/// <summary>Doublon de n° d'assuré de la reprise, à valider (092). Statut : a_valider, garde_existant, remplace, ayant_droit ; Dette : rattachee, abandonnee.</summary>
+public sealed record DoublonImportDto(long Id, long SessionId, string Logiciel, string RefSource, int? Ligne, string Nom, string? Prenom, string? Telephone,
+    string NumAssure, decimal SoldeCredit, string Origine, long PatientExistantId, string ExistantNom, string? ExistantNumAssure, string? ExistantTelephone,
+    decimal ExistantSolde, string Statut, string? Dette, long? PatientCreeId, string? DecidePar, DateTime? DecideLe);
+/// <summary>Decision : garder_existant, remplacer, ayant_droit ; Dette : rattacher, abandonner (obligatoire si dette reprise) ; NumAssure : ayant droit seulement.</summary>
+public sealed record DecisionDoublonImportRequete(string Decision, string? Dette, string? NumAssure);
+
 // ---- Nomenclature nationale ------------------------------------------------------
 
 public sealed record VersionNomenclatureDto(string Libelle, string Fichier, int EnVigueur, int NonRenouveles, int Retraits,
@@ -627,7 +663,8 @@ public sealed record TicketDto(
     string Numero, DateTime Date, string Vendeur, string? Poste, string Statut,
     string? Organisme, decimal? TauxTiersPayant, IReadOnlyList<LigneTicketDto> Lignes,
     decimal MontantBrut, decimal Remise, decimal PartOrganisme, decimal PartPatient, string? Mode,
-    string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null, decimal DonPartiel = 0);
+    string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null, decimal DonPartiel = 0,
+    decimal EcartChifa = 0, string? Client = null);
 
 // ---- Affichage (clair, sombre, automatique) --------------------------------------
 
@@ -656,7 +693,61 @@ public sealed record PanierAttenteDto(
     IReadOnlyList<LignePanierAttenteDto> Lignes, bool TiersPayant, long OrganismeId, int Taux, PatientDto? Patient,
     MedecinDto? Medecin, DateOnly DatePrescription, string? NumeroOrdonnance, decimal RemisePct, string? JetonScan, string? TexteReconnu,
     string? VoletChifa = null, decimal? ResteSaisi = null, bool PorteurAutre = false, string? PorteurNom = null, string? PorteurAdresse = null,
-    string? PorteurPiece = null, bool RemiseAdditionnee = false);
+    string? PorteurPiece = null, bool RemiseAdditionnee = false, long? RemiseProcheId = null, string? RemiseProcheNom = null, string? RemiseNom = null,
+    IReadOnlyList<ChoixChifaAttenteDto>? ChoixChifa = null);
+
+/// <summary>Choix de prix d'une ligne du volet Chifa gardé avec la vente en attente (2026-11-15) : aligne, garde ou plus_eleve.</summary>
+public sealed record ChoixChifaAttenteDto(long ProduitId, string Choix);
+
+/// <summary>
+/// Choix de prix Chifa d'une vente mise en attente (décision du titulaire, 2026-11-15) : gardés avec le panier et rétablis à la reprise
+/// sans les refaire ; le serveur les revérifie à l'encaissement (droit, seuil, prix attendu). Vente en attente d'un format ancien
+/// (sans choix) : reprise sans les choix.
+/// </summary>
+public static class ChoixChifaAttente
+{
+    public static readonly IReadOnlySet<string> Connus = new HashSet<string> { "aligne", "garde", "plus_eleve" };
+
+    /// <summary>Choix à garder avec le panier : aucun sans volet.</summary>
+    public static IReadOnlyList<ChoixChifaAttenteDto>? Garder(string? voletBrut, IReadOnlyDictionary<long, string> choix) =>
+        voletBrut is null || choix.Count == 0 ? null : choix.Select(c => new ChoixChifaAttenteDto(c.Key, c.Value)).ToList();
+
+    /// <summary>Choix rétablis à la reprise : volet relu, choix connus, produits encore dans le panier ; sinon aucun.</summary>
+    public static Dictionary<long, string> Restaurer(PanierAttenteDto panier, bool voletRelu)
+    {
+        var resultat = new Dictionary<long, string>();
+        if (!voletRelu || panier.VoletChifa is null || panier.ChoixChifa is null) return resultat;
+        var produits = panier.Lignes.Select(l => l.ProduitId).ToHashSet();
+        foreach (var c in panier.ChoixChifa)
+            if (c is not null && Connus.Contains(c.Choix) && produits.Contains(c.ProduitId)) resultat[c.ProduitId] = c.Choix;
+        return resultat;
+    }
+}
+
+/// <summary>
+/// Détail facultatif d'une demande « Faire autoriser », affiché au valideur sous le motif (tableau : en-têtes et lignes de texte).
+/// Permission : la demande ne le montre que si le refus porte sur ce droit.
+/// </summary>
+public sealed record DetailAutorisationDto(string Titre, IReadOnlyList<string> Colonnes, IReadOnlyList<IReadOnlyList<string>> Lignes, string? Permission = null);
+
+/// <summary>Détail « Faire autoriser » d'un choix de prix Chifa (2026-11-15) : lignes en écart dont le prix est choisi.</summary>
+public static class DetailAutorisationChifa
+{
+    /// <summary>Produit, prix Chifa, notre prix, écart par boîte, choix demandé ; null s'il n'y a aucune ligne à faire autoriser.</summary>
+    public static DetailAutorisationDto? Construire(IEnumerable<EcartChifaLigneDto>? ecarts, IReadOnlyDictionary<long, string> choix, Func<decimal, string> dinars)
+    {
+        var lignes = new List<IReadOnlyList<string>>();
+        foreach (var e in ecarts ?? [])
+        {
+            if (!e.AChoisir || !choix.TryGetValue(e.ProduitId, out var c)) continue;
+            var libelle = c switch { "aligne" => "S’aligner sur Chifa", "garde" => "Garder notre prix", _ => null };
+            if (libelle is null) continue;
+            lignes.Add([e.Produit, dinars(e.PrixChifa), dinars(e.NotrePrix), dinars(Math.Abs(e.PrixChifa - e.NotrePrix)), libelle]);
+        }
+        return lignes.Count == 0 ? null
+            : new DetailAutorisationDto("Prix des lignes du volet Chifa", ["Produit", "Prix Chifa", "Notre prix", "Écart par boîte", "Choix demandé"], lignes, "prix.modifier");
+    }
+}
 
 // ---- Annulation d'une vente ------------------------------------------------------
 
@@ -670,7 +761,8 @@ public sealed record VentesParBoiteDto(bool Exacte, string Produit, string? Lot,
 public sealed record VenteAnnulableDto(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulableDto> Lignes,
-    decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null, decimal DetteEffaceeAnnulation = 0);
+    decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null, decimal DetteEffaceeAnnulation = 0,
+    string? Remise = null);
 
 /// <summary>Validateur* : identifiant et code comptoir du pharmacien ou de l'assistant (vente ancienne).</summary>
 /// <summary>SolderDette : l'argent à rendre est retiré de la dette du patient (PatientDetteId : patient nommé, pour une vente sans patient).</summary>
@@ -745,17 +837,18 @@ public sealed record PaiementTraiteRequete(DateOnly? Date, string? Moyen, long? 
 
 public sealed record PatientEnCreditDto(long Id, string Nom, string? Telephone, decimal Solde, decimal Plafond, DateTime? DerniereVente);
 
-public sealed record VenteACreditDto(string Numero, DateTime Date, decimal Montant, decimal Regle = 0, decimal Reste = 0);
+public sealed record VenteACreditDto(string Numero, DateTime Date, decimal Montant, decimal Regle = 0, decimal Reste = 0, long Id = 0, string? Facture = null,
+    string? Remise = null);
 
 /// <summary>Ligne du relevé de dette ; Montant positif : la dette augmente, négatif : elle diminue.</summary>
 public sealed record MouvementCreditDto(DateTime Date, string Type, decimal Montant, decimal SoldeApres, string? Vente, string? Employe, string? Poste, string? Reference,
-    long? EmployeId = null);
+    long? EmployeId = null, string? Remise = null);
 
 public sealed record SituationCreditDto(PatientEnCreditDto Patient, IReadOnlyList<VenteACreditDto> Ventes, IReadOnlyList<MouvementCreditDto>? Mouvements = null,
     decimal DetteReprise = 0, int MouvementsTotal = 0);
 
-/// <summary>Mode : especes, carte ou cheque.</summary>
-public sealed record ReglementCreditRequete(decimal Montant, string Mode);
+/// <summary>Mode : especes, carte ou cheque. Ventes : ventes à crédit cochées (2026-11-15), le montant leur est imputé ; vide : dette la plus ancienne d'abord.</summary>
+public sealed record ReglementCreditRequete(decimal Montant, string Mode, IReadOnlyList<long>? Ventes = null);
 
 /// <summary>Correction de la dette par le titulaire : nouvelle dette et motif obligatoire.</summary>
 public sealed record CorrectionCreditRequete(decimal NouvelleDette, string? Motif);
@@ -867,5 +960,9 @@ public sealed record LigneVoletChifaDto(string Code, int Quantite, decimal PrixU
 /// <summary>Brut : contenu du QR, renvoyé avec l'encaissement (relu par le serveur). Champ5, Champ6, DateSecondaire : sens à confirmer avec l'éditeur de Chifa.</summary>
 public sealed record VoletChifaDto(string NumeroFacture, DateOnly DateFacture, string Assure, string Champ5, string Champ6, DateOnly? DateSecondaire,
     decimal MontantOrdonnance, IReadOnlyList<LigneVoletChifaDto> Lignes, long? PatientId, string? Patient, long? OrganismeId, string Brut,
-    string? PatientNumAssure = null);
+    string? PatientNumAssure = null, long? AssurePrincipalProposeId = null, string? AssurePrincipalPropose = null);
 public sealed record AssocierCodeChifaRequete(string Code, long ProduitId);
+/// <summary>Patient d'un volet Chifa à créer : QR relu par le serveur ; Nom vide : nom provisoire « Assuré n°/suffixe », à compléter.</summary>
+public sealed record CreerPatientVoletRequete(string Texte, string? Nom, long? OrganismeId, string? Lien = null, long? AssurePrincipalId = null);
+/// <summary>Cree : faux si la fiche du même n° d'assuré existait déjà ; ACompleter : nom provisoire.</summary>
+public sealed record PatientVoletDto(long Id, string Nom, string NumAssure, long? OrganismeId, bool Cree, bool ACompleter);

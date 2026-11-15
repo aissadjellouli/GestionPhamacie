@@ -44,6 +44,10 @@
                         <label for="annul">Alerte au-delà de N annulations par session</label>
                         <input id="annul" data-champ="seuil_annulations" type="number" min="0" max="100" @bind="parametres.SeuilAnnulations" />
                     </div>
+                    <div class="champ" title="Volet Chifa : sous cet écart par boîte, la ligne est alignée d’office sur le prix Chifa ; au-delà, un employé qui peut modifier les prix choisit (sinon le plus élevé des deux s’applique).">
+                        <label for="seuil-chifa">Écart de prix Chifa aligné d’office sous (DA par boîte)</label>
+                        <input id="seuil-chifa" data-champ="seuil_ecart_chifa" type="number" min="0" step="0.01" @bind="parametres.SeuilEcartChifa" />
+                    </div>
                 </div>
                 <fieldset class="champ" style="border: 0; padding: 0; margin: 0">
                     <legend class="etiquette-champ">À la clôture d’une caisse, l’argent compté part au coffre :</legend>
@@ -125,6 +129,7 @@
         public decimal PlafondCreditDefaut { get; set; }
         public int SeuilAnnulations { get; set; }
         public bool AutorisationParCode { get; set; } = true;
+        public decimal SeuilEcartChifa { get; set; } = 5;
     }
 
     private Saisie? parametres;
@@ -193,7 +198,7 @@
             {
                 ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
                 SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut,
-                SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode
+                SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode, SeuilEcartChifa = p.SeuilEcartChifa
             };
         (employesJournal, _) = await Api.EmployesJournalAsync();
         await ChargerJournalAsync(retour?.Entier("page") ?? 1, retour?.Entier("taille"));
@@ -212,7 +217,7 @@
         message = null;
         erreur = await Api.ModifierParametresCaisseAsync(new ParametresCaisseDto(
             parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture, parametres.PlafondCreditDefaut,
-            parametres.SeuilAnnulations, parametres.AutorisationParCode));
+            parametres.SeuilAnnulations, parametres.AutorisationParCode, parametres.SeuilEcartChifa));
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";

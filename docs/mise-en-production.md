@@ -62,7 +62,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `081`. |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `093`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -71,6 +71,15 @@ Le dossier `database/init/` contient trois fichiers :
   & psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -f database\init\schema.sql
   ```
   Si la base contient déjà le schéma, le script s'arrête sans rien faire.
+- [ ] **2.1 bis** Régler le fuseau horaire de la base (Algérie, UTC+1 toute l'année) : un `ALTER DATABASE … SET timezone` n'est pas
+  repris par un dump de schéma, il faut donc lancer ce script en plus (sans risque, il peut être relancé) :
+  ```powershell
+  & psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -f database\migration\083_fuseau_horaire.sql
+  ```
+  Vérifier : `& psql -h localhost -U pharma_app -d <base> -tAc "show timezone"` affiche `Africa/Algiers` (nouvelle connexion).
+  L'API ajoute de toute façon `Timezone=Africa/Algiers` à sa chaîne de connexion si celle-ci n'en précise pas.
+  Windows du PC serveur doit aussi être en « (UTC+01:00) Afrique centrale - Ouest » : sinon l'API écrit un avertissement dans son
+  journal au démarrage (dates des ventes calculées sur le poste et dans la base décalées).
 - [ ] **2.2** Charger le référentiel :
   ```powershell
   & psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -f database\init\seed_referentiel.sql
@@ -113,7 +122,19 @@ Le dossier `database/init/` contient trois fichiers :
     `Journaux__Dossier` (par défaut `C:\ProgramData\PharmaOfficine\Journaux`), `Journaux__TailleMaxMo` (50 par défaut, par fichier),
     `Journaux__RetentionMois` (3 par défaut : les fichiers plus anciens sont supprimés au démarrage puis chaque jour),
     `Journaux__Niveau` (`Information` par défaut, `Warning` pour ne garder que les avertissements et erreurs) ;
-  - `Urls` : `http://0.0.0.0:5080` par défaut.
+  - `Urls` : `http://0.0.0.0:5080` dans `appsettings.json`. **Attention** : hors développement, l'API **refuse de démarrer** si elle
+    écoute en HTTP (non chiffré) sur une autre adresse que `localhost` / `127.0.0.1` / `::1` (ce qui est le cas de `0.0.0.0`), sauf
+    réglage explicite **`AutoriserHttpReseau=true`** (variable `AutoriserHttpReseau=true`). Trois possibilités :
+    1. HTTPS seulement sur le réseau (conseillé, étape 3.5 bis) : HTTP limité à `http://localhost:5080` (ou supprimé) ;
+    2. HTTP et HTTPS gardés tous deux sur le réseau (ex. le temps de passer les postes en `https`, ou le scanner mobile en `https`
+       et les postes encore en `http`) : régler `AutoriserHttpReseau=true` ; HTTP reste alors servi sans redirection ;
+    3. HTTP seul sur le réseau (installation actuelle) : `AutoriserHttpReseau=true` — mots de passe, codes et données patients
+       circulent alors en clair sur le réseau de la pharmacie.
+    Quand HTTPS est configuré (`Kestrel:Endpoints`, écrit par `scripts\certificat_mobile.ps1`), l'API envoie l'en-tête HSTS sur ses
+    réponses HTTPS, et redirige vers HTTPS les requêtes HTTP venues d'un autre PC, sauf si `AutoriserHttpReseau=true` (le poste
+    installé sur le serveur lui-même, `127.0.0.1`, n'est jamais redirigé) ;
+  - `LimiteConnexions__ParMinute` : nombre d'essais de connexion permis par minute et par adresse IP (20 par défaut ; routes
+    `/api/auth/connexion`, `/api/auth/connexion-code`, `/api/auth/mot-de-passe`, `/api/super-admin/connexion` ; au-delà : réponse 429).
 - [ ] **3.3** Installer l'API comme service Windows, démarré automatiquement (nom attendu : « PharmaOfficine API ») :
   ```powershell
   sc.exe create "PharmaOfficine API" binPath= "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" start= auto
@@ -155,7 +176,9 @@ Le dossier `database/init/` contient trois fichiers :
   - Il n'existe pas encore d'installateur ni de mise à jour automatique des postes (prévus dans `feuille-de-route.md`) : la copie,
     les variables (étape 4.2) et le raccourci se font à la main sur chaque poste.
 - [ ] **4.2** Variables d'environnement du poste :
-  - `PHARMA_API=http://<serveur>:5080/` ;
+  - `PHARMA_API=https://<serveur>:5443/` (HTTPS, étape 3.5 bis : certificat de l'autorité de la pharmacie installé sur le poste),
+    ou `http://<serveur>:5080/` si HTTP est gardé sur le réseau (`AutoriserHttpReseau=true`, étape 3.2). Le poste accepte les deux ;
+    la barre finale est ajoutée si elle manque ;
   - `PHARMA_POSTE` : un nom **différent pour chaque poste** (ex. « Caisse 1 », « Caisse 2 »). Ce nom identifie la caisse (le tiroir) que partagent les employés du poste. Deux postes portant le même nom partageraient la même caisse.
 - [ ] **4.3** Ouvrir le poste et vérifier que l'écran de connexion s'affiche.
 

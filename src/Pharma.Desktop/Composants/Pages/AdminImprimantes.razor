@@ -46,8 +46,10 @@
                 <div class="champ" style="flex: 0 0 200px">
                     <label for="i-largeur">Largeur du rouleau</label>
                     <select id="i-largeur" @bind="largeur">
-                        <option value="80">80 mm</option>
-                        <option value="58">58 mm</option>
+                        @foreach (var l in ImprimanteTickets.Largeurs)
+                        {
+                            <option value="@l">@l mm</option>
+                        }
                     </select>
                 </div>
             </div>
@@ -59,9 +61,9 @@
             }
             else if (v.ImprimanteTickets is { Length: > 0 } imprimanteFichier && ImprimanteTickets.EstFichier(imprimanteFichier))
             {
-                @* Imprimante « fichier » choisie exprès : respectée, mais chaque ticket ou reçu ouvre une fenêtre « Enregistrer » *@
-                <div class="bandeau-attention" role="status">« @imprimanteFichier » enregistre un fichier au lieu d’imprimer : à chaque ticket ou reçu,
-                    Windows demandera où enregistrer le PDF. Pour le comptoir, choisissez l’imprimante de tickets.</div>
+                @* Imprimante « fichier » choisie exprès : respectée ; le ticket et le reçu s'ouvrent à l'écran en PDF au format rouleau *@
+                <div class="bandeau-attention" role="status">« @imprimanteFichier » enregistre un fichier au lieu d’imprimer : rien ne sort sur papier,
+                    le ticket et le reçu s’ouvrent à l’écran en PDF au format rouleau. Pour le comptoir, choisissez l’imprimante de tickets.</div>
             }
             <label class="case"><input type="checkbox" @bind="v.TicketAutomatique" /><span>Imprimer le ticket automatiquement après chaque vente</span></label>
             <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">

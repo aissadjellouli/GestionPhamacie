@@ -79,6 +79,12 @@ public interface IComptesLecture
 public interface IVerificateurMotDePasse
 {
     bool Verifier(string motDePasse, string hash);
+
+    /// <summary>
+    /// Identifiant inconnu : vérification sur un hachage factice, pour un temps de réponse identique à celui d'un compte existant
+    /// (la durée ne révèle pas quels identifiants existent).
+    /// </summary>
+    void VerifierFactice(string motDePasse) { }
 }
 
 public interface IGenerateurJeton

@@ -203,10 +203,10 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
             verrou.Parameters.AddWithValue(factureId);
             await verrou.ExecuteNonQueryAsync(ct);
         }
-        var restes = new List<(long Patient, decimal Reste)>();
+        var restes = new List<(long Patient, long Vente, decimal Reste)>();
         string numero;
         await using (var cmd = new NpgsqlCommand("""
-            SELECT c.patient_id, c.reste, (SELECT numero FROM facture_client WHERE id = $1)
+            SELECT c.patient_id, c.reste, (SELECT numero FROM facture_client WHERE id = $1), c.vente_id
             FROM v_vente_credit c
             WHERE c.reste > 0 AND c.vente_id IN (SELECT fl.vente_id FROM facture_client_ligne fl
                                                  WHERE fl.facture_id = $1 AND fl.part = 'patient' AND fl.vente_id IS NOT NULL)
@@ -218,17 +218,19 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
             numero = "";
             while (await r.ReadAsync(ct))
             {
-                restes.Add((r.GetInt64(0), r.GetDecimal(1)));
+                restes.Add((r.GetInt64(0), r.GetInt64(3), r.GetDecimal(1)));
                 numero = r.GetString(2);
             }
         }
         var parPatient = new Dictionary<long, decimal>();
+        var parVente = new List<(long Patient, long Vente, decimal Part)>();
         var disponible = encaisse;
-        foreach (var (patient, reste) in restes)
+        foreach (var (patient, vente, reste) in restes)
         {
             if (disponible <= 0) break;
             var part = Math.Min(reste, disponible);
             parPatient[patient] = parPatient.GetValueOrDefault(patient) + part;
+            parVente.Add((patient, vente, part));
             disponible -= part;
         }
         foreach (var (patient, montant) in parPatient.OrderBy(p => p.Key))
@@ -240,6 +242,9 @@ public sealed class TresorerieSql(NpgsqlDataSource db) : ITresorerie
             cmd.Parameters.AddWithValue(montant);
             if (await cmd.ExecuteNonQueryAsync(ct) == 0)
                 throw new RegleMetierException("La dette d’un patient de cette facture vient de changer : rechargez la liste.");
+            // 087 : le règlement solde les ventes de CETTE facture, jamais une dette plus ancienne du patient
+            foreach (var (_, vente, part) in parVente.Where(v => v.Patient == patient && v.Part > 0))
+                await Caisse.ReleveCredit.ImputerAsync(cx, tx, vente, part, ct);
         }
         return encaisse - disponible;
     }

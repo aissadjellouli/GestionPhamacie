@@ -8,7 +8,8 @@ namespace Pharma.Application.Factures;
 
 /// <summary>Ligne de vente proposée à la facturation, avec le patient, l'organisme et l'ordonnance de la vente.</summary>
 public sealed record LigneVenteSource(LigneVendue Ligne, DateTime DateVente, long? PatientId, string? Patient, long? OrganismeId,
-    long? OrdonnanceId, string? OrdonnanceNumero, bool DejaFacturee);
+    long? OrdonnanceId, string? OrdonnanceNumero, bool DejaFacturee, string? NumAssure = null, string? Medecin = null,
+    string Canal = Caisse.CanalOrganisme.Logiciel);
 
 public sealed record LigneLibre(string Designation, decimal Quantite, decimal PrixTtc, decimal TauxTva);
 
@@ -285,10 +286,20 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
             throw new RegleMetierException($"La vente {dejaFait.Ligne.NumeroVente} est déjà facturée pour cette part.");
         if (dest == Destinataire.Patient && sources.FirstOrDefault(s => s.PatientId != idDest) is { } autre)
             throw new RegleMetierException($"La vente {autre.Ligne.NumeroVente} n’est pas au nom de ce patient.");
+        // Vente facturée par Chifa ou le MDN (script 089) : sa part organisme n'est jamais refacturée par le logiciel
+        if (dest == Destinataire.Organisme && sources.FirstOrDefault(s => Caisse.CanalOrganisme.Externe(s.Canal)) is { } externe)
+            throw new RegleMetierException(
+                $"La vente {externe.Ligne.NumeroVente} est facturée par {(externe.Canal == Caisse.CanalOrganisme.Mdn ? "le MDN" : "Chifa")} : elle ne se refacture pas à l’organisme.");
         if (dest == Destinataire.Organisme && sources.FirstOrDefault(s => s.OrganismeId != idDest) is { } horsOrg)
             throw new RegleMetierException($"La vente {horsOrg.Ligne.NumeroVente} n’est pas prise en charge par cet organisme.");
 
-        var lignes = RegleFacture.DepuisVentes(dest, sources.Select(s => s.Ligne)).ToList();
+        // Facture d'organisme : patient, n° d'assuré, ordonnance et médecin de chaque vente (2026-11-15)
+        var mentions = dest == Destinataire.Organisme
+            ? sources.GroupBy(s => s.Ligne.VenteId).Select(g => (g.Key, Texte: RegleFacture.MentionOrganisme(g.First().Patient, g.First().NumAssure,
+                    g.First().OrdonnanceNumero, g.First().Medecin)))
+                .Where(x => x.Texte is not null).ToDictionary(x => x.Key, x => x.Texte!)
+            : null;
+        var lignes = RegleFacture.DepuisVentes(dest, sources.Select(s => s.Ligne), mentions).ToList();
         if (ventes.FirstOrDefault(v => lignes.All(l => l.VenteId != v)) is var vide && vide != 0)
             throw new RegleMetierException($"La vente {sources.First(s => s.Ligne.VenteId == vide).Ligne.NumeroVente} n’a rien à facturer pour cette part.");
         lignes.AddRange(d.Libres.Select(l => RegleFacture.Libre(l.Designation, l.Quantite, l.PrixTtc, l.TauxTva)));

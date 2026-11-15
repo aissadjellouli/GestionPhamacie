@@ -8,7 +8,8 @@ namespace Pharma.Application.Caisse;
 
 /// <summary>VersementCloture : « manuel » (saisi en Trésorerie) ou « automatique » (compté moins le fond par défaut porté au coffre à la clôture).</summary>
 public sealed record ParametresCaisse(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string VersementCloture = "manuel",
-    decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true);
+    decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true,
+    decimal SeuilEcartChifa = Pharma.Domain.Ventes.EcartPrixChifa.SeuilParDefaut);
 
 /// <summary>Données d'une session pour l'écran et le rapport.</summary>
 public sealed record DetailSession(
@@ -106,6 +107,8 @@ public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionS
     public async Task<ClotureVue> ExecuterAsync(long utilisateurId, string? poste, IReadOnlyDictionary<string, decimal> saisies, CancellationToken ct = default,
         bool confirmerZero = false, bool releve = false)
     {
+        // Relève et clôture : droit « caisse.cloturer » (085), autorisable par le code comptoir d'un ayant droit
+        await droits.ExigerAsync(utilisateurId, Permissions.CaisseCloturer, releve ? "faire la relève" : "clôturer la caisse", ct);
         var session = await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct)
                       ?? throw new RegleMetierException("Aucune caisse ouverte à clôturer sur ce poste.");
         var parametres = await sessions.ParametresAsync(ct);
@@ -207,6 +210,8 @@ public sealed class ModifierParametresCaisse(ISessionsCaisse sessions, IJournal 
             throw new RegleMetierException("Le seuil d’annulations doit être compris entre 0 (pas d’alerte) et 100.", "seuil_annulations");
         if (p.PlafondCreditDefaut < 0)
             throw new RegleMetierException("Le plafond de crédit proposé ne peut pas être négatif.", "plafond_defaut");
+        if (p.SeuilEcartChifa is < 0 or > 1_000_000)
+            throw new RegleMetierException("Le seuil d’écart de prix Chifa doit être positif ou nul (DA par boîte).", "seuil_ecart_chifa");
         if (p.DeconnexionMinutes is < 0 or > 240)
             throw new RegleMetierException("La déconnexion automatique doit être comprise entre 0 (désactivée) et 240 minutes.", "deconnexion");
         if (p.VersementCloture is not ("manuel" or "automatique"))

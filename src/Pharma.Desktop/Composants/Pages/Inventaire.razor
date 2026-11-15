@@ -243,6 +243,8 @@
                         <input id="fr-texte" type="search" autocomplete="off" @bind="fLigneTexte" @bind:event="oninput" @bind:after="() => pageLignes = 1" /></div>
                     <label class="case" style="align-self: end"><input type="checkbox" @bind="fAvecEcart" @bind:after="() => pageLignes = 1" /><span>Avec un écart seulement</span></label>
                     @if (fLigneTexte.Trim() != "" || fAvecEcart) { <button type="button" class="btn" @onclick="() => (fLigneTexte, fAvecEcart, pageLignes) = (string.Empty, false, 1)">Tout afficher</button> }
+                    @* Écran fixe (2026-11-15) : le bouton est sur la ligne des filtres, plus sous le tableau *@
+                    <button type="button" class="btn" style="margin-left: auto; align-self: end" @onclick="FermerResultatAsync">Rayon suivant</button>
                 </div>
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 760px">
@@ -269,7 +271,6 @@
                     <p class="detail" style="margin: 0">Profitez du passage dans le rayon : imprimez et collez une étiquette sur chaque boîte, elle sera reliée à son lot et à son grossiste.</p>
                     <EtiquetagerLots Lots="@aEtiqueter" />
                 }
-                <div><button type="button" class="btn" @onclick="FermerResultatAsync">Rayon suivant</button></div>
             </section>
         }
 

@@ -9,7 +9,41 @@ namespace Pharma.Domain.Securite;
 public static class CodeComptoir
 {
     public const int EssaisMax = 5;
+    /// <summary>Premier blocage ; chaque blocage suivant (sans bon code entre-temps) dure deux fois plus longtemps.</summary>
     public static readonly TimeSpan Blocage = TimeSpan.FromMinutes(5);
+    /// <summary>Durée maximale d'un blocage.</summary>
+    public static readonly TimeSpan BlocageMax = TimeSpan.FromHours(24);
+    /// <summary>Codes faux d'affilée à partir desquels chaque blocage est signalé au titulaire (alerte du contrôle interne).</summary>
+    public const int SeuilAlerte = 2 * EssaisMax;
+
+    /// <summary>
+    /// Blocage progressif : le compteur d'essais n'est remis à zéro que par un bon code (ou un nouveau code). Dès le 5e code faux,
+    /// chaque essai faux bloque le code : 5 min, puis 10, 20, 40… jusqu'à 24 h. Null : pas de blocage à cet essai.
+    /// </summary>
+    public static TimeSpan? DureeBlocage(int essai)
+    {
+        if (essai < EssaisMax) return null;
+        var facteur = Math.Pow(2, Math.Min(essai - EssaisMax, 20));
+        var duree = TimeSpan.FromTicks((long)Math.Min(Blocage.Ticks * facteur, BlocageMax.Ticks));
+        return duree;
+    }
+
+    /// <summary>
+    /// Liste blanche des droits qu'un collègue peut accorder sur place avec son code comptoir (« Faire autoriser ») : gestes du
+    /// comptoir et de la réception seulement. Jamais le rôle de titulaire, l'administration, la trésorerie, les financements,
+    /// le contrôle interne, les notifications, les sauvegardes, ni la délivrance d'un psychotrope (le registre nomme celui qui délivre).
+    /// </summary>
+    public static readonly IReadOnlySet<string> AutorisablesParCollegue = new HashSet<string>(StringComparer.Ordinal)
+    {
+        Permissions.CaisseVendre, Permissions.CaisseSupprimerLigne, Permissions.CaisseAnnulerVente, Permissions.CaisseRemise,
+        Permissions.CaisseRetourEspeces, Permissions.CaisseOuvrirTiroir, Permissions.CaisseVendreSansOrdonnance, Permissions.CaisseCloturer,
+        Permissions.CreditAccorder, Permissions.CreditDepasserPlafond,
+        Permissions.StockConsulter, Permissions.StockDonner,
+        Permissions.PrixModifier, Permissions.ProduitsBloquer,
+        Permissions.AchatsReceptionner, Permissions.AchatsValiderEcart, Permissions.AchatsRetourFournisseur,
+    };
+
+    public static bool AutorisableParCollegue(string? permission) => permission is not null && AutorisablesParCollegue.Contains(permission);
 
     /// <summary>Nom de la revendication du jeton : connexion par code, limitée au comptoir.</summary>
     public const string Revendication = "portee";

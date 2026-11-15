@@ -15,7 +15,8 @@ public sealed record TicketVente(
     string Numero, DateTime Date, string Vendeur, string? Poste, string Statut,
     string? Organisme, decimal? TauxTiersPayant, IReadOnlyList<LigneTicket> Lignes,
     decimal MontantBrut, decimal Remise, decimal PartOrganisme, decimal PartPatient, string? Mode,
-    string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null, decimal DonPartiel = 0);
+    string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null, decimal DonPartiel = 0,
+    decimal EcartChifa = 0, string? Client = null);
 
 /// <summary>
 /// Ticket en PDF (2026-11-15) : montré à l'écran quand l'imprimante de tickets du poste enregistre un fichier (Microsoft Print to PDF…)
@@ -23,7 +24,36 @@ public sealed record TicketVente(
 /// </summary>
 public interface IDocumentsTicket
 {
-    byte[] Ticket(TicketVente t, decimal? rendu);
+    /// <summary>Page au format rouleau (largeur bornée par FormatTicket, hauteur selon le contenu).</summary>
+    byte[] Ticket(TicketVente t, decimal? rendu, int largeurMm = Pharma.Domain.Caisse.FormatTicket.LargeurParDefaut);
+}
+
+/// <summary>Reçu d'un règlement de crédit tel qu'enregistré : ResteDu = dette du patient juste après ce règlement.</summary>
+public sealed record RecuCreditEnregistre(string Numero, DateTime Date, decimal Montant, string Mode, decimal ResteDu, string? Employe, string? Poste);
+
+public interface IRecusCredit
+{
+    Task<RecuCreditEnregistre?> LireAsync(string numero, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Reçu de règlement de crédit en PDF (2026-11-15), comme le ticket de vente : montré à l'écran quand l'imprimante de tickets du poste
+/// enregistre un fichier. Même contenu que le reçu imprimé : montant, mode, reste dû, sans le nom du patient.
+/// </summary>
+public sealed class ImprimerRecuCredit(IRecusCredit recus, IDocumentsTicket documents, IPharmacie pharmacie)
+{
+    public static TicketVente Contenu(RecuCreditEnregistre r) => new(r.Numero, r.Date, r.Employe ?? "", r.Poste, "validee", null, null,
+        [new LigneTicket($"Encaissement de dette (reste dû {r.ResteDu.ToString("N2", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))} DA)", 1, r.Montant, r.Montant, 0)],
+        r.Montant, 0, 0, r.Montant, r.Mode, null, null, null, null);
+
+    /// <returns>null si le reçu n'existe pas (404 côté API, revue 2026-11-15 M5).</returns>
+    public async Task<(byte[] Contenu, string NomFichier)?> ExecuterAsync(string numero, int? largeurMm, CancellationToken ct = default)
+    {
+        if (await recus.LireAsync(numero.Trim(), ct) is not { } r) return null;
+        var p = await pharmacie.LireAsync(ct);
+        var t = Contenu(r) with { Pharmacie = p.Nom, Adresse = p.Adresse, Telephone = p.Telephone, Nif = p.Nif };
+        return (documents.Ticket(t, null, Pharma.Domain.Caisse.FormatTicket.Borner(largeurMm)), $"recu_{r.Numero}.pdf");
+    }
 }
 
 public interface ITicketLecture
@@ -32,7 +62,7 @@ public interface ITicketLecture
     Task<TicketVente?> LireAsync(long venteId, CancellationToken ct = default);
 }
 
-/// <summary>Ticket d'une vente (impression au comptoir ou réimpression). Aucune donnée du patient n'y figure.</summary>
+/// <summary>Ticket d'une vente (impression au comptoir ou réimpression). Aucune donnée du patient n'y figure, sauf « Remis à » / « Pour » (Client : « Karim · remis à Ali », 2026-11-15).</summary>
 public sealed class ObtenirTicket(ITicketLecture tickets, IPharmacie pharmacie)
 {
     public async Task<TicketVente> ExecuterAsync(long venteId, CancellationToken ct = default)

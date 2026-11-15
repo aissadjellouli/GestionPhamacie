@@ -1,4 +1,7 @@
+@implements IDisposable
 @inject ApiClient Api
+@inject SessionPoste Session
+@inject DemandesAutorisation Demandes
 
 @* Fiche de création d'un produit absent du catalogue (droit catalogue.creer) *@
 <section class="panneau fiche-produit" aria-labelledby="t-nouveau-produit">
@@ -8,6 +11,9 @@
     </div>
     <p class="detail" style="margin: 0">Le produit est créé sans stock : il sera vendable après une réception. La création est inscrite au journal.</p>
     @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+    @* Écran fixe (charte) : le formulaire défile dans son cadre, « Créer le produit » reste visible en dessous *@
+    <div class="cadre-defilant fiche-produit-champs">
 
     <div class="champ">
         <label for="p-nomenclature">Chercher dans la nomenclature nationale (nom, DCI ou n° d’enregistrement)</label>
@@ -68,7 +74,7 @@
             class="@Obligatoire.Classe(FormeManque)" aria-invalid="@Obligatoire.Aria(FormeManque)" />
             <datalist id="formes"><option value="comprimé" /><option value="gélule" /><option value="sirop" /><option value="ampoule" /><option value="injectable" /><option value="pommade" /><option value="collyre" /><option value="sachet" /><option value="stylo" /></datalist>
         </div>
-        <div class="champ" style="flex: 1 1 140px"><label for="p-prix" class="requis">Prix public (DA)</label><input id="p-prix" data-champ="prix_public" type="number" min="0" step="0.01" @ref="champPrix" @bind="prix"
+        <div class="champ" style="flex: 1 1 140px@(PrixDebloque ? null : "; opacity: .6")" title="@(PrixDebloque ? null : MentionPrix)"><label for="p-prix" class="@(PeutPrix ? "requis" : null)">Prix public (DA)@(PrixDebloque ? null : " : à faire valider par un ayant droit")</label><input id="p-prix" disabled="@(!PrixDebloque)" data-champ="prix_public" type="number" min="0" step="0.01" @ref="champPrix" @bind="prix"
             class="@Obligatoire.Classe(PrixManque)" aria-invalid="@Obligatoire.Aria(PrixManque)" /></div>
         <div class="champ" style="flex: 1 1 160px">
             <label for="p-classe" class="requis">Classe</label>
@@ -95,11 +101,26 @@
     </div>
     <div class="achats-ligne">
         <div class="champ" style="flex: 1 1 180px"><label for="p-cb">Code-barres (facultatif)</label><input id="p-cb" data-champ="code_barre" type="text" inputmode="numeric" @bind="codeBarre" /></div>
-        <div class="champ" style="flex: 1 1 160px"><label for="p-tarif" class="@(remboursable ? "requis" : null)">Tarif de référence (DA)</label><input id="p-tarif" data-champ="tarif_reference" type="number" min="0" step="0.01" @ref="champTarif" @bind="tarif"
+        <div class="champ" style="flex: 1 1 160px@(PrixDebloque ? null : "; opacity: .6")" title="@(PrixDebloque ? null : MentionPrix)"><label for="p-tarif" class="@(remboursable ? "requis" : null)">Tarif de référence (DA)@(PrixDebloque ? null : " : à faire valider par un ayant droit")</label><input id="p-tarif" disabled="@(!PrixDebloque)" data-champ="tarif_reference" type="number" min="0" step="0.01" @ref="champTarif" @bind="tarif"
             class="@Obligatoire.Classe(TarifManque)" aria-invalid="@Obligatoire.Aria(TarifManque)" /></div>
         <div class="champ" style="flex: 0 0 110px"><label for="p-tva">TVA (%)</label><input id="p-tva" data-champ="tva" type="number" min="0" max="100" step="0.01" @bind="tva" /></div>
         <div class="champ" style="flex: 0 0 200px"><label for="p-min">Seuil d’alerte (boîtes)</label><input id="p-min" data-champ="stock_minimum" type="number" min="0" placeholder="automatique" @bind="stockMin" /></div>
-        <label class="case" style="align-self: center"><input type="checkbox" @bind="remboursable" /><span>Remboursable</span></label>
+        <label class="case" style="align-self: center@(PrixDebloque ? null : "; opacity: .6")" title="@(PrixDebloque ? null : MentionPrix)"><input type="checkbox" disabled="@(!PrixDebloque)" @bind="remboursable" /><span>Remboursable@(PrixDebloque ? null : " (à faire valider par un ayant droit)")</span></label>
+    </div>
+    @if (!PeutPrix)
+    {
+        @if (accordPrix is { } a)
+        {
+            <div class="info-bandeau" role="status">Prix débloqués : autorisation de @a.Nom, jointe à la création du produit.</div>
+        }
+        else
+        {
+            <div class="achats-ligne" style="align-items: center">
+                <div class="detail" role="note" style="flex: 1 1 320px">@MentionPrix</div>
+                <button type="button" class="btn" disabled="@enCours" @onclick="FaireAutoriserPrixAsync">Faire autoriser</button>
+            </div>
+        }
+    }
     </div>
     <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CreerAsync">Créer le produit</button></div>
 </section>
@@ -133,7 +154,29 @@
     private bool DciManque => Obligatoire.Manque(controle, dci);
     private bool DosageManque => Obligatoire.Manque(controle, dosage);
     private bool FormeManque => Obligatoire.Manque(controle, forme);
-    private bool PrixManque => controle && prix <= 0;
+    // Un seul droit pour toute saisie de prix (prix.modifier, décision du titulaire du 2026-11-15) : sans ce droit, les champs de prix
+    // sont grisés ; laissés vides, le produit est créé sans prix (invendable jusqu'à ce qu'un ayant droit fixe son prix) ; remplis,
+    // le serveur refuse et la fenêtre « Faire autoriser » s'ouvre à l'enregistrement.
+    private bool PeutPrix => Session.A("prix.modifier");
+    // « Faire autoriser » (décision du titulaire, 2026-11-15) : un ayant droit donne son code, les champs de prix se débloquent et
+    // l'autorisation est jointe à la création (X-Pharma-Autorise-Par) ; un code faux rouvre la fenêtre à l'enregistrement
+    private (string Identifiant, string Code, string Nom)? accordPrix;
+    private bool PrixDebloque => PeutPrix || accordPrix is not null;
+
+    // Fiche fermée (« Annuler » de la page, autre écran) : la fenêtre « Faire autoriser » qu'elle a ouverte se ferme avec elle
+    private Task<(string Identifiant, string Code)?>? demandePrix;
+    public void Dispose() => Demandes.Abandonner(demandePrix);
+
+    private async Task FaireAutoriserPrixAsync()
+    {
+        var r = await (demandePrix = Demandes.DemanderAsync("Saisir le prix public, le tarif de référence et le remboursement du nouveau produit demande le droit « modifier un prix de vente ».", "prix.modifier"));
+        demandePrix = null;
+        if (r is not { } a) return;
+        var (valideurs, _) = await Api.ValideursAsync("prix.modifier", null);
+        accordPrix = (a.Identifiant, a.Code, valideurs.FirstOrDefault(v => v.Reference == a.Identifiant)?.NomComplet ?? "l’ayant droit");
+    }
+    private const string MentionPrix = "Prix public, tarif de référence et remboursement : à faire valider par un ayant droit (droit « modifier un prix de vente »). Laissés vides, le produit est créé sans prix et reste invendable jusqu’à ce qu’un ayant droit fixe son prix.";
+    private bool PrixManque => controle && (PeutPrix ? prix <= 0 : prix < 0);
     private bool TarifManque => controle && remboursable && tarif is null;
 
     protected override async Task OnInitializedAsync()
@@ -195,12 +238,22 @@
         enCours = true;
         try
         {
+            if (!PeutPrix && accordPrix is { } a) Api.AutoriserProchaineAction(a.Identifiant, a.Code, "prix.modifier");
             var (r, e) = await Api.CreerProduitAsync(new NouveauProduitDto(nom, dci, dosage, forme, prix, classe, codeBarre, tarif, remboursable, tva, stockMin,
                 choisi?.NumEnregistrement, categorie, string.IsNullOrEmpty(listePsychotrope) ? null : listePsychotrope));
             if (e is not null) { erreur = e; return; }
             controle = false;
             await OnCree.InvokeAsync((r!.Id, nom!.Trim(), r.Information));
+            Vider();
         }
         finally { enCours = false; }
+    }
+
+    /// <summary>Produit créé : formulaire vidé, prêt pour le suivant (les valeurs initiales ne sont pas reprises : elles ont servi).</summary>
+    private void Vider()
+    {
+        (nom, dci, dosage, forme, codeBarre, prix, tarif, tva, stockMin, remboursable) = (null, null, null, null, null, 0, null, 0, null, false);
+        (classe, categorie, listePsychotrope, dcis, choisi, erreur, controle) = ("libre", "medicament", "", [], null, null, false);
+        (recherche, resultats, rechercheFaite, nomenclatureVide, accordPrix) = (null, [], false, false, null);
     }
 }

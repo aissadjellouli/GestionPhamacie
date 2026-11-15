@@ -224,49 +224,120 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
 
     // ---- Ticket de caisse (vue à l'écran, imprimante « fichier ») ----------------
 
-    public byte[] Ticket(Pharma.Application.Caisse.TicketVente t, decimal? rendu)
+    /// <summary>
+    /// Ticket (ou reçu de crédit) au format rouleau (2026-11-15) : page de la largeur du rouleau, hauteur selon le contenu (mise en page
+    /// une première fois sur une page très haute, puis page coupée sous le dernier élément : jamais de saut de page dans un ticket).
+    /// </summary>
+    public byte[] Ticket(Pharma.Application.Caisse.TicketVente t, decimal? rendu, int largeurMm = FormatTicket.LargeurParDefaut)
     {
-        var doc = NouveauDocument($"Ticket {t.Numero}", t.Pharmacie);
-        var section = doc.LastSection;
-        Titre(section, $"Ticket {t.Numero}");
-        var entete = Tableau(section, 5, 11.5);
-        if (!string.IsNullOrWhiteSpace(t.Adresse)) Ligne(entete, "Adresse", t.Adresse);
-        if (!string.IsNullOrWhiteSpace(t.Telephone)) Ligne(entete, "Téléphone", t.Telephone);
-        if (!string.IsNullOrWhiteSpace(t.Nif)) Ligne(entete, "NIF", t.Nif);
-        Ligne(entete, "Date", Quand(t.Date));
-        Ligne(entete, "Vendeur", t.Poste is null ? t.Vendeur : $"{t.Vendeur} · {t.Poste}");
-        if (t.Statut != "validee") Ligne(entete, "État", t.Statut == "annulee" ? "Vente annulée" : t.Statut, gras: true);
-        if (t.Organisme is { } org) Ligne(entete, "Tiers payant", t.TauxTiersPayant is { } taux ? $"{org} · {taux:0.##} %" : org);
+        largeurMm = FormatTicket.Borner(largeurMm);
+        var premier = new PdfDocumentRenderer { Document = DocumentTicket(t, rendu, largeurMm, 2000) };
+        premier.PrepareRenderPages();
+        var bas = premier.DocumentRenderer.GetRenderInfoFromPage(1)
+            .Select(i => (i.LayoutInfo.ContentArea.Y + i.LayoutInfo.ContentArea.Height).Point).DefaultIfEmpty(0).Max();
+        var hauteurMm = Math.Max(40, bas / 72 * 25.4 + MargeTicketMm(largeurMm) + 2);
+        return Rendre(DocumentTicket(t, rendu, largeurMm, hauteurMm));
+    }
 
-        SousTitre(section, "Produits");
-        var lignes = Tableau(section, 7.5, 1.5, 3, 3.5);
-        Entete(lignes, "Produit", "Qté", "P.U.", "Montant");
-        foreach (var l in t.Lignes)
+    private static double MargeTicketMm(int largeurMm) => FormatTicket.Etroit(largeurMm) ? 2.5 : 4;
+
+    /// <summary>Même contenu que le ticket imprimé par le poste ; colonnes réparties sur la largeur utile du rouleau.</summary>
+    private static Document DocumentTicket(Pharma.Application.Caisse.TicketVente t, decimal? rendu, int largeurMm, double hauteurMm)
+    {
+        var recu = t.Numero.StartsWith("RC-", StringComparison.Ordinal);
+        var titre = $"{(recu ? "Reçu d’encaissement de dette" : "Ticket")} {t.Numero}";
+        var etroit = FormatTicket.Etroit(largeurMm);
+        var marge = MargeTicketMm(largeurMm);
+        var utile = (largeurMm - 2 * marge) / 10.0;   // cm
+        var doc = new Document();
+        doc.Info.Title = titre;
+        doc.Info.Author = "Pharma Officine";
+        var normal = doc.Styles[StyleNames.Normal]!;
+        normal.Font.Name = "Arial";
+        normal.Font.Size = etroit ? 7 : largeurMm >= 100 ? 9 : 8;
+        var section = doc.AddSection();
+        section.PageSetup.PageWidth = Unit.FromMillimeter(largeurMm);
+        section.PageSetup.PageHeight = Unit.FromMillimeter(hauteurMm);
+        section.PageSetup.TopMargin = section.PageSetup.BottomMargin = Unit.FromMillimeter(marge);
+        section.PageSetup.LeftMargin = section.PageSetup.RightMargin = Unit.FromMillimeter(marge);
+        section.PageSetup.HeaderDistance = section.PageSetup.FooterDistance = Unit.FromMillimeter(0);
+
+        void Centre(string texte, bool gras = false, double? taille = null)
         {
-            var row = lignes.AddRow();
-            row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
-            var produit = l.Reduction > 0 ? $"{l.Produit} ({(l.DonPartiel ? "don" : "remise")} −{l.PctReduction:0.##} %)" : l.Produit;
-            string[] cellules = [produit, l.Quantite.ToString(Fr), Da(l.PrixUnitaire), Da(l.Montant)];
-            for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+            var p = section.AddParagraph(texte);
+            p.Format.Alignment = ParagraphAlignment.Center;
+            p.Format.Font.Bold = gras;
+            if (taille is { } s) p.Format.Font.Size = s;
+        }
+        void Separateur()
+        {
+            var p = section.AddParagraph();
+            p.Format.Borders.Bottom.Width = 0.5;
+            p.Format.SpaceAfter = Unit.FromPoint(3);
+        }
+        Table Colonnes(params double[] parts)
+        {
+            var tb = section.AddTable();
+            var somme = parts.Sum();
+            foreach (var p in parts) tb.AddColumn(Unit.FromCentimeter(utile * p / somme));
+            for (var i = 1; i < parts.Length; i++) tb.Columns[i].Format.Alignment = ParagraphAlignment.Right;
+            return tb;
+        }
+        void Paire(Table tb, string a, string b, bool gras = false)
+        {
+            var row = tb.AddRow();
+            row.Format.Font.Bold = gras;
+            row.Cells[0].AddParagraph(a);
+            row.Cells[1].AddParagraph(b);
         }
 
-        var totaux = Tableau(section, 11.5, 5);
-        Ligne(totaux, "Total", Da(t.MontantBrut));
-        if (t.Remise > 0) Ligne(totaux, "Remises", "− " + Da(t.Remise));
-        if (t.DonPartiel > 0) Ligne(totaux, "Don partiel", "− " + Da(t.DonPartiel));
-        if (t.PartOrganisme > 0) Ligne(totaux, $"Part {t.Organisme ?? "organisme"}", Da(t.PartOrganisme));
-        Ligne(totaux, "À payer par le patient", Da(t.PartPatient), gras: true);
-        if (t.Mode is { } mode) Ligne(totaux, "Règlement", mode switch
+        if (!string.IsNullOrWhiteSpace(t.Pharmacie)) Centre(t.Pharmacie, gras: true, taille: normal.Font.Size + 1);
+        if (!string.IsNullOrWhiteSpace(t.Adresse)) Centre(t.Adresse);
+        if (!string.IsNullOrWhiteSpace(t.Telephone)) Centre($"Tél. {t.Telephone}");
+        if (!string.IsNullOrWhiteSpace(t.Nif)) Centre($"NIF {t.Nif}");
+        Separateur();
+        Centre(titre, gras: true);
+        // Libellés courts (Date, Vendeur) : la valeur prend les trois quarts, pour ne pas passer à la ligne en 57-58 mm (2026-11-15)
+        var entete = Colonnes(1, 3);
+        Paire(entete, "Date", Quand(t.Date));
+        Paire(entete, "Vendeur", t.Poste is null ? t.Vendeur : $"{t.Vendeur} · {t.Poste}");
+        if (t.Statut != "validee") Paire(entete, "État", t.Statut == "annulee" ? "Vente annulée" : t.Statut, gras: true);
+        if (t.Client is { } client) Paire(entete, "Client", client);
+        if (t.Organisme is { } org) Paire(entete, "Tiers payant", t.TauxTiersPayant is { } taux ? $"{org} · {taux:0.##} %" : org);
+        Separateur();
+
+        // Une ligne de désignation, puis quantité × prix et montant (lisible même en 57 mm)
+        var lignes = Colonnes(3, 2);
+        foreach (var l in t.Lignes)
+        {
+            var nom = lignes.AddRow();
+            nom.Cells[0].MergeRight = 1;
+            nom.Cells[0].AddParagraph(l.Reduction > 0 ? $"{l.Produit} ({(l.DonPartiel ? "don" : "remise")} −{l.PctReduction:0.##} %)" : l.Produit);
+            var montant = lignes.AddRow();
+            montant.BottomPadding = Unit.FromPoint(2);
+            montant.Cells[0].AddParagraph($"  {l.Quantite.ToString(Fr)} × {Da(l.PrixUnitaire)}");
+            montant.Cells[1].AddParagraph(Da(l.Montant));
+        }
+        Separateur();
+
+        var totaux = Colonnes(3, 2);
+        Paire(totaux, "Total", Da(t.MontantBrut));
+        if (t.Remise > 0) Paire(totaux, "Remises", "− " + Da(t.Remise));
+        if (t.DonPartiel > 0) Paire(totaux, "Don partiel", "− " + Da(t.DonPartiel));
+        if (t.PartOrganisme > 0) Paire(totaux, $"Part {t.Organisme ?? "organisme"}", Da(t.PartOrganisme));
+        if (t.EcartChifa > 0) Paire(totaux, "Écart Chifa payé par le patient", Da(t.EcartChifa));
+        Paire(totaux, recu ? "Montant réglé" : "À payer par le patient", Da(t.PartPatient), gras: true);
+        if (t.Mode is { } mode) Paire(totaux, "Règlement", mode switch
         {
             "especes" => "Espèces", "carte" => "Carte", "cheque" => "Chèque", "credit" => "Crédit", "virement" => "Virement", _ => mode
         });
-        if (rendu is > 0) Ligne(totaux, "Rendu", Da(rendu.Value), gras: true);
-        foreach (var retour in t.Retours ?? []) Ligne(totaux, "Retour", retour);
+        if (rendu is > 0) Paire(totaux, "Rendu", Da(rendu.Value), gras: true);
+        foreach (var retour in t.Retours ?? []) Paire(totaux, "Retour", retour);
 
         var note = section.AddParagraph("Merci de votre visite.");
-        note.Format.SpaceBefore = Unit.FromPoint(12);
-        note.Format.Font.Size = 9;
-        return Rendre(doc);
+        note.Format.SpaceBefore = Unit.FromPoint(6);
+        note.Format.Alignment = ParagraphAlignment.Center;
+        return doc;
     }
 
     public byte[] ReleveCredit(Pharma.Application.Caisse.SituationCredit s, string? pharmacie)
@@ -287,7 +358,7 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         {
             var row = ventes.AddRow();
             row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
-            string[] cellules = [v.Numero, Quand(v.Date), Da(v.Montant), Da(v.Regle), v.Reste > 0 ? Da(v.Reste) : "soldée"];
+            string[] cellules = [v.Remise is { } rv ? $"{v.Numero} · {rv}" : v.Numero, Quand(v.Date), Da(v.Montant), Da(v.Regle), v.Reste > 0 ? Da(v.Reste) : "soldée"];
             for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
         }
         if (s.Ventes.Count == 0) Ligne(ventes, "Aucune vente à crédit", "");
@@ -302,10 +373,10 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             var libelle = m.Type switch
             {
                 "ouverture" => "Dette à la mise en place du relevé", "reprise" => "Dette reprise de l’ancien logiciel", "vente_credit" => "Vente à crédit",
-                "remboursement" => "Règlement", "retour" => "Retour de produits", "annulation" => "Vente annulée",
+                "remboursement" => "Encaissement de dette", "retour" => "Retour de produits", "annulation" => "Vente annulée",
                 _ => m.Employe is null ? "Correction hors logiciel" : "Correction par le titulaire"
             };
-            string[] cellules = [Quand(m.Date), m.Vente is null ? libelle : $"{libelle} · {m.Vente}", (m.Montant > 0 ? "+ " : "- ") + Da(Math.Abs(m.Montant)), Da(m.SoldeApres)];
+            string[] cellules = [Quand(m.Date), m.Vente is null ? libelle : $"{libelle} · {m.Vente}" + (m.Remise is { } rm ? $" · {rm}" : ""), (m.Montant > 0 ? "+ " : "- ") + Da(Math.Abs(m.Montant)), Da(m.SoldeApres)];
             for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
         }
 

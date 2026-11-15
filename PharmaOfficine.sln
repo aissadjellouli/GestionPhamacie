@@ -212,6 +212,17 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\080_classe_confirmee_titulaire.sql = database\migration\080_classe_confirmee_titulaire.sql
 		database\migration\081_conditions_pret_assurance.sql = database\migration\081_conditions_pret_assurance.sql
 		database\migration\082_medecin_coordonnees.sql = database\migration\082_medecin_coordonnees.sql
+		database\migration\083_fuseau_horaire.sql = database\migration\083_fuseau_horaire.sql
+		database\migration\084_avoir_dette_patient.sql = database\migration\084_avoir_dette_patient.sql
+		database\migration\085_droit_cloture_caisse.sql = database\migration\085_droit_cloture_caisse.sql
+		database\migration\086_seuil_ecart_chifa.sql = database\migration\086_seuil_ecart_chifa.sql
+		database\migration\087_imputation_credit.sql = database\migration\087_imputation_credit.sql
+		database\migration\088_libelle_encaissement_dette.sql = database\migration\088_libelle_encaissement_dette.sql
+		database\migration\089_canal_organisme_assure_unique.sql = database\migration\089_canal_organisme_assure_unique.sql
+		database\migration\090_lien_patient_mdn.sql = database\migration\090_lien_patient_mdn.sql
+		database\migration\091_vente_remis_a_pour.sql = database\migration\091_vente_remis_a_pour.sql
+		database\migration\092_import_patients_doublons.sql = database\migration\092_import_patients_doublons.sql
+		database\migration\093_droit_doublons_import.sql = database\migration\093_droit_doublons_import.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"

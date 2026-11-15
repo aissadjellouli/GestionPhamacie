@@ -30,13 +30,17 @@ internal sealed class CatalogueEnMemoire : IPreparationVente
     public static readonly Produit Sintrom = new() { Id = 9, NomCommercial = "Sintrom", PrixPublic = 280, Classe = ClasseReglementaire.ListeI };
     public static readonly Produit Creme = new() { Id = 11, NomCommercial = "Crème solaire", PrixPublic = 1000, EstMedicament = false, Categorie = "dermo_cosmetique" };
 
-    private readonly Dictionary<long, Produit> produits = new() { [2] = Amoxicilline, [7] = Alprazolam, [9] = Sintrom, [11] = Creme };
+    /// <summary>Créé sans prix par un employé sans le droit prix.modifier : invendable tant que son prix n'est pas fixé.</summary>
+    public static readonly Produit SansPrix = new() { Id = 13, NomCommercial = "Sans prix", PrixPublic = 0 };
+
+    private readonly Dictionary<long, Produit> produits = new() { [2] = Amoxicilline, [7] = Alprazolam, [9] = Sintrom, [11] = Creme, [13] = SansPrix };
     private readonly Dictionary<long, Lot> lots = new()
     {
         [20] = new Lot { Id = 20, ProduitId = 2, NumeroLot = "B1182", QuantiteDisponible = 20, DatePeremption = Aujourdhui.AddDays(140) },
         [70] = new Lot { Id = 70, ProduitId = 7, NumeroLot = "AL25", QuantiteDisponible = 14, DatePeremption = Aujourdhui.AddDays(330) },
         [90] = new Lot { Id = 90, ProduitId = 9, NumeroLot = "SI40", QuantiteDisponible = 30, DatePeremption = Aujourdhui.AddDays(400) },
-        [110] = new Lot { Id = 110, ProduitId = 11, NumeroLot = "CR1", QuantiteDisponible = 30, DatePeremption = Aujourdhui.AddDays(400) }
+        [110] = new Lot { Id = 110, ProduitId = 11, NumeroLot = "CR1", QuantiteDisponible = 30, DatePeremption = Aujourdhui.AddDays(400) },
+        [130] = new Lot { Id = 130, ProduitId = 13, NumeroLot = "SP1", QuantiteDisponible = 5, DatePeremption = Aujourdhui.AddDays(400), Ppa = 300 }
     };
 
     public Task<IReadOnlyDictionary<long, Produit>> ProduitsAsync(IEnumerable<long> ids, CancellationToken ct = default) =>
@@ -97,6 +101,60 @@ public class ModifierPatientTests
     public async Task Patient_inconnu_refuse() =>
         await Assert.ThrowsAsync<RegleMetierException>(() => new ModifierPatient(new PatientsEnMemoire(), new JournalEspion(), new HorlogeFixe(Aujourdhui))
             .ExecuterAsync(Fiche(), 3));
+
+    [Fact]
+    public async Task Relever_le_plafond_exige_le_droit_de_depasser_le_plafond()
+    {
+        var patients = new PatientsEnMemoire { Fiche = Fiche() };
+        var ex = await Assert.ThrowsAsync<DroitRefuseException>(() => new ModifierPatient(patients, new JournalEspion(), new HorlogeFixe(Aujourdhui),
+                new DroitsFactices("caisse.vendre"))
+            .ExecuterAsync(Fiche() with { PlafondCredit = 8000 }, 3));
+        Assert.Equal("credit.depasser_plafond", ex.Permission);
+        Assert.Null(patients.Modifiee);
+
+        await new ModifierPatient(patients, new JournalEspion(), new HorlogeFixe(Aujourdhui), new DroitsFactices("caisse.vendre", "credit.depasser_plafond"))
+            .ExecuterAsync(Fiche() with { PlafondCredit = 8000 }, 3);
+        Assert.Equal(8000m, patients.Modifiee!.PlafondCredit);
+    }
+
+    [Fact]
+    public async Task Le_titulaire_peut_relever_le_plafond()
+    {
+        var patients = new PatientsEnMemoire { Fiche = Fiche() };
+        await new ModifierPatient(patients, new JournalEspion(), new HorlogeFixe(Aujourdhui), new DroitsFactices() { Titulaire = true })
+            .ExecuterAsync(Fiche() with { PlafondCredit = 9000 }, 1);
+        Assert.Equal(9000m, patients.Modifiee!.PlafondCredit);
+    }
+
+    [Fact]
+    public async Task Baisser_le_plafond_ou_modifier_le_reste_de_la_fiche_avec_le_seul_droit_de_vendre()
+    {
+        var patients = new PatientsEnMemoire { Fiche = Fiche() };
+        await new ModifierPatient(patients, new JournalEspion(), new HorlogeFixe(Aujourdhui), new DroitsFactices("caisse.vendre"))
+            .ExecuterAsync(Fiche() with { Nom = "Benali-Saïd", PlafondCredit = 3000 }, 3);
+        Assert.Equal(("Benali-Saïd", 3000m), (patients.Modifiee!.Nom, patients.Modifiee.PlafondCredit));
+    }
+
+    [Fact]
+    public async Task Creer_un_patient_au_dela_du_plafond_par_defaut_exige_le_droit()
+    {
+        var caisse = new SessionsEnMemoire { Parametres = new ParametresCaisse(true, 5000, 500, 0, PlafondCreditDefaut: 2000) };
+        var nouveau = new NouveauPatient("Benali", "Amine", null, null, null, 5000m);
+        var ex = await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            new CreerPatient(new PatientsEnMemoire(), new JournalEspion(), new DroitsFactices("caisse.vendre"), caisse).ExecuterAsync(nouveau, 3));
+        Assert.Equal("credit.depasser_plafond", ex.Permission);
+        // Au plafond par défaut : seul le droit de vendre
+        await new CreerPatient(new PatientsEnMemoire(), new JournalEspion(), new DroitsFactices("caisse.vendre"), caisse).ExecuterAsync(nouveau with { PlafondCredit = 2000 }, 3);
+        await new CreerPatient(new PatientsEnMemoire(), new JournalEspion(), new DroitsFactices("caisse.vendre", "credit.depasser_plafond"), caisse).ExecuterAsync(nouveau, 3);
+    }
+
+    [Theory]
+    [InlineData(4000, 1000, 5000, false, true)]
+    [InlineData(4500, 1000, 5000, false, false)]
+    [InlineData(4500, 1000, 5000, true, true)]
+    [InlineData(9000, 0, 5000, false, true)]
+    public void Plafond_revérifie_a_l_encaissement_avec_le_solde_relu(decimal solde, decimal montant, decimal plafond, bool peutDepasser, bool respecte) =>
+        Assert.Equal(respecte, PlafondEncaissement.Respecte(solde, montant, plafond, peutDepasser));
 }
 
 internal sealed class VentesEspion : IVentesEcriture
@@ -181,6 +239,16 @@ public class CaisseApplicationTests
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() =>
             Cas(sessions, new DroitsFactices("caisse.vendre"), new VentesEspion()).ExecuterAsync(Commande(2, 20), 5, "Caisse 1"));
         Assert.Contains("Ouvrez la caisse", ex.Message);
+    }
+
+    [Fact]
+    public async Task Produit_sans_prix_fixe_invendable_meme_avec_un_ppa_sur_le_lot()
+    {
+        var ventes = new VentesEspion();
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes).ExecuterAsync(Commande(13, 130), 5, "Caisse 1"));
+        Assert.Contains("prix de vente non fixé", ex.Message);
+        Assert.Null(ventes.Recu);
     }
 
     [Fact]
@@ -486,7 +554,7 @@ public class CaisseApplicationTests
     {
         var sessions = new SessionsEnMemoire { Especes = 45000 };
         var journal = new JournalEspion();
-        var vue = await new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), journal)
+        var vue = await new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre", "caisse.cloturer"), journal)
             .ExecuterAsync(5, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 24, ["b500"] = 1 });
 
         Assert.Equal(48500m, vue.Compte);
@@ -499,7 +567,7 @@ public class CaisseApplicationTests
     [Fact]
     public async Task Cloture_avec_droit_montre_l_ecart()
     {
-        var vue = await new CloturerSessionCaisse(new SessionsEnMemoire { Especes = 1000 }, new DroitsFactices("caisse.voir_ecart"), new JournalEspion())
+        var vue = await new CloturerSessionCaisse(new SessionsEnMemoire { Especes = 1000 }, new DroitsFactices("caisse.voir_ecart", "caisse.cloturer"), new JournalEspion())
             .ExecuterAsync(5, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 3 });
         Assert.Equal(6000m, vue.Attendu);
         Assert.Equal(0m, vue.Ecart);
@@ -554,12 +622,44 @@ public class CaisseApplicationTests
     {
         var sessions = new SessionsEnMemoire { Especes = 1000 };
         var journal = new JournalEspion();
-        var cloturer = new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), journal);
+        var cloturer = new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre", "caisse.cloturer"), journal);
         var r = await new ReleverCaisse(sessions, cloturer, journal)
             .ExecuterAsync(9, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 3 });
         Assert.Equal(6000m, r.Cloture.Compte);
         Assert.NotNull(sessions.Cloture);
         Assert.Equal((9L, "Caisse 1", 6000m, (long?)1), sessions.Ouvertures.Single());
         Assert.Contains("releve_caisse", journal.Actions);
+    }
+
+    // ---- Droit « Faire la relève et clôturer la caisse » (085) ----
+
+    [Fact]
+    public async Task Cloture_refusee_sans_le_droit_caisse_cloturer()
+    {
+        var sessions = new SessionsEnMemoire { Especes = 1000 };
+        var ex = await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), new JournalEspion())
+                .ExecuterAsync(5, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 3 }));
+        Assert.Equal("caisse.cloturer", ex.Permission);
+        Assert.Null(sessions.Cloture);
+    }
+
+    [Fact]
+    public async Task Releve_refusee_sans_le_droit_caisse_cloturer_et_caisse_pas_rouverte()
+    {
+        var sessions = new SessionsEnMemoire { Especes = 1000 };
+        var journal = new JournalEspion();
+        var cloturer = new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), journal);
+        await Assert.ThrowsAsync<DroitRefuseException>(() => new ReleverCaisse(sessions, cloturer, journal)
+            .ExecuterAsync(9, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 3 }));
+        Assert.Null(sessions.Cloture);
+        Assert.Empty(sessions.Ouvertures);
+    }
+
+    [Fact]
+    public void Cloture_autorisable_par_le_code_d_un_ayant_droit()
+    {
+        Assert.True(CodeComptoir.AutorisableParCollegue(Permissions.CaisseCloturer));
+        Assert.True(CodeComptoir.Autorise(Permissions.CaisseCloturer));
     }
 }

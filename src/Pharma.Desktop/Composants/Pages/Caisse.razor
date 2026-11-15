@@ -54,11 +54,13 @@
             <div class="succes" role="status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px">
                 <strong>Vente @venteFaite.Numero encaissée : @Libelles.Dinars(venteFaite.MontantTotal, 2)</strong>
                 @if (venteFaite.PartOrganisme > 0) { <span>part organisme @Libelles.Dinars(venteFaite.PartOrganisme, 2)</span> }
+                @if (venteFaite.EcartChifaPatient > 0) { <span>Écart Chifa payé par le patient : @Libelles.Dinars(venteFaite.EcartChifaPatient, 2)</span> }
                 @if (venteFaite.Mode == "especes" && venteFaite.Rendu > 0) { <span style="font-size: 18px; font-weight: 600">Rendu : @Libelles.Dinars(venteFaite.Rendu, 2)</span> }
                 @if (venteFaite.Mode == "credit") { <span>mise en crédit</span> }
                 <button type="button" class="btn" disabled="@impressionEnCours" @onclick="ImprimerTicketAsync">@(impressionEnCours ? "Impression…" : "Imprimer le ticket")</button>
                 <button type="button" class="lien-bouton" @onclick="() => OuvrirAnnulation(venteFaite.Numero)">Annuler ou retour</button>
             </div>
+            @if (venteFaite.CatalogueChifa is { } majCatalogue) { <div class="info-bandeau" role="status" data-champ="catalogue_chifa">@majCatalogue</div> }
             @if (messageTicket is not null) { <div class="@(ticketImprime ? "info-bandeau" : "erreur")" role="status">@messageTicket</div> }
         }
 
@@ -243,6 +245,10 @@
                                         }
                                     </li>
                                 }
+                                @if (autresResultats)
+                                {
+                                    <li class="detail suggestion-autres" role="note" style="padding: 8px 12px">… autres résultats, précisez la recherche</li>
+                                }
                             </ul>
                         }
                     </div>
@@ -287,16 +293,110 @@
 
                 @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
 
+                @if (volet is not null && patientVoletOuvert)
+                {
+                    @* Volet prérempli (2026-11-15) : assuré inconnu, le vendeur saisit le nom du patient (ordonnance en main) ;
+                       sans nom, fiche créée au nom provisoire « Assuré n°/suffixe », à compléter. La vente continue sans autre ressaisie. *@
+                    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-patient-volet" @onkeydown="TouchePatientVoletAsync">
+                        <section class="panneau" style="max-width: 480px; width: 100%">
+                            <h2 id="t-patient-volet">Nouveau patient du volet Chifa</h2>
+                            <p style="margin: 0">Assuré inconnu : saisissez le nom du patient inscrit sur l’ordonnance.</p>
+                            <div class="champ">
+                                <label for="pv-nom">Nom du patient</label>
+                                <input id="pv-nom" data-champ="nom_patient_volet" type="text" maxlength="120" autocomplete="off" autofocus
+                                       @bind="nomPatientVolet" @bind:event="oninput" />
+                            </div>
+                            <div class="champ">
+                                <label for="pv-assure">N° d’assuré</label>
+                                <input id="pv-assure" type="text" readonly value="@volet.Assure" />
+                            </div>
+                            @* Ayant droit inconnu (2026-11-15) : lien proposé vide ; assuré principal proposé = fiche de même n° de base au lien « assuré » *@
+                            <div class="achats-ligne">
+                                <div class="champ" style="flex: 0 1 150px"><label for="pv-lien">Lien</label>
+                                    <select id="pv-lien" data-champ="lien" @bind="lienPatientVolet">
+                                        <option value="">Non renseigné</option>
+                                        <option value="assure">Assuré</option>
+                                        <option value="conjoint">Conjoint</option>
+                                        <option value="enfant">Enfant</option>
+                                        <option value="ascendant">Ascendant</option>
+                                        <option value="autre">Autre</option>
+                                    </select></div>
+                                <div class="champ" style="flex: 1 1 220px"><label for="pv-principal">Assuré principal</label>
+                                    <select id="pv-principal" data-champ="assure_principal" @bind="principalPatientVolet" disabled="@(lienPatientVolet == "assure")">
+                                        <option value="">Aucun</option>
+                                        @if (volet.AssurePrincipalProposeId is { } apid)
+                                        {
+                                            <option value="@apid">@volet.AssurePrincipalPropose</option>
+                                        }
+                                    </select></div>
+                            </div>
+                            <div class="champ">
+                                <span>Organisme</span>
+                                <div>
+                                    @foreach (var o in organismes.Where(o => o.Code is "CNAS" or "CASNOS"))
+                                    {
+                                        <button type="button" class="puce" aria-pressed="@(o.Id == organismeId ? "true" : "false")"
+                                                @onclick="() => organismeId = o.Id">@o.Code</button>
+                                    }
+                                </div>
+                            </div>
+                            @if (erreurPatientVolet is not null) { <div class="erreur" role="alert">@erreurPatientVolet</div> }
+                            <div class="filtres">
+                                <button type="button" class="btn btn-principal" disabled="@patientVoletEnCours" @onclick="() => EnregistrerPatientVoletAsync(nomPatientVolet)">Enregistrer</button>
+                                <button type="button" class="btn" disabled="@patientVoletEnCours" title="Fiche créée au nom provisoire « Assuré n°/suffixe », à compléter"
+                                        @onclick="() => EnregistrerPatientVoletAsync(null)">Passer</button>
+                            </div>
+                        </section>
+                    </div>
+                }
+
                 @if (volet is not null)
                 {
                     @* Volet Chifa scanné : vente reprise en tiers payant ; format du QR à confirmer avec l'éditeur de Chifa *@
                     <div class="info-bandeau" role="status">
                         <strong>Volet Chifa n° @volet.NumeroFacture du @Libelles.Date(volet.DateFacture)</strong> · assuré @volet.Assure
-                        · @(volet.Patient is { } nomPatient ? $"patient {nomPatient}" : "patient inconnu : créez-le avec ce n° d’assuré")
-                        · ordonnance @Libelles.Dinars(volet.MontantOrdonnance, 2)
-                        @foreach (var ec in ecartsVolet) { <br /><span>@ec</span> }
-                        <button type="button" class="lien-bouton" @onclick="RetirerVolet">Retirer le volet</button>
+                        · @(volet.Patient is { } nomPatient ? $"patient {nomPatient}" : patient is { } pv ? $"patient {pv.Nom}" : "patient inconnu")
+                        · ordonnance @Libelles.Dinars(volet.MontantOrdonnance, 2)@(volet.DateSecondaire is { } dOrd ? $" du {Libelles.Date(dOrd)}" : "")
+                        @* Organisme du volet (2026-11-15) : CNAS ou CASNOS (même carte Chifa, le QR ne le dit pas), changé en un clic *@
+                        · organisme
+                        @foreach (var o in organismes.Where(o => o.Code is "CNAS" or "CASNOS"))
+                        {
+                            <button type="button" class="puce" aria-pressed="@(o.Id == organismeId ? "true" : "false")"
+                                    @onclick="() => ChoisirOrganismeVoletAsync(o.Id)">@o.Code</button>
+                        }
+                        <button type="button" class="lien-bouton" @onclick="RetirerVoletAsync">Retirer le volet</button>
                     </div>
+                    @* Prix Chifa différent du nôtre (prix du lot servi) : ligne orange ; sous le seuil, aligné d'office ; au-delà, choix d'un ayant
+                       droit prix.modifier, sinon le plus élevé d'office (le code d'un ayant droit permet de choisir, à l'encaissement) *@
+                    @if (apercu?.EcartsChifa is { Count: > 0 } ecarts)
+                    {
+                        <div class="bandeau-attention" role="status" data-champ="prix_chifa" style="display: flex; flex-direction: column; gap: 4px">
+                            @if (ecarts.Count(e => e.AChoisir) > 1)
+                            {
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                                    <button type="button" class="lien-bouton" @onclick="@(() => ChoisirToutChifaAsync(ChoixAligne))">Tout aligner sur Chifa</button>
+                                    <button type="button" class="lien-bouton" @onclick="@(() => ChoisirToutChifaAsync(ChoixGarde))">Tout garder à notre prix</button>
+                                </div>
+                            }
+                            @foreach (var e in ecarts)
+                            {
+                                var choisi = choixChifa.GetValueOrDefault(e.ProduitId);
+                                <div style="display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center">
+                                    <span style="flex: 1 1 320px"><strong>@e.Produit</strong> : prix Chifa @Libelles.Dinars(e.PrixChifa, 2), notre prix @Libelles.Dinars(e.NotrePrix, 2),
+                                        écart @Libelles.Dinars(Math.Abs(e.PrixChifa - e.NotrePrix), 2) par boîte · @LibelleChoixChifa(e, choisi)</span>
+                                    @if (e.AChoisir)
+                                    {
+                                        <button type="button" class="puce" aria-pressed="@(choisi == ChoixAligne ? "true" : "false")"
+                                                title="@(Session.A("prix.modifier") ? "Ligne vendue au prix Chifa" : "Validé à l’encaissement par le code d’un employé qui peut modifier les prix")"
+                                                @onclick="@(() => ChoisirChifaAsync(e.ProduitId, ChoixAligne))">S’aligner sur Chifa</button>
+                                        <button type="button" class="puce" aria-pressed="@(choisi == ChoixGarde ? "true" : "false")"
+                                                title="@(Session.A("prix.modifier") ? "La différence est à la charge du patient" : "Validé à l’encaissement par le code d’un employé qui peut modifier les prix")"
+                                                @onclick="@(() => ChoisirChifaAsync(e.ProduitId, ChoixGarde))">Garder notre prix</button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
                 }
                 @foreach (var c in codesAAssocier)
                 {
@@ -606,6 +706,13 @@
                             </select>
                             <input type="number" min="0" aria-label="Plafond de crédit (DA)" data-champ="plafond" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
                             @if (NomPatientManquant) { <span class="message-champ" style="grid-column: 1 / -1">Le nom du patient est obligatoire.</span> }
+                            @if (patientExistant is { } existant)
+                            {
+                                <span class="message-champ" style="grid-column: 1 / -1">
+                                    Ce n° d’assuré est celui de @($"{existant.Nom} {existant.Prenom}".Trim()).
+                                    <button type="button" class="lien-bouton" @onclick="OuvrirPatientExistantAsync">Ouvrir sa fiche</button>
+                                </span>
+                            }
                             <div class="actions">
                                 <button type="button" class="btn btn-principal" @onclick="CreerPatientAsync">Créer</button>
                                 <button type="button" class="btn" @onclick="() => (nouveauPatient, controlePatient) = (false, false)">Annuler</button>
@@ -670,6 +777,30 @@
                                        class="@Obligatoire.Classe(PorteurPieceManque)" aria-invalid="@Obligatoire.Aria(PorteurPieceManque)" />
                             }
                         }
+                        @* « Remis à » (avec ordonnance) / « Pour » (sans ordonnance), 2026-11-15 : une ligne, la vente reste au nom du patient *@
+                        @if (patient is not null)
+                        {
+                            <div class="champ champ-ligne remise-vente" title="@(AvecOrdonnance ? "Vente au nom du patient de l’ordonnance : personne qui récupère les médicaments" : "Vente au nom de celui qui commande : membre de la famille concerné")">
+                                <label for="remise-vente">@(AvecOrdonnance ? "Remis à" : "Pour")</label>
+                                @if (RemiseParPorteur)
+                                {
+                                    <span class="detail">@porteurNom (porteur de l’ordonnance)</span>
+                                }
+                                else
+                                {
+                                    <select id="remise-vente" class="selection" data-champ="remis_a pour" @bind="RemiseChoix">
+                                        <option value="">@(AvecOrdonnance ? "le patient lui-même" : "lui-même")</option>
+                                        @foreach (var pr in proches) { <option value="@pr.Id">@pr.Nom@LienLibelle(pr.Lien)</option> }
+                                        <option value="@RemiseAutreValeur">Autre personne…</option>
+                                    </select>
+                                    @if (remiseAutre)
+                                    {
+                                        <input type="text" aria-label="@(AvecOrdonnance ? "Nom de la personne qui récupère" : "Nom de la personne concernée")" placeholder="Nom et prénom" maxlength="200" data-champ="remis_a pour"
+                                               @bind="remiseNom" @bind:event="oninput" />
+                                    }
+                                }
+                            </div>
+                        }
                     }
                 </section>
             </section>
@@ -684,7 +815,7 @@
                         <div class="champ champ-ligne">
                             <label for="org">Organisme</label>
                             <select id="org" class="selection" @bind="organismeId" @bind:after="RecalculerAsync">
-                                @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                                @foreach (var o in OrganismesPaiement) { <option value="@o.Id">@o.Code</option> }
                             </select>
                         </div>
                         <div class="champ champ-ligne">
@@ -702,6 +833,21 @@
                         @if (resteSaisi is not null)
                         {
                             <p class="detail" style="margin: 0">Reste à charge saisi : le taux n’est pas appliqué, la part de l’organisme est la différence. Videz la case pour revenir au taux.</p>
+                        }
+                        @* Vente Chifa sans volet (script 089) : part organisme facturée par Chifa, jamais par le logiciel ; n° de facture Chifa obligatoire *@
+                        @if (volet is null && OrganismeChifa)
+                        {
+                            <label class="case" data-champ="facturee_chifa">
+                                <input type="checkbox" @bind="factureeChifa" /><span>Facturée par Chifa (jamais refacturée par le logiciel)</span>
+                            </label>
+                            @if (factureeChifa)
+                            {
+                                <div class="champ champ-ligne">
+                                    <label for="facture-chifa">N° de facture Chifa *</label>
+                                    <input id="facture-chifa" data-champ="facture_chifa" type="text" maxlength="30" placeholder="Obligatoire"
+                                           @bind="numeroFactureChifa" />
+                                </div>
+                            }
                         }
                     </div>
                     <div class="separateur"></div>
@@ -729,6 +875,10 @@
                 @if ((apercu?.MontantDon ?? 0) > 0)
                 {
                     <div class="ligne-total"><span>Don partiel@(apercu!.MontantRemise == 0 && apercu.ReductionsAuto > 0 ? $" (dont auto {Libelles.Dinars(apercu.ReductionsAuto, 2)})" : "")</span><span>− @Libelles.Dinars(apercu.MontantDon, 2)</span></div>
+                }
+                @if ((apercu?.EcartChifaPatient ?? 0) > 0)
+                {
+                    <div class="ligne-total" data-champ="ecart_chifa"><span>Écart Chifa payé par le patient</span><span>@Libelles.Dinars(apercu!.EcartChifaPatient, 2)</span></div>
                 }
                 <div class="a-payer"><span>@(tiersPayant ? "À payer par le patient" : "À payer")</span><span>@Libelles.Dinars(apercu?.PartPatient ?? 0, 2)</span></div>
 
@@ -967,6 +1117,7 @@
         lignes.Count == 0 ? "Panier vide"
         : lignes.Any(l => l.Lot is null) ? "Retirez ou remplacez les produits sans lot vendable"
         : erreurCalcul is not null ? erreurCalcul
+        : ChoixChifaManquant ? "Volet Chifa : choisissez le prix de chaque ligne en écart (s’aligner sur Chifa ou garder notre prix)"
         : PsychotropeInterdit ? "Psychotrope : délivrance réservée aux employés qui en ont le droit"
         : PatientObligatoire && patient is null ? "Choisissez le patient"
         : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
@@ -1195,7 +1346,7 @@
         enCours = true;
         (_, erreurOuverture) = await Api.OuvrirCaisseAsync(Poste.Poste, fondCaisse);
         enCours = false;
-        if (erreurOuverture is null) await ChargerEtatAsync();
+        if (erreurOuverture is null) { await ChargerEtatAsync(); Session.SignalerCaisse(); }
     }
 
     // ---- Panier ---------------------------------------------------------------
@@ -1217,10 +1368,15 @@
     {
         var numero = ++requete;
         if (texte.Trim().Length < 2) { suggestions = []; return; }
-        var (trouves, err) = await Api.RechercherAuComptoirAsync(texte);
+        // Une ligne de plus que l'affichage : elle signale qu'il reste d'autres résultats (2026-11-15)
+        var (trouves, err) = await Api.RechercherAuComptoirAsync(texte, SuggestionsMax + 1);
         if (numero != requete) return;   // une frappe plus récente a déjà relancé la recherche
-        (suggestions, erreur) = (trouves, err);
+        autresResultats = trouves.Count > SuggestionsMax;
+        (suggestions, erreur) = (autresResultats ? trouves.Take(SuggestionsMax).ToList() : trouves, err);
     }
+
+    private const int SuggestionsMax = 20;
+    private bool autresResultats;
 
     private async Task ToucheAsync(KeyboardEventArgs e)
     {
@@ -1527,6 +1683,18 @@
 
     protected override async Task OnAfterRenderAsync(bool premierAffichage)
     {
+        // Patient choisi ou changé : membres de sa famille (script 090) chargés pour « Remis à » / « Pour »
+        if (patient?.Id != prochesDe)
+        {
+            prochesDe = patient?.Id;
+            var charges = prochesDe is { } pid ? (await Api.ProchesPatientAsync(pid)).Item1 ?? [] : [];
+            if (patient?.Id == prochesDe)
+            {
+                proches = charges;
+                if (remiseProcheId is { } rid && proches.All(p => p.Id != rid)) (remiseProcheId, remiseProcheNom) = (null, null);
+                StateHasChanged();
+            }
+        }
         // Produit ajouté ou scanné : sa ligne est amenée dans le cadre du panier (les autres restent au-dessus ou au-dessous)
         if (ligneAVoir is { } aVoir)
         {
@@ -1649,7 +1817,7 @@
     private async Task ChoisirTiersPayantAsync(bool oui)
     {
         tiersPayant = oui;
-        if (oui && patient?.OrganismeId is { } org) organismeId = org;
+        if (oui && patient?.OrganismeId is { } org && OrganismeAdmis(org)) organismeId = org;
         await RecalculerAsync();
     }
 
@@ -1674,9 +1842,52 @@
     private VoletChifaDto? volet;
     private string? voletBrut;
     private List<LigneVoletChifaDto> codesAAssocier = [];
-    private List<string> ecartsVolet = [];
+    /// <summary>Choix par produit quand l'écart de prix Chifa atteint le seuil : « aligne » (prix Chifa) ou « garde » (notre prix).</summary>
+    private Dictionary<long, string> choixChifa = [];
+    private const string ChoixAligne = "aligne", ChoixGarde = "garde";
 
-    /// <summary>Volet scanné : tiers payant CNAS, assuré retrouvé, produits reconnus ajoutés avec leurs quantités ; écarts de prix signalés.</summary>
+    private string LibelleChoixChifa(EcartChifaLigneDto e, string? choisi) => e.Choix switch
+    {
+        "aligne_auto" => "aligné d’office sur Chifa (écart sous le seuil)",
+        "aligne" => "aligné sur Chifa",
+        "garde" => $"notre prix gardé : {Libelles.Dinars(e.NotrePrix - e.PrixChifa, 2)} par boîte à la charge du patient",
+        _ when choisi is not null => $"{(choisi == ChoixAligne ? "s’aligner sur Chifa" : "garder notre prix")} : validé à l’encaissement par le code d’un employé qui peut modifier les prix ; en attendant, le plus élevé des deux",
+        _ when Session.A("prix.modifier") => "à choisir (en attendant, le plus élevé des deux)",
+        _ => "le plus élevé des deux s’applique d’office (un employé qui peut modifier les prix peut choisir avec son code)"
+    };
+
+    private async Task ChoisirChifaAsync(long produitId, string choix)
+    {
+        choixChifa[produitId] = choix;
+        await RecalculerAsync();
+    }
+
+    private async Task ChoisirToutChifaAsync(string choix)
+    {
+        foreach (var e in apercu?.EcartsChifa ?? []) if (e.AChoisir) choixChifa[e.ProduitId] = choix;
+        await RecalculerAsync();
+    }
+
+    /// <summary>Choix envoyés au serveur, avec le prix attendu (revérifié : refus s'il n'est pas conforme à la règle).</summary>
+    private List<ChoixPrixChifaDto>? ChoixChifaEnvoyes() => voletBrut is null || choixChifa.Count == 0 ? null
+        : choixChifa.Select(c => new ChoixPrixChifaDto(c.Key, c.Value,
+            apercu?.EcartsChifa?.FirstOrDefault(e => e.ProduitId == c.Key && e.AChoisir) is { } e ? (c.Value == ChoixAligne ? e.PrixChifa : e.NotrePrix) : null)).ToList();
+
+    /// <summary>Employé qui peut modifier les prix : chaque écart d'au moins le seuil doit être choisi avant d'encaisser.</summary>
+    private bool ChoixChifaManquant => Session.A("prix.modifier") && apercu?.EcartsChifa is { } ec && ec.Any(e => e.AChoisir && !choixChifa.ContainsKey(e.ProduitId));
+
+    /// <summary>Organisme du volet choisi par le vendeur (CNAS ou CASNOS), part recalculée.</summary>
+    /// <summary>Organismes proposés au paiement : volet Chifa sur la vente, CNAS et CASNOS seulement (2026-11-15) ; sinon tous.</summary>
+    private IEnumerable<OrganismeDto> OrganismesPaiement => volet is null ? organismes : organismes.Where(o => o.Code is "CNAS" or "CASNOS");
+    private bool OrganismeAdmis(long id) => volet is null || OrganismesPaiement.Any(o => o.Id == id);
+
+    private async Task ChoisirOrganismeVoletAsync(long id)
+    {
+        organismeId = id;
+        await RecalculerAsync();
+    }
+
+    /// <summary>Volet scanné : tiers payant CNAS ou CASNOS (celui de la fiche du patient, sinon CNAS), assuré retrouvé, produits reconnus ajoutés avec leurs quantités ; écarts de prix signalés.</summary>
     private async Task ReprendreVoletAsync(VoletChifaDto v)
     {
         // Un seul volet par vente : un second scan du même volet n'ajoute pas les produits une seconde fois
@@ -1687,7 +1898,7 @@
                 : $"Un seul volet Chifa par vente : encaissez ou retirez d’abord le volet n° {deja.NumeroFacture}.";
             return;
         }
-        (volet, voletBrut, codesAAssocier, ecartsVolet) = (v, v.Brut, [], []);
+        (volet, voletBrut, codesAAssocier, choixChifa) = (v, v.Brut, [], []);
         tiersPayant = true;
         if (v.PatientId is { } pid)
         {
@@ -1697,13 +1908,19 @@
             else (patients, patientTexte) = ([], "");
         }
         if (v.OrganismeId is { } org) organismeId = org;
+        // Volet Chifa : CNAS ou CASNOS seulement (2026-11-15) ; un autre organisme repris de la fiche du patient est remplacé
+        if (!OrganismeAdmis(organismeId)) organismeId = OrganismesPaiement.FirstOrDefault()?.Id ?? organismeId;
+        // Date de l'ordonnance : seconde date du QR (sens à confirmer, docs/chifa.md), jamais dans le futur
+        if (v.DateSecondaire is { } dateOrd && dateOrd <= DateOnly.FromDateTime(DateTime.Today)) datePrescription = dateOrd;
+        // Assuré inconnu : petite fenêtre du nom du patient (volet prérempli, 2026-11-15)
+        if (patient is null)
+            (patientVoletOuvert, nomPatientVolet, erreurPatientVolet, lienPatientVolet, principalPatientVolet) = (true, "", null, "", v.AssurePrincipalProposeId);
         foreach (var l in v.Lignes)
         {
             if (l.ProduitId is not { } id) { codesAAssocier.Add(l); continue; }
             await AjouterAsync(id, l.Produit!, l.PrixCatalogue ?? l.PrixUnitaire, l.Quantite, viderSaisie: false);
-            if (l.PrixCatalogue is { } pc && pc != l.PrixUnitaire)
-                ecartsVolet.Add($"{l.Produit} : {Libelles.Dinars(l.PrixUnitaire, 2)} sur le volet, {Libelles.Dinars(pc, 2)} au catalogue.");
         }
+        // Écarts de prix (prix Chifa / prix du lot servi) : calculés par le serveur (apercu.EcartsChifa)
         await RecalculerAsync();
     }
 
@@ -1714,16 +1931,55 @@
         if (e is not null) { erreur = e; return; }
         codesAAssocier.Remove(c);
         await AjouterAsync(p.Id, p.NomCommercial, p.PrixPublic, c.Quantite);
-        if (p.PrixPublic != c.PrixUnitaire)
-            ecartsVolet.Add($"{p.NomCommercial} : {Libelles.Dinars(c.PrixUnitaire, 2)} sur le volet, {Libelles.Dinars(p.PrixPublic, 2)} au catalogue.");
     }
 
-    private void RetirerVolet() => (volet, voletBrut, codesAAssocier, ecartsVolet) = (null, null, [], []);
+    // ---- Volet prérempli : patient inconnu créé avec le nom saisi, sinon nom provisoire à compléter (2026-11-15) ----
+    private bool patientVoletOuvert;
+    private bool patientVoletEnCours;
+    private string nomPatientVolet = "";
+    private string? erreurPatientVolet;
+    private string lienPatientVolet = "";
+    private long? principalPatientVolet;
+
+    private async Task TouchePatientVoletAsync(KeyboardEventArgs e)
+    {
+        if (patientVoletEnCours) return;
+        if (e.Key == "Enter") await EnregistrerPatientVoletAsync(nomPatientVolet);
+        else if (e.Key == "Escape") await EnregistrerPatientVoletAsync(null);   // fermer : fiche créée quand même, à compléter
+    }
+
+    /// <summary>Crée (ou retrouve) la fiche de l'assuré du volet, puis la choisit pour la vente ; nom vide : nom provisoire.</summary>
+    private async Task EnregistrerPatientVoletAsync(string? nom)
+    {
+        if (voletBrut is null) { patientVoletOuvert = false; return; }
+        patientVoletEnCours = true;
+        try
+        {
+            var lien = string.IsNullOrEmpty(lienPatientVolet) ? null : lienPatientVolet;
+            var (p, err) = await Api.CreerPatientVoletAsync(voletBrut, string.IsNullOrWhiteSpace(nom) ? null : nom.Trim(), organismeId > 0 ? organismeId : null,
+                lien, lien == "assure" ? null : principalPatientVolet);
+            if (err is not null || p is null) { erreurPatientVolet = err ?? "Création du patient impossible."; return; }
+            patientVoletOuvert = false;
+            erreurPatientVolet = null;
+            var organisme = organismes.FirstOrDefault(o => o.Id == p.OrganismeId);
+            // Bandeau du volet : le patient créé remplace « patient inconnu » (E4, 2026-11-15)
+            if (volet is { PatientId: null } vp) volet = vp with { PatientId = p.Id, Patient = p.Nom };
+            await ChoisirPatientAsync(new PatientDto(p.Id, p.Nom, null, null, p.NumAssure, p.OrganismeId, organisme?.Code, 0, 0));
+        }
+        finally { patientVoletEnCours = false; }
+    }
+
+    private async Task RetirerVoletAsync()
+    {
+        patientVoletOuvert = false;
+        (volet, voletBrut, codesAAssocier, choixChifa) = (null, null, [], []);
+        await RecalculerAsync();
+    }
 
     private async Task ChoisirPatientAsync(PatientDto p)
     {
         (patient, patients, patientTexte, clientEdition) = (p, [], "", true);
-        if (tiersPayant && p.OrganismeId is { } org) organismeId = org;
+        if (tiersPayant && p.OrganismeId is { } org && OrganismeAdmis(org)) organismeId = org;
         await RecalculerAsync();
     }
 
@@ -1755,6 +2011,16 @@
     private ElementReference champNomPatient;
     private bool NomPatientManquant => Obligatoire.Manque(controlePatient, np.Nom);
 
+    /// <summary>Patient qui a déjà le n° d'assuré saisi (création refusée, script 089) : proposé à la place d'une seconde fiche.</summary>
+    private PatientDto? patientExistant;
+
+    private async Task OuvrirPatientExistantAsync()
+    {
+        if (patientExistant is not { } p) return;
+        (patientExistant, nouveauPatient, controlePatient, erreurEncaissement) = (null, false, false, null);
+        await ChoisirPatientAsync(p);
+    }
+
     private async Task CreerPatientAsync()
     {
         controlePatient = true;
@@ -1767,11 +2033,21 @@
         var saisie = new NouveauPatientDto(np.Nom, np.Prenom, np.Telephone, np.NumAssure,
             np.OrganismeId > 0 ? np.OrganismeId : null, np.Plafond, np.Email);
         var (cree, err) = await Api.CreerPatientAsync(saisie);
-        if (err is not null) { erreurEncaissement = err; return; }
+        if (err is not null)
+        {
+            erreurEncaissement = err;
+            // N° d'assuré déjà pris (script 089) : la fiche existante est proposée au lieu d'une seconde fiche
+            patientExistant = err.StartsWith("N° d’assuré déjà utilisé par ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(saisie.NumAssure)
+                ? (await Api.RechercherPatientsAsync(saisie.NumAssure.Trim())).Item1.FirstOrDefault() : null;
+            return;
+        }
+        patientExistant = null;
         var organisme = organismes.FirstOrDefault(o => o.Id == np.OrganismeId);
         nouveauPatient = false;
         erreurEncaissement = null;
         controlePatient = false;
+        // Volet Chifa d'un assuré inconnu : le bandeau affiche le patient créé (E4, 2026-11-15)
+        if (volet is { PatientId: null } vp) volet = vp with { PatientId = cree!.Id, Patient = saisie.Nom.Trim() };
         await ChoisirPatientAsync(new PatientDto(cree!.Id, saisie.Nom.Trim(), saisie.Prenom, saisie.Telephone, saisie.NumAssure,
             saisie.OrganismeId, organisme?.Code, saisie.PlafondCredit, 0));
     }
@@ -1815,18 +2091,60 @@
         finally { creationMedecin = false; }
     }
 
+    /// <summary>Vente envoyée avec une ordonnance (même condition que la commande) : « Remis à » ; sinon « Pour ».</summary>
+    private bool AvecOrdonnance => jetonScan is not null || (volet is not null && patient is not null)
+        || ((apercu?.OrdonnanceRequise == true || apercu?.SurOrdonnance == true || MedecinParLeTaux || TiersSansPart) && medecin is not null);
+
+    // ---- « Remis à » / « Pour » (2026-11-15, script 091) : la vente et sa dette restent au nom du patient choisi ----
+    // Un seul champ selon l'ordonnance (les deux sont donc exclusifs) ; famille du patient (090) proposée d'abord, sinon nom libre.
+    private List<ProchePatientDto> proches = [];
+    private long? prochesDe;
+    private long? remiseProcheId;
+    private string? remiseProcheNom;
+    private bool remiseAutre;
+    private string? remiseNom;
+    private const string RemiseAutreValeur = "autre";
+    /// <summary>Psychotrope : le porteur saisi (registre) vaut « Remis à », rien à ressaisir.</summary>
+    private bool RemiseParPorteur => AvecOrdonnance && PorteurDemande && !string.IsNullOrWhiteSpace(porteurNom);
+    private string RemiseChoix
+    {
+        get => remiseAutre ? RemiseAutreValeur : remiseProcheId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        set
+        {
+            remiseAutre = value == RemiseAutreValeur;
+            var p = long.TryParse(value, out var id) ? proches.FirstOrDefault(x => x.Id == id) : null;
+            (remiseProcheId, remiseProcheNom) = (p?.Id, p?.Nom);
+            if (!remiseAutre) remiseNom = null;
+        }
+    }
+    private static string LienLibelle(string? lien) => lien switch
+    {
+        "assure" => " (assuré)", "conjoint" => " (conjoint)", "enfant" => " (enfant)", "ascendant" => " (ascendant)", "autre" => "", _ => ""
+    };
+    private PersonneVenteDto? RemiseEnvoyee => patient is null || RemiseParPorteur ? null
+        : remiseProcheId is { } rid ? new PersonneVenteDto(rid, null)
+        : remiseAutre && !string.IsNullOrWhiteSpace(remiseNom) ? new PersonneVenteDto(null, remiseNom.Trim()) : null;
+
     private CommandeVenteDto Commande(string modePaiement) => new(
         lignes.Where(l => l.Lot is not null).Select(l => new LigneCommandeDto(l.ProduitId, l.Lot!.LotId, l.Quantite,
             l.Boites.Count > 0 ? l.Boites.Take(l.Quantite).ToList() : null, l.RaisonLot)).ToList(),
         tiersPayant, tiersPayant ? organismeId : null, tiersPayant ? taux : null,
         patient?.Id,
-        jetonScan is not null || ((apercu?.OrdonnanceRequise == true || apercu?.SurOrdonnance == true || MedecinParLeTaux || TiersSansPart) && medecin is not null)
+        AvecOrdonnance
             ? new OrdonnanceDto(medecin?.Id, datePrescription, string.IsNullOrWhiteSpace(numeroOrdonnance) ? null : numeroOrdonnance.Trim(),
                 jetonScan, texteReconnu,
                 PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null)
             : null,
         remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null, tiersPayant ? resteSaisi : null,
-        accordBlocage.VersDto(Session.A("produits.bloquer")), voletBrut, remiseAdditionnee, cleEncaissement);
+        accordBlocage.VersDto(Session.A("produits.bloquer")), voletBrut, remiseAdditionnee, cleEncaissement, ChoixChifaEnvoyes(),
+        FactureeChifaEnvoyee, FactureeChifaEnvoyee ? numeroFactureChifa?.Trim() : null,
+        AvecOrdonnance ? RemiseEnvoyee : null, AvecOrdonnance ? null : RemiseEnvoyee);
+
+    // ---- Vente Chifa sans volet (script 089) : case « facturée par Chifa » et n° de facture Chifa ----
+    private bool factureeChifa;
+    private string? numeroFactureChifa;
+    private bool OrganismeChifa => tiersPayant && OrganismeCode is "CNAS" or "CASNOS";
+    private bool FactureeChifaEnvoyee => factureeChifa && volet is null && OrganismeChifa;
 
     /// <summary>Les totaux viennent du serveur : mêmes règles que l'encaissement (tiers payant, remise).</summary>
     // Raison du lot servi quand un lot plus ancien est en stock (codes de Pharma.Domain.Ventes.RaisonLot)
@@ -1898,7 +2216,7 @@
             if (Tickets.ImprimanteFichier)
             {
                 // Imprimante qui enregistre un fichier (PDF…) : le ticket s'ouvre à l'écran, sans fenêtre « Enregistrer sous » (2026-11-15)
-                var (pdf, nom, ePdf) = await Api.TicketPdfAsync(vente.VenteId, rendu);
+                var (pdf, nom, ePdf) = await Api.TicketPdfAsync(vente.VenteId, rendu, Tickets.LargeurMm);
                 if (ePdf is null) Documents.OuvrirSurCePoste("Tickets", nom ?? $"ticket_{vente.Numero}.pdf", pdf!);
                 ticketImprime = ePdf is null;
                 messageTicket = ePdf ?? $"Ticket {vente.Numero} ouvert à l’écran (l’imprimante de ce poste enregistre un fichier au lieu d’imprimer).";
@@ -1923,6 +2241,9 @@
         messageTicket = null;
         enCours = true;
         erreurEncaissement = null;
+        // Choix de prix Chifa demandé sans le droit : la fenêtre « Faire autoriser » montre au valideur chaque ligne et le choix (2026-11-15)
+        if (voletBrut is not null && !Session.A("prix.modifier"))
+            Api.DetaillerProchaineAutorisation(DetailAutorisationChifa.Construire(apercu?.EcartsChifa, choixChifa, m => Libelles.Dinars(m, 2)));
         var (vente, err) = await Api.EncaisserAsync(Commande(modePaiement));
         enCours = false;
         if (err is not null)
@@ -1993,7 +2314,8 @@
             lignes.Select(l => new LignePanierAttenteDto(l.ProduitId, l.Nom, l.Prix, l.Lot, l.Quantite, l.BoiteScannee, l.StockProduit,
                 l.Boites.ToList(), l.RaisonLot, l.LotConseilleServi)).ToList(),
             tiersPayant, organismeId, taux, patient, medecin, datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu, voletBrut,
-            resteSaisi, porteurAutre, porteurNom, porteurAdresse, porteurPiece, remiseAdditionnee);
+            resteSaisi, porteurAutre, porteurNom, porteurAdresse, porteurPiece, remiseAdditionnee, remiseProcheId, remiseProcheNom, remiseAutre ? remiseNom : null,
+            ChoixChifaAttente.Garder(voletBrut, choixChifa));
         var libelle = (patient is { } p ? $"{p.Nom} {p.Prenom}".Trim() : $"Vente de {DateTime.Now:HH:mm}") + precision;
         var total = apercu?.MontantTotal ?? lignes.Sum(l => l.Prix * l.Quantite);
         return new MiseEnAttenteRequete(libelle, lignes.Count, total, System.Text.Json.JsonSerializer.Serialize(panier));
@@ -2028,7 +2350,17 @@
         if (lignes.Count > 0) { await MettreDeCoteAsync(); if (erreurAttente is not null) return; }
         var (json, e) = await Api.ReprendreVenteEnAttenteAsync(v.Id);
         if (e is not null) { erreurAttente = e; await ChargerAttentesAsync(); return; }
-        var p = System.Text.Json.JsonSerializer.Deserialize<PanierAttenteDto>(json!)!;
+        PanierAttenteDto? p;
+        try { p = System.Text.Json.JsonSerializer.Deserialize<PanierAttenteDto>(json!); }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException) { p = null; }
+        if (p?.Lignes is null)
+        {
+            // Contenu illisible (format d'une ancienne version) : la vente est remise en attente telle quelle au lieu d'être perdue
+            await Api.MettreEnAttenteAsync(new MiseEnAttenteRequete(v.Libelle, v.Lignes, v.Total, json!));
+            erreurAttente = "Cette vente en attente n’a pas pu être reprise (contenu illisible) : elle reste dans la liste, ressaisissez-la.";
+            await ChargerAttentesAsync();
+            return;
+        }
         ViderPanier();
         venteFaite = null;
         foreach (var l in p.Lignes)
@@ -2042,8 +2374,12 @@
         (datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu) = (p.DatePrescription, p.NumeroOrdonnance, p.RemisePct, p.JetonScan, p.TexteReconnu);
         (resteSaisi, porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (p.ResteSaisi, p.PorteurAutre, p.PorteurNom, p.PorteurAdresse, p.PorteurPiece);
         remiseAdditionnee = p.RemiseAdditionnee;
+        (remiseProcheId, remiseProcheNom, remiseAutre, remiseNom) = (p.RemiseProcheId, p.RemiseProcheNom, p.RemiseNom is not null, p.RemiseNom);
+        if (remiseProcheId is { } rp && proches.All(x => x.Id != rp)) proches = [.. proches, new ProchePatientDto(rp, remiseProcheNom ?? "", null, null)];
         if (medecin is not null) medecinTexte = medecin.Nom;
         if (p.VoletChifa is { } brut && (await Api.LireVoletChifaAsync(brut)).Item1 is { } vr) (volet, voletBrut) = (vr, brut);
+        // Choix de prix Chifa gardés avec la vente (2026-11-15) : rétablis sans les refaire, revérifiés par le serveur à l'encaissement
+        choixChifa = ChoixChifaAttente.Restaurer(p, voletBrut is not null);
         await ChargerAttentesAsync();
         await RecalculerAsync();   // prix et parts recalculés par le serveur
     }
@@ -2071,12 +2407,14 @@
         alerterMedecin = false;
         if (mode == "credit") mode = "especes";
         (datePrescription, erreurScan, taux, organismeId) = (DateOnly.FromDateTime(DateTime.Today), null, TauxParDefaut, OrganismeParDefaut);
-        (volet, voletBrut, codesAAssocier, ecartsVolet) = (null, null, [], []);
+        (volet, voletBrut, codesAAssocier, choixChifa) = (null, null, [], []);
+        (factureeChifa, numeroFactureChifa, patientExistant) = (false, null, null);
         accordBlocage.Effacer();
         (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
         lectureAjouts.Clear();
         (motifSaisieManuelle, lectureSansResultat) = (null, null);
         (porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (false, null, null, null);
+        (remiseProcheId, remiseProcheNom, remiseAutre, remiseNom) = (null, null, false, null);
     }
 
     // Panier non encaissé ni mis en attente, perdu en quittant la caisse (autre écran, déconnexion, changement d'utilisateur,
@@ -2098,11 +2436,35 @@
         lignes.Clear();
     }
 
+    /// <summary>
+    /// Écran détruit panier encore rempli (2026-11-15). Quitter par le menu met déjà la vente en attente (QuitterAsync) et la
+    /// déconnexion passe par PanierAbandonne : un panier encore là vient d'une erreur imprévue (l'écran est remplacé par le
+    /// message d'erreur) ou de la fermeture de la fenêtre. Il part en attente « sauvée après une erreur » au lieu d'être perdu
+    /// et signalé ligne par ligne comme retiré ; si la mise en attente échoue, les boîtes sont signalées retirées comme avant.
+    /// </summary>
+    private void SauverPanierRestant()
+    {
+        var restantes = lignes.Where(l => l.Quantite > 0).ToList();
+        if (restantes.Count == 0) { lignes.Clear(); return; }
+        var demande = DemandeAttente(" · sauvée après une erreur de l’écran");
+        lignes.Clear();
+        _ = MettreEnAttenteOuSignalerAsync(demande, restantes);
+    }
+
+    private async Task MettreEnAttenteOuSignalerAsync(MiseEnAttenteRequete demande, List<LignePanier> restantes)
+    {
+        string? e;
+        try { (_, e) = await Api.MettreEnAttenteAsync(demande); }
+        catch (Exception ex) { e = ex.Message; }
+        if (e is null) return;
+        foreach (var l in restantes) SignalerRetrait(l, l.Quantite);
+    }
+
     public async ValueTask DisposeAsync()
     {
         Session.AvantFermeture -= PanierAbandonne;
         Historique.Oublier("caisse");
-        PanierAbandonne();
+        SauverPanierRestant();
         // Écran quitté : l'afficheur client revient à l'accueil, la caméra s'éteint (même si elle était encore en train de démarrer)
         Afficheur.Accueil();
         try { await JS.InvokeVoidAsync("pharma.arreterF12"); }

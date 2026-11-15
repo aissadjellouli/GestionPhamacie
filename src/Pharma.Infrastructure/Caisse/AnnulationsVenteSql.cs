@@ -8,7 +8,7 @@ namespace Pharma.Infrastructure.Caisse;
 /// <summary>Annulation d'une vente (027_annulation_vente.sql) : tout en une transaction.</summary>
 public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente, IVentesParBoite
 {
-    private const string Select = """
+    private const string Select = $"""
         SELECT v.id, v.numero, v.date_vente, u.nom_complet, NULLIF(trim(concat_ws(' ', pa.nom, pa.prenom)), ''),
                v.montant_total, v.part_patient, v.part_organisme,
                (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id ORDER BY p.id LIMIT 1),
@@ -32,7 +32,9 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                                     COALESCE(sum(GREATEST(net, 0)) OVER (ORDER BY rang, le, vente_id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS avant
                              FROM dettes WHERE net IS NOT NULL)
                    SELECT LEAST(GREATEST((SELECT COALESCE(-sum(montant), 0) FROM m WHERE type = 'remboursement') - c.avant, 0), c.net)
-                   FROM cumul c WHERE c.vente_id = v.id), 0)
+                   FROM cumul c WHERE c.vente_id = v.id), 0),
+               -- « Remis à » / « Pour » (script 091)
+               {RemiseVenteSql.RemisA}, {RemiseVenteSql.Pour}
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient pa ON pa.id = v.patient_id
@@ -126,7 +128,8 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                 ventes.Add((r.GetInt64(0), new VenteAnnulable(r.GetInt64(0), r.GetString(1), r.GetDateTime(2), r.GetString(3),
                     r.IsDBNull(4) ? null : r.GetString(4), r.GetDecimal(5), r.GetDecimal(6), r.GetDecimal(7),
                     r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9), r.GetBoolean(10), r.GetBoolean(11), [],
-                    r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16), r.GetDecimal(17))));
+                    r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16), r.GetDecimal(17),
+                    RemiseVente.Complement(r.IsDBNull(18) ? null : r.GetString(18), r.IsDBNull(19) ? null : r.GetString(19)))));
         if (ventes.Count == 0) return [];
 
         var lignes = new Dictionary<long, List<LigneVenteAnnulable>>();

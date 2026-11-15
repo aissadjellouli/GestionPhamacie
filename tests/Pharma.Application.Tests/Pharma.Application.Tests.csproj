@@ -13,5 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Pharma.Application\Pharma.Application.csproj" />
+    <!-- Logique du poste partagée par le contrat HTTP (choix Chifa d'une vente en attente, détail d'une autorisation) -->
+    <ProjectReference Include="..\..\src\Pharma.Shared\Pharma.Shared.csproj" />
   </ItemGroup>
 </Project>

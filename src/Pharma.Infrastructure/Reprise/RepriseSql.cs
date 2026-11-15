@@ -39,10 +39,15 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
         var colonnes = string.Join(", ", champs);
         var tableaux = string.Join(", ", champs.Select((_, i) => $"${i + 2}::text[]"));
         var conflit = cible == CibleReprise.Stock ? "" : "ON CONFLICT DO NOTHING";
-        var sql = $"INSERT INTO {table} (session_id, {colonnes}) SELECT $1, * FROM unnest({tableaux}) {conflit}";
+        // Clients : rang de chaque ligne dans la table source (premier patient d'un n° d'assuré, compte rendu des doublons, 092)
+        var avecLigne = cible == CibleReprise.Clients;
+        var sql = avecLigne
+            ? $"INSERT INTO {table} (session_id, ligne, {colonnes}) SELECT $1, * FROM unnest(${champs.Count + 2}::int[], {tableaux}) {conflit}"
+            : $"INSERT INTO {table} (session_id, {colonnes}) SELECT $1, * FROM unnest({tableaux}) {conflit}";
 
-        int inserees = 0, lues = 0;
+        int inserees = 0, lues = 0, rang = 0;
         var paquet = new List<string?[]>(Paquet);
+        var rangs = new List<int>(Paquet);
         async Task Envoyer()
         {
             if (paquet.Count == 0) return;
@@ -50,15 +55,19 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
             cmd.Parameters.AddWithValue(session);
             for (var i = 0; i < champs.Count; i++)
                 cmd.Parameters.Add(new NpgsqlParameter { Value = paquet.Select(l => Nettoyer(l[i])).ToArray(), NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
+            if (avecLigne) cmd.Parameters.Add(new NpgsqlParameter { Value = rangs.ToArray(), NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Integer });
             inserees += await cmd.ExecuteNonQueryAsync(ct);
             paquet.Clear();
+            rangs.Clear();
         }
 
         await foreach (var l in lignes.WithCancellation(ct))
         {
+            rang++;
             if (idxRequis.Any(i => string.IsNullOrWhiteSpace(l[i]))) continue;   // ligne sans identifiant ou sans nom : ignorée
             lues++;
             paquet.Add(l);
+            rangs.Add(rang);
             if (paquet.Count == Paquet) await Envoyer();
         }
         await Envoyer();

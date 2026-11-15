@@ -1,6 +1,7 @@
 using Npgsql;
 using NpgsqlTypes;
 using Pharma.Application.Patients;
+using Pharma.Domain.Commun;
 using Pharma.Domain.Ventes;
 
 namespace Pharma.Infrastructure.Patients;
@@ -19,6 +20,9 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
                OR (p.nom || ' ' || COALESCE(p.prenom, '')) ILIKE '%' || $1 || '%'
                OR ($3::text IS NOT NULL AND {TelephoneSql.Normalise("p.telephone")} LIKE $3 || '%')
                OR p.num_assure = $1
+               -- N° d'assuré saisi avec un autre séparateur (« 690755003842 80 » = « 690755003842/80 ») : chiffres seuls (index ux_patient_num_assure)
+               OR (length(regexp_replace($1, '\D', '', 'g')) >= 6 AND p.num_assure IS NOT NULL
+                   AND regexp_replace(p.num_assure, '\D', '', 'g') = regexp_replace($1, '\D', '', 'g'))
             ORDER BY p.nom, p.prenom
             LIMIT $2
             """);
@@ -53,21 +57,50 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
     public async Task<FichePatient?> FicheAsync(long id, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT id, nom, prenom, date_naissance, telephone, email, num_assure, organisme_id, est_chronique, plafond_credit, solde_credit
+            SELECT id, nom, prenom, date_naissance, telephone, email, num_assure, organisme_id, est_chronique, plafond_credit, solde_credit,
+                   lien, assure_principal_id
             FROM patient WHERE id = $1
             """);
         cmd.Parameters.AddWithValue(id);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         return new FichePatient(r.GetInt64(0), r.GetString(1), Texte(r, 2), r.IsDBNull(3) ? null : r.GetFieldValue<DateOnly>(3), Texte(r, 4),
-            Texte(r, 5), Texte(r, 6), r.IsDBNull(7) ? null : r.GetInt64(7), r.GetBoolean(8), r.GetDecimal(9), r.GetDecimal(10));
+            Texte(r, 5), Texte(r, 6), r.IsDBNull(7) ? null : r.GetInt64(7), r.GetBoolean(8), r.GetDecimal(9), r.GetDecimal(10),
+            Texte(r, 11), r.IsDBNull(12) ? null : r.GetInt64(12));
+    }
+
+    public Task<IReadOnlyList<ProchePatient>> ProchesAsync(long id, CancellationToken ct = default) => Proches(db, id, ct);
+
+    /// <summary>
+    /// Assuré principal, ayants droit et fiches de même n° d'assuré de base (12 premiers chiffres, index ix_patient_num_assure_base,
+    /// script 090) du patient <paramref name="id"/>, lui exclu.
+    /// </summary>
+    internal static async Task<IReadOnlyList<ProchePatient>> Proches(NpgsqlDataSource db, long id, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT p.id, trim(p.nom || ' ' || COALESCE(p.prenom, '')), p.num_assure, p.lien, p.assure_principal_id
+            FROM patient m
+            JOIN patient p ON p.id <> m.id
+             AND (p.id = m.assure_principal_id OR p.assure_principal_id = m.id
+                  OR (length(regexp_replace(COALESCE(m.num_assure, ''), '\D', '', 'g')) >= 12 AND p.num_assure IS NOT NULL
+                      AND left(regexp_replace(p.num_assure, '\D', '', 'g'), 12) = left(regexp_replace(m.num_assure, '\D', '', 'g'), 12)))
+            WHERE m.id = $1
+            ORDER BY p.id
+            LIMIT 100
+            """);
+        cmd.Parameters.AddWithValue(id);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var liste = new List<ProchePatient>();
+        while (await r.ReadAsync(ct))
+            liste.Add(new ProchePatient(r.GetInt64(0), r.GetString(1), Texte(r, 2), Texte(r, 3), r.IsDBNull(4) ? null : r.GetInt64(4)));
+        return liste;
     }
 
     public async Task<bool> ModifierAsync(FichePatient f, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
             UPDATE patient SET nom = $2, prenom = $3, date_naissance = $4, telephone = $5, email = $6, num_assure = $7,
-                               organisme_id = $8, est_chronique = $9, plafond_credit = $10
+                               organisme_id = $8, est_chronique = $9, plafond_credit = $10, lien = $11, assure_principal_id = $12
             WHERE id = $1
             """);
         cmd.Parameters.AddWithValue(f.Id);
@@ -80,7 +113,35 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         cmd.Parameters.Add(Nullable(f.OrganismeId, NpgsqlDbType.Bigint));
         cmd.Parameters.AddWithValue(f.Chronique);
         cmd.Parameters.AddWithValue(f.PlafondCredit);
-        return await cmd.ExecuteNonQueryAsync(ct) > 0;
+        cmd.Parameters.Add(Nullable(f.Lien, NpgsqlDbType.Text));
+        cmd.Parameters.Add(Nullable(f.AssurePrincipalId, NpgsqlDbType.Bigint));
+        try { return await cmd.ExecuteNonQueryAsync(ct) > 0; }
+        catch (PostgresException e) when (AssureEnDouble(e)) { throw await RefusAssureAsync(f.NumAssure, f.Id, ct); }
+    }
+
+    public async Task<(long Id, string Nom)?> AssureUtiliseAsync(string chiffres, long? sauf, CancellationToken ct = default)
+    {
+        // Même expression que l'index unique ux_patient_num_assure (script 089)
+        await using var cmd = db.CreateCommand("""
+            SELECT id, trim(nom || ' ' || COALESCE(prenom, '')) FROM patient
+            WHERE num_assure IS NOT NULL AND regexp_replace(num_assure, '\D', '', 'g') = $1 AND ($2::bigint IS NULL OR id <> $2)
+            ORDER BY id LIMIT 1
+            """);
+        cmd.Parameters.AddWithValue(chiffres);
+        cmd.Parameters.Add(Nullable(sauf, NpgsqlDbType.Bigint));
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        return await r.ReadAsync(ct) ? (r.GetInt64(0), r.GetString(1)) : null;
+    }
+
+    private static bool AssureEnDouble(PostgresException e) =>
+        e.SqlState == PostgresErrorCodes.UniqueViolation && e.ConstraintName == "ux_patient_num_assure";
+
+    /// <summary>Course entre deux postes : l'index unique a refusé ; message avec le nom du patient qui a déjà ce n°.</summary>
+    private async Task<RegleMetierException> RefusAssureAsync(string? numAssure, long? sauf, CancellationToken ct)
+    {
+        var autre = RegleNumAssure.Chiffres(numAssure) is { } c ? await AssureUtiliseAsync(c, sauf, ct) : null;
+        return new RegleMetierException(autre is { } a ? RegleNumAssure.Message(a.Nom) : "N° d’assuré déjà utilisé par un autre patient.",
+            RegleNumAssure.Champ);
     }
 
     async Task<bool> IMedecins.ModifierAsync(Medecin m, CancellationToken ct)
@@ -119,7 +180,8 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         cmd.Parameters.AddWithValue(p.PlafondCredit);
         cmd.Parameters.Add(Nullable(p.Email, NpgsqlDbType.Text));
         cmd.Parameters.Add(Nullable(creePar, NpgsqlDbType.Bigint));
-        return (long)(await cmd.ExecuteScalarAsync(ct))!;
+        try { return (long)(await cmd.ExecuteScalarAsync(ct))!; }
+        catch (PostgresException e) when (AssureEnDouble(e)) { throw await RefusAssureAsync(p.NumAssure, null, ct); }
     }
 
     async Task<IReadOnlyList<Medecin>> IMedecins.RechercherAsync(string texte, int limite, CancellationToken ct)

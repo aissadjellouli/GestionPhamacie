@@ -13,6 +13,8 @@ autorite-pharmacie.crt
 # Vidéos : jamais dans git, où qu'elles soient (démonstrations, exemples de docs/EXEMPLE…) :
 # trop lourdes (limite GitHub 100 Mo), à garder sur le disque ou à partager à part
 *.mp4
+# Exemples réels (ordonnances, données de santé possibles) : jamais dans git
+docs/EXEMPLE/aid/Wasfa2/
 *.MP4
 *.mov
 *.MOV
@@ -25,3 +27,6 @@ autorite-pharmacie.crt
 
 # Fichiers temporaires de la compilation WPF (Visual Studio)
 *_wpftmp.csproj
+
+# Exemples réels (ordonnances, volets, factures) : jamais dans git
+docs/EXEMPLE/

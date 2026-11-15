@@ -15,11 +15,11 @@ public sealed class PermissionsComptoir(PermissionService droits, IHttpContextAc
     private bool EstUtilisateurCourant(long utilisateurId) =>
         long.TryParse(http.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && id == utilisateurId;
 
-    // Jamais par le code d'un collègue :
-    //  - la délivrance d'un psychotrope (le registre nomme celui qui délivre : un employé habilité reprend la vente) ;
-    //  - sur une connexion par code comptoir, un droit hors du comptoir ou du titulaire (portée de la connexion conservée).
+    // Par le code d'un collègue, seulement un droit de la liste blanche (CodeComptoir.AutorisablesParCollegue : jamais le titulaire,
+    // l'administration, la trésorerie, les financements, la surveillance, ni la délivrance d'un psychotrope) ; sur une connexion par
+    // code comptoir, en plus, un droit du comptoir (portée de la connexion conservée).
     public static bool AutorisableSurPlace(ClaimsPrincipal user, string permission) =>
-        permission != Permissions.PsychotropesDelivrer && (!user.ParCodeComptoir() || CodeComptoir.Autorise(permission));
+        CodeComptoir.AutorisableParCollegue(permission) && (!user.ParCodeComptoir() || CodeComptoir.Autorise(permission));
 
     private async Task<bool> AutoriseSurPlaceAsync(long utilisateurId, string permission, CancellationToken ct) =>
         autorisation is not null && !MotDePasseAChanger && EstUtilisateurCourant(utilisateurId)

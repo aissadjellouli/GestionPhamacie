@@ -23,15 +23,28 @@ internal static class PatientsEndpoints
         api.MapGet("/patients/{id:long}/fiche", async (long id, LireFichePatient lire, CancellationToken ct) =>
             {
                 var f = await lire.ExecuterAsync(id, ct);
+                var proches = await lire.ProchesAsync(id, ct);
+                // Assuré principal possible : l'actuel, et les fiches de même n° de base qui peuvent l'être (pas ses propres ayants droit)
+                var candidats = proches.Where(p => p.Id == f.AssurePrincipalId
+                        || (FamillePatient.PeutEtrePrincipal(p.Lien, p.AssurePrincipalId) && p.AssurePrincipalId != id
+                            && FamillePatient.NumeroBase(p.NumAssure) is { } b && b == FamillePatient.NumeroBase(f.NumAssure)))
+                    .Select(Dto).ToList();
+                var proposition = FamillePatient.Proposition(f.Id, f.NumAssure, f.Lien, f.AssurePrincipalId, proches);
                 return Results.Ok(new FichePatientDto(f.Id, f.Nom, f.Prenom, f.DateNaissance, f.Telephone, f.Email, f.NumAssure, f.OrganismeId,
-                    f.Chronique, f.PlafondCredit, f.SoldeCredit));
+                    f.Chronique, f.PlafondCredit, f.SoldeCredit, f.Lien, f.AssurePrincipalId, candidats, proposition is null ? null : Dto(proposition)));
+                static ProchePatientDto Dto(ProchePatient p) => new(p.Id, p.Nom, p.NumAssure, p.Lien);
             })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        // Membres de la famille (script 090) proposés en priorité pour « Remis à » / « Pour » à la caisse (2026-11-15)
+        api.MapGet("/patients/{id:long}/proches", async (long id, LireFichePatient lire, CancellationToken ct) =>
+                Results.Ok((await lire.ProchesAsync(id, ct)).Where(p => p.Id != id).Select(p => new ProchePatientDto(p.Id, p.Nom, p.NumAssure, p.Lien)).ToList()))
            .ExigerPermission(Permissions.CaisseVendre);
 
         api.MapPut("/patients/{id:long}", async (long id, FichePatientDto d, ModifierPatient modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await modifier.ExecuterAsync(new FichePatient(id, d.Nom, d.Prenom, d.DateNaissance, d.Telephone, d.Email, d.NumAssure, d.OrganismeId,
-                    d.Chronique, d.PlafondCredit), user.UtilisateurId(), ct);
+                    d.Chronique, d.PlafondCredit, 0, d.Lien, d.AssurePrincipalId), user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.CaisseVendre);

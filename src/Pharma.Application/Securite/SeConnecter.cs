@@ -28,6 +28,8 @@ public sealed class SeConnecter(
                 $"Connexion bloquée après {EssaisConnexion.EssaisMax} mots de passe faux : réessayez après {jusqu.ToLocalTime():HH:mm}.");
 
         var compte = await comptes.TrouverActifAsync(nom, ct);
+        // Identifiant inconnu : hachage factice, même durée de réponse qu'un mot de passe faux sur un compte existant
+        if (compte is null) verificateur.VerifierFactice(motDePasse);
         if (compte is null || !compte.Actif || !verificateur.Verifier(motDePasse, compte.MotDePasseHash))
         {
             if (essais is not null && essais.NoterEchec(nom, maintenant))

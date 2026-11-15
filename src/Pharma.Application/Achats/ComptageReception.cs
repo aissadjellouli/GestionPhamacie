@@ -180,6 +180,8 @@ public sealed class FacturerComptage(IComptagesReception comptages, Receptionner
     public async Task<ResultatFacturation> ExecuterAsync(long comptageId, SaisieReception s, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsReceptionner, "saisir la facture d’une livraison", ct);
+        // Saisie de facture : ayant droit prix.modifier seulement, quel que soit le prix (même une facture « tout à 0 »)
+        await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "saisir les prix de la facture d’achat", ct);
         var c = await comptages.LireAsync(comptageId, ct) ?? throw new RegleMetierException("Comptage introuvable.");
         if (c.Statut != StatutsComptage.Compte) throw new RegleMetierException("La facture de cette livraison a déjà été saisie.");
         if (s.FournisseurId != c.FournisseurId)

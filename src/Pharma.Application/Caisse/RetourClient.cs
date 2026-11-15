@@ -128,7 +128,7 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         {
             if (string.IsNullOrWhiteSpace(validateurIdentifiant))
                 throw new RegleMetierException("Le retour d’un produit est décidé par le pharmacien ou l’assistant : il doit valider avec son code.");
-            var validateur = await codes.VerifierAsync(validateurIdentifiant, validateurCode, nomPoste, ct);
+            var validateur = await codes.VerifierAsync(validateurIdentifiant, validateurCode, nomPoste, ct, utilisateurId);
             if (!await droits.APermissionAsync(validateur.Id, Permissions.CaisseRetourEspeces, ct))
                 throw new DroitRefuseException(Permissions.CaisseRetourEspeces, "valider le retour d’un produit");
             (validePar, nomValidateur) = (validateur.Id, validateur.NomComplet);

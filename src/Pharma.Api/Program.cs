@@ -19,6 +19,10 @@ builder.Configuration.AddJsonFile("appsettings.Https.json", optional: true, relo
 // Clé de signature des jetons : la valeur d'exemple n'est tolérée que sur un poste de développement
 JetonService.VerifierCle(builder.Configuration, builder.Environment.IsDevelopment());
 
+// HTTP en clair sur le réseau refusé hors développement, sauf réglage AutoriserHttpReseau=true (docs/mise-en-production.md)
+if (ReseauSecurise.RefusDemarrage(builder.Configuration, builder.Environment.IsDevelopment()) is { } refusHttp)
+    throw new InvalidOperationException(refusHttp);
+
 // Exécution en service Windows sur le PC serveur de l'officine
 builder.Host.UseWindowsService(o => o.ServiceName = "PharmaOfficine API");
 
@@ -74,6 +78,8 @@ builder.Services.AddHostedService<EnvoiNotifications>();
 builder.Services.AddHostedService<SauvegardesAutomatiques>();
 builder.Services.AddHostedService<SurveillancePeriodique>();
 builder.Services.AddProblemDetails();
+// Limite de débit par adresse IP sur les routes de connexion (mots de passe, codes comptoir, super admin)
+builder.Services.AjouterLimiteConnexions(builder.Configuration);
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -96,6 +102,10 @@ var app = builder.Build();
 // Création ou modification du compte super admin sur le PC serveur : Pharma.Api.exe --super-admin (le serveur ne démarre pas)
 if (args.Contains(ConsoleSuperAdmin.Argument))
     return await ConsoleSuperAdmin.ExecuterAsync(app.Services);
+
+// Fuseau horaire : l'officine est en UTC+1 toute l'année (Africa/Algiers) ; la base est réglée par la migration 083
+if (ReseauSecurise.AvertissementFuseau(TimeZoneInfo.Local, DateTime.UtcNow) is { } fuseau)
+    app.Logger.LogWarning("{Avertissement}", fuseau);
 
 // Règles métier et refus de la base (déclencheurs) renvoyés au poste avec un message clair
 app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
@@ -129,6 +139,10 @@ app.Use(async (ctx, suite) =>
         await ctx.Response.WriteAsJsonAsync(new ErreurDto(message));
     }
 });
+
+// HTTPS configuré : HSTS et redirection des requêtes HTTP du réseau (sauf HTTP gardé volontairement : AutoriserHttpReseau)
+app.UtiliserHttps();
+app.UseRateLimiter();
 
 // Page du scanner mobile (wwwroot/mobile) : fichiers statiques, sans données
 app.Use((ctx, suite) =>

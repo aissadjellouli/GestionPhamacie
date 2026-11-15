@@ -60,6 +60,7 @@
         ("admin/notifications", "role.titulaire"),
         ("admin/sauvegardes", "admin.sauvegardes"),
         ("admin/reprise", "role.super_admin"),
+        ("admin/doublons-import", "reprise.doublons"),
         ("admin/nomenclature", "role.titulaire")
     ];
 
@@ -74,6 +75,7 @@
         new("Sauvegardes", "admin/sauvegardes", "admin.sauvegardes"),
         new("Notifications au titulaire", "admin/notifications", "role.titulaire"),
         new("Reprise de données", "admin/reprise", "role.super_admin"),
+        new("Doublons d’import", "admin/doublons-import", "reprise.doublons"),
         new("Nomenclature nationale", "admin/nomenclature", "role.titulaire"),
         new("Langue et pharmacie", "admin/pharmacie", "admin.parametres")
     ];

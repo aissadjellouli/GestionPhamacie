@@ -31,13 +31,27 @@ public sealed record InfrastructureOptions(string ChaineConnexion, string Dossie
 
 public static class DependencyInjection
 {
+    /// <summary>Fuseau de l'officine (Algérie, UTC+1 toute l'année) : celui de la base (migration 083) et des connexions de l'API.</summary>
+    public const string Fuseau = "Africa/Algiers";
+
+    /// <summary>
+    /// Chaîne de connexion de l'API : Timezone=Africa/Algiers ajouté si elle n'en précise pas (dates SQL calculées dans le fuseau de
+    /// l'officine, même si la base n'a pas encore reçu la migration 083) ; un fuseau déjà précisé est gardé.
+    /// </summary>
+    public static string AvecFuseau(string chaineConnexion)
+    {
+        var b = new NpgsqlConnectionStringBuilder(chaineConnexion);
+        if (string.IsNullOrWhiteSpace(b.Timezone)) b.Timezone = Fuseau;
+        return b.ConnectionString;
+    }
+
     /// <summary>Adaptateurs des ports de l'Application : PostgreSQL, sécurité, horloge, Chifa, impression.</summary>
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, InfrastructureOptions options)
     {
         if (string.IsNullOrWhiteSpace(options.ChaineConnexion))
             throw new InvalidOperationException("Chaîne de connexion « Pharmacie » manquante.");
 
-        services.AddSingleton(NpgsqlDataSource.Create(options.ChaineConnexion));
+        services.AddSingleton(NpgsqlDataSource.Create(AvecFuseau(options.ChaineConnexion)));
         services.AddDbContext<PharmaDbContext>((sp, o) => o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>()));
 
         services.AddSingleton<IHorloge, HorlogeSysteme>();
@@ -106,6 +120,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Pilotage.IPilotage, Lecture.PilotageSql>();
         services.AddScoped<Pharma.Application.Stock.IRegistrePsychotropes, RegistreSql>();
         services.AddScoped<Pharma.Application.Caisse.ITicketLecture, Caisse.TicketSql>();
+        services.AddScoped<Pharma.Application.Caisse.IRecusCredit, Caisse.RecusCreditSql>();
         services.AddScoped<Pharma.Application.Securite.IPreferencesAffichage, Securite.PreferencesAffichageSql>();
         services.AddScoped<Pharma.Application.Caisse.IVentesEnAttente, Caisse.VentesEnAttenteSql>();
         services.AddScoped<Pharma.Application.Caisse.IEtatIntermediaireCaisse, Caisse.EtatIntermediaireSql>();
@@ -126,6 +141,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Rapports.IRapports, RapportsSql>();
         services.AddSingleton<Pharma.Application.Reprise.ISourceReprise, Reprise.SourceOdbc>();
         services.AddScoped<Pharma.Application.Reprise.IRepriseImport, Reprise.RepriseSql>();
+        services.AddScoped<Pharma.Application.Reprise.IDoublonsImport, Reprise.DoublonsImportSql>();
         services.AddScoped<Application.Ordonnances.IRapprochementCatalogue, Ordonnances.RapprochementSql>();
         services.AddSingleton<Application.Ordonnances.IStockageOrdonnances>(new Ordonnances.StockageOrdonnancesFichiers(options.DossierOrdonnances));
         services.AddScoped<ITracabiliteLecture, TracabiliteLecture>();

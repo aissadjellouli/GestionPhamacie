@@ -86,8 +86,8 @@ internal static class AchatsEndpoints
                 Fichier(await emettre.ExecuterAsync(id, user.UtilisateurId(), ct)))
            .ExigerPermission(Permissions.AchatsCommander);
 
-        achats.MapGet("/commandes/{id:long}/pdf", async (long id, ImprimerCommande imprimer, CancellationToken ct) =>
-                await imprimer.ExecuterAsync(id, ct) is { } d ? Fichier(d) : Results.NotFound(new ErreurDto("Commande introuvable.")))
+        achats.MapGet("/commandes/{id:long}/pdf", async (long id, ImprimerCommande imprimer, ClaimsPrincipal user, CancellationToken ct) =>
+                await imprimer.ExecuterAsync(id, user.UtilisateurId(), ct) is { } d ? Fichier(d) : Results.NotFound(new ErreurDto("Commande introuvable.")))
            .ExigerPermission(Lecture);
 
         achats.MapPost("/commandes/{id:long}/annuler", async (long id, AnnulerCommande annuler, ClaimsPrincipal user, CancellationToken ct) =>
@@ -190,8 +190,8 @@ internal static class AchatsEndpoints
                 Fichier(await suivre.EnvoyerAsync(id, user.UtilisateurId(), ct)))
            .ExigerPermission(Permissions.AchatsRetourFournisseur);
 
-        achats.MapGet("/retours/{id:long}/pdf", async (long id, SuivreRetour suivre, CancellationToken ct) =>
-                await suivre.ImprimerAsync(id, ct) is { } d ? Fichier(d) : Results.NotFound(new ErreurDto("Retour introuvable.")))
+        achats.MapGet("/retours/{id:long}/pdf", async (long id, SuivreRetour suivre, ClaimsPrincipal user, CancellationToken ct) =>
+                await suivre.ImprimerAsync(id, user.UtilisateurId(), ct) is { } d ? Fichier(d) : Results.NotFound(new ErreurDto("Retour introuvable.")))
            .ExigerPermission(Lecture);
 
         achats.MapPost("/retours/{id:long}/avoir", async (long id, AvoirRequete req, SuivreRetour suivre, ClaimsPrincipal user, CancellationToken ct) =>

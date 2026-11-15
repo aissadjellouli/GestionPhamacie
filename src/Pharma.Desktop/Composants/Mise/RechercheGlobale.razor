@@ -49,10 +49,10 @@
     private static readonly (string Libelle, string Ou, string Lien, string[] Droits)[] Rubriques =
     [
         ("Annulation ou retour", "Caisse", "caisse?rubrique=annulation", ["caisse.vendre"]),
-        ("Règlement d’un crédit", "Caisse", "caisse?rubrique=credit", ["caisse.vendre"]),
+        ("Encaisser une dette", "Caisse", "caisse?rubrique=credit", ["caisse.vendre"]),
         ("État de la caisse", "Caisse", "caisse/etat", ["caisse.vendre"]),
-        ("Relève", "Caisse", "cloture?releve=true", ["caisse.vendre"]),
-        ("Clôturer la caisse", "Caisse", "cloture", ["caisse.vendre"]),
+        ("Relève", "Caisse", "cloture?releve=true", ["caisse.cloturer"]),
+        ("Clôturer la caisse", "Caisse", "cloture", ["caisse.cloturer"]),
         ("Alertes urgentes", "Stock · Alertes", "?rubrique=urgent", []),
         ("Alertes de péremption", "Stock · Alertes", "?rubrique=peremption", []),
         ("Écarts d’inventaire à valider", "Stock · Inventaire", "inventaire?rubrique=ecarts", []),
@@ -63,10 +63,11 @@
         ("Réceptionner une livraison", "Achats", "achats?onglet=receptions&vue=saisie", ["achats.receptionner"]),
         ("Réceptions en attente", "Achats", "achats?onglet=receptions&vue=attente", ["achats.receptionner"]),
         ("Préparer un retour", "Achats", "achats?onglet=retours&vue=preparer", ["achats.retour_fournisseur"]),
-        ("Règlements des grossistes", "Achats", "achats?onglet=reglements", ["achats.regler"]),
+        ("Payer un grossiste", "Achats", "achats?onglet=reglements", ["achats.regler"]),
         ("Grossistes", "Achats", "achats?onglet=grossistes", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]),
         ("Prêts bancaires", "Finances · Financements", "financements?rubrique=prets", ["role.titulaire"]),
         ("Échéances des prêts à payer", "Finances · Financements", "financements?rubrique=echeances", ["role.titulaire"]),
+        ("Doublons d’import", "Administration", "admin/doublons-import", ["reprise.doublons"]),
         ("Compte du titulaire (apports)", "Finances · Financements", "financements?rubrique=titulaire", ["role.titulaire"]),
     ];
 

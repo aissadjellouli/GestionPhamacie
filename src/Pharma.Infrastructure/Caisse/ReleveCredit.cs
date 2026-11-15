@@ -30,4 +30,19 @@ internal static class ReleveCredit
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)sessionCaisseId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
         await cmd.ExecuteNonQueryAsync(ct);
     }
+
+    /// <summary>
+    /// Rattache une part du dernier mouvement de crédit inscrit dans cette transaction (celui que le déclencheur vient d'écrire
+    /// en diminuant la dette) à une vente à crédit (087_imputation_credit.sql) : v_vente_credit la déduit de cette vente.
+    /// </summary>
+    public static async Task ImputerAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long venteId, decimal montant, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand("""
+            INSERT INTO credit_imputation (credit_mouvement_id, vente_id, montant)
+            VALUES (currval(pg_get_serial_sequence('credit_mouvement', 'id')), $1, $2)
+            """, cx, tx);
+        cmd.Parameters.AddWithValue(venteId);
+        cmd.Parameters.AddWithValue(montant);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 }

@@ -27,7 +27,7 @@ public static class AutorisationBlocage
         if (await droits.APermissionAsync(utilisateurId, Permissions.ProduitsBloquer, ct)) return (utilisateurId, "");
         if (string.IsNullOrWhiteSpace(v.ValidateurIdentifiant) || codes is null)
             throw new RegleMetierException($"{liste} : produit bloqué {operation}. Le pharmacien ou l’assistant doit valider avec son code comptoir.", "produit_bloque");
-        var c = await codes.VerifierAsync(v.ValidateurIdentifiant, v.ValidateurCode, poste, ct);
+        var c = await codes.VerifierAsync(v.ValidateurIdentifiant, v.ValidateurCode, poste, ct, utilisateurId);
         if (!await droits.APermissionAsync(c.Id, Permissions.ProduitsBloquer, ct))
             throw new RegleMetierException($"{c.NomComplet} n’a pas le droit de valider un produit bloqué.", "produit_bloque");
         return (c.Id, c.NomComplet);

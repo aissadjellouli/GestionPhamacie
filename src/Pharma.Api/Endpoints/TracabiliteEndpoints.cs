@@ -24,8 +24,8 @@ internal static class TracabiliteEndpoints
                 Results.Ok((await consulter.ExecuterAsync(produit, lot, ct)).VersDto()))
            .ExigerPermission(Permissions.StockDeclarerPerime);
 
-        api.MapGet("/tracabilite/boites/{code}", async (string code, ConsulterParcoursBoite consulter, CancellationToken ct) =>
-                await consulter.ExecuterAsync(code, ct) is { } parcours
+        api.MapGet("/tracabilite/boites/{code}", async (string code, ConsulterParcoursBoite consulter, ClaimsPrincipal user, CancellationToken ct) =>
+                await consulter.ExecuterAsync(code, user.UtilisateurId(), ct) is { } parcours
                     ? Results.Ok(parcours.VersDto())
                     : Results.NotFound(new ErreurDto("Boîte inconnue : vérifiez le code ou l'étiquette.")))
            .ExigerPermission(Permissions.StockConsulter);

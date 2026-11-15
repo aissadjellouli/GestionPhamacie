@@ -21,9 +21,13 @@
 
     @if (mode is not null)
     {
-        <EditeurFacture @key="cleEditeur" Mode="@mode" Origine="origine" Reprise="@repriseFacture" OnFerme="() => (mode, repriseFacture) = (null, null)" OnTermine="TermineAsync" />
+        @* Écran fixe (2026-11-15) : pendant la saisie, la liste est masquée et le formulaire défile dans son cadre *@
+        <div class="cadre-defilant">
+            <EditeurFacture @key="cleEditeur" Mode="@mode" Origine="origine" Reprise="@repriseFacture" OnFerme="() => (mode, repriseFacture) = (null, null)" OnTermine="TermineAsync" />
+        </div>
     }
-
+    else
+    {
     <!-- Filtres -->
     <div class="filtres" role="tablist" aria-label="Suivi">
         @foreach (var (code, libelle) in Suivis)
@@ -62,7 +66,8 @@
                         @{ var cf = Libelles.ContactFacture(f.Destinataire, f.PatientId, f.ClientId, f.OrganismeId); }
                         <td><LienContact Type="@cf.Type" Id="cf.Id" Nom="@f.DestinataireNom" /><br /><span class="detail">@Destinataire(f.Destinataire)</span></td>
                         <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(f.Ttc, 2)</td>
-                        <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(f.Type == "avoir" || f.Statut == "remplacee" ? f.DejaPaye + f.Regle + f.Avoirs : f.Ttc - f.Reste, 2)</td>
+                        @* Payé / réglé aligné sur le détail (E6) : l'avoir a sa ligne dans le détail, il n'est pas compté ici (même calcul que RegleFacture.PayeAfficheListe) *@
+                        <td class="nombre" style="white-space: nowrap">@Libelles.Dinars(f.Type == "avoir" || f.Statut == "remplacee" ? f.DejaPaye + f.Regle + f.Avoirs : Math.Max(0, f.Ttc - f.Reste - f.Avoirs), 2)</td>
                         <td class="nombre" style="white-space: nowrap">@(f.Type == "avoir" ? "—" : Libelles.Dinars(f.Reste, 2))</td>
                         <td>@Etat(f)</td>
                         <td><button type="button" class="lien-bouton" @onclick="() => OuvrirAsync(f.Id)">Ouvrir</button></td>
@@ -77,6 +82,7 @@
         </table>
     </div>
     <Pagination Total="total" Numero="page" Taille="taille" Occupe="enCours" Libelle="Pages des factures" OnChange="p => AllerPageAsync(p.Numero, p.Taille)" />
+    }
 
     @if (detail is { } d)
     {

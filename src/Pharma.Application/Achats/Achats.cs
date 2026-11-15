@@ -196,8 +196,10 @@ public interface IAchats
 
 public interface IDocumentsAchats
 {
-    byte[] BonCommande(CommandeDetail commande, Fournisseur fournisseur, string? pharmacie);
-    byte[] BonRetour(RetourResume retour, string? pharmacie);
+    /// <param name="avecPrix">Faux si l'utilisateur qui produit le bon ne voit pas les prix d'achat : bon sans prix ni montants.</param>
+    byte[] BonCommande(CommandeDetail commande, Fournisseur fournisseur, string? pharmacie, bool avecPrix);
+    /// <param name="avecPrix">Faux si l'utilisateur qui produit le bon ne voit pas les prix d'achat : bon sans « avoir attendu » ni prix.</param>
+    byte[] BonRetour(RetourResume retour, string? pharmacie, bool avecPrix);
     /// <summary>Planche A4 d'étiquettes 50 × 30 mm avec code EAN-13.</summary>
     byte[] PlancheEtiquettes(IReadOnlyList<EtiquetteBoite> etiquettes);
     /// <summary>Etiquettes ZPL (imprimante thermique 203 dpi), une par boîte.</summary>
@@ -337,19 +339,22 @@ public sealed class EmettreCommande(IAchats achats, IPermissionService droits, I
             new Dictionary<string, object?> { ["numero"] = emise.Entete.Numero, ["montant_ht"] = emise.Entete.MontantHt, ["lignes"] = emise.Lignes.Count },
             Permissions.AchatsCommander, ct);
         var nom = (await pharmacie.LireAsync(ct)).Nom;
-        return new DocumentGenere(documents.BonCommande(emise, f, nom), $"{emise.Entete.Numero}.pdf");
+        return new DocumentGenere(documents.BonCommande(emise, f, nom, await droits.VoitPrixAchatAsync(utilisateurId, ct)), $"{emise.Entete.Numero}.pdf");
     }
 }
 
-/// <summary>Bon de commande PDF (réimpression), quel que soit le statut.</summary>
-public sealed class ImprimerCommande(IAchats achats, IDocumentsAchats documents, Administration.IPharmacie pharmacie)
+/// <summary>
+/// Bon de commande PDF (réimpression), quel que soit le statut. Prix et montants imprimés seulement pour qui voit les prix d'achat
+/// (rapports.marges, titulaire) : sinon le bon sort sans prix (décision du 2026-11-15).
+/// </summary>
+public sealed class ImprimerCommande(IAchats achats, IDocumentsAchats documents, Administration.IPharmacie pharmacie, IPermissionService droits)
 {
-    public async Task<DocumentGenere?> ExecuterAsync(long commandeId, CancellationToken ct = default)
+    public async Task<DocumentGenere?> ExecuterAsync(long commandeId, long utilisateurId, CancellationToken ct = default)
     {
         if (await achats.CommandeAsync(commandeId, ct) is not { } c) return null;
         var f = await achats.FournisseurAsync(c.Entete.FournisseurId, ct) ?? throw new RegleMetierException("Grossiste introuvable.");
         var nom = (await pharmacie.LireAsync(ct)).Nom;
-        return new DocumentGenere(documents.BonCommande(c, f, nom), $"{c.Entete.Numero}.pdf");
+        return new DocumentGenere(documents.BonCommande(c, f, nom, await droits.VoitPrixAchatAsync(utilisateurId, ct)), $"{c.Entete.Numero}.pdf");
     }
 }
 
@@ -391,7 +396,20 @@ public sealed class Receptionner(IAchats achats, IPermissionService droits, IHor
         // Réception à l'aveugle : la livraison est d'abord comptée, la facture se saisit ensuite sur ce comptage
         if (mode is not null && await mode.AveugleAsync(ct))
             throw new RegleMetierException("Réception à l’aveugle : comptez d’abord les boîtes (« Compter une livraison »), la facture se saisit ensuite sur ce comptage.");
+        await ExigerSaisiePrixAsync(droits, s, utilisateurId, ct);
         return await EntrerAsync(s, utilisateurId, ct);
+    }
+
+    /// <summary>
+    /// Prix facturés (prix HT, remise, timbre) : saisis seulement par un ayant droit prix.modifier (un seul droit pour toute saisie de
+    /// prix, titulaire compris, décision du 2026-11-15) ; la visibilité des prix d'achat reste liée à rapports.marges. Sans le droit, l'employé compte les boîtes (CompterLivraison) et la facture est saisie par un ayant droit ;
+    /// le refus (DroitRefuseException) permet l'autorisation sur place par code comptoir. Exigé quel que soit le prix saisi (revue
+    /// 2026-11-15) : une facture « tout à 0 » ferait entrer le stock valorisé à 0 sans contrôle.
+    /// </summary>
+    public static async Task ExigerSaisiePrixAsync(IPermissionService droits, SaisieReception s, long utilisateurId, CancellationToken ct = default)
+    {
+        if (s.Timbre == 0 && s.Lignes.Count == 0) return;
+        await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "saisir les prix de la facture d’achat", ct);
     }
 
     /// <summary>Livraison comptée puis facturée (FacturerComptage, DeciderEcartReception) : lignes déjà rapprochées du comptage.</summary>
@@ -615,7 +633,8 @@ public sealed class SuivreRetour(IAchats achats, IPermissionService droits, IDoc
         await achats.MarquerEnvoyeAsync(retourId, ct);
         await Journaliser(utilisateurId, "retour_envoye", r, null, ct);
         var maj = await achats.RetourAsync(retourId, ct) ?? r;
-        return new DocumentGenere(documents.BonRetour(maj, (await pharmacie.LireAsync(ct)).Nom), $"{r.Numero}.pdf");
+        return new DocumentGenere(documents.BonRetour(maj, (await pharmacie.LireAsync(ct)).Nom, await droits.VoitPrixAchatAsync(utilisateurId, ct)),
+            $"{r.Numero}.pdf");
     }
 
     public async Task EnregistrerAvoirAsync(long retourId, decimal montant, long utilisateurId, CancellationToken ct = default)
@@ -640,9 +659,14 @@ public sealed class SuivreRetour(IAchats achats, IPermissionService droits, IDoc
         await Journaliser(utilisateurId, "retour_refuse", r, null, ct);
     }
 
-    public async Task<DocumentGenere?> ImprimerAsync(long retourId, CancellationToken ct = default) =>
+    /// <summary>
+    /// Bon de retour PDF : « avoir attendu » au prix d'achat imprimé seulement pour qui voit les prix d'achat (rapports.marges,
+    /// titulaire) ; sinon le bon sort sans prix (décision du 2026-11-15, comme le bon de commande).
+    /// </summary>
+    public async Task<DocumentGenere?> ImprimerAsync(long retourId, long utilisateurId, CancellationToken ct = default) =>
         await achats.RetourAsync(retourId, ct) is { } r
-            ? new DocumentGenere(documents.BonRetour(r, (await pharmacie.LireAsync(ct)).Nom), $"{r.Numero}.pdf")
+            ? new DocumentGenere(documents.BonRetour(r, (await pharmacie.LireAsync(ct)).Nom, await droits.VoitPrixAchatAsync(utilisateurId, ct)),
+                $"{r.Numero}.pdf")
             : null;
 
     private async Task<RetourResume> Charger(long retourId, long utilisateurId, StatutRetour voulu, CancellationToken ct)

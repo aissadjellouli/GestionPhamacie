@@ -10,6 +10,17 @@ public static class RegleTresorerie
     /// <summary>Catégorie des intérêts (et TVA, marge) payés avec une échéance de prêt (volet Financements).</summary>
     public const string ChargesFinancieres = "charges_financieres";
 
+    /// <summary>
+    /// Paiement d'une échéance de prêt (décision du titulaire, 2026-11-15) : le découvert est accepté sur un compte bancaire
+    /// (la banque prélève l'échéance même sans provision) ; le coffre (espèces) ne peut jamais payer plus qu'il ne contient.
+    /// Type de compte : « banque » ou « coffre » (compte_tresorerie.type).
+    /// </summary>
+    public static bool DecouvertAdmisPourEcheance(string typeCompte) => typeCompte == "banque";
+
+    /// <summary>Solde suffisant, ou découvert admis (échéance payée par une banque).</summary>
+    public static bool PaiementEcheancePermis(string typeCompte, decimal solde, decimal montant) =>
+        solde >= montant || DecouvertAdmisPourEcheance(typeCompte);
+
     /// <summary>Catégories de dépenses (code, libellé).</summary>
     public static readonly IReadOnlyList<(string Code, string Libelle)> Categories =
     [

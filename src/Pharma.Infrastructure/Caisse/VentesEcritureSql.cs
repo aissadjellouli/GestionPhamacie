@@ -103,6 +103,34 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             }
         }
 
+        // « Remis à » / « Pour » (script 091) : fiche d'un patient ou nom libre ; la vente reste au nom de vente.patient_id
+        if (a.RemisA is not null || a.Pour is not null)
+        {
+            await using var cmd = new NpgsqlCommand(
+                "UPDATE vente SET remis_a_patient_id = $2, remis_a_nom = $3, pour_patient_id = $4, pour_nom = $5 WHERE id = $1", cx, tx);
+            cmd.Parameters.AddWithValue(venteId);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.RemisA?.PatientId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.RemisA?.Nom ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.Pour?.PatientId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.Pour?.Nom ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+
+        // Canal de la part organisme (script 089) ; vente Chifa sans volet : n° de facture Chifa saisi (même unicité que le volet)
+        if (a.CanalOrganisme != CanalOrganisme.Logiciel || a.FactureChifa is not null)
+        {
+            await using var cmd = new NpgsqlCommand(
+                "UPDATE vente SET canal_organisme = $2, chifa_facture = COALESCE($3, chifa_facture) WHERE id = $1", cx, tx);
+            cmd.Parameters.AddWithValue(venteId);
+            cmd.Parameters.AddWithValue(a.CanalOrganisme);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.FactureChifa ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+            try { await cmd.ExecuteNonQueryAsync(ct); }
+            catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
+            {
+                throw new RegleMetierException($"La facture Chifa n° {a.FactureChifa} vient d’être rattachée à une autre vente.", "facture_chifa");
+            }
+        }
+
         // 3. Lignes, stock, mouvements, registre
         // Lots du panier verrouillés d'emblée, toujours dans le même ordre (id croissant) : deux postes qui vendent les mêmes lots
         // s'attendent au lieu de s'interbloquer
@@ -119,8 +147,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             await using (var cmd = new NpgsqlCommand("""
                 INSERT INTO ligne_vente (vente_id, produit_id, lot_id, quantite, prix_unitaire,
                                          base_remboursement, taux_remboursement, montant_organisme, montant_patient, shp, raison_lot,
-                                         remise_auto_pct, reduction_auto, reduction_manuelle, don_partiel)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id
+                                         remise_auto_pct, reduction_auto, reduction_manuelle, don_partiel, prix_chifa, choix_prix_chifa)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id
                 """, cx, tx))
             {
                 cmd.Parameters.AddWithValue(venteId);
@@ -138,6 +166,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
                 cmd.Parameters.AddWithValue(l.ReductionAuto);
                 cmd.Parameters.AddWithValue(l.ReductionManuelle);
                 cmd.Parameters.AddWithValue(l.Medicament && l.Reduction > 0);
+                cmd.Parameters.Add(Valeur(l.PrixChifa, NpgsqlDbType.Numeric));
+                cmd.Parameters.Add(Valeur(l.ChoixPrixChifa, NpgsqlDbType.Text));
                 ligneId = (long)(await cmd.ExecuteScalarAsync(ct))!;
             }
 
@@ -227,6 +257,18 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         // 5. Crédit : la dette du patient augmente
         if (a.CreditAccorde)
         {
+            // Plafond revérifié dans la transaction : patient verrouillé, solde relu (deux ventes à crédit simultanées ne le
+            // dépassent pas ensemble ; la seconde attend la première puis voit sa dette)
+            await using (var verrou = new NpgsqlCommand("SELECT solde_credit, plafond_credit FROM patient WHERE id = $1 FOR UPDATE", cx, tx))
+            {
+                verrou.Parameters.AddWithValue(v.PatientId!.Value);
+                await using var r = await verrou.ExecuteReaderAsync(ct);
+                if (!await r.ReadAsync(ct)) throw new RegleMetierException("Crédit : patient introuvable.");
+                var (solde, plafond) = (r.GetDecimal(0), r.GetDecimal(1));
+                if (!PlafondEncaissement.Respecte(solde, a.Reglement.Montant, plafond, a.PeutDepasserPlafond))
+                    throw new Pharma.Application.Commun.DroitRefuseException(Permissions.CreditDepasserPlafond, "dépasser le plafond de crédit",
+                        PlafondEncaissement.Message(solde, a.Reglement.Montant, plafond));
+            }
             await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.VenteCredit, venteId, v.UtilisateurId, null, $"Vente {numero}", ct, v.SessionCaisseId);
             await using var cmd = new NpgsqlCommand(
                 "UPDATE patient SET solde_credit = solde_credit + $2 WHERE id = $1", cx, tx);

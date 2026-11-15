@@ -160,6 +160,17 @@
     <File Path="database/migration/080_classe_confirmee_titulaire.sql" />
     <File Path="database/migration/081_conditions_pret_assurance.sql" />
     <File Path="database/migration/082_medecin_coordonnees.sql" />
+    <File Path="database/migration/083_fuseau_horaire.sql" />
+    <File Path="database/migration/084_avoir_dette_patient.sql" />
+    <File Path="database/migration/085_droit_cloture_caisse.sql" />
+    <File Path="database/migration/086_seuil_ecart_chifa.sql" />
+    <File Path="database/migration/087_imputation_credit.sql" />
+    <File Path="database/migration/088_libelle_encaissement_dette.sql" />
+    <File Path="database/migration/089_canal_organisme_assure_unique.sql" />
+    <File Path="database/migration/090_lien_patient_mdn.sql" />
+    <File Path="database/migration/091_vente_remis_a_pour.sql" />
+    <File Path="database/migration/092_import_patients_doublons.sql" />
+    <File Path="database/migration/093_droit_doublons_import.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

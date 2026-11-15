@@ -321,7 +321,8 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
                     $"paiement de l’échéance du prêt {pret}", p.UtilisateurId, ct);
         }
         else compte = p.CompteId!.Value;
-        await SoldeTresorerie.ExigerAsync(cx, tx, compte, montant, ct, p.Moyen == "especes" ? " : complétez avec l’argent du tiroir de la caisse" : null);
+        // Découvert accepté sur une banque (décision du titulaire) ; le coffre ne paie jamais plus qu'il ne contient
+        await SoldeTresorerie.ExigerPourEcheanceAsync(cx, tx, compte, montant, ct, p.Moyen == "especes" ? " : complétez avec l’argent du tiroir de la caisse" : null);
 
         var libelle = $"Échéance du {dateEcheance:dd/MM/yyyy} · prêt {pret}";
         long? mouvementCapital = capital > 0

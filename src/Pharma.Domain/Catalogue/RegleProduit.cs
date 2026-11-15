@@ -12,9 +12,10 @@ public static class RegleProduit
 {
     /// <summary>
     /// Contrôle et normalise la fiche : espaces retirés, code-barres EAN-13 (un GTIN-14 commençant par 0 est ramené à 13 chiffres).
-    /// Obligatoires : nom, DCI, dosage, forme, prix public, classe.
+    /// Obligatoires : nom, DCI, dosage, forme, prix public, classe. <paramref name="prixFacultatif"/> : création par un employé sans le
+    /// droit prix.modifier, prix public laissé à 0 (produit invendable jusqu'à ce qu'un ayant droit fixe son prix).
     /// </summary>
-    public static FicheProduit Normaliser(FicheProduit f)
+    public static FicheProduit Normaliser(FicheProduit f, bool prixFacultatif = false)
     {
         static string Requis(string? valeur, string champ) =>
             string.IsNullOrWhiteSpace(valeur) ? throw new RegleMetierException($"{champ} obligatoire.") : valeur.Trim();
@@ -24,7 +25,7 @@ public static class RegleProduit
         var dci = Requis(f.Dci, "DCI");
         var dosage = Requis(f.Dosage, "Dosage");
         var forme = Requis(f.Forme, "Forme");
-        if (f.PrixPublic <= 0) throw new RegleMetierException("Le prix public doit être supérieur à 0.", "prix_public");
+        if (f.PrixPublic < 0 || (f.PrixPublic == 0 && !prixFacultatif)) throw new RegleMetierException("Le prix public doit être supérieur à 0.", "prix_public");
         if (f.TarifReference is <= 0) throw new RegleMetierException("Le tarif de référence doit être supérieur à 0.", "tarif_reference");
         if (f.Remboursable && f.TarifReference is null) throw new RegleMetierException("Un produit remboursable a besoin d’un tarif de référence.", "tarif_reference");
         if (f.TauxTva is < 0 or > 100) throw new RegleMetierException("Taux de TVA entre 0 et 100 %.", "tva");

@@ -265,6 +265,9 @@ input[type=date], input[type=time] { height: 44px; padding: 0 12px; border-radiu
 .tableau-cadre { background: var(--surface); border: 1px solid var(--bordure); border-radius: 12px; overflow: auto; }
 /* Liste de cartes qui défile dans son cadre, comme un tableau (hauteur ajustée par poste.js) */
 .cadre-defilant { overflow-y: auto; padding-right: 4px; }
+/* Tableau à l'intérieur d'un panneau défilant (Achats › Règlements, 2026-11-15) : jamais écrasé par le flex du panneau ;
+   il garde sa hauteur utile (plafonnée par poste.js, il défile alors dans son cadre) et c'est le panneau qui défile */
+.cadre-defilant > .tableau-cadre { flex-shrink: 0; min-height: 120px; }
 /* Le tableau défile dans son cadre (hauteur ajustée par poste.js) : la ligne d'en-tête reste visible */
 .tableau-cadre .tableau thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--bordure); }
 .tableau { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 860px; }
@@ -867,6 +870,12 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 .bloc-client-ordonnance { align-items: center; }
 .bloc-client-ordonnance .champ input { width: 160px; }
 .bloc-client-ordonnance .lien-bouton { align-self: center; }
+/* « Remis à » / « Pour » (2026-11-15) : une seule ligne sous l'ordonnance, sans défilement de la caisse */
+.champ.champ-ligne.remise-vente { justify-content: flex-start; gap: 10px; }
+.champ.champ-ligne.remise-vente label { flex: 0 0 auto; }
+.champ.champ-ligne.remise-vente select { width: 220px; flex: 0 0 220px; }
+.champ.champ-ligne.remise-vente input { width: 220px; flex: 0 0 220px; }
+.champ.champ-ligne.remise-vente .detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 /* Fiche d'un médecin (création à la caisse, correction dans Factures) : deux champs par ligne (2026-11-15) */
 .sous-formulaire.fiche-medecin { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .fiche-medecin > .actions, .fiche-medecin > .erreur { grid-column: 1 / -1; }
@@ -909,3 +918,6 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 .connexion .entete-connexion { display: grid; grid-template-columns: auto 1fr; column-gap: 16px; align-items: center; }
 .connexion .entete-connexion .logo-connexion { width: 64px; height: 64px; grid-row: span 2; }
 .connexion .entete-connexion h1, .connexion .entete-connexion .sous-titre { margin: 0; }
+
+/* Nouveau produit (2026-11-15) : les champs défilent dans leur cadre, « Créer le produit » reste visible (écran fixe) */
+.fiche-produit-champs { display: flex; flex-direction: column; gap: 14px; min-height: 0; }

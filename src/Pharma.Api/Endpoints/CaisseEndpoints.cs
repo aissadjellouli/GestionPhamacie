@@ -31,7 +31,8 @@ internal static class CaisseEndpoints
                 var e = await obtenir.ExecuterAsync(user.UtilisateurId(), requete.Poste(), ct);
                 return Results.Ok(new EtatCaisseDto(e.SessionId, e.OuverteLe, e.FondCaisse, e.Poste,
                     e.Parametres.ComptageAveugle, e.Parametres.FondCaisseDefaut, e.Parametres.SeuilEcart,
-                    e.Parametres.DeconnexionMinutes, e.PeutVoirEcart, e.VentesEspecesVisibles, e.OuvertePar, user.ParCodeComptoir(), e.Parametres.PlafondCreditDefaut));
+                    e.Parametres.DeconnexionMinutes, e.PeutVoirEcart, e.VentesEspecesVisibles, e.OuvertePar, user.ParCodeComptoir(), e.Parametres.PlafondCreditDefaut,
+                    e.Parametres.SeuilEcartChifa));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -45,7 +46,9 @@ internal static class CaisseEndpoints
                 return Results.Ok(new ApercuVenteDto(a.MontantBrut, a.PartOrganisme, a.MontantRemise, a.PartPatient, a.MontantTotal, a.OrdonnanceRequise,
                     a.PrixLignes, a.Shp, a.TotalMedicaments, a.ProduitsBloques, a.SurOrdonnance,
                     a.Situations?.Select(s => new SituationLotDto(s.LotId, s.Situation, s.LotDelaisse, s.PeremptionDelaisse)).ToList(),
-                    a.MontantDon, a.ReductionsAuto, a.Reductions?.Select(r => new ReductionLigneDto(r.RemiseAutoPct, r.PctApplique, r.Montant, r.DonPartiel)).ToList()));
+                    a.MontantDon, a.ReductionsAuto, a.Reductions?.Select(r => new ReductionLigneDto(r.RemiseAutoPct, r.PctApplique, r.Montant, r.DonPartiel)).ToList(),
+                    a.EcartsChifa?.Select(e => new EcartChifaLigneDto(e.Index, e.ProduitId, e.Produit, e.PrixChifa, e.NotrePrix, e.PrixApplique, e.Choix, e.AChoisir)).ToList(),
+                    a.EcartChifaPatient, a.SeuilEcartChifa));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -55,7 +58,16 @@ internal static class CaisseEndpoints
                 var v = await lire.ExecuterAsync(req.Texte, user.UtilisateurId(), ct);
                 return Results.Ok(new VoletChifaDto(v.Qr.NumeroFacture, v.Qr.DateFacture, v.Qr.AssureComplet, v.Qr.Champ5, v.Qr.Champ6, v.Qr.DateSecondaire,
                     v.Qr.MontantOrdonnance, v.Lignes.Select(l => new LigneVoletChifaDto(l.Code, l.Quantite, l.PrixUnitaire, l.Produit?.Id, l.Produit?.Nom,
-                        l.Produit?.PrixPublic)).ToList(), v.PatientId, v.Patient, v.OrganismeId, v.Qr.Brut, v.PatientNumAssure));
+                        l.Produit?.PrixPublic)).ToList(), v.PatientId, v.Patient, v.OrganismeId, v.Qr.Brut, v.PatientNumAssure,
+                    v.AssurePrincipalProposeId, v.AssurePrincipalPropose));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        // Volet prérempli (2026-11-15) : patient inconnu créé avec le nom saisi, sinon nom provisoire à compléter ; jamais deux fiches par n° d'assuré
+        caisse.MapPost("/volet-chifa/patient", async (CreerPatientVoletRequete req, CreerPatientVoletChifa creer, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await creer.ExecuterAsync(req.Texte, req.Nom, req.OrganismeId, req.Lien, req.AssurePrincipalId, user.UtilisateurId(), ct);
+                return Results.Ok(new PatientVoletDto(p.Id, p.Nom, p.NumAssure, p.OrganismeId, p.Cree, p.ACompleter));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -66,7 +78,8 @@ internal static class CaisseEndpoints
         caisse.MapPost("/encaisser", async (CommandeVenteDto req, Encaisser encaisser, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
                 var v = await encaisser.ExecuterAsync(VersCommande(req), user.UtilisateurId(), requete.Poste(), ct);
-                return Results.Ok(new VenteEncaisseeDto(v.VenteId, v.Numero, v.MontantTotal, v.PartOrganisme, v.PartPatient, v.Mode.Code(), v.Rendu));
+                return Results.Ok(new VenteEncaisseeDto(v.VenteId, v.Numero, v.MontantTotal, v.PartOrganisme, v.PartPatient, v.Mode.Code(), v.Rendu,
+                    v.EcartChifaPatient, v.CatalogueChifa));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -78,13 +91,23 @@ internal static class CaisseEndpoints
                 var verse = await verser.ApresClotureAutomatiqueAsync(vue.SessionId, user.UtilisateurId(), ct);
                 return Results.Ok(VersDto(vue) with { VerseAuCoffre = verse });
             })
-           .ExigerPermission(Permissions.CaisseVendre);
+           .ExigerPermission(Permissions.CaisseCloturer);
 
         // Ticket en PDF (2026-11-15) : montré à l'écran quand l'imprimante de tickets du poste enregistre un fichier
-        caisse.MapGet("/ventes/{id:long}/ticket.pdf", async (long id, decimal? rendu, ObtenirTicket obtenir, Pharma.Application.Caisse.IDocumentsTicket documents, CancellationToken ct) =>
+        // Format rouleau : largeur du poste (57, 58, 76, 80 ou 112 mm ; autre valeur : 80 mm)
+        caisse.MapGet("/ventes/{id:long}/ticket.pdf", async (long id, decimal? rendu, int? largeur, ObtenirTicket obtenir, Pharma.Application.Caisse.IDocumentsTicket documents, CancellationToken ct) =>
             {
                 var t = await obtenir.ExecuterAsync(id, ct);
-                return Results.File(documents.Ticket(t, rendu), "application/pdf", $"ticket_{t.Numero}.pdf");
+                return Results.File(documents.Ticket(t, rendu, Pharma.Domain.Caisse.FormatTicket.Borner(largeur)), "application/pdf", $"ticket_{t.Numero}.pdf");
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        // Reçu d'un règlement de crédit en PDF (2026-11-15), même format rouleau que le ticket
+        caisse.MapGet("/credits/recus/{numero}/recu.pdf", async (string numero, int? largeur, Pharma.Application.Caisse.ImprimerRecuCredit imprimer, CancellationToken ct) =>
+            {
+                return await imprimer.ExecuterAsync(numero, largeur, ct) is (var contenu, var nom)
+                    ? Results.File(contenu, "application/pdf", nom)
+                    : Results.NotFound(new ErreurDto("Reçu introuvable."));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -95,7 +118,7 @@ internal static class CaisseEndpoints
                 return Results.Ok(new TicketDto(t.Numero, t.Date, t.Vendeur, t.Poste, t.Statut, t.Organisme, t.TauxTiersPayant,
                     t.Lignes.Select(l => new LigneTicketDto(l.Produit, l.Quantite, l.PrixUnitaire, l.Montant, l.PartOrganisme, l.Shp, l.Medicament,
                         l.Reduction, l.PctReduction, l.DonPartiel)).ToList(),
-                    t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif, t.Retours, t.DonPartiel));
+                    t.MontantBrut, t.Remise, t.PartOrganisme, t.PartPatient, t.Mode, t.Pharmacie, t.Adresse, t.Telephone, t.Nif, t.Retours, t.DonPartiel, t.EcartChifa, t.Client));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -185,13 +208,13 @@ internal static class CaisseEndpoints
                 Results.Ok((await detenteurs.ListerAsync(Permissions.PsychotropesDelivrer, ct)).Select(d => new DetenteurDroitDto(d.NomComplet, d.CodeComptoir))))
            .ExigerPermission(Permissions.CaisseVendre);
 
-        // Qui peut autoriser sur place une action refusée faute de droit (droit donné, ou « role.titulaire ») ;
-        // ?remise= : remise refusée (caisse.remise), seuls les employés dont le maximum de remise la couvre
+        // Qui peut autoriser sur place une action refusée faute de droit : seulement pour un droit de la liste blanche
+        // (CodeComptoir.AutorisablesParCollegue ; liste vide sinon, rôle de titulaire compris) ; noms et références opaques,
+        // jamais les identifiants de connexion. ?remise= : remise refusée, seuls les employés dont le maximum la couvre
         api.MapGet("/auth/valideurs", async (string? permission, decimal? remise, Pharma.Application.Securite.ListerValidateurs lister, ClaimsPrincipal user,
                 CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(permission ?? Pharma.Application.Securite.PermissionServiceExtensions.MarqueTitulaire, ct, user.UtilisateurId(),
-                        remise is > 0 ? remise : null))
-                    .Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet)).ToList()))
+                Results.Ok((await lister.AutorisablesAsync(permission, user.UtilisateurId(), remise is > 0 ? remise : null, ct))
+                    .Select(v => new ValideurDto(Pharma.Application.Securite.VerificationCodeComptoir.Reference(v.Id), v.NomComplet)).ToList()))
            .ExigerConnexion();
 
         // Qui peut valider un produit bloqué (à la vente ou à l'achat) avec son code comptoir
@@ -229,7 +252,7 @@ internal static class CaisseEndpoints
                 var r = await relever.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct, req.ConfirmerZero);
                 return Results.Ok(new ReleveDto(VersDto(r.Cloture), r.NouvelleSessionId));
             })
-           .ExigerPermission(Permissions.CaisseVendre);
+           .ExigerPermission(Permissions.CaisseCloturer);
 
         caisse.MapGet("/sessions/{id:long}/rapport", async (long id, ObtenirRapportCloture rapport, ClaimsPrincipal user, CancellationToken ct) =>
                 await rapport.ExecuterAsync(id, user.UtilisateurId(), ct) is { } r
@@ -264,7 +287,7 @@ internal static class CaisseEndpoints
         v.Id, v.Numero, v.Date, v.Vendeur, v.Patient, v.Total, v.PartPatient, v.PartOrganisme, v.Mode, v.Statut,
         v.CaisseOuverte, v.DansUnBordereau, v.Lignes.Select(l => new LigneVenteAnnulableDto(l.Produit, l.Quantite, l.Montant, l.Lot)).ToList(),
         ARendre(v), v.FactureNumero, v.SoldeCreditPatient, v.VendeurId, v.PatientId,
-        RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, v.SoldeCreditPatient).ReductionDette);
+        RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, v.SoldeCreditPatient).ReductionDette, v.Remise);
 
     private static CommandeVente VersCommande(CommandeVenteDto d)
     {
@@ -279,6 +302,8 @@ internal static class CaisseEndpoints
                 o.PorteurNom is null && o.PorteurAdresse is null && o.PorteurPiece is null ? null : new PorteurOrdonnance(o.PorteurNom, o.PorteurAdresse, o.PorteurPiece)) : null,
             d.RemisePct, mode, d.MontantRecu, d.ResteACharge,
             d.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null,
-            d.VoletChifa, d.RemiseAdditionnee, d.CleEncaissement);
+            d.VoletChifa, d.RemiseAdditionnee, d.CleEncaissement,
+            d.ChoixChifa?.Select(x => new ChoixPrixChifa(x.ProduitId, x.Choix, x.PrixAttendu)).ToList(), d.FactureeParChifa, d.NumeroFactureChifa,
+            d.RemisA is { } ra ? new PersonneVente(ra.PatientId, ra.Nom) : null, d.Pour is { } po ? new PersonneVente(po.PatientId, po.Nom) : null);
     }
 }

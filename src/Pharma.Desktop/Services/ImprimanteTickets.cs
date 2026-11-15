@@ -22,9 +22,12 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         reglages.Actuelles.ImprimanteTickets is { Length: > 0 } r ? r.Trim()
         : Environment.GetEnvironmentVariable("PHARMA_IMPRIMANTE_TICKETS") is { Length: > 0 } n ? n.Trim() : null;
 
+    /// <summary>Largeurs de rouleau du marché (2026-11-15), mêmes valeurs que FormatTicket côté serveur ; défaut 80 mm.</summary>
+    public static readonly IReadOnlyList<int> Largeurs = [57, 58, 76, 80, 112];
+
     public int LargeurMm =>
-        reglages.Actuelles.LargeurTicketMm is int r && r is >= 40 and <= 120 ? r
-        : int.TryParse(Environment.GetEnvironmentVariable("PHARMA_TICKET_LARGEUR_MM"), out var l) && l is >= 40 and <= 120 ? l : 80;
+        reglages.Actuelles.LargeurTicketMm is int r && Largeurs.Contains(r) ? r
+        : int.TryParse(Environment.GetEnvironmentVariable("PHARMA_TICKET_LARGEUR_MM"), out var l) && Largeurs.Contains(l) ? l : 80;
 
     public bool Automatique => reglages.Actuelles.TicketAutomatique;
 
@@ -184,8 +187,10 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         if (t.Telephone is { Length: > 0 } tel) P($"Tél. {tel}", alignement: TextAlignment.Center);
         if (t.Nif is { Length: > 0 } nif) P($"NIF {nif}", alignement: TextAlignment.Center);
         Separateur();
-        P($"Ticket {t.Numero}", gras: true);
+        // Reçu d'un encaissement de dette (numéro RC-…) : titre propre (2026-11-15)
+        P(t.Numero.StartsWith("RC-", StringComparison.Ordinal) ? $"Reçu d’encaissement de dette {t.Numero}" : $"Ticket {t.Numero}", gras: true);
         P($"{t.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr)} · {t.Vendeur}{(t.Poste is null ? "" : $" · {t.Poste}")}");
+        if (t.Client is { Length: > 0 } client) P($"Client : {client}");
         if (t.Statut == "annulee") P("VENTE ANNULÉE", gras: true, TextAlignment.Center);
         Separateur();
         foreach (var l in t.Lignes)
@@ -211,6 +216,7 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         if (t.DonPartiel > 0) Montant("Don partiel", -t.DonPartiel);
         if (t.PartOrganisme > 0)
             Montant($"Part {t.Organisme ?? "organisme"}{(t.TauxTiersPayant is { } taux ? $" ({taux:0.##} %)" : "")}", -t.PartOrganisme);
+        if (t.EcartChifa > 0) Montant("Écart Chifa payé par le patient", t.EcartChifa);
         Montant("À PAYER", t.PartPatient, gras: true);
         if (t.Mode is { } mode) P($"Réglé : {Mode(mode)}");
         if (rendu is > 0) Montant("Rendu", rendu.Value);

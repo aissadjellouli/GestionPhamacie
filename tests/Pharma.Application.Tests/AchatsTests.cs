@@ -82,7 +82,10 @@ internal sealed class AchatsEnMemoire : IAchats
         Task.FromResult<IReadOnlyList<ReceptionResume>>(n == "26/F-015695" ? [new ReceptionResume(9, "Qouds", n, null, null, DateTime.UtcNow, 0, 0, 100, f)] : []);
     public Task<Pharma.Application.Commun.Page<ReceptionResume>> ReceptionsAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<long>> LotsEnStockAsync(long produitId, string? numeroLot, CancellationToken ct = default) => throw new NotSupportedException();
-    public Task<RetourResume?> RetourAsync(long id, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Retour relu (bon de retour) ; null : non prévu par le test.</summary>
+    public RetourResume? RetourLu { get; set; }
+    public Task<RetourResume?> RetourAsync(long id, CancellationToken ct = default) =>
+        RetourLu is not null ? Task.FromResult<RetourResume?>(RetourLu) : throw new NotSupportedException();
     public Task<Pharma.Application.Commun.Page<RetourResume>> RetoursAsync(Pharma.Application.Commun.DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default) => throw new NotSupportedException();
     public Task MarquerEnvoyeAsync(long retourId, CancellationToken ct = default) => throw new NotSupportedException();
     public Task EnregistrerAvoirAsync(long retourId, decimal montant, CancellationToken ct = default) => throw new NotSupportedException();
@@ -162,7 +165,7 @@ public class AchatsApplicationTests
             new AjouterACommande(new AchatsEnMemoire(), new DroitsFactices("achats.commander")).ExecuterAsync(1, 4, 5, null, 5))).Message);
 
     private static Receptionner Reception(AchatsEnMemoire achats) =>
-        new(achats, new DroitsFactices("achats.receptionner"), new HorlogeFixe(Aujourdhui), new JournalEspion());
+        new(achats, new DroitsFactices("achats.receptionner", "prix.modifier"), new HorlogeFixe(Aujourdhui), new JournalEspion());
 
     [Fact]
     public async Task Reception_montant_ttc_avec_la_tva_du_catalogue()
@@ -204,10 +207,11 @@ public class AchatsApplicationTests
     {
         var achats = new AchatsEnMemoire();
         var ligne = new LigneReceptionSaisie(1, "x", "L1", Aujourdhui.AddYears(1), 12, 100m, Ppa: 130m, Ug: 2, RemplacerPrixCatalogue: true);
-        await Assert.ThrowsAnyAsync<Exception>(() => Reception(achats).ExecuterAsync(new SaisieReception(1, null, "BL-11", null, [ligne]), 5));
+        await Assert.ThrowsAnyAsync<Exception>(() => new Receptionner(achats, new DroitsFactices("achats.receptionner", "rapports.marges"),
+            new HorlogeFixe(Aujourdhui), new JournalEspion()).ExecuterAsync(new SaisieReception(1, null, "BL-11", null, [ligne]), 5));
         Assert.Null(achats.ReceptionRecue);
         var journal = new JournalEspion();
-        await new Receptionner(achats, new DroitsFactices("achats.receptionner", "prix.modifier"), new HorlogeFixe(Aujourdhui), journal)
+        await new Receptionner(achats, new DroitsFactices("achats.receptionner", "prix.modifier", "rapports.marges"), new HorlogeFixe(Aujourdhui), journal)
             .ExecuterAsync(new SaisieReception(1, null, "BL-11", null, [ligne]), 5);
         Assert.Equal(1000m, achats.ReceptionRecue!.MontantTtc);           // 10 boîtes facturées, 2 UG
         Assert.Contains("prix_modifie", journal.Actions);                 // 100 (catalogue de la doublure) → 130
@@ -227,7 +231,7 @@ public class AchatsApplicationTests
 
         // Validée par une personne habilitée : réceptionnée et inscrite au journal
         var journal = new JournalEspion();
-        await new Receptionner(achats, new DroitsFactices("achats.receptionner", "produits.bloquer"), new HorlogeFixe(Aujourdhui), journal)
+        await new Receptionner(achats, new DroitsFactices("achats.receptionner", "produits.bloquer", "prix.modifier"), new HorlogeFixe(Aujourdhui), journal)
             .ExecuterAsync(new SaisieReception(1, null, "BL-12", null, [new LigneReceptionSaisie(1, "x", "L1", Aujourdhui.AddYears(1), 1, 10m)],
                 Blocage: new Pharma.Application.Catalogue.ValidationBlocage(true)), 5);
         Assert.NotNull(achats.ReceptionRecue);
@@ -271,8 +275,9 @@ public class AchatsApplicationTests
     private sealed class DocumentsEspion : IDocumentsAchats
     {
         public CommandeDetail? Bon { get; private set; }
-        public byte[] BonCommande(CommandeDetail commande, Fournisseur fournisseur, string? pharmacie) { Bon = commande; return [1]; }
-        public byte[] BonRetour(RetourResume retour, string? pharmacie) => [];
+        public bool? AvecPrix { get; private set; }
+        public byte[] BonCommande(CommandeDetail commande, Fournisseur fournisseur, string? pharmacie, bool avecPrix) { (Bon, AvecPrix) = (commande, avecPrix); return [1]; }
+        public byte[] BonRetour(RetourResume retour, string? pharmacie, bool avecPrix) => [];
         public byte[] PlancheEtiquettes(IReadOnlyList<EtiquetteBoite> etiquettes) => [];
         public string EtiquettesZpl(IReadOnlyList<EtiquetteBoite> etiquettes) => "";
     }

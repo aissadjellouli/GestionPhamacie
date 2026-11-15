@@ -8,7 +8,7 @@
 <div class="@(EnLigne ? "partie-caisse" : "voile")" role="@(EnLigne ? null : "dialog")" aria-modal="@(EnLigne ? null : "true")" aria-labelledby="t-credit">
     <section class="panneau @(EnLigne ? "partie-caisse-panneau" : "fenetre-annulation")">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
-            <h2 id="t-credit">Règlement d’un crédit</h2>
+            <h2 id="t-credit">Encaisser une dette</h2>
             @if (!EnLigne) { <button type="button" class="btn" @onclick="OnFerme">Fermer</button> }
         </div>
 
@@ -59,14 +59,28 @@
                 }
                 @if (s.Ventes.Count > 0)
                 {
+                    @* Le patient peut solder toute une facture (2026-11-15) : la case coche ou décoche toutes ses ventes encore dues *@
+                    @if (FacturesDues.Count > 0)
+                    {
+                        <div class="filtres" style="margin-top: 8px">
+                            @foreach (var f in FacturesDues)
+                            {
+                                <label style="display: inline-flex; align-items: center; gap: 4px">
+                                    <input type="checkbox" checked="@FactureCochee(f)" @onchange="e => CocherFacture(f, e.Value is true)" />
+                                    toute la facture @f
+                                </label>
+                            }
+                        </div>
+                    }
                     <div class="tableau-cadre" style="margin-top: 8px">
                         <table class="tableau" style="min-width: 0">
-                            <thead><tr><th scope="col">Vente à crédit</th><th scope="col">Montant</th><th scope="col">Réglé</th><th scope="col">Reste dû</th></tr></thead>
+                            <thead><tr><th scope="col">Solder</th><th scope="col">Vente à crédit</th><th scope="col">Montant</th><th scope="col">Réglé</th><th scope="col">Reste dû</th></tr></thead>
                             <tbody>
                                 @foreach (var v in s.Ventes)
                                 {
                                     <tr>
-                                        <td class="nom">@v.Numero<br /><span class="detail">@Libelles.DateHeureLocale(v.Date)</span></td>
+                                        <td>@if (v.Reste > 0 && v.Id > 0) { <input type="checkbox" aria-label="@($"Solder la vente {v.Numero}")" checked="@cochees.Contains(v.Id)" @onchange="e => Cocher(v.Id, e.Value is true)" /> }</td>
+                                        <td class="nom">@v.Numero@if (v.Facture is { } fac) { <span class="detail"> · facture @fac</span> }@if (v.Remise is { } rv) { <span class="detail"> · @rv</span> }<br /><span class="detail">@Libelles.DateHeureLocale(v.Date)</span></td>
                                         <td>@Libelles.Dinars(v.Montant, 2)</td>
                                         <td>@Libelles.Dinars(v.Regle, 2)</td>
                                         <td>@if (v.Reste > 0) { <strong class="montant-du">@Libelles.Dinars(v.Reste, 2)</strong> } else { <span class="pastille ok">Soldée</span> }</td>
@@ -75,7 +89,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <p class="detail" style="margin: 4px 0 0">Les règlements soldent les dettes les plus anciennes d’abord.</p>
+                    <p class="detail" style="margin: 4px 0 0">Le montant réglé solde les ventes cochées (par défaut les plus anciennes jusqu’au montant ; le patient peut en choisir d’autres). Sans vente cochée, ou au-delà de leur reste, la dette la plus ancienne est soldée d’abord.</p>
                 }
                 @if (releveTotal > 0)
                 {
@@ -119,7 +133,7 @@
                                     {
                                         <tr>
                                             <td>@Libelles.DateHeureLocale(m.Date)</td>
-                                            <td>@LibelleMouvement(m.Type, m.Employe)@if (m.Vente is { } ticket) { <span class="detail"> · @ticket</span> }@if (m.Reference is { } reference && reference != LibelleMouvement(m.Type, m.Employe)) { <br /><span class="detail">@reference</span> }</td>
+                                            <td>@LibelleMouvement(m.Type, m.Employe)@if (m.Vente is { } ticket) { <span class="detail"> · @ticket</span> }@if (m.Remise is { } rm) { <span class="detail"> · @rm</span> }@if (m.Reference is { } reference && reference != LibelleMouvement(m.Type, m.Employe)) { <br /><span class="detail">@reference</span> }</td>
                                             <td class="@(m.Montant > 0 ? "texte-urgent" : null)"><strong>@(m.Montant > 0 ? "+" : "−") @Libelles.Dinars(Math.Abs(m.Montant), 2)</strong></td>
                                             <td>@Libelles.Dinars(m.SoldeApres, 2)</td>
                                             <td><LienContact Type="employe" Id="m.EmployeId" Nom="@(m.Employe ?? "—")" />@if (m.Poste is { } poste) { <br /><span class="detail">@poste</span> }</td>
@@ -153,7 +167,7 @@
             <div class="achats-ligne" style="align-items: flex-end">
                 <div class="champ" style="flex: 0 0 200px">
                     <label for="c-montant" class="requis">Montant réglé (DA)</label>
-                    <input id="c-montant" data-champ="montant" type="number" min="0.01" max="@s.Patient.Solde.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="0.01" @bind="montant" />
+                    <input id="c-montant" data-champ="montant" type="number" min="0.01" max="@s.Patient.Solde.ToString(System.Globalization.CultureInfo.InvariantCulture)" step="0.01" @bind="montant" @bind:after="CocherParDefaut" />
                 </div>
                 <div class="filtres" role="radiogroup" aria-label="Mode de règlement">
                     @foreach (var (code, libelle) in Modes)
@@ -162,6 +176,7 @@
                     }
                 </div>
             </div>
+            @if (MessageSurplus is { } surplus) { <div class="info-bandeau" role="status">@surplus</div> }
             <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EncaisserAsync">Encaisser @Libelles.Dinars(montant, 2)</button>
         }
     </section>
@@ -171,7 +186,7 @@
     private static string LibelleMouvement(string type, string? employe) => type switch
     {
         "ouverture" => "Dette à la mise en place du relevé", "reprise" => "Dette reprise de l’ancien logiciel", "vente_credit" => "Vente à crédit",
-        "remboursement" => "Règlement du patient", "retour" => "Retour de produits", "annulation" => "Vente annulée",
+        "remboursement" => "Encaissement de dette", "retour" => "Retour de produits", "annulation" => "Vente annulée",
         _ => employe is null ? "Correction hors logiciel" : "Correction par le titulaire"
     };
 
@@ -203,7 +218,7 @@
     private Task EffacerFiltresReleveAsync() { (releveDu, releveAu, releveType) = (null, null, ""); return FiltrerReleveAsync(); }
     private static readonly (string, string)[] TypesMouvement =
     [
-        ("vente_credit", "Vente à crédit"), ("remboursement", "Règlement du patient"), ("retour", "Retour de produits"), ("annulation", "Vente annulée"),
+        ("vente_credit", "Vente à crédit"), ("remboursement", "Encaissement de dette"), ("retour", "Retour de produits"), ("annulation", "Vente annulée"),
         ("correction", "Correction"), ("reprise", "Dette reprise de l’ancien logiciel"), ("ouverture", "Dette à la mise en place du relevé")
     ];
 
@@ -321,8 +336,62 @@
         (nouvelleDette, correction) = (s?.Patient.Solde ?? 0, false);
         (mouvements, mouvementsTotal, mouvementsPage) = (s?.Mouvements?.ToList() ?? [], s?.MouvementsTotal ?? 0, 1);
         releveTotal = s?.MouvementsTotal ?? 0;
+        CocherParDefaut();
         // La fiche apporte la première page sans filtre : rechargée avec les filtres et la taille de page en cours
         if (s is not null && (FiltreReleveActif || mouvementsTaille != Pagination.TailleParDefaut)) await ChargerMouvementsAsync(1, mouvementsTaille);
+    }
+
+    // Ventes à solder choisies par le patient (2026-11-15) : par défaut les plus anciennes jusqu'à couvrir le montant
+    private HashSet<long> cochees = [];
+
+    // Même règle que RegleReglementCredit.VentesParDefaut (domaine, non référencé par le poste)
+    private void CocherParDefaut()
+    {
+        cochees = [];
+        var couvert = 0m;
+        foreach (var v in (situation?.Ventes ?? []).Where(v => v.Reste > 0 && v.Id > 0).OrderBy(v => v.Date).ThenBy(v => v.Id))
+        {
+            if (couvert >= montant) break;
+            cochees.Add(v.Id);
+            couvert += v.Reste;
+        }
+    }
+
+    private void Cocher(long venteId, bool coche)
+    {
+        if (coche) cochees.Add(venteId); else cochees.Remove(venteId);
+    }
+
+    private IEnumerable<VenteACreditDto> VentesDues => (situation?.Ventes ?? []).Where(v => v.Reste > 0 && v.Id > 0);
+
+    /// <summary>Factures qui reprennent au moins une vente encore due (case « toute la facture »).</summary>
+    private List<string> FacturesDues => VentesDues.Where(v => v.Facture is not null).Select(v => v.Facture!).Distinct().Order().ToList();
+
+    private bool FactureCochee(string facture) => VentesDues.Where(v => v.Facture == facture).All(v => cochees.Contains(v.Id));
+
+    private void CocherFacture(string facture, bool coche)
+    {
+        foreach (var v in VentesDues.Where(v => v.Facture == facture)) Cocher(v.Id, coche);
+    }
+
+    /// <summary>
+    /// Surplus annoncé avant d'encaisser (2026-11-15) : montant au-delà du reste des ventes cochées, imputé par le serveur au plus ancien
+    /// (dette reprise d'abord, puis la plus ancienne vente non cochée). Même règle que RegleReglementCredit.Surplus (domaine).
+    /// </summary>
+    private string? MessageSurplus
+    {
+        get
+        {
+            if (situation is not { } s || cochees.Count == 0 || montant <= 0) return null;
+            var dues = VentesDues.OrderBy(v => v.Date).ThenBy(v => v.Id).ToList();
+            var surplus = montant - dues.Where(v => cochees.Contains(v.Id)).Sum(v => v.Reste);
+            if (surplus <= 0) return null;
+            var repriseRestante = s.Patient.Solde - dues.Sum(v => v.Reste);
+            var cible = repriseRestante > 0 ? "la dette reprise de l’ancien logiciel"
+                : dues.FirstOrDefault(v => !cochees.Contains(v.Id)) is { } a ? $"vente {a.Numero} du {Libelles.DateHeureLocale(a.Date)}" : null;
+            return cible is null ? null
+                : $"Surplus de {Libelles.Dinars(surplus, 2)} : il soldera la dette la plus ancienne ({cible}). Cochez d’autres ventes si le patient préfère.";
+        }
     }
 
     private async Task EncaisserAsync()
@@ -330,7 +399,7 @@
         if (situation is null) return;
         if (montant <= 0 || montant > situation.Patient.Solde) { erreur = Api.SignalerChamp("montant", $"Montant entre 0,01 et {Libelles.Dinars(situation.Patient.Solde, 2)}."); return; }
         enCours = true;
-        var (r, e) = await Api.ReglerCreditAsync(situation.Patient.Id, new ReglementCreditRequete(montant, mode));
+        var (r, e) = await Api.ReglerCreditAsync(situation.Patient.Id, new ReglementCreditRequete(montant, mode, cochees.ToList()));
         enCours = false;
         if (e is not null) { erreur = e; return; }
         recu = r;
@@ -342,8 +411,25 @@
     {
         if (recu is null) return;
         enCours = true;
+        if (Tickets.ImprimanteFichier)
+        {
+            // Imprimante qui enregistre un fichier (PDF…) : reçu produit par le serveur et ouvert à l'écran, sans « Enregistrer sous » (2026-11-15)
+            try
+            {
+                var (pdf, nom, ePdf) = await Api.RecuCreditPdfAsync(recu.Numero, Tickets.LargeurMm);
+                if (ePdf is null) Documents.OuvrirSurCePoste("Tickets", nom ?? $"recu_{recu.Numero}.pdf", pdf!);
+                (impressionOk, messageImpression) = (ePdf is null,
+                    ePdf ?? $"Reçu {recu.Numero} ouvert à l’écran (l’imprimante de ce poste enregistre un fichier au lieu d’imprimer).");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                (impressionOk, messageImpression) = (false, $"Reçu {recu.Numero} non ouvert : {ex.Message}");
+            }
+            finally { enCours = false; }
+            return;
+        }
         var t = new TicketDto(recu.Numero, DateTime.UtcNow, Session.NomComplet ?? "", null, "validee", null, null,
-            [new LigneTicketDto($"Règlement de crédit (reste dû {Libelles.Dinars(recu.ResteDu, 2)})", 1, recu.Montant, recu.Montant, 0)],
+            [new LigneTicketDto($"Encaissement de dette (reste dû {Libelles.Dinars(recu.ResteDu, 2)})", 1, recu.Montant, recu.Montant, 0)],
             recu.Montant, 0, 0, recu.Montant, recu.Mode, Session.NomPharmacie, null, null, null);
         var e = await Tickets.ImprimerAsync(t);
         enCours = false;

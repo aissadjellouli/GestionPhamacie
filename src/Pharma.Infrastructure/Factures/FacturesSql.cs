@@ -17,7 +17,14 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
                EXISTS (SELECT 1 FROM facture_client_ligne fl JOIN facture_client fc ON fc.id = fl.facture_id
                        WHERE fl.ligne_vente_id = f.ligne_vente_id AND fl.part = $1 AND fc.type = 'facture'
                          AND fc.statut IN ('emise', 'rejetee') AND fc.id IS DISTINCT FROM $2),
-               (SELECT v.montant_don FROM vente v WHERE v.id = f.vente_id)
+               (SELECT v.montant_don FROM vente v WHERE v.id = f.vente_id),
+               NULLIF(trim(p.num_assure), ''),
+               (SELECT m.nom FROM ordonnance o JOIN medecin m ON m.id = o.medecin_id WHERE o.id = f.ordonnance_id),
+               -- Réductions de la ligne (remise automatique, remise du vendeur, don partiel) au prorata de la quantité nette des retours
+               (SELECT round((lv.reduction_auto + lv.reduction_manuelle) * f.quantite_nette / lv.quantite, 2)
+                FROM ligne_vente lv WHERE lv.id = f.ligne_vente_id),
+               -- Canal de la part organisme (script 089) : chifa / mdn jamais refacturées à l'organisme
+               (SELECT v.canal_organisme FROM vente v WHERE v.id = f.vente_id)
         FROM v_ligne_vente_facturable f
         LEFT JOIN patient p ON p.id = f.patient_id
         """;
@@ -30,7 +37,8 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
             WHERE f.date_vente >= $3::date AND f.date_vente < $4::date + 1
               AND ($5::bigint IS NULL OR f.patient_id = $5)
               AND ($6::bigint IS NULL OR f.organisme_id = $6)
-              AND ($1 = 'patient' OR f.organisme_id IS NOT NULL)
+              AND ($1 = 'patient' OR (f.organisme_id IS NOT NULL
+                   AND EXISTS (SELECT 1 FROM vente vc WHERE vc.id = f.vente_id AND vc.canal_organisme = 'logiciel')))
               AND ($7::text IS NULL OR f.numero ILIKE '%' || $7 || '%' OR f.ordonnance_numero ILIKE '%' || $7 || '%'
                    OR concat_ws(' ', p.nom, p.prenom) ILIKE '%' || $7 || '%')
             ORDER BY f.date_vente, f.numero, f.ligne_vente_id
@@ -62,8 +70,9 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         while (await r.ReadAsync(ct))
             liste.Add(new LigneVenteSource(
                 new LigneVendue(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetString(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6),
-                    r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(16)),
-                r.GetDateTime(9), Nl(r, 10), Txt(r, 11), Nl(r, 12), Nl(r, 13), Txt(r, 14), r.GetBoolean(15)));
+                    r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(16), r.IsDBNull(19) ? 0 : r.GetDecimal(19)),
+                r.GetDateTime(9), Nl(r, 10), Txt(r, 11), Nl(r, 12), Nl(r, 13), Txt(r, 14), r.GetBoolean(15), Txt(r, 17), Txt(r, 18),
+                Txt(r, 20) ?? Pharma.Application.Caisse.CanalOrganisme.Logiciel));
         return liste;
     }
 
@@ -108,6 +117,8 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
         await VerrouillerEtControler(cx, tx, f, remplaceId, ct);
+        if (f.Type == "avoir" && f.FactureOrigineId is { } factureAvoir)
+            await ControlerAvoirSousVerrouAsync(cx, tx, factureAvoir, f.Totaux.Ttc, f.Motif, ct);
 
         int sequence;
         await using (var cmd = new NpgsqlCommand("""
@@ -154,6 +165,8 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
             id = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
         await EcrireLignes(cx, tx, id, f.Lignes, ct);
+        if (f.Type == "avoir" && f.FactureOrigineId is { } origine)
+            await DiminuerDetteParAvoirAsync(cx, tx, id, numero, origine, f.Totaux.Ttc, f.UtilisateurId, ct);
 
         if (remplaceId is { } ancienne)
             await using (var cmd = new NpgsqlCommand(
@@ -165,6 +178,98 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
             }
         await tx.CommitAsync(ct);
         return (id, numero);
+    }
+
+    /// <summary>
+    /// Avoir : facture d'origine verrouillée (FOR UPDATE) et contrôle refait dans la transaction (2026-11-15) : deux avoirs émis
+    /// en même temps ne dépassent jamais ensemble le montant de la facture.
+    /// </summary>
+    private static async Task ControlerAvoirSousVerrouAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long factureId, decimal montant, string? motif,
+        CancellationToken ct)
+    {
+        string type, statut;
+        decimal ttc;
+        await using (var cmd = new NpgsqlCommand("SELECT type, statut, montant_ttc FROM facture_client WHERE id = $1 FOR UPDATE", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(factureId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (!await r.ReadAsync(ct)) throw new RegleMetierException("Facture introuvable.");
+            (type, statut, ttc) = (r.GetString(0), r.GetString(1), r.GetDecimal(2));
+        }
+        decimal avoirs;
+        await using (var cmd = new NpgsqlCommand(
+            "SELECT COALESCE(sum(montant_ttc), 0) FROM facture_client WHERE facture_origine_id = $1 AND type = 'avoir'", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(factureId);
+            avoirs = (decimal)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        RegleFacture.VerifierAvoir(type, statut, ttc, avoirs, montant, motif);
+    }
+
+    /// <summary>
+    /// Avoir sur une facture dont des ventes sont à crédit (084_avoir_dette_patient.sql) : la dette du patient diminue de
+    /// min(avoir, reste dû à crédit de ces ventes), mouvement « correction » rattaché à la vente, même transaction que l'avoir.
+    /// La part imputée sur la dette est gardée dans facture_client.part_credit de l'avoir : v_facture_client ne la retire
+    /// qu'une fois du reste de la facture (elle y apparaît déjà comme réglée sur les ventes à crédit).
+    /// </summary>
+    private static async Task DiminuerDetteParAvoirAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long avoirId, string numeroAvoir, long factureId,
+        decimal montant, long utilisateurId, CancellationToken ct)
+    {
+        // Patients verrouillés : un remboursement ou un encaissement simultané ne diminue pas deux fois la même dette
+        await using (var verrou = new NpgsqlCommand("""
+            SELECT 1 FROM patient WHERE id IN (
+                SELECT v.patient_id FROM facture_client_ligne fl JOIN vente v ON v.id = fl.vente_id
+                WHERE fl.facture_id = $1 AND fl.part = 'patient' AND v.patient_id IS NOT NULL)
+            ORDER BY id FOR UPDATE
+            """, cx, tx))
+        {
+            verrou.Parameters.AddWithValue(factureId);
+            await verrou.ExecuteNonQueryAsync(ct);
+        }
+        var restes = new List<(long VenteId, decimal Reste)>();
+        var patients = new Dictionary<long, long>();
+        string numeroFacture;
+        await using (var cmd = new NpgsqlCommand("SELECT numero FROM facture_client WHERE id = $1", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(factureId);
+            numeroFacture = (string)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT c.vente_id, c.patient_id, c.reste
+            FROM v_vente_credit c
+            WHERE c.reste > 0 AND c.vente_id IN (SELECT fl.vente_id FROM facture_client_ligne fl
+                                                 WHERE fl.facture_id = $1 AND fl.part = 'patient' AND fl.vente_id IS NOT NULL)
+            ORDER BY c.date_vente, c.vente_id
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(factureId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+            {
+                restes.Add((r.GetInt64(0), r.GetDecimal(2)));
+                patients[r.GetInt64(0)] = r.GetInt64(1);
+            }
+        }
+        var parts = RegleFacture.RepartirAvoirSurDette(montant, restes);
+        if (parts.Count == 0) return;
+        foreach (var (vente, part) in parts)
+        {
+            await Caisse.ReleveCredit.ContexteAsync(cx, tx, Caisse.ReleveCredit.Correction, vente, utilisateurId, null,
+                $"Avoir {numeroAvoir} sur facture {numeroFacture}", ct);
+            await using var cmd = new NpgsqlCommand("UPDATE patient SET solde_credit = solde_credit - $2 WHERE id = $1 AND solde_credit >= $2", cx, tx);
+            cmd.Parameters.AddWithValue(patients[vente]);
+            cmd.Parameters.AddWithValue(part);
+            if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+                throw new RegleMetierException("La dette du patient de cette facture vient de changer : rechargez la facture.");
+            // 087 : la baisse de dette solde CETTE vente de la facture, jamais une dette plus ancienne
+            await Caisse.ReleveCredit.ImputerAsync(cx, tx, vente, part, ct);
+        }
+        await using (var cmd = new NpgsqlCommand("UPDATE facture_client SET part_credit = $2 WHERE id = $1", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(avoirId);
+            cmd.Parameters.AddWithValue(parts.Sum(p => p.Montant));
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
     }
 
     /// <summary>Une émission à la fois : une ligne de vente n'est facturée qu'une fois par part (hors facture corrigée ou remplacée).</summary>
@@ -351,14 +456,18 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
                 Txt(r, 27), Txt(r, 28), r.GetString(29), [], [], Nl(r, 31));
         }
 
-        // Ventes à crédit de la facture (part du patient) réglées depuis par le patient sur sa dette : même calcul que v_facture_client
+        // Ventes à crédit de la facture (part du patient) réglées depuis par le patient sur sa dette : même calcul que v_facture_client.
+        // La part des avoirs imputée sur la dette (part_credit) y figure aussi : elle est retirée, déjà affichée dans « Avoirs » (2026-11-15)
         await using (var cmd = db.CreateCommand("""
-            SELECT COALESCE(sum(c.regle), 0) FROM v_vente_credit c
-            WHERE c.vente_id IN (SELECT fl.vente_id FROM facture_client_ligne fl WHERE fl.facture_id = $1 AND fl.part = 'patient' AND fl.vente_id IS NOT NULL)
+            SELECT (SELECT COALESCE(sum(c.regle), 0) FROM v_vente_credit c
+                    WHERE c.vente_id IN (SELECT fl.vente_id FROM facture_client_ligne fl WHERE fl.facture_id = $1 AND fl.part = 'patient' AND fl.vente_id IS NOT NULL)),
+                   (SELECT COALESCE(sum(a.part_credit), 0) FROM facture_client a WHERE a.facture_origine_id = $1 AND a.type = 'avoir')
             """))
         {
             cmd.Parameters.AddWithValue(id);
-            detail = detail with { RegleParDette = (decimal)(await cmd.ExecuteScalarAsync(ct))! };
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            await r.ReadAsync(ct);
+            detail = detail with { RegleParDette = RegleFacture.RegleParDetteAffiche(r.GetDecimal(0), r.GetDecimal(1)) };
         }
 
         var versions = new List<int>();

@@ -8,6 +8,15 @@ public class RegleTresorerieTests
     private static readonly DateOnly Jour = new(2026, 11, 9);
     private static readonly DateOnly Depart = new(2026, 11, 1);
 
+    [Theory]
+    [InlineData("banque", 100, 5000, true)]
+    [InlineData("banque", -2000, 5000, true)]
+    [InlineData("coffre", 100, 5000, false)]
+    [InlineData("coffre", 5000, 5000, true)]
+    [InlineData("banque", 6000, 5000, true)]
+    public void Echeance_de_pret_decouvert_admis_sur_une_banque_jamais_sur_le_coffre(string type, decimal solde, decimal montant, bool permis) =>
+        Assert.Equal(permis, RegleTresorerie.PaiementEcheancePermis(type, solde, montant));
+
     [Fact]
     public void Depense_demande_une_categorie_et_un_libelle()
     {

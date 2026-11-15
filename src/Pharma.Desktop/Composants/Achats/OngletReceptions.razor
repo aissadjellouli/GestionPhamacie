@@ -154,7 +154,12 @@
                                 }
                             </td>
                             <td style="white-space: nowrap">
-                                @if (c.Statut == "compte" && Session.A("achats.receptionner"))
+                                @if (c.Statut == "compte" && Session.A("achats.receptionner") && !SaisitPrix)
+                                {
+                                    <span class="detail">Facture à saisir par un ayant droit « modifier un prix ».</span>
+                                    <button type="button" class="btn" disabled="@enCours" @onclick="() => AnnulerComptageAsync(c)">Annuler</button>
+                                }
+                                else if (c.Statut == "compte" && Session.A("achats.receptionner"))
                                 {
                                     <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => SaisirFactureAsync(c.Id)">Saisir la facture</button>
                                     <button type="button" class="btn" disabled="@enCours" @onclick="() => AnnulerComptageAsync(c)">Annuler</button>
@@ -236,11 +241,19 @@ else if (resultat is not null)
 }
 else
 {
-    <section class="panneau" aria-labelledby="t-recep">
+    @* Écran fixe (2026-11-15) : la saisie (facture longue, 12 colonnes) défile dans son panneau, jamais l'écran *@
+    <section class="panneau cadre-defilant" aria-labelledby="t-recep">
         <h2 id="t-recep">@(aRecompter is { } ar ? $"Recompter le BL {ar.NumeroBl}" : Comptage ? "Compter une livraison" : aFacturer is { } af ? $"Saisir la facture du BL {af.NumeroBl}" : "Réceptionner une livraison")</h2>
         @if (Comptage)
         {
-            <p class="detail" style="margin: 0">Réception à l’aveugle : comptez les boîtes du carton (scan ou saisie) sans regarder le bon de livraison. La facture se saisit ensuite, de préférence par une autre personne, et le logiciel compare.</p>
+            @if (aveugle || aRecompter is not null)
+            {
+                <p class="detail" style="margin: 0">Réception à l’aveugle : comptez les boîtes du carton (scan ou saisie) sans regarder le bon de livraison. La facture se saisit ensuite, de préférence par une autre personne, et le logiciel compare.</p>
+            }
+            else
+            {
+                <p class="detail" style="margin: 0">Comptez les boîtes du carton (scan ou saisie). Les prix de la facture sont saisis ensuite par une personne qui a le droit de voir les prix d’achat, et le logiciel compare.</p>
+            }
         }
         else if (aFacturer is not null)
         {
@@ -541,7 +554,9 @@ else
     // En attente : une liste à la fois quand les deux en ont (écran fixe) ; les écarts à valider d'abord s'il y en a
     private string? partieChoisie;
     private string partieAttente { get => partieChoisie ?? (comptages.Any(c => c.Statut == "ecart") ? "comptees" : "receptions"); set => partieChoisie = value; }
-    private bool DeuxListesAttente => Vue == "attente" && attentes.Count > 0 && comptages.Count > 0 && aFacturer is null && aRecompter is null && resultat is null;
+    private bool DeuxListesAttente => Vue == "attente" && attentes.Count > 0 && comptages.Count > 0 && resultat is null
+        // Facture déjà validée avec un écart : la livraison n'est plus « en saisie », les deux pastilles restent proposées (2026-11-15)
+        && (ecartFacture is not null || (aFacturer is null && aRecompter is null));
 
     /// <summary>Partie affichée : « saisie », « attente », « historique », vide (tout).</summary>
     [Parameter] public string Vue { get; set; } = "";
@@ -628,7 +643,10 @@ else
     private ComptageAFacturerDto? aFacturer;
     /// <summary>Livraison à recompter : comptage à l'aveugle des lots de la livraison, comparé à la facture déjà saisie.</summary>
     private ComptageAFacturerDto? aRecompter;
-    private bool Comptage => (aveugle || aRecompter is not null) && aFacturer is null;
+    // Prix facturés saisis seulement par un ayant droit prix.modifier (un seul droit pour toute saisie de prix, titulaire compris ;
+    // le serveur le revérifie) : sans ce droit, l'employé compte la livraison et la facture est saisie par un ayant droit (décision du 2026-11-15)
+    private bool SaisitPrix => Session.A("prix.modifier");
+    private bool Comptage => (aveugle || !SaisitPrix || aRecompter is not null) && aFacturer is null;
     private List<ComptageResumeDto> comptages = [];
     // Livraisons comptées : filtres et page à l'écran
     private string fcTexte = "", fcEtat = "";
@@ -695,6 +713,7 @@ else
         (fournisseurId, numeroBl, commandeId) = (c!.FournisseurId, c.NumeroBl, 0);
         foreach (var l in c.Lots)
             lignes.Add(new Ligne { ProduitId = l.ProduitId, Nom = l.Nom, NumeroLot = l.NumeroLot, Peremption = l.DatePeremption, Gtin = l.Gtin, Quantite = 0 });
+        empreinteInitiale = Empreinte();
         await DocumentSaisiAsync();
     }
 
@@ -710,6 +729,7 @@ else
         (fournisseurId, numeroBl, commandeId) = (c!.FournisseurId, c.NumeroBl, 0);
         foreach (var l in c.Lots)
             lignes.Add(new Ligne { ProduitId = l.ProduitId, Nom = l.Nom, NumeroLot = l.NumeroLot, Peremption = l.DatePeremption, Gtin = l.Gtin, Quantite = 0 });
+        empreinteInitiale = Empreinte();
     }
 
     private async Task AnnulerComptageAsync(ComptageResumeDto c)
@@ -741,6 +761,18 @@ else
         finally { enCours = false; }
     }
 
+    private string? vueChargee;
+
+    /// <summary>Ouverture de « En attente » (même onglet déjà affiché) : listes et pastilles relues, jamais obsolètes (2026-11-15).</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        var avant = vueChargee;
+        vueChargee = Vue;
+        if (avant is null || avant == Vue || Vue != "attente") return;
+        await ChargerAttentesAsync();
+        await ChargerComptagesAsync();
+    }
+
     protected override async Task OnInitializedAsync()
     {
         (fournisseurs, erreur) = await Api.FournisseursAsync();
@@ -764,7 +796,7 @@ else
         await ChargerReceptionsAsync(r?.Entier("page") ?? 1, r?.Entier("taille"));
         await CompterScansMobileAsync();
         // Réception à l'aveugle : le bon de commande (et ses quantités) ne s'ouvre pas au comptage
-        if (!aveugle && CommandeId is { } cid && commandes.FirstOrDefault(c => c.Id == cid) is { } c)
+        if (!Comptage && CommandeId is { } cid && commandes.FirstOrDefault(c => c.Id == cid) is { } c)
         {
             (fournisseurId, commandeId) = (c.FournisseurId, c.Id);
             await ChargerCommandeAsync();
@@ -1105,7 +1137,7 @@ else
         lignes.Clear();
         (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
         (dejaRecues, timbre) = ([], 0);
-        (aFacturer, ecartFacture, aRecompter) = (null, null, null);
+        (aFacturer, ecartFacture, aRecompter, empreinteInitiale) = (null, null, null, null);
         await ChargerComptagesAsync();
         accordBlocage.Effacer();
         controle = false;
@@ -1138,7 +1170,22 @@ else
     private long? aAbandonner, receptionMiseDeCoteEnPartant;
 
     /// <summary>Une livraison est en cours de saisie (pas encore validée) : à mettre en attente plutôt qu'à perdre.</summary>
-    private bool SaisieEnCours => resultat is null && (lignes.Count > 0 || aFacturer is not null || aRecompter is not null);
+    // Facture validée avec un écart (ecartFacture) : la saisie est terminée, rien à mettre en attente en quittant l'écran (2026-11-15)
+    // Facture ou recompte d'un BL compté ouvert puis laissé tel quel : rien à mettre en attente (pas de réception fantôme, 2026-11-15)
+    private bool SaisieEnCours => resultat is null && ecartFacture is null && (lignes.Count > 0 || aFacturer is not null || aRecompter is not null)
+        && !(empreinteInitiale is not null && Empreinte() == empreinteInitiale);
+
+    // État de la saisie juste après l'ouverture d'un BL compté (« Saisir la facture », « Recompter ») ; null sinon
+    private string? empreinteInitiale;
+    private string Empreinte() => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        fournisseurId, numeroBl, numeroFacture, timbre, commandeId,
+        Lignes = lignes.Select(l => new
+        {
+            l.ProduitId, l.NumeroLot, l.Peremption, l.Quantite, l.Prix, l.RemisePct, l.Ug, l.UgCoutReparti, l.RemplacerPrixCatalogue,
+            l.Ppa, l.Shp, Series = l.Series.Count, l.SansSerie, l.QuantiteSaisie, l.QuantiteMobile, Scans = l.ScansMobile.Count, l.LotSepare
+        })
+    });
 
     private string ModeSaisie => aRecompter is not null ? "recompte" : aFacturer is not null ? "facture" : Comptage ? "comptage" : "reception";
 
@@ -1169,7 +1216,7 @@ else
         lignes.Clear();
         (resultat, commandeId, numeroBl, numeroFacture, infoScan, erreur, infoEtiquettes) = (null, 0, null, null, null, null, null);
         (dejaRecues, timbre) = ([], 0);
-        (aFacturer, ecartFacture, aRecompter) = (null, null, null);
+        (aFacturer, ecartFacture, aRecompter, empreinteInitiale) = (null, null, null, null);
         accordBlocage.Effacer();
         controle = false;
     }

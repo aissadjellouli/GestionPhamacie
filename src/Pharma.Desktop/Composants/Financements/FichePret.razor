@@ -15,7 +15,8 @@ else
 {
     var p = d.Pret;
     var cout = Cout(d);
-    <div class="tuiles">
+    @* Écran fixe (2026-11-15) : pendant la saisie de l'échéancier, les tuiles du résumé sont masquées (le tableau de saisie garde la place) *@
+    <div class="tuiles" style="@(vue == "editer" ? "display: none" : null)">
         <div class="tuile"><span class="tuile-libelle">Prêt @p.Reference · @p.Banque</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant, 2)</span>
             <span class="tuile-pied">du @p.DatePret.ToString("dd/MM/yyyy") · taux @Libelles.TauxPret(p.Taux) · durée @Libelles.DureePret(p.DureeMois)@(p.Objet is { } o ? $" · {o}" : "")</span></div>
         @* Mensualité : montant de la prochaine échéance non payée, assurance comprise (tiré de l'échéancier) *@
@@ -36,6 +37,16 @@ else
             <button type="button" role="tab" class="puce" aria-selected="@(vue == code ? "true" : "false")" @onclick="() => Ouvrir(code)">@libelle</button>
         }
         <a class="btn" href="financements?rubrique=prets">← Liste des prêts</a>
+        @if (vue is not ("modifier" or "employer" or "editer" or "usages"))
+        {
+            @* Écran fixe (2026-11-15) : filtre et saisie de l'échéancier sur la ligne des onglets, le tableau garde la place *@
+            <div class="champ" role="search" aria-label="Filtrer l’échéancier" style="flex: 0 0 200px; margin-left: auto">
+                <label for="fe-etat-pret" class="visuellement-cache">Échéances</label>
+                <select id="fe-etat-pret" @bind="filtreEcheances" @bind:after="() => pageEcheances = 1">
+                    <option value="">Toutes les échéances</option><option value="a_payer">À payer</option><option value="payees">Payées</option>
+                </select></div>
+            <button type="button" class="btn" @onclick='() => Ouvrir("editer")'>@(d.Echeances.Count == 0 ? "Saisir ou importer l’échéancier…" : "Modifier ou réimporter l’échéancier…")</button>
+        }
     </div>
 
     @switch (vue)
@@ -80,7 +91,7 @@ else
         case "employer":
             <section class="panneau" aria-labelledby="t-employer">
                 <h2 id="t-employer">Employer l’argent du prêt · reste @Libelles.Dinars(p.Montant - p.Utilise, 2)</h2>
-                <p class="detail" style="margin: 0">Pour payer une facture ou une traite d’un grossiste avec ce prêt (hors trésorerie) : Achats, Règlements ou Traites à payer, « Prêt ou apport ».</p>
+                <p class="detail" style="margin: 0">Pour payer une facture ou une traite d’un grossiste avec ce prêt (hors trésorerie) : Achats, Payer un grossiste ou Traites à payer, « Prêt ou apport ».</p>
                 @if (p.CompteId is null)
                 {
                     <p class="detail" style="margin: 0">Prêteur hors trésorerie (@p.Banque) : l’argent reçu n’entre dans aucun compte suivi ; il ne se verse pas au coffre ni en banque, il paie directement une facture, une traite ou une dépense.</p>
@@ -117,13 +128,6 @@ else
             break;
 
         default:
-            <div class="filtres-liste" role="search" aria-label="Filtrer l’échéancier">
-                <div class="champ" style="flex: 0 0 220px"><label for="fe-etat-pret">Échéances</label>
-                    <select id="fe-etat-pret" @bind="filtreEcheances" @bind:after="() => pageEcheances = 1">
-                        <option value="">Toutes</option><option value="a_payer">À payer</option><option value="payees">Payées</option>
-                    </select></div>
-                <button type="button" class="btn" @onclick='() => Ouvrir("editer")'>@(d.Echeances.Count == 0 ? "Saisir ou importer l’échéancier…" : "Modifier ou réimporter l’échéancier…")</button>
-            </div>
             <div class="tableau-cadre">
                 <table class="tableau">
                     <thead><tr><th scope="col">N°</th><th scope="col">Date</th><th scope="col" class="nombre">Capital</th><th scope="col" class="nombre">Intérêts</th><th scope="col" class="nombre">TVA</th><th scope="col" class="nombre">Marge</th><th scope="col" class="nombre">Assurance</th><th scope="col" class="nombre">Échéance</th><th scope="col" class="nombre">Capital restant dû</th><th scope="col">Paiement</th></tr></thead>

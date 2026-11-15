@@ -353,8 +353,11 @@
             };
             liste.Add(new Etape(titre, detail));
         }
+        // Nom du patient envoyé seulement à qui a le droit (registre pour un psychotrope, rappel de lot sinon ; titulaire) : « — » sinon
         if (p.Patient is not null)
             liste.Add(new Etape("Patient", p.Patient));
+        else if (p.Ticket is not null)
+            liste.Add(new Etape("Patient", "—"));
         return liste;
     }
 

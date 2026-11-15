@@ -73,7 +73,7 @@ public class ComptageReceptionTests
         Assert.Contains("comptez d’abord", ex.Message);
 
         surveillance.Parametres = surveillance.Parametres with { ReceptionAveugle = false };
-        await Receptionner(achats, surveillance).ExecuterAsync(Facture(2), 5);
+        await Receptionner(achats, surveillance, "achats.receptionner", "prix.modifier").ExecuterAsync(Facture(2), 5);
         Assert.NotNull(achats.ReceptionRecue);
     }
 
@@ -95,13 +95,13 @@ public class ComptageReceptionTests
     {
         var (comptages, achats, id) = Compte1(4);
         var surveillance = new SurveillanceEnMemoire();
-        var r = await new FacturerComptage(comptages, Receptionner(achats, surveillance), new DroitsFactices("achats.receptionner"), Horloge,
+        var r = await new FacturerComptage(comptages, Receptionner(achats, surveillance), new DroitsFactices("achats.receptionner", "prix.modifier"), Horloge,
             new JournalEspion(), new Surveiller(surveillance)).ExecuterAsync(id, Facture(4), 5);
         Assert.NotNull(r.Reception);
         Assert.Equal("BL-7", achats.ReceptionRecue!.NumeroBl);      // le BL du comptage
         Assert.Equal(StatutsComptage.Receptionne, comptages.Comptages[id].Statut);
         Assert.Single(surveillance.Calculs);                         // comptage et facture par la même personne ?
-        await Assert.ThrowsAsync<RegleMetierException>(() => new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner"),
+        await Assert.ThrowsAsync<RegleMetierException>(() => new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner", "prix.modifier"),
             Horloge, new JournalEspion()).ExecuterAsync(id, Facture(4), 5));
     }
 
@@ -110,7 +110,7 @@ public class ComptageReceptionTests
     {
         var (comptages, achats, id) = Compte1(3);
         var journal = new JournalEspion();
-        var r = await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner"), Horloge, journal)
+        var r = await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner", "prix.modifier"), Horloge, journal)
             .ExecuterAsync(id, Facture(5, new Pharma.Application.Catalogue.ValidationBlocage(true, "titulaire", "1234")), 5);
         Assert.Null(r.Reception);
         Assert.Null(achats.ReceptionRecue);
@@ -124,7 +124,7 @@ public class ComptageReceptionTests
     public async Task Ecart_valide_par_un_employe_habilite_titulaire_prevenu()
     {
         var (comptages, achats, id) = Compte1(3);
-        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner"), Horloge, new JournalEspion())
+        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner", "prix.modifier"), Horloge, new JournalEspion())
             .ExecuterAsync(id, Facture(5), 5);
 
         var alertes = new AlertesTitulaireEspion();
@@ -149,7 +149,7 @@ public class ComptageReceptionTests
     public async Task Ecart_renvoye_au_recomptage_par_le_titulaire_sans_alerte()
     {
         var (comptages, achats, id) = Compte1(3);
-        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner"), Horloge, new JournalEspion())
+        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner", "prix.modifier"), Horloge, new JournalEspion())
             .ExecuterAsync(id, Facture(5), 5);
         var alertes = new AlertesTitulaireEspion();
         var r = await new DeciderEcartReception(comptages, Receptionner(achats), new DroitsFactices("achats.valider_ecart") { Titulaire = true },
@@ -164,7 +164,7 @@ public class ComptageReceptionTests
     public async Task Personne_ne_decide_de_son_propre_ecart_sauf_le_titulaire()
     {
         var (comptages, achats, id) = Compte1(3);                       // compté par 3
-        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner"), Horloge, new JournalEspion())
+        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner", "prix.modifier"), Horloge, new JournalEspion())
             .ExecuterAsync(id, Facture(5), 5);                         // facture saisie par 5
         var droits = new DroitsFactices("achats.receptionner", "achats.valider_ecart");
         foreach (var u in new long[] { 3, 5 })
@@ -184,7 +184,7 @@ public class ComptageReceptionTests
     public async Task Recomptage_a_l_aveugle_compare_a_la_facture_gardee()
     {
         var (comptages, achats, id) = Compte1(3);
-        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner"), Horloge, new JournalEspion())
+        await new FacturerComptage(comptages, Receptionner(achats), new DroitsFactices("achats.receptionner", "prix.modifier"), Horloge, new JournalEspion())
             .ExecuterAsync(id, Facture(5), 5);
         await new DeciderEcartReception(comptages, Receptionner(achats), new DroitsFactices("achats.valider_ecart") { Titulaire = true },
             new JournalEspion()).ExecuterAsync(id, false, 1);
@@ -206,7 +206,7 @@ public class ComptageReceptionTests
         Assert.True((await new ListerComptagesReception(comptages, new DroitsFactices("achats.valider_ecart")).ExecuterAsync(1)).VoirQuantites);
         await Assert.ThrowsAsync<DroitRefuseException>(() => new ListerComptagesReception(comptages, new DroitsFactices("caisse.vendre")).ExecuterAsync(9));
         // Un écart ne s'annule que par qui en décide
-        await new FacturerComptage(comptages, Receptionner(new AchatsEnMemoire()), new DroitsFactices("achats.receptionner"), Horloge, journal)
+        await new FacturerComptage(comptages, Receptionner(new AchatsEnMemoire()), new DroitsFactices("achats.receptionner", "prix.modifier"), Horloge, journal)
             .ExecuterAsync(1, Facture(4), 5);
         await Assert.ThrowsAsync<DroitRefuseException>(() => new AnnulerComptage(comptages, new DroitsFactices("achats.receptionner"), journal).ExecuterAsync(1, 3));
         await new AnnulerComptage(comptages, new DroitsFactices("achats.valider_ecart"), journal).ExecuterAsync(1, 1);

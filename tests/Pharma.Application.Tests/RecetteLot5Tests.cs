@@ -115,7 +115,7 @@ public class RecetteLot5Tests
     {
         var journal = new JournalEspion();
         // Attendu 5 000 + 1 000 = 6 000 ; compté 5 800 : écart −200, sous le seuil de 500
-        await new CloturerSessionCaisse(new SessionsEnMemoire { Especes = 1000 }, new DroitsFactices("caisse.vendre"), journal)
+        await new CloturerSessionCaisse(new SessionsEnMemoire { Especes = 1000 }, new DroitsFactices("caisse.vendre", "caisse.cloturer"), journal)
             .ExecuterAsync(5, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 2, ["b1000"] = 1, ["b200"] = 4 });
         Assert.Equal(["ecart_caisse"], journal.Actions);
         Assert.Equal(false, journal.Details.Single()["au_dela_du_seuil"]);
@@ -148,7 +148,7 @@ public class RecetteLot5Tests
     public async Task Cloture_a_zero_demande_une_confirmation()
     {
         var sessions = new SessionsEnMemoire();
-        var cloturer = new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), new JournalEspion());
+        var cloturer = new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre", "caisse.cloturer"), new JournalEspion());
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cloturer.ExecuterAsync(5, "Caisse 1", new Dictionary<string, decimal>()));
         Assert.Equal(CloturerSessionCaisse.ConfirmationZero, ex.Message);
         Assert.Null(sessions.Cloture);

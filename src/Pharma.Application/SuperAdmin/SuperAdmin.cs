@@ -302,8 +302,10 @@ public sealed class SeConnecterSuperAdmin(ICompteSuperAdmin comptes, IVerificate
         if (etat.MotsDePasse.BloqueJusqu(nom, maintenant) is { } jusqu)
             throw new RegleMetierException($"Connexion bloquée après {EssaisConnexion.EssaisMax} mots de passe faux : réessayez après {jusqu.ToLocalTime():HH:mm}.");
         var compte = comptes.Lire();
-        if (compte is null || !string.Equals(compte.Identifiant, identifiant.Trim(), StringComparison.OrdinalIgnoreCase)
-            || !verificateur.Verifier(motDePasse, compte.MotDePasseHash))
+        var inconnu = compte is null || !string.Equals(compte.Identifiant, identifiant.Trim(), StringComparison.OrdinalIgnoreCase);
+        // Identifiant inconnu : hachage factice, même durée de réponse
+        if (inconnu) verificateur.VerifierFactice(motDePasse);
+        if (inconnu || !verificateur.Verifier(motDePasse, compte!.MotDePasseHash))
         {
             if (etat.MotsDePasse.NoterEchec(nom, maintenant))
                 throw new RegleMetierException($"Connexion bloquée {EssaisConnexion.Blocage.TotalMinutes:0} minutes après {EssaisConnexion.EssaisMax} mots de passe faux.");

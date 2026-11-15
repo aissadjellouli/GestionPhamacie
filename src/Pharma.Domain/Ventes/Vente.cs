@@ -59,6 +59,8 @@ public class Vente
     public decimal MontantReductionsAuto => _lignes.Sum(l => l.ReductionAuto);
     /// <summary>Tiers payant : reste à charge du patient saisi par le caissier (le taux n'est pas appliqué).</summary>
     public decimal? ResteSaisi { get; private set; }
+    /// <summary>Reste à charge saisi : part de l'organisme telle que calculée avant la saisie (prix Chifa pour les lignes d'un volet).</summary>
+    public decimal? PartOrganismeCalculee { get; private set; }
     public StatutVente Statut { get; private set; } = StatutVente.EnCours;
     public string? NumFactureChifa { get; init; }
     public IReadOnlyList<LigneVente> Lignes => _lignes;
@@ -144,6 +146,24 @@ public class Vente
         RecalculerTotaux();
     }
 
+    /// <summary>
+    /// Ligne reprise d'un volet Chifa (tiers payant) : prix appliqué selon EcartPrixChifa, part de l'organisme sur le prix Chifa.
+    /// Le catalogue n'est pas modifié.
+    /// </summary>
+    public void AppliquerVoletChifa(LigneVente ligne, decimal prixChifa, decimal prixApplique, string? choix)
+    {
+        if (Type != TypeVente.TiersPayant)
+            throw new RegleMetierException("Un volet Chifa se reprend en tiers payant.", "volet_chifa");
+        if (!_lignes.Contains(ligne)) throw new InvalidOperationException("Ligne étrangère à la vente.");
+        if (prixChifa < 0 || prixApplique <= 0)
+            throw new RegleMetierException("Prix d’une ligne du volet Chifa invalide.", "prix_chifa");
+        ligne.AppliquerVoletChifa(prixChifa, prixApplique, choix, TauxTiersPayant ?? 0);
+        RecalculerTotaux();
+    }
+
+    /// <summary>Écart Chifa payé par le patient (notre prix au-dessus du prix Chifa), toutes lignes.</summary>
+    public decimal EcartChifaPatient => _lignes.Sum(l => l.EcartChifaPatient);
+
     /// <summary>La remise du vendeur réduit au moins une ligne hors médicament (remise : droit et maximum de remise).</summary>
     public bool RemiseManuelleSurProduits => _lignes.Any(l => !l.Medicament && l.ReductionManuelle > 0);
     /// <summary>La remise du vendeur réduit au moins un médicament (don partiel : droit de don).</summary>
@@ -167,6 +187,8 @@ public class Vente
             throw new RegleMetierException(
                 $"Le reste à charge doit être d’au moins {nonPrisEnCharge:N2} DA : montant des produits non remboursables (ou sans tarif de référence), que l’organisme ne prend pas en charge.",
                 "reste_a_charge");
+        // Part de l'organisme calculée (taux, prix Chifa pour un volet) avant d'être remplacée par la saisie : journal du reste saisi
+        if (ResteSaisi is null) PartOrganismeCalculee = _lignes.Sum(l => l.MontantOrganisme);
         ResteSaisi = Arrondi.Centime(reste);
         RecalculerTotaux();
     }

@@ -38,13 +38,53 @@ public class CreerProduitTests
     public async Task Creation_journalisee_avec_le_droit()
     {
         var (catalogue, journal) = (new CatalogueEcritureEnMemoire(), new JournalEspion());
-        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer"), journal).ExecuterAsync(Fiche(), 2);
+        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer", "prix.modifier"), journal).ExecuterAsync(Fiche(), 2);
         Assert.Equal((50, null), (cree.Id, cree.Information));
         Assert.Equal("Sintrom 4 mg cp", catalogue.Crees.Single().NomCommercial);
         Assert.Equal(ClasseReglementaire.ListeI, catalogue.Crees.Single().Classe);
         Assert.False(catalogue.AVerifier.Single());
         Assert.Equal(["produit_cree"], journal.Actions);
     }
+
+    // ---- Un seul droit pour toute saisie de prix : prix.modifier (décision du titulaire, 2026-11-15) ----
+
+    [Theory]
+    [InlineData(280, null, false)]
+    [InlineData(0, 280, false)]
+    [InlineData(0, 280, true)]
+    public async Task Creation_avec_prix_tarif_ou_remboursable_refusee_sans_le_droit_de_modifier_un_prix(decimal prix, int? tarif, bool remboursable)
+    {
+        foreach (var droits in new[] { new DroitsFactices("catalogue.creer"), new DroitsFactices("catalogue.creer", "rapports.marges") { Titulaire = true } })
+        {
+            var catalogue = new CatalogueEcritureEnMemoire();
+            var e = await Assert.ThrowsAsync<DroitRefuseException>(() => new CreerProduit(catalogue, droits, new JournalEspion())
+                .ExecuterAsync(Fiche() with { PrixPublic = prix, TarifReference = tarif, Remboursable = remboursable }, 3));
+            Assert.Equal("prix.modifier", e.Permission);   // autorisation sur place par code comptoir possible
+            Assert.Empty(catalogue.Crees);
+        }
+    }
+
+    [Fact]
+    public async Task Creation_avec_prix_acceptee_avec_le_droit_de_modifier_un_prix()
+    {
+        var catalogue = new CatalogueEcritureEnMemoire();
+        await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer", "prix.modifier"), new JournalEspion()).ExecuterAsync(Fiche(), 3);
+        Assert.Equal((280m, 280m, true), (catalogue.Crees.Single().PrixPublic, catalogue.Crees.Single().TarifReference, catalogue.Crees.Single().Remboursable));
+    }
+
+    [Fact]
+    public async Task Creation_sans_prix_acceptee_sans_le_droit_le_produit_reste_sans_prix()
+    {
+        var catalogue = new CatalogueEcritureEnMemoire();
+        await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer"), new JournalEspion())
+            .ExecuterAsync(Fiche() with { PrixPublic = 0, TarifReference = null, Remboursable = false }, 3);
+        Assert.Equal(0m, catalogue.Crees.Single().PrixPublic);
+    }
+
+    [Fact]
+    public async Task Prix_negatif_toujours_refuse() =>
+        await Assert.ThrowsAsync<RegleMetierException>(() => new CreerProduit(new CatalogueEcritureEnMemoire(),
+            new DroitsFactices("catalogue.creer", "prix.modifier"), new JournalEspion()).ExecuterAsync(Fiche() with { PrixPublic = -1 }, 3));
 
     private static FicheProduit Psychotrope(ClasseReglementaire classe, string dci = "Alprazolam") =>
         new("Xanax 0,25 mg cp", dci, "0,25 mg", "comprimé", 190m, classe, null, null, false, 0m, null);
@@ -55,7 +95,7 @@ public class CreerProduitTests
     public async Task Psychotrope_cree_en_classe_libre_par_un_employe_classe_d_office_et_a_verifier(string dci, ClasseReglementaire attendue)
     {
         var (catalogue, journal) = (new CatalogueEcritureEnMemoire(), new JournalEspion());
-        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer"), journal)
+        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer", "prix.modifier"), journal)
             .ExecuterAsync(Psychotrope(ClasseReglementaire.Libre, dci), 3);
         Assert.Equal(attendue, catalogue.Crees.Single().Classe);
         Assert.True(catalogue.AVerifier.Single());
@@ -71,7 +111,7 @@ public class CreerProduitTests
         ClasseReglementaire attendue)
     {
         var (catalogue, journal) = (new CatalogueEcritureEnMemoire(), new JournalEspion());
-        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer"), journal)
+        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer", "prix.modifier"), journal)
             .ExecuterAsync(Psychotrope(ClasseReglementaire.Libre, dci) with { NumEnregistrement = num }, 3);
         Assert.Equal((attendue, true), (catalogue.Crees.Single().Classe, catalogue.AVerifier.Single()));
         Assert.Contains($"n° d’enregistrement {num}", cree.Information);
@@ -79,7 +119,7 @@ public class CreerProduitTests
 
         // Le titulaire décide lui-même
         var titulaire = new CatalogueEcritureEnMemoire();
-        var r = await new CreerProduit(titulaire, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
+        var r = await new CreerProduit(titulaire, new DroitsFactices("catalogue.creer", "prix.modifier") { Titulaire = true }, new JournalEspion())
             .ExecuterAsync(Psychotrope(ClasseReglementaire.Libre, dci) with { NumEnregistrement = num }, 1);
         Assert.Equal((ClasseReglementaire.Libre, null), (titulaire.Crees.Single().Classe, r.Information));
     }
@@ -98,17 +138,17 @@ public class CreerProduitTests
     public async Task Titulaire_ou_classe_deja_sous_registre_ou_dci_non_surveillee_non_concernes()
     {
         var titulaire = new CatalogueEcritureEnMemoire();
-        var r1 = await new CreerProduit(titulaire, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
+        var r1 = await new CreerProduit(titulaire, new DroitsFactices("catalogue.creer", "prix.modifier") { Titulaire = true }, new JournalEspion())
             .ExecuterAsync(Psychotrope(ClasseReglementaire.Libre), 1);
         Assert.Equal((ClasseReglementaire.Libre, false, null), (titulaire.Crees.Single().Classe, titulaire.AVerifier.Single(), r1.Information));
 
         var dejaSousRegistre = new CatalogueEcritureEnMemoire();
-        var r2 = await new CreerProduit(dejaSousRegistre, new DroitsFactices("catalogue.creer"), new JournalEspion())
+        var r2 = await new CreerProduit(dejaSousRegistre, new DroitsFactices("catalogue.creer", "prix.modifier"), new JournalEspion())
             .ExecuterAsync(Psychotrope(ClasseReglementaire.Psychotrope), 3);
         Assert.Equal((ClasseReglementaire.Psychotrope, false, null), (dejaSousRegistre.Crees.Single().Classe, dejaSousRegistre.AVerifier.Single(), r2.Information));
 
         var nonSurveillee = new CatalogueEcritureEnMemoire();
-        await new CreerProduit(nonSurveillee, new DroitsFactices("catalogue.creer"), new JournalEspion()).ExecuterAsync(Fiche(), 3);
+        await new CreerProduit(nonSurveillee, new DroitsFactices("catalogue.creer", "prix.modifier"), new JournalEspion()).ExecuterAsync(Fiche(), 3);
         Assert.Equal((ClasseReglementaire.ListeI, false), (nonSurveillee.Crees.Single().Classe, nonSurveillee.AVerifier.Single()));
     }
 
@@ -120,7 +160,7 @@ public class CreerProduitTests
     [Fact]
     public async Task Doublon_et_code_barres_deja_pris_refuses()
     {
-        var cas = new CreerProduit(new CatalogueEcritureEnMemoire(), new DroitsFactices("catalogue.creer"), new JournalEspion());
+        var cas = new CreerProduit(new CatalogueEcritureEnMemoire(), new DroitsFactices("catalogue.creer", "prix.modifier"), new JournalEspion());
         Assert.Contains("existe déjà", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(Fiche("PARACÉTAMOL 500 mg cp", "500 mg"), 2))).Message);
         Assert.Contains("déjà utilisé", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(Fiche(code: "6130000000107"), 2))).Message);
     }

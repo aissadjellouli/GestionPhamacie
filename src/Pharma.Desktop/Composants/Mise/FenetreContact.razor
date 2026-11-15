@@ -61,6 +61,33 @@
                     <div class="champ" style="flex: 0 1 160px"><label for="fp-plafond">Plafond de crédit (DA)</label>
                         <input id="fp-plafond" data-champ="plafond" type="number" min="0" step="1" @bind="patient.PlafondCredit" /></div>
                 </div>
+                @* Lien avec l'assuré et assuré principal (2026-11-15, script 090) : rien n'est déduit du suffixe, le rattachement est seulement proposé *@
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 1 170px"><label for="fp-lien">Lien</label>
+                        <select id="fp-lien" data-champ="lien" @bind="patient.Lien">
+                            <option value="">Non renseigné</option>
+                            <option value="assure">Assuré</option>
+                            <option value="conjoint">Conjoint</option>
+                            <option value="enfant">Enfant</option>
+                            <option value="ascendant">Ascendant</option>
+                            <option value="autre">Autre</option>
+                        </select></div>
+                    <div class="champ" style="flex: 1 1 260px"><label for="fp-principal">Assuré principal</label>
+                        <select id="fp-principal" data-champ="assure_principal" @bind="patient.AssurePrincipalId" disabled="@(patient.Lien == "assure")">
+                            <option value="">Aucun (assuré lui-même ou non renseigné)</option>
+                            @foreach (var c in patient.Candidats)
+                            {
+                                <option value="@c.Id">@c.Nom (@c.NumAssure)</option>
+                            }
+                        </select></div>
+                </div>
+                @if (patient.Proposition is { } prop && patient.AssurePrincipalId is null && patient.Lien != "assure")
+                {
+                    <div class="filtres">
+                        <span class="detail">Même n° d’assuré de base :</span>
+                        <button type="button" class="btn" @onclick="() => { if (patient is not null) patient.AssurePrincipalId = prop.Id; }">Rattacher à @prop.Nom (@prop.NumAssure) ?</button>
+                    </div>
+                }
                 <label class="case"><input type="checkbox" @bind="patient.Chronique" /> Malade chronique</label>
                 <p class="detail" style="margin: 0">Dette actuelle : @Libelles.Dinars(patient.SoldeCredit, 2) (elle ne se modifie pas ici : règlement ou correction depuis le relevé de dette). Chaque changement est inscrit au journal.</p>
                 @if (erreurSaisie is not null) { <div class="erreur" role="alert">@erreurSaisie</div> }
@@ -200,6 +227,10 @@
         public bool Chronique { get; set; }
         public decimal PlafondCredit { get; set; }
         public decimal SoldeCredit { get; init; }
+        public string? Lien { get; set; }
+        public long? AssurePrincipalId { get; set; }
+        public IReadOnlyList<ProchePatientDto> Candidats { get; init; } = [];
+        public ProchePatientDto? Proposition { get; init; }
     }
     private SaisiePatient? patient;
     private List<OrganismeDto> organismes = [];
@@ -218,7 +249,8 @@
             patient = new SaisiePatient
             {
                 Id = f.Id, Nom = f.Nom, Prenom = f.Prenom, DateNaissance = f.DateNaissance, Telephone = f.Telephone, Email = f.Email,
-                NumAssure = f.NumAssure, OrganismeId = f.OrganismeId, Chronique = f.Chronique, PlafondCredit = f.PlafondCredit, SoldeCredit = f.SoldeCredit
+                NumAssure = f.NumAssure, OrganismeId = f.OrganismeId, Chronique = f.Chronique, PlafondCredit = f.PlafondCredit, SoldeCredit = f.SoldeCredit,
+                Lien = f.Lien, AssurePrincipalId = f.AssurePrincipalId, Candidats = f.Candidats ?? [], Proposition = f.Proposition
             };
         }
         finally { enCours = false; }
@@ -231,7 +263,8 @@
         try
         {
             var e = await Api.ModifierPatientAsync(new FichePatientDto(p.Id, p.Nom, p.Prenom, p.DateNaissance, p.Telephone, p.Email, p.NumAssure,
-                p.OrganismeId, p.Chronique, p.PlafondCredit));
+                p.OrganismeId, p.Chronique, p.PlafondCredit, 0, string.IsNullOrEmpty(p.Lien) ? null : p.Lien,
+                p.Lien == "assure" ? null : p.AssurePrincipalId));
             if (e is not null) { erreurSaisie = e; return; }
             var (f, err) = await Api.ContactAsync(fiche.Type, fiche.Id);
             (fiche, erreur, patient, message) = (f ?? fiche, err, null, "Fiche du patient enregistrée.");
@@ -340,7 +373,7 @@
                     if (Session.A("factures.gerer")) liste.Add(("Factures", $"factures?q={nom}"));
                     break;
                 case "grossiste":
-                    if (Session.A("achats.regler")) liste.Add(("Règlements et relevé", $"achats?onglet=reglements&grossiste={fiche.Id}"));
+                    if (Session.A("achats.regler")) liste.Add(("Payer un grossiste et relevé", $"achats?onglet=reglements&grossiste={fiche.Id}"));
                     if (Session.A("achats.commander") || Session.A("achats.receptionner")) liste.Add(("Bons de commande", $"achats?onglet=commandes&grossiste={fiche.Id}"));
                     break;
                 case "organisme":

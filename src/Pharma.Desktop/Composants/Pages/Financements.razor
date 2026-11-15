@@ -424,7 +424,13 @@
     private void ChoisirRubrique()
     {
         rubrique = Rubriques.Any(r => r.Id == Rubrique) ? Rubrique! : "prets";
-        if (Nouveau == 1 && rubrique == "prets") NouveauPret();
+        if (Nouveau == 1 && rubrique == "prets")
+        {
+            NouveauPret();
+            // « nouveau=1 » ne sert qu'une fois : retiré de l'adresse, sinon le formulaire se rouvrait à chaque retour sur cette
+            // adresse (« ← Retour » depuis le prêt enregistré) alors que le prêt est déjà créé
+            Nav.NavigateTo("financements?rubrique=prets", replace: true);
+        }
     }
 
     private Task ChargerRubriqueAsync() => rubrique switch
@@ -439,6 +445,8 @@
     /// <summary>Après un changement dans la fiche (paiement, usage, échéancier) : soldes des comptes et compteurs relus.</summary>
     private async Task ApresModificationPretAsync()
     {
+        // Le bandeau « saisissez ou importez son échéancier » ne reste pas après l'enregistrement (2026-11-15) : la fiche affiche son propre message
+        message = null;
         (comptes, _) = await Api.ComptesTresorerieAsync();
         await ChargerTitulaireAsync(pageTitulaire, tailleTitulaire);
         await CompterAPayerAsync();

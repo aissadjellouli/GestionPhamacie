@@ -76,8 +76,8 @@ internal static class ReglementsEndpoints
             {
                 var s = await consulter.SituationAsync(patientId, ct);
                 return Results.Ok(new SituationCreditDto(VersDto(s.Patient),
-                    s.Ventes.Select(v => new VenteACreditDto(v.Numero, v.Date, v.Montant, v.Regle, v.Reste)).ToList(),
-                    (s.Mouvements ?? []).Select(m => new MouvementCreditDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Vente, m.Employe, m.Poste, m.Reference, m.EmployeId)).ToList(),
+                    s.Ventes.Select(v => new VenteACreditDto(v.Numero, v.Date, v.Montant, v.Regle, v.Reste, v.Id, v.Facture, v.Remise)).ToList(),
+                    (s.Mouvements ?? []).Select(m => new MouvementCreditDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Vente, m.Employe, m.Poste, m.Reference, m.EmployeId, m.Remise)).ToList(),
                     s.DetteReprise, s.MouvementsTotal));
             });
 
@@ -86,7 +86,7 @@ internal static class ReglementsEndpoints
             {
                 var p = await consulter.MouvementsAsync(patientId, Pharma.Application.Commun.DemandePage.Lire(page, taille), Pharma.Application.Commun.FiltreReleve.Lire(du, au, type), ct);
                 return Results.Ok(new PageDto<MouvementCreditDto>(
-                    p.Lignes.Select(m => new MouvementCreditDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Vente, m.Employe, m.Poste, m.Reference, m.EmployeId)).ToList(),
+                    p.Lignes.Select(m => new MouvementCreditDto(m.Date, m.Type, m.Montant, m.SoldeApres, m.Vente, m.Employe, m.Poste, m.Reference, m.EmployeId, m.Remise)).ToList(),
                     p.Total, p.Numero, p.Taille));
             });
 
@@ -109,7 +109,7 @@ internal static class ReglementsEndpoints
         credits.MapPost("/{patientId:long}/reglement", async (long patientId, ReglementCreditRequete req, EncaisserReglementCredit encaisser,
                 ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
-                var r = await encaisser.ExecuterAsync(patientId, req.Montant, req.Mode, user.UtilisateurId(), requete.Poste(), ct);
+                var r = await encaisser.ExecuterAsync(patientId, req.Montant, req.Mode, user.UtilisateurId(), requete.Poste(), req.Ventes, ct);
                 return Results.Ok(new RecuCreditDto(r.Numero, r.Patient, r.Montant, r.Mode, r.ResteDu));
             });
     }

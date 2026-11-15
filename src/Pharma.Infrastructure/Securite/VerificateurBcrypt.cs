@@ -8,5 +8,10 @@ public sealed class VerificateurBcrypt : IVerificateurMotDePasse, IHacheurMotDeP
 {
     public bool Verifier(string motDePasse, string hash) => BCrypt.Net.BCrypt.Verify(motDePasse, hash);
 
+    // Hachage factice au même coût que les vrais, calculé une fois (identifiant inconnu : même durée de réponse)
+    private static readonly Lazy<string> HashFactice = new(() => BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N")));
+
+    public void VerifierFactice(string motDePasse) => _ = BCrypt.Net.BCrypt.Verify(motDePasse, HashFactice.Value);
+
     public string Hacher(string motDePasse) => BCrypt.Net.BCrypt.HashPassword(motDePasse);
 }

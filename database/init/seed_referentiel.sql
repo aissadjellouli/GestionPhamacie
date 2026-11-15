@@ -10,7 +10,7 @@
 --     traçabilité, inventaire, notifications, sauvegardes) ;
 --   * rôles (titulaire, assistant, vendeur, stagiaire), droits et droits
 --     de départ de chaque rôle ;
---   * organismes CNAS et CASNOS ; substances surveillées (arrêté du
+--   * organismes CNAS, CASNOS et MDN ; substances surveillées (arrêté du
 --     11 août 2021) ; coffre de la trésorerie ; catégories de produits
 --     (médicament, dermo-cosmétique, hygiène…) ;
 --   * compte « titulaire » avec le mot de passe provisoire « Provisoire-2026 » :
@@ -19,7 +19,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 082 (vérifié : permissions, rôles,
+-- Valeurs identiques à celles posées par les scripts 001 à 093 (vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
@@ -40,12 +40,16 @@ INSERT INTO parametre_surveillance DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 INSERT INTO parametre_rapport DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------
--- 2. Organismes payeurs (les autres, ex. militaires, s'ajoutent dans Administration › Pharmacie)
+-- 2. Organismes payeurs CNAS, CASNOS et MDN (les autres s'ajoutent dans Administration › Pharmacie)
 -- ---------------------------------------------------------------------
 INSERT INTO organisme (code, nom) VALUES
     ('CNAS',   'Caisse nationale des assurances sociales des travailleurs salariés'),
     ('CASNOS', 'Caisse nationale de sécurité sociale des non-salariés')
 ON CONFLICT (code) DO NOTHING;
+-- MDN (militaires, script 090) : ajouté seulement s'il n'existe pas déjà (quelle que soit la casse du code)
+INSERT INTO organisme (code, nom)
+SELECT 'MDN', 'Ministère de la Défense nationale (militaires)'
+WHERE NOT EXISTS (SELECT 1 FROM organisme WHERE upper(code) = 'MDN');
 
 -- Catégories de produits (045) : « médicament » ou autre produit, pour les totaux de la caisse et des rapports
 INSERT INTO categorie_produit (code, libelle, medicament, ordre) VALUES
@@ -87,7 +91,9 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('admin.parametres', 'Administration', 'Modifier les paramètres', true),
     ('admin.sauvegardes', 'Administration', 'Gérer les sauvegardes', true),
     ('admin.utilisateurs', 'Administration', 'Gérer les utilisateurs et les droits', true),
+    ('reprise.doublons', 'Administration', 'Valider les doublons d''import', true),
     ('caisse.annuler_vente', 'Caisse', 'Annuler une vente validée', true),
+    ('caisse.cloturer', 'Caisse', 'Faire la relève et clôturer la caisse', true),
     ('caisse.ouvrir_tiroir', 'Caisse', 'Ouvrir le tiroir sans vente', true),
     ('caisse.remise', 'Caisse', 'Accorder une remise', true),
     ('caisse.remises_auto', 'Caisse', 'Gérer les remises automatiques', true),
@@ -132,7 +138,9 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'admin.parametres'),
     ('titulaire', 'admin.sauvegardes'),
     ('titulaire', 'admin.utilisateurs'),
+    ('titulaire', 'reprise.doublons'),
     ('titulaire', 'caisse.annuler_vente'),
+    ('titulaire', 'caisse.cloturer'),
     ('titulaire', 'caisse.ouvrir_tiroir'),
     ('titulaire', 'caisse.remise'),
     ('titulaire', 'caisse.remises_auto'),
@@ -164,6 +172,8 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'achats.retour_fournisseur'),
     ('assistant', 'achats.valider_ecart'),
     ('assistant', 'caisse.annuler_vente'),
+    ('assistant', 'caisse.cloturer'),
+    ('assistant', 'reprise.doublons'),
     ('assistant', 'caisse.ouvrir_tiroir'),
     ('assistant', 'caisse.retour_especes'),
     ('assistant', 'caisse.supprimer_ligne'),

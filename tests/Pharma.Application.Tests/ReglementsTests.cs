@@ -24,7 +24,7 @@ internal sealed class CreditsEnMemoire(decimal solde) : ICreditsClients
         Task.FromResult(new Pharma.Application.Commun.Page<PatientEnCredit>([], 0, p.Page, p.Taille));
     public Task<SituationCredit?> SituationAsync(long id, CancellationToken ct = default) =>
         Task.FromResult<SituationCredit?>(new SituationCredit(new PatientEnCredit(id, "Patient fictif", null, solde, 5000, null), []));
-    public Task<string> EncaisserAsync(long p, decimal m, string mode, long s, long u, CancellationToken ct = default) { Encaisse = (m, mode, s); return Task.FromResult("RC-000007"); }
+    public Task<string> EncaisserAsync(long p, decimal m, string mode, long s, long u, IReadOnlyList<long>? ventes = null, CancellationToken ct = default) { Encaisse = (m, mode, s); return Task.FromResult("RC-000007"); }
     public Task<Pharma.Application.Commun.Page<MouvementCredit>> MouvementsAsync(long p, Pharma.Application.Commun.DemandePage page, Pharma.Application.Commun.FiltreReleve? filtre = null, CancellationToken ct = default) =>
         Task.FromResult(new Pharma.Application.Commun.Page<MouvementCredit>([], 0, page.Page, page.Taille));
     public (decimal Avant, decimal Apres, string Motif)? Correction { get; private set; }

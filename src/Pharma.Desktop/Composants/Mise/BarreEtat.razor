@@ -51,6 +51,7 @@
     {
         Nav.LocationChanged += SurNavigation;
         Session.Changee += SurSession;
+        Session.CaisseChangee += SurSession;
         await ActualiserAsync(complet: true);
         _ = BouclerAsync();
     }
@@ -59,6 +60,7 @@
     {
         Nav.LocationChanged -= SurNavigation;
         Session.Changee -= SurSession;
+        Session.CaisseChangee -= SurSession;
         minuterie?.Dispose();
     }
 

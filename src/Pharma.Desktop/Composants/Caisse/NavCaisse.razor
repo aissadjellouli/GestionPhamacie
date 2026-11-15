@@ -9,7 +9,7 @@
     @Lien("caisse", "Vente")
     <span class="nav-groupe-titre">Opérations</span>
     @Lien("caisse?rubrique=annulation", "Annulation ou retour")
-    @Lien("caisse?rubrique=credit", "Règlement d’un crédit")
+    @Lien("caisse?rubrique=credit", "Encaisser une dette")
     @if (!Session.A("caisse.ouvrir_tiroir"))
     {
         @* Sans le droit « Ouvrir le tiroir sans vente » : rien (une action interdite n'est pas montrée, docs/navigation.md) *@
@@ -32,8 +32,12 @@
     @if (messageTiroir is not null) { <span class="detail" role="status" style="padding: 0 12px 0 24px">@messageTiroir</span> }
     <span class="nav-groupe-titre">Caisse</span>
     @Lien("caisse/etat", "État de la caisse")
-    @Lien("cloture?releve=true", "Relève")
-    @Lien("cloture", "Clôturer la caisse")
+    @if (Session.A("caisse.cloturer"))
+    {
+        @* Sans le droit « Faire la relève et clôturer la caisse » (085) : entrées masquées ; le serveur refuse de toute façon *@
+        @Lien("cloture?releve=true", "Relève")
+        @Lien("cloture", "Clôturer la caisse")
+    }
 
     @if (OuverteLe is { } le)
     {

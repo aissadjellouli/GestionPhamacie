@@ -12,6 +12,8 @@ public static class Permissions
     public const string CaisseRetourEspeces = "caisse.retour_especes";
     public const string CaisseOuvrirTiroir = "caisse.ouvrir_tiroir";
     public const string CaisseVoirEcart = "caisse.voir_ecart";
+    /// <summary>Faire la relève et clôturer la caisse (085) ; un vendeur le fait avec le code comptoir d'un ayant droit.</summary>
+    public const string CaisseCloturer = "caisse.cloturer";
     /// <summary>Vendre sans ordonnance un médicament de liste I ou II (jamais un psychotrope ni un stupéfiant).</summary>
     public const string CaisseVendreSansOrdonnance = "caisse.vendre_sans_ordonnance";
     public const string CreditAccorder = "credit.accorder";
@@ -41,4 +43,6 @@ public static class Permissions
     public const string AdminParametres = "admin.parametres";
     public const string AdminUtilisateurs = "admin.utilisateurs";
     public const string AdminSauvegardes = "admin.sauvegardes";
+    /// <summary>Valider les doublons d'import de patients (093) ; décision d'administration, jamais autorisable par code comptoir.</summary>
+    public const string RepriseDoublons = "reprise.doublons";
 }

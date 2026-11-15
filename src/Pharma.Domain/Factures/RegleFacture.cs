@@ -8,9 +8,13 @@ public enum Destinataire { Patient, Entreprise, Organisme }
 public sealed record LigneFacture(long? VenteId, long? LigneVenteId, string Part, string Designation, decimal Quantite, decimal PrixUnitaireTtc,
     decimal TauxTva, decimal MontantTtc);
 
-/// <summary>Ligne de vente facturable (quantité nette des retours, parts au prorata).</summary>
+/// <summary>
+/// Ligne de vente facturable (quantité nette des retours, parts au prorata). ReductionLigne : réductions de la ligne
+/// (remise automatique, remise du vendeur, don partiel), au prorata de la quantité nette ; 0 pour une vente antérieure aux
+/// réductions par ligne (2026-11-14), dont la remise et le don restent portés par la vente.
+/// </summary>
 public sealed record LigneVendue(long VenteId, string NumeroVente, long LigneVenteId, string Designation, decimal TauxTva, decimal Quantite,
-    decimal MontantPatient, decimal MontantOrganisme, decimal RemiseVente, decimal DonVente = 0);
+    decimal MontantPatient, decimal MontantOrganisme, decimal RemiseVente, decimal DonVente = 0, decimal ReductionLigne = 0);
 
 public sealed record Totaux(decimal Ht, decimal Tva, decimal Ttc);
 
@@ -41,22 +45,45 @@ public static class RegleFacture
     public static string Part(Destinataire d) => d == Destinataire.Organisme ? "organisme" : "patient";
 
     /// <summary>
+    /// Mention d'une vente sur la facture adressée à un organisme (2026-11-15) : patient, n° d'assuré, n° d'ordonnance et médecin
+    /// quand ils sont connus. Données de santé : jamais sur une facture de patient ou d'entreprise. Null si rien n'est connu.
+    /// </summary>
+    public static string? MentionOrganisme(string? patient, string? numAssure, string? ordonnance, string? medecin)
+    {
+        var parties = new List<string>();
+        if (!string.IsNullOrWhiteSpace(patient)) parties.Add($"patient {patient.Trim()}");
+        if (!string.IsNullOrWhiteSpace(numAssure)) parties.Add($"n° d’assuré {numAssure.Trim()}");
+        if (!string.IsNullOrWhiteSpace(ordonnance)) parties.Add($"ordonnance {ordonnance.Trim()}");
+        if (!string.IsNullOrWhiteSpace(medecin)) parties.Add($"médecin {medecin.Trim()}");
+        return parties.Count == 0 ? null : string.Join(", ", parties);
+    }
+
+    /// <summary>
     /// Lignes d'une facture à partir de ventes : une ligne par produit (part concernée, quantité nette) ;
     /// pour la part patient, la remise de chaque vente devient une ligne négative par taux de TVA.
     /// </summary>
-    public static IReadOnlyList<LigneFacture> DepuisVentes(Destinataire d, IEnumerable<LigneVendue> lignes)
+    public static IReadOnlyList<LigneFacture> DepuisVentes(Destinataire d, IEnumerable<LigneVendue> lignes,
+        IReadOnlyDictionary<long, string>? mentionsOrganisme = null)
     {
         var part = Part(d);
         var resultat = new List<LigneFacture>();
         foreach (var vente in lignes.GroupBy(l => (l.VenteId, l.NumeroVente)).OrderBy(g => g.Key.NumeroVente, StringComparer.Ordinal))
         {
+            // Facture d'organisme seulement (2026-11-15) : patient, n° d'assuré, ordonnance et médecin de la vente sur chaque ligne
+            var mention = part == "organisme" && mentionsOrganisme is not null && mentionsOrganisme.TryGetValue(vente.Key.VenteId, out var m)
+                && !string.IsNullOrWhiteSpace(m) ? $" · {m}" : "";
+            // Réductions par ligne (2026-11-15) : la part patient de chaque ligne est facturée nette de ses propres réductions,
+            // au taux de TVA du produit (HT, TVA et TTC = ce que le patient a payé pour ce produit).
+            var reductionsParLigne = vente.Any(l => l.ReductionLigne > 0);
             foreach (var l in vente.Where(l => l.Quantite > 0))
             {
-                var montant = part == "organisme" ? l.MontantOrganisme : l.MontantPatient;
+                var montant = part == "organisme" ? l.MontantOrganisme : l.MontantPatient - (reductionsParLigne ? l.ReductionLigne : 0);
                 if (montant <= 0) continue;
-                resultat.Add(new LigneFacture(l.VenteId, l.LigneVenteId, part, $"{l.Designation} (vente {vente.Key.NumeroVente})", l.Quantite,
+                resultat.Add(new LigneFacture(l.VenteId, l.LigneVenteId, part, $"{l.Designation} (vente {vente.Key.NumeroVente}{mention})", l.Quantite,
                     Arrondi.Centime(montant / l.Quantite), l.TauxTva, montant));
             }
+            if (reductionsParLigne) continue;
+            // Vente antérieure aux réductions par ligne : remise et don de la vente répartis par taux de TVA
             var remise = vente.First().RemiseVente;
             var lignesVente = resultat.Where(r => r.VenteId == vente.Key.VenteId).ToList();
             if (part == "patient" && remise > 0)
@@ -169,6 +196,42 @@ public static class RegleFacture
             throw new RegleMetierException("Le montant de l’avoir compte au plus deux décimales (centimes) : corrigez la saisie.", "montant_avoir");
         if (montant > montantFacture - avoirsDeja)
             throw new RegleMetierException($"L’avoir dépasse ce qui reste de la facture ({montantFacture - avoirsDeja:N2} DA).", "montant_avoir");
+    }
+
+    /// <summary>
+    /// « Déjà réglé par le patient sur sa dette » affiché sur la facture (écran et PDF, 2026-11-15) : le réglé des ventes à crédit
+    /// comprend la part des avoirs imputée sur la dette (part_credit), déjà affichée dans « Avoirs » ; elle en est retirée pour que
+    /// total − déjà payé − déjà réglé − règlements − avoirs = reste.
+    /// </summary>
+    public static decimal RegleParDetteAffiche(decimal regleVentesCredit, decimal partAvoirsSurDette) =>
+        Math.Max(0, regleVentesCredit - partAvoirsSurDette);
+
+    /// <summary>
+    /// Colonne « Payé / réglé » de la liste des factures (E6, 2026-11-15) : alignée sur le détail, où les avoirs ont leur propre ligne.
+    /// TTC − reste compte l'avoir (y compris sa part imputée sur la dette) ; il en est retiré : payé au comptoir + règlements + réglé sur la dette.
+    /// </summary>
+    public static decimal PayeAfficheListe(decimal montantTtc, decimal reste, decimal avoirs) =>
+        Math.Max(0, montantTtc - reste - avoirs);
+
+    /// <summary>
+    /// Avoir sur une facture dont des ventes sont à crédit (084, 2026-11-15) : la dette du patient diminue de
+    /// min(avoir, reste encore dû à crédit de ces ventes), ventes les plus anciennes d'abord (restes donnés dans cet ordre).
+    /// Renvoie la part de chaque vente ; leur somme est la part de l'avoir imputée sur la dette (facture_client.part_credit),
+    /// que v_facture_client ne retire pas une seconde fois du reste de la facture. Facture déjà payée : aucune part.
+    /// </summary>
+    public static IReadOnlyList<(long VenteId, decimal Montant)> RepartirAvoirSurDette(decimal avoir, IEnumerable<(long VenteId, decimal Reste)> restesCredit)
+    {
+        var parts = new List<(long, decimal)>();
+        var disponible = Math.Max(avoir, 0);
+        foreach (var (vente, reste) in restesCredit)
+        {
+            if (disponible <= 0) break;
+            if (reste <= 0) continue;
+            var part = Math.Min(reste, disponible);
+            parts.Add((vente, part));
+            disponible -= part;
+        }
+        return parts;
     }
 
     /// <summary>Retrait du suivi de trésorerie : motif obligatoire (la facture reste valable et imprimable).</summary>

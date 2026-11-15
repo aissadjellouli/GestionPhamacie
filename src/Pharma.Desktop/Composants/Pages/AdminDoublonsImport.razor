@@ -1,0 +1,166 @@
+@page "/admin/doublons-import"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Doublons de n° d'assuré de la reprise (script 092) : patients non créés au chargement, à valider par le titulaire ou un employé qui a
+   le droit « accorder un crédit ». Liste filtrée et paginée par le serveur ; écran fixe, seul le tableau défile ; décision dans une fenêtre. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/doublons-import" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Doublons d’import à valider</h1>
+                <p class="sous-titre">Patients de l’ancien logiciel non créés à la reprise : leur n° d’assuré (n° et suffixe) appartenait déjà à un patient. Pour chacun, choisissez la fiche à garder et le sort de sa dette.</p>
+            </div>
+        </div>
+
+        @if (!Session.A("credit.accorder") && !Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Réservé au titulaire et aux employés qui ont le droit « accorder un crédit ».</div>
+        }
+        else
+        {
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+            <div class="filtres-liste" role="search" aria-label="Filtrer les doublons d’import">
+                <div class="champ" style="flex: 1 1 240px"><label for="fd-texte">Nom ou n° d’assuré</label>
+                    <input id="fd-texte" data-champ="recherche" type="search" autocomplete="off" placeholder="Ex. 690755003842" @bind="fTexte" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" /></div>
+                <div class="champ" style="flex: 0 0 220px"><label for="fd-statut">Statut</label>
+                    <select id="fd-statut" @bind="fStatut" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="">Tous</option>
+                        @foreach (var (code, libelle) in Statuts) { <option value="@code">@libelle</option> }
+                    </select></div>
+                @if (fTexte != "" || fStatut != "a_valider") { <button type="button" class="btn" @onclick="ToutAfficherAsync">À valider seulement</button> }
+            </div>
+
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 900px">
+                    <thead><tr><th scope="col">Patient importé (ignoré)</th><th scope="col">N° d’assuré</th><th scope="col" class="nombre">Dette reprise</th><th scope="col">Fiche existante</th><th scope="col">Statut</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                    <tbody>
+                        @if (liste is null)
+                        {
+                            <tr><td colspan="6"><Chargement /></td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var d in liste.Lignes)
+                            {
+                                <tr>
+                                    <td><span class="nom">@NomComplet(d.Nom, d.Prenom)</span><br /><span class="detail">Reprise n° @d.SessionId (@d.Logiciel), ligne @(d.Ligne?.ToString() ?? "?") · @(d.Telephone ?? "sans téléphone")</span></td>
+                                    <td>@d.NumAssure</td>
+                                    <td class="nombre">@(d.SoldeCredit == 0 ? "—" : $"{d.SoldeCredit:N2} DA")</td>
+                                    <td>@d.ExistantNom <span class="detail">· @d.ExistantNumAssure</span><br /><span class="detail">@(d.Origine == "base" ? "Déjà en base" : "Ligne précédente du même export") · dette @d.ExistantSolde.ToString("N2") DA</span></td>
+                                    <td>
+                                        @if (d.Statut == "a_valider") { <span class="pastille attention">À valider</span> }
+                                        else
+                                        {
+                                            <span class="pastille">@LibelleStatut(d.Statut)</span><br />
+                                            <span class="detail">@(d.Dette is null ? "" : d.Dette == "rattachee" ? "Dette rattachée · " : "Dette abandonnée · ")@d.DecidePar@(d.DecideLe is { } le ? $", le {Libelles.DateHeureLocale(le)}" : "")</span>
+                                        }
+                                    </td>
+                                    <td>@if (d.Statut == "a_valider") { <button type="button" class="btn" disabled="@enCours" @onclick="() => Ouvrir(d)">Décider…</button> }</td>
+                                </tr>
+                            }
+                            @if (liste.Lignes.Count == 0) { <tr><td colspan="6" class="vide">Aucun doublon d’import pour ces filtres.</td></tr> }
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <Pagination Total="@(liste?.Total ?? 0)" Numero="@(liste?.Numero ?? 1)" Taille="taille" Occupe="enCours" Libelle="Pages des doublons d’import" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
+    </div>
+</div>
+
+@if (choisi is { } c)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-doublon">
+        <section class="panneau" style="max-width: 620px; width: 100%">
+            <h2 id="t-doublon">Doublon : @NomComplet(c.Nom, c.Prenom)</h2>
+            <p class="detail" style="margin: 0 0 8px">N° @c.NumAssure, déjà porté par <strong>@c.ExistantNom</strong> (@c.ExistantNumAssure).</p>
+            @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
+            <fieldset class="champ" data-champ="decision">
+                <legend class="requis">Décision</legend>
+                <label class="case"><input type="radio" name="dd-decision" checked="@(decision == "garder_existant")" @onchange="@(() => decision = "garder_existant")" /><span>Garder la fiche existante (le patient importé est écarté)</span></label>
+                <label class="case"><input type="radio" name="dd-decision" checked="@(decision == "remplacer")" @onchange="@(() => decision = "remplacer")" /><span>Remplacer la fiche existante par les données importées (nom, prénom, téléphone, n°)</span></label>
+                <label class="case"><input type="radio" name="dd-decision" checked="@(decision == "ayant_droit")" @onchange="@(() => decision = "ayant_droit")" /><span>Créer comme ayant droit distinct (autre suffixe)</span></label>
+            </fieldset>
+            @if (decision == "ayant_droit")
+            {
+                <div class="champ"><label for="dd-num" class="requis">N° d’assuré de l’ayant droit (avec son suffixe)</label>
+                    <input id="dd-num" data-champ="num_assure" type="text" autocomplete="off" maxlength="40" @bind="numAssure" @bind:event="oninput" /></div>
+            }
+            @if (c.SoldeCredit != 0)
+            {
+                <fieldset class="champ" data-champ="dette">
+                    <legend class="requis">Dette reprise de @c.SoldeCredit.ToString("N2") DA</legend>
+                    <label class="case"><input type="radio" name="dd-dette" checked="@(dette == "rattacher")" @onchange="@(() => dette = "rattacher")" /><span>@(decision == "ayant_droit" ? "La reporter sur la fiche de l’ayant droit" : "La rattacher à la fiche gardée")</span></label>
+                    <label class="case"><input type="radio" name="dd-dette" checked="@(dette == "abandonner")" @onchange="@(() => dette = "abandonner")" /><span>L’abandonner</span></label>
+                </fieldset>
+            }
+            <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end">
+                <button type="button" class="btn" disabled="@enCours" @onclick="Fermer">Annuler</button>
+                <button type="button" class="btn btn-principal" disabled="@(enCours || decision is null || (c.SoldeCredit != 0 && dette is null))" @onclick="ValiderAsync">Valider la décision</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly (string Code, string Libelle)[] Statuts =
+        [("a_valider", "À valider"), ("garde_existant", "Fiche existante gardée"), ("remplace", "Fiche remplacée"), ("ayant_droit", "Créé comme ayant droit")];
+
+    private PageDto<DoublonImportDto>? liste;
+    private string fTexte = "", fStatut = "a_valider";
+    private int taille = Pagination.TailleParDefaut;
+    private bool enCours;
+    private string? erreur, message, erreurFenetre;
+    private DoublonImportDto? choisi;
+    private string? decision, dette, numAssure;
+
+    protected override Task OnInitializedAsync()
+    {
+        Historique.Suivre("doublons-import", e => { e.Mettre("texte", fTexte); e.Mettre("statut", fStatut == "" ? "tous" : fStatut); e.Mettre("page", liste?.Numero ?? 1); e.Mettre("taille", taille); });
+        var numero = 1;
+        if (Historique.Restaurer("doublons-import") is { } h)
+        {
+            (fTexte, fStatut, numero, taille) = (h.Texte("texte") ?? "", h.Texte("statut") is "tous" ? "" : h.Texte("statut") ?? "a_valider", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+            if (fStatut != "" && !Statuts.Any(s => s.Code == fStatut)) fStatut = "a_valider";
+        }
+        return ChargerAsync(numero, taille);
+    }
+
+    private async Task ChargerAsync(int numero, int t)
+    {
+        enCours = true;
+        taille = t;
+        (liste, erreur) = await Api.DoublonsImportAsync(fStatut == "" ? null : fStatut, fTexte == "" ? null : fTexte, numero, t);
+        enCours = false;
+    }
+
+    private Task ToutAfficherAsync()
+    {
+        (fTexte, fStatut) = ("", "a_valider");
+        return ChargerAsync(1, taille);
+    }
+
+    private void Ouvrir(DoublonImportDto d) => (choisi, decision, dette, numAssure, erreurFenetre, message) = (d, null, null, d.NumAssure, null, null);
+    private void Fermer() => choisi = null;
+
+    private async Task ValiderAsync()
+    {
+        if (choisi is not { } c || decision is null) return;
+        enCours = true;
+        var (_, e) = await Api.DeciderDoublonImportAsync(c.Id, new DecisionDoublonImportRequete(decision, c.SoldeCredit == 0 ? null : dette, decision == "ayant_droit" ? numAssure : null));
+        enCours = false;
+        if (e is not null) { erreurFenetre = e; return; }
+        choisi = null;
+        message = $"Décision enregistrée pour {NomComplet(c.Nom, c.Prenom)} : {LibelleStatut(decision switch { "garder_existant" => "garde_existant", "remplacer" => "remplace", _ => "ayant_droit" }).ToLowerInvariant()}.";
+        await ChargerAsync(liste?.Numero ?? 1, taille);
+    }
+
+    private static string NomComplet(string nom, string? prenom) => string.IsNullOrWhiteSpace(prenom) ? nom : $"{nom} {prenom}";
+    private static string LibelleStatut(string s) => Statuts.FirstOrDefault(x => x.Code == s).Libelle ?? s;
+}

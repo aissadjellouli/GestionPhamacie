@@ -68,7 +68,35 @@ internal static class RepriseEndpoints
                 return Results.NoContent();
             })
             .ValidationSuperAdmin(ActionsSuperAdmin.RepriseAnnuler);
+
+        // Doublons de n° d'assuré de la reprise (092) : droit « Valider les doublons d'import » (093, revérifié par le cas d'usage)
+        var doublons = api.MapGroup("/reprise/doublons-patients").ExigerPermission(Pharma.Domain.Securite.Permissions.RepriseDoublons);
+
+        doublons.MapGet("", async (string? statut, string? q, int? page, int? taille, ListerDoublonsImport lister, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            var p = await lister.ExecuterAsync(new FiltreDoublonsImport(statut, q), Pharma.Application.Commun.DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
+            return Results.Ok(new PageDto<DoublonImportDto>(p.Lignes.Select(VersDto).ToList(), p.Total, p.Numero, p.Taille));
+        });
+
+        doublons.MapPost("/{id:long}/decision", async (long id, DecisionDoublonImportRequete req, DeciderDoublonImport decider, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            var decision = req.Decision switch
+            {
+                "garder_existant" => DecisionDoublon.GarderExistant, "remplacer" => DecisionDoublon.Remplacer, "ayant_droit" => DecisionDoublon.AyantDroit,
+                _ => throw new RegleMetierException("Décision inconnue.", "decision")
+            };
+            DetteDoublon? dette = req.Dette switch
+            {
+                null or "" => null, "rattacher" => DetteDoublon.Rattacher, "abandonner" => DetteDoublon.Abandonner,
+                _ => throw new RegleMetierException("Choix de la dette inconnu.", "dette")
+            };
+            return Results.Ok(new IdentifiantDto(await decider.ExecuterAsync(id, decision, dette, req.NumAssure, user.UtilisateurId(), ct)));
+        });
     }
+
+    private static DoublonImportDto VersDto(DoublonPatientImport d) => new(d.Id, d.SessionId, d.Logiciel, d.RefSource, d.Ligne, d.Nom, d.Prenom, d.Telephone,
+        d.NumAssure, d.SoldeCredit, d.Origine, d.PatientExistantId, d.ExistantNom, d.ExistantNumAssure, d.ExistantTelephone, d.ExistantSolde,
+        d.Statut, d.Dette, d.PatientCreeId, d.DecidePar, d.DecideLe);
 
     /// <summary>Données chargées par le super admin : attribuées au pharmacien titulaire (registre des psychotropes compris).</summary>
     private static async Task<long> Titulaire(ITitulaireLecture titulaire, CancellationToken ct) =>

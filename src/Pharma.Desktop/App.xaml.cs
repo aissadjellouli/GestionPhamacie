@@ -21,7 +21,10 @@ public partial class App : Application
         services.AddBlazorWebViewDeveloperTools();
 #endif
         // Adresse de l'API sur le PC serveur de l'officine (variable d'environnement PHARMA_API)
-        var api = Environment.GetEnvironmentVariable("PHARMA_API") ?? "http://localhost:5080/";
+        // http:// ou https:// (HTTPS conseillé dès que le serveur est sur un autre PC : docs/mise-en-production.md ; le certificat du
+        // serveur doit être reconnu par Windows). Barre finale ajoutée : les routes « api/… » sont relatives à cette adresse.
+        var api = (Environment.GetEnvironmentVariable("PHARMA_API") is { Length: > 0 } a ? a.Trim() : "http://localhost:5080/");
+        if (!api.EndsWith('/')) api += "/";
         // Chaque appel nomme le poste : il identifie la caisse (le tiroir) partagée par les employés du poste
         var poste = new ConfigurationPoste();
         // Chaque appel est compté : la barre de chargement du haut de la fenêtre s'affiche pendant les appels

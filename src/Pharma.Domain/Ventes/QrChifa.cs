@@ -17,7 +17,9 @@ public sealed record QrChifa(
 {
     /// <summary>N° d'assuré tel qu'imprimé sur le volet : « 690755003842/80 ».</summary>
     public string AssureComplet => $"{NumeroAssure}/{SuffixeAssure}";
-    public decimal MontantOrdonnance => Lignes.Sum(l => l.Quantite * l.PrixUnitaire);
+    /// <summary>Date de l'ordonnance : la seconde date du QR (7e zone), hypothèse à confirmer avec l'éditeur de Chifa (docs/chifa.md).</summary>
+    public DateOnly? DateOrdonnance => DateSecondaire;
+    public decimal MontantOrdonnance =>Lignes.Sum(l => l.Quantite * l.PrixUnitaire);
 
     public static bool TryParse(string? texte, out QrChifa? qr)
     {

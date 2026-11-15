@@ -31,22 +31,33 @@ public sealed class CodesComptoirSql(NpgsqlDataSource db) : ICodesComptoir
         return await Lire(cmd, ct);
     }
 
-    // Ligne verrouillée par l'UPDATE : les essais simultanés passent un par un. Blocage expiré : le compte repart à 1.
-    public async Task<int?> ReserverEssaiAsync(long utilisateurId, DateTime maintenant, int essaisMax, DateTime bloqueJusqu, CancellationToken ct = default)
+    public async Task<CompteComptoir?> TrouverActifParIdAsync(long utilisateurId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand($"{Select} WHERE id = $1 AND actif");
+        cmd.Parameters.AddWithValue(utilisateurId);
+        return (await Lire(cmd, ct)).FirstOrDefault();
+    }
+
+    // Ligne verrouillée par l'UPDATE : les essais simultanés passent un par un. Blocage progressif (CodeComptoir.DureeBlocage) :
+    // le compteur n'est jamais remis à 1 par l'expiration d'un blocage (seulement par un bon code) ; dès le maximum atteint,
+    // chaque essai pose un blocage qui double (exposant plafonné à 20, durée plafonnée à BlocageMax).
+    public async Task<int?> ReserverEssaiAsync(long utilisateurId, DateTime maintenant, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
             UPDATE utilisateur
-            SET code_comptoir_essais = CASE WHEN code_comptoir_bloque_jusqu IS NOT NULL THEN 1 ELSE code_comptoir_essais + 1 END,
+            SET code_comptoir_essais = code_comptoir_essais + 1,
                 code_comptoir_bloque_jusqu = CASE
-                    WHEN (CASE WHEN code_comptoir_bloque_jusqu IS NOT NULL THEN 1 ELSE code_comptoir_essais + 1 END) >= $2 THEN $3
+                    WHEN code_comptoir_essais + 1 >= $2
+                    THEN $3 + LEAST($4 * power(2, LEAST(code_comptoir_essais + 1 - $2, 20)), $5)
                     ELSE NULL END
-            WHERE id = $1 AND (code_comptoir_bloque_jusqu IS NULL OR code_comptoir_bloque_jusqu <= $4)
+            WHERE id = $1 AND (code_comptoir_bloque_jusqu IS NULL OR code_comptoir_bloque_jusqu <= $3)
             RETURNING code_comptoir_essais
             """);
         cmd.Parameters.AddWithValue(utilisateurId);
-        cmd.Parameters.AddWithValue(essaisMax);
-        cmd.Parameters.Add(new NpgsqlParameter { Value = bloqueJusqu, NpgsqlDbType = NpgsqlDbType.TimestampTz });
+        cmd.Parameters.AddWithValue(Pharma.Domain.Securite.CodeComptoir.EssaisMax);
         cmd.Parameters.Add(new NpgsqlParameter { Value = maintenant, NpgsqlDbType = NpgsqlDbType.TimestampTz });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = Pharma.Domain.Securite.CodeComptoir.Blocage, NpgsqlDbType = NpgsqlDbType.Interval });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = Pharma.Domain.Securite.CodeComptoir.BlocageMax, NpgsqlDbType = NpgsqlDbType.Interval });
         return await cmd.ExecuteScalarAsync(ct) is int n ? n : null;
     }
 

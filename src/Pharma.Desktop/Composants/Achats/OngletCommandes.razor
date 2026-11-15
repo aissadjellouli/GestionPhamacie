@@ -403,8 +403,12 @@
         await Executer(async () =>
         {
             var gros = s.DernierFournisseurId ?? fournisseurId;
-            var (r, e) = await Api.AjouterACommandeAsync(gros, s.ProduitId, Math.Max(1, s.QteSuggeree), null);
+            // Prix HT saisi dans le champ « Prix HT » : envoyé s'il y en a un (sauf s'il a été saisi pour un autre produit choisi) ;
+            // sans prix, le serveur reprend le dernier prix d'achat
+            var prixSaisi = VoitPrix && prix is > 0 && (produitChoisi is null || produitChoisi.Id == s.ProduitId) ? prix : null;
+            var (r, e) = await Api.AjouterACommandeAsync(gros, s.ProduitId, Math.Max(1, s.QteSuggeree), prixSaisi);
             if (e is not null) return e;
+            if (prixSaisi is not null) prix = null;
             message = $"{s.Produit} : {Math.Max(1, s.QteSuggeree)} boîte(s) ajoutée(s) au bon de {s.DernierFournisseur ?? "ce grossiste"}.";
             suggestions.Remove(s);
             totalSuggestions--;

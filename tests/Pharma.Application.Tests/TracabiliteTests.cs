@@ -8,7 +8,7 @@ public class TracabiliteTests
     public async Task Code_vide_n_interroge_pas_la_base()
     {
         var lecture = new TracabiliteEspion();
-        Assert.Null(await new ConsulterParcoursBoite(lecture).ExecuterAsync("  "));
+        Assert.Null(await new ConsulterParcoursBoite(lecture, new DroitsFactices()).ExecuterAsync("  ", 1));
         Assert.Null(lecture.CodeRecu);
     }
 
@@ -16,7 +16,7 @@ public class TracabiliteTests
     public async Task Code_nettoye_avant_recherche()
     {
         var lecture = new TracabiliteEspion();
-        await new ConsulterParcoursBoite(lecture).ExecuterAsync(" 2000000001272 ");
+        await new ConsulterParcoursBoite(lecture, new DroitsFactices()).ExecuterAsync(" 2000000001272 ", 1);
         Assert.Equal("2000000001272", lecture.CodeRecu);
     }
 }

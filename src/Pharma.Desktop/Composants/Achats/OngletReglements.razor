@@ -25,10 +25,11 @@
         }
     </section>
 
-    <section class="panneau colonne-principale" aria-labelledby="t-reglement">
+    @* Écran fixe (2026-11-15) : formulaire, factures et derniers règlements défilent dans le panneau, jamais l'écran *@
+    <section class="panneau colonne-principale cadre-defilant" aria-labelledby="t-reglement">
         @if (situation is not { } s)
         {
-            <h2 id="t-reglement">Règlement</h2>
+            <h2 id="t-reglement">Payer un grossiste</h2>
             <p class="vide" style="margin: 0">Choisissez un grossiste dans la liste.</p>
         }
         else
@@ -369,7 +370,7 @@
         var regle = montant;
         await ChargerAsync();
         await ChoisirAsync(situation.Id);
-        message = $"Règlement de {Libelles.Dinars(regle, 2)} à {nom} enregistré. Nouvelle dette : {Libelles.Dinars(situation?.Solde ?? 0, 2)}.";
+        message = $"Paiement de {Libelles.Dinars(regle, 2)} à {nom} enregistré. Nouvelle dette : {Libelles.Dinars(situation?.Solde ?? 0, 2)}.";
         // Le reste à employer des prêts a changé
         if (EstTitulaire) (sources, _) = await Api.SourcesFinancementAsync();
     }

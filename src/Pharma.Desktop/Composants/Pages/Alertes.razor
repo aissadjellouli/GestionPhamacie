@@ -87,10 +87,10 @@
                 @if (ind.ReglementsAPreparer is { } nb)
                 {
                     <div class="tuile">
-                        <span class="tuile-libelle">Règlements grossistes à préparer</span>
+                        <span class="tuile-libelle">Grossistes à payer</span>
                         <span class="tuile-valeur @(nb > 0 ? "urgent" : null)">@nb</span>
                         <span class="tuile-note">@Libelles.Dinars(ind.MontantAPreparer ?? 0) · factures en retard et traites échues ou à payer sous 7 jours
-                            @if (nb > 0) { <br /><a href="achats?onglet=reglements">Préparer les règlements</a> }</span>
+                            @if (nb > 0) { <br /><a href="achats?onglet=reglements">Payer un grossiste</a> }</span>
                     </div>
                 }
             </section>

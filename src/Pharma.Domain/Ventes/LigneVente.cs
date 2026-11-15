@@ -8,7 +8,14 @@ public class LigneVente
     public long LotId { get; init; }
     public int Quantite { get; init; }
     /// <summary>Prix de vente d'une boîte : PPA du lot (ou prix du catalogue) plus le SHP.</summary>
-    public decimal PrixUnitaire { get; init; }
+    public decimal PrixUnitaire { get => _prix; init => _prix = value; }
+    private decimal _prix;
+    /// <summary>Ligne reprise d'un volet Chifa : prix unitaire lu sur le volet (base de la part de l'organisme) ; null hors volet.</summary>
+    public decimal? PrixChifa { get; private set; }
+    /// <summary>Prix retenu quand il diffère du prix Chifa (EcartPrixChifa : aligne_auto, aligne, garde, plus_eleve) ; null sinon.</summary>
+    public string? ChoixPrixChifa { get; private set; }
+    /// <summary>Écart payé par le patient : prix appliqué au-dessus du prix Chifa, par la quantité.</summary>
+    public decimal EcartChifaPatient => EcartPrixChifa.EcartPatient(PrixUnitaire, PrixChifa, Quantite);
     /// <summary>SHP par boîte, compris dans PrixUnitaire.</summary>
     public decimal Shp { get; init; }
     /// <summary>Lot plus récent servi alors qu'un lot plus ancien du produit est en stock : pourquoi (RaisonLot), sinon null.</summary>
@@ -41,6 +48,23 @@ public class LigneVente
         var part = Math.Round(Math.Min(baseRemboursement, PrixUnitaire) * Quantite * tauxPourcent / 100m, 2, MidpointRounding.AwayFromZero);
         MontantOrganisme = part;
         MontantPatient = PrixUnitaire * Quantite - part;
+    }
+
+    /// <summary>
+    /// Ligne d'un volet Chifa : prix appliqué (Chifa ou le nôtre, selon EcartPrixChifa) ; la part de l'organisme se calcule sur le prix Chifa
+    /// (barème Chifa) × quantité × taux, jamais sur notre prix, au plus le montant de la ligne ; le patient paie le reste (dont l'écart).
+    /// </summary>
+    internal void AppliquerVoletChifa(decimal prixChifa, decimal prixApplique, string? choix, decimal tauxPourcent)
+    {
+        _prix = prixApplique;
+        PrixChifa = prixChifa;
+        ChoixPrixChifa = choix;
+        PriseEnCharge = true;
+        BaseRemboursement = prixChifa;
+        TauxRemboursement = tauxPourcent;
+        var montant = PrixUnitaire * Quantite;
+        MontantOrganisme = Math.Min(Math.Round(prixChifa * Quantite * tauxPourcent / 100m, 2, MidpointRounding.AwayFromZero), montant);
+        MontantPatient = montant - MontantOrganisme;
     }
 
     /// <summary>Reste à charge saisi par le caissier : part de l'organisme imposée, taux effectif recalculé (taux choisi ignoré).</summary>

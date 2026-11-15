@@ -17,6 +17,7 @@ public class ListesTests
         ["Achats/OngletReglements.razor"] = (2, "factures restant dues d'un grossiste, et récapitulatif des 20 derniers règlements (historique complet : relevé paginé)"),
         ["Achats/OngletRetours.razor"] = (1, "lignes d'un retour fournisseur (détail d'un document)"),
         ["Achats/PanneauInventaireComplet.razor"] = (1, "rayons de l'officine (bornés)"),
+        ["Mise/FenetreAutorisation.razor"] = (1, "détail d'une demande d'autorisation : lignes du panier concernées (détail d'un document)"),
         ["Factures/EditeurFacture.razor"] = (1, "ventes à cocher pour une facture (période et destinataire choisis)"),
         ["Factures/PanneauMedecins.razor"] = (1, "résultats d'une recherche (dès 2 lettres, plafonnée par le serveur)"),
         ["Pages/AdminDroits.razor"] = (2, "utilisateurs : exception choisie le 2026-11-13 ; droits par rôle (bornés)"),

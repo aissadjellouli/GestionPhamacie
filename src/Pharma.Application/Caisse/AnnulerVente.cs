@@ -16,7 +16,7 @@ public sealed record VenteAnnulable(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulable> Lignes,
     decimal DejaRendu = 0, decimal SoldeCreditPatient = 0, string? FactureNumero = null, long? VendeurId = null, long? PatientId = null,
-    decimal PayeSurVente = 0);
+    decimal PayeSurVente = 0, string? Remise = null);
 
 /// <summary>
 /// Annulation à écrire en une transaction : vente, stock (hors boîtes déjà rendues), boîtes, crédit, argent rendu.
@@ -96,7 +96,7 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
         {
             if (string.IsNullOrWhiteSpace(validateurIdentifiant))
                 throw new RegleMetierException("Vente d’une caisse déjà clôturée : le pharmacien ou l’assistant doit valider avec son code.");
-            var validateur = await codes.VerifierAsync(validateurIdentifiant, validateurCode, nomPoste, ct);
+            var validateur = await codes.VerifierAsync(validateurIdentifiant, validateurCode, nomPoste, ct, utilisateurId);
             if (!await droits.APermissionAsync(validateur.Id, Permissions.CaisseAnnulerVente, ct))
                 throw new DroitRefuseException(Permissions.CaisseAnnulerVente, "valider l’annulation d’une vente ancienne");
             (validePar, nomValidateur) = (validateur.Id, validateur.NomComplet);

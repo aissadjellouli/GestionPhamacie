@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Pharma.Application.Caisse;
 using Pharma.Application.Commun;
 using Pharma.Application.Securite;
@@ -41,7 +42,9 @@ public sealed class AutorisationParCode(IHttpContextAccessor http, VerificationC
         if (!await ActiveeAsync(ct)) { Erreur = "L’autorisation par code est désactivée (Administration › Caisse)."; return null; }
         var identifiant = Uri.UnescapeDataString(requete.Headers[EnTeteIdentifiant].ToString());
         var code = requete.Headers[EnTeteCode].ToString();
-        try { valideur = await codes.VerifierAsync(identifiant, code, requete.Poste(), ct); }
+        // Essais comptés au demandeur connecté (revue 2026-11-15, I2) : il ne peut pas bloquer le code d'un collègue
+        long? demandeur = long.TryParse(http.HttpContext?.User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out var id) && id > 0 ? id : null;
+        try { valideur = await codes.VerifierAsync(identifiant, code, requete.Poste(), ct, demandeur); }
         catch (RegleMetierException e) { Erreur = e.Message; }
         return valideur;
     }
@@ -57,6 +60,8 @@ public sealed class AutorisationParCode(IHttpContextAccessor http, VerificationC
         var droit = permission ?? PermissionServiceExtensions.MarqueTitulaire;
         // Droit non demandé au valideur : refusé (le poste le lui présentera s'il le faut)
         if (!DroitsDemandes().Contains(droit)) return false;
+        // Hors liste blanche (titulaire, administration, trésorerie…) : jamais par le code d'un collègue, quoi que demande le poste
+        if (!Pharma.Domain.Securite.CodeComptoir.AutorisableParCollegue(droit)) return false;
         if (await ValideurAsync(ct) is not { } v || v.Id == utilisateurId) return false;
         var ok = permission is null || permission == PermissionServiceExtensions.MarqueTitulaire
             ? await droits.EstTitulaireAsync(v.Id, ct)

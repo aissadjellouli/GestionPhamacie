@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 082 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 093 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 082 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 093 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -20,12 +20,11 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
     \echo 'La base contient déjà le schéma : rien n''est fait. Base existante : appliquer seulement les nouveaux scripts 0xx_*.sql.'
     \quit
 \endif
-
 --
 -- PostgreSQL database dump
 --
 
-\restrict E7QYfnH8rhuGYixEnngB0Jx7bw9vDi8oWzhgIwZeiwnpaj3yac8FgejccaXvhOp
+\restrict l8CrTZ3t6B4Oi6t3OxcTIAP9xeiDuE8Ge81Pwx149dvFscpPbDzBglnXeu1MdIB
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -47,6 +46,7 @@ SET row_security = off;
 --
 
 CREATE SCHEMA import;
+
 
 
 --
@@ -77,6 +77,7 @@ DECLARE
     v_nomencl  text;
     v_ancien   text;
     v_classe   text;
+    v_existant bigint;
     r          record;
 BEGIN
     IF (SELECT statut FROM import.session WHERE id = p_session) <> 'en_cours' THEN
@@ -187,8 +188,26 @@ BEGIN
     WHERE l.reception_id IN (SELECT reception_id FROM _rec)
       AND p.classe IN ('psychotrope', 'stupefiant');
 
-    -- Clients et crédits en cours
-    FOR r IN SELECT * FROM import.client_src WHERE session_id = p_session LOOP
+    -- Clients et crédits en cours, dans l'ordre de l'export. N° d'assuré déjà pris (patient en base, ou ligne précédente
+    -- de l'export) : patient non créé, mis en attente de validation avec sa dette (092) ; le reste de l'import continue
+    FOR r IN SELECT * FROM import.client_src WHERE session_id = p_session ORDER BY ligne NULLS LAST, ref_source LOOP
+        v_existant := NULL;
+        IF r.num_assure IS NOT NULL AND regexp_replace(r.num_assure, '\D', '', 'g') <> '' THEN
+            SELECT pt.id INTO v_existant FROM patient pt
+            WHERE pt.num_assure IS NOT NULL AND regexp_replace(pt.num_assure, '\D', '', 'g') <> ''
+              AND regexp_replace(pt.num_assure, '\D', '', 'g') = regexp_replace(r.num_assure, '\D', '', 'g')
+            ORDER BY pt.id LIMIT 1;
+        END IF;
+        IF v_existant IS NOT NULL THEN
+            INSERT INTO import.doublon_patient (session_id, ref_source, ligne, nom, prenom, telephone, num_assure, solde_credit,
+                                                patient_existant_id, origine)
+            VALUES (p_session, r.ref_source, r.ligne, r.nom, r.prenom, r.telephone, r.num_assure,
+                    COALESCE(import.nombre(r.solde_credit), 0), v_existant,
+                    CASE WHEN EXISTS (SELECT 1 FROM import.client_src x WHERE x.session_id = p_session AND x.patient_id = v_existant)
+                         THEN 'fichier' ELSE 'base' END)
+            ON CONFLICT (session_id, ref_source) DO NOTHING;
+            CONTINUE;
+        END IF;
         INSERT INTO patient (nom, prenom, telephone, num_assure, solde_credit)
         VALUES (r.nom, r.prenom, r.telephone, r.num_assure, COALESCE(import.nombre(r.solde_credit), 0))
         RETURNING id INTO v_id;
@@ -280,6 +299,15 @@ CREATE FUNCTION import.controle_apres_chargement(p_session bigint) RETURNS TABLE
                (SELECT count(*) FROM import.client_src c WHERE c.session_id = p_session),
                (SELECT count(*) FROM import.client_src c
                 WHERE c.session_id = p_session AND c.patient_id IS NOT NULL)
+        UNION ALL
+        -- 092 : patients non créés (n° d'assuré déjà pris) ; nouveau = déjà décidés par le titulaire
+        SELECT 6, 'Doublons de n° d''assuré (décidés)',
+               (SELECT count(*) FROM import.doublon_patient d WHERE d.session_id = p_session),
+               (SELECT count(*) FROM import.doublon_patient d WHERE d.session_id = p_session AND d.statut <> 'a_valider')
+        UNION ALL
+        SELECT 7, 'Dettes des doublons (DA, reprises)',
+               (SELECT COALESCE(SUM(d.solde_credit), 0) FROM import.doublon_patient d WHERE d.session_id = p_session),
+               (SELECT COALESCE(SUM(d.solde_credit), 0) FROM import.doublon_patient d WHERE d.session_id = p_session AND d.dette = 'rattachee')
     ) t
     ORDER BY t.ordre;
 $$;
@@ -422,6 +450,25 @@ BEGIN
         HAVING count(*) > 0;
     END IF;
 
+    -- Doublons de n° d'assuré (092) : jamais bloquants ; le premier patient du n° est repris, les suivants sont
+    -- mis en attente de validation au chargement (import.doublon_patient)
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, 'client', NULL, 'avertissement',
+           format('%s doublon(s) de n° d''assuré ignoré(s) : le premier patient de chaque n° est repris, les suivants ne sont pas créés et attendent la validation du titulaire (Administration › Doublons d''import), avec leur dette éventuelle', count(*))
+    FROM import.doublons_clients(p_session)
+    HAVING count(*) > 0;
+
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, 'client', d.ref_source, 'avertissement',
+           format('Ligne %s — %s — n° %s (déjà : %s%s)%s',
+                  COALESCE(d.ligne::text, '?'), btrim(d.nom || ' ' || COALESCE(d.prenom, '')), d.num_assure,
+                  d.existant_nom, CASE d.origine WHEN 'base' THEN ', patient déjà en base' ELSE ', ligne ' || COALESCE(d.existant_ligne::text, '?') || ' du fichier' END,
+                  CASE WHEN d.solde_credit <> 0
+                       THEN format(' ; dette reprise %s DA mise en attente (rattachée à la fiche gardée ou abandonnée à la validation)', d.solde_credit)
+                       ELSE '' END)
+    FROM import.doublons_clients(p_session) d
+    ORDER BY d.ligne NULLS LAST, d.ref_source;
+
     SELECT count(*) INTO nb_bloquants
     FROM import.anomalie WHERE session_id = p_session AND gravite = 'bloquant';
     RETURN nb_bloquants;
@@ -454,6 +501,106 @@ EXCEPTION WHEN others THEN
     RETURN NULL;
 END;
 $_$;
+
+
+--
+-- Name: decider_doublon_patient(bigint, text, text, text, bigint); Type: FUNCTION; Schema: import; Owner: -
+--
+
+CREATE FUNCTION import.decider_doublon_patient(p_id bigint, p_decision text, p_dette text, p_num_assure text, p_utilisateur_id bigint) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    d       import.doublon_patient%ROWTYPE;
+    v_cible bigint;
+    v_cle   text := regexp_replace(COALESCE(p_num_assure, ''), '\D', '', 'g');
+BEGIN
+    SELECT * INTO d FROM import.doublon_patient WHERE id = p_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Doublon d''import introuvable.';
+    END IF;
+    IF d.statut <> 'a_valider' THEN
+        RAISE EXCEPTION 'Ce doublon a déjà été traité : rien n''a été modifié.';
+    END IF;
+    IF p_decision NOT IN ('garder_existant', 'remplacer', 'ayant_droit') THEN
+        RAISE EXCEPTION 'Décision inconnue : %', p_decision;
+    END IF;
+    IF d.solde_credit <> 0 AND COALESCE(p_dette, '') NOT IN ('rattachee', 'abandonnee') THEN
+        RAISE EXCEPTION 'Dette reprise de % DA : choisissez de la rattacher ou de l''abandonner.', d.solde_credit;
+    END IF;
+    IF d.solde_credit = 0 THEN
+        p_dette := NULL;
+    END IF;
+
+    IF p_decision = 'ayant_droit' THEN
+        IF v_cle = '' THEN
+            RAISE EXCEPTION 'Saisissez le n° d''assuré de l''ayant droit (avec son suffixe).';
+        END IF;
+        IF v_cle = regexp_replace(d.num_assure, '\D', '', 'g') THEN
+            RAISE EXCEPTION 'Même n° que la fiche existante : changez le suffixe de l''ayant droit.';
+        END IF;
+        IF EXISTS (SELECT 1 FROM patient pt WHERE pt.num_assure IS NOT NULL AND regexp_replace(pt.num_assure, '\D', '', 'g') <> ''
+                   AND regexp_replace(pt.num_assure, '\D', '', 'g') = v_cle) THEN
+            RAISE EXCEPTION 'Le n° % est déjà celui d''un autre patient.', btrim(p_num_assure);
+        END IF;
+        INSERT INTO patient (nom, prenom, telephone, num_assure, cree_par)
+        VALUES (d.nom, d.prenom, d.telephone, btrim(p_num_assure), p_utilisateur_id)
+        RETURNING id INTO v_cible;
+    ELSE
+        v_cible := d.patient_existant_id;
+        IF p_decision = 'remplacer' THEN
+            UPDATE patient SET nom = d.nom, prenom = d.prenom, telephone = d.telephone, num_assure = d.num_assure
+            WHERE id = v_cible;
+        END IF;
+    END IF;
+
+    IF p_dette = 'rattachee' THEN
+        PERFORM credit_contexte('reprise', NULL, p_utilisateur_id, NULL, 'REPRISE-' || d.session_id || ' ' || d.ref_source);
+        UPDATE patient SET solde_credit = solde_credit + d.solde_credit WHERE id = v_cible;
+    END IF;
+
+    UPDATE import.doublon_patient
+    SET statut = CASE p_decision WHEN 'garder_existant' THEN 'garde_existant' WHEN 'remplacer' THEN 'remplace' ELSE 'ayant_droit' END,
+        dette = p_dette,
+        patient_cree_id = CASE WHEN p_decision = 'ayant_droit' THEN v_cible END,
+        decide_par = p_utilisateur_id, decide_le = now()
+    WHERE id = p_id;
+    UPDATE import.client_src SET patient_id = v_cible
+    WHERE session_id = d.session_id AND ref_source = d.ref_source AND p_decision = 'ayant_droit';
+    RETURN v_cible;
+END;
+$$;
+
+
+--
+-- Name: doublons_clients(bigint); Type: FUNCTION; Schema: import; Owner: -
+--
+
+CREATE FUNCTION import.doublons_clients(p_session bigint) RETURNS TABLE(ref_source text, ligne integer, nom text, prenom text, telephone text, num_assure text, solde_credit numeric, origine text, existant_patient_id bigint, existant_ref text, existant_ligne integer, existant_nom text)
+    LANGUAGE sql STABLE
+    AS $$
+    WITH c AS (
+        SELECT s.*, regexp_replace(s.num_assure, '\D', '', 'g') AS cle,
+               row_number() OVER (PARTITION BY regexp_replace(s.num_assure, '\D', '', 'g')
+                                  ORDER BY s.ligne NULLS LAST, s.ref_source) AS rang
+        FROM import.client_src s
+        WHERE s.session_id = p_session AND s.num_assure IS NOT NULL AND regexp_replace(s.num_assure, '\D', '', 'g') <> ''
+    )
+    SELECT c.ref_source, c.ligne, c.nom, c.prenom, c.telephone, c.num_assure,
+           COALESCE(import.nombre(c.solde_credit), 0),
+           CASE WHEN b.id IS NOT NULL THEN 'base' ELSE 'fichier' END,
+           b.id, p.ref_source, p.ligne,
+           COALESCE(btrim(b.nom || ' ' || COALESCE(b.prenom, '')), btrim(p.nom || ' ' || COALESCE(p.prenom, '')))
+    FROM c
+    JOIN c p ON p.cle = c.cle AND p.rang = 1
+    LEFT JOIN LATERAL (
+        SELECT pt.id, pt.nom, pt.prenom FROM patient pt
+        WHERE pt.num_assure IS NOT NULL AND regexp_replace(pt.num_assure, '\D', '', 'g') <> ''
+          AND regexp_replace(pt.num_assure, '\D', '', 'g') = c.cle
+          AND pt.id IS DISTINCT FROM c.patient_id
+        ORDER BY pt.id LIMIT 1) b ON true
+    WHERE c.patient_id IS NULL AND (b.id IS NOT NULL OR c.rang > 1);
+$$;
 
 
 --
@@ -1047,70 +1194,70 @@ $$;
 
 CREATE FUNCTION public.lots_delaisses(p_produit_id bigint DEFAULT NULL::bigint) RETURNS TABLE(o_type text, o_niveau text, o_produit_id bigint, o_lot_id bigint, o_message text, o_valeur_dzd numeric)
     LANGUAGE sql STABLE
-    AS $$
-    WITH p AS (SELECT seuil_lot_delaisse AS seuil, seuil_lot_delaisse_collectif AS collectif, jours_rouge FROM parametre_alerte WHERE id = 1),
-    lots AS (
-        SELECT l.id, l.produit_id, l.numero_lot, l.date_peremption, l.quantite_disponible, l.prix_achat_ht, l.bloque, r.date_reception
-        FROM lot l JOIN reception r ON r.id = l.reception_id
-        WHERE p_produit_id IS NULL OR l.produit_id = p_produit_id
-    ),
-    -- Ancien lot A, encore en stock et vendable ; dernière vente validée d'une de ses boîtes
-    delaisses AS (
-        SELECT a.*,
-               (SELECT max(t.traitee_le) FROM alerte t
-                WHERE t.type = 'lot_delaisse' AND t.lot_id = a.id AND t.statut = 'traitee') AS traitee_le,
-               (SELECT max(va.date_vente) FROM ligne_vente la JOIN vente va ON va.id = la.vente_id
-                WHERE la.lot_id = a.id AND va.statut = 'validee') AS derniere_vente
-        FROM lots a
-        WHERE a.quantite_disponible > 0 AND a.date_peremption > current_date AND NOT a.bloque
-    ),
-    -- Lot B plus récent (reçu après, ou périmant après) qui ne périme pas avant A ; compté depuis l'arrivée
-    -- des deux lots, la dernière alerte traitée par le titulaire ou la dernière vente d'une boîte de A
-    paires AS (
-        SELECT a.id AS a_id, b.id AS b_id,
-               greatest(a.date_reception, b.date_reception, a.traitee_le, a.derniere_vente) AS depuis,
-               a.derniere_vente
-        FROM delaisses a
-        JOIN lots b ON b.produit_id = a.produit_id AND b.id <> a.id
-        WHERE (b.date_reception > a.date_reception OR b.date_peremption > a.date_peremption)
-          AND b.date_peremption >= a.date_peremption
-    ),
-    ventes AS (
-        SELECT pa.a_id, v.utilisateur_id, sum(lv.quantite)::int AS boites, bool_or(lv.raison_lot = 'introuvable') AS introuvable
-        FROM paires pa
-        JOIN ligne_vente lv ON lv.lot_id = pa.b_id
-        JOIN vente v ON v.id = lv.vente_id AND v.statut = 'validee' AND v.date_vente >= pa.depuis
-        WHERE lv.raison_lot IS DISTINCT FROM 'peremption'
-          -- Strictement après la dernière vente de A (une vente qui contient aussi une boîte de A ne compte pas)
-          AND (pa.derniere_vente IS NULL OR v.date_vente > pa.derniere_vente)
-        GROUP BY pa.a_id, v.utilisateur_id
-    ),
-    -- Par ancien lot : seuil d'un vendeur atteint, ou seuil collectif atteint par plusieurs vendeurs
-    par_lot AS (
-        SELECT ve.a_id, max(ve.boites) AS max_vendeur, sum(ve.boites) AS total, count(*) AS vendeurs, bool_or(ve.introuvable) AS introuvable
-        FROM ventes ve GROUP BY ve.a_id
-    ),
-    retenus AS (
-        SELECT pl.*, (pl.vendeurs >= 2 AND pl.total >= p.collectif) AS collectif
-        FROM par_lot pl, p
-        WHERE pl.max_vendeur >= p.seuil OR (pl.vendeurs >= 2 AND pl.total >= p.collectif)
-    )
-    SELECT 'lot_delaisse'::text,
-           CASE WHEN rt.collectif OR rt.introuvable OR a.date_peremption <= current_date + (SELECT jours_rouge FROM p) THEN 'urgent' ELSE 'attention' END,
-           a.produit_id,
-           a.id,
-           format('%s, lot %s : %s boîte(s) en stock, délaissées : un lot plus récent est vendu à leur place. %s%s. Risque de péremption ou de perte des boîtes du lot %s : faites l''inventaire de ce produit.',
-                  pr.nom_commercial, a.numero_lot, a.quantite_disponible,
-                  CASE WHEN rt.collectif THEN format('%s vendeurs ont vendu ensemble %s boîte(s) d''un lot plus récent : ', rt.vendeurs, rt.total) ELSE '' END,
-                  (SELECT string_agg(format('%s a vendu %s boîte(s) d''un lot plus récent%s', u.nom_complet, ve.boites,
-                                            CASE WHEN ve.introuvable THEN ' (dont « boîte de l''ancien lot introuvable »)' ELSE '' END),
-                                     ' ; ' ORDER BY ve.boites DESC)
-                   FROM ventes ve JOIN utilisateur u ON u.id = ve.utilisateur_id WHERE ve.a_id = a.id),
-                  a.numero_lot),
-           round(a.quantite_disponible * a.prix_achat_ht, 2)
-    FROM retenus rt
-    JOIN delaisses a ON a.id = rt.a_id
-    JOIN produit pr ON pr.id = a.produit_id;
+    AS $$
+    WITH p AS (SELECT seuil_lot_delaisse AS seuil, seuil_lot_delaisse_collectif AS collectif, jours_rouge FROM parametre_alerte WHERE id = 1),
+    lots AS (
+        SELECT l.id, l.produit_id, l.numero_lot, l.date_peremption, l.quantite_disponible, l.prix_achat_ht, l.bloque, r.date_reception
+        FROM lot l JOIN reception r ON r.id = l.reception_id
+        WHERE p_produit_id IS NULL OR l.produit_id = p_produit_id
+    ),
+    -- Ancien lot A, encore en stock et vendable ; dernière vente validée d'une de ses boîtes
+    delaisses AS (
+        SELECT a.*,
+               (SELECT max(t.traitee_le) FROM alerte t
+                WHERE t.type = 'lot_delaisse' AND t.lot_id = a.id AND t.statut = 'traitee') AS traitee_le,
+               (SELECT max(va.date_vente) FROM ligne_vente la JOIN vente va ON va.id = la.vente_id
+                WHERE la.lot_id = a.id AND va.statut = 'validee') AS derniere_vente
+        FROM lots a
+        WHERE a.quantite_disponible > 0 AND a.date_peremption > current_date AND NOT a.bloque
+    ),
+    -- Lot B plus récent (reçu après, ou périmant après) qui ne périme pas avant A ; compté depuis l'arrivée
+    -- des deux lots, la dernière alerte traitée par le titulaire ou la dernière vente d'une boîte de A
+    paires AS (
+        SELECT a.id AS a_id, b.id AS b_id,
+               greatest(a.date_reception, b.date_reception, a.traitee_le, a.derniere_vente) AS depuis,
+               a.derniere_vente
+        FROM delaisses a
+        JOIN lots b ON b.produit_id = a.produit_id AND b.id <> a.id
+        WHERE (b.date_reception > a.date_reception OR b.date_peremption > a.date_peremption)
+          AND b.date_peremption >= a.date_peremption
+    ),
+    ventes AS (
+        SELECT pa.a_id, v.utilisateur_id, sum(lv.quantite)::int AS boites, bool_or(lv.raison_lot = 'introuvable') AS introuvable
+        FROM paires pa
+        JOIN ligne_vente lv ON lv.lot_id = pa.b_id
+        JOIN vente v ON v.id = lv.vente_id AND v.statut = 'validee' AND v.date_vente >= pa.depuis
+        WHERE lv.raison_lot IS DISTINCT FROM 'peremption'
+          -- Strictement après la dernière vente de A (une vente qui contient aussi une boîte de A ne compte pas)
+          AND (pa.derniere_vente IS NULL OR v.date_vente > pa.derniere_vente)
+        GROUP BY pa.a_id, v.utilisateur_id
+    ),
+    -- Par ancien lot : seuil d'un vendeur atteint, ou seuil collectif atteint par plusieurs vendeurs
+    par_lot AS (
+        SELECT ve.a_id, max(ve.boites) AS max_vendeur, sum(ve.boites) AS total, count(*) AS vendeurs, bool_or(ve.introuvable) AS introuvable
+        FROM ventes ve GROUP BY ve.a_id
+    ),
+    retenus AS (
+        SELECT pl.*, (pl.vendeurs >= 2 AND pl.total >= p.collectif) AS collectif
+        FROM par_lot pl, p
+        WHERE pl.max_vendeur >= p.seuil OR (pl.vendeurs >= 2 AND pl.total >= p.collectif)
+    )
+    SELECT 'lot_delaisse'::text,
+           CASE WHEN rt.collectif OR rt.introuvable OR a.date_peremption <= current_date + (SELECT jours_rouge FROM p) THEN 'urgent' ELSE 'attention' END,
+           a.produit_id,
+           a.id,
+           format('%s, lot %s : %s boîte(s) en stock, délaissées : un lot plus récent est vendu à leur place. %s%s. Risque de péremption ou de perte des boîtes du lot %s : faites l''inventaire de ce produit.',
+                  pr.nom_commercial, a.numero_lot, a.quantite_disponible,
+                  CASE WHEN rt.collectif THEN format('%s vendeurs ont vendu ensemble %s boîte(s) d''un lot plus récent : ', rt.vendeurs, rt.total) ELSE '' END,
+                  (SELECT string_agg(format('%s a vendu %s boîte(s) d''un lot plus récent%s', u.nom_complet, ve.boites,
+                                            CASE WHEN ve.introuvable THEN ' (dont « boîte de l''ancien lot introuvable »)' ELSE '' END),
+                                     ' ; ' ORDER BY ve.boites DESC)
+                   FROM ventes ve JOIN utilisateur u ON u.id = ve.utilisateur_id WHERE ve.a_id = a.id),
+                  a.numero_lot),
+           round(a.quantite_disponible * a.prix_achat_ht, 2)
+    FROM retenus rt
+    JOIN delaisses a ON a.id = rt.a_id
+    JOIN produit pr ON pr.id = a.produit_id;
 $$;
 
 
@@ -1992,22 +2139,22 @@ $$;
 
 CREATE FUNCTION public.ventes_lot(p_produit_id bigint, p_numero_lot text) RETURNS TABLE(o_patient text, o_telephone text, o_date_vente timestamp with time zone, o_ticket text, o_boites bigint)
     LANGUAGE sql STABLE
-    AS $$
-    -- Aussi les ventes d'avant l'étiquetage par boîte ; une vente dont toutes les boîtes du lot ont été rendues est masquée
-    SELECT COALESCE(NULLIF(btrim(COALESCE(pt.nom, '') || ' ' || COALESCE(pt.prenom, '')), ''),
-                    'Vente anonyme'),
-           pt.telephone, v.date_vente, v.numero, SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0))::bigint
-    FROM ligne_vente lv
-    JOIN vente v     ON v.id = lv.vente_id
-    JOIN lot l       ON l.id = lv.lot_id
-    LEFT JOIN patient pt ON pt.id = v.patient_id
-    LEFT JOIN LATERAL (SELECT sum(rl.quantite) AS rendues
-                       FROM retour_client_ligne rl WHERE rl.ligne_vente_id = lv.id) rd ON true
-    WHERE l.produit_id = p_produit_id AND l.numero_lot = p_numero_lot
-      AND v.statut = 'validee'
-    GROUP BY pt.nom, pt.prenom, pt.telephone, v.date_vente, v.numero
-    HAVING SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0)) > 0
-    ORDER BY v.date_vente DESC;
+    AS $$
+    -- Aussi les ventes d'avant l'étiquetage par boîte ; une vente dont toutes les boîtes du lot ont été rendues est masquée
+    SELECT COALESCE(NULLIF(btrim(COALESCE(pt.nom, '') || ' ' || COALESCE(pt.prenom, '')), ''),
+                    'Vente anonyme'),
+           pt.telephone, v.date_vente, v.numero, SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0))::bigint
+    FROM ligne_vente lv
+    JOIN vente v     ON v.id = lv.vente_id
+    JOIN lot l       ON l.id = lv.lot_id
+    LEFT JOIN patient pt ON pt.id = v.patient_id
+    LEFT JOIN LATERAL (SELECT sum(rl.quantite) AS rendues
+                       FROM retour_client_ligne rl WHERE rl.ligne_vente_id = lv.id) rd ON true
+    WHERE l.produit_id = p_produit_id AND l.numero_lot = p_numero_lot
+      AND v.statut = 'validee'
+    GROUP BY pt.nom, pt.prenom, pt.telephone, v.date_vente, v.numero
+    HAVING SUM(greatest(lv.quantite - COALESCE(rd.rendues, 0), 0)) > 0
+    ORDER BY v.date_vente DESC;
 $$;
 
 
@@ -2234,7 +2381,8 @@ CREATE TABLE import.client_src (
     telephone text,
     num_assure text,
     solde_credit text,
-    patient_id bigint
+    patient_id bigint,
+    ligne integer
 );
 
 
@@ -2250,6 +2398,49 @@ CREATE TABLE import.correspondance_produit (
     score numeric(4,3),
     valide boolean DEFAULT false NOT NULL,
     CONSTRAINT correspondance_produit_methode_check CHECK ((methode = ANY (ARRAY['code_barre'::text, 'num_enregistrement'::text, 'nom_approche'::text, 'manuel'::text, 'nouveau'::text])))
+);
+
+
+--
+-- Name: doublon_patient; Type: TABLE; Schema: import; Owner: -
+--
+
+CREATE TABLE import.doublon_patient (
+    id bigint NOT NULL,
+    session_id bigint NOT NULL,
+    ref_source text NOT NULL,
+    ligne integer,
+    nom text NOT NULL,
+    prenom text,
+    telephone text,
+    num_assure text NOT NULL,
+    solde_credit numeric(12,2) DEFAULT 0 NOT NULL,
+    patient_existant_id bigint NOT NULL,
+    origine text NOT NULL,
+    statut text DEFAULT 'a_valider'::text NOT NULL,
+    dette text,
+    patient_cree_id bigint,
+    decide_par bigint,
+    decide_le timestamp with time zone,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_doublon_patient_decision CHECK (((statut = 'a_valider'::text) = (decide_le IS NULL))),
+    CONSTRAINT ck_doublon_patient_dette CHECK (((dette IS NULL) OR (dette = ANY (ARRAY['rattachee'::text, 'abandonnee'::text])))),
+    CONSTRAINT ck_doublon_patient_origine CHECK ((origine = ANY (ARRAY['fichier'::text, 'base'::text]))),
+    CONSTRAINT ck_doublon_patient_statut CHECK ((statut = ANY (ARRAY['a_valider'::text, 'garde_existant'::text, 'remplace'::text, 'ayant_droit'::text])))
+);
+
+
+--
+-- Name: doublon_patient_id_seq; Type: SEQUENCE; Schema: import; Owner: -
+--
+
+ALTER TABLE import.doublon_patient ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME import.doublon_patient_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -3003,6 +3194,34 @@ CREATE TABLE public.correspondance_echeancier_preteur (
 
 
 --
+-- Name: credit_imputation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.credit_imputation (
+    id bigint NOT NULL,
+    credit_mouvement_id bigint NOT NULL,
+    vente_id bigint NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_credit_imputation_montant CHECK ((montant > (0)::numeric))
+);
+
+
+--
+-- Name: credit_imputation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.credit_imputation ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.credit_imputation_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: credit_mouvement; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3264,6 +3483,8 @@ CREATE TABLE public.facture_client (
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     date_echeance date,
+    part_credit numeric(12,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_facture_client_part_credit CHECK (((part_credit >= (0)::numeric) AND ((part_credit = (0)::numeric) OR ((type = 'avoir'::text) AND (part_credit <= montant_ttc))))),
     CONSTRAINT ck_facture_echeance CHECK ((((type = 'facture'::text) AND (date_echeance IS NOT NULL) AND (date_echeance >= date_facture)) OR ((type = 'avoir'::text) AND (date_echeance IS NULL)))),
     CONSTRAINT facture_client_check CHECK (((destinataire <> 'patient'::text) OR (patient_id IS NOT NULL))),
     CONSTRAINT facture_client_check1 CHECK (((destinataire <> 'entreprise'::text) OR (client_id IS NOT NULL))),
@@ -3658,6 +3879,10 @@ CREATE TABLE public.ligne_vente (
     reduction_auto numeric(12,2) DEFAULT 0 NOT NULL,
     reduction_manuelle numeric(12,2) DEFAULT 0 NOT NULL,
     don_partiel boolean DEFAULT false NOT NULL,
+    prix_chifa numeric(12,2),
+    choix_prix_chifa text,
+    CONSTRAINT ck_ligne_vente_choix_prix_chifa CHECK (((choix_prix_chifa IS NULL) OR ((prix_chifa IS NOT NULL) AND (choix_prix_chifa = ANY (ARRAY['aligne_auto'::text, 'aligne'::text, 'garde'::text, 'plus_eleve'::text]))))),
+    CONSTRAINT ck_ligne_vente_prix_chifa CHECK (((prix_chifa IS NULL) OR (prix_chifa >= (0)::numeric))),
     CONSTRAINT ck_ligne_vente_raison_lot CHECK (((raison_lot IS NULL) OR (raison_lot = ANY (ARRAY['peremption'::text, 'introuvable'::text, 'abimee'::text, 'demande_client'::text])))),
     CONSTRAINT ck_ligne_vente_reduction_auto CHECK ((reduction_auto >= (0)::numeric)),
     CONSTRAINT ck_ligne_vente_reduction_manuelle CHECK ((reduction_manuelle >= (0)::numeric)),
@@ -4183,9 +4408,11 @@ CREATE TABLE public.parametre_caisse (
     plafond_credit_defaut numeric(12,2) DEFAULT 0 NOT NULL,
     seuil_annulations integer DEFAULT 0 NOT NULL,
     autorisation_par_code boolean DEFAULT true NOT NULL,
+    seuil_ecart_chifa numeric(12,2) DEFAULT 5 NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
     CONSTRAINT ck_plafond_credit_defaut CHECK ((plafond_credit_defaut >= (0)::numeric)),
     CONSTRAINT ck_seuil_annulations CHECK (((seuil_annulations >= 0) AND (seuil_annulations <= 100))),
+    CONSTRAINT ck_seuil_ecart_chifa CHECK ((seuil_ecart_chifa >= (0)::numeric)),
     CONSTRAINT ck_versement_cloture CHECK ((versement_cloture = ANY (ARRAY['manuel'::text, 'automatique'::text]))),
     CONSTRAINT parametre_caisse_deconnexion_minutes_check CHECK ((deconnexion_minutes >= 0)),
     CONSTRAINT parametre_caisse_fond_caisse_defaut_check CHECK ((fond_caisse_defaut >= (0)::numeric)),
@@ -4337,7 +4564,11 @@ CREATE TABLE public.patient (
     solde_credit numeric(12,2) DEFAULT 0 NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     email text,
-    cree_par bigint
+    cree_par bigint,
+    lien text,
+    assure_principal_id bigint,
+    CONSTRAINT ck_patient_assure_principal CHECK ((assure_principal_id <> id)),
+    CONSTRAINT ck_patient_lien CHECK ((lien = ANY (ARRAY['assure'::text, 'conjoint'::text, 'enfant'::text, 'ascendant'::text, 'autre'::text])))
 );
 
 
@@ -5236,7 +5467,17 @@ CREATE TABLE public.vente (
     remise_additionnee boolean DEFAULT false NOT NULL,
     montant_don numeric(12,2) DEFAULT 0 NOT NULL,
     cle_encaissement uuid,
+    canal_organisme text DEFAULT 'logiciel'::text NOT NULL,
+    remis_a_patient_id bigint,
+    remis_a_nom text,
+    pour_patient_id bigint,
+    pour_nom text,
+    CONSTRAINT ck_vente_canal_organisme CHECK ((canal_organisme = ANY (ARRAY['logiciel'::text, 'chifa'::text, 'mdn'::text]))),
     CONSTRAINT ck_vente_montant_don CHECK ((montant_don >= (0)::numeric)),
+    CONSTRAINT ck_vente_pour_nom CHECK (((pour_nom IS NULL) OR ((char_length(btrim(pour_nom)) >= 1) AND (char_length(btrim(pour_nom)) <= 200)))),
+    CONSTRAINT ck_vente_pour_un_seul CHECK (((pour_patient_id IS NULL) OR (pour_nom IS NULL))),
+    CONSTRAINT ck_vente_remis_a_nom CHECK (((remis_a_nom IS NULL) OR ((char_length(btrim(remis_a_nom)) >= 1) AND (char_length(btrim(remis_a_nom)) <= 200)))),
+    CONSTRAINT ck_vente_remis_a_un_seul CHECK (((remis_a_patient_id IS NULL) OR (remis_a_nom IS NULL))),
     CONSTRAINT vente_check CHECK (((type = 'libre'::text) OR ((organisme_id IS NOT NULL) AND (patient_id IS NOT NULL)))),
     CONSTRAINT vente_montant_remise_check CHECK ((montant_remise >= (0)::numeric)),
     CONSTRAINT vente_remise_pct_check CHECK (((remise_pct >= (0)::numeric) AND (remise_pct <= (100)::numeric))),
@@ -5384,7 +5625,7 @@ CREATE VIEW public.v_cheque_a_remettre AS
  SELECT p.id AS paiement_id,
     p.cree_le,
     p.montant,
-    COALESCE(v.numero, 'Règlement de crédit'::text) AS origine,
+    COALESCE(v.numero, 'Encaissement de dette'::text) AS origine,
     NULLIF(TRIM(BOTH FROM concat_ws(' '::text, pa.nom, pa.prenom)), ''::text) AS patient
    FROM ((public.paiement p
      LEFT JOIN public.vente v ON ((v.id = p.vente_id)))
@@ -5600,19 +5841,25 @@ CREATE VIEW public.v_vente_credit AS
     numero,
     date_vente,
     montant,
-    LEAST(GREATEST((regle_total - ((ouverture + cumul) - montant)), (0)::numeric), montant) AS regle,
-    (montant - LEAST(GREATEST((regle_total - ((ouverture + cumul) - montant)), (0)::numeric), montant)) AS reste
+    LEAST((impute + LEAST(GREATEST((libre - ((ouverture + cumul) - capacite)), (0)::numeric), capacite)), montant) AS regle,
+    (montant - LEAST((impute + LEAST(GREATEST((libre - ((ouverture + cumul) - capacite)), (0)::numeric), capacite)), montant)) AS reste
    FROM ( SELECT a.vente_id,
             a.patient_id,
             a.numero,
             a.date_vente,
             a.montant,
+            LEAST(COALESCE(i.impute, (0)::numeric), a.montant) AS impute,
+            (a.montant - LEAST(COALESCE(i.impute, (0)::numeric), a.montant)) AS capacite,
             COALESCE(o.montant, (0)::numeric) AS ouverture,
-            sum(a.montant) OVER (PARTITION BY a.patient_id ORDER BY a.date_vente, a.vente_id) AS cumul,
-            GREATEST(((COALESCE(o.montant, (0)::numeric) + sum(a.montant) OVER (PARTITION BY a.patient_id)) - p.solde_credit), (0)::numeric) AS regle_total
-           FROM ((public.v_credit_accorde a
+            sum((a.montant - LEAST(COALESCE(i.impute, (0)::numeric), a.montant))) OVER (PARTITION BY a.patient_id ORDER BY a.date_vente, a.vente_id) AS cumul,
+            GREATEST((((COALESCE(o.montant, (0)::numeric) + sum(a.montant) OVER (PARTITION BY a.patient_id)) - p.solde_credit) - sum(LEAST(COALESCE(i.impute, (0)::numeric), a.montant)) OVER (PARTITION BY a.patient_id)), (0)::numeric) AS libre
+           FROM (((public.v_credit_accorde a
              JOIN public.patient p ON ((p.id = a.patient_id)))
              LEFT JOIN public.credit_ouverture o ON ((o.patient_id = a.patient_id)))
+             LEFT JOIN ( SELECT ci.vente_id,
+                    sum(ci.montant) AS impute
+                   FROM public.credit_imputation ci
+                  GROUP BY ci.vente_id) i ON ((i.vente_id = a.vente_id)))
           WHERE (a.montant > (0)::numeric)) t;
 
 
@@ -5657,7 +5904,7 @@ CREATE VIEW public.v_facture_client AS
           WHERE (r.facture_id = f.id)), (0)::numeric) AS regle,
         CASE
             WHEN ((f.type = 'avoir'::text) OR (f.statut = 'remplacee'::text)) THEN (0)::numeric
-            ELSE GREATEST(((((f.montant_ttc - f.deja_paye) - COALESCE(( SELECT sum(a.montant_ttc) AS sum
+            ELSE GREATEST(((((f.montant_ttc - f.deja_paye) - COALESCE(( SELECT sum((a.montant_ttc - a.part_credit)) AS sum
                FROM public.facture_client a
               WHERE ((a.facture_origine_id = f.id) AND (a.type = 'avoir'::text))), (0)::numeric)) - COALESCE(( SELECT sum((r.montant - r.part_credit)) AS sum
                FROM public.reglement_facture_client r
@@ -5722,7 +5969,10 @@ CREATE VIEW public.v_ligne_vente_facturable AS
     l.quantite,
     (l.quantite - COALESCE(rt.quantite, (0)::bigint)) AS quantite_nette,
     round(((l.montant_patient * ((l.quantite - COALESCE(rt.quantite, (0)::bigint)))::numeric) / (l.quantite)::numeric), 2) AS montant_patient,
-    round(((l.montant_organisme * ((l.quantite - COALESCE(rt.quantite, (0)::bigint)))::numeric) / (l.quantite)::numeric), 2) AS montant_organisme,
+        CASE
+            WHEN (v.canal_organisme = 'logiciel'::text) THEN round(((l.montant_organisme * ((l.quantite - COALESCE(rt.quantite, (0)::bigint)))::numeric) / (l.quantite)::numeric), 2)
+            ELSE (0)::numeric
+        END AS montant_organisme,
     v.montant_remise,
     (EXISTS ( SELECT 1
            FROM (public.facture_client_ligne fl
@@ -6380,6 +6630,14 @@ ALTER TABLE ONLY import.correspondance_produit
 
 
 --
+-- Name: doublon_patient doublon_patient_pkey; Type: CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.doublon_patient
+    ADD CONSTRAINT doublon_patient_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fournisseur_src fournisseur_src_pkey; Type: CONSTRAINT; Schema: import; Owner: -
 --
 
@@ -6409,6 +6667,14 @@ ALTER TABLE ONLY import.session
 
 ALTER TABLE ONLY import.stock_src
     ADD CONSTRAINT stock_src_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: doublon_patient ux_doublon_patient_source; Type: CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.doublon_patient
+    ADD CONSTRAINT ux_doublon_patient_source UNIQUE (session_id, ref_source);
 
 
 --
@@ -6641,6 +6907,14 @@ ALTER TABLE ONLY public.correspondance_echeancier
 
 ALTER TABLE ONLY public.correspondance_echeancier_preteur
     ADD CONSTRAINT correspondance_echeancier_preteur_pkey PRIMARY KEY (preteur);
+
+
+--
+-- Name: credit_imputation credit_imputation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_imputation
+    ADD CONSTRAINT credit_imputation_pkey PRIMARY KEY (id);
 
 
 --
@@ -7364,6 +7638,13 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: ix_doublon_patient_statut; Type: INDEX; Schema: import; Owner: -
+--
+
+CREATE INDEX ix_doublon_patient_statut ON import.doublon_patient USING btree (statut, id);
+
+
+--
 -- Name: idx_alerte_non_envoyee_non_vue; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7945,10 +8226,38 @@ CREATE INDEX ix_connexion_employe ON public.connexion_employe USING btree (utili
 
 
 --
+-- Name: ix_credit_imputation_mouvement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_credit_imputation_mouvement ON public.credit_imputation USING btree (credit_mouvement_id);
+
+
+--
+-- Name: ix_credit_imputation_vente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_credit_imputation_vente ON public.credit_imputation USING btree (vente_id);
+
+
+--
 -- Name: ix_evenement_caisse_employe; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_evenement_caisse_employe ON public.evenement_caisse USING btree (utilisateur_id, cree_le);
+
+
+--
+-- Name: ix_patient_assure_principal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_patient_assure_principal ON public.patient USING btree (assure_principal_id) WHERE (assure_principal_id IS NOT NULL);
+
+
+--
+-- Name: ix_patient_num_assure_base; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_patient_num_assure_base ON public.patient USING btree ("left"(regexp_replace(num_assure, '\D'::text, ''::text, 'g'::text), 12)) WHERE (num_assure IS NOT NULL);
 
 
 --
@@ -7963,6 +8272,20 @@ CREATE INDEX ix_remise_auto_categorie ON public.remise_automatique USING btree (
 --
 
 CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (produit_id) WHERE (produit_id IS NOT NULL);
+
+
+--
+-- Name: ix_vente_pour_patient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_vente_pour_patient ON public.vente USING btree (pour_patient_id) WHERE (pour_patient_id IS NOT NULL);
+
+
+--
+-- Name: ix_vente_remis_a_patient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_vente_remis_a_patient ON public.vente USING btree (remis_a_patient_id) WHERE (remis_a_patient_id IS NOT NULL);
 
 
 --
@@ -8026,6 +8349,13 @@ CREATE UNIQUE INDEX ux_ordonnance_chemin_scan ON public.ordonnance USING btree (
 --
 
 CREATE UNIQUE INDEX ux_paiement_numero_recu ON public.paiement USING btree (numero_recu) WHERE (numero_recu IS NOT NULL);
+
+
+--
+-- Name: ux_patient_num_assure; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_patient_num_assure ON public.patient USING btree (regexp_replace(num_assure, '\D'::text, ''::text, 'g'::text)) WHERE ((num_assure IS NOT NULL) AND (regexp_replace(num_assure, '\D'::text, ''::text, 'g'::text) <> ''::text));
 
 
 --
@@ -8560,6 +8890,38 @@ ALTER TABLE ONLY import.correspondance_produit
 
 
 --
+-- Name: doublon_patient doublon_patient_decide_par_fkey; Type: FK CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.doublon_patient
+    ADD CONSTRAINT doublon_patient_decide_par_fkey FOREIGN KEY (decide_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: doublon_patient doublon_patient_patient_cree_id_fkey; Type: FK CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.doublon_patient
+    ADD CONSTRAINT doublon_patient_patient_cree_id_fkey FOREIGN KEY (patient_cree_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: doublon_patient doublon_patient_patient_existant_id_fkey; Type: FK CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.doublon_patient
+    ADD CONSTRAINT doublon_patient_patient_existant_id_fkey FOREIGN KEY (patient_existant_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: doublon_patient doublon_patient_session_id_fkey; Type: FK CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.doublon_patient
+    ADD CONSTRAINT doublon_patient_session_id_fkey FOREIGN KEY (session_id) REFERENCES import.session(id);
+
+
+--
 -- Name: fournisseur_src fournisseur_src_session_id_fkey; Type: FK CONSTRAINT; Schema: import; Owner: -
 --
 
@@ -8936,6 +9298,22 @@ ALTER TABLE ONLY public.correspondance_echeancier
 
 
 --
+-- Name: credit_imputation credit_imputation_credit_mouvement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_imputation
+    ADD CONSTRAINT credit_imputation_credit_mouvement_id_fkey FOREIGN KEY (credit_mouvement_id) REFERENCES public.credit_mouvement(id);
+
+
+--
+-- Name: credit_imputation credit_imputation_vente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.credit_imputation
+    ADD CONSTRAINT credit_imputation_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
+
+
+--
 -- Name: credit_mouvement credit_mouvement_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9120,11 +9498,35 @@ ALTER TABLE ONLY public.facture_client_version
 
 
 --
+-- Name: patient fk_patient_assure_principal; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.patient
+    ADD CONSTRAINT fk_patient_assure_principal FOREIGN KEY (assure_principal_id) REFERENCES public.patient(id) ON DELETE SET NULL;
+
+
+--
 -- Name: produit fk_produit_categorie; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.produit
     ADD CONSTRAINT fk_produit_categorie FOREIGN KEY (categorie) REFERENCES public.categorie_produit(code);
+
+
+--
+-- Name: vente fk_vente_pour_patient; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente
+    ADD CONSTRAINT fk_vente_pour_patient FOREIGN KEY (pour_patient_id) REFERENCES public.patient(id) ON DELETE SET NULL;
+
+
+--
+-- Name: vente fk_vente_remis_a_patient; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente
+    ADD CONSTRAINT fk_vente_remis_a_patient FOREIGN KEY (remis_a_patient_id) REFERENCES public.patient(id) ON DELETE SET NULL;
 
 
 --
@@ -10123,5 +10525,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict E7QYfnH8rhuGYixEnngB0Jx7bw9vDi8oWzhgIwZeiwnpaj3yac8FgejccaXvhOp
+\unrestrict l8CrTZ3t6B4Oi6t3OxcTIAP9xeiDuE8Ge81Pwx149dvFscpPbDzBglnXeu1MdIB
 

@@ -88,7 +88,7 @@
                     @foreach (var v in ventes)
                     {
                         <button type="button" class="ligne-vente @(v.Statut == "annulee" ? "annulee" : null)" disabled="@(v.Statut != "validee")" @onclick="() => Choisir(v)">
-                            <span><strong>@v.Numero</strong> · @Libelles.DateHeureLocale(v.Date) · @v.Vendeur@(v.Patient is { } p ? $" · {p}" : "")
+                            <span><strong>@v.Numero</strong> · @Libelles.DateHeureLocale(v.Date) · @v.Vendeur@(v.Patient is { } p ? $" · {p}" : "")@(v.Remise is { } rv ? $" · {rv}" : "")
                                 @if (resultatBoite is not null)
                                 {
                                     <br /><span class="detail">@string.Join(", ", v.Lignes.Select(l => $"{l.Quantite} × {l.Produit}{(l.Lot is { } lo ? $" (lot {lo})" : "")}"))</span>
@@ -108,7 +108,7 @@
             {
                 var v = choisie;
                 <div class="carte">
-                    <strong>@v.Numero</strong> · @Libelles.DateHeureLocale(v.Date) · vendu par <LienContact Type="employe" Id="v.VendeurId" Nom="@v.Vendeur" />@if (v.Patient is { } p) { <text> · </text><LienContact Type="patient" Id="v.PatientId" Nom="@p" /> }
+                    <strong>@v.Numero</strong> · @Libelles.DateHeureLocale(v.Date) · vendu par <LienContact Type="employe" Id="v.VendeurId" Nom="@v.Vendeur" />@if (v.Patient is { } p) { <text> · </text><LienContact Type="patient" Id="v.PatientId" Nom="@p" /> }@if (v.Remise is { } rv) { <text> · @rv</text> }
                     <ul style="margin: 8px 0">
                         @foreach (var l in v.Lignes) { <li>@l.Quantite × @l.Produit · @Libelles.Dinars(l.Montant, 2)</li> }
                     </ul>

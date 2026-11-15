@@ -233,6 +233,7 @@
         else
             (resultat, erreur) = await Api.CloturerCaisseAsync(new Dictionary<string, decimal>(saisies), confirmerZero);
         enCours = false;
+        if (erreur is null) Session.SignalerCaisse();   // barre d'état à jour tout de suite (2026-11-15)
     }
 
     private async Task RapportAsync()

@@ -16,7 +16,7 @@ public class RecetteLot7Tests
         // Caisse ouverte par l'employé 5 (« Vendeur A »), clôturée par l'employé 9 avec un manque de 2 000 DA
         var sessions = new SessionsEnMemoire { Especes = 1000 };
         var (journal, alertes) = (new JournalEspion(), new AlertesTitulaireEspion());
-        await new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), journal, alertes)
+        await new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre", "caisse.cloturer"), journal, alertes)
             .ExecuterAsync(9, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 2 });
 
         Assert.Equal(("Employé 9", "Caisse 1", -2000m, false), alertes.Ecarts.Single());
@@ -29,7 +29,7 @@ public class RecetteLot7Tests
     {
         var sessions = new SessionsEnMemoire { Especes = 1000 };
         var (journal, alertes) = (new JournalEspion(), new AlertesTitulaireEspion());
-        var cloturer = new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre"), journal, alertes);
+        var cloturer = new CloturerSessionCaisse(sessions, new DroitsFactices("caisse.vendre", "caisse.cloturer"), journal, alertes);
         await new ReleverCaisse(sessions, cloturer, journal).ExecuterAsync(9, "Caisse 1", new Dictionary<string, decimal> { ["b2000"] = 4 });
 
         Assert.Equal(("Employé 9", "Caisse 1", 2000m, true), alertes.Ecarts.Single());
@@ -76,7 +76,7 @@ public class RecetteLot7Tests
     public async Task Stupefiant_cree_en_psychotrope_par_un_employe_monte_en_stupefiant()
     {
         var (catalogue, journal) = (new CatalogueEcritureEnMemoire(), new JournalEspion());
-        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer"), journal)
+        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer", "prix.modifier"), journal)
             .ExecuterAsync(Morphine(ClasseReglementaire.Psychotrope) with { ListePsychotrope = "liste_i" }, 3);
         Assert.Equal((ClasseReglementaire.Stupefiant, true, null), (catalogue.Crees.Single().Classe, catalogue.AVerifier.Single(), catalogue.Crees.Single().ListePsychotrope));
         Assert.Contains("stupéfiant", cree.Information);
@@ -84,7 +84,7 @@ public class RecetteLot7Tests
 
         // Nomenclature stupéfiant, DCI anodine : idem
         var parNumero = new CatalogueEcritureEnMemoire();
-        await new CreerProduit(parNumero, new DroitsFactices("catalogue.creer"), new JournalEspion())
+        await new CreerProduit(parNumero, new DroitsFactices("catalogue.creer", "prix.modifier"), new JournalEspion())
             .ExecuterAsync(Morphine(ClasseReglementaire.Psychotrope, "Acénocoumarol", "56/78/B"), 3);
         Assert.Equal(ClasseReglementaire.Stupefiant, parNumero.Crees.Single().Classe);
     }
@@ -114,7 +114,7 @@ public class RecetteLot7Tests
     public async Task Titulaire_qui_cree_un_produit_moins_strict_que_sa_substance_confirmation_memorisee_et_journalisee()
     {
         var (catalogue, journal) = (new CatalogueEcritureEnMemoire(), new JournalEspion());
-        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer") { Titulaire = true }, journal)
+        var cree = await new CreerProduit(catalogue, new DroitsFactices("catalogue.creer", "prix.modifier") { Titulaire = true }, journal)
             .ExecuterAsync(Morphine(ClasseReglementaire.Libre), 1);
         Assert.Equal((ClasseReglementaire.Libre, false, (long?)1, null), (catalogue.Crees.Single().Classe, catalogue.AVerifier.Single(),
             catalogue.ConfirmeesPar.Single(), cree.Information));
@@ -123,10 +123,10 @@ public class RecetteLot7Tests
 
         // Classe cohérente avec la substance, ou DCI anodine : rien à confirmer
         var coherent = new CatalogueEcritureEnMemoire();
-        await new CreerProduit(coherent, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
+        await new CreerProduit(coherent, new DroitsFactices("catalogue.creer", "prix.modifier") { Titulaire = true }, new JournalEspion())
             .ExecuterAsync(Morphine(ClasseReglementaire.Stupefiant), 1);
         var anodine = new CatalogueEcritureEnMemoire();
-        await new CreerProduit(anodine, new DroitsFactices("catalogue.creer") { Titulaire = true }, new JournalEspion())
+        await new CreerProduit(anodine, new DroitsFactices("catalogue.creer", "prix.modifier") { Titulaire = true }, new JournalEspion())
             .ExecuterAsync(Morphine(ClasseReglementaire.Libre, "Paracétamol"), 1);
         Assert.Equal(((long?)null, (long?)null), (coherent.ConfirmeesPar.Single(), anodine.ConfirmeesPar.Single()));
     }
