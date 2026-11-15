@@ -9,7 +9,11 @@ public sealed record ProduitResume(
 public interface ICatalogueLecture
 {
     /// <summary>Code-barres exact, puis nom ou DCI, tolérant aux fautes.</summary>
-    Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false);
+    /// <summary>
+    /// auComptoir (2026-11-15) : avant de couper la liste, les produits disponibles d'abord, puis ceux en rupture qui ont un remplaçant
+    /// (même DCI en stock), en dernier ceux en rupture sans remplaçant ; le code-barres exact reste en tête.
+    /// </summary>
+    Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false, bool auComptoir = false);
 }
 
 /// <summary>Recherche au comptoir (scan ou saisie).</summary>

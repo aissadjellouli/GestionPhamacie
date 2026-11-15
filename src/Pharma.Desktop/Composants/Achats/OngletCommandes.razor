@@ -3,13 +3,17 @@
 @inject NavigationManager Nav
 @inject HistoriqueNavigation Historique
 
-@if (message is not null)
+@* « À commander » : le message prend la place de la note du formulaire d'ajout (écran fixe, recette 2026-11-15) ; ailleurs, en haut *@
+@if (!MessageDansAjout)
 {
-    <div class="succes" role="status">@message</div>
-}
-@if (erreur is not null)
-{
-    <div class="erreur" role="alert">@erreur</div>
+    @if (message is not null)
+    {
+        <div class="succes" role="status">@message</div>
+    }
+    @if (erreur is not null)
+    {
+        <div class="erreur" role="alert">@erreur</div>
+    }
 }
 
 @* Vue « a-commander » : ajout et suggestions ; vue « bons » : liste des bons et détail (écran fixe : une partie à la fois) *@
@@ -35,10 +39,13 @@
                         <label for="c-qte" class="requis">Quantité</label>
                         <input id="c-qte" type="number" min="1" @ref="champQuantite" @bind="quantite" class="@Obligatoire.Classe(QuantiteInvalide)" aria-invalid="@Obligatoire.Aria(QuantiteInvalide)" />
                     </div>
+                    @if (VoitPrix)
+                    {
                     <div class="champ" style="flex: 0 0 150px; min-width: 0">
                         <label for="c-prix">Prix HT (DA)</label>
                         <input id="c-prix" type="number" min="0" step="0.01" placeholder="dernier prix" @bind="prix" />
                     </div>
+                    }
                 </div>
                 @if (produitChoisi is not null)
                 {
@@ -47,7 +54,9 @@
                         <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => AjouterAsync(produitChoisi.Id)">Ajouter au bon</button>
                     </div>
                 }
-                <p class="detail" style="margin: 0">Ajouté au bon en brouillon du grossiste (créé au besoin) ; sans prix, le dernier prix d’achat est repris.</p>
+                @if (MessageDansAjout && erreur is not null) { <div class="erreur" role="alert" style="padding: 6px 12px">@erreur</div> }
+                else if (MessageDansAjout && message is not null) { <div class="succes" role="status" style="padding: 6px 12px">@message</div> }
+                else { <p class="detail" style="margin: 0">Ajouté au bon en brouillon du grossiste (créé au besoin) ; sans prix, le dernier prix d’achat est repris.</p> }
             </section>
 
             <h2 id="t-sugg" style="margin: 0">À commander (ruptures et stocks critiques)</h2>
@@ -79,7 +88,7 @@
                                 <td><span class="pastille @(s.Statut == "rupture" ? "urgent" : "attention")">@(s.Statut == "rupture" ? "Rupture" : "Critique")</span></td>
                                 <td>@s.Stock</td>
                                 <td>@Math.Max(1, s.QteSuggeree)</td>
-                                <td>@(s.DernierPrixHt is { } p ? $"{Libelles.Dinars(p, 2)} · {s.DernierFournisseur}" : "aucun")</td>
+                                <td>@(s.DernierPrixHt is { } p ? $"{Libelles.Dinars(p, 2)} · {s.DernierFournisseur}" : s.DernierFournisseur ?? "aucun")</td>
                                 <td><button type="button" class="btn" disabled="@enCours" @onclick="() => AjouterSuggestionAsync(s)">Ajouter</button></td>
                             </tr>
                         }
@@ -115,7 +124,7 @@
         </div>
         <section class="tableau-cadre" aria-label="Bons de commande">
             <table class="tableau" style="min-width: 0">
-                <thead><tr><th scope="col">Bon</th><th scope="col">Grossiste</th><th scope="col">Date</th><th scope="col">Montant HT</th><th scope="col">Statut</th></tr></thead>
+                <thead><tr><th scope="col">Bon</th><th scope="col">Grossiste</th><th scope="col">Date</th>@if (VoitPrix) { <th scope="col">Montant HT</th> }<th scope="col">Statut</th></tr></thead>
                 <tbody>
                     @foreach (var c in commandes)
                     {
@@ -123,7 +132,7 @@
                             <td><button type="button" class="lien" @onclick="() => OuvrirAsync(c.Id)" @onclick:stopPropagation="true">@c.Numero</button><br /><span class="detail">@c.NombreLignes ligne(s)</span></td>
                             <td><LienContact Type="grossiste" Id="c.FournisseurId" Nom="@c.Fournisseur" /></td>
                             <td>@Libelles.DateLocale(c.Date)</td>
-                            <td>@Libelles.Dinars(c.MontantHt, 2)</td>
+                            @if (VoitPrix) { <td>@Libelles.Dinars(c.MontantHt, 2)</td> }
                             <td><span class="pastille @Libelles.ClasseStatutCommande(c.Statut)">@Libelles.StatutCommande(c.Statut)</span></td>
                         </tr>
                     }
@@ -155,7 +164,7 @@
             </div>
             <p class="detail" style="margin: 0"><LienContact Type="grossiste" Id="detail.Entete.FournisseurId" Nom="@detail.Entete.Fournisseur" /> · @Libelles.DateLocale(detail.Entete.Date)</p>
             <table class="tableau" style="min-width: 0">
-                <thead><tr><th scope="col">Produit</th><th scope="col">Qté</th><th scope="col">Prix HT</th>@if (!brouillon){<th scope="col">Reçu</th>}</tr></thead>
+                <thead><tr><th scope="col">Produit</th><th scope="col">Qté</th>@if (VoitPrix) { <th scope="col">Prix HT</th> }@if (!brouillon){<th scope="col">Reçu</th>}</tr></thead>
                 <tbody>
                     @foreach (var l in lignesEdition)
                     {
@@ -164,19 +173,20 @@
                             @if (brouillon && PeutCommander)
                             {
                                 <td><input type="number" min="0" style="width: 64px" aria-label="Quantité de @l.Produit" @bind="l.Quantite" @bind:after="() => EnregistrerLigneAsync(l)" /></td>
-                                <td><input type="number" min="0" step="0.01" style="width: 90px" aria-label="Prix HT de @l.Produit" @bind="l.Prix" @bind:after="() => EnregistrerLigneAsync(l)" /></td>
+                                @* Prix d'achat caché sans le droit « rapports.marges » : le prix enregistré est gardé *@
+                                @if (VoitPrix) { <td><input type="number" min="0" step="0.01" style="width: 90px" aria-label="Prix HT de @l.Produit" @bind="l.Prix" @bind:after="() => EnregistrerLigneAsync(l)" /></td> }
                             }
                             else
                             {
                                 <td>@l.Quantite</td>
-                                <td>@Libelles.Dinars(l.Prix, 2)</td>
+                                @if (VoitPrix) { <td>@Libelles.Dinars(l.Prix, 2)</td> }
                                 <td>@l.Recue / @l.Quantite</td>
                             }
                         </tr>
                     }
                 </tbody>
             </table>
-            <p style="margin: 0; font-weight: 600">Total HT : @Libelles.Dinars(lignesEdition.Sum(l => l.Quantite * l.Prix), 2)</p>
+            @if (VoitPrix) { <p style="margin: 0; font-weight: 600">Total HT : @Libelles.Dinars(lignesEdition.Sum(l => l.Quantite * (l.Prix ?? 0)), 2)</p> }
             @if (brouillon)
             {
                 <p class="detail" style="margin: 0">Quantité 0 : la ligne est retirée.</p>
@@ -214,10 +224,16 @@
     [Parameter] public long? Grossiste { get; set; }
     private long? grossisteApplique;
     private bool initialise, premiereLecture;
+    private string? vueChargee;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (!initialise || Grossiste == grossisteApplique) return;
+        if (!initialise) return;
+        // Passage de « Bons de commande » à « À commander » : le composant est réutilisé (OnInitialized ne repasse pas) ;
+        // les suggestions sont lues à ce moment (recette 2026-11-15 : liste vide à tort après l'ouverture d'un bon)
+        if (Vue != vueChargee && Vue != "bons" && PeutCommander) { vueChargee = Vue; await ChargerSuggestionsAsync(pageSuggestions, tailleSuggestions); }
+        vueChargee = Vue;
+        if (Grossiste == grossisteApplique) return;
         (fFournisseur, grossisteApplique) = (Grossiste ?? 0, Grossiste);
         await PremierePageAsync();
     }
@@ -227,7 +243,7 @@
         public long Id { get; } = l.Id;
         public string Produit { get; } = l.Produit;
         public int Quantite { get; set; } = l.QteCommandee;
-        public decimal Prix { get; set; } = l.PrixAchatHt;
+        public decimal? Prix { get; set; } = l.PrixAchatHt;
         public int Recue { get; } = l.QteRecue;
     }
 
@@ -248,7 +264,7 @@
     private List<SuggestionCommandeDto> suggestions = [];
     private List<CodeLibelleDto> grossistesSuggestions = [];
     private bool sansAchat;
-    private int totalSuggestions, pageSuggestions = 1, tailleSuggestions = Pagination.TailleParDefaut, requeteSuggestions;
+    private int totalSuggestions, pageSuggestions = 1, tailleSuggestions = Pagination.TailleParDefaut, requeteSuggestions, lectureSuggestions;
     private string sRecherche = "", sStatut = "", sGrossiste = "";
     private bool FiltreSuggestionsActif => sRecherche.Trim().Length > 0 || sStatut != "" || sGrossiste != "";
     private Task PremierePageSuggestionsAsync() => ChargerSuggestionsAsync(1, tailleSuggestions);
@@ -265,7 +281,10 @@
 
     private async Task ChargerSuggestionsAsync(int numero, int nouvelleTaille)
     {
+        // Réponses dans le désordre (filtre changé, vue rouverte) : seule la dernière demande est affichée
+        var n = ++lectureSuggestions;
         var (r, e) = await Api.SuggestionsCommandePageAsync(sRecherche, sStatut, long.TryParse(sGrossiste, out var g) ? g : null, numero, nouvelleTaille);
+        if (n != lectureSuggestions) return;
         if (r is null) { erreur ??= e; return; }
         // Page au-delà de la fin (produits commandés entre-temps) : retour à la première
         if (r.Page.Lignes.Count == 0 && numero > 1) { await ChargerSuggestionsAsync(1, nouvelleTaille); return; }
@@ -289,6 +308,9 @@
     private string? erreur, message;
 
     private bool PeutCommander => Session.A("achats.commander");
+    private bool MessageDansAjout => PeutCommander && Vue == "a-commander";
+    // Prix d'achat : envoyés par le serveur seulement avec le droit « rapports.marges » (ou au titulaire), colonnes cachées sinon
+    private bool VoitPrix => Session.A("role.titulaire") || Session.A("rapports.marges");
 
     protected override async Task OnInitializedAsync()
     {
@@ -313,6 +335,7 @@
         }
         await RechargerAsync();
         if (r?.Long("bon") is { } bon) await OuvrirAsync(bon);
+        vueChargee = Vue;
         if (PeutCommander && Vue != "bons") await ChargerSuggestionsAsync(pageSuggestions, tailleSuggestions);
         premiereLecture = true;
 

@@ -312,3 +312,13 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
             ["numero"] = numero, ["destinataire"] = f.DestinataireNom, ["ttc"] = f.Totaux.Ttc, ["lignes"] = f.Lignes.Count, ["remplace"] = remplace
         }, Permissions.FacturesGerer, CancellationToken.None);
 }
+
+/// <summary>Tableau de gestion des organismes payeurs (Administration › Langue et pharmacie) : filtré et paginé par le serveur (2026-11-15).</summary>
+public static class ListeOrganismes
+{
+    /// <summary>État : actif ou inactif (vide : tous) ; recherche sur le sigle, le nom, l'adresse, le téléphone et le NIF, sans accents.</summary>
+    public static IReadOnlyList<OrganismeFiche> Filtrer(IEnumerable<OrganismeFiche> liste, string? etat, string? recherche) => liste
+        .Where(o => etat switch { "actif" => o.Actif, "inactif" => !o.Actif, _ => true })
+        .Where(o => Commun.TexteRecherche.Contient(recherche, o.Code, o.Nom, o.Adresse, o.Telephone, o.Nif))
+        .ToList();
+}

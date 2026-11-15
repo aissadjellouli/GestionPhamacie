@@ -27,9 +27,9 @@
         }
         @if (suivi is { } t)
         {
-            <div class="nav-resume">
+            <div class="nav-resume compact">
                 <span class="detail">À recevoir</span><strong>@Libelles.Dinars(t.TotalCreances, 2)</strong>
-                <span class="detail" style="margin-top: 6px">À payer</span><strong>@Libelles.Dinars(t.TotalDettes, 2)</strong>
+                <span class="detail">À payer</span><strong>@Libelles.Dinars(t.TotalDettes, 2)</strong>
             </div>
         }
     </NavDomaine>

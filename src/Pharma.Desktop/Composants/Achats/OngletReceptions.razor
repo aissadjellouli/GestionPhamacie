@@ -22,7 +22,15 @@
 @* Réceptions mises en attente (bouton, départ de l'écran, déconnexion) : reprises depuis n'importe quel poste *@
 @if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
 @if (messageAttente is not null) { <div class="info-bandeau" role="status">@messageAttente</div> }
-@if (attentes.Count > 0 || Vue == "attente")
+@* Écran fixe (recette 2026-11-15) : avec des réceptions en attente ET des livraisons comptées, une seule liste à la fois, choisie par deux pastilles *@
+@if (DeuxListesAttente)
+{
+    <div class="filtres" role="group" aria-label="Liste affichée">
+        <button type="button" class="puce" aria-pressed="@(partieAttente == "receptions" ? "true" : "false")" @onclick="@(() => partieAttente = "receptions")">Réceptions en attente (@attentes.Count)</button>
+        <button type="button" class="puce" aria-pressed="@(partieAttente == "comptees" ? "true" : "false")" @onclick="@(() => partieAttente = "comptees")">Livraisons comptées (@comptages.Count)</button>
+    </div>
+}
+@if ((attentes.Count > 0 || Vue == "attente") && !(DeuxListesAttente && partieAttente == "comptees"))
 {
     <section class="panneau" aria-labelledby="t-attente-rec">
         <h2 id="t-attente-rec">Réceptions en attente (@attentes.Count)</h2>
@@ -88,7 +96,7 @@
     </section>
 }
 
-@if (aFacturer is null && aRecompter is null && resultat is null && comptages.Count > 0)
+@if (aFacturer is null && aRecompter is null && resultat is null && comptages.Count > 0 && !(DeuxListesAttente && partieAttente == "receptions"))
 {
     <section class="panneau" aria-labelledby="t-comptages">
         <div>
@@ -530,6 +538,11 @@ else
 }
 
 @code {
+    // En attente : une liste à la fois quand les deux en ont (écran fixe) ; les écarts à valider d'abord s'il y en a
+    private string? partieChoisie;
+    private string partieAttente { get => partieChoisie ?? (comptages.Any(c => c.Statut == "ecart") ? "comptees" : "receptions"); set => partieChoisie = value; }
+    private bool DeuxListesAttente => Vue == "attente" && attentes.Count > 0 && comptages.Count > 0 && aFacturer is null && aRecompter is null && resultat is null;
+
     /// <summary>Partie affichée : « saisie », « attente », « historique », vide (tout).</summary>
     [Parameter] public string Vue { get; set; } = "";
     [Parameter] public long? CommandeId { get; set; }
@@ -860,7 +873,7 @@ else
         var (d, e) = await Api.CommandeAchatAsync(commandeId);
         if (e is not null) { erreur = e; return; }
         foreach (var l in d!.Lignes.Where(l => l.QteRecue < l.QteCommandee))
-            lignes.Add(new Ligne { ProduitId = l.ProduitId, Nom = l.Produit, Quantite = l.QteCommandee - l.QteRecue, Prix = l.PrixAchatHt, Commandee = l.QteCommandee - l.QteRecue });
+            lignes.Add(new Ligne { ProduitId = l.ProduitId, Nom = l.Produit, Quantite = l.QteCommandee - l.QteRecue, Prix = l.PrixAchatHt ?? 0, Commandee = l.QteCommandee - l.QteRecue });
     }
 
     private (string? Code, string? Nom)? creation;

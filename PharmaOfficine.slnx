@@ -171,6 +171,8 @@
     <File Path="database/data/901_complement_sintrom.sql" />
     <File Path="database/data/902_emplacements_demo.sql" />
     <File Path="database/data/903_factures_demo.sql" />
+    <File Path="database/data/904_coordonnees_demo.sql" />
+    <File Path="database/data/905_jeu_de_test.sql" />
     <File Path="database/data/NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx" />
   </Folder>
   <Folder Name="/scripts/">

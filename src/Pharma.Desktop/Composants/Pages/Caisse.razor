@@ -256,6 +256,8 @@
                         }
                         @if (attentesOuvertes && attentes.Count > 0)
                         {
+                            @* Liste déroulante au-dessus du panier : un clic ailleurs la referme, elle ne reste plus sur la ligne du panier (recette 2026-11-15) *@
+                            <div class="fond-attentes" aria-hidden="true" @onclick="() => attentesOuvertes = false"></div>
                             <div class="liste-attentes" role="group" aria-label="Ventes en attente">
                                 @foreach (var v in attentes)
                                 {
@@ -533,7 +535,7 @@
                                 else if (!nouveauPatient)
                                 {
                                     <input type="search" data-raccourci="patient" aria-label="Rechercher un patient" placeholder="Nom, téléphone ou n° d’assuré" autocomplete="off"
-                                           class="@Obligatoire.Classe(PatientManquant && !patientTouche)" aria-invalid="@Obligatoire.Aria(PatientManquant && alerterPatient)" @onfocus="() => patientTouche = true"
+                                           class="@Obligatoire.Classe(PatientManquant)" aria-invalid="@Obligatoire.Aria(PatientManquant && alerterPatient)" @onfocus="() => alerterPatient = false"
                                            @bind="patientTexte" @bind:event="oninput" @bind:after="RechercherPatientsAsync" />
                                     @if (patients.Count > 0)
                                     {
@@ -547,24 +549,7 @@
                                 }
                                 else
                                 {
-                                    <div class="sous-formulaire">
-                                        <input type="text" aria-label="Nom (obligatoire)" data-champ="nom_patient" placeholder="Nom *" @ref="champNomPatient" @bind="np.Nom" @bind:event="oninput"
-                                               class="@Obligatoire.Classe(NomPatientManquant)" aria-invalid="@Obligatoire.Aria(NomPatientManquant)" />
-                                        @if (NomPatientManquant) { <span class="message-champ">Le nom du patient est obligatoire.</span> }
-                                        <input type="text" aria-label="Prénom" placeholder="Prénom" @bind="np.Prenom" />
-                                        <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" @bind="np.Telephone" />
-                                        <input type="email" aria-label="E-mail (facultatif)" data-champ="email" placeholder="E-mail" maxlength="120" @bind="np.Email" />
-                                        <input type="text" aria-label="N° d’assuré" placeholder="N° d’assuré" @bind="np.NumAssure" />
-                                        <select class="selection" aria-label="Organisme" @bind="np.OrganismeId">
-                                            <option value="0">Sans organisme</option>
-                                            @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
-                                        </select>
-                                        <input type="number" min="0" aria-label="Plafond de crédit (DA)" data-champ="plafond" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
-                                        <div class="actions">
-                                            <button type="button" class="btn btn-principal" @onclick="CreerPatientAsync">Créer</button>
-                                            <button type="button" class="btn" @onclick="() => (nouveauPatient, controlePatient) = (false, false)">Annuler</button>
-                                        </div>
-                                    </div>
+                                    <span class="detail">Nouveau patient : complétez sa fiche ci-dessous.</span>
                                 }
                             </div>
                             @if (AfficherMedecin)
@@ -581,7 +566,7 @@
                                     }
                                     else
                                     {
-                                        <input type="search" data-raccourci="medecin" aria-label="Rechercher le médecin prescripteur" data-champ="nom_medecin" placeholder="Nom du médecin" autocomplete="off" aria-invalid="@Obligatoire.Aria(MedecinManquant && !medecinTouche)" @onfocus="() => medecinTouche = true"
+                                        <input type="search" data-raccourci="medecin" aria-label="Rechercher le médecin prescripteur" data-champ="nom_medecin" placeholder="Nom du médecin" autocomplete="off" class="@Obligatoire.Classe(MedecinManquant)" aria-invalid="@Obligatoire.Aria(MedecinManquant && alerterMedecin)" @onfocus="() => alerterMedecin = false"
                                                @bind="medecinTexte" @bind:event="oninput" @bind:after="RechercherMedecinsAsync" />
                                         @if (medecins.Count > 0)
                                         {
@@ -605,6 +590,28 @@
                             }
                         </div>
 
+                        @* Fiche du nouveau patient sur toute la largeur, quatre champs par ligne (recette 2026-11-15 : écran fixe en tiers payant) *@
+                        @if (nouveauPatient && patient is null)
+                        {
+                        <div class="sous-formulaire fiche-medecin large" role="group" aria-label="Nouveau patient">
+                            <input type="text" aria-label="Nom (obligatoire)" data-champ="nom_patient" placeholder="Nom *" @ref="champNomPatient" @bind="np.Nom" @bind:event="oninput"
+                                   class="@Obligatoire.Classe(NomPatientManquant)" aria-invalid="@Obligatoire.Aria(NomPatientManquant)" />
+                            <input type="text" aria-label="Prénom" placeholder="Prénom" @bind="np.Prenom" />
+                            <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" @bind="np.Telephone" />
+                            <input type="email" aria-label="E-mail (facultatif)" data-champ="email" placeholder="E-mail" maxlength="120" @bind="np.Email" />
+                            <input type="text" aria-label="N° d’assuré" placeholder="N° d’assuré" @bind="np.NumAssure" />
+                            <select class="selection" aria-label="Organisme" @bind="np.OrganismeId">
+                                <option value="0">Sans organisme</option>
+                                @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                            </select>
+                            <input type="number" min="0" aria-label="Plafond de crédit (DA)" data-champ="plafond" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
+                            @if (NomPatientManquant) { <span class="message-champ" style="grid-column: 1 / -1">Le nom du patient est obligatoire.</span> }
+                            <div class="actions">
+                                <button type="button" class="btn btn-principal" @onclick="CreerPatientAsync">Créer</button>
+                                <button type="button" class="btn" @onclick="() => (nouveauPatient, controlePatient) = (false, false)">Annuler</button>
+                            </div>
+                        </div>
+                        }
                         @if (nouveauMedecin is { } nm)
                         {
                             @* Fiche du nouveau médecin (2026-11-15) : nom obligatoire ; spécialité, téléphone, e-mail, adresse, n° d'ordre et
@@ -1170,8 +1177,8 @@
         if (PeutEncaisserMode) await EncaisserAsync(mode);
         else
         {
-            if (PatientManquant) (alerterPatient, patientTouche) = (true, false);   // la bulle « À renseigner » s'ouvre seulement maintenant
-            if (MedecinManquant) medecinTouche = false;                            // champ vide : son rouge revient
+            if (PatientManquant) alerterPatient = true;   // la bulle « À renseigner » s'ouvre seulement maintenant
+            if (MedecinManquant && !PatientManquant) alerterMedecin = true;          // une bulle à la fois : le patient d’abord
         }
         StateHasChanged();
     }
@@ -1741,8 +1748,8 @@
     /// (aria-invalid, erreurs.js) n'apparaît qu'à la tentative d'encaisser (F12), pour ne pas cacher le reste de l'ordonnance (2026-11-15).
     /// </summary>
     private bool alerterPatient;
-    /// <summary>Champ cliqué (2026-11-15) : son rouge « obligatoire » s’efface ; « Encaisser » reste bloqué tant qu’il est vide.</summary>
-    private bool patientTouche, medecinTouche;
+    /// <summary>Champ obligatoire vide : rouge tant qu’il est vide ; la bulle « À renseigner » vient à F12 et part au clic dans le champ.</summary>
+    private bool alerterMedecin;
     private bool MedecinManquant => MedecinObligatoire && medecin is null;
     private bool controlePatient;
     private ElementReference champNomPatient;
@@ -1887,8 +1894,18 @@
         (impressionEnCours, messageTicket) = (true, null);
         try
         {
+            var rendu = vente.Mode == "especes" ? vente.Rendu : (decimal?)null;
+            if (Tickets.ImprimanteFichier)
+            {
+                // Imprimante qui enregistre un fichier (PDF…) : le ticket s'ouvre à l'écran, sans fenêtre « Enregistrer sous » (2026-11-15)
+                var (pdf, nom, ePdf) = await Api.TicketPdfAsync(vente.VenteId, rendu);
+                if (ePdf is null) Documents.OuvrirSurCePoste("Tickets", nom ?? $"ticket_{vente.Numero}.pdf", pdf!);
+                ticketImprime = ePdf is null;
+                messageTicket = ePdf ?? $"Ticket {vente.Numero} ouvert à l’écran (l’imprimante de ce poste enregistre un fichier au lieu d’imprimer).";
+                return;
+            }
             var (ticket, e) = await Api.TicketAsync(vente.VenteId);
-            e ??= await Tickets.ImprimerAsync(ticket!, vente.Mode == "especes" ? vente.Rendu : null);
+            e ??= await Tickets.ImprimerAsync(ticket!, rendu);
             ticketImprime = e is null;
             messageTicket = e ?? $"Ticket {vente.Numero} envoyé à l’imprimante{(Tickets.NomDeclare is { } n ? $" « {n} »" : " par défaut")}.";
         }
@@ -2051,7 +2068,7 @@
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
         (nouveauPatient, np, controlePatient, patientTexte, patients, medecins, alerterPatient) = (false, new(), false, "", [], [], false);
         (clientDeplie, remiseDemandee, attentesOuvertes, nouveauMedecin, erreurMedecin, clientEdition, reduitDemande) = (false, false, false, null, null, false, false);
-        (patientTouche, medecinTouche) = (false, false);
+        alerterMedecin = false;
         if (mode == "credit") mode = "especes";
         (datePrescription, erreurScan, taux, organismeId) = (DateOnly.FromDateTime(DateTime.Today), null, TauxParDefaut, OrganismeParDefaut);
         (volet, voletBrut, codesAAssocier, ecartsVolet) = (null, null, [], []);

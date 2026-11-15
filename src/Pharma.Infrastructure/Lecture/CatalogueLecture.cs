@@ -28,16 +28,25 @@ public sealed class CatalogueLecture(NpgsqlDataSource db) : ICatalogueLecture
                            WHERE l.produit_id = p.id AND l.date_peremption > current_date AND NOT l.bloque) e ON true
         WHERE (p.actif OR $3)
         ORDER BY COALESCE(p.code_barre = $1, false) DESC,
+                 -- Au comptoir ($4) : disponible, puis rupture avec remplaçant (même DCI en stock vendable), puis rupture sans remplaçant
+                 CASE WHEN NOT $4 THEN 0
+                      WHEN COALESCE(e.stock, 0) > 0 THEN 0
+                      WHEN p.dci_id IS NOT NULL AND EXISTS (
+                           SELECT 1 FROM produit a JOIN lot la ON la.produit_id = a.id
+                           WHERE a.dci_id = p.dci_id AND a.id <> p.id AND a.actif
+                             AND la.quantite_disponible > 0 AND la.date_peremption > current_date AND NOT la.bloque) THEN 1
+                      ELSE 2 END,
                  similarity(sans_accent(p.nom_commercial), q.t) DESC, p.nom_commercial
         LIMIT $2
         """;
 
-    public async Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false)
+    public async Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false, bool auComptoir = false)
     {
         await using var cmd = db.CreateCommand(SqlRecherche);
         cmd.Parameters.AddWithValue(texte);
         cmd.Parameters.AddWithValue(limite);
         cmd.Parameters.AddWithValue(inclureInactifs);
+        cmd.Parameters.AddWithValue(auComptoir);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<ProduitResume>();
         while (await r.ReadAsync(ct))

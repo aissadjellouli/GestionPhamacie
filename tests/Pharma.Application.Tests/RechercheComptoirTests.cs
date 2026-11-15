@@ -11,7 +11,7 @@ public class RechercheComptoirTests
 
     private sealed class Catalogue(params ProduitResume[] produits) : ICatalogueLecture
     {
-        public Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false) =>
+        public Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false, bool auComptoir = false) =>
             Task.FromResult<IReadOnlyList<ProduitResume>>(produits);
     }
 
@@ -29,6 +29,15 @@ public class RechercheComptoirTests
         var cas = new RechercherAuComptoir(new Catalogue(Resume(1, "A", 0), Resume(2, "B", 5), Resume(3, "C", 0), Resume(4, "D", 2)),
             new Equivalents(Info(1, 0, 300), Info(2, 5, 300), Info(3, 0, 300), Info(4, 2, 300)));
         Assert.Equal([2L, 4L, 1L, 3L], (await cas.ExecuterAsync("amox", null)).Select(c => c.Produit.Id));
+    }
+
+    [Fact]
+    public async Task Disponible_puis_rupture_avec_remplacant_puis_rupture_sans_remplacant()
+    {
+        // 1 : rupture sans remplaçant (autre DCI, rien en stock) ; 2 : rupture avec remplaçant (le 3 a la même DCI) ; 3 : en stock
+        var cas = new RechercherAuComptoir(new Catalogue(Resume(1, "A", 0), Resume(2, "B", 0), Resume(3, "C", 4)),
+            new Equivalents(Info(1, 0, 300, dci: 9), Info(2, 0, 300), Info(3, 4, 300)));
+        Assert.Equal([3L, 2L, 1L], (await cas.ExecuterAsync("x", null)).Select(c => c.Produit.Id));
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Commun;
 using Pharma.Application.Achats;
+using Pharma.Application.Securite;
 using Pharma.Domain.Achats;
 using Pharma.Domain.Commun;
 using Pharma.Domain.Securite;
@@ -19,9 +20,12 @@ internal static class AchatsEndpoints
     {
         var achats = api.MapGroup("/achats");
 
-        achats.MapGet("/fournisseurs", async (ListerFournisseurs lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(f => new FournisseurDto(f.Id, f.RaisonSociale, f.Telephone, f.Solde, f.DelaiRepriseJours, f.Email,
-                    f.Adresse, f.Nif, f.Rc, f.Actif))))
+        achats.MapGet("/fournisseurs", async (ListerFournisseurs lister, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
+                return Results.Ok((await lister.ExecuterAsync(ct)).Select(f => new FournisseurDto(f.Id, f.RaisonSociale, f.Telephone, v.Dette(f.Solde),
+                    f.DelaiRepriseJours, f.Email, f.Adresse, f.Nif, f.Rc, f.Actif)));
+            })
            .ExigerPermission(Lecture);
 
         achats.MapPost("/fournisseurs", async (FicheGrossisteDto d, EnregistrerGrossiste enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
@@ -30,27 +34,37 @@ internal static class AchatsEndpoints
            .ExigerPermission(Permissions.AchatsCommander);
 
         // ---- Commandes ----
-        achats.MapGet("/commandes", async (long? fournisseurId, string? statut, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerCommandes lister, CancellationToken ct) =>
-                Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, statut, du, au, q), ct), x => VersDto(x))))
+        achats.MapGet("/commandes", async (long? fournisseurId, string? statut, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerCommandes lister, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
+                return Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, statut, du, au, q), ct), x => VersDto(x, v)));
+            })
            .ExigerPermission(Lecture);
 
-        achats.MapGet("/commandes/{id:long}", async (long id, ObtenirCommande obtenir, CancellationToken ct) =>
-                await obtenir.ExecuterAsync(id, ct) is { } c ? Results.Ok(VersDto(c)) : Results.NotFound(new ErreurDto("Commande introuvable.")))
+        achats.MapGet("/commandes/{id:long}", async (long id, ObtenirCommande obtenir, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
+                return await obtenir.ExecuterAsync(id, ct) is { } c ? Results.Ok(VersDto(c, v)) : Results.NotFound(new ErreurDto("Commande introuvable."));
+            })
            .ExigerPermission(Lecture);
 
-        achats.MapGet("/suggestions", async (ListerSuggestionsCommande lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(ct)).Select(s => new SuggestionCommandeDto(
-                    s.ProduitId, s.Produit, s.Statut, s.Stock, s.QteSuggeree, s.DernierPrixHt, s.DernierFournisseurId, s.DernierFournisseur))))
+        achats.MapGet("/suggestions", async (ListerSuggestionsCommande lister, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
+                return Results.Ok((await lister.ExecuterAsync(ct)).Select(s => new SuggestionCommandeDto(
+                    s.ProduitId, s.Produit, s.Statut, s.Stock, s.QteSuggeree, v.Prix(s.DernierPrixHt), s.DernierFournisseurId, s.DernierFournisseur)));
+            })
            .ExigerPermission(Permissions.AchatsCommander);
 
         // Produits à commander paginés et filtrés par le serveur (règle des listes) : produit, état, grossiste du dernier achat (0 : aucun)
         achats.MapGet("/suggestions/page", async (string? recherche, string? statut, long? grossiste, int? page, int? taille,
-                ListerSuggestionsCommande lister, CancellationToken ct) =>
+                ListerSuggestionsCommande lister, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
             {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
                 var r = await lister.PageAsync(recherche, statut, grossiste, DemandePage.Lire(page, taille), ct);
                 return Results.Ok(new SuggestionsCommandePageDto(
                     new PageDto<SuggestionCommandeDto>(r.Page.Lignes.Select(s => new SuggestionCommandeDto(
-                        s.ProduitId, s.Produit, s.Statut, s.Stock, s.QteSuggeree, s.DernierPrixHt, s.DernierFournisseurId, s.DernierFournisseur)).ToList(),
+                        s.ProduitId, s.Produit, s.Statut, s.Stock, s.QteSuggeree, v.Prix(s.DernierPrixHt), s.DernierFournisseurId, s.DernierFournisseur)).ToList(),
                         r.Page.Total, r.Page.Numero, r.Page.Taille),
                     r.Grossistes.Select(g => new CodeLibelleDto(g.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), g.Nom)).ToList(), r.SansAchat));
             })
@@ -86,18 +100,22 @@ internal static class AchatsEndpoints
         // ---- Réceptions ----
         // N° de BL ou de facture (saisi ou scanné sur le QR code) déjà réceptionné pour ce grossiste
         achats.MapGet("/receptions/document", async (long fournisseurId, string? numero, ChercherDocumentReception chercher, ClaimsPrincipal user,
-                CancellationToken ct) =>
+                IPermissionService droits, CancellationToken ct) =>
             {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
                 var liste = await chercher.ExecuterAsync(fournisseurId, numero, user.UtilisateurId(), ct);
                 return Results.Ok(new DocumentReceptionDto(RegleDocumentReception.Normaliser(numero),
-                    liste.Select(r => new ReceptionResumeDto(r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, 0, 0, r.MontantTtc,
+                    liste.Select(r => new ReceptionResumeDto(r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, 0, 0, v.Prix(r.MontantTtc),
                         r.FournisseurId)).ToList()));
             })
            .ExigerPermission(Permissions.AchatsReceptionner);
 
-        achats.MapGet("/receptions", async (long? fournisseurId, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerReceptions lister, CancellationToken ct) =>
-                Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, null, du, au, q), ct), r => new ReceptionResumeDto(
-                    r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, r.NombreLots, r.NombreBoites, r.MontantTtc, r.FournisseurId))))
+        achats.MapGet("/receptions", async (long? fournisseurId, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerReceptions lister, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
+                return Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, null, du, au, q), ct), r => new ReceptionResumeDto(
+                    r.Id, r.Fournisseur, r.NumeroBl, r.NumeroFacture, r.NumeroCommande, r.Date, r.NombreLots, r.NombreBoites, v.Prix(r.MontantTtc), r.FournisseurId)));
+            })
            .ExigerPermission(Lecture);
 
         achats.MapPost("/datamatrix", async (DataMatrixRequete req, LireDataMatrix lire, CancellationToken ct) =>
@@ -137,18 +155,25 @@ internal static class AchatsEndpoints
            .ExigerPermission(Permissions.AchatsReceptionner);
 
         // ---- Retours ----
-        achats.MapGet("/retours", async (long? fournisseurId, string? statut, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerRetours lister, CancellationToken ct) =>
-                Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, statut, du, au, q), ct), x => VersDto(x))))
+        achats.MapGet("/retours", async (long? fournisseurId, string? statut, DateOnly? du, DateOnly? au, string? q, int? page, int? taille, ListerRetours lister, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
+                return Results.Ok(VersPage(await lister.ExecuterAsync(DemandePage.Lire(page, taille), FiltreAchats.Lire(fournisseurId, statut, du, au, q), ct), x => VersDto(x, v)));
+            })
            .ExigerPermission(Lecture);
 
-        achats.MapGet("/lots/{id:long}/retour", async (long id, ObtenirLotRetournable obtenir, CancellationToken ct) =>
-                await obtenir.ExecuterAsync(id, ct) is { } l
-                    ? Results.Ok(VersDto(l))
-                    : Results.NotFound(new ErreurDto("Lot introuvable.")))
+        achats.MapGet("/lots/{id:long}/retour", async (long id, ObtenirLotRetournable obtenir, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
+                return await obtenir.ExecuterAsync(id, ct) is { } l ? Results.Ok(VersDto(l, v)) : Results.NotFound(new ErreurDto("Lot introuvable."));
+            })
            .ExigerPermission(Permissions.AchatsRetourFournisseur);
 
-        achats.MapGet("/lots", async (long produitId, string? numeroLot, ListerLotsRetournables lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(produitId, numeroLot, ct)).Select(VersDto)))
+        achats.MapGet("/lots", async (long produitId, string? numeroLot, ListerLotsRetournables lister, IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var v = await VisibiliteAchats.LireAsync(droits, user.UtilisateurId(), ct);
+                return Results.Ok((await lister.ExecuterAsync(produitId, numeroLot, ct)).Select(l => VersDto(l, v)));
+            })
            .ExigerPermission(Permissions.AchatsRetourFournisseur);
 
         achats.MapPost("/retours", async (PreparationRetourRequete req, PreparerRetour preparer, ClaimsPrincipal user, CancellationToken ct) =>
@@ -302,19 +327,19 @@ internal static class AchatsEndpoints
     private static PageDto<TDto> VersPage<T, TDto>(Page<T> p, Func<T, TDto> convertir) =>
         new(p.Lignes.Select(convertir).ToList(), p.Total, p.Numero, p.Taille);
 
-    private static CommandeAchatDto VersDto(CommandeResume c) =>
-        new(c.Id, c.Numero, c.FournisseurId, c.Fournisseur, c.Date, c.Statut, c.NombreLignes, c.MontantHt);
+    private static CommandeAchatDto VersDto(CommandeResume c, VisibiliteAchats v) =>
+        new(c.Id, c.Numero, c.FournisseurId, c.Fournisseur, c.Date, c.Statut, c.NombreLignes, v.Prix(c.MontantHt));
 
-    private static CommandeAchatDetailDto VersDto(CommandeDetail c) =>
-        new(VersDto(c.Entete), c.Lignes.Select(l => new LigneCommandeAchatDto(l.Id, l.ProduitId, l.Produit, l.QteCommandee, l.QteRecue, l.PrixAchatHt)).ToList());
+    private static CommandeAchatDetailDto VersDto(CommandeDetail c, VisibiliteAchats v) =>
+        new(VersDto(c.Entete, v), c.Lignes.Select(l => new LigneCommandeAchatDto(l.Id, l.ProduitId, l.Produit, l.QteCommandee, l.QteRecue, v.Prix(l.PrixAchatHt))).ToList());
 
-    private static LotRetournableDto VersDto(LotRetournable l) =>
+    private static LotRetournableDto VersDto(LotRetournable l, VisibiliteAchats v) =>
         new(l.LotId, l.ProduitId, l.Produit, l.NumeroLot, l.DatePeremption, l.FournisseurId,
-            l.Fournisseur, l.Disponible, l.PrixAchatHt, l.Bloque, l.Boites.Count);
+            l.Fournisseur, l.Disponible, v.Prix(l.PrixAchatHt), l.Bloque, l.Boites.Count);
 
-    private static RetourDto VersDto(RetourResume r) =>
+    private static RetourDto VersDto(RetourResume r, VisibiliteAchats v) =>
         new(r.Id, r.Numero, r.FournisseurId, r.Fournisseur, r.Motif, r.Statut, r.CreeLe, r.EnvoyeLe, r.AvoirRecuLe,
-            r.MontantAttendu, r.MontantAvoir, r.Lignes.Select(l => new LigneRetourDto(l.Produit, l.NumeroLot, l.Quantite)).ToList());
+            v.Prix(r.MontantAttendu), v.Prix(r.MontantAvoir), r.Lignes.Select(l => new LigneRetourDto(l.Produit, l.NumeroLot, l.Quantite)).ToList());
 
     private static SaisieReception VersSaisie(ReceptionRequete req) => new(req.FournisseurId, req.CommandeId, req.NumeroBl, req.NumeroFacture,
         req.Lignes.Requise().Select(l => new LigneReceptionSaisie(l.ProduitId, l.Nom, l.NumeroLot, l.DatePeremption, l.Quantite,

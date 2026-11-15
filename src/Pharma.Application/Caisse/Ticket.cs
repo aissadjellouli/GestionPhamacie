@@ -17,6 +17,15 @@ public sealed record TicketVente(
     decimal MontantBrut, decimal Remise, decimal PartOrganisme, decimal PartPatient, string? Mode,
     string? Pharmacie, string? Adresse, string? Telephone, string? Nif, IReadOnlyList<string>? Retours = null, decimal DonPartiel = 0);
 
+/// <summary>
+/// Ticket en PDF (2026-11-15) : montré à l'écran quand l'imprimante de tickets du poste enregistre un fichier (Microsoft Print to PDF…)
+/// au lieu d'imprimer ; même contenu que le ticket imprimé. Rendu : monnaie rendue (espèces), sinon null.
+/// </summary>
+public interface IDocumentsTicket
+{
+    byte[] Ticket(TicketVente t, decimal? rendu);
+}
+
 public interface ITicketLecture
 {
     /// <summary>Vente et ses lignes, sans les coordonnées de la pharmacie ; null si introuvable.</summary>

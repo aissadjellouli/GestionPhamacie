@@ -426,7 +426,13 @@
     private static readonly Dictionary<string, string> LibellesPertes = new() { ["pertes"] = "Récapitulatif", ["pertes-detail"] = "Détail des sorties", ["tva"] = "TVA à reverser" };
     private RubriqueRapport Courante => Rubriques.FirstOrDefault(x => x.Groupe is null && x.Id == rubrique)
         ?? (LibellesPertes.TryGetValue(rubrique, out var l) ? new RubriqueRapport(rubrique, l) : Rubriques[1]);
-    protected override void OnParametersSet() => ChoisirRubrique();
+    protected override void OnParametersSet()
+    {
+        // Changer de rubrique efface le message de la précédente (« Rapport rangé… », recette 2026-11-15)
+        var avant = rubrique;
+        ChoisirRubrique();
+        if (avant != rubrique) (erreur, message) = (null, null);
+    }
     private void ChoisirRubrique() => rubrique = Rubrique is { } v && Rubriques.Any(x => x.Groupe is null && x.Id == v) ? v
         : rapport is null && Rubrique is "pertes" or "pertes-detail" or "tva" ? Rubrique : "synthese";
 

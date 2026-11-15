@@ -80,6 +80,14 @@ internal static class CaisseEndpoints
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
+        // Ticket en PDF (2026-11-15) : montré à l'écran quand l'imprimante de tickets du poste enregistre un fichier
+        caisse.MapGet("/ventes/{id:long}/ticket.pdf", async (long id, decimal? rendu, ObtenirTicket obtenir, Pharma.Application.Caisse.IDocumentsTicket documents, CancellationToken ct) =>
+            {
+                var t = await obtenir.ExecuterAsync(id, ct);
+                return Results.File(documents.Ticket(t, rendu), "application/pdf", $"ticket_{t.Numero}.pdf");
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
         // Ticket de caisse : contenu mis en page et imprimé par le poste (imprimante Windows)
         caisse.MapGet("/ventes/{id:long}/ticket", async (long id, ObtenirTicket obtenir, CancellationToken ct) =>
             {

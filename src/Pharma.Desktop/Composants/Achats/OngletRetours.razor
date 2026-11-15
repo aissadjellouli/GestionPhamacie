@@ -87,7 +87,7 @@
             </table>
         </div>
         <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
-            <strong>Avoir attendu : @Libelles.Dinars(lignes.Sum(l => l.Quantite * l.Lot.PrixAchatHt), 2)</strong>
+            <strong>Avoir attendu : @Libelles.Dinars(lignes.Any(l => l.Lot.PrixAchatHt is null) ? null : lignes.Sum(l => l.Quantite * l.Lot.PrixAchatHt!.Value), 2)</strong>
             <span class="detail">au prix d’achat de chaque lot</span>
         </div>
         @if (lignes.Select(l => l.Lot.FournisseurId).Distinct().Count() > 1)
@@ -372,7 +372,7 @@
 
     private async Task AvoirAsync(RetourDto r) => await Executer(async () =>
     {
-        var montant = avoirs.TryGetValue(r.Id, out var m) ? m : r.MontantAttendu;
+        var montant = avoirs.TryGetValue(r.Id, out var m) ? m : r.MontantAttendu ?? 0;
         var e = await Api.EnregistrerAvoirAsync(r.Id, montant);
         if (e is not null) return e;
         message = $"Avoir de {Libelles.Dinars(montant, 2)} enregistré et déduit de la dette de {r.Fournisseur}.";

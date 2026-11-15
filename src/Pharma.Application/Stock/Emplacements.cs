@@ -24,6 +24,17 @@ public interface IEmplacements
 public sealed class ListerEmplacements(IEmplacements emplacements)
 {
     public Task<IReadOnlyList<Emplacement>> ExecuterAsync(CancellationToken ct = default) => emplacements.ListerAsync(ct);
+
+    /// <summary>Tableau de gestion (Administration › Emplacements) : filtré et paginé par le serveur ; zone vente/reserve, état actif/inactif.</summary>
+    public async Task<Page<Emplacement>> PageAsync(string? zone, string? etat, string? recherche, DemandePage page, CancellationToken ct = default) =>
+        PageEnMemoire.Paginer(Filtrer(await emplacements.ListerAsync(ct), zone, etat, recherche), page);
+
+    public static IReadOnlyList<Emplacement> Filtrer(IEnumerable<Emplacement> liste, string? zone, string? etat, string? recherche) => liste
+        .Where(e => string.IsNullOrWhiteSpace(zone) || e.Zone.Code() == zone)
+        .Where(e => etat switch { "actif" => e.Actif, "inactif" => !e.Actif, _ => true })
+        .Where(e => TexteRecherche.Contient(recherche, e.Code, e.Libelle))
+        .OrderBy(e => e.Zone == ZoneEmplacement.Vente ? 0 : 1).ThenBy(e => e.Code, StringComparer.Ordinal)
+        .ToList();
 }
 
 /// <summary>Création ou modification d'un emplacement (droit admin.parametres), inscrite au journal.</summary>

@@ -1,5 +1,6 @@
 @page "/admin/emplacements"
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 <div class="page admin">
     <NavAdmin Actif="admin/emplacements" />
@@ -43,29 +44,41 @@
             </section>
         }
 
-        @foreach (var groupe in emplacements.GroupBy(e => e.Zone))
+        @* Tableau filtré et paginé par le serveur (règle des listes, 2026-11-15) ; caché le temps de la saisie d'une fiche (écran fixe) *@
+        @if (fiche is null)
         {
-            <section class="tableau-cadre" aria-label="@(groupe.Key == "vente" ? "Zone de vente" : "Réserve")">
-                <table class="tableau" style="min-width: 0">
-                    <thead><tr><th scope="col">@(groupe.Key == "vente" ? "Zone de vente" : "Réserve")</th><th scope="col">Libellé</th><th scope="col">Produits rangés</th><th scope="col">État</th><th scope="col"></th></tr></thead>
-                    <tbody>
-                        @foreach (var e in groupe)
-                        {
-                            <tr>
-                                <td><span class="code-emplacement">@e.Code</span></td>
-                                <td>@(e.Libelle ?? "—")</td>
-                                <td>@e.NombreProduits</td>
-                                <td><span class="pastille @(e.Actif ? "ok" : "info")">@(e.Actif ? "Utilisé" : "Désactivé")</span></td>
-                                <td><button type="button" class="btn" @onclick="() => Editer(e)">Modifier</button></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
-        }
-        @if (emplacements.Count == 0 && erreur is null)
-        {
-            <p class="vide">Aucun emplacement : commencez par les rayons (A, B, C…) puis la réserve.</p>
+        <div class="filtres-liste" role="search" aria-label="Filtrer les emplacements">
+            <div class="champ" style="flex: 1 1 240px"><label for="fe-texte">Code ou libellé</label>
+                <input id="fe-texte" type="search" autocomplete="off" placeholder="Ex. A-02, réfrigérateur" value="@fTexte" @oninput="RechercheAsync" /></div>
+            <div class="champ" style="flex: 0 0 170px"><label for="fe-zone">Zone</label>
+                <select id="fe-zone" @bind="fZone" @bind:after="PremierePageAsync"><option value="">Toutes</option><option value="vente">Zone de vente</option><option value="reserve">Réserve</option></select></div>
+            <div class="champ" style="flex: 0 0 170px"><label for="fe-etat">État</label>
+                <select id="fe-etat" @bind="fEtat" @bind:after="PremierePageAsync"><option value="">Tous</option><option value="actif">Utilisés</option><option value="inactif">Désactivés</option></select></div>
+            @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+        </div>
+        <section class="tableau-cadre" aria-label="Emplacements">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Emplacement</th><th scope="col">Zone</th><th scope="col">Libellé</th><th scope="col">Produits rangés</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                <tbody>
+                    @foreach (var e in emplacements)
+                    {
+                        <tr>
+                            <td><span class="code-emplacement">@e.Code</span></td>
+                            <td>@(e.Zone == "vente" ? "Zone de vente" : "Réserve")</td>
+                            <td>@(e.Libelle ?? "—")</td>
+                            <td>@e.NombreProduits</td>
+                            <td><span class="pastille @(e.Actif ? "ok" : "info")">@(e.Actif ? "Utilisé" : "Désactivé")</span></td>
+                            <td><button type="button" class="btn" @onclick="() => Editer(e)">Modifier</button></td>
+                        </tr>
+                    }
+                    @if (emplacements.Count == 0 && erreur is null)
+                    {
+                        <tr><td colspan="6" class="vide">@(FiltreActif ? "Aucun emplacement pour ces filtres." : "Aucun emplacement : commencez par les rayons (A, B, C…) puis la réserve.")</td></tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+        <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des emplacements" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
         }
     </div>
 </div>
@@ -91,13 +104,36 @@
     private string Apercu => fiche is null ? "" : string.Join('-', new[] { fiche.Rayon, fiche.Etagere, fiche.Tiroir }
         .Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!.Trim().ToUpperInvariant())) is { Length: > 0 } c ? c : "—";
 
-    protected override Task OnInitializedAsync() => ChargerAsync();
+    private int total, page = 1, taille = Pagination.TailleParDefaut, saisie;
+    private string fTexte = "", fZone = "", fEtat = "";
+    private bool FiltreActif => fTexte.Trim() != "" || fZone != "" || fEtat != "";
 
-    private async Task ChargerAsync()
+    protected override async Task OnInitializedAsync()
     {
-        string? e;
-        (emplacements, e) = await Api.EmplacementsAsync();
-        erreur ??= e;
+        // « ← Retour » : filtres et page retrouvés
+        Historique.Suivre("emplacements", e => { e.Mettre("texte", fTexte); e.Mettre("zone", fZone); e.Mettre("etat", fEtat); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("emplacements") is { } h)
+            (fTexte, fZone, fEtat, page, taille) = (h.Texte("texte") ?? "", h.Texte("zone") ?? "", h.Texte("etat") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        await ChargerAsync(page, taille);
+    }
+
+    private Task ChargerAsync() => ChargerAsync(page, taille);
+    private Task PremierePageAsync() => ChargerAsync(1, taille);
+    private Task ToutAfficherAsync() { (fTexte, fZone, fEtat) = ("", "", ""); return PremierePageAsync(); }
+
+    private async Task RechercheAsync(ChangeEventArgs a)
+    {
+        fTexte = a.Value?.ToString() ?? "";
+        var n = ++saisie;
+        await Task.Delay(250);
+        if (n == saisie) await PremierePageAsync();
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.EmplacementsPageAsync(fZone, fEtat, fTexte.Trim(), numero, nouvelleTaille);
+        if (p is null) { erreur ??= e; return; }
+        (emplacements, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
     }
 
     private void Editer(EmplacementDto e) => (fiche, controle) = (new Fiche

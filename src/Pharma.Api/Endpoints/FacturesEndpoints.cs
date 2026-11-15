@@ -106,6 +106,15 @@ internal static class FacturesEndpoints
                 Results.Ok((await factures.OrganismesAsync(ct)).Select(o => new OrganismeFicheDto(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email, o.DelaiPaiementJours))))
            .ExigerPermission(Permissions.AdminParametres);
 
+        // Tableau de gestion : filtré (état, texte) et paginé par le serveur ; la liste complète ci-dessus reste pour les listes de choix
+        api.MapGet("/admin/organismes/page", async (string? etat, string? q, int? page, int? taille, IFactures factures, CancellationToken ct) =>
+            {
+                var p = Pharma.Application.Commun.PageEnMemoire.Paginer(ListeOrganismes.Filtrer(await factures.OrganismesAsync(ct), etat, q), Pharma.Application.Commun.DemandePage.Lire(page, taille));
+                return Results.Ok(new PageDto<OrganismeFicheDto>(p.Lignes.Select(o => new OrganismeFicheDto(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email,
+                    o.DelaiPaiementJours)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.AdminParametres);
+
         api.MapPost("/admin/organismes", async (OrganismeFicheDto o, Facturation fa, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await fa.EnregistrerOrganismeAsync(new OrganismeFiche(o.Id, o.Code, o.Nom, o.Adresse, o.Nif, o.Actif, o.Telephone, o.Email, o.DelaiPaiementJours),
                     user.UtilisateurId(), ct))))

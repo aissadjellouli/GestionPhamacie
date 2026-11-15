@@ -1,4 +1,5 @@
 @inject ApiClient Api
+@inject HistoriqueNavigation Historique
 
 @* Organismes payeurs (tiers payant et factures) : CNAS, CASNOS, organisme des militaires… Modification réservée au titulaire. *@
 <section class="panneau" aria-labelledby="t-organismes">
@@ -28,6 +29,16 @@
             <button type="button" class="btn" @onclick="() => edition = null">Annuler</button>
         </div>
     }
+    @* Tableau filtré et paginé par le serveur (règle des listes, 2026-11-15) ; caché le temps de la saisie d'une fiche (écran fixe) *@
+    @if (edition is null)
+    {
+    <div class="filtres-liste" role="search" aria-label="Filtrer les organismes payeurs">
+        <div class="champ" style="flex: 1 1 240px"><label for="fo-texte">Sigle, nom, adresse, téléphone ou NIF</label>
+            <input id="fo-texte" type="search" autocomplete="off" value="@fTexte" @oninput="RechercheAsync" /></div>
+        <div class="champ" style="flex: 0 0 170px"><label for="fo-etat">État</label>
+            <select id="fo-etat" @bind="fEtat" @bind:after="() => ChargerAsync(1, taille)"><option value="">Tous</option><option value="actif">Actifs</option><option value="inactif">Inactifs</option></select></div>
+        @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+    </div>
     <div class="tableau-cadre">
         <table class="tableau">
             <thead><tr><th scope="col">Sigle</th><th scope="col">Nom</th><th scope="col">Adresse</th><th scope="col">Téléphone</th><th scope="col">NIF</th><th scope="col">Délai de paiement</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
@@ -40,9 +51,12 @@
                         <td><button type="button" class="lien-bouton" @onclick="() => Modifier(o)">Modifier</button></td>
                     </tr>
                 }
+                @if (organismes.Count == 0 && erreur is null) { <tr><td colspan="8" class="vide">@(FiltreActif ? "Aucun organisme pour ces filtres." : "Aucun organisme payeur.")</td></tr> }
             </tbody>
         </table>
     </div>
+    <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des organismes payeurs" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+    }
 </section>
 
 @code {
@@ -64,7 +78,35 @@
     private string? erreur, message;
     private bool enCours;
 
-    protected override async Task OnInitializedAsync() => (organismes, erreur) = await Api.OrganismesFichesAsync();
+    private int total, page = 1, taille = Pagination.TailleParDefaut, saisie;
+    private string fTexte = "", fEtat = "";
+    private bool FiltreActif => fTexte.Trim() != "" || fEtat != "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // « ← Retour » : filtres et page retrouvés
+        Historique.Suivre("organismes", e => { e.Mettre("texte", fTexte); e.Mettre("etat", fEtat); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("organismes") is { } h)
+            (fTexte, fEtat, page, taille) = (h.Texte("texte") ?? "", h.Texte("etat") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        await ChargerAsync(page, taille);
+    }
+
+    private Task ToutAfficherAsync() { (fTexte, fEtat) = ("", ""); return ChargerAsync(1, taille); }
+
+    private async Task RechercheAsync(ChangeEventArgs a)
+    {
+        fTexte = a.Value?.ToString() ?? "";
+        var n = ++saisie;
+        await Task.Delay(250);
+        if (n == saisie) await ChargerAsync(1, taille);
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.OrganismesFichesPageAsync(fEtat, fTexte.Trim(), numero, nouvelleTaille);
+        if (p is null) { erreur ??= e; return; }
+        (organismes, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
 
     private void Modifier(OrganismeFicheDto o) =>
         edition = new Edition { Id = o.Id, Code = o.Code, Nom = o.Nom, Adresse = o.Adresse, Nif = o.Nif, Actif = o.Actif, Telephone = o.Telephone, Email = o.Email, DelaiPaiementJours = o.DelaiPaiementJours };
@@ -78,6 +120,6 @@
         if (err is not null) { erreur = err; return; }
         message = $"Organisme « {e.Code} » enregistré.";
         edition = null;
-        (organismes, erreur) = await Api.OrganismesFichesAsync();
+        await ChargerAsync(page, taille);
     }
 }

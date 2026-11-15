@@ -301,6 +301,8 @@
 
     private async Task OuvrirAsync(long id, int? version = null)
     {
+        // Autre document ouvert (un avoir après sa facture…) : le message du précédent s'efface (recette 2026-11-15)
+        if (detail?.Resume.Id != id) (erreur, message, pdfOuvert) = (null, null, null);
         var (d, e) = await Api.FactureAsync(id, version);
         if (e is not null) { erreur = e; return; }
         (detail, versionVue, motifAction, montantAvoir) = (d, version ?? d!.Resume.Version, null, 0);

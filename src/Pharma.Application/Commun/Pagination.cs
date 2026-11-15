@@ -26,6 +26,20 @@ public sealed record FiltreReleve(DateOnly? Du = null, DateOnly? Au = null, stri
     public static FiltreReleve Lire(DateOnly? du, DateOnly? au, string? type) => new(du, au, string.IsNullOrWhiteSpace(type) ? null : type.Trim());
 }
 
+/// <summary>
+/// Pagination faite par le serveur sur une liste courte qu'il lit en entier (emplacements, organismes payeurs) : le poste ne reçoit que
+/// la page demandée et le total ; une page au-delà de la fin est ramenée à la dernière.
+/// </summary>
+public static class PageEnMemoire
+{
+    public static Page<T> Paginer<T>(IReadOnlyList<T> lignes, DemandePage page)
+    {
+        var derniere = Math.Max(1, (lignes.Count + page.Taille - 1) / page.Taille);
+        var numero = Math.Min(page.Page, derniere);
+        return new(lignes.Skip((numero - 1) * page.Taille).Take(page.Taille).ToList(), lignes.Count, numero, page.Taille);
+    }
+}
+
 /// <summary>Une page de résultats et le nombre total de lignes qui répondent aux filtres (toutes pages confondues).</summary>
 public sealed record Page<T>(IReadOnlyList<T> Lignes, int Total, int Numero, int Taille)
 {

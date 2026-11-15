@@ -300,13 +300,15 @@ public static class RegleCommande
 /// <summary>Modification d'une ligne, uniquement sur un brouillon (revérifié en base). Quantité 0 : la ligne est retirée.</summary>
 public sealed class ModifierLigneCommande(IAchats achats, IPermissionService droits)
 {
-    public async Task ExecuterAsync(long commandeId, long ligneId, int quantite, decimal prixHt, long utilisateurId, CancellationToken ct = default)
+    public async Task ExecuterAsync(long commandeId, long ligneId, int quantite, decimal? prix, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AchatsCommander, "modifier une commande", ct);
         var c = await achats.CommandeAsync(commandeId, ct) ?? throw new RegleMetierException("Commande introuvable.");
         if (c.Entete.Statut != "brouillon")
             throw new RegleMetierException($"La commande {c.Entete.Numero} est déjà émise : elle ne se modifie plus.");
         var ligne = c.Lignes.FirstOrDefault(l => l.Id == ligneId) ?? throw new RegleMetierException("Ligne introuvable.");
+        // Sans prix (employé qui ne voit pas les prix d'achat) : le prix de la ligne est gardé
+        var prixHt = prix ?? ligne.PrixAchatHt;
         if (quantite == 0) { await achats.SupprimerLigneAsync(commandeId, ligneId, ct); return; }
         RegleAchats.VerifierCommande([new LigneCommandeSaisie(ligne.ProduitId, ligne.Produit, quantite, prixHt)]);
         await achats.ModifierLigneAsync(commandeId, ligneId, quantite, prixHt, ct);

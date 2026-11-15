@@ -101,6 +101,7 @@ public static class DependencyInjection
         services.AddSingleton<Pharma.Application.Factures.IDocumentsFactures, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Stock.IDocumentsInventaire, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Caisse.IDocumentsCredit, DocumentsPdf>();
+        services.AddSingleton<Pharma.Application.Caisse.IDocumentsTicket, DocumentsPdf>();
         services.AddScoped<Pharma.Application.Stock.ICampagnesInventaire, Lecture.CampagnesInventaireSql>();
         services.AddScoped<Pharma.Application.Pilotage.IPilotage, Lecture.PilotageSql>();
         services.AddScoped<Pharma.Application.Stock.IRegistrePsychotropes, RegistreSql>();

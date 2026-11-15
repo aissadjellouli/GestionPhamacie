@@ -47,6 +47,23 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         [new LigneTicketDto("Produit d’essai 500 mg cp", 2, 120m, 240m, 0m), new LigneTicketDto("Produit d’essai sirop 125 ml", 1, 350m, 350m, 0m)],
         590m, 0m, 0m, 590m, "especes", pharmacie, null, null, null), 410m);
 
+    /// <summary>
+    /// Imprimante de tickets du poste qui enregistre un fichier (Microsoft Print to PDF, XPS, OneNote…) : le ticket est alors montré à
+    /// l'écran en PDF au lieu d'ouvrir « Enregistrer sous » (2026-11-15).
+    /// </summary>
+    public bool ImprimanteFichier
+    {
+        get
+        {
+            try
+            {
+                if (NomDeclare is { } nom) return EstFichier(nom);
+                return LocalPrintServer.GetDefaultPrintQueue() is { } defaut && EstFichier(defaut);
+            }
+            catch (Exception e) when (e is PrintQueueException or InvalidOperationException) { return false; }
+        }
+    }
+
     /// <summary>Imprime le ticket ; renvoie un message d'erreur lisible, ou null si l'impression est partie.</summary>
     public Task<string?> ImprimerAsync(TicketDto ticket, decimal? rendu = null) =>
         Application.Current.Dispatcher.InvokeAsync(() =>

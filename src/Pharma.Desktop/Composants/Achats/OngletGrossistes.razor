@@ -37,14 +37,17 @@
         <input id="fg-texte" type="search" autocomplete="off" @bind="fTexte" @bind:event="oninput" @bind:after="() => page = 1" /></div>
     <div class="champ" style="flex: 0 0 170px"><label for="fg-etat">État</label>
         <select id="fg-etat" @bind="fEtat" @bind:after="() => page = 1"><option value="">Tous</option><option value="actif">Actifs</option><option value="inactif">Désactivés</option></select></div>
+    @if (VoitDette)
+    {
     <div class="champ" style="flex: 0 0 170px"><label for="fg-dette">Dette</label>
         <select id="fg-dette" @bind="fDette" @bind:after="() => page = 1"><option value="">Toutes</option><option value="oui">Avec une dette</option><option value="non">Sans dette</option></select></div>
+    }
     <label class="case" style="align-self: center"><input type="checkbox" @bind="fEmailManquant" @bind:after="() => page = 1" /><span>E-mail à compléter</span></label>
     @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltres">Tout afficher</button> }
 </div>
 <section class="tableau-cadre" aria-label="Grossistes">
     <table class="tableau" style="min-width: 0">
-        <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">E-mail</th><th scope="col">Dette (solde)</th><th scope="col">Délai de reprise</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+        <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">E-mail</th>@if (VoitDette) { <th scope="col">Dette (solde)</th> }<th scope="col">Délai de reprise</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
         <tbody>
             @if (Filtres.Count == 0)
             {
@@ -56,7 +59,7 @@
                     <td class="nom"><LienContact Type="grossiste" Id="g.Id" Nom="@g.RaisonSociale" /></td>
                     <td>@(g.Telephone ?? "—")</td>
                     <td>@if (g.Email is { } mail) { @mail } else { <span class="pastille attention">à compléter</span> }</td>
-                    <td>@Libelles.Dinars(g.Solde, 2)</td>
+                    @if (VoitDette) { <td>@Libelles.Dinars(g.Solde, 2)</td> }
                     <td>@(g.DelaiRepriseJours is { } j ? $"{j} jours avant péremption" : "non renseigné")</td>
                     <td>@(g.Actif ? "Actif" : "Désactivé")</td>
                     <td>@if (Session.A("achats.commander")) { <button type="button" class="lien-bouton" @onclick="() => Modifier(g)">Modifier</button> }</td>
@@ -69,6 +72,8 @@
 <p class="detail" style="margin: 0">La dette augmente du montant de chaque réception et diminue de chaque avoir et de chaque règlement. Un grossiste désactivé n’est plus proposé aux commandes ni aux réceptions ; son historique est conservé.</p>
 
 @code {
+    // Dette envers les grossistes : envoyée par le serveur seulement avec le droit « achats.regler » (ou au titulaire), colonne cachée sinon
+    private bool VoitDette => Session.A("role.titulaire") || Session.A("achats.regler");
     private sealed class Fiche
     {
         public long? Id { get; init; }

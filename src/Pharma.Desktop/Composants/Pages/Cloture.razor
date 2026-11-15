@@ -99,7 +99,7 @@
                 else if (resultat.Attendu is null)
                 {
                     <div class="succes" role="status">Comptage enregistré : @Libelles.Dinars(resultat.Compte, 2). L’attendu et l’écart sont consultables par le titulaire.</div>
-                    @if (!Intermediaire) { <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button> }
+                    @if (!Intermediaire) { <button type="button" class="btn" @onclick="RapportAsync">@(Releve ? "Imprimer le rapport de relève" : "Imprimer le rapport de clôture")</button> }
                 }
                 else
                 {
@@ -123,7 +123,7 @@
                         {
                             <div class="info-bandeau" role="status">@Libelles.Dinars(resultat.VerseAuCoffre, 2) portés au coffre automatiquement ; le fond de caisse reste dans le tiroir.</div>
                         }
-                        @if (!Intermediaire) { <button type="button" class="btn" @onclick="RapportAsync">Imprimer le rapport de clôture</button> }
+                        @if (!Intermediaire) { <button type="button" class="btn" @onclick="RapportAsync">@(Releve ? "Imprimer le rapport de relève" : "Imprimer le rapport de clôture")</button> }
                     </div>
                 }
                 @if (Intermediaire && resultat is not null)

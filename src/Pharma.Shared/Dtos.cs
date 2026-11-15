@@ -246,7 +246,8 @@ public sealed record ScanOrdonnanceDto(string Jeton);
 
 // ---- Achats -----------------------------------------------------------------
 
-public sealed record FournisseurDto(long Id, string RaisonSociale, string? Telephone, decimal Solde, int? DelaiRepriseJours, string? Email = null,
+/// <summary>Solde (dette envers le grossiste) : null sans le droit « achats.regler » (titulaire : toujours).</summary>
+public sealed record FournisseurDto(long Id, string RaisonSociale, string? Telephone, decimal? Solde, int? DelaiRepriseJours, string? Email = null,
     string? Adresse = null, string? Nif = null, string? Rc = null, bool Actif = true);
 /// <summary>Grossiste créé (Id null) ou modifié.</summary>
 public sealed record FicheGrossisteDto(long? Id, string? RaisonSociale, string? Telephone, string? Email, string? Adresse, string? Nif, string? Rc,
@@ -254,9 +255,9 @@ public sealed record FicheGrossisteDto(long? Id, string? RaisonSociale, string? 
 
 /// <summary>Statut : brouillon, envoyee, recue_partielle, recue ou annulee.</summary>
 public sealed record CommandeAchatDto(
-    long Id, string Numero, long FournisseurId, string Fournisseur, DateTime Date, string Statut, int NombreLignes, decimal MontantHt);
+    long Id, string Numero, long FournisseurId, string Fournisseur, DateTime Date, string Statut, int NombreLignes, decimal? MontantHt);
 
-public sealed record LigneCommandeAchatDto(long Id, long ProduitId, string Produit, int QteCommandee, int QteRecue, decimal PrixAchatHt);
+public sealed record LigneCommandeAchatDto(long Id, long ProduitId, string Produit, int QteCommandee, int QteRecue, decimal? PrixAchatHt);
 public sealed record CommandeAchatDetailDto(CommandeAchatDto Entete, IReadOnlyList<LigneCommandeAchatDto> Lignes);
 
 public sealed record SuggestionCommandeDto(
@@ -268,7 +269,8 @@ public sealed record SuggestionsCommandePageDto(PageDto<SuggestionCommandeDto> P
 
 /// <summary>Sans prix, le dernier prix d'achat connu est repris.</summary>
 public sealed record AjoutCommandeRequete(long FournisseurId, long ProduitId, int Quantite, decimal? PrixAchatHt);
-public sealed record ModificationLigneCommandeRequete(int Quantite, decimal PrixAchatHt);
+/// <summary>PrixAchatHt null : prix de la ligne inchangé (employé sans le droit de voir les prix d'achat).</summary>
+public sealed record ModificationLigneCommandeRequete(int Quantite, decimal? PrixAchatHt);
 
 /// <summary>PrixAchatHt : avant remise, comme sur la facture. Shp null : selon la liste du produit.</summary>
 public sealed record LigneReceptionDto(
@@ -293,14 +295,14 @@ public sealed record DocumentReceptionDto(string? Numero, IReadOnlyList<Receptio
 
 public sealed record ReceptionResumeDto(
     long Id, string Fournisseur, string? NumeroBl, string? NumeroFacture, string? NumeroCommande,
-    DateTime Date, int NombreLots, int NombreBoites, decimal MontantTtc, long? FournisseurId = null);
+    DateTime Date, int NombreLots, int NombreBoites, decimal? MontantTtc, long? FournisseurId = null);
 
 public sealed record DataMatrixRequete(string Code);
 public sealed record BoiteLueDto(string Gtin, string? NumeroLot, DateOnly? Peremption, string? NumeroSerie, long? ProduitId, string? Produit);
 
 public sealed record LotRetournableDto(
     long LotId, long ProduitId, string Produit, string NumeroLot, DateOnly DatePeremption,
-    long FournisseurId, string Fournisseur, int Disponible, decimal PrixAchatHt, bool Bloque, int BoitesIdentifiees);
+    long FournisseurId, string Fournisseur, int Disponible, decimal? PrixAchatHt, bool Bloque, int BoitesIdentifiees);
 
 /// <summary>Motif : peremption_proche, perime, defaut, erreur_livraison ou rappel_lot.</summary>
 public sealed record LotARetournerDto(long LotId, int Quantite, IReadOnlyList<string> CodesBoites);
@@ -311,7 +313,7 @@ public sealed record LigneRetourDto(string Produit, string NumeroLot, int Quanti
 /// <summary>Statut : brouillon (préparé, stock sorti), envoye, avoir_recu ou refuse.</summary>
 public sealed record RetourDto(
     long Id, string Numero, long FournisseurId, string Fournisseur, string Motif, string Statut,
-    DateTime CreeLe, DateTime? EnvoyeLe, DateTime? AvoirRecuLe, decimal MontantAttendu, decimal? MontantAvoir,
+    DateTime CreeLe, DateTime? EnvoyeLe, DateTime? AvoirRecuLe, decimal? MontantAttendu, decimal? MontantAvoir,
     IReadOnlyList<LigneRetourDto> Lignes);
 
 public sealed record AvoirRequete(decimal Montant);

@@ -86,6 +86,9 @@
                     </div>
                 }
 
+                @* Écran fixe (recette 2026-11-15) : fiche ouverte, la liste des utilisateurs s'efface le temps de la saisie *@
+                @if (fiche is null)
+                {
                 <div class="tableau-cadre">
                     <table class="tableau" style="min-width: 760px">
                         <thead><tr><th scope="col">Nom</th><th scope="col">Rôle</th><th scope="col">Don · remise</th><th scope="col">État</th><th scope="col">Dernière connexion</th><th scope="col">Code comptoir</th><th scope="col"><span class="visuellement-cache">Actions</span></th></tr></thead>
@@ -129,6 +132,7 @@
                         </tbody>
                     </table>
                 </div>
+                }
             </section>
             }
 
@@ -189,6 +193,13 @@
     /// <summary>Sous-rubrique dans l'adresse (admin/droits?rubrique=…) : une partie à la fois, l'écran reste fixe.</summary>
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
     private string rubrique => NavAdmin.RubriqueCourante("admin/droits", Rubrique);
+    // Changer de rubrique efface le message de la précédente (recette 2026-11-15)
+    private string? rubriqueAffichee;
+    protected override void OnParametersSet()
+    {
+        if (rubriqueAffichee is not null && rubriqueAffichee != rubrique) (erreur, message) = (null, null);
+        rubriqueAffichee = rubrique;
+    }
 
     /// <summary>Seul un titulaire voit le rôle titulaire et peut modifier le compte d'un titulaire (le serveur le revérifie).</summary>
     private bool EstTitulaire => Session.A("role.titulaire");

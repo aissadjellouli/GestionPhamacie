@@ -22,16 +22,15 @@
         {
             <div class="carte" style="display: flex; flex-direction: column; gap: 10px">
                 <strong>@c.Nom</strong>
-                <div class="filtres">
-                    <label class="case"><input type="checkbox" @bind="achat" /><span>Bloqué à l’achat</span></label>
-                    <label class="case"><input type="checkbox" @bind="vente" /><span>Bloqué à la vente</span></label>
-                </div>
-                <div class="champ">
-                    <label for="bl-motif" class="@(achat || vente ? "requis" : null)">Motif</label>
-                    <input id="bl-motif" data-champ="motif_blocage" type="text" maxlength="300" placeholder="Rappel de lot, litige avec le grossiste, arrêt de commercialisation…" @bind="motif" />
-                </div>
-                <div class="filtres">
-                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
+                @* Cases, motif et bouton sur une ligne : l'écran reste fixe quand la fiche est ouverte (recette 2026-11-15) *@
+                <div class="achats-ligne" style="align-items: flex-end">
+                    <label class="case" style="flex: 0 0 auto; align-self: center"><input type="checkbox" @bind="achat" /><span>Bloqué à l’achat</span></label>
+                    <label class="case" style="flex: 0 0 auto; align-self: center"><input type="checkbox" @bind="vente" /><span>Bloqué à la vente</span></label>
+                    <div class="champ" style="flex: 1 1 320px">
+                        <label for="bl-motif" class="@(achat || vente ? "requis" : null)">Motif</label>
+                        <input id="bl-motif" data-champ="motif_blocage" type="text" maxlength="300" placeholder="Rappel de lot, litige avec le grossiste, arrêt de commercialisation…" @bind="motif" />
+                    </div>
+                    <button type="button" class="btn btn-principal" style="flex: 0 0 auto" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
                 </div>
             </div>
         }

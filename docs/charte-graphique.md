@@ -186,7 +186,8 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
   Seuls échappent à la pagination les tableaux **bornés par nature**, dont la taille ne dépend pas de l'activité : contenu
   d'un document (lignes d'une facture, d'un bon, d'un retour), réglages (droits par rôle), rayons, synthèses (échéancier,
   tableau par jour d'un rapport), résultats d'une recherche plafonnée (médecins). Exceptions choisies par le pharmacien
-  le 2026-11-13 : **utilisateurs, organismes payeurs, emplacements** (courts en pratique). Le test d'architecture
+  le 2026-11-13 : **utilisateurs** (court en pratique) ; organismes payeurs et emplacements sont paginés et filtrés
+  par le serveur depuis le 2026-11-15 (décision du titulaire). Le test d'architecture
   `ListesTests` (`tests/Pharma.Architecture.Tests/ListesTests.cs`) liste ces exceptions avec leur raison et refuse tout
   nouveau tableau qui n'y est pas et n'est pas paginé.
 - **Pagination par le serveur ou à l'écran.** Une liste que le serveur plafonnait (« les 20 derniers ») est paginée par le

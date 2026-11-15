@@ -159,7 +159,7 @@
                 {
                     <div class="info-bandeau" role="note">
                         Pour chaque produit rapporté : quantité, puis remis en stock (boîte intacte) ou à détruire. Laisser à 0 ce qui n’est pas rendu.
-                        Refuser le retour : fermez simplement cette fenêtre.
+                        Refuser le retour : @(EnLigne ? "« Changer de vente », ou quittez la rubrique sans enregistrer." : "fermez simplement cette fenêtre.")
                     </div>
                     @foreach (var s in saisies)
                     {

@@ -126,7 +126,8 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
             SELECT s.id, s.utilisateur_id, u.nom_complet, s.poste, s.ouverte_le, s.fond_caisse, s.fermee_le,
                    s.ventes_especes, s.montant_attendu, s.montant_compte, s.ecart,
                    (SELECT count(*) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'validee')::int,
-                   (SELECT COALESCE(SUM(v.montant_total), 0) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'validee')
+                   (SELECT COALESCE(SUM(v.montant_total), 0) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'validee'),
+                   EXISTS (SELECT 1 FROM session_caisse n WHERE n.releve_de = s.id)
             FROM session_caisse s JOIN utilisateur u ON u.id = s.utilisateur_id
             WHERE s.id = $1
             """);
@@ -138,7 +139,7 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
             decimal? Dec(int i) => r.IsDBNull(i) ? null : r.GetDecimal(i);
             detail = new DetailSession(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetDateTime(4),
                 r.GetDecimal(5), r.IsDBNull(6) ? null : r.GetDateTime(6), Dec(7), Dec(8), Dec(9), Dec(10),
-                r.GetInt32(11), r.GetDecimal(12), []);
+                r.GetInt32(11), r.GetDecimal(12), [], Releve: r.GetBoolean(13));
         }
 
         await using var cmdComptage = db.CreateCommand(

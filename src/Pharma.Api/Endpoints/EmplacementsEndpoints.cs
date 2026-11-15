@@ -17,6 +17,15 @@ internal static class EmplacementsEndpoints
                     e.Id, e.Code, e.Rayon, e.Etagere, e.Tiroir, e.Libelle, e.Zone.Code(), e.Actif, e.NombreProduits))))
            .ExigerPermission(Permissions.StockConsulter);
 
+        // Tableau de gestion (Administration › Emplacements) : filtré et paginé par le serveur ; la liste complète ci-dessus sert aux choix d'emplacement
+        api.MapGet("/emplacements/page", async (string? zone, string? etat, string? q, int? page, int? taille, ListerEmplacements lister, CancellationToken ct) =>
+            {
+                var p = await lister.PageAsync(zone, etat, q, Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<EmplacementDto>(p.Lignes.Select(e => new EmplacementDto(
+                    e.Id, e.Code, e.Rayon, e.Etagere, e.Tiroir, e.Libelle, e.Zone.Code(), e.Actif, e.NombreProduits)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.AdminParametres);
+
         api.MapPost("/emplacements", async (SaisieEmplacementDto d, EnregistrerEmplacement enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await enregistrer.ExecuterAsync(null, VersSaisie(d), user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.AdminParametres);

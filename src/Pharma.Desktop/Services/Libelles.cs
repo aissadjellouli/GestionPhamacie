@@ -8,6 +8,9 @@ public static class Libelles
 {
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
 
+    /// <summary>Montant masqué par le serveur (droit manquant, ex. prix d'achat) : « — ».</summary>
+    public static string Dinars(decimal? montant, int decimales = 0) => montant is { } m ? Dinars(m, decimales) : "—";
+
     public static string Dinars(decimal montant, int decimales = 0) =>
         montant.ToString(decimales == 0 ? "N0" : "N2", Fr) + " DA";
 
@@ -394,6 +397,13 @@ public static class Libelles
                 "tva_sorties" => $"TVA reversée : périmé {(B("perime") ? "oui" : "non")}, casse {(B("casse") ? "oui" : "non")}, don {(B("don") ? "oui" : "non")} (avant : {T("avant")})",
                 "seuil_stock" => $"{T("produit")} : {(T("apres") == "—" ? "seuil automatique" : $"seuil {T("apres")} boîte(s)")} (automatique : {T("automatique")}, avant : {(T("avant") == "—" ? "automatique" : T("avant"))})",
                 "peremption_verifiee" => $"{T("produit")} lot {T("lot")} : péremption au {T("date")} (lue sur la boîte)",
+                // Détails lisibles (recette 2026-11-15) : plus de « Nature : depense », « Produit id », « Pourcentage : 15.00 »
+                "mouvement_tresorerie" => $"{Humaniser(T("nature"))} de {Dinars(N("montant"), 2)} · {T("compte")}" + (T("categorie") is "—" ? "" : $" · {T("categorie")}") + (T("libelle") is "—" ? "" : $" · « {T("libelle")} »"),
+                "remise_automatique_creee" or "remise_automatique_modifiee" => $"{N("pourcentage"):0.##} % sur {(T("cible") is "—" ? T("categorie") : T("cible"))}"
+                                  + (T("debut") is "—" ? "" : $" du {T("debut")} au {T("fin")}") + (T("motif") is "—" ? "" : $" · motif : {T("motif")}"),
+                "produit_bloque" or "produit_debloque" => $"{T("produit")} : achat {(B("achat") ? "bloqué" : "permis")}, vente {(B("vente") ? "bloquée" : "permise")}"
+                                  + $" (avant : achat {(B("avant_achat") ? "bloqué" : "permis")}, vente {(B("avant_vente") ? "bloquée" : "permise")})" + (T("motif") is "—" ? "" : $" · motif : {T("motif")}"),
+                "remise_automatique_arretee" => $"{N("pourcentage"):0.##} % sur {T("cible")} : arrêtée",
                 "reglages_sauvegarde" => $"{(B("actif") ? "Automatique" : "Manuelle seulement")} à {T("heure")} · dossier {T("dossier")} · {T("conservation")} conservée(s)",
                 _ => Generique(d)
             };
@@ -458,6 +468,8 @@ public static class Libelles
         if (e.ValueKind == System.Text.Json.JsonValueKind.Object)
             foreach (var p in e.EnumerateObject())
             {
+                // Identifiants techniques (produit_id, ordonnance_id…) : rien à lire pour le titulaire
+                if (p.Name == "id" || p.Name.EndsWith("_id", StringComparison.Ordinal)) continue;
                 var cle = prefixe.Length == 0 ? Humaniser(p.Name) : $"{prefixe}, {Humaniser(p.Name).ToLowerInvariant()}";
                 if (p.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
                     foreach (var kv in Aplatir(p.Value, cle)) resultat[kv.Key] = kv.Value;
@@ -473,7 +485,10 @@ public static class Libelles
         System.Text.Json.JsonValueKind.False => "non",
         System.Text.Json.JsonValueKind.Null => "—",
         System.Text.Json.JsonValueKind.String => LibellesDroits.TryGetValue(v.GetString()!, out var droit) ? droit
+            : DateOnly.TryParseExact(v.GetString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var jour) ? Date(jour)
             : ValeursCodees.GetValueOrDefault(v.GetString()!, v.GetString()!),
+        // Nombres à la française, sans zéros inutiles : 15.00 → 15 ; 1477.77 → 1 477,77
+        System.Text.Json.JsonValueKind.Number when v.TryGetDecimal(out var n) => n.ToString("#,0.##", Fr),
         System.Text.Json.JsonValueKind.Array => v.GetArrayLength() == 0 ? "aucun" : string.Join(", ", v.EnumerateArray().Select(Valeur)),
         System.Text.Json.JsonValueKind.Object => Generique(v),
         _ => v.ToString()
@@ -486,7 +501,10 @@ public static class Libelles
         ["especes"] = "espèces", ["cheque"] = "chèque", ["carte"] = "carte", ["virement"] = "virement", ["effet"] = "traite", ["prelevement"] = "prélèvement", ["credit"] = "crédit",
         ["financement"] = "prêt ou apport du titulaire",
         ["perime"] = "périmé", ["casse"] = "cassé", ["echantillon"] = "échantillon ou don", ["peremption_proche"] = "péremption proche",
-        ["erreur_livraison"] = "erreur de livraison"
+        ["erreur_livraison"] = "erreur de livraison",
+        ["depense"] = "dépense", ["encaissement"] = "encaissement", ["autre"] = "autre", ["defini"] = "défini", ["medicament"] = "médicament",
+        ["dermo_cosmetique"] = "dermo-cosmétique", ["fermee"] = "fermée", ["ouverte"] = "ouverte", ["probleme"] = "problème", ["libre"] = "libre",
+        ["versement_organisme"] = "versement d’un organisme", ["transfert"] = "transfert"
     };
 
     /// <summary>Clés entières du journal dont la forme mot à mot serait fausse.</summary>
@@ -515,7 +533,7 @@ public static class Libelles
         ["frequence"] = "fréquence", ["deconnexion"] = "déconnexion", ["controle"] = "contrôle", ["ancienne"] = "ancienne", ["diminuee"] = "diminuée",
         ["reference"] = "référence", ["apres"] = "après", ["autorise"] = "autorisé", ["recu"] = "reçu", ["detruites"] = "détruites",
         ["boites"] = "boîtes", ["seuil"] = "seuil", ["delivrance"] = "délivrance", ["medecin"] = "médecin", ["specialite"] = "spécialité",
-        ["entree"] = "entrée", ["reglees"] = "réglées", ["reglee"] = "réglée", ["cle"] = "clé", ["etat"] = "état", ["etagere"] = "étagère"
+        ["entree"] = "entrée", ["debut"] = "début", ["ecran"] = "écran", ["depense"] = "dépense", ["mouvement"] = "mouvement", ["reglees"] = "réglées", ["reglee"] = "réglée", ["cle"] = "clé", ["etat"] = "état", ["etagere"] = "étagère"
     };
 
     // ---- Traçabilité ------------------------------------------------------

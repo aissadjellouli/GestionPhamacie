@@ -24,7 +24,7 @@ internal sealed class CatalogueEspion : ICatalogueLecture
     public string? Texte { get; private set; }
     public int? Limite { get; private set; }
 
-    public Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false)
+    public Task<IReadOnlyList<ProduitResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default, bool inclureInactifs = false, bool auComptoir = false)
     {
         (Texte, Limite) = (texte, limite);
         return Task.FromResult<IReadOnlyList<ProduitResume>>([]);

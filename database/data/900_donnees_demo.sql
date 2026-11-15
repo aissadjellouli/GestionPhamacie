@@ -46,9 +46,9 @@ JOIN dci d ON d.nom = p.dci;
 
 -- Grossistes, avec leurs délais de reprise
 INSERT INTO fournisseur (raison_sociale, telephone, solde, jours_orange, jours_rouge) VALUES
-    ('Grossiste A (GR-01)', '[téléphone]', 185000.00, 195, NULL),
-    ('Grossiste B (GR-02)', '[téléphone]',  64000.00, NULL, NULL),
-    ('Grossiste C (GR-03)', '[téléphone]',  23500.00, 105, 60);
+    ('Grossiste A (GR-01)', '0550 00 01 01', 185000.00, 195, NULL),
+    ('Grossiste B (GR-02)', '0550 00 01 02',  64000.00, NULL, NULL),
+    ('Grossiste C (GR-03)', '0550 00 01 03',  23500.00, 105, 60);
 
 -- Une réception par grossiste, il y a 30 jours
 INSERT INTO reception (fournisseur_id, numero_bl, date_reception)
@@ -76,7 +76,7 @@ JOIN reception r   ON r.fournisseur_id = f.id;
 
 -- Patients fictifs
 INSERT INTO patient (nom, prenom, telephone, num_assure, organisme_id, plafond_credit, solde_credit)
-SELECT 'Patient fictif', n::text, '[téléphone]', 'ASSURE-DEMO-' || n, o.id, 10000, (n * 500) % 3000
+SELECT 'Patient fictif', n::text, '0660 00 02 ' || lpad(n::text, 2, '0'), 'ASSURE-DEMO-' || n, o.id, 10000, (n * 500) % 3000
 FROM generate_series(1, 7) n
 JOIN organisme o ON o.code = 'CNAS';
 

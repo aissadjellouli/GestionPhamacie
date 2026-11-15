@@ -24,7 +24,8 @@ public sealed record ProduitComptoir(ProduitResume Produit, decimal PrixServi, P
 
 /// <summary>
 /// Recherche au comptoir par nom ou DCI (2026-11-14) : produits en stock d'abord (ordre de pertinence gardé), produits en rupture
-/// en bas. Rupture : remplaçant = l'équivalent exact (même DCI, dosage, forme) en stock le moins cher, à défaut la même DCI dans un
+/// en bas ; depuis le 2026-11-15 cet ordre est appliqué par la base AVANT de couper la liste (avec tout le catalogue de la nomenclature,
+/// les produits disponibles ne sont plus évincés), et parmi les ruptures, celles qui ont un remplaçant avant celles qui n'en ont pas. Rupture : remplaçant = l'équivalent exact (même DCI, dosage, forme) en stock le moins cher, à défaut la même DCI dans un
 /// autre dosage ou une autre forme (à valider par le pharmacien). En stock : le même produit d'un autre laboratoire moins cher est
 /// suggéré, sans changer l'ordre (le client peut demander explicitement le produit cherché). Prix comparé : prix servi.
 /// </summary>
@@ -34,17 +35,18 @@ public sealed class RechercherAuComptoir(ICatalogueLecture catalogue, IEquivalen
     {
         var recherche = texte?.Trim() ?? "";
         if (recherche.Length == 0) return [];
-        var trouves = await catalogue.RechercherAsync(recherche, Math.Clamp(limite ?? RechercherProduits.LimiteParDefaut, 1, RechercherProduits.LimiteMax), ct);
+        var trouves = await catalogue.RechercherAsync(recherche, Math.Clamp(limite ?? RechercherProduits.LimiteParDefaut, 1, RechercherProduits.LimiteMax), ct, auComptoir: true);
         if (trouves.Count == 0) return [];
 
         var infos = (await equivalents.ProduitsAsync(trouves.Select(p => p.Id).ToList(), ct)).ToDictionary(p => p.Id);
         var dcis = infos.Values.Where(i => i.DciId is not null).Select(i => i.DciId!.Value).Distinct().ToList();
         var enStock = dcis.Count == 0 ? [] : await equivalents.EnStockAsync(dcis, ct);
 
+        // Disponible, puis rupture avec remplaçant, puis rupture sans remplaçant (ordre de la base gardé dans chaque groupe)
         return trouves
-            .Select((p, rang) => (Produit: p, Rang: rang))
-            .OrderBy(x => x.Produit.Stock > 0 ? 0 : 1).ThenBy(x => x.Rang)
-            .Select(x => Proposer(x.Produit, infos.GetValueOrDefault(x.Produit.Id), enStock))
+            .Select((p, rang) => (Proposition: Proposer(p, infos.GetValueOrDefault(p.Id), enStock), Rang: rang))
+            .OrderBy(x => x.Proposition.Produit.Stock > 0 ? 0 : x.Proposition.Remplacant is not null ? 1 : 2).ThenBy(x => x.Rang)
+            .Select(x => x.Proposition)
             .ToList();
     }
 

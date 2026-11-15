@@ -38,6 +38,10 @@ public static class Documents
         return new DocumentRange(local, null, $"Document non rangé dans la GED du serveur ({erreur}) : gardé sur ce poste et envoyé à la prochaine connexion.");
     }
 
+    /// <summary>Document de passage (ticket vu à l'écran) : enregistré sur ce poste seulement, jamais dans la GED, puis ouvert.</summary>
+    public static void OuvrirSurCePoste(string type, string nomFichier, byte[] contenu) =>
+        Ouvrir(Ecrire(Path.Combine(DossierTemporaire, type), string.Concat(nomFichier.Split(Path.GetInvalidFileNameChars())), contenu));
+
     private static string Ecrire(string dossier, string nom, byte[] contenu)
     {
         Directory.CreateDirectory(dossier);

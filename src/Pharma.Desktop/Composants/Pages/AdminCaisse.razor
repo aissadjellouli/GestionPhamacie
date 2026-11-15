@@ -161,8 +161,13 @@
     private string? employeApplique;
     private bool initialise;
 
+    // Changer de rubrique efface le message de la précédente (recette 2026-11-15)
+    private string? rubriqueAffichee;
+
     protected override async Task OnParametersSetAsync()
     {
+        if (rubriqueAffichee is not null && rubriqueAffichee != rubrique) (erreur, message, erreurJournal) = (null, null, null);
+        rubriqueAffichee = rubrique;
         if (!initialise || Employe == employeApplique) return;
         (journalEmploye, employeApplique) = (Employe, Employe);
         await ChargerJournalAsync(1);

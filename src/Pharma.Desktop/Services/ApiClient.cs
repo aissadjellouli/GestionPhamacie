@@ -314,6 +314,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         (await EnvoyerCorpsAsync<SuiviRequete, object>(HttpMethod.Post, $"api/factures/{id}/suivi", new(horsSuivi, motif))).Item2;
     public Task<(List<ClientFactureDto>, string?)> ClientsFactureAsync() => GetAsync<List<ClientFactureDto>>("api/factures/clients", []);
     public Task<(IdentifiantDto?, string?)> EnregistrerClientFactureAsync(ClientFactureDto c) => PostAsync<ClientFactureDto, IdentifiantDto>("api/factures/clients", c);
+    public Task<(PageDto<OrganismeFicheDto>?, string?)> OrganismesFichesPageAsync(string? etat, string? texte, int page, int taille) =>
+        GetAsync<PageDto<OrganismeFicheDto>?>("api/admin/organismes/page?" + Requete(("etat", etat), ("q", texte), ("page", page), ("taille", taille)), null);
     public Task<(List<OrganismeFicheDto>, string?)> OrganismesFichesAsync() => GetAsync<List<OrganismeFicheDto>>("api/admin/organismes", []);
     public Task<(IdentifiantDto?, string?)> EnregistrerOrganismeAsync(OrganismeFicheDto o) => PostAsync<OrganismeFicheDto, IdentifiantDto>("api/admin/organismes", o);
 
@@ -408,6 +410,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         GetAsync<PageDto<MouvementCreditDto>?>($"api/caisse/credits/{patientId}/mouvements?" + Requete(("du", du), ("au", au), ("type", type), ("page", page), ("taille", taille)), null);
     public Task<(PageDto<MouvementGrossisteDto>?, string?)> MouvementsGrossisteAsync(long fournisseurId, int page, int taille, DateOnly? du = null, DateOnly? au = null, string? type = null) =>
         GetAsync<PageDto<MouvementGrossisteDto>?>($"api/achats/reglements/{fournisseurId}/mouvements?" + Requete(("du", du), ("au", au), ("type", type), ("page", page), ("taille", taille)), null);
+    /// <summary>Ticket en PDF (vue à l'écran quand l'imprimante de tickets enregistre un fichier).</summary>
+    public Task<(byte[]?, string?, string?)> TicketPdfAsync(long venteId, decimal? rendu) =>
+        FichierAsync(HttpMethod.Get, $"api/caisse/ventes/{venteId}/ticket.pdf{(rendu is { } r ? $"?rendu={r.ToString(System.Globalization.CultureInfo.InvariantCulture)}" : "")}", "ticket.pdf");
     public Task<(byte[]?, string?, string?)> ReleveCreditAsync(long patientId) => FichierAsync(HttpMethod.Get, $"api/caisse/credits/{patientId}/releve", "releve_credit.pdf");
     public async Task<string?> CorrigerCreditAsync(long patientId, decimal nouvelleDette, string? motif) =>
         (await PostAsync<CorrectionCreditRequete, object>($"api/caisse/credits/{patientId}/correction", new(nouvelleDette, motif))).Item2;
@@ -819,6 +824,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> TvaSortiesAsync(TvaSortiesDto t) =>
         (await EnvoyerCorpsAsync<TvaSortiesDto, object>(HttpMethod.Put, "api/rapports/tva-sorties", t)).Item2;
 
+    public Task<(PageDto<EmplacementDto>?, string?)> EmplacementsPageAsync(string? zone, string? etat, string? texte, int page, int taille) =>
+        GetAsync<PageDto<EmplacementDto>?>("api/emplacements/page?" + Requete(("zone", zone), ("etat", etat), ("q", texte), ("page", page), ("taille", taille)), null);
     public Task<(List<EmplacementDto>, string?)> EmplacementsAsync() => GetAsync<List<EmplacementDto>>("api/emplacements", []);
     public Task<(IdentifiantDto?, string?)> EnregistrerEmplacementAsync(long? id, SaisieEmplacementDto e) => id is null
         ? PostAsync<SaisieEmplacementDto, IdentifiantDto>("api/emplacements", e)
@@ -938,7 +945,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(IdentifiantDto?, string?)> AjouterACommandeAsync(long fournisseurId, long produitId, int quantite, decimal? prixHt) =>
         PostAsync<AjoutCommandeRequete, IdentifiantDto>("api/achats/commandes/lignes", new(fournisseurId, produitId, quantite, prixHt));
 
-    public async Task<string?> ModifierLigneCommandeAsync(long commandeId, long ligneId, int quantite, decimal prixHt) =>
+    public async Task<string?> ModifierLigneCommandeAsync(long commandeId, long ligneId, int quantite, decimal? prixHt) =>
         (await EnvoyerCorpsAsync<ModificationLigneCommandeRequete, object>(HttpMethod.Put, $"api/achats/commandes/{commandeId}/lignes/{ligneId}", new(quantite, prixHt))).Item2;
 
     public Task<(byte[]?, string?, string?)> EmettreCommandeAsync(long id) => FichierAsync(HttpMethod.Post, $"api/achats/commandes/{id}/emettre", $"commande_{id}.pdf");

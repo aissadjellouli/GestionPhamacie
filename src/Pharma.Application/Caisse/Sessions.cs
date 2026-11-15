@@ -14,7 +14,13 @@ public sealed record ParametresCaisse(bool ComptageAveugle, decimal FondCaisseDe
 public sealed record DetailSession(
     long Id, long UtilisateurId, string Employe, string Poste, DateTime OuverteLe, decimal FondCaisse,
     DateTime? FermeeLe, decimal? VentesEspeces, decimal? Attendu, decimal? Compte, decimal? Ecart,
-    int NombreVentes, decimal TotalVentes, IReadOnlyList<LigneComptage> Comptage, IReadOnlyList<string>? Vendeurs = null);
+    int NombreVentes, decimal TotalVentes, IReadOnlyList<LigneComptage> Comptage, IReadOnlyList<string>? Vendeurs = null, bool Releve = false)
+{
+    /// <summary>Titre du rapport PDF : une relève laisse la caisse ouverte (une nouvelle session la suit), ce n'est pas une clôture.</summary>
+    public string TitreRapport => Releve ? "Rapport de relève de caisse" : "Rapport de clôture de caisse";
+    /// <summary>Libellé de l'heure de fin dans le rapport.</summary>
+    public string LibelleFin => Releve ? "Relève" : "Clôture";
+}
 
 public sealed record Vendeur(long Id, string Nom);
 
@@ -182,7 +188,7 @@ public sealed class ObtenirRapportCloture(ISessionsCaisse sessions, IPermissionS
         var parametres = await sessions.ParametresAsync(ct);
         var nomPharmacie = (await pharmacie.LireAsync(ct)).Nom;
         var contenu = pdf.RapportCloture(detail, voirEcart, parametres.SeuilEcart, nomPharmacie);
-        return (contenu, $"cloture_{detail.FermeeLe.Value.ToLocalTime():yyyyMMdd_HHmm}_{sessionId}.pdf");
+        return (contenu, $"{(detail.Releve ? "releve" : "cloture")}_{detail.FermeeLe.Value.ToLocalTime():yyyyMMdd_HHmm}_{sessionId}.pdf");
     }
 }
 

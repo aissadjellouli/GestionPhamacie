@@ -261,7 +261,7 @@
     // Écrans réservés à un droit (comme le menu) : sans ce droit, retour à l'accueil avec le droit nécessaire
     private static readonly (string Chemin, string[] Droits)[] EcransReserves =
     [
-        ("rapports", ["rapports.ventes"]), ("surveillance", ["role.titulaire"]), ("factures", ["factures.gerer"]), ("tresorerie", ["tresorerie.gerer"]), ("dettes", ["tresorerie.gerer"]),
+        ("rapports", ["rapports.ventes"]), ("surveillance", ["role.titulaire"]), ("financements", ["role.titulaire"]),("factures", ["factures.gerer"]), ("tresorerie", ["tresorerie.gerer"]), ("dettes", ["tresorerie.gerer"]),
         ("achats", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]), ("stock/registre", ["psychotropes.registre"]),
         ("stock/etiquettes", ["stock.consulter", "achats.receptionner"]),
         .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))

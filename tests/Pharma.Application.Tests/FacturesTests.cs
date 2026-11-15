@@ -142,4 +142,15 @@ public class FacturesTests
         Assert.Equal(("avoir", 60m, 101L), (f.Emises[0].Type, f.Emises[0].Totaux.Ttc, f.Emises[0].FactureOrigineId!.Value));
         await Assert.ThrowsAsync<RegleMetierException>(() => Cas(f).AvoirAsync(101, 600, "Trop", 5));
     }
+
+    [Fact]
+    public async Task Ligne_de_l_avoir_porte_le_prix_unitaire_de_l_avoir_et_non_celui_de_la_facture()
+    {
+        // Recette 2026-11-15 (AV-2026-0005) : quantité × P.U. = montant de l'avoir (500), jamais le prix de la facture (560 ici)
+        var f = new FacturesEnMemoire { Detail = Detail("emise") };
+        await Cas(f).AvoirAsync(101, 500, "Geste commercial", 5);
+        var ligne = Assert.Single(f.Emises[0].Lignes);
+        Assert.Equal((1m, 500m, 500m), (ligne.Quantite, ligne.PrixUnitaireTtc, ligne.MontantTtc));
+        Assert.Equal(ligne.MontantTtc, ligne.Quantite * ligne.PrixUnitaireTtc);
+    }
 }

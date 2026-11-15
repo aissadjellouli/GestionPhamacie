@@ -896,3 +896,16 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 .tiers-payant-paiement label[for="reste-saisi"] { font-weight: 600; }
 /* Patient et médecin alignés par le bas, même si un libellé passe sur deux lignes (2026-11-15) */
 .bloc-client-grille { align-items: end; }
+
+/* Écran fixe (recette 2026-11-15) : un menu de gauche plus haut que la fenêtre défile dans son propre cadre, jamais l'écran
+   (haut du menu ~101 px + marge basse de la page 36 px + barre d'état 32 px) */
+.page.avec-menu > .nav-laterale, .page.admin > .admin-nav { max-height: calc(100vh - 170px); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+/* Résumé du menu (Dettes et créances) : libellé et montant sur une même ligne */
+.nav-laterale .nav-resume.compact { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 2px; align-items: baseline; margin-top: 8px; padding-top: 8px; }
+.nav-laterale .nav-resume.compact strong { text-align: right; }
+/* Ventes en attente de la caisse : fond transparent sous la liste ouverte, un clic ailleurs la referme (recette 2026-11-15) */
+.fond-attentes { position: fixed; inset: 0; z-index: 29; background: transparent; }
+/* Connexion (recette 2026-11-15) : avec le message « … a quitté le poste », l'écran restait 30 px trop haut ; logo à côté du titre */
+.connexion .entete-connexion { display: grid; grid-template-columns: auto 1fr; column-gap: 16px; align-items: center; }
+.connexion .entete-connexion .logo-connexion { width: 64px; height: 64px; grid-row: span 2; }
+.connexion .entete-connexion h1, .connexion .entete-connexion .sous-titre { margin: 0; }

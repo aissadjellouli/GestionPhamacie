@@ -11,7 +11,7 @@ namespace Pharma.Infrastructure.Impression;
 
 /// <summary>Documents PDF produits avec PDFsharp-MigraDoc (licence MIT), polices Windows du serveur.</summary>
 public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.IDocumentsRapports, Pharma.Application.Stock.IDocumentsRegistre,
-    Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire, Pharma.Application.Caisse.IDocumentsCredit
+    Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire, Pharma.Application.Caisse.IDocumentsCredit, Pharma.Application.Caisse.IDocumentsTicket
 {
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
 
@@ -23,10 +23,10 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
 
     public byte[] RapportCloture(DetailSession s, bool avecEcart, decimal seuilEcart, string? pharmacie)
     {
-        var doc = NouveauDocument("Rapport de clôture de caisse", pharmacie);
+        var doc = NouveauDocument(s.TitreRapport, pharmacie);
         var section = doc.LastSection;
 
-        Titre(section, "Rapport de clôture de caisse");
+        Titre(section, s.TitreRapport);
         var infos = section.AddParagraph();
         infos.Format.SpaceAfter = Unit.FromPoint(12);
         infos.AddText($"Caisse ouverte par : {s.Employe}   ·   {s.Poste}\n");
@@ -34,8 +34,9 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         if (s.Vendeurs is { Count: > 0 } vendeurs)
             infos.AddText($"Vendeurs : {string.Join(", ", vendeurs)}\n");
         infos.AddText($"Ouverture : {s.OuverteLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr)}   ·   ");
-        infos.AddText($"Clôture : {s.FermeeLe?.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr) ?? "—"}\n");
+        infos.AddText($"{s.LibelleFin} : {s.FermeeLe?.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr) ?? "—"}\n");
         infos.AddText($"Ventes de la session : {s.NombreVentes}, pour {Da(s.TotalVentes)} (tous modes de paiement)");
+        if (s.Releve) infos.AddText("\nRelève : la caisse reste ouverte ; le montant compté devient le fond de la session suivante.");
 
         SousTitre(section, "Espèces comptées");
         var comptage = Tableau(section, 9.5, 3, 4);
@@ -221,6 +222,53 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
 
     // ---- Relevé de la dette d'un patient -------------------------------------
 
+    // ---- Ticket de caisse (vue à l'écran, imprimante « fichier ») ----------------
+
+    public byte[] Ticket(Pharma.Application.Caisse.TicketVente t, decimal? rendu)
+    {
+        var doc = NouveauDocument($"Ticket {t.Numero}", t.Pharmacie);
+        var section = doc.LastSection;
+        Titre(section, $"Ticket {t.Numero}");
+        var entete = Tableau(section, 5, 11.5);
+        if (!string.IsNullOrWhiteSpace(t.Adresse)) Ligne(entete, "Adresse", t.Adresse);
+        if (!string.IsNullOrWhiteSpace(t.Telephone)) Ligne(entete, "Téléphone", t.Telephone);
+        if (!string.IsNullOrWhiteSpace(t.Nif)) Ligne(entete, "NIF", t.Nif);
+        Ligne(entete, "Date", Quand(t.Date));
+        Ligne(entete, "Vendeur", t.Poste is null ? t.Vendeur : $"{t.Vendeur} · {t.Poste}");
+        if (t.Statut != "validee") Ligne(entete, "État", t.Statut == "annulee" ? "Vente annulée" : t.Statut, gras: true);
+        if (t.Organisme is { } org) Ligne(entete, "Tiers payant", t.TauxTiersPayant is { } taux ? $"{org} · {taux:0.##} %" : org);
+
+        SousTitre(section, "Produits");
+        var lignes = Tableau(section, 7.5, 1.5, 3, 3.5);
+        Entete(lignes, "Produit", "Qté", "P.U.", "Montant");
+        foreach (var l in t.Lignes)
+        {
+            var row = lignes.AddRow();
+            row.TopPadding = row.BottomPadding = Unit.FromPoint(3);
+            var produit = l.Reduction > 0 ? $"{l.Produit} ({(l.DonPartiel ? "don" : "remise")} −{l.PctReduction:0.##} %)" : l.Produit;
+            string[] cellules = [produit, l.Quantite.ToString(Fr), Da(l.PrixUnitaire), Da(l.Montant)];
+            for (var i = 0; i < cellules.Length; i++) row.Cells[i].AddParagraph(cellules[i]);
+        }
+
+        var totaux = Tableau(section, 11.5, 5);
+        Ligne(totaux, "Total", Da(t.MontantBrut));
+        if (t.Remise > 0) Ligne(totaux, "Remises", "− " + Da(t.Remise));
+        if (t.DonPartiel > 0) Ligne(totaux, "Don partiel", "− " + Da(t.DonPartiel));
+        if (t.PartOrganisme > 0) Ligne(totaux, $"Part {t.Organisme ?? "organisme"}", Da(t.PartOrganisme));
+        Ligne(totaux, "À payer par le patient", Da(t.PartPatient), gras: true);
+        if (t.Mode is { } mode) Ligne(totaux, "Règlement", mode switch
+        {
+            "especes" => "Espèces", "carte" => "Carte", "cheque" => "Chèque", "credit" => "Crédit", "virement" => "Virement", _ => mode
+        });
+        if (rendu is > 0) Ligne(totaux, "Rendu", Da(rendu.Value), gras: true);
+        foreach (var retour in t.Retours ?? []) Ligne(totaux, "Retour", retour);
+
+        var note = section.AddParagraph("Merci de votre visite.");
+        note.Format.SpaceBefore = Unit.FromPoint(12);
+        note.Format.Font.Size = 9;
+        return Rendre(doc);
+    }
+
     public byte[] ReleveCredit(Pharma.Application.Caisse.SituationCredit s, string? pharmacie)
     {
         var doc = NouveauDocument("Relevé de crédit", pharmacie);
@@ -327,8 +375,15 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             for (var i = 0; i < c.Length; i++) row.Cells[i].AddParagraph(c[i]);
         }
 
-        var signature = section.AddParagraph("Cachet de l’officine et griffe du pharmacien (n° d’inscription à l’Ordre) : ________________________________");
-        signature.Format.SpaceBefore = Unit.FromCentimeter(1);
+        // Cachet et griffe : dernière ligne (sans bordure) du tableau de la balance, gardée avec la ligne qui la précède :
+        // elle ne part plus seule sur une page presque vide (recette 2026-11-15)
+        if (b.Rows.Count > 0) b.Rows[b.Rows.Count - 1].KeepWith = 1;
+        var cachet = b.AddRow();
+        cachet.Borders.Visible = false;
+        cachet.TopPadding = Unit.FromCentimeter(0.8);
+        cachet.Cells[0].MergeRight = 5;
+        cachet.Cells[0].Format.Alignment = ParagraphAlignment.Left;
+        cachet.Cells[0].AddParagraph("Cachet de l’officine et griffe du pharmacien (n° d’inscription à l’Ordre) : ________________________________");
         return Rendre(doc);
     }
 
@@ -495,6 +550,7 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         p.Format.Font.Bold = true;
         p.Format.SpaceBefore = Unit.FromPoint(12);
         p.Format.SpaceAfter = Unit.FromPoint(6);
+        p.Format.KeepWithNext = true;   // jamais seul en bas de page, loin de son tableau (recette 2026-11-15)
     }
 
     private static Table Tableau(Section s, params double[] largeursCm)
@@ -510,6 +566,8 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
     private static void Entete(Table t, params string[] textes)
     {
         var row = t.AddRow();
+        // En-tête répété en haut de chaque page quand le tableau continue sur la suivante (recette 2026-11-15)
+        row.HeadingFormat = true;
         row.Shading.Color = Color.FromRgb(0xF9, 0xFA, 0xFB);
         row.Format.Font.Bold = true;
         for (var i = 0; i < textes.Length; i++) row.Cells[i].AddParagraph(textes[i]);
