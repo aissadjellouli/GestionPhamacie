@@ -1,5 +1,6 @@
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject ImprimanteTickets Tickets
 
 @* Colonne d'actions de la Caisse, commune à la vente, à l'annulation, au règlement d'un crédit, à l'état de la caisse,
    à la relève et à la clôture (écran fixe, docs/charte-graphique.md). Chaque entrée est une adresse, « ← Retour » y revient ;
@@ -21,26 +22,100 @@
     }
     else
     {
-        @* Motif obligatoire (2026-11-15, script 094) : liste réglée par le titulaire ; « Autre » demande un texte *@
-        <div class="nav-confirmation" role="alertdialog" aria-labelledby="t-tiroir">
-            <span id="t-tiroir">Ouvrir le tiroir sans vente ? Ce sera inscrit au contrôle interne.</span>
-            <label for="ti-motif" class="requis">Motif</label>
-            <select id="ti-motif" data-champ="motif" @bind="motifTiroir" autofocus>
-                <option value="">— choisir —</option>
-                @foreach (var m in motifsTiroir) { <option value="@m.Code">@m.Libelle</option> }
-            </select>
-            @if (motifTiroir == "autre")
-            {
-                <label for="ti-texte" class="requis">Précisez</label>
-                <input id="ti-texte" data-champ="motif_texte" type="text" maxlength="200" @bind="texteTiroir" @bind:event="oninput" />
-            }
-            <div style="display: flex; gap: 6px">
-                <button type="button" class="btn" @onclick="() => confirmation = false">Annuler</button>
-                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="OuvrirTiroirAsync">Ouvrir</button>
-            </div>
+        <a href="" class="sous-rubrique active" @onclick:preventDefault="true">Ouvrir le tiroir <span class="detail">F8</span></a>
+        @* Motif obligatoire (2026-11-15, script 094) : liste réglée par le titulaire ; « Autre » demande un texte.
+           Motif à effet (script 096) : montant obligatoire et détail exigé ; l'argent sorti ou remis est compté dans l'attendu de la caisse
+           et écrit en trésorerie ; au-delà du seuil, « Faire autoriser » (code d'un ayant droit) ; bon de sortie imprimable. *@
+        <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-tiroir">
+            <section class="panneau" style="max-width: 560px; width: 100%; display: flex; flex-direction: column; gap: 10px">
+                <h2 id="t-tiroir">Ouvrir le tiroir sans vente</h2>
+                <p class="detail" style="margin: 0">Inscrit au contrôle interne. Une sortie ou une remise d’argent est comptée dans l’attendu de la caisse.</p>
+                <div class="champ">
+                    <label for="ti-motif" class="requis">Motif</label>
+                    <select id="ti-motif" data-champ="motif" @bind="motifTiroir" @bind:after="ChoisirMotif" autofocus>
+                        <option value="">— choisir —</option>
+                        @foreach (var m in motifsTiroir) { <option value="@m.Code">@m.Libelle</option> }
+                    </select>
+                </div>
+                @if (motifTiroir == "autre")
+                {
+                    <div class="champ"><label for="ti-texte" class="requis">Précisez</label>
+                        <input id="ti-texte" data-champ="motif_texte" type="text" maxlength="200" @bind="texteTiroir" @bind:event="oninput" /></div>
+                }
+                @if (Choisi is { Effet: not "aucun" } choisi)
+                {
+                    <div class="champ">
+                        <label for="ti-montant" class="requis">Montant (DA) · @(choisi.Effet == "sortie" ? "sortie du tiroir" : "entrée au tiroir")</label>
+                        <input id="ti-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montantTiroir" />
+                    </div>
+                    @switch (choisi.Detail)
+                    {
+                        case "depense":
+                            <div style="display: flex; gap: 8px">
+                                <div class="champ" style="flex: 1"><label for="ti-categorie" class="requis">Catégorie de charge</label>
+                                    <select id="ti-categorie" data-champ="categorie" @bind="categorieTiroir">
+                                        <option value="">— choisir —</option>
+                                        @foreach (var c in categories) { <option value="@c.Code">@c.Libelle</option> }
+                                    </select></div>
+                                <div class="champ" style="flex: 1"><label for="ti-libelle" class="requis">Libellé</label>
+                                    <input id="ti-libelle" data-champ="libelle" type="text" maxlength="200" @bind="libelleTiroir" placeholder="Ex. café, ampoules, timbres" /></div>
+                            </div>
+                            break;
+                        case "fournisseur":
+                            <div style="display: flex; gap: 8px">
+                                <div class="champ" style="flex: 1"><label for="ti-grossiste">Grossiste (dette diminuée)</label>
+                                    <select id="ti-grossiste" data-champ="fournisseur" @bind="grossisteTiroir">
+                                        <option value="0">— aucun : livreur ou autre fournisseur —</option>
+                                        @foreach (var g in grossistes) { <option value="@g.Id">@g.RaisonSociale</option> }
+                                    </select></div>
+                                <div class="champ" style="flex: 1"><label for="ti-reference" class="@(grossisteTiroir > 0 ? "requis" : null)">N° de BL ou de facture</label>
+                                    <input id="ti-reference" data-champ="reference" type="text" maxlength="200" @bind="referenceTiroir" /></div>
+                            </div>
+                            @if (grossisteTiroir == 0)
+                            {
+                                <div class="champ"><label for="ti-beneficiaire" class="requis">Nom du livreur ou du fournisseur</label>
+                                    <input id="ti-beneficiaire" data-champ="beneficiaire" type="text" maxlength="200" @bind="beneficiaireTiroir" /></div>
+                            }
+                            break;
+                        case "patient":
+                            <div class="champ recherche"><label for="ti-patient" class="requis">Patient remboursé</label>
+                                <input id="ti-patient" data-champ="patient" type="search" autocomplete="off" @bind="recherchePatient" @bind:event="oninput"
+                                       @bind:after="RechercherPatientAsync" placeholder="Nom, téléphone ou n° d’assuré" />
+                                @if (patients.Count > 0)
+                                {
+                                    <ul class="suggestions" aria-label="Patients trouvés">
+                                        @foreach (var p in patients.Take(6))
+                                        {
+                                            <li><button type="button" @onclick="() => ChoisirPatient(p)"><strong>@p.Nom @p.Prenom</strong> <span class="detail">@p.Telephone</span></button></li>
+                                        }
+                                    </ul>
+                                }
+                                @if (patientTiroir is { } pt) { <span class="detail">Choisi : @pt.Nom @pt.Prenom</span> }
+                            </div>
+                            <div class="champ"><label for="ti-raison" class="requis">Raison du remboursement</label>
+                                <input id="ti-raison" data-champ="raison" type="text" maxlength="200" @bind="raisonTiroir" /></div>
+                            break;
+                        case "coffre":
+                            <p class="detail" style="margin: 0">L’argent part au coffre de la trésorerie : l’attendu de la caisse baisse d’autant.</p>
+                            break;
+                        case "fond":
+                            <p class="detail" style="margin: 0">L’argent vient du coffre (son solde est contrôlé) : l’attendu de la caisse monte d’autant.</p>
+                            break;
+                    }
+                }
+                @if (messageTiroir is not null && confirmation) { <div class="erreur" role="alert">@messageTiroir</div> }
+                <div style="display: flex; gap: 8px">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="OuvrirTiroirAsync">Ouvrir</button>
+                    <button type="button" class="btn" @onclick="() => (confirmation, messageTiroir) = (false, null)">Annuler</button>
+                </div>
+            </section>
         </div>
     }
-    @if (messageTiroir is not null) { <span class="detail" role="status" style="padding: 0 12px 0 24px">@messageTiroir</span> }
+    @if (messageTiroir is not null && !confirmation) { <span class="detail" role="status" style="padding: 0 12px 0 24px">@messageTiroir</span> }
+    @if (bonTiroir is { } bon && !confirmation)
+    {
+        <a href="" class="sous-rubrique" @onclick="() => ImprimerBonAsync(bon)" @onclick:preventDefault="true">Imprimer le bon @bon.Numero</a>
+    }
     <span class="nav-groupe-titre">Caisse</span>
     @Lien("caisse/etat", "État de la caisse")
     @if (Session.A("caisse.cloturer"))
@@ -84,26 +159,79 @@
     private string motifTiroir = "";
     private string? texteTiroir;
 
-    /// <summary>F8 ou clic : la confirmation s'ouvre avec les motifs actifs (rechargés à chaque fois : le titulaire a pu les changer).</summary>
+    // Motif à effet (script 096) : montant et détail exigé
+    private MotifReglableDto? Choisi => motifsTiroir.FirstOrDefault(m => m.Code == motifTiroir);
+    private decimal? montantTiroir;
+    private string categorieTiroir = "";
+    private string? libelleTiroir, referenceTiroir, beneficiaireTiroir, raisonTiroir, recherchePatient;
+    private long grossisteTiroir;
+    private PatientDto? patientTiroir;
+    private List<PatientDto> patients = [];
+    private List<MotifReglableDto> categories = [];
+    private List<FournisseurDto> grossistes = [];
+    private OuvertureTiroirDto? bonTiroir;
+    private int requetePatient;
+
+    /// <summary>F8 ou clic : la fenêtre s'ouvre avec les motifs actifs (rechargés à chaque fois : le titulaire a pu les changer).</summary>
     private async Task DemanderTiroirAsync()
     {
-        (confirmation, messageTiroir, motifTiroir, texteTiroir) = (true, null, "", null);
+        (confirmation, messageTiroir, motifTiroir, texteTiroir, bonTiroir) = (true, null, "", null, null);
+        (montantTiroir, categorieTiroir, libelleTiroir, referenceTiroir, beneficiaireTiroir, raisonTiroir) = (null, "", null, null, null, null);
+        (grossisteTiroir, patientTiroir, patients, recherchePatient) = (0, null, [], null);
         var (liste, e) = await Api.MotifsAsync("tiroir");
         (motifsTiroir, messageTiroir) = (liste, e);
     }
 
+    /// <summary>Listes du détail chargées seulement quand le motif les demande (catégories de charge, grossistes).</summary>
+    private async Task ChoisirMotif()
+    {
+        messageTiroir = null;
+        if (Choisi?.Detail == "depense" && categories.Count == 0) (categories, _) = await Api.MotifsAsync("charge");
+        if (Choisi?.Detail == "fournisseur" && grossistes.Count == 0)
+        {
+            var (liste, _) = await Api.FournisseursAsync();
+            grossistes = liste.Where(f => f.Actif).OrderBy(f => f.RaisonSociale).ToList();
+        }
+    }
+
+    private async Task RechercherPatientAsync()
+    {
+        var n = ++requetePatient;
+        if ((recherchePatient ?? "").Trim().Length < 2) { patients = []; return; }
+        var (trouves, _) = await Api.RechercherPatientsAsync(recherchePatient!.Trim());
+        if (n == requetePatient) patients = trouves;
+    }
+
+    private void ChoisirPatient(PatientDto p) => (patientTiroir, patients, recherchePatient) = (p, [], $"{p.Nom} {p.Prenom}".Trim());
+
     private async Task OuvrirTiroirAsync()
     {
-        // Contrôle aussi fait par le serveur (motif actif, « Autre » avec texte)
-        if (motifTiroir == "") { messageTiroir = "Choisissez le motif de l’ouverture du tiroir."; return; }
-        if (motifTiroir == "autre" && string.IsNullOrWhiteSpace(texteTiroir)) { messageTiroir = "Motif « Autre » : précisez le motif."; return; }
+        // Contrôles aussi faits par le serveur (motif actif, « Autre » avec texte, montant, détail exigé, tiroir, seuil)
+        if (motifTiroir == "") { messageTiroir = Api.SignalerChamp("motif", "Choisissez le motif de l’ouverture du tiroir."); return; }
+        if (motifTiroir == "autre" && string.IsNullOrWhiteSpace(texteTiroir)) { messageTiroir = Api.SignalerChamp("motif_texte", "Motif « Autre » : précisez le motif."); return; }
+        var effet = Choisi?.Effet ?? "aucun";
+        if (effet != "aucun" && montantTiroir is not > 0) { messageTiroir = Api.SignalerChamp("montant", "Indiquez le montant (supérieur à 0)."); return; }
+        var saisie = effet == "aucun" ? null : new SaisieTiroirDto(montantTiroir, categorieTiroir == "" ? null : categorieTiroir, libelleTiroir,
+            grossisteTiroir > 0 ? grossisteTiroir : null, grossisteTiroir > 0 ? null : beneficiaireTiroir, referenceTiroir, patientTiroir?.Id, raisonTiroir);
         enCours = true;
         try
         {
-            var e = await Api.SignalerCaisseAsync(new EvenementCaisseRequete("tiroir_ouvert", MotifCode: motifTiroir, MotifTexte: texteTiroir));
+            var (bon, e) = await Api.OuvrirTiroirAsync(new EvenementCaisseRequete("tiroir_ouvert", MotifCode: motifTiroir, MotifTexte: texteTiroir, Tiroir: saisie));
             if (e is not null) { messageTiroir = e; return; }
-            (messageTiroir, confirmation) = ($"Ouverture du tiroir sans vente enregistrée à {DateTime.Now:HH:mm}.", false);
+            bonTiroir = bon?.MouvementId is not null ? bon : null;
+            (messageTiroir, confirmation) = (bonTiroir is null
+                ? $"Ouverture du tiroir sans vente enregistrée à {DateTime.Now:HH:mm}."
+                : $"{(effet == "sortie" ? "Sortie" : "Entrée")} de {Libelles.Dinars(montantTiroir ?? 0, 2)} enregistrée à {DateTime.Now:HH:mm} (bon {bonTiroir.Numero}).", false);
         }
         finally { enCours = false; }
+    }
+
+    /// <summary>Bon de sortie au format rouleau, produit par le serveur et ouvert à l'écran pour l'imprimer.</summary>
+    private async Task ImprimerBonAsync(OuvertureTiroirDto bon)
+    {
+        var (pdf, nom, e) = await Api.BonSortiePdfAsync(bon.MouvementId!.Value, Tickets.LargeurMm);
+        if (e is not null) { messageTiroir = e; return; }
+        try { Documents.OuvrirSurCePoste("Tickets", nom ?? $"bon_{bon.Numero}.pdf", pdf!); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { messageTiroir = $"Bon {bon.Numero} non ouvert : {ex.Message}"; }
     }
 }

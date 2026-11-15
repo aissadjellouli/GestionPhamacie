@@ -279,7 +279,10 @@ public static class CanalOrganisme
 
     public static bool Externe(string? canal) => canal is Chifa or Mdn;
 
-    /// <summary>N° de facture Chifa saisi (vente Chifa sans volet) : obligatoire, 30 caractères au plus, espaces retirés.</summary>
+    /// <summary>
+    /// N° de facture Chifa saisi (vente Chifa sans volet) : 30 caractères au plus, espaces retirés. Depuis le 2026-11-15 (circuit « la caisse
+    /// d'abord »), la case cochée sans n° est acceptée par l'encaissement (vente en attente de volet) : cette lecture ne sert qu'à un n° saisi.
+    /// </summary>
     public static string NumeroFacture(string? saisie)
     {
         var n = saisie?.Trim() ?? "";

@@ -36,6 +36,9 @@ public static class DependencyInjection
         services.AddScoped<Caisse.ListerRemisesAutomatiques>();
         services.AddScoped<Caisse.GererRemisesAutomatiques>();
         services.AddScoped<LireVoletChifa>();
+        services.AddScoped<RapprocherVoletChifa>();
+        services.AddScoped<ConsulterVoletsChifa>();
+        services.AddScoped<GarderPatientVoletChifa>();
         services.AddScoped<AssocierCodeChifa>();
         services.AddScoped<CreerPatientVoletChifa>();
         services.AddScoped<ObtenirEtatCaisse>();
@@ -110,6 +113,11 @@ public static class DependencyInjection
         services.AddScoped<Stock.ExporterRegistre>();
         services.AddScoped<Caisse.ObtenirTicket>();
         services.AddScoped<Caisse.ImprimerRecuCredit>();
+        // Sorties et entrées d'argent par le tiroir (script 096)
+        services.AddScoped<Caisse.OuvrirTiroirAvecEffet>();
+        services.AddScoped<Caisse.CorrigerMouvementTiroir>();
+        services.AddScoped<Caisse.ListerMouvementsTiroir>();
+        services.AddScoped<Caisse.ObtenirBonSortie>();
         services.AddScoped<Securite.ChoisirAffichage>();
         services.AddScoped<Securite.LireAffichage>();
         services.AddScoped<Caisse.GererVentesEnAttente>();

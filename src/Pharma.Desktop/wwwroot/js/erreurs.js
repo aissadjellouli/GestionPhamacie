@@ -27,7 +27,16 @@
   function placerBulle() {
     if (!bulle || !visible(champBulle)) { retirerBulle(); return; }
     const r = champBulle.getBoundingClientRect();
-    bulle.style.top = (window.scrollY + r.bottom + 6) + 'px';
+    // Message d'erreur ou explication posé juste sous le champ (recette 2026-11-15) : la bulle passe dessous, sans le cacher
+    let bas = r.bottom;
+    const zone = champBulle.closest('.champ') || champBulle.parentElement;
+    for (let s = zone && zone.nextElementSibling, n = 0; s && n < 2; s = s.nextElementSibling, n++) {
+      if (!visible(s) || !s.matches('.erreur, .detail, [role="status"], [role="alert"]')) break;
+      const rs = s.getBoundingClientRect();
+      if (rs.top - bas > 40) break;
+      bas = Math.max(bas, rs.bottom);
+    }
+    bulle.style.top = (window.scrollY + bas + 6) + 'px';
     bulle.style.left = (window.scrollX + Math.max(8, Math.min(r.left, window.innerWidth - bulle.offsetWidth - 8))) + 'px';
   }
 

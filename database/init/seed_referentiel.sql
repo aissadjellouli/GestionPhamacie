@@ -13,14 +13,17 @@
 --   * organismes CNAS, CASNOS et MDN ; substances surveillées (arrêté du
 --     11 août 2021) ; coffre de la trésorerie ; catégories de produits
 --     (médicament, dermo-cosmétique, hygiène…) ; motifs et catégories réglables
---     (tiroir, mise en attente, charges, sorties de stock, retours ; 094) ;
+--     (tiroir, mise en attente, charges, sorties de stock, retours ; 094 ;
+--     vente Chifa sans n° de facture ; 097) ;
 --   * compte « titulaire » avec le mot de passe provisoire « Provisoire-2026 » :
 --     changement obligatoire à la première connexion (rien d'autre n'est
 --     possible avant).
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 094 (vérifié : permissions, rôles,
+-- Valeurs identiques à celles posées par les scripts 001 à 097 (095 n'ajoute aucune donnée de référence ; 096 : motifs du tiroir avec effet
+-- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
+-- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
 -- une donnée de référence la reporte ici dans la même modification (docs/base-de-donnees.md).
 -- =====================================================================
@@ -224,12 +227,22 @@ WHERE r.code = 'titulaire' AND NOT EXISTS (SELECT 1 FROM utilisateur WHERE ident
 -- ---------------------------------------------------------------------
 -- 7. Motifs et catégories réglables par le titulaire (094) : valeurs de départ, insérées si absentes
 -- ---------------------------------------------------------------------
+-- Tiroir (094, 096) : effet sur l'argent de la caisse et détail exigé ; « Dépôt ou retrait d'espèces » désactivé par 096
+INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre, effet, detail, actif) VALUES
+    ('tiroir', 'monnaie',              'Faire de la monnaie',                       false, 10,  'aucun',  'aucun',       true),
+    ('tiroir', 'erreur_rendu',         'Erreur de rendu de monnaie',                false, 20,  'aucun',  'aucun',       true),
+    ('tiroir', 'depot_especes',        'Dépôt ou retrait d''espèces',               false, 30,  'aucun',  'aucun',       false),
+    ('tiroir', 'verification',         'Vérification du contenu',                   false, 40,  'aucun',  'aucun',       true),
+    ('tiroir', 'remise_fond',          'Remise d''un fonds de caisse',              false, 50,  'entree', 'fond',        true),
+    ('tiroir', 'retrait_coffre',       'Retrait vers le coffre',                    false, 60,  'sortie', 'coffre',      true),
+    ('tiroir', 'paiement_fournisseur', 'Paiement d''un livreur ou d''un fournisseur', false, 70, 'sortie', 'fournisseur', true),
+    ('tiroir', 'petite_depense',       'Petite dépense',                            false, 80,  'sortie', 'depense',     true),
+    ('tiroir', 'remboursement_client', 'Remboursement d''un client',                false, 90,  'sortie', 'patient',     true),
+    ('tiroir', 'recuperation_objet',   'Récupération d''un objet',                  false, 100, 'aucun',  'aucun',       true),
+    ('tiroir', 'autre',                'Autre (préciser)',                          true,  999, 'aucun',  'aucun',       true)
+ON CONFLICT (liste, code) DO NOTHING;
+
 INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre) VALUES
-    ('tiroir', 'monnaie',            'Faire de la monnaie',                   false, 10),
-    ('tiroir', 'erreur_rendu',       'Erreur de rendu de monnaie',            false, 20),
-    ('tiroir', 'depot_especes',      'Dépôt ou retrait d''espèces',           false, 30),
-    ('tiroir', 'verification',       'Vérification du contenu',               false, 40),
-    ('tiroir', 'autre',              'Autre (préciser)',                      true,  999),
     ('attente', 'produit_manquant',  'Produit manquant à commander',          false, 10),
     ('attente', 'patient_revient',   'Patient revient payer',                 false, 20),
     ('attente', 'attente_ordonnance','Attente de l''ordonnance',              false, 30),
@@ -250,6 +263,14 @@ INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre) VALUES
     ('retour_fournisseur', 'defaut',            'Défaut',                     false, 30),
     ('retour_fournisseur', 'erreur_livraison',  'Erreur de livraison',        false, 40),
     ('retour_fournisseur', 'rappel_lot',        'Rappel de lot',              true,  50)
+ON CONFLICT (liste, code) DO NOTHING;
+
+-- Vente « Facturée par Chifa » encaissée sans n° de facture Chifa : motif obligatoire (097)
+INSERT INTO motif_reglable (liste, code, libelle, systeme, ordre) VALUES
+    ('volet_absent', 'carte_absente',      'Pas de carte Chifa présentée',  false, 10),
+    ('volet_absent', 'chifa_indisponible', 'CHIFA-Officine indisponible',   false, 20),
+    ('volet_absent', 'volet_plus_tard',    'Volet à éditer plus tard',      false, 30),
+    ('volet_absent', 'autre',              'Autre (préciser)',              true,  999)
 ON CONFLICT (liste, code) DO NOTHING;
 
 COMMIT;

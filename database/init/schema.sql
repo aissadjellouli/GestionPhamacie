@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 094 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 097 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 094 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 097 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -21,10 +21,11 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
     \quit
 \endif
 --
+--
 -- PostgreSQL database dump
 --
 
-\restrict cE16I4VTfXg9G566yOsYDDBYCdBKzzyidxIBA4rSBT3olGXsxtSiIGRxi1lsuUq
+\restrict fGy4yTWAV3SA2y2Sre1h6JO6pmUQITp4IjQH1TCcAWUKAmxGWpSiw1PQn9AnDZ5
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1442,6 +1443,18 @@ $$;
 
 
 --
+-- Name: proteger_regularisation_part_organisme(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.proteger_regularisation_part_organisme() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Une régularisation de part organisme ne se modifie pas et ne se supprime pas';
+END $$;
+
+
+--
 -- Name: proteger_role_systeme(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1996,6 +2009,29 @@ $$;
 
 
 --
+-- Name: surveillance_candidats_tiroir(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.surveillance_candidats_tiroir(p_jour date) RETURNS TABLE(o_type text, o_niveau text, o_utilisateur_id bigint, o_jour date, o_cle text, o_message text, o_notification text, o_valeur numeric)
+    LANGUAGE sql STABLE
+    AS $$
+    WITH p AS (SELECT seuil_sorties_tiroir FROM parametre_surveillance WHERE id = 1),
+    sorties AS (
+        SELECT m.utilisateur_id, count(*) AS n, sum(m.montant) AS total,
+               string_agg(DISTINCT m.motif_libelle, ', ') AS motifs
+        FROM mouvement_tiroir m
+        WHERE m.sens = 'sortie' AND m.corrige_id IS NULL AND m.cree_le::date = p_jour
+        GROUP BY m.utilisateur_id)
+    SELECT 'sorties_tiroir', CASE WHEN s.n >= 2 * p.seuil_sorties_tiroir THEN 'urgent' ELSE 'attention' END, s.utilisateur_id, p_jour, '',
+           format('%s a fait %s sortie(s) d''argent par le tiroir le %s, pour %s DA (%s).', u.nom_complet, s.n, to_char(p_jour, 'DD/MM/YYYY'),
+                  to_char(s.total, 'FM999G999G990D00'), s.motifs),
+           format('%s : %s sorties du tiroir le %s.', u.nom_complet, s.n, to_char(p_jour, 'DD/MM')),
+           s.n
+    FROM sorties s JOIN utilisateur u ON u.id = s.utilisateur_id, p WHERE s.n >= p.seuil_sorties_tiroir;
+$$;
+
+
+--
 -- Name: surveiller(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2009,7 +2045,8 @@ DECLARE
 BEGIN
     FOR c IN SELECT * FROM surveillance_candidats(p_jour)
              UNION ALL SELECT * FROM surveillance_candidats_achats(p_jour)
-             UNION ALL SELECT * FROM surveillance_candidats_comptes(p_jour) LOOP
+             UNION ALL SELECT * FROM surveillance_candidats_comptes(p_jour)
+             UNION ALL SELECT * FROM surveillance_candidats_tiroir(p_jour) LOOP
         v_id := NULL;
         SELECT a.id, a.niveau INTO v_id, v_ancien FROM alerte_surveillance a
         WHERE a.type = c.o_type AND COALESCE(a.utilisateur_id, 0) = COALESCE(c.o_utilisateur_id, 0) AND a.jour = c.o_jour AND a.cle = c.o_cle;
@@ -2626,7 +2663,7 @@ CREATE TABLE public.alerte_surveillance (
     traitee_le timestamp with time zone,
     CONSTRAINT alerte_surveillance_niveau_check CHECK ((niveau = ANY (ARRAY['attention'::text, 'urgent'::text]))),
     CONSTRAINT alerte_surveillance_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'traitee'::text]))),
-    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text, 'ecart_reception'::text, 'reception_meme_personne'::text, 'retour_sans_avoir'::text, 'avoir_incomplet'::text, 'credit_nouveau_patient'::text, 'credits_employe'::text, 'credit_sans_remboursement'::text, 'autorisations_valideur'::text, 'autorisations_employe'::text, 'postes_simultanes'::text, 'baisses_prix'::text])))
+    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text, 'ecart_reception'::text, 'reception_meme_personne'::text, 'retour_sans_avoir'::text, 'avoir_incomplet'::text, 'credit_nouveau_patient'::text, 'credits_employe'::text, 'credit_sans_remboursement'::text, 'autorisations_valideur'::text, 'autorisations_employe'::text, 'postes_simultanes'::text, 'baisses_prix'::text, 'sorties_tiroir'::text])))
 );
 
 
@@ -4029,10 +4066,14 @@ CREATE TABLE public.motif_reglable (
     ordre integer DEFAULT 100 NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    effet text DEFAULT 'aucun'::text NOT NULL,
+    detail text DEFAULT 'aucun'::text NOT NULL,
+    CONSTRAINT ck_motif_reglable_effet CHECK ((((effet = 'aucun'::text) AND (detail = 'aucun'::text)) OR ((effet = 'sortie'::text) AND (detail = ANY (ARRAY['depense'::text, 'fournisseur'::text, 'patient'::text, 'coffre'::text]))) OR ((effet = 'entree'::text) AND (detail = 'fond'::text)))),
+    CONSTRAINT ck_motif_reglable_effet_tiroir CHECK (((effet = 'aucun'::text) OR (liste = 'tiroir'::text))),
+    CONSTRAINT ck_motif_reglable_liste CHECK ((liste = ANY (ARRAY['tiroir'::text, 'attente'::text, 'charge'::text, 'sortie_stock'::text, 'retour_fournisseur'::text, 'volet_absent'::text]))),
     CONSTRAINT ck_motif_reglable_systeme_actif CHECK ((actif OR (NOT systeme))),
     CONSTRAINT motif_reglable_code_check CHECK ((code ~ '^[a-z0-9_]{1,40}$'::text)),
-    CONSTRAINT motif_reglable_libelle_check CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 80))),
-    CONSTRAINT motif_reglable_liste_check CHECK ((liste = ANY (ARRAY['tiroir'::text, 'attente'::text, 'charge'::text, 'sortie_stock'::text, 'retour_fournisseur'::text])))
+    CONSTRAINT motif_reglable_libelle_check CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 80)))
 );
 
 
@@ -4074,6 +4115,59 @@ CREATE TABLE public.mouvement_stock (
 
 ALTER TABLE public.mouvement_stock ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.mouvement_stock_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: mouvement_tiroir; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mouvement_tiroir (
+    id bigint NOT NULL,
+    numero text NOT NULL,
+    evenement_caisse_id bigint,
+    session_caisse_id bigint NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    poste text,
+    motif_code text NOT NULL,
+    motif_libelle text NOT NULL,
+    sens text NOT NULL,
+    detail text NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    categorie text,
+    libelle text,
+    fournisseur_id bigint,
+    beneficiaire text,
+    reference text,
+    patient_id bigint,
+    raison text,
+    reglement_fournisseur_id bigint,
+    mouvement_tresorerie_id bigint,
+    valide_par bigint,
+    corrige_id bigint,
+    motif_correction text,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_mouvement_tiroir_correction CHECK (((corrige_id IS NULL) = (motif_correction IS NULL))),
+    CONSTRAINT ck_mouvement_tiroir_depense CHECK (((detail <> 'depense'::text) OR (corrige_id IS NOT NULL) OR ((categorie IS NOT NULL) AND (libelle IS NOT NULL)))),
+    CONSTRAINT ck_mouvement_tiroir_fournisseur CHECK (((detail <> 'fournisseur'::text) OR (corrige_id IS NOT NULL) OR (fournisseur_id IS NOT NULL) OR (beneficiaire IS NOT NULL))),
+    CONSTRAINT ck_mouvement_tiroir_patient CHECK (((detail <> 'patient'::text) OR (corrige_id IS NOT NULL) OR ((patient_id IS NOT NULL) AND (raison IS NOT NULL)))),
+    CONSTRAINT mouvement_tiroir_detail_check CHECK ((detail = ANY (ARRAY['depense'::text, 'fournisseur'::text, 'patient'::text, 'coffre'::text, 'fond'::text]))),
+    CONSTRAINT mouvement_tiroir_montant_check CHECK ((montant > (0)::numeric)),
+    CONSTRAINT mouvement_tiroir_sens_check CHECK ((sens = ANY (ARRAY['sortie'::text, 'entree'::text])))
+);
+
+
+--
+-- Name: mouvement_tiroir_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.mouvement_tiroir ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.mouvement_tiroir_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -4446,7 +4540,11 @@ CREATE TABLE public.parametre_caisse (
     seuil_annulations integer DEFAULT 0 NOT NULL,
     autorisation_par_code boolean DEFAULT true NOT NULL,
     seuil_ecart_chifa numeric(12,2) DEFAULT 5 NOT NULL,
+    seuil_sortie_tiroir numeric(12,2) DEFAULT 2000 NOT NULL,
+    delai_volet_chifa_jours integer DEFAULT 7 NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
+    CONSTRAINT ck_parametre_caisse_delai_volet_chifa CHECK (((delai_volet_chifa_jours >= 1) AND (delai_volet_chifa_jours <= 365))),
+    CONSTRAINT ck_parametre_caisse_seuil_sortie_tiroir CHECK ((seuil_sortie_tiroir >= (0)::numeric)),
     CONSTRAINT ck_plafond_credit_defaut CHECK ((plafond_credit_defaut >= (0)::numeric)),
     CONSTRAINT ck_seuil_annulations CHECK (((seuil_annulations >= 0) AND (seuil_annulations <= 100))),
     CONSTRAINT ck_seuil_ecart_chifa CHECK ((seuil_ecart_chifa >= (0)::numeric)),
@@ -4558,9 +4656,11 @@ CREATE TABLE public.parametre_surveillance (
     minutes_postes_simultanes integer DEFAULT 10 NOT NULL,
     seuil_changements_poste integer DEFAULT 3 NOT NULL,
     seuil_baisses_prix integer DEFAULT 1 NOT NULL,
+    seuil_sorties_tiroir integer DEFAULT 5 NOT NULL,
     CONSTRAINT ck_parametre_surveillance_achats CHECK (((jours_avoir_retour >= 1) AND (jours_avoir_retour <= 365))),
     CONSTRAINT ck_parametre_surveillance_comptes CHECK (((seuil_credit_nouveau_patient > (0)::numeric) AND ((jours_patient_recent >= 1) AND (jours_patient_recent <= 90)) AND (seuil_credits_jour > (0)::numeric) AND ((jours_credit_sans_remboursement >= 1) AND (jours_credit_sans_remboursement <= 365)) AND (seuil_autorisations_valideur >= 1) AND (seuil_autorisations_employe >= 1) AND ((minutes_postes_simultanes >= 1) AND (minutes_postes_simultanes <= 120)) AND (seuil_changements_poste >= 1) AND (seuil_baisses_prix >= 1))),
     CONSTRAINT ck_parametre_surveillance_horaires CHECK (((heure_ouverture IS NULL) = (heure_fermeture IS NULL))),
+    CONSTRAINT ck_parametre_surveillance_sorties_tiroir CHECK ((seuil_sorties_tiroir >= 1)),
     CONSTRAINT ck_parametre_surveillance_stock CHECK (((seuil_ajustements >= 1) AND (seuil_casses >= 1) AND (seuil_echantillons >= 1) AND ((jours_comptage_sensibles >= 1) AND (jours_comptage_sensibles <= 90)))),
     CONSTRAINT parametre_surveillance_id_check CHECK ((id = 1)),
     CONSTRAINT parametre_surveillance_seuil_attentes_abandonnees_check CHECK ((seuil_attentes_abandonnees >= 1)),
@@ -4989,6 +5089,52 @@ ALTER TABLE public.reglement_fournisseur ALTER COLUMN id ADD GENERATED ALWAYS AS
 
 
 --
+-- Name: regularisation_part_organisme; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.regularisation_part_organisme (
+    id bigint NOT NULL,
+    vente_id bigint NOT NULL,
+    organisme_id bigint,
+    part_organisme_vente numeric(12,2) NOT NULL,
+    part_organisme_chifa numeric(12,2) NOT NULL,
+    ecart numeric(12,2) NOT NULL,
+    sort text NOT NULL,
+    montant_patient numeric(12,2) DEFAULT 0 NOT NULL,
+    montant_dette_diminuee numeric(12,2) DEFAULT 0 NOT NULL,
+    montant_a_rendre numeric(12,2) DEFAULT 0 NOT NULL,
+    montant_pharmacie numeric(12,2) DEFAULT 0 NOT NULL,
+    credit_mouvement_id bigint,
+    utilisateur_id bigint NOT NULL,
+    valide_par bigint,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_regularisation_avoir CHECK (((sort <> 'avoir_patient'::text) OR ((montant_patient > (0)::numeric) AND (montant_patient = (montant_dette_diminuee + montant_a_rendre))))),
+    CONSTRAINT ck_regularisation_patient CHECK (((sort <> 'charge_patient'::text) OR ((montant_patient = ecart) AND (credit_mouvement_id IS NOT NULL)))),
+    CONSTRAINT ck_regularisation_sens CHECK ((((ecart > (0)::numeric) AND (sort = ANY (ARRAY['charge_patient'::text, 'perte_pharmacie'::text]))) OR ((ecart < (0)::numeric) AND (sort = ANY (ARRAY['avoir_patient'::text, 'gain_organisme'::text]))))),
+    CONSTRAINT regularisation_part_organisme_ecart_check CHECK ((ecart <> (0)::numeric)),
+    CONSTRAINT regularisation_part_organisme_montant_a_rendre_check CHECK ((montant_a_rendre >= (0)::numeric)),
+    CONSTRAINT regularisation_part_organisme_montant_dette_diminuee_check CHECK ((montant_dette_diminuee >= (0)::numeric)),
+    CONSTRAINT regularisation_part_organisme_montant_patient_check CHECK ((montant_patient >= (0)::numeric)),
+    CONSTRAINT regularisation_part_organisme_part_organisme_chifa_check CHECK ((part_organisme_chifa >= (0)::numeric)),
+    CONSTRAINT regularisation_part_organisme_sort_check CHECK ((sort = ANY (ARRAY['charge_patient'::text, 'perte_pharmacie'::text, 'avoir_patient'::text, 'gain_organisme'::text])))
+);
+
+
+--
+-- Name: regularisation_part_organisme_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.regularisation_part_organisme ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.regularisation_part_organisme_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: remboursement_titulaire; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5282,6 +5428,18 @@ CREATE SEQUENCE public.seq_code_interne
 
 
 --
+-- Name: seq_numero_bon_sortie; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.seq_numero_bon_sortie
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
 -- Name: seq_numero_commande; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -5509,7 +5667,17 @@ CREATE TABLE public.vente (
     remis_a_nom text,
     pour_patient_id bigint,
     pour_nom text,
+    chifa_date_ordonnance date,
+    chifa_rattache_le timestamp with time zone,
+    chifa_rattache_par bigint,
+    chifa_ecart_motif text,
+    chifa_ecart_detail text,
+    chifa_ecart_part_organisme numeric(12,2),
+    chifa_attente_motif_code text,
+    chifa_attente_motif_texte text,
     CONSTRAINT ck_vente_canal_organisme CHECK ((canal_organisme = ANY (ARRAY['logiciel'::text, 'chifa'::text, 'mdn'::text]))),
+    CONSTRAINT ck_vente_chifa_attente_motif_texte CHECK (((chifa_attente_motif_texte IS NULL) OR ((char_length(btrim(chifa_attente_motif_texte)) >= 1) AND (char_length(btrim(chifa_attente_motif_texte)) <= 200)))),
+    CONSTRAINT ck_vente_chifa_ecart_motif CHECK (((chifa_ecart_motif IS NULL) OR ((char_length(btrim(chifa_ecart_motif)) >= 1) AND (char_length(btrim(chifa_ecart_motif)) <= 500)))),
     CONSTRAINT ck_vente_montant_don CHECK ((montant_don >= (0)::numeric)),
     CONSTRAINT ck_vente_pour_nom CHECK (((pour_nom IS NULL) OR ((char_length(btrim(pour_nom)) >= 1) AND (char_length(btrim(pour_nom)) <= 200)))),
     CONSTRAINT ck_vente_pour_un_seul CHECK (((pour_patient_id IS NULL) OR (pour_nom IS NULL))),
@@ -5715,9 +5883,11 @@ CREATE VIEW public.v_credit_accorde AS
            FROM public.retour_client rc
           WHERE (rc.vente_id = v.id)), (0)::numeric)) AS montant
    FROM (public.vente v
-     JOIN LATERAL ( SELECT sum(p.montant) AS montant
-           FROM public.paiement p
-          WHERE ((p.vente_id = v.id) AND (p.mode = 'credit'::text))) x ON ((x.montant > (0)::numeric)))
+     JOIN LATERAL ( SELECT (COALESCE(( SELECT sum(p.montant) AS sum
+                   FROM public.paiement p
+                  WHERE ((p.vente_id = v.id) AND (p.mode = 'credit'::text))), (0)::numeric) + COALESCE(( SELECT sum(r.montant_patient) AS sum
+                   FROM public.regularisation_part_organisme r
+                  WHERE ((r.vente_id = v.id) AND (r.sort = 'charge_patient'::text))), (0)::numeric)) AS montant) x ON ((x.montant > (0)::numeric)))
   WHERE ((v.statut = 'validee'::text) AND (v.patient_id IS NOT NULL));
 
 
@@ -6622,6 +6792,19 @@ UNION ALL
 
 
 --
+-- Name: v_vente_part_organisme; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_vente_part_organisme AS
+ SELECT v.id AS vente_id,
+    v.organisme_id,
+    v.part_organisme AS part_organisme_caisse,
+    COALESCE(r.part_organisme_chifa, v.part_organisme) AS part_organisme_retenue
+   FROM (public.vente v
+     LEFT JOIN public.regularisation_part_organisme r ON ((r.vente_id = v.id)));
+
+
+--
 -- Name: vente_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -7219,6 +7402,30 @@ ALTER TABLE ONLY public.mouvement_stock
 
 
 --
+-- Name: mouvement_tiroir mouvement_tiroir_corrige_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_corrige_id_key UNIQUE (corrige_id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_numero_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_numero_key UNIQUE (numero);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: mouvement_tresorerie mouvement_tresorerie_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7515,6 +7722,14 @@ ALTER TABLE ONLY public.reglement_fournisseur
 
 
 --
+-- Name: regularisation_part_organisme regularisation_part_organisme_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: remboursement_titulaire remboursement_titulaire_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7672,6 +7887,14 @@ ALTER TABLE ONLY public.utilisation_financement
 
 ALTER TABLE ONLY public.lot
     ADD CONSTRAINT ux_lot_fournisseur_date UNIQUE (produit_id, fournisseur_id, numero_lot, date_peremption);
+
+
+--
+-- Name: regularisation_part_organisme ux_regularisation_part_organisme_vente; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT ux_regularisation_part_organisme_vente UNIQUE (vente_id);
 
 
 --
@@ -8300,6 +8523,20 @@ CREATE INDEX ix_evenement_caisse_employe ON public.evenement_caisse USING btree 
 
 
 --
+-- Name: ix_mouvement_tiroir_employe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_mouvement_tiroir_employe ON public.mouvement_tiroir USING btree (utilisateur_id, cree_le);
+
+
+--
+-- Name: ix_mouvement_tiroir_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_mouvement_tiroir_session ON public.mouvement_tiroir USING btree (session_caisse_id);
+
+
+--
 -- Name: ix_patient_assure_principal; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8325,6 +8562,20 @@ CREATE INDEX ix_remise_auto_categorie ON public.remise_automatique USING btree (
 --
 
 CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (produit_id) WHERE (produit_id IS NOT NULL);
+
+
+--
+-- Name: ix_vente_chifa_attente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_vente_chifa_attente ON public.vente USING btree (date_vente) WHERE ((canal_organisme = 'chifa'::text) AND (chifa_facture IS NULL) AND (statut = 'validee'::text));
+
+
+--
+-- Name: ix_vente_chifa_ecart; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_vente_chifa_ecart ON public.vente USING btree (chifa_rattache_le) WHERE (chifa_ecart_motif IS NOT NULL);
 
 
 --
@@ -8652,6 +8903,13 @@ CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.annulation_vente FOR E
 
 
 --
+-- Name: mouvement_tiroir trg_caisse_ouverte; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.mouvement_tiroir FOR EACH ROW EXECUTE FUNCTION public.verifier_caisse_ouverte();
+
+
+--
 -- Name: mouvement_tresorerie trg_caisse_ouverte; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8866,6 +9124,13 @@ CREATE TRIGGER trg_registre_numero BEFORE INSERT ON public.registre_psychotrope 
 --
 
 CREATE TRIGGER trg_registre_sans_doublon BEFORE INSERT ON public.registre_psychotrope FOR EACH ROW EXECUTE FUNCTION public.eviter_doublon_registre();
+
+
+--
+-- Name: regularisation_part_organisme trg_regularisation_part_organisme_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_regularisation_part_organisme_immuable BEFORE DELETE OR UPDATE ON public.regularisation_part_organisme FOR EACH ROW EXECUTE FUNCTION public.proteger_regularisation_part_organisme();
 
 
 --
@@ -9815,6 +10080,78 @@ ALTER TABLE ONLY public.mouvement_stock
 
 
 --
+-- Name: mouvement_tiroir mouvement_tiroir_corrige_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_corrige_id_fkey FOREIGN KEY (corrige_id) REFERENCES public.mouvement_tiroir(id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_evenement_caisse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_evenement_caisse_id_fkey FOREIGN KEY (evenement_caisse_id) REFERENCES public.evenement_caisse(id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_fournisseur_id_fkey FOREIGN KEY (fournisseur_id) REFERENCES public.fournisseur(id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_mouvement_tresorerie_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_mouvement_tresorerie_id_fkey FOREIGN KEY (mouvement_tresorerie_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_reglement_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_reglement_fournisseur_id_fkey FOREIGN KEY (reglement_fournisseur_id) REFERENCES public.reglement_fournisseur(id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_session_caisse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_session_caisse_id_fkey FOREIGN KEY (session_caisse_id) REFERENCES public.session_caisse(id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: mouvement_tiroir mouvement_tiroir_valide_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mouvement_tiroir
+    ADD CONSTRAINT mouvement_tiroir_valide_par_fkey FOREIGN KEY (valide_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: mouvement_tresorerie mouvement_tresorerie_bordereau_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10263,6 +10600,46 @@ ALTER TABLE ONLY public.reglement_fournisseur
 
 
 --
+-- Name: regularisation_part_organisme regularisation_part_organisme_credit_mouvement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_credit_mouvement_id_fkey FOREIGN KEY (credit_mouvement_id) REFERENCES public.credit_mouvement(id);
+
+
+--
+-- Name: regularisation_part_organisme regularisation_part_organisme_organisme_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_organisme_id_fkey FOREIGN KEY (organisme_id) REFERENCES public.organisme(id);
+
+
+--
+-- Name: regularisation_part_organisme regularisation_part_organisme_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: regularisation_part_organisme regularisation_part_organisme_valide_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_valide_par_fkey FOREIGN KEY (valide_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: regularisation_part_organisme regularisation_part_organisme_vente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regularisation_part_organisme
+    ADD CONSTRAINT regularisation_part_organisme_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
+
+
+--
 -- Name: remboursement_titulaire remboursement_titulaire_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10535,6 +10912,14 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: vente vente_chifa_rattache_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vente
+    ADD CONSTRAINT vente_chifa_rattache_par_fkey FOREIGN KEY (chifa_rattache_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: vente vente_ordonnance_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10578,5 +10963,5 @@ ALTER TABLE ONLY public.vente
 -- PostgreSQL database dump complete
 --
 
-\unrestrict cE16I4VTfXg9G566yOsYDDBYCdBKzzyidxIBA4rSBT3olGXsxtSiIGRxi1lsuUq
+\unrestrict fGy4yTWAV3SA2y2Sre1h6JO6pmUQITp4IjQH1TCcAWUKAmxGWpSiw1PQn9AnDZ5
 

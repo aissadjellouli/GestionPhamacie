@@ -93,6 +93,7 @@ public static class DependencyInjection
         services.AddScoped<Application.Surveillance.ISurveillance, Surveillance.SurveillanceSql>();
         services.AddScoped<Application.Surveillance.IRisques, Surveillance.RisquesSql>();
         services.AddScoped<Application.Caisse.IVoletsChifa, Caisse.VoletsChifaSql>();
+        services.AddScoped<Application.Caisse.IRapprochementsVolet, Caisse.RapprochementsVoletSql>();
         services.AddSingleton<Application.Commun.ITraceErreurs, Systeme.TraceErreurs>();
         services.AddScoped<IAlertesEcriture, AlertesEcriture>();
         services.AddScoped<IRappelLot, RappelLotSql>();
@@ -117,6 +118,9 @@ public static class DependencyInjection
         services.AddSingleton<Pharma.Application.Stock.IDocumentsInventaire, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Caisse.IDocumentsCredit, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Caisse.IDocumentsTicket, DocumentsPdf>();
+        // Sorties et entrées d'argent par le tiroir (script 096) : écritures et bon de sortie
+        services.AddScoped<Pharma.Application.Caisse.ITiroir, TiroirSql>();
+        services.AddSingleton<Pharma.Application.Caisse.IDocumentsBonSortie, DocumentsPdf>();
         services.AddScoped<Pharma.Application.Stock.ICampagnesInventaire, Lecture.CampagnesInventaireSql>();
         services.AddScoped<Pharma.Application.Pilotage.IPilotage, Lecture.PilotageSql>();
         services.AddScoped<Pharma.Application.Stock.IRegistrePsychotropes, RegistreSql>();

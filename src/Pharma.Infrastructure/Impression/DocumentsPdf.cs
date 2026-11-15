@@ -11,7 +11,8 @@ namespace Pharma.Infrastructure.Impression;
 
 /// <summary>Documents PDF produits avec PDFsharp-MigraDoc (licence MIT), polices Windows du serveur.</summary>
 public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.IDocumentsRapports, Pharma.Application.Stock.IDocumentsRegistre,
-    Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire, Pharma.Application.Caisse.IDocumentsCredit, Pharma.Application.Caisse.IDocumentsTicket
+    Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire, Pharma.Application.Caisse.IDocumentsCredit, Pharma.Application.Caisse.IDocumentsTicket,
+    Pharma.Application.Caisse.IDocumentsBonSortie
 {
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
 
@@ -53,7 +54,16 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             SousTitre(section, "Résultat");
             var resultat = Tableau(section, 12.5, 4);
             Ligne(resultat, "Fond de caisse", Da(s.FondCaisse));
-            Ligne(resultat, "Ventes en espèces", Da(s.VentesEspeces ?? 0));
+            if (s.LignesTiroir is { Count: > 0 } tiroir)
+            {
+                // Sorties et entrées du tiroir (script 096) en lignes séparées : comprises dans l'attendu, aucun écart dû à elles
+                Ligne(resultat, "Espèces encaissées (ventes, retours, crédits…)", Da(RecapitulatifTiroir.Encaissees(s.VentesEspeces ?? 0, tiroir)));
+                foreach (var l in tiroir)
+                    Ligne(resultat, $"{(l.Sens == RegleTiroir.Sortie ? "Sortie du tiroir" : "Entrée au tiroir")} : {l.Motif}",
+                        (l.Sens == RegleTiroir.Sortie ? "− " : "+ ") + Da(l.Montant));
+            }
+            else
+                Ligne(resultat, "Ventes en espèces", Da(s.VentesEspeces ?? 0));
             Ligne(resultat, "Attendu", Da(s.Attendu ?? 0), gras: true);
             Ligne(resultat, "Compté", Da(s.Compte ?? 0));
             Ligne(resultat, "Écart", Da(s.Ecart ?? 0), gras: true);
@@ -240,6 +250,88 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
     }
 
     private static double MargeTicketMm(int largeurMm) => FormatTicket.Etroit(largeurMm) ? 2.5 : 4;
+
+    /// <summary>
+    /// Bon de sortie (ou d'entrée) de caisse au format rouleau (script 096) : motif, montant, employé, date, bénéficiaire, validation,
+    /// ligne de signature ; hauteur selon le contenu, comme le ticket.
+    /// </summary>
+    public byte[] BonSortie(BonSortieCaisse b, int largeurMm = FormatTicket.LargeurParDefaut)
+    {
+        largeurMm = FormatTicket.Borner(largeurMm);
+        var premier = new PdfDocumentRenderer { Document = DocumentBon(b, largeurMm, 2000) };
+        premier.PrepareRenderPages();
+        var bas = premier.DocumentRenderer.GetRenderInfoFromPage(1)
+            .Select(i => (i.LayoutInfo.ContentArea.Y + i.LayoutInfo.ContentArea.Height).Point).DefaultIfEmpty(0).Max();
+        return Rendre(DocumentBon(b, largeurMm, Math.Max(40, bas / 72 * 25.4 + MargeTicketMm(largeurMm) + 2)));
+    }
+
+    private static Document DocumentBon(BonSortieCaisse b, int largeurMm, double hauteurMm)
+    {
+        var sortie = b.Sens == RegleTiroir.Sortie;
+        var titre = $"{(sortie ? "Bon de sortie de caisse" : "Bon d’entrée en caisse")} {b.Numero}";
+        var marge = MargeTicketMm(largeurMm);
+        var utile = (largeurMm - 2 * marge) / 10.0;
+        var doc = new Document();
+        doc.Info.Title = titre;
+        doc.Info.Author = "Pharma Officine";
+        var normal = doc.Styles[StyleNames.Normal]!;
+        normal.Font.Name = "Arial";
+        normal.Font.Size = FormatTicket.Etroit(largeurMm) ? 7 : largeurMm >= 100 ? 9 : 8;
+        var section = doc.AddSection();
+        section.PageSetup.PageWidth = Unit.FromMillimeter(largeurMm);
+        section.PageSetup.PageHeight = Unit.FromMillimeter(hauteurMm);
+        section.PageSetup.TopMargin = section.PageSetup.BottomMargin = Unit.FromMillimeter(marge);
+        section.PageSetup.LeftMargin = section.PageSetup.RightMargin = Unit.FromMillimeter(marge);
+        section.PageSetup.HeaderDistance = section.PageSetup.FooterDistance = Unit.FromMillimeter(0);
+
+        void Centre(string texte, bool gras = false)
+        {
+            var p = section.AddParagraph(texte);
+            p.Format.Alignment = ParagraphAlignment.Center;
+            p.Format.Font.Bold = gras;
+        }
+        void Separateur()
+        {
+            var p = section.AddParagraph();
+            p.Format.Borders.Bottom.Width = 0.5;
+            p.Format.SpaceAfter = Unit.FromPoint(3);
+        }
+        var tb = new Table();
+        void Paire(string a, string v, bool gras = false)
+        {
+            var row = tb.AddRow();
+            row.Format.Font.Bold = gras;
+            row.Cells[0].AddParagraph(a);
+            row.Cells[1].AddParagraph(v);
+        }
+
+        if (!string.IsNullOrWhiteSpace(b.Pharmacie)) Centre(b.Pharmacie, gras: true);
+        Separateur();
+        Centre(titre, gras: true);
+        section.Elements.Add(tb);
+        tb.AddColumn(Unit.FromCentimeter(utile * 0.3));
+        tb.AddColumn(Unit.FromCentimeter(utile * 0.7));
+        Paire("Date", Quand(b.Le));
+        Paire("Employé", b.Poste is null ? b.Employe : $"{b.Employe} · {b.Poste}");
+        Paire("Motif", b.Motif);
+        if (b.Beneficiaire is { } benef) Paire(sortie ? "Bénéficiaire" : "Origine", benef);
+        Paire("Montant", (sortie ? "− " : "+ ") + Da(b.Montant), gras: true);
+        if (b.ValidePar is { } v) Paire("Validé par", v);
+        foreach (var d in b.Details) { var p = section.AddParagraph(d); p.Format.SpaceBefore = Unit.FromPoint(2); }
+        if (b.Correction is { } c) { var p = section.AddParagraph(c); p.Format.Font.Bold = true; p.Format.SpaceBefore = Unit.FromPoint(2); }
+        Separateur();
+        var signature = section.AddParagraph(sortie ? "Signature du bénéficiaire :" : "Signature :");
+        signature.Format.SpaceBefore = Unit.FromPoint(6);
+        signature.Format.SpaceAfter = Unit.FromPoint(22);
+        var trait = section.AddParagraph();
+        trait.Format.Borders.Bottom.Width = 0.5;
+        var employe = section.AddParagraph("Signature de l’employé :");
+        employe.Format.SpaceBefore = Unit.FromPoint(6);
+        employe.Format.SpaceAfter = Unit.FromPoint(22);
+        var trait2 = section.AddParagraph();
+        trait2.Format.Borders.Bottom.Width = 0.5;
+        return doc;
+    }
 
     /// <summary>Même contenu que le ticket imprimé par le poste ; colonnes réparties sur la largeur utile du rouleau.</summary>
     private static Document DocumentTicket(Pharma.Application.Caisse.TicketVente t, decimal? rendu, int largeurMm, double hauteurMm)

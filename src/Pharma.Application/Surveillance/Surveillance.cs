@@ -1,4 +1,4 @@
-using Pharma.Application.Commun;
+﻿using Pharma.Application.Commun;
 using Pharma.Application.Notifications;
 using Pharma.Application.Securite;
 using Pharma.Domain.Commun;
@@ -33,7 +33,7 @@ public sealed record ParametresSurveillance(int SeuilLignesRetirees, int SeuilTi
     bool ReceptionAveugle = true, int JoursAvoirRetour = 30,
     decimal SeuilCreditNouveauPatient = 5000, int JoursPatientRecent = 7, decimal SeuilCreditsJour = 20000, int JoursCreditSansRemboursement = 60,
     int SeuilAutorisationsValideur = 10, int SeuilAutorisationsEmploye = 5, int MinutesPostesSimultanes = 10, int SeuilChangementsPoste = 3,
-    int SeuilBaissesPrix = 1);
+    int SeuilBaissesPrix = 1, int SeuilSortiesTiroir = 5);
 
 // ---- Port -------------------------------------------------------------------
 
@@ -81,10 +81,12 @@ public sealed class Surveiller(ISurveillance surveillance, IAlertesTitulaire? al
 /// Tiroir : motif obligatoire, choisi parmi les motifs actifs (« Autre » avec texte, script 094), inscrit avec l'événement et au journal.
 /// </summary>
 public sealed class SignalerEvenementCaisse(ISurveillance surveillance, Caisse.ISessionsCaisse sessions, IPermissionService droits, Surveiller surveiller,
-    IJournal? journal = null, Referentiels.MotifsActifs? motifs = null)
+    IJournal? journal = null, Referentiels.MotifsActifs? motifs = null, Caisse.OuvrirTiroirAvecEffet? avecEffet = null)
 {
-    public async Task ExecuterAsync(string? type, long? produitId, long? lotId, int? quantite, decimal? montant, long utilisateurId, string? poste,
-        CancellationToken ct = default, string? motifCode = null, string? motifTexte = null)
+    /// <param name="saisie">Motif à effet (script 096) : montant et détail exigé ; ignoré pour une ligne retirée.</param>
+    /// <returns>Bon de sortie (ou d'entrée) créé pour un motif à effet, null sinon.</returns>
+    public async Task<Caisse.MouvementTiroirEcrit?> ExecuterAsync(string? type, long? produitId, long? lotId, int? quantite, decimal? montant, long utilisateurId,
+        string? poste, CancellationToken ct = default, string? motifCode = null, string? motifTexte = null, Pharma.Domain.Caisse.SaisieTiroir? saisie = null)
     {
         if (type is not (TypesEvenementCaisse.LigneRetiree or TypesEvenementCaisse.TiroirOuvert))
             throw new RegleMetierException("Événement de caisse inconnu.");
@@ -94,6 +96,16 @@ public sealed class SignalerEvenementCaisse(ISurveillance surveillance, Caisse.I
             await droits.ExigerAsync(utilisateurId, Permissions.CaisseOuvrirTiroir, "ouvrir le tiroir sans vente", ct);
             if (motifs is null) throw new RegleMetierException("Motifs d’ouverture du tiroir indisponibles.");
             motif = await motifs.ChoisirAsync(Pharma.Domain.Referentiels.RegleMotifs.Tiroir, motifCode, motifTexte, "de l’ouverture du tiroir", ct);
+            // Motif à effet (sortie ou entrée d'argent, script 096) : montant, détail et écriture de trésorerie dans la même transaction
+            var regle = (await motifs.ExecuterAsync(Pharma.Domain.Referentiels.RegleMotifs.Tiroir, ct)).First(m => m.Code == motif.Value.Code);
+            if (regle.Effet != Pharma.Domain.Caisse.RegleTiroir.Aucun)
+            {
+                if (avecEffet is null) throw new RegleMetierException("Sorties et entrées du tiroir indisponibles.");
+                var ecrit = await avecEffet.ExecuterAsync(regle, motif.Value.Libelle, saisie, utilisateurId, poste, ct);
+                await surveiller.ExecuterAsync(ct);
+                return ecrit;
+            }
+            Pharma.Domain.Caisse.RegleTiroir.VerifierMontant(regle.Effet, saisie?.Montant);
         }
         if (type == TypesEvenementCaisse.LigneRetiree && (produitId is null || quantite is not > 0))
             throw new RegleMetierException("Ligne retirée : produit et nombre de boîtes manquants.");
@@ -106,6 +118,7 @@ public sealed class SignalerEvenementCaisse(ISurveillance surveillance, Caisse.I
                 new Dictionary<string, object?> { ["poste"] = poste?.Trim(), ["motif"] = motif?.Libelle, ["motif_code"] = motif?.Code },
                 Permissions.CaisseOuvrirTiroir, ct);
         await surveiller.ExecuterAsync(ct);
+        return null;
     }
 }
 
@@ -141,7 +154,7 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
         await droits.ExigerTitulaireAsync(utilisateurId, "régler le contrôle interne", ct);
         if (p.SeuilLignesRetirees < 1 || p.SeuilTiroir < 1 || p.SeuilAttentesAbandonnees < 1 || p.SeuilRemises < 1 || p.SeuilRemisesPatient < 1
             || p.SeuilAjustements < 1 || p.SeuilCasses < 1 || p.SeuilEchantillons < 1 || p.SeuilAutorisationsValideur < 1
-            || p.SeuilAutorisationsEmploye < 1 || p.SeuilChangementsPoste < 1 || p.SeuilBaissesPrix < 1)
+            || p.SeuilAutorisationsEmploye < 1 || p.SeuilChangementsPoste < 1 || p.SeuilBaissesPrix < 1 || p.SeuilSortiesTiroir < 1)
             throw new RegleMetierException("Chaque seuil doit être d’au moins 1.");
         if (p.SeuilCreditNouveauPatient <= 0 || p.SeuilCreditsJour <= 0)
             throw new RegleMetierException("Les montants de crédit surveillés doivent être supérieurs à 0.", "seuil_credit");
@@ -178,7 +191,7 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
         ["credit_nouveau_patient"] = p.SeuilCreditNouveauPatient, ["patient_recent_jours"] = p.JoursPatientRecent,
         ["credits_jour"] = p.SeuilCreditsJour, ["credit_sans_remboursement_jours"] = p.JoursCreditSansRemboursement,
         ["autorisations_valideur"] = p.SeuilAutorisationsValideur, ["autorisations_employe"] = p.SeuilAutorisationsEmploye,
-        ["postes_minutes"] = p.MinutesPostesSimultanes, ["changements_poste"] = p.SeuilChangementsPoste, ["baisses_prix"] = p.SeuilBaissesPrix,
+        ["postes_minutes"] = p.MinutesPostesSimultanes, ["changements_poste"] = p.SeuilChangementsPoste, ["baisses_prix"] = p.SeuilBaissesPrix, ["sorties_tiroir"] = p.SeuilSortiesTiroir,
         ["horaires"] = p.HeureOuverture is { } a ? $"{a:HH\\:mm}-{p.HeureFermeture:HH\\:mm}" : null
     };
 }

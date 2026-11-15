@@ -71,7 +71,54 @@ internal static class CaisseEndpoints
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
-        caisse.MapPost("/codes-chifa", async (AssocierCodeChifaRequete req, AssocierCodeChifa associer, ClaimsPrincipal user, CancellationToken ct) =>
+        // Circuit « la caisse d'abord » (2026-11-15) : volet scanné rapproché d'une vente déjà encaissée
+        caisse.MapPost("/volet-chifa/rapprochement", async (LireVoletChifaRequete req, RapprocherVoletChifa rapprocher, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await rapprocher.ProposerAsync(req.Texte, user.UtilisateurId(), ct);
+                return Results.Ok(new RapprochementVoletDto(p.Volet.Qr.NumeroFacture, p.Volet.Qr.DateFacture, p.Volet.Qr.AssureComplet, p.Volet.Qr.DateOrdonnance,
+                    p.Volet.Qr.MontantOrdonnance, p.Seuil, p.DelaiJours,
+                    p.Candidates.Select(c => new VenteCandidateDto(c.Vente.Id, c.Vente.Numero, c.Vente.Date, c.Vente.Patient, c.Vente.NumAssure, c.Vente.Organisme,
+                        c.Vente.Vendeur, c.Vente.Total, c.MemeAssure, c.Comparaison.Concorde, c.Comparaison.Score, c.Comparaison.PartOrganismeVente,
+                        c.Comparaison.PartOrganismeChifa, c.Comparaison.EcartPartOrganisme,
+                        c.Comparaison.Lignes.Select(l => new LigneRapprochementDto(l.Code, l.ProduitId, l.Produit, l.QuantiteVolet, l.QuantiteVente, l.PrixChifa,
+                            l.NotrePrix, l.Ecart, RapprochementVolet.Libelle(l.Ecart), l.EnRouge)).ToList(), c.MemeCarte, c.EnRetard)).ToList()));
+            })
+           .ExigerPermission(Permissions.CaisseVendre)
+           .GererErreursMetier();
+
+        caisse.MapPost("/volet-chifa/rattacher", async (RattacherVoletRequete req, RapprocherVoletChifa rapprocher, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var r = await rapprocher.RattacherAsync(req.Texte, req.VenteId, req.Motif, user.UtilisateurId(), req.Regularisation, ct);
+                return Results.Ok(new VoletRattacheDto(r.Vente, r.AvecEcart, r.EcartPartOrganisme, r.Catalogue, r.Regularisation));
+            })
+           .ExigerPermission(Permissions.CaisseVendre)
+           .GererErreursMetier();
+
+        // Volet d'un autre assuré que le patient choisi (recette 2026-11-15) : « garder le patient choisi » journalisé
+        caisse.MapPost("/volet-chifa/patient-garde", async (GarderPatientVoletRequete req, GarderPatientVoletChifa garder, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new { Journalise = await garder.ExecuterAsync(req.Texte, req.PatientId, req.Patient, req.NumAssure, user.UtilisateurId(), ct) }))
+           .ExigerPermission(Permissions.CaisseVendre)
+           .GererErreursMetier();
+
+        caisse.MapGet("/ventes-attente-volet", async (string? q, int? page, int? taille, ConsulterVoletsChifa consulter, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = Pharma.Application.Commun.DemandePage.Lire(page, taille);
+                var (lignes, total) = await consulter.EnAttenteAsync(q, p, user.UtilisateurId(), ct);
+                return Results.Ok(new PageDto<VenteAttenteVoletDto>(lignes.Select(v => new VenteAttenteVoletDto(v.Id, v.Numero, v.Date, v.Patient, v.NumAssure,
+                    v.Organisme, v.Vendeur, v.Total, v.PartOrganisme, v.MotifAttente, v.EnRetard)).ToList(), total, p.Page, p.Taille));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        caisse.MapGet("/volets-ecart", async (string? q, int? page, int? taille, ConsulterVoletsChifa consulter, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = Pharma.Application.Commun.DemandePage.Lire(page, taille);
+                var (lignes, total) = await consulter.AvecEcartAsync(q, p, user.UtilisateurId(), ct);
+                return Results.Ok(new PageDto<VoletAvecEcartDto>(lignes.Select(v => new VoletAvecEcartDto(v.VenteId, v.Numero, v.DateVente, v.Patient, v.NumeroFacture,
+                    v.RattacheLe, v.RattachePar, v.Motif, v.Detail, v.EcartPartOrganisme, v.Regularisation)).ToList(), total, p.Page, p.Taille));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        caisse.MapPost("/codes-chifa",async (AssocierCodeChifaRequete req, AssocierCodeChifa associer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new { Produit = await associer.ExecuterAsync(req.Code, req.ProduitId, user.UtilisateurId(), ct) }))
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -282,7 +329,8 @@ internal static class CaisseEndpoints
         Pharma.Domain.Ventes.RegleAnnulation.Remboursement(v.Mode, v.PartPatient, v.DejaRendu, v.SoldeCreditPatient).ARendre;
 
     private static ClotureDto VersDto(ClotureVue c) =>
-        new(c.SessionId, c.Compte, c.FondCaisse, c.VentesEspeces, c.Attendu, c.Ecart, c.AuDelaDuSeuil, c.SeuilEcart);
+        new(c.SessionId, c.Compte, c.FondCaisse, c.VentesEspeces, c.Attendu, c.Ecart, c.AuDelaDuSeuil, c.SeuilEcart,
+            LignesTiroir: c.LignesTiroir?.Select(l => new LigneTiroirDto(l.Motif, l.Sens, l.Montant)).ToList());
 
     /// <summary>Vente vue pour l'annulation ou le retour ; vente à crédit : dette de cette vente que l'annulation effacerait.</summary>
     private static VenteAnnulableDto VersDto(VenteAnnulable v) => new(
@@ -306,6 +354,7 @@ internal static class CaisseEndpoints
             d.Blocage is { } b ? new Pharma.Application.Catalogue.ValidationBlocage(b.Accepte, b.ValidateurIdentifiant, b.ValidateurCode) : null,
             d.VoletChifa, d.RemiseAdditionnee, d.CleEncaissement,
             d.ChoixChifa?.Select(x => new ChoixPrixChifa(x.ProduitId, x.Choix, x.PrixAttendu)).ToList(), d.FactureeParChifa, d.NumeroFactureChifa,
-            d.RemisA is { } ra ? new PersonneVente(ra.PatientId, ra.Nom) : null, d.Pour is { } po ? new PersonneVente(po.PatientId, po.Nom) : null);
+            d.RemisA is { } ra ? new PersonneVente(ra.PatientId, ra.Nom) : null, d.Pour is { } po ? new PersonneVente(po.PatientId, po.Nom) : null,
+            d.MotifSansVoletCode, d.MotifSansVoletTexte);
     }
 }

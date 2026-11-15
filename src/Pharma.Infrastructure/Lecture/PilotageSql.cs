@@ -39,7 +39,10 @@ public sealed class PilotageSql(NpgsqlDataSource db) : IPilotage
                    - COALESCE((SELECT sum(montant_rembourse) FROM annulation_vente WHERE session_caisse_id = s.id AND mode = 'especes'), 0)
                    - COALESCE((SELECT sum(montant_rembourse) FROM retour_client WHERE session_caisse_id = s.id AND mode = 'especes'), 0)
                    - COALESCE((SELECT sum(part_tiroir) FROM reglement_fournisseur WHERE session_caisse_id = s.id), 0)
-                   - COALESCE((SELECT sum(montant) FROM mouvement_tresorerie WHERE session_caisse_id = s.id AND pendant_session), 0),
+                   - COALESCE((SELECT sum(CASE WHEN sens = 'entree' THEN montant ELSE -montant END) FROM mouvement_tresorerie
+                               WHERE session_caisse_id = s.id AND pendant_session), 0)
+                   - COALESCE((SELECT sum(CASE WHEN sens = 'sortie' THEN montant ELSE -montant END) FROM mouvement_tiroir
+                               WHERE session_caisse_id = s.id AND reglement_fournisseur_id IS NULL AND mouvement_tresorerie_id IS NULL), 0),
                    (SELECT count(*) FROM vente v WHERE v.session_caisse_id = s.id AND v.statut = 'validee')::int
             FROM session_caisse s JOIN utilisateur u ON u.id = s.utilisateur_id
             WHERE s.fermee_le IS NULL ORDER BY s.poste

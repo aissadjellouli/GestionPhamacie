@@ -3,8 +3,12 @@ using Pharma.Domain.Commun;
 
 namespace Pharma.Domain.Referentiels;
 
-/// <summary>Motif d'une liste réglable (table motif_reglable, script 094).</summary>
-public sealed record MotifReglable(long Id, string Liste, string Code, string Libelle, bool Actif, bool Systeme, int Ordre);
+/// <summary>
+/// Motif d'une liste réglable (table motif_reglable, script 094). Tiroir (script 096) : Effet (aucun, sortie, entree) et Detail exigé
+/// (aucun, depense, fournisseur, patient, coffre, fond), voir <see cref="Caisse.RegleTiroir"/>.
+/// </summary>
+public sealed record MotifReglable(long Id, string Liste, string Code, string Libelle, bool Actif, bool Systeme, int Ordre,
+    string Effet = Caisse.RegleTiroir.Aucun, string Detail = Caisse.RegleTiroir.Aucun);
 
 /// <summary>
 /// Motifs et catégories réglables par le titulaire (Administration › Motifs et catégories) : ajout, libellé, désactivation ;
@@ -18,6 +22,8 @@ public static partial class RegleMotifs
     public const string Charge = "charge";
     public const string SortieStock = "sortie_stock";
     public const string RetourFournisseur = "retour_fournisseur";
+    /// <summary>Vente « Facturée par Chifa » encaissée sans n° de facture Chifa (script 097) : motif obligatoire.</summary>
+    public const string VoletAbsent = "volet_absent";
     public const string Autre = "autre";
     /// <summary>Mise en attente pour un produit manquant : les produits dus au patient sont gardés avec la vente en attente.</summary>
     public const string ProduitManquant = "produit_manquant";
@@ -26,13 +32,14 @@ public static partial class RegleMotifs
     public static readonly IReadOnlyList<(string Code, string Libelle)> Listes =
     [
         (Tiroir, "Ouverture du tiroir sans vente"), (Attente, "Mise en attente d’une vente"), (Charge, "Catégories de dépenses"),
-        (SortieStock, "Sorties de stock"), (RetourFournisseur, "Retours au fournisseur")
+        (SortieStock, "Sorties de stock"), (RetourFournisseur, "Retours au fournisseur"),
+        (VoletAbsent, "Vente Chifa sans n° de facture")
     ];
 
     public static bool ListeConnue(string? liste) => Listes.Any(l => l.Code == liste);
 
     /// <summary>Ajout de motifs : tiroir, attente et charges ; pas les sorties ni les retours (codes fixés par la base).</summary>
-    public static bool AjoutPermis(string liste) => liste is Tiroir or Attente or Charge;
+    public static bool AjoutPermis(string liste) => liste is Tiroir or Attente or Charge or VoletAbsent;
 
     public static string ExigerListe(string? liste) =>
         ListeConnue(liste) ? liste! : throw new RegleMetierException("Liste de motifs inconnue.", "liste");

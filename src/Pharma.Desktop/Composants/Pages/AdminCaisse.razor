@@ -1,4 +1,4 @@
-@page "/admin/caisse"
+﻿@page "/admin/caisse"
 @inject ApiClient Api
 @inject HistoriqueNavigation Historique
 
@@ -47,6 +47,14 @@
                     <div class="champ" title="Volet Chifa : sous cet écart par boîte, la ligne est alignée d’office sur le prix Chifa ; au-delà, un employé qui peut modifier les prix choisit (sinon le plus élevé des deux s’applique).">
                         <label for="seuil-chifa">Écart de prix Chifa aligné d’office sous (DA par boîte)</label>
                         <input id="seuil-chifa" data-champ="seuil_ecart_chifa" type="number" min="0" step="0.01" @bind="parametres.SeuilEcartChifa" />
+                    </div>
+                    <div class="champ" title="Ventes « Facturées par Chifa » en attente de leur volet : proposées en priorité au scan du volet pendant ce délai ; au-delà, signalées « en retard », toujours rattachables à la main.">
+                        <label for="delai-volet">Délai d’attente du volet Chifa (jours)</label>
+                        <input id="delai-volet" data-champ="delai_volet_chifa" type="number" min="1" max="365" @bind="parametres.DelaiVoletChifaJours" />
+                    </div>
+                    <div class="champ" title="F8 : une sortie d’argent par le tiroir au-delà de ce montant est validée par un employé qui a le droit de faire la relève et de clôturer (son code comptoir). 0 : toute sortie est validée.">
+                        <label for="seuil-sortie">Sortie du tiroir validée au-delà de (DA)</label>
+                        <input id="seuil-sortie" data-champ="seuil_sortie_tiroir" type="number" min="0" step="0.01" @bind="parametres.SeuilSortieTiroir" />
                     </div>
                 </div>
                 <fieldset class="champ" style="border: 0; padding: 0; margin: 0">
@@ -130,6 +138,8 @@
         public int SeuilAnnulations { get; set; }
         public bool AutorisationParCode { get; set; } = true;
         public decimal SeuilEcartChifa { get; set; } = 5;
+        public int DelaiVoletChifaJours { get; set; } = 7;
+        public decimal SeuilSortieTiroir { get; set; } = 2000;
     }
 
     private Saisie? parametres;
@@ -198,7 +208,8 @@
             {
                 ComptageAveugle = p.ComptageAveugle, FondCaisseDefaut = p.FondCaisseDefaut,
                 SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut,
-                SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode, SeuilEcartChifa = p.SeuilEcartChifa
+                SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode, SeuilEcartChifa = p.SeuilEcartChifa,
+                DelaiVoletChifaJours = p.DelaiVoletChifaJours, SeuilSortieTiroir = p.SeuilSortieTiroir
             };
         (employesJournal, _) = await Api.EmployesJournalAsync();
         await ChargerJournalAsync(retour?.Entier("page") ?? 1, retour?.Entier("taille"));
@@ -217,7 +228,7 @@
         message = null;
         erreur = await Api.ModifierParametresCaisseAsync(new ParametresCaisseDto(
             parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture, parametres.PlafondCreditDefaut,
-            parametres.SeuilAnnulations, parametres.AutorisationParCode, parametres.SeuilEcartChifa));
+            parametres.SeuilAnnulations, parametres.AutorisationParCode, parametres.SeuilEcartChifa, DelaiVoletChifaJours: parametres.DelaiVoletChifaJours, SeuilSortieTiroir: parametres.SeuilSortieTiroir));
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";

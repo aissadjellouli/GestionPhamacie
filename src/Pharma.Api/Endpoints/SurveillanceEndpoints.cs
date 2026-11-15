@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Surveillance;
 using Pharma.Domain.Securite;
@@ -18,9 +18,28 @@ internal static class SurveillanceEndpoints
         api.MapPost("/caisse/evenements", async (EvenementCaisseRequete req, SignalerEvenementCaisse signaler, ClaimsPrincipal user, HttpRequest requete,
                 CancellationToken ct) =>
             {
-                await signaler.ExecuterAsync(req.Type, req.ProduitId, req.LotId, req.Quantite, req.Montant, user.UtilisateurId(), requete.Poste(), ct,
-                    req.MotifCode, req.MotifTexte);
-                return Results.NoContent();
+                var s = req.Tiroir is { } d
+                    ? new Pharma.Domain.Caisse.SaisieTiroir(d.Montant, d.Categorie, d.Libelle, d.FournisseurId, d.Beneficiaire, d.Reference, d.PatientId, d.Raison)
+                    : null;
+                var bon = await signaler.ExecuterAsync(req.Type, req.ProduitId, req.LotId, req.Quantite, req.Montant, user.UtilisateurId(), requete.Poste(), ct,
+                    req.MotifCode, req.MotifTexte, s);
+                return Results.Ok(new OuvertureTiroirDto(bon?.Id, bon?.Numero));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        // Sorties et entrées du tiroir (script 096) : bon de sortie en PDF rouleau, correction par écriture inverse (droit caisse.cloturer)
+        api.MapGet("/caisse/tiroir/{id:long}/bon.pdf", async (long id, int? largeur, Pharma.Application.Caisse.ObtenirBonSortie obtenir, ClaimsPrincipal user,
+                CancellationToken ct) =>
+                await obtenir.ExecuterAsync(id, largeur, user.UtilisateurId(), ct) is { } r
+                    ? Results.File(r.Contenu, "application/pdf", r.NomFichier)
+                    : Results.NotFound(new ErreurDto("Bon de sortie introuvable.")))
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        api.MapPost("/caisse/tiroir/{id:long}/correction", async (long id, CorrectionTiroirRequete req, Pharma.Application.Caisse.CorrigerMouvementTiroir corriger,
+                ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
+            {
+                var e = await corriger.ExecuterAsync(id, req.Motif, user.UtilisateurId(), requete.Poste(), ct);
+                return Results.Ok(new OuvertureTiroirDto(e.Id, e.Numero));
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
@@ -42,7 +61,7 @@ internal static class SurveillanceEndpoints
                     p.SeuilRemisesPatient, p.HeureOuverture, p.HeureFermeture, p.SeuilAjustements, p.SeuilCasses, p.SeuilEchantillons, p.JoursComptageSensibles,
                     p.ReceptionAveugle, p.JoursAvoirRetour, p.SeuilCreditNouveauPatient, p.JoursPatientRecent, p.SeuilCreditsJour,
                     p.JoursCreditSansRemboursement, p.SeuilAutorisationsValideur, p.SeuilAutorisationsEmploye, p.MinutesPostesSimultanes,
-                    p.SeuilChangementsPoste, p.SeuilBaissesPrix));
+                    p.SeuilChangementsPoste, p.SeuilBaissesPrix, p.SeuilSortiesTiroir));
             });
 
         surveillance.MapPut("/parametres", async (ParametresSurveillanceDto req, ReglerSurveillance regler, ClaimsPrincipal user, CancellationToken ct) =>
@@ -52,8 +71,19 @@ internal static class SurveillanceEndpoints
                     req.SeuilEchantillons, req.JoursComptageSensibles, req.ReceptionAveugle, req.JoursAvoirRetour,
                     req.SeuilCreditNouveauPatient, req.JoursPatientRecent, req.SeuilCreditsJour, req.JoursCreditSansRemboursement,
                     req.SeuilAutorisationsValideur, req.SeuilAutorisationsEmploye, req.MinutesPostesSimultanes, req.SeuilChangementsPoste,
-                    req.SeuilBaissesPrix), user.UtilisateurId(), ct);
+                    req.SeuilBaissesPrix, req.SeuilSortiesTiroir), user.UtilisateurId(), ct);
                 return Results.NoContent();
+            });
+
+        // Contrôle interne : sorties et entrées du tiroir par motif, employé et période (script 096)
+        surveillance.MapGet("/tiroir", async (DateOnly? du, DateOnly? au, long? employe, string? motif, string? sens, int? page, int? taille,
+                Pharma.Application.Caisse.ListerMouvementsTiroir lister, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await lister.ExecuterAsync(new Pharma.Application.Caisse.FiltreMouvementsTiroir(du, au, employe, motif, sens),
+                    Pharma.Application.Commun.DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
+                return Results.Ok(new PageMouvementsTiroirDto(p.Page.Lignes.Select(m => new MouvementTiroirDto(m.Id, m.Numero, m.Le, m.UtilisateurId, m.Employe,
+                        m.Poste, m.Motif, m.Sens, m.Montant, m.Categorie, m.Libelle, m.Beneficiaire, m.Reference, m.Patient, m.Raison, m.ValidePar,
+                        m.CorrigeId, m.MotifCorrection, m.Corrigee)).ToList(), p.Page.Total, p.Page.Numero, p.Page.Taille, p.TotalSorties, p.TotalEntrees));
             });
 
         // Produits sensibles : comptés à part et régulièrement

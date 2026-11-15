@@ -1,0 +1,158 @@
+@page "/surveillance/tiroir"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject ImprimanteTickets Tickets
+@inject HistoriqueNavigation Historique
+
+@* Contrôle interne du titulaire (script 096) : sorties et entrées d'argent par le tiroir (F8), par motif, employé et période.
+   Écran fixe, menu vertical à gauche ; seul le tableau défile, paginé (docs/charte-graphique.md). Jamais de suppression :
+   une erreur se corrige par une écriture inverse (motif obligatoire, caisse du poste ouverte). *@
+<div class="page avec-menu">
+    <NavControleInterne Actif="surveillance/tiroir" />
+
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Contrôle interne · Sorties et entrées du tiroir</h1>
+                <p class="sous-titre">Chaque sortie ou remise d’argent par le tiroir, comptée dans l’attendu de la caisse. Totaux nets des corrections.</p>
+            </div>
+            <button type="button" class="btn" disabled="@enCours" @onclick="() => ChargerAsync(1, taille)">Actualiser</button>
+        </div>
+
+        @if (!Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Écran réservé au pharmacien titulaire.</div>
+        }
+        else
+        {
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+            <div class="filtres-liste" role="search" aria-label="Filtrer les sorties du tiroir">
+                <div class="champ" style="flex: 0 0 150px"><label for="st-du">Du</label><input id="st-du" type="date" @bind="du" @bind:after="() => ChargerAsync(1, taille)" /></div>
+                <div class="champ" style="flex: 0 0 150px"><label for="st-au">Au</label><input id="st-au" type="date" @bind="au" @bind:after="() => ChargerAsync(1, taille)" /></div>
+                <div class="champ" style="flex: 0 0 200px"><label for="st-employe">Employé</label>
+                    <select id="st-employe" @bind="employe" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="0">Tous</option>
+                        @foreach (var (id, nom) in employes.OrderBy(e => e.Value)) { <option value="@id">@nom</option> }
+                    </select></div>
+                <div class="champ" style="flex: 0 0 240px"><label for="st-motif">Motif</label>
+                    <select id="st-motif" @bind="motif" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="">Tous</option>
+                        @foreach (var m in motifs.Where(m => m.Effet != "aucun")) { <option value="@m.Code">@m.Libelle</option> }
+                    </select></div>
+                <div class="champ" style="flex: 0 0 140px"><label for="st-sens">Sens</label>
+                    <select id="st-sens" @bind="sens" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="">Tous</option><option value="sortie">Sorties</option><option value="entree">Entrées</option>
+                    </select></div>
+                @if (resultat is { } r)
+                {
+                    <div class="detail" style="align-self: flex-end">Sorties : <strong>@Libelles.Dinars(r.TotalSorties, 2)</strong> · Entrées : <strong>@Libelles.Dinars(r.TotalEntrees, 2)</strong></div>
+                }
+            </div>
+
+            @if (aCorriger is { } c)
+            {
+                <section class="panneau" aria-labelledby="t-correction" style="display: flex; gap: 8px; align-items: flex-end">
+                    <h2 id="t-correction" class="visuellement-cache">Corriger le bon @c.Numero</h2>
+                    <div class="champ" style="flex: 1"><label for="st-motif-correction" class="requis">Motif de la correction du bon @c.Numero (@c.Motif, @Libelles.Dinars(c.Montant, 2))</label>
+                        <input id="st-motif-correction" data-champ="motif_correction" type="text" maxlength="200" @bind="motifCorrection" @bind:event="oninput" /></div>
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="CorrigerAsync">Écriture inverse</button>
+                    <button type="button" class="btn" @onclick="() => aCorriger = null">Annuler</button>
+                </section>
+            }
+
+            <section class="tableau-cadre" aria-label="Sorties et entrées du tiroir">
+                <table class="tableau">
+                    <thead><tr><th scope="col">Bon</th><th scope="col">Date</th><th scope="col">Employé</th><th scope="col">Motif</th><th scope="col">Montant</th>
+                        <th scope="col">Détail</th><th scope="col">Validé par</th><th scope="col"><span class="visuellement-cache">Actions</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var m in resultat?.Lignes ?? [])
+                        {
+                            <tr>
+                                <td>@m.Numero@if (m.Corrigee) { <br /><span class="pastille info">corrigé</span> }@if (m.CorrigeId is not null) { <br /><span class="pastille attention">correction</span> }</td>
+                                <td>@Libelles.DateHeureLocale(m.Le)</td>
+                                <td>@m.Employe<br /><span class="detail">@m.Poste</span></td>
+                                <td>@m.Motif</td>
+                                <td style="white-space: nowrap; color: @(m.Sens == "sortie" ? "var(--urgent)" : "var(--accent)")">@(m.Sens == "sortie" ? "− " : "+ ")@Libelles.Dinars(m.Montant, 2)</td>
+                                <td class="detail">@Detail(m)</td>
+                                <td>@(m.ValidePar ?? "—")</td>
+                                <td style="white-space: nowrap">
+                                    <button type="button" class="lien-bouton" @onclick="() => BonAsync(m)">Bon</button>
+                                    @if (!m.Corrigee && m.CorrigeId is null)
+                                    {
+                                        <button type="button" class="lien-bouton" @onclick="() => (aCorriger, motifCorrection) = (m, null)">Corriger</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        @if ((resultat?.Lignes.Count ?? 0) == 0 && erreur is null) { <tr><td colspan="8" class="vide">Aucune sortie ni entrée du tiroir pour ces filtres.</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+            <Pagination Total="resultat?.Total ?? 0" Numero="page" Taille="taille" Libelle="Pages des sorties du tiroir" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
+    </div>
+</div>
+
+@code {
+    private PageMouvementsTiroirDto? resultat;
+    private List<MotifReglableDto> motifs = [];
+    private readonly Dictionary<long, string> employes = [];
+    private DateOnly? du = DateOnly.FromDateTime(DateTime.Today.AddDays(-30)), au = DateOnly.FromDateTime(DateTime.Today);
+    private long employe;
+    private string motif = "", sens = "";
+    private int page = 1, taille = Pagination.TailleParDefaut;
+    private bool enCours;
+    private string? erreur, message, motifCorrection;
+    private MouvementTiroirDto? aCorriger;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.A("role.titulaire")) return;
+        Historique.Suivre("sorties-tiroir", e => { e.Mettre("page", page); e.Mettre("taille", taille); e.Mettre("motif", motif); e.Mettre("sens", sens); });
+        if (Historique.Restaurer("sorties-tiroir") is { } h)
+            (page, taille, motif, sens) = (h.Entier("page") ?? 1, h.Entier("taille") ?? taille, h.Texte("motif") ?? "", h.Texte("sens") ?? "");
+        (motifs, _) = await Api.MotifsAsync("tiroir");
+        await ChargerAsync(page, taille);
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        if (du is { } d && au is { } a && a < d) { erreur = "La période est inversée."; return; }
+        enCours = true;
+        var (p, e) = await Api.MouvementsTiroirAsync(du, au, employe > 0 ? employe : null, motif == "" ? null : motif, sens == "" ? null : sens, numero, nouvelleTaille);
+        enCours = false;
+        erreur = e;
+        if (p is null) return;
+        (resultat, page, taille) = (p, p.Numero, p.Taille);
+        // Liste du filtre « Employé » : employés rencontrés dans les résultats
+        foreach (var m in p.Lignes) employes[m.UtilisateurId] = m.Employe;
+    }
+
+    private static string Detail(MouvementTiroirDto m) => string.Join(" · ", new[]
+    {
+        m.Categorie, m.Libelle, m.Beneficiaire, m.Reference is { } r ? $"BL/facture {r}" : null, m.Patient, m.Raison,
+        m.MotifCorrection is { } c ? $"Correction : {c}" : null
+    }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private async Task BonAsync(MouvementTiroirDto m)
+    {
+        var (pdf, nom, e) = await Api.BonSortiePdfAsync(m.Id, Tickets.LargeurMm);
+        if (e is not null) { erreur = e; return; }
+        try { Documents.OuvrirSurCePoste("Tickets", nom ?? $"bon_{m.Numero}.pdf", pdf!); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { erreur = $"Bon {m.Numero} non ouvert : {ex.Message}"; }
+    }
+
+    private async Task CorrigerAsync()
+    {
+        if (aCorriger is null) return;
+        if (string.IsNullOrWhiteSpace(motifCorrection)) { erreur = Api.SignalerChamp("motif_correction", "Indiquez le motif de la correction."); return; }
+        enCours = true;
+        var (bon, e) = await Api.CorrigerTiroirAsync(aCorriger.Id, motifCorrection);
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        (message, erreur, aCorriger) = ($"Écriture inverse {bon?.Numero} enregistrée.", null, null);
+        await ChargerAsync(page, taille);
+    }
+}

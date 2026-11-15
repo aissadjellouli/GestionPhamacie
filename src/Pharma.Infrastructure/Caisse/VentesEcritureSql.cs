@@ -91,11 +91,14 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         // Volet Chifa repris : n° de facture, date et QR brut ; un même volet n'est repris qu'une fois (ux_vente_chifa_facture)
         if (a.VoletChifa is { } volet)
         {
-            await using var cmd = new NpgsqlCommand("UPDATE vente SET chifa_facture = $2, chifa_date = $3, chifa_qr = $4 WHERE id = $1", cx, tx);
+            // Date de l'ordonnance (7e zone du QR) gardée aussi sur la vente (script 095), comme au rattachement d'un volet
+            await using var cmd = new NpgsqlCommand(
+                "UPDATE vente SET chifa_facture = $2, chifa_date = $3, chifa_qr = $4, chifa_date_ordonnance = $5 WHERE id = $1", cx, tx);
             cmd.Parameters.AddWithValue(venteId);
             cmd.Parameters.AddWithValue(volet.NumeroFacture);
             cmd.Parameters.AddWithValue(volet.DateFacture);
             cmd.Parameters.AddWithValue(volet.Brut);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)volet.DateOrdonnance ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
             try { await cmd.ExecuteNonQueryAsync(ct); }
             catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
             {
@@ -120,10 +123,17 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         if (a.CanalOrganisme != CanalOrganisme.Logiciel || a.FactureChifa is not null)
         {
             await using var cmd = new NpgsqlCommand(
-                "UPDATE vente SET canal_organisme = $2, chifa_facture = COALESCE($3, chifa_facture) WHERE id = $1", cx, tx);
+                """
+                UPDATE vente SET canal_organisme = $2, chifa_facture = COALESCE($3, chifa_facture),
+                                 chifa_attente_motif_code = $4, chifa_attente_motif_texte = $5
+                WHERE id = $1
+                """, cx, tx);
             cmd.Parameters.AddWithValue(venteId);
             cmd.Parameters.AddWithValue(a.CanalOrganisme);
             cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.FactureChifa ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+            // Vente Chifa sans n° de facture : motif choisi (script 097)
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.MotifSansVoletCode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.MotifSansVoletTexte ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
             try { await cmd.ExecuteNonQueryAsync(ct); }
             catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
             {

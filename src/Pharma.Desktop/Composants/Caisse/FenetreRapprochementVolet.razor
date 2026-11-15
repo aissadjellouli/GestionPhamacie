@@ -1,0 +1,143 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Circuit « la caisse d'abord » (règle du titulaire, 2026-11-15) : volet Chifa scanné alors que des ventes Chifa encaissées attendent leur
+   volet. À gauche les ventes candidates (la meilleure choisie d'office), à droite la comparaison ligne à ligne, différences en rouge.
+   « Rattacher » n'ajoute ni ne retire rien à la vente (stock et argent inchangés). Différences : droit « modifier les prix » (ou
+   « Faire autoriser ») et motif obligatoire. « Nouvelle vente depuis le volet » : circuit « Chifa d'abord ». Fenêtre fixe : seuls la liste
+   des ventes et le tableau défilent. *@
+<div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-rapprochement">
+    <section class="panneau" style="width: min(1240px, 96vw); max-height: 88vh; display: flex; flex-direction: column; gap: 10px">
+        <div>
+            <h2 id="t-rapprochement" style="margin: 0">Volet Chifa n° @Rapprochement.NumeroFacture : rattacher à une vente déjà encaissée ?</h2>
+            <p class="detail" style="margin: 4px 0 0">
+                Assuré @Rapprochement.Assure · facture du @Rapprochement.DateFacture.ToString("dd/MM/yyyy")
+                @if (Rapprochement.DateOrdonnance is { } d) { <span> · ordonnance du @d.ToString("dd/MM/yyyy")</span> }
+                · @Libelles.Dinars(Rapprochement.MontantVolet, 2) · ventes Chifa en attente de volet (au-delà de @Rapprochement.JoursCandidats jours : « en retard », à choisir à la main)
+            </p>
+        </div>
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+        <div style="display: flex; gap: 16px; min-height: 0; flex: 1 1 auto">
+            <div style="flex: 0 0 300px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; max-height: 56vh" role="listbox" aria-label="Ventes candidates" data-champ="vente">
+                @foreach (var c in Rapprochement.Candidates)
+                {
+                    <button type="button" role="option" aria-selected="@(c.VenteId == choisie?.VenteId ? "true" : "false")"
+                            class="ligne-vente" style="flex-direction: column; gap: 2px; @(c.VenteId == choisie?.VenteId ? "border-color: var(--accent); background: var(--accent-clair)" : "")"
+                            @onclick="() => Choisir(c)">
+                        <span><strong>@c.Numero</strong> · @Libelles.DateHeureLocale(c.Date)</span>
+                        <span class="detail">@(c.Patient ?? "Patient inconnu")@(c.NumAssure is { } n ? $" · {n}" : "") · @c.Organisme</span>
+                        <span class="detail">@Libelles.Dinars(c.Total, 2) · @c.Vendeur</span>
+                        <span class="@(c.Concorde ? "detail" : "texte-urgent")">@(c.Concorde ? "Concorde avec le volet" : "Différences avec le volet")@(c.MemeAssure ? " · même assuré" : c.MemeCarte ? " · même carte (ayant droit)" : "")</span>
+                        @if (c.EnRetard) { <span class="texte-urgent">En retard (plus de @Rapprochement.JoursCandidats jours)</span> }
+                    </button>
+                }
+            </div>
+
+            @if (choisie is { } v)
+            {
+                <div style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 8px; min-width: 0">
+                    <div class="tableau-cadre" style="max-height: 40vh; overflow-y: auto">
+                        <table class="tableau">
+                            <thead><tr><th scope="col">Produit</th><th scope="col">Code Chifa</th><th scope="col" class="nombre">Qté volet</th><th scope="col" class="nombre">Qté servie</th><th scope="col" class="nombre">Prix Chifa</th><th scope="col" class="nombre">Notre prix</th><th scope="col">Constat</th></tr></thead>
+                            <tbody>
+                                @foreach (var l in v.Lignes)
+                                {
+                                    <tr style="@(l.EnRouge ? "background: var(--urgent-fond); color: var(--urgent)" : null)" data-ecart="@l.Ecart">
+                                        <td>@l.Produit</td>
+                                        <td>@(l.Code ?? "—")</td>
+                                        <td class="nombre">@(l.QuantiteVolet?.ToString() ?? "—")</td>
+                                        <td class="nombre">@(l.QuantiteVente?.ToString() ?? "—")</td>
+                                        <td class="nombre">@(l.PrixChifa is { } pc ? pc.ToString("N2") : "—")</td>
+                                        <td class="nombre">@(l.NotrePrix is { } np ? np.ToString("N2") : "—")</td>
+                                        <td>@l.Libelle</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="detail" style="margin: 0">
+                        Part organisme de la vente : @Libelles.Dinars(v.PartOrganisme, 2)
+                        @if (v.PartOrganismeChifa is { } pChifa)
+                        {
+                            <span> · calculée sur le prix Chifa : @Libelles.Dinars(pChifa, 2)</span>
+                            @if (v.EcartPartOrganisme > 0) { <span class="texte-urgent"> · la caisse paiera @Libelles.Dinars(v.EcartPartOrganisme, 2) de moins : créance ramenée à la part Chifa</span> }
+                            else if (v.EcartPartOrganisme < 0) { <span class="texte-urgent"> · la caisse paiera @Libelles.Dinars(-v.EcartPartOrganisme, 2) de plus : créance portée à la part Chifa, trop-payé du patient rendu (dette diminuée, sinon à rendre)</span> }
+                        }
+                        else { <span> · taux saisi à la main : part Chifa non calculée</span> }
+                    </p>
+                    @if (v.EcartPartOrganisme > 0 && v.PartOrganismeChifa is not null)
+                    {
+                        <fieldset class="champ" style="border: 0; padding: 0; margin: 0" data-champ="regularisation">
+                            <legend class="etiquette-champ requis">Écart de @Libelles.Dinars(v.EcartPartOrganisme, 2) :</legend>
+                            <label class="case"><input type="radio" name="regul" checked="@(regularisation == "charge_patient")" disabled="@(v.Patient is null)"
+                                                       @onchange="@(() => regularisation = "charge_patient")" /><span>À la charge du patient (ajouté à sa dette, rattaché à cette vente)</span></label>
+                            <label class="case"><input type="radio" name="regul" checked="@(regularisation == "perte_pharmacie")"
+                                                       @onchange="@(() => regularisation = "perte_pharmacie")" /><span>Perte pharmacie</span></label>
+                            @if (!Session.A("prix.modifier")) { <p class="detail" style="margin: 0">Réservé au droit « modifier les prix » : un employé qui l’a validera avec son code.</p> }
+                        </fieldset>
+                    }
+                    @if (!v.Concorde)
+                    {
+                        <div class="champ">
+                            <label for="r-motif" class="requis">Motif du rattachement malgré les différences</label>
+                            <textarea id="r-motif" data-champ="motif" rows="2" maxlength="500" @bind="motif" @bind:event="oninput"
+                                      class="@Obligatoire.Classe(string.IsNullOrWhiteSpace(motif))" aria-invalid="@Obligatoire.Aria(string.IsNullOrWhiteSpace(motif))"
+                                      placeholder="Ex. : boîte remplacée par un générique, quantité corrigée par Chifa"></textarea>
+                            <p class="detail" style="margin: 0">
+                                La vente n’est pas modifiée (stock et argent inchangés) ; le volet est rattaché avec ce motif, journalisé, et la vente apparaît dans « Volets avec écart ».
+                                @(Session.A("prix.modifier") ? "" : "Réservé au droit « modifier les prix » : un employé qui l’a validera avec son code.")
+                            </p>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap">
+            <button type="button" class="btn" disabled="@enCours" @onclick="OnFerme">Annuler</button>
+            <button type="button" class="btn" disabled="@enCours" @onclick="OnNouvelleVente">Nouvelle vente depuis le volet</button>
+            <button type="button" class="btn btn-principal" disabled="@(enCours || choisie is null || (choisie is { Concorde: false } && string.IsNullOrWhiteSpace(motif)) || RegularisationManquante)"
+                    @onclick="RattacherAsync">@(enCours ? "Rattachement…" : choisie is { Concorde: false } ? "Rattacher malgré les différences" : "Rattacher à cette vente")</button>
+        </div>
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RapprochementVoletDto Rapprochement { get; set; } = default!;
+    /// <summary>QR scanné, relu par le serveur au rattachement.</summary>
+    [Parameter, EditorRequired] public string Texte { get; set; } = "";
+    [Parameter] public EventCallback OnFerme { get; set; }
+    [Parameter] public EventCallback OnNouvelleVente { get; set; }
+    [Parameter] public EventCallback<VoletRattacheDto> OnRattache { get; set; }
+
+    private VenteCandidateDto? choisie;
+    private string? motif, erreur, regularisation;
+    private bool enCours;
+
+    /// <summary>La caisse paiera moins (écart &gt; 0) : « à la charge du patient » ou « perte pharmacie » à choisir.</summary>
+    private bool RegularisationManquante => choisie is { EcartPartOrganisme: > 0, PartOrganismeChifa: not null } && regularisation is null;
+
+    // La meilleure candidate (même assuré, même carte, dans le délai, la plus proche) est proposée ; une vente « en retard » se choisit à la main
+    protected override void OnParametersSet()
+    {
+        if (choisie is null || Rapprochement.Candidates.All(c => c.VenteId != choisie.VenteId))
+            choisie = Rapprochement.Candidates.FirstOrDefault() is { EnRetard: false } premiere ? premiere : null;
+    }
+
+    private void Choisir(VenteCandidateDto c) => (choisie, motif, erreur, regularisation) = (c, null, null, null);
+
+    private async Task RattacherAsync()
+    {
+        if (choisie is not { } v) return;
+        enCours = true;
+        erreur = null;
+        try
+        {
+            var (r, e) = await Api.RattacherVoletAsync(Texte, v.VenteId, v.Concorde ? null : motif?.Trim(), v.EcartPartOrganisme > 0 ? regularisation : null);
+            if (e is not null || r is null) { erreur = e ?? "Rattachement impossible."; return; }
+            await OnRattache.InvokeAsync(r);
+        }
+        finally { enCours = false; }
+    }
+}

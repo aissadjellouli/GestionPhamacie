@@ -1,4 +1,4 @@
-using Npgsql;
+﻿using Npgsql;
 using Pharma.Application.Caisse;
 using Pharma.Domain.Caisse;
 using Pharma.Domain.Commun;
@@ -64,13 +64,38 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
         return (decimal)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
-    private const string SqlVentesEspeces = """
+    // 096 : échanges avec le coffre signés (entrée au coffre : l'argent quitte le tiroir ; sortie du coffre : remise d'un fonds au tiroir) ;
+    // sorties et entrées du tiroir sans autre écriture (petite dépense, remboursement d'un client, fournisseur hors grossiste), corrections comprises
+    internal const string SqlVentesEspeces = """
         SELECT COALESCE((SELECT SUM(montant) FROM paiement WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
              - COALESCE((SELECT SUM(montant_rembourse) FROM annulation_vente WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
              - COALESCE((SELECT SUM(montant_rembourse) FROM retour_client WHERE session_caisse_id = $1 AND mode = 'especes'), 0)
              - COALESCE((SELECT SUM(part_tiroir) FROM reglement_fournisseur WHERE session_caisse_id = $1), 0)
-             - COALESCE((SELECT SUM(montant) FROM mouvement_tresorerie WHERE session_caisse_id = $1 AND pendant_session), 0)
+             - COALESCE((SELECT SUM(CASE WHEN sens = 'entree' THEN montant ELSE -montant END) FROM mouvement_tresorerie
+                         WHERE session_caisse_id = $1 AND pendant_session), 0)
+             - COALESCE((SELECT SUM(CASE WHEN sens = 'sortie' THEN montant ELSE -montant END) FROM mouvement_tiroir
+                         WHERE session_caisse_id = $1 AND reglement_fournisseur_id IS NULL AND mouvement_tresorerie_id IS NULL), 0)
         """;
+
+    /// <summary>
+    /// Récapitulatif (script 096) : sorties par motif et entrées du tiroir de la session, nettes des corrections (une écriture inverse est
+    /// comptée avec le mouvement qu'elle corrige, même si elle est passée dans une autre session : elle l'est alors dans celle-ci).
+    /// </summary>
+    public async Task<IReadOnlyList<LigneTiroir>> LignesTiroirAsync(long sessionId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT motif_libelle, CASE WHEN corrige_id IS NULL THEN sens WHEN sens = 'sortie' THEN 'entree' ELSE 'sortie' END AS s,
+                   SUM(CASE WHEN corrige_id IS NULL THEN montant ELSE -montant END)
+            FROM mouvement_tiroir WHERE session_caisse_id = $1
+            GROUP BY 1, 2 HAVING SUM(CASE WHEN corrige_id IS NULL THEN montant ELSE -montant END) <> 0
+            ORDER BY 2 DESC, 1
+            """);
+        cmd.Parameters.AddWithValue(sessionId);
+        var lignes = new List<LigneTiroir>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) lignes.Add(new LigneTiroir(r.GetString(0), r.GetString(1), r.GetDecimal(2)));
+        return lignes;
+    }
 
     public async Task CloturerAsync(long sessionId, Comptage comptage, ResultatCloture resultat, CancellationToken ct = default)
     {
@@ -164,12 +189,13 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
         await using var cmd = db.CreateCommand(
             """
             SELECT comptage_aveugle, fond_caisse_defaut, seuil_ecart, deconnexion_minutes, versement_cloture, plafond_credit_defaut,
-                   seuil_annulations, autorisation_par_code, seuil_ecart_chifa
+                   seuil_annulations, autorisation_par_code, seuil_ecart_chifa, seuil_sortie_tiroir, delai_volet_chifa_jours
             FROM parametre_caisse WHERE id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         return await r.ReadAsync(ct)
-            ? new ParametresCaisse(r.GetBoolean(0), r.GetDecimal(1), r.GetDecimal(2), r.GetInt32(3), r.GetString(4), r.GetDecimal(5), r.GetInt32(6), r.GetBoolean(7), r.GetDecimal(8))
+            ? new ParametresCaisse(r.GetBoolean(0), r.GetDecimal(1), r.GetDecimal(2), r.GetInt32(3), r.GetString(4), r.GetDecimal(5), r.GetInt32(6), r.GetBoolean(7), r.GetDecimal(8), r.GetDecimal(9),
+                DelaiVoletChifaJours: r.GetInt32(10))
             : new ParametresCaisse(true, 0, 0, 0);
     }
 
@@ -178,7 +204,8 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
         await using var cmd = db.CreateCommand("""
             UPDATE parametre_caisse
             SET comptage_aveugle = $1, fond_caisse_defaut = $2, seuil_ecart = $3, deconnexion_minutes = $4, versement_cloture = $5,
-                plafond_credit_defaut = $6, seuil_annulations = $7, autorisation_par_code = $8, seuil_ecart_chifa = $9
+                plafond_credit_defaut = $6, seuil_annulations = $7, autorisation_par_code = $8, seuil_ecart_chifa = $9, seuil_sortie_tiroir = $10,
+                delai_volet_chifa_jours = $11
             WHERE id = 1
             """);
         cmd.Parameters.AddWithValue(p.ComptageAveugle);
@@ -190,6 +217,8 @@ public sealed class SessionsCaisseSql(NpgsqlDataSource db) : ISessionsCaisse
         cmd.Parameters.AddWithValue(p.SeuilAnnulations);
         cmd.Parameters.AddWithValue(p.AutorisationParCode);
         cmd.Parameters.AddWithValue(p.SeuilEcartChifa);
+        cmd.Parameters.AddWithValue(p.SeuilSortieTiroir);
+        cmd.Parameters.AddWithValue(p.DelaiVoletChifaJours);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }

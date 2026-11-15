@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Commun;
 using Pharma.Application.Referentiels;
@@ -29,7 +29,7 @@ internal static class MotifsReglablesEndpoints
            .ExigerPermission(Permissions.AdminParametres);
 
         api.MapPost("/motifs", async (SaisieMotifReglableDto d, EnregistrerMotifReglable enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok(new IdentifiantDto(await enregistrer.ExecuterAsync(null, d.Liste, d.Libelle, true, user.UtilisateurId(), ct))))
+                Results.Ok(new IdentifiantDto(await enregistrer.ExecuterAsync(null, d.Liste, d.Libelle, true, user.UtilisateurId(), ct, d.Effet, d.Detail))))
            .ExigerPermission(Permissions.AdminParametres);
 
         api.MapPut("/motifs/{id:long}", async (long id, SaisieMotifReglableDto d, EnregistrerMotifReglable enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
@@ -37,5 +37,5 @@ internal static class MotifsReglablesEndpoints
            .ExigerPermission(Permissions.AdminParametres);
     }
 
-    private static MotifReglableDto Dto(MotifReglable m) => new(m.Id, m.Liste, m.Code, m.Libelle, m.Actif, m.Systeme);
+    private static MotifReglableDto Dto(MotifReglable m) => new(m.Id, m.Liste, m.Code, m.Libelle, m.Actif, m.Systeme, m.Effet, m.Detail);
 }

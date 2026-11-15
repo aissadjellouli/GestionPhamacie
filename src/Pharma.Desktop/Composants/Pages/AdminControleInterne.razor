@@ -1,4 +1,4 @@
-@page "/admin/controle-interne"
+﻿@page "/admin/controle-interne"
 @inject ApiClient Api
 @inject SessionPoste Session
 
@@ -34,6 +34,7 @@
                         <p class="detail" style="margin: 0">Par employé et par jour.</p>
                         <div class="reglage-ligne"><label for="sv-retraits">Boîtes retirées du panier avant paiement</label><input id="sv-retraits" type="number" min="1" @bind="r.SeuilLignesRetirees" /></div>
                         <div class="reglage-ligne"><label for="sv-tiroir">Tiroir ouvert sans vente</label><input id="sv-tiroir" type="number" min="1" @bind="r.SeuilTiroir" /></div>
+                        <div class="reglage-ligne" title="Sorties d’argent par le tiroir (F8 : petite dépense, retrait vers le coffre, paiement d’un livreur, remboursement…), corrections non comptées"><label for="sv-sorties-tiroir">Sorties d’argent par le tiroir</label><input id="sv-sorties-tiroir" type="number" min="1" @bind="r.SeuilSortiesTiroir" /></div>
                         <div class="reglage-ligne"><label for="sv-attente">Ventes en attente abandonnées</label><input id="sv-attente" type="number" min="1" @bind="r.SeuilAttentesAbandonnees" /></div>
                         <div class="reglage-ligne"><label for="sv-remises">Ventes avec remise</label><input id="sv-remises" type="number" min="1" @bind="r.SeuilRemises" /></div>
                         <div class="reglage-ligne"><label for="sv-remises-p">Remises au même patient (30 jours)</label><input id="sv-remises-p" type="number" min="1" @bind="r.SeuilRemisesPatient" /></div>
@@ -100,6 +101,7 @@
         public int MinutesPostesSimultanes { get; set; }
         public int SeuilChangementsPoste { get; set; }
         public int SeuilBaissesPrix { get; set; }
+        public int SeuilSortiesTiroir { get; set; } = 5;
     }
 
     private Reglages? reglages;
@@ -120,7 +122,7 @@
                 SeuilCreditNouveauPatient = p.SeuilCreditNouveauPatient, JoursPatientRecent = p.JoursPatientRecent, SeuilCreditsJour = p.SeuilCreditsJour,
                 JoursCreditSansRemboursement = p.JoursCreditSansRemboursement, SeuilAutorisationsValideur = p.SeuilAutorisationsValideur,
                 SeuilAutorisationsEmploye = p.SeuilAutorisationsEmploye, MinutesPostesSimultanes = p.MinutesPostesSimultanes,
-                SeuilChangementsPoste = p.SeuilChangementsPoste, SeuilBaissesPrix = p.SeuilBaissesPrix
+                SeuilChangementsPoste = p.SeuilChangementsPoste, SeuilBaissesPrix = p.SeuilBaissesPrix, SeuilSortiesTiroir = p.SeuilSortiesTiroir
             };
         erreur = e;
     }
@@ -133,7 +135,7 @@
             r.SeuilAttentesAbandonnees, r.SeuilRemises, r.SeuilRemisesPatient, r.HeureOuverture, r.HeureFermeture, r.SeuilAjustements, r.SeuilCasses,
             r.SeuilEchantillons, r.JoursComptageSensibles, r.ReceptionAveugle, r.JoursAvoirRetour, r.SeuilCreditNouveauPatient, r.JoursPatientRecent,
             r.SeuilCreditsJour, r.JoursCreditSansRemboursement, r.SeuilAutorisationsValideur, r.SeuilAutorisationsEmploye, r.MinutesPostesSimultanes,
-            r.SeuilChangementsPoste, r.SeuilBaissesPrix));
+            r.SeuilChangementsPoste, r.SeuilBaissesPrix, r.SeuilSortiesTiroir));
         enCours = false;
         message = erreur is null ? "Réglages du contrôle interne enregistrés." : null;
     }

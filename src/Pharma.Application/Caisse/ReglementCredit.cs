@@ -74,7 +74,9 @@ public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsC
         RegleReglementCredit.Verifier(montant, s.Patient.Solde, mode);
         var numero = await credits.EncaisserAsync(patientId, montant, mode!, session.Id, utilisateurId, ventes, ct);
         await journal.EcrireAsync(utilisateurId, "reglement_credit", "patient", patientId,
-            new Dictionary<string, object?> { ["montant"] = montant, ["mode"] = mode, ["reste_du"] = s.Patient.Solde - montant, ["recu"] = numero, ["ventes"] = ventes }, null, ct);
+            new Dictionary<string, object?> { ["montant"] = montant, ["mode"] = mode, ["reste_du"] = s.Patient.Solde - montant, ["recu"] = numero, ["ventes"] = ventes,
+                // N° de ticket des ventes choisies : le journal les affiche à la place des identifiants (recette 2026-11-15)
+                ["tickets"] = ventes is { Count: > 0 } ? s.Ventes.Where(v => ventes.Contains(v.Id)).Select(v => v.Numero).ToList() : null }, null, ct);
         return new RecuCredit(numero, s.Patient.Nom, montant, mode!, s.Patient.Solde - montant);
     }
 }

@@ -1,4 +1,4 @@
-using Pharma.Application.Commun;
+﻿using Pharma.Application.Commun;
 using Pharma.Application.Securite;
 using Pharma.Domain.Commun;
 using Pharma.Domain.Referentiels;
@@ -14,6 +14,9 @@ public interface IMotifsReglables
     /// <summary>Motifs d'une liste (actifs et désactivés), ou de toutes les listes (liste null), dans l'ordre d'affichage.</summary>
     Task<IReadOnlyList<MotifReglable>> ListerAsync(string? liste, CancellationToken ct = default);
     Task<long> CreerAsync(string liste, string code, string libelle, CancellationToken ct = default);
+    /// <summary>Motif du tiroir avec effet et détail (script 096), fixés à la création.</summary>
+    Task<long> CreerAsync(string liste, string code, string libelle, string effet, string detail, CancellationToken ct = default) =>
+        CreerAsync(liste, code, libelle, ct);
     Task<bool> ModifierAsync(long id, string libelle, bool actif, CancellationToken ct = default);
 }
 
@@ -52,7 +55,9 @@ public sealed class ListerMotifsReglables(IMotifsReglables motifs, IPermissionSe
 /// <summary>Ajout (tiroir, attente, charges) ou modification du libellé et de l'activation ; journalisé (droit admin.parametres).</summary>
 public sealed class EnregistrerMotifReglable(IMotifsReglables motifs, IPermissionService droits, IJournal journal)
 {
-    public async Task<long> ExecuterAsync(long? id, string? liste, string? libelle, bool actif, long utilisateurId, CancellationToken ct = default)
+    /// <param name="effet">Tiroir seulement, à la création (script 096) : aucun, sortie ou entree, avec le détail exigé ; fixé ensuite.</param>
+    public async Task<long> ExecuterAsync(long? id, string? liste, string? libelle, bool actif, long utilisateurId, CancellationToken ct = default,
+        string? effet = null, string? detail = null)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AdminParametres, "régler les motifs et catégories", ct);
         var l = RegleMotifs.ExigerListe(liste);
@@ -67,7 +72,11 @@ public sealed class EnregistrerMotifReglable(IMotifsReglables motifs, IPermissio
             if (!RegleMotifs.AjoutPermis(l))
                 throw new RegleMetierException("Cette liste ne reçoit pas de nouveau motif : seuls les libellés et l’activation se règlent.", "liste");
             code = RegleMotifs.CodeDepuisLibelle(lib, existants.Select(m => m.Code));
-            id = await motifs.CreerAsync(l, code, lib, ct);
+            var (e, d) = Pharma.Domain.Caisse.RegleTiroir.VerifierEffet(effet, detail);
+            if (e != Pharma.Domain.Caisse.RegleTiroir.Aucun && l != RegleMotifs.Tiroir)
+                throw new RegleMetierException("Seuls les motifs du tiroir ont un effet sur l’argent de la caisse.", "effet");
+            id = e == Pharma.Domain.Caisse.RegleTiroir.Aucun ? await motifs.CreerAsync(l, code, lib, ct) : await motifs.CreerAsync(l, code, lib, e, d, ct);
+            (effet, detail) = (e, d);
             actif = true;
         }
         else
@@ -79,7 +88,7 @@ public sealed class EnregistrerMotifReglable(IMotifsReglables motifs, IPermissio
         }
 
         await journal.EcrireAsync(utilisateurId, "motif_reglable", "motif_reglable", id,
-            new Dictionary<string, object?> { ["liste"] = l, ["code"] = code, ["libelle"] = lib, ["actif"] = actif },
+            new Dictionary<string, object?> { ["liste"] = l, ["code"] = code, ["libelle"] = lib, ["actif"] = actif, ["effet"] = effet, ["detail"] = detail },
             Permissions.AdminParametres, ct);
         return id.Value;
     }

@@ -173,6 +173,9 @@
     <File Path="database/migration/092_import_patients_doublons.sql" />
     <File Path="database/migration/093_droit_doublons_import.sql" />
     <File Path="database/migration/094_motifs_reglables.sql" />
+    <File Path="database/migration/095_rapprochement_volet.sql" />
+    <File Path="database/migration/096_sorties_tiroir.sql" />
+    <File Path="database/migration/097_rapprochement_decisions.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

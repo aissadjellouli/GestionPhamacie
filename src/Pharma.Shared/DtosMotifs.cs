@@ -1,10 +1,10 @@
-namespace Pharma.Shared;
+﻿namespace Pharma.Shared;
 
 // ---- Motifs réglables (script 094) ----
 /// <summary>Motif d'une liste réglable : tiroir, attente, charge, sortie_stock, retour_fournisseur. Systeme : jamais désactivé.</summary>
-public sealed record MotifReglableDto(long Id, string Liste, string Code, string Libelle, bool Actif, bool Systeme);
-/// <summary>Ajout (Liste, Libelle) ou modification (Libelle, Actif) d'un motif.</summary>
-public sealed record SaisieMotifReglableDto(string Liste, string Libelle, bool Actif = true);
+public sealed record MotifReglableDto(long Id, string Liste, string Code, string Libelle, bool Actif, bool Systeme, string Effet = "aucun", string Detail = "aucun");
+/// <summary>Ajout (Liste, Libelle ; tiroir : Effet et Detail, fixés à la création) ou modification (Libelle, Actif) d'un motif.</summary>
+public sealed record SaisieMotifReglableDto(string Liste, string Libelle, bool Actif = true, string? Effet = null, string? Detail = null);
 /// <summary>Produit dû au patient, gardé avec une vente mise en attente pour « produit manquant » (aucune commande créée).</summary>
 public sealed record ProduitDuDto(long ProduitId, string Nom, int Quantite);
 

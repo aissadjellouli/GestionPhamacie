@@ -12,19 +12,60 @@ public class CanalOrganismeTests
 {
     private const string Volet = "06930126;11/11/2026;690755003842;80;24;2;09/11/2026;07607,2,350.00;";
 
-    private static (Encaisser Cas, VentesEspion Ventes) CasCaisse(VoletsChifaEnMemoire? volets = null)
+    private static (Encaisser Cas, VentesEspion Ventes) CasCaisse(VoletsChifaEnMemoire? volets = null, Referentiels.IMotifsReglables? motifs = null)
     {
         volets ??= new VoletsChifaEnMemoire();
         volets.Codes["07607"] = new ProduitChifa(2, "Amoxicilline", 350);
         var ventes = new VentesEspion();
         var cas = new Encaisser(new CatalogueEnMemoire(), new PatientsEnMemoire(), ventes, new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"),
-            new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire(), voletsChifa: volets);
+            new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire(), voletsChifa: volets, motifs: motifs);
         return (cas, ventes);
     }
 
-    private static CommandeVente TiersPayant(long organisme, bool factureeChifa = false, string? numero = null) =>
+    private static CommandeVente TiersPayant(long organisme, bool factureeChifa = false, string? numero = null, string? motif = "carte_absente",
+        string? texte = null) =>
         new([new LigneCommande(2, 20, 1)], true, organisme, 80, 12, new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, null), 0,
-            ModePaiement.Especes, null, FactureeParChifa: factureeChifa, NumeroFactureChifa: numero);
+            ModePaiement.Especes, null, FactureeParChifa: factureeChifa, NumeroFactureChifa: numero, MotifSansVoletCode: motif, MotifSansVoletTexte: texte);
+
+    /// <summary>Liste réglable « volet_absent » (script 097) : motifs de départ, un motif désactivé.</summary>
+    private static MotifsEnMemoire MotifsVoletAbsent()
+    {
+        var m = new MotifsEnMemoire();
+        m.Motifs.AddRange([
+            new(101, "volet_absent", "carte_absente", "Pas de carte Chifa présentée", true, false, 10),
+            new(102, "volet_absent", "chifa_indisponible", "CHIFA-Officine indisponible", false, false, 20),
+            new(103, "volet_absent", "autre", "Autre (préciser)", true, true, 999)
+        ]);
+        return m;
+    }
+
+    [Fact]
+    public async Task Facturee_par_Chifa_sans_numero_motif_enregistre_sur_la_vente()
+    {
+        var (cas, ventes) = CasCaisse(motifs: MotifsVoletAbsent());
+        await cas.ExecuterAsync(TiersPayant(1, true, null, "autre", "  Patient pressé "), 5, "Caisse 1");
+        Assert.Equal(("autre", "Patient pressé"), (ventes.Recu!.MotifSansVoletCode, ventes.Recu.MotifSansVoletTexte));
+    }
+
+    [Theory]
+    [InlineData(null, null, "motif")]                    // aucun motif
+    [InlineData("chifa_indisponible", null, "motif")]    // motif désactivé
+    [InlineData("autre", "  ", "motif_texte")]           // « Autre » sans texte
+    public async Task Facturee_par_Chifa_sans_numero_refusee_sans_motif_valable(string? motif, string? texte, string champ)
+    {
+        var (cas, ventes) = CasCaisse(motifs: MotifsVoletAbsent());
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(TiersPayant(1, true, null, motif, texte), 5, "Caisse 1"));
+        Assert.Equal(champ, ex.Champ);
+        Assert.Null(ventes.Recu);
+    }
+
+    [Fact]
+    public async Task Facturee_par_Chifa_avec_numero_aucun_motif_demande()
+    {
+        var (cas, ventes) = CasCaisse(motifs: MotifsVoletAbsent());
+        await cas.ExecuterAsync(TiersPayant(1, true, "06931126", motif: null), 5, "Caisse 1");
+        Assert.Equal(("06931126", (string?)null), (ventes.Recu!.FactureChifa, ventes.Recu.MotifSansVoletCode));
+    }
 
     [Fact]
     public async Task Vente_reprise_d_un_volet_canal_chifa()
@@ -60,8 +101,18 @@ public class CanalOrganismeTests
     }
 
     [Theory]
-    [InlineData(1L, null, "facture_chifa")]     // n° de facture Chifa obligatoire
-    [InlineData(1L, "  ", "facture_chifa")]
+    [InlineData(null)]
+    [InlineData("  ")]
+    public async Task Facturee_par_Chifa_sans_numero_vente_en_attente_de_volet(string? numero)
+    {
+        // Circuit « la caisse d'abord » (2026-11-15) : la vente est encaissée, canal chifa, sans n° (le volet sera rattaché ensuite)
+        var (cas, ventes) = CasCaisse();
+        await cas.ExecuterAsync(TiersPayant(1, true, numero), 5, "Caisse 1");
+        Assert.Equal((CanalOrganisme.Chifa, (string?)null, "carte_absente"), (ventes.Recu!.CanalOrganisme, ventes.Recu.FactureChifa, ventes.Recu.MotifSansVoletCode));
+    }
+
+    [Theory]
+    [InlineData(1L, "0123456789012345678901234567890", "facture_chifa")]   // 31 caractères : trop long
     [InlineData(4L, "06931126", "organisme")]   // CNAS ou CASNOS seulement
     public async Task Facturee_par_Chifa_refusee_sans_numero_ou_hors_CNAS_CASNOS(long organisme, string? numero, string champ)
     {

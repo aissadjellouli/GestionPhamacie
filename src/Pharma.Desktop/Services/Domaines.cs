@@ -43,7 +43,8 @@ public static class Domaines
             new("Trésorerie", "tresorerie", ["tresorerie"], ["tresorerie.gerer"]),
             new("Dettes et créances", "dettes", ["dettes"], ["tresorerie.gerer"]),
             new("Financements", "financements", ["financements"], ["role.titulaire"]),
-            new("Chifa", "", ["chifa"], [], "à venir"),
+            // Circuit « la caisse d'abord » (2026-11-15) : ventes Chifa en attente de volet, volets rattachés avec écart
+            new("Chifa", "chifa", ["chifa"], ["caisse.vendre"]),
         ]),
         new("pilotage", "Pilotage", 'P',
         [

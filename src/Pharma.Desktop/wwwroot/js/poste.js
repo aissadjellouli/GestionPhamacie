@@ -326,11 +326,18 @@ window.pharma.tableaux = (function () {
     }
     return total;
   }
+  // Cadre placé dans un « cadre-unique » (2026-11-15, Encaisser une dette) : c'est le cadre englobant qui défile seul,
+  // le cadre intérieur n'a pas de hauteur propre (pas de barres de défilement imbriquées)
+  function interieur(c) { return !!(c.parentElement && c.parentElement.closest(".cadre-unique")); }
   function ajuster() {
     const zoom = parseFloat(document.documentElement.style.zoom) || 1;
     const fenetre = window.innerHeight / zoom;
+    document.querySelectorAll(".cadre-unique .tableau-cadre, .cadre-unique .cadre-defilant").forEach(function (c) {
+      if (c.style.maxHeight) c.style.maxHeight = "";
+      if (c.style.height) c.style.height = "";
+    });
     document.querySelectorAll(".tableau-cadre, .cadre-defilant").forEach(function (c) {
-      if (c.closest(".voile, .suggestions")) return;   // fenêtres au-dessus de l'écran : leur propre défilement
+      if (c.closest(".voile, .suggestions") || interieur(c)) return;   // fenêtres au-dessus de l'écran : leur propre défilement
       const h = Math.max(minimum(c), Math.floor(fenetre - hautDansPage(c) - dessous(c) - BARRE_ETAT - MARGE));
       poser(c, h);
     });
@@ -341,7 +348,7 @@ window.pharma.tableaux = (function () {
       const hauteurPage = document.documentElement.getBoundingClientRect().height;
       const deborde = Math.ceil(Math.max(d.scrollHeight - d.clientHeight, hauteurPage - window.innerHeight) / zoom);
       if (deborde <= 0) break;
-      const cadres = Array.from(document.querySelectorAll(".tableau-cadre, .cadre-defilant")).filter(function (c) { return !c.closest(".voile, .suggestions"); });
+      const cadres = Array.from(document.querySelectorAll(".tableau-cadre, .cadre-defilant")).filter(function (c) { return !c.closest(".voile, .suggestions") && !interieur(c); });
       // Un cadre marqué « prioritaire » (le panier de la caisse) reprend le débordement avant les autres
       const grand = cadres.sort(function (a, b) {
         const pa = a.classList.contains('cadre-prioritaire') ? 1 : 0, pb = b.classList.contains('cadre-prioritaire') ? 1 : 0;

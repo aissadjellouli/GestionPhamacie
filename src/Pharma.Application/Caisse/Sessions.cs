@@ -1,4 +1,4 @@
-using Pharma.Application.Commun;
+﻿using Pharma.Application.Commun;
 using Pharma.Application.Securite;
 using Pharma.Domain.Caisse;
 using Pharma.Domain.Commun;
@@ -9,13 +9,15 @@ namespace Pharma.Application.Caisse;
 /// <summary>VersementCloture : « manuel » (saisi en Trésorerie) ou « automatique » (compté moins le fond par défaut porté au coffre à la clôture).</summary>
 public sealed record ParametresCaisse(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string VersementCloture = "manuel",
     decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true,
-    decimal SeuilEcartChifa = Pharma.Domain.Ventes.EcartPrixChifa.SeuilParDefaut);
+    decimal SeuilEcartChifa = Pharma.Domain.Ventes.EcartPrixChifa.SeuilParDefaut, decimal SeuilSortieTiroir = 2000,
+    int DelaiVoletChifaJours = RapprocherVoletChifa.DelaiParDefaut);
 
 /// <summary>Données d'une session pour l'écran et le rapport.</summary>
 public sealed record DetailSession(
     long Id, long UtilisateurId, string Employe, string Poste, DateTime OuverteLe, decimal FondCaisse,
     DateTime? FermeeLe, decimal? VentesEspeces, decimal? Attendu, decimal? Compte, decimal? Ecart,
-    int NombreVentes, decimal TotalVentes, IReadOnlyList<LigneComptage> Comptage, IReadOnlyList<string>? Vendeurs = null, bool Releve = false)
+    int NombreVentes, decimal TotalVentes, IReadOnlyList<LigneComptage> Comptage, IReadOnlyList<string>? Vendeurs = null, bool Releve = false,
+    IReadOnlyList<LigneTiroir>? LignesTiroir = null)
 {
     /// <summary>Titre du rapport PDF : une relève laisse la caisse ouverte (une nouvelle session la suit), ce n'est pas une clôture.</summary>
     public string TitreRapport => Releve ? "Rapport de relève de caisse" : "Rapport de clôture de caisse";
@@ -42,6 +44,9 @@ public interface ISessionsCaisse
     Task<string?> NomEmployeAsync(long utilisateurId, CancellationToken ct = default);
     Task<ParametresCaisse> ParametresAsync(CancellationToken ct = default);
     Task ModifierParametresAsync(ParametresCaisse parametres, CancellationToken ct = default);
+    /// <summary>Sorties (par motif) et entrées du tiroir de la session (script 096), nettes des corrections, pour le récapitulatif.</summary>
+    Task<IReadOnlyList<LigneTiroir>> LignesTiroirAsync(long sessionId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<LigneTiroir>>([]);
 }
 
 /// <summary>État de la caisse pour le poste. Les montants attendus ne sont donnés qu'avec le droit de voir les écarts.</summary>
@@ -94,7 +99,7 @@ public sealed class OuvrirSessionCaisse(ISessionsCaisse sessions)
 /// </summary>
 public sealed record ClotureVue(
     long SessionId, decimal Compte, decimal? FondCaisse, decimal? VentesEspeces, decimal? Attendu,
-    decimal? Ecart, bool? AuDelaDuSeuil, decimal? SeuilEcart);
+    decimal? Ecart, bool? AuDelaDuSeuil, decimal? SeuilEcart, IReadOnlyList<LigneTiroir>? LignesTiroir = null);
 
 public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionService droits, IJournal journal, Notifications.IAlertesTitulaire? alertes = null,
     ITraceErreurs? trace = null)
@@ -141,8 +146,9 @@ public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionS
 
         if (!await droits.APermissionAsync(utilisateurId, Permissions.CaisseVoirEcart, ct))
             return new ClotureVue(session.Id, resultat.Compte, null, null, null, null, null, null);
+        // Sorties et entrées du tiroir (script 096) : lignes séparées du récapitulatif, déjà comprises dans l'attendu
         return new ClotureVue(session.Id, resultat.Compte, resultat.FondCaisse, resultat.VentesEspeces,
-            resultat.Attendu, resultat.Ecart, resultat.AuDelaDuSeuil, parametres.SeuilEcart);
+            resultat.Attendu, resultat.Ecart, resultat.AuDelaDuSeuil, parametres.SeuilEcart, await sessions.LignesTiroirAsync(session.Id, ct));
     }
 }
 
@@ -185,7 +191,7 @@ public sealed class ObtenirRapportCloture(ISessionsCaisse sessions, IPermissionS
         var vendeurs = await sessions.VendeursAsync(sessionId, ct);
         if (detail.UtilisateurId != utilisateurId && vendeurs.All(v => v.Id != utilisateurId) && !voirEcart)
             throw new DroitRefuseException(Permissions.CaisseVoirEcart, "consulter la clôture d’une caisse où vous n’avez pas vendu");
-        detail = detail with { Vendeurs = vendeurs.Select(v => v.Nom).ToList() };
+        detail = detail with { Vendeurs = vendeurs.Select(v => v.Nom).ToList(), LignesTiroir = await sessions.LignesTiroirAsync(sessionId, ct) };
         if (detail.FermeeLe is null)
             throw new RegleMetierException("La session n’est pas encore clôturée.");
         var parametres = await sessions.ParametresAsync(ct);
@@ -210,8 +216,12 @@ public sealed class ModifierParametresCaisse(ISessionsCaisse sessions, IJournal 
             throw new RegleMetierException("Le seuil d’annulations doit être compris entre 0 (pas d’alerte) et 100.", "seuil_annulations");
         if (p.PlafondCreditDefaut < 0)
             throw new RegleMetierException("Le plafond de crédit proposé ne peut pas être négatif.", "plafond_defaut");
+        if (p.SeuilSortieTiroir is < 0 or > 100_000_000)
+            throw new RegleMetierException("Le seuil de validation des sorties du tiroir doit être positif ou nul (DA).", "seuil_sortie_tiroir");
         if (p.SeuilEcartChifa is < 0 or > 1_000_000)
             throw new RegleMetierException("Le seuil d’écart de prix Chifa doit être positif ou nul (DA par boîte).", "seuil_ecart_chifa");
+        if (p.DelaiVoletChifaJours is < 1 or > 365)
+            throw new RegleMetierException("Le délai des ventes en attente de volet Chifa doit être compris entre 1 et 365 jours.", "delai_volet_chifa");
         if (p.DeconnexionMinutes is < 0 or > 240)
             throw new RegleMetierException("La déconnexion automatique doit être comprise entre 0 (désactivée) et 240 minutes.", "deconnexion");
         if (p.VersementCloture is not ("manuel" or "automatique"))

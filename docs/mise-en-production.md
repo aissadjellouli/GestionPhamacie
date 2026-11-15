@@ -62,7 +62,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `094`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `097`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -203,7 +203,9 @@ Le dossier `database/init/` contient trois fichiers :
   - seuil d'écart ;
   - comptage aveugle ;
   - déconnexion automatique ;
-  - versement des caisses au coffre (manuel ou automatique).
+  - versement des caisses au coffre (manuel ou automatique) ;
+  - seuil de validation des sorties d'argent par le tiroir (défaut 2 000 DA : au-delà, un employé qui a le droit « Faire la relève et clôturer la caisse » valide, code comptoir possible) ;
+  - Administration › Motifs et catégories : motifs du tiroir et leur effet (sortie, entrée, aucun) ; Administration › Contrôle interne : alerte au-delà de N sorties du tiroir par employé et par jour (défaut 5).
 - [ ] **7.2** Administration › Alertes et seuils, et Seuils de stock : seuils de péremption et de stock.
 - [ ] **7.3** Administration › Emplacements : rayons, réfrigérateur, armoire des psychotropes, réserves.
 - [ ] **7.4** **Sur chaque poste** : Administration › Imprimantes et étiquettes (imprimante de tickets, largeur du rouleau, ticket automatique, imprimante d'étiquettes, afficheur client). Faire un essai d'impression et un essai de l'afficheur.

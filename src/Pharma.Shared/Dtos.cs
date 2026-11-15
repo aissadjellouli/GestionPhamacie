@@ -130,7 +130,7 @@ public sealed record CommandeVenteDto(
     long? PatientId, OrdonnanceDto? Ordonnance, decimal RemisePct, string Mode, decimal? MontantRecu, decimal? ResteACharge = null,
     ValidationBlocageDto? Blocage = null, string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null,
     IReadOnlyList<ChoixPrixChifaDto>? ChoixChifa = null, bool FactureeParChifa = false, string? NumeroFactureChifa = null,
-    PersonneVenteDto? RemisA = null, PersonneVenteDto? Pour = null);
+    PersonneVenteDto? RemisA = null, PersonneVenteDto? Pour = null, string? MotifSansVoletCode = null, string? MotifSansVoletTexte = null);
 
 /// <summary>
 /// « Remis à » (vente avec ordonnance) ou « Pour » (vente sans ordonnance), 2026-11-15 : fiche d'un membre de la famille (PatientId)
@@ -180,7 +180,9 @@ public sealed record ClotureRequete(IReadOnlyDictionary<string, decimal> Saisies
 
 public sealed record ClotureDto(
     long SessionId, decimal Compte, decimal? FondCaisse, decimal? VentesEspeces, decimal? Attendu,
-    decimal? Ecart, bool? AuDelaDuSeuil, decimal? SeuilEcart, decimal VerseAuCoffre = 0);
+    decimal? Ecart, bool? AuDelaDuSeuil, decimal? SeuilEcart, decimal VerseAuCoffre = 0, List<LigneTiroirDto>? LignesTiroir = null);
+/// <summary>Ligne du récapitulatif : sortie (par motif) ou entrée du tiroir de la session (script 096), comprise dans l'attendu.</summary>
+public sealed record LigneTiroirDto(string Motif, string Sens, decimal Montant);
 
 /// <summary>Relève : clôture comptée de la session précédente et caisse rouverte avec ce montant.</summary>
 public sealed record ReleveDto(ClotureDto Cloture, long NouvelleSessionId);
@@ -197,7 +199,8 @@ public sealed record ComptageIntermediaireDto(DateTime Le, string Employe, decim
 
 /// <summary>VersementCloture : manuel ou automatique (argent des caisses clôturées vers le coffre).</summary>
 public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel",
-    decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true, decimal SeuilEcartChifa = 5);
+    decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true, decimal SeuilEcartChifa = 5,
+    int DelaiVoletChifaJours = 7, decimal SeuilSortieTiroir = 2000);
 
 public sealed record EntreeJournalDto(DateTime Date, string Employe, string Action, string? Details, string? AutorisePar, long? EmployeId = null, long? AutoriseParId = null);
 
@@ -923,7 +926,18 @@ public sealed record EtatRestaurationDto(bool EnCours, string? Type, DateTime? D
 // ---- Surveillance de la caisse (titulaire) ----
 /// <summary>Signalé par le poste : ligne_retiree (produit, lot, boîtes, montant) ou tiroir_ouvert (motif obligatoire, « autre » avec texte).</summary>
 public sealed record EvenementCaisseRequete(string Type, long? ProduitId = null, long? LotId = null, int? Quantite = null, decimal? Montant = null,
-    string? MotifCode = null, string? MotifTexte = null);
+    string? MotifCode = null, string? MotifTexte = null, SaisieTiroirDto? Tiroir = null);
+/// <summary>Motif du tiroir à effet (script 096) : montant et détail exigé (catégorie et libellé, grossiste et BL ou nom, patient et raison).</summary>
+public sealed record SaisieTiroirDto(decimal? Montant, string? Categorie = null, string? Libelle = null, long? FournisseurId = null,
+    string? Beneficiaire = null, string? Reference = null, long? PatientId = null, string? Raison = null);
+/// <summary>Bon de sortie (ou d'entrée) créé par un motif à effet ; vide pour un motif sans effet.</summary>
+public sealed record OuvertureTiroirDto(long? MouvementId, string? Numero);
+/// <summary>Sortie ou entrée du tiroir (contrôle interne). Corrigee : une écriture inverse existe ; CorrigeId : ce mouvement en est une.</summary>
+public sealed record MouvementTiroirDto(long Id, string Numero, DateTime Le, long UtilisateurId, string Employe, string? Poste, string Motif, string Sens,
+    decimal Montant, string? Categorie, string? Libelle, string? Beneficiaire, string? Reference, string? Patient, string? Raison, string? ValidePar,
+    long? CorrigeId, string? MotifCorrection, bool Corrigee);
+public sealed record PageMouvementsTiroirDto(List<MouvementTiroirDto> Lignes, int Total, int Numero, int Taille, decimal TotalSorties, decimal TotalEntrees);
+public sealed record CorrectionTiroirRequete(string? Motif);
 public sealed record AlerteSurveillanceDto(long Id, string Type, string Niveau, long? UtilisateurId, string? Employe, DateOnly Jour, string Message,
     decimal? Valeur, string Statut, DateTime MiseAJourLe, string? TraiteePar, DateTime? TraiteeLe, string? ActionPrise);
 public sealed record ParametresSurveillanceDto(int SeuilLignesRetirees, int SeuilTiroir, int SeuilAttentesAbandonnees, int SeuilRemises,
@@ -932,7 +946,7 @@ public sealed record ParametresSurveillanceDto(int SeuilLignesRetirees, int Seui
     bool ReceptionAveugle = true, int JoursAvoirRetour = 30,
     decimal SeuilCreditNouveauPatient = 5000, int JoursPatientRecent = 7, decimal SeuilCreditsJour = 20000, int JoursCreditSansRemboursement = 60,
     int SeuilAutorisationsValideur = 10, int SeuilAutorisationsEmploye = 5, int MinutesPostesSimultanes = 10, int SeuilChangementsPoste = 3,
-    int SeuilBaissesPrix = 1);
+    int SeuilBaissesPrix = 1, int SeuilSortiesTiroir = 5);
 public sealed record ProduitSensibleDto(long ProduitId, string Nom, int Stock);
 public sealed record MarquerSensibleRequete(bool Sensible);
 
@@ -975,3 +989,23 @@ public sealed record AssocierCodeChifaRequete(string Code, long ProduitId);
 public sealed record CreerPatientVoletRequete(string Texte, string? Nom, long? OrganismeId, string? Lien = null, long? AssurePrincipalId = null);
 /// <summary>Cree : faux si la fiche du même n° d'assuré existait déjà ; ACompleter : nom provisoire.</summary>
 public sealed record PatientVoletDto(long Id, string Nom, string NumAssure, long? OrganismeId, bool Cree, bool ACompleter);
+
+// ---- Circuit « la caisse d'abord » (2026-11-15) : volet rapproché d'une vente déjà encaissée ----
+/// <summary>Ecart : concorde, prix_sous_seuil (acceptés) ; prix, quantite, absent_vente, absent_volet, code_non_associe (en rouge).</summary>
+public sealed record LigneRapprochementDto(string? Code, long? ProduitId, string Produit, int? QuantiteVolet, int? QuantiteVente, decimal? PrixChifa,
+    decimal? NotrePrix, string Ecart, string Libelle, bool EnRouge);
+/// <summary>Vente candidate : MemeAssure (n° + suffixe du volet), Concorde (aucune différence en rouge), parts de l'organisme (vente, prix Chifa).</summary>
+public sealed record VenteCandidateDto(long VenteId, string Numero, DateTime Date, string? Patient, string? NumAssure, string? Organisme, string Vendeur,
+    decimal Total, bool MemeAssure, bool Concorde, int Score, decimal PartOrganisme, decimal? PartOrganismeChifa, decimal EcartPartOrganisme,
+    IReadOnlyList<LigneRapprochementDto> Lignes, bool MemeCarte = false, bool EnRetard = false);
+/// <summary>Volet lu et ventes candidates (la meilleure d'abord) ; aucune : le volet crée la vente comme avant.</summary>
+public sealed record RapprochementVoletDto(string NumeroFacture, DateOnly DateFacture, string Assure, DateOnly? DateOrdonnance, decimal MontantVolet,
+    decimal Seuil, int JoursCandidats, IReadOnlyList<VenteCandidateDto> Candidates);
+/// <summary>Volet d'un autre assuré que le patient choisi : le vendeur garde le patient (journalisé).</summary>
+public sealed record GarderPatientVoletRequete(string Texte, long PatientId, string? Patient, string? NumAssure);
+public sealed record RattacherVoletRequete(string Texte, long VenteId, string? Motif, string? Regularisation = null);
+public sealed record VoletRattacheDto(string Vente, bool AvecEcart, decimal EcartPartOrganisme, string? Catalogue, string? Regularisation = null);
+public sealed record VenteAttenteVoletDto(long Id, string Numero, DateTime Date, string? Patient, string? NumAssure, string? Organisme, string Vendeur,
+    decimal Total, decimal PartOrganisme, string? Motif = null, bool EnRetard = false);
+public sealed record VoletAvecEcartDto(long VenteId, string Numero, DateTime DateVente, string? Patient, string NumeroFacture, DateTime? RattacheLe,
+    string? RattachePar, string Motif, string? Detail, decimal? EcartPartOrganisme, string? Regularisation = null);

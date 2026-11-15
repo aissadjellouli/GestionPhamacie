@@ -822,6 +822,17 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     /// <summary>Ligne retirée du panier ou tiroir ouvert : signalé au serveur (surveillance du titulaire).</summary>
     public async Task<string?> SignalerCaisseAsync(EvenementCaisseRequete e) => (await PostAsync<EvenementCaisseRequete, object>("api/caisse/evenements", e)).Item2;
 
+    // ---- Sorties et entrées d'argent par le tiroir (script 096) ----
+    /// <summary>Ouverture du tiroir (F8) : bon de sortie (ou d'entrée) rendu pour un motif à effet ; « Faire autoriser » au-delà du seuil.</summary>
+    public Task<(OuvertureTiroirDto?, string?)> OuvrirTiroirAsync(EvenementCaisseRequete e) => PostAsync<EvenementCaisseRequete, OuvertureTiroirDto>("api/caisse/evenements", e);
+    public Task<(byte[]?, string?, string?)> BonSortiePdfAsync(long id, int largeurMm) =>
+        FichierAsync(HttpMethod.Get, $"api/caisse/tiroir/{id}/bon.pdf?largeur={largeurMm}", "bon_sortie.pdf");
+    public Task<(OuvertureTiroirDto?, string?)> CorrigerTiroirAsync(long id, string? motif) =>
+        PostAsync<CorrectionTiroirRequete, OuvertureTiroirDto>($"api/caisse/tiroir/{id}/correction", new(motif));
+    public Task<(PageMouvementsTiroirDto?, string?)> MouvementsTiroirAsync(DateOnly? du, DateOnly? au, long? employe, string? motif, string? sens, int page, int taille) =>
+        GetAsync<PageMouvementsTiroirDto?>("api/surveillance/tiroir?" + Requete(("du", du?.ToString("yyyy-MM-dd")), ("au", au?.ToString("yyyy-MM-dd")),
+            ("employe", employe), ("motif", motif), ("sens", sens), ("page", page), ("taille", taille)), null);
+
     // ---- Motifs réglables (script 094) ----
     /// <summary>Motifs actifs d'une liste (tiroir, attente, charge, sortie_stock, retour_fournisseur), proposés à la saisie.</summary>
     public Task<(List<MotifReglableDto>, string?)> MotifsAsync(string liste) => GetAsync<List<MotifReglableDto>>($"api/motifs/{Uri.EscapeDataString(liste)}", []);
@@ -999,6 +1010,19 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     // ---- Volet Chifa repris par son QR code ----
     public Task<(VoletChifaDto?, string?)> LireVoletChifaAsync(string texte) => PostAsync<LireVoletChifaRequete, VoletChifaDto>("api/caisse/volet-chifa", new(texte));
+    // Circuit « la caisse d'abord » (2026-11-15) : ventes candidates au rattachement du volet, rattachement, listes
+    public Task<(RapprochementVoletDto?, string?)> RapprochementVoletAsync(string texte) =>
+        PostAsync<LireVoletChifaRequete, RapprochementVoletDto>("api/caisse/volet-chifa/rapprochement", new(texte));
+    public async Task<string?> GarderPatientVoletAsync(string texte, long patientId, string? patient, string? numAssure) =>
+        (await PostAsync<GarderPatientVoletRequete, System.Text.Json.JsonElement>("api/caisse/volet-chifa/patient-garde", new(texte, patientId, patient, numAssure))).Item2;
+    public Task<(VoletRattacheDto?, string?)> RattacherVoletAsync(string texte, long venteId, string? motif, string? regularisation = null) =>
+        PostAsync<RattacherVoletRequete, VoletRattacheDto>("api/caisse/volet-chifa/rattacher", new(texte, venteId, motif, regularisation));
+    public Task<(PageDto<VenteAttenteVoletDto>?, string?)> VentesAttenteVoletAsync(string? q, int page, int taille) =>
+        GetAsync<PageDto<VenteAttenteVoletDto>?>($"api/caisse/ventes-attente-volet?page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(q) ? "" : $"&q={Uri.EscapeDataString(q.Trim())}"), null);
+    public Task<(PageDto<VoletAvecEcartDto>?, string?)> VoletsAvecEcartAsync(string? q, int page, int taille) =>
+        GetAsync<PageDto<VoletAvecEcartDto>?>($"api/caisse/volets-ecart?page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(q) ? "" : $"&q={Uri.EscapeDataString(q.Trim())}"), null);
     public Task<(PatientVoletDto?, string?)> CreerPatientVoletAsync(string texte, string? nom, long? organismeId, string? lien = null,
         long? assurePrincipalId = null) =>
         PostAsync<CreerPatientVoletRequete, PatientVoletDto>("api/caisse/volet-chifa/patient", new(texte, nom, organismeId, lien, assurePrincipalId));

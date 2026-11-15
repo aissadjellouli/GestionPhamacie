@@ -315,6 +315,12 @@ public static class Libelles
         "comptage_recompte" => "Livraison recomptée",
         "reception_attente_abandonnee" => "Réception en attente abandonnée",
         "tiroir_ouvert" => "Tiroir ouvert sans vente",
+        "correction_tiroir" => "Correction d’une sortie du tiroir (écriture inverse)",
+        "motif_reglable" => "Motif ou catégorie modifié",
+        "volet_chifa_rattache" => "Volet Chifa rattaché à une vente",
+        "regularisation_part_organisme" => "Régularisation de la part organisme (volet Chifa)",
+        "volet_chifa_patient_garde" => "Volet Chifa d’un autre assuré : patient choisi gardé",
+        "mot_de_passe_actuel_refuse" => "Mot de passe actuel refusé",
         "restauration_base" => "Base de données restaurée",
         "restauration_ged" => "Documents restaurés",
         "pret_cree" => "Prêt créé",
@@ -435,6 +441,12 @@ public static class Libelles
                                   + $" (avant : achat {(B("avant_achat") ? "bloqué" : "permis")}, vente {(B("avant_vente") ? "bloquée" : "permise")})" + (T("motif") is "—" ? "" : $" · motif : {T("motif")}"),
                 "remise_automatique_arretee" => $"{N("pourcentage"):0.##} % sur {T("cible")} : arrêtée",
                 "reglages_sauvegarde" => $"{(B("actif") ? "Automatique" : "Manuelle seulement")} à {T("heure")} · dossier {T("dossier")} · {T("conservation")} conservée(s)",
+                // Libellés lisibles (recette 2026-11-15, 6e passage) : plus de « Motif reglable », « Prix applique », « Ventes : 3 306 236 »
+                "motif_reglable" => $"{ListeMotifs(T("liste"))} : « {T("libelle")} » · {(B("actif") ? "proposé" : "désactivé")}",
+                "ecart_prix_chifa" => $"Ticket {T("ticket")}" + (T("volet") is "—" ? "" : $" · volet n° {T("volet")}") + LignesEcartChifa(d)
+                                      + (N("ecart_patient") != 0 ? $" · écart pour le patient {Dinars(N("ecart_patient"), 2)}" : "")
+                                      + (T("valideur") is "—" ? "" : $" · autorisé par {T("valideur")}"),
+                "reglement_credit" => $"{Dinars(N("montant"), 2)} en {T("mode")} · reçu n° {T("recu")} · reste dû {Dinars(N("reste_du"), 2)}" + VentesReglees(d),
                 _ => Generique(d)
             };
         }
@@ -500,10 +512,14 @@ public static class Libelles
             {
                 // Identifiants techniques (produit_id, ordonnance_id…) : rien à lire pour le titulaire
                 if (p.Name == "id" || p.Name.EndsWith("_id", StringComparison.Ordinal)) continue;
+                // Code d'un motif : seul le libellé du motif se lit, quand il est là
+                if (p.Name == "motif_code" && e.TryGetProperty("motif", out var motif) && motif.ValueKind == System.Text.Json.JsonValueKind.String) continue;
+                // Identifiants de ventes quand les n° de ticket sont là
+                if (p.Name == "ventes" && e.TryGetProperty("tickets", out var tk) && tk.ValueKind == System.Text.Json.JsonValueKind.Array) continue;
                 var cle = prefixe.Length == 0 ? Humaniser(p.Name) : $"{prefixe}, {Humaniser(p.Name).ToLowerInvariant()}";
                 if (p.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
                     foreach (var kv in Aplatir(p.Value, cle)) resultat[kv.Key] = kv.Value;
-                else resultat[cle] = Valeur(p.Value);
+                else resultat[cle] = ClesNumeros.Contains(p.Name) ? Brut(p.Value) : Valeur(p.Value);
             }
         else resultat[prefixe.Length == 0 ? "Valeur" : prefixe] = Valeur(e);
         return resultat;
@@ -541,8 +557,74 @@ public static class Libelles
     private static readonly Dictionary<string, string> ClesJournal = new()
     {
         ["reste_du"] = "Reste dû", ["autorise_par"] = "Autorisé par", ["valide_par"] = "Validé par", ["deja_rendu"] = "Déjà rendu",
-        ["part_tiroir"] = "Part du tiroir", ["mode_remboursement"] = "Mode de remboursement", ["dette_diminuee"] = "Dette diminuée"
+        ["part_tiroir"] = "Part du tiroir", ["mode_remboursement"] = "Mode de remboursement", ["dette_diminuee"] = "Dette diminuée",
+        // Recette 2026-11-15 (6e passage) : volet Chifa, écarts de prix, motifs
+        ["prix_applique"] = "Prix appliqué", ["prix_chifa"] = "Prix Chifa", ["notre_prix"] = "Notre prix", ["choix"] = "Choix",
+        ["motif"] = "Motif", ["motif_code"] = "Code du motif", ["part_organisme"] = "Part organisme", ["ecart"] = "Écart",
+        ["volet"] = "N° du volet", ["ticket"] = "Ticket", ["tickets"] = "Tickets", ["ventes"] = "Ventes", ["vente"] = "Vente", ["recu"] = "Reçu n°",
+        ["ecart_patient"] = "Écart pour le patient", ["valideur"] = "Autorisé par", ["validateur"] = "Validé par",
+        ["part_organisme_calculee"] = "Part organisme calculée (prix Chifa)", ["part_organisme_vente"] = "Part organisme de la vente",
+        ["part_organisme_chifa"] = "Part organisme selon Chifa", ["reste_calcule"] = "Reste calculé", ["reste_saisi"] = "Reste saisi",
+        ["date_facture"] = "Date de la facture", ["date_ordonnance"] = "Date de l’ordonnance", ["concorde"] = "Concorde",
+        ["ecarts"] = "Écarts", ["qte_volet"] = "Quantité du volet", ["qte_vente"] = "Quantité vendue",
+        ["assure_volet"] = "Assuré du volet", ["num_assure_patient"] = "N° d’assuré du patient", ["tarif_reference"] = "Tarif de référence",
+        ["remboursable"] = "Remboursable", ["montant_dette"] = "Montant de la dette", ["decision"] = "Décision", ["dette"] = "Dette",
+        ["liste"] = "Liste", ["libelle"] = "Libellé", ["actif"] = "Actif", ["origine"] = "Origine", ["poste"] = "Poste"
     };
+
+    /// <summary>Clés dont la valeur est un numéro (vente, ticket, volet, reçu) : jamais formatée comme un montant (3306236, pas 3 306 236).</summary>
+    private static readonly HashSet<string> ClesNumeros = new(StringComparer.Ordinal)
+    {
+        "ventes", "vente", "ticket", "tickets", "volet", "recu", "numero", "bl", "facture"
+    };
+
+    /// <summary>Valeur telle quelle (numéros) : tableau joint par des virgules, nombre sans séparateur de milliers.</summary>
+    private static string Brut(System.Text.Json.JsonElement v) => v.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.Number => v.GetRawText(),
+        System.Text.Json.JsonValueKind.String => v.GetString()!,
+        System.Text.Json.JsonValueKind.Null => "—",
+        System.Text.Json.JsonValueKind.Array => v.GetArrayLength() == 0 ? "aucun" : string.Join(", ", v.EnumerateArray().Select(Brut)),
+        _ => Valeur(v)
+    };
+
+    /// <summary>Nom lisible d'une liste de motifs réglables (Administration › Motifs et catégories).</summary>
+    private static string ListeMotifs(string liste) => liste switch
+    {
+        "charge" => "Catégories de dépenses",
+        "attente" => "Motifs de mise en attente",
+        "tiroir" => "Motifs d’ouverture du tiroir",
+        "sortie_stock" => "Motifs de sortie de stock",
+        "retour_fournisseur" => "Motifs de retour fournisseur",
+        "volet_absent" => "Motifs de vente Chifa sans n° de facture",
+        _ => Humaniser(liste)
+    };
+
+    /// <summary>Lignes d'un écart de prix Chifa : « produit : prix Chifa …, notre prix …, appliqué … (choix) ».</summary>
+    private static string LignesEcartChifa(System.Text.Json.JsonElement d)
+    {
+        if (!d.TryGetProperty("lignes", out var lignes) || lignes.ValueKind != System.Text.Json.JsonValueKind.Array) return "";
+        static decimal Num(System.Text.Json.JsonElement l, string nom) => l.TryGetProperty(nom, out var v) && v.TryGetDecimal(out var n) ? n : 0;
+        static string Choix(string? c) => c switch
+        {
+            "aligne_auto" => "aligné d’office", "aligne" => "aligné sur Chifa", "garde" => "notre prix gardé", "plus_eleve" => "prix le plus élevé",
+            null => "", _ => Humaniser(c).ToLowerInvariant()
+        };
+        return string.Concat(lignes.EnumerateArray().Select(l =>
+            $"\n{(l.TryGetProperty("produit", out var p) ? p.GetString() : "?")} : prix Chifa {Dinars(Num(l, "prix_chifa"), 2)}, notre prix {Dinars(Num(l, "notre_prix"), 2)}, "
+            + $"prix appliqué {Dinars(Num(l, "prix_applique"), 2)}"
+            + (l.TryGetProperty("choix", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String ? $" ({Choix(c.GetString())})" : "")));
+    }
+
+    /// <summary>Ventes soldées par un règlement de dette : n° de ticket si connus, sinon n° de vente bruts.</summary>
+    private static string VentesReglees(System.Text.Json.JsonElement d)
+    {
+        if (d.TryGetProperty("tickets", out var t) && t.ValueKind == System.Text.Json.JsonValueKind.Array && t.GetArrayLength() > 0)
+            return $" · ventes choisies : {Brut(t)}";
+        if (d.TryGetProperty("ventes", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Array && v.GetArrayLength() > 0)
+            return $" · ventes choisies n° {Brut(v)}";
+        return "";
+    }
 
     private static string Humaniser(string code)
     {

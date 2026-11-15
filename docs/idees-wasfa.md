@@ -188,3 +188,30 @@ Rien d'officiel trouvé ; sources commerciales ou anciennes, à confirmer par le
 - **Homonymes** : les applications mobiles « Wasfa » (App Store, Google Play) sont des services de photo d'ordonnance, sans rapport avec le logiciel de gestion.
 
 Sources : https://comparili.net/produit/wasfapro-secteur-medical-et-pharmaceutique-logiciel-algerie-comparili/ ; https://www.ctib.dz/telechargement.php ; https://www.profficine.com/ ; https://www.arpce.dz/en/file/j2m9a9 ; https://lechiffredaffaires.dz/la-convention-entre-lorganisme-de-securite-sociale-et-lofficine-pharmaceutique/ ; https://play.google.com/store/apps/details?id=dz.wasfa.pharmacy
+
+## 7. Comparaison à jour : Wasfa / Pharma Officine (état au 15/11/2026, après les lots du jour)
+
+| Domaine | Wasfa | Pharma Officine | Existe chez nous ? | Point fort Wasfa | Point faible Wasfa | Point fort Pharma Officine | Point faible Pharma Officine |
+|---|---|---|---|---|---|---|---|
+| Vente au comptoir | Oui | Oui | Oui | Simple, raccourcis clavier | Date de vente modifiable (Alt+D), retour en quantité négative | Lots, péremption, recherche « disponible d'abord », retour contrôlé avec motif et droit | Tiroir et imprimante non encore branchés au matériel |
+| Chifa avant signature (rapprochement avec le stock) | Oui | Oui, après signature | Partiel | Corrige les erreurs avant de signer | Mécanisme d'accès à Chifa inconnu | Rapprochement volet ↔ vente (QR), écarts en rouge, motif et journal (095, 097) | Pas de transmission vers CHIFA-Officine (format inconnu, demandé à la CNAS) |
+| Chifa non traitées | Oui | Liste « Ventes Chifa en attente de volet » | Partiel | Liste par mois, exclusion d'une ordonnance | — | Vente encaissée sans n° avec motif, rapprochable plus tard, « en retard » signalé | Pas de lecture des ordonnances signées dans Chifa |
+| Écarts de prix Chifa | Non vu | Oui | Oui (mieux) | — | — | Seuil réglable, choix de l'ayant droit, prix le plus élevé sinon, catalogue mis à jour d'après le volet | — |
+| Volet / patient prérempli par QR | Non vu | Oui | Oui (mieux) | — | — | Patient créé depuis le QR, date d'ordonnance, CNAS/CASNOS, ayants droit (lien familial) | Sens des champs « 24 », « 2 » et du suffixe non confirmé |
+| Nombre de vignettes | Oui | Oui | Oui | Affiché en grand | — | Affiché en grand (094) | — |
+| Bordereaux et rejets Chifa | Oui (journaux) | Conçu | Non (conçu) | Suivi des bordereaux | — | Ventes Chifa/MDN jamais refacturées (089) | Écran Bordereaux, paiement par bordereau et rejets à faire |
+| Convention militaire (CVM / MDN) | Oui, écran dédié | Canal MDN + organisme MDN | Partiel | Saisie dédiée | Sigle et format non documentés | Ventes MDN jamais refacturées | Pas de saisie dédiée (modèle de feuille manquant) |
+| Prestations de service (sans stock) | Oui (F10) | Non | Non | Prise de tension, injection… | — | — | À faire |
+| Crédit client | Oui | Oui | Oui (mieux) | Paiement simple | — | Plafond par droit, imputation par vente ou facture, reçu, relevé, surplus annoncé, « Remis à / Pour » | — |
+| Tiroir-caisse : motif d'ouverture | Oui (table) | Oui | Oui (mieux) | Liste réglable | — | Motif obligatoire, montant et écriture en trésorerie, prise en compte à la clôture, seuil et alerte (094, 096) | Tiroir matériel non branché |
+| Motifs d'instances (mises en attente) | Oui (table) | Oui | Oui | Liste réglable | Sens d'« instance » non confirmé | Motif + produits dus (094) | Produits dus non visibles après reprise |
+| Types de charges | Oui (table) | Oui | Oui | Réglable | — | Catégories réglables, contrôlées en trésorerie | — |
+| Motifs retours / sorties de stock | Oui (table) | Libellés réglables | Partiel | Ajout libre | — | Codes sûrs (TVA, registre, rapports) | Ajout d'un nouveau motif impossible (contraintes) |
+| Indications thérapeutiques | Oui (table) | Non | Non | Recherche par indication | — | — | À faire (fiche produit, recherche au comptoir) |
+| Correction prix / péremption / lot d'une entrée | Oui | Partiel | Partiel | Correction directe | Traçabilité non vue | Prix réservé à `prix.modifier` | Correction tracée depuis le stock à faire |
+| Libérer les produits (verrous après arrêt) | Oui | Inutile | Non nécessaire | — | Signe de verrous qui restent après un arrêt | Transactions : aucun verrou ne survit | — |
+| Inventaire | Oui | Oui | Oui (mieux) | — | — | Tournant, à l'aveugle, écarts validés | — |
+| Sécurité, droits, journal | Connexion, actions sensibles | Oui | Oui (mieux) | — | Liste des identifiants à la connexion | Droits fins, code comptoir en liste blanche, blocages, journal lisible, HTTPS possible | — |
+| Interface | Fenêtres superposées, tuiles | Écrans fixes, rubriques | — | Familière aux pharmaciens | Fenêtres empilées | Écran fixe, listes paginées et filtrées | — |
+
+> Réponse du titulaire (15/11/2026) : sens de « CVM » inconnu, probablement les ventes au MDN (militaires) ; à confirmer. Le seuil de sortie de caisse (2 000 DA par défaut) reste paramétrable dans Administration › Caisse.

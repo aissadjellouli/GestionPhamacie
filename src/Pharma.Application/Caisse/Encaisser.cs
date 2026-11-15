@@ -38,7 +38,7 @@ public sealed record CommandeVente(
     decimal RemisePct, ModePaiement Mode, decimal? MontantRecu, decimal? ResteACharge = null, Catalogue.ValidationBlocage? Blocage = null,
     string? VoletChifa = null, bool RemiseAdditionnee = false, Guid? CleEncaissement = null,
     IReadOnlyList<ChoixPrixChifa>? ChoixChifa = null, bool FactureeParChifa = false, string? NumeroFactureChifa = null,
-    PersonneVente? RemisA = null, PersonneVente? Pour = null);
+    PersonneVente? RemisA = null, PersonneVente? Pour = null, string? MotifSansVoletCode = null, string? MotifSansVoletTexte = null);
 
 /// <summary>
 /// Volet Chifa, écart de prix d'au moins le seuil : choix du vendeur pour un produit (« aligne » : prix Chifa ; « garde » : notre prix,
@@ -91,7 +91,7 @@ public sealed record VenteAEnregistrer(
     IReadOnlySet<long> ProduitsSousRegistre, bool CreditAccorde, IReadOnlyDictionary<long, IReadOnlyList<long>>? BoitesParLot = null,
     Pharma.Domain.Ventes.QrChifa? VoletChifa = null, Guid? CleEncaissement = null, bool PeutDepasserPlafond = false,
     string CanalOrganisme = Caisse.CanalOrganisme.Logiciel, string? FactureChifa = null,
-    PersonneVente? RemisA = null, PersonneVente? Pour = null);
+    PersonneVente? RemisA = null, PersonneVente? Pour = null, string? MotifSansVoletCode = null, string? MotifSansVoletTexte = null);
 
 /// <summary>
 /// Plafond de crédit revérifié dans la transaction d'encaissement (patient verrouillé, solde relu) : deux ventes à crédit simultanées
@@ -154,7 +154,8 @@ public sealed class Encaisser(
     VerificationCodeComptoir? codesComptoir = null, IJournal? journal = null,
     Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null,
     Surveillance.Surveiller? surveillance = null, IRemisesAutomatiques? remisesAuto = null, ITraceErreurs? trace = null,
-    IVoletsChifa? voletsChifa = null, Securite.AutorisationCourante? autorisation = null)
+    IVoletsChifa? voletsChifa = null, Securite.AutorisationCourante? autorisation = null,
+    Referentiels.IMotifsReglables? motifs = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
@@ -227,6 +228,26 @@ public sealed class Encaisser(
     /// maximum la couvre. Sur des médicaments, c'est un don partiel du reste à charge : droit de don, sinon code d'un employé qui l'a.
     /// Les remises automatiques, décidées par le titulaire, ne demandent rien.
     /// </summary>
+    /// <summary>
+    /// Vente « Facturée par Chifa » sans n° de facture (décision du titulaire, 2026-11-15) : motif obligatoire, actif dans la liste
+    /// « volet_absent » (Administration › Motifs et catégories), « Autre » avec un texte. Liste non branchée (tests) : code exigé seulement.
+    /// </summary>
+    private async Task<(string Code, string? Texte)> MotifSansVoletAsync(CommandeVente commande, CancellationToken ct)
+    {
+        const string Quoi = "de la vente sans n° de facture Chifa";
+        if (motifs is null)
+        {
+            if (string.IsNullOrWhiteSpace(commande.MotifSansVoletCode)) throw new RegleMetierException($"Choisissez le motif {Quoi}.", "motif");
+            var t = string.IsNullOrWhiteSpace(commande.MotifSansVoletTexte) ? null : commande.MotifSansVoletTexte.Trim();
+            var code = commande.MotifSansVoletCode.Trim();
+            if (code == Pharma.Domain.Referentiels.RegleMotifs.Autre && t is null) throw new RegleMetierException("Motif « Autre » : précisez le motif.", "motif_texte");
+            return (code, code == Pharma.Domain.Referentiels.RegleMotifs.Autre ? t : null);
+        }
+        var (c, _, texte) = await new Referentiels.MotifsActifs(motifs)
+            .ChoisirAsync(Pharma.Domain.Referentiels.RegleMotifs.VoletAbsent, commande.MotifSansVoletCode, commande.MotifSansVoletTexte, Quoi, ct);
+        return (c, texte);
+    }
+
     private async Task ExigerReductionsAsync(Vente vente, long utilisateurId, CancellationToken ct)
     {
         if (vente.RemiseManuelleSurProduits && !await droits.RemiseAutoriseeAsync(utilisateurId, vente.RemisePct, ct))
@@ -316,15 +337,20 @@ public sealed class Encaisser(
         var codeOrganisme = commande.TiersPayant && voletsChifa is not null && commande.OrganismeId is { } idOrg
             ? await voletsChifa.CodeOrganismeAsync(idOrg, ct) : null;
         string? factureChifa = null;
+        (string Code, string? Texte)? motifSansVolet = null;
         if (commande.FactureeParChifa && volet is null)
         {
             if (!commande.TiersPayant || (voletsChifa is not null && !OrganismeVoletChifa.Accepte(codeOrganisme)))
                 throw new RegleMetierException("« Facturée par Chifa » : tiers payant CNAS ou CASNOS seulement.", "organisme");
-            factureChifa = CanalOrganisme.NumeroFacture(commande.NumeroFactureChifa);
-            if (voletsChifa is not null && await voletsChifa.VenteDuVoletAsync(factureChifa, ct) is { } dejaChifa)
+            // Circuit « la caisse d'abord » (2026-11-15) : sans n° de facture Chifa, la vente attend son volet (rattaché au scan du QR)
+            factureChifa = string.IsNullOrWhiteSpace(commande.NumeroFactureChifa) ? null : CanalOrganisme.NumeroFacture(commande.NumeroFactureChifa);
+            if (factureChifa is not null && voletsChifa is not null && await voletsChifa.VenteDuVoletAsync(factureChifa, ct) is { } dejaChifa)
                 throw new RegleMetierException($"La facture Chifa n° {factureChifa} est déjà rattachée à la vente {dejaChifa}.", "facture_chifa");
+            // Sans n° (décision du titulaire, 2026-11-15) : motif obligatoire, choisi dans la liste réglable « volet_absent »
+            if (factureChifa is null)
+                motifSansVolet = await MotifSansVoletAsync(commande, ct);
         }
-        var canal = CanalOrganisme.Determiner(commande.TiersPayant, volet is not null, factureChifa is not null, codeOrganisme);
+        var canal = CanalOrganisme.Determiner(commande.TiersPayant, volet is not null, commande.FactureeParChifa && volet is null, codeOrganisme);
         // Lot plus récent servi alors qu'un lot plus ancien est en stock : raison obligatoire (ou péremption vérifiée, validée)
         await RaisonsAsync(commande, vente, produits, exiger: true, ct);
 
@@ -408,7 +434,7 @@ public sealed class Encaisser(
         {
             (id, numero) = await ventes.EnregistrerAsync(
                 new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit, BoitesParLot(commande), volet,
-                    commande.CleEncaissement, peutDepasser, canal, factureChifa, remisA, pour), ct);
+                    commande.CleEncaissement, peutDepasser, canal, factureChifa, remisA, pour, motifSansVolet?.Code, motifSansVolet?.Texte), ct);
         }
         catch (EncaissementDejaEnregistreException e)
         {

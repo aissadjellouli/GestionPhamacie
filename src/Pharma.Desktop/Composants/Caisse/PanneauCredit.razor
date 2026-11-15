@@ -51,7 +51,8 @@
         {
             @* Situation du patient dans un cadre défilant (2026-11-15) : relevé déplié, ventes et correction défilent ici, la page reste à 0
                et le montant, le mode et « Encaisser » restent visibles dessous *@
-            <div class="carte cadre-defilant">
+            @* cadre-unique : seul ce bloc défile, ses tableaux n'ont pas de hauteur propre (pas de barres imbriquées) *@
+            <div class="carte cadre-defilant cadre-unique">
                 <strong><LienContact Type="patient" Id="s.Patient.Id" Nom="@s.Patient.Nom" /></strong>@(s.Patient.Telephone is { } t ? $" · {t}" : "")
                 · doit <strong class="montant-du">@Libelles.Dinars(s.Patient.Solde, 2)</strong>@(s.Patient.Plafond > 0 ? $" (plafond {Libelles.Dinars(s.Patient.Plafond)})" : "")
                 <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => situation = null">Changer de patient</button>
@@ -179,7 +180,12 @@
                 </div>
             </div>
             @if (MessageSurplus is { } surplus) { <div class="info-bandeau" role="status">@surplus</div> }
-            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EncaisserAsync">Encaisser @Libelles.Dinars(montant, 2)</button>
+            @* Patient sans dette (2026-11-15) : rien à encaisser, bouton grisé avec l'explication *@
+            @if (s.Patient.Solde <= 0)
+            {
+                <p class="detail" style="margin: 0" id="c-sans-dette">Ce patient ne doit rien : il n’y a pas de dette à encaisser.</p>
+            }
+            <button type="button" class="btn btn-principal" disabled="@(enCours || s.Patient.Solde <= 0)" aria-describedby="@(s.Patient.Solde <= 0 ? "c-sans-dette" : null)" @onclick="EncaisserAsync">Encaisser @Libelles.Dinars(montant, 2)</button>
         }
     </section>
 </div>

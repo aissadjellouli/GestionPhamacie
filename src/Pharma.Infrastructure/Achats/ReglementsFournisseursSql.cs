@@ -96,7 +96,14 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        var id = await EcrireAsync(cx, tx, g, ct);
+        await tx.CommitAsync(ct);
+        return id;
+    }
 
+    /// <summary>Règlement écrit dans la transaction de l'appelant (aussi le paiement d'un grossiste depuis le tiroir, script 096).</summary>
+    internal static async Task<long> EcrireAsync(NpgsqlConnection cx, NpgsqlTransaction tx, ReglementAEcrire g, CancellationToken ct)
+    {
         if (g.Moyen == MoyenReglement.Financement && g.Source is null)
             throw new RegleMetierException("Un règlement par prêt ou apport indique sa source.", "source");
         // Grossiste verrouillé : deux règlements simultanés ne paient pas deux fois la même facture
@@ -164,7 +171,6 @@ public sealed class ReglementsFournisseursSql(NpgsqlDataSource db) : IReglements
         if (g.Source is { } source)
             await Financements.FinancementsSql.EnregistrerUtilisationAsync(cx, tx, source, "reglement", g.Date, g.Montant, $"Règlement {numero}",
                 null, null, id, null, g.UtilisateurId, ct);
-        await tx.CommitAsync(ct);
         return id;
     }
 

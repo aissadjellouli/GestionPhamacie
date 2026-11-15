@@ -63,6 +63,27 @@
             @if (venteFaite.CatalogueChifa is { } majCatalogue) { <div class="info-bandeau" role="status" data-champ="catalogue_chifa">@majCatalogue</div> }
             @if (messageTicket is not null) { <div class="@(ticketImprime ? "info-bandeau" : "erreur")" role="status">@messageTicket</div> }
         }
+        @if (messageRattachement is not null)
+        {
+            <div class="succes" role="status" data-champ="volet_rattache" style="display: flex; gap: 12px; align-items: center">
+                <span>@messageRattachement</span>
+                <button type="button" class="lien-bouton" @onclick="() => messageRattachement = catalogueRattachement = null">Fermer</button>
+            </div>
+            @if (catalogueRattachement is { } majCat) { <div class="info-bandeau" role="status" data-champ="catalogue_chifa">@majCat</div> }
+        }
+        @if (assureConflit is { } conflit && patient is { } choisiConflit)
+        {
+            <div class="bandeau" role="alert" data-champ="assure_volet" style="display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center">
+                <strong>Le volet appartient à l’assuré @conflit.Assure, pas à @choisiConflit.Nom@(choisiConflit.NumAssure is { } na ? $" ({na})" : "").</strong>
+                <button type="button" class="btn btn-principal" @onclick="PrendreAssureVoletAsync">Prendre l’assuré du volet</button>
+                <button type="button" class="btn" @onclick="GarderPatientChoisiAsync">Garder @choisiConflit.Nom (journalisé)</button>
+            </div>
+        }
+        @if (rapprochement is { } rap && rapprochementTexte is { } texteVolet)
+        {
+            <FenetreRapprochementVolet Rapprochement="rap" Texte="@texteVolet" OnNouvelleVente="NouvelleVenteDepuisVoletAsync"
+                                       OnRattache="VoletRattache" OnFerme="() => (rapprochement, rapprochementTexte, rapprochementVolet) = (null, null, null)" />
+        }
 
         @* Caisse en trois parties (2026-11-15, maquettes validées) : 1 · le panier, 2 · le client et l'ordonnance (sous le panier,
            réduit à une ligne quand rien n'est exigé), 3 · le paiement seul à droite. Écran fixe : seul le panier défile. *@
@@ -887,21 +908,37 @@
                         {
                             <p class="detail" style="margin: 0">Reste à charge saisi : le taux n’est pas appliqué, la part de l’organisme est la différence. Videz la case pour revenir au taux.</p>
                         }
-                        @* Vente Chifa sans volet (script 089) : part organisme facturée par Chifa, jamais par le logiciel ; n° de facture Chifa obligatoire *@
+                        @* Vente Chifa sans volet (script 089) : part organisme facturée par Chifa, jamais par le logiciel. N° de facture Chifa
+                           facultatif (circuit « la caisse d'abord », 2026-11-15) : vide, la vente attend son volet, rattaché au scan du QR *@
                         @if (volet is null && OrganismeChifa)
                         {
                             <label class="case" data-champ="facturee_chifa">
-                                <input type="checkbox" @bind="factureeChifa" /><span>Facturée par Chifa (jamais refacturée par le logiciel)</span>
+                                <input type="checkbox" @bind="factureeChifa" @bind:after="ChargerMotifsSansVoletAsync" /><span>Facturée par Chifa (jamais refacturée par le logiciel)</span>
                             </label>
                             @if (factureeChifa)
                             {
                                 <div class="champ champ-ligne">
-                                    <label for="facture-chifa">N° de facture Chifa *</label>
-                                    <input id="facture-chifa" data-champ="facture_chifa" type="text" maxlength="30" placeholder="Obligatoire"
-                                           class="@Obligatoire.Classe(FactureChifaManquante)" aria-invalid="@Obligatoire.Aria(FactureChifaManquante)"
+                                    <label for="facture-chifa">N° de facture Chifa</label>
+                                    <input id="facture-chifa" data-champ="facture_chifa" type="text" maxlength="30" placeholder="Vide : volet à scanner ensuite"
                                            @bind="numeroFactureChifa" @bind:event="oninput" />
                                 </div>
-                                @if (FactureChifaManquante) { <p class="texte-urgent" role="alert" style="margin: 0">Saisissez le n° de facture Chifa pour encaisser.</p> }
+                                @if (FactureChifaEnAttente)
+                                {
+                                    <div class="champ champ-ligne">
+                                        <label for="motif-sans-volet" class="requis">Motif sans n°</label>
+                                        <select id="motif-sans-volet" data-champ="motif_sans_volet" @bind="motifSansVolet"
+                                                class="@Obligatoire.Classe(string.IsNullOrEmpty(motifSansVolet))" aria-invalid="@Obligatoire.Aria(string.IsNullOrEmpty(motifSansVolet))">
+                                            <option value="">— Choisir —</option>
+                                            @foreach (var m in motifsSansVolet) { <option value="@m.Code">@m.Libelle</option> }
+                                        </select>
+                                        @if (motifSansVolet == "autre")
+                                        {
+                                            <input data-champ="motif_sans_volet_texte" type="text" maxlength="200" placeholder="Préciser" @bind="texteSansVolet" @bind:event="oninput"
+                                                   class="@Obligatoire.Classe(string.IsNullOrWhiteSpace(texteSansVolet))" />
+                                        }
+                                    </div>
+                                    <p class="detail" role="status" style="margin: 0">Sans n° : la vente attendra son volet Chifa (Finances › Chifa) ; scannez le QR du volet après l’édition de la facture par Chifa.</p>
+                                }
                             }
                         }
                     </div>
@@ -1173,12 +1210,13 @@
         : lignes.Any(l => l.Lot is null) ? "Retirez ou remplacez les produits sans lot vendable"
         : erreurCalcul is not null ? erreurCalcul
         : ChoixChifaManquant ? "Volet Chifa : choisissez le prix de chaque ligne en écart (s’aligner sur Chifa ou garder notre prix)"
-        : PsychotropeInterdit ? "Psychotrope : délivrance réservée aux employés qui en ont le droit"
+        : MotifSansVoletManquant ? "Facturée par Chifa sans n° de facture : choisissez le motif (« Autre » : précisez-le)"
+        : assureConflit is not null ? "Volet Chifa d’un autre assuré : prenez l’assuré du volet ou gardez le patient choisi"
+        : PsychotropeInterdit ?"Psychotrope : délivrance réservée aux employés qui en ont le droit"
         : PatientObligatoire && patient is null ? "Choisissez le patient"
         : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
         : MedecinParLeTaux && medecin is null ? "Tiers payant : l’organisme paie une partie, indiquez le médecin prescripteur"
         : PorteurIncomplet ? "Porteur de l’ordonnance : nom, adresse et pièce d’identité obligatoires"
-        : FactureChifaManquante ? "Vente facturée par Chifa : saisissez le n° de facture Chifa"
         : lignes.FirstOrDefault(l => l.Lot is not null && l.Situation is { Situation: not "aucune" } && l.RaisonLot is null) is { } sansRaison
             ? $"{sansRaison.Nom} : un lot plus ancien est en stock, indiquez ou validez la raison sous la ligne"
         : apercu?.ProduitsBloques is { Count: > 0 } && !accordBlocage.Complet(Session.A("produits.bloquer"))
@@ -1456,7 +1494,18 @@
         if (code.Length >= 20 && (code.Contains(';') || code.Count(c => "&é\"'(-è_çà".Contains(c)) >= 5))
         {
             var (v, ev) = await Api.LireVoletChifaAsync(code);
-            if (v is not null) { suggestions = []; await ReprendreVoletAsync(v); return; }
+            if (v is not null)
+            {
+                suggestions = [];
+                // Circuit « la caisse d'abord » (2026-11-15) : panier vide et ventes Chifa en attente de volet => rattacher ou nouvelle vente
+                if (lignes.Count == 0 && volet is null && (await Api.RapprochementVoletAsync(code)).Item1 is { Candidates.Count: > 0 } rv)
+                {
+                    (rapprochement, rapprochementTexte, rapprochementVolet) = (rv, code, v);
+                    return;
+                }
+                await ReprendreVoletAsync(v);
+                return;
+            }
             if (code.Contains(';')) { (suggestions, erreur) = ([], ev); return; }
         }
         // Étiquette interne ou Data Matrix : la boîte désigne son lot, servi tel quel (contrôle de péremption)
@@ -1956,6 +2005,44 @@
         }
         (volet, voletBrut, codesAAssocier, choixChifa) = (v, v.Brut, [], []);
         tiersPayant = true;
+        // Patient déjà choisi d'un autre assuré (recette 2026-11-15) : avertissement, le vendeur choisit (l'encaissement attend)
+        if (patient is { } dejaChoisi && Chiffres(dejaChoisi.NumAssure) != Chiffres(v.Assure))
+            assureConflit = v;
+        else
+            await AppliquerAssureVoletAsync(v);
+        foreach (var l in v.Lignes)
+        {
+            if (l.ProduitId is not { } id) { codesAAssocier.Add(l); continue; }
+            await AjouterAsync(id, l.Produit!, l.PrixCatalogue ?? l.PrixUnitaire, l.Quantite, viderSaisie: false);
+        }
+        // Écarts de prix (prix Chifa / prix du lot servi) : calculés par le serveur (apercu.EcartsChifa)
+        await RecalculerAsync();
+    }
+
+    // ---- Volet d'un autre assuré que le patient déjà choisi (recette 2026-11-15) ----
+    private VoletChifaDto? assureConflit;
+    private static string Chiffres(string? s) => new((s ?? "").Where(char.IsAsciiDigit).ToArray());
+
+    private async Task PrendreAssureVoletAsync()
+    {
+        if (assureConflit is not { } v) return;
+        assureConflit = null;
+        patient = null;
+        await AppliquerAssureVoletAsync(v);
+        await RecalculerAsync();
+    }
+
+    private async Task GarderPatientChoisiAsync()
+    {
+        if (assureConflit is not { } v || patient is not { } p) { assureConflit = null; return; }
+        var e = await Api.GarderPatientVoletAsync(v.Brut, p.Id, p.Nom, p.NumAssure);
+        if (e is not null) { erreur = e; return; }
+        assureConflit = null;
+    }
+
+    /// <summary>Patient, organisme et date d'ordonnance repris du volet.</summary>
+    private async Task AppliquerAssureVoletAsync(VoletChifaDto v)
+    {
         if (v.PatientId is { } pid)
         {
             patientTexte = v.PatientNumAssure ?? v.Assure;   // la recherche compare le n° d'assuré à l'identique
@@ -1971,13 +2058,6 @@
         // Assuré inconnu : petite fenêtre du nom du patient (volet prérempli, 2026-11-15)
         if (patient is null)
             (patientVoletOuvert, nomPatientVolet, erreurPatientVolet, lienPatientVolet, principalPatientVolet) = (true, "", null, "", v.AssurePrincipalProposeId);
-        foreach (var l in v.Lignes)
-        {
-            if (l.ProduitId is not { } id) { codesAAssocier.Add(l); continue; }
-            await AjouterAsync(id, l.Produit!, l.PrixCatalogue ?? l.PrixUnitaire, l.Quantite, viderSaisie: false);
-        }
-        // Écarts de prix (prix Chifa / prix du lot servi) : calculés par le serveur (apercu.EcartsChifa)
-        await RecalculerAsync();
     }
 
     /// <summary>Code Chifa inconnu : associé au produit choisi (retenu pour les prochains volets), puis ajouté au panier.</summary>
@@ -2025,9 +2105,33 @@
         finally { patientVoletEnCours = false; }
     }
 
+    // ---- Circuit « la caisse d'abord » (2026-11-15) : volet rapproché d'une vente déjà encaissée ----
+    private RapprochementVoletDto? rapprochement;
+    private string? rapprochementTexte;
+    private VoletChifaDto? rapprochementVolet;
+
+    /// <summary>« Nouvelle vente depuis le volet » : circuit « Chifa d'abord », comme sans vente candidate.</summary>
+    private async Task NouvelleVenteDepuisVoletAsync()
+    {
+        var v = rapprochementVolet;
+        (rapprochement, rapprochementTexte, rapprochementVolet) = (null, null, null);
+        if (v is not null) await ReprendreVoletAsync(v);
+    }
+
+    private void VoletRattache(VoletRattacheDto r)
+    {
+        (rapprochement, rapprochementTexte, rapprochementVolet) = (null, null, null);
+        (venteFaite, messageRattachement, catalogueRattachement) = (null,
+            $"Volet rattaché à la vente {r.Vente}" + (r.AvecEcart ? " avec écart (motif enregistré, liste « Volets avec écart »)" : "")
+            + (r.Regularisation is { } g ? $" ; créance de l’organisme ramenée à la part Chifa (écart {r.EcartPartOrganisme:N2} DA) — {g}" : "") + ".",
+            r.Catalogue);
+    }
+
+    private string? messageRattachement, catalogueRattachement;
+
     private async Task RetirerVoletAsync()
     {
-        patientVoletOuvert = false;
+        (patientVoletOuvert, assureConflit) = (false, null);
         (volet, voletBrut, codesAAssocier, choixChifa) = (null, null, [], []);
         await RecalculerAsync();
     }
@@ -2194,7 +2298,9 @@
         remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null, tiersPayant ? resteSaisi : null,
         accordBlocage.VersDto(Session.A("produits.bloquer")), voletBrut, remiseAdditionnee, cleEncaissement, ChoixChifaEnvoyes(),
         FactureeChifaEnvoyee, FactureeChifaEnvoyee ? numeroFactureChifa?.Trim() : null,
-        AvecOrdonnance ? RemiseEnvoyee : null, AvecOrdonnance ? null : RemiseEnvoyee);
+        AvecOrdonnance ? RemiseEnvoyee : null, AvecOrdonnance ? null : RemiseEnvoyee,
+        MotifSansVoletCode: FactureChifaEnAttente ? motifSansVolet : null,
+        MotifSansVoletTexte: FactureChifaEnAttente && motifSansVolet == "autre" ? texteSansVolet?.Trim() : null);
 
     // ---- Vente Chifa sans volet (script 089) : case « facturée par Chifa » et n° de facture Chifa ----
     private bool factureeChifa;
@@ -2203,8 +2309,20 @@
     private bool FactureeChifaEnvoyee => factureeChifa && volet is null && OrganismeChifa;
     /// <summary>Écarts Chifa affichés : une ligne par produit et par prix (un produit servi sur deux lots au même prix n'apparaît qu'une fois).</summary>
     private List<EcartChifaLigneDto>? EcartsChifaAffiches => apercu?.EcartsChifa?.DistinctBy(e => (e.ProduitId, e.PrixChifa, e.NotrePrix, e.Choix, e.AChoisir)).ToList();
-    /// <summary>« Facturée par Chifa » cochée sans n° de facture : signalé avant l'envoi (bouton grisé, champ en rouge) ; le serveur refuse aussi.</summary>
-    private bool FactureChifaManquante => FactureeChifaEnvoyee && string.IsNullOrWhiteSpace(numeroFactureChifa);
+    /// <summary>« Facturée par Chifa » cochée sans n° de facture : permis (2026-11-15), la vente attend son volet (rattaché au scan du QR).</summary>
+    private bool FactureChifaEnAttente => FactureeChifaEnvoyee && string.IsNullOrWhiteSpace(numeroFactureChifa);
+    // Sans n° de facture Chifa (décision du titulaire, 2026-11-15) : motif obligatoire, liste réglable « volet_absent » (script 097)
+    private string? motifSansVolet, texteSansVolet;
+    private List<MotifReglableDto> motifsSansVolet = [];
+    private bool MotifSansVoletManquant => FactureChifaEnAttente
+        && (string.IsNullOrEmpty(motifSansVolet) || (motifSansVolet == "autre" && string.IsNullOrWhiteSpace(texteSansVolet)));
+
+    private async Task ChargerMotifsSansVoletAsync()
+    {
+        if (!factureeChifa || motifsSansVolet.Count > 0) return;
+        var (liste, _) = await Api.MotifsAsync("volet_absent");
+        motifsSansVolet = liste;
+    }
 
     /// <summary>Les totaux viennent du serveur : mêmes règles que l'encaissement (tiers payant, remise).</summary>
     // Raison du lot servi quand un lot plus ancien est en stock (codes de Pharma.Domain.Ventes.RaisonLot)
@@ -2503,6 +2621,7 @@
         (datePrescription, erreurScan, taux, organismeId) = (DateOnly.FromDateTime(DateTime.Today), null, TauxParDefaut, OrganismeParDefaut);
         (volet, voletBrut, codesAAssocier, choixChifa) = (null, null, [], []);
         (factureeChifa, numeroFactureChifa, patientExistant) = (false, null, null);
+        (motifSansVolet, texteSansVolet) = (null, null);
         accordBlocage.Effacer();
         (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
         lectureAjouts.Clear();

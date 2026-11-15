@@ -53,7 +53,7 @@
         else if (!etat.ComptageAveugle && etat.VentesEspeces is { } especes && resultat is null)
         {
             <div class="info-bandeau" role="note">
-                Attendu dans le tiroir : @Libelles.Dinars((etat.FondCaisse ?? 0) + especes, 2) (fond de caisse et ventes en espèces).
+                Attendu dans le tiroir : @Libelles.Dinars((etat.FondCaisse ?? 0) + especes, 2) (fond de caisse, ventes en espèces, sorties et entrées du tiroir).
             </div>
         }
 
@@ -104,7 +104,22 @@
                 else
                 {
                     <div class="reglement">
-                        <div class="ligne-total"><span>Ventes en espèces</span><span>@Libelles.Dinars(resultat.VentesEspeces ?? 0, 2)</span></div>
+                        @if (resultat.LignesTiroir is { Count: > 0 } tiroir)
+                        {
+                            @* Sorties et entrées du tiroir (script 096) : lignes séparées, comprises dans l'attendu (aucun écart dû à elles) *@
+                            var sorties = tiroir.Where(l => l.Sens == "sortie").Sum(l => l.Montant);
+                            var entrees = tiroir.Where(l => l.Sens == "entree").Sum(l => l.Montant);
+                            <div class="ligne-total"><span>Espèces encaissées (ventes, retours, crédits…)</span><span>@Libelles.Dinars((resultat.VentesEspeces ?? 0) + sorties - entrees, 2)</span></div>
+                            @foreach (var l in tiroir)
+                            {
+                                <div class="ligne-total"><span>@(l.Sens == "sortie" ? "Sortie du tiroir" : "Entrée au tiroir") : @l.Motif</span>
+                                    <span>@(l.Sens == "sortie" ? "− " : "+ ")@Libelles.Dinars(l.Montant, 2)</span></div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="ligne-total"><span>Ventes en espèces</span><span>@Libelles.Dinars(resultat.VentesEspeces ?? 0, 2)</span></div>
+                        }
                         <div class="ligne-total"><span>Fond de caisse</span><span>@Libelles.Dinars(resultat.FondCaisse ?? 0, 2)</span></div>
                         <div class="ligne-total"><span>Attendu</span><strong>@Libelles.Dinars(resultat.Attendu.Value, 2)</strong></div>
                         <div class="ligne-total"><span>Compté</span><span>@Libelles.Dinars(resultat.Compte, 2)</span></div>
