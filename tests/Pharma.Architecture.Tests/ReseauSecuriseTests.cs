@@ -41,6 +41,53 @@ public class ReseauSecuriseTests
         Assert.NotNull(ReseauSecurise.RefusDemarrage(mobile, developpement: false));
     }
 
+    [Fact]
+    public void Configuration_ecrite_par_le_script_donne_http_localhost_et_https_reseau_sans_autorisation_http_reseau()
+    {
+        var script = File.ReadAllText(Path.Combine(RacineDepot(), "scripts", "certificat_mobile.ps1"));
+        Assert.Contains("Url = \"http://localhost:$PortHttp\"", script);
+        Assert.Contains("Url         = \"https://0.0.0.0:$PortHttps\"", script);
+        Assert.DoesNotContain("http://0.0.0.0", script);
+        Assert.DoesNotContain("AutoriserHttpReseau=true", script);
+
+        // Même forme que le fichier écrit par le script (appsettings.Https.json)
+        const string json = """
+            { "Kestrel": { "Endpoints": {
+                "Http": { "Url": "http://localhost:5080" },
+                "Https": { "Url": "https://0.0.0.0:5443", "Certificate": { "Subject": "PharmaOfficine Mobile", "Store": "My", "Location": "LocalMachine", "AllowInvalid": true } } } } }
+            """;
+        var config = new ConfigurationBuilder().AddJsonStream(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json))).Build();
+        Assert.Empty(ReseauSecurise.HttpSurLeReseau(config));
+        Assert.True(ReseauSecurise.HttpsConfigure(config));
+        Assert.Null(ReseauSecurise.RefusDemarrage(config, developpement: false));
+        Assert.False(config.GetValue(ReseauSecurise.ReglageHttpReseau, false));
+    }
+
+    [Fact]
+    public void Http_sur_le_reseau_reste_refuse_meme_avec_https_configure()
+    {
+        var config = Config(("Kestrel:Endpoints:Http:Url", "http://0.0.0.0:5080"), ("Kestrel:Endpoints:Https:Url", "https://0.0.0.0:5443"));
+        Assert.NotNull(ReseauSecurise.RefusDemarrage(config, developpement: false));
+    }
+
+    [Theory]
+    [InlineData("/mobile/autorite-pharmacie.crt", "192.168.1.20", true)]
+    [InlineData("/Mobile/Autorite-Pharmacie.crt", "10.0.0.5", true)]
+    [InlineData("/mobile/autorite-pharmacie.crt", null, true)]
+    [InlineData("/mobile/autorite-pharmacie.crt", "127.0.0.1", false)]
+    [InlineData("/mobile/autorite-pharmacie.crt", "::1", false)]
+    [InlineData("/mobile/index.html", "192.168.1.20", false)]
+    public void Certificat_de_l_autorite_servi_seulement_au_poste_local(string chemin, string? origine, bool refuse) =>
+        Assert.Equal(refuse, ReseauSecurise.CertificatAutoriteRefuse(new PathString(chemin), origine is null ? null : System.Net.IPAddress.Parse(origine)));
+
+    private static string RacineDepot()
+    {
+        var dossier = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dossier is not null && !File.Exists(Path.Combine(dossier.FullName, "PharmaOfficine.slnx")))
+            dossier = dossier.Parent;
+        return dossier?.FullName ?? throw new DirectoryNotFoundException("Racine du dépôt introuvable.");
+    }
+
     [Theory]
     [InlineData("/api/auth/connexion", true)]
     [InlineData("/api/auth/connexion-code", true)]

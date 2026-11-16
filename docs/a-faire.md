@@ -4,20 +4,21 @@ Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livr�
 
 Dernière mise à jour : 2026-11-16 (bilan de la session du 13 au 16/11/2026).
 
-## Livré mais pas encore commité
+## Livré et commité le 2026-11-16 (à pousser par le titulaire)
 
-- [ ] **Synchronisation** : réglages descendants (scripts 130-131, central 004-005, table `reglage_central`) ; limite pendant un chargement et activation par groupes (central 006) ; familles nominatives (130), Pharmacie et Clients facturés (133, central 007), Banque élargie (135, central 008) ; conservation réglable au central (004) ; corrections de la revue globale et de l'audit de sécurité (136, central 009). Build et 1 918 tests verts, scripts rejoués deux fois sans effet.
-- [ ] **Contenance** : enregistrement depuis la nomenclature et sachets / ampoules (scripts 132 à 134, motif corrigé au 136).
-- [ ] **Écrans du super admin** : Reprise, Restauration, accès aux Profils de reprise.
-- [ ] **Avant de commiter** : l'index git contient 61 fichiers indexés lors de la session précédente, dont 15 modifiés depuis et 3 nouveaux fichiers non indexés ; désindexer, puis indexer et commiter par sujet (synchronisation, contenance, écrans), sans `docs/taches/`.
+Commits `5db185c` (écrans), `4a0bfaa` (contenance), `97340dc` (synchronisation), `db955f4` (ce fichier).
+
+- [x] **Synchronisation** : réglages descendants (scripts 130-131, central 004-005, table `reglage_central`) ; limite pendant un chargement et activation par groupes (central 006) ; familles nominatives (130), Pharmacie et Clients facturés (133, central 007), Banque élargie (135, central 008) ; conservation réglable au central (004) ; corrections de la revue globale et de l'audit de sécurité (136, central 009). Build et 1 918 tests verts, scripts rejoués deux fois sans effet.
+- [x] **Contenance** : enregistrement depuis la nomenclature et sachets / ampoules (scripts 132 à 134, motif corrigé au 136).
+- [x] **Écrans du super admin** : Reprise, Restauration, accès aux Profils de reprise.
 
 ## HTTPS sur le réseau de l'officine (décidé le 2026-11-16 : oui)
 
 Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localhost:5080`). Voir `docs/mise-en-production.md`, étapes 3.2 et 3.5 bis.
-- [ ] `scripts/certificat_mobile.ps1` : il écrit encore `http://0.0.0.0:5080` (HTTP ouvert au réseau) ; le limiter à `localhost`, HTTPS sur 5443, fermer le port 5080 aux autres postes dans le pare-feu.
-- [ ] Distribution du certificat de la pharmacie aux postes et aux téléphones : aujourd'hui téléchargé en HTTP (`/mobile/autorite-pharmacie.crt`). **À décider** : petite porte HTTP limitée à ce fichier, ou clé USB / QR code.
-- [ ] **À décider** : le certificat doit-il couvrir dès maintenant le 2e serveur (bascule) et l'adresse VPN (`docs/acces-distant.md`) ?
-- [ ] Mise à jour de `docs/mise-en-production.md` (installation du certificat sur chaque poste, `PHARMA_API=https://<serveur>:5443/`, vérifications).
+- [x] `scripts/certificat_mobile.ps1` : HTTP sur `localhost:5080`, HTTPS sur `0.0.0.0:5443`, pare-feu 5443 en réseau privé, 5080 jamais ouvert (règles existantes signalées), export du `.crt` et de l'empreinte dans un dossier choisi, `-WhatIf`, idempotent. Essai en simulation seulement ; jamais exécuté en réel sur ce poste.
+- [x] Distribution du certificat : clé USB pour les postes, hors réseau HTTP pour les téléphones, empreinte SHA-256 en texte (pas de QR code : aucune librairie dans la solution). L'API ne publie plus le `.crt` ; l'ancien chemin n'est servi qu'à 127.0.0.1 / ::1.
+- [x] Noms et adresses supplémentaires (2e serveur de bascule, adresse VPN) : `-NomsSupplementaires` / `-AdressesSupplementaires`, à renseigner par le titulaire ; rien n'est supposé. Documenté dans `mise-en-production.md` (3.5 bis) et `acces-distant.md`.
+- [x] Mise à jour de `docs/mise-en-production.md` (installation du certificat sur chaque poste, `PHARMA_API=https://<serveur>:5443/`, vérifications), `scanner-mobile.md`, `acces-distant.md`.
 - [ ] Essai réel en HTTPS : connexion, vente, impression, scanner mobile ; API en production en HTTPS jamais vérifiée.
 - [ ] Port 5432 de la base fermé aux autres postes : aucune vérification tracée.
 

@@ -43,9 +43,9 @@ Rien n'est installé par le logiciel : ces réglages relèvent du prestataire in
 
 ## Étapes, une fois le VPN en place
 
-1. Le certificat HTTPS de la page mobile doit aussi couvrir l'adresse VPN du serveur. Relancer le script en administrateur, avec les deux adresses :
+1. Le certificat HTTPS de la page mobile doit aussi couvrir l'adresse VPN du serveur. Relancer le script en administrateur en ajoutant l'adresse VPN (les noms et adresses par défaut du PC sont gardés ; ne renseigner que l'adresse réellement utilisée, rien n'est deviné) :
    ```powershell
-   .\scripts\certificat_mobile.ps1 -DossierApi "<dossier de l'API>" -Adresses <adresse IP locale>,<adresse VPN du serveur> -PareFeu
+   .\scripts\certificat_mobile.ps1 -DossierApi "<dossier de l'API>" -DossierExport <clé USB> -AdressesSupplementaires <adresse VPN du serveur> -PareFeu
    ```
 2. Installer le certificat racine sur le téléphone du titulaire, comme pour le scanner mobile : voir `scanner-mobile.md`.
 3. Sur le téléphone, activer le VPN, puis ouvrir `https://<adresse VPN du serveur>:5443/mobile/`. Se connecter avec le compte du titulaire, puis « Ajouter à l'écran d'accueil ».

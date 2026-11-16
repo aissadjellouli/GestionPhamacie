@@ -25,26 +25,26 @@ Les Data Matrix contiennent un séparateur invisible (GS) entre le lot et la sé
 
 ## Installation (une fois, sur le PC serveur)
 
-1. En administrateur, lancer :
+1. En administrateur, lancer (clé USB en `E:\`) :
    ```powershell
-   .\scripts\certificat_mobile.ps1 -DossierApi "<dossier de l'API>" -Adresses <adresse IP du PC> -PareFeu
+   .\scripts\certificat_mobile.ps1 -DossierApi "<dossier de l'API>" -DossierExport E:\ -PareFeu
    ```
-   Le script crée une autorité de certification propre à la pharmacie (clé non exportable, magasin Windows de la machine), un certificat pour l'adresse du PC, le fichier `appsettings.Https.json` (http sur 5080, https sur 5443, aucun secret), publie le certificat **public** de l'autorité dans la page mobile et ouvre le port 5443 sur le réseau **privé** uniquement.
+   Le script crée une autorité de certification propre à la pharmacie (clé non exportable, magasin Windows de la machine), un certificat pour le PC (noms et adresses ajoutables : `-NomsSupplementaires`, `-AdressesSupplementaires`), le fichier `appsettings.Https.json` (HTTP sur `localhost:5080` seulement, HTTPS sur 5443, aucun secret), exporte le certificat **public** de l'autorité et son empreinte SHA-256 dans le dossier choisi, et ouvre le port 5443 sur le réseau **privé** uniquement. `-WhatIf` simule sans rien écrire. Le détail et les noms/adresses à renseigner (2e serveur, VPN) sont dans `mise-en-production.md`, étape 3.5 bis.
 2. Redémarrer le service « PharmaOfficine API ».
 3. Donner une **adresse IP fixe** au PC serveur dans la box ; sinon relancer le script quand elle change.
 
 ## Installation (une fois, sur chaque téléphone)
 
-1. Ouvrir `http://<adresse du PC>:5080/mobile/autorite-pharmacie.crt` et installer le certificat :
+1. Transmettre `autorite-pharmacie.crt` au téléphone **hors réseau HTTP** (câble USB ou clé USB OTG) ; l'API ne le publie plus. Avant d'installer, comparer l'empreinte SHA-256 affichée dans les détails du certificat du téléphone avec `empreinte-autorite-pharmacie.txt`. Puis installer le certificat :
    - Android : Paramètres, Sécurité, Chiffrement et identifiants, Installer un certificat, Certificat CA ;
-   - iPhone : installer le profil téléchargé, puis Réglages, Général, Informations, Réglages des certificats : activer la confiance totale.
+   - iPhone : installer le profil, puis Réglages, Général, Informations, Réglages des certificats : activer la confiance totale.
 2. Ouvrir `https://<adresse du PC>:5443/mobile/` et l'ajouter à l'écran d'accueil.
 
 ## Sécurité
 
 - Connexion avec le compte de l'employé ; chaque action est revérifiée par le serveur avec ses droits. Le jeton est gardé pour l'onglet seulement (`sessionStorage`) et disparaît à sa fermeture.
 - La page n'affiche aucune donnée de patient. Le motif d'un blocage de lot, saisi librement, peut citer un patient : il n'est jamais envoyé au téléphone (seulement « bloqué (rappel) »). Un test le vérifie.
-- Le port https n'est ouvert que sur le réseau privé ; rien n'est exposé sur internet.
+- Le port https n'est ouvert que sur le réseau privé ; rien n'est exposé sur internet. Aucun port HTTP en clair n'est ouvert sur le réseau.
 - Les données affichées sont insérées comme du texte, jamais comme du HTML.
 
 ## Limites connues

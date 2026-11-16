@@ -122,17 +122,16 @@ Le dossier `database/init/` contient trois fichiers :
     `Journaux__Dossier` (par défaut `C:\ProgramData\PharmaOfficine\Journaux`), `Journaux__TailleMaxMo` (50 par défaut, par fichier),
     `Journaux__RetentionMois` (3 par défaut : les fichiers plus anciens sont supprimés au démarrage puis chaque jour),
     `Journaux__Niveau` (`Information` par défaut, `Warning` pour ne garder que les avertissements et erreurs) ;
-  - `Urls` : `http://0.0.0.0:5080` dans `appsettings.json`. **Attention** : hors développement, l'API **refuse de démarrer** si elle
+  - `Urls` : `http://0.0.0.0:5080` dans `appsettings.json`. **Décision (2026-11-16) : HTTPS seul sur le réseau de l'officine ; HTTP
+    seulement sur le PC serveur lui-même (`http://localhost:5080`).** Hors développement, l'API **refuse de démarrer** si elle
     écoute en HTTP (non chiffré) sur une autre adresse que `localhost` / `127.0.0.1` / `::1` (ce qui est le cas de `0.0.0.0`), sauf
-    réglage explicite **`AutoriserHttpReseau=true`** (variable `AutoriserHttpReseau=true`). Trois possibilités :
-    1. HTTPS seulement sur le réseau (conseillé, étape 3.5 bis) : HTTP limité à `http://localhost:5080` (ou supprimé) ;
-    2. HTTP et HTTPS gardés tous deux sur le réseau (ex. le temps de passer les postes en `https`, ou le scanner mobile en `https`
-       et les postes encore en `http`) : régler `AutoriserHttpReseau=true` ; HTTP reste alors servi sans redirection ;
-    3. HTTP seul sur le réseau (installation actuelle) : `AutoriserHttpReseau=true` — mots de passe, codes et données patients
-       circulent alors en clair sur le réseau de la pharmacie.
-    Quand HTTPS est configuré (`Kestrel:Endpoints`, écrit par `scripts\certificat_mobile.ps1`), l'API envoie l'en-tête HSTS sur ses
-    réponses HTTPS, et redirige vers HTTPS les requêtes HTTP venues d'un autre PC, sauf si `AutoriserHttpReseau=true` (le poste
-    installé sur le serveur lui-même, `127.0.0.1`, n'est jamais redirigé) ;
+    réglage explicite `AutoriserHttpReseau=true`. Ne pas régler `AutoriserHttpReseau` : `scripts\certificat_mobile.ps1` (étape 3.5 bis)
+    écrit `appsettings.Https.json` (HTTP sur `localhost:5080`, HTTPS sur `0.0.0.0:5443`), qui remplace `Urls` et suffit à démarrer.
+    `AutoriserHttpReseau=true` reste une dérogation provisoire (ex. le temps de passer les postes en HTTPS) : HTTP est alors servi
+    sur le réseau sans redirection, et mots de passe, codes et données patients y circulent en clair.
+    Avec HTTPS configuré (`Kestrel:Endpoints`), l'API envoie l'en-tête HSTS sur ses réponses HTTPS (sauf sur localhost, règle de
+    .NET) et redirige vers HTTPS toute requête HTTP venue d'un autre PC, sauf si `AutoriserHttpReseau=true` (le poste installé sur le
+    serveur lui-même, `127.0.0.1`, n'est jamais redirigé) ;
   - `LimiteConnexions__ParMinute` : nombre d'essais de connexion permis par minute et par adresse IP (20 par défaut ; routes
     `/api/auth/connexion`, `/api/auth/connexion-code`, `/api/auth/mot-de-passe`, `/api/super-admin/connexion` ; au-delà : réponse 429).
 - [ ] **3.3** Installer l'API comme service Windows, démarré automatiquement (nom attendu : « PharmaOfficine API ») :
@@ -140,16 +139,50 @@ Le dossier `database/init/` contient trois fichiers :
   sc.exe create "PharmaOfficine API" binPath= "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" start= auto
   sc.exe start "PharmaOfficine API"
   ```
-- [ ] **3.4** Ouvrir le port 5080 du pare-feu Windows aux postes de la pharmacie.
-- [ ] **3.5** Vérifier : `http://<serveur>:5080/api/auth/comptoir` répond depuis un poste.
+- [ ] **3.4** Pare-feu : ne **pas** ouvrir le port 5080 aux postes (HTTP reste réservé au PC serveur). Le port 5443 (HTTPS) est ouvert à l'étape 3.5 bis.
+- [ ] **3.5** Vérifier sur le PC serveur : `http://localhost:5080/api/auth/comptoir` répond. Les postes ne passent que par HTTPS (étape 3.5 bis).
 - [ ] **3.5 bis** **Chiffrer les échanges (HTTPS)** : en `http`, mots de passe, codes comptoir et connexions passent en clair sur le réseau
-  de la pharmacie (Wi-Fi compris).
-  - Lancer `scripts\certificat_mobile.ps1` sur le serveur (voir [scanner-mobile.md](scanner-mobile.md)) : il crée l'autorité de
-    certification de la pharmacie et ouvre `https` sur le port 5443.
-  - Sur chaque poste : installer le certificat de l'autorité (`autorite-pharmacie.crt`) dans « Autorités de certification racines
-    de confiance » de l'ordinateur, puis régler `PHARMA_API=https://<serveur>:5443/` (étape 4).
-  - Une fois tous les postes et téléphones en `https`, fermer le port 5080 du pare-feu aux postes.
-  - À vérifier sur un poste avant le jour J : connexion, vente et impression en `https` (essai non encore fait sur un vrai poste).
+  de la pharmacie (Wi-Fi compris). Rien du certificat ne circule par le réseau en HTTP : il se transmet par clé USB ou câble.
+  1. **Sur le PC serveur, en administrateur** (PowerShell), clé USB branchée (ici `E:\`) :
+     ```powershell
+     .\scripts\certificat_mobile.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu
+     ```
+     Essai à blanc d'abord : ajouter `-WhatIf` (rien n'est écrit : ni certificats, ni pare-feu, ni configuration, ni fichier). Le script :
+     crée l'autorité de la pharmacie (une fois) et le certificat du serveur ; écrit `appsettings.Https.json` (HTTP `localhost:5080`,
+     HTTPS `0.0.0.0:5443`) ; ouvre 5443 en réseau **privé** seulement ; écrit sur la clé `autorite-pharmacie.crt` et
+     `empreinte-autorite-pharmacie.txt` (empreinte SHA-256) et l'affiche. Il n'ouvre jamais 5080 et signale toute règle de pare-feu
+     existante qui l'ouvre. Relancé, il ne crée ni doublon de certificat ni doublon de règle.
+  2. **Noms et adresses du certificat** : par défaut, `localhost`, `127.0.0.1`, le nom du PC et ses adresses IPv4 privées. Un poste ne
+     fait confiance au serveur que pour un nom ou une adresse **présents dans le certificat**. Rien n'est deviné : à renseigner
+     soi-même, seulement si cela sert, avec `-NomsSupplementaires` et `-AdressesSupplementaires` :
+     - **2e serveur de bascule** : son nom (`-NomsSupplementaires SERVEUR2`) et son adresse IP (`-AdressesSupplementaires <IP>`) ;
+     - **accès par VPN** (`acces-distant.md`) : l'adresse VPN du serveur (`-AdressesSupplementaires <adresse VPN>`) ;
+     - tout autre nom ou adresse par lequel on ouvre `https://…:5443`.
+     **Si une adresse change, ou si l'on en ajoute une, relancer le script** avec la liste à jour : le certificat du serveur est recréé,
+     signé par la même autorité, donc **rien à réinstaller sur les postes et téléphones**. Une adresse IP fixe pour le PC serveur
+     (réglage de la box) reste conseillée.
+  3. Redémarrer le service « PharmaOfficine API ».
+  4. **Chaque poste** : copier `autorite-pharmacie.crt` de la clé USB sur le poste. Vérifier l'empreinte :
+     `certutil -hashfile autorite-pharmacie.crt SHA256` doit donner la même valeur que `empreinte-autorite-pharmacie.txt` (sans les `:`).
+     Puis, en administrateur : double-clic sur le fichier, « Installer le certificat… », « Ordinateur local », « Placer tous les
+     certificats dans le magasin suivant », **Autorités de certification racines de confiance**. Régler ensuite
+     `PHARMA_API=https://<serveur>:5443/` (étape 4.2).
+  5. **Téléphones** (scanner mobile, voir `scanner-mobile.md`) : transmettre `autorite-pharmacie.crt` **hors réseau HTTP** (câble USB
+     ou clé USB OTG, jamais par un lien HTTP). **Vérifier l'empreinte avant d'installer** : l'empreinte SHA-256 du certificat est
+     affichée dans les détails du certificat du téléphone ; elle doit être identique, caractère pour caractère, à celle de
+     `empreinte-autorite-pharmacie.txt` (ou affichée par le script). Sinon, ne pas installer. Pas de QR code de l'empreinte : aucune
+     librairie de QR code dans la solution, texte seul. Android : Paramètres, Sécurité, Chiffrement et identifiants, Installer un
+     certificat, Certificat CA ; iPhone : installer le profil, puis Réglages, Général, Informations, Réglages des certificats.
+  6. **Fermer le 5080 aux autres postes** : une fois tous les postes et téléphones en HTTPS, vérifier qu'aucune règle de pare-feu entrante
+     n'ouvre 5080 (le script avertit s'il en trouve ; la désactiver avec `Disable-NetFirewallRule -DisplayName '<nom de la règle>'`).
+     Le port 5080 n'écoute de toute façon que sur le PC serveur (`localhost`).
+  7. **Vérifications finales** :
+     - depuis un poste : `https://<serveur>:5443/api/sante` répond sans avertissement de certificat ; `http://<serveur>:5080/` ne répond pas ;
+     - sur le PC serveur : `http://localhost:5080/api/sante` répond ;
+     - `netstat -ano | findstr :5080` n'affiche que `127.0.0.1` et `[::1]` ; 5443 écoute sur `0.0.0.0` ;
+     - réponses HTTPS : en-tête `Strict-Transport-Security` présent (absent sur `localhost`, règle de .NET) ;
+     - `/mobile/autorite-pharmacie.crt` n'est pas servi sur le réseau (404 ; l'ancienne copie du dossier de l'API est supprimée par le script).
+  8. **Essai réel sur un vrai poste avant le jour J** : connexion, vente, impression, scanner mobile en HTTPS (non encore fait).
 - [ ] **3.6** **Compte super admin** (reprise de données, et plus tard restauration), sur le PC serveur, dans une invite de commandes
   administrateur :
   ```powershell
@@ -176,9 +209,9 @@ Le dossier `database/init/` contient trois fichiers :
   - Il n'existe pas encore d'installateur ni de mise à jour automatique des postes (prévus dans `feuille-de-route.md`) : la copie,
     les variables (étape 4.2) et le raccourci se font à la main sur chaque poste.
 - [ ] **4.2** Variables d'environnement du poste :
-  - `PHARMA_API=https://<serveur>:5443/` (HTTPS, étape 3.5 bis : certificat de l'autorité de la pharmacie installé sur le poste),
-    ou `http://<serveur>:5080/` si HTTP est gardé sur le réseau (`AutoriserHttpReseau=true`, étape 3.2). Le poste accepte les deux ;
-    la barre finale est ajoutée si elle manque ;
+  - `PHARMA_API=https://<serveur>:5443/` (HTTPS, étape 3.5 bis : certificat de l'autorité de la pharmacie installé sur le poste ;
+    `<serveur>` doit figurer dans le certificat). Sur le PC serveur lui-même, `http://localhost:5080/` reste permis. Le poste accepte
+    `http://` et `https://` ; la barre finale est ajoutée si elle manque ;
   - `PHARMA_POSTE` : un nom **différent pour chaque poste** (ex. « Caisse 1 », « Caisse 2 »). Ce nom identifie la caisse (le tiroir) que partagent les employés du poste. Deux postes portant le même nom partageraient la même caisse.
 - [ ] **4.3** Ouvrir le poste et vérifier que l'écran de connexion s'affiche.
 

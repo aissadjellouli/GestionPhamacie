@@ -186,6 +186,16 @@ app.Use((ctx, suite) =>
     if (ctx.Request.Path.Value == "/mobile") { ctx.Response.Redirect("/mobile/"); return Task.CompletedTask; }
     return suite();
 });
+app.Use((ctx, suite) =>
+{
+    // Certificat de l'autorité : plus distribué par le réseau (clé USB), seulement au PC serveur
+    if (ReseauSecurise.CertificatAutoriteRefuse(ctx.Request.Path, ctx.Connection.RemoteIpAddress))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return Task.CompletedTask;
+    }
+    return suite();
+});
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {

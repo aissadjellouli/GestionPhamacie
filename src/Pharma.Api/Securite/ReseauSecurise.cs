@@ -99,6 +99,19 @@ public static class ReseauSecurise
     }
 
     /// <summary>
+    /// Ancien emplacement du certificat public de l'autorité, publié par l'API : il n'est plus distribué par le réseau (clé USB,
+    /// voir docs/mise-en-production.md). Si une ancienne copie traîne dans wwwroot, elle n'est servie qu'au PC serveur (127.0.0.1, ::1).
+    /// </summary>
+    public const string CheminCertificatAutorite = "/mobile/autorite-pharmacie.crt";
+
+    public static bool EstCertificatAutorite(PathString chemin) =>
+        string.Equals(chemin.Value, CheminCertificatAutorite, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Le certificat de l'autorité n'est servi qu'à une requête venue du poste local.</summary>
+    public static bool CertificatAutoriteRefuse(PathString chemin, IPAddress? origine) =>
+        EstCertificatAutorite(chemin) && (origine is null || !IPAddress.IsLoopback(origine));
+
+    /// <summary>
     /// L'officine est en Algérie (UTC+1 toute l'année, sans heure d'été) : avertissement si le fuseau de Windows en diffère
     /// (dates des ventes calculées en C# décalées par rapport à la base). Null : fuseau correct.
     /// </summary>
