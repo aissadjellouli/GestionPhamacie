@@ -50,7 +50,8 @@ $psql = Join-Path $PgBin "psql.exe"
 Write-Host "PostgreSQL : $PgBin"
 
 $env:PGCLIENTENCODING = "UTF8"
-$env:PGOPTIONS = "-c client_min_messages=warning"
+# Marqueur de la mutualisation des réglages (script 141) : les scripts rejoués ne sont jamais refusés par la garde d'une table imposée
+$env:PGOPTIONS = "-c client_min_messages=warning -c pharma.reglage_central=on"
 
 function Aleatoire([int]$longueur) {
     $octets = New-Object byte[] $longueur

@@ -67,7 +67,8 @@ if ($Recreer -and -not $Force) {
 # Les scripts contiennent des accents
 $env:PGCLIENTENCODING = "UTF8"
 # Rejouer un script idempotent produit un « existe déjà, poursuite du traitement » par objet : on ne garde que les avertissements
-$env:PGOPTIONS = "-c client_min_messages=warning"
+# Marqueur de la mutualisation des réglages (script 141) : les scripts rejoués ne sont jamais refusés par la garde d'une table imposée
+$env:PGOPTIONS = "-c client_min_messages=warning -c pharma.reglage_central=on"
 
 function Invoke-Psql([string]$utilisateur, [string]$motDePasse, [string]$base, [string[]]$arguments) {
     $env:PGPASSWORD = $motDePasse
@@ -75,8 +76,9 @@ function Invoke-Psql([string]$utilisateur, [string]$motDePasse, [string]$base, [
     if ($LASTEXITCODE -ne 0) { throw "Échec psql ($base) : $($arguments -join ' ')" }
 }
 
-# Migrations seulement (0NN_*.sql de database\migration) : la création à la MEP (database\init) ne passe pas par ce script
-$scripts = Get-ChildItem (Join-Path $racine "database\migration") -Filter "0*.sql" | Where-Object { $_.Name -match "^0\d{2}_" } | Sort-Object Name
+# Migrations seulement (NNN_*.sql de database\migration, 001 à 999) : la création à la MEP (database\init) ne passe pas par ce script.
+# Les scripts « b » (101b, 111b) sont exclus : ils se lancent à part, sur décision (docs\scripts-base-de-donnees.md).
+$scripts = Get-ChildItem (Join-Path $racine "database\migration") -Filter "*.sql" | Where-Object { $_.Name -match "^\d{3}_" } | Sort-Object { [int]$_.Name.Substring(0, 3) }
 # Fichiers qui remplissent la base (données fictives) : database\data
 $demo    = Get-ChildItem (Join-Path $racine "database\data") -Filter "*.sql" | Sort-Object Name
 
