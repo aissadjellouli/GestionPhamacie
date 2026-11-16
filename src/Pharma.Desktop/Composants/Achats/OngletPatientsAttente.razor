@@ -139,8 +139,9 @@
     /// <summary>Vue ouverte en fenêtre par-dessus la Caisse : pas de suivi « ← Retour » (l'écran affiché reste la Caisse).</summary>
     [Parameter] public bool EnFenetre { get; set; }
 
-    private string? StyleGrille => string.Join("; ", new[] { premiereLecture ? null : "visibility: hidden",
-        EnFenetre ? "grid-template-columns: minmax(340px, 1fr) minmax(0, 2fr)" : null }.Where(s => s is not null)) is { Length: > 0 } s ? s : null;
+    // Saisie étroite à gauche, file large à droite (écran Achats comme fenêtre de la Caisse) : les six colonnes tiennent sans défilement horizontal
+    private string StyleGrille => string.Join("; ", new[] { premiereLecture ? null : "visibility: hidden",
+        "grid-template-columns: minmax(340px, 1fr) minmax(0, 2fr)" }.Where(s => s is not null));
 
     protected override async Task OnInitializedAsync()
     {

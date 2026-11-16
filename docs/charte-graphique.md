@@ -97,6 +97,15 @@ Corrigés ce jour : Accueil (27 px), Administration › Contrôle interne (29 px
 ligne), Trésorerie › Chèques à remettre (4 632 px, liste en cadre défilant) et › Caisses à verser (10 px), Achats ›
 Réceptions › En attente (272 px : pastilles dès qu’il y a des livraisons comptées), Achats › À commander avec un produit
 choisi (33 px : produit, bouton et note sur une ligne).
+Mesurés et corrigés le 2026-11-16 (1 536 × 890, titulaire, 0 px après correction, ni vertical ni horizontal) :
+Contrôle interne › Journal fiscal (505 px en largeur : colonnes `minmax(0, 1fr) 380px` et tableaux de la colonne de droite
+en `min-width: 0`), `/pilotage-financier` › Synthèse (248 px : six tuiles compactes sur une ligne, histogramme de 200 px),
+Psychotropes › Alertes du registre (206 px : panneau « Wilayas de la zone » en ligne, liste des voisines de 128 px) et
+› Suivi des antibiotiques (30 px : deux colonnes égales), Achats › Patients en attente et › Catalogues des grossistes
+(défilement horizontal du tableau : file à droite élargie, colonnes égales), Stock › Modifier un produit (DCI et forme
+tronquées : champs élargis). Fenêtre de modification de la fiche patient (157 px, boutons cachés) : fenêtre élargie
+(`.fenetre-contact-large`, 1 000 px), tout tient à l'écran. `/admin/synchronisation` › État mesuré à 0 px.
+`/admin/reprise` et `/admin/profils-reprise` (super admin) : non mesurés, compte super admin non utilisé.
 
 **Ajouté le 2026-11-16 (lot 2, à mesurer sur le poste)** : Administration › Contrôle interne › Intégrité des journaux
 (`/admin/controle-interne?rubrique=integrite`) : titre et bouton « Vérifier maintenant » sur une ligne, un seul tableau en

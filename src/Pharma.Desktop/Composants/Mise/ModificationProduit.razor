@@ -18,10 +18,10 @@
         @if (fiche is { } f)
         {
             <div class="achats-ligne">
-                <div class="champ" style="flex: 2 1 240px"><label for="mp-nom" class="requis">Nom commercial</label><input id="mp-nom" data-champ="nom_commercial" type="text" maxlength="120" @bind="f.NomCommercial" /></div>
-                <div class="champ" style="flex: 1 1 180px"><label for="mp-dci">DCI</label><input id="mp-dci" type="text" @bind="f.Dci" /></div>
+                <div class="champ" style="flex: 1 1 220px"><label for="mp-nom" class="requis">Nom commercial</label><input id="mp-nom" data-champ="nom_commercial" type="text" maxlength="120" @bind="f.NomCommercial" /></div>
+                <div class="champ" style="flex: 3 1 300px"><label for="mp-dci">DCI</label><input id="mp-dci" type="text" @bind="f.Dci" /></div>
                 <div class="champ" style="flex: 0 1 130px"><label for="mp-dosage">Dosage</label><input id="mp-dosage" type="text" @bind="f.Dosage" /></div>
-                <div class="champ" style="flex: 0 1 150px"><label for="mp-forme">Forme</label><input id="mp-forme" type="text" @bind="f.Forme" /></div>
+                <div class="champ" style="flex: 2 1 220px"><label for="mp-forme">Forme</label><input id="mp-forme" type="text" @bind="f.Forme" /></div>
             </div>
             <div class="achats-ligne">
                 <div class="champ" style="flex: 1 1 170px"><label for="mp-cb">Code-barres</label><input id="mp-cb" data-champ="code_barre" type="text" inputmode="numeric" @bind="f.CodeBarre" /></div>

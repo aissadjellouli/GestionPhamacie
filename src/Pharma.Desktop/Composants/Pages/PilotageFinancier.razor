@@ -64,7 +64,7 @@
         @switch (rubrique)
         {
             case "synthese":
-                <div class="tuiles">
+                <div class="tuiles tuiles-compactes" style="grid-template-columns: repeat(6, minmax(0, 1fr))">
                     <div class="tuile">
                         <span class="tuile-libelle">Chiffre d’affaires TTC</span>
                         <span class="tuile-valeur">@Libelles.Dinars(t.ChiffreAffaires.Actuel)</span>
@@ -105,7 +105,7 @@
                     var max = Math.Max(1m, t.ParJour.Max(j => j.ChiffreAffaires));
                     <section class="panneau" aria-labelledby="pf-jours">
                         <h2 id="pf-jours">Chiffre d’affaires par jour</h2>
-                        <div class="histogramme" role="img" aria-label="@($"Chiffre d’affaires par jour, maximum {Libelles.Dinars(max)}")">
+                        <div class="histogramme" style="height: 200px" role="img" aria-label="@($"Chiffre d’affaires par jour, maximum {Libelles.Dinars(max)}")">
                             <div class="histogramme-echelle" aria-hidden="true"><span>@Libelles.Dinars(max)</span><span>0</span></div>
                             <div class="histogramme-barres" style="--colonnes: @t.ParJour.Count">
                                 @foreach (var j in t.ParJour)

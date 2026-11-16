@@ -5,7 +5,7 @@
 @* Achats › Catalogues des grossistes (lot 6, M3a) : import du catalogue / de la disponibilité d'un grossiste (Excel ou CSV).
    Formats des grossistes inconnus : la correspondance des colonnes se règle par grossiste (profil), rien n'est supposé.
    Écran fixe : profil et import à gauche, historique des imports (paginé, filtré par grossiste) à droite, seul le tableau défile. *@
-<div class="achats-grille" style="@(premiereLecture ? null : "visibility: hidden")">
+<div class="achats-grille" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)@(premiereLecture ? null : "; visibility: hidden")">
     <section class="panneau cadre-defilant" aria-labelledby="t-profil">
         <h2 id="t-profil">Fichier du grossiste</h2>
         @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }

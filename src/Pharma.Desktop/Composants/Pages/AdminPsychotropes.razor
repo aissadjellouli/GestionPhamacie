@@ -65,7 +65,7 @@
                 <p class="detail" style="margin: 8px 0 0">Valeurs de départ à confirmer. « Hors zone » : seulement pour un médecin dont la wilaya est renseignée (sinon signalé « wilaya à renseigner ») ;
                     la durée de traitement n’est contrôlée que si elle est fournie. Journal des forçages : Stock › Registre › Alertes forcées.</p>
                 @* Zone de l'officine (2026-11-16) : wilaya de l'officine et wilayas voisines ; zone vide = pas de contrôle « hors zone » *@
-                <section class="panneau" aria-labelledby="t-zone" style="display: flex; gap: 16px; align-items: flex-start; margin-top: 8px">
+                <section class="panneau" aria-labelledby="t-zone" style="display: flex; flex-direction: row; gap: 16px; align-items: flex-start; margin-top: 8px">
                     <div style="display: flex; flex-direction: column; gap: 6px; flex: 0 0 300px">
                         <h2 id="t-zone" style="margin: 0">Wilayas de la zone</h2>
                         <div class="champ">
@@ -79,7 +79,7 @@
                     </div>
                     <div class="champ" style="flex: 1 1 auto">
                         <label for="zone-voisines">Wilayas voisines (Ctrl + clic pour en choisir plusieurs)</label>
-                        <select id="zone-voisines" data-champ="wilayas_voisines" multiple size="5" @bind="zoneVoisines">
+                        <select id="zone-voisines" data-champ="wilayas_voisines" multiple size="5" style="height: 128px" @bind="zoneVoisines">
                             @foreach (var w in wilayas.Where(w => w.Code != zoneOfficine)) { <option value="@w.Code">@w.Code - @w.Nom</option> }
                         </select>
                         <span class="detail">@(string.IsNullOrEmpty(zoneOfficine) ? "Zone non réglée : pas de contrôle « hors zone »." : $"Zone : {string.Join(", ", new[] { zoneOfficine }.Concat(zoneVoisines))}")</span>
@@ -98,7 +98,7 @@
             </div>
             @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
             @if (fichier is not null) { <div class="succes" role="status">Fichier rangé : @fichier <button type="button" class="lien-bouton" @onclick="() => Documents.Ouvrir(fichier)">Ouvrir</button></div> }
-            <div style="display: grid; grid-template-columns: minmax(320px, 1fr) 2fr; gap: 12px; min-height: 0; flex: 1 1 auto">
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; min-height: 0; flex: 1 1 auto">
                 <section class="panneau" aria-labelledby="t-dci" style="display: flex; flex-direction: column; gap: 8px; min-height: 0">
                     <h2 id="t-dci" style="margin: 0">Molécules suivies (@dci.Count)</h2>
                     <div class="filtres-liste" role="search" aria-label="Ajouter une molécule">
@@ -115,7 +115,7 @@
                         </ul>
                     }
                     <div class="tableau-cadre">
-                        <table class="tableau">
+                        <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">DCI</th><th scope="col"></th></tr></thead>
                             <tbody>
                                 @foreach (var d in DciFiltrees.Skip((pageDci - 1) * tailleDci).Take(tailleDci))
@@ -134,7 +134,7 @@
                         <div class="champ" style="flex: 0 0 170px"><label for="ab-au">Au</label><input id="ab-au" type="date" @bind="au" @bind:after="ChargerSuiviAsync" /></div>
                     </div>
                     <div class="tableau-cadre">
-                        <table class="tableau">
+                        <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">Molécule</th><th scope="col">Mois</th><th scope="col" class="nombre">Boîtes</th><th scope="col" class="nombre">Ventes</th></tr></thead>
                             <tbody>
                                 @foreach (var l in suivi.Skip((pageSuivi - 1) * tailleSuivi).Take(tailleSuivi))

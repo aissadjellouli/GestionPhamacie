@@ -38,10 +38,10 @@
         <p class="detail" style="margin: 0 0 6px" title="@string.Join(" ; ", d.TrousHistorique)">Historique avant la mise en service : @d.TrousHistorique.Count trou(s) de numérotation (signalés, non modifiés), dont @d.TrousHistorique[0].</p>
     }
 
-    <div style="display: grid; grid-template-columns: 1fr 380px; gap: 12px; min-height: 0; flex: 1">
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 12px; min-height: 0; flex: 1">
         <div style="display: flex; flex-direction: column; min-height: 0">
             <section class="tableau-cadre" aria-label="Lignes du journal fiscal">
-                <table class="tableau" style="min-width: 860px">
+                <table class="tableau" style="min-width: 0">
                     <thead><tr><th scope="col" class="nombre">Ligne</th><th scope="col">Date</th><th scope="col">Événement</th><th scope="col">Ticket</th>
                         <th scope="col">Vendeur · poste</th><th scope="col" class="nombre">TTC</th><th scope="col" class="nombre">TVA</th>
                         <th scope="col">Paiements</th><th scope="col">Empreinte</th></tr></thead>
@@ -70,7 +70,7 @@
         <div style="display: flex; flex-direction: column; gap: 8px; min-height: 0">
             <section class="panneau" aria-labelledby="t-tva">
                 <h2 id="t-tva">Récapitulatif TVA</h2>
-                <table class="tableau">
+                <table class="tableau" style="min-width: 0">
                     <thead><tr><th scope="col">Taux</th><th scope="col" class="nombre">TTC</th><th scope="col" class="nombre">HT</th><th scope="col" class="nombre">TVA</th></tr></thead>
                     <tbody>
                         @foreach (var t in d.Tva)
@@ -84,7 +84,7 @@
                 </table>
             </section>
             <section class="tableau-cadre" aria-label="Sceaux de la période" style="flex: 1">
-                <table class="tableau">
+                <table class="tableau" style="min-width: 0">
                     <thead><tr><th scope="col">Sceau</th><th scope="col">Période</th><th scope="col" class="nombre">Ligne</th></tr></thead>
                     <tbody>
                         @foreach (var c in d.Clotures)

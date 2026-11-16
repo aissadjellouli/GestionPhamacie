@@ -13,7 +13,7 @@
 {
     <div class="voile voile-contact" role="dialog" aria-modal="true" aria-labelledby="t-contact" tabindex="-1" @ref="fenetre"
          @onkeydown="Touche" @onkeydown:stopPropagation="true" @onclick="ClicACote" @onclick:stopPropagation="true">
-        <section class="panneau fenetre-contact" @onclick:stopPropagation="true">
+        <section class="panneau fenetre-contact @(patient is not null ? "fenetre-contact-large" : null)" @onclick:stopPropagation="true">
             <div class="titre-fenetre">
                 <div>
                     <h2 id="t-contact">@(fiche?.Nom ?? o.Nom)</h2>
