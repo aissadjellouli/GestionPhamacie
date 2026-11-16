@@ -206,6 +206,7 @@ public static class DependencyInjection
         services.AddSingleton<Application.SecondServeur.ICleIntegriteStockee>(scelleur);
         services.AddScoped<Application.SecondServeur.ISecondServeurDepot, SecondServeur.SecondServeurSql>();
         services.AddScoped<Application.Integrite.IIntegriteDepot, Securite.IntegriteSql>();
+        services.AddScoped<Application.Synchronisation.ISortieSyncDepot, Synchronisation.SortieSyncSql>();
         // Registre des psychotropes renforcé (lot 8, script 117) ; répertoire national des ordonnances : adaptateur FACTICE
         services.AddScoped<Application.Psychotropes.IRegistreRenforceDepot, Psychotropes.RegistreRenforceSql>();
         services.AddScoped<Application.Psychotropes.IZonePsychotropesDepot, Psychotropes.RegistreRenforceSql>();

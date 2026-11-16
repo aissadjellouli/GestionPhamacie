@@ -2,6 +2,7 @@
   <Folder Name="/Documents/">
     <File Path="docs/analyse-ecarts.md" />
     <File Path="docs/conception-synchronisation.md" />
+    <File Path="docs/synchronisation-inventaire.md" />
     <File Path="docs/a-faire.md" />
     <File Path="docs/acces-distant.md" />
     <File Path="docs/architecture.md" />
@@ -187,9 +188,13 @@
     <File Path="database/migration/123_formulaire_accord_sms.sql" />
     <File Path="database/migration/124_profils_reprise_noms_neutres.sql" />
     <File Path="database/migration/125_wilayas_59_69.sql" />
+    <File Path="database/migration/126_synchronisation_sortie.sql" />
+    <File Path="database/migration/127_synchronisation_textes_medecins.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
+    <File Path="database/tests/126_synchronisation_sortie_tests.sql" />
+    <File Path="database/tests/127_synchronisation_textes_medecins_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">

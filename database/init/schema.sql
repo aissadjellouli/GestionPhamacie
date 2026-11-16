@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 125 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 127 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 125 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 127 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -32,10 +32,12 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
+--
 -- PostgreSQL database dump
 --
 
-\restrict WeAK3jYFDgmtkwsscfOe7nXQEpd4GLhgsLVnrFz8BvlgNid7vEW9LPjlk2WFcpG
+\restrict hd85PEvehjENS1u0wgdjP9rHPJMfTYelXpfhzXPY36nTBfL3v4f5zOeAZYdZAXS
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3108,6 +3110,356 @@ BEGIN
         END IF;
     END LOOP;
 END;
+$$;
+
+
+--
+-- Name: sync_code_patient(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_code_patient(p_id bigint) RETURNS text
+    LANGUAGE plpgsql
+    AS $$
+DECLARE v_code text;
+BEGIN
+    IF p_id IS NULL THEN RETURN NULL; END IF;
+    SELECT code INTO v_code FROM sync_pseudonyme WHERE nature = 'patient' AND cle_locale = p_id::text;
+    IF FOUND THEN RETURN v_code; END IF;
+    INSERT INTO sync_pseudonyme (nature, cle_locale, code)
+    VALUES ('patient', p_id::text, 'P-' || encode(gen_random_bytes(12), 'hex'))
+    ON CONFLICT (nature, cle_locale) DO NOTHING;
+    SELECT code INTO v_code FROM sync_pseudonyme WHERE nature = 'patient' AND cle_locale = p_id::text;
+    RETURN v_code;
+END $$;
+
+
+--
+-- Name: sync_code_porteur(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_code_porteur(p_nom text, p_piece text) RETURNS text
+    LANGUAGE plpgsql
+    AS $$
+DECLARE v_cle text; v_code text;
+BEGIN
+    IF coalesce(btrim(p_nom), '') = '' AND coalesce(btrim(p_piece), '') = '' THEN RETURN NULL; END IF;
+    v_cle := encode(sha256(convert_to(lower(btrim(coalesce(p_nom, ''))) || '|' || lower(btrim(coalesce(p_piece, ''))), 'UTF8')), 'hex');
+    SELECT code INTO v_code FROM sync_pseudonyme WHERE nature = 'porteur' AND cle_locale = v_cle;
+    IF FOUND THEN RETURN v_code; END IF;
+    INSERT INTO sync_pseudonyme (nature, cle_locale, code)
+    VALUES ('porteur', v_cle, 'R-' || encode(gen_random_bytes(12), 'hex'))
+    ON CONFLICT (nature, cle_locale) DO NOTHING;
+    SELECT code INTO v_code FROM sync_pseudonyme WHERE nature = 'porteur' AND cle_locale = v_cle;
+    RETURN v_code;
+END $$;
+
+
+--
+-- Name: sync_definir_active(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_definir_active(p_active boolean) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE v_oubliees text;
+BEGIN
+    IF p_active THEN
+        SELECT string_agg(x, ', ') INTO v_oubliees FROM sync_tables_non_classees() AS x;
+        IF v_oubliees IS NOT NULL THEN
+            RAISE EXCEPTION 'Synchronisation : tables non classées (sync_table) : %', v_oubliees;
+        END IF;
+    END IF;
+    UPDATE sync_parametre SET active = p_active, modifie_le = now() WHERE id = 1;
+    RETURN sync_installer_declencheurs();
+END $$;
+
+
+--
+-- Name: sync_definir_options(text, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_definir_options(p_textes_libres text, p_envoyer_medecins boolean) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF p_textes_libres NOT IN ('filtres', 'retires') THEN
+        RAISE EXCEPTION 'Synchronisation : textes_libres doit valoir filtres ou retires';
+    END IF;
+    UPDATE sync_parametre SET textes_libres = p_textes_libres,
+                              envoyer_medecins = coalesce(p_envoyer_medecins, false),
+                              modifie_le = now()
+    WHERE id = 1;
+    RETURN sync_installer_declencheurs();
+END $$;
+
+
+--
+-- Name: sync_enregistrer_lot(bigint, bigint[], integer, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_enregistrer_lot(p_numero bigint, p_lignes bigint[], p_octets integer, p_empreinte text) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE p sync_parametre; n int;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
+    IF p.dernier_lot + 1 <> p_numero OR coalesce(array_length(p_lignes, 1), 0) = 0 THEN RETURN NULL; END IF;
+    INSERT INTO sync_lot (epoque, numero, version_contrat, nb_lignes, octets, empreinte)
+    VALUES (p.epoque, p_numero, p.version_contrat, array_length(p_lignes, 1), p_octets, p_empreinte);
+    UPDATE sync_sortie SET lot_numero = p_numero
+    WHERE id = ANY (p_lignes) AND lot_numero IS NULL AND epoque = p.epoque;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n <> array_length(p_lignes, 1) THEN
+        RAISE EXCEPTION 'Synchronisation : lot % incohérent (% lignes rattachées sur %)', p_numero, n, array_length(p_lignes, 1);
+    END IF;
+    UPDATE sync_parametre SET dernier_lot = p_numero WHERE id = 1;
+    RETURN p_numero;
+END $$;
+
+
+--
+-- Name: sync_filtrer_texte(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_filtrer_texte(p_texte text) RETURNS text
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    t       text := p_texte;
+    m       text;
+    v_ids   bigint[];
+    v_rempl text;
+BEGIN
+    IF t IS NULL OR btrim(t) = '' THEN RETURN t; END IF;
+    t := regexp_replace(t, '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}', '[COURRIEL]', 'g');
+    t := regexp_replace(t, '(\+|00)?213[ .-]?[0-9]([ .-]?[0-9]){7,8}', '[TÉL]', 'g');
+    t := regexp_replace(t, '\m0[2-7]([ .-]?[0-9]){8}\M', '[TÉL]', 'g');
+    t := regexp_replace(t, '[0-9]([ .-]?[0-9]){8,}', '[N°]', 'g');
+    FOR m IN SELECT DISTINCT lower(x[1]) FROM regexp_matches(t, '([[:alpha:]][[:alpha:]''-]{2,})', 'g') AS x LOOP
+        SELECT array_agg(DISTINCT id) INTO v_ids FROM patient WHERE lower(nom) = m OR lower(prenom) = m;
+        IF v_ids IS NOT NULL THEN
+            v_rempl := CASE WHEN array_length(v_ids, 1) = 1 THEN sync_code_patient(v_ids[1]) ELSE '[NOM]' END;
+        ELSIF EXISTS (SELECT 1 FROM registre_psychotrope WHERE lower(porteur_nom) ~ ('\m' || m || '\M')) THEN
+            v_rempl := '[NOM]';
+        ELSE
+            CONTINUE;
+        END IF;
+        t := regexp_replace(t, '\m' || m || '\M', v_rempl, 'gi');
+    END LOOP;
+    RETURN t;
+END $$;
+
+
+--
+-- Name: sync_inscrire(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_inscrire() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    t       sync_table;
+    p       sync_parametre;
+    j       jsonb;
+    v_id    text;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1;
+    IF NOT FOUND OR NOT p.active THEN RETURN NULL; END IF;
+    SELECT * INTO t FROM sync_table WHERE nom_table = TG_TABLE_NAME;
+    IF NOT FOUND OR sync_sens_effectif(t, p) NOT IN ('montante', 'bidirectionnelle') THEN RETURN NULL; END IF;
+    j := sync_minimiser(t, CASE WHEN TG_OP = 'DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END);
+    SELECT string_agg(coalesce(j ->> k.col, ''), '|' ORDER BY k.n) INTO v_id
+    FROM unnest(t.cle_colonnes) WITH ORDINALITY AS k(col, n);
+    INSERT INTO sync_sortie (nom_table, id_local, operation, donnees, version_contrat, epoque)
+    VALUES (TG_TABLE_NAME, v_id,
+            CASE TG_OP WHEN 'INSERT' THEN 'creation' WHEN 'UPDATE' THEN 'modification' ELSE 'suppression' END,
+            CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE j END,
+            p.version_contrat, p.epoque);
+    RETURN NULL;
+END $$;
+
+
+--
+-- Name: sync_installer_declencheurs(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_installer_declencheurs() RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE r record; n int := 0; p sync_parametre;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1;
+    FOR r IN SELECT c.relname FROM pg_trigger tg
+             JOIN pg_class c ON c.oid = tg.tgrelid
+             JOIN pg_namespace ns ON ns.oid = c.relnamespace AND ns.nspname = 'public'
+             WHERE tg.tgname = 'zz_sync_sortie' LOOP
+        EXECUTE format('DROP TRIGGER zz_sync_sortie ON public.%I', r.relname);
+    END LOOP;
+    IF coalesce(p.active, false) THEN
+        FOR r IN SELECT s.nom_table FROM sync_table s
+                 JOIN pg_tables t ON t.schemaname = 'public' AND t.tablename = s.nom_table
+                 WHERE sync_sens_effectif(s, p) IN ('montante', 'bidirectionnelle') ORDER BY 1 LOOP
+            EXECUTE format('CREATE TRIGGER zz_sync_sortie AFTER INSERT OR UPDATE OR DELETE ON public.%I '
+                           'FOR EACH ROW EXECUTE FUNCTION sync_inscrire()', r.nom_table);
+            n := n + 1;
+        END LOOP;
+    END IF;
+    RETURN n;
+END $$;
+
+
+--
+-- Name: sync_lot_garde(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_lot_garde() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.accuse_le IS NULL AND NEW.accuse_le IS NOT NULL
+       AND (to_jsonb(NEW) - 'accuse_le') = (to_jsonb(OLD) - 'accuse_le') THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'sync_lot : lot figé (seul l''accusé peut être enregistré)';
+END $$;
+
+
+--
+-- Name: sync_table; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_table (
+    nom_table text NOT NULL,
+    sens text NOT NULL,
+    cle_colonnes text[] DEFAULT '{id}'::text[] NOT NULL,
+    colonnes_exclues text[] DEFAULT '{}'::text[] NOT NULL,
+    colonnes_patient text[] DEFAULT '{}'::text[] NOT NULL,
+    porteur boolean DEFAULT false NOT NULL,
+    motif text,
+    colonnes_texte text[] DEFAULT '{}'::text[] NOT NULL,
+    CONSTRAINT sync_table_sens_check CHECK ((sens = ANY (ARRAY['montante'::text, 'descendante'::text, 'bidirectionnelle'::text, 'jamais'::text])))
+);
+
+
+--
+-- Name: TABLE sync_table; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_table IS 'Synchronisation : inventaire de chaque table du schéma public (sens, clé, colonnes exclues ou sous code) (script 126).';
+
+
+--
+-- Name: sync_minimiser(public.sync_table, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_minimiser(p_table public.sync_table, p_ligne jsonb) RETURNS jsonb
+    LANGUAGE plpgsql
+    AS $$
+DECLARE j jsonb := p_ligne; c text; v_mode text;
+BEGIN
+    IF p_table.porteur THEN
+        j := j || jsonb_build_object('porteur_code', sync_code_porteur(j ->> 'porteur_nom', j ->> 'porteur_piece'));
+        j := j - ARRAY['porteur_nom', 'porteur_adresse', 'porteur_piece'];
+    END IF;
+    j := j - p_table.colonnes_exclues;
+    FOREACH c IN ARRAY p_table.colonnes_patient LOOP
+        IF jsonb_typeof(j -> c) = 'number' THEN
+            j := jsonb_set(j, ARRAY[c], to_jsonb(sync_code_patient((j ->> c)::bigint)));
+        END IF;
+    END LOOP;
+    IF cardinality(p_table.colonnes_texte) > 0 THEN
+        SELECT textes_libres INTO v_mode FROM sync_parametre WHERE id = 1;
+        FOREACH c IN ARRAY p_table.colonnes_texte LOOP
+            IF jsonb_typeof(j -> c) = 'string' THEN
+                j := jsonb_set(j, ARRAY[c], CASE WHEN v_mode = 'retires' THEN 'null'::jsonb
+                                                 ELSE to_jsonb(sync_filtrer_texte(j ->> c)) END);
+            END IF;
+        END LOOP;
+    END IF;
+    RETURN j;
+END $$;
+
+
+--
+-- Name: sync_parametre; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_parametre (
+    id integer DEFAULT 1 NOT NULL,
+    active boolean DEFAULT false NOT NULL,
+    officine_id uuid,
+    epoque integer DEFAULT 1 NOT NULL,
+    version_contrat text DEFAULT 'sync-v1'::text NOT NULL,
+    lot_max_lignes integer DEFAULT 500 NOT NULL,
+    lot_max_octets integer DEFAULT 1048576 NOT NULL,
+    dernier_lot bigint DEFAULT 0 NOT NULL,
+    dernier_accuse bigint DEFAULT 0 NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    textes_libres text DEFAULT 'filtres'::text NOT NULL,
+    envoyer_medecins boolean DEFAULT false NOT NULL,
+    CONSTRAINT sync_parametre_check CHECK (((dernier_accuse >= 0) AND (dernier_accuse <= dernier_lot))),
+    CONSTRAINT sync_parametre_dernier_lot_check CHECK ((dernier_lot >= 0)),
+    CONSTRAINT sync_parametre_epoque_check CHECK ((epoque >= 1)),
+    CONSTRAINT sync_parametre_id_check CHECK ((id = 1)),
+    CONSTRAINT sync_parametre_lot_max_lignes_check CHECK (((lot_max_lignes >= 1) AND (lot_max_lignes <= 10000))),
+    CONSTRAINT sync_parametre_lot_max_octets_check CHECK (((lot_max_octets >= 1024) AND (lot_max_octets <= 16777216))),
+    CONSTRAINT sync_parametre_textes_libres_check CHECK ((textes_libres = ANY (ARRAY['filtres'::text, 'retires'::text]))),
+    CONSTRAINT sync_parametre_version_contrat_check CHECK ((version_contrat ~ '^sync-v[0-9]+$'::text))
+);
+
+
+--
+-- Name: TABLE sync_parametre; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_parametre IS 'Synchronisation : réglage (désactivée par défaut), officine, époque, contrat, bornes des lots (script 126).';
+
+
+--
+-- Name: sync_sens_effectif(public.sync_table, public.sync_parametre); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_sens_effectif(p_table public.sync_table, p_param public.sync_parametre) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT CASE WHEN p_table.nom_table = 'medecin' AND p_param.envoyer_medecins THEN 'montante' ELSE p_table.sens END
+$$;
+
+
+--
+-- Name: sync_sortie_garde(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_sortie_garde() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF OLD.lot_numero IS NULL AND NEW.lot_numero IS NOT NULL
+           AND (to_jsonb(NEW) - 'lot_numero') = (to_jsonb(OLD) - 'lot_numero') THEN
+            RETURN NEW;
+        END IF;
+        RAISE EXCEPTION 'sync_sortie : ajout seul (seul le rattachement à un lot est permis)';
+    ELSIF TG_OP = 'DELETE' THEN
+        IF EXISTS (SELECT 1 FROM sync_lot l WHERE l.epoque = OLD.epoque AND l.numero = OLD.lot_numero AND l.accuse_le IS NOT NULL) THEN
+            RETURN OLD;
+        END IF;
+        RAISE EXCEPTION 'sync_sortie : suppression permise seulement après accusé du lot';
+    END IF;
+    RAISE EXCEPTION 'sync_sortie : vidage interdit';
+END $$;
+
+
+--
+-- Name: sync_tables_non_classees(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_tables_non_classees() RETURNS SETOF text
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT t.tablename::text FROM pg_tables t
+    WHERE t.schemaname = 'public' AND NOT EXISTS (SELECT 1 FROM sync_table s WHERE s.nom_table = t.tablename)
+    ORDER BY 1
 $$;
 
 
@@ -8744,6 +9096,94 @@ COMMENT ON TABLE public.surveillance_replication IS 'Seuils d''alerte de retard 
 
 
 --
+-- Name: sync_lot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_lot (
+    epoque integer NOT NULL,
+    numero bigint NOT NULL,
+    version_contrat text NOT NULL,
+    nb_lignes integer NOT NULL,
+    octets integer NOT NULL,
+    empreinte text NOT NULL,
+    constitue_le timestamp with time zone DEFAULT now() NOT NULL,
+    accuse_le timestamp with time zone,
+    CONSTRAINT sync_lot_empreinte_check CHECK ((empreinte ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT sync_lot_nb_lignes_check CHECK ((nb_lignes >= 1)),
+    CONSTRAINT sync_lot_numero_check CHECK ((numero >= 1)),
+    CONSTRAINT sync_lot_octets_check CHECK ((octets >= 0))
+);
+
+
+--
+-- Name: TABLE sync_lot; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_lot IS 'Synchronisation : lots constitués, numérotés sans trou par époque à la constitution (script 126).';
+
+
+--
+-- Name: sync_pseudonyme; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_pseudonyme (
+    nature text NOT NULL,
+    cle_locale text NOT NULL,
+    code text NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT sync_pseudonyme_code_check CHECK ((code ~ '^[PR]-[0-9a-f]{24}$'::text)),
+    CONSTRAINT sync_pseudonyme_nature_check CHECK ((nature = ANY (ARRAY['patient'::text, 'porteur'::text])))
+);
+
+
+--
+-- Name: TABLE sync_pseudonyme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_pseudonyme IS 'Synchronisation : correspondance locale personne <-> code aléatoire stable ; jamais envoyée (script 126).';
+
+
+--
+-- Name: sync_sortie; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_sortie (
+    id bigint NOT NULL,
+    nom_table text NOT NULL,
+    id_local text NOT NULL,
+    operation text NOT NULL,
+    donnees jsonb,
+    version_contrat text NOT NULL,
+    epoque integer NOT NULL,
+    survenu_le timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    lot_numero bigint,
+    CONSTRAINT ck_sync_sortie_donnees CHECK (((operation = 'suppression'::text) = (donnees IS NULL))),
+    CONSTRAINT sync_sortie_operation_check CHECK ((operation = ANY (ARRAY['creation'::text, 'modification'::text, 'suppression'::text])))
+);
+
+
+--
+-- Name: TABLE sync_sortie; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_sortie IS 'Synchronisation : file des modifications à envoyer (outbox), ajout seul tant que non acquittée (script 126).';
+
+
+--
+-- Name: sync_sortie_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sync_sortie ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.sync_sortie_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: type_prestation; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12004,6 +12444,54 @@ ALTER TABLE ONLY public.surveillance_replication
 
 
 --
+-- Name: sync_lot sync_lot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_lot
+    ADD CONSTRAINT sync_lot_pkey PRIMARY KEY (epoque, numero);
+
+
+--
+-- Name: sync_parametre sync_parametre_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_parametre
+    ADD CONSTRAINT sync_parametre_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sync_pseudonyme sync_pseudonyme_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_pseudonyme
+    ADD CONSTRAINT sync_pseudonyme_code_key UNIQUE (code);
+
+
+--
+-- Name: sync_pseudonyme sync_pseudonyme_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_pseudonyme
+    ADD CONSTRAINT sync_pseudonyme_pkey PRIMARY KEY (nature, cle_locale);
+
+
+--
+-- Name: sync_sortie sync_sortie_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_sortie
+    ADD CONSTRAINT sync_sortie_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sync_table sync_table_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_table
+    ADD CONSTRAINT sync_table_pkey PRIMARY KEY (nom_table);
+
+
+--
 -- Name: type_prestation type_prestation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13032,10 +13520,24 @@ CREATE INDEX ix_patient_assure_principal ON public.patient USING btree (assure_p
 
 
 --
+-- Name: ix_patient_nom_minuscule; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_patient_nom_minuscule ON public.patient USING btree (lower(nom));
+
+
+--
 -- Name: ix_patient_num_assure_base; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_patient_num_assure_base ON public.patient USING btree ("left"(regexp_replace(num_assure, '\D'::text, ''::text, 'g'::text), 12)) WHERE (num_assure IS NOT NULL);
+
+
+--
+-- Name: ix_patient_prenom_minuscule; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_patient_prenom_minuscule ON public.patient USING btree (lower(prenom));
 
 
 --
@@ -13050,6 +13552,20 @@ CREATE INDEX ix_remise_auto_categorie ON public.remise_automatique USING btree (
 --
 
 CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (produit_id) WHERE (produit_id IS NOT NULL);
+
+
+--
+-- Name: ix_sync_sortie_en_attente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_sortie_en_attente ON public.sync_sortie USING btree (id) WHERE (lot_numero IS NULL);
+
+
+--
+-- Name: ix_sync_sortie_lot; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_sortie_lot ON public.sync_sortie USING btree (epoque, lot_numero) WHERE (lot_numero IS NOT NULL);
 
 
 --
@@ -14025,6 +14541,34 @@ CREATE TRIGGER trg_sceau_integrite_non_vidable BEFORE TRUNCATE ON public.sceau_i
 --
 
 CREATE TRIGGER trg_session_fermee BEFORE DELETE OR UPDATE ON public.session_caisse FOR EACH ROW EXECUTE FUNCTION public.proteger_session_fermee();
+
+
+--
+-- Name: sync_lot trg_sync_lot_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sync_lot_garde BEFORE DELETE OR UPDATE ON public.sync_lot FOR EACH ROW EXECUTE FUNCTION public.sync_lot_garde();
+
+
+--
+-- Name: sync_lot trg_sync_lot_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sync_lot_non_vidable BEFORE TRUNCATE ON public.sync_lot FOR EACH STATEMENT EXECUTE FUNCTION public.sync_lot_garde();
+
+
+--
+-- Name: sync_sortie trg_sync_sortie_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sync_sortie_garde BEFORE DELETE OR UPDATE ON public.sync_sortie FOR EACH ROW EXECUTE FUNCTION public.sync_sortie_garde();
+
+
+--
+-- Name: sync_sortie trg_sync_sortie_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sync_sortie_non_vidable BEFORE TRUNCATE ON public.sync_sortie FOR EACH STATEMENT EXECUTE FUNCTION public.sync_sortie_garde();
 
 
 --
@@ -15040,6 +15584,14 @@ ALTER TABLE ONLY public.patient
 
 ALTER TABLE ONLY public.produit
     ADD CONSTRAINT fk_produit_categorie FOREIGN KEY (categorie) REFERENCES public.categorie_produit(code);
+
+
+--
+-- Name: sync_sortie fk_sync_sortie_lot; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_sortie
+    ADD CONSTRAINT fk_sync_sortie_lot FOREIGN KEY (epoque, lot_numero) REFERENCES public.sync_lot(epoque, numero);
 
 
 --
@@ -16590,5 +17142,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict WeAK3jYFDgmtkwsscfOe7nXQEpd4GLhgsLVnrFz8BvlgNid7vEW9LPjlk2WFcpG
+\unrestrict hd85PEvehjENS1u0wgdjP9rHPJMfTYelXpfhzXPY36nTBfL3v4f5zOeAZYdZAXS
 

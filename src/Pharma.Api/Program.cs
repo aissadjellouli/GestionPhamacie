@@ -83,6 +83,8 @@ builder.Services.AddScoped<Pharma.Api.Securite.AutorisationParCode>();
 builder.Services.AddScoped<IPermissionService, PermissionsComptoir>();
 builder.Services.AddScoped(sp => new Pharma.Application.Securite.ListerValidateurs(
     sp.GetRequiredService<Pharma.Application.Securite.ICodesComptoir>(), sp.GetRequiredService<Pharma.Infrastructure.Securite.PermissionService>()));
+// Synchronisation, lot S1 : mise en forme sync-v1 des lots (aucun envoi, aucune adresse de serveur central)
+builder.Services.AddSingleton<Pharma.Application.Synchronisation.IFormatLotSync, Pharma.Api.Synchronisation.FormatLotSyncV1>();
 builder.Services.AddHostedService<AlertesQuotidiennes>();
 builder.Services.AddHostedService<EnvoiNotifications>();
 builder.Services.AddHostedService<SauvegardesAutomatiques>();

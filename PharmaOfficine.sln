@@ -45,6 +45,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{
 		docs\tracabilite.md = docs\tracabilite.md
 		docs\analyse-ecarts.md = docs\analyse-ecarts.md
 		docs\conception-synchronisation.md = docs\conception-synchronisation.md
+		docs\synchronisation-inventaire.md = docs\synchronisation-inventaire.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "adr", "adr", "{35D7AF71-198B-4464-B00C-B4E49C87A256}"
@@ -235,11 +236,15 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\123_formulaire_accord_sms.sql = database\migration\123_formulaire_accord_sms.sql
 		database\migration\124_profils_reprise_noms_neutres.sql = database\migration\124_profils_reprise_noms_neutres.sql
 		database\migration\125_wilayas_59_69.sql = database\migration\125_wilayas_59_69.sql
+		database\migration\126_synchronisation_sortie.sql = database\migration\126_synchronisation_sortie.sql
+		database\migration\127_synchronisation_textes_medecins.sql = database\migration\127_synchronisation_textes_medecins.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
 	ProjectSection(SolutionItems) = preProject
 		database\tests\111_integrite_hachage_tests.sql = database\tests\111_integrite_hachage_tests.sql
+		database\tests\126_synchronisation_sortie_tests.sql = database\tests\126_synchronisation_sortie_tests.sql
+		database\tests\127_synchronisation_textes_medecins_tests.sql = database\tests\127_synchronisation_textes_medecins_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 	EndProjectSection
 EndProject

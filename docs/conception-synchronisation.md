@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception seulement (GO « go conception sync », 2026-11-16).** Aucun code, aucun script SQL, aucune modification de base. Rien n'est lancé.
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (GO « go S1 », 2026-11-16, voir § 11)** : inventaire, contrat `sync-v1`, file locale et constitution des lots, **sans aucun envoi**. Lots S2 à S7 non lancés.
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -76,14 +76,14 @@ Le choix « pseudonymiser ou envoyer en clair » est structurant pour la sauvega
 ### 3.1 Journal des modifications local (outbox)
 - Une table locale `sync_sortie` (nom indicatif) reçoit **dans la même transaction** que l'opération métier une ligne par modification d'une table synchronisée : table, identifiant stable, type (création / modification / ajout seul), version de contrat, contenu ou référence, horodatage UTC.
 - Alimentation proposée : **déclencheurs différés** (même principe que `journal_vente`) pour ne rien oublier quel que soit le chemin d'écriture. Une opération sans sa ligne d'outbox est donc impossible.
-- Numéro de séquence local **croissant par officine** (attribué à la validation, verrou court comme le compteur de tickets) : il donne l'ordre d'envoi. Les trous dus aux annulations de transaction sont acceptables ici **à condition** que la séquence soit attribuée au commit ; sinon le cloud ne peut pas détecter un manque **[À VÉRIFIER au lot S1 : mode d'attribution sans trou]**.
+- ~~Numéro de séquence local croissant attribué au commit~~ **Tranché au lot S1** : les **lignes** reçoivent un n° d'identité croissant (trous possibles, transactions annulées) qui ne sert qu'à l'ordre ; ce sont les **lots** qui sont numérotés sans trou, à la constitution (voir § 11). Pas de verrou ajouté sur les ventes.
 
 ### 3.2 Identifiants stables
 - Identité globale = **(id officine, table, id local)**. Les `bigint` existants ne changent pas (§ 6 bis, point 3) ; les nouvelles tables portent une clé GUID.
 - L'id officine est un GUID attribué à l'inscription (§ 9) et stocké dans la base locale ; il est **répliqué** vers le 2e serveur (même officine).
 
 ### 3.3 Envoi par lots idempotents
-- Lot = suite contiguë de séquences [n..m], taille plafonnée (proposition : 500 lignes ou 1 Mo compressé, **[À VÉRIFIER par mesure]**), identifiant de lot = (id officine, n, m), empreinte SHA-256 du contenu.
+- Lot = lignes de la file pas encore rattachées, par n° croissant, taille plafonnée (réglage : 500 lignes et 1 Mo non compressé par défaut, **[À VÉRIFIER par mesure]**), identifiant de lot = (id officine, époque, n° de lot sans trou), empreinte SHA-256 du lot sérialisé `sync-v1` (révisé au lot S1, § 11).
 - Le cloud applique un lot **une seule fois** : un lot déjà reçu avec la même empreinte est accusé sans réapplication ; même numéro avec une empreinte différente = **anomalie** (alerte, lot refusé).
 - Le cloud n'accepte que le lot qui suit immédiatement le dernier accusé (n = dernier + 1) : **ordre garanti**, aucun manque.
 
@@ -210,8 +210,8 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 - Déclaration ANPDP, rôle responsable de traitement / sous-traitant, délégué à la protection des données.
 - Durées de conservation côté cloud (fiscal 6 ans ; registre des psychotropes ; données patients).
 - Taille réelle des lots et débit des lignes Internet des officines.
-- Attribution sans trou de la séquence d'outbox au commit.
-- Liste exhaustive des tables à synchroniser.
+- ~~Attribution sans trou de la séquence d'outbox au commit.~~ Tranché au lot S1 (§ 11 : lots numérotés à la constitution).
+- ~~Liste exhaustive des tables à synchroniser.~~ Faite au lot S1 : [synchronisation-inventaire.md](synchronisation-inventaire.md).
 
 ## Décisions du titulaire (2026-11-16)
 
@@ -225,3 +225,26 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | 6 | Mode d'échange | **Interrogation toutes les minutes** environ à l'initiative de l'officine (envoi des nouveautés, relève des ordres) ; un ordre à distance arrive en une minute au plus |
 | 7 | Séparation des officines dans le cloud | **Un schéma par officine** dans une base commune, avec un compte PostgreSQL propre à chaque schéma (plus le contrôle de l'officine du jeton dans l'API) |
 | 8 | Lignes reçues par le cloud mais absentes de l'officine après une bascule ou une restauration | **Signaler et garder** : le cloud ne les efface jamais, les marque « absentes de l'officine » et alerte le titulaire, qui décide (ressaisie, annulation tracée ou justification pour le contrôle fiscal) |
+
+## 11. Lot S1 : réalisé (2026-11-16, GO « go S1 »)
+
+Côté officine seulement : **aucun appel réseau, aucune adresse de serveur central, aucun envoi, aucun chiffrement**.
+
+| Élément | Réalisation |
+|---|---|
+| Inventaire | `sync_table` (script `126_synchronisation_sortie.sql`) et [synchronisation-inventaire.md](synchronisation-inventaire.md) : 142 tables du schéma public — 78 montantes, 22 bidirectionnelles, 17 descendantes, 25 jamais. Test d'architecture `SynchronisationInventaireTests` (table oubliée, document en écart, patients et porteurs sous code) ; `sync_definir_active(true)` refuse d'activer tant qu'une table n'est pas classée. |
+| Contrat `sync-v1` | `Pharma.Shared/DtosSynchronisation.cs` : `EnTeteLotSyncDto` (version, officine, époque, n° de lot, nombre de lignes, empreinte), `LigneSyncDto` (n°, table, id stable, opération `creation`/`modification`/`suppression`, horodatage UTC, données), `SerialisationSyncV1` : JSON UTF-8 compact, ordre des propriétés fixe, données canoniques (clés triées), dates à la microseconde ; empreinte = SHA-256 du lot sérialisé avec une empreinte vide. Même bibliothèque prévue côté serveur central. |
+| File locale (outbox) | `sync_sortie`, alimentée par le déclencheur `zz_sync_sortie` (AFTER INSERT/UPDATE/DELETE, **même transaction**) des tables montantes et bidirectionnelles ; données minimisées **avant** inscription (patients et porteurs sous code, colonnes exclues) ; ajout seul ; purge seulement après accusé (prévue, non lancée). |
+| Pseudonymes | `sync_pseudonyme` : patient ↔ `P-` + 24 hex, porteur ↔ `R-` + 24 hex (clé locale = empreinte du nom et de la pièce), créés au premier besoin, stables, jamais envoyés. |
+| Désactivée par défaut | `sync_parametre.active = false` : **aucun déclencheur posé**, rien n'est inscrit, aucun coût sur les ventes. `sync_definir_active(bool)` pose ou retire les déclencheurs. `officine_id` reste vide jusqu'à l'inscription (S2/S6). |
+| Constitution des lots | `Pharma.Application/Synchronisation/ConstitutionLots.cs` (`ConstitutionLotsSync`, ports `ISortieSyncDepot` — `SortieSyncSql` — et `IFormatLotSync` — `FormatLotSyncV1` dans l'API) : lit les lignes en attente, forme des lots bornés (lignes et octets ; une ligne plus grosse que la borne part seule), calcule l'empreinte, enregistre par `sync_enregistrer_lot`. Refuse si désactivée, officine non inscrite ou version inconnue. **Aucune tâche de fond ne l'appelle encore.** |
+
+**Numérotation (point [À VÉRIFIER] du § 3.1, tranché)** : attribuer aux *lignes* un n° sans trou au commit imposerait un verrou sérialisant toutes les écritures (comme le compteur de tickets) sur chaque vente. Retenu : les lignes ont un n° d'identité croissant **avec trous possibles** (transactions annulées), utilisé seulement pour l'ordre ; les **lots** sont numérotés **sans trou** par époque au moment de la constitution (`sync_enregistrer_lot` : n° = dernier + 1 sous verrou de la ligne `sync_parametre`, insertion du lot et rattachement des lignes dans la même transaction ; une constitution simultanée reçoit NULL et reprend plus tard). Une ligne n'est jamais oubliée : la sélection se fait sur « pas encore rattachée », pas sur un intervalle de n°. Une transaction longue validée après un lot part dans un lot suivant ; comme deux modifications d'une même ligne se suivent toujours dans l'ordre des n° (verrou de ligne PostgreSQL), le serveur central retient **l'état de plus grand n° de ligne**. Le serveur central détecte un manque par la continuité des n° de lot.
+
+**Ce qui reste (S2 et suivants)** :
+- S2 : API cloud (réception, idempotence par (officine, époque, n° de lot, empreinte), ordre n = dernier + 1, accusés), base centrale par schéma, certificat client et JWT ; inscription de l'officine (remplit `officine_id`).
+- S3 : tâche de fond d'envoi (appel de `ConstitutionLotsSync`, renvoi d'un lot à l'identique depuis `sync_lot`/`sync_sortie`, enregistrement de l'accusé dans `sync_lot.accuse_le` et `sync_parametre.dernier_accuse`, purge après le délai de garde), bandeau « n opérations en attente », écran d'état.
+- S4 : vérification des chaînes côté cloud ; **[DÉCISION]** pour `journal_registre_psychotrope`, dont l'empreinte ne peut pas être recalculée sans les colonnes du porteur.
+- S6 : chargement initial (instantané des tables montantes), nouvelle époque après restauration.
+- Points ouverts de l'inventaire : textes libres envoyés, `medecin` jamais, volume de `catalogue_grossiste` (voir l'inventaire).
+- `init/schema.sql` à régénérer (tables, fonctions et déclencheurs du script 126).
