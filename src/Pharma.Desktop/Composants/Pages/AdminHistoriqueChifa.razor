@@ -1,0 +1,110 @@
+@page "/admin/historique-chifa"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Historique des ventes Chifa de l'ancien logiciel (script 114), en lecture seule : aucune vente, aucun stock, aucune dette recréés.
+   Liste filtrée et paginée par le serveur ; écran fixe, seul le tableau défile. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/historique-chifa" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Historique des organismes repris</h1>
+                <p class="sous-titre">Factures Chifa (CNAS, CASNOS) et MDN de l’ancien logiciel, reprises en lecture seule pour les recherches (n° de facture, assuré ou affilié, montants). Elles ne sont ni des ventes ni des bordereaux de Pharma Officine.</p>
+            </div>
+        </div>
+
+        @if (!Session.A("chifa.bordereaux") && !Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Réservé au titulaire et aux employés qui ont le droit « bordereaux Chifa ».</div>
+        }
+        else
+        {
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+            <div class="filtres-liste" role="search" aria-label="Filtrer l’historique des organismes">
+                <div class="champ" style="flex: 1 1 260px"><label for="hc-texte">N° de facture, n° ou nom de l’assuré</label>
+                    <input id="hc-texte" data-champ="recherche" type="search" autocomplete="off" @bind="fTexte" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" /></div>
+                <div class="champ" style="flex: 0 0 200px"><label for="hc-organisme">Organisme</label>
+                    <select id="hc-organisme" data-champ="organisme" @bind="fOrganisme" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="">Tous</option>
+                        <option value="CHIFA">Chifa (CNAS et CASNOS)</option>
+                        <option value="CNAS">CNAS</option>
+                        <option value="CASNOS">CASNOS</option>
+                        <option value="MDN">MDN</option>
+                    </select></div>
+                <div class="champ" style="flex: 0 0 170px"><label for="hc-du">Du</label>
+                    <input id="hc-du" type="date" @bind="fDu" @bind:after="() => ChargerAsync(1, taille)" /></div>
+                <div class="champ" style="flex: 0 0 170px"><label for="hc-au">Au</label>
+                    <input id="hc-au" type="date" @bind="fAu" @bind:after="() => ChargerAsync(1, taille)" /></div>
+                @if (fTexte != "" || fOrganisme != "" || fDu is not null || fAu is not null) { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+            </div>
+
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 900px">
+                    <thead><tr><th scope="col">Date</th><th scope="col">Organisme</th><th scope="col">N° de facture</th><th scope="col">Assuré ou affilié</th><th scope="col" class="nombre">Total</th><th scope="col" class="nombre">Part organisme</th><th scope="col" class="nombre">Part assuré</th><th scope="col">Origine</th></tr></thead>
+                    <tbody>
+                        @if (liste is null)
+                        {
+                            <tr><td colspan="8"><Chargement /></td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var h in liste.Lignes)
+                            {
+                                <tr>
+                                    <td>@h.DateFacture.ToString("dd/MM/yyyy")</td>
+                                    <td>@(h.Organisme == "CHIFA" ? "Chifa" : h.Organisme)</td>
+                                    <td>@h.NumFacture</td>
+                                    <td>@(h.NomAssure ?? "—")@if (h.NumAssure is { } n) { <br /><span class="detail">@n</span> }</td>
+                                    <td class="nombre">@Montant(h.MontantTotal)</td>
+                                    <td class="nombre">@Montant(h.PartChifa)</td>
+                                    <td class="nombre">@Montant(h.PartAssure)</td>
+                                    <td><span class="detail">Reprise n° @h.SessionId · @h.Logiciel</span></td>
+                                </tr>
+                            }
+                            @if (liste.Lignes.Count == 0) { <tr><td colspan="8" class="vide">Aucune facture d’organisme reprise pour ces filtres.</td></tr> }
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <Pagination Total="@(liste?.Total ?? 0)" Numero="@(liste?.Numero ?? 1)" Taille="taille" Occupe="enCours" Libelle="Pages de l’historique des organismes" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
+    </div>
+</div>
+
+@code {
+    private PageDto<HistoriqueChifaDto>? liste;
+    private string fTexte = "", fOrganisme = "";
+    private DateOnly? fDu, fAu;
+    private int taille = Pagination.TailleParDefaut;
+    private bool enCours;
+    private string? erreur;
+
+    protected override Task OnInitializedAsync()
+    {
+        Historique.Suivre("historique-chifa", e => { e.Mettre("texte", fTexte); e.Mettre("organisme", fOrganisme); e.Mettre("du", fDu); e.Mettre("au", fAu); e.Mettre("page", liste?.Numero ?? 1); e.Mettre("taille", taille); });
+        var numero = 1;
+        if (Historique.Restaurer("historique-chifa") is { } h)
+            (fTexte, fOrganisme, fDu, fAu, numero, taille) = (h.Texte("texte") ?? "", h.Texte("organisme") ?? "", h.Date("du"), h.Date("au"), h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        return ChargerAsync(numero, taille);
+    }
+
+    private async Task ChargerAsync(int numero, int t)
+    {
+        enCours = true;
+        taille = t;
+        (liste, erreur) = await Api.HistoriqueChifaAsync(fTexte == "" ? null : fTexte, fDu, fAu, numero, t, fOrganisme == "" ? null : fOrganisme);
+        enCours = false;
+    }
+
+    private Task ToutAfficherAsync()
+    {
+        (fTexte, fOrganisme, fDu, fAu) = ("", "", null, null);
+        return ChargerAsync(1, taille);
+    }
+
+    private static string Montant(decimal? m) => m is { } v ? $"{v:N2} DA" : "—";
+}

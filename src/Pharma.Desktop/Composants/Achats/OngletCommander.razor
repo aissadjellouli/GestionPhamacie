@@ -1,0 +1,215 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Achats › Commander (lot 6, M3a) : liste à commander, comparaison des grossistes par produit (prix, disponibilité, délai,
+   dernier achat), choix du grossiste par ligne (proposé : meilleur prix, sinon disponibilité), RÉPARTITION de la commande :
+   un bon en brouillon par grossiste, puis envoi (PDF à l'écran ou e-mail par le SMTP de la pharmacie).
+   Écran fixe : seul le tableau défile ; liste paginée et filtrée par le serveur. Prix d'achat : seulement avec « rapports.marges ». *@
+<div class="liste" style="@(premiereLecture ? null : "visibility: hidden")">
+    @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }
+    else if (message is not null) { <div class="succes" role="status" style="margin: 0">@message</div> }
+
+    <div class="filtres-liste" role="search" aria-label="Filtrer les produits à commander">
+        <div class="champ" style="flex: 1 1 240px"><label for="cm-recherche">Produit</label>
+            <input id="cm-recherche" type="search" autocomplete="off" placeholder="Ex. amlodipine" value="@recherche" @oninput="RechercheAsync" /></div>
+        <div class="champ" style="flex: 0 0 160px"><label for="cm-etat">État</label>
+            <select id="cm-etat" @bind="statut" @bind:after="() => ChargerAsync(1, taille)">
+                <option value="">Tous</option>
+                <option value="rupture">Rupture</option>
+                <option value="critique">Critique</option>
+            </select></div>
+        @if (recherche.Trim().Length > 0 || statut != "") { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
+        <p class="detail" style="margin: 0; flex: 1 1 300px">Grossiste proposé : meilleur prix (catalogue importé, sinon dernier achat), à défaut disponibilité. Le choix reste le vôtre.</p>
+    </div>
+
+    <section class="tableau-cadre" aria-label="Comparaison des grossistes">
+        <table class="tableau" style="min-width: 0">
+            <thead><tr><th scope="col" style="width: 40px">Cmd</th><th scope="col">Produit</th><th scope="col" style="width: 90px">Quantité</th>
+                <th scope="col">Grossistes : @(VoitPrix ? "prix HT, " : "")disponibilité, délai, dernier achat</th></tr></thead>
+            <tbody>
+                @foreach (var l in lignes)
+                {
+                    var c = Choix(l);
+                    <tr>
+                        <td><input type="checkbox" checked="@c.Inclus" aria-label="Commander @l.Produit" disabled="@(c.FournisseurId is null)"
+                                   @onchange="e => c.Inclus = e.Value is true" /></td>
+                        <td><span class="nom">@l.Produit</span><br />
+                            <span class="pastille @(l.Statut == "rupture" ? "urgent" : "attention")">@(l.Statut == "rupture" ? "Rupture" : "Critique")</span>
+                            <span class="detail">stock @l.Stock · @(l.GrossistePropose is null ? l.MotifProposition : $"proposé : {l.MotifProposition}")</span></td>
+                        <td><input type="number" min="1" max="10000" style="width: 72px" aria-label="Quantité de @l.Produit" @bind="c.Quantite" /></td>
+                        <td>
+                            @if (l.Offres.Count == 0)
+                            {
+                                <select aria-label="Grossiste pour @l.Produit" value="@(c.FournisseurId?.ToString() ?? "")" @onchange="e => ChoisirGrossiste(c, e.Value?.ToString())">
+                                    <option value="">Aucun catalogue ni achat : choisir</option>
+                                    @foreach (var f in fournisseurs.Where(f => f.Actif)) { <option value="@f.Id">@f.RaisonSociale</option> }
+                                </select>
+                            }
+                            else
+                            {
+                                @foreach (var o in l.Offres)
+                                {
+                                    <label style="display: flex; gap: 6px; align-items: baseline; font-weight: normal">
+                                        <input type="radio" name="g-@l.ProduitId" checked="@(c.FournisseurId == o.FournisseurId)"
+                                               @onchange="() => { c.FournisseurId = o.FournisseurId; c.Inclus = true; }" />
+                                        <span><strong>@o.Grossiste</strong>@(o.FournisseurId == l.GrossistePropose ? " ★" : "")
+                                            <span class="detail">· @Offre(o)</span></span>
+                                    </label>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (lignes.Count == 0)
+                {
+                    <tr><td colspan="4" class="vide">@(recherche.Trim().Length > 0 || statut != "" ? "Aucun produit à commander pour ces filtres." : "Aucune rupture ni stock critique : rien à commander.")</td></tr>
+                }
+            </tbody>
+        </table>
+    </section>
+    <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des produits à commander" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+        @{ var retenus = choix.Values.Where(x => x.Inclus && x.FournisseurId is not null).ToList(); }
+        <span><strong>@retenus.Count</strong> produit(s) coché(s) chez <strong>@retenus.Select(x => x.FournisseurId).Distinct().Count()</strong> grossiste(s)</span>
+        <button type="button" class="btn btn-principal" disabled="@(enCours || retenus.Count == 0 || !PeutCommander)" @onclick="RepartirAsync">Créer les bons (un par grossiste)</button>
+        @foreach (var b in bons)
+        {
+            <span style="display: inline-flex; gap: 6px; align-items: center">
+                <span>@b.Grossiste (@b.Lignes l.)</span>
+                <button type="button" class="btn" disabled="@enCours" @onclick="() => PdfAsync(b)">PDF</button>
+                <button type="button" class="btn" disabled="@enCours" @onclick="() => EmailAsync(b)">E-mail</button>
+                <a class="lien" href="@($"achats?onglet=commandes&vue=bons&commande={b.CommandeId}")">Voir</a>
+            </span>
+        }
+    </div>
+</div>
+
+@code {
+    private sealed class ChoixLigne
+    {
+        public required long ProduitId { get; init; }
+        public bool Inclus { get; set; }
+        public long? FournisseurId { get; set; }
+        public int Quantite { get; set; }
+    }
+
+    private List<FournisseurDto> fournisseurs = [];
+    private List<ComparaisonProduitDto> lignes = [];
+    // Choix gardés d'une page à l'autre et d'un filtre à l'autre (produit → grossiste, quantité, coché)
+    private readonly Dictionary<long, ChoixLigne> choix = [];
+    private List<BonRepartiDto> bons = [];
+    private int total, page = 1, taille = Pagination.TailleParDefaut, requete, lecture;
+    private string recherche = "", statut = "";
+    private bool enCours, premiereLecture;
+    private string? erreur, message;
+
+    private bool PeutCommander => Session.A("achats.commander");
+    private bool VoitPrix => Session.A("role.titulaire") || Session.A("rapports.marges");
+
+    protected override async Task OnInitializedAsync()
+    {
+        (fournisseurs, erreur) = await Api.FournisseursAsync();
+        // « ← Retour » : filtres et page retrouvés tels qu'ils étaient
+        Historique.Suivre("commander", e => { e.Mettre("recherche", recherche); e.Mettre("etat", statut); e.Mettre("page", page); e.Mettre("taille", taille); });
+        var r = Historique.Restaurer("commander");
+        if (r is not null) (recherche, statut, page, taille) = (r.Texte("recherche") ?? "", r.Texte("etat") ?? "", r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        await ChargerAsync(page, taille);
+        premiereLecture = true;
+    }
+
+    private ChoixLigne Choix(ComparaisonProduitDto l)
+    {
+        if (!choix.TryGetValue(l.ProduitId, out var c))
+            choix[l.ProduitId] = c = new ChoixLigne { ProduitId = l.ProduitId, FournisseurId = l.GrossistePropose, Inclus = l.GrossistePropose is not null,
+                Quantite = Math.Max(1, l.QteSuggeree) };
+        return c;
+    }
+
+    private static void ChoisirGrossiste(ChoixLigne c, string? valeur)
+    {
+        c.FournisseurId = long.TryParse(valeur, out var id) ? id : null;
+        c.Inclus = c.FournisseurId is not null;
+    }
+
+    private string Offre(OffreGrossisteDto o)
+    {
+        var morceaux = new List<string>();
+        if (VoitPrix && o.PrixHt is { } p) morceaux.Add(Libelles.Dinars(p, 2));
+        morceaux.Add(o.Disponible switch
+        {
+            true => o.QuantiteDisponible is { } q ? $"disponible ({q})" : "disponible",
+            false => "indisponible",
+            _ => "disponibilité inconnue"
+        });
+        if (o.DelaiJours is { } d) morceaux.Add($"{d} j");
+        if (o.CatalogueLe is { } cl) morceaux.Add($"catalogue du {Libelles.DateLocale(cl)}");
+        if (o.DernierAchatLe is { } da)
+            morceaux.Add(VoitPrix && o.DernierPrixAchatHt is { } dp ? $"dernier achat {Libelles.Dinars(dp, 2)} le {Libelles.DateLocale(da)}" : $"dernier achat le {Libelles.DateLocale(da)}");
+        return string.Join(" · ", morceaux);
+    }
+
+    private async Task RechercheAsync(ChangeEventArgs e)
+    {
+        recherche = e.Value?.ToString() ?? "";
+        var n = ++requete;
+        await Task.Delay(250);
+        if (n == requete) await ChargerAsync(1, taille);
+    }
+
+    private Task EffacerFiltresAsync() { (recherche, statut) = ("", ""); return ChargerAsync(1, taille); }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var n = ++lecture;
+        var (p, e) = await Api.ComparaisonGrossistesAsync(recherche, statut, numero, nouvelleTaille);
+        if (n != lecture) return;
+        if (p is null) { erreur = e; return; }
+        if (p.Lignes.Count == 0 && numero > 1) { await ChargerAsync(1, nouvelleTaille); return; }
+        (lignes, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    private async Task RepartirAsync() => await Executer(async () =>
+    {
+        var retenus = choix.Values.Where(x => x.Inclus && x.FournisseurId is not null).ToList();
+        if (retenus.Any(x => x.Quantite is <= 0 or > 10_000)) return "Quantité à commander entre 1 et 10 000.";
+        var (r, e) = await Api.RepartirCommandeAsync(new RepartitionRequete(
+            retenus.Select(x => new LigneRepartitionDto(x.ProduitId, x.FournisseurId!.Value, x.Quantite)).ToList()));
+        if (e is not null) return e;
+        bons = r!;
+        message = $"{bons.Count} bon(s) en brouillon : {string.Join(", ", bons.Select(b => b.Grossiste))}. Envoyez chaque bon (PDF ou e-mail).";
+        foreach (var x in retenus) choix.Remove(x.ProduitId);
+        await ChargerAsync(page, taille);
+        return null;
+    });
+
+    /// <summary>Émet le bon (s'il est en brouillon) et l'ouvre à l'écran, à transmettre au grossiste.</summary>
+    private async Task PdfAsync(BonRepartiDto b) => await Executer(async () =>
+    {
+        var (detail, e0) = await Api.CommandeAchatAsync(b.CommandeId);
+        if (detail is null) return e0;
+        var (pdf, nom, e) = detail.Entete.Statut == "brouillon" ? await Api.EmettreCommandeAsync(b.CommandeId) : await Api.BonCommandeAsync(b.CommandeId);
+        if (e is not null) return e;
+        var doc = await Documents.RangerAsync(Api, "Commandes", nom!, pdf!);
+        Documents.Ouvrir(doc.CheminLocal);
+        message = $"Bon {detail.Entete.Numero} ({b.Grossiste}) émis : PDF rangé ({doc.Emplacement}).";
+        return doc.Erreur;
+    });
+
+    private async Task EmailAsync(BonRepartiDto b) => await Executer(async () =>
+    {
+        var (r, e) = await Api.EnvoyerBonParEmailAsync(b.CommandeId);
+        if (e is not null) return e;
+        await Documents.RangerAsync(Api, "Commandes", r!.NomFichier, Convert.FromBase64String(r.PdfBase64));
+        message = $"Bon {r.Numero} envoyé par e-mail à {r.Adresse} ({b.Grossiste}).";
+        return null;
+    });
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

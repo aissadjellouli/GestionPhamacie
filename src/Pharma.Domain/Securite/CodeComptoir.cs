@@ -41,6 +41,8 @@ public static class CodeComptoir
         Permissions.StockConsulter, Permissions.StockDonner,
         Permissions.PrixModifier, Permissions.ProduitsBloquer,
         Permissions.AchatsReceptionner, Permissions.AchatsValiderEcart, Permissions.AchatsRetourFournisseur,
+        // Lot 8 : valider le forçage d'une alerte du registre des psychotropes (le délivreur reste celui de la vente)
+        Permissions.PsychotropesForcerAlerte,
     };
 
     public static bool AutorisableParCollegue(string? permission) =>
@@ -100,5 +102,5 @@ public static class CodeComptoir
     public static bool Autorise(string permission) =>
         permission.StartsWith("caisse.", StringComparison.Ordinal)
         || permission.StartsWith("credit.", StringComparison.Ordinal)
-        || permission is Permissions.PsychotropesDelivrer or Permissions.StockConsulter or Permissions.StockDonner;
+        || permission is Permissions.PsychotropesDelivrer or Permissions.PsychotropesForcerAlerte or Permissions.StockConsulter or Permissions.StockDonner;
 }

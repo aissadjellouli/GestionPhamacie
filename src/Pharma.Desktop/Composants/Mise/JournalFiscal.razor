@@ -1,0 +1,152 @@
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Administration › Contrôle interne › Journal fiscal (titulaire, lot 3) : journal des ventes chaîné et scellé, recherche par période et
+   n° de ticket, état de la chaîne, continuité des tickets, sceaux des clôtures, récapitulatif TVA et export d'audit (CSV, PDF).
+   Écran fixe : seuls le tableau des lignes et la colonne des sceaux défilent. *@
+<div class="titre-page">
+    <div>
+        <h1>Contrôle interne · Journal fiscal</h1>
+        <p class="sous-titre">Une ligne par vente, annulation, retour, avoir ou régularisation, jamais modifiée ; scellée à chaque clôture de caisse et chaque mois.</p>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: end; flex-wrap: wrap">
+        <label class="detail">Du <input type="date" @bind="du" /></label>
+        <label class="detail">Au <input type="date" @bind="au" /></label>
+        <label class="detail">Ticket <input type="search" style="width: 110px" placeholder="T-…" @bind="ticket" /></label>
+        <button type="button" class="btn" disabled="@enCours" @onclick="() => ChargerAsync(1)">Rechercher</button>
+        <button type="button" class="btn" disabled="@enCours" @onclick='() => ExporterAsync("csv")'>Export CSV</button>
+        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick='() => ExporterAsync("pdf")'>Export PDF</button>
+    </div>
+</div>
+
+@if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+@if (j is { } d)
+{
+    <p class="detail" style="margin: 0 0 6px">
+        Chaîne : <span class="pastille @(d.EtatChaine switch { "ok" => "ok", null => null, _ => "urgent" })">@(d.EtatChaine switch { "ok" => "Intacte", "rupture" => "Rompue", "erreur" => "Erreur", _ => "Jamais vérifiée" })</span>
+        @(d.VerifieeLe is { } v ? $" le {Libelles.DateHeureLocale(v)}" : "") @(d.MotifChaine is { } m ? $" · {m}" : "")
+        · dernier ticket @d.DernierTicket · numérotation continue depuis @d.PremierTicketContinu (@Libelles.DateHeureLocale(d.MisEnServiceLe))
+        · conservation @d.ConservationAnnees ans · export @d.FormatExport
+    </p>
+    @if (d.Anomalies.Count > 0)
+    {
+        <div class="erreur" role="alert" title="@string.Join(" ; ", d.Anomalies)">Numérotation : @d.Anomalies.Count anomalie(s), dont @d.Anomalies[0]. Ne rien corriger, prévenir l’éditeur.</div>
+    }
+    @if (d.TrousHistorique.Count > 0)
+    {
+        <p class="detail" style="margin: 0 0 6px" title="@string.Join(" ; ", d.TrousHistorique)">Historique avant la mise en service : @d.TrousHistorique.Count trou(s) de numérotation (signalés, non modifiés), dont @d.TrousHistorique[0].</p>
+    }
+
+    <div style="display: grid; grid-template-columns: 1fr 380px; gap: 12px; min-height: 0; flex: 1">
+        <div style="display: flex; flex-direction: column; min-height: 0">
+            <section class="tableau-cadre" aria-label="Lignes du journal fiscal">
+                <table class="tableau" style="min-width: 860px">
+                    <thead><tr><th scope="col" class="nombre">Ligne</th><th scope="col">Date</th><th scope="col">Événement</th><th scope="col">Ticket</th>
+                        <th scope="col">Vendeur · poste</th><th scope="col" class="nombre">TTC</th><th scope="col" class="nombre">TVA</th>
+                        <th scope="col">Paiements</th><th scope="col">Empreinte</th></tr></thead>
+                    <tbody>
+                        @foreach (var l in d.Lignes.Lignes)
+                        {
+                            <tr title="@l.Motif">
+                                <td class="nombre">@l.Rang</td>
+                                <td>@Libelles.DateHeureLocale(l.SurvenuLe)</td>
+                                <td>@Evenement(l.Evenement)</td>
+                                <td>@(l.NumeroTicket ?? "—")</td>
+                                <td class="detail">@(l.Vendeur ?? "—")@(l.Poste is { } p ? $" · {p}" : "")</td>
+                                <td class="nombre">@l.Ttc.ToString("N2")</td>
+                                <td class="nombre">@l.Tva.ToString("N2")</td>
+                                <td class="detail">@(l.Paiements.Length > 0 ? l.Paiements.Replace(";", " · ") : l.MontantMouvement != 0 ? $"mouvement {l.MontantMouvement:N2}" : "—")</td>
+                                <td class="detail" title="@l.Empreinte">@l.Empreinte[..12]…</td>
+                            </tr>
+                        }
+                        @if (d.Lignes.Lignes.Count == 0) { <tr><td colspan="9" class="vide">Aucune ligne sur la période.</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+            <Pagination Total="d.Lignes.Total" Numero="d.Lignes.Numero" Taille="d.Lignes.Taille" Libelle="Pages du journal fiscal" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; min-height: 0">
+            <section class="panneau" aria-labelledby="t-tva">
+                <h2 id="t-tva">Récapitulatif TVA</h2>
+                <table class="tableau">
+                    <thead><tr><th scope="col">Taux</th><th scope="col" class="nombre">TTC</th><th scope="col" class="nombre">HT</th><th scope="col" class="nombre">TVA</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in d.Tva)
+                        {
+                            <tr><td>@t.Taux.ToString("0.##") %@(t.Exoneree ? " exonéré" : "")</td><td class="nombre">@t.Ttc.ToString("N2")</td>
+                                <td class="nombre">@t.Ht.ToString("N2")</td><td class="nombre">@t.Tva.ToString("N2")</td></tr>
+                        }
+                        <tr><td><strong>Total</strong> (@d.Evenements)</td><td class="nombre"><strong>@d.Ttc.ToString("N2")</strong></td>
+                            <td class="nombre">@d.Ht.ToString("N2")</td><td class="nombre">@d.MontantTva.ToString("N2")</td></tr>
+                    </tbody>
+                </table>
+            </section>
+            <section class="tableau-cadre" aria-label="Sceaux de la période" style="flex: 1">
+                <table class="tableau">
+                    <thead><tr><th scope="col">Sceau</th><th scope="col">Période</th><th scope="col" class="nombre">Ligne</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in d.Clotures)
+                        {
+                            <tr title="@TitreSceau(c)">
+                                <td>n° @c.SceauId · @(c.Type == "mensuelle" ? "mois" : $"caisse {c.SessionCaisseId}")<br /><span class="detail">@c.Sceau[..16]…</span></td>
+                                <td class="detail">@c.Du.ToString("dd/MM") – @c.Au.ToString("dd/MM/yyyy")<br />@Libelles.DateHeureLocale(c.ScelleLe)</td>
+                                <td class="nombre">@c.DernierRang</td>
+                            </tr>
+                        }
+                        @if (d.Clotures.Count == 0) { <tr><td colspan="3" class="vide">Aucun sceau sur la période.</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    </div>
+}
+else if (erreur is null) { <Chargement /> }
+
+@code {
+    private JournalFiscalDto? j;
+    private DateOnly du = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateOnly au = DateOnly.FromDateTime(DateTime.Today);
+    private string? ticket, erreur;
+    private bool enCours;
+    private int taille = 20, page = 1;
+
+    protected override Task OnInitializedAsync()
+    {
+        // « ← Retour » : période, ticket et page retrouvés tels qu'ils étaient
+        Historique.Suivre("journal-fiscal", e => { e.Mettre("du", du); e.Mettre("au", au); e.Mettre("ticket", ticket); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("journal-fiscal") is { } r)
+            (du, au, ticket, page, taille) = (r.Date("du") ?? du, r.Date("au") ?? au, r.Texte("ticket"), r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        return ChargerAsync(page);
+    }
+
+    private async Task ChargerAsync(int numero, int? nouvelleTaille = null)
+    {
+        (page, taille) = (numero, nouvelleTaille ?? taille);
+        (enCours, erreur) = (true, null);
+        var (r, e) = await Api.JournalFiscalAsync(du, au, ticket, page, taille);
+        enCours = false;
+        if (r is not null) j = r;
+        erreur = e;
+    }
+
+    private async Task ExporterAsync(string format)
+    {
+        (enCours, erreur) = (true, null);
+        var (contenu, nom, e) = await Api.ExportJournalFiscalAsync(du, au, format);
+        enCours = false;
+        if (e is not null) { erreur = e; return; }
+        try { var doc = await Documents.RangerAsync(Api, "JournalFiscal", nom!, contenu!); Documents.Ouvrir(doc.CheminLocal); erreur = doc.Erreur; }
+        catch (Exception ex) { erreur = $"Export impossible à ouvrir : {ex.Message}"; }
+    }
+
+    private static string TitreSceau(ClotureFiscaleDto c) =>
+        $"Sceau {c.Sceau} · clé {c.EmpreinteCle}" + (c.FichierArchive is { } f ? $" · archivé : {f}" : " · non archivé");
+
+    private static string Evenement(string e) => e switch
+    {
+        "vente" => "Vente", "annulation" => "Annulation", "retour" => "Retour client", "avoir" => "Avoir",
+        "regularisation" => "Régularisation Chifa", "annulation_regularisation" => "Annulation de régularisation", "ouverture" => "Mise en service", _ => e
+    };
+}

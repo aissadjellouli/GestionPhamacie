@@ -1,0 +1,226 @@
+@page "/admin/second-serveur"
+@using System.IO
+@inject ApiClient Api
+
+@* 2e serveur (2026-11-16, script 122) : réplication en continu vers le 2e serveur de l'officine, réglages propres à chaque serveur,
+   export de la clé de scellement. Titulaire seul. Écran fixe 1536×890 : une sous-rubrique à la fois, seul le tableau défile. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/second-serveur" Rubrique="@Rubrique" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>2e serveur · @NavAdmin.Libelle("admin/second-serveur", Rubrique)</h1>
+                <p class="sous-titre">Copie en continu de la base sur le 2e serveur de l’officine ; bascule décidée par une personne (procédure « 2e serveur »).</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn" disabled="@enCours" @onclick="ChargerAsync">Actualiser</button>
+            </div>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (t is not null && rubrique == "etat")
+        {
+            @if (t.Probleme is { } p) { <div class="bandeau-attention" role="status">@p Le titulaire est prévenu (au plus une alerte par heure).</div> }
+            <section class="panneau" aria-labelledby="t-repl">
+                <h2 id="t-repl">Réplication (vue du serveur @t.CeServeur)</h2>
+                @if (t.EnRecovery)
+                {
+                    <p class="detail" style="margin: 0">Ce serveur est le 2e serveur (base en lecture seule) : état de réception @(t.Etat ?? "inconnu")@(t.Client is { } cl ? $" depuis {cl}" : "").</p>
+                }
+                else if (!t.SlotExiste && !t.Serveurs.Any(s => s.Role == "second"))
+                {
+                    <p class="detail" style="margin: 0">Aucun 2e serveur : option facultative, fortement conseillée (panne du PC serveur = officine arrêtée). Sans elle, la copie de secours protège les données. Procédure : « 2e serveur » de docs/mise-en-production.md (scripts\second-serveur).</p>
+                }
+                else
+                {
+                    <div class="achats-ligne">
+                        <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Liaison</span>
+                            <span class="pastille @(t.Connecte ? "ok" : "urgent")">@(t.Connecte ? "2e serveur connecté" : "2e serveur décroché")</span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">État</span><span>@(t.Etat ?? (t.DetailsVisibles ? "—" : "non visible (droit pg_monitor manquant)"))</span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Retard</span><span>@Retard</span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Slot de réplication</span><span>@(t.SlotExiste ? (t.SlotActif ? "actif" : "inactif (modifications gardées en attente)") : "absent")</span></div>
+                    </div>
+                    @if (t.Client is { } c) { <p class="detail" style="margin: 0">2e serveur : @c</p> }
+                }
+            </section>
+            <section class="panneau" aria-labelledby="t-seuils">
+                <h2 id="t-seuils">Alerte au titulaire</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 260px"><label for="r-sec">Retard toléré (secondes)</label>
+                        <input id="r-sec" data-champ="seuil_secondes" type="number" min="10" max="86400" @bind="seuilSecondes" /></div>
+                    <div class="champ" style="flex: 0 0 260px"><label for="r-mo">Retard toléré (Mo à recevoir)</label>
+                        <input id="r-mo" data-champ="seuil_mo" type="number" min="1" max="100000" @bind="seuilMo" /></div>
+                    <div class="champ" style="flex: 0 0 auto; align-self: flex-end"><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerSeuilsAsync">Enregistrer les seuils</button></div>
+                </div>
+                <p class="detail" style="margin: 0">Le titulaire est prévenu si le 2e serveur décroche ou si le retard dépasse un seuil. Dernière alerte : @(t.DerniereAlerte is { } da ? Libelles.DateHeureLocale(da) : "aucune en cours").</p>
+                <p class="detail" style="margin: 0">Bascule : jamais automatique. En cas de panne du serveur principal, l’administrateur (avec le titulaire) lance « Basculer sur le 2e serveur » sur le 2e serveur, puis chaque poste bascule par le bandeau « Serveur injoignable ».</p>
+            </section>
+        }
+
+        @if (t is not null && rubrique == "serveurs")
+        {
+            <section class="tableau-cadre" aria-label="Serveurs de l’officine" style="max-height: 300px">
+                <table class="tableau" style="min-width: 900px">
+                    <thead><tr><th scope="col">Serveur</th><th scope="col">Rôle</th><th scope="col">Version de l’API</th><th scope="col">Clé de scellement</th><th scope="col">Dossier Chifa</th><th scope="col">Dossier MDN</th><th scope="col">Imprimantes</th><th scope="col">Relevé</th></tr></thead>
+                    <tbody>
+                        @foreach (var s in t.Serveurs)
+                        {
+                            <tr class="@(s.Nom == choisi ? "selection" : null)" style="cursor: pointer" @onclick="() => Choisir(s)">
+                                <td>@s.Nom@(s.Nom == t.CeServeur ? " (ce serveur)" : "")</td>
+                                <td>@(s.Role == "principal" ? "Principal" : "2e serveur")</td>
+                                <td><span class="pastille @(s.VersionApi is null ? "attention" : s.VersionApi == t.VersionApi ? "ok" : "urgent")">@(s.VersionApi ?? "inconnue")</span></td>
+                                <td>@Cle(s)</td>
+                                <td>@Dossier(s.DossierChifa, s.DossierChifaJoignable)</td>
+                                <td>@Dossier(s.DossierMdn, s.DossierMdnJoignable)</td>
+                                <td class="detail">@(s.Imprimantes ?? "—")</td>
+                                <td class="detail">@(s.ReleveLe is { } r ? Libelles.DateHeureLocale(r) : "—")</td>
+                            </tr>
+                        }
+                        @if (t.Serveurs.Count == 0) { <tr><td colspan="8" class="vide">Aucun serveur déclaré (script 122 à passer, ou API pas encore redémarrée).</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+            @if (fiche is not null)
+            {
+                <section class="panneau" aria-labelledby="t-fiche">
+                    <h2 id="t-fiche">Réglages propres au serveur @fiche.Nom</h2>
+                    <div class="achats-ligne">
+                        <div class="champ" style="flex: 1 1 320px"><label for="f-chifa">Dossier d’échange CHIFA-Officine</label>
+                            <input id="f-chifa" data-champ="dossier_chifa" type="text" placeholder="vide : réglage Chifa:DossierExport de ce serveur" @bind="fiche.DossierChifa" @bind:event="oninput" /></div>
+                        <div class="champ" style="flex: 1 1 320px"><label for="f-mdn">Dossier du logiciel MDN</label>
+                            <input id="f-mdn" data-champ="dossier_mdn" type="text" placeholder="vide : réglage Mdn:Dossier de ce serveur" @bind="fiche.DossierMdn" @bind:event="oninput" /></div>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 16px">
+                        <label class="case"><input type="checkbox" @bind="fiche.ChifaInstalle" /><span>CHIFA-Officine installé</span></label>
+                        <label class="case"><input type="checkbox" @bind="fiche.LecteurToken" /><span>Lecteur de carte et Token disponibles</span></label>
+                        <label class="case"><input type="checkbox" @bind="fiche.MdnInstalle" /><span>Logiciel MDN installé</span></label>
+                        <label class="case"><input type="checkbox" @bind="fiche.DouchetteTestee" /><span>Douchette branchée et testée</span></label>
+                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerServeurAsync">Enregistrer</button>
+                    </div>
+                    <p class="detail" style="margin: 0">Chaque serveur garde ses propres dossiers : à la bascule, l’API du 2e serveur prend ceux de sa ligne (pris en compte au démarrage de son API).</p>
+                </section>
+            }
+            else
+            {
+                <p class="detail">Cliquez sur un serveur pour régler ses dossiers et cocher ce qui est installé.</p>
+            }
+        }
+
+        @if (t is not null && rubrique == "cle")
+        {
+            <section class="panneau" aria-labelledby="t-cle">
+                <h2 id="t-cle">Exporter la clé de scellement</h2>
+                <p class="detail" style="margin: 0">Clé de ce serveur : @(t.EmpreinteCle is { } e ? $"empreinte {e}" : "illisible ou absente"). Le 2e serveur doit avoir la même clé pour vérifier les journaux scellés après une bascule.</p>
+                <p class="detail" style="margin: 0">Le fichier est chiffré par le mot de passe que vous choisissez (12 caractères au moins) : rangez-le hors du PC (clé USB au coffre) et notez le mot de passe à part. Sans le mot de passe, le fichier est inutilisable.</p>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 220px"><label for="c-mdp" class="requis">Mot de passe du fichier</label><input id="c-mdp" data-champ="mot_de_passe" type="password" autocomplete="new-password" @bind="motDePasse" @bind:event="oninput" /></div>
+                    <div class="champ" style="flex: 1 1 220px"><label for="c-conf" class="requis">Confirmation</label><input id="c-conf" data-champ="confirmation" type="password" autocomplete="new-password" @bind="confirmation" @bind:event="oninput" /></div>
+                    <div class="champ" style="flex: 2 1 300px"><label for="c-dossier" class="requis">Enregistrer dans (sur ce poste)</label><input id="c-dossier" data-champ="dossier_cle" type="text" placeholder="ex. E:\ (clé USB)" @bind="dossierCle" @bind:event="oninput" /></div>
+                    <div class="champ" style="flex: 0 0 auto; align-self: flex-end"><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ExporterCleAsync">Exporter la clé</button></div>
+                </div>
+                <p class="detail" style="margin: 0">Import sur le 2e serveur : <code>Pharma.Api.exe --importer-cle &lt;fichier&gt;</code> (script initialiser-second-serveur.ps1). Export et import sont inscrits au journal, jamais la clé.</p>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => NavAdmin.RubriqueCourante("admin/second-serveur", Rubrique);
+
+    private sealed class Fiche
+    {
+        public string Nom { get; set; } = "";
+        public string? DossierChifa { get; set; }
+        public string? DossierMdn { get; set; }
+        public bool ChifaInstalle { get; set; }
+        public bool LecteurToken { get; set; }
+        public bool MdnInstalle { get; set; }
+        public bool DouchetteTestee { get; set; }
+    }
+
+    private SecondServeurDto? t;
+    private Fiche? fiche;
+    private string? choisi;
+    private int seuilSecondes = 300, seuilMo = 64;
+    private string motDePasse = "", confirmation = "";
+    private string? dossierCle;
+    private bool enCours;
+    private string? erreur, message;
+
+    protected override Task OnInitializedAsync() => ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        var (d, e) = await Api.SecondServeurAsync();
+        if (d is null) { erreur = e; return; }
+        (t, seuilSecondes, seuilMo, erreur) = (d, d.SeuilSecondes, d.SeuilMo, null);
+        if (choisi is not null && d.Serveurs.FirstOrDefault(s => s.Nom == choisi) is { } s) Choisir(s);
+    }
+
+    private string Retard => t is null ? "" : t.RetardSecondes is null && t.RetardOctets is null ? (t.DetailsVisibles ? "aucun" : "non visible")
+        : $"{(t.RetardSecondes is { } s ? $"{Math.Round(s)} s" : "")}{(t.RetardSecondes is not null && t.RetardOctets is not null ? " · " : "")}{(t.RetardOctets is { } o ? $"{o / 1024.0 / 1024.0:0.0} Mo" : "")}";
+
+    private string Cle(ServeurOfficineDto s) => s.ClePresente switch
+    {
+        true when s.EmpreinteCle is { } e && t?.EmpreinteCle is { } moi => e == moi ? $"présente ({e}), identique" : $"présente ({e}), DIFFÉRENTE",
+        true => $"présente{(s.EmpreinteCle is { } e2 ? $" ({e2})" : "")}",
+        false => "absente",
+        _ => "non relevée"
+    };
+
+    private static string Dossier(string? dossier, bool? joignable) =>
+        $"{dossier ?? "réglage du serveur"} · {joignable switch { true => "joignable", false => "INJOIGNABLE", _ => "non vérifié" }}";
+
+    private void Choisir(ServeurOfficineDto s)
+    {
+        choisi = s.Nom;
+        fiche = new Fiche { Nom = s.Nom, DossierChifa = s.DossierChifa, DossierMdn = s.DossierMdn, ChifaInstalle = s.ChifaInstalle,
+            LecteurToken = s.LecteurToken, MdnInstalle = s.MdnInstalle, DouchetteTestee = s.DouchetteTestee };
+    }
+
+    private Task EnregistrerServeurAsync() => Executer(async () =>
+    {
+        var f = fiche!;
+        var e = await Api.ModifierServeurOfficineAsync(new ModifierServeurOfficineDto(f.Nom, f.DossierChifa, f.DossierMdn, f.ChifaInstalle, f.LecteurToken,
+            f.MdnInstalle, f.DouchetteTestee));
+        if (e is not null) return e;
+        message = $"Réglages du serveur {f.Nom} enregistrés (dossiers pris en compte au prochain démarrage de son API).";
+        await ChargerAsync();
+        return null;
+    });
+
+    private Task EnregistrerSeuilsAsync() => Executer(async () =>
+    {
+        var e = await Api.ModifierSeuilsReplicationAsync(new SeuilsReplicationDto(seuilSecondes, seuilMo));
+        if (e is not null) return e;
+        message = "Seuils d’alerte enregistrés.";
+        await ChargerAsync();
+        return null;
+    });
+
+    private Task ExporterCleAsync() => Executer(async () =>
+    {
+        var dossier = dossierCle?.Trim();
+        if (string.IsNullOrEmpty(dossier) || !Path.IsPathFullyQualified(dossier) || !Directory.Exists(dossier))
+            return "Indiquez un dossier existant sur ce poste, par exemple E:\\ (clé USB branchée).";
+        var (f, e) = await Api.ExporterCleScellementAsync(motDePasse, confirmation);
+        if (f is null) return e;
+        var chemin = Path.Combine(dossier, f.NomFichier);
+        try { await File.WriteAllBytesAsync(chemin, Convert.FromBase64String(f.ContenuBase64)); }
+        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { return $"Fichier non écrit dans {dossier} : {x.Message}"; }
+        (motDePasse, confirmation) = ("", "");
+        message = $"Clé exportée (empreinte {f.Empreinte}) : {chemin}. Rangez ce fichier hors du PC et le mot de passe à part.";
+        return null;
+    });
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

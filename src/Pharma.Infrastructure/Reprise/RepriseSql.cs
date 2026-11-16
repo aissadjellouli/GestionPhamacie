@@ -17,7 +17,11 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
             [CibleReprise.Produits] = ("import.produit_src", ["ref_source", "code_barre", "num_enregistrement", "nom", "dosage", "forme", "prix_vente", "prix_achat", "classe"], ["ref_source", "nom"]),
             [CibleReprise.Stock] = ("import.stock_src", ["ref_produit", "numero_lot", "date_peremption", "quantite", "fournisseur_ref", "prix_achat"], ["ref_produit"]),
             [CibleReprise.Fournisseurs] = ("import.fournisseur_src", ["ref_source", "raison_sociale", "telephone", "solde"], ["ref_source", "raison_sociale"]),
-            [CibleReprise.Clients] = ("import.client_src", ["ref_source", "nom", "prenom", "telephone", "num_assure", "solde_credit"], ["ref_source", "nom"])
+            [CibleReprise.Clients] = ("import.client_src", ["ref_source", "nom", "prenom", "telephone", "num_assure", "solde_credit"], ["ref_source", "nom"]),
+            // Historique des ventes Chifa : lecture seule après chargement (114)
+            [CibleReprise.HistoriqueChifa] = ("import.historique_chifa_src", ["num_facture", "date_facture", "num_assure", "nom_assure", "montant_total", "part_chifa", "part_assure", "organisme"], ["num_facture", "date_facture"]),
+            // Factures MDN : même historique des organismes (121)
+            [CibleReprise.HistoriqueMdn] = ("import.historique_mdn_src", ["num_facture", "date_facture", "num_affilie", "nom_affilie", "montant_total", "part_mdn", "part_assure"], ["num_facture", "date_facture"])
         };
 
     public async Task<long> CreerSessionAsync(string logiciel, string lancePar, CancellationToken ct = default)
@@ -88,9 +92,19 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
 
     public async Task<int> ControlerAsync(long session, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT import.controler($1)");
-        cmd.Parameters.AddWithValue(session);
-        return (int)(await cmd.ExecuteScalarAsync(ct))!;
+        int bloquants;
+        await using (var cmd = db.CreateCommand("SELECT import.controler($1)"))
+        {
+            cmd.Parameters.AddWithValue(session);
+            bloquants = (int)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        // import.controler vide les anomalies de la session : avertissements de l'historique Chifa ajoutés ensuite (114, jamais bloquants)
+        await using (var cmd = db.CreateCommand("SELECT import.controler_historique_chifa($1)"))
+        {
+            cmd.Parameters.AddWithValue(session);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        return bloquants;
     }
 
     public async Task<IReadOnlyList<SessionReprise>> SessionsAsync(CancellationToken ct = default)
@@ -118,6 +132,8 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
             UNION ALL SELECT 'stock', count(*)::int FROM import.stock_src WHERE session_id = $1
             UNION ALL SELECT 'grossistes', count(*)::int FROM import.fournisseur_src WHERE session_id = $1
             UNION ALL SELECT 'clients', count(*)::int FROM import.client_src WHERE session_id = $1
+            UNION ALL SELECT 'historique_chifa', count(*)::int FROM import.historique_chifa_src WHERE session_id = $1
+            UNION ALL SELECT 'historique_mdn', count(*)::int FROM import.historique_mdn_src WHERE session_id = $1
             """, session, ct);
         var rapprochement = await Comptes("""
             SELECT CASE WHEN c.ref_source IS NULL THEN 'aucune'
@@ -204,6 +220,13 @@ public sealed class RepriseSql(NpgsqlDataSource db) : IRepriseImport
             cmd.CommandTimeout = 600;
             cmd.Parameters.AddWithValue(session);
             cmd.Parameters.AddWithValue(utilisateurId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        // Historique des ventes Chifa : copié en lecture seule, dans la même transaction (114)
+        await using (var cmd = new NpgsqlCommand("SELECT import.charger_historique_chifa($1)", cx, tx))
+        {
+            cmd.CommandTimeout = 600;
+            cmd.Parameters.AddWithValue(session);
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await using (var cmd = new NpgsqlCommand("UPDATE import.session SET charge_le = now(), charge_par = $2 WHERE id = $1", cx, tx))

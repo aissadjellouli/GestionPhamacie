@@ -5,7 +5,9 @@ using System.Text.RegularExpressions;
 namespace Pharma.Domain.Reprise;
 
 /// <summary>Ce que la reprise attend de l'ancien logiciel (tables de transit du schéma import).</summary>
-public enum CibleReprise { Produits, Stock, Fournisseurs, Clients }
+/// <summary>HistoriqueChifa : ventes Chifa passées de l'ancien logiciel, gardées en lecture (aucune vente recréée, script 114).</summary>
+/// <summary>HistoriqueMdn : factures MDN (conventions militaires), même historique des organismes en lecture seule (script 121).</summary>
+public enum CibleReprise { Produits, Stock, Fournisseurs, Clients, HistoriqueChifa, HistoriqueMdn }
 
 public enum NatureValeur { Texte, Identifiant, CodeBarre, Nombre, Date, Telephone }
 
@@ -66,6 +68,31 @@ public static partial class DetectionReprise
             new("telephone", "Téléphone", false, NatureValeur.Telephone, "tel", "telephone", "phone", "mobile", "gsm"),
             new("num_assure", "N° d'assuré", false, NatureValeur.Identifiant, "assure", "nss", "numassure", "num_assure", "chifa", "carte", "immatriculation"),
             new("solde_credit", "Crédit en cours", false, NatureValeur.Nombre, "credit", "solde", "dette", "reste", "du")
+        ],
+        // Historique des ventes Chifa (lecture seule, script 114) : facture, date, assuré, montants
+        [CibleReprise.HistoriqueChifa] =
+        [
+            new("num_facture", "N° de facture", true, NatureValeur.Identifiant, "facture", "num_facture", "numfacture", "nfacture", "nfact", "num_fact", "numfact", "fact"),
+            new("date_facture", "Date de la facture", true, NatureValeur.Date, "date", "date_facture", "datefacture", "date_vente", "datevente", "dfact"),
+            new("num_assure", "N° d'assuré", false, NatureValeur.Identifiant, "assure", "nss", "numassure", "num_assure", "immatriculation", "carte"),
+            new("nom_assure", "Nom de l'assuré", false, NatureValeur.Texte, "nom", "nom_assure", "nomassure", "beneficiaire", "malade"),
+            new("montant_total", "Montant total", false, NatureValeur.Nombre, "total", "montant", "montant_total", "mt", "mttotal", "ttc"),
+            new("part_chifa", "Part Chifa (organisme)", false, NatureValeur.Nombre, "part_chifa", "partchifa", "cnas", "casnos", "organisme", "tiers", "rembourse", "part_caisse"),
+            new("part_assure", "Part de l'assuré", false, NatureValeur.Nombre, "part_assure", "partassure", "ticket", "ticket_moderateur", "reste_a_payer"),
+            // CNAS ou CASNOS (121) ; vide : « Chifa » sans précision
+            new("organisme", "Organisme (CNAS ou CASNOS)", false, NatureValeur.Texte, "caisse_assurance", "regime", "cnas_casnos", "type_assurance", "assurance")
+        ],
+        // Historique des factures MDN, conventions militaires (lecture seule, script 121). [À VÉRIFIER] format réel inconnu :
+        // aucun modèle de feuille MDN dans le dépôt, tout reste réglable par le profil de reprise.
+        [CibleReprise.HistoriqueMdn] =
+        [
+            new("num_facture", "N° de facture ou de feuille", true, NatureValeur.Identifiant, "facture", "feuille", "num_facture", "numfacture", "num_feuille", "bordereau", "nfact"),
+            new("date_facture", "Date de la facture", true, NatureValeur.Date, "date", "date_facture", "datefacture", "date_vente", "date_feuille", "dfact"),
+            new("num_affilie", "N° d'affilié", false, NatureValeur.Identifiant, "affilie", "matricule", "num_affilie", "numaffilie", "immatriculation", "carte"),
+            new("nom_affilie", "Nom de l'affilié", false, NatureValeur.Texte, "nom", "nom_affilie", "nomaffilie", "beneficiaire", "militaire"),
+            new("montant_total", "Montant total", false, NatureValeur.Nombre, "total", "montant", "montant_total", "mt", "mttotal", "ttc"),
+            new("part_mdn", "Part MDN", false, NatureValeur.Nombre, "part_mdn", "partmdn", "mdn", "organisme", "tiers", "rembourse", "part_caisse"),
+            new("part_assure", "Part de l'assuré", false, NatureValeur.Nombre, "part_assure", "partassure", "ticket", "ticket_moderateur", "reste_a_payer")
         ]
     };
 
@@ -74,7 +101,9 @@ public static partial class DetectionReprise
         [CibleReprise.Produits] = ["produit", "article", "medic", "prod", "catalogue", "nomenclature", "art"],
         [CibleReprise.Stock] = ["stock", "lot", "inventaire", "lots"],
         [CibleReprise.Fournisseurs] = ["fournisseur", "frs", "grossiste", "fourn", "labo"],
-        [CibleReprise.Clients] = ["client", "patient", "malade", "assure", "cli"]
+        [CibleReprise.Clients] = ["client", "patient", "malade", "assure", "cli"],
+        [CibleReprise.HistoriqueChifa] = ["chifa", "facture", "vente", "historique", "cnas", "casnos", "tiers"],
+        [CibleReprise.HistoriqueMdn] = ["mdn", "militaire", "armee", "convention", "defense"]
     };
 
     /// <summary>Seuil en dessous duquel aucune table n'est proposée.</summary>

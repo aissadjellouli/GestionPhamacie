@@ -138,6 +138,31 @@ internal static class NotificationsEndpoints
                 return Results.Ok(new ResultatSauvegardeDto(r.Statut, r.Fichier, r.TailleOctets, r.Message));
             })
            .ExigerPermission(Permissions.AdminSauvegardes);
+
+        // ---- Copie de secours (PC de secours) : second emplacement, état, test de restauration (titulaire) ----
+        s.MapGet("/secours", (ICopieSecoursDepot depot, Pharma.Application.Commun.IHorloge horloge) =>
+            {
+                var (r, e) = (depot.Reglages(), depot.Etat());
+                var reference = e.DerniereCopieUtc ?? r.RegleLeUtc;
+                var enRetard = r.Dossier is not null && reference is { } d && horloge.MaintenantUtc - d >= TimeSpan.FromHours(r.AlerteHeures);
+                return Results.Ok(new CopieSecoursDto(r.Dossier, r.AlerteHeures, e.DerniereCopieUtc, e.DerniereCopie, e.Taille, e.Sha256,
+                    e.DernierEchecUtc, e.DernierEchec, e.DernierTestUtc, e.DernierTestReussi, e.DernierTestMessage, enRetard));
+            })
+           .ExigerPermission(Permissions.AdminSauvegardes);
+
+        s.MapPut("/secours", async (ReglagesCopieSecoursDto d, ModifierReglagesCopieSecours modifier, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await modifier.ExecuterAsync(d.Dossier, d.AlerteHeures, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.AdminSauvegardes);
+
+        s.MapPost("/secours/tester", async (TesterRestaurationCopie tester, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var r = await tester.ExecuterAsync(user.UtilisateurId(), ct);
+                return Results.Ok(new ResultatTestRestaurationDto(r.Reussi, r.Fichier, r.Message));
+            })
+           .ExigerTitulaire();
     }
 
     private static ReglagesNotificationDto VersDto(ReglagesNotification r) =>

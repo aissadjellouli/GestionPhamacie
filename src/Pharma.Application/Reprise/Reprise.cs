@@ -13,8 +13,42 @@ public sealed record SourceDisponible(string Libelle, string? ChaineConnexion, s
 
 public sealed record InfoSource(string Pilote, string? Version, int NombreTables);
 
-/// <summary>Tables de l'ancienne base (exemples masqués pour les données personnelles) et correspondance proposée.</summary>
-public sealed record ResultatScan(InfoSource Info, IReadOnlyList<TableSource> Tables, IReadOnlyList<PropositionReprise> Propositions);
+/// <summary>Tables de l'ancienne base (exemples masqués pour les données personnelles) et correspondance proposée.
+/// ExigerProduitsHistorique : option du titulaire (fichier des produits exigé pour l'historique des organismes seul), rappelée à l'écran.</summary>
+public sealed record ResultatScan(InfoSource Info, IReadOnlyList<TableSource> Tables, IReadOnlyList<PropositionReprise> Propositions,
+    bool ExigerProduitsHistorique = true);
+
+/// <summary>
+/// Fichier des produits (règle 2026-11-16) : toujours exigé dès que l'import contient autre chose que l'historique des organismes
+/// (stock, lots, ventes, patients, crédits, grossistes) ; pour l'historique des organismes seul (Chifa et/ou MDN), selon UNE option
+/// réglée par le titulaire (Administration › Caisse et contrôle › Règles, par défaut : exigé).
+/// </summary>
+public static class ExigenceProduitsReprise
+{
+    public const string Option = "Reprise de données : exiger le fichier des produits pour importer l’historique des organismes seul (Chifa, MDN)";
+
+    /// <summary>Historiques en lecture seule : factures Chifa (CNAS, CASNOS) et MDN.</summary>
+    public static bool EstHistorique(CibleReprise c) => c is CibleReprise.HistoriqueChifa or CibleReprise.HistoriqueMdn;
+
+    public static string Information(bool exiger) => exiger
+        ? "Le titulaire exige le fichier des produits pour un import de l’historique des organismes seul (Chifa, MDN)."
+        : "Le titulaire n’exige pas le fichier des produits pour un import de l’historique des organismes seul (Chifa, MDN).";
+
+    /// <summary>Refuse (RegleMetierException) un import sans la table des produits, sauf historique des organismes seul quand l'option ne l'exige pas.</summary>
+    public static void Verifier(IReadOnlyCollection<CibleReprise> cibles, bool exiger)
+    {
+        if (cibles.Contains(CibleReprise.Produits)) return;
+        if (cibles.Count == 0)
+            throw new RegleMetierException("Choisissez au moins une table à reprendre (la table des produits est indispensable).");
+        if (cibles.Any(c => !EstHistorique(c)))
+            throw new RegleMetierException("La table des produits est indispensable dès que l’import contient du stock, des lots, des ventes, " +
+                "des patients, des crédits ou des grossistes.");
+        if (exiger)
+            throw new RegleMetierException($"La table des produits est indispensable : {Information(true)} " +
+                $"Option « {Option} » (Administration › Caisse et contrôle › Règles), modifiable par le titulaire " +
+                "ou un employé qui a le droit de modifier les paramètres.");
+    }
+}
 
 /// <summary>Correspondance confirmée par l'utilisateur : table de l'ancienne base et champ de reprise → colonne.</summary>
 public sealed record CorrespondanceTable(CibleReprise Cible, string Table, IReadOnlyDictionary<string, string> Colonnes);
@@ -84,7 +118,7 @@ public sealed class ListerSourcesReprise(ISourceReprise source, SuperAdmin.Super
 }
 
 /// <summary>Connexion en lecture seule à l'ancienne base, puis scan de sa structure et correspondance proposée.</summary>
-public sealed class ScannerSourceReprise(ISourceReprise source, SuperAdmin.SuperAdminCourant superAdmin)
+public sealed class ScannerSourceReprise(ISourceReprise source, SuperAdmin.SuperAdminCourant superAdmin, Caisse.ISessionsCaisse? caisse = null)
 {
     public const int Exemples = 8;
     public const string Masque = "•••";
@@ -103,21 +137,30 @@ public sealed class ScannerSourceReprise(ISourceReprise source, SuperAdmin.Super
                 ? c with { Exemples = c.Exemples.Select(v => string.IsNullOrWhiteSpace(v) ? v : Masque).ToList() }
                 : c).ToList()
         }).ToList();
-        return new ResultatScan(info with { NombreTables = tables.Count }, masquees, propositions);
+        var exiger = caisse is null || (await caisse.ParametresAsync(ct)).ExigerProduitsRepriseHistorique;
+        return new ResultatScan(info with { NombreTables = tables.Count }, masquees, propositions, exiger);
     }
 }
 
 /// <summary>Copie les tables choisies vers les tables de transit, puis rapproche les produits et contrôle.</summary>
-public sealed class ExtraireReprise(ISourceReprise source, IRepriseImport import, SuperAdmin.SuperAdminCourant superAdmin, IJournal journal)
+public sealed class ExtraireReprise(ISourceReprise source, IRepriseImport import, SuperAdmin.SuperAdminCourant superAdmin, IJournal journal,
+    Caisse.ISessionsCaisse? caisse = null)
 {
+    public Task<ResultatExtraction> ExecuterAsync(string? chaineConnexion, string? logiciel, IReadOnlyList<CorrespondanceTable> correspondances,
+        long utilisateurId, CancellationToken ct = default) =>
+        ExecuterAsync(chaineConnexion, logiciel, correspondances, TransformationsReprise.Aucune, null, utilisateurId, ct);
+
+    /// <param name="transformations">Transformations du profil de reprise choisi (séparateur décimal, format de date, codes de classe).</param>
+    /// <param name="profil">Profil utilisé (journal), null sans profil.</param>
     public async Task<ResultatExtraction> ExecuterAsync(string? chaineConnexion, string? logiciel, IReadOnlyList<CorrespondanceTable> correspondances,
-        long utilisateurId, CancellationToken ct = default)
+        TransformationsReprise transformations, string? profil, long utilisateurId, CancellationToken ct = default)
     {
         superAdmin.ExigerValidation(SuperAdmin.ActionsSuperAdmin.RepriseExtraire, "extraire les données de l’ancien logiciel");
         if (string.IsNullOrWhiteSpace(chaineConnexion)) throw new RegleMetierException("Connexion à l’ancienne base manquante.");
         if (string.IsNullOrWhiteSpace(logiciel)) throw new RegleMetierException("Indiquez le nom et la version de l’ancien logiciel (pour le rapport de reprise).");
-        if (!correspondances.Any(c => c.Cible == CibleReprise.Produits))
-            throw new RegleMetierException("La table des produits est indispensable.");
+        // Option du titulaire (par défaut : exigé) ; toujours exigé hors historique Chifa seul
+        var exigerProduits = caisse is null || (await caisse.ParametresAsync(ct)).ExigerProduitsRepriseHistorique;
+        ExigenceProduitsReprise.Verifier(correspondances.Select(c => c.Cible).ToList(), exigerProduits);
         foreach (var c in correspondances)
         {
             var manquants = DetectionReprise.Champs[c.Cible].Where(f => f.Obligatoire && !c.Colonnes.ContainsKey(f.Code)).Select(f => f.Libelle).ToList();
@@ -133,8 +176,10 @@ public sealed class ExtraireReprise(ISourceReprise source, IRepriseImport import
         foreach (var c in correspondances.OrderBy(c => c.Cible))
         {
             var champs = c.Colonnes.Keys.ToList();
-            var (n, d) = await import.InsererAsync(session, c.Cible, champs,
-                source.LireAsync(chaineConnexion, c.Table, champs.Select(f => c.Colonnes[f]).ToList(), ct), ct);
+            var lues = source.LireAsync(chaineConnexion, c.Table, champs.Select(f => c.Colonnes[f]).ToList(), ct);
+            if (!transformations.EstVide)
+                lues = Transformer(lues, champs.Select(f => DetectionReprise.Champs[c.Cible].First(x => x.Code == f)).ToArray(), transformations);
+            var (n, d) = await import.InsererAsync(session, c.Cible, champs, lues, ct);
             (lignes[c.Cible], doublons) = (n, doublons + d);
         }
         var bloquants = await import.RapprocherEtControlerAsync(session, ct);
@@ -145,6 +190,10 @@ public sealed class ExtraireReprise(ISourceReprise source, IRepriseImport import
         details["stock"] = lignes.GetValueOrDefault(CibleReprise.Stock);
         details["grossistes"] = lignes.GetValueOrDefault(CibleReprise.Fournisseurs);
         details["clients"] = lignes.GetValueOrDefault(CibleReprise.Clients);
+        details["historique_chifa"] = lignes.GetValueOrDefault(CibleReprise.HistoriqueChifa);
+        details["historique_mdn"] = lignes.GetValueOrDefault(CibleReprise.HistoriqueMdn);
+        details["produits_exiges_historique_organismes"] = exigerProduits;
+        if (profil is not null) details["profil"] = profil;
         details["bloquants"] = bloquants;
         await journal.EcrireAsync(utilisateurId, "reprise_extraction", "import.session", session, details, null, ct);
         return new ResultatExtraction(session, lignes, doublons, bloquants);
@@ -152,8 +201,20 @@ public sealed class ExtraireReprise(ISourceReprise source, IRepriseImport import
 
     public static string Libelle(CibleReprise c) => c switch
     {
-        CibleReprise.Produits => "Produits", CibleReprise.Stock => "Stock par lot", CibleReprise.Fournisseurs => "Grossistes", _ => "Clients et crédits"
+        CibleReprise.Produits => "Produits", CibleReprise.Stock => "Stock par lot", CibleReprise.Fournisseurs => "Grossistes",
+        CibleReprise.HistoriqueChifa => "Historique des ventes Chifa", CibleReprise.HistoriqueMdn => "Historique des factures MDN",
+        _ => "Clients et crédits"
     };
+
+    /// <summary>Valeurs transformées selon le profil (une valeur illisible reste telle quelle : les contrôles la signalent).</summary>
+    private static async IAsyncEnumerable<string?[]> Transformer(IAsyncEnumerable<string?[]> lignes, ChampCible[] champs, TransformationsReprise t)
+    {
+        await foreach (var l in lignes)
+        {
+            for (var i = 0; i < l.Length && i < champs.Length; i++) l[i] = ProfilsReprise.Transformer(champs[i], l[i], t);
+            yield return l;
+        }
+    }
 }
 
 public sealed class ObtenirEtatReprise(IRepriseImport import, SuperAdmin.SuperAdminCourant superAdmin)

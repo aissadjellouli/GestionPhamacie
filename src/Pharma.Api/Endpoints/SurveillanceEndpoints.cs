@@ -54,6 +54,7 @@ internal static class SurveillanceEndpoints
            .ExigerPermission(Permissions.CaisseVendre);
 
         var surveillance = api.MapGroup("/surveillance").ExigerTitulaire();
+        surveillance.MapJournalFiscal();
 
         surveillance.MapGet("", async (bool? traitees, ListerSurveillance lister, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok((await lister.ExecuterAsync(traitees == true, user.UtilisateurId(), ct)).Select(a => new AlerteSurveillanceDto(
@@ -122,5 +123,66 @@ internal static class SurveillanceEndpoints
                         e.Activite.Casses, e.Activite.Echantillons, e.Activite.BoitesAjustees)).ToList(),
                     Pharma.Domain.Rapports.RegleRisques.JoursPerteMin, Pharma.Domain.Rapports.RegleRisques.Facteur, Pharma.Domain.Rapports.RegleRisques.JoursAbsentMin));
             });
+
+        // Intégrité des journaux chaînés : état de chaque chaîne et « Vérifier maintenant » (titulaire)
+        surveillance.MapGet("/integrite", async (Pharma.Application.Integrite.ObtenirIntegrite obtenir, ClaimsPrincipal user, CancellationToken ct) =>
+            Results.Ok(TableauIntegrite(await obtenir.ExecuterAsync(user.UtilisateurId(), ct))));
+        surveillance.MapPost("/integrite/verifier", async (Pharma.Application.Integrite.VerifierIntegriteMaintenant verifier,
+                Pharma.Application.Integrite.ObtenirIntegrite obtenir, Pharma.Application.Fiscal.ControlerNumerotation numerotation, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                await verifier.ExecuterAsync(user.UtilisateurId(), ct);
+                // Lot 3 : continuité des n° de tickets (après le contrôle du titulaire fait par VerifierIntegriteMaintenant)
+                await numerotation.ExecuterAsync(user.UtilisateurId(), ct);
+                return Results.Ok(TableauIntegrite(await obtenir.ExecuterAsync(user.UtilisateurId(), ct)));
+            });
+    }
+
+    /// <summary>Journal fiscal des ventes (lot 3, titulaire) : recherche, récapitulatif TVA, sceaux, continuité, export CSV ou PDF.</summary>
+    public static void MapJournalFiscal(this RouteGroupBuilder surveillance)
+    {
+        surveillance.MapGet("/journal-fiscal", async (DateOnly? du, DateOnly? au, string? ticket, int? page, int? taille,
+                Pharma.Application.Fiscal.ObtenirJournalFiscal obtenir, ClaimsPrincipal user, CancellationToken ct) =>
+            Results.Ok(JournalFiscal(await obtenir.ExecuterAsync(user.UtilisateurId(), du, au, ticket,
+                Pharma.Application.Commun.DemandePage.Lire(page, taille), ct))));
+        surveillance.MapGet("/journal-fiscal/export", async (DateOnly? du, DateOnly? au, string? format,
+                Pharma.Application.Fiscal.ExporterJournalFiscal exporter, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var (contenu, nom, type) = await exporter.ExecuterAsync(user.UtilisateurId(), du, au, format, ct);
+                return Results.File(contenu, type, nom);
+            });
+    }
+
+    private static JournalFiscalDto JournalFiscal(Pharma.Application.Fiscal.TableauJournalFiscal t)
+    {
+        static string Ticket(Pharma.Application.Fiscal.CompteurTickets c, long n) => c.Prefixe + n.ToString().PadLeft(6, '0');
+        return new JournalFiscalDto(
+            new PageDto<LigneJournalFiscalDto>(t.Lignes.Lignes.Select(l => new LigneJournalFiscalDto(l.Rang, l.Evenement, l.NumeroTicket, l.SurvenuLe,
+                l.Poste, l.Vendeur, l.Ttc, l.Ht, l.Tva, l.PartPatient, l.PartOrganisme, l.Paiements, l.MontantMouvement, l.Motif, l.Hash)).ToList(),
+                t.Lignes.Total, t.Lignes.Numero, t.Lignes.Taille),
+            t.Tva.Select(x => new LigneRecapTvaDto(x.Taux, x.Exoneree, x.Ttc, x.Ht, x.Tva, x.Evenements)).ToList(),
+            t.Totaux.Evenements, t.Totaux.Ttc, t.Totaux.Ht, t.Totaux.Tva,
+            t.Clotures.Select(c => new ClotureFiscaleDto(c.SceauId, c.Type, c.SessionCaisseId, c.Du, c.Au, c.ScelleLeUtc, c.DernierRang,
+                Pharma.Application.Integrite.MessageSceau.Exporter(c.Sceau, t.FormatSceau), c.EmpreinteCle, c.Ttc, c.FichierArchive)).ToList(),
+            t.Anomalies.Select(a => a.Libelle).ToList(),
+            t.TrousHistorique.Select(h => h.Du == h.Au ? $"{Ticket(t.Compteur, h.Du)}" : $"{Ticket(t.Compteur, h.Du)} à {Ticket(t.Compteur, h.Au)} ({h.Manquants})").ToList(),
+            Ticket(t.Compteur, t.Compteur.DernierNumero), Ticket(t.Compteur, t.Compteur.PremierNumeroContinu), t.Compteur.MisEnServiceLe,
+            t.Parametres.ConservationAnnees, t.Parametres.FormatExport,
+            t.DerniereVerification?.Statut, t.DerniereVerification?.VerifieLe, t.DerniereVerification?.Motif);
+    }
+
+    private static TableauIntegriteDto TableauIntegrite(Pharma.Application.Integrite.TableauIntegrite t)
+    {
+        var chaines = new List<ChaineIntegriteDto>();
+        foreach (var j in t.Journaux)
+        {
+            var verifs = t.Verifications.Where(v => v.Journal == j.Journal).ToList();
+            if (verifs.Count == 0)
+                chaines.Add(new ChaineIntegriteDto(j.Journal, j.Libelle, j.Algorithme, null, null, false, 0, 0, null, null, null, null, null));
+            foreach (var v in verifs)
+                chaines.Add(new ChaineIntegriteDto(j.Journal, j.Libelle, j.Algorithme, v.CleChaine, v.VerifieLe, v.DeclencheePar is null, v.Lignes,
+                    v.Sceaux, v.Statut, v.RangRupture, v.Motif, v.Attendu, v.Trouve));
+        }
+        return new TableauIntegriteDto(chaines, t.Parametres.HeureVerification, t.AlgorithmeSceau, t.EmpreinteCle, t.Parametres.FormatExportSceau);
     }
 }

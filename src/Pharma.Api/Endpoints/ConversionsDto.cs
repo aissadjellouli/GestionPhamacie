@@ -24,7 +24,7 @@ internal static class ConversionsDto
         new(l.LotId, l.NumeroLot, l.DatePeremption, l.Quantite, l.Fournisseur, ecartes.Select(VersDto).ToList(), l.StockProduit);
 
     public static ProduitAlternatifDto VersDto(this ProduitAlternatif a) =>
-        new(a.ProduitId, a.NomCommercial, a.PrixPublic, a.Stock, a.Exact, a.Dosage, a.Forme, a.Laboratoire);
+        new(a.ProduitId, a.NomCommercial, a.PrixPublic, a.Stock, a.Exact, a.Dosage, a.Forme, a.Laboratoire, a.ListeBlanche, a.FabricationLocale);
 
     public static AlerteDto VersDto(this Alerte a) =>
         new(a.Id, a.Type, a.Niveau, a.ProduitId, a.LotId, a.Message, a.ValeurDzd, a.Statut, a.MiseAJourLe,

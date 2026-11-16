@@ -7,6 +7,7 @@
       api\          le serveur (Pharma.Api), publié avec .NET inclus : rien à installer à part PostgreSQL ;
       poste\        le poste de travail (Pharma.Desktop), publié de même ;
       database\     les scripts de la base et les données de démonstration (fictives) ;
+      scripts\      les scripts d'administration du 2e serveur (second-serveur\) et de la bascule sur le PC de secours ;
       installer.ps1 crée la base de démonstration et la configuration du serveur, propre à ce PC ;
       demarrer.cmd  lance le serveur puis le poste ;
       LISEZMOI.txt  le mode d'emploi.
@@ -51,10 +52,16 @@ Remove-Item (Join-Path $Sortie "api\appsettings.Development.json") -ErrorAction 
 
 # Base : scripts numérotés (structure et référentiel), puis données fictives de démonstration
 $db = New-Item -ItemType Directory -Force (Join-Path $Sortie "database\data")
-Copy-Item (Join-Path $racine "database\migration\0*.sql") (Join-Path $Sortie "database")
+# Tous les scripts numérotés (001 à 1xx) ; les scripts d'administrateur (*b_*.sql, superutilisateur) restent hors paquet
+Copy-Item (Join-Path $racine "database\migration\*.sql") (Join-Path $Sortie "database") -Exclude "*b_*.sql"
 Copy-Item (Join-Path $racine "database\data\9*.sql") $db
 
 Copy-Item (Join-Path $PSScriptRoot "paquet\*") $Sortie
+
+# Scripts d'administration du 2e serveur et de la bascule (lancés par l'administrateur, voir docs/mise-en-production.md)
+$adm = New-Item -ItemType Directory -Force (Join-Path $Sortie "scripts\second-serveur")
+Copy-Item (Join-Path $PSScriptRoot "second-serveur\*.ps1") $adm
+Copy-Item (Join-Path $PSScriptRoot "basculer-pc-secours.ps1") (Join-Path $Sortie "scripts")
 Write-Host "Paquet prêt : $Sortie"
 
 if ($Zip) {

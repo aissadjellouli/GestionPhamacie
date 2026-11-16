@@ -1,11 +1,67 @@
 namespace Pharma.Domain.Commun;
 
-/// <summary>Contenu d'un Data Matrix GS1 : GTIN (01), péremption (17), lot (10), série (21).</summary>
+/// <summary>Donnée d'une boîte portée par un identifiant d'application GS1.</summary>
+public enum ChampGs1 { Gtin, Peremption, Lot, Serie }
+
+/// <summary>
+/// Identifiant d'application GS1 lu dans un Data Matrix : code (2 à 4 chiffres), donnée portée, longueur fixe (null : longueur
+/// variable, terminée par le séparateur GS ou la fin du code) et longueur maximale d'une donnée variable (null : sans limite).
+/// </summary>
+public sealed record Gs1Identifiant(string Code, ChampGs1 Champ, int? LongueurFixe, int? LongueurMax = null);
+
+/// <summary>
+/// Norme de lecture des Data Matrix (script 120, table parametre_gs1_ai) [À VÉRIFIER IANOR / GS1].
+/// Par défaut : 01 GTIN (14), 17 péremption (6, AAMMJJ), 10 lot (variable), 21 série (variable), comme avant le script 120.
+/// </summary>
+public sealed class Gs1Norme
+{
+    public IReadOnlyList<Gs1Identifiant> Identifiants { get; }
+
+    public Gs1Norme(IEnumerable<Gs1Identifiant> identifiants)
+    {
+        // Codes numériques de 2 à 4 chiffres, un seul par code ; une péremption se lit toujours sur 6 chiffres (AAMMJJ)
+        Identifiants = identifiants
+            .Where(i => i.Code.Length is >= 2 and <= 4 && i.Code.All(char.IsAsciiDigit))
+            .Where(i => i.LongueurFixe is null or > 0 && i.LongueurMax is null or > 0)
+            .Where(i => i.Champ != ChampGs1.Peremption || i.LongueurFixe == 6)
+            .GroupBy(i => i.Code).Select(g => g.First())
+            .OrderByDescending(i => i.Code.Length)
+            .ToList();
+    }
+
+    public static Gs1Norme ParDefaut { get; } = new(
+    [
+        new("01", ChampGs1.Gtin, 14),
+        new("17", ChampGs1.Peremption, 6),
+        new("10", ChampGs1.Lot, null),
+        new("21", ChampGs1.Serie, null)
+    ]);
+
+    private static Gs1Norme courante = ParDefaut;
+
+    /// <summary>
+    /// Norme utilisée par <see cref="Gs1DataMatrix.TryParse(string, out Gs1DataMatrix?)"/> : celle de la base, chargée par le serveur
+    /// (tâche de sérialisation) ; la norme par défaut tant qu'elle n'est pas chargée ou si le paramétrage est vide.
+    /// </summary>
+    public static Gs1Norme Courante
+    {
+        get => Volatile.Read(ref courante);
+        set => Volatile.Write(ref courante, value is { Identifiants.Count: > 0 } && value.Identifiants.Any(i => i.Champ == ChampGs1.Gtin) ? value : ParDefaut);
+    }
+
+    /// <summary>Identifiant qui commence à la position i (le plus long code d'abord), null s'il n'est pas paramétré.</summary>
+    internal Gs1Identifiant? Trouver(string s, int i) =>
+        Identifiants.FirstOrDefault(a => string.CompareOrdinal(s, i, a.Code, 0, a.Code.Length) == 0 && i + a.Code.Length <= s.Length);
+}
+
+/// <summary>Contenu d'un Data Matrix GS1 : GTIN (01), péremption (17), lot (10), série (21) ; identifiants paramétrables (Gs1Norme).</summary>
 public sealed record Gs1DataMatrix(string Gtin, DateOnly? Peremption, string? Lot, string? NumeroSerie)
 {
     private const char Gs = (char)29; // séparateur des champs de longueur variable
 
-    public static bool TryParse(string brut, out Gs1DataMatrix? resultat)
+    public static bool TryParse(string brut, out Gs1DataMatrix? resultat) => TryParse(brut, Gs1Norme.Courante, out resultat);
+
+    public static bool TryParse(string brut, Gs1Norme norme, out Gs1DataMatrix? resultat)
     {
         resultat = null;
         var s = brut.StartsWith("]d2", StringComparison.Ordinal) ? brut[3..] : brut; // préfixe du scanner
@@ -16,20 +72,26 @@ public sealed record Gs1DataMatrix(string Gtin, DateOnly? Peremption, string? Lo
 
         while (i + 2 <= s.Length)
         {
-            var ai = s.Substring(i, 2);
-            i += 2;
-            switch (ai)
+            if (norme.Trouver(s, i) is not { } ai) return false; // identifiant d'application non géré
+            i += ai.Code.Length;
+            string valeur;
+            if (ai.LongueurFixe is { } n)
             {
-                case "01" when i + 14 <= s.Length:
-                    gtin = s.Substring(i, 14); i += 14; break;
-                case "17" when i + 6 <= s.Length:
-                    peremption = LireDate(s.Substring(i, 6)); i += 6; break;
-                case "10":
-                    lot = LireVariable(s, ref i); break;
-                case "21":
-                    serie = LireVariable(s, ref i); break;
-                default:
-                    return false; // identifiant d'application non géré
+                if (i + n > s.Length) return false;
+                valeur = s.Substring(i, n);
+                i += n;
+            }
+            else
+            {
+                valeur = LireVariable(s, ref i);
+                if (ai.LongueurMax is { } max && valeur.Length > max) return false;
+            }
+            switch (ai.Champ)
+            {
+                case ChampGs1.Gtin: gtin = valeur; break;
+                case ChampGs1.Peremption: peremption = LireDate(valeur); break;
+                case ChampGs1.Lot: lot = valeur; break;
+                case ChampGs1.Serie: serie = valeur; break;
             }
         }
 
@@ -50,7 +112,8 @@ public sealed record Gs1DataMatrix(string Gtin, DateOnly? Peremption, string? Lo
     // AAMMJJ ; un jour 00 signifie le dernier jour du mois
     private static DateOnly? LireDate(string aammjj)
     {
-        if (!int.TryParse(aammjj[..2], out var aa) ||
+        if (aammjj.Length != 6 ||
+            !int.TryParse(aammjj[..2], out var aa) ||
             !int.TryParse(aammjj[2..4], out var mm) ||
             !int.TryParse(aammjj[4..6], out var jj) || mm is < 1 or > 12)
             return null;

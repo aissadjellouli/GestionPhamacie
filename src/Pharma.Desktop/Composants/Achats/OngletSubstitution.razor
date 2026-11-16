@@ -1,0 +1,168 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Achats › Substitution (lot 7, M3b) : « équivalent exact seulement » (même DCI, dosage et forme, activé par défaut), liste blanche
+   (produits autorisés en remplacement d'un produit donné) et « fabriqué en Algérie » (mis en tête des remplaçants ; saisi, sinon
+   repris de la nomenclature nationale importée). Écran fixe : réglages à gauche, une liste paginée et filtrée à droite. *@
+<div class="achats-grille" style="@(premiereLecture ? null : "visibility: hidden")">
+    <section class="panneau cadre-defilant" aria-labelledby="t-subst">
+        <h2 id="t-subst">Substitution</h2>
+        @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }
+        else if (message is not null) { <div class="succes" role="status" style="margin: 0">@message</div> }
+        @if (parametre is not null)
+        {
+            <label style="display: flex; gap: 8px; align-items: center">
+                <input type="checkbox" checked="@parametre.EquivalentExactSeulement" disabled="@(enCours || !PeutRegler)"
+                       @onchange="e => ParametreAsync(e.Value is true)" />
+                Équivalent exact seulement (même DCI, dosage et forme)
+            </label>
+            <p class="detail" style="margin: 0">Désactivé : à défaut d’équivalent exact, la même DCI dans un autre dosage ou une autre forme est proposée,
+                « à valider par le pharmacien ». @(parametre.ModifieLe is { } le ? $"Modifié le {Libelles.DateLocale(le)}{(parametre.ModifiePar is { } u ? " par " + u : "")}." : "")</p>
+        }
+        <h2 style="margin: 8px 0 0">Liste blanche</h2>
+        <p class="detail" style="margin: 0">Produit autorisé en remplacement d’un produit donné, même hors équivalent exact (choix du pharmacien).</p>
+        <div data-champ="produit"><ChoixProduit Id="sb-produit" Libelle="Produit manquant" InclureInactifs="true" OnChoisi="p => produit = p" OnEfface="() => produit = null" /></div>
+        <div data-champ="remplacant"><ChoixProduit Id="sb-remplacant" Libelle="Remplaçant autorisé" OnChoisi="p => remplacant = p" OnEfface="() => remplacant = null" /></div>
+        <div><button type="button" class="btn btn-principal" disabled="@(enCours || produit is null || remplacant is null || !PeutRegler)" @onclick="AjouterAsync">Ajouter à la liste blanche</button></div>
+        <p class="detail" style="margin: 0">Ordre des remplaçants proposés : fabriqué en Algérie d’abord, puis le moins cher, puis le plus de stock.</p>
+    </section>
+
+    <div class="liste">
+        <div class="achats-ligne" style="align-items: flex-end">
+            <div class="champ" style="flex: 0 0 240px">
+                <label for="sb-vue">Liste</label>
+                <select id="sb-vue" @bind="vue" @bind:after="() => ChargerAsync(1, taille)">
+                    <option value="blanche">Liste blanche</option>
+                    <option value="fab">Fabriqué en Algérie : tous</option>
+                    <option value="fab-oui">Fabriqué en Algérie : oui</option>
+                    <option value="fab-non">Fabriqué en Algérie : non</option>
+                </select>
+            </div>
+            <div class="champ" style="flex: 1 1 220px">
+                <label for="sb-recherche">Produit</label>
+                <input id="sb-recherche" type="search" @bind="recherche" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" />
+            </div>
+        </div>
+        <section class="tableau-cadre" aria-label="Substitution">
+            <table class="tableau" style="min-width: 0">
+                @if (vue == "blanche")
+                {
+                    <thead><tr><th scope="col">Produit</th><th scope="col">Remplaçant autorisé</th><th scope="col">Ajouté le</th><th scope="col"></th></tr></thead>
+                    <tbody>
+                        @foreach (var l in liens)
+                        {
+                            <tr><td>@l.Produit</td><td>@l.Remplacant</td><td>@Libelles.DateLocale(l.CreeLe)<br /><span class="detail">@l.CreePar</span></td>
+                                <td><button type="button" class="btn" disabled="@(enCours || !PeutRegler)" @onclick="() => RetirerAsync(l)">Retirer</button></td></tr>
+                        }
+                        @if (liens.Count == 0) { <tr><td colspan="4" class="vide">Liste blanche vide.</td></tr> }
+                    </tbody>
+                }
+                else
+                {
+                    <thead><tr><th scope="col">Produit</th><th scope="col">Laboratoire</th><th scope="col">Nomenclature</th><th scope="col">Fabriqué en Algérie</th></tr></thead>
+                    <tbody>
+                        @foreach (var f in fabrication)
+                        {
+                            <tr><td>@f.Produit</td><td>@f.Laboratoire</td><td>@(f.Nomenclature switch { true => "Algérie", false => "importé", null => "inconnu" })</td>
+                                <td><select value="@(f.Saisie switch { true => "oui", false => "non", null => "" })" disabled="@(enCours || !PeutRegler)"
+                                            @onchange="e => FabricationAsync(f, e.Value?.ToString())">
+                                        <option value="">Selon la nomenclature</option>
+                                        <option value="oui">Oui</option>
+                                        <option value="non">Non</option>
+                                    </select></td></tr>
+                        }
+                        @if (fabrication.Count == 0) { <tr><td colspan="4" class="vide">Aucun produit.</td></tr> }
+                    </tbody>
+                }
+            </table>
+        </section>
+        <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages de la substitution" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+    </div>
+</div>
+
+@code {
+    private ParametreSubstitutionDto? parametre;
+    private List<LienListeBlancheDto> liens = [];
+    private List<ProduitFabricationDto> fabrication = [];
+    private ProduitDto? produit, remplacant;
+    private string vue = "blanche";
+    private string? recherche, erreur, message;
+    private int total, page = 1, taille = Pagination.TailleParDefaut;
+    private bool enCours, premiereLecture;
+
+    private bool PeutRegler => Session.A("admin.parametres");
+
+    protected override async Task OnInitializedAsync()
+    {
+        // « ← Retour » : liste, recherche et page retrouvées
+        Historique.Suivre("substitution", e => { e.Mettre("vue", vue); e.Mettre("recherche", recherche); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("substitution") is { } r)
+            (vue, recherche, page, taille) = (r.Texte("vue") ?? vue, r.Texte("recherche"), r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        (parametre, erreur) = await Api.ParametreSubstitutionAsync();
+        await ChargerAsync(page, taille);
+        premiereLecture = true;
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        if (vue == "blanche")
+        {
+            var (p, e) = await Api.ListeBlancheAsync(recherche, numero, nouvelleTaille);
+            if (p is null) { erreur ??= e; return; }
+            (liens, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+        }
+        else
+        {
+            bool? locale = vue switch { "fab-oui" => true, "fab-non" => false, _ => null };
+            var (p, e) = await Api.FabricationLocaleAsync(recherche, locale, numero, nouvelleTaille);
+            if (p is null) { erreur ??= e; return; }
+            (fabrication, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+        }
+    }
+
+    private async Task ParametreAsync(bool exact) => await Executer(async () =>
+    {
+        var e = await Api.EnregistrerParametreSubstitutionAsync(exact);
+        if (e is not null) return e;
+        (parametre, e) = await Api.ParametreSubstitutionAsync();
+        message = exact ? "Seuls les équivalents exacts seront proposés." : "Les autres dosages ou formes seront proposés, à valider.";
+        return e;
+    });
+
+    private async Task AjouterAsync() => await Executer(async () =>
+    {
+        var e = await Api.AjouterListeBlancheAsync(produit!.Id, remplacant!.Id);
+        if (e is not null) return e;
+        message = $"{remplacant.NomCommercial} autorisé en remplacement de {produit.NomCommercial}.";
+        vue = "blanche";
+        await ChargerAsync(1, taille);
+        return null;
+    });
+
+    private async Task RetirerAsync(LienListeBlancheDto l) => await Executer(async () =>
+    {
+        var e = await Api.RetirerListeBlancheAsync(l.ProduitId, l.RemplacantId);
+        if (e is not null) return e;
+        message = $"{l.Remplacant} retiré de la liste blanche de {l.Produit}.";
+        await ChargerAsync(page, taille);
+        return null;
+    });
+
+    private async Task FabricationAsync(ProduitFabricationDto f, string? valeur) => await Executer(async () =>
+    {
+        bool? v = valeur switch { "oui" => true, "non" => false, _ => null };
+        var e = await Api.ModifierFabricationLocaleAsync(f.ProduitId, v);
+        if (e is not null) return e;
+        message = $"{f.Produit} : enregistré.";
+        await ChargerAsync(page, taille);
+        return null;
+    });
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

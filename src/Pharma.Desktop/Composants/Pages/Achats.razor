@@ -53,8 +53,23 @@
             case "reglements":
                 <OngletReglements Grossiste="Grossiste" />
                 break;
+            case "commander":
+                <OngletCommander />
+                break;
+            case "catalogues":
+                <OngletCataloguesGrossistes />
+                break;
             case "traites":
                 <OngletTraites />
+                break;
+            case "ruptures":
+                <OngletRuptures />
+                break;
+            case "patients-attente":
+                <OngletPatientsAttente />
+                break;
+            case "substitution":
+                <OngletSubstitution />
                 break;
             default:
                 <OngletGrossistes />
@@ -86,7 +101,13 @@
     [
         new("", null, "", "", Groupe: "Commandes"),
         new("commandes", "a-commander", "À commander", "Ruptures et stocks critiques, ajout d’un produit au bon du grossiste", PeutCommander, true),
+        new("commander", null, "Commander (multi-grossistes)", "Comparer les grossistes, répartir la commande : un bon par grossiste, envoi PDF ou e-mail", Session.A("achats.commander"), true),
         new("commandes", "bons", "Bons de commande", "Bons par grossiste et par statut : brouillon, envoyé, reçu en partie, reçu", PeutCommander, true),
+        new("catalogues", null, "Catalogues des grossistes", "Import du catalogue et de la disponibilité de chaque grossiste (Excel ou CSV)", Session.A("achats.commander"), true),
+        new("", null, "", "", Groupe: "Ruptures"),
+        new("ruptures", null, "Ruptures chez les grossistes", "En rupture chez tous les grossistes, depuis quand, retours en stock", Session.A("achats.commander"), true),
+        new("patients-attente", null, "Patients en attente", "Prévenir quand disponible : file des patients, alerte au retour du produit, SMS avec accord", Session.A("caisse.vendre"), true),
+        new("substitution", null, "Substitution", "Équivalent exact seulement, liste blanche, fabriqué en Algérie", Session.A("admin.parametres"), true),
         new("", null, "", "", Groupe: "Réceptions"),
         new("receptions", "saisie", "Réceptionner", "Compter ou saisir une livraison", Session.A("achats.receptionner"), true),
         new("receptions", "attente", "En attente", "Réceptions mises en attente et livraisons comptées à facturer", Session.A("achats.receptionner"), true),

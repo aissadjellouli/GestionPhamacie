@@ -9,7 +9,7 @@ namespace Pharma.Infrastructure.Lecture;
 /// </summary>
 public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
 {
-    private const string Periode = "v.date_vente >= $1::date AND v.date_vente < ($2::date + 1)";
+    internal const string Periode ="v.date_vente >= $1::date AND v.date_vente < ($2::date + 1)";
 
     /// <summary>
     /// Retours clients enregistrés pendant la période (ventes non annulées) : ils diminuent le chiffre du jour où la caisse
@@ -21,7 +21,7 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
         """;
 
     /// <summary>Boîtes rendues pendant la période, par ligne de vente : quantité, part payée rendue, boîtes remises en stock.</summary>
-    private const string LignesRendues = $"""
+    internal const string LignesRendues =$"""
         SELECT lv.id AS ligne_vente_id, lv.produit_id, lv.lot_id, rl.quantite, rl.montant, rl.destination
         FROM retour_client_ligne rl
         JOIN retour_client rc ON rc.id = rl.retour_id
@@ -31,7 +31,7 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
         """;
 
     /// <summary>Lignes des ventes validées de la période, avec leur montant net de remise (« net »).</summary>
-    private const string LignesNettes = $"""
+    internal const string LignesNettes =$"""
         WITH v AS (SELECT v.id, v.montant_total FROM vente v WHERE v.statut = 'validee' AND {Periode}),
         l AS (SELECT lv.id, lv.produit_id, lv.lot_id, lv.quantite, lv.taux_tva AS taux_tva_ligne, lv.prix_unitaire * lv.quantite AS brut,
                      SUM(lv.prix_unitaire * lv.quantite) OVER (PARTITION BY lv.vente_id) AS brut_vente, v.montant_total

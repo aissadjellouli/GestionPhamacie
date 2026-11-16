@@ -1,0 +1,397 @@
+@page "/pilotage-financier"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Tableau de bord financier du titulaire (lot 11, M5) : titulaire ou droit « rapports.marges ». Lecture seule : chiffre d'affaires et
+   marge des rapports, TVA par taux du journal des ventes. Écran fixe 1536×890 : une rubrique à la fois (menu à gauche,
+   pilotage-financier?rubrique=…), seul le tableau défile, listes paginées et filtrées. *@
+<div class="page avec-menu">
+    <NavDomaine Libelle="Rubriques du tableau de bord financier">
+        @foreach (var (id, libelle) in Rubriques)
+        {
+            <a href="@($"pilotage-financier?rubrique={id}")" class="sous-rubrique @(id == rubrique ? "active" : null)" aria-current="@(id == rubrique ? "page" : null)">@libelle</a>
+        }
+    </NavDomaine>
+
+    <div class="contenu-rubrique">
+    <div class="titre-page">
+        <div>
+            <h1>Tableau de bord financier · @Rubriques.First(x => x.Id == rubrique).Libelle<AideEcran Cle="pilotage-financier" /></h1>
+            <p class="sous-titre">@(tableau is { } tt ? $"{tt.Libelle}{(tt.PrecedentDu is { } pd ? $" · comparé au {pd:dd/MM/yyyy} – {tt.PrecedentAu:dd/MM/yyyy}" : "")}" : "Chargement…")</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            <button type="button" class="btn" disabled="@(tableau is null || enCours)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
+            <button type="button" class="btn" disabled="@(tableau is null || enCours)" @onclick='() => ExporterAsync("excel")'>Exporter pour Excel</button>
+        </div>
+    </div>
+
+    <div class="rapport-filtres">
+        <div class="filtres" role="group" aria-label="Période">
+            @foreach (var (code, libelle) in Periodes)
+            {
+                <button type="button" class="puce" aria-pressed="@(periode == code ? "true" : "false")" @onclick="() => ChoisirAsync(code)">@libelle</button>
+            }
+        </div>
+        @if (periode == "dates")
+        {
+            <div class="filtres dates-rapport" role="group" aria-label="Dates choisies">
+                <label for="pf-du">Du</label>
+                <input id="pf-du" type="date" max="@Aujourdhui.ToString("yyyy-MM-dd")" @bind="du" @bind:after="ChargerAsync" />
+                <label for="pf-au">au</label>
+                <input id="pf-au" type="date" max="@Aujourdhui.ToString("yyyy-MM-dd")" @bind="au" @bind:after="ChargerAsync" />
+            </div>
+        }
+        else
+        {
+            <div class="filtres dates-rapport" role="group" aria-label="Aller à une date">
+                <label for="pf-date">Aller au</label>
+                <input id="pf-date" type="date" max="@Aujourdhui.ToString("yyyy-MM-dd")" @bind="reference" @bind:after="ChargerAsync" />
+            </div>
+        }
+        <div class="filtres" role="group" aria-label="Changer de période">
+            <button type="button" class="puce" disabled="@(tableau is null)" @onclick="() => DeplacerAsync(-1)">‹ Précédent</button>
+            <button type="button" class="puce" @onclick="AujourdhuiAsync">Aujourd’hui</button>
+            <button type="button" class="puce" disabled="@(tableau is null || tableau.Au >= Aujourdhui)" @onclick="() => DeplacerAsync(+1)">Suivant ›</button>
+        </div>
+    </div>
+
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+    @if (tableau is { } t)
+    {
+        @switch (rubrique)
+        {
+            case "synthese":
+                <div class="tuiles">
+                    <div class="tuile">
+                        <span class="tuile-libelle">Chiffre d’affaires TTC</span>
+                        <span class="tuile-valeur">@Libelles.Dinars(t.ChiffreAffaires.Actuel)</span>
+                        <span class="tuile-pied">@Comparer(t.ChiffreAffaires, true)</span>
+                    </div>
+                    <div class="tuile">
+                        <span class="tuile-libelle">Marge brute</span>
+                        <span class="tuile-valeur">@Libelles.Dinars(t.MargeBrute.Actuel)</span>
+                        <span class="tuile-pied">@(t.TauxMarge is { } tm ? $"{tm:0.0} % du CA HT" : "pas de vente")@(t.TauxMargePrecedent is { } tp ? $" (précédente {tp:0.0} %)" : "")</span>
+                        <span class="tuile-pied">@Comparer(t.MargeBrute, true)</span>
+                    </div>
+                    <div class="tuile">
+                        <span class="tuile-libelle">Ventes · panier moyen</span>
+                        <span class="tuile-valeur">@t.NombreVentes.Actuel.ToString("0") · @(t.PanierMoyen is { } pm ? Libelles.Dinars(pm.Actuel) : "—")</span>
+                        <span class="tuile-pied">ventes @Comparer(t.NombreVentes, false)</span>
+                        @if (t.PanierMoyen is { } pm2) { <span class="tuile-pied">panier @Comparer(pm2, true)</span> }
+                    </div>
+                    <div class="tuile">
+                        <span class="tuile-libelle">Répartition</span>
+                        <span class="tuile-pied">comptant @Libelles.Dinars(t.Repartition.Comptant) · crédit @Libelles.Dinars(t.Repartition.Credit)</span>
+                        <span class="tuile-pied">Chifa @Libelles.Dinars(t.Repartition.Chifa) · MDN @Libelles.Dinars(t.Repartition.Mdn)@(t.Repartition.AutresOrganismes != 0 ? $" · autres {Libelles.Dinars(t.Repartition.AutresOrganismes)}" : "")</span>
+                    </div>
+                    <div class="tuile tuile-lien" @onclick='() => Aller("creances")'>
+                        <span class="tuile-libelle">Créances à encaisser</span>
+                        <span class="tuile-valeur">@Libelles.Dinars(t.Creances.TotalBordereaux + t.Creances.HorsBordereau + t.Creances.CreditsPatients)</span>
+                        <span class="tuile-pied">bordereaux @Libelles.Dinars(t.Creances.TotalBordereaux) · hors bordereau @Libelles.Dinars(t.Creances.HorsBordereau)</span>
+                        <span class="tuile-pied">crédits patients @Libelles.Dinars(t.Creances.CreditsPatients) (@t.Creances.PatientsDebiteurs)</span>
+                    </div>
+                    <div class="tuile tuile-lien" @onclick='() => Aller("stock")'>
+                        <span class="tuile-libelle">Stock au prix d’achat HT</span>
+                        <span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurAchat)</span>
+                        <span class="tuile-pied">rotation @(t.Stock.RotationAnnuelle?.ToString("0.0") ?? "—") / an · couverture @(t.Stock.CouvertureJours?.ToString("0") ?? "—") j</span>
+                        <span class="tuile-pied">dormant @Libelles.Dinars(t.Stock.ValeurDormante) (@t.Stock.Dormants) · ruptures @t.Stock.RupturesOfficine / grossistes @t.Stock.RupturesGrossistes</span>
+                    </div>
+                </div>
+                @if (t.ParJour.Count > 1)
+                {
+                    var max = Math.Max(1m, t.ParJour.Max(j => j.ChiffreAffaires));
+                    <section class="panneau" aria-labelledby="pf-jours">
+                        <h2 id="pf-jours">Chiffre d’affaires par jour</h2>
+                        <div class="histogramme" role="img" aria-label="@($"Chiffre d’affaires par jour, maximum {Libelles.Dinars(max)}")">
+                            <div class="histogramme-echelle" aria-hidden="true"><span>@Libelles.Dinars(max)</span><span>0</span></div>
+                            <div class="histogramme-barres" style="--colonnes: @t.ParJour.Count">
+                                @foreach (var j in t.ParJour)
+                                {
+                                    <div class="histogramme-colonne" title="@($"{j.Date:dd/MM/yyyy} : {Libelles.Dinars(j.ChiffreAffaires)}, {j.NombreVentes} vente(s)")">
+                                        <div class="histogramme-zone"><div class="histogramme-barre" style="height: @Pourcent(j.ChiffreAffaires, max)"></div></div>
+                                        <span class="histogramme-jour">@j.Date.Day</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </section>
+                }
+                <p class="pied-page">Chiffre d’affaires et marge : mêmes calculs que les rapports (ventes validées, remises et retours déduits). Période en cours comparée à la même durée écoulée de la période précédente.</p>
+                break;
+
+            case "creances":
+                <div class="tuiles">
+                    @foreach (var x in t.Creances.BordereauxParAge)
+                    {
+                        <div class="tuile"><span class="tuile-libelle">Bordereaux · @x.Tranche</span><span class="tuile-valeur">@Libelles.Dinars(x.Montant)</span><span class="tuile-pied">@x.Nombre bordereau(x)</span></div>
+                    }
+                    <div class="tuile"><span class="tuile-libelle">Part organismes hors bordereau</span><span class="tuile-valeur">@Libelles.Dinars(t.Creances.HorsBordereau)</span><span class="tuile-pied">ventes pas encore portées sur un bordereau</span></div>
+                    <div class="tuile"><span class="tuile-libelle">Crédits patients</span><span class="tuile-valeur">@Libelles.Dinars(t.Creances.CreditsPatients)</span>
+                        <span class="tuile-pied">@t.Creances.PatientsDebiteurs patient(s) · @string.Join(" · ", t.Creances.CreditsParAge.Select(c => $"{c.Tranche} {Libelles.Dinars(c.Montant)}"))</span></div>
+                </div>
+                <section class="tableau-cadre" aria-label="Bordereaux non réglés">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Bordereau</th><th scope="col">Organisme</th><th scope="col">Statut</th><th scope="col">Déposé le</th><th scope="col">Âge</th>
+                            <th scope="col">Attendu</th><th scope="col">Rejeté</th><th scope="col">Versé</th><th scope="col">Reste</th></tr></thead>
+                        <tbody>
+                            @foreach (var b in t.Creances.Bordereaux.Skip((pageCreances - 1) * tailleCreances).Take(tailleCreances))
+                            {
+                                <tr><td>@b.Numero</td><td>@b.Organisme</td><td>@b.Statut</td><td>@(b.DateDepot?.ToString("dd/MM/yyyy") ?? "non déposé")</td>
+                                    <td>@(b.AgeJours is { } a ? $"{a} j" : "—")</td><td>@Libelles.Dinars(b.Attendu, 2)</td><td>@Libelles.Dinars(b.Rejete, 2)</td>
+                                    <td>@Libelles.Dinars(b.Verse, 2)</td><td>@Libelles.Dinars(b.Reste, 2)</td></tr>
+                            }
+                            @if (t.Creances.Bordereaux.Count == 0) { <tr><td colspan="9" class="vide">Aucun bordereau en attente de paiement.</td></tr> }
+                        </tbody>
+                    </table>
+                </section>
+                <Pagination Total="t.Creances.Bordereaux.Count" Numero="pageCreances" Taille="tailleCreances" Libelle="Pages des bordereaux"
+                            OnChange="p => { (pageCreances, tailleCreances) = (p.Numero, p.Taille); return Task.CompletedTask; }" />
+                break;
+
+            case "stock":
+                <div class="tuiles">
+                    <div class="tuile"><span class="tuile-libelle">Valeur du stock (achat HT)</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurAchat)</span><span class="tuile-pied">@t.Stock.Produits produit(s) en stock</span></div>
+                    <div class="tuile"><span class="tuile-libelle">Rotation · couverture</span><span class="tuile-valeur">@(t.Stock.RotationAnnuelle?.ToString("0.0") ?? "—") / an</span><span class="tuile-pied">couverture @(t.Stock.CouvertureJours?.ToString("0") ?? "—") jours · coût des ventes @Libelles.Dinars(t.Stock.CoutVentesPeriode)</span></div>
+                    <div class="tuile"><span class="tuile-libelle">Stock dormant</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurDormante)</span><span class="tuile-pied">@t.Stock.Dormants produit(s) sans vente depuis @t.Stock.SeuilDormantJours jours</span></div>
+                    <div class="tuile"><span class="tuile-libelle">Ruptures en cours</span><span class="tuile-valeur">@t.Stock.RupturesOfficine</span><span class="tuile-pied">à l’officine · @t.Stock.RupturesGrossistes produit(s) en rupture chez un grossiste</span></div>
+                </div>
+                <div class="achats-ligne" style="align-items: flex-end">
+                    <div class="champ" style="flex: 0 0 200px">
+                        <label for="pf-seuil">Sans vente depuis (jours)</label>
+                        <input id="pf-seuil" type="number" min="1" max="3650" @bind="seuilDormant" @bind:after="ChargerAsync" />
+                    </div>
+                    <div class="champ" style="flex: 1 1 260px">
+                        <label for="pf-dormant">Produit ou laboratoire</label>
+                        <input id="pf-dormant" type="search" @bind="rechercheDormant" @bind:event="oninput" @bind:after="() => ChargerDormantsAsync(1, tailleDormants)" />
+                    </div>
+                </div>
+                <section class="tableau-cadre" aria-label="Stock dormant">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Produit</th><th scope="col">Laboratoire</th><th scope="col">Stock</th><th scope="col">Valeur HT</th><th scope="col">Dernière vente</th><th scope="col">Jours sans vente</th></tr></thead>
+                        <tbody>
+                            @foreach (var d in dormants?.Lignes ?? [])
+                            {
+                                <tr><td>@d.Produit</td><td>@d.Laboratoire</td><td>@d.Stock</td><td>@Libelles.Dinars(d.Valeur, 2)</td>
+                                    <td>@(d.DerniereVente is { } dv ? Libelles.DateLocale(dv) : "jamais vendu")</td><td>@(d.JoursSansVente?.ToString() ?? "—")</td></tr>
+                            }
+                            @if ((dormants?.Lignes.Count ?? 0) == 0) { <tr><td colspan="6" class="vide">Aucun produit dormant.</td></tr> }
+                        </tbody>
+                    </table>
+                </section>
+                <Pagination Total="dormants?.Total ?? 0" Numero="pageDormants" Taille="tailleDormants" Libelle="Pages du stock dormant" OnChange="p => ChargerDormantsAsync(p.Numero, p.Taille)" />
+                break;
+
+            case "marges":
+                <div class="achats-ligne" style="align-items: flex-end">
+                    <div class="filtres" role="group" aria-label="Regrouper par">
+                        <button type="button" class="puce" aria-pressed="@(parMarge == "produit" ? "true" : "false")" @onclick='() => RegrouperAsync("produit")'>Par produit</button>
+                        <button type="button" class="puce" aria-pressed="@(parMarge == "laboratoire" ? "true" : "false")" @onclick='() => RegrouperAsync("laboratoire")'>Par laboratoire</button>
+                    </div>
+                    <div class="champ" style="flex: 1 1 260px">
+                        <label for="pf-marge">@(parMarge == "produit" ? "Produit" : "Laboratoire")</label>
+                        <input id="pf-marge" type="search" @bind="rechercheMarge" @bind:event="oninput" @bind:after="() => ChargerMargesAsync(1, tailleMarges)" />
+                    </div>
+                </div>
+                <section class="tableau-cadre" aria-label="Marges">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">@(parMarge == "produit" ? "Produit" : "Laboratoire")</th><th scope="col">Boîtes</th><th scope="col">CA HT</th><th scope="col">Coût d’achat HT</th><th scope="col">Marge</th><th scope="col">Taux</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in marges?.Lignes ?? [])
+                            {
+                                <tr><td>@m.Cle</td><td>@m.Quantite</td><td>@Libelles.Dinars(m.ChiffreAffairesHt, 2)</td><td>@Libelles.Dinars(m.CoutAchat, 2)</td>
+                                    <td>@Libelles.Dinars(m.Marge, 2)</td><td>@(m.TauxPct is { } x ? $"{x:0.0} %" : "—")</td></tr>
+                            }
+                            @if ((marges?.Lignes.Count ?? 0) == 0) { <tr><td colspan="6" class="vide">Aucune vente sur la période.</td></tr> }
+                        </tbody>
+                    </table>
+                </section>
+                <Pagination Total="marges?.Total ?? 0" Numero="pageMarges" Taille="tailleMarges" Libelle="Pages des marges" OnChange="p => ChargerMargesAsync(p.Numero, p.Taille)" />
+                break;
+
+            case "achats":
+                <section class="tableau-cadre" aria-label="Achats par grossiste">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Grossiste</th><th scope="col">Réceptions</th><th scope="col">Montant HT</th><th scope="col">Montant TTC</th></tr></thead>
+                        <tbody>
+                            @foreach (var a in t.Achats.Skip((pageAchats - 1) * tailleAchats).Take(tailleAchats))
+                            {
+                                <tr><td>@a.Grossiste</td><td>@a.Receptions</td><td>@Libelles.Dinars(a.MontantHt, 2)</td><td>@Libelles.Dinars(a.MontantTtc, 2)</td></tr>
+                            }
+                            @if (t.Achats.Count == 0) { <tr><td colspan="4" class="vide">Aucune réception sur la période.</td></tr> }
+                        </tbody>
+                    </table>
+                </section>
+                <Pagination Total="t.Achats.Count" Numero="pageAchats" Taille="tailleAchats" Libelle="Pages des achats"
+                            OnChange="p => { (pageAchats, tailleAchats) = (p.Numero, p.Taille); return Task.CompletedTask; }" />
+                <p class="pied-page">Montants des réceptions saisies (factures des grossistes) sur la période.</p>
+                break;
+
+            case "rejets":
+                <div class="tuiles">
+                    <div class="tuile"><span class="tuile-libelle">Taux de rejet</span><span class="tuile-valeur">@(t.Rejets.TauxRejetPct is { } tr ? $"{tr:0.0} %" : "—")</span>
+                        <span class="tuile-pied">@t.Rejets.Rejets rejet(s) sur @t.Rejets.VentesDeposees vente(s) déposée(s)</span></div>
+                    <div class="tuile"><span class="tuile-libelle">Montant rejeté</span><span class="tuile-valeur">@Libelles.Dinars(t.Rejets.MontantRejete)</span>
+                        <span class="tuile-pied">sur @Libelles.Dinars(t.Rejets.MontantDepose) déposés</span></div>
+                </div>
+                <section class="tableau-cadre" aria-label="Rejets par motif">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Motif</th><th scope="col">Rejets</th><th scope="col">Montant rejeté</th><th scope="col">Taux (ventes déposées)</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in t.Rejets.ParMotif)
+                            {
+                                <tr><td>@m.Libelle</td><td>@m.Nombre</td><td>@Libelles.Dinars(m.Montant, 2)</td><td>@(m.TauxPct is { } x ? $"{x:0.0} %" : "—")</td></tr>
+                            }
+                            @if (t.Rejets.ParMotif.Count == 0) { <tr><td colspan="4" class="vide">Aucun rejet sur les bordereaux déposés pendant la période.</td></tr> }
+                        </tbody>
+                    </table>
+                </section>
+                <p class="pied-page">Bordereaux Chifa et MDN déposés pendant la période ; rejets saisis dans Finances › Bordereaux Chifa.</p>
+                break;
+
+            case "tva":
+                <section class="tableau-cadre" aria-label="TVA par taux">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Taux</th><th scope="col">TTC</th><th scope="col">HT</th><th scope="col">TVA</th><th scope="col">Événements</th></tr></thead>
+                        <tbody>
+                            @foreach (var x in t.Tva)
+                            {
+                                <tr><td>@x.Taux.ToString("0.##") %</td><td>@Libelles.Dinars(x.Ttc, 2)</td><td>@Libelles.Dinars(x.Ht, 2)</td><td>@Libelles.Dinars(x.Tva, 2)</td><td>@x.Evenements</td></tr>
+                            }
+                            @if (t.Tva.Count == 0) { <tr><td colspan="5" class="vide">Aucune ligne au journal des ventes sur la période.</td></tr> }
+                        </tbody>
+                    </table>
+                </section>
+                <p class="pied-page">Lu dans le journal fiscal des ventes (récapitulatif par taux), sans recalcul.</p>
+                break;
+        }
+    }
+    </div>
+</div>
+
+@code {
+    private static readonly (string Id, string Libelle)[] Rubriques =
+    [
+        ("synthese", "Synthèse"), ("creances", "Créances"), ("stock", "Stock et dormant"), ("marges", "Marges"),
+        ("achats", "Achats par grossiste"), ("rejets", "Rejets Chifa"), ("tva", "TVA par taux")
+    ];
+    private static readonly (string Code, string Libelle)[] Periodes = [("jour", "Jour"), ("semaine", "Semaine"), ("mois", "Mois"), ("dates", "Dates choisies")];
+
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    private string rubrique = "synthese";
+
+    private TableauFinancierDto? tableau;
+    private PageDto<MargeRegroupeeDto>? marges;
+    private PageDto<ProduitDormantDto>? dormants;
+    private string periode = "mois", parMarge = "produit";
+    private string? rechercheMarge, rechercheDormant, erreur, message;
+    private int? seuilDormant;
+    private DateOnly reference = DateOnly.FromDateTime(DateTime.Now);
+    private DateOnly du = new(DateTime.Now.Year, DateTime.Now.Month, 1), au = DateOnly.FromDateTime(DateTime.Now);
+    private int pageMarges = 1, tailleMarges = Pagination.TailleParDefaut, pageDormants = 1, tailleDormants = Pagination.TailleParDefaut;
+    private int pageCreances = 1, tailleCreances = Pagination.TailleParDefaut, pageAchats = 1, tailleAchats = Pagination.TailleParDefaut;
+    private bool enCours;
+
+    private static DateOnly Aujourdhui => DateOnly.FromDateTime(DateTime.Now);
+
+    protected override void OnParametersSet() =>
+        rubrique = Rubrique is { } r && Rubriques.Any(x => x.Id == r) ? r : "synthese";
+
+    protected override Task OnInitializedAsync()
+    {
+        Historique.Suivre("pilotage-financier", e =>
+        {
+            e.Mettre("periode", periode); e.Mettre("reference", reference); e.Mettre("du", du); e.Mettre("au", au); e.Mettre("par", parMarge);
+        });
+        if (Historique.Restaurer("pilotage-financier") is { } h)
+            (periode, reference, du, au, parMarge) = (h.Texte("periode") ?? periode, h.Date("reference") ?? reference, h.Date("du") ?? du, h.Date("au") ?? au, h.Texte("par") ?? parMarge);
+        return ChargerAsync();
+    }
+
+    private void Aller(string id) => Nav.NavigateTo($"pilotage-financier?rubrique={id}");
+
+    private async Task ChargerAsync()
+    {
+        enCours = true;
+        try
+        {
+            var (t, e) = await Api.TableauFinancierAsync(periode, reference, du, au, seuilDormant);
+            if (t is not null)
+            {
+                tableau = t;
+                seuilDormant ??= t.Stock.SeuilDormantJours;
+                (pageCreances, pageAchats) = (1, 1);
+                await ChargerMargesAsync(1, tailleMarges);
+                await ChargerDormantsAsync(1, tailleDormants);
+            }
+            erreur = e;
+        }
+        finally { enCours = false; }
+    }
+
+    private async Task ChargerMargesAsync(int numero, int taille)
+    {
+        var (p, e) = await Api.MargesFinancierAsync(periode, reference, du, au, parMarge, rechercheMarge, numero, taille);
+        if (p is null) { erreur ??= e; return; }
+        (marges, pageMarges, tailleMarges) = (p, p.Numero, p.Taille);
+    }
+
+    private async Task ChargerDormantsAsync(int numero, int taille)
+    {
+        var (p, e) = await Api.DormantsFinancierAsync(seuilDormant, rechercheDormant, numero, taille);
+        if (p is null) { erreur ??= e; return; }
+        (dormants, pageDormants, tailleDormants) = (p, p.Numero, p.Taille);
+    }
+
+    private Task RegrouperAsync(string par) { (parMarge, rechercheMarge) = (par, null); return ChargerMargesAsync(1, tailleMarges); }
+
+    private Task ChoisirAsync(string code) { (periode, message) = (code, null); return ChargerAsync(); }
+
+    private Task AujourdhuiAsync()
+    {
+        (reference, message) = (Aujourdhui, null);
+        if (periode == "dates") (du, au) = (Aujourdhui, Aujourdhui);
+        return ChargerAsync();
+    }
+
+    private Task DeplacerAsync(int sens)
+    {
+        if (tableau is null) return Task.CompletedTask;
+        if (periode == "dates")
+        {
+            var jours = au.DayNumber - du.DayNumber + 1;
+            (du, au, message) = (du.AddDays(sens * jours), au.AddDays(sens * jours), null);
+            return ChargerAsync();
+        }
+        (reference, message) = (sens < 0 ? tableau.Du.AddDays(-1) : tableau.Au.AddDays(1), null);
+        return ChargerAsync();
+    }
+
+    private async Task ExporterAsync(string format)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var (contenu, nom, e) = await Api.ExporterTableauFinancierAsync(periode, reference, du, au, seuilDormant, format);
+            if (e is not null) { erreur = e; return; }
+            var doc = await Documents.RangerAsync(Api, "Rapports", nom!, contenu!);
+            (message, erreur) = ($"Tableau de bord rangé : {doc.Emplacement}", doc.Erreur);
+            Documents.Ouvrir(doc.CheminLocal);
+        }
+        finally { enCours = false; }
+    }
+
+    /// <summary>« +12,5 % par rapport à 1 200 DA » ; « — » sans période précédente.</summary>
+    private static string Comparer(ComparaisonDto c, bool dinars)
+    {
+        if (c.Precedent is not { } p) return "pas de période précédente";
+        var avant = dinars ? Libelles.Dinars(p) : p.ToString("0");
+        return c.VariationPct is { } v ? $"{(v > 0 ? "+" : "")}{v:0.0} % (précédente {avant})" : $"précédente {avant}";
+    }
+
+    private static string Pourcent(decimal valeur, decimal max) =>
+        (max <= 0 ? 0 : Math.Round(valeur / max * 100, 1)).ToString(System.Globalization.CultureInfo.InvariantCulture) + "%";
+}

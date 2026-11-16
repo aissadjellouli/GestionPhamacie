@@ -1,0 +1,271 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Achats › Patients en attente (lot 7, M3b) : « Prévenir quand disponible » (patient + produit), file des demandes (paginée,
+   filtrée), produits redevenus disponibles (stock reçu ou grossiste qui le déclare disponible) mis en avant, et produits dus des
+   ventes en attente (motif « produit manquant »). SMS « Votre commande est disponible » par le modem GSM local, seulement avec
+   l'accord du patient enregistré sur sa fiche (case et date). Écran fixe : saisie à gauche (panneau défilant), file à droite. *@
+<div class="achats-grille" style="@StyleGrille">
+    <section class="panneau cadre-defilant" aria-labelledby="t-prevenir">
+        <h2 id="t-prevenir">Prévenir quand disponible</h2>
+        @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }
+        else if (message is not null) { <div class="succes" role="status" style="margin: 0">@message</div> }
+        <div class="achats-ligne" style="align-items: flex-end">
+            <div class="champ" style="flex: 1 1 200px; min-width: 0">
+                <label for="pa-patient" class="requis">Patient (nom ou téléphone)</label>
+                <input id="pa-patient" type="search" data-champ="patient" @bind="textePatient" @onkeydown="ToucheAsync" />
+            </div>
+            <button type="button" class="btn" disabled="@(enCours || string.IsNullOrWhiteSpace(textePatient))" @onclick="ChercherPatientsAsync">Chercher</button>
+        </div>
+        @if (patients.Count > 0)
+        {
+            <div class="champ">
+                <label for="pa-choix">Fiche</label>
+                <select id="pa-choix" @bind="patientId" @bind:after="ChargerConsentementAsync">
+                    <option value="0">Choisir…</option>
+                    @foreach (var p in patients) { <option value="@p.Id">@($"{p.Nom} {p.Prenom}".Trim())@(p.Telephone is { Length: > 0 } t ? $" · {t}" : "")</option> }
+                </select>
+            </div>
+        }
+        @if (patientId != 0 && consentement is not null)
+        {
+            <label style="display: flex; gap: 8px; align-items: center">
+                <input type="checkbox" checked="@consentement.Accord" disabled="@enCours" @onchange="e => ConsentirAsync(e.Value is true)" />
+                Le patient accepte d’être prévenu par SMS
+            </label>
+            <p class="detail" style="margin: 0">@(consentement.Le is { } le ? $"{(consentement.Accord ? "Accord" : "Retrait")} enregistré le {Libelles.DateLocale(le)}." : "Aucun accord enregistré.")
+                Texte envoyé : « Votre commande est disponible à la pharmacie… » (aucun nom de produit).</p>
+            @* Formulaire papier d'accord (2026-11-16) : imprimé, signé au comptoir, réception notée avec la date *@
+            <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+                <button type="button" class="btn" data-champ="imprimer_formulaire_sms" disabled="@enCours" @onclick="ImprimerFormulaireAsync">Imprimer le formulaire d’accord</button>
+                <label style="display: flex; gap: 8px; align-items: center">
+                    <input type="checkbox" data-champ="formulaire_sms_recu" checked="@consentement.FormulaireRecu" disabled="@enCours" @onchange="e => FormulaireRecuAsync(e.Value is true)" />
+                    Formulaire signé reçu@(consentement.FormulaireRecu && consentement.FormulaireRecuLe is { } fl ? $" le {Libelles.DateLocale(fl)}" : "")
+                </label>
+            </div>
+        }
+        <div data-champ="produit"><ChoixProduit Id="pa-produit" Libelle="Produit attendu" Requis="true" OnChoisi="p => produit = p" OnEfface="() => produit = null" /></div>
+        <div class="achats-ligne" style="align-items: flex-end">
+            <div class="champ" style="flex: 0 0 120px">
+                <label for="pa-qte">Quantité</label>
+                <input id="pa-qte" type="number" min="1" max="1000" data-champ="quantite" @bind="quantite" />
+            </div>
+            <button type="button" class="btn btn-principal" disabled="@(enCours || patientId == 0 || produit is null || !PeutVendre)" @onclick="CreerAsync">Noter la demande</button>
+        </div>
+
+        @if (alertes is { } al && (al.Patients.Count > 0 || al.VentesEnAttente.Count > 0))
+        {
+            <h2 style="margin: 8px 0 0">Redevenus disponibles</h2>
+            @foreach (var v in al.VentesEnAttente)
+            {
+                <p style="margin: 0"><span class="pastille info">Vente en attente</span> « @v.Libelle » : @v.Produit (@v.Quantite)
+                    — @(v.StockOfficine > 0 ? $"en stock ({v.StockOfficine})" : "disponible chez un grossiste")</p>
+            }
+            @if (al.Patients.Count > 0) { <p class="detail" style="margin: 0">@al.Patients.Count patient(s) à prévenir : voir les lignes « Disponible » de la file.</p> }
+        }
+    </section>
+
+    <div class="liste">
+        <div class="achats-ligne" style="align-items: flex-end">
+            <div class="champ" style="flex: 0 0 200px">
+                <label for="pa-statut">Demandes</label>
+                <select id="pa-statut" @bind="statut" @bind:after="() => ChargerAsync(1, taille)">
+                    <option value="ouvertes">En cours</option>
+                    <option value="en_attente">À prévenir</option>
+                    <option value="prevenu">Prévenus</option>
+                    <option value="servie">Servies</option>
+                    <option value="annulee">Annulées</option>
+                    <option value="toutes">Toutes</option>
+                </select>
+            </div>
+            <div class="champ" style="flex: 1 1 220px">
+                <label for="pa-recherche">Patient ou produit</label>
+                <input id="pa-recherche" type="search" @bind="recherche" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" />
+            </div>
+        </div>
+        <section class="tableau-cadre" aria-label="Patients en attente">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Demandé le</th><th scope="col">Patient</th><th scope="col">Produit</th><th scope="col">Disponibilité</th>
+                    <th scope="col">État</th><th scope="col">Actions</th></tr></thead>
+                <tbody>
+                    @foreach (var d in demandes)
+                    {
+                        var ouverte = d.Statut is "en_attente" or "prevenu";
+                        <tr>
+                            <td>@Libelles.DateLocale(d.CreeLe)</td>
+                            <td>@d.Patient<br /><span class="detail">@(d.ConsentementSms ? "SMS accepté" : "pas d’accord SMS")</span></td>
+                            <td>@d.Produit (@d.Quantite)</td>
+                            <td>@if (d.Disponible) { <span class="pastille info">Disponible</span><br /><span class="detail">@(d.StockOfficine > 0 ? $"stock {d.StockOfficine}" : "chez un grossiste")</span> }
+                                else { <span class="pastille urgent">Rupture</span> }</td>
+                            <td>@Etat(d)@if (d.SmsErreur is { } se) { <br /><span class="detail">SMS non parti : @se</span> }</td>
+                            <td>
+                                @if (ouverte)
+                                {
+                                    <div style="display: flex; gap: 4px; flex-wrap: wrap">
+                                        <button type="button" class="btn" disabled="@enCours" title="Prévenu au comptoir ou par téléphone" @onclick="() => PrevenirAsync(d, false)">Prévenu</button>
+                                        <button type="button" class="btn" disabled="@(enCours || !d.ConsentementSms)" title="@(d.ConsentementSms ? "SMS par le modem de la pharmacie" : "Le patient n’a pas donné son accord pour les SMS")" @onclick="() => PrevenirAsync(d, true)">SMS</button>
+                                        <button type="button" class="btn" disabled="@enCours" @onclick="() => CloturerAsync(d, true)">Servie</button>
+                                        <button type="button" class="btn" disabled="@enCours" @onclick="() => CloturerAsync(d, false)">Annuler</button>
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    @if (demandes.Count == 0) { <tr><td colspan="6" class="vide">Aucune demande.</td></tr> }
+                </tbody>
+            </table>
+        </section>
+        <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des demandes" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+    </div>
+</div>
+
+@code {
+    private List<PatientDto> patients = [];
+    private List<DemandePatientDto> demandes = [];
+    private AlertesDisponibiliteDto? alertes;
+    private ConsentementSmsDto? consentement;
+    private ProduitDto? produit;
+    private string? textePatient, recherche, erreur, message;
+    private string statut = "ouvertes";
+    private long patientId;
+    private int quantite = 1, total, page = 1, taille = Pagination.TailleParDefaut;
+    private bool enCours, premiereLecture;
+
+    private bool PeutVendre => Session.A("caisse.vendre");
+
+    /// <summary>Ouverture depuis la Caisse (2026-11-16) : patient de la vente en cours déjà choisi.</summary>
+    [Parameter] public PatientDto? PatientInitial { get; set; }
+    /// <summary>Vue ouverte en fenêtre par-dessus la Caisse : pas de suivi « ← Retour » (l'écran affiché reste la Caisse).</summary>
+    [Parameter] public bool EnFenetre { get; set; }
+
+    private string? StyleGrille => string.Join("; ", new[] { premiereLecture ? null : "visibility: hidden",
+        EnFenetre ? "grid-template-columns: minmax(340px, 1fr) minmax(0, 2fr)" : null }.Where(s => s is not null)) is { Length: > 0 } s ? s : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!EnFenetre)
+        {
+            // « ← Retour » : filtre, recherche et page retrouvés
+            Historique.Suivre("patients-attente", e => { e.Mettre("statut", statut); e.Mettre("recherche", recherche); e.Mettre("page", page); e.Mettre("taille", taille); });
+            if (Historique.Restaurer("patients-attente") is { } r)
+                (statut, recherche, page, taille) = (r.Texte("statut") ?? statut, r.Texte("recherche"), r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        }
+        if (PatientInitial is { } pi)
+        {
+            (patients, patientId, textePatient) = ([pi], pi.Id, $"{pi.Nom} {pi.Prenom}".Trim());
+            await ChargerConsentementAsync();
+        }
+        await RafraichirAsync();
+        premiereLecture = true;
+    }
+
+    private async Task RafraichirAsync()
+    {
+        (alertes, var e) = await Api.AlertesDisponibiliteAsync();
+        erreur ??= e;
+        await ChargerAsync(page, taille);
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.DemandesPatientsAsync(recherche, statut == "toutes" ? null : statut, numero, nouvelleTaille);
+        if (p is null) { erreur ??= e; return; }
+        if (p.Lignes.Count == 0 && numero > 1) { await ChargerAsync(1, nouvelleTaille); return; }
+        (demandes, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    private static string Etat(DemandePatientDto d) => d.Statut switch
+    {
+        "en_attente" => "À prévenir",
+        "prevenu" => $"Prévenu{(d.PrevenuCanal == "sms" ? " par SMS" : "")}{(d.PrevenuLe is { } le ? " le " + Libelles.DateLocale(le) : "")}",
+        "servie" => "Servie",
+        "annulee" => "Annulée",
+        _ => d.Statut
+    };
+
+    private async Task ToucheAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ChercherPatientsAsync();
+    }
+
+    private async Task ChercherPatientsAsync() => await Executer(async () =>
+    {
+        var (liste, e) = await Api.RechercherPatientsAsync(textePatient!.Trim());
+        if (e is not null) return e;
+        (patients, patientId, consentement) = (liste, liste.Count == 1 ? liste[0].Id : 0, null);
+        if (patientId != 0) await ChargerConsentementAsync();
+        return liste.Count == 0 ? "Aucun patient trouvé : créez sa fiche (Patients) d’abord." : null;
+    });
+
+    private async Task ChargerConsentementAsync()
+    {
+        consentement = null;
+        if (patientId == 0) return;
+        (consentement, var e) = await Api.ConsentementSmsAsync(patientId);
+        erreur = e;
+    }
+
+    private async Task ConsentirAsync(bool accord) => await Executer(async () =>
+    {
+        var e = await Api.EnregistrerConsentementSmsAsync(patientId, accord);
+        if (e is not null) return e;
+        await ChargerConsentementAsync();
+        message = accord ? "Accord SMS enregistré sur la fiche du patient." : "Accord SMS retiré.";
+        await ChargerAsync(page, taille);
+        return null;
+    });
+
+    private async Task ImprimerFormulaireAsync() => await Executer(async () =>
+    {
+        var (pdf, nom, e) = await Api.FormulaireAccordSmsPdfAsync(patientId);
+        if (e is not null) return e;
+        try { Documents.OuvrirSurCePoste("Formulaires", nom ?? $"accord_sms_{patientId}.pdf", pdf!); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { return $"Formulaire non ouvert : {ex.Message}"; }
+        message = "Formulaire d’accord ouvert : imprimez-le et faites-le signer.";
+        return null;
+    });
+
+    private async Task FormulaireRecuAsync(bool recu) => await Executer(async () =>
+    {
+        var e = await Api.EnregistrerFormulaireSmsRecuAsync(patientId, recu);
+        if (e is not null) return e;
+        await ChargerConsentementAsync();
+        message = recu ? "Formulaire signé noté sur la fiche du patient." : "Réception du formulaire retirée.";
+        return null;
+    });
+
+    private async Task CreerAsync() => await Executer(async () =>
+    {
+        var (_, e) = await Api.CreerDemandePatientAsync(new NouvelleDemandePatientRequete(patientId, produit!.Id, quantite));
+        if (e is not null) return e;
+        message = $"Demande notée : {produit.NomCommercial}.";
+        await RafraichirAsync();
+        return null;
+    });
+
+    private async Task PrevenirAsync(DemandePatientDto d, bool parSms) => await Executer(async () =>
+    {
+        var (_, e) = await Api.PrevenirPatientAsync(d.Id, parSms);
+        if (e is not null) { await ChargerAsync(page, taille); return e; }
+        message = parSms ? "SMS envoyé au patient." : "Patient noté comme prévenu.";
+        await RafraichirAsync();
+        return null;
+    });
+
+    private async Task CloturerAsync(DemandePatientDto d, bool servie) => await Executer(async () =>
+    {
+        var e = await Api.CloturerDemandePatientAsync(d.Id, servie);
+        if (e is not null) return e;
+        message = servie ? "Demande servie." : "Demande annulée.";
+        await RafraichirAsync();
+        return null;
+    });
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

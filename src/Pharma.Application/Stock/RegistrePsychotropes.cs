@@ -12,7 +12,8 @@ public sealed record LigneRegistre(
     long Numero, DateTime Date, long ProduitId, string Produit, string NumeroLot, string Type,
     int? Entree, int? Sortie, int? SoldeProduit, int SoldeLot,
     string? Patient, string? Medecin, string? Ordonnance, string? Fournisseur, string? Reference,
-    string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe, long? PatientId = null);
+    string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe, long? PatientId = null,
+    int? DureeTraitementJours = null);
 
 /// <summary>
 /// Balance mensuelle des entrées et sorties d'un produit (arrêté du 23 août 1999, art. 4). SoldeReporte : solde d'ouverture du
@@ -23,8 +24,12 @@ public sealed record BalanceMensuelle(long ProduitId, string Produit, int Annee,
 public sealed record ProduitRegistre(long Id, string Nom);
 
 /// <summary>Registre complet d'une période (exports PDF et CSV : un an au plus).</summary>
+/// <param name="Filtres">Filtres d'un export d'inspection (patient, prescripteur), imprimés en tête.</param>
+/// <param name="Annulations">Écritures annulées (lot 8), par numéro d'ordre : jamais modifiées, marquées « annulée » avec le motif.</param>
+/// <param name="Sceau">Sceau de la période (lot 8) : sceaux mensuels du journal chaîné et état de la chaîne.</param>
 public sealed record Registre(DateOnly Du, DateOnly Au, string? Produit, IReadOnlyList<LigneRegistre> Lignes,
-    IReadOnlyList<BalanceMensuelle> Balance, bool NomsMasques);
+    IReadOnlyList<BalanceMensuelle> Balance, bool NomsMasques, string? Filtres = null,
+    IReadOnlyDictionary<long, Psychotropes.AnnulationEcriture>? Annulations = null, string? Sceau = null);
 
 /// <summary>En-tête de l'écran du registre : nombre d'inscriptions et balance mensuelle de la période, calculés par la base (période sans limite).</summary>
 public sealed record SyntheseRegistre(DateOnly Du, DateOnly Au, string? Produit, int Inscriptions, IReadOnlyList<BalanceMensuelle> Balance, bool NomsMasques);
@@ -63,17 +68,25 @@ public sealed class ConsulterRegistre(IRegistrePsychotropes registre, IPermissio
     public const int JoursMaxExport = 366;
 
     /// <summary>Registre complet de la période, pour les exports : un an au plus.</summary>
+    /// <param name="patientId">Export d'inspection (lot 8) : lignes de ce patient seulement.</param>
+    /// <param name="prescripteur">Export d'inspection (lot 8) : lignes dont le médecin contient ce texte.</param>
     public async Task<Registre> ExecuterAsync(long utilisateurId, long? produitId, DateOnly? du, DateOnly? au, DateOnly aujourdhui,
-        CancellationToken ct = default)
+        CancellationToken ct = default, long? patientId = null, string? prescripteur = null)
     {
         var (debut, fin) = await PeriodeAsync(utilisateurId, du, au, aujourdhui, ct);
         if (fin.DayNumber - debut.DayNumber >= JoursMaxExport)
             throw new RegleMetierException("Export limité à un an par fichier : choisissez une période plus courte (un fichier par année).");
 
         var lignes = await registre.LireAsync(produitId, debut, fin, ct);
+        // Filtres avant le masquage des noms (l'identifiant du patient est retiré hors titulaire)
+        if (patientId is { } pid) lignes = lignes.Where(l => l.PatientId == pid).ToList();
+        if (!string.IsNullOrWhiteSpace(prescripteur))
+            lignes = lignes.Where(l => l.Medecin?.Contains(prescripteur.Trim(), StringComparison.CurrentCultureIgnoreCase) == true).ToList();
         var masquer = !await droits.EstTitulaireAsync(utilisateurId, ct);
         if (masquer) lignes = lignes.Select(Masquer).ToList();
-        return new Registre(debut, fin, await NomProduitAsync(produitId, lignes, ct), lignes, Balance(lignes), masquer);
+        // Extrait par patient ou prescripteur : pas de balance (elle ne vaut que pour toutes les lignes du produit)
+        var extrait = patientId is not null || !string.IsNullOrWhiteSpace(prescripteur);
+        return new Registre(debut, fin, await NomProduitAsync(produitId, lignes, ct), lignes, extrait ? [] : Balance(lignes), masquer);
     }
 
     /// <summary>En-tête de l'écran : nombre d'inscriptions et balance mensuelle, sur une période sans limite.</summary>
@@ -149,19 +162,35 @@ public sealed class ListerProduitsRegistre(IRegistrePsychotropes registre, IPerm
     }
 }
 
-/// <summary>Export du registre consulté : PDF (à imprimer et signer) ou CSV pour Excel.</summary>
-public sealed class ExporterRegistre(ConsulterRegistre consulter, IDocumentsRegistre documents, Administration.IPharmacie pharmacie)
+/// <summary>
+/// Export du registre consulté : PDF (à imprimer et signer), Excel (.xlsx) ou CSV. Export d'inspection (lot 8) : filtres patient et
+/// prescripteur en plus du produit et de la période, écritures annulées marquées, sceau de la période (journal chaîné).
+/// </summary>
+public sealed class ExporterRegistre(ConsulterRegistre consulter, IDocumentsRegistre documents, Administration.IPharmacie pharmacie,
+    Psychotropes.IRegistreRenforceDepot? renforce = null, Integrite.IIntegriteDepot? integrite = null)
 {
+    public const string TypeXlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
     public async Task<(byte[] Contenu, string NomFichier, string Type)> ExecuterAsync(string format, long utilisateurId, long? produitId,
-        DateOnly? du, DateOnly? au, DateOnly aujourdhui, CancellationToken ct = default)
+        DateOnly? du, DateOnly? au, DateOnly aujourdhui, CancellationToken ct = default, long? patientId = null, string? prescripteur = null)
     {
-        var r = await consulter.ExecuterAsync(utilisateurId, produitId, du, au, aujourdhui, ct);
+        if (format is not ("pdf" or "csv" or "xlsx")) throw new RegleMetierException("Format d'export inconnu : pdf, xlsx ou csv.");
+        var r = await consulter.ExecuterAsync(utilisateurId, produitId, du, au, aujourdhui, ct, patientId, prescripteur);
+        var filtres = new List<string>();
+        if (patientId is not null) filtres.Add("patient : " + (r.Lignes.FirstOrDefault()?.Patient ?? "aucune ligne"));
+        if (!string.IsNullOrWhiteSpace(prescripteur)) filtres.Add($"prescripteur : {prescripteur.Trim()}");
+        r = r with
+        {
+            Filtres = filtres.Count == 0 ? null : string.Join(" · ", filtres),
+            Annulations = renforce is null ? null : await renforce.AnnulationsAsync(r.Lignes.Select(l => l.Numero).ToList(), ct),
+            Sceau = integrite is null ? null : await Psychotropes.ScellerRegistreMensuel.TexteSceauAsync(integrite, r.Du, r.Au, ct)
+        };
         var nom = $"registre_psychotropes_{r.Du:yyyyMMdd}_{r.Au:yyyyMMdd}";
         return format switch
         {
             "pdf" => (documents.RegistrePsychotropes(r, (await pharmacie.LireAsync(ct)).Nom), nom + ".pdf", "application/pdf"),
-            "csv" => (RegistreCsv.Ecrire(r), nom + ".csv", "text/csv"),
-            _ => throw new RegleMetierException("Format d'export inconnu : pdf ou csv.")
+            "xlsx" => (RegistreCsv.Xlsx(r), nom + ".xlsx", TypeXlsx),
+            _ => (RegistreCsv.Ecrire(r), nom + ".csv", "text/csv")
         };
     }
 }
@@ -185,22 +214,58 @@ public static class RegistreCsv
         _ => type
     };
 
+    private static readonly string[] Titres =
+    [
+        "N° d'ordre", "Date", "Produit", "Lot", "Opération", "Entrée", "Sortie", "Solde produit", "Solde lot",
+        "Patient", "Médecin", "N° ordonnance", "Grossiste", "Référence", "Porteur", "Adresse du porteur", "Pièce d'identité", "Employé",
+        "Annulation", "Durée du traitement (jours)"
+    ];
+
+    /// <summary>« Annulée le … par … : motif » (écriture d'annulation, lot 8), ou null.</summary>
+    public static string? Annulation(Registre r, long numero) =>
+        r.Annulations?.GetValueOrDefault(numero) is { } a
+            ? $"Annulée le {a.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr)} par {a.Employe} : {a.Motif}" : null;
+
+    private static object?[] Cellules(Registre r, LigneRegistre l) =>
+    [
+        l.Numero, l.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr), l.Produit, l.NumeroLot, Libelle(l.Type), l.Entree, l.Sortie,
+        l.SoldeProduit, l.SoldeLot, l.Patient, l.Medecin, l.Ordonnance, l.Fournisseur, l.Reference,
+        l.PorteurNom, l.PorteurAdresse, l.PorteurPiece, l.Employe, Annulation(r, l.Numero), l.DureeTraitementJours
+    ];
+
+    private static string Entete(Registre r) =>
+        $"du {r.Du:dd/MM/yyyy} au {r.Au:dd/MM/yyyy} · {r.Produit ?? "tous les produits"}{(r.Filtres is { } f ? " · " + f : "")}";
+
     public static byte[] Ecrire(Registre r)
     {
         var sb = new StringBuilder();
         void L(params object?[] champs) => sb.AppendLine(string.Join(';', champs.Select(Champ)));
-        L("Registre des psychotropes et stupéfiants", $"du {r.Du:dd/MM/yyyy} au {r.Au:dd/MM/yyyy}", r.Produit ?? "tous les produits");
+        L("Registre des psychotropes et stupéfiants", Entete(r));
+        if (r.Sceau is not null) L(r.Sceau);
         L();
-        L("N° d'ordre", "Date", "Produit", "Lot", "Opération", "Entrée", "Sortie", "Solde produit", "Solde lot",
-          "Patient", "Médecin", "N° ordonnance", "Grossiste", "Référence", "Porteur", "Adresse du porteur", "Pièce d'identité", "Employé");
-        foreach (var l in r.Lignes)
-            L(l.Numero, l.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Fr), l.Produit, l.NumeroLot, Libelle(l.Type), l.Entree, l.Sortie,
-              l.SoldeProduit, l.SoldeLot, l.Patient, l.Medecin, l.Ordonnance, l.Fournisseur, l.Reference,
-              l.PorteurNom, l.PorteurAdresse, l.PorteurPiece, l.Employe);
+        L(Titres);
+        foreach (var l in r.Lignes) L(Cellules(r, l));
         L();
         L("Balance mensuelle", "Mois", "Solde reporté", "Entrées", "Sorties", "Solde fin de mois");
         foreach (var b in r.Balance) L(b.Produit, $"{b.Mois:00}/{b.Annee}", b.SoldeReporte == 0 ? null : b.SoldeReporte, b.Entrees, b.Sorties, b.SoldeFin);
         return [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(sb.ToString())];
+    }
+
+    /// <summary>Classeur Excel : feuilles « Registre », « Balance », « Sceau » (lot 8).</summary>
+    public static byte[] Xlsx(Registre r)
+    {
+        var registre = new List<IReadOnlyList<object?>> { Titres };
+        registre.AddRange(r.Lignes.Select(l => (IReadOnlyList<object?>)Cellules(r, l)));
+        var balance = new List<IReadOnlyList<object?>> { new object?[] { "Produit", "Mois", "Solde reporté", "Entrées", "Sorties", "Solde fin de mois" } };
+        balance.AddRange(r.Balance.Select(b => (IReadOnlyList<object?>)new object?[]
+            { b.Produit, $"{b.Mois:00}/{b.Annee}", b.SoldeReporte == 0 ? null : b.SoldeReporte, b.Entrees, b.Sorties, b.SoldeFin }));
+        var sceau = new List<IReadOnlyList<object?>>
+        {
+            new object?[] { "Registre des psychotropes et stupéfiants" }, new object?[] { Entete(r) },
+            new object?[] { r.Sceau ?? "Sceau non disponible" },
+            new object?[] { r.NomsMasques ? "Noms des patients et porteurs abrégés (édition hors titulaire)" : null }
+        };
+        return Psychotropes.ClasseurXlsx.Ecrire([new("Registre", registre), new("Balance", balance), new("Sceau", sceau)]);
     }
 
     private static string Champ(object? v)

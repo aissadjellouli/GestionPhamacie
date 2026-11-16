@@ -12,14 +12,15 @@ public sealed record ParametresCaisse(bool ComptageAveugle, decimal FondCaisseDe
     decimal SeuilEcartChifa = Pharma.Domain.Ventes.EcartPrixChifa.SeuilParDefaut, decimal SeuilSortieTiroir = 2000,
     int DelaiVoletChifaJours = RapprocherVoletChifa.DelaiParDefaut, int JoursAlerteFinDroit = 30,
     int DelaiDepotChifaJours = Pharma.Domain.Ventes.RegleBordereau.DelaiDepotParDefaut,
-    int DelaiPaiementBordereauJours = Pharma.Domain.Ventes.RegleBordereau.DelaiPaiementParDefaut);
+    int DelaiPaiementBordereauJours = Pharma.Domain.Ventes.RegleBordereau.DelaiPaiementParDefaut,
+    bool ExigerProduitsRepriseHistorique = true);
 
 /// <summary>Données d'une session pour l'écran et le rapport.</summary>
 public sealed record DetailSession(
     long Id, long UtilisateurId, string Employe, string Poste, DateTime OuverteLe, decimal FondCaisse,
     DateTime? FermeeLe, decimal? VentesEspeces, decimal? Attendu, decimal? Compte, decimal? Ecart,
     int NombreVentes, decimal TotalVentes, IReadOnlyList<LigneComptage> Comptage, IReadOnlyList<string>? Vendeurs = null, bool Releve = false,
-    IReadOnlyList<LigneTiroir>? LignesTiroir = null, decimal AvoirsUtilises = 0)
+    IReadOnlyList<LigneTiroir>? LignesTiroir = null, decimal AvoirsUtilises = 0, string? SceauFiscal = null)
 {
     /// <summary>Titre du rapport PDF : une relève laisse la caisse ouverte (une nouvelle session la suit), ce n'est pas une clôture.</summary>
     public string TitreRapport => Releve ? "Rapport de relève de caisse" : "Rapport de clôture de caisse";
@@ -104,7 +105,7 @@ public sealed record ClotureVue(
     decimal? Ecart, bool? AuDelaDuSeuil, decimal? SeuilEcart, IReadOnlyList<LigneTiroir>? LignesTiroir = null);
 
 public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionService droits, IJournal journal, Notifications.IAlertesTitulaire? alertes = null,
-    ITraceErreurs? trace = null)
+    ITraceErreurs? trace = null, Fiscal.ScellerClotureCaisse? scellerFiscal = null)
 {
     /// <summary>Message (et champ) du refus d'une clôture à 0 DA compté sans confirmation explicite.</summary>
     public const string ConfirmationZero = "Vous clôturez avec 0 DA compté : confirmez.";
@@ -124,6 +125,17 @@ public sealed class CloturerSessionCaisse(ISessionsCaisse sessions, IPermissionS
         var resultat = session.Cloturer(comptage, await sessions.VentesEspecesAsync(session.Id, ct), parametres.SeuilEcart);
 
         await sessions.CloturerAsync(session.Id, comptage, resultat, ct);
+        // Clôture journalière scellée (lot 3) : sceau du journal des ventes, rapport archivé. Un échec ne défait pas la clôture :
+        // la tâche planifiée rattrape les sessions non scellées
+        if (scellerFiscal is not null)
+            try
+            {
+                await scellerFiscal.ExecuterAsync(session.Id, utilisateurId, ct);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                trace?.Erreur($"Sceau de la clôture de caisse {session.Id} impossible (rattrapé par la tâche planifiée)", e);
+            }
         // Tout écart non nul est inscrit au journal des actions (notifié dans le logiciel), au nom de celui qui clôture (ou fait la relève) ;
         // au-delà du seuil, il est marqué
         if (resultat.Ecart != 0)
@@ -182,7 +194,8 @@ public interface IDocumentsPdf
 }
 
 /// <summary>Rapport PDF d'une session : la sienne, ou n'importe laquelle avec le droit de voir les écarts.</summary>
-public sealed class ObtenirRapportCloture(ISessionsCaisse sessions, IPermissionService droits, IDocumentsPdf pdf, Administration.IPharmacie pharmacie)
+public sealed class ObtenirRapportCloture(ISessionsCaisse sessions, IPermissionService droits, IDocumentsPdf pdf, Administration.IPharmacie pharmacie,
+    Fiscal.IJournalFiscalDepot? fiscal = null, Integrite.IIntegriteDepot? integrite = null)
 {
     public async Task<(byte[] Contenu, string NomFichier)?> ExecuterAsync(long sessionId, long utilisateurId, CancellationToken ct = default)
     {
@@ -196,6 +209,9 @@ public sealed class ObtenirRapportCloture(ISessionsCaisse sessions, IPermissionS
         detail = detail with { Vendeurs = vendeurs.Select(v => v.Nom).ToList(), LignesTiroir = await sessions.LignesTiroirAsync(sessionId, ct) };
         if (detail.FermeeLe is null)
             throw new RegleMetierException("La session n’est pas encore clôturée.");
+        // Sceau de la clôture journalière (lot 3), imprimé sur le rapport
+        if (fiscal is not null && integrite is not null && await fiscal.ClotureSessionAsync(sessionId, ct) is { } scellee)
+            detail = detail with { SceauFiscal = Fiscal.TexteSceau.Pour(scellee, (await integrite.ParametresAsync(ct)).FormatExportSceau) };
         var parametres = await sessions.ParametresAsync(ct);
         var nomPharmacie = (await pharmacie.LireAsync(ct)).Nom;
         var contenu = pdf.RapportCloture(detail, voirEcart, parametres.SeuilEcart, nomPharmacie);

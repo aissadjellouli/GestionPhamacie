@@ -9,9 +9,15 @@
     </div>
     @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
     @if (message is not null) { <div class="succes" role="status">@message</div> }
-    <div class="champ" style="max-width: 420px">
-        <label for="md-recherche">Rechercher un médecin (2 lettres au moins)</label>
-        <input id="md-recherche" type="search" autocomplete="off" @bind="recherche" @bind:event="oninput" @bind:after="ChercherAsync" />
+    <div style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap">
+        <div class="champ" style="max-width: 420px">
+            <label for="md-recherche">@(sansWilaya ? "Filtrer par nom (facultatif)" : "Rechercher un médecin (2 lettres au moins)")</label>
+            <input id="md-recherche" type="search" autocomplete="off" @bind="recherche" @bind:event="oninput" @bind:after="ChercherAsync" />
+        </div>
+        @* Filtre « wilaya à renseigner » (2026-11-16) : 50 médecins au plus, par nom *@
+        <label class="case" title="Médecins dont la wilaya n’est pas renseignée : le contrôle « hors zone » des psychotropes est impossible pour eux">
+            <input type="checkbox" @bind="sansWilaya" @bind:after="ChercherAsync" /> Sans wilaya (à renseigner)
+        </label>
     </div>
     @if (edition is { } e)
     {
@@ -23,6 +29,11 @@
             <input type="text" aria-label="Adresse" data-champ="adresse_medecin" placeholder="Adresse" maxlength="300" @bind="e.Adresse" />
             <input type="text" aria-label="N° d’inscription à l’Ordre" data-champ="numero_ordre" placeholder="N° d’ordre" maxlength="30" @bind="e.NumeroOrdre" />
             <input type="text" aria-label="Code CNAS (Chifa)" data-champ="code_cnas" placeholder="Code CNAS" maxlength="30" @bind="e.CodeCnas" />
+            <select aria-label="Wilaya d’exercice" data-champ="wilaya_medecin" @bind="e.Wilaya"
+                    title="@(string.IsNullOrEmpty(e.Wilaya) ? "Wilaya à renseigner : sans elle, pas de contrôle « hors zone » des psychotropes" : null)">
+                <option value="">Wilaya (à renseigner)</option>
+                @foreach (var w in wilayas) { <option value="@w.Code">@w.Code - @w.Nom</option> }
+            </select>
             <div class="actions">
                 <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
                 <button type="button" class="btn" @onclick="() => edition = null">Annuler</button>
@@ -34,7 +45,7 @@
         @* Résultats bornés par le serveur (20 au plus, recherche par nom) : pas de pagination *@
         <div class="tableau-cadre">
             <table class="tableau" style="min-width: 0">
-                <thead><tr><th scope="col">Nom</th><th scope="col">Spécialité</th><th scope="col">Téléphone</th><th scope="col">N° d’ordre</th><th scope="col">Code CNAS</th>
+                <thead><tr><th scope="col">Nom</th><th scope="col">Spécialité</th><th scope="col">Téléphone</th><th scope="col">N° d’ordre</th><th scope="col">Code CNAS</th><th scope="col">Wilaya</th>
                     <th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
                 <tbody>
                     @foreach (var m in medecins)
@@ -45,6 +56,14 @@
                             <td>@(m.Telephone ?? "—")</td>
                             <td>@(m.NumeroOrdre ?? "—")</td>
                             <td>@(m.CodeCnas ?? "—")</td>
+                            @if (m.Wilaya is null)
+                            {
+                                <td><span class="detail" title="Wilaya à renseigner : sans elle, pas de contrôle « hors zone » des psychotropes">à renseigner</span></td>
+                            }
+                            else
+                            {
+                                <td title="@NomWilaya(m.Wilaya)">@m.Wilaya</td>
+                            }
                             <td><button type="button" class="lien-bouton" @onclick="() => Editer(m)">Modifier</button></td>
                         </tr>
                     }
@@ -65,22 +84,34 @@
         public string? Adresse { get; set; }
         public string? NumeroOrdre { get; set; }
         public string? CodeCnas { get; set; }
+        public string? Wilaya { get; set; }
     }
 
     private string recherche = "";
     private List<MedecinDto> medecins = [];
+    private List<WilayaDto> wilayas = [];
     private Edition? edition;
     private string? erreur, message;
-    private bool enCours;
+    private bool enCours, sansWilaya;
+
+    protected override async Task OnInitializedAsync()
+    {
+        string? err;
+        (wilayas, err) = await Api.WilayasAsync();
+        erreur ??= err;
+    }
+
+    private string? NomWilaya(string code) => wilayas.FirstOrDefault(w => w.Code == code)?.Nom;
 
     private void Editer(MedecinDto m) => (edition, erreur, message) = (new Edition
     {
         Id = m.Id, Nom = m.Nom, Specialite = m.Specialite, Telephone = m.Telephone, Email = m.Email, Adresse = m.Adresse,
-        NumeroOrdre = m.NumeroOrdre, CodeCnas = m.CodeCnas
+        NumeroOrdre = m.NumeroOrdre, CodeCnas = m.CodeCnas, Wilaya = m.Wilaya
     }, null, null);
 
     private async Task ChercherAsync()
     {
+        if (sansWilaya) { (medecins, erreur) = await Api.MedecinsSansWilayaAsync(recherche.Trim()); return; }
         if (recherche.Trim().Length < 2) { medecins = []; return; }
         (medecins, erreur) = await Api.RechercherMedecinsAsync(recherche.Trim());
     }
@@ -91,7 +122,8 @@
         (enCours, erreur, message) = (true, null, null);
         try
         {
-            var err = await Api.ModifierMedecinAsync(e.Id, new NouveauMedecinDto(e.Nom, e.Specialite, e.Telephone, e.Adresse, e.Email, e.NumeroOrdre, e.CodeCnas));
+            var err = await Api.ModifierMedecinAsync(e.Id, new NouveauMedecinDto(e.Nom, e.Specialite, e.Telephone, e.Adresse, e.Email, e.NumeroOrdre, e.CodeCnas,
+                string.IsNullOrEmpty(e.Wilaya) ? null : e.Wilaya));
             if (err is not null) { erreur = err; return; }
             message = $"Médecin « {e.Nom.Trim()} » enregistré.";
             edition = null;

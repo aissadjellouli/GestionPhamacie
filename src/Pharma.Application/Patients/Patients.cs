@@ -116,12 +116,13 @@ public static class FamillePatient
 }
 
 /// <summary>Médecin prescripteur ; coordonnées facultatives (script 082).</summary>
+/// <remarks>Wilaya : code de wilaya d'exercice (01 à 58, script 118), facultatif.</remarks>
 public sealed record Medecin(long Id, string Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
-    string? NumeroOrdre = null, string? CodeCnas = null);
+    string? NumeroOrdre = null, string? CodeCnas = null, string? Wilaya = null);
 
 /// <summary>Saisie d'un médecin (création ou correction) : le nom seul est obligatoire.</summary>
 public sealed record SaisieMedecin(string? Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
-    string? NumeroOrdre = null, string? CodeCnas = null)
+    string? NumeroOrdre = null, string? CodeCnas = null, string? Wilaya = null)
 {
     public const int AdresseMax = 300, NumeroOrdreMax = 30, TexteMax = 120;
 
@@ -139,7 +140,8 @@ public sealed record SaisieMedecin(string? Nom, string? Specialite, string? Tele
         if (ordre?.Length > NumeroOrdreMax) throw new RegleMetierException($"N° d’ordre : {NumeroOrdreMax} caractères au plus.", "numero_ordre");
         var cnas = Net(CodeCnas);
         if (cnas?.Length > NumeroOrdreMax) throw new RegleMetierException($"Code CNAS : {NumeroOrdreMax} caractères au plus.", "code_cnas");
-        return new Medecin(id, nom, specialite, Contacts.RegleContact.Telephone(Telephone), adresse, Contacts.RegleContact.Email(Email), ordre, cnas);
+        return new Medecin(id, nom, specialite, Contacts.RegleContact.Telephone(Telephone), adresse, Contacts.RegleContact.Email(Email), ordre, cnas,
+            Psychotropes.RegleWilaya.Normaliser(Wilaya, "wilaya_medecin"));
     }
 
     private static string? Net(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
@@ -247,6 +249,9 @@ public sealed class LireFichePatient(IPatients patients)
 public interface IMedecins
 {
     Task<IReadOnlyList<Medecin>> RechercherAsync(string texte, int limite, CancellationToken ct = default);
+    /// <summary>Médecins sans wilaya (à renseigner), filtrés par nom si <paramref name="texte"/> est donné (script 118).</summary>
+    Task<IReadOnlyList<Medecin>> SansWilayaAsync(string? texte, int limite, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<Medecin>>([]);
     /// <summary>Crée le médecin (son Id est ignoré) et renvoie son identifiant.</summary>
     Task<long> CreerAsync(Medecin medecin, CancellationToken ct = default);
     /// <summary>Remplace le nom, la spécialité et les coordonnées ; faux si le médecin n'existe pas.</summary>
@@ -322,6 +327,12 @@ public sealed class RechercherMedecins(IMedecins medecins)
         var t = texte?.Trim() ?? "";
         return t.Length < 2 ? Task.FromResult<IReadOnlyList<Medecin>>([]) : medecins.RechercherAsync(t, 20, ct);
     }
+
+    /// <summary>Filtre « sans wilaya » de l'écran des médecins : 50 au plus, par nom.</summary>
+    public const int LimiteSansWilaya = 50;
+
+    public Task<IReadOnlyList<Medecin>> SansWilayaAsync(string? texte, CancellationToken ct = default) =>
+        medecins.SansWilayaAsync(string.IsNullOrWhiteSpace(texte) ? null : texte.Trim(), LimiteSansWilaya, ct);
 }
 
 /// <summary>
@@ -338,7 +349,7 @@ public sealed class ModifierMedecin(IMedecins medecins, Commun.IJournal journal)
             new Dictionary<string, object?>
             {
                 ["nom"] = m.Nom, ["specialite"] = m.Specialite, ["telephone"] = m.Telephone, ["adresse"] = m.Adresse,
-                ["email"] = m.Email, ["numero_ordre"] = m.NumeroOrdre, ["code_prestataire"] = m.CodeCnas
+                ["email"] = m.Email, ["numero_ordre"] = m.NumeroOrdre, ["code_prestataire"] = m.CodeCnas, ["wilaya"] = m.Wilaya
             }, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);
     }
 }

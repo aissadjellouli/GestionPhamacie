@@ -49,6 +49,37 @@
             }
         }
 
+        @if (rubrique == "secours" && secours is not null)
+        {
+        @* PC de secours (2026-11-16) : seconde copie vérifiée de chaque sauvegarde réussie, gardée dans l'officine, non chiffrée *@
+        @if (secours.EnRetard)
+        {
+            <div class="bandeau-attention" role="status">La dernière copie de secours a plus de @secours.AlerteHeures h : vérifiez le second emplacement. Le titulaire est prévenu.</div>
+        }
+        <section class="panneau" aria-labelledby="t-secours">
+            <h2 id="t-secours">Copie de secours (PC de secours, clé USB, autre disque)</h2>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 2 1 320px"><label for="s-secours">Second emplacement</label>
+                    <input id="s-secours" data-champ="dossier_secours" type="text" placeholder="ex. F:\CopieSecours ou \\PC-SECOURS\Sauvegardes" @bind="dossierSecours" @bind:event="oninput" /></div>
+                <div class="champ" style="flex: 0 0 240px"><label for="s-alerte">Alerte si la dernière copie a plus de (heures)</label>
+                    <input id="s-alerte" data-champ="alerte_heures" type="number" min="1" max="720" @bind="alerteHeures" /></div>
+            </div>
+            <p class="detail" style="margin: 0">Après chaque sauvegarde réussie, le fichier est copié à cet emplacement, puis vérifié (taille et empreinte SHA-256) ; vide : pas de copie de secours. Les copies restent dans l’officine.</p>
+            <p class="detail" style="margin: 0">Dernière copie : @(secours.DerniereCopie is { } dc ? $"{Libelles.DateHeureLocale(dc)} · {secours.Fichier}" : "aucune")@(secours.Sha256 is { } h ? $" · SHA-256 {h[..Math.Min(16, h.Length)]}…" : "")</p>
+            @if (secours.DernierEchec is { } de)
+            {
+                <p class="detail" style="margin: 0">Dernier échec : @Libelles.DateHeureLocale(de) · @secours.MessageEchec</p>
+            }
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerSecoursAsync">Enregistrer l’emplacement</button>
+                <button type="button" class="btn" disabled="@(enCours || secours.DerniereCopie is null)" @onclick="TesterRestaurationAsync">Tester la restauration de la dernière copie</button>
+                <span class="detail">Réservé au titulaire : restauration dans une base temporaire, vérifiée puis supprimée ; la base en service n’est pas touchée.</span>
+            </div>
+            <p class="detail" style="margin: 0">Dernier test : @(secours.DernierTest is { } dt ? $"{Libelles.DateHeureLocale(dt)} · {(secours.DernierTestReussi == true ? "réussi" : "échoué")} · {secours.MessageTest}" : "jamais")</p>
+            <p class="detail" style="margin: 0">PC serveur en panne : procédure « PC serveur en panne » de docs/mise-en-production.md (script scripts\basculer-pc-secours.ps1 sur le PC de secours).</p>
+        </section>
+        }
+
         @if (rubrique == "journal")
         {
         @* Journal complet, filtré et paginé par le serveur (règle des listes) *@
@@ -154,7 +185,38 @@
         (baseSauvegardee, serveurBase) = (etat.Base, etat.Serveur);
         journalAJour = false;
         await ChargerJournalSiAfficheAsync();   // journal complet, par page (et non les 30 dernières)
+        await ChargerSecoursAsync();
     }
+
+    // ---- Copie de secours ----
+    private CopieSecoursDto? secours;
+    private string? dossierSecours;
+    private int alerteHeures = 26;
+
+    private async Task ChargerSecoursAsync()
+    {
+        var (c, e) = await Api.CopieSecoursAsync();
+        if (c is null) { erreur ??= e; return; }
+        (secours, dossierSecours, alerteHeures) = (c, c.Dossier, c.AlerteHeures);
+    }
+
+    private Task EnregistrerSecoursAsync() => Executer(async () =>
+    {
+        var e = await Api.ModifierCopieSecoursAsync(new ReglagesCopieSecoursDto(dossierSecours, alerteHeures));
+        if (e is not null) return e;
+        message = string.IsNullOrWhiteSpace(dossierSecours) ? "Copie de secours désactivée." : "Second emplacement enregistré : la prochaine sauvegarde y sera copiée.";
+        await ChargerSecoursAsync();
+        return null;
+    });
+
+    private Task TesterRestaurationAsync() => Executer(async () =>
+    {
+        var (res, e) = await Api.TesterRestaurationCopieAsync();
+        if (e is not null) return e;
+        await ChargerSecoursAsync();
+        if (res!.Reussi) { message = res.Message; return null; }
+        return res.Message;
+    });
 
     // Dossier obligatoire pour activer la sauvegarde automatique ou sauvegarder maintenant : en rouge s'il manque
     private bool controleEnregistrer, controleLancer;

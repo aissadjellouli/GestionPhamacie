@@ -144,6 +144,22 @@
         </section>
         }
 
+        @if (rubrique == "serveur")
+        {
+        <section class="panneau" aria-labelledby="t-serveur">
+            <h2 id="t-serveur">Serveur et PC de secours (ce poste)</h2>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 1 1 300px"><label for="p-api">Adresse de l’API utilisée par ce poste</label>
+                    <input id="p-api" data-champ="adresse_api" type="text" placeholder="vide : variable PHARMA_API ou ce PC" @bind="v.AdresseApi" @bind:event="oninput" /></div>
+                <div class="champ" style="flex: 1 1 300px"><label for="p-secours">Adresse de l’API du PC de secours</label>
+                    <input id="p-secours" data-champ="adresse_api_secours" type="text" placeholder="ex. http://192.168.1.20:5080/" @bind="v.AdresseApiSecours" @bind:event="oninput" /></div>
+                <div class="champ" style="flex: 0 0 220px"><label for="p-delai">Bandeau après (secondes)</label>
+                    <input id="p-delai" type="number" min="10" max="3600" placeholder="60" @bind="v.DelaiServeurInjoignableSecondes" /></div>
+            </div>
+            <p class="detail" style="margin: 0">Adresse actuelle : @Api.AdresseServeur. Un changement d’adresse est pris au prochain démarrage du poste. Serveur injoignable trop longtemps : bandeau avec la consigne et le bouton de bascule sur le PC de secours.</p>
+        </section>
+        }
+
         @if (rubrique == "etiquettes")
         {
         <section class="panneau" aria-labelledby="t-plus">
@@ -177,7 +193,8 @@
         {
             ImprimanteTickets = a.ImprimanteTickets, LargeurTicketMm = a.LargeurTicketMm,
             TicketAutomatique = a.TicketAutomatique, ImprimanteEtiquettes = a.ImprimanteEtiquettes,
-            Afficheur = a.Afficheur, PortAfficheur = a.PortAfficheur, ProtocoleAfficheur = a.ProtocoleAfficheur ?? "epson"
+            Afficheur = a.Afficheur, PortAfficheur = a.PortAfficheur, ProtocoleAfficheur = a.ProtocoleAfficheur ?? "epson",
+            AdresseApi = a.AdresseApi, AdresseApiSecours = a.AdresseApiSecours, DelaiServeurInjoignableSecondes = a.DelaiServeurInjoignableSecondes
         };
         (ecranClient, vitesse) = (a.EcranClient ?? 0, a.VitesseAfficheur ?? 9600);
         ecrans = AfficheurClient.Ecrans();
@@ -212,7 +229,10 @@
         EcranClient = ecranClient > 0 ? ecranClient : null,
         PortAfficheur = string.IsNullOrWhiteSpace(v.PortAfficheur) ? null : v.PortAfficheur,
         VitesseAfficheur = vitesse,
-        ProtocoleAfficheur = v.ProtocoleAfficheur ?? "epson"
+        ProtocoleAfficheur = v.ProtocoleAfficheur ?? "epson",
+        AdresseApi = string.IsNullOrWhiteSpace(v.AdresseApi) ? null : v.AdresseApi.Trim(),
+        AdresseApiSecours = string.IsNullOrWhiteSpace(v.AdresseApiSecours) ? null : v.AdresseApiSecours.Trim(),
+        DelaiServeurInjoignableSecondes = v.DelaiServeurInjoignableSecondes is { } s ? Math.Clamp(s, 10, 3600) : null
     };
 
     private void Enregistrer()
@@ -223,6 +243,8 @@
             erreur = Api.SignalerChamp("ip_etiquettes", "Adresse IP de l’imprimante d’étiquettes invalide (ex. 192.168.1.50).");
             return;
         }
+        foreach (var (champ, adresse) in new[] { ("adresse_api", v.AdresseApi), ("adresse_api_secours", v.AdresseApiSecours) })
+            if (ReglagesPoste.ControlerAdresse(adresse) is { } invalide) { erreur = Api.SignalerChamp(champ, invalide); return; }
         erreur = Reglages.Enregistrer(Saisie());
         if (erreur is null) { message = "Réglages du poste enregistrés."; Afficheur.Reappliquer(); }
     }

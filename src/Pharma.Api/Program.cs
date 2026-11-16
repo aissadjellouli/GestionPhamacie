@@ -40,6 +40,15 @@ var ged = new Pharma.Application.Ged.ReglagesGed(
     builder.Configuration.GetValue("Ged:RetentionSauvegardesJours", 7));
 var dossierOrdonnances = builder.Configuration["Ordonnances:Dossier"] is { Length: > 0 } o ? o : ged.Dossier(Pharma.Application.Ged.TypesGed.Ordonnances);
 var dossierChifa = builder.Configuration["Chifa:DossierExport"] is { Length: > 0 } c ? c : ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa);
+// 2e serveur (script 122) : rôle de la base de ce serveur, dossiers propres à ce serveur (Chifa, MDN : sa ligne de serveur_officine
+// l'emporte sur appsettings), autre serveur de l'officine (SecondServeur:AutreServeur) pour ne jamais avoir deux API qui écrivent
+var demarrage = await Pharma.Infrastructure.SecondServeur.DemarrageServeur.LireAsync(
+    builder.Configuration.GetConnectionString("Pharmacie") ?? "", builder.Configuration["SecondServeur:AutreServeur"]);
+dossierChifa = Pharma.Application.SecondServeur.DossiersServeur.Choisir(demarrage.DossierChifa, dossierChifa) ?? dossierChifa;
+var ceServeur = new Pharma.Application.SecondServeur.CeServeur(Pharma.Infrastructure.SecondServeur.DemarrageServeur.NomCeServeur, dossierChifa,
+    Pharma.Application.SecondServeur.DossiersServeur.Choisir(demarrage.DossierMdn, builder.Configuration["Mdn:Dossier"]),
+    typeof(Program).Assembly.GetName().Version is { } va ? (va.Build > 0 ? $"{va.Major}.{va.Minor:00}.{va.Build}" : $"{va.Major}.{va.Minor:00}") : null);
+builder.Services.AddSingleton(ceServeur);
 // Chaque dossier à part : un dossier réglé ailleurs et introuvable (ex. Chifa sur un disque absent) n'empêche pas les autres
 foreach (var d in new[] { dossierOrdonnances, ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa), ged.Dossier(Pharma.Application.Ged.TypesGed.Sauvegardes) })
     try { Directory.CreateDirectory(d); }
@@ -63,7 +72,8 @@ builder.Services.AddInfrastructure(new InfrastructureOptions(
     dossierOrdonnances,
     builder.Configuration["Sauvegardes:PgDump"],
     ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa),
-    builder.Configuration["SuperAdmin:Fichier"]));
+    builder.Configuration["SuperAdmin:Fichier"],
+    builder.Configuration["Integrite:FichierCle"]));
 builder.Services.AddSingleton<JetonService>();
 builder.Services.AddSingleton<IGenerateurJeton>(sp => sp.GetRequiredService<JetonService>());
 // Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
@@ -77,6 +87,11 @@ builder.Services.AddHostedService<AlertesQuotidiennes>();
 builder.Services.AddHostedService<EnvoiNotifications>();
 builder.Services.AddHostedService<SauvegardesAutomatiques>();
 builder.Services.AddHostedService<SurveillancePeriodique>();
+builder.Services.AddHostedService<VerificationIntegriteNocturne>();
+builder.Services.AddHostedService<ScellementMensuelRegistre>();
+builder.Services.AddHostedService<ClotureFiscaleMensuelle>();
+builder.Services.AddHostedService<SerialisationHorsLigne>();
+builder.Services.AddHostedService<SurveillanceSecondServeur>();
 builder.Services.AddProblemDetails();
 // Limite de débit par adresse IP sur les routes de connexion (mots de passe, codes comptoir, super admin)
 builder.Services.AjouterLimiteConnexions(builder.Configuration);
@@ -102,6 +117,19 @@ var app = builder.Build();
 // Création ou modification du compte super admin sur le PC serveur : Pharma.Api.exe --super-admin (le serveur ne démarre pas)
 if (args.Contains(ConsoleSuperAdmin.Argument))
     return await ConsoleSuperAdmin.ExecuterAsync(app.Services);
+
+// Clé de scellement sur le 2e serveur : Pharma.Api.exe --importer-cle <fichier> | --empreinte-cle (le serveur ne démarre pas)
+if (ConsoleCleScellement.Concerne(args))
+    return ConsoleCleScellement.Executer(app.Services, args);
+
+// Jamais deux API qui écrivent : base en lecture seule (2e serveur en veille) ou autre serveur principal => refus, message clair
+if (Pharma.Application.SecondServeur.ReplicationOfficine.RefusDemarrage(demarrage.BaseEnRecovery, demarrage.AutreServeurPrincipal,
+        builder.Configuration["SecondServeur:AutreServeur"], demarrage.Timeline, demarrage.TimelineAutre) is { } refusServeur)
+{
+    app.Logger.LogCritical("{Refus}", refusServeur);
+    Console.Error.WriteLine(refusServeur);
+    return 2;
+}
 
 // Fuseau horaire : l'officine est en UTC+1 toute l'année (Africa/Algiers) ; la base est réglée par la migration 083
 if (ReseauSecurise.AvertissementFuseau(TimeZoneInfo.Local, DateTime.UtcNow) is { } fuseau)

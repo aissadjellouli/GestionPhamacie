@@ -180,6 +180,7 @@ public sealed class HistoriqueNavigation(NavigationManager nav, FichesContact fi
         "inventaire" => "Inventaire",
         "achats" => "Achats",
         "rapports" => "Rapports",
+        "pilotage-financier" => "Tableau de bord financier",
         "factures" => "Factures",
         "tresorerie" => "Trésorerie",
         "dettes" => "Dettes et créances",

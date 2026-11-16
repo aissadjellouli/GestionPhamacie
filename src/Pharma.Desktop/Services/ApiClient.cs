@@ -508,8 +508,60 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         GetAsync<InscriptionsRegistreDto?>($"api/registre/inscriptions?{FiltreRegistre(produit, du, au)}&page={page}&taille={taille}"
             + (string.IsNullOrEmpty(operation) ? "" : $"&operation={Uri.EscapeDataString(operation)}"), null);
 
-    public Task<(byte[]?, string?, string?)> ExporterRegistreAsync(long? produit, DateOnly du, DateOnly au, string format) =>
-        FichierAsync(HttpMethod.Get, $"api/registre/export?format={format}&{FiltreRegistre(produit, du, au)}", $"registre_psychotropes.{format}");
+    public Task<(byte[]?, string?, string?)> ExporterRegistreAsync(long? produit, DateOnly du, DateOnly au, string format,
+        long? patient = null, string? prescripteur = null) =>
+        FichierAsync(HttpMethod.Get, $"api/registre/export?format={format}&{FiltreRegistre(produit, du, au)}"
+            + (patient is { } pa ? $"&patient={pa}" : "")
+            + (string.IsNullOrWhiteSpace(prescripteur) ? "" : $"&prescripteur={Uri.EscapeDataString(prescripteur.Trim())}"),
+            $"registre_psychotropes.{format}");
+
+    // ---- Registre renforcé (lot 8) ---------------------------------------------
+
+    public async Task<string?> AnnulerEcritureRegistreAsync(long numero, string motif) =>
+        (await PostAsync<AnnulationEcritureRequete, object>($"api/registre/inscriptions/{numero}/annulation", new(motif))).Item2;
+
+    public Task<(PageDto<ForcageAlerteDto>?, string?)> ForcagesPsychotropesAsync(DateOnly du, DateOnly au, string? code, int page, int taille) =>
+        GetAsync<PageDto<ForcageAlerteDto>?>($"api/registre/forcages?du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}&page={page}&taille={taille}"
+            + (string.IsNullOrEmpty(code) ? "" : $"&code={Uri.EscapeDataString(code)}"), null);
+
+    public Task<(ControleDelivranceDto?, string?)> ControlerDelivrancePsychotropeAsync(DelivrancePsychotropeDto d) =>
+        PostAsync<DelivrancePsychotropeDto, ControleDelivranceDto>("api/psychotropes/controle", d);
+
+    public async Task<string?> ForcerAlertesPsychotropesAsync(DelivrancePsychotropeDto d, string motif) =>
+        (await PostAsync<ForcageRequete, IdentifiantDto>("api/psychotropes/forcer", new(d, motif))).Item2;
+
+    public Task<(List<RegleAlertePsychotropeDto>, string?)> ReglesAlertesPsychotropesAsync() =>
+        GetAsync<List<RegleAlertePsychotropeDto>>("api/psychotropes/regles", []);
+
+    public async Task<string?> EnregistrerReglesAlertesPsychotropesAsync(List<RegleAlertePsychotropeDto> regles) =>
+        (await EnvoyerCorpsAsync<List<RegleAlertePsychotropeDto>, object>(HttpMethod.Put, "api/psychotropes/regles", regles)).Item2;
+
+    // Zone de l'officine et référentiel des wilayas (script 118)
+    public Task<(ZoneOfficineDto?, string?)> ZoneOfficineAsync() => GetAsync<ZoneOfficineDto?>("api/psychotropes/zone", null);
+
+    public async Task<string?> EnregistrerZoneOfficineAsync(ZoneOfficineDto zone) =>
+        (await EnvoyerCorpsAsync<ZoneOfficineDto, object>(HttpMethod.Put, "api/psychotropes/zone", zone)).Item2;
+
+    public Task<(List<WilayaDto>, string?)> WilayasAsync() => GetAsync<List<WilayaDto>>("api/wilayas", []);
+
+    public Task<(List<ClasseSuivieDto>, string?)> ClassesSuiviesAsync() => GetAsync<List<ClasseSuivieDto>>("api/psychotropes/classes", []);
+
+    public Task<(List<DciClasseDto>, string?)> DciClasseAsync(string classe) =>
+        GetAsync<List<DciClasseDto>>($"api/psychotropes/classes/{Uri.EscapeDataString(classe)}/dci", []);
+
+    public Task<(List<DciClasseDto>, string?)> ChercherDciClasseAsync(string q) =>
+        GetAsync<List<DciClasseDto>>($"api/psychotropes/dci?q={Uri.EscapeDataString(q)}", []);
+
+    public async Task<string?> ModifierDciClasseAsync(string classe, long dciId, bool ajouter) =>
+        (await EnvoyerCorpsAsync<object, object>(ajouter ? HttpMethod.Put : HttpMethod.Delete,
+            $"api/psychotropes/classes/{Uri.EscapeDataString(classe)}/dci/{dciId}", new())).Item2;
+
+    public Task<(List<LigneSuiviClasseDto>, string?)> SuiviClasseAsync(string classe, DateOnly du, DateOnly au) =>
+        GetAsync<List<LigneSuiviClasseDto>>($"api/psychotropes/classes/{Uri.EscapeDataString(classe)}/suivi?du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}", []);
+
+    public Task<(byte[]?, string?, string?)> ExporterSuiviClasseAsync(string classe, DateOnly du, DateOnly au) =>
+        FichierAsync(HttpMethod.Get, $"api/psychotropes/classes/{Uri.EscapeDataString(classe)}/suivi?du={du:yyyy-MM-dd}&au={au:yyyy-MM-dd}&format=xlsx",
+            $"suivi_{classe}.xlsx");
 
     // ---- Nomenclature nationale ------------------------------------------------
 
@@ -635,6 +687,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(List<MedecinDto>, string?)> RechercherMedecinsAsync(string q) =>
         GetAsync<List<MedecinDto>>($"api/medecins?q={Uri.EscapeDataString(q)}", []);
+
+    /// <summary>Médecins sans wilaya (filtre « wilaya à renseigner »), par nom si <paramref name="q"/> est donné.</summary>
+    public Task<(List<MedecinDto>, string?)> MedecinsSansWilayaAsync(string? q) =>
+        GetAsync<List<MedecinDto>>($"api/medecins?sansWilaya=true&q={Uri.EscapeDataString(q ?? "")}", []);
 
     public Task<(IdentifiantDto?, string?)> CreerMedecinAsync(NouveauMedecinDto medecin) =>
         PostAsync<NouveauMedecinDto, IdentifiantDto>("api/medecins", medecin);
@@ -798,6 +854,37 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> ModifierReglagesSauvegardeAsync(ReglagesSauvegardeDto r) =>
         (await EnvoyerCorpsAsync<ReglagesSauvegardeDto, object>(HttpMethod.Put, "api/admin/sauvegardes/reglages", r)).Item2;
     public Task<(ResultatSauvegardeDto?, string?)> LancerSauvegardeAsync() => PostAsync<object, ResultatSauvegardeDto>("api/admin/sauvegardes/lancer", new());
+    // Copie de secours (PC de secours) ; le test de restauration est réservé au titulaire
+    public Task<(CopieSecoursDto?, string?)> CopieSecoursAsync() => GetAsync<CopieSecoursDto?>("api/admin/sauvegardes/secours", null);
+    public async Task<string?> ModifierCopieSecoursAsync(ReglagesCopieSecoursDto r) =>
+        (await EnvoyerCorpsAsync<ReglagesCopieSecoursDto, object>(HttpMethod.Put, "api/admin/sauvegardes/secours", r)).Item2;
+    public Task<(ResultatTestRestaurationDto?, string?)> TesterRestaurationCopieAsync() =>
+        PostAsync<object, ResultatTestRestaurationDto>("api/admin/sauvegardes/secours/tester", new());
+
+    // ---- 2e serveur (titulaire, script 122) ----
+    public Task<(SecondServeurDto?, string?)> SecondServeurAsync() => GetAsync<SecondServeurDto?>("api/admin/second-serveur", null);
+    public async Task<string?> ModifierServeurOfficineAsync(ModifierServeurOfficineDto d) =>
+        (await EnvoyerCorpsAsync<ModifierServeurOfficineDto, object>(HttpMethod.Put, "api/admin/second-serveur/serveurs", d)).Item2;
+    public async Task<string?> ModifierSeuilsReplicationAsync(SeuilsReplicationDto d) =>
+        (await EnvoyerCorpsAsync<SeuilsReplicationDto, object>(HttpMethod.Put, "api/admin/second-serveur/seuils", d)).Item2;
+    public Task<(FichierCleDto?, string?)> ExporterCleScellementAsync(string motDePasse, string confirmation) =>
+        PostAsync<ExportCleDto, FichierCleDto>("api/admin/second-serveur/cle/exporter", new(motDePasse, confirmation));
+
+    /// <summary>
+    /// Bascule d'un poste : l'API du 2e serveur répond-elle (donc a-t-elle été basculée : elle ne démarre pas tant que sa base est en
+    /// lecture seule) ? Port puis /api/sante, 4 secondes au plus.
+    /// </summary>
+    public static async Task<bool> ApiRepondAsync(string adresse)
+    {
+        if (!Uri.TryCreate(adresse, UriKind.Absolute, out var uri) || !await PortOuvertAsync(uri.Host, uri.Port, TimeSpan.FromSeconds(4))) return false;
+        try
+        {
+            using var client = new HttpClient { BaseAddress = uri, Timeout = TimeSpan.FromSeconds(4) };
+            using var rep = await client.GetAsync("api/sante");
+            return rep.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Security.Authentication.AuthenticationException) { return false; }
+    }
 
     /// <summary>Paramètres de pagination et filtres facultatifs d'une liste, en chaîne de requête.</summary>
     private static string Requete(params (string Nom, object? Valeur)[] parametres) =>
@@ -873,6 +960,17 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         GetAsync<List<AlerteSurveillanceDto>>($"api/surveillance?traitees={(traitees ? "true" : "false")}", []);
     public async Task<string?> TraiterSurveillanceAsync(long id, string? action) =>
         (await PostAsync<TraiterAlerteRequete, object>($"api/surveillance/{id}/traiter", new(action))).Item2;
+    // ---- Intégrité des journaux (titulaire) ----
+    public Task<(TableauIntegriteDto?, string?)> IntegriteAsync() => GetAsync<TableauIntegriteDto?>("api/surveillance/integrite", null);
+    public Task<(TableauIntegriteDto?, string?)> VerifierIntegriteAsync() => PostAsync<object, TableauIntegriteDto>("api/surveillance/integrite/verifier", new());
+    // ---- Journal fiscal des ventes (lot 3, titulaire) ----
+    public Task<(JournalFiscalDto?, string?)> JournalFiscalAsync(DateOnly du, DateOnly au, string? ticket, int page, int taille) =>
+        GetAsync<JournalFiscalDto?>("api/surveillance/journal-fiscal?" + Requete(("du", du.ToString("yyyy-MM-dd")), ("au", au.ToString("yyyy-MM-dd")),
+            ("ticket", ticket), ("page", page), ("taille", taille)), null);
+    public Task<(byte[]?, string?, string?)> ExportJournalFiscalAsync(DateOnly du, DateOnly au, string format) =>
+        FichierAsync(HttpMethod.Get, "api/surveillance/journal-fiscal/export?" + Requete(("du", du.ToString("yyyy-MM-dd")), ("au", au.ToString("yyyy-MM-dd")),
+            ("format", format)), $"journal_fiscal.{format}");
+
     public Task<(ParametresSurveillanceDto?, string?)> ParametresSurveillanceAsync() => GetAsync<ParametresSurveillanceDto?>("api/surveillance/parametres", null);
     public async Task<string?> EnregistrerParametresSurveillanceAsync(ParametresSurveillanceDto p) =>
         (await EnvoyerCorpsAsync<ParametresSurveillanceDto, object>(HttpMethod.Put, "api/surveillance/parametres", p)).Item2;
@@ -988,6 +1086,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     /// pendant qu'on l'attend (on cesse seulement de l'attendre après 4 secondes) ; son issue, même en échec, est relevée à part. Le
     /// débogueur ne s'arrête donc plus sur une TaskCanceledException quand l'API est arrêtée, en pause ou lente à démarrer.
     /// </summary>
+    /// <summary>Adresse de l'API utilisée par ce poste (affichage).</summary>
+    public string AdresseServeur => http.BaseAddress?.ToString() ?? "?";
+
     public async Task<bool> ServeurJoignableAsync()
     {
         var delai = TimeSpan.FromSeconds(4);
@@ -1052,6 +1153,68 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(byte[]?, string?, string?)> BonCommandeAsync(long id) => FichierAsync(HttpMethod.Get, $"api/achats/commandes/{id}/pdf", $"commande_{id}.pdf");
     public async Task<string?> AnnulerCommandeAsync(long id) => (await PostAsync<object, object>($"api/achats/commandes/{id}/annuler", new())).Item2;
 
+    // ---- Multi-grossistes (Achats › Commander, Catalogues des grossistes) ----
+    public Task<(ProfilCatalogueDto?, string?)> ProfilCatalogueAsync(long fournisseurId) =>
+        GetAsync<ProfilCatalogueDto?>($"api/achats/catalogues/profils/{fournisseurId}", null);
+    public async Task<string?> EnregistrerProfilCatalogueAsync(ProfilCatalogueDto p) =>
+        (await EnvoyerCorpsAsync<ProfilCatalogueDto, object>(HttpMethod.Put, $"api/achats/catalogues/profils/{p.FournisseurId}", p)).Item2;
+    public Task<(List<string>?, string?)> ColonnesCatalogueAsync(FichierCatalogueRequete f) =>
+        PostAsync<FichierCatalogueRequete, List<string>>("api/achats/catalogues/colonnes", f);
+    public Task<(BilanImportCatalogueDto?, string?)> ImporterCatalogueAsync(long fournisseurId, FichierCatalogueRequete f) =>
+        PostAsync<FichierCatalogueRequete, BilanImportCatalogueDto>($"api/achats/catalogues/{fournisseurId}/import", f);
+    public Task<(PageDto<ImportCatalogueDto>?, string?)> ImportsCatalogueAsync(long? grossiste, int page, int taille) =>
+        GetAsync<PageDto<ImportCatalogueDto>?>("api/achats/catalogues/imports?" + Requete(("grossiste", grossiste), ("page", page), ("taille", taille)), null);
+    public Task<(PageDto<ComparaisonProduitDto>?, string?)> ComparaisonGrossistesAsync(string? recherche, string? statut, int page, int taille) =>
+        GetAsync<PageDto<ComparaisonProduitDto>?>("api/achats/commander?" + Requete(("recherche", recherche?.Trim()), ("statut", statut), ("page", page), ("taille", taille)), null);
+    public Task<(List<BonRepartiDto>?, string?)> RepartirCommandeAsync(RepartitionRequete r) =>
+        PostAsync<RepartitionRequete, List<BonRepartiDto>>("api/achats/commander/repartir", r);
+    public Task<(BonEnvoyeDto?, string?)> EnvoyerBonParEmailAsync(long commandeId) =>
+        PostAsync<object, BonEnvoyeDto>($"api/achats/commandes/{commandeId}/envoyer-email", new());
+
+    // ---- Ruptures et substitution (lot 7) ----
+    public Task<(PageDto<RuptureProduitDto>?, string?)> RupturesPartoutAsync(string? recherche, int page, int taille) =>
+        GetAsync<PageDto<RuptureProduitDto>?>("api/achats/ruptures/partout?" + Requete(("recherche", recherche?.Trim()), ("page", page), ("taille", taille)), null);
+    public Task<(PageDto<PeriodeRuptureDto>?, string?)> HistoriqueRupturesAsync(string? recherche, string? etat, int page, int taille) =>
+        GetAsync<PageDto<PeriodeRuptureDto>?>("api/achats/ruptures/historique?" + Requete(("recherche", recherche?.Trim()), ("etat", etat), ("page", page), ("taille", taille)), null);
+    public Task<(PageDto<DemandePatientDto>?, string?)> DemandesPatientsAsync(string? recherche, string? statut, int page, int taille) =>
+        GetAsync<PageDto<DemandePatientDto>?>("api/caisse/demandes-patients?" + Requete(("recherche", recherche?.Trim()), ("statut", statut), ("page", page), ("taille", taille)), null);
+    public Task<(AlertesDisponibiliteDto?, string?)> AlertesDisponibiliteAsync() =>
+        GetAsync<AlertesDisponibiliteDto?>("api/caisse/demandes-patients/alertes", null);
+    public Task<(long, string?)> CreerDemandePatientAsync(NouvelleDemandePatientRequete r) =>
+        PostAsync<NouvelleDemandePatientRequete, long>("api/caisse/demandes-patients", r);
+    public Task<(string?, string?)> PrevenirPatientAsync(long id, bool parSms) =>
+        PostAsync<PrevenirPatientRequete, string>($"api/caisse/demandes-patients/{id}/prevenir", new(parSms));
+    public async Task<string?> CloturerDemandePatientAsync(long id, bool servie) =>
+        (await EnvoyerCorpsAsync<CloturerDemandeRequete, object>(HttpMethod.Post, $"api/caisse/demandes-patients/{id}/cloturer", new(servie))).Item2;
+    public Task<(ConsentementSmsDto?, string?)> ConsentementSmsAsync(long patientId) =>
+        GetAsync<ConsentementSmsDto?>($"api/patients/{patientId}/consentement-sms", null);
+    public async Task<string?> EnregistrerConsentementSmsAsync(long patientId, bool accord) =>
+        (await EnvoyerCorpsAsync<ConsentementSmsDto, object>(HttpMethod.Put, $"api/patients/{patientId}/consentement-sms", new(accord, null))).Item2;
+    // Formulaire d'accord SMS (2026-11-16, script 123)
+    public Task<(byte[]?, string?, string?)> FormulaireAccordSmsPdfAsync(long patientId) =>
+        FichierAsync(HttpMethod.Get, $"api/patients/{patientId}/formulaire-sms.pdf", $"accord_sms_{patientId}.pdf");
+    public async Task<string?> EnregistrerFormulaireSmsRecuAsync(long patientId, bool recu) =>
+        (await EnvoyerCorpsAsync<FormulaireSmsRecuRequete, object>(HttpMethod.Put, $"api/patients/{patientId}/formulaire-sms", new(recu))).Item2;
+    public Task<(TexteFormulaireSmsDto?, string?)> TexteFormulaireSmsAsync() =>
+        GetAsync<TexteFormulaireSmsDto?>("api/parametres/formulaire-sms", null);
+    public async Task<string?> EnregistrerTexteFormulaireSmsAsync(string? texte) =>
+        (await EnvoyerCorpsAsync<TexteFormulaireSmsDto, object>(HttpMethod.Put, "api/parametres/formulaire-sms", new(texte ?? "", false))).Item2;
+    public Task<(ParametreSubstitutionDto?, string?)> ParametreSubstitutionAsync() =>
+        GetAsync<ParametreSubstitutionDto?>("api/substitution/parametre", null);
+    public async Task<string?> EnregistrerParametreSubstitutionAsync(bool equivalentExactSeulement) =>
+        (await EnvoyerCorpsAsync<ParametreSubstitutionDto, object>(HttpMethod.Put, "api/substitution/parametre", new(equivalentExactSeulement, null, null))).Item2;
+    public Task<(PageDto<LienListeBlancheDto>?, string?)> ListeBlancheAsync(string? recherche, int page, int taille) =>
+        GetAsync<PageDto<LienListeBlancheDto>?>("api/substitution/liste-blanche?" + Requete(("recherche", recherche?.Trim()), ("page", page), ("taille", taille)), null);
+    public async Task<string?> AjouterListeBlancheAsync(long produitId, long remplacantId) =>
+        (await EnvoyerCorpsAsync<LienListeBlancheRequete, object>(HttpMethod.Post, "api/substitution/liste-blanche", new(produitId, remplacantId))).Item2;
+    public async Task<string?> RetirerListeBlancheAsync(long produitId, long remplacantId) =>
+        (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/substitution/liste-blanche/{produitId}/{remplacantId}", null)).Item2;
+    public Task<(PageDto<ProduitFabricationDto>?, string?)> FabricationLocaleAsync(string? recherche, bool? locale, int page, int taille) =>
+        GetAsync<PageDto<ProduitFabricationDto>?>("api/substitution/fabrication?" + Requete(("recherche", recherche?.Trim()),
+            ("locale", locale is null ? null : locale.Value ? "true" : "false"), ("page", page), ("taille", taille)), null);
+    public async Task<string?> ModifierFabricationLocaleAsync(long produitId, bool? valeur) =>
+        (await EnvoyerCorpsAsync<FabricationLocaleRequete, object>(HttpMethod.Put, $"api/substitution/fabrication/{produitId}", new(valeur))).Item2;
+
     public Task<(List<InfoAchatProduitDto>, string?)> InfosAchatAsync(IEnumerable<long> produitIds) =>
         GetAsync<List<InfoAchatProduitDto>>("api/achats/produits/infos?ids=" + string.Join(",", produitIds.Distinct()), []);
 
@@ -1097,6 +1260,15 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         (await PostAsync<TrancherConflitFactureRequete, object>($"api/chifa/conflits-facture/{venteId}", new(valeurRetenue))).Item2;
     public async Task<string?> RetablirVenteChifaAsync(long venteId) =>
         (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/ventes/{venteId}/chifa/exclusion", null)).Item2;
+
+    // ---- Sérialisation DataMatrix : file hors ligne (script 120) ----
+    public Task<(EtatSerialisationDto?, string?)> EtatSerialisationAsync() => GetAsync<EtatSerialisationDto?>("api/serialisation/etat", null);
+    public Task<(PageDto<OperationSerialisationDto>?, string?)> FileSerialisationAsync(string? statut, int page, int taille) =>
+        GetAsync<PageDto<OperationSerialisationDto>?>($"api/serialisation/file?page={page}&taille={taille}&" + Requete(("statut", statut)), null);
+    public Task<(RelanceSerialisationDto?, string?)> RelancerSerialisationAsync(long? id) =>
+        PostAsync<object?, RelanceSerialisationDto>("api/serialisation/relance" + (id is null ? "" : $"?id={id}"), null);
+    public async Task<string?> EnregistrerParametresSerialisationAsync(bool actif, bool facticeHorsLigne) =>
+        (await EnvoyerCorpsAsync<ParametresSerialisationRequete, object>(HttpMethod.Put, "api/serialisation/parametres", new(actif, facticeHorsLigne))).Item2;
 
     // ---- Bordereaux Chifa / MDN (script 110) ----
     public Task<(PageDto<BordereauDto>?, string?)> BordereauxAsync(long? organismeId, string? etat, string? q, int page, int taille) =>
@@ -1185,6 +1357,16 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         PostAsync<DecisionProduitRepriseRequete, NombreDto>($"api/admin/reprise/sessions/{id}/produits", d);
     public Task<(EtatRepriseDto?, string?)> ChargerRepriseAsync(long id) => PostAsync<object, EtatRepriseDto>($"api/admin/reprise/sessions/{id}/charger", new());
     public async Task<string?> AnnulerRepriseAsync(long id) => (await PostAsync<object, object>($"api/admin/reprise/sessions/{id}/annuler", new())).Item2;
+    // Profils de reprise par logiciel concurrent et historique Chifa repris (114)
+    public Task<(PageDto<ProfilRepriseDto>?, string?)> ProfilsRepriseAsync(string? texte, string? statut, int page, int taille) =>
+        GetAsync<PageDto<ProfilRepriseDto>?>("api/admin/reprise/profils?" + Requete(("q", texte), ("statut", statut), ("page", page), ("taille", taille)), null);
+    public Task<(ProfilRepriseDto?, string?)> ProfilRepriseAsync(long id) => GetAsync<ProfilRepriseDto?>($"api/admin/reprise/profils/{id}", null);
+    public Task<(FormatsProfilRepriseDto?, string?)> FormatsProfilRepriseAsync() => GetAsync<FormatsProfilRepriseDto?>("api/admin/reprise/profils/formats", null);
+    public Task<(IdentifiantDto?, string?)> EnregistrerProfilRepriseAsync(ProfilRepriseDto profil) =>
+        PostAsync<ProfilRepriseDto, IdentifiantDto>("api/admin/reprise/profils", profil);
+    public Task<(PageDto<HistoriqueChifaDto>?, string?)> HistoriqueChifaAsync(string? texte, DateOnly? du, DateOnly? au, int page, int taille, string? organisme = null) =>
+        GetAsync<PageDto<HistoriqueChifaDto>?>("api/reprise/historique-chifa?" + Requete(("q", texte), ("du", du?.ToString("yyyy-MM-dd")), ("au", au?.ToString("yyyy-MM-dd")),
+            ("organisme", organisme), ("page", page), ("taille", taille)), null);
     public Task<(PageDto<DoublonImportDto>?, string?)> DoublonsImportAsync(string? statut, string? texte, int page, int taille) =>
         GetAsync<PageDto<DoublonImportDto>?>("api/reprise/doublons-patients?" + Requete(("statut", statut), ("q", texte), ("page", page), ("taille", taille)), null);
     public Task<(IdentifiantDto?, string?)> DeciderDoublonImportAsync(long id, DecisionDoublonImportRequete d) =>
@@ -1208,6 +1390,21 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(byte[]?, string?, string?)> ExporterRapportAsync(string periode, DateOnly date, DateOnly du, DateOnly au, string format) =>
         // « csv » ou « excel » : fichier CSV ; « pdf » : PDF (mêmes formats que le serveur)
         FichierAsync(HttpMethod.Get, $"api/rapports/export?{FiltreRapport(periode, date, du, au)}&format={format}", $"rapport.{(format is "excel" or "csv" ? "csv" : "pdf")}");
+
+    // ---- Tableau de bord financier (lot 11) : titulaire ou « rapports.marges » ----
+    private static string Dormant(int? jours) => jours is { } j ? $"&dormant={j}" : "";
+    public Task<(TableauFinancierDto?, string?)> TableauFinancierAsync(string periode, DateOnly date, DateOnly du, DateOnly au, int? dormant) =>
+        GetAsync<TableauFinancierDto?>($"api/pilotage/financier?{FiltreRapport(periode, date, du, au)}{Dormant(dormant)}", null);
+    public Task<(PageDto<MargeRegroupeeDto>?, string?)> MargesFinancierAsync(string periode, DateOnly date, DateOnly du, DateOnly au, string par,
+        string? recherche, int page, int taille) =>
+        GetAsync<PageDto<MargeRegroupeeDto>?>($"api/pilotage/financier/marges?{FiltreRapport(periode, date, du, au)}&par={par}&page={page}&taille={taille}"
+            + (string.IsNullOrWhiteSpace(recherche) ? "" : $"&recherche={Uri.EscapeDataString(recherche)}"), null);
+    public Task<(PageDto<ProduitDormantDto>?, string?)> DormantsFinancierAsync(int? dormant, string? recherche, int page, int taille) =>
+        GetAsync<PageDto<ProduitDormantDto>?>($"api/pilotage/financier/dormants?page={page}&taille={taille}{Dormant(dormant)}"
+            + (string.IsNullOrWhiteSpace(recherche) ? "" : $"&recherche={Uri.EscapeDataString(recherche)}"), null);
+    public Task<(byte[]?, string?, string?)> ExporterTableauFinancierAsync(string periode, DateOnly date, DateOnly du, DateOnly au, int? dormant, string format) =>
+        FichierAsync(HttpMethod.Get, $"api/pilotage/financier/export?{FiltreRapport(periode, date, du, au)}{Dormant(dormant)}&format={format}",
+            $"tableau_financier.{(format == "excel" ? "xlsx" : "pdf")}");
     public async Task<string?> EnregistrerAvoirAsync(long id, decimal montant) => (await PostAsync<AvoirRequete, object>($"api/achats/retours/{id}/avoir", new(montant))).Item2;
     public async Task<string?> RefuserRetourAsync(long id, string? motif) => (await PostAsync<RefusRetourRequete, object>($"api/achats/retours/{id}/refuser", new(motif))).Item2;
 

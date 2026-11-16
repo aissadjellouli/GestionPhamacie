@@ -1,15 +1,23 @@
 @page "/stock/registre"
 @inject ApiClient Api
 @inject HistoriqueNavigation Historique
+@inject SessionPoste Session
 
 @* Écran fixe : inscriptions et balance mensuelle en deux rubriques (menu vertical) ; le tableau défile dans son cadre *@
 <div class="page avec-menu">
     <NavDomaine Libelle="Rubriques du registre">
         <a href="stock/registre" class="@(rubrique == "inscriptions" ? "active" : null)" aria-current="@(rubrique == "inscriptions" ? "page" : null)">Inscriptions @if (NombreInscriptions is { } n) { <span class="compteur neutre">@n</span> }</a>
         <a href="stock/registre?rubrique=balance" class="@(rubrique == "balance" ? "active" : null)" aria-current="@(rubrique == "balance" ? "page" : null)">Balance mensuelle</a>
+        <a href="stock/registre?rubrique=forcages" class="@(rubrique == "forcages" ? "active" : null)" aria-current="@(rubrique == "forcages" ? "page" : null)">Alertes forcées</a>
     </NavDomaine>
 
     <div class="contenu-rubrique">
+    @if (rubrique == "forcages")
+    {
+        <ForcagesPsychotropes />
+    }
+    else
+    {
     <div class="titre-page">
         <div>
             <h1>Registre des psychotropes · @(rubrique == "balance" ? "Balance mensuelle" : "Inscriptions")<AideEcran Cle="stock/registre" /></h1>
@@ -44,8 +52,15 @@
             }
             @if (operation != "" && rubrique == "inscriptions") { <button type="button" class="btn" @onclick="ToutesOperationsAsync">Tout afficher</button> }
             @* Exports sur la ligne des filtres (écran fixe : pas de ligne de boutons en plus) ; ils prennent tout le registre du produit et de la période *@
-            <button type="button" class="btn" disabled="@(registre is null || enCours || ExportTropLong)" title="@(ExportTropLong ? "Un an au plus par fichier" : null)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
-            <button type="button" class="btn" disabled="@(registre is null || enCours || ExportTropLong)" title="@(ExportTropLong ? "Un an au plus par fichier" : null)" @onclick='() => ExporterAsync("csv")'>Exporter pour Excel</button>
+            @* Export d'inspection (lot 8) : prescripteur (texte) et patient (« Extrait » sur une ligne) en plus ; sceau de la période dans le fichier *@
+            <div class="champ" style="flex: 1 1 150px"><label for="r-prescripteur">Prescripteur (export)</label><input id="r-prescripteur" type="text" maxlength="80" @bind="prescripteur" /></div>
+            @if (patientExport is { } pe)
+            {
+                <span class="pastille" title="Export limité à ce patient">@pe.Nom <button type="button" class="lien-bouton" aria-label="Retirer le filtre patient" @onclick="() => patientExport = null">×</button></span>
+            }
+            <button type="button" class="btn" disabled="@(registre is null || enCours || ExportTropLong)" title="@(ExportTropLong ? "Un an au plus par fichier" : null)" @onclick='() => ExporterAsync("pdf")'>PDF</button>
+            <button type="button" class="btn" disabled="@(registre is null || enCours || ExportTropLong)" title="@(ExportTropLong ? "Un an au plus par fichier" : "Classeur Excel (.xlsx)")" @onclick='() => ExporterAsync("xlsx")'>Excel</button>
+            <button type="button" class="btn" disabled="@(registre is null || enCours || ExportTropLong)" title="@(ExportTropLong ? "Un an au plus par fichier" : "Texte séparé par des points-virgules")" @onclick='() => ExporterAsync("csv")'>CSV</button>
         </div>
         @if (ExportTropLong)
         {
@@ -91,7 +106,11 @@
                                     <td>@l.Numero</td>
                                     <td>@Libelles.DateHeureLocale(l.Date)</td>
                                     <td><span class="nom"><LienProduit Texte="@l.Produit" /></span><br /><span class="detail">lot <LienProduit Texte="@l.NumeroLot" Lot="true" /></span></td>
-                                    <td>@l.Operation</td>
+                                    <td>@l.Operation
+                                        @if (l.Annulation is not null) { <br /><span class="pastille urgent" title="@l.Annulation">Annulée</span> }
+                                        else if (Session.A("role.titulaire")) { <br /><button type="button" class="lien-bouton" @onclick="() => annulation = (l.Numero, l.Produit, (string?)null)">Annuler l’écriture</button> }
+                                        @if (l.PatientId is { } pid) { <br /><button type="button" class="lien-bouton" title="Exporter seulement les lignes de ce patient" @onclick="() => patientExport = (pid, l.Patient ?? pid.ToString())">Extrait patient</button> }
+                                    </td>
                                     <td class="nombre">@l.Entree</td>
                                     <td class="nombre">@l.Sortie</td>
                                     <td class="nombre"><strong>@(l.SoldeProduit?.ToString() ?? "—")</strong></td>
@@ -101,6 +120,10 @@
                                         @if (l.PorteurNom is not null)
                                         {
                                             <br /><span class="detail">Porteur : @l.PorteurNom, @l.PorteurAdresse, pièce @l.PorteurPiece</span>
+                                }
+                                @if (l.DureeTraitementJours is { } dt)
+                                {
+                                    <br /><span class="detail">Traitement : @dt jours</span>
                                         }
                                     </td>
                                     <td>@l.Medecin @if (l.Ordonnance is not null) { <br /><span class="detail">n° @l.Ordonnance</span> }</td>
@@ -139,13 +162,49 @@
             }
         </section>
     }
+    }
     </div>
 </div>
+
+@if (annulation is { } an)
+{
+    @* Correction par écriture d'annulation (titulaire) : la ligne reste au registre, marquée « annulée » avec le motif *@
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-annulation-registre">
+        <section class="panneau" style="width: min(620px, 96vw); display: flex; flex-direction: column; gap: 10px">
+            <h2 id="t-annulation-registre" style="margin: 0">Annuler l’écriture n° @an.Numero · @an.Produit</h2>
+            <p class="detail" style="margin: 0">La ligne n’est jamais modifiée ni supprimée : elle est marquée annulée, avec votre nom et le motif, dans le registre et son journal protégé.
+                Le stock se corrige par un retour ou un écart d’inventaire, qui s’inscrivent au registre.</p>
+            <div class="champ"><label for="an-motif">Motif (5 caractères au moins)</label><input id="an-motif" type="text" maxlength="500" @bind="motifAnnulation" @bind:event="oninput" /></div>
+            @if (erreurAnnulation is not null) { <div class="erreur" role="alert">@erreurAnnulation</div> }
+            <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end">
+                <button type="button" class="btn" disabled="@enCours" @onclick="() => (annulation, motifAnnulation, erreurAnnulation) = (null, null, null)">Fermer</button>
+                <button type="button" class="btn btn-principal" disabled="@(enCours || (motifAnnulation?.Trim().Length ?? 0) < 5)" @onclick="AnnulerEcritureAsync">Annuler l’écriture</button>
+            </div>
+        </section>
+    </div>
+}
 
 @code {
     // Rubrique dans l'adresse (stock/registre?rubrique=balance) : « Retour » y revient
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
-    private string rubrique => Rubrique == "balance" ? "balance" : "inscriptions";
+    private string rubrique => Rubrique is "balance" or "forcages" ? Rubrique! : "inscriptions";
+
+    // Export d'inspection (lot 8) et annulation d'écriture (titulaire)
+    private string? prescripteur;
+    private (long Id, string Nom)? patientExport;
+    private (long Numero, string Produit, string? Motif)? annulation;
+    private string? motifAnnulation, erreurAnnulation;
+
+    private async Task AnnulerEcritureAsync()
+    {
+        if (annulation is not { } an) return;
+        (enCours, erreurAnnulation) = (true, null);
+        erreurAnnulation = await Api.AnnulerEcritureRegistreAsync(an.Numero, motifAnnulation!.Trim());
+        enCours = false;
+        if (erreurAnnulation is not null) return;
+        (annulation, motifAnnulation) = (null, null);
+        await ChargerInscriptionsAsync(pageInscriptions, tailleInscriptions);
+    }
     private int? NombreInscriptions => registre?.Inscriptions;
     // Consultation sans limite de durée ; un export (PDF ou CSV) porte sur un an au plus : un fichier par année
     private const int JoursMaxExport = 366;
@@ -227,7 +286,7 @@
         (erreur, fichier, enCours) = (null, null, true);
         try
         {
-            var (contenu, nom, e) = await Api.ExporterRegistreAsync(produitId, du, au, format);
+            var (contenu, nom, e) = await Api.ExporterRegistreAsync(produitId, du, au, format, patientExport?.Id, prescripteur);
             if (e is not null) { erreur = e; return; }
             var doc = await Documents.RangerAsync(Api, "Registre", nom!, contenu!);
             (fichier, emplacement, erreur) = (doc.CheminLocal, doc.Emplacement, doc.Erreur);

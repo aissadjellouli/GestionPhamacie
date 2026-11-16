@@ -1,0 +1,45 @@
+@inject ApiClient Api
+
+@* Registre des psychotropes renforcé (lot 8) : avertissement avant l'encaissement d'un produit sous registre. « Forcer » demande un
+   motif ; une règle qui exige un valideur ouvre « Faire autoriser » (code comptoir d'un ayant droit). Aucun nom de patient affiché. *@
+<div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-alertes-psy">
+    <section class="panneau" style="width: min(760px, 96vw); display: flex; flex-direction: column; gap: 10px">
+        <h2 id="t-alertes-psy" style="margin: 0">Alerte du registre des psychotropes</h2>
+        <ul style="margin: 0; padding-left: 18px">
+            @foreach (var a in Controle.Alertes)
+            {
+                <li><strong>@a.Libelle</strong> : @a.Message @if (a.ExigeValideur) { <span class="pastille urgent">valideur exigé</span> }</li>
+            }
+        </ul>
+        @if (Controle.Repertoire is { } rep) { <p class="detail" style="margin: 0">@rep</p> }
+        @* Avis non bloquants (2026-11-16) : ex. wilaya du prescripteur à renseigner *@
+        @foreach (var avis in Controle.Avis ?? []) { <p class="detail" style="margin: 0">@avis</p> }
+        <div class="champ">
+            <label for="psy-motif">Motif du forçage (obligatoire, gardé avec votre nom@(Controle.Alertes.Any(a => a.ExigeValideur) ? " et celui du valideur" : ""))</label>
+            <input id="psy-motif" type="text" maxlength="500" @bind="motif" @bind:event="oninput" />
+        </div>
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end">
+            <button type="button" class="btn" disabled="@enCours" @onclick="OnAbandon">Abandonner la délivrance</button>
+            <button type="button" class="btn btn-principal" disabled="@(enCours || (motif?.Trim().Length ?? 0) < 5)" @onclick="ForcerAsync">@(enCours ? "Enregistrement…" : "Forcer et encaisser")</button>
+        </div>
+    </section>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ControleDelivranceDto Controle { get; set; } = default!;
+    [Parameter, EditorRequired] public DelivrancePsychotropeDto Delivrance { get; set; } = default!;
+    [Parameter] public EventCallback OnAbandon { get; set; }
+    [Parameter] public EventCallback OnForce { get; set; }
+
+    private string? motif, erreur;
+    private bool enCours;
+
+    private async Task ForcerAsync()
+    {
+        (enCours, erreur) = (true, null);
+        erreur = await Api.ForcerAlertesPsychotropesAsync(Delivrance, motif!.Trim());
+        enCours = false;
+        if (erreur is null) await OnForce.InvokeAsync();
+    }
+}

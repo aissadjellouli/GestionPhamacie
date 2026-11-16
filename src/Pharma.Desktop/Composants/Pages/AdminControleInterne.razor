@@ -5,9 +5,21 @@
 @* Réglages du contrôle interne (seuils par employé et par jour, réception à l'aveugle, horaires d'ouverture) :
    déplacés de l'écran Contrôle interne vers l'Administration ; réservés au titulaire (API /surveillance/parametres). *@
 <div class="page admin">
-    <NavAdmin Actif="admin/controle-interne" />
+    <NavAdmin Actif="admin/controle-interne" Rubrique="@Rubrique" />
 
     <div class="admin-contenu">
+        @if (rubrique == "integrite")
+        {
+            @if (!Session.A("role.titulaire")) { <div class="erreur" role="alert">Écran réservé au pharmacien titulaire.</div> }
+            else { <IntegriteJournaux /> }
+        }
+        else if (rubrique == "journal-fiscal")
+        {
+            @if (!Session.A("role.titulaire")) { <div class="erreur" role="alert">Écran réservé au pharmacien titulaire.</div> }
+            else { <JournalFiscal /> }
+        }
+        else
+        {
         <div class="titre-page">
             <div>
                 <h1>Contrôle interne</h1>
@@ -73,10 +85,15 @@
             }
             else if (erreur is null) { <Chargement /> }
         }
+        }
     </div>
 </div>
 
 @code {
+    /// <summary>Sous-rubrique (admin/controle-interne?rubrique=integrite : Intégrité des journaux) ; vide : seuils et horaires.</summary>
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => NavAdmin.RubriqueCourante("admin/controle-interne", Rubrique);
+
     private sealed class Reglages
     {
         public int SeuilLignesRetirees { get; set; }
@@ -108,9 +125,10 @@
     private bool enCours;
     private string? erreur, message;
 
-    protected override async Task OnInitializedAsync()
+    // Chargé au premier affichage des seuils (la même page sert aussi la sous-rubrique Intégrité des journaux)
+    protected override async Task OnParametersSetAsync()
     {
-        if (!Session.A("role.titulaire")) return;
+        if (!Session.A("role.titulaire") || rubrique is "integrite" or "journal-fiscal" || reglages is not null) return;
         var (p, e) = await Api.ParametresSurveillanceAsync();
         if (p is not null)
             reglages = new Reglages

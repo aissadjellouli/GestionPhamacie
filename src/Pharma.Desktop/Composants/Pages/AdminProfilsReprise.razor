@@ -1,0 +1,345 @@
+@page "/admin/profils-reprise"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Profils de reprise par logiciel concurrent (script 114) : correspondance de colonnes enregistrée et réutilisable, transformations simples.
+   Les formats réels des logiciels concurrents ne sont pas connus : les modèles livrés sont vides, à compléter avec un export réel.
+   Liste filtrée et paginée par le serveur ; écran fixe, seul le tableau défile ; édition dans une fenêtre qui défile dans son cadre. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/profils-reprise" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Profils de reprise</h1>
+                <p class="sous-titre">Une correspondance de colonnes par logiciel concurrent, établie à partir d’un fichier exemple (classeur .xlsx ou dossier CSV), puis réutilisée à chaque reprise. Les modèles livrés sont vides : leur format est à compléter avec un export réel.</p>
+            </div>
+            @if (Session.SuperAdmin) { <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="Nouveau">Nouveau profil</button> }
+        </div>
+
+        @if (!Session.SuperAdmin)
+        {
+            <div class="erreur" role="alert">Réservé au super admin : déconnectez-vous, puis « Connexion super admin » sur l’écran de connexion.</div>
+        }
+        else
+        {
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+            <div class="filtres-liste" role="search" aria-label="Filtrer les profils de reprise">
+                <div class="champ" style="flex: 1 1 240px"><label for="pr-texte">Logiciel ou version</label>
+                    <input id="pr-texte" data-champ="recherche" type="search" autocomplete="off" @bind="fTexte" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" /></div>
+                <div class="champ" style="flex: 0 0 220px"><label for="pr-statut">Statut</label>
+                    <select id="pr-statut" @bind="fStatut" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="">Tous</option>
+                        <option value="a_completer">À compléter</option>
+                        <option value="verifie">Vérifié avec un export réel</option>
+                    </select></div>
+                @if (fTexte != "" || fStatut != "") { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+            </div>
+
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 860px">
+                    <thead><tr><th scope="col">Logiciel</th><th scope="col">Version</th><th scope="col">Statut</th><th scope="col">Données reprises</th><th scope="col">Transformations</th><th scope="col">Modifié</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                    <tbody>
+                        @if (liste is null)
+                        {
+                            <tr><td colspan="7"><Chargement /></td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var p in liste.Lignes)
+                            {
+                                <tr>
+                                    <td><span class="nom">@p.Logiciel</span></td>
+                                    <td>@(p.Version == "" ? "—" : p.Version)</td>
+                                    <td>@if (p.Statut == "verifie") { <span class="pastille ok">Vérifié</span> } else { <span class="pastille attention">À compléter</span> }</td>
+                                    <td>@(p.Correspondances.Count == 0 ? "aucune (modèle vide)" : string.Join(", ", p.Correspondances.Select(c => LibelleCible(c.Cible))))</td>
+                                    <td class="detail">@ResumeTransformations(p)</td>
+                                    <td>@(p.ModifieLe is { } le ? Libelles.DateHeureLocale(le) : "—")@if (p.ModifiePar is { } par) { <br /><span class="detail">@par</span> }</td>
+                                    <td><button type="button" class="btn" disabled="@enCours" @onclick="() => Ouvrir(p)">Modifier…</button></td>
+                                </tr>
+                            }
+                            @if (liste.Lignes.Count == 0) { <tr><td colspan="7" class="vide">Aucun profil pour ces filtres.</td></tr> }
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <Pagination Total="@(liste?.Total ?? 0)" Numero="@(liste?.Numero ?? 1)" Taille="taille" Occupe="enCours" Libelle="Pages des profils de reprise" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
+    </div>
+</div>
+
+@if (edition is { } ed && formats is { } fm)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-profil">
+        <section class="panneau" style="max-width: 1100px; width: 100%; max-height: 92vh; overflow-y: auto">
+            <h2 id="t-profil">@(ed.Id == 0 ? "Nouveau profil de reprise" : $"Profil : {ed.Logiciel} {ed.Version}")</h2>
+            @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
+            @if (messageFenetre is not null) { <div class="succes" role="status">@messageFenetre</div> }
+
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 1 1 220px"><label for="pe-logiciel" class="requis">Logiciel</label>
+                    <input id="pe-logiciel" data-champ="logiciel" type="text" maxlength="100" @bind="ed.Logiciel" /></div>
+                <div class="champ" style="flex: 0 1 140px"><label for="pe-version">Version</label>
+                    <input id="pe-version" data-champ="version" type="text" maxlength="50" @bind="ed.Version" /></div>
+                <div class="champ" style="flex: 0 1 240px"><label for="pe-statut">Statut</label>
+                    <select id="pe-statut" @bind="ed.Statut">
+                        <option value="a_completer">À compléter (format non vérifié)</option>
+                        <option value="verifie">Vérifié avec un export réel</option>
+                    </select></div>
+                <div class="champ" style="flex: 2 1 300px"><label for="pe-remarque">Remarque</label>
+                    <input id="pe-remarque" data-champ="remarque" type="text" maxlength="1000" @bind="ed.Remarque" /></div>
+            </div>
+
+            <h3 style="margin: 8px 0 4px">Transformations</h3>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 0 1 260px"><label for="pe-decimal">Séparateur décimal des nombres</label>
+                    <select id="pe-decimal" data-champ="separateurDecimal" @bind="ed.SeparateurDecimal">
+                        <option value="auto">Détection habituelle (« 12.500 » signalé)</option>
+                        <option value="virgule">Virgule (1.234,50)</option>
+                        <option value="point">Point (1,234.50)</option>
+                    </select></div>
+                <div class="champ" style="flex: 0 1 260px"><label for="pe-date">Format des dates</label>
+                    <select id="pe-date" data-champ="formatDate" @bind="ed.FormatDate">
+                        <option value="">Détection habituelle</option>
+                        @foreach (var f in fm.FormatsDate) { <option value="@f">@f</option> }
+                    </select></div>
+            </div>
+            <div class="champ" data-champ="codesClasse">
+                <span class="etiquette-champ">Codes de classe réglementaire de l’ancien logiciel</span>
+                @foreach (var code in ed.Codes)
+                {
+                    <div class="achats-ligne" style="margin-top: 4px">
+                        <input type="text" aria-label="Code de l’ancien logiciel" maxlength="50" style="flex: 0 1 180px" @bind="code.Code" />
+                        <select aria-label="Classe correspondante" style="flex: 0 1 220px" @bind="code.Classe">
+                            @foreach (var cl in fm.Classes) { <option value="@cl">@LibelleClasse(cl)</option> }
+                        </select>
+                        <button type="button" class="lien" @onclick="() => ed.Codes.Remove(code)">Retirer</button>
+                    </div>
+                }
+                <div><button type="button" class="lien" @onclick="() => ed.Codes.Add(new CodeClasse())">+ Ajouter un code</button></div>
+            </div>
+
+            <h3 style="margin: 8px 0 4px" data-champ="correspondances">Correspondance à partir d’un fichier exemple</h3>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 1 1 420px"><label for="pe-fichier">Fichier exemple sur le PC serveur (classeur .xlsx, ou un fichier CSV de l’export)</label>
+                    <input id="pe-fichier" type="text" @bind="fichierExemple" placeholder="Ex. C:\Export\ancien.xlsx" /></div>
+                <button type="button" class="btn" @onclick="ParcourirExemple">Parcourir…</button>
+                <button type="button" class="btn" disabled="@(enCours || string.IsNullOrWhiteSpace(fichierExemple))" @onclick="LireExempleAsync">Lire le fichier exemple</button>
+            </div>
+            <p class="detail" style="margin: 0">
+                @(apercu is null ? "Sans fichier exemple, saisissez les noms des feuilles et des colonnes tels qu’ils figurent dans l’export." : $"{apercu.Tables.Count} feuille(s) ou fichier(s) lu(s). Les noms et téléphones des patients sont masqués dans les exemples.")
+            </p>
+
+            @foreach (var (cible, libelle) in Cibles)
+            {
+                var corr = ed.Correspondance(cible);
+                var table = apercu?.Tables.FirstOrDefault(t => string.Equals(t.Nom, corr.Table, StringComparison.OrdinalIgnoreCase));
+                <fieldset class="champ" style="margin-top: 8px">
+                    <legend>@libelle</legend>
+                    <div class="achats-ligne">
+                        <label for="@($"pe-t-{cible}")" style="flex: 0 0 160px">Feuille ou table</label>
+                        @if (apercu is not null)
+                        {
+                            <select id="@($"pe-t-{cible}")" style="flex: 0 1 360px" value="@(table?.Nom ?? "")" @onchange="e => corr.Table = e.Value?.ToString() ?? string.Empty">
+                                <option value="">— ne pas reprendre —</option>
+                                @foreach (var t in apercu.Tables) { <option value="@t.Nom">@t.Nom (@(t.Lignes?.ToString("N0") ?? "?") lignes)</option> }
+                            </select>
+                        }
+                        else
+                        {
+                            <input id="@($"pe-t-{cible}")" type="text" maxlength="200" style="flex: 0 1 360px" placeholder="vide : ne pas reprendre" @bind="corr.Table" />
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(corr.Table))
+                    {
+                        <div class="tableau-cadre" style="max-height: none">
+                            <table class="tableau" style="min-width: 0">
+                                <thead><tr><th scope="col">Donnée</th><th scope="col">Colonne de l’export</th><th scope="col">Exemples</th></tr></thead>
+                                <tbody>
+                                    @foreach (var champ in fm.Champs.Where(c => c.Cible == cible))
+                                    {
+                                        var colonne = corr.Colonnes.GetValueOrDefault(champ.Code) ?? "";
+                                        var col = table?.Colonnes.FirstOrDefault(c => string.Equals(c.Nom, colonne, StringComparison.OrdinalIgnoreCase));
+                                        <tr>
+                                            <td><span class="@(champ.Obligatoire ? "etiquette-champ requis" : null)">@champ.Libelle</span></td>
+                                            <td>
+                                                @if (table is not null)
+                                                {
+                                                    <select aria-label="@($"Colonne pour {champ.Libelle}")" value="@(col?.Nom ?? "")" @onchange="e => corr.Colonnes[champ.Code] = e.Value?.ToString() ?? string.Empty">
+                                                        <option value="">— aucune —</option>
+                                                        @foreach (var c in table.Colonnes) { <option value="@c.Nom">@c.Nom</option> }
+                                                    </select>
+                                                }
+                                                else
+                                                {
+                                                    <input type="text" aria-label="@($"Colonne pour {champ.Libelle}")" maxlength="200" value="@colonne" @onchange="e => corr.Colonnes[champ.Code] = e.Value?.ToString() ?? string.Empty" />
+                                                }
+                                            </td>
+                                            <td class="detail exemples">@(col is null ? "" : string.Join(" · ", col.Exemples.Where(v => !string.IsNullOrWhiteSpace(v)).Take(4)))</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </fieldset>
+            }
+
+            <div class="actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px">
+                <button type="button" class="btn" disabled="@enCours" @onclick="Fermer">Fermer</button>
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer le profil</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private static readonly (string Code, string Libelle)[] Cibles =
+        [("produits", "Produits"), ("stock", "Stock par lot"), ("fournisseurs", "Grossistes et dettes"), ("clients", "Clients et crédits"),
+         ("historique_chifa", "Historique des ventes Chifa (lecture seule)"), ("historique_mdn", "Historique des factures MDN (lecture seule)")];
+
+    private sealed class CodeClasse
+    {
+        public string Code { get; set; } = "";
+        public string Classe { get; set; } = "psychotrope";
+    }
+
+    private sealed class Corr
+    {
+        public string Table { get; set; } = "";
+        public Dictionary<string, string> Colonnes { get; set; } = [];
+    }
+
+    /// <summary>Profil en cours d'édition (copie modifiable du DTO).</summary>
+    private sealed class Edition
+    {
+        public long Id { get; set; }
+        public string Logiciel { get; set; } = "";
+        public string Version { get; set; } = "";
+        public string Statut { get; set; } = "a_completer";
+        public string? Remarque { get; set; }
+        public string SeparateurDecimal { get; set; } = "auto";
+        public string FormatDate { get; set; } = "";
+        public List<CodeClasse> Codes { get; set; } = [];
+        public Dictionary<string, Corr> Correspondances { get; } = [];
+        public Corr Correspondance(string cible) => Correspondances.TryGetValue(cible, out var c) ? c : Correspondances[cible] = new Corr();
+    }
+
+    private PageDto<ProfilRepriseDto>? liste;
+    private FormatsProfilRepriseDto? formats;
+    private List<string> pilotes = [];
+    private string fTexte = "", fStatut = "";
+    private int taille = Pagination.TailleParDefaut;
+    private bool enCours;
+    private string? erreur, message, erreurFenetre, messageFenetre, fichierExemple;
+    private Edition? edition;
+    private ScanRepriseDto? apercu;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("profils-reprise", e => { e.Mettre("texte", fTexte); e.Mettre("statut", fStatut); e.Mettre("page", liste?.Numero ?? 1); e.Mettre("taille", taille); });
+        var numero = 1;
+        if (Historique.Restaurer("profils-reprise") is { } h)
+            (fTexte, fStatut, numero, taille) = (h.Texte("texte") ?? "", h.Texte("statut") is "a_completer" or "verifie" ? h.Texte("statut")! : "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        if (!Session.SuperAdmin) return;
+        (formats, _) = await Api.FormatsProfilRepriseAsync();
+        (pilotes, _) = await Api.PilotesOdbcAsync();
+        await ChargerAsync(numero, taille);
+    }
+
+    private async Task ChargerAsync(int numero, int t)
+    {
+        enCours = true;
+        taille = t;
+        (liste, erreur) = await Api.ProfilsRepriseAsync(fTexte == "" ? null : fTexte, fStatut == "" ? null : fStatut, numero, t);
+        enCours = false;
+    }
+
+    private Task ToutAfficherAsync()
+    {
+        (fTexte, fStatut) = ("", "");
+        return ChargerAsync(1, taille);
+    }
+
+    private void Nouveau() => (edition, apercu, erreurFenetre, messageFenetre, message) = (new Edition(), null, null, null, null);
+
+    private void Ouvrir(ProfilRepriseDto p)
+    {
+        var ed = new Edition
+        {
+            Id = p.Id, Logiciel = p.Logiciel, Version = p.Version, Statut = p.Statut, Remarque = p.Remarque,
+            SeparateurDecimal = p.SeparateurDecimal, FormatDate = p.FormatDate ?? "",
+            Codes = p.CodesClasse.Select(kv => new CodeClasse { Code = kv.Key, Classe = kv.Value }).ToList()
+        };
+        foreach (var c in p.Correspondances)
+            ed.Correspondances[c.Cible] = new Corr { Table = c.Table, Colonnes = c.Colonnes.ToDictionary(kv => kv.Key, kv => kv.Value) };
+        (edition, apercu, erreurFenetre, messageFenetre, message) = (ed, null, null, null, null);
+    }
+
+    private void Fermer() => (edition, apercu) = (null, null);
+
+    private void ParcourirExemple()
+    {
+        if (Dialogues.ChoisirFichier("Fichier exemple de l’ancien logiciel", "Exports|*.xlsx;*.csv;*.txt;*.tab|Tous les fichiers|*.*",
+                string.IsNullOrWhiteSpace(fichierExemple) ? null : System.IO.Path.GetDirectoryName(fichierExemple)) is { } choisi)
+            fichierExemple = choisi;
+    }
+
+    /// <summary>
+    /// Fichier exemple lu par le serveur, en lecture seule, avec les lecteurs intégrés : classeur .xlsx (une feuille par type de données)
+    /// ou dossier du fichier CSV (un fichier par type de données).
+    /// </summary>
+    private async Task LireExempleAsync()
+    {
+        var chemin = fichierExemple!.Trim().Trim('"');
+        var excel = chemin.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase);
+        var lecteur = pilotes.FirstOrDefault(p => p.Contains(excel ? "Lecteur Excel" : "Lecteur CSV", StringComparison.OrdinalIgnoreCase));
+        if (lecteur is null) { erreurFenetre = "Lecteur intégré absent du serveur : mettez l’API à jour."; return; }
+        var emplacement = excel ? chemin : System.IO.Path.GetDirectoryName(chemin) ?? chemin;
+        var chaine = ChaineOdbc.Construire(lecteur, null, emplacement, null, null, null);
+        enCours = true;
+        var (s, e) = await Api.ScannerRepriseAsync(chaine);
+        enCours = false;
+        if (e is not null) { (erreurFenetre, messageFenetre) = (e, null); return; }
+        apercu = s;
+        (erreurFenetre, messageFenetre) = (null, "Fichier lu : choisissez la feuille et les colonnes de chaque donnée (rien n’est déduit d’office).");
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (edition is not { } ed) return;
+        var dto = new ProfilRepriseDto(ed.Id, ed.Logiciel, ed.Version, ed.Statut, ed.Remarque,
+            ed.Correspondances.Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Table))
+                .Select(kv => new CorrespondanceTableDto(kv.Key, kv.Value.Table.Trim(),
+                    kv.Value.Colonnes.Where(c => !string.IsNullOrWhiteSpace(c.Value)).ToDictionary(c => c.Key, c => c.Value.Trim())))
+                .ToList(),
+            ed.SeparateurDecimal, ed.FormatDate == "" ? null : ed.FormatDate,
+            ed.Codes.Where(c => !string.IsNullOrWhiteSpace(c.Code)).GroupBy(c => c.Code.Trim()).ToDictionary(g => g.Key, g => g.Last().Classe));
+        enCours = true;
+        var (r, e) = await Api.EnregistrerProfilRepriseAsync(dto);
+        enCours = false;
+        if (e is not null) { (erreurFenetre, messageFenetre) = (e, null); return; }
+        (edition, apercu) = (null, null);
+        message = $"Profil « {dto.Logiciel} {dto.Version} » enregistré (n° {r!.Id}).".Replace("  ", " ");
+        await ChargerAsync(liste?.Numero ?? 1, taille);
+    }
+
+    private static string LibelleCible(string c) => Cibles.FirstOrDefault(x => x.Code == c).Libelle ?? c;
+
+    private static string LibelleClasse(string c) => c switch
+    {
+        "stupefiant" => "Stupéfiant", "psychotrope" => "Psychotrope", "liste_i" => "Liste I", "liste_ii" => "Liste II", _ => "Libre"
+    };
+
+    private static string ResumeTransformations(ProfilRepriseDto p)
+    {
+        var morceaux = new List<string>();
+        if (p.SeparateurDecimal != "auto") morceaux.Add($"décimales : {p.SeparateurDecimal}");
+        if (p.FormatDate is { } f) morceaux.Add($"dates : {f}");
+        if (p.CodesClasse.Count > 0) morceaux.Add($"{p.CodesClasse.Count} code(s) de classe");
+        return morceaux.Count == 0 ? "aucune" : string.Join(" · ", morceaux);
+    }
+}

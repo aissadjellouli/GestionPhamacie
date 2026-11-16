@@ -1,0 +1,91 @@
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Registre › Alertes forcées (lot 8) : journal des forçages (employé, valideur par code, motif), paginé et filtré par le serveur.
+   Écran fixe : seul le tableau défile. Noms des patients abrégés hors titulaire. *@
+<div class="titre-page">
+    <div>
+        <h1>Registre des psychotropes · Alertes forcées</h1>
+        <p class="sous-titre">Délivrances faites malgré une alerte : qui a forcé, qui a validé par code, et pourquoi. Réglage des alertes : Administration › Psychotropes.</p>
+    </div>
+</div>
+
+@if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+<section aria-label="Filtres">
+    <div class="filtres-liste" role="search" aria-label="Filtrer les alertes forcées">
+        <div class="champ" style="flex: 0 0 170px"><label for="f-du">Du</label><input id="f-du" type="date" @bind="du" @bind:after="PremierePageAsync" /></div>
+        <div class="champ" style="flex: 0 0 170px"><label for="f-au">Au</label><input id="f-au" type="date" @bind="au" @bind:after="PremierePageAsync" /></div>
+        <div class="champ" style="flex: 0 0 300px"><label for="f-code">Alerte</label>
+            <select id="f-code" @bind="code" @bind:after="PremierePageAsync">
+                <option value="">Toutes</option>
+                <option value="patient_repete">Même patient servi plusieurs fois</option>
+                <option value="ordonnance_reutilisee">Ordonnance déjà utilisée</option>
+                <option value="quantite_anormale">Quantité anormale</option>
+                <option value="prescripteur_inhabituel">Prescripteur inhabituel</option>
+            </select></div>
+    </div>
+</section>
+
+@if (page is null && erreur is null) { <Chargement /> }
+else if (page is { } p)
+{
+    <section aria-label="Alertes forcées">
+        @if (p.Lignes.Count == 0) { <p class="vide" style="margin: 0">Aucune alerte forcée sur la période.</p> }
+        else
+        {
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 1000px">
+                    <thead><tr><th scope="col">Date</th><th scope="col">Employé · valideur</th><th scope="col">Alertes</th><th scope="col">Motif</th>
+                        <th scope="col">Patient · médecin · ordonnance</th><th scope="col">Produits</th></tr></thead>
+                    <tbody>
+                        @foreach (var f in p.Lignes)
+                        {
+                            <tr>
+                                <td>@Libelles.DateHeureLocale(f.Date)</td>
+                                <td>@f.Employe @if (f.Valideur is not null) { <br /><span class="detail">validé par @f.Valideur</span> }</td>
+                                <td class="detail">@f.Messages</td>
+                                <td>@f.Motif</td>
+                                <td>@(f.Patient ?? "—") <br /><span class="detail">@(f.Medecin ?? "—")@(f.NumeroOrdonnance is { } n ? $" · n° {n}" : "")</span></td>
+                                <td class="detail">@f.Produits</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <Pagination Total="p.Total" Numero="p.Numero" Taille="p.Taille" Libelle="Pages des alertes forcées" OnChange="x => ChargerAsync(x.Numero, x.Taille)" />
+    </section>
+}
+
+@code {
+    private DateOnly du = DateOnly.FromDateTime(DateTime.Today).AddMonths(-1);
+    private DateOnly au = DateOnly.FromDateTime(DateTime.Today);
+    private string code = "";
+    private PageDto<ForcageAlerteDto>? page;
+    private string? erreur;
+    private int taille = Pagination.TailleParDefaut;
+
+    protected override Task OnInitializedAsync()
+    {
+        // « ← Retour » : période, alerte et page retrouvées telles qu'elles étaient
+        Historique.Suivre("registre-forcages", e =>
+        {
+            e.Mettre("du", du); e.Mettre("au", au); e.Mettre("code", code);
+            e.Mettre("page", page?.Numero ?? 1); e.Mettre("taille", taille);
+        });
+        var r = Historique.Restaurer("registre-forcages");
+        if (r is null) return PremierePageAsync();
+        (du, au, code, taille) = (r.Date("du") ?? du, r.Date("au") ?? au, r.Texte("code") ?? "", r.Entier("taille") ?? taille);
+        return ChargerAsync(r.Entier("page") ?? 1, taille);
+    }
+
+    private Task PremierePageAsync() => ChargerAsync(1, taille);
+
+    private async Task ChargerAsync(int numero, int t)
+    {
+        taille = t;
+        var (r, e) = await Api.ForcagesPsychotropesAsync(du, au, code, numero, t);
+        (page, erreur) = (r ?? page, e);
+    }
+}

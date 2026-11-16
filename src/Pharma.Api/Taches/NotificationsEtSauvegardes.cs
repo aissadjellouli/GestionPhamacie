@@ -45,6 +45,9 @@ public sealed class SauvegardesAutomatiques(IServiceProvider services, ILogger<S
                 using var scope = services.CreateScope();
                 if (await scope.ServiceProvider.GetRequiredService<SauvegardeAutomatique>().ExecuterAsync(DateTime.Now, stoppingToken) is { } r)
                     logger.Log(r.Statut == "reussie" ? LogLevel.Information : LogLevel.Error, "Sauvegarde automatique : {Statut} · {Message}", r.Statut, r.Message);
+                // Copie de secours trop ancienne : titulaire prévenu (une alerte par période réglée)
+                if (await scope.ServiceProvider.GetRequiredService<SurveillerCopieSecours>().ExecuterAsync(stoppingToken))
+                    logger.LogWarning("Copie de secours en retard : titulaire prévenu");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

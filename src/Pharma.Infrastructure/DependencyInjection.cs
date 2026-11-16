@@ -26,8 +26,9 @@ namespace Pharma.Infrastructure;
 
 /// <summary>DossierArchiveChifa : copie des fichiers Chifa lus (GED\Chifa).</summary>
 /// <param name="FichierSuperAdmin">Fichier chiffré du compte super admin (vide : C:\ProgramData\PharmaOfficine\super-admin.dat).</param>
+/// <param name="FichierCleIntegrite">Fichier chiffré de la clé de scellement des journaux (vide : C:\ProgramData\PharmaOfficine\cle-integrite.dat).</param>
 public sealed record InfrastructureOptions(string ChaineConnexion, string DossierExportChifa, string DossierOrdonnances, string? CheminPgDump = null,
-    string? DossierArchiveChifa = null, string? FichierSuperAdmin = null);
+    string? DossierArchiveChifa = null, string? FichierSuperAdmin = null, string? FichierCleIntegrite = null);
 
 public static class DependencyInjection
 {
@@ -71,6 +72,14 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Stock.ISortiesStock, SortiesStockSql>();
         services.AddScoped<Pharma.Application.Stock.IEntreesStock, EntreesStockSql>();
         services.AddScoped<Pharma.Application.Achats.IGrossistes, Achats.GrossistesSql>();
+        services.AddScoped<Pharma.Application.Achats.ICatalogueGrossistes, Achats.CatalogueGrossistesSql>();
+        // Ruptures et substitution (lot 7, 116)
+        services.AddScoped<Pharma.Application.Achats.IRupturesGrossistes, Achats.RupturesGrossistesSql>();
+        services.AddScoped<Pharma.Application.Achats.IDemandesPatients, Achats.DemandesPatientsSql>();
+        // Formulaire d'accord SMS (2026-11-16, script 123)
+        services.AddScoped<Pharma.Application.Achats.IFormulaireAccordSmsDepot, Achats.FormulaireAccordSmsSql>();
+        services.AddSingleton<Pharma.Application.Achats.IDocumentsAccordSms, DocumentsPdf>();
+        services.AddScoped<Pharma.Application.Catalogue.ISubstitution, Achats.SubstitutionSql>();
         services.AddScoped<IProduitsModification, ProduitsModificationSql>();
         services.AddScoped<Pharma.Application.Essai.IRetoursEssai, Securite.RetoursEssaiSql>();
         services.AddScoped<IEmplacements, EmplacementsSql>();
@@ -104,6 +113,9 @@ public static class DependencyInjection
         services.AddSingleton<Application.Commun.ITraceErreurs, Systeme.TraceErreurs>();
         services.AddScoped<IAlertesEcriture, AlertesEcriture>();
         services.AddScoped<IRappelLot, RappelLotSql>();
+        // Sérialisation (script 120) : adaptateur FACTICE tant que l'API du MIPH n'est pas connue [À VÉRIFIER]
+        services.AddScoped<Application.Serialisation.IFileSerialisation, Serialisation.FileSerialisationSql>();
+        services.AddScoped<Application.Serialisation.ISerialisationConnecteur, Serialisation.SerialisationFactice>();
         services.AddScoped<JournalSql>();
         services.AddScoped<IJournal>(sp => sp.GetRequiredService<JournalSql>());
         services.AddScoped<IJournalLecture>(sp => sp.GetRequiredService<JournalSql>());
@@ -132,6 +144,9 @@ public static class DependencyInjection
         services.AddSingleton<Pharma.Application.Chifa.IDocumentsBordereau, DocumentsPdf>();
         services.AddScoped<Pharma.Application.Stock.ICampagnesInventaire, Lecture.CampagnesInventaireSql>();
         services.AddScoped<Pharma.Application.Pilotage.IPilotage, Lecture.PilotageSql>();
+        // Tableau de bord financier (lot 11)
+        services.AddScoped<Pharma.Application.Pilotage.IPilotageFinancier, Lecture.PilotageFinancierSql>();
+        services.AddSingleton<Pharma.Application.Pilotage.IDocumentsPilotageFinancier, DocumentsPdf>();
         services.AddScoped<Pharma.Application.Stock.IRegistrePsychotropes, RegistreSql>();
         services.AddScoped<Pharma.Application.Caisse.ITicketLecture, Caisse.TicketSql>();
         services.AddScoped<Pharma.Application.Caisse.IRecusCredit, Caisse.RecusCreditSql>();
@@ -158,6 +173,8 @@ public static class DependencyInjection
         services.AddSingleton<Pharma.Application.Reprise.ISourceReprise, Reprise.SourceOdbc>();
         services.AddScoped<Pharma.Application.Reprise.IRepriseImport, Reprise.RepriseSql>();
         services.AddScoped<Pharma.Application.Reprise.IDoublonsImport, Reprise.DoublonsImportSql>();
+        services.AddScoped<Pharma.Application.Reprise.IProfilsReprise, Reprise.ProfilsRepriseSql>();
+        services.AddScoped<Pharma.Application.Reprise.IHistoriqueChifa, Reprise.HistoriqueChifaSql>();
         services.AddScoped<Application.Ordonnances.IRapprochementCatalogue, Ordonnances.RapprochementSql>();
         services.AddSingleton<Application.Ordonnances.IStockageOrdonnances>(new Ordonnances.StockageOrdonnancesFichiers(options.DossierOrdonnances));
         services.AddScoped<ITracabiliteLecture, TracabiliteLecture>();
@@ -172,16 +189,42 @@ public static class DependencyInjection
         services.AddScoped<Application.Notifications.IAlertesNonEnvoyees, Notifications.AlertesNonEnvoyeesSql>();
         services.AddSingleton<Application.Notifications.IProtectionSecret, Notifications.ProtectionDpapi>();
         services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();
+        services.AddSingleton<Application.Achats.IEnvoiEmailPieceJointe, Notifications.EnvoiEmailMailKit>();
         services.AddSingleton<Application.Notifications.IEnvoiSms, Notifications.EnvoiSmsModemGsm>();
         services.AddSingleton<Application.SuperAdmin.ICompteSuperAdmin>(new Securite.CompteSuperAdminFichier(
             string.IsNullOrWhiteSpace(options.FichierSuperAdmin)
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "super-admin.dat")
                 : options.FichierSuperAdmin));
         services.AddScoped<Application.SuperAdmin.ITitulaireLecture, Securite.TitulaireLecture>();
+        // Intégrité des journaux : clé de scellement hors de la base (DPAPI machine), registre et vérifications en base (script 111)
+        var scelleur = new Securite.ScelleurIntegriteLocal(
+            string.IsNullOrWhiteSpace(options.FichierCleIntegrite)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "cle-integrite.dat")
+                : options.FichierCleIntegrite);
+        services.AddSingleton<Application.Integrite.IScelleurIntegrite>(scelleur);
+        // 2e serveur (script 122) : export / import de la clé (même fichier), réglages par serveur, réplication
+        services.AddSingleton<Application.SecondServeur.ICleIntegriteStockee>(scelleur);
+        services.AddScoped<Application.SecondServeur.ISecondServeurDepot, SecondServeur.SecondServeurSql>();
+        services.AddScoped<Application.Integrite.IIntegriteDepot, Securite.IntegriteSql>();
+        // Registre des psychotropes renforcé (lot 8, script 117) ; répertoire national des ordonnances : adaptateur FACTICE
+        services.AddScoped<Application.Psychotropes.IRegistreRenforceDepot, Psychotropes.RegistreRenforceSql>();
+        services.AddScoped<Application.Psychotropes.IZonePsychotropesDepot, Psychotropes.RegistreRenforceSql>();
+        services.AddSingleton<Application.Psychotropes.IRepertoireOrdonnancesConnecteur, Psychotropes.RepertoireOrdonnancesFactice>();
+        // Journal fiscal des ventes (lot 3, script 112) : lignes et clôtures en base, rapports scellés archivés sur le PC serveur
+        services.AddScoped<Application.Fiscal.IJournalFiscalDepot, Fiscal.JournalFiscalSql>();
+        services.AddSingleton<Application.Fiscal.IDocumentsFiscaux, DocumentsPdf>();
+        services.AddSingleton<Application.Fiscal.IArchivesFiscales>(new Fiscal.ArchivesFiscalesLocales(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "archives-fiscales")));
         // Restauration : scripts database/migration/0xx livrés avec l'API (sous-dossier « database »)
         services.AddScoped<Application.SuperAdmin.IRestaurationBase>(sp => new Sauvegardes.RestaurationPostgres(
             options.ChaineConnexion, options.CheminPgDump, Path.Combine(AppContext.BaseDirectory, "database"), sp.GetRequiredService<NpgsqlDataSource>()));
         services.AddScoped<Application.Sauvegardes.ISauvegardesDepot, Sauvegardes.SauvegardesSql>();
+        // PC de secours : réglages et état de la seconde copie hors de la base (C:\ProgramData\PharmaOfficine\copie-secours.json)
+        services.AddSingleton<Application.Sauvegardes.ICopieSecoursDepot>(new Sauvegardes.CopieSecoursFichier(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "copie-secours.json")));
+        services.AddSingleton<Application.Sauvegardes.IFichiersCopieSecours, Sauvegardes.FichiersCopieSecours>();
+        services.AddScoped<Application.Sauvegardes.ITestRestauration>(sp => new Sauvegardes.RestaurationPostgres(
+            options.ChaineConnexion, options.CheminPgDump, Path.Combine(AppContext.BaseDirectory, "database"), sp.GetRequiredService<NpgsqlDataSource>()));
         services.AddSingleton<Application.Ged.IGed, Ged.GedFichiers>();
         services.AddSingleton<Application.Sauvegardes.IStockageSauvegarde>(new Sauvegardes.StockagePgDump(options.ChaineConnexion, options.CheminPgDump));
         services.AddSingleton<IChifaConnecteur>(sp => new ChifaFichiersConnecteur(

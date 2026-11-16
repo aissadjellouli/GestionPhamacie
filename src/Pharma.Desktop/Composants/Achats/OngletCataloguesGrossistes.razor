@@ -1,0 +1,196 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Achats › Catalogues des grossistes (lot 6, M3a) : import du catalogue / de la disponibilité d'un grossiste (Excel ou CSV).
+   Formats des grossistes inconnus : la correspondance des colonnes se règle par grossiste (profil), rien n'est supposé.
+   Écran fixe : profil et import à gauche, historique des imports (paginé, filtré par grossiste) à droite, seul le tableau défile. *@
+<div class="achats-grille" style="@(premiereLecture ? null : "visibility: hidden")">
+    <section class="panneau cadre-defilant" aria-labelledby="t-profil">
+        <h2 id="t-profil">Fichier du grossiste</h2>
+        @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }
+        else if (message is not null) { <div class="succes" role="status" style="margin: 0">@message</div> }
+        <div class="achats-ligne">
+            <div class="champ" style="flex: 1 1 220px; min-width: 0">
+                <label for="cg-gros" class="requis">Grossiste</label>
+                <select id="cg-gros" data-champ="grossiste" @bind="fournisseurId" @bind:after="ChargerProfilAsync">
+                    <option value="0">Choisir…</option>
+                    @foreach (var f in fournisseurs.Where(x => x.Actif)) { <option value="@f.Id">@f.RaisonSociale</option> }
+                </select>
+            </div>
+            <div class="champ" style="flex: 2 1 260px; min-width: 0">
+                <label>Fichier (Excel .xlsx ou CSV)</label>
+                <div style="display: flex; gap: 8px; align-items: center">
+                    <button type="button" class="btn" disabled="@(enCours || fournisseurId == 0)" @onclick="ChoisirFichierAsync">Choisir le fichier…</button>
+                    <span class="detail">@(fichier?.NomFichier ?? "aucun")</span>
+                </div>
+            </div>
+        </div>
+        @if (fournisseurId != 0)
+        {
+            <p class="detail" style="margin: 0">Nom de l’en-tête (première ligne du fichier) de chaque information ; code produit ou code-barres obligatoire.
+                @(colonnes.Count > 0 ? "Colonnes lues dans le fichier choisi." : "Choisissez un fichier pour proposer ses colonnes.")</p>
+            <div class="achats-ligne">
+                @foreach (var (cle, libelle) in Champs)
+                {
+                    <div class="champ" style="flex: 1 1 150px; min-width: 0">
+                        <label for="cg-@cle">@libelle</label>
+                        @if (colonnes.Count > 0)
+                        {
+                            <select id="cg-@cle" value="@Lire(cle)" @onchange="e => Ecrire(cle, e.Value?.ToString())">
+                                <option value="">(absente)</option>
+                                @foreach (var c in colonnes) { <option value="@c">@c</option> }
+                                @if (Lire(cle) is { Length: > 0 } v && !colonnes.Contains(v)) { <option value="@v">@v (absente du fichier)</option> }
+                            </select>
+                        }
+                        else
+                        {
+                            <input id="cg-@cle" value="@Lire(cle)" @onchange="e => Ecrire(cle, e.Value?.ToString())" />
+                        }
+                    </div>
+                }
+            </div>
+            <div class="achats-ligne">
+                <div class="champ" style="flex: 1 1 200px; min-width: 0"><label for="cg-vdispo">Textes « disponible » (séparés par ;)</label>
+                    <input id="cg-vdispo" placeholder="à recopier du fichier" @bind="valeursDisponible" /></div>
+                <div class="champ" style="flex: 1 1 200px; min-width: 0"><label for="cg-vindispo">Textes « indisponible » (séparés par ;)</label>
+                    <input id="cg-vindispo" placeholder="à recopier du fichier" @bind="valeursIndisponible" /></div>
+            </div>
+            <p class="detail" style="margin: 0">Disponibilité : une quantité (0 = indisponible) ou l’un de ces textes ; un autre texte reste « inconnu » et est signalé.</p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                <button type="button" class="btn" disabled="@(enCours || !PeutCommander)" @onclick="EnregistrerProfilAsync">Enregistrer les colonnes</button>
+                <button type="button" class="btn btn-principal" disabled="@(enCours || fichier is null || !PeutCommander)" @onclick="ImporterAsync">Importer le fichier</button>
+            </div>
+            @if (bilan is not null)
+            {
+                <p style="margin: 0"><strong>@bilan.LignesRapprochees</strong> produit(s) mis à jour sur @bilan.LignesLues ligne(s) lue(s) ;
+                    @bilan.LignesIgnorees non rapprochée(s) (code-barres ou code inconnu de l’officine : rien n’est créé).</p>
+                @if (bilan.NonRapprochees.Count > 0) { <p class="detail" style="margin: 0">Non rapprochées : @string.Join(" ; ", bilan.NonRapprochees)</p> }
+                @if (bilan.Anomalies.Count > 0) { <p class="detail" style="margin: 0">À vérifier : @string.Join(" ; ", bilan.Anomalies.Select(a => $"ligne {a.NumeroLigne} : {a.Message}"))</p> }
+            }
+        }
+    </section>
+
+    <div class="liste">
+        <h2 id="t-imports" style="margin: 0">Imports</h2>
+        <section class="tableau-cadre" aria-labelledby="t-imports">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Date</th><th scope="col">Grossiste</th><th scope="col">Fichier</th><th scope="col">Lues</th><th scope="col">Mises à jour</th><th scope="col">Ignorées</th></tr></thead>
+                <tbody>
+                    @foreach (var i in imports)
+                    {
+                        <tr><td>@Libelles.DateLocale(i.ImporteLe)<br /><span class="detail">@i.Utilisateur</span></td><td>@i.Grossiste</td><td>@i.NomFichier</td>
+                            <td>@i.LignesLues</td><td>@i.LignesRapprochees</td><td>@i.LignesIgnorees</td></tr>
+                    }
+                    @if (imports.Count == 0) { <tr><td colspan="6" class="vide">Aucun import@(fournisseurId != 0 ? " pour ce grossiste" : "").</td></tr> }
+                </tbody>
+            </table>
+        </section>
+        <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des imports" OnChange="p => ChargerImportsAsync(p.Numero, p.Taille)" />
+    </div>
+</div>
+
+@code {
+    private static readonly (string Cle, string Libelle)[] Champs =
+    [
+        ("code", "Code produit"), ("barre", "Code-barres"), ("designation", "Désignation"),
+        ("prix", "Prix HT"), ("dispo", "Disponibilité"), ("delai", "Délai (jours)")
+    ];
+
+    private List<FournisseurDto> fournisseurs = [];
+    private List<ImportCatalogueDto> imports = [];
+    private List<string> colonnes = [];
+    private readonly Dictionary<string, string?> profil = [];
+    private string? valeursDisponible, valeursIndisponible;
+    private FichierCatalogueRequete? fichier;
+    private BilanImportCatalogueDto? bilan;
+    private long fournisseurId;
+    private int total, page = 1, taille = Pagination.TailleParDefaut;
+    private bool enCours, premiereLecture;
+    private string? erreur, message;
+
+    private bool PeutCommander => Session.A("achats.commander");
+
+    protected override async Task OnInitializedAsync()
+    {
+        (fournisseurs, erreur) = await Api.FournisseursAsync();
+        // « ← Retour » : grossiste choisi et page des imports retrouvés
+        Historique.Suivre("catalogues", e => { e.Mettre("grossiste", fournisseurId > 0 ? fournisseurId : null); e.Mettre("page", page); e.Mettre("taille", taille); });
+        var r = Historique.Restaurer("catalogues");
+        if (r is not null)
+        {
+            (page, taille) = (r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+            if (r.Long("grossiste") is { } g) { fournisseurId = g; await ChargerProfilAsync(); }
+        }
+        await ChargerImportsAsync(page, taille);
+        premiereLecture = true;
+    }
+
+    private string? Lire(string cle) => profil.TryGetValue(cle, out var v) ? v : null;
+    private void Ecrire(string cle, string? v) => profil[cle] = string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+
+    private async Task ChargerProfilAsync()
+    {
+        (bilan, fichier, colonnes, erreur, message) = (null, null, [], null, null);
+        profil.Clear();
+        (valeursDisponible, valeursIndisponible) = (null, null);
+        if (fournisseurId != 0)
+        {
+            var (p, e) = await Api.ProfilCatalogueAsync(fournisseurId);
+            if (p is null) { erreur = e; return; }
+            (profil["code"], profil["barre"], profil["designation"], profil["prix"], profil["dispo"], profil["delai"]) =
+                (p.ColonneCode, p.ColonneCodeBarre, p.ColonneDesignation, p.ColonnePrixHt, p.ColonneDisponibilite, p.ColonneDelai);
+            (valeursDisponible, valeursIndisponible) = (p.ValeursDisponible, p.ValeursIndisponible);
+        }
+        await ChargerImportsAsync(1, taille);
+    }
+
+    private async Task ChargerImportsAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.ImportsCatalogueAsync(fournisseurId == 0 ? null : fournisseurId, numero, nouvelleTaille);
+        if (p is null) { erreur ??= e; return; }
+        if (p.Lignes.Count == 0 && numero > 1) { await ChargerImportsAsync(1, nouvelleTaille); return; }
+        (imports, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    private async Task ChoisirFichierAsync() => await Executer(async () =>
+    {
+        var chemin = Dialogues.ChoisirFichier("Catalogue ou disponibilité du grossiste", "Tableaux (Excel, CSV)|*.xlsx;*.csv;*.txt|Tous les fichiers|*.*");
+        if (chemin is null) return null;
+        var f = new FichierCatalogueRequete(System.IO.Path.GetFileName(chemin), Convert.ToBase64String(await System.IO.File.ReadAllBytesAsync(chemin)));
+        var (c, e) = await Api.ColonnesCatalogueAsync(f);
+        if (e is not null) return e;
+        (fichier, colonnes, bilan) = (f, c!, null);
+        return null;
+    });
+
+    private ProfilCatalogueDto Profil() => new(fournisseurId, Lire("code"), Lire("barre"), Lire("designation"), Lire("prix"), Lire("dispo"), Lire("delai"),
+        valeursIndisponible, valeursDisponible, null);
+
+    private async Task EnregistrerProfilAsync() => await Executer(async () =>
+    {
+        var e = await Api.EnregistrerProfilCatalogueAsync(Profil());
+        if (e is null) message = "Colonnes du fichier enregistrées pour ce grossiste.";
+        return e;
+    });
+
+    private async Task ImporterAsync() => await Executer(async () =>
+    {
+        // Colonnes enregistrées d'abord : l'import lit le fichier avec le profil du grossiste
+        var e = await Api.EnregistrerProfilCatalogueAsync(Profil());
+        if (e is not null) return e;
+        var (b, e2) = await Api.ImporterCatalogueAsync(fournisseurId, fichier!);
+        if (e2 is not null) return e2;
+        bilan = b;
+        message = $"Import de {fichier!.NomFichier} terminé.";
+        await ChargerImportsAsync(1, taille);
+        return null;
+    });
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

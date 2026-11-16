@@ -64,9 +64,14 @@
         ("admin/pharmacie", "admin.parametres"),
         ("admin/notifications", "role.titulaire"),
         ("admin/sauvegardes", "admin.sauvegardes"),
+        ("admin/second-serveur", "role.titulaire"),
         ("admin/reprise", "role.super_admin"),
         ("admin/doublons-import", "reprise.doublons"),
-        ("admin/nomenclature", "role.titulaire")
+        ("admin/profils-reprise", "role.super_admin"),
+        ("admin/historique-chifa", "chifa.bordereaux"),
+        ("admin/nomenclature", "role.titulaire"),
+        ("admin/serialisation", "role.titulaire"),
+        ("admin/psychotropes", "role.titulaire")
     ];
 
     private static readonly Rubrique_[] Rubriques =
@@ -83,10 +88,15 @@
         new("Indications thérapeutiques", "admin/indications", "catalogue.creer"),
         new("Imprimantes et étiquettes", "admin/imprimantes", "admin.parametres"),
         new("Sauvegardes", "admin/sauvegardes", "admin.sauvegardes"),
+        new("2e serveur", "admin/second-serveur", "role.titulaire"),
         new("Notifications au titulaire", "admin/notifications", "role.titulaire"),
         new("Reprise de données", "admin/reprise", "role.super_admin"),
         new("Doublons d’import", "admin/doublons-import", "reprise.doublons"),
+        new("Profils de reprise", "admin/profils-reprise", "role.super_admin"),
+        new("Historique des organismes repris", "admin/historique-chifa", "chifa.bordereaux"),
         new("Nomenclature nationale", "admin/nomenclature", "role.titulaire"),
+        new("Sérialisation DataMatrix", "admin/serialisation", "role.titulaire"),
+        new("Psychotropes et antibiotiques", "admin/psychotropes", "role.titulaire"),
         new("Langue et pharmacie", "admin/pharmacie", "admin.parametres")
     ];
 
@@ -96,10 +106,13 @@
         ["admin/seuils"] = [("peremption", "Péremption"), ("grossistes", "Péremption par grossiste"), ("exceptions", "Exceptions par produit"), ("stock", "Stock et lots délaissés"), ("produits", "Seuils par produit")],
         ["admin/droits"] = [("utilisateurs", "Utilisateurs"), ("roles", "Droits par rôle")],
         ["admin/caisse"] = [("regles", "Règles"), ("journal", "Journal des actions sensibles")],
-        ["admin/imprimantes"] = [("tickets", "Tickets et afficheur"), ("etiquettes", "Étiquettes")],
-        ["admin/sauvegardes"] = [("reglages", "Réglages"), ("journal", "Journal des sauvegardes")],
-        ["admin/notifications"] = [("envoi", "E-mail et SMS"), ("destinataires", "Destinataires"), ("fiche", "Ajouter ou modifier"), ("file", "File d’attente")],
+        ["admin/controle-interne"] = [("seuils", "Seuils et horaires"), ("integrite", "Intégrité des journaux"), ("journal-fiscal", "Journal fiscal")],
+        ["admin/imprimantes"] = [("tickets", "Tickets et afficheur"), ("etiquettes", "Étiquettes"), ("serveur", "Serveur et PC de secours")],
+        ["admin/sauvegardes"] = [("reglages", "Réglages"), ("secours", "Copie de secours"), ("journal", "Journal des sauvegardes")],
+        ["admin/second-serveur"] = [("etat", "État de la réplication"), ("serveurs", "Réglages par serveur"), ("cle", "Clé de scellement")],
+        ["admin/notifications"] = [("envoi", "E-mail et SMS"), ("destinataires", "Destinataires"), ("fiche", "Ajouter ou modifier"), ("file", "File d’attente"), ("formulaire-sms", "Formulaire d’accord SMS")],
         ["admin/nomenclature"] = [("version", "Version et catégories"), ("verifier", "Produits à vérifier")],
+        ["admin/psychotropes"] = [("alertes", "Alertes du registre"), ("antibiotiques", "Suivi des antibiotiques")],
         ["admin/pharmacie"] = [("pharmacie", "Pharmacie et langue"), ("organismes", "Organismes payeurs"), ("medecins", "Médecins prescripteurs")]
     };
 

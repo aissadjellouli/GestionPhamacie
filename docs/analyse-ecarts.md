@@ -51,6 +51,8 @@
 
 **Bilan M1 : Partiel avancé** — il manque le port national, la file hors ligne et le paramétrage des AI.
 
+**Mise à jour 2026-11-16 (lot 10, script 120)** : port `ISerialisationConnecteur` avec adaptateur **factice** (réponses paramétrables), file hors ligne `verification_serialisation` rejouée par tâche de fond (vente jamais bloquée, boîte refusée après coup signalée au titulaire), écran Administration › Sérialisation DataMatrix, identifiants GS1 paramétrables (`parametre_gs1_ai`, défauts inchangés). Reste : adaptateur réel [À VÉRIFIER : API MIPH] et normes [À VÉRIFIER IANOR / GS1].
+
 ### M2 — Psychotropes et stupéfiants
 
 | Fonction / critère | Statut | Constat |
@@ -70,21 +72,27 @@
 
 **Bilan M2 : Partiel** (base solide, manque hachage, alertes, répertoire, antibiotiques).
 
+**Lot 8 réalisé le 2026-11-16 (script 117)** : registre chaîné par un journal séparé avec ligne d’ouverture scellant les lignes
+antérieures, concordance vérifiée chaque nuit, scellement mensuel ; écritures d’annulation ; quatre alertes réglables avec forçage
+(motif, employé, valideur par code) ; exports d’inspection PDF, Excel (.xlsx) et CSV par période, produit, patient, prescripteur avec
+sceau ; suivi des antibiotiques ; `IRepertoireOrdonnancesConnecteur` avec adaptateur factice. Restent : zone du médecin (« hors zone »),
+durée de traitement saisie à la caisse, nomenclature des antibiotiques et seuils à confirmer, connecteur réel du répertoire.
+
 ### M3 — Ruptures et réseau
 
 | Fonction / critère | Statut | Constat |
 |---|---|---|
 | Commandes fournisseurs | **Fait** (mono-grossiste) | `commande_fournisseur`, `src/Pharma.Application/Achats/Achats.cs`, `AchatsSql.cs`, `OngletCommandes.razor` ; un brouillon par grossiste. |
-| Écran unique multi-grossistes, comparaison prix/délais | **Absent** | Seul le dernier prix par grossiste est connu (`AchatsDuProduit`). |
-| Catalogue/disponibilité par grossiste (fichier, e-mail, API) | **Absent** | Pas de table catalogue grossiste ; pas d'`IGrossisteConnector`. |
-| Répartir une commande entre grossistes | **Partiel** | Possible à la main (un bon par grossiste) ; pas de répartition assistée. |
+| Écran unique multi-grossistes, comparaison prix/délais | **Fait** (2026-11-16, lot 6) | Achats › Commander (`OngletCommander.razor`, `ComparerGrossistes`, `RegleChoixGrossiste`). |
+| Catalogue/disponibilité par grossiste (fichier, e-mail, API) | **Partiel** (2026-11-16, lot 6) | `IGrossisteConnecteur` : fichier (profil de colonnes par grossiste) et e-mail (SMTP) ; `catalogue_grossiste` (115) ; API grossistes absente. |
+| Répartir une commande entre grossistes | **Fait** (2026-11-16, lot 6) | `RepartirCommande` : un bon par grossiste. |
 | Envoi du bon de commande | **Partiel** | PDF produit à l'émission ; pas d'envoi automatique. |
 | Suggestions « à commander » | **Fait** | Ruptures + stock critique, dernier prix et grossiste (règle « suggestions de commande »). |
-| Historique des ruptures chez les grossistes, retour en stock | **Absent** | Les ruptures connues sont celles de l'officine seulement. |
-| File des patients en attente + rappel SMS/WhatsApp [À VÉRIFIER] | **Absent** | Les SMS existants ne vont qu'au titulaire et à ses destinataires vérifiés (modem GSM). |
-| Substitution même DCI/dosage/forme | **Fait, mais écart** | `ListerAlternatives.cs`, `RechercherAuComptoir.cs`, `EquivalentsComptoirSql.cs`. **Le dépôt propose aussi un autre dosage/forme « à valider »**, contraire au critère « uniquement ». À trancher (paramètre). |
-| Mise en avant des génériques locaux | **Absent** | Pas de champ « fabriqué en Algérie » constaté sur `produit` [Supposé : déductible de la nomenclature, à vérifier]. |
-| Liste blanche du pharmacien | **Absent** | |
+| Historique des ruptures chez les grossistes, retour en stock | **Fait** (2026-11-16, lot 7) | `rupture_grossiste` (116), noté à chaque import de catalogue ; Achats › Ruptures chez les grossistes (`OngletRuptures.razor`). Dépend des fichiers importés (pas d'API grossiste). |
+| File des patients en attente + rappel SMS/WhatsApp [À VÉRIFIER] | **Fait** (2026-11-16, lot 7), WhatsApp exclu | `demande_patient` (116) + produits dus des ventes en attente (094) ; alerte au comptoir ; SMS par le modem local seulement avec l'accord du patient (`patient.consentement_sms`), texte sans donnée de santé. Consentement et règles de communication [À VÉRIFIER]. |
+| Substitution même DCI/dosage/forme | **Fait** (écart levé le 2026-11-16, lot 7) | Paramètre « équivalent exact seulement » activé par défaut (`parametre_substitution`, `RegleSubstitution`) ; le titulaire peut le désactiver pour retrouver l'autre dosage/forme « à valider ». |
+| Mise en avant des génériques locaux | **Fait** (2026-11-16, lot 7) | `produit.fabrication_locale` (saisie) sinon pays de la nomenclature (`v_produit_fabrication_locale`) ; fabriqué en Algérie en tête des remplaçants. |
+| Liste blanche du pharmacien | **Fait** (2026-11-16, lot 7) | `substitution_liste_blanche`, Achats › Substitution. |
 | Réseau inter-officines opt-in, application patient | **Absent** | Nécessite un serveur central (§ 4 bis). |
 
 **Bilan M3 : Partiel** (achats et substitution présents ; multi-grossistes, ruptures externes, réseau absents).
@@ -117,6 +125,8 @@
 | Suggestions de commande (saisonnalité) | **Partiel** | Ruptures/stock critique uniquement, sans historique ni saisonnalité. |
 
 **Bilan M5 : Partiel.**
+
+**Mise à jour 2026-11-16 (lot 11, sans script)** : Pilotage › Tableau de bord financier (`/pilotage-financier`, titulaire ou `rapports.marges`, lecture seule) : CA, marge et taux, panier moyen comparés à la période précédente ; répartition comptant / crédit / Chifa / MDN ; créances (bordereaux non réglés par âge, part hors bordereau, crédits patients par âge) ; valeur, rotation, couverture du stock, **stock dormant avec valeur immobilisée**, ruptures ; achats par grossiste ; **marge par produit et par laboratoire** ; **taux de rejet Chifa par motif** ; TVA par taux lue au journal fiscal ; exports PDF et Excel (`PilotageFinancier.cs`, `PilotageFinancierSql.cs`). Restent : évolution de la marge dans le temps par produit, suggestions de retour avant péremption, suggestions saisonnières.
 
 ### M6 — Conformité fiscale
 
@@ -207,11 +217,11 @@ Colonne **Version** : **A** = faisable sur la **version actuelle** (installée d
 | 2 | P1 · M6a Brique d'intégrité | Fonction de hachage, chaînage générique, vérification planifiée + alerte titulaire, rôle propriétaire séparé | A → C | M | 111 | 0 | Algorithme, fréquence |
 | 3 | P1 · M6b Journal des ventes | `journal_vente` ajout seul chaîné, numérotation sans trou, clôtures journalières/mensuelles scellées, récap TVA | A → C | L | 112-113 | 2 | Format d'export DGI, durée 6 ans, TVA médicaments/parapharmacie |
 | 4 | P1 · M4a Reprise concurrents | Profils Chifa Plus / XpertPharm / PharmaPro / Profficine, import xlsx, historique Chifa | A → C | M par profil | 114 | exports réels | Format de chaque logiciel |
-| 5 | P1 · M4b Résilience | Mode dégradé si PC serveur indisponible : **A** = PC de secours / sauvegarde restaurable sur un autre poste ; **C** = base locale par poste et synchronisation | A puis C | L | — | décision | — |
+| 5 | P1 · M4b Résilience | Mode dégradé si PC serveur indisponible : **A** = PC de secours / sauvegarde restaurable sur un autre poste (**A fait le 16/11/2026** : copie de secours vérifiée, test de restauration, bandeau poste, script de bascule ; **2e serveur fait le 16/11/2026** : réplication PostgreSQL en continu, API de secours en veille, bascule par une personne, export/import protégé de la clé de scellement, écran « 2e serveur », script 122) ; **C** = base de l'officine (PC serveur local, partagé par tous les postes) synchronisée avec le serveur central — pas de base par poste (décision du titulaire, 16/11/2026) | A puis C | L | — | décision | — |
 | 6 | P1 · M3a Multi-grossistes | `IGrossisteConnecteur` (fichier, e-mail), catalogue et dispo, comparaison, répartition de commande | A → C (API grossistes : C) | L | 115 | — | Formats grossistes |
 | 7 | P1 · M3b Ruptures et substitution | Historique ruptures, file patients en attente, liste blanche, génériques locaux, paramètre « équivalent exact seulement » | A → C | M | 116 | 6 | Consentement SMS/WhatsApp |
 | 8 | P2 · M2 Registre renforcé | Chaînage du registre, écritures d'annulation, alertes paramétrables avec forçage tracé, exports Excel et filtres, antibiotiques, `IRepertoireOrdonnancesConnecteur` factice | A → C (connecteur réel : C) | L | 117-118 | 2 | Nomenclature des molécules, seuils |
-| 9 | P2 · Données de santé | Journal des accès patient, chiffrement des colonnes sensibles, export/anonymisation | A → C | L | 119 | 8 | Loi 18-07, durée de conservation |
+| 9 | **Dernier** · Données de santé | Journal des accès patient, chiffrement des colonnes sensibles et des sauvegardes, export/anonymisation. **Reporté en fin de plan ; jamais lancé sans l'approbation explicite du titulaire (décision du 16/11/2026).** | A → C | L | 119 | 8 | Loi 18-07, durée de conservation |
 | 10 | P2 · M1 Sérialisation | `ISerialisationConnecteur` factice, file de vérification hors ligne, décommissionnement, AI GS1 paramétrables | A (factice) → C (base nationale) | M | 120 | file générique | API MIPH, normes IANOR |
 | 11 | P3 · M5 Pilotage | Marge par produit/labo/temps, valeur dormante, suggestions de retour, taux de rejet Chifa par motif, suggestions saisonnières | A → C | M | 121 | 7 | — |
 | 12 | P3 · Réseau | Serveur central en Algérie, multi-officines, partage opt-in agrégé, puis application patient | **C** | L+ | 122+ | hébergement ARPCE | Règles CNOP |
@@ -231,7 +241,7 @@ Principe (décision du titulaire, 16/11/2026) : la **version cloud part de la ve
 | Changement de logiciel (M4) | Profils d'import des concurrents, import Excel, multi-postes (déjà fait) | — |
 | Pilotage (M5) | Marges, stock dormant, périmés, rejets Chifa, suggestions | — |
 | Données de santé | Journaux sans données personnelles (fait), journal des accès, chiffrement des colonnes et des **sauvegardes**, anonymisation | Rien ne sort de l'officine : conforme § 4 bis par construction. |
-| Résilience | PC de secours ou restauration rapide de la sauvegarde sur un autre poste | Pas de base locale par poste dans cette version. |
+| Résilience | PC de secours ou restauration rapide de la sauvegarde sur un autre poste | Une seule base par officine, partagée par tous les postes. |
 | Mobile du titulaire | Onglet Pilotage dans l'officine, ou à distance par **VPN** | Sans serveur extérieur. |
 
 ### Ce qui n'existe que dans la version cloud
@@ -239,7 +249,7 @@ Principe (décision du titulaire, 16/11/2026) : la **version cloud part de la ve
 | Domaine | Propre au cloud | Pourquoi |
 |---|---|---|
 | Hébergement | Serveur central chez un hébergeur **algérien autorisé ARPCE**, réplica et sauvegardes chez un second hébergeur | § 4 bis : aucune donnée hors d'Algérie. |
-| Postes | **Base locale par poste** (caisse hors ligne) et **synchronisation** avec le serveur central ; gestion des conflits | Changement d'architecture : identifiants GUID ou clé de synchronisation pour les nouvelles tables, horodatage UTC (déjà en place). |
+| Officine | **Une base par officine** (le PC serveur de l'officine, comme aujourd'hui, partagé par tous les postes) qui vend hors Internet et se **synchronise** avec le serveur central quand la connexion revient ; gestion des conflits entre officine et serveur central seulement | Décision du titulaire (16/11/2026) : pas de base par poste. Plus simple : un seul point de synchronisation par officine, les postes restent des clients du PC serveur. Clé de synchronisation (GUID) pour les nouvelles tables ; horodatage UTC déjà en place. Si le PC serveur tombe : PC de secours (lot 5 A). |
 | Multi-officines | Un titulaire suit plusieurs officines | Demande le serveur central. |
 | Réseau entre officines (M3) | Disponibilités agrégées opt-in, dépannage entre confrères, puis application patient | Demande le serveur central et l'accord CNOP. |
 | Connecteurs nationaux réels | Base nationale de sérialisation (MIPH), répertoire des ordonnances, plateforme des officines, API des grossistes | Les versions factices de la version actuelle sont remplacées par les réelles. |

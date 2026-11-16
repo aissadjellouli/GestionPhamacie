@@ -42,7 +42,11 @@ public sealed record SituationLotVente(long LotId, string Situation, string? Num
 /// (image conservée sur le serveur, désignée par son jeton).
 /// </summary>
 public sealed record OrdonnanceSaisie(long? MedecinId, DateOnly DatePrescription, string? Numero,
-    string? JetonScan = null, string? TexteReconnu = null, PorteurOrdonnance? Porteur = null);
+    string? JetonScan = null, string? TexteReconnu = null, PorteurOrdonnance? Porteur = null, int? DureeTraitementJours = null)
+{
+    /// <summary>Durée du traitement (jours), facultative : psychotrope ou stupéfiant seulement, inscrite au registre (2026-11-16).</summary>
+    public const int DureeMax = 3650;
+}
 
 /// <summary>Porteur de l'ordonnance quand ce n'est pas le patient : inscrit au registre des psychotropes.</summary>
 public sealed record PorteurOrdonnance(string? Nom, string? Adresse, string? PieceIdentite);
@@ -181,7 +185,8 @@ public sealed class Encaisser(
     Alertes.IAlertesLotsDelaisses? lotsDelaisses = null, Notifications.IAlertesTitulaire? alertesTitulaire = null,
     Surveillance.Surveiller? surveillance = null, IRemisesAutomatiques? remisesAuto = null, ITraceErreurs? trace = null,
     IVoletsChifa? voletsChifa = null, Securite.AutorisationCourante? autorisation = null,
-    Referentiels.IMotifsReglables? motifs = null, IAvoirs? avoirs = null)
+    Referentiels.IMotifsReglables? motifs = null, IAvoirs? avoirs = null,
+    Psychotropes.ControleAlertesPsychotropes? alertesPsychotropes = null)
 {
     /// <summary>Totaux recalculés par le serveur (mêmes règles que l'encaissement), sans rien enregistrer.</summary>
     public async Task<ApercuVente> CalculerAsync(CommandeVente commande, long utilisateurId, CancellationToken ct = default)
@@ -411,7 +416,18 @@ public sealed class Encaisser(
                 throw new RegleMetierException("La date de prescription ne peut pas être dans le futur.");
             // Porteur différent du patient : nom, adresse et pièce d'identité au registre (psychotropes seulement)
             commande = commande with { Ordonnance = o with { Porteur = vente.ContientSousRegistre && o.Porteur is { } p ? VerifierPorteur(p) : null } };
+            // Durée du traitement : facultative (jamais bloquante si absente), gardée seulement pour un psychotrope ou stupéfiant
+            if (vente.ContientSousRegistre && o.DureeTraitementJours is < 1 or > OrdonnanceSaisie.DureeMax)
+                throw new RegleMetierException($"Durée du traitement : de 1 à {OrdonnanceSaisie.DureeMax} jours (ou laissez vide).", "duree_traitement");
+            if (!vente.ContientSousRegistre && commande.Ordonnance!.DureeTraitementJours is not null)
+                commande = commande with { Ordonnance = commande.Ordonnance with { DureeTraitementJours = null } };
         }
+        // Registre renforcé (lot 8) : une alerte psychotrope non forcée (motif) bloque l'encaissement
+        if (vente.ContientSousRegistre && alertesPsychotropes is not null)
+            await alertesPsychotropes.ExigerAsync(utilisateurId, new Psychotropes.DelivrancePsychotrope(commande.PatientId,
+                commande.Ordonnance?.MedecinId, commande.Ordonnance?.Numero, commande.Ordonnance?.DatePrescription,
+                vente.Lignes.Where(l => l.ProduitId is not null).Select(l => new Psychotropes.LignePsychotrope(l.ProduitId!.Value, l.Quantite)).ToList(),
+                commande.Ordonnance?.DureeTraitementJours), ct);
         // « Remis à » (avec ordonnance) / « Pour » (sans ordonnance) : la vente et sa dette restent au nom du patient (RemiseVente)
         var (remisA, pour) = RemiseVente.Verifier(commande.PatientId, commande.Ordonnance is not null, commande.RemisA, commande.Pour,
             commande.Ordonnance?.Porteur?.Nom);

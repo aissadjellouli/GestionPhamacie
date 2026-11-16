@@ -10,7 +10,8 @@ public sealed class RegistreSql(NpgsqlDataSource db) : IRegistrePsychotropes
     private const string Colonnes = """
         numero, cree_le, produit_id, produit, numero_lot, type_mouvement, entree, sortie, solde_produit, solde_lot,
         NULLIF(patient, ''), medecin, ordonnance, fournisseur, reference,
-        porteur_nom, porteur_adresse, porteur_piece, employe, patient_id
+        porteur_nom, porteur_adresse, porteur_piece, employe, patient_id,
+        (SELECT rp.duree_traitement_jours FROM registre_psychotrope rp WHERE rp.numero_ordre = v_registre_psychotrope.numero)
         """;
 
     /// <summary>Filtre commun : $1 et $2 bornes de la période (instants), $3 produit (ou null).</summary>
@@ -29,7 +30,7 @@ public sealed class RegistreSql(NpgsqlDataSource db) : IRegistrePsychotropes
         string? S(int i) => r.IsDBNull(i) ? null : r.GetString(i);
         int? N(int i) => r.IsDBNull(i) ? null : r.GetInt32(i);
         return new LigneRegistre(r.GetInt64(0), r.GetDateTime(1), r.GetInt64(2), r.GetString(3), r.GetString(4), r.GetString(5),
-            N(6), N(7), N(8), r.GetInt32(9), S(10), S(11), S(12), S(13), S(14), S(15), S(16), S(17), r.GetString(18), r.IsDBNull(19) ? null : r.GetInt64(19));
+            N(6), N(7), N(8), r.GetInt32(9), S(10), S(11), S(12), S(13), S(14), S(15), S(16), S(17), r.GetString(18), r.IsDBNull(19) ? null : r.GetInt64(19), N(20));
     }
 
     /// <summary>
@@ -62,7 +63,7 @@ public sealed class RegistreSql(NpgsqlDataSource db) : IRegistrePsychotropes
         ParametresPeriode(cmd, produitId, du, au);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)type ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         PaginationSql.Parametres(cmd, page);
-        return await PaginationSql.LireAsync(cmd, page, 20, Lire, ct);
+        return await PaginationSql.LireAsync(cmd, page, 21, Lire, ct);
     }
 
     public async Task<IReadOnlyList<string>> TypesAsync(long? produitId, DateOnly du, DateOnly au, CancellationToken ct = default)

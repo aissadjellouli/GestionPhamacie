@@ -62,7 +62,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `110`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `123`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -305,6 +305,26 @@ L'ancienne base n'est jamais modifiée : on travaille sur une copie, ce qui rend
    republier l'API et les postes avec le SDK à jour et les remplacer de la même façon, même sans nouvelle fonction.
 5. Nouvelle nomenclature du ministère : la réimporter dans Administration › Nomenclature. L'import remplace l'ancienne liste sans toucher au catalogue.
 
+### Séparation des rôles (journaux inaltérables) — à faire par l'administrateur
+
+**Non faite par le logiciel** (2026-11-16, lot 2) : elle demande un superutilisateur PostgreSQL. Tant qu'elle n'est pas faite, le compte de l'API `pharma_app` est **propriétaire** de la base : il pourrait désactiver les déclencheurs qui protègent les journaux chaînés (`ALTER TABLE … DISABLE TRIGGER`). La vérification nocturne de l'intégrité détecte alors la falsification, mais ne l'empêche pas.
+
+Procédure (une fois par base, après `111_integrite_hachage.sql`) :
+
+1. Faire une sauvegarde de la base ; arrêter le service : `sc.exe stop "PharmaOfficine API"`.
+2. En superutilisateur : `psql -U postgres -d <base> -v ON_ERROR_STOP=1 -f database\migration\111b_roles_integrite.sql`. Le script crée le rôle sans connexion `pharma_proprietaire`, lui donne la base, le schéma et tous les objets, rend à `pharma_app` lecture, ajout, modification et suppression sur les tables métier, et lui retire `UPDATE`, `DELETE` et `TRUNCATE` sur les journaux (tables chaînées, `sceau_integrite`, `verification_integrite`, `journal_audit`, `journal_sauvegarde`, `boite_evenement`, `registre_psychotrope`) ainsi que l'écriture dans `chaine_integrite`.
+3. Lire la dernière ligne affichée : `objets_encore_a_pharma_app` doit valoir 0.
+4. Redémarrer le service et vérifier une vente, une clôture et Administration › Contrôle interne › Intégrité des journaux (« Vérifier maintenant »).
+5. **Ensuite**, les nouveaux scripts de mise à jour et les restaurations se lancent avec un compte membre de `pharma_proprietaire` (`GRANT pharma_proprietaire TO <administrateur>;` puis `SET ROLE pharma_proprietaire;` en tête de session), jamais avec `pharma_app`.
+
+Retour arrière : `ALTER DATABASE <base> OWNER TO pharma_app;` puis `REASSIGN OWNED BY pharma_proprietaire TO pharma_app;` (en superutilisateur).
+
+### Clé de scellement des journaux
+
+Au premier démarrage, l'API crée `C:\ProgramData\PharmaOfficine\cle-integrite.dat` (clé de scellement, chiffrée pour ce PC). Elle se **sauvegarde avec le PC serveur** (copie du fichier sur le disque externe, comme `super-admin.dat`) : sans elle, les sceaux déjà posés ne peuvent plus être vérifiés (ils sont signalés « faits avec une autre clé »). Elle n'est lisible que sur ce PC : un changement de PC serveur demande une procédure de reprise (voir « PC serveur en panne »). Depuis le 2026-11-16 (accord du titulaire), le titulaire **exporte** la clé dans un fichier protégé par un mot de passe qu'il choisit (Administration › 2e serveur › Clé de scellement), et elle s'**importe** sur un autre PC (`Pharma.Api.exe --importer-cle <fichier>`) : voir « 2e serveur ».
+
+Journal fiscal des ventes (lot 3) : les rapports de clôture et mensuels scellés sont archivés dans `C:\ProgramData\PharmaOfficine\archives-fiscales\AAAA\MM` ; ce dossier se **sauvegarde avec le PC serveur** et se **conserve 6 ans au moins** (`parametre_fiscal.conservation_annees`). Ne jamais purger le journal ni les sceaux : la base le refuse.
+
 Côté développement, à chaque nouveau script `0xx`, il faut régénérer `database/init/schema.sql` (`pg_dump --schema-only --no-owner --no-privileges` d'une base construite par les scripts) et compléter `seed_referentiel.sql` s'il ajoute des données de référence (un nouveau droit, par exemple).
 
 ## Restauration (base ou GED détruite)
@@ -346,3 +366,168 @@ sur le PC serveur ; la base, elle, peut être détruite (le compte du super admi
 
 La copie de la GED sur le disque externe n'a qu'un exemplaire par document : un document abîmé sur le serveur remplace sa copie à la
 sauvegarde suivante. Garder deux disques externes en rotation (étape 8.2).
+
+## PC serveur en panne (bascule sur le PC de secours)
+
+Ajouté le 2026-11-16 (lot 5, version actuelle). La pharmacie repart sur un **PC de secours** de l'officine, à partir de la dernière
+**copie de secours** de la base. Les copies restent dans l'officine (§ 4 bis de l'analyse des écarts) ; elles ne sont **pas chiffrées** :
+les ranger comme les sauvegardes (accès restreint au dossier).
+
+### À préparer à l'avance (une fois)
+
+1. **PC de secours** : un PC de l'officine (souvent un poste de caisse) avec PostgreSQL (étape 1, même version majeure que le PC serveur,
+   compte `pharma_app` avec `CREATEDB`) et l'API installée **à la même version** que le PC serveur (étape 3 : dossier
+   `C:\Program Files\PharmaOfficine\Api`, service `PharmaOfficine API` créé mais **arrêté**, port 5080 ouvert au pare-feu). Ne pas créer la base.
+2. **Second emplacement** : Administration › Sauvegardes › **Copie de secours** : dossier partagé du PC de secours
+   (`\\PC-SECOURS\CopieSecours`), autre disque ou clé USB ; le compte du service de l'API doit pouvoir y écrire. Après chaque sauvegarde
+   réussie, le fichier y est copié, puis **vérifié** (taille et empreinte SHA-256) ; l'empreinte est notée à côté (`<copie>.sha256`). Les
+   copies au-delà du nombre de sauvegardes conservées sont supprimées. Échec de copie, ou dernière copie plus vieille que le délai réglé
+   (26 h par défaut) : le titulaire est prévenu (SMS/e-mail des alertes de sauvegarde) ; le résultat est écrit dans le message du journal des
+   sauvegardes. Réglages et état : `C:\ProgramData\PharmaOfficine\copie-secours.json` du PC serveur.
+3. **Test** : chaque mois, le titulaire clique **« Tester la restauration de la dernière copie »** (même écran) : empreinte contrôlée,
+   restauration dans une base temporaire `<base>_test_restauration_…`, contenu compté, base supprimée ; résultat affiché et inscrit au
+   journal des opérations. La base en service n'est pas touchée. Le script s'essaie aussi sur le PC de secours, sans rien modifier :
+   `.\basculer-pc-secours.ps1 -Copies "D:\CopieSecours" -Essai`.
+4. **Postes** : Administration › Imprimantes et étiquettes › **Serveur et PC de secours**, sur chaque poste : adresse de l'API du PC de
+   secours (ex. `http://192.168.1.20:5080/`) et délai avant le bandeau (60 s par défaut). Ces réglages vont dans
+   `C:\ProgramData\PharmaOfficine\poste.json` (`AdresseApiSecours`, `DelaiServeurInjoignableSecondes`, et `AdresseApi`, prioritaire sur
+   `PHARMA_API` quand il est rempli).
+5. **Clé de scellement des journaux** (`cle-integrite.dat`, chiffrée pour le PC serveur seulement) : **non transportable à ce jour**. Le PC de
+   secours ne peut pas la relire : voir « Limite » ci-dessous.
+
+### Le jour de la panne
+
+1. Constater la panne : sur les postes, bandeau « Serveur injoignable : vérifiez le PC serveur ou basculez sur le PC de secours » après le
+   délai réglé. Vérifier d'abord le PC serveur (allumé, réseau, service `PharmaOfficine API`) : la bascule fait perdre les opérations faites
+   depuis la dernière copie.
+2. Sur le PC de secours, PowerShell **en administrateur**, dans le dossier `scripts` livré avec l'API :
+   ```powershell
+   .\basculer-pc-secours.ps1 -Copies "D:\CopieSecours" -Essai   # simulation : contrôles seulement, rien n'est modifié
+   .\basculer-pc-secours.ps1 -Copies "D:\CopieSecours"          # bascule (mot de passe de postgres demandé)
+   ```
+   Le script : prend la copie la plus récente (ou `-Fichier`), contrôle l'empreinte SHA-256 et la lisibilité (`pg_restore --list`),
+   restaure dans une base neuve, **rejoue tous les scripts de la base** livrés avec l'API (dernier script rejoué affiché : il doit être le
+   dernier de la version installée), garde une base existante sous `<base>_avant_bascule_<date>` (jamais supprimée), démarre le service et
+   affiche l'adresse à donner aux postes.
+3. Sur chaque poste : bouton **« Basculer sur le 2e serveur »** du bandeau (il ne règle le poste que si l'API de secours répond déjà ;
+   ou rubrique Serveur et PC de secours), puis fermer et rouvrir Pharma Officine.
+4. GED : recopier le dossier `GED` du disque externe si besoin (`restaurer_pharmacie.ps1 -SansBase`, DossierGed du PC de secours).
+5. Ressaisir les opérations faites depuis la copie ; ressaisir le mot de passe des notifications (chiffré pour le PC d'origine).
+6. Retour sur le PC serveur réparé : sauvegarde sur le PC de secours, restauration sur le PC serveur (« Restauration » ci-dessus), puis
+   vider `AdresseApi` sur chaque poste.
+
+### Clé de scellement des journaux sur le PC de secours
+
+L'API refuse de démarrer si la clé de scellement est illisible (elle n'est jamais remplacée en silence). Sur le PC de secours, la clé du
+PC serveur n'est pas lisible telle quelle : **à préparer à l'avance**, le titulaire l'exporte (Administration › 2e serveur › Clé de
+scellement, fichier protégé par son mot de passe, rangé sur une clé USB au coffre) et l'administrateur l'importe sur le PC de secours,
+le titulaire tapant le mot de passe : `"C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --importer-cle E:\cle-scellement-….pocle`
+(détail dans « 2e serveur », étape 4). Contrôle : `Pharma.Api.exe --empreinte-cle` affiche la même empreinte que l'écran du titulaire.
+
+## 2e serveur (réplication en continu)
+
+> **Option facultative, fortement conseillée.** L'officine fonctionne sans 2e serveur : sans `SecondServeur:AutreServeur` ni slot
+> de réplication, l'API démarre normalement, aucune alerte de réplication n'est émise, et la protection des données repose sur les
+> sauvegardes et la **copie de secours** (PC de secours, restauration). Le 2e serveur est conseillé parce qu'il réduit l'arrêt de
+> l'officine à quelques minutes et la perte à quelques secondes en cas de panne du PC serveur. Le titulaire décide selon ses moyens.
+
+Ajouté le 2026-11-16 (lot 5, version actuelle ; GO du titulaire « go 2e base + API, oui export clé »). Un **2e serveur** dans l'officine
+(réseau local, sans Internet) reçoit **en continu** la base du serveur principal (réplication physique native de PostgreSQL, en
+streaming, avec slot). Il garde une **API de secours en veille**. En cas de panne du principal, une **personne** décide la bascule : le 2e
+serveur devient le principal en quelques minutes, **sans perte** des opérations déjà reçues (en général toutes, à quelques secondes près).
+Toujours **une seule base par officine** (§ 6 bis de l'analyse des écarts) : la base du 2e serveur est une copie en lecture seule, jamais
+utilisée par les postes tant qu'il n'est pas basculé. La copie de secours du lot 5 A (PC de secours, ci-dessus) reste en place en plus.
+
+Scripts d'administration : `scripts\second-serveur\` (livrés dans le paquet d'installation, dossier `scripts\second-serveur\`,
+avec `scripts\basculer-pc-secours.ps1` ; à copier sur les deux serveurs). `commun.ps1` doit rester à côté des autres. Ils demandent un administrateur Windows et le
+superutilisateur PostgreSQL ; chacun a un mode **`-Essai`** qui n'écrit rien (contrôles et actions prévues affichés) : **toujours le
+lancer d'abord**.
+
+| Script | Où | Rôle |
+|---|---|---|
+| `preparer-principal.ps1` | principal | rôle de réplication, `postgresql.conf` (`wal_level = replica`, `max_wal_senders`, `max_replication_slots`, `hot_standby`, `max_slot_wal_keep_size`, `listen_addresses`), `pg_hba.conf` (copie datée gardée ; lignes pour l'adresse du 2e serveur seulement), slot `second_serveur`, `pg_monitor` pour `pharma_app` |
+| `initialiser-second-serveur.ps1` | 2e serveur | API de secours arrêtée en démarrage manuel, ancien dossier de données gardé, `pg_basebackup` avec slot et `-R` (`standby.signal`), démarrage, contrôle « lecture seule », import de la clé de scellement |
+| `verifier-second-serveur.ps1` | l'un ou l'autre | rôle, réplication (`pg_stat_replication` / `pg_stat_wal_receiver`), version de l'API, service, empreinte de la clé, imprimantes, dossiers ; inscrit le relevé sur le principal (écran « 2e serveur ») |
+| `basculer-second-serveur.ps1` | 2e serveur | **bascule** : refuse si l'ancien principal répond encore ; `pg_promote()` ; API de secours démarrée (démarrage automatique) |
+| `remettre-en-second.ps1` | ancien principal | **retour** : il redevient 2e serveur (ancienne base gardée à côté), copie complète depuis le nouveau principal |
+
+### Choix de la bascule : script sur le 2e serveur, pas de service réseau
+
+La bascule (promotion de la base, démarrage d'un service Windows) demande des droits administrateur. Un petit service réseau installé
+sur le 2e serveur, appelé par un bouton du poste, devrait porter ces droits et les ouvrir au réseau, et ne pourrait pas s'assurer
+que l'ancien principal est vraiment arrêté (coupure réseau partielle : risque de **deux serveurs qui écrivent**). La solution retenue,
+la plus sûre :
+
+- la bascule se fait **sur le 2e serveur**, par `basculer-second-serveur.ps1`, lancé par l'administrateur (ou le titulaire, avec un compte
+  administrateur du PC) à la demande du titulaire. Le script **refuse** si l'ancien principal répond encore (PostgreSQL ou API) et demande
+  de taper `BASCULER` ;
+- le bouton **« Basculer sur le 2e serveur »** des postes (bandeau « Serveur injoignable », adresse `AdresseApiSecours`) règle le poste sur le
+  2e serveur **seulement si l'API du 2e serveur répond déjà**, donc après la bascule. Sinon il affiche la consigne. Il est ouvert à tout
+  employé connecté au poste (comme le bouton « PC de secours » du lot 5 A) : il ne change rien au serveur, et chaque caisse doit pouvoir
+  repartir sans attendre le titulaire ;
+- **jamais deux API qui écrivent** : l'API **refuse de démarrer** si sa base est en lecture seule (2e serveur non basculé), avec un message
+  clair dans son journal ; et, si `SecondServeur:AutreServeur` est réglé, si l'autre serveur a lui aussi une base principale, sauf si la
+  sienne est la plus récemment promue (n° de *timeline* plus grand). Ainsi, un ancien principal qui redémarre après une bascule ne
+  reprend pas la main. Une écriture tentée sur une base en lecture seule est refusée par PostgreSQL (message « base en lecture seule »).
+
+### À préparer à l'avance (une fois)
+
+1. **2e serveur** : un PC de l'officine allumé en permanence, sur le même réseau, avec **la même version majeure de PostgreSQL** (étape 1,
+   superutilisateur `postgres` ; la copie apporte ensuite tous les rôles et bases du principal) et **l'API à la même version, installée
+   par le même installateur** (`scripts\paquet`, étape 3), avec le même `appsettings.Production.json` que le principal (même chaîne de
+   connexion `Host=localhost`, même clé de jetons `Jwt`), sauf ce qui est propre à ce PC (dossiers Chifa / MDN, voir 5). Port 5080 ouvert au
+   pare-feu ; port 5432 ouvert sur chaque serveur **pour l'autre serveur seulement** (réplication et contrôle « deux principaux » ;
+   `pg_hba.conf`, recopié par `pg_basebackup` quand il est dans le dossier de données, autorise les deux adresses). Chaque **mise à jour** se fait sur les deux serveurs, même jour, même
+   installateur (principal d'abord, scripts de la base appliqués sur le principal seulement : ils arrivent sur le 2e serveur par la
+   réplication), puis `verifier-second-serveur.ps1` sur le 2e serveur : l'écran « 2e serveur » signale une version différente en rouge.
+2. **Principal** : `.\preparer-principal.ps1 -AdresseSecond <IP du 2e> -AdressePrincipal <IP du principal> -Essai`, puis sans `-Essai`
+   (mot de passe du rôle de réplication choisi et noté, 12 caractères au moins), puis `-Redemarrer` à un moment calme si demandé.
+   Dans l'appsettings de l'API du principal : `"SecondServeur": { "AutreServeur": "<IP du 2e>" }`, puis redémarrer le service.
+3. **Clé de scellement** : le titulaire, Administration › **2e serveur › Clé de scellement** : mot de passe (12 caractères au moins, saisi
+   deux fois), dossier de la clé USB, « Exporter la clé ». Fichier `cle-scellement-AAAAMMJJ-<empreinte>.pocle` chiffré par le mot de passe
+   (PBKDF2-SHA256 600 000 tours, AES-256-GCM) : la clé n'est jamais en clair, ni dans le fichier ni au journal. Ranger la clé USB **au
+   coffre** et le mot de passe **à part**. Ce chiffrement porte sur la clé seulement, pas sur les données.
+4. **2e serveur** : `.\initialiser-second-serveur.ps1 -Principal <IP du principal> -FichierCle E:\cle-scellement-….pocle -Essai`, puis
+   sans `-Essai` (taper `OUI`, mot de passe du rôle de réplication, puis le titulaire tape le mot de passe du fichier de clé). Dans
+   l'appsettings de l'API du 2e serveur : `"SecondServeur": { "AutreServeur": "<IP du principal>" }`. Le service de l'API reste
+   **arrêté, en démarrage manuel**.
+5. **Réglages propres à chaque serveur** : Administration › 2e serveur › **Réglages par serveur** (titulaire) : cliquer un serveur, régler son
+   dossier d'échange **CHIFA-Officine** et son dossier du **logiciel MDN** (vide : réglages `Chifa:DossierExport` / `Mdn:Dossier` de
+   l'appsettings de ce serveur), cocher « CHIFA-Officine installé », « Lecteur de carte et Token disponibles », « Logiciel MDN installé »,
+   « Douchette branchée et testée ». Ces réglages sont dans la base (table `serveur_officine`, script 122), donc répliqués : à la bascule,
+   l'API du 2e serveur prend **les dossiers de sa propre ligne** (au démarrage de l'API).
+6. **Contrôle** : `.\verifier-second-serveur.ps1 -Principal <IP du principal> -DossierChifa <…> -DossierMdn <…>` sur le 2e serveur (mot de
+   passe de `pharma_app` pour inscrire le relevé) ; puis l'écran du titulaire, Administration › **2e serveur › État de la réplication** :
+   « 2e serveur connecté », retard en secondes et en octets, slot actif ; **Réglages par serveur** : versions identiques, clé présente et
+   **identique**, dossiers joignables, imprimantes.
+7. **Postes** : Administration › Imprimantes et étiquettes › Serveur et PC de secours : adresse de l'API du 2e serveur dans « PC de secours »
+   (`AdresseApiSecours`, ex. `http://192.168.1.21:5080/`).
+8. **Alerte** : le titulaire est prévenu (SMS / e-mail des alertes de sauvegarde, au plus une fois par heure) si le 2e serveur décroche ou si
+   le retard dépasse les seuils réglés à l'écran (300 s et 64 Mo par défaut). Un 2e serveur éteint longtemps : le principal garde les
+   modifications jusqu'à `max_slot_wal_keep_size` (20 Go par défaut), au-delà le 2e serveur est à réinitialiser (étape 4).
+   Rattrapage : au redémarrage de l'un ou l'autre PC, la réplication reprend seule et rattrape le retard.
+
+### Bascule (panne du principal)
+
+1. Constater la panne (bandeau « Serveur injoignable » sur les postes) ; vérifier le principal (allumé, réseau, services). Le titulaire décide.
+2. Sur le principal, si possible : arrêter le service de l'API et PostgreSQL, ou **débrancher son câble réseau**.
+3. Sur le 2e serveur, PowerShell en administrateur, dossier `scripts\second-serveur` :
+   ```powershell
+   .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal> -Essai   # contrôles seulement
+   .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal>          # taper BASCULER
+   ```
+   Le script affiche l'heure de la dernière transaction reçue : ce qui a été saisi après (rare) est à ressaisir.
+4. Sur chaque poste : bouton **« Basculer sur le 2e serveur »** du bandeau, puis fermer et rouvrir Pharma Officine.
+5. Titulaire : écran « 2e serveur » (ce serveur est maintenant « Principal », dossiers Chifa / MDN, clé identique) ; CHIFA-Officine, lecteur
+   de carte et Token sur ce PC (question posée à la CNAS, `docs/taches/2026-11-15-recette-complete/demande-cnas.md`).
+
+### Retour (ancien principal réparé)
+
+1. **Ne pas redémarrer l'API de l'ancien principal** (elle refuserait de démarrer si `SecondServeur:AutreServeur` est réglé).
+2. Sur le nouveau principal : `.\preparer-principal.ps1 -AdresseSecond <IP de l'ancien> -AdressePrincipal <IP du nouveau>` (slot, `pg_hba.conf`).
+3. Sur l'ancien principal : `.\remettre-en-second.ps1 -NouveauPrincipal <IP du nouveau> -Essai`, puis sans `-Essai`. Son ancienne base est
+   **gardée** à côté (`<dossier>_ancien_principal_<date>`) : elle peut contenir les dernières saisies d'avant la panne, à examiner avant
+   toute suppression. Il redevient 2e serveur et rattrape le nouveau principal.
+4. **Rebascule à un moment calme** (facultatif, pour revenir à la répartition d'origine) : arrêter l'API et PostgreSQL du serveur principal
+   actuel, lancer `basculer-second-serveur.ps1` sur l'autre, puis `remettre-en-second.ps1` sur celui qu'on vient d'arrêter, et remettre
+   `AdresseApi` des postes (rubrique Serveur et PC de secours).

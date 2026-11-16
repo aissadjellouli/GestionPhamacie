@@ -21,7 +21,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 110 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 123 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -114,6 +114,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('factures.gerer', 'Factures', 'Émettre et gérer les factures clients', true),
     ('psychotropes.delivrer', 'Psychotropes', 'Délivrer un psychotrope', true),
     ('psychotropes.registre', 'Psychotropes', 'Consulter le registre', false),
+    ('psychotropes.forcer_alerte', 'Psychotropes', 'Forcer une alerte du registre (valideur)', true),
     ('rapports.marges', 'Rapports', 'Voir les prix d''achat et les marges', true),
     ('rapports.ventes', 'Rapports', 'Voir les rapports de ventes', false),
     ('catalogue.creer', 'Stock', 'Créer un produit au catalogue', true),
@@ -166,6 +167,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'prix.modifier'),
     ('titulaire', 'psychotropes.delivrer'),
     ('titulaire', 'psychotropes.registre'),
+    ('titulaire', 'psychotropes.forcer_alerte'),
     ('titulaire', 'rapports.marges'),
     ('titulaire', 'rapports.ventes'),
     ('titulaire', 'stock.ajuster'),
@@ -196,6 +198,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('assistant', 'credit.depasser_plafond'),
     ('assistant', 'psychotropes.delivrer'),
     ('assistant', 'psychotropes.registre'),
+    ('assistant', 'psychotropes.forcer_alerte'),
     ('assistant', 'rapports.ventes'),
     ('assistant', 'stock.ajuster'),
     ('assistant', 'stock.consulter'),
@@ -319,6 +322,27 @@ INSERT INTO type_prestation (code, libelle, prix, taux_tva)
 SELECT x.code, x.libelle, 0, 0
 FROM (VALUES ('TENSION', 'Prise de tension'), ('GLYCEMIE', 'Mesure de la glycémie'), ('INJECTION', 'Injection')) AS x(code, libelle)
 WHERE NOT EXISTS (SELECT 1 FROM type_prestation t WHERE upper(btrim(t.code)) = x.code);
+
+-- Wilayas d'Algérie (118) : 48 historiques + 10 de la loi 19-12 (49 à 58)
+INSERT INTO wilaya (code, nom) VALUES
+    ('01', 'Adrar'), ('02', 'Chlef'), ('03', 'Laghouat'), ('04', 'Oum El Bouaghi'), ('05', 'Batna'),
+    ('06', 'Béjaïa'), ('07', 'Biskra'), ('08', 'Béchar'), ('09', 'Blida'), ('10', 'Bouira'),
+    ('11', 'Tamanrasset'), ('12', 'Tébessa'), ('13', 'Tlemcen'), ('14', 'Tiaret'), ('15', 'Tizi Ouzou'),
+    ('16', 'Alger'), ('17', 'Djelfa'), ('18', 'Jijel'), ('19', 'Sétif'), ('20', 'Saïda'),
+    ('21', 'Skikda'), ('22', 'Sidi Bel Abbès'), ('23', 'Annaba'), ('24', 'Guelma'), ('25', 'Constantine'),
+    ('26', 'Médéa'), ('27', 'Mostaganem'), ('28', 'M''Sila'), ('29', 'Mascara'), ('30', 'Ouargla'),
+    ('31', 'Oran'), ('32', 'El Bayadh'), ('33', 'Illizi'), ('34', 'Bordj Bou Arréridj'), ('35', 'Boumerdès'),
+    ('36', 'El Tarf'), ('37', 'Tindouf'), ('38', 'Tissemsilt'), ('39', 'El Oued'), ('40', 'Khenchela'),
+    ('41', 'Souk Ahras'), ('42', 'Tipaza'), ('43', 'Mila'), ('44', 'Aïn Defla'), ('45', 'Naâma'),
+    ('46', 'Aïn Témouchent'), ('47', 'Ghardaïa'), ('48', 'Relizane'),
+    ('49', 'Timimoun'), ('50', 'Bordj Badji Mokhtar'), ('51', 'Ouled Djellal'), ('52', 'Béni Abbès'), ('53', 'In Salah'),
+    ('54', 'In Guezzam'), ('55', 'Touggourt'), ('56', 'Djanet'), ('57', 'El M''Ghair'), ('58', 'El Meniaa')
+ON CONFLICT (code) DO NOTHING;
+
+-- Alerte « prescripteur hors zone » du registre des psychotropes (118) : sans effet tant que la zone n'est pas réglée
+INSERT INTO regle_alerte_psychotrope (code, libelle, seuil, periode_jours, ordre) VALUES
+    ('prescripteur_hors_zone', 'Prescripteur hors zone (wilaya du médecin hors de la zone de l''officine)', 1, 1, 5)
+ON CONFLICT (code) DO NOTHING;
 
 COMMIT;
 

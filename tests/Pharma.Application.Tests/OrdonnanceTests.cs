@@ -102,7 +102,8 @@ public class OrdonnanceTests
     public async Task Sans_equivalent_exact_meme_dci_autre_dosage()
     {
         var r = await new ListerAlternatives(new AlternativesEnMemoire(
-            new ProduitAlternatif(5, "Amoxicilline 500 mg", 200, 40, Exact: false, Dosage: "500 mg"))).ExecuterAsync(2);
+            new ProduitAlternatif(5, "Amoxicilline 500 mg", 200, 40, Exact: false, Dosage: "500 mg")),
+            new SubstitutionEnMemoire(exactSeulement: false)).ExecuterAsync(2);   // « équivalent exact seulement » désactivé (2026-11-16)
         Assert.False(Assert.Single(r).Exact);
     }
 

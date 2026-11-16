@@ -10,9 +10,10 @@ using Pharma.Domain.Commun;
 namespace Pharma.Infrastructure.Impression;
 
 /// <summary>Documents PDF produits avec PDFsharp-MigraDoc (licence MIT), polices Windows du serveur.</summary>
-public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.IDocumentsRapports, Pharma.Application.Stock.IDocumentsRegistre,
+public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.IDocumentsRapports, Pharma.Application.Stock.IDocumentsRegistre,
     Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire, Pharma.Application.Caisse.IDocumentsCredit, Pharma.Application.Caisse.IDocumentsTicket,
-    Pharma.Application.Caisse.IDocumentsBonSortie, Pharma.Application.Chifa.IDocumentsBordereau
+    Pharma.Application.Caisse.IDocumentsBonSortie, Pharma.Application.Chifa.IDocumentsBordereau, Pharma.Application.Fiscal.IDocumentsFiscaux,
+    Pharma.Application.Achats.IDocumentsAccordSms
 {
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
 
@@ -84,8 +85,70 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             p.Format.Font.Color = Color.FromRgb(0x47, 0x54, 0x67);
         }
 
+        // Sceau du journal des ventes à la clôture (lot 3)
+        if (s.SceauFiscal is { } sceau) Sceau(section, sceau);
+
         Signatures(section);
         return Rendre(doc);
+    }
+
+    /// <summary>Rapport mensuel scellé ou export d'audit : totaux, récapitulatif TVA par taux, sceaux de la période, anomalies.</summary>
+    public byte[] RapportFiscal(Pharma.Application.Fiscal.RapportFiscal r, string? pharmacie)
+    {
+        var doc = NouveauDocument(r.Titre, pharmacie);
+        var section = doc.LastSection;
+        Titre(section, r.Titre);
+        var infos = section.AddParagraph($"Période du {r.Du.ToString("dd/MM/yyyy", Fr)} au {r.Au.ToString("dd/MM/yyyy", Fr)} · journal des ventes (fiscal), lignes chaînées et scellées");
+        infos.Format.SpaceAfter = Unit.FromPoint(8);
+
+        SousTitre(section, "Totaux");
+        var totaux = Tableau(section, 11.5, 5);
+        Ligne(totaux, "Événements (ventes, annulations, retours, avoirs, régularisations)", r.Totaux.Evenements.ToString(Fr));
+        Ligne(totaux, "Total TTC", Da(r.Totaux.Ttc), gras: true);
+        Ligne(totaux, "Total HT", Da(r.Totaux.Ht));
+        Ligne(totaux, "Total TVA", Da(r.Totaux.Tva));
+
+        SousTitre(section, "Récapitulatif TVA par taux");
+        var tva = Tableau(section, 3, 3.5, 3.5, 3.5, 3);
+        Entete(tva, "Taux", "TTC", "HT", "TVA", "Événements");
+        foreach (var t in r.Tva)
+        {
+            var row = tva.AddRow();
+            row.Cells[0].AddParagraph($"{t.Taux.ToString("0.##", Fr)} %{(t.Exoneree ? " (exonéré)" : "")}");
+            row.Cells[1].AddParagraph(Da(t.Ttc));
+            row.Cells[2].AddParagraph(Da(t.Ht));
+            row.Cells[3].AddParagraph(Da(t.Tva));
+            row.Cells[4].AddParagraph(t.Evenements.ToString(Fr));
+        }
+        if (r.Tva.Count == 0) section.AddParagraph("Aucune vente sur la période.");
+
+        SousTitre(section, "Sceaux de la période");
+        if (r.Sceaux.Count == 0) section.AddParagraph("Aucune clôture scellée sur la période.");
+        foreach (var c in r.Sceaux)
+        {
+            var p = section.AddParagraph($"{(c.Type == "mensuelle" ? "Clôture mensuelle" : $"Clôture de caisse (session {c.SessionCaisseId})")} du {c.Du.ToString("dd/MM/yyyy", Fr)} au {c.Au.ToString("dd/MM/yyyy", Fr)} : "
+                + Pharma.Application.Fiscal.TexteSceau.Pour(c, r.FormatSceau));
+            p.Format.Font.Size = 8;
+            p.Format.SpaceAfter = Unit.FromPoint(3);
+        }
+
+        if (r.Anomalies.Count > 0)
+        {
+            SousTitre(section, "Anomalies de numérotation");
+            foreach (var a in r.Anomalies.Take(50)) section.AddParagraph(a.Libelle).Format.Font.Color = Color.FromRgb(0x91, 0x20, 0x18);
+            if (r.Anomalies.Count > 50) section.AddParagraph($"… et {r.Anomalies.Count - 50} autre(s).");
+        }
+
+        if (r.SceauDuRapport is { } sceau) Sceau(section, sceau);
+        return Rendre(doc);
+    }
+
+    private static void Sceau(Section section, string texte)
+    {
+        var p = section.AddParagraph("Sceau du journal des ventes : " + texte);
+        p.Format.SpaceBefore = Unit.FromPoint(12);
+        p.Format.Font.Size = 8;
+        p.Format.Font.Color = Color.FromRgb(0x47, 0x54, 0x67);
     }
 
     public byte[] RapportActivite(Application.Rapports.RapportActivite r, string? pharmacie)
@@ -573,8 +636,16 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         doc.Styles[StyleNames.Normal]!.Font.Size = 7.5;
         Titre(section, "Registre des psychotropes et stupéfiants");
         var info = section.AddParagraph($"Du {r.Du.ToString("dd/MM/yyyy", Fr)} au {r.Au.ToString("dd/MM/yyyy", Fr)} · {r.Produit ?? "tous les produits"}"
+            + (r.Filtres is { } filtres ? $" · {filtres}" : "")
             + (r.NomsMasques ? " · noms des patients et porteurs abrégés (édition hors titulaire)" : ""));
         info.Format.SpaceAfter = Unit.FromPoint(6);
+        // Export d'inspection (lot 8) : sceau de la période (sceaux mensuels du journal chaîné, état de la chaîne)
+        if (r.Sceau is { } sceau)
+        {
+            var p = section.AddParagraph(sceau);
+            p.Format.Font.Size = 6.5;
+            p.Format.SpaceAfter = Unit.FromPoint(6);
+        }
 
         double[] largeurs = [1.1, 2.0, 3.6, 1.6, 2.6, 1.1, 1.1, 1.3, 1.2, 3.0, 2.4, 1.6, 2.4, 2.3];
         var t = section.AddTable();
@@ -596,10 +667,13 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
             row.TopPadding = row.BottomPadding = Unit.FromPoint(2);
             var patient = l.Patient ?? "";
             if (l.PorteurNom is not null) patient += $"\nPorteur : {l.PorteurNom}, {l.PorteurAdresse}, pièce {l.PorteurPiece}";
+            if (l.DureeTraitementJours is { } duree) patient += $"\nTraitement : {duree} jours";
             string[] cellules =
             [
                 l.Numero.ToString(Fr), l.Date.ToLocalTime().ToString("dd/MM/yy HH:mm", Fr), l.Produit, l.NumeroLot,
-                Pharma.Application.Stock.RegistreCsv.Libelle(l.Type), l.Entree?.ToString(Fr) ?? "", l.Sortie?.ToString(Fr) ?? "",
+                Pharma.Application.Stock.RegistreCsv.Libelle(l.Type)
+                    + (Pharma.Application.Stock.RegistreCsv.Annulation(r, l.Numero) is { } annulee ? "\n" + annulee.ToUpperInvariant()[..7] + annulee[7..] : ""),
+                l.Entree?.ToString(Fr) ?? "", l.Sortie?.ToString(Fr) ?? "",
                 l.SoldeProduit?.ToString(Fr) ?? "—", l.SoldeLot.ToString(Fr), patient.Trim(),
                 string.Join(" · ", new[] { l.Medecin, l.Ordonnance }.Where(x => !string.IsNullOrEmpty(x))),
                 l.Reference ?? "", l.Fournisseur ?? "", l.Employe
@@ -764,6 +838,43 @@ public sealed class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.ID
         signature.Format.SpaceBefore = Unit.FromCentimeter(1.5);
         signature.Format.Alignment = ParagraphAlignment.Right;
         return Rendre(doc);
+    }
+
+    /// <summary>Formulaire d'accord SMS (2026-11-16) : A4, en-tête de la pharmacie, patient, texte réglable, date, signature et cachet.</summary>
+    public byte[] FormulaireAccordSms(Pharma.Application.Achats.ContenuFormulaireAccordSms f) => Rendre(DocumentFormulaireAccordSms(f));
+
+    /// <summary>Document MigraDoc du formulaire (lu par les tests avant rendu).</summary>
+    public static Document DocumentFormulaireAccordSms(Pharma.Application.Achats.ContenuFormulaireAccordSms f)
+    {
+        const string titre = "Accord pour être prévenu par SMS";
+        var ph = f.Pharmacie;
+        var doc = NouveauDocument(titre, ph?.Nom);
+        var section = doc.LastSection;
+        if (ph is not null)
+        {
+            var entete = section.AddParagraph();
+            entete.Format.SpaceAfter = Unit.FromPoint(10);
+            if (ph.Nom is { Length: > 0 } nom) entete.AddFormattedText(nom + "\n", TextFormat.Bold);
+            if (ph.Titulaire is { Length: > 0 } tit) entete.AddText($"Titulaire : {tit}\n");
+            if (ph.Adresse is { Length: > 0 } adr) entete.AddText(adr + "\n");
+            if (ph.Telephone is { Length: > 0 } tel) entete.AddText($"Tél. : {tel}");
+        }
+        Titre(section, titre);
+        var patient = section.AddParagraph();
+        patient.Format.SpaceAfter = Unit.FromPoint(12);
+        patient.AddText("Patient : ");
+        patient.AddFormattedText(f.Patient, TextFormat.Bold);
+        patient.AddText($"\nN° de téléphone : {(string.IsNullOrWhiteSpace(f.Telephone) ? "____________________" : f.Telephone)}");
+        foreach (var ligne in f.Texte.Split('\n'))
+        {
+            var p = section.AddParagraph(ligne.TrimEnd('\r'));
+            p.Format.SpaceAfter = Unit.FromPoint(6);
+        }
+        var date = section.AddParagraph($"Fait le {f.Date.ToString("dd/MM/yyyy", Fr)}");
+        date.Format.SpaceBefore = Unit.FromCentimeter(1);
+        var signatures = section.AddParagraph("Signature du patient : ____________________        Cachet de la pharmacie :");
+        signatures.Format.SpaceBefore = Unit.FromCentimeter(1);
+        return doc;
     }
 
     // ---- Mise en page commune --------------------------------------------

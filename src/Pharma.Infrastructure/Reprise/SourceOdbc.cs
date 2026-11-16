@@ -13,7 +13,7 @@ namespace Pharma.Infrastructure.Reprise;
 /// Ancienne base lue par ODBC (pilotes installés sur le PC serveur), en lecture seule : uniquement des SELECT,
 /// construits avec des noms de tables et de colonnes relus dans la structure de la base (aucun texte saisi n'est exécuté).
 /// Dossier de fichiers CSV : lu par <see cref="LecteurCsv"/> (tout en texte, encodage et séparateur détectés), même si la
-/// chaîne désigne le pilote texte de Windows.
+/// chaîne désigne le pilote texte de Windows. Classeur .xlsx : lu par <see cref="LecteurExcel"/> (une feuille = une table).
 /// </summary>
 public sealed class SourceOdbc : ISourceReprise
 {
@@ -75,9 +75,15 @@ public sealed class SourceOdbc : ISourceReprise
                     yield return new SourceDisponible($"Fichiers texte (CSV) : {rep}", $"Driver={{{LecteurCsv.Moteur}}};Dbq={rep};", "fichier",
                         "Exports CSV : lus comme du texte ; encodage (UTF-8 ou ANSI) et séparateur détectés", LecteurCsv.Moteur, rep);
                     break;
-                case ".xls" or ".xlsx":
-                    if (Pilote("Excel Driver") is { } x)
-                        yield return new SourceDisponible($"Classeur Excel : {f}", $"Driver={{{x}}};Dbq={f};", "fichier", null, x, f);
+                case ".xlsx":
+                    // Lecteur intégré : aucun pilote à installer, une feuille par type de données
+                    yield return new SourceDisponible($"Classeur Excel : {f}", $"Driver={{{LecteurExcel.Moteur}}};Dbq={f};", "fichier",
+                        "Classeur .xlsx : une feuille par type de données, première ligne = noms de colonnes", LecteurExcel.Moteur, f);
+                    break;
+                case ".xls":
+                    yield return Pilote("Excel Driver") is { } x
+                        ? new SourceDisponible($"Classeur Excel : {f}", $"Driver={{{x}}};Dbq={f};", "fichier", null, x, f)
+                        : new SourceDisponible($"Classeur Excel (ancien format .xls) : {f}", null, "fichier", "Enregistrez-le en .xlsx depuis Excel");
                     break;
                 case ".fic" when vus.Add("hfsql|" + rep):
                     yield return new SourceDisponible($"Base HFSQL (WinDev) : {rep}", null, "fichier",
@@ -98,7 +104,7 @@ public sealed class SourceOdbc : ISourceReprise
         }
     }
 
-    public IReadOnlyList<string> Pilotes() => PilotesInstalles().Append(LecteurCsv.Moteur).OrderBy(p => p).ToList();
+    public IReadOnlyList<string> Pilotes() => PilotesInstalles().Append(LecteurCsv.Moteur).Append(LecteurExcel.Moteur).OrderBy(p => p).ToList();
 
     private static List<string> PilotesInstalles()
     {
@@ -112,6 +118,7 @@ public sealed class SourceOdbc : ISourceReprise
     public async Task<InfoSource> TesterAsync(string chaineConnexion, CancellationToken ct = default)
     {
         if (LecteurCsv.EstCsv(chaineConnexion, out var csv)) return LecteurCsv.Info(csv);
+        if (LecteurExcel.EstExcel(chaineConnexion, out var xlsx)) return LecteurExcel.Info(xlsx);
         await using var cnx = await Ouvrir(chaineConnexion, ct);
         return new InfoSource(cnx.Driver, string.IsNullOrEmpty(cnx.ServerVersion) ? null : cnx.ServerVersion, 0);
     }
@@ -119,6 +126,7 @@ public sealed class SourceOdbc : ISourceReprise
     public async Task<IReadOnlyList<TableSource>> ScannerAsync(string chaineConnexion, int exemples, CancellationToken ct = default)
     {
         if (LecteurCsv.EstCsv(chaineConnexion, out var csv)) return LecteurCsv.Scanner(csv, exemples);
+        if (LecteurExcel.EstExcel(chaineConnexion, out var xlsx)) return LecteurExcel.Scanner(xlsx, exemples);
         await using var cnx = await Ouvrir(chaineConnexion, ct);
         var resultat = new List<TableSource>();
         foreach (var table in NomsDeTables(cnx).Take(TablesMax))
@@ -148,6 +156,15 @@ public sealed class SourceOdbc : ISourceReprise
         if (LecteurCsv.EstCsv(chaineConnexion, out var csv))
         {
             foreach (var l in LecteurCsv.Lire(csv, table, colonnes))
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return l;
+            }
+            yield break;
+        }
+        if (LecteurExcel.EstExcel(chaineConnexion, out var xlsx))
+        {
+            foreach (var l in LecteurExcel.Lire(xlsx, table, colonnes))
             {
                 ct.ThrowIfCancellationRequested();
                 yield return l;

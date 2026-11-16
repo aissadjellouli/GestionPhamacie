@@ -27,6 +27,8 @@
                 <p class="detail" style="margin: 0">Ticket imprimé pour chaque vente : se règle pour chaque poste dans <a href="admin/imprimantes">Imprimantes et étiquettes</a>.</p>
                 <label class="case" title="Une action refusée faute de droit peut être autorisée sur place par le code comptoir d’un employé qui a ce droit (inscrit au journal)">
                     <input type="checkbox" @bind="parametres.AutorisationParCode" /><span>Une action non autorisée peut être autorisée par le code comptoir d’un employé qui a le droit</span></label>
+                <label class="case" title="Reprise de données (Administration › Reprise de données) : si la case est décochée, l’historique des factures Chifa et MDN peut être importé seul, sans le fichier des produits. Le fichier des produits reste toujours exigé avec le stock, les lots, les ventes, les patients ou les crédits.">
+                    <input type="checkbox" data-champ="reprise_exiger_produits_historique" @bind="parametres.ExigerProduitsRepriseHistorique" /><span>Reprise de données : exiger le fichier des produits pour importer l’historique des organismes seul (Chifa, MDN)</span></label>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
                     <label class="case"><input type="checkbox" checked="@(parametres.DeconnexionMinutes > 0)" @onchange="BasculerDeconnexion" /><span>Déconnexion automatique du poste après</span></label>
                     <input type="number" min="1" max="240" style="width: 90px" aria-label="Minutes d’inactivité" data-champ="deconnexion"
@@ -155,6 +157,7 @@
         public int DelaiDepotChifaJours { get; set; } = 7;
         public int DelaiPaiementBordereauJours { get; set; } = 45;
         public decimal SeuilSortieTiroir { get; set; } = 2000;
+        public bool ExigerProduitsRepriseHistorique { get; set; } = true;
     }
 
     private Saisie? parametres;
@@ -225,7 +228,8 @@
                 SeuilEcart = p.SeuilEcart, DeconnexionMinutes = p.DeconnexionMinutes, VersementCloture = p.VersementCloture ?? "manuel", PlafondCreditDefaut = p.PlafondCreditDefaut,
                 SeuilAnnulations = p.SeuilAnnulations, AutorisationParCode = p.AutorisationParCode, SeuilEcartChifa = p.SeuilEcartChifa,
                 DelaiVoletChifaJours = p.DelaiVoletChifaJours, SeuilSortieTiroir = p.SeuilSortieTiroir, JoursAlerteFinDroit = p.JoursAlerteFinDroit,
-                DelaiDepotChifaJours = p.DelaiDepotChifaJours, DelaiPaiementBordereauJours = p.DelaiPaiementBordereauJours
+                DelaiDepotChifaJours = p.DelaiDepotChifaJours, DelaiPaiementBordereauJours = p.DelaiPaiementBordereauJours,
+                ExigerProduitsRepriseHistorique = p.ExigerProduitsRepriseHistorique
             };
         (employesJournal, _) = await Api.EmployesJournalAsync();
         await ChargerJournalAsync(retour?.Entier("page") ?? 1, retour?.Entier("taille"));
@@ -246,7 +250,7 @@
             parametres.ComptageAveugle, parametres.FondCaisseDefaut, parametres.SeuilEcart, parametres.DeconnexionMinutes, parametres.VersementCloture, parametres.PlafondCreditDefaut,
             parametres.SeuilAnnulations, parametres.AutorisationParCode, parametres.SeuilEcartChifa, DelaiVoletChifaJours: parametres.DelaiVoletChifaJours, SeuilSortieTiroir: parametres.SeuilSortieTiroir,
             JoursAlerteFinDroit: parametres.JoursAlerteFinDroit, DelaiDepotChifaJours: parametres.DelaiDepotChifaJours,
-            DelaiPaiementBordereauJours: parametres.DelaiPaiementBordereauJours));
+            DelaiPaiementBordereauJours: parametres.DelaiPaiementBordereauJours, ExigerProduitsRepriseHistorique: parametres.ExigerProduitsRepriseHistorique));
         enCours = false;
         if (erreur is not null) return;
         message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";

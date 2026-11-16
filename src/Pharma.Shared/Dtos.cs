@@ -43,9 +43,11 @@ public sealed record AucunLotDto(string Message, IReadOnlyList<LotEcarteDto> Eca
 /// </summary>
 public sealed record ProduitComptoirDto(ProduitDto Produit, decimal PrixServi, ProduitAlternatifDto? Remplacant, ProduitAlternatifDto? MoinsCher);
 
-/// <summary>Exact : même DCI, dosage et forme. Sinon autre dosage ou autre forme, à valider par le pharmacien. PrixPublic : prix servi.</summary>
+/// <summary>Exact : même DCI, dosage et forme. Sinon autre dosage ou autre forme, à valider par le pharmacien. PrixPublic : prix servi.
+/// ListeBlanche : autorisé par le pharmacien ; FabricationLocale : fabriqué en Algérie (2026-11-16).</summary>
 public sealed record ProduitAlternatifDto(long ProduitId, string NomCommercial, decimal PrixPublic, int Stock,
-    bool Exact = true, string? Dosage = null, string? Forme = null, string? Laboratoire = null);
+    bool Exact = true, string? Dosage = null, string? Forme = null, string? Laboratoire = null,
+    bool ListeBlanche = false, bool FabricationLocale = false);
 
 /// <summary>Lots qui périment dans les N jours (cumulé), au prix d'achat.</summary>
 public sealed record HorizonPeremptionDto(int Jours, int Lots, int Boites, decimal? Valeur);
@@ -137,7 +139,7 @@ public sealed record IndicationsProduitRequete(IReadOnlyList<long> IndicationIds
 /// <summary>Porteur* : à remplir quand le porteur de l'ordonnance n'est pas le patient (psychotrope).</summary>
 public sealed record OrdonnanceDto(long? MedecinId, DateOnly DatePrescription, string? Numero,
     string? JetonScan = null, string? TexteReconnu = null,
-    string? PorteurNom = null, string? PorteurAdresse = null, string? PorteurPiece = null);
+    string? PorteurNom = null, string? PorteurAdresse = null, string? PorteurPiece = null, int? DureeTraitementJours = null);
 
 /// <summary>
 /// Mode : especes, carte, cheque ou credit. CleEncaissement : clé du panier créée par le poste ; renvoyée à l'identique lors d'un
@@ -220,7 +222,7 @@ public sealed record ComptageIntermediaireDto(DateTime Le, string Employe, decim
 public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaisseDefaut, decimal SeuilEcart, int DeconnexionMinutes, string? VersementCloture = "manuel",
     decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true, decimal SeuilEcartChifa = 5,
     int DelaiVoletChifaJours = 7, decimal SeuilSortieTiroir = 2000, int JoursAlerteFinDroit = EtatDroitsChifa.JoursAlerteParDefaut,
-    int DelaiDepotChifaJours = 7, int DelaiPaiementBordereauJours = 45);
+    int DelaiDepotChifaJours = 7, int DelaiPaiementBordereauJours = 45, bool ExigerProduitsRepriseHistorique = true);
 
 /// <summary>Date de fin de droits Chifa saisie à la caisse ou dans la liste de suivi (vide : effacée).</summary>
 public sealed record FinDroitDto(DateOnly? DateFinDroit);
@@ -249,11 +251,12 @@ public sealed record ProchePatientDto(long Id, string Nom, string? NumAssure, st
 
 public sealed record NouveauPatientDto(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
 /// <summary>Médecin prescripteur ; coordonnées facultatives (2026-11-15).</summary>
+/// <remarks>Wilaya : code 01 à 58 (2026-11-16), facultatif.</remarks>
 public sealed record MedecinDto(long Id, string Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
-    string? NumeroOrdre = null, string? CodeCnas = null);
+    string? NumeroOrdre = null, string? CodeCnas = null, string? Wilaya = null);
 /// <summary>Création ou correction d'un médecin : le nom seul est obligatoire.</summary>
 public sealed record NouveauMedecinDto(string Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
-    string? NumeroOrdre = null, string? CodeCnas = null);
+    string? NumeroOrdre = null, string? CodeCnas = null, string? Wilaya = null);
 public sealed record OrganismeDto(long Id, string Code, string Nom, int DelaiPaiementJours = 30);
 public sealed record IdentifiantDto(long Id);
 
@@ -466,6 +469,11 @@ public sealed record EntreeSauvegardeDto(
 /// Le journal se lit à part, par page (api/admin/sauvegardes/journal).</summary>
 public sealed record EtatSauvegardesDto(ReglagesSauvegardeDto Reglages, string? Base = null, string? Serveur = null);
 public sealed record ResultatSauvegardeDto(string Statut, string? Fichier, long? TailleOctets, string Message);
+/// <summary>Copie de secours (PC de secours, clé USB, autre disque) : réglages, dernière copie vérifiée, dernier échec, dernier test.</summary>
+public sealed record CopieSecoursDto(string? Dossier, int AlerteHeures, DateTime? DerniereCopie, string? Fichier, long? Taille, string? Sha256,
+    DateTime? DernierEchec, string? MessageEchec, DateTime? DernierTest, bool? DernierTestReussi, string? MessageTest, bool EnRetard);
+public sealed record ReglagesCopieSecoursDto(string? Dossier, int AlerteHeures);
+public sealed record ResultatTestRestaurationDto(bool Reussi, string? Fichier, string Message);
 
 // ---- Création d'un produit ----------------------------------------------------
 
@@ -625,10 +633,24 @@ public sealed record TableSourceDto(string Nom, long? Lignes, IReadOnlyList<Colo
 /// <summary>Cible : produits, stock, fournisseurs ou clients. Colonnes : champ de reprise → colonne de l'ancienne base (null : non trouvé).</summary>
 public sealed record PropositionRepriseDto(string Cible, string? Table, double Score, IReadOnlyDictionary<string, string?> Colonnes);
 public sealed record ChampRepriseDto(string Cible, string Code, string Libelle, bool Obligatoire);
+/// <summary>ExigerProduitsHistorique / InformationProduitsHistorique : option du titulaire sur le fichier des produits pour l'historique Chifa seul.</summary>
 public sealed record ScanRepriseDto(string Pilote, string? Version, IReadOnlyList<TableSourceDto> Tables, IReadOnlyList<PropositionRepriseDto> Propositions,
-    IReadOnlyList<ChampRepriseDto> Champs);
+    IReadOnlyList<ChampRepriseDto> Champs, bool ExigerProduitsHistorique = true, string? InformationProduitsHistorique = null);
 public sealed record CorrespondanceTableDto(string Cible, string Table, IReadOnlyDictionary<string, string> Colonnes);
-public sealed record ExtractionRepriseRequete(string ChaineConnexion, string Logiciel, IReadOnlyList<CorrespondanceTableDto> Correspondances);
+/// <summary>ProfilId : profil de reprise dont les transformations (séparateur décimal, format de date, codes de classe) s'appliquent (114).</summary>
+public sealed record ExtractionRepriseRequete(string ChaineConnexion, string Logiciel, IReadOnlyList<CorrespondanceTableDto> Correspondances, long? ProfilId = null);
+/// <summary>
+/// Profil de reprise d'un logiciel concurrent (114). Statut : a_completer (modèle vide, format réel inconnu) ou verifie.
+/// SeparateurDecimal : auto, virgule, point ; FormatDate : motif proposé par FormatsProfilRepriseDto ; CodesClasse : code de l'ancien logiciel → classe.
+/// </summary>
+public sealed record ProfilRepriseDto(long Id, string Logiciel, string Version, string Statut, string? Remarque,
+    IReadOnlyList<CorrespondanceTableDto> Correspondances, string SeparateurDecimal, string? FormatDate, IReadOnlyDictionary<string, string> CodesClasse,
+    DateTime? ModifieLe = null, string? ModifiePar = null);
+/// <summary>Formats de date et classes proposés à l'écran des profils, et champs de reprise de chaque cible.</summary>
+public sealed record FormatsProfilRepriseDto(IReadOnlyList<string> FormatsDate, IReadOnlyList<string> Classes, IReadOnlyList<ChampRepriseDto> Champs);
+/// <summary>Vente Chifa de l'ancien logiciel, en lecture seule (114) : aucune vente n'est recréée.</summary>
+public sealed record HistoriqueChifaDto(long Id, long SessionId, string Logiciel, string NumFacture, DateOnly DateFacture, string? NumAssure, string? NomAssure,
+    decimal? MontantTotal, decimal? PartChifa, decimal? PartAssure, string Organisme = "CHIFA");
 public sealed record ExtractionRepriseDto(long SessionId, IReadOnlyDictionary<string, int> Lignes, int Doublons, int Bloquants);
 /// <summary>LancePar : qui a lancé l'extraction ; ChargeLe, ChargePar : chargement définitif (date et auteur).</summary>
 public sealed record SessionRepriseDto(long Id, string Logiciel, DateTime Debut, string Statut, string? LancePar = null, DateTime? ChargeLe = null, string? ChargePar = null);
@@ -679,7 +701,8 @@ public sealed record LigneRegistreDto(
     long Numero, DateTime Date, long ProduitId, string Produit, string NumeroLot, string Type, string Operation,
     int? Entree, int? Sortie, int? SoldeProduit, int SoldeLot,
     string? Patient, string? Medecin, string? Ordonnance, string? Fournisseur, string? Reference,
-    string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe, long? PatientId = null);
+    string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe, long? PatientId = null,
+    string? Annulation = null, int? DureeTraitementJours = null);
 
 public sealed record ProduitRegistreDto(long Id, string Nom);
 
@@ -1032,6 +1055,13 @@ public sealed record RisqueEmployeDto(long UtilisateurId, string Nom, bool Actif
 /// <summary>JoursPerteMin et Facteur : règle du signalement (au moins JoursPerteMin jours de perte en sa présence, perte moyenne présent ≥ Facteur × absent).</summary>
 public sealed record TableauRisquesDto(DateOnly Du, DateOnly Au, IReadOnlyList<JourEcartsDto> Jours, IReadOnlyList<RisqueEmployeDto> Employes,
     int JoursPerteMin, decimal Facteur, int JoursAbsentMin = 3);
+
+// ---- Intégrité des journaux (titulaire) ----
+/// <summary>Une chaîne (journal et clé de chaîne) et sa dernière vérification ; Statut : ok, rupture, erreur, ou null si jamais vérifiée.</summary>
+public sealed record ChaineIntegriteDto(string Journal, string Libelle, string Algorithme, string? CleChaine, DateTime? VerifieLe, bool Planifiee,
+    long Lignes, int Sceaux, string? Statut, long? RangRupture, string? Motif, string? Attendu, string? Trouve);
+public sealed record TableauIntegriteDto(IReadOnlyList<ChaineIntegriteDto> Chaines, int HeureVerification, string AlgorithmeSceau,
+    string EmpreinteCle, string FormatExportSceau);
 
 // ---- Volet Chifa repris à la caisse par son QR code ----
 public sealed record LireVoletChifaRequete(string Texte);

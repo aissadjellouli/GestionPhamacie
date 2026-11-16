@@ -56,6 +56,8 @@ public static class Domaines
         new("pilotage", "Pilotage", 'P',
         [
             new("Rapports", "rapports", ["rapports"], ["rapports.ventes"]),
+            // Tableau de bord financier (lot 11) : titulaire ou droit de voir prix d'achat et marges
+            new("Tableau de bord financier", "pilotage-financier", ["pilotage-financier"], ["role.titulaire", "rapports.marges"]),
             new("Contrôle interne", "surveillance", ["surveillance"], ["role.titulaire"]),
         ]),
     ];

@@ -1,0 +1,166 @@
+﻿@page "/admin/serialisation"
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Sérialisation DataMatrix (script 120, 2026-11-16, lot 10) : file hors ligne des vérifications, décommissionnements (vente) et
+   réactivations (retour, annulation) envoyés à la base nationale (adaptateur factice [À VÉRIFIER : API MIPH]).
+   Écran fixe : seul le tableau défile, paginé et filtré par statut (docs/charte-graphique.md). *@
+<div class="page admin">
+    <NavAdmin Actif="admin/serialisation" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Sérialisation DataMatrix</h1>
+                <p class="sous-titre">Réservé au titulaire · la vente n'attend jamais la base nationale : chaque boîte est vérifiée, décommissionnée ou réactivée en file, rejouée toutes les minutes</p>
+            </div>
+            <button type="button" class="btn" disabled="@enCours" @onclick="() => RelancerAsync(null)">Relancer la file maintenant</button>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (etat is not null)
+        {
+            <div class="filtres">
+                <span class="detail"><strong>@etat.EnAttente</strong> en attente · <strong>@etat.Reussies</strong> réussie(s) · <strong>@etat.Refusees</strong> refusée(s)@(etat.DernierEssaiLe is { } d ? $" · dernier envoi {Libelles.DateHeureLocale(d)}" : "")</span>
+                <span class="detail">Connecteur : @(etat.Connecteur == "factice" ? "factice (démonstration)" : etat.Connecteur) · AI GS1 : @string.Join(", ", etat.IdentifiantsGs1.Select(i => $"{i.Code} {i.Champ}{(i.LongueurFixe is { } n ? $" ({n})" : " (variable)")}"))</span>
+                <label class="case"><input type="checkbox" checked="@etat.Actif" disabled="@enCours" @onchange="e => EnregistrerAsync((bool)e.Value!, etat.FacticeHorsLigne)" /><span>File active</span></label>
+                <label class="case"><input type="checkbox" checked="@etat.FacticeHorsLigne" disabled="@enCours" @onchange="e => EnregistrerAsync(etat.Actif, (bool)e.Value!)" /><span>Simuler la base nationale hors ligne</span></label>
+            </div>
+            @if (etat.DerniereErreur is not null && etat.EnAttente > 0)
+            {
+                <p class="detail">Dernier report : @etat.DerniereErreur</p>
+            }
+        }
+
+        <div class="filtres">
+            <label>Statut
+                <select value="@statut" @onchange="ChangerStatutAsync" aria-label="Statut des opérations">
+                    <option value="">Tous</option>
+                    <option value="en_attente">En attente</option>
+                    <option value="reussie">Réussies</option>
+                    <option value="refusee">Refusées</option>
+                </select>
+            </label>
+        </div>
+
+        @if (page is null)
+        {
+            <p class="sous-titre">Chargement…</p>
+        }
+        else
+        {
+            <div class="tableau-cadre">
+                <table class="tableau">
+                    <thead>
+                        <tr><th>Mise en file</th><th>Produit</th><th>Lot</th><th>Série</th><th>Opération</th><th>Statut</th><th>Réponse</th><th>Essais</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @if (page.Lignes.Count == 0)
+                        {
+                            <tr><td colspan="9" class="vide">Aucune opération @(statut is "" ? "" : "pour ce statut").</td></tr>
+                        }
+                        @foreach (var o in page.Lignes)
+                        {
+                            <tr>
+                                <td>@Libelles.DateHeureLocale(o.CreeLe)</td>
+                                <td>@o.Produit</td>
+                                <td>@o.Lot</td>
+                                <td title="GTIN @o.Gtin">@o.NumeroSerie</td>
+                                <td>@Operation(o.Operation)</td>
+                                <td>@Statut(o.Statut)</td>
+                                <td class="detail">@Resultat(o.Resultat)@(o.Message is null ? "" : $" · {o.Message}")</td>
+                                <td>@o.Essais</td>
+                                <td>
+                                    @if (o.Statut != "reussie")
+                                    {
+                                        <button type="button" class="btn" disabled="@enCours" @onclick="() => RelancerAsync(o.Id)">Relancer</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <Pagination Total="page.Total" Numero="numero" Taille="taille" Occupe="enCours" Libelle="Pages de la file de sérialisation"
+                        OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
+    </div>
+</div>
+
+@code {
+    private EtatSerialisationDto? etat;
+    private PageDto<OperationSerialisationDto>? page;
+    private string statut = "";
+    private int numero = 1, taille = Pagination.TailleParDefaut;
+    private bool enCours;
+    private string? erreur, message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("serialisation", e => { e.Mettre("statut", statut); e.Mettre("page", numero); e.Mettre("taille", taille); });
+        var r = Historique.Restaurer("serialisation");
+        if (r is not null) statut = r.Texte("statut") ?? "";
+        await ChargerAsync(r?.Entier("page") ?? 1, r?.Entier("taille") ?? taille);
+    }
+
+    private async Task ChargerAsync(int n, int t)
+    {
+        (numero, taille) = (n, t);
+        string? e1, e2;
+        (etat, e1) = await Api.EtatSerialisationAsync();
+        (page, e2) = await Api.FileSerialisationAsync(statut == "" ? null : statut, numero, taille);
+        erreur = e1 ?? e2;
+    }
+
+    private async Task ChangerStatutAsync(ChangeEventArgs e)
+    {
+        statut = e.Value?.ToString() ?? "";
+        await ChargerAsync(1, taille);
+    }
+
+    private async Task RelancerAsync(long? id)
+    {
+        enCours = true;
+        message = null;
+        var (r, e) = await Api.RelancerSerialisationAsync(id);
+        erreur = e;
+        if (r is not null)
+            message = r.ConnecteurIndisponible
+                ? $"{r.Relancees} opération(s) relancée(s) : la base nationale ne répond pas, elles restent en attente."
+                : $"{r.Relancees} opération(s) relancée(s) : {r.Reussies} réussie(s), {r.Refusees} refusée(s).";
+        await ChargerAsync(numero, taille);
+        erreur ??= e;
+        enCours = false;
+    }
+
+    private async Task EnregistrerAsync(bool actif, bool horsLigne)
+    {
+        enCours = true;
+        message = null;
+        erreur = await Api.EnregistrerParametresSerialisationAsync(actif, horsLigne);
+        if (erreur is null) message = "Réglages de la sérialisation enregistrés.";
+        await ChargerAsync(numero, taille);
+        enCours = false;
+    }
+
+    private static string Operation(string o) => o switch
+    {
+        "verifier" => "Vérification (réception)",
+        "decommissionner" => "Décommissionnement (vente)",
+        _ => "Réactivation (retour)"
+    };
+
+    private static string Statut(string s) => s switch { "en_attente" => "En attente", "reussie" => "Réussie", _ => "Refusée" };
+
+    private static string Resultat(string? r) => r switch
+    {
+        null => "—",
+        "authentique" => "Authentique",
+        "inconnue" => "Inconnue de la base nationale",
+        "deja_decommissionnee" => "Déjà décommissionnée",
+        "rappelee" => "Rappelée",
+        _ => "Expirée"
+    };
+}

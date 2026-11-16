@@ -91,7 +91,15 @@
                         <button type="button" class="btn" @onclick="() => { if (patient is not null) patient.AssurePrincipalId = prop.Id; }">Rattacher à @prop.Nom (@prop.NumAssure) ?</button>
                     </div>
                 }
-                <label class="case"><input type="checkbox" @bind="patient.Chronique" /> Malade chronique</label>
+                <div style="display: flex; gap: 24px; flex-wrap: wrap; align-items: center">
+                    <label class="case"><input type="checkbox" @bind="patient.Chronique" /> Malade chronique</label>
+                    @* Accord SMS (2026-11-16) : même source que la case de « Patients en attente » (patient.consentement_sms et sa date) *@
+                    <label class="case"><input type="checkbox" data-champ="consentement_sms" @bind="patient.ConsentementSms" /> Accepte d’être prévenu par SMS</label>
+                    <span class="detail" data-champ="consentement_sms_le">@(patient.ConsentementSmsLe is { } le ? $"{(patient.ConsentementSmsInitial ? "Accord" : "Retrait")} enregistré le {Libelles.DateLocale(le)}" : "Aucun accord enregistré")</span>
+                    @* Formulaire papier d'accord (2026-11-16) : imprimé, signé, réception notée avec la date (enregistrée avec la fiche) *@
+                    <button type="button" class="lien-bouton" data-champ="imprimer_formulaire_sms" disabled="@enCours" @onclick="ImprimerFormulaireSmsAsync">Imprimer le formulaire d’accord</button>
+                    <label class="case"><input type="checkbox" data-champ="formulaire_sms_recu" @bind="patient.FormulaireRecu" /> Formulaire signé reçu@(patient.FormulaireRecuInitial && patient.FormulaireRecuLe is { } fl ? $" le {Libelles.DateLocale(fl)}" : "")</label>
+                </div>
                 <p class="detail" style="margin: 0">Dette actuelle : @Libelles.Dinars(patient.SoldeCredit, 2) (elle ne se modifie pas ici : règlement ou correction depuis le relevé de dette). Chaque changement est inscrit au journal.</p>
                 @if (erreurSaisie is not null) { <div class="erreur" role="alert">@erreurSaisie</div> }
                 <div class="filtres">
@@ -255,6 +263,12 @@
         public string? Lien { get; set; }
         public long? AssurePrincipalId { get; set; }
         public DateOnly? DateFinDroit { get; set; }
+        public bool ConsentementSms { get; set; }
+        public bool ConsentementSmsInitial { get; init; }
+        public DateTime? ConsentementSmsLe { get; init; }
+        public bool FormulaireRecu { get; set; }
+        public bool FormulaireRecuInitial { get; init; }
+        public DateTime? FormulaireRecuLe { get; init; }
         public IReadOnlyList<ProchePatientDto> Candidats { get; init; } = [];
         public ProchePatientDto? Proposition { get; init; }
     }
@@ -300,14 +314,33 @@
             var (f, e) = await Api.FichePatientAsync(fiche.Id);
             if (f is null) { erreurSaisie = e ?? "Patient introuvable."; return; }
             if (organismes.Count == 0) organismes = (await Api.OrganismesAsync()).Item1;
+            var (accordSms, eSms) = await Api.ConsentementSmsAsync(f.Id);
+            if (accordSms is null) { erreurSaisie = eSms ?? "Accord SMS du patient illisible."; return; }
             patient = new SaisiePatient
             {
+                ConsentementSms = accordSms.Accord, ConsentementSmsInitial = accordSms.Accord, ConsentementSmsLe = accordSms.Le,
+                FormulaireRecu = accordSms.FormulaireRecu, FormulaireRecuInitial = accordSms.FormulaireRecu, FormulaireRecuLe = accordSms.FormulaireRecuLe,
                 Id = f.Id, Nom = f.Nom, Prenom = f.Prenom, DateNaissance = f.DateNaissance, Telephone = f.Telephone, Email = f.Email,
                 NumAssure = f.NumAssure, OrganismeId = f.OrganismeId, Chronique = f.Chronique, PlafondCredit = f.PlafondCredit, SoldeCredit = f.SoldeCredit,
                 Lien = f.Lien, AssurePrincipalId = f.AssurePrincipalId, Candidats = f.Candidats ?? [], Proposition = f.Proposition,
                 DateFinDroit = f.DateFinDroit
             };
         }
+        finally { enCours = false; }
+    }
+
+    /// <summary>Formulaire d'accord SMS (2026-11-16) : PDF A4 produit par le serveur, ouvert sur ce poste pour l'imprimer.</summary>
+    private async Task ImprimerFormulaireSmsAsync()
+    {
+        if (patient is not { } p) return;
+        (enCours, erreurSaisie) = (true, null);
+        try
+        {
+            var (pdf, nom, e) = await Api.FormulaireAccordSmsPdfAsync(p.Id);
+            if (e is not null) { erreurSaisie = e; return; }
+            Documents.OuvrirSurCePoste("Formulaires", nom ?? $"accord_sms_{p.Id}.pdf", pdf!);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { erreurSaisie = $"Formulaire non ouvert : {ex.Message}"; }
         finally { enCours = false; }
     }
 
@@ -321,6 +354,17 @@
                 p.OrganismeId, p.Chronique, p.PlafondCredit, 0, string.IsNullOrEmpty(p.Lien) ? null : p.Lien,
                 p.Lien == "assure" ? null : p.AssurePrincipalId, DateFinDroit: p.DateFinDroit));
             if (e is not null) { erreurSaisie = e; return; }
+            // Accord SMS : enregistré seulement s'il change (date d'accord ou de retrait, journal sans donnée personnelle)
+            if (p.ConsentementSms != p.ConsentementSmsInitial && await Api.EnregistrerConsentementSmsAsync(p.Id, p.ConsentementSms) is { } eSms)
+            {
+                erreurSaisie = $"Fiche enregistrée, mais pas l’accord SMS : {eSms}";
+                return;
+            }
+            if (p.FormulaireRecu != p.FormulaireRecuInitial && await Api.EnregistrerFormulaireSmsRecuAsync(p.Id, p.FormulaireRecu) is { } eForm)
+            {
+                erreurSaisie = $"Fiche enregistrée, mais pas la réception du formulaire d’accord : {eForm}";
+                return;
+            }
             var (f, err) = await Api.ContactAsync(fiche.Type, fiche.Id);
             (fiche, erreur, patient, message) = (f ?? fiche, err, null, "Fiche du patient enregistrée.");
         }

@@ -81,30 +81,6 @@
     <File Path="docs/maquettes/source/Stock.dc.html" />
     <File Path="docs/maquettes/source/Tracabilite.dc.html" />
   </Folder>
-  <Folder Name="/Documents/taches/2026-11-15-analyse-wasfa/">
-    <File Path="docs/taches/2026-11-15-analyse-wasfa/analyse-wasfa.md" />
-    <File Path="docs/taches/2026-11-15-analyse-wasfa/echanges.md" />
-  </Folder>
-  <Folder Name="/Documents/taches/2026-11-15-modele-wasfa/">
-    <File Path="docs/taches/2026-11-15-modele-wasfa/contrat-api.md" />
-    <File Path="docs/taches/2026-11-15-modele-wasfa/echanges.md" />
-    <File Path="docs/taches/2026-11-15-modele-wasfa/lot0-constat.md" />
-    <File Path="docs/taches/2026-11-15-modele-wasfa/lot2-partie-b.md" />
-    <File Path="docs/taches/2026-11-15-modele-wasfa/modele-wasfa.md" />
-    <File Path="docs/taches/2026-11-15-modele-wasfa/plan.md" />
-    <File Path="docs/taches/2026-11-15-modele-wasfa/recette.md" />
-  </Folder>
-  <Folder Name="/Documents/taches/2026-11-15-recette-complete/">
-    <File Path="docs/taches/2026-11-15-recette-complete/conception-chifa-mdn.md" />
-    <File Path="docs/taches/2026-11-15-recette-complete/demande-cnas.md" />
-    <File Path="docs/taches/2026-11-15-recette-complete/echanges.md" />
-    <File Path="docs/taches/2026-11-15-recette-complete/recette.md" />
-  </Folder>
-  <Folder Name="/Documents/taches/2026-11-15-revue-develop/">
-    <File Path="docs/taches/2026-11-15-revue-develop/echanges.md" />
-    <File Path="docs/taches/2026-11-15-revue-develop/review.md" />
-    <File Path="docs/taches/2026-11-15-revue-develop/securite.md" />
-  </Folder>
   <Folder Name="/database/migration/">
     <File Path="database/migration/001_schema.sql" />
     <File Path="database/migration/002_alertes_stock.sql" />
@@ -216,6 +192,21 @@
     <File Path="database/migration/108_prestations_remboursables.sql" />
     <File Path="database/migration/109_retour_avoir.sql" />
     <File Path="database/migration/110_bordereaux_chifa.sql" />
+    <File Path="database/migration/111_integrite_hachage.sql" />
+    <File Path="database/migration/111b_roles_integrite.sql" />
+    <File Path="database/migration/114_profils_reprise.sql" />
+    <File Path="database/migration/115_multi_grossistes.sql" />
+    <File Path="database/migration/116_ruptures_substitution.sql" />
+    <File Path="database/migration/117_registre_renforce.sql" />
+    <File Path="database/migration/118_wilaya_duree_traitement.sql" />
+    <File Path="database/migration/121_option_reprise_chifa.sql" />
+    <File Path="database/migration/120_serialisation_file.sql" />
+    <File Path="database/migration/122_second_serveur.sql" />
+    <File Path="database/migration/123_formulaire_accord_sms.sql" />
+  </Folder>
+  <Folder Name="/database/tests/">
+    <File Path="database/tests/111_integrite_hachage_tests.sql" />
+    <File Path="database/tests/117_registre_renforce_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -236,6 +227,14 @@
     <File Path="scripts/initialiser_base_locale.ps1" />
     <File Path="scripts/restaurer_pharmacie.ps1" />
     <File Path="scripts/sauvegarde_pharmacie.ps1" />
+  </Folder>
+  <Folder Name="/scripts/second-serveur/">
+    <File Path="scripts/second-serveur/commun.ps1" />
+    <File Path="scripts/second-serveur/preparer-principal.ps1" />
+    <File Path="scripts/second-serveur/initialiser-second-serveur.ps1" />
+    <File Path="scripts/second-serveur/verifier-second-serveur.ps1" />
+    <File Path="scripts/second-serveur/basculer-second-serveur.ps1" />
+    <File Path="scripts/second-serveur/remettre-en-second.ps1" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Pharma.Domain/Pharma.Domain.csproj" />

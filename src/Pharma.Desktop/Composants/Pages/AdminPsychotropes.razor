@@ -1,0 +1,295 @@
+@page "/admin/psychotropes"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Administration › Psychotropes et antibiotiques (lot 8, titulaire) : règles d'alerte du registre (seuils, périodes, valideur exigé)
+   et suivi des antibiotiques (liste des DCI en données, quantités délivrées par molécule et par mois). Écran fixe : seuls les
+   tableaux défilent dans leur cadre. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/psychotropes" Rubrique="@Rubrique" />
+
+    <div class="admin-contenu">
+        @if (!Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Écran réservé au pharmacien titulaire.</div>
+        }
+        else if (rubrique == "alertes")
+        {
+            <div class="titre-page">
+                <div>
+                    <h1>Psychotropes · Alertes du registre</h1>
+                    <p class="sous-titre">À la délivrance d’un psychotrope ou stupéfiant : avertissement ; « Forcer » demande un motif, garde l’employé et, si la règle l’exige, le valideur (code comptoir).</p>
+                </div>
+                @if (regles.Count > 0) { <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerReglesAsync">Enregistrer</button> }
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+            @if (regles.Count == 0 && erreur is null) { <Chargement /> }
+            else
+            {
+                <div class="tableau-cadre">
+                    <table class="tableau">
+                        <thead><tr><th scope="col">Alerte</th><th scope="col">Active</th><th scope="col" class="nombre">Seuil</th><th scope="col" class="nombre">Période (jours)</th><th scope="col" class="nombre">Unités / jour</th><th scope="col">Valideur exigé</th><th scope="col">Règle</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in regles)
+                            {
+                                <tr>
+                                    <td>@r.Libelle</td>
+                                    <td><input type="checkbox" aria-label="@($"{r.Libelle} : active")" @bind="r.Active" /></td>
+                                    @if (r.Code == "prescripteur_hors_zone")
+                                    {
+                                        <td class="nombre detail">—</td><td class="nombre detail">—</td>
+                                    }
+                                    else
+                                    {
+                                        <td class="nombre"><input type="number" min="1" max="1000" style="width: 90px" aria-label="@($"{r.Libelle} : seuil")" @bind="r.Seuil" /></td>
+                                        <td class="nombre"><input type="number" min="1" max="3650" style="width: 90px" aria-label="@($"{r.Libelle} : période")" @bind="r.PeriodeJours" /></td>
+                                    }
+                                    @if (r.Code == "quantite_anormale")
+                                    {
+                                        <td class="nombre"><input type="number" min="1" max="100" style="width: 80px" aria-label="Quantité anormale : unités par jour de traitement (vide : contrôle inactif)"
+                                                                  title="Boîtes × contenance comparées à la durée du traitement × ce nombre (vide : contrôle inactif)" @bind="r.UnitesParJour" /></td>
+                                    }
+                                    else
+                                    {
+                                        <td class="nombre detail">—</td>
+                                    }
+                                    <td><input type="checkbox" aria-label="@($"{r.Libelle} : valideur exigé")" @bind="r.ExigerValideur" /></td>
+                                    <td class="detail">@Explication(r.Code)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="detail" style="margin: 8px 0 0">Valeurs de départ à confirmer. « Hors zone » : seulement pour un médecin dont la wilaya est renseignée (sinon signalé « wilaya à renseigner ») ;
+                    la durée de traitement n’est contrôlée que si elle est fournie. Journal des forçages : Stock › Registre › Alertes forcées.</p>
+                @* Zone de l'officine (2026-11-16) : wilaya de l'officine et wilayas voisines ; zone vide = pas de contrôle « hors zone » *@
+                <section class="panneau" aria-labelledby="t-zone" style="display: flex; gap: 16px; align-items: flex-start; margin-top: 8px">
+                    <div style="display: flex; flex-direction: column; gap: 6px; flex: 0 0 300px">
+                        <h2 id="t-zone" style="margin: 0">Wilayas de la zone</h2>
+                        <div class="champ">
+                            <label for="zone-officine">Wilaya de l’officine</label>
+                            <select id="zone-officine" data-champ="wilaya_officine" @bind="zoneOfficine">
+                                <option value="">— à renseigner —</option>
+                                @foreach (var w in wilayas) { <option value="@w.Code">@w.Code - @w.Nom</option> }
+                            </select>
+                        </div>
+                        <button type="button" class="btn" style="align-self: flex-start" disabled="@enCours" @onclick="EnregistrerZoneAsync">Enregistrer la zone</button>
+                    </div>
+                    <div class="champ" style="flex: 1 1 auto">
+                        <label for="zone-voisines">Wilayas voisines (Ctrl + clic pour en choisir plusieurs)</label>
+                        <select id="zone-voisines" data-champ="wilayas_voisines" multiple size="5" @bind="zoneVoisines">
+                            @foreach (var w in wilayas.Where(w => w.Code != zoneOfficine)) { <option value="@w.Code">@w.Code - @w.Nom</option> }
+                        </select>
+                        <span class="detail">@(string.IsNullOrEmpty(zoneOfficine) ? "Zone non réglée : pas de contrôle « hors zone »." : $"Zone : {string.Join(", ", new[] { zoneOfficine }.Concat(zoneVoisines))}")</span>
+                    </div>
+                </section>
+            }
+        }
+        else
+        {
+            <div class="titre-page">
+                <div>
+                    <h1>Psychotropes · Suivi des antibiotiques</h1>
+                    <p class="sous-titre">Boîtes délivrées par molécule et par mois (ventes validées). La liste des molécules suivies est en données : à confirmer avec la nomenclature.</p>
+                </div>
+                <button type="button" class="btn" disabled="@(enCours || suivi.Count == 0)" @onclick="ExporterSuiviAsync">Excel</button>
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (fichier is not null) { <div class="succes" role="status">Fichier rangé : @fichier <button type="button" class="lien-bouton" @onclick="() => Documents.Ouvrir(fichier)">Ouvrir</button></div> }
+            <div style="display: grid; grid-template-columns: minmax(320px, 1fr) 2fr; gap: 12px; min-height: 0; flex: 1 1 auto">
+                <section class="panneau" aria-labelledby="t-dci" style="display: flex; flex-direction: column; gap: 8px; min-height: 0">
+                    <h2 id="t-dci" style="margin: 0">Molécules suivies (@dci.Count)</h2>
+                    <div class="filtres-liste" role="search" aria-label="Ajouter une molécule">
+                        <div class="champ" style="flex: 1 1 160px"><label for="ab-q">Ajouter (DCI)</label><input id="ab-q" type="text" @bind="recherche" @bind:event="oninput" @bind:after="ChercherAsync" /></div>
+                        <div class="champ" style="flex: 1 1 160px"><label for="ab-filtre">Filtrer la liste</label><input id="ab-filtre" type="text" @bind="filtreDci" @bind:event="oninput" @bind:after="() => pageDci = 1" /></div>
+                    </div>
+                    @if (trouvees.Count > 0)
+                    {
+                        <ul class="detail" style="margin: 0; padding-left: 16px; max-height: 120px; overflow: auto">
+                            @foreach (var t in trouvees.Where(t => dci.All(d => d.DciId != t.DciId)))
+                            {
+                                <li>@t.Nom <button type="button" class="lien-bouton" @onclick="() => ModifierAsync(t.DciId, true)">Ajouter</button></li>
+                            }
+                        </ul>
+                    }
+                    <div class="tableau-cadre">
+                        <table class="tableau">
+                            <thead><tr><th scope="col">DCI</th><th scope="col"></th></tr></thead>
+                            <tbody>
+                                @foreach (var d in DciFiltrees.Skip((pageDci - 1) * tailleDci).Take(tailleDci))
+                                {
+                                    <tr><td>@d.Nom</td><td><button type="button" class="lien-bouton" @onclick="() => ModifierAsync(d.DciId, false)">Retirer</button></td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <Pagination Total="DciFiltrees.Count()" Numero="pageDci" Taille="tailleDci" Libelle="Pages des molécules" OnChange="p => (pageDci, tailleDci) = (p.Numero, p.Taille)" />
+                </section>
+                <section class="panneau" aria-labelledby="t-suivi" style="display: flex; flex-direction: column; gap: 8px; min-height: 0">
+                    <h2 id="t-suivi" style="margin: 0">Quantités délivrées</h2>
+                    <div class="filtres-liste" role="search" aria-label="Période du suivi">
+                        <div class="champ" style="flex: 0 0 170px"><label for="ab-du">Du</label><input id="ab-du" type="date" @bind="du" @bind:after="ChargerSuiviAsync" /></div>
+                        <div class="champ" style="flex: 0 0 170px"><label for="ab-au">Au</label><input id="ab-au" type="date" @bind="au" @bind:after="ChargerSuiviAsync" /></div>
+                    </div>
+                    <div class="tableau-cadre">
+                        <table class="tableau">
+                            <thead><tr><th scope="col">Molécule</th><th scope="col">Mois</th><th scope="col" class="nombre">Boîtes</th><th scope="col" class="nombre">Ventes</th></tr></thead>
+                            <tbody>
+                                @foreach (var l in suivi.Skip((pageSuivi - 1) * tailleSuivi).Take(tailleSuivi))
+                                {
+                                    <tr><td>@l.Dci</td><td>@($"{l.Mois:00}/{l.Annee}")</td><td class="nombre">@l.Boites</td><td class="nombre">@l.Delivrances</td></tr>
+                                }
+                                @if (suivi.Count == 0) { <tr><td colspan="4" class="vide">Aucune délivrance sur la période.</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                    <Pagination Total="suivi.Count" Numero="pageSuivi" Taille="tailleSuivi" Libelle="Pages du suivi" OnChange="p => (pageSuivi, tailleSuivi) = (p.Numero, p.Taille)" />
+                </section>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => NavAdmin.RubriqueCourante("admin/psychotropes", Rubrique);
+    private const string Classe = "antibiotiques";
+
+    private sealed class Regle
+    {
+        public string Code { get; init; } = "";
+        public string Libelle { get; init; } = "";
+        public bool Active { get; set; }
+        public int Seuil { get; set; }
+        public int PeriodeJours { get; set; }
+        public bool ExigerValideur { get; set; }
+        public int? UnitesParJour { get; set; }
+    }
+
+    private List<Regle> regles = [];
+    private List<WilayaDto> wilayas = [];
+    private string? zoneOfficine;
+    private string[] zoneVoisines = [];
+    private List<DciClasseDto> dci = [], trouvees = [];
+    private List<LigneSuiviClasseDto> suivi = [];
+    private string? recherche, filtreDci, erreur, message, fichier;
+    private bool enCours;
+    private string? charge;
+    private DateOnly du = new(DateTime.Today.Year, 1, 1);
+    private DateOnly au = DateOnly.FromDateTime(DateTime.Today);
+    private int pageDci = 1, tailleDci = Pagination.TailleParDefaut, pageSuivi = 1, tailleSuivi = Pagination.TailleParDefaut;
+
+    private IEnumerable<DciClasseDto> DciFiltrees => string.IsNullOrWhiteSpace(filtreDci) ? dci
+        : dci.Where(d => d.Nom.Contains(filtreDci.Trim(), StringComparison.CurrentCultureIgnoreCase));
+
+    protected override void OnInitialized()
+    {
+        // « ← Retour » : période du suivi, filtre et pages retrouvés tels qu'ils étaient
+        Historique.Suivre("admin-psychotropes", e =>
+        {
+            e.Mettre("du", du); e.Mettre("au", au); e.Mettre("filtre", filtreDci ?? "");
+            e.Mettre("page_dci", pageDci); e.Mettre("taille_dci", tailleDci); e.Mettre("page_suivi", pageSuivi); e.Mettre("taille_suivi", tailleSuivi);
+        });
+        if (Historique.Restaurer("admin-psychotropes") is { } r)
+        {
+            (du, au, filtreDci) = (r.Date("du") ?? du, r.Date("au") ?? au, r.Texte("filtre"));
+            (pageDci, tailleDci) = (r.Entier("page_dci") ?? 1, r.Entier("taille_dci") ?? tailleDci);
+            (pageSuivi, tailleSuivi) = (r.Entier("page_suivi") ?? 1, r.Entier("taille_suivi") ?? tailleSuivi);
+            pageSuiviRestauree = pageSuivi;
+        }
+    }
+
+    private int? pageSuiviRestauree;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!Session.A("role.titulaire") || charge == rubrique) return;
+        (charge, erreur, message, fichier) = (rubrique, null, null, null);
+        if (rubrique == "alertes")
+        {
+            var (r, e) = await Api.ReglesAlertesPsychotropesAsync();
+            regles = r.Select(x => new Regle { Code = x.Code, Libelle = x.Libelle, Active = x.Active, Seuil = x.Seuil, PeriodeJours = x.PeriodeJours,
+                ExigerValideur = x.ExigerValideur, UnitesParJour = x.UnitesParJour }).ToList();
+            erreur = e;
+            (wilayas, e) = await Api.WilayasAsync();
+            erreur ??= e;
+            var (zone, ez) = await Api.ZoneOfficineAsync();
+            erreur ??= ez;
+            (zoneOfficine, zoneVoisines) = (zone?.Officine, zone?.Voisines.ToArray() ?? []);
+        }
+        else
+        {
+            (dci, erreur) = await Api.DciClasseAsync(Classe);
+            await ChargerSuiviAsync();
+            if (pageSuiviRestauree is { } ps) (pageSuivi, pageSuiviRestauree) = (ps, null);
+        }
+    }
+
+    private static string Explication(string code) => code switch
+    {
+        "patient_repete" => "Alerte si le patient a déjà reçu au moins « seuil » délivrances sous registre sur la période.",
+        "ordonnance_reutilisee" => "Alerte si le même n° d’ordonnance du même médecin a déjà servi « seuil » fois sur la période.",
+        "quantite_anormale" => "Alerte au-delà de « seuil » boîtes d’un produit par délivrance, ou d’une durée de traitement supérieure à la période.",
+        "prescripteur_inhabituel" => "Alerte si le médecin a moins de « seuil » délivrances sous registre à l’officine sur la période.",
+        "prescripteur_hors_zone" => "Alerte si la wilaya du médecin est renseignée et hors des wilayas de la zone (ci-dessous).",
+        _ => ""
+    };
+
+    private async Task EnregistrerReglesAsync()
+    {
+        (enCours, message) = (true, null);
+        erreur = await Api.EnregistrerReglesAlertesPsychotropesAsync(regles.Select(r =>
+            new RegleAlertePsychotropeDto(r.Code, r.Libelle, r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur, r.UnitesParJour)).ToList());
+        enCours = false;
+        message = erreur is null ? "Alertes du registre enregistrées." : null;
+    }
+
+    private async Task EnregistrerZoneAsync()
+    {
+        (enCours, message) = (true, null);
+        erreur = await Api.EnregistrerZoneOfficineAsync(new ZoneOfficineDto(string.IsNullOrEmpty(zoneOfficine) ? null : zoneOfficine,
+            zoneVoisines.Where(v => v != zoneOfficine).ToList()));
+        enCours = false;
+        message = erreur is null ? "Zone de l’officine enregistrée." : null;
+    }
+
+    private async Task ChercherAsync()
+    {
+        if ((recherche?.Trim().Length ?? 0) < 2) { trouvees = []; return; }
+        (trouvees, erreur) = await Api.ChercherDciClasseAsync(recherche!.Trim());
+    }
+
+    private async Task ModifierAsync(long dciId, bool ajouter)
+    {
+        enCours = true;
+        erreur = await Api.ModifierDciClasseAsync(Classe, dciId, ajouter);
+        enCours = false;
+        if (erreur is not null) return;
+        (dci, erreur) = await Api.DciClasseAsync(Classe);
+        await ChargerSuiviAsync();
+    }
+
+    private async Task ChargerSuiviAsync()
+    {
+        pageSuivi = 1;
+        var (s, e) = await Api.SuiviClasseAsync(Classe, du, au);
+        (suivi, erreur) = (s, e ?? erreur);
+    }
+
+    private async Task ExporterSuiviAsync()
+    {
+        (enCours, erreur, fichier) = (true, null, null);
+        try
+        {
+            var (contenu, nom, e) = await Api.ExporterSuiviClasseAsync(Classe, du, au);
+            if (e is not null) { erreur = e; return; }
+            var doc = await Documents.RangerAsync(Api, "Rapports", nom!, contenu!);
+            (fichier, erreur) = (doc.CheminLocal, doc.Erreur);
+            Documents.Ouvrir(fichier);
+        }
+        catch (Exception ex) { erreur = $"Fichier impossible à ouvrir : {ex.Message}"; }
+        finally { enCours = false; }
+    }
+}

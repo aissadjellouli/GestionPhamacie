@@ -125,4 +125,68 @@ public class RepriseTests
             [new(CibleReprise.Produits, "ARTICLES", new Dictionary<string, string> { ["ref_source"] = "CODE_ART" })], 1));
         Assert.Contains("Désignation", ex.Message);
     }
+
+    // ---- Option du titulaire : fichier des produits pour l'historique des organismes seul (2026-11-16) ----
+
+    private static readonly Dictionary<string, string> ColonnesChifa = new() { ["num_facture"] = "CODE_ART", ["date_facture"] = "DESIGNATION" };
+
+    private static ExtraireReprise Extraction(bool exiger, RepriseEnMemoire import) =>
+        new(new SourceRepriseFactice(), import, SuperAdmin(ActionsSuperAdmin.RepriseExtraire), new JournalEspion(),
+            new SessionsEnMemoire { Parametres = new Pharma.Application.Caisse.ParametresCaisse(true, 0, 0, 0, ExigerProduitsRepriseHistorique: exiger) });
+
+    [Fact]
+    public async Task Historique_seul_refuse_quand_le_titulaire_exige_les_produits_et_cite_l_option()
+    {
+        var import = new RepriseEnMemoire();
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => Extraction(true, import).ExecuterAsync("DSN=Ancien;", "Ancien",
+            [new(CibleReprise.HistoriqueChifa, "ARTICLES", ColonnesChifa)], 1));
+        Assert.Contains("Le titulaire exige", ex.Message);
+        Assert.Contains(ExigenceProduitsReprise.Option, ex.Message);
+        Assert.Contains("Caisse et contrôle", ex.Message);
+        Assert.Empty(import.Inserts);
+    }
+
+    [Fact]
+    public async Task Historique_Chifa_et_MDN_seuls_acceptes_quand_le_titulaire_n_exige_pas_les_produits()
+    {
+        var import = new RepriseEnMemoire();
+        var r = await Extraction(false, import).ExecuterAsync("DSN=Ancien;", "Ancien",
+            [new(CibleReprise.HistoriqueChifa, "ARTICLES", ColonnesChifa), new(CibleReprise.HistoriqueMdn, "CLIENTS", new Dictionary<string, string> { ["num_facture"] = "NUM_CLI", ["date_facture"] = "NOM" })], 1);
+        Assert.Equal(1, r.Lignes[CibleReprise.HistoriqueChifa]);
+        Assert.Equal(1, r.Lignes[CibleReprise.HistoriqueMdn]);
+    }
+
+    [Theory]
+    [InlineData(CibleReprise.Stock, "ref_produit")]
+    [InlineData(CibleReprise.Clients, "ref_source")]
+    public async Task Stock_ou_patients_sans_produits_toujours_refuses_meme_si_l_option_n_exige_pas(CibleReprise cible, string champ)
+    {
+        var colonnes = DetectionReprise.Champs[cible].Where(f => f.Obligatoire).ToDictionary(f => f.Code, _ => "CODE_ART");
+        colonnes[champ] = "CODE_ART";
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => Extraction(false, new RepriseEnMemoire()).ExecuterAsync("DSN=Ancien;", "Ancien",
+            [new(cible, "ARTICLES", colonnes), new(CibleReprise.HistoriqueChifa, "CLIENTS", ColonnesChifa)], 1));
+        Assert.Contains("indispensable dès que", ex.Message);
+    }
+
+    [Fact]
+    public async Task Le_scan_informe_l_administrateur_de_l_etat_de_l_option()
+    {
+        Assert.Equal("Le titulaire exige le fichier des produits pour un import de l’historique des organismes seul (Chifa, MDN).", ExigenceProduitsReprise.Information(true));
+        Assert.StartsWith("Le titulaire n’exige pas", ExigenceProduitsReprise.Information(false));
+        var scan = await new ScannerSourceReprise(new SourceRepriseFactice(), SuperAdmin(),
+            new SessionsEnMemoire { Parametres = new Pharma.Application.Caisse.ParametresCaisse(true, 0, 0, 0, ExigerProduitsRepriseHistorique: false) }).ExecuterAsync("DSN=Ancien;", 1);
+        Assert.False(scan.ExigerProduitsHistorique);
+        // Sans réglage lu : exigé (comportement d'origine)
+        Assert.True((await new ScannerSourceReprise(new SourceRepriseFactice(), SuperAdmin()).ExecuterAsync("DSN=Ancien;", 1)).ExigerProduitsHistorique);
+    }
+
+    [Fact]
+    public void Verification_des_cibles_sans_produits()
+    {
+        ExigenceProduitsReprise.Verifier([CibleReprise.HistoriqueMdn], exiger: false);
+        ExigenceProduitsReprise.Verifier([CibleReprise.Produits, CibleReprise.Stock], exiger: true);
+        Assert.Throws<RegleMetierException>(() => ExigenceProduitsReprise.Verifier([CibleReprise.HistoriqueMdn], exiger: true));
+        Assert.Throws<RegleMetierException>(() => ExigenceProduitsReprise.Verifier([CibleReprise.Fournisseurs], exiger: false));
+        Assert.Throws<RegleMetierException>(() => ExigenceProduitsReprise.Verifier([], exiger: false));
+    }
 }

@@ -1,0 +1,68 @@
+@inject ApiClient Api
+
+@* Administration › Contrôle interne › Intégrité des journaux (titulaire) : état de chaque journal chaîné (empreintes reliées en base,
+   sceaux de l'application), dernière vérification, et « Vérifier maintenant ». Écran fixe : seul le tableau défile. *@
+<div class="titre-page">
+    <div>
+        <h1>Contrôle interne · Intégrité des journaux</h1>
+        <p class="sous-titre">Chaque ligne d’un journal protégé est reliée à la précédente par une empreinte ; une modification ou une suppression casse la chaîne.
+            Vérification automatique chaque nuit@(tableau is { } t ? $" à {t.HeureVerification} h" : "").</p>
+    </div>
+    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="VerifierAsync">@(enCours ? "Vérification…" : "Vérifier maintenant")</button>
+</div>
+
+@if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+@if (message is not null) { <div class="succes" role="status">@message</div> }
+
+@if (tableau is { } tab)
+{
+    <p class="detail" style="margin: 0 0 8px">Sceau des clôtures : @tab.AlgorithmeSceau · clé de scellement @tab.EmpreinteCle (empreinte, la clé reste sur le PC serveur)
+        · export du sceau en @(tab.FormatExportSceau == "base64" ? "base64" : "hexadécimal").</p>
+    <section class="tableau-cadre" aria-label="Journaux protégés">
+        <table class="tableau" style="min-width: 900px">
+            <thead><tr><th scope="col">Journal</th><th scope="col">Chaîne</th><th scope="col">État</th><th scope="col">Dernière vérification</th>
+                <th scope="col" class="nombre">Lignes</th><th scope="col" class="nombre">Sceaux</th><th scope="col">Détail</th></tr></thead>
+            <tbody>
+                @foreach (var c in tab.Chaines)
+                {
+                    <tr>
+                        <td>@c.Libelle <span class="detail">(@c.Algorithme)</span></td>
+                        <td class="detail">@(c.CleChaine ?? "—")</td>
+                        <td><span class="pastille @(c.Statut switch { "ok" => "ok", null => null, _ => "urgent" })">@(c.Statut switch
+                            { "ok" => "Intacte", "rupture" => "Rompue", "erreur" => "Erreur", _ => "Jamais vérifiée" })</span></td>
+                        <td>@(c.VerifieLe is { } v ? $"{Libelles.DateHeureLocale(v)} · {(c.Planifiee ? "nuit" : "titulaire")}" : "—")</td>
+                        <td class="nombre">@c.Lignes</td>
+                        <td class="nombre">@c.Sceaux</td>
+                        <td class="detail">@(c.RangRupture is { } r ? $"Ligne {r} : {c.Motif}" : c.Motif)
+                            @if (c.Attendu is not null || c.Trouve is not null) { <br /><span title="Attendu : @c.Attendu · trouvé : @c.Trouve">attendu @Court(c.Attendu), trouvé @Court(c.Trouve)</span> }</td>
+                    </tr>
+                }
+                @if (tab.Chaines.Count == 0) { <tr><td colspan="7" class="vide">Aucun journal protégé pour l’instant.</td></tr> }
+            </tbody>
+        </table>
+    </section>
+    <p class="detail" style="margin: 8px 0 0">En cas de rupture : ne rien corriger dans la base, garder la sauvegarde de la veille et prévenir l’éditeur ; vous êtes alerté par SMS ou e-mail.</p>
+}
+else if (erreur is null) { <Chargement /> }
+
+@code {
+    private TableauIntegriteDto? tableau;
+    private bool enCours;
+    private string? erreur, message;
+
+    protected override async Task OnInitializedAsync() => (tableau, erreur) = await Api.IntegriteAsync();
+
+    private async Task VerifierAsync()
+    {
+        (enCours, message, erreur) = (true, null, null);
+        var (t, e) = await Api.VerifierIntegriteAsync();
+        enCours = false;
+        if (t is not null) tableau = t;
+        erreur = e;
+        if (e is null && t is not null)
+            message = t.Chaines.Any(c => c.Statut is "rupture" or "erreur") ? null : "Vérification terminée : tous les journaux sont intacts.";
+        if (e is null && t is not null && message is null) erreur = "Rupture d’intégrité détectée : voir le détail ci-dessous.";
+    }
+
+    private static string Court(string? v) => v is null ? "—" : v.Length > 16 ? v[..16] + "…" : v;
+}

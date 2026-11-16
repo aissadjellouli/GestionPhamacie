@@ -59,7 +59,7 @@ public static class DelaisAppels
     public static readonly TimeSpan Lourd = TimeSpan.FromMinutes(10);
 
     private static readonly string[] Lourds =
-        ["/api/admin/sauvegardes/lancer", "/api/admin/reprise/", "/api/super-admin/restauration", "/api/admin/nomenclature", "/api/ged/",
+        ["/api/admin/sauvegardes/lancer", "/api/admin/sauvegardes/secours/tester","/api/admin/reprise/", "/api/super-admin/restauration", "/api/admin/nomenclature", "/api/ged/",
          "/api/mobile/reception/scans/importer"];
 
     private static readonly string[] Documents = ["/pdf", "/export", "/etiquettes", "/rapport"];

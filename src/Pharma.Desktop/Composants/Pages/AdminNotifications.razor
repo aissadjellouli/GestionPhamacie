@@ -1,4 +1,4 @@
-@page "/admin/notifications"
+﻿@page "/admin/notifications"
 @inject ApiClient Api
 @inject HistoriqueNavigation Historique
 @inject NavigationManager Nav
@@ -88,6 +88,21 @@
                     <button type="button" class="lien" disabled="@enCours" @onclick="RapportMaintenantAsync">envoyer le rapport du jour maintenant</button></p>
             </section>
             }
+        }
+
+        @if (rubrique == "formulaire-sms")
+        {
+            @* Texte du formulaire d'accord SMS des patients (2026-11-16) : imprimé depuis la fiche patient ou « Patients en attente » *@
+            <section class="panneau" aria-labelledby="t-formulaire-sms" style="display: flex; flex-direction: column; gap: 8px">
+                <h2 id="t-formulaire-sms">Formulaire d’accord SMS des patients</h2>
+                <p class="detail" style="margin: 0">Imprimé avec l’en-tête de la pharmacie, le nom et le téléphone du patient, la date, la signature et le cachet.
+                    Texte à faire valider (loi 18-07, ANPDP). Vide : texte par défaut.@(texteFormulaireParDefaut ? " Texte par défaut en cours." : "")</p>
+                <textarea id="n-formulaire-sms" data-champ="texte_formulaire_sms" rows="12" maxlength="4000" aria-labelledby="t-formulaire-sms" @bind="texteFormulaire"></textarea>
+                <div style="display: flex; gap: 8px">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => EnregistrerTexteFormulaireAsync(false)">Enregistrer le texte</button>
+                    <button type="button" class="btn" disabled="@enCours" @onclick="() => EnregistrerTexteFormulaireAsync(true)">Revenir au texte par défaut</button>
+                </div>
+            </section>
         }
 
         @if (rubrique == "destinataires")
@@ -273,9 +288,29 @@
     private bool enCours;
     private string? erreur, message;
 
+    private string? texteFormulaire;
+    private bool texteFormulaireParDefaut;
+
+    private async Task ChargerTexteFormulaireAsync()
+    {
+        var (t, e) = await Api.TexteFormulaireSmsAsync();
+        if (t is null) { erreur ??= e; return; }
+        (texteFormulaire, texteFormulaireParDefaut) = (t.Texte, t.ParDefaut);
+    }
+
+    private async Task EnregistrerTexteFormulaireAsync(bool parDefaut) => await Executer(async () =>
+    {
+        var e = await Api.EnregistrerTexteFormulaireSmsAsync(parDefaut ? null : texteFormulaire);
+        if (e is not null) return e;
+        await ChargerTexteFormulaireAsync();
+        message = parDefaut ? "Texte par défaut du formulaire rétabli." : "Texte du formulaire d’accord SMS enregistré.";
+        return null;
+    });
+
     protected override async Task OnInitializedAsync()
     {
         await ChargerReglagesAsync();
+        await ChargerTexteFormulaireAsync();
         (destinataires, _) = await Api.DestinatairesAsync();
         // « ← Retour » : filtres et page de la file d'attente retrouvés tels qu'ils étaient
         Historique.Suivre("notifications", e =>

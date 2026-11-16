@@ -25,7 +25,29 @@ public sealed class ReglagesPoste
         public int? VitesseAfficheur { get; set; }
         /// <summary>epson (par défaut) ou cd5220.</summary>
         public string? ProtocoleAfficheur { get; set; }
+        /// <summary>Adresse de l'API utilisée par ce poste (prise au démarrage) ; null : variable PHARMA_API, sinon http://localhost:5080/.</summary>
+        public string? AdresseApi { get; set; }
+        /// <summary>Adresse de l'API du PC de secours (affichée dans le bandeau « Serveur injoignable », proposée pour basculer le poste).</summary>
+        public string? AdresseApiSecours { get; set; }
+        /// <summary>Délai (secondes) avant le bandeau « Serveur injoignable » ; null : 60 secondes.</summary>
+        public int? DelaiServeurInjoignableSecondes { get; set; }
     }
+
+    public const int DelaiInjoignableParDefaut = 60;
+
+    /// <summary>Adresse de l'API au démarrage : poste.json (AdresseApi), sinon PHARMA_API, sinon le PC lui-même ; barre finale ajoutée.</summary>
+    public static string AdresseApiDemarrage(Valeurs v, string? variableEnvironnement)
+    {
+        var api = v.AdresseApi is { Length: > 0 } p ? p.Trim()
+            : variableEnvironnement is { Length: > 0 } a ? a.Trim() : "http://localhost:5080/";
+        return api.EndsWith('/') ? api : api + "/";
+    }
+
+    /// <summary>Adresse d'API valide (http ou https absolue) ; sinon message d'erreur.</summary>
+    public static string? ControlerAdresse(string? adresse) =>
+        string.IsNullOrWhiteSpace(adresse) ? null
+        : Uri.TryCreate(adresse.Trim(), UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? null
+        : "Adresse invalide : par exemple https://PC-SECOURS:5443/ ou http://192.168.1.20:5080/.";
 
     private static readonly string Fichier =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "poste.json");

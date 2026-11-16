@@ -2,10 +2,24 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject NavigationManager Nav
+@inject ReglagesPoste Reglages
 
 @* Barre d'état en bas de la fenêtre (charte graphique, « Barre d'état ») : liaison au serveur, caisse du poste, dernière
    sauvegarde, version, date et heure. Un clic ouvre l'écran correspondant.
    Avant la connexion : liaison au serveur et version seulement. *@
+@if (InjoignableTropLongtemps)
+{
+    @* Serveur injoignable plus de N secondes (poste.json, DelaiServeurInjoignableSecondes) : consigne claire (2026-11-16) *@
+    <div class="bandeau-attention" role="alert" style="position: fixed; left: 0; right: 0; bottom: 32px; z-index: 50; margin: 0">
+        Serveur injoignable : vérifiez le PC serveur ou basculez sur le 2e serveur (procédure « 2e serveur » ou « PC serveur en panne »).
+        @if (Reglages.Actuelles.AdresseApiSecours is { Length: > 0 } secours && !basculeFaite)
+        {
+            <button type="button" class="btn" style="margin-left: 8px" disabled="@verificationSecours" @onclick="BasculerPosteAsync">Basculer sur le 2e serveur (@secours) sur ce poste</button>
+        }
+        @if (basculeFaite) { <strong> Poste réglé sur le 2e serveur : fermez puis rouvrez Pharma Officine.</strong> }
+        @if (secoursPasPret) { <strong> Le 2e serveur n’est pas encore basculé : sur le 2e serveur, l’administrateur (avec le titulaire) lance « Basculer sur le 2e serveur » (scripts\second-serveur\basculer-second-serveur.ps1), puis réessayez.</strong> }
+    </div>
+}
 <footer class="barre-etat" aria-label="État du poste">
     <button type="button" class="element-etat @(serveurJoignable == false ? "anormal" : null)" title="Vérifier la liaison avec le serveur maintenant"
             @onclick="VerifierServeurAsync">
@@ -42,6 +56,31 @@
         ? (v.Build > 0 ? $"{v.Major}.{v.Minor:00}.{v.Build}" : $"{v.Major}.{v.Minor:00}") : "?";
 
     private bool? serveurJoignable;
+    private DateTime? injoignableDepuis;
+    private bool basculeFaite;
+    private bool InjoignableTropLongtemps => injoignableDepuis is { } d
+        && DateTime.Now - d >= TimeSpan.FromSeconds(Reglages.Actuelles.DelaiServeurInjoignableSecondes ?? ReglagesPoste.DelaiInjoignableParDefaut);
+
+    private bool verificationSecours, secoursPasPret;
+
+    /// <summary>
+    /// Bascule de ce poste : seulement si l'API du 2e serveur répond (elle ne démarre qu'une fois sa base promue par le script de
+    /// bascule : jamais un poste dirigé vers une copie en lecture seule). L'adresse de secours devient alors l'adresse de l'API
+    /// (poste.json), prise au prochain démarrage.
+    /// </summary>
+    private async Task BasculerPosteAsync()
+    {
+        var a = Reglages.Actuelles;
+        if (a.AdresseApiSecours is not { Length: > 0 } secours) return;
+        (verificationSecours, secoursPasPret) = (true, false);
+        StateHasChanged();
+        try { secoursPasPret = !await ApiClient.ApiRepondAsync(secours); }
+        finally { verificationSecours = false; }
+        if (secoursPasPret) return;
+        var v = System.Text.Json.JsonSerializer.Deserialize<ReglagesPoste.Valeurs>(System.Text.Json.JsonSerializer.Serialize(a))!;
+        v.AdresseApi = a.AdresseApiSecours;
+        basculeFaite = Reglages.Enregistrer(v) is null;
+    }
     private EtatPosteDto? etat;
     private DateTime maintenant = DateTime.Now;
     private PeriodicTimer? minuterie;
@@ -80,6 +119,7 @@
     {
         maintenant = DateTime.Now;
         serveurJoignable = await Api.ServeurJoignableAsync();
+        injoignableDepuis = serveurJoignable == false ? injoignableDepuis ?? DateTime.Now : null;
         if (complet && serveurJoignable == true && Session.EstConnecte)
         {
             var (e, erreur) = await Api.EtatPosteAsync();

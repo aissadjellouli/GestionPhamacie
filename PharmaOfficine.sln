@@ -244,6 +244,23 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\108_prestations_remboursables.sql = database\migration\108_prestations_remboursables.sql
 		database\migration\109_retour_avoir.sql = database\migration\109_retour_avoir.sql
 		database\migration\110_bordereaux_chifa.sql = database\migration\110_bordereaux_chifa.sql
+		database\migration\111_integrite_hachage.sql = database\migration\111_integrite_hachage.sql
+		database\migration\111b_roles_integrite.sql = database\migration\111b_roles_integrite.sql
+		database\migration\114_profils_reprise.sql = database\migration\114_profils_reprise.sql
+		database\migration\115_multi_grossistes.sql = database\migration\115_multi_grossistes.sql
+		database\migration\116_ruptures_substitution.sql = database\migration\116_ruptures_substitution.sql
+		database\migration\117_registre_renforce.sql = database\migration\117_registre_renforce.sql
+		database\migration\118_wilaya_duree_traitement.sql = database\migration\118_wilaya_duree_traitement.sql
+		database\migration\121_option_reprise_chifa.sql = database\migration\121_option_reprise_chifa.sql
+		database\migration\120_serialisation_file.sql = database\migration\120_serialisation_file.sql
+		database\migration\122_second_serveur.sql = database\migration\122_second_serveur.sql
+		database\migration\123_formulaire_accord_sms.sql = database\migration\123_formulaire_accord_sms.sql
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
+	ProjectSection(SolutionItems) = preProject
+		database\tests\111_integrite_hachage_tests.sql = database\tests\111_integrite_hachage_tests.sql
+		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"
@@ -259,40 +276,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{5C0D
 		scripts\initialiser_base_locale.ps1 = scripts\initialiser_base_locale.ps1
 		scripts\restaurer_pharmacie.ps1 = scripts\restaurer_pharmacie.ps1
 		scripts\sauvegarde_pharmacie.ps1 = scripts\sauvegarde_pharmacie.ps1
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "taches", "taches", "{AFEB1849-9F28-4855-ADCD-9D2A0C55F685}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2026-11-15-analyse-wasfa", "2026-11-15-analyse-wasfa", "{F486720F-41B3-48A1-9C16-8F142BEE192A}"
-	ProjectSection(SolutionItems) = preProject
-		docs\taches\2026-11-15-analyse-wasfa\analyse-wasfa.md = docs\taches\2026-11-15-analyse-wasfa\analyse-wasfa.md
-		docs\taches\2026-11-15-analyse-wasfa\echanges.md = docs\taches\2026-11-15-analyse-wasfa\echanges.md
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2026-11-15-modele-wasfa", "2026-11-15-modele-wasfa", "{70E526E0-159C-473D-A0DB-CD9267005570}"
-	ProjectSection(SolutionItems) = preProject
-		docs\taches\2026-11-15-modele-wasfa\contrat-api.md = docs\taches\2026-11-15-modele-wasfa\contrat-api.md
-		docs\taches\2026-11-15-modele-wasfa\echanges.md = docs\taches\2026-11-15-modele-wasfa\echanges.md
-		docs\taches\2026-11-15-modele-wasfa\lot0-constat.md = docs\taches\2026-11-15-modele-wasfa\lot0-constat.md
-		docs\taches\2026-11-15-modele-wasfa\lot2-partie-b.md = docs\taches\2026-11-15-modele-wasfa\lot2-partie-b.md
-		docs\taches\2026-11-15-modele-wasfa\modele-wasfa.md = docs\taches\2026-11-15-modele-wasfa\modele-wasfa.md
-		docs\taches\2026-11-15-modele-wasfa\plan.md = docs\taches\2026-11-15-modele-wasfa\plan.md
-		docs\taches\2026-11-15-modele-wasfa\recette.md = docs\taches\2026-11-15-modele-wasfa\recette.md
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2026-11-15-recette-complete", "2026-11-15-recette-complete", "{770091CC-9838-4C1C-A0B6-AB6C69A30089}"
-	ProjectSection(SolutionItems) = preProject
-		docs\taches\2026-11-15-recette-complete\conception-chifa-mdn.md = docs\taches\2026-11-15-recette-complete\conception-chifa-mdn.md
-		docs\taches\2026-11-15-recette-complete\demande-cnas.md = docs\taches\2026-11-15-recette-complete\demande-cnas.md
-		docs\taches\2026-11-15-recette-complete\echanges.md = docs\taches\2026-11-15-recette-complete\echanges.md
-		docs\taches\2026-11-15-recette-complete\recette.md = docs\taches\2026-11-15-recette-complete\recette.md
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2026-11-15-revue-develop", "2026-11-15-revue-develop", "{F68ED391-69E0-4AA3-A329-7B3FF0263B4E}"
-	ProjectSection(SolutionItems) = preProject
-		docs\taches\2026-11-15-revue-develop\echanges.md = docs\taches\2026-11-15-revue-develop\echanges.md
-		docs\taches\2026-11-15-revue-develop\review.md = docs\taches\2026-11-15-revue-develop\review.md
-		docs\taches\2026-11-15-revue-develop\securite.md = docs\taches\2026-11-15-revue-develop\securite.md
+		scripts\second-serveur\commun.ps1 = scripts\second-serveur\commun.ps1
+		scripts\second-serveur\preparer-principal.ps1 = scripts\second-serveur\preparer-principal.ps1
+		scripts\second-serveur\initialiser-second-serveur.ps1 = scripts\second-serveur\initialiser-second-serveur.ps1
+		scripts\second-serveur\verifier-second-serveur.ps1 = scripts\second-serveur\verifier-second-serveur.ps1
+		scripts\second-serveur\basculer-second-serveur.ps1 = scripts\second-serveur\basculer-second-serveur.ps1
+		scripts\second-serveur\remettre-en-second.ps1 = scripts\second-serveur\remettre-en-second.ps1
 	EndProjectSection
 EndProject
 Global
@@ -342,11 +331,6 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{F68ED391-69E0-4AA3-A329-7B3FF0263B4E} = {AFEB1849-9F28-4855-ADCD-9D2A0C55F685}
-		{770091CC-9838-4C1C-A0B6-AB6C69A30089} = {AFEB1849-9F28-4855-ADCD-9D2A0C55F685}
-		{70E526E0-159C-473D-A0DB-CD9267005570} = {AFEB1849-9F28-4855-ADCD-9D2A0C55F685}
-		{F486720F-41B3-48A1-9C16-8F142BEE192A} = {AFEB1849-9F28-4855-ADCD-9D2A0C55F685}
-		{AFEB1849-9F28-4855-ADCD-9D2A0C55F685} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{6230CD90-B24B-45AC-86F9-2336EFECC80D} = {0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1}
 		{35D7AF71-198B-4464-B00C-B4E49C87A256} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{E1DF76AA-DD72-4CD5-8AD0-81C6533C0213} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
@@ -364,6 +348,7 @@ Global
 		{FA6BA489-4AF9-4CBD-A777-F282E75E959F} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
 		{F7EF4CD7-5740-415E-8001-0454EA5D98E0} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
 		{260B10C5-14E0-4E71-ACF8-F97E022B21BE} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
+		{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {82509D8C-BF89-40EE-96D5-21A0C4CD1E18}

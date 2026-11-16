@@ -20,6 +20,8 @@ public static class Permissions
     public const string CreditDepasserPlafond = "credit.depasser_plafond";
     public const string PsychotropesDelivrer = "psychotropes.delivrer";
     public const string PsychotropesRegistre = "psychotropes.registre";
+    /// <summary>Forcer une alerte du registre dont la règle exige un valideur (script 117) ; accordable par code comptoir.</summary>
+    public const string PsychotropesForcerAlerte = "psychotropes.forcer_alerte";
     public const string StockConsulter = "stock.consulter";
     public const string StockAjuster = "stock.ajuster";
     public const string StockDeclarerPerime = "stock.declarer_perime";

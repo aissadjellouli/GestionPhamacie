@@ -184,9 +184,27 @@
                         La correspondance est déduite des noms et des valeurs : vérifiez chaque colonne avec les exemples avant d’extraire.
                         Les noms et téléphones des patients sont masqués.
                     </p>
-                    <div class="champ" style="max-width: 420px">
-                        <label for="rp-logiciel" class="requis">Ancien logiciel (nom et version)</label>
-                        <input id="rp-logiciel" type="text" @bind="logiciel" @bind:event="oninput" aria-invalid="@Obligatoire.Aria(Obligatoire.Manque(controle, logiciel))" />
+                    <p class="detail" style="margin: 0" role="note" data-champ="exigence_produits_historique">
+                        <span class="pastille @(sc.ExigerProduitsHistorique ? "attention" : "info")">@(sc.InformationProduitsHistorique ?? (sc.ExigerProduitsHistorique
+                            ? "Le titulaire exige le fichier des produits pour un import de l’historique des organismes seul (Chifa, MDN)."
+                            : "Le titulaire n’exige pas le fichier des produits pour un import de l’historique des organismes seul (Chifa, MDN)."))</span>
+                        Le fichier des produits reste toujours exigé avec le stock, les grossistes, les patients ou les crédits.
+                    </p>
+                    <div class="achats-ligne">
+                        <div class="champ" style="flex: 1 1 300px; max-width: 420px">
+                            <label for="rp-logiciel" class="requis">Ancien logiciel (nom et version)</label>
+                            <input id="rp-logiciel" type="text" @bind="logiciel" @bind:event="oninput" aria-invalid="@Obligatoire.Aria(Obligatoire.Manque(controle, logiciel))" />
+                        </div>
+                        @* Profil de reprise (114) : correspondance enregistrée et transformations ; formats réels des concurrents à vérifier *@
+                        <div class="champ" style="flex: 1 1 280px; max-width: 380px">
+                            <label for="rp-profil">Profil de reprise</label>
+                            <select id="rp-profil" class="selection" @bind="profilId">
+                                <option value="0">— aucun (correspondance proposée) —</option>
+                                @foreach (var p in profils) { <option value="@p.Id">@p.Logiciel @p.Version@(p.Statut == "a_completer" ? " (à compléter)" : "")</option> }
+                            </select>
+                        </div>
+                        <button type="button" class="btn" disabled="@(enCours || profilId == 0)" @onclick="AppliquerProfil">Appliquer le profil</button>
+                        <button type="button" class="btn" disabled="@enCours" @onclick="EnregistrerProfilAsync">@(profilId == 0 ? "Enregistrer comme nouveau profil" : "Enregistrer dans ce profil")</button>
                     </div>
                 </section>
 
@@ -264,7 +282,7 @@
                         }
                     </p>
                     <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
-                        @foreach (var (cle, lib) in new[] { ("produits", "Produits"), ("stock", "Lignes de stock"), ("grossistes", "Grossistes"), ("clients", "Clients") })
+                        @foreach (var (cle, lib) in new[] { ("produits", "Produits"), ("stock", "Lignes de stock"), ("grossistes", "Grossistes"), ("clients", "Clients"), ("historique_chifa", "Factures Chifa (historique)"), ("historique_mdn", "Factures MDN (historique)") })
                         {
                             <div class="tuile"><span class="tuile-libelle">@lib</span><span class="tuile-valeur petite">@et.Lignes.GetValueOrDefault(cle)</span></div>
                         }
@@ -422,7 +440,9 @@
 
     private static readonly (int, string)[] Etapes = [(1, "Source"), (2, "Correspondance"), (3, "Rapprochement et contrôles"), (4, "Chargement"), (5, "Vérification")];
     private static readonly (string Code, string Libelle)[] Cibles =
-        [("produits", "Produits"), ("stock", "Stock par lot"), ("fournisseurs", "Grossistes et dettes"), ("clients", "Clients et crédits")];
+        [("produits", "Produits"), ("stock", "Stock par lot"), ("fournisseurs", "Grossistes et dettes"), ("clients", "Clients et crédits"),
+         ("historique_chifa", "Historique des ventes Chifa (lecture seule, aucune vente recréée)"),
+         ("historique_mdn", "Historique des factures MDN (lecture seule, format à vérifier avec le profil)")];
 
     private sealed class Choix
     {
@@ -442,12 +462,16 @@
     private ScanRepriseDto? scan;
     private EtatRepriseDto? etat;
     private Dictionary<string, Choix> correspondances = [];
+    // Profils de reprise (114) : appliqué à la correspondance, et ses transformations à l'extraction
+    private List<ProfilRepriseDto> profils = [];
+    private long profilId;
 
     protected override async Task OnInitializedAsync()
     {
         if (!Session.SuperAdmin) return;
         (sessions, _) = await Api.SessionsRepriseAsync();
         (pilotes, _) = await Api.PilotesOdbcAsync();
+        await ChargerProfilsAsync();
         await ChercherAsync(silencieux: true);
     }
 
@@ -556,6 +580,65 @@
         }
     }
 
+    private async Task ChargerProfilsAsync()
+    {
+        var (p, _) = await Api.ProfilsRepriseAsync(null, null, 1, 200);
+        profils = p?.Lignes.ToList() ?? [];
+    }
+
+    /// <summary>
+    /// Profil appliqué à la base analysée : feuille ou table cherchée par son nom, colonnes par leur nom (sans tenir compte de la casse).
+    /// Ce qui manque dans la base est signalé, jamais deviné.
+    /// </summary>
+    private void AppliquerProfil()
+    {
+        var profil = profils.FirstOrDefault(p => p.Id == profilId);
+        if (profil is null || scan is null) return;
+        var manques = new List<string>();
+        foreach (var c in profil.Correspondances)
+        {
+            if (!correspondances.TryGetValue(c.Cible, out var choix)) continue;
+            var table = scan.Tables.FirstOrDefault(t => string.Equals(t.Nom, c.Table, StringComparison.OrdinalIgnoreCase));
+            if (table is null) { manques.Add($"feuille ou table « {c.Table} »"); continue; }
+            choix.Table = table.Nom;
+            choix.Colonnes = scan.Champs.Where(f => f.Cible == c.Cible).ToDictionary(f => f.Code, _ => (string?)null);
+            foreach (var (champ, colonne) in c.Colonnes)
+            {
+                var col = table.Colonnes.FirstOrDefault(x => string.Equals(x.Nom, colonne, StringComparison.OrdinalIgnoreCase));
+                if (col is null) manques.Add($"colonne « {colonne} » ({table.Nom})");
+                else choix.Colonnes[champ] = col.Nom;
+            }
+        }
+        if (string.IsNullOrWhiteSpace(logiciel)) logiciel = $"{profil.Logiciel} {profil.Version}".Trim();
+        (erreur, message) = manques.Count > 0
+            ? ((string?)$"Profil appliqué en partie, absent de cette base : {string.Join(", ", manques)}. Vérifiez la correspondance.", (string?)null)
+            : ((string?)null, (string?)(profil.Correspondances.Count == 0
+                ? $"Le profil « {profil.Logiciel} » est vide (format à compléter) : établissez la correspondance puis enregistrez-la dans le profil."
+                : $"Profil « {profil.Logiciel} {profil.Version} » appliqué. Vérifiez chaque colonne avec les exemples."));
+    }
+
+    /// <summary>Correspondance affichée enregistrée dans le profil choisi (ses transformations sont gardées) ou dans un nouveau profil.</summary>
+    private async Task EnregistrerProfilAsync()
+    {
+        var existant = profils.FirstOrDefault(p => p.Id == profilId);
+        if (existant is null && string.IsNullOrWhiteSpace(logiciel)) { erreur = "Indiquez le nom de l’ancien logiciel : il nomme le nouveau profil."; return; }
+        var liste = correspondances.Where(kv => kv.Value.Table is not null)
+            .Select(kv => new CorrespondanceTableDto(kv.Key, kv.Value.Table!, kv.Value.Colonnes.Where(c => c.Value is not null).ToDictionary(c => c.Key, c => c.Value!)))
+            .ToList();
+        var profil = existant is null
+            ? new ProfilRepriseDto(0, logiciel!.Trim(), "", "a_completer", null, liste, "auto", null, new Dictionary<string, string>())
+            : existant with { Correspondances = liste };
+        await Executer(async () =>
+        {
+            var (r, e) = await Api.EnregistrerProfilRepriseAsync(profil);
+            if (e is not null) return e;
+            await ChargerProfilsAsync();
+            profilId = r!.Id;
+            message = "Correspondance enregistrée dans le profil. Réglez ses transformations (séparateur décimal, dates, classes) dans Administration › Profils de reprise.";
+            return null;
+        });
+    }
+
     private void ChoisirColonne(string cible, string champ, string? colonne) =>
         correspondances[cible].Colonnes[champ] = string.IsNullOrEmpty(colonne) ? null : colonne;
 
@@ -567,7 +650,18 @@
         var incomplete = correspondances.Where(kv => kv.Value.Table is not null)
             .FirstOrDefault(kv => requises.Any(f => f.Cible == kv.Key && kv.Value.Colonnes.GetValueOrDefault(f.Code) is null));
         if (incomplete.Key is not null) { erreur = $"{Cibles.First(c => c.Code == incomplete.Key).Libelle} : choisissez les colonnes marquées d’un astérisque."; return; }
-        if (correspondances["produits"].Table is null) { erreur = "La table des produits est indispensable."; return; }
+        if (correspondances["produits"].Table is null)
+        {
+            var choisies = correspondances.Where(kv => kv.Value.Table is not null).Select(kv => kv.Key).ToList();
+            var historiqueSeul = choisies.Count > 0 && choisies.All(c => c is "historique_chifa" or "historique_mdn");
+            if (!historiqueSeul) { erreur = "La table des produits est indispensable dès que l’import contient du stock, des grossistes, des patients ou des crédits."; return; }
+            if (scan.ExigerProduitsHistorique)
+            {
+                erreur = "La table des produits est indispensable : le titulaire exige le fichier des produits pour un import de l’historique des organismes seul (Chifa, MDN) " +
+                         "(option dans Administration › Caisse et contrôle › Règles, modifiable par le titulaire ou un employé qui a le droit de modifier les paramètres).";
+                return;
+            }
+        }
 
         erreur = null;
         validation = new("reprise.extraire", "Extraire les données de l’ancien logiciel",
@@ -578,7 +672,7 @@
                 var liste = correspondances.Where(kv => kv.Value.Table is not null)
                     .Select(kv => new CorrespondanceTableDto(kv.Key, kv.Value.Table!, kv.Value.Colonnes.Where(c => c.Value is not null).ToDictionary(c => c.Key, c => c.Value!)))
                     .ToList();
-                var (r, e) = await Api.ExtraireRepriseAsync(new ExtractionRepriseRequete(chaine!, logiciel!, liste));
+                var (r, e) = await Api.ExtraireRepriseAsync(new ExtractionRepriseRequete(chaine!, logiciel!, liste, profilId == 0 ? null : profilId));
                 if (e is not null) return e;
                 message = $"Extraction terminée : {string.Join(", ", r!.Lignes.Select(kv => $"{kv.Value} {kv.Key}"))}"
                           + (r.Doublons > 0 ? $" ({r.Doublons} ligne(s) en double ignorée(s))" : "") + $". {r.Bloquants} anomalie(s) bloquante(s).";
@@ -625,7 +719,8 @@
         var et = etat!;
         validation = new("reprise.charger", $"Charger la reprise n° {et.Session.Id} ({et.Session.Logiciel})",
             $"Chargement DÉFINITIF dans la base : {et.Lignes.GetValueOrDefault("produits")} produit(s), {et.Lignes.GetValueOrDefault("stock")} ligne(s) de stock, " +
-            $"{et.Lignes.GetValueOrDefault("grossistes")} grossiste(s), {et.Lignes.GetValueOrDefault("clients")} client(s) et leurs crédits. " +
+            $"{et.Lignes.GetValueOrDefault("grossistes")} grossiste(s), {et.Lignes.GetValueOrDefault("clients")} client(s) et leurs crédits, " +
+            $"{et.Lignes.GetValueOrDefault("historique_chifa")} facture(s) Chifa et {et.Lignes.GetValueOrDefault("historique_mdn")} facture(s) MDN en historique (lecture seule). " +
             "Les entrées (stock, registre des psychotropes) seront attribuées au pharmacien titulaire ; le journal gardera que vous les avez chargées. " +
             "Faites une sauvegarde de la base avant.",
             () => LancerAsync(async () =>

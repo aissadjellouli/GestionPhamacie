@@ -86,6 +86,10 @@
                 <button type="button" class="btn" @onclick="GarderPatientChoisiAsync">Garder @choisiConflit.Nom (journalisé)</button>
             </div>
         }
+        @if (controlePsy is { } ctrlPsy && delivrancePsy is { } delPsy)
+        {
+            <FenetreAlertesPsychotropes Controle="ctrlPsy" Delivrance="delPsy" OnAbandon="AbandonnerPsy" OnForce="PsyForceesAsync" />
+        }
         @if (rapprochement is { } rap && rapprochementTexte is { } texteVolet)
         {
             <FenetreRapprochementVolet Rapprochement="rap" Texte="@texteVolet" OnNouvelleVente="NouvelleVenteDepuisVoletAsync"
@@ -262,7 +266,7 @@
                                             @if (c.Remplacant is { } r)
                                             {
                                                 <button type="button" class="suggestion-equivalent" @onclick="() => AjouterAsync(r.ProduitId, r.NomCommercial, r.PrixPublic)">
-                                                    <span>Remplaçant : <strong>@r.NomCommercial</strong>@(r.Exact ? "" : $" ({r.Dosage} {r.Forme}, à valider par le pharmacien)") · stock @r.Stock</span>
+                                                    <span>Remplaçant : <strong>@r.NomCommercial</strong>@(r.Exact ? "" : r.ListeBlanche ? " (liste blanche du pharmacien)" : $" ({r.Dosage} {r.Forme}, à valider par le pharmacien)")@(r.FabricationLocale ? " · fabriqué en Algérie" : "") · stock @r.Stock</span>
                                                     <span>@Libelles.Dinars(r.PrixPublic, 2)</span>
                                                 </button>
                                             }
@@ -403,6 +407,28 @@
                 }
                 @if (erreurAttente is not null) { <div class="erreur" role="alert">@erreurAttente</div> }
                 @if (messageRetour is not null) { <div class="info-bandeau" role="status">@messageRetour</div> }
+                @* Lot 7 : produit attendu par un patient (ou dû d'une vente en attente) redevenu disponible *@
+                @if (alertesDispo is { } ad && ad.Patients.Count + ad.VentesEnAttente.Count > 0)
+                {
+                    <div class="info-bandeau" role="status" data-champ="patients_a_prevenir">
+                        Produit redevenu disponible : @(ad.Patients.Count) patient(s) à prévenir@(ad.VentesEnAttente.Count > 0 ? $", {ad.VentesEnAttente.Count} produit(s) dû(s) de ventes en attente" : "").
+                        <button type="button" class="lien-bouton" @onclick="() => patientsAttenteOuvert = true">Voir les patients en attente</button>
+                    </div>
+                }
+                @if (patientsAttenteOuvert)
+                {
+                    @* Patients en attente depuis la Caisse (2026-11-16) : droit caisse.vendre seulement, sans accès aux Achats ; fenêtre
+                       par-dessus la vente (le panier reste en place), patient de la vente en cours déjà choisi *@
+                    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-patients-attente" @onkeydown="ToucheFenetrePatientsAttenteAsync">
+                        <section class="panneau" style="width: min(1400px, 96vw); max-height: 86vh; overflow: auto; display: flex; flex-direction: column; gap: 10px">
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+                                <h2 id="t-patients-attente" style="margin: 0">Patients en attente d’un produit</h2>
+                                <button type="button" class="btn" @onclick="FermerPatientsAttente">Fermer</button>
+                            </div>
+                            <OngletPatientsAttente EnFenetre="true" PatientInitial="patient" />
+                        </section>
+                    </div>
+                }
 
                 @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
 
@@ -765,6 +791,12 @@
                                     {
                                         <button type="button" class="lien-bouton" @onclick="OuvrirNouveauPatient">Nouveau patient</button>
                                     }
+                                    else if (patient is not null)
+                                    {
+                                        @* 2026-11-16 : « Prévenir quand disponible » pour le patient de la vente, sans quitter la Caisse *@
+                                        <button type="button" class="lien-bouton" data-champ="prevenir_dispo" title="Noter le patient en attente d’un produit en rupture (file des patients en attente)"
+                                                @onclick="() => patientsAttenteOuvert = true">Prévenir quand disponible</button>
+                                    }
                                 </div>
                                 @if (patient is not null)
                                 {
@@ -910,6 +942,11 @@
                                 <input type="text" aria-label="Adresse" data-champ="adresse_medecin" placeholder="Adresse" maxlength="300" @bind="nm.Adresse" />
                                 <input type="text" aria-label="N° d’inscription à l’Ordre" data-champ="numero_ordre" placeholder="N° d’ordre" maxlength="30" @bind="nm.NumeroOrdre" />
                                 <input type="text" aria-label="Code CNAS (Chifa)" data-champ="code_cnas" placeholder="Code CNAS" maxlength="30" @bind="nm.CodeCnas" />
+                                <select aria-label="Wilaya d’exercice" data-champ="wilaya_medecin" @bind="nm.Wilaya"
+                                        title="@(string.IsNullOrEmpty(nm.Wilaya) ? "Wilaya à renseigner : sans elle, pas de contrôle « hors zone » des psychotropes" : null)">
+                                    <option value="">Wilaya (à renseigner)</option>
+                                    @foreach (var w in wilayas) { <option value="@w.Code">@w.Code - @w.Nom</option> }
+                                </select>
                                 @if (erreurMedecin is not null) { <div class="erreur" role="alert">@erreurMedecin</div> }
                                 <div class="actions">
                                     <button type="button" class="btn btn-principal" disabled="@creationMedecin" @onclick="CreerMedecinAsync">Créer</button>
@@ -955,6 +992,18 @@
                                 <input type="text" aria-label="Pièce d’identité du porteur" placeholder="Pièce d’identité (type et n°) *" @bind="porteurPiece" @bind:event="oninput"
                                        class="@Obligatoire.Classe(PorteurPieceManque)" aria-invalid="@Obligatoire.Aria(PorteurPieceManque)" />
                             }
+                            @* Durée du traitement (2026-11-16) : psychotrope ou stupéfiant seulement, facultative (bulle « à renseigner », ne bloque pas) ;
+                               inscrite au registre, comparée à la quantité délivrée (alerte « quantité anormale ») *@
+                            <div class="champ champ-ligne" title="@(dureeTraitement is null ? "Durée du traitement à renseigner (facultative) : inscrite au registre et comparée à la quantité délivrée" : "Durée du traitement, inscrite au registre")">
+                                <label for="duree-traitement">Durée du traitement (jours)</label>
+                                <input id="duree-traitement" type="number" min="1" max="3650" step="1" style="width: 80px" data-champ="duree_traitement"
+                                       @bind="dureeTraitement" @bind:event="oninput" />
+                                @if (dureeTraitement is null) { <span class="detail">à renseigner</span> }
+                                @if (medecin is { Wilaya: null })
+                                {
+                                    <span class="detail" title="Wilaya du médecin à renseigner (Factures › Médecins) : sans elle, pas de contrôle « hors zone »">· wilaya du médecin à renseigner</span>
+                                }
+                            </div>
                         }
                         @* « Remis à » (avec ordonnance) / « Pour » (sans ordonnance), 2026-11-15 : une ligne, la vente reste au nom du patient *@
                         @if (patient is not null)
@@ -1406,6 +1455,9 @@
     private bool porteurAutre;
     private string? porteurNom, porteurAdresse, porteurPiece;
     private bool PorteurDemande => porteurAutre && apercu?.OrdonnanceRequise == true;
+    // Durée du traitement (jours), facultative, envoyée seulement pour une vente sous registre (2026-11-16)
+    private int? dureeTraitement;
+    private int? DureeEnvoyee => apercu?.OrdonnanceRequise == true && dureeTraitement is > 0 ? dureeTraitement : null;
     private bool PorteurIncomplet => PorteurDemande
         && (string.IsNullOrWhiteSpace(porteurNom) || string.IsNullOrWhiteSpace(porteurAdresse) || string.IsNullOrWhiteSpace(porteurPiece));
     private bool PorteurNomManque => PorteurDemande && string.IsNullOrWhiteSpace(porteurNom);
@@ -1544,6 +1596,8 @@
         (organismes, _) = await Api.OrganismesAsync();
         organismeId = OrganismeParDefaut;
         await ChargerEtatAsync();
+        if (Session.A("caisse.vendre")) (alertesDispo, _) = await Api.AlertesDisponibiliteAsync();
+        _ = ActualiserAlertesDispoAsync();
         if (aReprendre is { } id) await ReprendreAuRetourAsync(id);
         // Vente laissée en attente au « Changer d'utilisateur » : reprise par l'employé qui se connecte ensuite sur ce poste
         else if (Session.A("caisse.vendre") && Session.PrendreVenteAReprendre() is { } laissee) await ReprendreLaisseeAsync(laissee.Id, laissee.LaisseePar);
@@ -1552,6 +1606,45 @@
     // ---- Retour sur la Caisse : mise en attente automatique en partant, reprise en revenant ----
     private long? derniereMiseEnAttente, venteMiseDeCoteEnPartant;
     private string? messageRetour;
+    /// <summary>Lot 7 : demandes de patients et produits dus redevenus disponibles (lu à l'ouverture de la Caisse, puis toutes les 5 minutes).</summary>
+    private AlertesDisponibiliteDto? alertesDispo;
+    private bool patientsAttenteOuvert;
+
+    /// <summary>Fermeture de la fenêtre « Patients en attente » : le bandeau est relu (demandes servies ou prévenues entre-temps).</summary>
+    /// <summary>2026-11-16 : bandeau « produit redevenu disponible » relu toutes les 5 minutes tant que la Caisse est ouverte.</summary>
+    public static readonly TimeSpan IntervalleAlertesDispo = TimeSpan.FromMinutes(5);
+    private readonly CancellationTokenSource arretAlertesDispo = new();
+
+    /// <summary>Boucle d'actualisation : arrêtée à la sortie de la page ; erreur réseau silencieuse ; rien pendant un encaissement.</summary>
+    private async Task ActualiserAlertesDispoAsync()
+    {
+        using var minuterie = new PeriodicTimer(IntervalleAlertesDispo);
+        try
+        {
+            while (await minuterie.WaitForNextTickAsync(arretAlertesDispo.Token))
+            {
+                if (enCours || !Session.A("caisse.vendre")) continue;
+                try
+                {
+                    var (a, e) = await Api.AlertesDisponibiliteAsync();
+                    if (e is null && !arretAlertesDispo.IsCancellationRequested) await InvokeAsync(() => { alertesDispo = a; StateHasChanged(); });
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task ToucheFenetrePatientsAttenteAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await FermerPatientsAttente();
+    }
+
+    private async Task FermerPatientsAttente()
+    {
+        patientsAttenteOuvert = false;
+        if (Session.A("caisse.vendre")) (alertesDispo, _) = await Api.AlertesDisponibiliteAsync();
+    }
 
     /// <summary>
     /// Avant de quitter la Caisse : un panier rempli part en attente (rien n'est perdu, rien n'est signalé comme retiré).
@@ -1853,7 +1946,11 @@
         await AjouterAsync(alt.ProduitId, alt.NomCommercial, alt.PrixPublic, reste);
     }
 
-    private static string LibelleEquivalent(ProduitAlternatifDto a) => a.Exact
+    private static string LibelleEquivalent(ProduitAlternatifDto a) => (a.FabricationLocale ? "Fabriqué en Algérie · " : "") + LibelleEquivalentSeul(a);
+
+    private static string LibelleEquivalentSeul(ProduitAlternatifDto a) => a.ListeBlanche && !a.Exact
+        ? $"Remplaçant autorisé par le pharmacien (liste blanche) : {a.NomCommercial}, {a.Stock} boîte(s)"
+        : a.Exact
         ? $"Équivalent en stock (même DCI, dosage et forme) : {a.NomCommercial}, {a.Stock} boîte(s)"
         : $"Même DCI, autre dosage ou forme ({a.Dosage} {a.Forme}) : {a.NomCommercial}, {a.Stock} boîte(s) · à valider par le pharmacien";
 
@@ -2479,13 +2576,21 @@
         public string? Adresse { get; set; }
         public string? NumeroOrdre { get; set; }
         public string? CodeCnas { get; set; }
-        public NouveauMedecinDto VersDto() => new(Nom.Trim(), Specialite, Telephone, Adresse, Email, NumeroOrdre, CodeCnas);
+        public string? Wilaya { get; set; }
+        public NouveauMedecinDto VersDto() => new(Nom.Trim(), Specialite, Telephone, Adresse, Email, NumeroOrdre, CodeCnas,
+            string.IsNullOrEmpty(Wilaya) ? null : Wilaya);
     }
+    // Référentiel des wilayas (liste bornée de la fiche médecin), chargé à la première ouverture de la fiche
+    private List<WilayaDto> wilayas = [];
     private FicheMedecin? nouveauMedecin;
     private string? erreurMedecin;
     private bool creationMedecin;
 
-    private void OuvrirNouveauMedecin() => (nouveauMedecin, erreurMedecin, medecins) = (new FicheMedecin { Nom = medecinTexte.Trim() }, null, []);
+    private async Task OuvrirNouveauMedecin()
+    {
+        (nouveauMedecin, erreurMedecin, medecins) = (new FicheMedecin { Nom = medecinTexte.Trim() }, null, []);
+        if (wilayas.Count == 0) (wilayas, _) = await Api.WilayasAsync();
+    }
 
     private async Task CreerMedecinAsync()
     {
@@ -2497,7 +2602,7 @@
             var (cree, err) = await Api.CreerMedecinAsync(dto);
             if (err is not null) { erreurMedecin = err; return; }
             (clientEdition, medecin, medecins, nouveauMedecin, erreurMedecin) = (true, new MedecinDto(cree!.Id, dto.Nom, dto.Specialite, dto.Telephone, dto.Adresse, dto.Email,
-                dto.NumeroOrdre, dto.CodeCnas), [], null, null);
+                dto.NumeroOrdre, dto.CodeCnas, dto.Wilaya), [], null, null);
         }
         finally { creationMedecin = false; }
     }
@@ -2546,7 +2651,8 @@
         AvecOrdonnance
             ? new OrdonnanceDto(medecin?.Id, datePrescription, string.IsNullOrWhiteSpace(numeroOrdonnance) ? null : numeroOrdonnance.Trim(),
                 jetonScan, texteReconnu,
-                PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null)
+                PorteurDemande ? porteurNom?.Trim() : null, PorteurDemande ? porteurAdresse?.Trim() : null, PorteurDemande ? porteurPiece?.Trim() : null,
+                DureeEnvoyee)
             : null,
         remisePct, modePaiement, modePaiement == "especes" ? montantRecu : null, tiersPayant ? resteSaisi : null,
         accordBlocage.VersDto(Session.A("produits.bloquer")), voletBrut, remiseAdditionnee, cleEncaissement, ChoixChifaEnvoyes(),
@@ -2669,12 +2775,41 @@
         finally { impressionEnCours = false; }
     }
 
+    // ---- Alertes du registre des psychotropes (lot 8) ----
+    private ControleDelivranceDto? controlePsy;
+    private DelivrancePsychotropeDto? delivrancePsy;
+    private string modePsy = "especes";
+    private bool alertesPsyForcees;
+
+    private void AbandonnerPsy() => (controlePsy, delivrancePsy) = (null, null);
+
+    private async Task PsyForceesAsync()
+    {
+        (controlePsy, delivrancePsy, alertesPsyForcees) = (null, null, true);
+        await EncaisserAsync(modePsy);
+    }
+
     private async Task EncaisserAsync(string modePaiement)
     {
         if (!PeutEncaisser) return;
         messageTicket = null;
         enCours = true;
         erreurEncaissement = null;
+        // Registre renforcé (lot 8) : produit sous registre, alertes contrôlées avant l'encaissement (avertissement ; « Forcer » avec motif)
+        if (apercu?.OrdonnanceRequise == true && !alertesPsyForcees)
+        {
+            var c = Commande(modePaiement);
+            var d = new DelivrancePsychotropeDto(c.PatientId, c.Ordonnance?.MedecinId, c.Ordonnance?.Numero, c.Ordonnance?.DatePrescription,
+                c.Lignes.Where(l => l.ProduitId is not null).Select(l => new LignePsychotropeDto(l.ProduitId!.Value, l.Quantite)).ToList(),
+                c.Ordonnance?.DureeTraitementJours);
+            var (controle, _) = await Api.ControlerDelivrancePsychotropeAsync(d);   // erreur : l'encaissement contrôle de nouveau
+            if (controle is { Alertes.Count: > 0 })
+            {
+                (controlePsy, delivrancePsy, modePsy, enCours) = (controle, d, modePaiement, false);
+                return;
+            }
+        }
+        alertesPsyForcees = false;
         // Choix de prix Chifa demandé sans le droit : la fenêtre « Faire autoriser » montre au valideur chaque ligne et le choix (2026-11-15)
         if (voletBrut is not null && !Session.A("prix.modifier"))
             Api.DetaillerProchaineAutorisation(DetailAutorisationChifa.Construire(apercu?.EcartsChifa, choixChifa, m => Libelles.Dinars(m, 2)));
@@ -2891,6 +3026,7 @@
         lectureAjouts.Clear();
         (motifSaisieManuelle, lectureSansResultat) = (null, null);
         (porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (false, null, null, null);
+        dureeTraitement = null;
         (remiseProcheId, remiseProcheNom, remiseAutre, remiseNom) = (null, null, false, null);
     }
 
@@ -2940,6 +3076,9 @@
     public async ValueTask DisposeAsync()
     {
         Session.AvantFermeture -= PanierAbandonne;
+        // Actualisation du bandeau « produit redevenu disponible » arrêtée (2026-11-16)
+        arretAlertesDispo.Cancel();
+        arretAlertesDispo.Dispose();
         Historique.Oublier("caisse");
         SauverPanierRestant();
         // Écran quitté : l'afficheur client revient à l'accueil, la caméra s'éteint (même si elle était encore en train de démarrer)

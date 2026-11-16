@@ -1,0 +1,92 @@
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Achats › Ruptures (lot 7, M3b) : produits en rupture chez tous les grossistes (depuis quand, stock de l'officine, patients en
+   attente) et historique des ruptures noté à chaque import de catalogue (début, retour en stock chez le grossiste).
+   Écran fixe : filtres sur une ligne, un seul tableau en cadre défilant, pagination. *@
+<div class="liste" style="@(premiereLecture ? null : "visibility: hidden")">
+    <div class="achats-ligne" style="align-items: flex-end">
+        <div class="champ" style="flex: 0 0 280px">
+            <label for="ru-vue">Afficher</label>
+            <select id="ru-vue" @bind="vue" @bind:after="() => ChargerAsync(1, taille)">
+                <option value="partout">En rupture chez tous les grossistes</option>
+                <option value="en_cours">Historique : ruptures en cours</option>
+                <option value="terminees">Historique : retours en stock</option>
+                <option value="tout">Historique : tout</option>
+            </select>
+        </div>
+        <div class="champ" style="flex: 1 1 260px">
+            <label for="ru-recherche">Produit@(vue == "partout" ? "" : " ou grossiste")</label>
+            <input id="ru-recherche" type="search" @bind="recherche" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" />
+        </div>
+    </div>
+    @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }
+    <p class="detail" style="margin: 0">Disponibilités notées à chaque import du catalogue d’un grossiste (Achats › Catalogues des grossistes) ;
+        une disponibilité inconnue ne change rien.</p>
+    <section class="tableau-cadre" aria-label="Ruptures">
+        <table class="tableau" style="min-width: 0">
+            @if (vue == "partout")
+            {
+                <thead><tr><th scope="col">Produit</th><th scope="col">En rupture depuis</th><th scope="col">Grossistes</th>
+                    <th scope="col">Stock officine</th><th scope="col">Patients en attente</th></tr></thead>
+                <tbody>
+                    @foreach (var r in partout)
+                    {
+                        <tr><td>@r.Produit</td><td>@Libelles.DateLocale(r.Depuis)</td><td>@r.Grossistes</td>
+                            <td>@(r.StockOfficine > 0 ? r.StockOfficine.ToString() : "Rupture")</td><td>@r.PatientsEnAttente</td></tr>
+                    }
+                    @if (partout.Count == 0) { <tr><td colspan="5" class="vide">Aucun produit en rupture chez tous les grossistes.</td></tr> }
+                </tbody>
+            }
+            else
+            {
+                <thead><tr><th scope="col">Produit</th><th scope="col">Grossiste</th><th scope="col">Rupture le</th><th scope="col">Retour en stock</th></tr></thead>
+                <tbody>
+                    @foreach (var r in historique)
+                    {
+                        <tr><td>@r.Produit</td><td>@r.Grossiste</td><td>@Libelles.DateLocale(r.Debut)</td>
+                            <td>@(r.Fin is { } f ? Libelles.DateLocale(f) : "toujours en rupture")</td></tr>
+                    }
+                    @if (historique.Count == 0) { <tr><td colspan="4" class="vide">Aucune rupture notée.</td></tr> }
+                </tbody>
+            }
+        </table>
+    </section>
+    <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des ruptures" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+</div>
+
+@code {
+    private string vue = "partout";
+    private string? recherche, erreur;
+    private List<RuptureProduitDto> partout = [];
+    private List<PeriodeRuptureDto> historique = [];
+    private int total, page = 1, taille = Pagination.TailleParDefaut;
+    private bool premiereLecture;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // « ← Retour » : vue, recherche et page retrouvées
+        Historique.Suivre("ruptures", e => { e.Mettre("vue", vue); e.Mettre("recherche", recherche); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("ruptures") is { } r)
+            (vue, recherche, page, taille) = (r.Texte("vue") ?? vue, r.Texte("recherche"), r.Entier("page") ?? 1, r.Entier("taille") ?? taille);
+        await ChargerAsync(page, taille);
+        premiereLecture = true;
+    }
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        erreur = null;
+        if (vue == "partout")
+        {
+            var (p, e) = await Api.RupturesPartoutAsync(recherche, numero, nouvelleTaille);
+            if (p is null) { erreur = e; return; }
+            (partout, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+        }
+        else
+        {
+            var (p, e) = await Api.HistoriqueRupturesAsync(recherche, vue == "tout" ? null : vue, numero, nouvelleTaille);
+            if (p is null) { erreur = e; return; }
+            (historique, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+        }
+    }
+}

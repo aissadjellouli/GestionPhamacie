@@ -37,15 +37,27 @@ public sealed class ProtectionDpapi : IProtectionSecret
 }
 
 /// <summary>Envoi par le serveur SMTP de la pharmacie (MailKit) ; aucun service cloud.</summary>
-public sealed class EnvoiEmailMailKit : IEnvoiEmail
+public sealed class EnvoiEmailMailKit : IEnvoiEmail, Pharma.Application.Achats.IEnvoiEmailPieceJointe
 {
-    public async Task EnvoyerAsync(ConnexionSmtp c, string adresse, string objet, string texte, string? html, CancellationToken ct = default)
+    public Task EnvoyerAsync(ConnexionSmtp c, string adresse, string objet, string texte, string? html, CancellationToken ct = default) =>
+        EnvoyerMessageAsync(c, adresse, objet, new BodyBuilder { TextBody = texte, HtmlBody = html }, ct);
+
+    /// <summary>E-mail avec une pièce jointe (bon de commande PDF au grossiste).</summary>
+    public Task EnvoyerAsync(ConnexionSmtp c, string adresse, string objet, string texte, string nomPieceJointe, byte[] pieceJointe,
+        string typeMime, CancellationToken ct = default)
+    {
+        var corps = new BodyBuilder { TextBody = texte };
+        corps.Attachments.Add(nomPieceJointe, pieceJointe, ContentType.Parse(typeMime));
+        return EnvoyerMessageAsync(c, adresse, objet, corps, ct);
+    }
+
+    private static async Task EnvoyerMessageAsync(ConnexionSmtp c, string adresse, string objet, BodyBuilder corps, CancellationToken ct)
     {
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress("Pharma Officine", c.Expediteur));
         message.To.Add(MailboxAddress.Parse(adresse));
         message.Subject = objet;
-        message.Body = new BodyBuilder { TextBody = texte, HtmlBody = html }.ToMessageBody();
+        message.Body = corps.ToMessageBody();
 
         using var client = new SmtpClient { Timeout = 30_000 };
         // Port 465 : TLS direct ; sinon STARTTLS exigé si TLS demandé

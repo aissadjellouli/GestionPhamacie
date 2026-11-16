@@ -22,7 +22,10 @@ public static class PharmaEndpoints
         api.MapOrdonnances();
         api.MapAdmin();
         api.MapTracabilite();
+        api.MapSerialisation();
         api.MapAchats();
+        api.MapMultiGrossistes();
+        api.MapRuptures();
         api.MapNotifications();
         api.MapEmplacements();
         api.MapMotifsReglables();
@@ -42,10 +45,12 @@ public static class PharmaEndpoints
         api.MapFactures();
         api.MapInventaireComplet();
         api.MapPilotage();
+        api.MapPilotageFinancier();
         api.MapSuiviDettes();
         api.MapContacts();
         api.MapRetoursEssai();
         api.MapEtatPoste();
         api.MapGed();
+        api.MapSecondServeur();
     }
 }

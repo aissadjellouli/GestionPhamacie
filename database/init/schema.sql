@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 110 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 123 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 110 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 123 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -29,10 +29,11 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
 -- PostgreSQL database dump
 --
 
-\restrict n4MqO8nrz4tdATAWHuZqVYgTz7vgi0grvCppkMhsScgWh6S1GP4zE1qa2gsagEr
+\restrict o6Zfh7mlmQninAi1cXUwoHGeN4d2aNT5dMnCEW2Jy7iEMOovhQIWXdsXht8QBcm
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -57,6 +58,13 @@ CREATE SCHEMA import;
 
 
 --
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON SCHEMA public IS '';
+
+
+--
 -- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
 --
 
@@ -64,10 +72,24 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 
 --
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+
+
+--
 -- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
 --
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
 
 
 --
@@ -223,6 +245,45 @@ BEGIN
     END LOOP;
 
     UPDATE import.session SET statut = 'charge' WHERE id = p_session;
+END;
+$$;
+
+
+--
+-- Name: charger_historique_chifa(bigint); Type: FUNCTION; Schema: import; Owner: -
+--
+
+CREATE FUNCTION import.charger_historique_chifa(p_session bigint) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    n integer;
+    m integer;
+BEGIN
+    INSERT INTO historique_chifa (session_id, logiciel_source, organisme, num_facture, date_facture, num_assure, nom_assure,
+                                  montant_total, part_chifa, part_assure)
+    SELECT h.session_id, s.logiciel_source,
+           CASE WHEN upper(btrim(h.organisme)) IN ('CNAS', 'CASNOS') THEN upper(btrim(h.organisme)) ELSE 'CHIFA' END,
+           btrim(h.num_facture), import.date_src(h.date_facture),
+           NULLIF(btrim(h.num_assure), ''), NULLIF(btrim(h.nom_assure), ''),
+           round(import.nombre(h.montant_total), 2), round(import.nombre(h.part_chifa), 2), round(import.nombre(h.part_assure), 2)
+    FROM import.historique_chifa_src h
+    JOIN import.session s ON s.id = h.session_id
+    WHERE h.session_id = p_session AND import.date_src(h.date_facture) IS NOT NULL
+    ON CONFLICT ON CONSTRAINT ux_historique_organisme_facture DO NOTHING;
+    GET DIAGNOSTICS n = ROW_COUNT;
+
+    INSERT INTO historique_chifa (session_id, logiciel_source, organisme, num_facture, date_facture, num_assure, nom_assure,
+                                  montant_total, part_chifa, part_assure)
+    SELECT h.session_id, s.logiciel_source, 'MDN', btrim(h.num_facture), import.date_src(h.date_facture),
+           NULLIF(btrim(h.num_affilie), ''), NULLIF(btrim(h.nom_affilie), ''),
+           round(import.nombre(h.montant_total), 2), round(import.nombre(h.part_mdn), 2), round(import.nombre(h.part_assure), 2)
+    FROM import.historique_mdn_src h
+    JOIN import.session s ON s.id = h.session_id
+    WHERE h.session_id = p_session AND import.date_src(h.date_facture) IS NOT NULL
+    ON CONFLICT ON CONSTRAINT ux_historique_organisme_facture DO NOTHING;
+    GET DIAGNOSTICS m = ROW_COUNT;
+    RETURN n + m;
 END;
 $$;
 
@@ -484,6 +545,49 @@ $$;
 
 
 --
+-- Name: controler_historique_chifa(bigint); Type: FUNCTION; Schema: import; Owner: -
+--
+
+CREATE FUNCTION import.controler_historique_chifa(p_session bigint) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    n integer;
+BEGIN
+    INSERT INTO import.anomalie (session_id, entite, ref_source, gravite, message)
+    SELECT p_session, h.entite, h.num_facture, 'avertissement', m.message
+    FROM (
+        SELECT 'historique_chifa' AS entite, 'Chifa' AS libelle, num_facture, date_facture, montant_total, part_chifa AS part_org, part_assure, organisme
+        FROM import.historique_chifa_src WHERE session_id = p_session
+        UNION ALL
+        SELECT 'historique_mdn', 'MDN', num_facture, date_facture, montant_total, part_mdn, part_assure, NULL
+        FROM import.historique_mdn_src WHERE session_id = p_session
+    ) h
+    CROSS JOIN LATERAL (
+        SELECT 'Date de facture illisible (« ' || h.date_facture || ' ») : facture non reprise dans l''historique' AS message
+        WHERE import.date_src(h.date_facture) IS NULL
+        UNION ALL
+        SELECT 'Organisme « ' || h.organisme || ' » inconnu (CNAS ou CASNOS attendu) : repris comme Chifa'
+        WHERE NULLIF(btrim(h.organisme), '') IS NOT NULL AND upper(btrim(h.organisme)) NOT IN ('CNAS', 'CASNOS', 'CHIFA')
+        UNION ALL
+        SELECT 'Montant ambigu (« ' || x.v || ' ») : point des milliers ou point décimal ? Choisissez le séparateur décimal du profil'
+        FROM unnest(ARRAY[h.montant_total, h.part_org, h.part_assure]) x(v) WHERE import.nombre_ambigu(x.v)
+        UNION ALL
+        SELECT 'Montant illisible (« ' || x.v || ' ») : repris vide'
+        FROM unnest(ARRAY[h.montant_total, h.part_org, h.part_assure]) x(v)
+        WHERE NULLIF(btrim(x.v), '') IS NOT NULL AND NOT import.nombre_ambigu(x.v) AND import.nombre(x.v) IS NULL
+        UNION ALL
+        SELECT 'Total (' || import.nombre(h.montant_total) || ') différent de part ' || h.libelle || ' + part assuré ('
+               || (import.nombre(h.part_org) + import.nombre(h.part_assure)) || ')'
+        WHERE abs(import.nombre(h.montant_total) - import.nombre(h.part_org) - import.nombre(h.part_assure)) > 0.01
+    ) m;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    RETURN n;
+END;
+$$;
+
+
+--
 -- Name: date_src(text); Type: FUNCTION; Schema: import; Owner: -
 --
 
@@ -735,6 +839,19 @@ $$;
 
 
 --
+-- Name: ajout_seul_refuser(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ajout_seul_refuser() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Table % en ajout seul : ni modification, ni suppression, ni vidage', TG_TABLE_NAME;
+END;
+$$;
+
+
+--
 -- Name: alerter_lots_delaisses(bigint[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -768,6 +885,21 @@ BEGIN
             END IF;
         END IF;
     END LOOP;
+END;
+$$;
+
+
+--
+-- Name: annulation_registre_vers_journal(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.annulation_registre_vers_journal() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO journal_registre_psychotrope (nature, registre_id, annulation_id, motif, utilisateur_id, inscrit_le)
+    VALUES ('annulation', NEW.registre_id, NEW.id, NEW.motif, NEW.utilisateur_id, NEW.cree_le);
+    RETURN NULL;
 END;
 $$;
 
@@ -807,6 +939,19 @@ END $$;
 
 
 --
+-- Name: cloture_fiscale_immuable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cloture_fiscale_immuable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Une clôture fiscale ne peut être ni modifiée, ni supprimée, ni vidée';
+END;
+$$;
+
+
+--
 -- Name: completer_reception_boite(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -825,6 +970,46 @@ BEGIN
             (SELECT prix_achat_ht FROM lot WHERE id = NEW.lot_id));
     END IF;
     RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: compteur_ticket_proteger(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.compteur_ticket_proteger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.dernier_numero = OLD.dernier_numero + 1 AND NEW.prefixe = OLD.prefixe
+       AND NEW.premier_numero_continu = OLD.premier_numero_continu AND NEW.mis_en_service_le = OLD.mis_en_service_le THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Le compteur des tickets avance d''une unité à la fois ; il ne se modifie pas et ne se supprime pas';
+END;
+$$;
+
+
+--
+-- Name: conservation_fiscale_proteger(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.conservation_fiscale_proteger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_annees int := COALESCE((SELECT conservation_annees FROM parametre_fiscal WHERE id = 1), 6);
+    v_date   timestamptz;
+BEGIN
+    v_date := CASE TG_TABLE_NAME
+        WHEN 'vente' THEN OLD.date_vente
+        ELSE (to_jsonb(OLD) ->> 'cree_le')::timestamptz
+    END;
+    IF v_date IS NULL OR v_date > now() - make_interval(years => v_annees) THEN
+        RAISE EXCEPTION 'Conservation fiscale : % de moins de % ans, suppression interdite', TG_TABLE_NAME, v_annees;
+    END IF;
+    RETURN OLD;
 END;
 $$;
 
@@ -1101,6 +1286,19 @@ $$;
 
 
 --
+-- Name: historique_chifa_lecture_seule(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.historique_chifa_lecture_seule() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Historique Chifa repris : lecture seule (ni modification ni suppression)';
+END;
+$$;
+
+
+--
 -- Name: inscrire_mouvement_registre(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1135,6 +1333,279 @@ BEGIN
     VALUES (NEW.lot_id, NEW.id, v_type, abs(NEW.quantite), coalesce(v_solde, 0), NEW.utilisateur_id, NEW.reference, NEW.cree_le);
     RETURN NEW;
 END $$;
+
+
+--
+-- Name: integrite_activer(text, text, text[], text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_activer(p_journal text, p_libelle text, p_colonnes text[], p_algorithme text DEFAULT NULL::text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_table   regclass := to_regclass(quote_ident(p_journal));
+    v_existe  chaine_integrite;
+    v_algo    text := COALESCE(p_algorithme, (SELECT algorithme_defaut FROM parametre_integrite WHERE id = 1), 'sha256');
+    v_lignes  boolean;
+    v_flottant text;
+BEGIN
+    IF v_table IS NULL THEN
+        RAISE EXCEPTION 'Table % introuvable', p_journal;
+    END IF;
+    SELECT * INTO v_existe FROM chaine_integrite WHERE journal = p_journal;
+    IF FOUND THEN
+        IF v_existe.colonnes <> p_colonnes OR v_existe.algorithme <> v_algo THEN
+            RAISE EXCEPTION 'Journal % déjà chaîné avec d''autres colonnes ou un autre algorithme', p_journal;
+        END IF;
+    ELSE
+        EXECUTE format('SELECT EXISTS (SELECT 1 FROM %I)', p_journal) INTO v_lignes;
+        IF v_lignes THEN
+            RAISE EXCEPTION 'Table % : elle a déjà des lignes, elle ne peut pas être chaînée après coup', p_journal;
+        END IF;
+        SELECT string_agg(a.attname, ', ') INTO v_flottant
+        FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid
+        WHERE a.attrelid = v_table AND a.attname = ANY (p_colonnes) AND t.typname IN ('float4', 'float8');
+        IF v_flottant IS NOT NULL THEN
+            RAISE EXCEPTION 'Table % : colonnes en réel flottant refusées (représentation instable) : %', p_journal, v_flottant;
+        END IF;
+    END IF;
+
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS cle_chaine text NOT NULL DEFAULT %L', p_journal, 'officine');
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS rang bigint', p_journal);
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS hash bytea', p_journal);
+    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS hash_precedent bytea', p_journal);
+    EXECUTE format('CREATE UNIQUE INDEX IF NOT EXISTS %I ON %I (cle_chaine, rang)', 'ux_' || p_journal || '_chaine', p_journal);
+
+    IF v_existe.journal IS NULL THEN
+        INSERT INTO chaine_integrite (journal, libelle, colonnes, algorithme) VALUES (p_journal, p_libelle, p_colonnes, v_algo);
+        -- Vérifie tout de suite que les colonnes déclarées existent
+        PERFORM integrite_expression(p_journal);
+    END IF;
+
+    EXECUTE format('CREATE OR REPLACE TRIGGER zz_integrite_chainer BEFORE INSERT ON %I FOR EACH ROW EXECUTE FUNCTION integrite_chainer()', p_journal);
+    EXECUTE format('CREATE OR REPLACE TRIGGER trg_integrite_immuable BEFORE UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION integrite_interdire_modification()', p_journal);
+    EXECUTE format('CREATE OR REPLACE TRIGGER trg_integrite_non_vidable BEFORE TRUNCATE ON %I FOR EACH STATEMENT EXECUTE FUNCTION integrite_interdire_modification()', p_journal);
+END;
+$$;
+
+
+--
+-- Name: integrite_chainer(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_chainer() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE
+    v_ci        chaine_integrite;
+    v_rang      bigint;
+    v_prec      bytea;
+    v_canonique text;
+BEGIN
+    SELECT * INTO v_ci FROM chaine_integrite WHERE journal = TG_TABLE_NAME;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Table % chaînée mais absente de chaine_integrite', TG_TABLE_NAME;
+    END IF;
+    -- En lecture répétable, la ligne écrite par une autre caisse juste avant ne serait pas vue : la chaîne se casserait
+    IF current_setting('transaction_isolation') <> 'read committed' THEN
+        RAISE EXCEPTION 'Journal % : écriture seulement en isolation « read committed »', TG_TABLE_NAME;
+    END IF;
+    NEW.cle_chaine := COALESCE(NEW.cle_chaine, 'officine');
+    -- Écriture sérialisée par journal et clé de chaîne (plusieurs caisses), verrou rendu à la fin de la transaction
+    PERFORM pg_advisory_xact_lock(hashtextextended('integrite|' || TG_TABLE_NAME || '|' || NEW.cle_chaine, 0));
+    EXECUTE format('SELECT rang, hash FROM %I WHERE cle_chaine = $1 ORDER BY rang DESC LIMIT 1', TG_TABLE_NAME)
+        INTO v_rang, v_prec USING NEW.cle_chaine;
+    NEW.rang := COALESCE(v_rang, 0) + 1;
+    NEW.hash_precedent := COALESCE(v_prec, integrite_origine(v_ci.algorithme));
+    EXECUTE format('SELECT %s FROM (SELECT ($1).*) r', integrite_expression(TG_TABLE_NAME)) INTO v_canonique USING NEW;
+    NEW.hash := integrite_hacher(v_ci.algorithme, v_canonique, NEW.hash_precedent);
+    RETURN NEW;
+END;
+$_$;
+
+
+--
+-- Name: integrite_champ(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_champ(p_nom text, p_valeur text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+    SELECT p_nom || '=' || CASE WHEN p_valeur IS NULL THEN '~' ELSE char_length(p_valeur)::text || ':' || p_valeur END
+$$;
+
+
+--
+-- Name: integrite_expression(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_expression(p_journal text) RETURNS text
+    LANGUAGE plpgsql STABLE
+    AS $$
+DECLARE
+    v_ci     chaine_integrite;
+    v_col    record;
+    v_val    text;
+    v_parts  text[];
+    v_trouve int := 0;
+BEGIN
+    SELECT * INTO v_ci FROM chaine_integrite WHERE journal = p_journal;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Journal % non inscrit dans chaine_integrite', p_journal;
+    END IF;
+    v_parts := ARRAY[
+        quote_literal('v' || v_ci.version_format || '|' || v_ci.journal),
+        'integrite_champ(''cle_chaine'', r.cle_chaine)',
+        'integrite_champ(''rang'', r.rang::text)'];
+    FOR v_col IN
+        SELECT u.nom, t.typname
+        FROM unnest(v_ci.colonnes) WITH ORDINALITY AS u(nom, ord)
+        JOIN pg_attribute a ON a.attrelid = to_regclass(quote_ident(v_ci.journal)) AND a.attname = u.nom AND a.attnum > 0 AND NOT a.attisdropped
+        JOIN pg_type t ON t.oid = a.atttypid
+        ORDER BY u.ord
+    LOOP
+        v_trouve := v_trouve + 1;
+        v_val := CASE v_col.typname
+            WHEN 'timestamptz' THEN format('to_char(r.%I AT TIME ZONE ''UTC'', ''YYYY-MM-DD"T"HH24:MI:SS.US"Z"'')', v_col.nom)
+            WHEN 'timestamp'   THEN format('to_char(r.%I, ''YYYY-MM-DD"T"HH24:MI:SS.US'')', v_col.nom)
+            WHEN 'date'        THEN format('to_char(r.%I, ''YYYY-MM-DD'')', v_col.nom)
+            WHEN 'bool'        THEN format('CASE WHEN r.%I IS NULL THEN NULL WHEN r.%I THEN ''true'' ELSE ''false'' END', v_col.nom, v_col.nom)
+            WHEN 'bytea'       THEN format('encode(r.%I, ''hex'')', v_col.nom)
+            ELSE format('r.%I::text', v_col.nom)
+        END;
+        v_parts := v_parts || format('integrite_champ(%L, %s)', v_col.nom, v_val);
+    END LOOP;
+    IF v_trouve <> cardinality(v_ci.colonnes) THEN
+        RAISE EXCEPTION 'Journal % : colonne déclarée absente de la table', p_journal;
+    END IF;
+    RETURN 'concat_ws(''|'', ' || array_to_string(v_parts, ', ') || ')';
+END;
+$$;
+
+
+--
+-- Name: integrite_hacher(text, text, bytea); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_hacher(p_algorithme text, p_canonique text, p_precedent bytea) RETURNS bytea
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+    SELECT CASE p_algorithme
+               WHEN 'sha512' THEN sha512(convert_to(p_canonique, 'UTF8') || p_precedent)
+               ELSE sha256(convert_to(p_canonique, 'UTF8') || p_precedent)
+           END
+$$;
+
+
+--
+-- Name: integrite_interdire_modification(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_interdire_modification() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Journal % chaîné : il ne peut être ni modifié, ni supprimé, ni vidé', TG_TABLE_NAME;
+END;
+$$;
+
+
+--
+-- Name: integrite_interdire_modification_trace(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_interdire_modification_trace() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'Les sceaux et vérifications d''intégrité ne peuvent être ni modifiés, ni supprimés, ni vidés';
+END;
+$$;
+
+
+--
+-- Name: integrite_origine(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_origine(p_algorithme text) RETURNS bytea
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$
+    SELECT decode(repeat('00', CASE p_algorithme WHEN 'sha512' THEN 64 ELSE 32 END), 'hex')
+$$;
+
+
+--
+-- Name: integrite_registre_immuable(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_registre_immuable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.journal = OLD.journal AND NEW.colonnes = OLD.colonnes AND NEW.algorithme = OLD.algorithme
+       AND NEW.version_format = OLD.version_format AND NEW.active_le = OLD.active_le THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Le registre des journaux chaînés ne peut être ni modifié (sauf le libellé) ni supprimé';
+END;
+$$;
+
+
+--
+-- Name: integrite_verifier(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_verifier(p_journal text, p_cle text DEFAULT NULL::text) RETURNS TABLE(cle_chaine text, lignes bigint, dernier_rang bigint, dernier_hash bytea, rang_rupture bigint, id_rupture bigint, motif text, attendu text, trouve text)
+    LANGUAGE plpgsql STABLE
+    AS $_$
+#variable_conflict use_variable
+DECLARE
+    v_ci    chaine_integrite;
+    v_cle   text;
+    v_ligne record;
+    v_prec  bytea;
+    v_rang  bigint;
+    v_calc  bytea;
+BEGIN
+    SELECT * INTO v_ci FROM chaine_integrite c WHERE c.journal = p_journal;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Journal % non inscrit dans chaine_integrite', p_journal;
+    END IF;
+    FOR v_cle IN EXECUTE format('SELECT DISTINCT t.cle_chaine FROM %I t WHERE $1 IS NULL OR t.cle_chaine = $1 ORDER BY 1', p_journal) USING p_cle
+    LOOP
+        cle_chaine := v_cle; lignes := 0; dernier_rang := 0; dernier_hash := NULL;
+        rang_rupture := NULL; id_rupture := NULL; motif := NULL; attendu := NULL; trouve := NULL;
+        v_prec := integrite_origine(v_ci.algorithme);
+        v_rang := 0;
+        FOR v_ligne IN EXECUTE format('SELECT r.id, r.rang, r.hash, r.hash_precedent, %s AS canonique FROM %I r WHERE r.cle_chaine = $1 ORDER BY r.rang',
+                                      integrite_expression(p_journal), p_journal) USING v_cle
+        LOOP
+            lignes := lignes + 1;
+            IF v_ligne.rang IS DISTINCT FROM v_rang + 1 THEN
+                rang_rupture := v_rang + 1; id_rupture := v_ligne.id; motif := 'ligne manquante ou hors chaîne';
+                attendu := 'rang ' || (v_rang + 1); trouve := 'rang ' || COALESCE(v_ligne.rang::text, 'vide');
+                EXIT;
+            END IF;
+            IF v_ligne.hash_precedent IS DISTINCT FROM v_prec THEN
+                rang_rupture := v_ligne.rang; id_rupture := v_ligne.id; motif := 'chaînage rompu (empreinte précédente)';
+                attendu := encode(v_prec, 'hex'); trouve := COALESCE(encode(v_ligne.hash_precedent, 'hex'), 'vide');
+                EXIT;
+            END IF;
+            v_calc := integrite_hacher(v_ci.algorithme, v_ligne.canonique, v_prec);
+            IF v_ligne.hash IS DISTINCT FROM v_calc THEN
+                rang_rupture := v_ligne.rang; id_rupture := v_ligne.id; motif := 'ligne modifiée (empreinte recalculée différente)';
+                attendu := encode(v_calc, 'hex'); trouve := COALESCE(encode(v_ligne.hash, 'hex'), 'vide');
+                EXIT;
+            END IF;
+            v_prec := v_ligne.hash;
+            v_rang := v_ligne.rang;
+            dernier_rang := v_ligne.rang;
+            dernier_hash := v_ligne.hash;
+        END LOOP;
+        RETURN NEXT;
+    END LOOP;
+END;
+$_$;
 
 
 --
@@ -1194,6 +1665,270 @@ BEGIN
             WHEN 'fournisseur_mouvement' THEN 'Le relevé de la dette envers les grossistes'
             ELSE 'La table ' || TG_TABLE_NAME
         END;
+END;
+$$;
+
+
+--
+-- Name: journal_vente_continuite(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_continuite() RETURNS TABLE(anomalie text, numero text, vente_id bigint)
+    LANGUAGE sql STABLE
+    AS $_$
+    WITH c AS (SELECT * FROM compteur_ticket WHERE id = 1),
+         v AS (SELECT x.id, x.numero, x.statut, substring(x.numero FROM '^' || (SELECT prefixe FROM c) || '([0-9]+)$')::bigint AS n
+               FROM vente x)
+    SELECT 'numero_manquant', c.prefixe || lpad(s.n::text, GREATEST(6, char_length(s.n::text)), '0'), NULL::bigint
+    FROM c, generate_series(c.premier_numero_continu, c.dernier_numero) AS s(n)
+    WHERE NOT EXISTS (SELECT 1 FROM v WHERE v.n = s.n)
+    UNION ALL
+    SELECT 'numero_hors_compteur', v.numero, v.id FROM v, c WHERE v.n > c.dernier_numero
+    UNION ALL
+    SELECT 'vente_sans_ligne', v.numero, v.id FROM v, c
+    WHERE v.n >= c.premier_numero_continu AND v.statut IN ('validee', 'annulee')
+      AND NOT EXISTS (SELECT 1 FROM journal_vente j WHERE j.vente_id = v.id AND j.evenement = 'vente')
+    UNION ALL
+    SELECT 'annulation_sans_ligne', v.numero, v.id FROM v
+    WHERE v.statut = 'annulee' AND EXISTS (SELECT 1 FROM annulation_vente a, compteur_ticket c WHERE a.vente_id = v.id AND a.cree_le >= c.mis_en_service_le)
+      AND NOT EXISTS (SELECT 1 FROM journal_vente j WHERE j.vente_id = v.id AND j.evenement = 'annulation')
+    ORDER BY 1, 2
+$_$;
+
+
+--
+-- Name: journal_vente_depuis_avoir(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_depuis_avoir() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_numero text;
+BEGIN
+    IF EXISTS (SELECT 1 FROM journal_vente WHERE avoir_mouvement_id = NEW.id) THEN RETURN NULL; END IF;
+    SELECT numero INTO v_numero FROM vente WHERE id = NEW.vente_id;
+    INSERT INTO journal_vente (evenement, numero_ticket, vente_id, avoir_mouvement_id, survenu_le, utilisateur_id, montant_mouvement, motif)
+    VALUES ('avoir', v_numero, NEW.vente_id, NEW.id, NEW.cree_le, NEW.utilisateur_id,
+            CASE WHEN NEW.sens = 'credit' THEN NEW.montant ELSE -NEW.montant END, NEW.origine);
+    RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: journal_vente_depuis_regularisation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_depuis_regularisation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    g        regularisation_part_organisme;
+    v        vente;
+    v_evt    text;
+    v_signe  int;
+    v_delta  numeric;
+BEGIN
+    SELECT * INTO g FROM regularisation_part_organisme WHERE id = NEW.id;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    v_evt := CASE WHEN TG_OP = 'INSERT' THEN 'regularisation' ELSE 'annulation_regularisation' END;
+    IF v_evt = 'annulation_regularisation' AND g.statut = 'active' THEN RETURN NULL; END IF;
+    IF EXISTS (SELECT 1 FROM journal_vente WHERE regularisation_id = g.id AND evenement = v_evt) THEN RETURN NULL; END IF;
+    SELECT * INTO v FROM vente WHERE id = g.vente_id;
+    v_signe := CASE WHEN v_evt = 'regularisation' THEN 1 ELSE -1 END;
+    v_delta := (g.part_organisme_chifa - g.part_organisme_vente) * v_signe;
+    INSERT INTO journal_vente (evenement, numero_ticket, vente_id, regularisation_id, survenu_le, utilisateur_id, type_vente,
+                               part_patient, part_organisme, montant_mouvement, motif)
+    VALUES (v_evt, v.numero, v.id, g.id, CASE WHEN v_evt = 'regularisation' THEN g.cree_le ELSE COALESCE(g.annulee_le, now()) END,
+            CASE WHEN v_evt = 'regularisation' THEN g.utilisateur_id ELSE g.annulee_par END, v.type,
+            -v_delta, v_delta, COALESCE(g.montant_a_rendre, 0) * v_signe,
+            left(CASE WHEN v_evt = 'regularisation' THEN g.sort ELSE g.motif_annulation END, 500));
+    RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: journal_vente_depuis_retour(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_depuis_retour() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    r       retour_client;
+    v       vente;
+    v_taux  numeric[];
+    v_poids numeric[];
+    v_total numeric;
+    v_vent  record;
+BEGIN
+    SELECT * INTO r FROM retour_client WHERE id = NEW.id;
+    IF NOT FOUND OR EXISTS (SELECT 1 FROM journal_vente WHERE retour_client_id = r.id) THEN RETURN NULL; END IF;
+    SELECT * INTO v FROM vente WHERE id = r.vente_id;
+    SELECT array_agg(taux ORDER BY taux), array_agg(poids ORDER BY taux), COALESCE(sum(poids), 0) INTO v_taux, v_poids, v_total
+    FROM (SELECT journal_vente_taux_ligne(rl.ligne_vente_id) AS taux, sum(rl.montant) AS poids
+          FROM retour_client_ligne rl WHERE rl.retour_id = r.id GROUP BY 1) g;
+    SELECT * INTO v_vent FROM journal_vente_ventiler(v_taux, v_poids, -v_total);
+    INSERT INTO journal_vente (evenement, numero_ticket, vente_id, retour_client_id, survenu_le, session_caisse_id, poste, utilisateur_id,
+                               type_vente, montant_ttc, montant_ht, montant_tva, detail_tva, part_patient, part_organisme, paiements, motif)
+    VALUES ('retour', v.numero, v.id, r.id, r.cree_le, r.session_caisse_id, r.poste, r.utilisateur_id, v.type,
+            -v_total, v_vent.ht, v_vent.tva, v_vent.detail, -v_total, 0,
+            CASE WHEN r.mode IS NOT NULL AND r.montant_rembourse > 0 THEN r.mode || ':' || (-r.montant_rembourse)::numeric(14,2) ELSE '' END,
+            left(COALESCE(r.motif_code || ' ', '') || COALESCE(r.motif, ''), 500));
+    RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: journal_vente_depuis_vente(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_depuis_vente() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v        vente;
+    v_poste  text;
+    v_taux   numeric[];
+    v_poids  numeric[];
+    v_vent   record;
+    v_an     annulation_vente;
+    v_retour numeric;
+BEGIN
+    SELECT * INTO v FROM vente WHERE id = NEW.id;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    SELECT array_agg(taux ORDER BY taux), array_agg(poids ORDER BY taux) INTO v_taux, v_poids
+    FROM (SELECT journal_vente_taux_ligne(l.id) AS taux, sum(l.montant_organisme + l.montant_patient) AS poids
+          FROM ligne_vente l WHERE l.vente_id = v.id GROUP BY 1) g;
+
+    -- Vente encaissée : insérée validée, ou passée de « en cours » à validée (ou annulée dans la même transaction)
+    IF v.statut IN ('validee', 'annulee') AND (TG_OP = 'INSERT' OR OLD.statut = 'en_cours')
+       AND NOT EXISTS (SELECT 1 FROM journal_vente WHERE vente_id = v.id AND evenement = 'vente') THEN
+        SELECT poste INTO v_poste FROM session_caisse WHERE id = v.session_caisse_id;
+        SELECT * INTO v_vent FROM journal_vente_ventiler(v_taux, v_poids, v.montant_total);
+        INSERT INTO journal_vente (evenement, numero_ticket, vente_id, survenu_le, session_caisse_id, poste, utilisateur_id, type_vente,
+                                   montant_ttc, montant_ht, montant_tva, detail_tva, part_patient, part_organisme, paiements)
+        VALUES ('vente', v.numero, v.id, v.date_vente, v.session_caisse_id, v_poste, v.utilisateur_id, v.type,
+                v.montant_total, v_vent.ht, v_vent.tva, v_vent.detail, v.part_patient, v.part_organisme, journal_vente_paiements(v.id, 1));
+    END IF;
+
+    -- Annulation : nouvelle ligne (le ticket garde son numéro), au montant encore acquis (déjà rendu par des retours exclu)
+    IF v.statut = 'annulee' AND (TG_OP = 'INSERT' OR OLD.statut IS DISTINCT FROM 'annulee')
+       AND NOT EXISTS (SELECT 1 FROM journal_vente WHERE vente_id = v.id AND evenement = 'annulation') THEN
+        SELECT * INTO v_an FROM annulation_vente WHERE vente_id = v.id ORDER BY id DESC LIMIT 1;
+        SELECT COALESCE(sum(r.montant), 0) INTO v_retour
+        FROM retour_client_ligne r JOIN ligne_vente l ON l.id = r.ligne_vente_id WHERE l.vente_id = v.id;
+        SELECT * INTO v_vent FROM journal_vente_ventiler(v_taux, v_poids, -(v.montant_total - v_retour));
+        INSERT INTO journal_vente (evenement, numero_ticket, vente_id, annulation_id, survenu_le, session_caisse_id, poste, utilisateur_id,
+                                   type_vente, montant_ttc, montant_ht, montant_tva, detail_tva, part_patient, part_organisme, paiements, motif)
+        VALUES ('annulation', v.numero, v.id, v_an.id, COALESCE(v_an.cree_le, now()), v_an.session_caisse_id, v_an.poste,
+                v_an.utilisateur_id, v.type, -(v.montant_total - v_retour), v_vent.ht, v_vent.tva, v_vent.detail,
+                -(v.part_patient - v_retour), -v.part_organisme,
+                CASE WHEN v_an.mode IS NOT NULL AND v_an.montant_rembourse > 0
+                     THEN v_an.mode || ':' || (-v_an.montant_rembourse)::numeric(14,2) ELSE '' END,
+                left(v_an.motif, 500));
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: journal_vente_paiements(bigint, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_paiements(p_vente_id bigint, p_signe integer) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT COALESCE(string_agg(mode || ':' || (total * p_signe)::numeric(14,2), ';' ORDER BY mode), '')
+    FROM (SELECT mode, sum(montant) AS total FROM paiement WHERE vente_id = p_vente_id GROUP BY mode) x
+$$;
+
+
+--
+-- Name: journal_vente_recap_tva(date, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_recap_tva(p_du date, p_au date) RETURNS TABLE(taux numeric, montant_ttc numeric, montant_ht numeric, montant_tva numeric, evenements bigint)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT split_part(d, ':', 1)::numeric(5,2), sum(split_part(d, ':', 2)::numeric), sum(split_part(d, ':', 3)::numeric),
+           sum(split_part(d, ':', 4)::numeric), count(DISTINCT j.id)
+    FROM journal_vente j CROSS JOIN LATERAL string_to_table(NULLIF(j.detail_tva, ''), ';') AS d
+    WHERE (j.survenu_le AT TIME ZONE (SELECT fuseau FROM parametre_fiscal WHERE id = 1))::date BETWEEN p_du AND p_au
+    GROUP BY 1 ORDER BY 1
+$$;
+
+
+--
+-- Name: journal_vente_taux_ligne(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_taux_ligne(p_ligne_id bigint) RETURNS numeric
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT COALESCE(l.taux_tva, p.taux_tva, tp.taux_tva, 0)::numeric(5,2)
+    FROM ligne_vente l LEFT JOIN produit p ON p.id = l.produit_id LEFT JOIN type_prestation tp ON tp.id = l.type_prestation_id
+    WHERE l.id = p_ligne_id
+$$;
+
+
+--
+-- Name: journal_vente_trous_historique(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_trous_historique() RETURNS TABLE(du bigint, au bigint, manquants bigint)
+    LANGUAGE sql STABLE
+    AS $_$
+    WITH n AS (SELECT DISTINCT substring(numero FROM '^T-([0-9]+)$')::bigint AS n FROM vente WHERE numero ~ '^T-[0-9]+$'),
+         s AS (SELECT n, lag(n) OVER (ORDER BY n) AS p FROM n
+               WHERE n < (SELECT premier_numero_continu FROM compteur_ticket WHERE id = 1))
+    SELECT COALESCE(p, 0) + 1, n - 1, n - COALESCE(p, 0) - 1 FROM s WHERE n - COALESCE(p, 0) > 1 ORDER BY 1
+$_$;
+
+
+--
+-- Name: journal_vente_ventiler(numeric[], numeric[], numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.journal_vente_ventiler(p_taux numeric[], p_poids numeric[], p_ttc numeric) RETURNS TABLE(detail text, ht numeric, tva numeric)
+    LANGUAGE plpgsql IMMUTABLE
+    AS $$
+DECLARE
+    v_n      int := COALESCE(cardinality(p_taux), 0);
+    v_total  numeric := 0;
+    v_reste  numeric;
+    v_max    int := 1;
+    v_ttc    numeric[] := '{}';
+    v_h      numeric;
+    v_parts  text[] := '{}';
+BEGIN
+    IF v_n = 0 THEN
+        p_taux := ARRAY[0::numeric]; p_poids := ARRAY[1::numeric]; v_n := 1;
+    END IF;
+    FOR i IN 1..v_n LOOP
+        v_total := v_total + abs(COALESCE(p_poids[i], 0));
+        IF abs(COALESCE(p_poids[i], 0)) > abs(COALESCE(p_poids[v_max], 0)) THEN v_max := i; END IF;
+    END LOOP;
+    v_reste := p_ttc;
+    FOR i IN 1..v_n LOOP
+        v_ttc[i] := CASE WHEN v_total = 0 THEN 0 ELSE round(p_ttc * abs(COALESCE(p_poids[i], 0)) / v_total, 2) END;
+        v_reste := v_reste - v_ttc[i];
+    END LOOP;
+    v_ttc[v_max] := v_ttc[v_max] + v_reste;
+    ht := 0; tva := 0;
+    FOR i IN 1..v_n LOOP
+        v_h := round(v_ttc[i] / (1 + COALESCE(p_taux[i], 0) / 100), 2);
+        ht := ht + v_h;
+        tva := tva + (v_ttc[i] - v_h);
+        v_parts := v_parts || format('%s:%s:%s:%s', to_char(COALESCE(p_taux[i], 0), 'FM990.00'),
+                                     v_ttc[i]::numeric(14,2), v_h::numeric(14,2), (v_ttc[i] - v_h)::numeric(14,2));
+    END LOOP;
+    detail := array_to_string(v_parts, ';');
+    RETURN NEXT;
 END;
 $$;
 
@@ -1314,6 +2049,37 @@ $$;
 
 
 --
+-- Name: mettre_en_file_serialisation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mettre_en_file_serialisation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_operation text;
+BEGIN
+    IF NEW.gtin IS NULL OR NEW.numero_serie IS NULL THEN
+        RETURN NULL;   -- étiquette interne : pas de sérialisation nationale
+    END IF;
+    IF NOT COALESCE((SELECT actif FROM parametre_serialisation WHERE id = 1), false) THEN
+        RETURN NULL;
+    END IF;
+    IF TG_OP = 'INSERT' THEN
+        v_operation := 'verifier';
+    ELSIF OLD.statut = 'en_stock' AND NEW.statut = 'vendue' THEN
+        v_operation := 'decommissionner';
+    ELSIF OLD.statut = 'vendue' AND NEW.statut = 'en_stock' THEN
+        v_operation := 'reactiver';
+    ELSE
+        RETURN NULL;
+    END IF;
+    INSERT INTO verification_serialisation (boite_id, operation) VALUES (NEW.id, v_operation);
+    RETURN NULL;
+END;
+$$;
+
+
+--
 -- Name: mouvement_boite(bigint, text, bigint, text, bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1407,9 +2173,18 @@ CREATE FUNCTION public.prochain_numero_retour() RETURNS text
 --
 
 CREATE FUNCTION public.prochain_numero_vente() RETURNS text
-    LANGUAGE sql
+    LANGUAGE plpgsql
     AS $$
-    SELECT 'T-' || lpad(nextval('seq_numero_vente')::text, 6, '0');
+DECLARE
+    v_numero  bigint;
+    v_prefixe text;
+BEGIN
+    UPDATE compteur_ticket SET dernier_numero = dernier_numero + 1 WHERE id = 1 RETURNING dernier_numero, prefixe INTO v_numero, v_prefixe;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Compteur des tickets absent (script 112)';
+    END IF;
+    RETURN v_prefixe || lpad(v_numero::text, GREATEST(6, char_length(v_numero::text)), '0');
+END;
 $$;
 
 
@@ -1548,6 +2323,13 @@ CREATE FUNCTION public.rang_assure(p_num text) RETURNS text
 
 
 --
+-- Name: FUNCTION rang_assure(p_num text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.rang_assure(p_num text) IS 'Rang de l''assuré = 2 chiffres du suffixe « /NN » du n° d''assuré ; NULL si absent ou format atypique (script 102)';
+
+
+--
 -- Name: rappel_lot(bigint, text, text, bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1612,6 +2394,180 @@ BEGIN
         RAISE EXCEPTION 'Une prestation ne se rend pas : annulez la vente ou faites un avoir';
     END IF;
     RETURN NEW;
+END;
+$$;
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: registre_psychotrope; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.registre_psychotrope (
+    id bigint NOT NULL,
+    lot_id bigint NOT NULL,
+    ligne_vente_id bigint,
+    type_mouvement text NOT NULL,
+    quantite integer NOT NULL,
+    solde_apres integer NOT NULL,
+    patient_id bigint,
+    medecin_id bigint,
+    ordonnance_id bigint,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    mouvement_id bigint,
+    reference text,
+    porteur_nom text,
+    porteur_adresse text,
+    porteur_piece text,
+    numero_ordre bigint,
+    duree_traitement_jours integer,
+    CONSTRAINT ck_registre_porteur_complet CHECK (((porteur_nom IS NULL) OR ((porteur_adresse IS NOT NULL) AND (porteur_piece IS NOT NULL)))),
+    CONSTRAINT ck_registre_psy_duree CHECK (((duree_traitement_jours IS NULL) OR ((duree_traitement_jours >= 1) AND (duree_traitement_jours <= 3650)))),
+    CONSTRAINT registre_psychotrope_check CHECK (((type_mouvement <> 'sortie'::text) OR (ordonnance_id IS NOT NULL))),
+    CONSTRAINT registre_psychotrope_quantite_check CHECK ((quantite > 0)),
+    CONSTRAINT registre_psychotrope_solde_apres_check CHECK ((solde_apres >= 0)),
+    CONSTRAINT registre_psychotrope_type_mouvement_check CHECK ((type_mouvement = ANY (ARRAY['ouverture'::text, 'entree'::text, 'retour_client'::text, 'retour_refuse'::text, 'ecart_plus'::text, 'sortie'::text, 'retour_fournisseur'::text, 'destruction'::text, 'casse'::text, 'ecart_moins'::text])))
+);
+
+
+--
+-- Name: COLUMN registre_psychotrope.porteur_nom; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.registre_psychotrope.porteur_nom IS 'Porteur de l''ordonnance quand ce n''est pas le patient (avec adresse et pièce d''identité)';
+
+
+--
+-- Name: registre_canonique(public.registre_psychotrope); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.registre_canonique(r public.registre_psychotrope) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT concat_ws('|', 'registre-v1',
+        integrite_champ('id', r.id::text),
+        integrite_champ('numero_ordre', r.numero_ordre::text),
+        integrite_champ('lot_id', r.lot_id::text),
+        integrite_champ('ligne_vente_id', r.ligne_vente_id::text),
+        integrite_champ('mouvement_id', r.mouvement_id::text),
+        integrite_champ('type_mouvement', r.type_mouvement),
+        integrite_champ('quantite', r.quantite::text),
+        integrite_champ('solde_apres', r.solde_apres::text),
+        integrite_champ('patient_id', r.patient_id::text),
+        integrite_champ('medecin_id', r.medecin_id::text),
+        integrite_champ('ordonnance_id', r.ordonnance_id::text),
+        integrite_champ('utilisateur_id', r.utilisateur_id::text),
+        integrite_champ('reference', r.reference),
+        integrite_champ('porteur_nom', r.porteur_nom),
+        integrite_champ('porteur_adresse', r.porteur_adresse),
+        integrite_champ('porteur_piece', r.porteur_piece),
+        integrite_champ('cree_le', to_char(r.cree_le AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')))
+$$;
+
+
+--
+-- Name: registre_concordance(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.registre_concordance() RETURNS TABLE(lignes bigint, motif text, registre_id bigint, attendu text, trouve text)
+    LANGUAGE plpgsql STABLE
+    AS $$
+#variable_conflict use_variable
+DECLARE
+    v_ouv  journal_registre_psychotrope;
+    v_ant  record;
+    v_id   bigint;
+BEGIN
+    SELECT count(*) INTO lignes FROM registre_psychotrope;
+    motif := NULL; registre_id := NULL; attendu := NULL; trouve := NULL;
+
+    SELECT * INTO v_ouv FROM journal_registre_psychotrope j WHERE j.nature = 'ouverture' ORDER BY j.rang LIMIT 1;
+    IF NOT FOUND THEN
+        motif := 'ligne d''ouverture du journal absente'; RETURN NEXT; RETURN;
+    END IF;
+
+    -- Lignes antérieures (absentes du journal) : même nombre et même empreinte qu'à l'ouverture
+    SELECT * INTO v_ant FROM registre_empreinte_anterieure();
+    IF v_ant.lignes <> v_ouv.lignes_anterieures OR v_ant.empreinte <> v_ouv.empreinte_anterieure THEN
+        motif := 'lignes antérieures à l''ouverture modifiées, supprimées, ou ligne ajoutée hors journal';
+        attendu := v_ouv.lignes_anterieures || ' ligne(s), ' || encode(v_ouv.empreinte_anterieure, 'hex');
+        trouve := v_ant.lignes || ' ligne(s), ' || encode(v_ant.empreinte, 'hex');
+        RETURN NEXT; RETURN;
+    END IF;
+
+    -- Ligne recopiée disparue du registre
+    SELECT j.registre_id INTO v_id FROM journal_registre_psychotrope j
+    WHERE j.nature = 'inscription' AND NOT EXISTS (SELECT 1 FROM registre_psychotrope r WHERE r.id = j.registre_id)
+    ORDER BY j.rang LIMIT 1;
+    IF FOUND THEN
+        motif := 'ligne du registre supprimée'; registre_id := v_id; RETURN NEXT; RETURN;
+    END IF;
+
+    -- Ligne du registre différente de sa copie chaînée
+    SELECT r.id INTO v_id FROM registre_psychotrope r JOIN journal_registre_psychotrope j ON j.nature = 'inscription' AND j.registre_id = r.id
+    WHERE (r.numero_ordre, r.lot_id, r.ligne_vente_id, r.mouvement_id, r.type_mouvement, r.quantite, r.solde_apres, r.patient_id,
+           r.medecin_id, r.ordonnance_id, r.utilisateur_id, r.reference, r.porteur_nom, r.porteur_adresse, r.porteur_piece, r.cree_le)
+          IS DISTINCT FROM
+          (j.numero_ordre, j.lot_id, j.ligne_vente_id, j.mouvement_id, j.type_mouvement, j.quantite, j.solde_apres, j.patient_id,
+           j.medecin_id, j.ordonnance_id, j.utilisateur_id, j.reference, j.porteur_nom, j.porteur_adresse, j.porteur_piece, j.inscrit_le)
+    ORDER BY r.id LIMIT 1;
+    IF FOUND THEN
+        motif := 'ligne du registre modifiée (différente de sa copie chaînée)'; registre_id := v_id; RETURN NEXT; RETURN;
+    END IF;
+
+    -- Annulations : chacune recopiée à l'identique, aucune disparue
+    SELECT a.registre_id INTO v_id FROM annulation_registre a
+    LEFT JOIN journal_registre_psychotrope j ON j.nature = 'annulation' AND j.annulation_id = a.id
+    WHERE j.id IS NULL OR (a.registre_id, a.motif, a.utilisateur_id, a.cree_le) IS DISTINCT FROM (j.registre_id, j.motif, j.utilisateur_id, j.inscrit_le)
+    ORDER BY a.id LIMIT 1;
+    IF FOUND THEN
+        motif := 'annulation d''écriture modifiée ou hors journal'; registre_id := v_id; RETURN NEXT; RETURN;
+    END IF;
+    SELECT j.registre_id INTO v_id FROM journal_registre_psychotrope j
+    WHERE j.nature = 'annulation' AND NOT EXISTS (SELECT 1 FROM annulation_registre a WHERE a.id = j.annulation_id)
+    ORDER BY j.rang LIMIT 1;
+    IF FOUND THEN
+        motif := 'annulation d''écriture supprimée'; registre_id := v_id; RETURN NEXT; RETURN;
+    END IF;
+
+    RETURN NEXT;
+END;
+$$;
+
+
+--
+-- Name: registre_empreinte_anterieure(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.registre_empreinte_anterieure() RETURNS TABLE(lignes bigint, dernier_id bigint, empreinte bytea)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT count(*), max(r.id),
+           sha256(convert_to(COALESCE(string_agg(registre_canonique(r), E'\n' ORDER BY r.id), ''), 'UTF8'))
+    FROM registre_psychotrope r
+    WHERE NOT EXISTS (SELECT 1 FROM journal_registre_psychotrope j WHERE j.nature = 'inscription' AND j.registre_id = r.id)
+$$;
+
+
+--
+-- Name: registre_vers_journal(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.registre_vers_journal() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO journal_registre_psychotrope (nature, registre_id, numero_ordre, lot_id, ligne_vente_id, mouvement_id, type_mouvement,
+        quantite, solde_apres, patient_id, medecin_id, ordonnance_id, utilisateur_id, reference, porteur_nom, porteur_adresse,
+        porteur_piece, inscrit_le)
+    VALUES ('inscription', NEW.id, NEW.numero_ordre, NEW.lot_id, NEW.ligne_vente_id, NEW.mouvement_id, NEW.type_mouvement,
+        NEW.quantite, NEW.solde_apres, NEW.patient_id, NEW.medecin_id, NEW.ordonnance_id, NEW.utilisateur_id, NEW.reference,
+        NEW.porteur_nom, NEW.porteur_adresse, NEW.porteur_piece, NEW.cree_le);
+    RETURN NULL;
 END;
 $$;
 
@@ -2271,6 +3227,13 @@ $$;
 
 
 --
+-- Name: FUNCTION ventes_lot(p_produit_id bigint, p_numero_lot text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.ventes_lot(p_produit_id bigint, p_numero_lot text) IS 'Ventes validées d''un lot (patients à contacter), boîtes rendues déduites : rappel et consultation d''un lot rappelé';
+
+
+--
 -- Name: verifier_caisse_ouverte(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2453,10 +3416,6 @@ END;
 $$;
 
 
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
 --
 -- Name: anomalie; Type: TABLE; Schema: import; Owner: -
 --
@@ -2504,6 +3463,13 @@ CREATE TABLE import.client_src (
 
 
 --
+-- Name: COLUMN client_src.ligne; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON COLUMN import.client_src.ligne IS 'Rang de la ligne dans la table de l''ancien logiciel (1 = première lue) ; NULL pour une extraction antérieure à 092';
+
+
+--
 -- Name: correspondance_produit; Type: TABLE; Schema: import; Owner: -
 --
 
@@ -2548,6 +3514,27 @@ CREATE TABLE import.doublon_patient (
 
 
 --
+-- Name: TABLE doublon_patient; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON TABLE import.doublon_patient IS 'Patients de la reprise non créés (n° d''assuré déjà pris), à valider par le titulaire ou un ayant droit (092)';
+
+
+--
+-- Name: COLUMN doublon_patient.origine; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON COLUMN import.doublon_patient.origine IS 'fichier : n° déjà repris d''une ligne précédente du même export ; base : n° d''un patient déjà en base';
+
+
+--
+-- Name: COLUMN doublon_patient.dette; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON COLUMN import.doublon_patient.dette IS 'Dette reprise du patient ignoré : rattachee (ajoutée à la fiche gardée ou créée) ou abandonnee ; NULL sans dette ou avant décision';
+
+
+--
 -- Name: doublon_patient_id_seq; Type: SEQUENCE; Schema: import; Owner: -
 --
 
@@ -2576,6 +3563,46 @@ CREATE TABLE import.fournisseur_src (
 
 
 --
+-- Name: historique_chifa_src; Type: TABLE; Schema: import; Owner: -
+--
+
+CREATE TABLE import.historique_chifa_src (
+    session_id bigint NOT NULL,
+    num_facture text NOT NULL,
+    date_facture text NOT NULL,
+    num_assure text,
+    nom_assure text,
+    montant_total text,
+    part_chifa text,
+    part_assure text,
+    organisme text
+);
+
+
+--
+-- Name: historique_mdn_src; Type: TABLE; Schema: import; Owner: -
+--
+
+CREATE TABLE import.historique_mdn_src (
+    session_id bigint NOT NULL,
+    num_facture text NOT NULL,
+    date_facture text NOT NULL,
+    num_affilie text,
+    nom_affilie text,
+    montant_total text,
+    part_mdn text,
+    part_assure text
+);
+
+
+--
+-- Name: TABLE historique_mdn_src; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON TABLE import.historique_mdn_src IS 'Transit des factures MDN (conventions militaires) de l''ancien logiciel (121) ; format à vérifier, réglable par le profil';
+
+
+--
 -- Name: produit_src; Type: TABLE; Schema: import; Owner: -
 --
 
@@ -2594,6 +3621,51 @@ CREATE TABLE import.produit_src (
 
 
 --
+-- Name: profil_reprise; Type: TABLE; Schema: import; Owner: -
+--
+
+CREATE TABLE import.profil_reprise (
+    id bigint NOT NULL,
+    logiciel text NOT NULL,
+    version text DEFAULT ''::text NOT NULL,
+    statut text DEFAULT 'a_completer'::text NOT NULL,
+    remarque text,
+    correspondances jsonb DEFAULT '[]'::jsonb NOT NULL,
+    separateur_decimal text DEFAULT 'auto'::text NOT NULL,
+    format_date text,
+    codes_classe jsonb DEFAULT '{}'::jsonb NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifie_par text,
+    CONSTRAINT profil_reprise_codes_objet CHECK ((jsonb_typeof(codes_classe) = 'object'::text)),
+    CONSTRAINT profil_reprise_correspondances_tableau CHECK ((jsonb_typeof(correspondances) = 'array'::text)),
+    CONSTRAINT profil_reprise_separateur_decimal_check CHECK ((separateur_decimal = ANY (ARRAY['auto'::text, 'virgule'::text, 'point'::text]))),
+    CONSTRAINT profil_reprise_statut_check CHECK ((statut = ANY (ARRAY['a_completer'::text, 'verifie'::text])))
+);
+
+
+--
+-- Name: TABLE profil_reprise; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON TABLE import.profil_reprise IS 'Profil de reprise d''un logiciel concurrent (114) : correspondance de colonnes et transformations ; a_completer = modèle vide, format réel inconnu';
+
+
+--
+-- Name: profil_reprise_id_seq; Type: SEQUENCE; Schema: import; Owner: -
+--
+
+ALTER TABLE import.profil_reprise ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME import.profil_reprise_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: session; Type: TABLE; Schema: import; Owner: -
 --
 
@@ -2608,6 +3680,27 @@ CREATE TABLE import.session (
     charge_par text,
     CONSTRAINT session_statut_check CHECK ((statut = ANY (ARRAY['en_cours'::text, 'charge'::text, 'annule'::text])))
 );
+
+
+--
+-- Name: COLUMN session.lance_par; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON COLUMN import.session.lance_par IS 'Qui a lancé l''extraction (ex. super admin et son identifiant)';
+
+
+--
+-- Name: COLUMN session.charge_le; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON COLUMN import.session.charge_le IS 'Date du chargement définitif dans la base';
+
+
+--
+-- Name: COLUMN session.charge_par; Type: COMMENT; Schema: import; Owner: -
+--
+
+COMMENT ON COLUMN import.session.charge_par IS 'Qui a lancé le chargement définitif';
 
 
 --
@@ -2710,6 +3803,13 @@ CREATE TABLE public.alerte_non_envoyee (
 
 
 --
+-- Name: TABLE alerte_non_envoyee; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.alerte_non_envoyee IS 'Alerte au titulaire qui n''a pas pu partir (mise en file impossible, aucun destinataire, envoi abandonné) : bandeau de l''Accueil du titulaire jusqu''à ce qu''il la marque vue';
+
+
+--
 -- Name: alerte_non_envoyee_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -2749,11 +3849,46 @@ CREATE TABLE public.alerte_surveillance (
 
 
 --
+-- Name: TABLE alerte_surveillance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.alerte_surveillance IS 'Anomalies de caisse par employé et par jour, visibles du titulaire seul ; closes par lui, jamais supprimées';
+
+
+--
 -- Name: alerte_surveillance_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.alerte_surveillance ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.alerte_surveillance_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: annulation_registre; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.annulation_registre (
+    id bigint NOT NULL,
+    registre_id bigint NOT NULL,
+    motif text NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_annulation_registre_motif CHECK (((char_length(btrim(motif)) >= 5) AND (char_length(btrim(motif)) <= 500)))
+);
+
+
+--
+-- Name: annulation_registre_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.annulation_registre ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.annulation_registre_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -2783,6 +3918,13 @@ CREATE TABLE public.annulation_vente (
     CONSTRAINT annulation_vente_montant_rembourse_check CHECK ((montant_rembourse >= (0)::numeric)),
     CONSTRAINT annulation_vente_motif_check CHECK ((length(btrim(motif)) >= 3))
 );
+
+
+--
+-- Name: TABLE annulation_vente; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.annulation_vente IS 'Ventes annulées : motif, employé, validateur (vente ancienne), argent rendu et caisse concernée';
 
 
 --
@@ -2821,6 +3963,13 @@ CREATE TABLE public.avoir_mouvement (
     CONSTRAINT ck_avoir_mouvement_sens CHECK ((sens = ANY (ARRAY['credit'::text, 'debit'::text]))),
     CONSTRAINT ck_avoir_mouvement_sens_origine CHECK ((((origine = ANY (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'saisie'::text, 'retour_client'::text])) AND (sens = 'credit'::text)) OR ((origine = ANY (ARRAY['paiement'::text, 'remboursement'::text])) AND (sens = 'debit'::text))))
 );
+
+
+--
+-- Name: TABLE avoir_mouvement; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.avoir_mouvement IS 'Avoir du patient (argent dû par la pharmacie), séparé de sa dette ; solde : v_avoir_patient';
 
 
 --
@@ -2876,6 +4025,13 @@ CREATE TABLE public.boite_evenement (
     inventaire_id bigint,
     CONSTRAINT boite_evenement_type_check CHECK ((type = ANY (ARRAY['reception'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'destruction'::text, 'blocage'::text, 'correction'::text, 'inventaire'::text, 'echantillon'::text, 'manquant_reception'::text])))
 );
+
+
+--
+-- Name: COLUMN boite_evenement.inventaire_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.boite_evenement.inventaire_id IS 'Inventaire où la boîte a été scannée (type inventaire) : boîtes fantômes';
 
 
 --
@@ -2935,6 +4091,41 @@ CREATE TABLE public.bordereau (
 
 
 --
+-- Name: COLUMN bordereau.numero; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bordereau.numero IS 'N° de bordereau de CHIFA-Officine (saisi), unique par organisme (script 110)';
+
+
+--
+-- Name: COLUMN bordereau.montant_total; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bordereau.montant_total IS 'Montant des anciens bordereaux sans ventes ; attendu des nouveaux : v_bordereau (script 110)';
+
+
+--
+-- Name: COLUMN bordereau.date_envoi; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bordereau.date_envoi IS 'Date de dépôt du bordereau à l''organisme (script 110)';
+
+
+--
+-- Name: COLUMN bordereau.canal; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bordereau.canal IS 'chifa (CNAS, CASNOS) ou mdn (script 110)';
+
+
+--
+-- Name: COLUMN bordereau.montant_declare; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bordereau.montant_declare IS 'Montant total déclaré par CHIFA-Officine (saisi), comparé à l''attendu (script 110)';
+
+
+--
 -- Name: bordereau_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -2971,6 +4162,34 @@ CREATE TABLE public.bordereau_vente (
     CONSTRAINT ck_bordereau_vente_rejet CHECK ((((rejete_le IS NULL) AND (rejete_par IS NULL) AND (rejet_motif_code IS NULL) AND (rejet_texte IS NULL) AND (montant_rejete = (0)::numeric) AND (suite IS NULL)) OR ((rejete_le IS NOT NULL) AND (rejete_par IS NOT NULL) AND (rejet_motif_code IS NOT NULL) AND (montant_rejete > (0)::numeric) AND (montant_rejete <= (part_organisme + 0.01))))),
     CONSTRAINT ck_bordereau_vente_suite CHECK ((((suite IS NULL) AND (suite_le IS NULL) AND (suite_par IS NULL) AND (credit_mouvement_id IS NULL)) OR ((suite = ANY (ARRAY['redeposer'::text, 'perte'::text, 'patient'::text])) AND (suite_le IS NOT NULL) AND (suite_par IS NOT NULL) AND ((suite = 'patient'::text) = (credit_mouvement_id IS NOT NULL)))))
 );
+
+
+--
+-- Name: TABLE bordereau_vente; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.bordereau_vente IS 'Factures Chifa (une par vente) d''un bordereau, et leur rejet éventuel (script 110)';
+
+
+--
+-- Name: COLUMN bordereau_vente.part_organisme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bordereau_vente.part_organisme IS 'Part organisme retenue au rattachement (information ; l''attendu se lit dans v_vente_part_organisme)';
+
+
+--
+-- Name: COLUMN bordereau_vente.rejet_motif_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bordereau_vente.rejet_motif_code IS 'Motif du rejet (motif_reglable, liste rejet_chifa)';
+
+
+--
+-- Name: COLUMN bordereau_vente.suite; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.bordereau_vente.suite IS 'Suite du rejet : redeposer (vente à déposer à nouveau), perte, patient (ajoutée à sa dette)';
 
 
 --
@@ -3040,6 +4259,27 @@ CREATE TABLE public.campagne_inventaire_ligne (
 
 
 --
+-- Name: catalogue_grossiste; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.catalogue_grossiste (
+    fournisseur_id bigint NOT NULL,
+    produit_id bigint NOT NULL,
+    code_grossiste text,
+    designation text,
+    prix_ht numeric(12,2),
+    disponible boolean,
+    quantite_disponible integer,
+    delai_jours integer,
+    import_id bigint,
+    maj_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT catalogue_grossiste_delai_jours_check CHECK (((delai_jours IS NULL) OR (delai_jours >= 0))),
+    CONSTRAINT catalogue_grossiste_prix_ht_check CHECK (((prix_ht IS NULL) OR (prix_ht >= (0)::numeric))),
+    CONSTRAINT catalogue_grossiste_quantite_disponible_check CHECK (((quantite_disponible IS NULL) OR (quantite_disponible >= 0)))
+);
+
+
+--
 -- Name: categorie_produit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3050,6 +4290,13 @@ CREATE TABLE public.categorie_produit (
     ordre integer DEFAULT 0 NOT NULL,
     actif boolean DEFAULT true NOT NULL
 );
+
+
+--
+-- Name: TABLE categorie_produit; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.categorie_produit IS 'Catégories de produits ; medicament : compté dans les totaux « médicaments », sinon « autres produits »';
 
 
 --
@@ -3069,6 +4316,13 @@ CREATE TABLE public.centre_payeur (
 
 
 --
+-- Name: TABLE centre_payeur; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.centre_payeur IS 'Centre payeur d''un organisme Chifa (CNAS, CASNOS) ; code libre 1 à 10 caractères (D-2) ; jamais supprimé, désactivé (script 100)';
+
+
+--
 -- Name: centre_payeur_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3083,6 +4337,22 @@ ALTER TABLE public.centre_payeur ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTIT
 
 
 --
+-- Name: chaine_integrite; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chaine_integrite (
+    journal text NOT NULL,
+    libelle text NOT NULL,
+    colonnes text[] NOT NULL,
+    algorithme text DEFAULT 'sha256'::text NOT NULL,
+    version_format smallint DEFAULT 1 NOT NULL,
+    active_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_chaine_integrite_algorithme CHECK ((algorithme = ANY (ARRAY['sha256'::text, 'sha512'::text]))),
+    CONSTRAINT ck_chaine_integrite_colonnes CHECK ((cardinality(colonnes) > 0))
+);
+
+
+--
 -- Name: chifa_code_produit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3091,6 +4361,37 @@ CREATE TABLE public.chifa_code_produit (
     produit_id bigint NOT NULL,
     associe_par bigint,
     associe_le timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE chifa_code_produit; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.chifa_code_produit IS 'Code produit du QR des volets Chifa associé à un produit du catalogue (fait une fois par le pharmacien)';
+
+
+--
+-- Name: classe_suivie; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.classe_suivie (
+    code text NOT NULL,
+    libelle text NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    CONSTRAINT ck_classe_suivie_code CHECK ((code ~ '^[a-z0-9_]{2,40}$'::text))
+);
+
+
+--
+-- Name: classe_suivie_dci; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.classe_suivie_dci (
+    classe_code text NOT NULL,
+    dci_id bigint NOT NULL,
+    ajoute_le timestamp with time zone DEFAULT now() NOT NULL,
+    ajoute_par bigint
 );
 
 
@@ -3116,11 +4417,63 @@ CREATE TABLE public.client_facture (
 
 
 --
+-- Name: COLUMN client_facture.email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.client_facture.email IS 'Adresse e-mail de l''entreprise cliente (facultative)';
+
+
+--
+-- Name: COLUMN client_facture.delai_paiement_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.client_facture.delai_paiement_jours IS 'Délai de paiement des factures du client : échéance proposée (jours)';
+
+
+--
 -- Name: client_facture_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.client_facture ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.client_facture_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: cloture_fiscale; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cloture_fiscale (
+    id bigint NOT NULL,
+    type text NOT NULL,
+    session_caisse_id bigint,
+    periode_du date NOT NULL,
+    periode_au date NOT NULL,
+    sceau_id bigint NOT NULL,
+    evenements bigint DEFAULT 0 NOT NULL,
+    montant_ttc numeric(14,2) DEFAULT 0 NOT NULL,
+    montant_ht numeric(14,2) DEFAULT 0 NOT NULL,
+    montant_tva numeric(14,2) DEFAULT 0 NOT NULL,
+    fichier_archive text,
+    empreinte_archive bytea,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_cloture_fiscale_periode CHECK ((periode_au >= periode_du)),
+    CONSTRAINT ck_cloture_fiscale_session CHECK (((type = 'journaliere'::text) = (session_caisse_id IS NOT NULL))),
+    CONSTRAINT ck_cloture_fiscale_type CHECK ((type = ANY (ARRAY['journaliere'::text, 'mensuelle'::text])))
+);
+
+
+--
+-- Name: cloture_fiscale_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cloture_fiscale ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.cloture_fiscale_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -3141,6 +4494,8 @@ CREATE TABLE public.commande_fournisseur (
     statut text DEFAULT 'brouillon'::text NOT NULL,
     montant_total numeric(12,2) DEFAULT 0 NOT NULL,
     utilisateur_id bigint,
+    envoyee_email_le timestamp with time zone,
+    envoyee_email_a text,
     CONSTRAINT commande_fournisseur_statut_check CHECK ((statut = ANY (ARRAY['brouillon'::text, 'envoyee'::text, 'recue_partielle'::text, 'recue'::text, 'annulee'::text])))
 );
 
@@ -3192,6 +4547,13 @@ CREATE TABLE public.comptage_intermediaire (
 
 
 --
+-- Name: TABLE comptage_intermediaire; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.comptage_intermediaire IS 'Comptages du tiroir en cours de journée, sans clôture (attendu et écart réservés au droit de voir les écarts)';
+
+
+--
 -- Name: comptage_intermediaire_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3231,6 +4593,27 @@ CREATE TABLE public.comptage_reception (
     CONSTRAINT comptage_reception_statut_check CHECK ((statut = ANY (ARRAY['compte'::text, 'ecart'::text, 'receptionne'::text, 'a_recompter'::text, 'annule'::text]))),
     CONSTRAINT comptage_reception_valeur_manquante_check CHECK ((valeur_manquante >= (0)::numeric))
 );
+
+
+--
+-- Name: TABLE comptage_reception; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.comptage_reception IS 'Réception à l''aveugle : boîtes comptées sans voir le BL ; la facture saisie ensuite est comparée au compté';
+
+
+--
+-- Name: COLUMN comptage_reception.saisie; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.comptage_reception.saisie IS 'Facture saisie en attente de validation (écart) ; jamais de code comptoir';
+
+
+--
+-- Name: COLUMN comptage_reception.ecarts; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.comptage_reception.ecarts IS 'Lignes en écart : produit, lot, facturé, compté';
 
 
 --
@@ -3293,6 +4676,13 @@ CREATE TABLE public.compte_carte_periode (
 
 
 --
+-- Name: TABLE compte_carte_periode; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.compte_carte_periode IS 'Banque qui reçoit les paiements par carte, du … au … (au vide : en cours). Tenue par le déclencheur de compte_tresorerie.recoit_carte';
+
+
+--
 -- Name: compte_carte_periode_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3341,6 +4731,21 @@ ALTER TABLE public.compte_tresorerie ALTER COLUMN id ADD GENERATED ALWAYS AS IDE
 
 
 --
+-- Name: compteur_ticket; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.compteur_ticket (
+    id smallint DEFAULT 1 NOT NULL,
+    prefixe text DEFAULT 'T-'::text NOT NULL,
+    dernier_numero bigint NOT NULL,
+    premier_numero_continu bigint NOT NULL,
+    mis_en_service_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_compteur_ticket_numero CHECK (((dernier_numero >= 0) AND (premier_numero_continu >= 1))),
+    CONSTRAINT compteur_ticket_id_check CHECK ((id = 1))
+);
+
+
+--
 -- Name: connexion_employe; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3352,6 +4757,13 @@ CREATE TABLE public.connexion_employe (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT connexion_employe_methode_check CHECK ((methode = ANY (ARRAY['mot_de_passe'::text, 'code'::text])))
 );
+
+
+--
+-- Name: TABLE connexion_employe; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.connexion_employe IS 'Connexions réussies des employés (poste, mot de passe ou code comptoir) : postes simultanés';
 
 
 --
@@ -3385,6 +4797,20 @@ CREATE TABLE public.correction_lot (
     CONSTRAINT ck_correction_lot_champ CHECK ((champ = ANY (ARRAY['ppa'::text, 'numero_lot'::text, 'date_peremption'::text, 'shp'::text, 'quantite'::text]))),
     CONSTRAINT ck_correction_lot_motif CHECK ((length(btrim(motif)) > 0))
 );
+
+
+--
+-- Name: TABLE correction_lot; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.correction_lot IS 'Corrections d''une entrée de stock (script 103) : une ligne par champ corrigé, ancienne → nouvelle valeur, motif ; jamais modifiée ni supprimée';
+
+
+--
+-- Name: COLUMN correction_lot.mouvement_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.correction_lot.mouvement_id IS 'Correction de quantité : mouvement de stock (ajustement) qui l''a portée';
 
 
 --
@@ -3431,6 +4857,13 @@ CREATE TABLE public.correspondance_echeancier (
 
 
 --
+-- Name: TABLE correspondance_echeancier; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.correspondance_echeancier IS 'Colonnes (à partir de 0) du tableau d''échéances fourni par cette banque, et lignes d''en-tête à ignorer ; proposées au prochain import';
+
+
+--
 -- Name: correspondance_echeancier_preteur; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3458,6 +4891,13 @@ CREATE TABLE public.correspondance_echeancier_preteur (
     CONSTRAINT correspondance_echeancier_preteur_lignes_ignorees_check CHECK ((lignes_ignorees >= 0)),
     CONSTRAINT correspondance_echeancier_preteur_preteur_check CHECK (((preteur = lower(btrim(preteur))) AND (preteur <> ''::text)))
 );
+
+
+--
+-- Name: TABLE correspondance_echeancier_preteur; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.correspondance_echeancier_preteur IS 'Colonnes (à partir de 0) du tableau d''échéances d''un prêteur hors trésorerie (nom en minuscules, sans espaces autour), proposées au prochain import';
 
 
 --
@@ -3509,6 +4949,13 @@ CREATE TABLE public.credit_mouvement (
 
 
 --
+-- Name: TABLE credit_mouvement; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.credit_mouvement IS 'Relevé de la dette des patients : une ligne par mouvement de patient.solde_credit (déclencheur trg_patient_credit)';
+
+
+--
 -- Name: credit_mouvement_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3534,6 +4981,13 @@ CREATE TABLE public.credit_ouverture (
 
 
 --
+-- Name: TABLE credit_ouverture; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.credit_ouverture IS 'Dette antérieure aux ventes à crédit du logiciel (reprise) : soldée en premier par les remboursements';
+
+
+--
 -- Name: dci; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3549,6 +5003,44 @@ CREATE TABLE public.dci (
 
 ALTER TABLE public.dci ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.dci_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: demande_patient; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.demande_patient (
+    id bigint NOT NULL,
+    patient_id bigint NOT NULL,
+    produit_id bigint NOT NULL,
+    quantite integer DEFAULT 1 NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    cree_par bigint,
+    statut text DEFAULT 'en_attente'::text NOT NULL,
+    prevenu_le timestamp with time zone,
+    prevenu_par bigint,
+    prevenu_canal text,
+    sms_erreur text,
+    cloture_le timestamp with time zone,
+    cloture_par bigint,
+    CONSTRAINT demande_patient_prevenu_canal_check CHECK (((prevenu_canal IS NULL) OR (prevenu_canal = ANY (ARRAY['comptoir'::text, 'sms'::text])))),
+    CONSTRAINT demande_patient_quantite_check CHECK (((quantite >= 1) AND (quantite <= 1000))),
+    CONSTRAINT demande_patient_statut_check CHECK ((statut = ANY (ARRAY['en_attente'::text, 'prevenu'::text, 'servie'::text, 'annulee'::text])))
+);
+
+
+--
+-- Name: demande_patient_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.demande_patient ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.demande_patient_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -3582,6 +5074,13 @@ CREATE TABLE public.destinataire_notification (
 
 
 --
+-- Name: COLUMN destinataire_notification.code_verification_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.destinataire_notification.code_verification_hash IS 'Code de vérification envoyé au destinataire (haché), effacé une fois vérifié';
+
+
+--
 -- Name: destinataire_notification_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3604,6 +5103,13 @@ CREATE TABLE public.ecart_caisse_vu (
     vu_le timestamp with time zone DEFAULT now() NOT NULL,
     vu_par bigint NOT NULL
 );
+
+
+--
+-- Name: TABLE ecart_caisse_vu; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ecart_caisse_vu IS 'Écart de caisse (session clôturée avec un écart non nul) marqué vu par le titulaire : il quitte la tuile « Écarts de caisse récents » de son accueil';
 
 
 --
@@ -3632,6 +5138,27 @@ CREATE TABLE public.echeance_pret (
     CONSTRAINT echeance_pret_rang_check CHECK ((rang > 0)),
     CONSTRAINT echeance_pret_tva_check CHECK ((tva >= (0)::numeric))
 );
+
+
+--
+-- Name: TABLE echeance_pret; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.echeance_pret IS 'Échéancier d''un prêt ; une échéance payée n''est plus modifiée';
+
+
+--
+-- Name: COLUMN echeance_pret.marge; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.echeance_pret.marge IS 'Marge du financement islamique (mourabaha), facultative';
+
+
+--
+-- Name: COLUMN echeance_pret.assurance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.echeance_pret.assurance IS 'Assurance comprise dans l''échéance, facultative ; payée avec les intérêts en charges financières';
 
 
 --
@@ -3703,6 +5230,13 @@ CREATE TABLE public.evenement_caisse (
 
 
 --
+-- Name: TABLE evenement_caisse; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.evenement_caisse IS 'Comptoir sans vente : ligne retirée du panier, tiroir ouvert sans vente, vente en attente abandonnée';
+
+
+--
 -- Name: evenement_caisse_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -3762,6 +5296,20 @@ CREATE TABLE public.facture_client (
     CONSTRAINT facture_client_statut_check CHECK ((statut = ANY (ARRAY['emise'::text, 'rejetee'::text, 'remplacee'::text]))),
     CONSTRAINT facture_client_type_check CHECK ((type = ANY (ARRAY['facture'::text, 'avoir'::text])))
 );
+
+
+--
+-- Name: COLUMN facture_client.date_facture; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facture_client.date_facture IS 'Date d''établissement de la facture';
+
+
+--
+-- Name: COLUMN facture_client.date_echeance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.facture_client.date_echeance IS 'Date d''échéance : la facture doit être payée à cette date (pas d''échéance pour un avoir)';
 
 
 --
@@ -3840,6 +5388,42 @@ CREATE TABLE public.facture_compteur (
 
 
 --
+-- Name: forcage_alerte_psychotrope; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.forcage_alerte_psychotrope (
+    id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    valide_par bigint,
+    codes text[] NOT NULL,
+    messages text NOT NULL,
+    motif text NOT NULL,
+    patient_id bigint,
+    medecin_id bigint,
+    numero_ordonnance text,
+    produits bigint[] NOT NULL,
+    poste text,
+    CONSTRAINT ck_forcage_psy_codes CHECK ((cardinality(codes) > 0)),
+    CONSTRAINT ck_forcage_psy_motif CHECK (((char_length(btrim(motif)) >= 5) AND (char_length(btrim(motif)) <= 500)))
+);
+
+
+--
+-- Name: forcage_alerte_psychotrope_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.forcage_alerte_psychotrope ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.forcage_alerte_psychotrope_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: fournisseur; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3861,6 +5445,20 @@ CREATE TABLE public.fournisseur (
     CONSTRAINT fournisseur_jours_orange_check CHECK ((jours_orange > 0)),
     CONSTRAINT fournisseur_jours_rouge_check CHECK ((jours_rouge > 0))
 );
+
+
+--
+-- Name: COLUMN fournisseur.email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.fournisseur.email IS 'Adresse e-mail du grossiste (facultative)';
+
+
+--
+-- Name: COLUMN fournisseur.actif; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.fournisseur.actif IS 'Faux : grossiste désactivé, plus proposé aux commandes ni aux réceptions (historique conservé)';
 
 
 --
@@ -3896,11 +5494,134 @@ CREATE TABLE public.fournisseur_mouvement (
 
 
 --
+-- Name: TABLE fournisseur_mouvement; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.fournisseur_mouvement IS 'Relevé de la dette envers les grossistes : une ligne par mouvement de fournisseur.solde (déclencheur trg_fournisseur_dette)';
+
+
+--
 -- Name: fournisseur_mouvement_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.fournisseur_mouvement ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.fournisseur_mouvement_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: historique_chifa; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.historique_chifa (
+    id bigint NOT NULL,
+    session_id bigint NOT NULL,
+    logiciel_source text NOT NULL,
+    num_facture text NOT NULL,
+    date_facture date NOT NULL,
+    num_assure text,
+    nom_assure text,
+    montant_total numeric(14,2),
+    part_chifa numeric(14,2),
+    part_assure numeric(14,2),
+    importe_le timestamp with time zone DEFAULT now() NOT NULL,
+    organisme text DEFAULT 'CHIFA'::text NOT NULL,
+    CONSTRAINT ck_historique_chifa_organisme CHECK ((organisme = ANY (ARRAY['CHIFA'::text, 'CNAS'::text, 'CASNOS'::text, 'MDN'::text])))
+);
+
+
+--
+-- Name: TABLE historique_chifa; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.historique_chifa IS 'Factures d''organisme passées de l''ancien logiciel (Chifa, MDN ; 114, 121), en lecture seule : aucune vente recréée';
+
+
+--
+-- Name: COLUMN historique_chifa.part_chifa; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.historique_chifa.part_chifa IS 'Part de l''organisme (Chifa ou MDN)';
+
+
+--
+-- Name: COLUMN historique_chifa.organisme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.historique_chifa.organisme IS 'CHIFA (CNAS ou CASNOS non précisé), CNAS, CASNOS ou MDN (121)';
+
+
+--
+-- Name: historique_chifa_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.historique_chifa ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.historique_chifa_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: historique_organisme; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.historique_organisme AS
+ SELECT id,
+    session_id,
+    logiciel_source,
+    organisme,
+    num_facture,
+    date_facture,
+    num_assure,
+    nom_assure,
+    montant_total,
+    part_chifa AS part_organisme,
+    part_assure,
+    importe_le
+   FROM public.historique_chifa;
+
+
+--
+-- Name: VIEW historique_organisme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.historique_organisme IS 'Historique des organismes repris (Chifa, MDN), lecture seule (121)';
+
+
+--
+-- Name: import_catalogue_grossiste; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.import_catalogue_grossiste (
+    id bigint NOT NULL,
+    fournisseur_id bigint NOT NULL,
+    nom_fichier text NOT NULL,
+    importe_le timestamp with time zone DEFAULT now() NOT NULL,
+    utilisateur_id bigint,
+    lignes_lues integer DEFAULT 0 NOT NULL,
+    lignes_rapprochees integer DEFAULT 0 NOT NULL,
+    lignes_ignorees integer DEFAULT 0 NOT NULL,
+    CONSTRAINT import_catalogue_grossiste_lignes_ignorees_check CHECK ((lignes_ignorees >= 0)),
+    CONSTRAINT import_catalogue_grossiste_lignes_lues_check CHECK ((lignes_lues >= 0)),
+    CONSTRAINT import_catalogue_grossiste_lignes_rapprochees_check CHECK ((lignes_rapprochees >= 0))
+);
+
+
+--
+-- Name: import_catalogue_grossiste_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.import_catalogue_grossiste ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.import_catalogue_grossiste_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -3937,6 +5658,36 @@ ALTER TABLE public.indication ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: integrite_essai; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.integrite_essai (
+    id bigint NOT NULL,
+    libelle text NOT NULL,
+    montant numeric(12,2),
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    cle_chaine text DEFAULT 'officine'::text NOT NULL,
+    rang bigint,
+    hash bytea,
+    hash_precedent bytea
+);
+
+
+--
+-- Name: integrite_essai_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.integrite_essai ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.integrite_essai_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: inventaire; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3952,6 +5703,13 @@ CREATE TABLE public.inventaire (
     produit_id bigint,
     CONSTRAINT inventaire_statut_check CHECK ((statut = ANY (ARRAY['en_cours'::text, 'termine'::text, 'annule'::text])))
 );
+
+
+--
+-- Name: COLUMN inventaire.produit_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.inventaire.produit_id IS 'Inventaire d''un seul produit (tous ses lots), demandé par une alerte ; NULL : inventaire d''un rayon';
 
 
 --
@@ -4000,6 +5758,60 @@ ALTER TABLE public.journal_audit ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTIT
 
 
 --
+-- Name: journal_registre_psychotrope; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.journal_registre_psychotrope (
+    id bigint NOT NULL,
+    nature text NOT NULL,
+    registre_id bigint,
+    numero_ordre bigint,
+    lot_id bigint,
+    ligne_vente_id bigint,
+    mouvement_id bigint,
+    type_mouvement text,
+    quantite integer,
+    solde_apres integer,
+    patient_id bigint,
+    medecin_id bigint,
+    ordonnance_id bigint,
+    utilisateur_id bigint,
+    reference text,
+    porteur_nom text,
+    porteur_adresse text,
+    porteur_piece text,
+    inscrit_le timestamp with time zone,
+    lignes_anterieures bigint,
+    empreinte_anterieure bytea,
+    dernier_registre_id bigint,
+    annulation_id bigint,
+    motif text,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    cle_chaine text DEFAULT 'officine'::text NOT NULL,
+    rang bigint,
+    hash bytea,
+    hash_precedent bytea,
+    CONSTRAINT ck_journal_registre_ligne CHECK (((nature = 'ouverture'::text) OR (registre_id IS NOT NULL))),
+    CONSTRAINT ck_journal_registre_nature CHECK ((nature = ANY (ARRAY['ouverture'::text, 'inscription'::text, 'annulation'::text]))),
+    CONSTRAINT ck_journal_registre_ouverture CHECK (((nature <> 'ouverture'::text) OR ((lignes_anterieures IS NOT NULL) AND (empreinte_anterieure IS NOT NULL))))
+);
+
+
+--
+-- Name: journal_registre_psychotrope_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.journal_registre_psychotrope ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.journal_registre_psychotrope_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: journal_sauvegarde; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4024,6 +5836,57 @@ CREATE TABLE public.journal_sauvegarde (
 
 ALTER TABLE public.journal_sauvegarde ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.journal_sauvegarde_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: journal_vente; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.journal_vente (
+    id bigint NOT NULL,
+    evenement text NOT NULL,
+    numero_ticket text,
+    vente_id bigint,
+    annulation_id bigint,
+    retour_client_id bigint,
+    avoir_mouvement_id bigint,
+    regularisation_id bigint,
+    survenu_le timestamp with time zone NOT NULL,
+    enregistre_le timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    session_caisse_id bigint,
+    poste text,
+    utilisateur_id bigint,
+    type_vente text,
+    montant_ttc numeric(14,2) DEFAULT 0 NOT NULL,
+    montant_ht numeric(14,2) DEFAULT 0 NOT NULL,
+    montant_tva numeric(14,2) DEFAULT 0 NOT NULL,
+    detail_tva text DEFAULT ''::text NOT NULL,
+    part_patient numeric(14,2) DEFAULT 0 NOT NULL,
+    part_organisme numeric(14,2) DEFAULT 0 NOT NULL,
+    paiements text DEFAULT ''::text NOT NULL,
+    montant_mouvement numeric(14,2) DEFAULT 0 NOT NULL,
+    motif text,
+    cle_chaine text DEFAULT 'officine'::text NOT NULL,
+    rang bigint,
+    hash bytea,
+    hash_precedent bytea,
+    CONSTRAINT ck_journal_vente_evenement CHECK ((evenement = ANY (ARRAY['ouverture'::text, 'vente'::text, 'annulation'::text, 'retour'::text, 'avoir'::text, 'regularisation'::text, 'annulation_regularisation'::text]))),
+    CONSTRAINT ck_journal_vente_montants CHECK (((montant_ht + montant_tva) = montant_ttc))
+);
+
+
+--
+-- Name: journal_vente_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.journal_vente ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.journal_vente_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -4192,6 +6055,83 @@ CREATE TABLE public.ligne_vente (
 
 
 --
+-- Name: COLUMN ligne_vente.shp; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.shp IS 'SHP par boîte, compris dans prix_unitaire';
+
+
+--
+-- Name: COLUMN ligne_vente.raison_lot; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.raison_lot IS 'Lot plus récent servi alors qu''un lot plus ancien est en stock : peremption (vérifiée), introuvable, abimee, demande_client';
+
+
+--
+-- Name: COLUMN ligne_vente.remise_auto_pct; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.remise_auto_pct IS 'Remise automatique appliquée à la ligne (%)';
+
+
+--
+-- Name: COLUMN ligne_vente.reduction_auto; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.reduction_auto IS 'Réduction due à la remise automatique (DA), sur la part du patient hors SHP';
+
+
+--
+-- Name: COLUMN ligne_vente.reduction_manuelle; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.reduction_manuelle IS 'Réduction due à la remise du vendeur (DA), sur la part du patient hors SHP';
+
+
+--
+-- Name: COLUMN ligne_vente.don_partiel; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.don_partiel IS 'Médicament : les réductions de la ligne sont un don partiel du reste à charge, pas une remise';
+
+
+--
+-- Name: COLUMN ligne_vente.prix_chifa; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.prix_chifa IS 'Prix unitaire lu sur le volet Chifa (NULL : ligne hors volet)';
+
+
+--
+-- Name: COLUMN ligne_vente.choix_prix_chifa; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.choix_prix_chifa IS 'Prix retenu quand il diffère du prix Chifa : aligne_auto, aligne, garde ou plus_eleve';
+
+
+--
+-- Name: COLUMN ligne_vente.type_prestation_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.type_prestation_id IS 'Prestation vendue (script 105) ; NULL pour une ligne produit';
+
+
+--
+-- Name: COLUMN ligne_vente.libelle; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.libelle IS 'Libellé de la prestation figé à la vente (script 105) ; NULL pour une ligne produit';
+
+
+--
+-- Name: COLUMN ligne_vente.taux_tva; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.ligne_vente.taux_tva IS 'Taux de TVA de la prestation figé à la vente (script 105) ; NULL pour une ligne produit (TVA du produit)';
+
+
+--
 -- Name: ligne_vente_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -4232,6 +6172,34 @@ CREATE TABLE public.lot (
 
 
 --
+-- Name: COLUMN lot.prix_achat_ht; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.lot.prix_achat_ht IS 'Prix de la première livraison du lot ; chaque boîte identifiée garde le sien (boite.prix_achat_ht)';
+
+
+--
+-- Name: COLUMN lot.reception_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.lot.reception_id IS 'Première réception du lot ; chaque boîte et chaque entrée gardent la leur';
+
+
+--
+-- Name: COLUMN lot.ppa; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.lot.ppa IS 'Prix public facturé du lot (vignette) ; null : prix public du catalogue';
+
+
+--
+-- Name: COLUMN lot.shp; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.lot.shp IS 'SHP par boîte du lot (script 103) : repris des lignes de réception, 0 sans ligne ; mis à jour à chaque réception du lot';
+
+
+--
 -- Name: lot_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -4258,6 +6226,7 @@ CREATE TABLE public.medecin (
     adresse text,
     email text,
     numero_ordre text,
+    wilaya text,
     CONSTRAINT ck_medecin_coordonnees CHECK ((((telephone IS NULL) OR (length(telephone) <= 30)) AND ((adresse IS NULL) OR (length(adresse) <= 300)) AND ((email IS NULL) OR (length(email) <= 120)) AND ((numero_ordre IS NULL) OR (length(numero_ordre) <= 30)) AND ((code_prestataire IS NULL) OR (length(code_prestataire) <= 30))))
 );
 
@@ -4303,6 +6272,13 @@ CREATE TABLE public.message_sortant (
 
 
 --
+-- Name: COLUMN message_sortant.signale_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.message_sortant.signale_le IS 'Envoi en échec signalé au titulaire (alerte_non_envoyee) : après un jour d''essais, ou à l''abandon ; une seule fois';
+
+
+--
 -- Name: message_sortant_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -4339,6 +6315,27 @@ CREATE TABLE public.motif_reglable (
     CONSTRAINT motif_reglable_code_check CHECK ((code ~ '^[a-z0-9_]{1,40}$'::text)),
     CONSTRAINT motif_reglable_libelle_check CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 80)))
 );
+
+
+--
+-- Name: TABLE motif_reglable; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.motif_reglable IS 'Motifs et catégories réglables par le titulaire (tiroir, mise en attente, charges, sorties de stock, retours) ; désactivés, jamais supprimés';
+
+
+--
+-- Name: COLUMN motif_reglable.effet; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.motif_reglable.effet IS 'Tiroir : aucun, sortie ou entree d''argent (montant obligatoire hors « aucun »)';
+
+
+--
+-- Name: COLUMN motif_reglable.detail; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.motif_reglable.detail IS 'Tiroir : détail exigé : depense (catégorie de charge), fournisseur (grossiste ou nom), patient, coffre (retrait vers le coffre), fond (remise d''un fonds de caisse)';
 
 
 --
@@ -4426,6 +6423,34 @@ CREATE TABLE public.mouvement_tiroir (
     CONSTRAINT mouvement_tiroir_montant_check CHECK ((montant > (0)::numeric)),
     CONSTRAINT mouvement_tiroir_sens_check CHECK ((sens = ANY (ARRAY['sortie'::text, 'entree'::text])))
 );
+
+
+--
+-- Name: TABLE mouvement_tiroir; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.mouvement_tiroir IS 'Sorties et entrées d''argent par le tiroir (F8, motif à effet) ; jamais supprimées : correction par écriture inverse (corrige_id)';
+
+
+--
+-- Name: COLUMN mouvement_tiroir.reglement_fournisseur_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mouvement_tiroir.reglement_fournisseur_id IS 'Paiement d''un grossiste : règlement en espèces pris dans le tiroir (part_tiroir), compté dans l''attendu par reglement_fournisseur';
+
+
+--
+-- Name: COLUMN mouvement_tiroir.mouvement_tresorerie_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mouvement_tiroir.mouvement_tresorerie_id IS 'Retrait vers le coffre ou remise d''un fonds : mouvement du coffre pendant la session, compté dans l''attendu par mouvement_tresorerie';
+
+
+--
+-- Name: COLUMN mouvement_tiroir.regularisation_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.mouvement_tiroir.regularisation_id IS 'Remboursement du trop-payé « à rendre » de cette régularisation Chifa (script 099) ; rendu tant que le bon n''est pas corrigé';
 
 
 --
@@ -4610,6 +6635,27 @@ CREATE TABLE public.organisme (
 
 
 --
+-- Name: COLUMN organisme.telephone; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.organisme.telephone IS 'Téléphone de l''organisme (facultatif)';
+
+
+--
+-- Name: COLUMN organisme.email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.organisme.email IS 'Adresse e-mail de l''organisme (facultative)';
+
+
+--
+-- Name: COLUMN organisme.delai_paiement_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.organisme.delai_paiement_jours IS 'Délai de paiement des factures de l''organisme : échéance proposée (jours)';
+
+
+--
 -- Name: organisme_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -4644,6 +6690,13 @@ CREATE TABLE public.paiement (
 
 
 --
+-- Name: COLUMN paiement.numero_recu; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.paiement.numero_recu IS 'Numéro du reçu de règlement de crédit (RC-000001), null pour un paiement de vente';
+
+
+--
 -- Name: paiement_echeance_pret; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4665,6 +6718,13 @@ CREATE TABLE public.paiement_echeance_pret (
     CONSTRAINT paiement_echeance_pret_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text]))),
     CONSTRAINT paiement_echeance_pret_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
 );
+
+
+--
+-- Name: TABLE paiement_echeance_pret; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.paiement_echeance_pret IS 'Échéance de prêt payée, confirmée par le titulaire : capital (remboursement_financement) et charges financières (intérêts, assurance, TVA, marge : dépense) sortis du coffre ou de la banque choisie';
 
 
 --
@@ -4701,6 +6761,20 @@ CREATE TABLE public.paiement_effet (
     CONSTRAINT paiement_effet_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text, 'financement'::text]))),
     CONSTRAINT paiement_effet_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
 );
+
+
+--
+-- Name: TABLE paiement_effet; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.paiement_effet IS 'Traite payée au grossiste à son échéance, confirmée par le titulaire ; débitée du coffre (espèces) ou de la banque choisie, sauf traite remise avec une banque (déjà débitée à l''échéance)';
+
+
+--
+-- Name: COLUMN paiement_effet.part_tiroir; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.paiement_effet.part_tiroir IS 'Espèces : complément pris dans le tiroir de la caisse ouverte et porté au coffre (versement_id) avant le paiement';
 
 
 --
@@ -4752,6 +6826,27 @@ CREATE TABLE public.panier_attente (
 
 
 --
+-- Name: TABLE panier_attente; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.panier_attente IS 'Ventes en attente de la caisse d''un poste (contenu du panier, repris puis supprimé)';
+
+
+--
+-- Name: COLUMN panier_attente.motif_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.panier_attente.motif_code IS 'Motif de la mise en attente (motif_reglable, liste attente) ; null : mise en attente automatique (départ de la caisse, changement d''utilisateur) ou antérieure à 094';
+
+
+--
+-- Name: COLUMN panier_attente.produits_dus; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.panier_attente.produits_dus IS 'Produits dus au patient (motif produit_manquant) : [{"ProduitId","Nom","Quantite"}] ; aucune commande créée';
+
+
+--
 -- Name: panier_attente_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -4791,6 +6886,20 @@ CREATE TABLE public.parametre_alerte (
 
 
 --
+-- Name: COLUMN parametre_alerte.seuil_lot_delaisse; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_alerte.seuil_lot_delaisse IS 'Boîtes d''un lot plus récent vendues par un même vendeur, l''ancien lot n''étant plus vendu, avant l''alerte lot_delaisse';
+
+
+--
+-- Name: COLUMN parametre_alerte.seuil_lot_delaisse_collectif; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_alerte.seuil_lot_delaisse_collectif IS 'Boîtes d''un lot plus récent vendues par plusieurs vendeurs ensemble, l''ancien lot n''étant plus vendu, avant l''alerte lot_delaisse urgente';
+
+
+--
 -- Name: parametre_caisse; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4811,6 +6920,7 @@ CREATE TABLE public.parametre_caisse (
     jours_alerte_fin_droit integer DEFAULT 30 NOT NULL,
     chifa_delai_depot_jours integer DEFAULT 7 NOT NULL,
     chifa_delai_paiement_jours integer DEFAULT 45 NOT NULL,
+    reprise_exiger_produits_historique boolean DEFAULT true NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_chifa_delai_depot CHECK (((chifa_delai_depot_jours >= 1) AND (chifa_delai_depot_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_chifa_delai_paiement CHECK (((chifa_delai_paiement_jours >= 1) AND (chifa_delai_paiement_jours <= 365))),
@@ -4825,6 +6935,148 @@ CREATE TABLE public.parametre_caisse (
     CONSTRAINT parametre_caisse_fond_caisse_defaut_check CHECK ((fond_caisse_defaut >= (0)::numeric)),
     CONSTRAINT parametre_caisse_id_check CHECK ((id = 1)),
     CONSTRAINT parametre_caisse_seuil_ecart_check CHECK ((seuil_ecart >= (0)::numeric))
+);
+
+
+--
+-- Name: COLUMN parametre_caisse.delai_alerte_dette_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.delai_alerte_dette_jours IS 'Ancienneté (jours) à partir de laquelle une dette ou une créance est signalée';
+
+
+--
+-- Name: COLUMN parametre_caisse.plafond_credit_defaut; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.plafond_credit_defaut IS 'Plafond de crédit proposé à la création d''un patient (DA)';
+
+
+--
+-- Name: COLUMN parametre_caisse.seuil_annulations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.seuil_annulations IS 'Alerte au-delà de ce nombre d''annulations de vente par session (0 : pas d''alerte)';
+
+
+--
+-- Name: COLUMN parametre_caisse.autorisation_par_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.autorisation_par_code IS 'Une action refusée faute de droit peut être autorisée par le code comptoir d''un employé qui a ce droit';
+
+
+--
+-- Name: COLUMN parametre_caisse.seuil_ecart_chifa; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.seuil_ecart_chifa IS 'Écart de prix par boîte (DA) sous lequel une ligne d''un volet Chifa est alignée d''office sur le prix Chifa';
+
+
+--
+-- Name: COLUMN parametre_caisse.seuil_sortie_tiroir; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.seuil_sortie_tiroir IS 'Sortie d''argent par le tiroir au-delà de ce montant : validation d''un ayant droit (caisse.cloturer, code comptoir possible)';
+
+
+--
+-- Name: COLUMN parametre_caisse.delai_volet_chifa_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.delai_volet_chifa_jours IS 'Ventes Chifa en attente de volet proposées en priorité (jours) ; au-delà : « en retard », toujours rattachables';
+
+
+--
+-- Name: COLUMN parametre_caisse.jours_alerte_fin_droit; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.jours_alerte_fin_droit IS 'Jours avant la fin des droits Chifa à partir desquels la caisse prévient (orange) ; 0 à 365, défaut 30 (script 107)';
+
+
+--
+-- Name: COLUMN parametre_caisse.chifa_delai_depot_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.chifa_delai_depot_jours IS 'Vente Chifa/MDN à déposer signalée en retard au-delà (jours, script 110)';
+
+
+--
+-- Name: COLUMN parametre_caisse.chifa_delai_paiement_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.chifa_delai_paiement_jours IS 'Bordereau déposé non soldé signalé impayé au-delà (jours après le dépôt, script 110)';
+
+
+--
+-- Name: COLUMN parametre_caisse.reprise_exiger_produits_historique; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.reprise_exiger_produits_historique IS 'Reprise : fichier des produits exigé pour importer l''historique des organismes seul (Chifa, MDN) ; toujours exigé avec stock, ventes, patients, crédits (121)';
+
+
+--
+-- Name: parametre_fiscal; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_fiscal (
+    id smallint DEFAULT 1 NOT NULL,
+    conservation_annees smallint DEFAULT 6 NOT NULL,
+    format_export_dgi text DEFAULT 'csv-v1'::text NOT NULL,
+    separateur_csv text DEFAULT ';'::text NOT NULL,
+    fuseau text DEFAULT 'Africa/Algiers'::text NOT NULL,
+    CONSTRAINT ck_parametre_fiscal_conservation CHECK (((conservation_annees >= 6) AND (conservation_annees <= 30))),
+    CONSTRAINT ck_parametre_fiscal_format CHECK ((format_export_dgi = 'csv-v1'::text)),
+    CONSTRAINT ck_parametre_fiscal_separateur CHECK ((separateur_csv = ANY (ARRAY[';'::text, ','::text, '	'::text]))),
+    CONSTRAINT parametre_fiscal_id_check CHECK ((id = 1))
+);
+
+
+--
+-- Name: parametre_formulaire_sms; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_formulaire_sms (
+    id integer DEFAULT 1 NOT NULL,
+    texte text,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifie_par bigint,
+    CONSTRAINT parametre_formulaire_sms_id_check CHECK ((id = 1)),
+    CONSTRAINT parametre_formulaire_sms_texte_check CHECK (((texte IS NULL) OR ((char_length(texte) >= 1) AND (char_length(texte) <= 4000))))
+);
+
+
+--
+-- Name: parametre_gs1_ai; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_gs1_ai (
+    code text NOT NULL,
+    champ text NOT NULL,
+    longueur_fixe integer,
+    longueur_max integer,
+    libelle text NOT NULL,
+    actif boolean DEFAULT true NOT NULL,
+    CONSTRAINT parametre_gs1_ai_champ_check CHECK ((champ = ANY (ARRAY['gtin'::text, 'peremption'::text, 'lot'::text, 'serie'::text]))),
+    CONSTRAINT parametre_gs1_ai_code_check CHECK ((code ~ '^[0-9]{2,4}$'::text)),
+    CONSTRAINT parametre_gs1_ai_longueur_fixe_check CHECK ((longueur_fixe > 0)),
+    CONSTRAINT parametre_gs1_ai_longueur_max_check CHECK ((longueur_max > 0))
+);
+
+
+--
+-- Name: parametre_integrite; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_integrite (
+    id smallint DEFAULT 1 NOT NULL,
+    algorithme_defaut text DEFAULT 'sha256'::text NOT NULL,
+    heure_verification smallint DEFAULT 3 NOT NULL,
+    format_export_sceau text DEFAULT 'hex'::text NOT NULL,
+    CONSTRAINT ck_parametre_integrite_algorithme CHECK ((algorithme_defaut = ANY (ARRAY['sha256'::text, 'sha512'::text]))),
+    CONSTRAINT ck_parametre_integrite_format CHECK ((format_export_sceau = ANY (ARRAY['hex'::text, 'base64'::text]))),
+    CONSTRAINT ck_parametre_integrite_heure CHECK (((heure_verification >= 0) AND (heure_verification <= 23))),
+    CONSTRAINT parametre_integrite_id_check CHECK ((id = 1))
 );
 
 
@@ -4868,6 +7120,13 @@ CREATE TABLE public.parametre_notification (
 
 
 --
+-- Name: COLUMN parametre_notification.signaler_sans_destinataire; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_notification.signaler_sans_destinataire IS 'Alerte (ou rapport du soir) partie vers aucun destinataire vérifié : signalée au bandeau de l''accueil du titulaire. Les pannes (mise en file impossible, envoi en échec) le sont toujours';
+
+
+--
 -- Name: parametre_rapport; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4878,6 +7137,34 @@ CREATE TABLE public.parametre_rapport (
     tva_reversee_don boolean DEFAULT false NOT NULL,
     CONSTRAINT parametre_rapport_id_check CHECK ((id = 1))
 );
+
+
+--
+-- Name: TABLE parametre_rapport; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.parametre_rapport IS 'Réglages des rapports : TVA d''achat à reverser selon le motif de la sortie de stock sans vente';
+
+
+--
+-- Name: COLUMN parametre_rapport.tva_reversee_perime; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_rapport.tva_reversee_perime IS 'TVA d''achat reversée sur les boîtes périmées détruites';
+
+
+--
+-- Name: COLUMN parametre_rapport.tva_reversee_casse; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_rapport.tva_reversee_casse IS 'TVA d''achat reversée sur les boîtes cassées';
+
+
+--
+-- Name: COLUMN parametre_rapport.tva_reversee_don; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_rapport.tva_reversee_don IS 'TVA d''achat reversée sur les boîtes données ou remises en échantillon';
 
 
 --
@@ -4897,6 +7184,48 @@ CREATE TABLE public.parametre_sauvegarde (
     CONSTRAINT ck_sauvegarde_retention_ged CHECK (((retention_ged_jours IS NULL) OR ((retention_ged_jours >= 1) AND (retention_ged_jours <= 365)))),
     CONSTRAINT parametre_sauvegarde_conservation_check CHECK (((conservation >= 1) AND (conservation <= 365))),
     CONSTRAINT parametre_sauvegarde_id_check CHECK ((id = 1))
+);
+
+
+--
+-- Name: COLUMN parametre_sauvegarde.retention_ged_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_sauvegarde.retention_ged_jours IS 'Jours de conservation de la copie de la base dans la GED (NULL : réglage du serveur, 7 par défaut)';
+
+
+--
+-- Name: COLUMN parametre_sauvegarde.nettoyage_ged_annees; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_sauvegarde.nettoyage_ged_annees IS 'Documents de la GED supprimés au-delà de ce nombre d''années (NULL : jamais)';
+
+
+--
+-- Name: parametre_serialisation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_serialisation (
+    id integer DEFAULT 1 NOT NULL,
+    actif boolean DEFAULT true NOT NULL,
+    connecteur text DEFAULT 'factice'::text NOT NULL,
+    factice_hors_ligne boolean DEFAULT false NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT parametre_serialisation_connecteur_check CHECK ((connecteur = 'factice'::text)),
+    CONSTRAINT parametre_serialisation_id_check CHECK ((id = 1))
+);
+
+
+--
+-- Name: parametre_substitution; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_substitution (
+    id integer DEFAULT 1 NOT NULL,
+    equivalent_exact_seulement boolean DEFAULT true NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifie_par bigint,
+    CONSTRAINT parametre_substitution_id_check CHECK ((id = 1))
 );
 
 
@@ -4944,6 +7273,27 @@ CREATE TABLE public.parametre_surveillance (
 
 
 --
+-- Name: TABLE parametre_surveillance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.parametre_surveillance IS 'Seuils de la surveillance de la caisse (par employé et par jour) et horaires d''ouverture (vides : pas de contrôle)';
+
+
+--
+-- Name: COLUMN parametre_surveillance.reception_aveugle; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_surveillance.reception_aveugle IS 'Réception en deux étapes : comptage sans voir le BL, puis facture saisie et comparée';
+
+
+--
+-- Name: COLUMN parametre_surveillance.jours_avoir_retour; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_surveillance.jours_avoir_retour IS 'Retour fournisseur envoyé sans avoir au-delà de ce délai (jours) : anomalie';
+
+
+--
 -- Name: parametre_tracabilite; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4978,9 +7328,55 @@ CREATE TABLE public.patient (
     assure_principal_id bigint,
     date_fin_droit date,
     centre_payeur_id bigint,
+    consentement_sms boolean DEFAULT false NOT NULL,
+    consentement_sms_le timestamp with time zone,
+    formulaire_sms_recu boolean DEFAULT false NOT NULL,
+    formulaire_sms_recu_le timestamp with time zone,
     CONSTRAINT ck_patient_assure_principal CHECK ((assure_principal_id <> id)),
     CONSTRAINT ck_patient_lien CHECK ((lien = ANY (ARRAY['assure'::text, 'conjoint'::text, 'enfant'::text, 'ascendant'::text, 'autre'::text])))
 );
+
+
+--
+-- Name: COLUMN patient.email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.patient.email IS 'Adresse e-mail du patient (facultative)';
+
+
+--
+-- Name: COLUMN patient.cree_par; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.patient.cree_par IS 'Employé qui a créé le patient (vide pour les patients antérieurs ou repris)';
+
+
+--
+-- Name: COLUMN patient.lien; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.patient.lien IS 'Lien avec l''assuré : assure, conjoint, enfant, ascendant, autre ; NULL : non renseigné';
+
+
+--
+-- Name: COLUMN patient.assure_principal_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.patient.assure_principal_id IS 'Fiche de l''assuré principal (NULL pour l''assuré lui-même) ; jamais déduit du suffixe du n° d''assuré';
+
+
+--
+-- Name: COLUMN patient.date_fin_droit; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.patient.date_fin_droit IS 'Fin des droits Chifa (saisie manuelle) ; dépassée : avertissement à la vente CNAS/CASNOS, sans blocage (script 102)';
+
+
+--
+-- Name: COLUMN patient.centre_payeur_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.patient.centre_payeur_id IS 'Centre payeur habituel, proposé aux ventes Chifa du patient (script 100)';
 
 
 --
@@ -5008,6 +7404,13 @@ CREATE TABLE public.permission (
     sensible boolean DEFAULT false NOT NULL,
     par_personne boolean DEFAULT false NOT NULL
 );
+
+
+--
+-- Name: COLUMN permission.par_personne; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.permission.par_personne IS 'Droit réglé sur chaque employé (utilisateur), pas dans la matrice des rôles';
 
 
 --
@@ -5053,6 +7456,41 @@ CREATE TABLE public.pret_bancaire (
     CONSTRAINT pret_bancaire_preteur_check CHECK ((((compte_id IS NOT NULL) AND (preteur IS NULL)) OR ((compte_id IS NULL) AND (btrim(preteur) <> ''::text)))),
     CONSTRAINT pret_bancaire_taux_check CHECK (((taux >= (0)::numeric) AND (taux <= (100)::numeric)))
 );
+
+
+--
+-- Name: TABLE pret_bancaire; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.pret_bancaire IS 'Prêt accordé par une banque de la trésorerie (compte_id) ou par un prêteur hors trésorerie (preteur) ; réservé au titulaire';
+
+
+--
+-- Name: COLUMN pret_bancaire.document; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.pret_bancaire.document IS 'Document joint (contrat, tableau d''amortissement) : chemin « Type\nom » dans la GED du serveur';
+
+
+--
+-- Name: COLUMN pret_bancaire.preteur; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.pret_bancaire.preteur IS 'Prêteur qui n''est pas un compte de la trésorerie (nom saisi librement) ; exclusif de compte_id';
+
+
+--
+-- Name: COLUMN pret_bancaire.taux; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.pret_bancaire.taux IS 'Taux annuel du contrat, en % (0 à 100, 4 décimales au plus) ; facultatif ; saisi, jamais recalculé';
+
+
+--
+-- Name: COLUMN pret_bancaire.duree_mois; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.pret_bancaire.duree_mois IS 'Durée du contrat en mois (1 à 600) ; facultative ; saisie, jamais recalculée';
 
 
 --
@@ -5106,6 +7544,9 @@ CREATE TABLE public.produit (
     sensible boolean DEFAULT false NOT NULL,
     classe_confirmee_par bigint,
     classe_confirmee_le timestamp with time zone,
+    fabrication_locale boolean,
+    contenance integer,
+    CONSTRAINT ck_produit_contenance CHECK (((contenance IS NULL) OR ((contenance >= 1) AND (contenance <= 10000)))),
     CONSTRAINT ck_produit_liste_psychotrope CHECK (((liste_psychotrope IS NULL) OR (liste_psychotrope = ANY (ARRAY['liste_i'::text, 'liste_ii'::text])))),
     CONSTRAINT ck_seuils_produit CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
     CONSTRAINT produit_classe_check CHECK ((classe = ANY (ARRAY['libre'::text, 'liste_i'::text, 'liste_ii'::text, 'psychotrope'::text, 'stupefiant'::text]))),
@@ -5116,6 +7557,76 @@ CREATE TABLE public.produit (
     CONSTRAINT produit_stock_minimum_positif CHECK (((stock_minimum IS NULL) OR ((stock_minimum >= 0) AND (stock_minimum <= 100000)))),
     CONSTRAINT produit_tarif_reference_check CHECK ((tarif_reference >= (0)::numeric))
 );
+
+
+--
+-- Name: COLUMN produit.stock_minimum; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.stock_minimum IS 'Seuil d''alerte saisi par le pharmacien (boîtes). NULL : seuil automatique. 0 : pas d''alerte de stock';
+
+
+--
+-- Name: COLUMN produit.a_verifier; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.a_verifier IS 'Classe à confirmer par le titulaire, vente refusée d''ici là : produit repris de l''ancien logiciel sans n° d''enregistrement, ou créé (ou passé à une DCI de substance surveillée) par un autre que le titulaire en classe hors registre, classé d''office psychotrope ou stupéfiant';
+
+
+--
+-- Name: COLUMN produit.liste_psychotrope; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.liste_psychotrope IS 'Liste I ou II d''un psychotrope, pour son SHP (null : à renseigner, SHP 0)';
+
+
+--
+-- Name: COLUMN produit.categorie; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.categorie IS 'Catégorie du produit (categorie_produit) : médicament ou autre produit';
+
+
+--
+-- Name: COLUMN produit.bloque_achat; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.bloque_achat IS 'Produit bloqué à l''achat : ni commande, ni réception, ni suggestion';
+
+
+--
+-- Name: COLUMN produit.bloque_vente; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.bloque_vente IS 'Produit bloqué à la vente : la caisse refuse de le vendre';
+
+
+--
+-- Name: COLUMN produit.motif_blocage; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.motif_blocage IS 'Raison du blocage à l''achat ou à la vente';
+
+
+--
+-- Name: COLUMN produit.sensible; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.sensible IS 'Produit sensible (cher, très demandé, souvent volé) : compté à part, régulièrement (Surveillance)';
+
+
+--
+-- Name: COLUMN produit.classe_confirmee_par; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.classe_confirmee_par IS 'Titulaire qui a confirmé une classe moins stricte que celle de la DCI (substance surveillée) ou de la nomenclature : un employé ne la change plus ; retirée si la DCI change';
+
+
+--
+-- Name: COLUMN produit.classe_confirmee_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.produit.classe_confirmee_le IS 'Date de la confirmation de classe par le titulaire (classe_confirmee_par)';
 
 
 --
@@ -5144,6 +7655,25 @@ CREATE TABLE public.produit_indication (
 
 
 --
+-- Name: profil_catalogue_grossiste; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.profil_catalogue_grossiste (
+    fournisseur_id bigint NOT NULL,
+    colonne_code text,
+    colonne_code_barre text,
+    colonne_designation text,
+    colonne_prix_ht text,
+    colonne_disponibilite text,
+    colonne_delai text,
+    valeurs_indisponible text,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifie_par bigint,
+    valeurs_disponible text
+);
+
+
+--
 -- Name: reception; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5168,6 +7698,55 @@ CREATE TABLE public.reception (
 
 
 --
+-- Name: COLUMN reception.montant_ttc; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception.montant_ttc IS 'Net à payer au grossiste : net HT + TVA + timbre';
+
+
+--
+-- Name: COLUMN reception.montant_ht; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception.montant_ht IS 'Total HT avant remise (null : réception enregistrée avant le détail)';
+
+
+--
+-- Name: COLUMN reception.remise; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception.remise IS 'Remise accordée par le grossiste sur la facture (DA)';
+
+
+--
+-- Name: COLUMN reception.montant_tva; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception.montant_tva IS 'TVA de la facture (null : réception enregistrée avant le détail)';
+
+
+--
+-- Name: COLUMN reception.timbre; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception.timbre IS 'Droit de timbre de la facture (DA)';
+
+
+--
+-- Name: COLUMN reception.shp_total; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception.shp_total IS 'Total du supplément d''honoraire du pharmacien (SHP) indiqué sur la facture ; non dû au grossiste';
+
+
+--
+-- Name: COLUMN reception.date_facture; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception.date_facture IS 'Date de la facture du grossiste (script 103), facultative ; ni dans le futur, ni plus de 90 jours avant la livraison (contrôle applicatif)';
+
+
+--
 -- Name: reception_attente; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5184,6 +7763,13 @@ CREATE TABLE public.reception_attente (
     CONSTRAINT reception_attente_lignes_check CHECK ((lignes >= 0)),
     CONSTRAINT reception_attente_mode_check CHECK ((mode = ANY (ARRAY['reception'::text, 'facture'::text, 'comptage'::text, 'recompte'::text])))
 );
+
+
+--
+-- Name: TABLE reception_attente; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.reception_attente IS 'Réceptions de livraison mises en attente (contenu de l''écran Réceptions, repris puis supprimé)';
 
 
 --
@@ -5243,6 +7829,34 @@ CREATE TABLE public.reception_ligne (
 
 
 --
+-- Name: TABLE reception_ligne; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.reception_ligne IS 'Lignes d''une réception telles qu''écrites sur la facture du grossiste (044)';
+
+
+--
+-- Name: COLUMN reception_ligne.quantite; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception_ligne.quantite IS 'Unités facturées';
+
+
+--
+-- Name: COLUMN reception_ligne.ug; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception_ligne.ug IS 'Unités gratuites livrées en plus';
+
+
+--
+-- Name: COLUMN reception_ligne.ug_cout; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reception_ligne.ug_cout IS 'Coût des UG : zero (boîtes gratuites à 0 DA) ou reparti (montant facturé ÷ toutes les boîtes)';
+
+
+--
 -- Name: reception_ligne_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -5262,36 +7876,6 @@ ALTER SEQUENCE public.reception_ligne_id_seq OWNED BY public.reception_ligne.id;
 
 
 --
--- Name: registre_psychotrope; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.registre_psychotrope (
-    id bigint NOT NULL,
-    lot_id bigint NOT NULL,
-    ligne_vente_id bigint,
-    type_mouvement text NOT NULL,
-    quantite integer NOT NULL,
-    solde_apres integer NOT NULL,
-    patient_id bigint,
-    medecin_id bigint,
-    ordonnance_id bigint,
-    utilisateur_id bigint NOT NULL,
-    cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    mouvement_id bigint,
-    reference text,
-    porteur_nom text,
-    porteur_adresse text,
-    porteur_piece text,
-    numero_ordre bigint,
-    CONSTRAINT ck_registre_porteur_complet CHECK (((porteur_nom IS NULL) OR ((porteur_adresse IS NOT NULL) AND (porteur_piece IS NOT NULL)))),
-    CONSTRAINT registre_psychotrope_check CHECK (((type_mouvement <> 'sortie'::text) OR (ordonnance_id IS NOT NULL))),
-    CONSTRAINT registre_psychotrope_quantite_check CHECK ((quantite > 0)),
-    CONSTRAINT registre_psychotrope_solde_apres_check CHECK ((solde_apres >= 0)),
-    CONSTRAINT registre_psychotrope_type_mouvement_check CHECK ((type_mouvement = ANY (ARRAY['ouverture'::text, 'entree'::text, 'retour_client'::text, 'retour_refuse'::text, 'ecart_plus'::text, 'sortie'::text, 'retour_fournisseur'::text, 'destruction'::text, 'casse'::text, 'ecart_moins'::text])))
-);
-
-
---
 -- Name: registre_psychotrope_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -5302,6 +7886,28 @@ ALTER TABLE public.registre_psychotrope ALTER COLUMN id ADD GENERATED ALWAYS AS 
     NO MINVALUE
     NO MAXVALUE
     CACHE 1
+);
+
+
+--
+-- Name: regle_alerte_psychotrope; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.regle_alerte_psychotrope (
+    code text NOT NULL,
+    libelle text NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    seuil integer NOT NULL,
+    periode_jours integer NOT NULL,
+    exiger_valideur boolean DEFAULT false NOT NULL,
+    ordre smallint DEFAULT 0 NOT NULL,
+    modifie_le timestamp with time zone,
+    modifie_par bigint,
+    unites_par_jour integer,
+    CONSTRAINT ck_regle_alerte_psy_code CHECK ((code = ANY (ARRAY['patient_repete'::text, 'ordonnance_reutilisee'::text, 'quantite_anormale'::text, 'prescripteur_inhabituel'::text, 'prescripteur_hors_zone'::text]))),
+    CONSTRAINT ck_regle_alerte_psy_periode CHECK (((periode_jours >= 1) AND (periode_jours <= 3650))),
+    CONSTRAINT ck_regle_alerte_psy_seuil CHECK (((seuil >= 1) AND (seuil <= 1000))),
+    CONSTRAINT ck_regle_alerte_psy_unites CHECK (((unites_par_jour IS NULL) OR ((unites_par_jour >= 1) AND (unites_par_jour <= 100))))
 );
 
 
@@ -5329,6 +7935,13 @@ CREATE TABLE public.reglement_facture_client (
     CONSTRAINT reglement_facture_client_check CHECK (((part_credit >= (0)::numeric) AND (part_credit <= montant))),
     CONSTRAINT reglement_facture_client_montant_check CHECK ((montant > (0)::numeric))
 );
+
+
+--
+-- Name: COLUMN reglement_facture_client.part_credit; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reglement_facture_client.part_credit IS 'Part de l''encaissement qui a soldé la dette du patient pour les ventes à crédit de la facture (comptée dans la dette réglée, pas une seconde fois dans le reste)';
 
 
 --
@@ -5364,6 +7977,27 @@ CREATE TABLE public.reglement_fournisseur (
     CONSTRAINT reglement_fournisseur_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'effet'::text, 'prelevement'::text, 'financement'::text]))),
     CONSTRAINT reglement_fournisseur_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
 );
+
+
+--
+-- Name: COLUMN reglement_fournisseur.numero; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reglement_fournisseur.numero IS 'Numéro du règlement au grossiste (RG-000001)';
+
+
+--
+-- Name: COLUMN reglement_fournisseur.statut; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reglement_fournisseur.statut IS 'valide ; annule : règlement en espèces payé depuis le tiroir et annulé (script 098), jamais supprimé';
+
+
+--
+-- Name: COLUMN reglement_fournisseur.annulation_valide_par; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.reglement_fournisseur.annulation_valide_par IS 'Ayant droit achats.regler qui a autorisé l''annulation par son code comptoir (null : droit propre)';
 
 
 --
@@ -5424,6 +8058,55 @@ CREATE TABLE public.regularisation_part_organisme (
 
 
 --
+-- Name: TABLE regularisation_part_organisme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.regularisation_part_organisme IS 'Écart de part organisme au rattachement du volet Chifa : créance ramenée à la part Chifa, différence à la charge du patient, perte pharmacie, avoir patient ou gain organisme ; jamais modifiée ni supprimée';
+
+
+--
+-- Name: COLUMN regularisation_part_organisme.ecart; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regularisation_part_organisme.ecart IS 'Part organisme enregistrée à la caisse moins part calculée sur le prix Chifa : > 0 la caisse paiera moins, < 0 elle paiera plus';
+
+
+--
+-- Name: COLUMN regularisation_part_organisme.montant_pharmacie; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regularisation_part_organisme.montant_pharmacie IS 'Effet pour la pharmacie : perte (négatif, perte_pharmacie) ou gain (positif, gain_organisme et part non rendue)';
+
+
+--
+-- Name: COLUMN regularisation_part_organisme.statut; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regularisation_part_organisme.statut IS 'active ; annulee : vente annulée (script 098), jamais supprimée';
+
+
+--
+-- Name: COLUMN regularisation_part_organisme.annulation_dette_annulee; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regularisation_part_organisme.annulation_dette_annulee IS 'Part encore due annulée par écriture inverse (annulation_credit_mouvement_id)';
+
+
+--
+-- Name: COLUMN regularisation_part_organisme.annulation_trop_paye_impute; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regularisation_part_organisme.annulation_trop_paye_impute IS 'Trop-payé déduit des autres dettes du patient, à son choix';
+
+
+--
+-- Name: COLUMN regularisation_part_organisme.annulation_rembourse; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regularisation_part_organisme.annulation_rembourse IS 'Trop-payé rendu par le tiroir (annulation_mouvement_tiroir_id)';
+
+
+--
 -- Name: regularisation_part_organisme_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -5453,6 +8136,13 @@ CREATE TABLE public.remboursement_titulaire (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT remboursement_titulaire_montant_check CHECK ((montant > (0)::numeric))
 );
+
+
+--
+-- Name: TABLE remboursement_titulaire; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.remboursement_titulaire IS 'Le titulaire se rembourse ses apports : sortie du coffre ou d''une banque (mouvement remboursement_financement)';
 
 
 --
@@ -5492,6 +8182,13 @@ CREATE TABLE public.remise_automatique (
     CONSTRAINT ck_remise_auto_motif CHECK (((motif IS NULL) OR (length(motif) <= 200))),
     CONSTRAINT ck_remise_auto_pct CHECK (((pourcentage > (0)::numeric) AND (pourcentage <= (100)::numeric) AND (pourcentage = trunc(pourcentage))))
 );
+
+
+--
+-- Name: TABLE remise_automatique; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.remise_automatique IS 'Remises automatiques (%) par produit ou par catégorie, appliquées par la caisse en vente libre (jamais sur un produit remboursable)';
 
 
 --
@@ -5690,6 +8387,36 @@ CREATE TABLE public.role_permission (
 
 
 --
+-- Name: rupture_grossiste; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rupture_grossiste (
+    id bigint NOT NULL,
+    fournisseur_id bigint NOT NULL,
+    produit_id bigint NOT NULL,
+    debut timestamp with time zone DEFAULT now() NOT NULL,
+    import_debut_id bigint,
+    fin timestamp with time zone,
+    import_fin_id bigint,
+    CONSTRAINT ck_rupture_grossiste_periode CHECK (((fin IS NULL) OR (fin >= debut)))
+);
+
+
+--
+-- Name: rupture_grossiste_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rupture_grossiste ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.rupture_grossiste_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: scan_reception; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5708,11 +8435,57 @@ CREATE TABLE public.scan_reception (
 
 
 --
+-- Name: TABLE scan_reception; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.scan_reception IS 'Boîtes scannées sur le mobile au déballage, en attente d''import dans une réception du poste';
+
+
+--
 -- Name: scan_reception_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.scan_reception ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.scan_reception_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: sceau_integrite; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sceau_integrite (
+    id bigint NOT NULL,
+    journal text NOT NULL,
+    cle_chaine text DEFAULT 'officine'::text NOT NULL,
+    motif text NOT NULL,
+    periode_du date NOT NULL,
+    periode_au date NOT NULL,
+    scelle_le timestamp with time zone NOT NULL,
+    dernier_rang bigint NOT NULL,
+    dernier_id bigint,
+    dernier_hash bytea NOT NULL,
+    algorithme text DEFAULT 'HMAC-SHA256'::text NOT NULL,
+    empreinte_cle text NOT NULL,
+    sceau bytea NOT NULL,
+    auteur_id bigint,
+    CONSTRAINT ck_sceau_integrite_motif CHECK ((motif = ANY (ARRAY['cloture_journaliere'::text, 'cloture_mensuelle'::text, 'manuel'::text]))),
+    CONSTRAINT ck_sceau_integrite_periode CHECK ((periode_au >= periode_du)),
+    CONSTRAINT ck_sceau_integrite_rang CHECK ((dernier_rang >= 0))
+);
+
+
+--
+-- Name: sceau_integrite_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sceau_integrite ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.sceau_integrite_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -5806,6 +8579,72 @@ CREATE SEQUENCE public.seq_numero_vente
 
 
 --
+-- Name: serialisation_reponse_factice; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.serialisation_reponse_factice (
+    id bigint NOT NULL,
+    gtin text,
+    numero_serie text,
+    numero_lot text,
+    operation text,
+    resultat text NOT NULL,
+    commentaire text,
+    CONSTRAINT serialisation_reponse_factice_operation_check CHECK ((operation = ANY (ARRAY['verifier'::text, 'decommissionner'::text, 'reactiver'::text]))),
+    CONSTRAINT serialisation_reponse_factice_resultat_check CHECK ((resultat = ANY (ARRAY['authentique'::text, 'inconnue'::text, 'deja_decommissionnee'::text, 'rappelee'::text, 'expiree'::text])))
+);
+
+
+--
+-- Name: serialisation_reponse_factice_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.serialisation_reponse_factice ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.serialisation_reponse_factice_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: serveur_officine; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.serveur_officine (
+    nom text NOT NULL,
+    role text DEFAULT 'second'::text NOT NULL,
+    dossier_chifa text,
+    dossier_mdn text,
+    chifa_installe boolean DEFAULT false NOT NULL,
+    lecteur_token boolean DEFAULT false NOT NULL,
+    mdn_installe boolean DEFAULT false NOT NULL,
+    douchette_testee boolean DEFAULT false NOT NULL,
+    version_api text,
+    cle_presente boolean,
+    empreinte_cle text,
+    imprimantes text,
+    dossier_chifa_joignable boolean,
+    dossier_mdn_joignable boolean,
+    releve_le timestamp with time zone,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifie_par bigint,
+    CONSTRAINT serveur_officine_empreinte_cle_check CHECK (((empreinte_cle IS NULL) OR (empreinte_cle ~ '^[0-9a-f]{16}$'::text))),
+    CONSTRAINT serveur_officine_nom_check CHECK (((nom <> ''::text) AND (nom = upper(btrim(nom))))),
+    CONSTRAINT serveur_officine_role_check CHECK ((role = ANY (ARRAY['principal'::text, 'second'::text])))
+);
+
+
+--
+-- Name: TABLE serveur_officine; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.serveur_officine IS 'Serveurs de l''officine (principal, 2e serveur) : réglages propres à chacun, cases du titulaire, relevés (script 122).';
+
+
+--
 -- Name: session_caisse; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5824,6 +8663,20 @@ CREATE TABLE public.session_caisse (
     CONSTRAINT session_caisse_check CHECK (((fermee_le IS NULL) = (montant_compte IS NULL))),
     CONSTRAINT session_caisse_fond_caisse_check CHECK ((fond_caisse >= (0)::numeric))
 );
+
+
+--
+-- Name: COLUMN session_caisse.utilisateur_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.session_caisse.utilisateur_id IS 'Employé qui a ouvert la caisse du poste (les ventes gardent leur vendeur)';
+
+
+--
+-- Name: COLUMN session_caisse.releve_de; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.session_caisse.releve_de IS 'Session clôturée par une relève, juste avant celle-ci';
 
 
 --
@@ -5853,6 +8706,42 @@ CREATE TABLE public.substance_surveillee (
 
 
 --
+-- Name: substitution_liste_blanche; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.substitution_liste_blanche (
+    produit_id bigint NOT NULL,
+    remplacant_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    cree_par bigint,
+    CONSTRAINT ck_substitution_liste_blanche_distincts CHECK ((produit_id <> remplacant_id))
+);
+
+
+--
+-- Name: surveillance_replication; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.surveillance_replication (
+    id integer DEFAULT 1 NOT NULL,
+    seuil_secondes integer DEFAULT 300 NOT NULL,
+    seuil_octets bigint DEFAULT 67108864 NOT NULL,
+    derniere_alerte_le timestamp with time zone,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT surveillance_replication_id_check CHECK ((id = 1)),
+    CONSTRAINT surveillance_replication_seuil_octets_check CHECK ((seuil_octets > 0)),
+    CONSTRAINT surveillance_replication_seuil_secondes_check CHECK (((seuil_secondes >= 10) AND (seuil_secondes <= 86400)))
+);
+
+
+--
+-- Name: TABLE surveillance_replication; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.surveillance_replication IS 'Seuils d''alerte de retard de la réplication vers le 2e serveur (script 122).';
+
+
+--
 -- Name: type_prestation; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5872,6 +8761,34 @@ CREATE TABLE public.type_prestation (
     CONSTRAINT ck_type_prestation_remboursable CHECK (((remboursable AND (tarif_reference IS NOT NULL) AND (tarif_reference > (0)::numeric)) OR ((NOT remboursable) AND (tarif_reference IS NULL)))),
     CONSTRAINT ck_type_prestation_tva CHECK (((taux_tva >= (0)::numeric) AND (taux_tva <= (100)::numeric)))
 );
+
+
+--
+-- Name: TABLE type_prestation; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.type_prestation IS 'Prestations vendues à la caisse, sans stock (script 105) ; droit catalogue.creer ; jamais supprimées';
+
+
+--
+-- Name: COLUMN type_prestation.prix; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.type_prestation.prix IS 'Prix TTC proposé à la caisse (0 : à fixer par le titulaire, vente refusée tant qu''il vaut 0)';
+
+
+--
+-- Name: COLUMN type_prestation.remboursable; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.type_prestation.remboursable IS 'Prestation prise en charge par l''organisme en tiers payant (script 108) : taux × min(prix, tarif de référence)';
+
+
+--
+-- Name: COLUMN type_prestation.tarif_reference; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.type_prestation.tarif_reference IS 'Tarif de référence du remboursement (script 108) ; obligatoire (> 0) si remboursable, NULL sinon';
 
 
 --
@@ -5918,6 +8835,62 @@ CREATE TABLE public.utilisateur (
 
 
 --
+-- Name: COLUMN utilisateur.pin_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisateur.pin_hash IS 'Code comptoir (haché) pour reprendre la caisse du poste ; accès limité au comptoir';
+
+
+--
+-- Name: COLUMN utilisateur.affichage; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisateur.affichage IS 'Affichage du poste : auto (suit Windows), clair ou sombre';
+
+
+--
+-- Name: COLUMN utilisateur.telephone; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisateur.telephone IS 'Téléphone de l''employé (facultatif)';
+
+
+--
+-- Name: COLUMN utilisateur.email; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisateur.email IS 'Adresse e-mail de l''employé (facultative)';
+
+
+--
+-- Name: COLUMN utilisateur.jetons_revoques_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisateur.jetons_revoques_le IS 'Connexions ouvertes avant cette date refusées (mot de passe changé, compte désactivé, code effacé, restauration)';
+
+
+--
+-- Name: COLUMN utilisateur.peut_donner; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisateur.peut_donner IS 'Peut faire un don (boîtes données, don partiel du reste à charge) sans autorisation ; réglé par le titulaire';
+
+
+--
+-- Name: COLUMN utilisateur.remise_max_pct; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisateur.remise_max_pct IS 'Remise maximale (%, entier) accordée seul ; au-delà, code d''un employé dont le maximum le permet ; réglé par le titulaire';
+
+
+--
+-- Name: COLUMN utilisateur.gere_remises_auto; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisateur.gere_remises_auto IS 'Peut créer, modifier et arrêter les remises automatiques ; réglé par le titulaire';
+
+
+--
 -- Name: utilisateur_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -5958,6 +8931,27 @@ CREATE TABLE public.utilisation_financement (
     CONSTRAINT utilisation_financement_source_check CHECK ((source = ANY (ARRAY['pret'::text, 'titulaire'::text]))),
     CONSTRAINT utilisation_financement_usage_check CHECK ((usage = ANY (ARRAY['tresorerie'::text, 'depense'::text, 'reglement'::text, 'traite'::text])))
 );
+
+
+--
+-- Name: TABLE utilisation_financement; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.utilisation_financement IS 'Usage d''un prêt ou d''un apport du titulaire : versé au coffre ou en banque, dépense payée, facture ou traite d''un grossiste payée hors trésorerie. Un apport du titulaire est une somme que la pharmacie lui doit';
+
+
+--
+-- Name: COLUMN utilisation_financement.mouvement_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisation_financement.mouvement_id IS 'Entrée « financement » sur le compte (versement, ou passage de la dépense payée)';
+
+
+--
+-- Name: COLUMN utilisation_financement.depense_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.utilisation_financement.depense_id IS 'Dépense payée par la source, inscrite sur le même compte que l''entrée (solde du compte inchangé)';
 
 
 --
@@ -6045,6 +9039,195 @@ CREATE TABLE public.vente (
     CONSTRAINT vente_taux_tiers_payant_check CHECK (((taux_tiers_payant >= (0)::numeric) AND (taux_tiers_payant <= (100)::numeric))),
     CONSTRAINT vente_type_check CHECK ((type = ANY (ARRAY['libre'::text, 'tiers_payant'::text])))
 );
+
+
+--
+-- Name: COLUMN vente.num_facture_chifa; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.num_facture_chifa IS 'OBSOLÈTE (script 101, 2026-11-15) : remplacée par chifa_facture, plus lue ni écrite ; suppression prévue par le script 101b après validation du titulaire';
+
+
+--
+-- Name: COLUMN vente.reste_saisi; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.reste_saisi IS 'Tiers payant : reste à charge du patient saisi par le caissier (taux non appliqué)';
+
+
+--
+-- Name: COLUMN vente.chifa_facture; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_facture IS 'N° de la facture Chifa (8 chiffres) : seule colonne du n° de facture Chifa depuis le script 101 (volet repris, rattaché ou saisi)';
+
+
+--
+-- Name: COLUMN vente.chifa_qr; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_qr IS 'Contenu brut du QR du volet Chifa (format à confirmer avec l''éditeur de Chifa)';
+
+
+--
+-- Name: COLUMN vente.remise_additionnee; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.remise_additionnee IS 'La remise du vendeur s''ajoute aux remises automatiques (sinon elle ne vaut que pour les lignes sans remise automatique)';
+
+
+--
+-- Name: COLUMN vente.montant_don; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.montant_don IS 'Don partiel du reste à charge (réductions sur les médicaments), en DA ; montant_remise : remises hors médicaments';
+
+
+--
+-- Name: COLUMN vente.cle_encaissement; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.cle_encaissement IS 'Clé du panier envoyée par le poste : un nouvel essai du même encaissement rend la vente déjà enregistrée (pas de doublon)';
+
+
+--
+-- Name: COLUMN vente.canal_organisme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.canal_organisme IS 'Qui facture la part organisme : logiciel (facture Pharma Officine), chifa (logiciel Chifa), mdn (organisme militaire) ; chifa et mdn ne sont jamais refacturées';
+
+
+--
+-- Name: COLUMN vente.remis_a_patient_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.remis_a_patient_id IS 'Vente avec ordonnance : membre de la famille qui récupère les médicaments (fiche patient)';
+
+
+--
+-- Name: COLUMN vente.remis_a_nom; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.remis_a_nom IS 'Vente avec ordonnance : personne qui récupère les médicaments (nom libre, hors fiche)';
+
+
+--
+-- Name: COLUMN vente.pour_patient_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.pour_patient_id IS 'Vente sans ordonnance : membre de la famille concerné (fiche patient)';
+
+
+--
+-- Name: COLUMN vente.pour_nom; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.pour_nom IS 'Vente sans ordonnance : personne concernée (nom libre, hors fiche)';
+
+
+--
+-- Name: COLUMN vente.chifa_date_ordonnance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_date_ordonnance IS 'Date de l''ordonnance lue dans le QR du volet Chifa (7e zone, à confirmer avec l''éditeur de Chifa)';
+
+
+--
+-- Name: COLUMN vente.chifa_rattache_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_rattache_le IS 'Volet Chifa rattaché à la vente déjà encaissée (circuit « la caisse d''abord ») : date du rattachement';
+
+
+--
+-- Name: COLUMN vente.chifa_rattache_par; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_rattache_par IS 'Employé qui a rattaché le volet Chifa à la vente déjà encaissée';
+
+
+--
+-- Name: COLUMN vente.chifa_ecart_motif; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_ecart_motif IS 'Volet rattaché malgré des différences avec la vente : motif obligatoire (droit prix.modifier)';
+
+
+--
+-- Name: COLUMN vente.chifa_ecart_detail; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_ecart_detail IS 'Différences volet / vente au rattachement (produits, quantités, prix, part organisme)';
+
+
+--
+-- Name: COLUMN vente.chifa_ecart_part_organisme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_ecart_part_organisme IS 'Part organisme de la vente moins part calculée sur le prix Chifa du volet (non recalculée)';
+
+
+--
+-- Name: COLUMN vente.chifa_attente_motif_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_attente_motif_code IS 'Vente « Facturée par Chifa » encaissée sans n° de facture : motif (motif_reglable, liste volet_absent) ; null avant 097';
+
+
+--
+-- Name: COLUMN vente.chifa_attente_motif_texte; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_attente_motif_texte IS 'Texte du motif « Autre » de la vente encaissée sans n° de facture Chifa';
+
+
+--
+-- Name: COLUMN vente.centre_payeur_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.centre_payeur_id IS 'Centre payeur de la vente Chifa (script 100)';
+
+
+--
+-- Name: COLUMN vente.chifa_date_soins; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_date_soins IS 'Date des soins de la vente Chifa, saisie (la 2e date du QR n''y est pas rangée automatiquement, D-1 ; script 100)';
+
+
+--
+-- Name: COLUMN vente.chifa_saisi_par; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_saisi_par IS 'Employé qui a saisi la vente dans CHIFA-Officine (défaut : le vendeur ; script 100)';
+
+
+--
+-- Name: COLUMN vente.chifa_majoration_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_majoration_code IS 'Type de majoration Chifa (motif_reglable, liste majoration_chifa ; script 100)';
+
+
+--
+-- Name: COLUMN vente.chifa_majoration_montant; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_majoration_montant IS 'Majoration Chifa, ajoutée à la part organisme (D-3 ; v_vente_part_organisme ; script 100)';
+
+
+--
+-- Name: COLUMN vente.chifa_exclue_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_exclue_le IS 'Vente Chifa exclue du traitement (hors attente de volet et bordereaux) ; null : non exclue (script 100)';
+
+
+--
+-- Name: COLUMN vente.chifa_exclusion_motif_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente.chifa_exclusion_motif_code IS 'Motif d''exclusion (motif_reglable, liste chifa_exclusion ; script 100)';
 
 
 --
@@ -6184,6 +9367,13 @@ CREATE VIEW public.v_vente_part_organisme AS
 
 
 --
+-- Name: VIEW v_vente_part_organisme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.v_vente_part_organisme IS 'Créance de l''organisme par vente : part Chifa si l''écart a été régularisé (script 097), sinon part enregistrée à la caisse';
+
+
+--
 -- Name: versement_bordereau; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6194,6 +9384,13 @@ CREATE TABLE public.versement_bordereau (
     montant numeric(12,2) NOT NULL,
     CONSTRAINT versement_bordereau_montant_check CHECK ((montant > (0)::numeric))
 );
+
+
+--
+-- Name: TABLE versement_bordereau; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.versement_bordereau IS 'Part d''un versement d''organisme (trésorerie) imputée à un bordereau (script 110)';
 
 
 --
@@ -6848,6 +10045,26 @@ CREATE VIEW public.v_produit_a_verifier AS
 
 
 --
+-- Name: v_produit_fabrication_locale; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_produit_fabrication_locale AS
+ SELECT p.id AS produit_id,
+    COALESCE(p.fabrication_locale, n.locale) AS fabrication_locale,
+        CASE
+            WHEN (p.fabrication_locale IS NOT NULL) THEN 'saisie'::text
+            WHEN (n.locale IS NOT NULL) THEN 'nomenclature'::text
+            ELSE NULL::text
+        END AS source
+   FROM (public.produit p
+     LEFT JOIN LATERAL ( SELECT (upper(btrim(np.pays)) = ANY (ARRAY['ALGERIE'::text, 'ALGÉRIE'::text])) AS locale
+           FROM public.nomenclature_produit np
+          WHERE ((p.num_enregistrement IS NOT NULL) AND (np.num_enregistrement = p.num_enregistrement) AND (np.pays IS NOT NULL) AND (btrim(np.pays) <> ''::text))
+          ORDER BY np.version_id DESC
+         LIMIT 1) n ON (true));
+
+
+--
 -- Name: v_registre_psychotrope; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -7305,11 +10522,112 @@ CREATE TABLE public.vente_chifa_facture_conflit (
 
 
 --
+-- Name: TABLE vente_chifa_facture_conflit; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.vente_chifa_facture_conflit IS 'Fusion du n° de facture Chifa (script 101) : ventes dont num_facture_chifa et chifa_facture diffèrent, tranchées par le titulaire';
+
+
+--
+-- Name: COLUMN vente_chifa_facture_conflit.num_facture_chifa; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente_chifa_facture_conflit.num_facture_chifa IS 'Valeur de l''ancienne colonne vente.num_facture_chifa au moment du constat';
+
+
+--
+-- Name: COLUMN vente_chifa_facture_conflit.chifa_facture; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente_chifa_facture_conflit.chifa_facture IS 'Valeur de vente.chifa_facture au moment du constat (null : recopie impossible, n° déjà porté par une autre vente)';
+
+
+--
+-- Name: COLUMN vente_chifa_facture_conflit.valeur_retenue; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.vente_chifa_facture_conflit.valeur_retenue IS 'N° retenu par le titulaire (8 chiffres), écrit dans vente.chifa_facture';
+
+
+--
 -- Name: vente_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 ALTER TABLE public.vente ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.vente_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: verification_integrite; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.verification_integrite (
+    id bigint NOT NULL,
+    verifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    journal text NOT NULL,
+    cle_chaine text,
+    lignes bigint DEFAULT 0 NOT NULL,
+    sceaux integer DEFAULT 0 NOT NULL,
+    statut text NOT NULL,
+    rang_rupture bigint,
+    motif text,
+    attendu text,
+    trouve text,
+    declenchee_par bigint,
+    CONSTRAINT ck_verification_integrite_statut CHECK ((statut = ANY (ARRAY['ok'::text, 'rupture'::text, 'erreur'::text])))
+);
+
+
+--
+-- Name: verification_integrite_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.verification_integrite ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.verification_integrite_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: verification_serialisation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.verification_serialisation (
+    id bigint NOT NULL,
+    boite_id bigint NOT NULL,
+    operation text NOT NULL,
+    statut text DEFAULT 'en_attente'::text NOT NULL,
+    resultat text,
+    message text,
+    essais integer DEFAULT 0 NOT NULL,
+    alerte_titulaire boolean DEFAULT false NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    prochain_essai_le timestamp with time zone DEFAULT now() NOT NULL,
+    dernier_essai_le timestamp with time zone,
+    traite_le timestamp with time zone,
+    CONSTRAINT verification_serialisation_essais_check CHECK ((essais >= 0)),
+    CONSTRAINT verification_serialisation_operation_check CHECK ((operation = ANY (ARRAY['verifier'::text, 'decommissionner'::text, 'reactiver'::text]))),
+    CONSTRAINT verification_serialisation_resultat_check CHECK ((resultat = ANY (ARRAY['authentique'::text, 'inconnue'::text, 'deja_decommissionnee'::text, 'rappelee'::text, 'expiree'::text]))),
+    CONSTRAINT verification_serialisation_statut_check CHECK ((statut = ANY (ARRAY['en_attente'::text, 'reussie'::text, 'refusee'::text])))
+);
+
+
+--
+-- Name: verification_serialisation_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.verification_serialisation ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.verification_serialisation_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -7329,6 +10647,29 @@ ALTER TABLE public.versement_bordereau ALTER COLUMN id ADD GENERATED ALWAYS AS I
     NO MINVALUE
     NO MAXVALUE
     CACHE 1
+);
+
+
+--
+-- Name: wilaya; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.wilaya (
+    code text NOT NULL,
+    nom text NOT NULL,
+    CONSTRAINT ck_wilaya_code CHECK ((code ~ '^[0-9]{2}$'::text))
+);
+
+
+--
+-- Name: zone_psychotrope_wilaya; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.zone_psychotrope_wilaya (
+    wilaya text NOT NULL,
+    officine boolean DEFAULT false NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    modifie_par bigint
 );
 
 
@@ -7380,11 +10721,35 @@ ALTER TABLE ONLY import.fournisseur_src
 
 
 --
+-- Name: historique_chifa_src historique_chifa_src_pkey; Type: CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.historique_chifa_src
+    ADD CONSTRAINT historique_chifa_src_pkey PRIMARY KEY (session_id, num_facture, date_facture);
+
+
+--
+-- Name: historique_mdn_src historique_mdn_src_pkey; Type: CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.historique_mdn_src
+    ADD CONSTRAINT historique_mdn_src_pkey PRIMARY KEY (session_id, num_facture, date_facture);
+
+
+--
 -- Name: produit_src produit_src_pkey; Type: CONSTRAINT; Schema: import; Owner: -
 --
 
 ALTER TABLE ONLY import.produit_src
     ADD CONSTRAINT produit_src_pkey PRIMARY KEY (session_id, ref_source);
+
+
+--
+-- Name: profil_reprise profil_reprise_pkey; Type: CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.profil_reprise
+    ADD CONSTRAINT profil_reprise_pkey PRIMARY KEY (id);
 
 
 --
@@ -7433,6 +10798,22 @@ ALTER TABLE ONLY public.alerte
 
 ALTER TABLE ONLY public.alerte_surveillance
     ADD CONSTRAINT alerte_surveillance_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: annulation_registre annulation_registre_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.annulation_registre
+    ADD CONSTRAINT annulation_registre_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: annulation_registre annulation_registre_registre_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.annulation_registre
+    ADD CONSTRAINT annulation_registre_registre_id_key UNIQUE (registre_id);
 
 
 --
@@ -7524,6 +10905,14 @@ ALTER TABLE ONLY public.campagne_inventaire
 
 
 --
+-- Name: catalogue_grossiste catalogue_grossiste_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.catalogue_grossiste
+    ADD CONSTRAINT catalogue_grossiste_pkey PRIMARY KEY (fournisseur_id, produit_id);
+
+
+--
 -- Name: categorie_produit categorie_produit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7540,11 +10929,35 @@ ALTER TABLE ONLY public.centre_payeur
 
 
 --
+-- Name: chaine_integrite chaine_integrite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chaine_integrite
+    ADD CONSTRAINT chaine_integrite_pkey PRIMARY KEY (journal);
+
+
+--
 -- Name: chifa_code_produit chifa_code_produit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.chifa_code_produit
     ADD CONSTRAINT chifa_code_produit_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: classe_suivie_dci classe_suivie_dci_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classe_suivie_dci
+    ADD CONSTRAINT classe_suivie_dci_pkey PRIMARY KEY (classe_code, dci_id);
+
+
+--
+-- Name: classe_suivie classe_suivie_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classe_suivie
+    ADD CONSTRAINT classe_suivie_pkey PRIMARY KEY (code);
 
 
 --
@@ -7561,6 +10974,14 @@ ALTER TABLE ONLY public.client_facture
 
 ALTER TABLE ONLY public.client_facture
     ADD CONSTRAINT client_facture_raison_sociale_key UNIQUE (raison_sociale);
+
+
+--
+-- Name: cloture_fiscale cloture_fiscale_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cloture_fiscale
+    ADD CONSTRAINT cloture_fiscale_pkey PRIMARY KEY (id);
 
 
 --
@@ -7636,6 +11057,14 @@ ALTER TABLE ONLY public.compte_tresorerie
 
 
 --
+-- Name: compteur_ticket compteur_ticket_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compteur_ticket
+    ADD CONSTRAINT compteur_ticket_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: connexion_employe connexion_employe_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7705,6 +11134,14 @@ ALTER TABLE ONLY public.dci
 
 ALTER TABLE ONLY public.dci
     ADD CONSTRAINT dci_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: demande_patient demande_patient_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.demande_patient
+    ADD CONSTRAINT demande_patient_pkey PRIMARY KEY (id);
 
 
 --
@@ -7804,6 +11241,14 @@ ALTER TABLE ONLY public.facture_compteur
 
 
 --
+-- Name: forcage_alerte_psychotrope forcage_alerte_psychotrope_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forcage_alerte_psychotrope
+    ADD CONSTRAINT forcage_alerte_psychotrope_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: fournisseur_mouvement fournisseur_mouvement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7820,11 +11265,35 @@ ALTER TABLE ONLY public.fournisseur
 
 
 --
+-- Name: historique_chifa historique_chifa_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.historique_chifa
+    ADD CONSTRAINT historique_chifa_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: import_catalogue_grossiste import_catalogue_grossiste_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_catalogue_grossiste
+    ADD CONSTRAINT import_catalogue_grossiste_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: indication indication_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.indication
     ADD CONSTRAINT indication_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: integrite_essai integrite_essai_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integrite_essai
+    ADD CONSTRAINT integrite_essai_pkey PRIMARY KEY (id);
 
 
 --
@@ -7844,11 +11313,27 @@ ALTER TABLE ONLY public.journal_audit
 
 
 --
+-- Name: journal_registre_psychotrope journal_registre_psychotrope_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_registre_psychotrope
+    ADD CONSTRAINT journal_registre_psychotrope_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: journal_sauvegarde journal_sauvegarde_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.journal_sauvegarde
     ADD CONSTRAINT journal_sauvegarde_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: journal_vente journal_vente_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_vente
+    ADD CONSTRAINT journal_vente_pkey PRIMARY KEY (id);
 
 
 --
@@ -8084,6 +11569,38 @@ ALTER TABLE ONLY public.parametre_caisse
 
 
 --
+-- Name: parametre_fiscal parametre_fiscal_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_fiscal
+    ADD CONSTRAINT parametre_fiscal_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: parametre_formulaire_sms parametre_formulaire_sms_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_formulaire_sms
+    ADD CONSTRAINT parametre_formulaire_sms_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: parametre_gs1_ai parametre_gs1_ai_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_gs1_ai
+    ADD CONSTRAINT parametre_gs1_ai_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: parametre_integrite parametre_integrite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_integrite
+    ADD CONSTRAINT parametre_integrite_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: parametre_inventaire parametre_inventaire_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8113,6 +11630,22 @@ ALTER TABLE ONLY public.parametre_rapport
 
 ALTER TABLE ONLY public.parametre_sauvegarde
     ADD CONSTRAINT parametre_sauvegarde_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: parametre_serialisation parametre_serialisation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_serialisation
+    ADD CONSTRAINT parametre_serialisation_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: parametre_substitution parametre_substitution_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_substitution
+    ADD CONSTRAINT parametre_substitution_pkey PRIMARY KEY (id);
 
 
 --
@@ -8204,6 +11737,14 @@ ALTER TABLE ONLY public.produit
 
 
 --
+-- Name: profil_catalogue_grossiste profil_catalogue_grossiste_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.profil_catalogue_grossiste
+    ADD CONSTRAINT profil_catalogue_grossiste_pkey PRIMARY KEY (fournisseur_id);
+
+
+--
 -- Name: reception_attente reception_attente_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8249,6 +11790,14 @@ ALTER TABLE ONLY public.registre_psychotrope
 
 ALTER TABLE ONLY public.registre_psychotrope
     ADD CONSTRAINT registre_psychotrope_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: regle_alerte_psychotrope regle_alerte_psychotrope_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regle_alerte_psychotrope
+    ADD CONSTRAINT regle_alerte_psychotrope_pkey PRIMARY KEY (code);
 
 
 --
@@ -8380,11 +11929,43 @@ ALTER TABLE ONLY public.role
 
 
 --
+-- Name: rupture_grossiste rupture_grossiste_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rupture_grossiste
+    ADD CONSTRAINT rupture_grossiste_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: scan_reception scan_reception_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.scan_reception
     ADD CONSTRAINT scan_reception_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sceau_integrite sceau_integrite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sceau_integrite
+    ADD CONSTRAINT sceau_integrite_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: serialisation_reponse_factice serialisation_reponse_factice_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.serialisation_reponse_factice
+    ADD CONSTRAINT serialisation_reponse_factice_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: serveur_officine serveur_officine_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.serveur_officine
+    ADD CONSTRAINT serveur_officine_pkey PRIMARY KEY (nom);
 
 
 --
@@ -8401,6 +11982,22 @@ ALTER TABLE ONLY public.session_caisse
 
 ALTER TABLE ONLY public.substance_surveillee
     ADD CONSTRAINT substance_surveillee_pkey PRIMARY KEY (motif);
+
+
+--
+-- Name: substitution_liste_blanche substitution_liste_blanche_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.substitution_liste_blanche
+    ADD CONSTRAINT substitution_liste_blanche_pkey PRIMARY KEY (produit_id, remplacant_id);
+
+
+--
+-- Name: surveillance_replication surveillance_replication_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.surveillance_replication
+    ADD CONSTRAINT surveillance_replication_pkey PRIMARY KEY (id);
 
 
 --
@@ -8476,6 +12073,14 @@ ALTER TABLE ONLY public.utilisation_financement
 
 
 --
+-- Name: historique_chifa ux_historique_organisme_facture; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.historique_chifa
+    ADD CONSTRAINT ux_historique_organisme_facture UNIQUE (session_id, organisme, num_facture, date_facture);
+
+
+--
 -- Name: lot ux_lot_fournisseur_date; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8516,6 +12121,22 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: verification_integrite verification_integrite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.verification_integrite
+    ADD CONSTRAINT verification_integrite_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: verification_serialisation verification_serialisation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.verification_serialisation
+    ADD CONSTRAINT verification_serialisation_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: versement_bordereau versement_bordereau_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8524,10 +12145,33 @@ ALTER TABLE ONLY public.versement_bordereau
 
 
 --
+-- Name: wilaya wilaya_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wilaya
+    ADD CONSTRAINT wilaya_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: zone_psychotrope_wilaya zone_psychotrope_wilaya_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zone_psychotrope_wilaya
+    ADD CONSTRAINT zone_psychotrope_wilaya_pkey PRIMARY KEY (wilaya);
+
+
+--
 -- Name: ix_doublon_patient_statut; Type: INDEX; Schema: import; Owner: -
 --
 
 CREATE INDEX ix_doublon_patient_statut ON import.doublon_patient USING btree (statut, id);
+
+
+--
+-- Name: ux_profil_reprise_logiciel_version; Type: INDEX; Schema: import; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_profil_reprise_logiciel_version ON import.profil_reprise USING btree (lower(logiciel), lower(version));
 
 
 --
@@ -8636,6 +12280,27 @@ CREATE INDEX idx_bordereau_vente_vente ON public.bordereau_vente USING btree (ve
 
 
 --
+-- Name: idx_catalogue_grossiste_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_catalogue_grossiste_code ON public.catalogue_grossiste USING btree (fournisseur_id, code_grossiste) WHERE (code_grossiste IS NOT NULL);
+
+
+--
+-- Name: idx_catalogue_grossiste_produit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_catalogue_grossiste_produit ON public.catalogue_grossiste USING btree (produit_id);
+
+
+--
+-- Name: idx_cloture_fiscale_periode; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cloture_fiscale_periode ON public.cloture_fiscale USING btree (periode_du, periode_au);
+
+
+--
 -- Name: idx_comptage_intermediaire_session; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8675,6 +12340,20 @@ CREATE INDEX idx_dci_nom_sans_accent ON public.dci USING gin (public.sans_accent
 --
 
 CREATE INDEX idx_dci_nom_trgm ON public.dci USING gin (nom public.gin_trgm_ops);
+
+
+--
+-- Name: idx_demande_patient_ouverte; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_demande_patient_ouverte ON public.demande_patient USING btree (produit_id) WHERE (statut = ANY (ARRAY['en_attente'::text, 'prevenu'::text]));
+
+
+--
+-- Name: idx_demande_patient_patient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_demande_patient_patient ON public.demande_patient USING btree (patient_id, cree_le DESC);
 
 
 --
@@ -8734,10 +12413,31 @@ CREATE INDEX idx_facture_origine ON public.facture_client USING btree (facture_o
 
 
 --
+-- Name: idx_forcage_psy_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_forcage_psy_date ON public.forcage_alerte_psychotrope USING btree (cree_le DESC);
+
+
+--
+-- Name: idx_forcage_psy_utilisateur; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_forcage_psy_utilisateur ON public.forcage_alerte_psychotrope USING btree (utilisateur_id, cree_le DESC);
+
+
+--
 -- Name: idx_fournisseur_mouvement; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_fournisseur_mouvement ON public.fournisseur_mouvement USING btree (fournisseur_id, id);
+
+
+--
+-- Name: idx_import_catalogue_grossiste; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_import_catalogue_grossiste ON public.import_catalogue_grossiste USING btree (fournisseur_id, importe_le DESC);
 
 
 --
@@ -8752,6 +12452,20 @@ CREATE INDEX idx_inventaire_campagne ON public.inventaire USING btree (campagne_
 --
 
 CREATE INDEX idx_journal_sauvegarde ON public.journal_sauvegarde USING btree (debut DESC);
+
+
+--
+-- Name: idx_journal_vente_survenu; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_journal_vente_survenu ON public.journal_vente USING btree (survenu_le);
+
+
+--
+-- Name: idx_journal_vente_ticket; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_journal_vente_ticket ON public.journal_vente USING btree (numero_ticket);
 
 
 --
@@ -8815,6 +12529,13 @@ CREATE INDEX idx_lot_fournisseur ON public.lot USING btree (fournisseur_id);
 --
 
 CREATE INDEX idx_lot_reception ON public.lot USING btree (reception_id);
+
+
+--
+-- Name: idx_medecin_sans_wilaya; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_medecin_sans_wilaya ON public.medecin USING btree (nom) WHERE (wilaya IS NULL);
 
 
 --
@@ -9014,6 +12735,20 @@ CREATE INDEX idx_registre_lot ON public.registre_psychotrope USING btree (lot_id
 
 
 --
+-- Name: idx_registre_medecin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_registre_medecin ON public.registre_psychotrope USING btree (medecin_id, cree_le) WHERE (medecin_id IS NOT NULL);
+
+
+--
+-- Name: idx_registre_patient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_registre_patient ON public.registre_psychotrope USING btree (patient_id, cree_le) WHERE (patient_id IS NOT NULL);
+
+
+--
 -- Name: idx_reglement_facture_client; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9070,10 +12805,24 @@ CREATE INDEX idx_retour_ligne_vente ON public.retour_client_ligne USING btree (l
 
 
 --
+-- Name: idx_rupture_grossiste_produit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rupture_grossiste_produit ON public.rupture_grossiste USING btree (produit_id, debut DESC);
+
+
+--
 -- Name: idx_scan_reception_attente; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_scan_reception_attente ON public.scan_reception USING btree (utilisateur_id) WHERE (importe_le IS NULL);
+
+
+--
+-- Name: idx_sceau_integrite_journal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_sceau_integrite_journal ON public.sceau_integrite USING btree (journal, cle_chaine, scelle_le);
 
 
 --
@@ -9088,6 +12837,13 @@ CREATE INDEX idx_session_caisse_date ON public.session_caisse USING btree (ouver
 --
 
 CREATE INDEX idx_session_fermee ON public.session_caisse USING btree (fermee_le) WHERE (fermee_le IS NOT NULL);
+
+
+--
+-- Name: idx_substitution_liste_blanche_remplacant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_substitution_liste_blanche_remplacant ON public.substitution_liste_blanche USING btree (remplacant_id);
 
 
 --
@@ -9137,6 +12893,34 @@ CREATE INDEX idx_vente_patient ON public.vente USING btree (patient_id, date_ven
 --
 
 CREATE INDEX idx_vente_session ON public.vente USING btree (session_caisse_id);
+
+
+--
+-- Name: idx_verification_integrite_journal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_verification_integrite_journal ON public.verification_integrite USING btree (journal, verifie_le DESC);
+
+
+--
+-- Name: idx_verification_serialisation_attente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_verification_serialisation_attente ON public.verification_serialisation USING btree (prochain_essai_le, id) WHERE (statut = 'en_attente'::text);
+
+
+--
+-- Name: idx_verification_serialisation_boite; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_verification_serialisation_boite ON public.verification_serialisation USING btree (boite_id);
+
+
+--
+-- Name: idx_verification_serialisation_statut; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_verification_serialisation_statut ON public.verification_serialisation USING btree (statut, id);
 
 
 --
@@ -9193,6 +12977,27 @@ CREATE INDEX ix_credit_imputation_vente ON public.credit_imputation USING btree 
 --
 
 CREATE INDEX ix_evenement_caisse_employe ON public.evenement_caisse USING btree (utilisateur_id, cree_le);
+
+
+--
+-- Name: ix_historique_chifa_assure; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_historique_chifa_assure ON public.historique_chifa USING btree (num_assure);
+
+
+--
+-- Name: ix_historique_chifa_date; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_historique_chifa_date ON public.historique_chifa USING btree (date_facture DESC);
+
+
+--
+-- Name: ix_historique_chifa_organisme; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_historique_chifa_organisme ON public.historique_chifa USING btree (organisme, date_facture DESC);
 
 
 --
@@ -9294,6 +13099,20 @@ CREATE INDEX ix_vente_remis_a_patient ON public.vente USING btree (remis_a_patie
 
 
 --
+-- Name: uq_rupture_grossiste_ouverte; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_rupture_grossiste_ouverte ON public.rupture_grossiste USING btree (fournisseur_id, produit_id) WHERE (fin IS NULL);
+
+
+--
+-- Name: uq_serveur_officine_principal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_serveur_officine_principal ON public.serveur_officine USING btree (role) WHERE (role = 'principal'::text);
+
+
+--
 -- Name: ux_alerte_ouverte; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9336,6 +13155,20 @@ CREATE UNIQUE INDEX ux_client_facture_raison_sociale_ci ON public.client_facture
 
 
 --
+-- Name: ux_cloture_fiscale_mois; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_cloture_fiscale_mois ON public.cloture_fiscale USING btree (periode_du) WHERE (type = 'mensuelle'::text);
+
+
+--
+-- Name: ux_cloture_fiscale_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_cloture_fiscale_session ON public.cloture_fiscale USING btree (session_caisse_id) WHERE (type = 'journaliere'::text);
+
+
+--
 -- Name: ux_compte_tresorerie_nom_ci; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -9350,10 +13183,87 @@ CREATE UNIQUE INDEX ux_indication_libelle ON public.indication USING btree (lowe
 
 
 --
+-- Name: ux_integrite_essai_chaine; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_integrite_essai_chaine ON public.integrite_essai USING btree (cle_chaine, rang);
+
+
+--
 -- Name: ux_inventaire_en_cours; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX ux_inventaire_en_cours ON public.inventaire USING btree (rayon) WHERE (statut = 'en_cours'::text);
+
+
+--
+-- Name: ux_journal_registre_annulation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_registre_annulation ON public.journal_registre_psychotrope USING btree (annulation_id) WHERE (nature = 'annulation'::text);
+
+
+--
+-- Name: ux_journal_registre_inscription; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_registre_inscription ON public.journal_registre_psychotrope USING btree (registre_id) WHERE (nature = 'inscription'::text);
+
+
+--
+-- Name: ux_journal_registre_ouverture; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_registre_ouverture ON public.journal_registre_psychotrope USING btree (cle_chaine) WHERE (nature = 'ouverture'::text);
+
+
+--
+-- Name: ux_journal_registre_psychotrope_chaine; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_registre_psychotrope_chaine ON public.journal_registre_psychotrope USING btree (cle_chaine, rang);
+
+
+--
+-- Name: ux_journal_vente_annulation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_vente_annulation ON public.journal_vente USING btree (vente_id) WHERE (evenement = 'annulation'::text);
+
+
+--
+-- Name: ux_journal_vente_avoir; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_vente_avoir ON public.journal_vente USING btree (avoir_mouvement_id) WHERE (avoir_mouvement_id IS NOT NULL);
+
+
+--
+-- Name: ux_journal_vente_chaine; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_vente_chaine ON public.journal_vente USING btree (cle_chaine, rang);
+
+
+--
+-- Name: ux_journal_vente_regularisation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_vente_regularisation ON public.journal_vente USING btree (regularisation_id, evenement) WHERE (regularisation_id IS NOT NULL);
+
+
+--
+-- Name: ux_journal_vente_retour; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_vente_retour ON public.journal_vente USING btree (retour_client_id) WHERE (retour_client_id IS NOT NULL);
+
+
+--
+-- Name: ux_journal_vente_vente; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_journal_vente_vente ON public.journal_vente USING btree (vente_id) WHERE (evenement = 'vente'::text);
 
 
 --
@@ -9452,6 +13362,13 @@ CREATE UNIQUE INDEX ux_vente_chifa_facture ON public.vente USING btree (chifa_fa
 --
 
 CREATE UNIQUE INDEX ux_vente_cle_encaissement ON public.vente USING btree (cle_encaissement) WHERE (cle_encaissement IS NOT NULL);
+
+
+--
+-- Name: ux_zone_psychotrope_officine; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_zone_psychotrope_officine ON public.zone_psychotrope_wilaya USING btree (officine) WHERE officine;
 
 
 --
@@ -9604,6 +13521,20 @@ CREATE TRIGGER tg_avoir_mouvement_solde BEFORE INSERT ON public.avoir_mouvement 
 
 
 --
+-- Name: annulation_registre trg_annulation_registre_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_annulation_registre_immuable BEFORE DELETE OR UPDATE ON public.annulation_registre FOR EACH ROW EXECUTE FUNCTION public.ajout_seul_refuser();
+
+
+--
+-- Name: annulation_registre trg_annulation_registre_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_annulation_registre_non_vidable BEFORE TRUNCATE ON public.annulation_registre FOR EACH STATEMENT EXECUTE FUNCTION public.ajout_seul_refuser();
+
+
+--
 -- Name: boite trg_boite_entree; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9629,6 +13560,13 @@ CREATE TRIGGER trg_boite_evenement_non_vidable BEFORE TRUNCATE ON public.boite_e
 --
 
 CREATE TRIGGER trg_boite_reception BEFORE INSERT ON public.boite FOR EACH ROW EXECUTE FUNCTION public.completer_reception_boite();
+
+
+--
+-- Name: boite trg_boite_serialisation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_boite_serialisation AFTER INSERT OR UPDATE OF statut ON public.boite FOR EACH ROW EXECUTE FUNCTION public.mettre_en_file_serialisation();
 
 
 --
@@ -9681,10 +13619,66 @@ CREATE TRIGGER trg_caisse_ouverte BEFORE INSERT ON public.vente FOR EACH ROW EXE
 
 
 --
+-- Name: chaine_integrite trg_chaine_integrite_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_chaine_integrite_immuable BEFORE DELETE OR UPDATE ON public.chaine_integrite FOR EACH ROW EXECUTE FUNCTION public.integrite_registre_immuable();
+
+
+--
+-- Name: cloture_fiscale trg_cloture_fiscale_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_cloture_fiscale_immuable BEFORE DELETE OR UPDATE ON public.cloture_fiscale FOR EACH ROW EXECUTE FUNCTION public.cloture_fiscale_immuable();
+
+
+--
+-- Name: cloture_fiscale trg_cloture_fiscale_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_cloture_fiscale_non_vidable BEFORE TRUNCATE ON public.cloture_fiscale FOR EACH STATEMENT EXECUTE FUNCTION public.cloture_fiscale_immuable();
+
+
+--
 -- Name: compte_tresorerie trg_compte_carte; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_compte_carte AFTER INSERT OR UPDATE OF recoit_carte ON public.compte_tresorerie FOR EACH ROW EXECUTE FUNCTION public.suivre_compte_carte();
+
+
+--
+-- Name: compteur_ticket trg_compteur_ticket_proteger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_compteur_ticket_proteger BEFORE DELETE OR UPDATE ON public.compteur_ticket FOR EACH ROW EXECUTE FUNCTION public.compteur_ticket_proteger();
+
+
+--
+-- Name: annulation_vente trg_conservation_fiscale; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_conservation_fiscale BEFORE DELETE ON public.annulation_vente FOR EACH ROW EXECUTE FUNCTION public.conservation_fiscale_proteger();
+
+
+--
+-- Name: paiement trg_conservation_fiscale; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_conservation_fiscale BEFORE DELETE ON public.paiement FOR EACH ROW EXECUTE FUNCTION public.conservation_fiscale_proteger();
+
+
+--
+-- Name: retour_client trg_conservation_fiscale; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_conservation_fiscale BEFORE DELETE ON public.retour_client FOR EACH ROW EXECUTE FUNCTION public.conservation_fiscale_proteger();
+
+
+--
+-- Name: vente trg_conservation_fiscale; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_conservation_fiscale BEFORE DELETE ON public.vente FOR EACH ROW EXECUTE FUNCTION public.conservation_fiscale_proteger();
 
 
 --
@@ -9716,6 +13710,20 @@ CREATE TRIGGER trg_credit_ouverture AFTER INSERT ON public.credit_mouvement FOR 
 
 
 --
+-- Name: forcage_alerte_psychotrope trg_forcage_psy_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_forcage_psy_immuable BEFORE DELETE OR UPDATE ON public.forcage_alerte_psychotrope FOR EACH ROW EXECUTE FUNCTION public.ajout_seul_refuser();
+
+
+--
+-- Name: forcage_alerte_psychotrope trg_forcage_psy_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_forcage_psy_non_vidable BEFORE TRUNCATE ON public.forcage_alerte_psychotrope FOR EACH STATEMENT EXECUTE FUNCTION public.ajout_seul_refuser();
+
+
+--
 -- Name: fournisseur trg_fournisseur_dette; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9744,6 +13752,13 @@ CREATE CONSTRAINT TRIGGER trg_garder_un_titulaire AFTER DELETE OR UPDATE ON publ
 
 
 --
+-- Name: historique_chifa trg_historique_chifa_lecture_seule; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_historique_chifa_lecture_seule BEFORE DELETE OR UPDATE ON public.historique_chifa FOR EACH ROW EXECUTE FUNCTION public.historique_chifa_lecture_seule();
+
+
+--
 -- Name: facture_client trg_historique_facture; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9762,6 +13777,48 @@ CREATE TRIGGER trg_historique_facture_ligne BEFORE DELETE OR UPDATE ON public.fa
 --
 
 CREATE TRIGGER trg_historique_facture_version BEFORE DELETE OR UPDATE ON public.facture_client_version FOR EACH ROW EXECUTE FUNCTION public.proteger_historique_facture();
+
+
+--
+-- Name: integrite_essai trg_integrite_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_integrite_immuable BEFORE DELETE OR UPDATE ON public.integrite_essai FOR EACH ROW EXECUTE FUNCTION public.integrite_interdire_modification();
+
+
+--
+-- Name: journal_registre_psychotrope trg_integrite_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_integrite_immuable BEFORE DELETE OR UPDATE ON public.journal_registre_psychotrope FOR EACH ROW EXECUTE FUNCTION public.integrite_interdire_modification();
+
+
+--
+-- Name: journal_vente trg_integrite_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_integrite_immuable BEFORE DELETE OR UPDATE ON public.journal_vente FOR EACH ROW EXECUTE FUNCTION public.integrite_interdire_modification();
+
+
+--
+-- Name: integrite_essai trg_integrite_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_integrite_non_vidable BEFORE TRUNCATE ON public.integrite_essai FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_interdire_modification();
+
+
+--
+-- Name: journal_registre_psychotrope trg_integrite_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_integrite_non_vidable BEFORE TRUNCATE ON public.journal_registre_psychotrope FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_interdire_modification();
+
+
+--
+-- Name: journal_vente trg_integrite_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_integrite_non_vidable BEFORE TRUNCATE ON public.journal_vente FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_interdire_modification();
 
 
 --
@@ -9790,6 +13847,48 @@ CREATE TRIGGER trg_journal_sauvegarde_immuable BEFORE DELETE OR UPDATE ON public
 --
 
 CREATE TRIGGER trg_journal_sauvegarde_non_vidable BEFORE TRUNCATE ON public.journal_sauvegarde FOR EACH STATEMENT EXECUTE FUNCTION public.interdire_vidage();
+
+
+--
+-- Name: avoir_mouvement trg_journal_vente_avoir; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER trg_journal_vente_avoir AFTER INSERT ON public.avoir_mouvement DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.origine = ANY (ARRAY['saisie'::text, 'trop_paye_regularisation'::text, 'remboursement'::text]))) EXECUTE FUNCTION public.journal_vente_depuis_avoir();
+
+
+--
+-- Name: vente trg_journal_vente_insertion; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER trg_journal_vente_insertion AFTER INSERT ON public.vente DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((new.statut <> 'en_cours'::text)) EXECUTE FUNCTION public.journal_vente_depuis_vente();
+
+
+--
+-- Name: regularisation_part_organisme trg_journal_vente_regularisation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER trg_journal_vente_regularisation AFTER INSERT ON public.regularisation_part_organisme DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.journal_vente_depuis_regularisation();
+
+
+--
+-- Name: regularisation_part_organisme trg_journal_vente_regularisation_annulee; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER trg_journal_vente_regularisation_annulee AFTER UPDATE OF statut ON public.regularisation_part_organisme DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((old.statut IS DISTINCT FROM new.statut)) EXECUTE FUNCTION public.journal_vente_depuis_regularisation();
+
+
+--
+-- Name: retour_client trg_journal_vente_retour; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER trg_journal_vente_retour AFTER INSERT ON public.retour_client DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.journal_vente_depuis_retour();
+
+
+--
+-- Name: vente trg_journal_vente_statut; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER trg_journal_vente_statut AFTER UPDATE OF statut ON public.vente DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((old.statut IS DISTINCT FROM new.statut)) EXECUTE FUNCTION public.journal_vente_depuis_vente();
 
 
 --
@@ -9905,6 +14004,20 @@ CREATE TRIGGER trg_role_systeme BEFORE DELETE OR UPDATE ON public.role FOR EACH 
 
 
 --
+-- Name: sceau_integrite trg_sceau_integrite_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sceau_integrite_immuable BEFORE DELETE OR UPDATE ON public.sceau_integrite FOR EACH ROW EXECUTE FUNCTION public.integrite_interdire_modification_trace();
+
+
+--
+-- Name: sceau_integrite trg_sceau_integrite_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sceau_integrite_non_vidable BEFORE TRUNCATE ON public.sceau_integrite FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_interdire_modification_trace();
+
+
+--
 -- Name: session_caisse trg_session_fermee; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -9919,10 +14032,59 @@ CREATE CONSTRAINT TRIGGER trg_tracabilite_vente AFTER INSERT OR UPDATE OF statut
 
 
 --
+-- Name: verification_integrite trg_verification_integrite_immuable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_verification_integrite_immuable BEFORE DELETE OR UPDATE ON public.verification_integrite FOR EACH ROW EXECUTE FUNCTION public.integrite_interdire_modification_trace();
+
+
+--
+-- Name: verification_integrite trg_verification_integrite_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_verification_integrite_non_vidable BEFORE TRUNCATE ON public.verification_integrite FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_interdire_modification_trace();
+
+
+--
 -- Name: produit trg_zones_produit; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_zones_produit BEFORE INSERT OR UPDATE OF emplacement_id, reserve_id ON public.produit FOR EACH ROW EXECUTE FUNCTION public.verifier_zones_produit();
+
+
+--
+-- Name: annulation_registre zz_annulation_registre_journal; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_annulation_registre_journal AFTER INSERT ON public.annulation_registre FOR EACH ROW EXECUTE FUNCTION public.annulation_registre_vers_journal();
+
+
+--
+-- Name: integrite_essai zz_integrite_chainer; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_integrite_chainer BEFORE INSERT ON public.integrite_essai FOR EACH ROW EXECUTE FUNCTION public.integrite_chainer();
+
+
+--
+-- Name: journal_registre_psychotrope zz_integrite_chainer; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_integrite_chainer BEFORE INSERT ON public.journal_registre_psychotrope FOR EACH ROW EXECUTE FUNCTION public.integrite_chainer();
+
+
+--
+-- Name: journal_vente zz_integrite_chainer; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_integrite_chainer BEFORE INSERT ON public.journal_vente FOR EACH ROW EXECUTE FUNCTION public.integrite_chainer();
+
+
+--
+-- Name: registre_psychotrope zz_registre_journal_chaine; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_registre_journal_chaine AFTER INSERT ON public.registre_psychotrope FOR EACH ROW EXECUTE FUNCTION public.registre_vers_journal();
 
 
 --
@@ -9998,6 +14160,22 @@ ALTER TABLE ONLY import.fournisseur_src
 
 
 --
+-- Name: historique_chifa_src historique_chifa_src_session_id_fkey; Type: FK CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.historique_chifa_src
+    ADD CONSTRAINT historique_chifa_src_session_id_fkey FOREIGN KEY (session_id) REFERENCES import.session(id);
+
+
+--
+-- Name: historique_mdn_src historique_mdn_src_session_id_fkey; Type: FK CONSTRAINT; Schema: import; Owner: -
+--
+
+ALTER TABLE ONLY import.historique_mdn_src
+    ADD CONSTRAINT historique_mdn_src_session_id_fkey FOREIGN KEY (session_id) REFERENCES import.session(id);
+
+
+--
 -- Name: produit_src produit_src_session_id_fkey; Type: FK CONSTRAINT; Schema: import; Owner: -
 --
 
@@ -10059,6 +14237,22 @@ ALTER TABLE ONLY public.alerte_surveillance
 
 ALTER TABLE ONLY public.alerte
     ADD CONSTRAINT alerte_traitee_par_fkey FOREIGN KEY (traitee_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: annulation_registre annulation_registre_registre_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.annulation_registre
+    ADD CONSTRAINT annulation_registre_registre_id_fkey FOREIGN KEY (registre_id) REFERENCES public.registre_psychotrope(id);
+
+
+--
+-- Name: annulation_registre annulation_registre_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.annulation_registre
+    ADD CONSTRAINT annulation_registre_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
 
 
 --
@@ -10326,6 +14520,30 @@ ALTER TABLE ONLY public.campagne_inventaire_ligne
 
 
 --
+-- Name: catalogue_grossiste catalogue_grossiste_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.catalogue_grossiste
+    ADD CONSTRAINT catalogue_grossiste_fournisseur_id_fkey FOREIGN KEY (fournisseur_id) REFERENCES public.fournisseur(id);
+
+
+--
+-- Name: catalogue_grossiste catalogue_grossiste_import_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.catalogue_grossiste
+    ADD CONSTRAINT catalogue_grossiste_import_id_fkey FOREIGN KEY (import_id) REFERENCES public.import_catalogue_grossiste(id);
+
+
+--
+-- Name: catalogue_grossiste catalogue_grossiste_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.catalogue_grossiste
+    ADD CONSTRAINT catalogue_grossiste_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
 -- Name: centre_payeur centre_payeur_organisme_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10347,6 +14565,46 @@ ALTER TABLE ONLY public.chifa_code_produit
 
 ALTER TABLE ONLY public.chifa_code_produit
     ADD CONSTRAINT chifa_code_produit_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
+-- Name: classe_suivie_dci classe_suivie_dci_ajoute_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classe_suivie_dci
+    ADD CONSTRAINT classe_suivie_dci_ajoute_par_fkey FOREIGN KEY (ajoute_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: classe_suivie_dci classe_suivie_dci_classe_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classe_suivie_dci
+    ADD CONSTRAINT classe_suivie_dci_classe_code_fkey FOREIGN KEY (classe_code) REFERENCES public.classe_suivie(code);
+
+
+--
+-- Name: classe_suivie_dci classe_suivie_dci_dci_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.classe_suivie_dci
+    ADD CONSTRAINT classe_suivie_dci_dci_id_fkey FOREIGN KEY (dci_id) REFERENCES public.dci(id);
+
+
+--
+-- Name: cloture_fiscale cloture_fiscale_sceau_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cloture_fiscale
+    ADD CONSTRAINT cloture_fiscale_sceau_id_fkey FOREIGN KEY (sceau_id) REFERENCES public.sceau_integrite(id);
+
+
+--
+-- Name: cloture_fiscale cloture_fiscale_session_caisse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cloture_fiscale
+    ADD CONSTRAINT cloture_fiscale_session_caisse_id_fkey FOREIGN KEY (session_caisse_id) REFERENCES public.session_caisse(id);
 
 
 --
@@ -10558,6 +14816,46 @@ ALTER TABLE ONLY public.credit_ouverture
 
 
 --
+-- Name: demande_patient demande_patient_cloture_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.demande_patient
+    ADD CONSTRAINT demande_patient_cloture_par_fkey FOREIGN KEY (cloture_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: demande_patient demande_patient_cree_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.demande_patient
+    ADD CONSTRAINT demande_patient_cree_par_fkey FOREIGN KEY (cree_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: demande_patient demande_patient_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.demande_patient
+    ADD CONSTRAINT demande_patient_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: demande_patient demande_patient_prevenu_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.demande_patient
+    ADD CONSTRAINT demande_patient_prevenu_par_fkey FOREIGN KEY (prevenu_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: demande_patient demande_patient_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.demande_patient
+    ADD CONSTRAINT demande_patient_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
 -- Name: ecart_caisse_vu ecart_caisse_vu_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10718,6 +15016,14 @@ ALTER TABLE ONLY public.ligne_vente
 
 
 --
+-- Name: medecin fk_medecin_wilaya; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.medecin
+    ADD CONSTRAINT fk_medecin_wilaya FOREIGN KEY (wilaya) REFERENCES public.wilaya(code);
+
+
+--
 -- Name: patient fk_patient_assure_principal; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10750,6 +15056,38 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: forcage_alerte_psychotrope forcage_alerte_psychotrope_medecin_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forcage_alerte_psychotrope
+    ADD CONSTRAINT forcage_alerte_psychotrope_medecin_id_fkey FOREIGN KEY (medecin_id) REFERENCES public.medecin(id);
+
+
+--
+-- Name: forcage_alerte_psychotrope forcage_alerte_psychotrope_patient_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forcage_alerte_psychotrope
+    ADD CONSTRAINT forcage_alerte_psychotrope_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES public.patient(id);
+
+
+--
+-- Name: forcage_alerte_psychotrope forcage_alerte_psychotrope_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forcage_alerte_psychotrope
+    ADD CONSTRAINT forcage_alerte_psychotrope_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: forcage_alerte_psychotrope forcage_alerte_psychotrope_valide_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.forcage_alerte_psychotrope
+    ADD CONSTRAINT forcage_alerte_psychotrope_valide_par_fkey FOREIGN KEY (valide_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: fournisseur_mouvement fournisseur_mouvement_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10763,6 +15101,30 @@ ALTER TABLE ONLY public.fournisseur_mouvement
 
 ALTER TABLE ONLY public.fournisseur_mouvement
     ADD CONSTRAINT fournisseur_mouvement_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: historique_chifa historique_chifa_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.historique_chifa
+    ADD CONSTRAINT historique_chifa_session_id_fkey FOREIGN KEY (session_id) REFERENCES import.session(id);
+
+
+--
+-- Name: import_catalogue_grossiste import_catalogue_grossiste_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_catalogue_grossiste
+    ADD CONSTRAINT import_catalogue_grossiste_fournisseur_id_fkey FOREIGN KEY (fournisseur_id) REFERENCES public.fournisseur(id);
+
+
+--
+-- Name: import_catalogue_grossiste import_catalogue_grossiste_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.import_catalogue_grossiste
+    ADD CONSTRAINT import_catalogue_grossiste_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
 
 
 --
@@ -10822,11 +15184,75 @@ ALTER TABLE ONLY public.journal_audit
 
 
 --
+-- Name: journal_registre_psychotrope journal_registre_psychotrope_registre_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_registre_psychotrope
+    ADD CONSTRAINT journal_registre_psychotrope_registre_id_fkey FOREIGN KEY (registre_id) REFERENCES public.registre_psychotrope(id);
+
+
+--
 -- Name: journal_sauvegarde journal_sauvegarde_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.journal_sauvegarde
     ADD CONSTRAINT journal_sauvegarde_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: journal_vente journal_vente_annulation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_vente
+    ADD CONSTRAINT journal_vente_annulation_id_fkey FOREIGN KEY (annulation_id) REFERENCES public.annulation_vente(id);
+
+
+--
+-- Name: journal_vente journal_vente_avoir_mouvement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_vente
+    ADD CONSTRAINT journal_vente_avoir_mouvement_id_fkey FOREIGN KEY (avoir_mouvement_id) REFERENCES public.avoir_mouvement(id);
+
+
+--
+-- Name: journal_vente journal_vente_regularisation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_vente
+    ADD CONSTRAINT journal_vente_regularisation_id_fkey FOREIGN KEY (regularisation_id) REFERENCES public.regularisation_part_organisme(id);
+
+
+--
+-- Name: journal_vente journal_vente_retour_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_vente
+    ADD CONSTRAINT journal_vente_retour_client_id_fkey FOREIGN KEY (retour_client_id) REFERENCES public.retour_client(id);
+
+
+--
+-- Name: journal_vente journal_vente_session_caisse_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_vente
+    ADD CONSTRAINT journal_vente_session_caisse_id_fkey FOREIGN KEY (session_caisse_id) REFERENCES public.session_caisse(id);
+
+
+--
+-- Name: journal_vente journal_vente_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_vente
+    ADD CONSTRAINT journal_vente_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: journal_vente journal_vente_vente_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.journal_vente
+    ADD CONSTRAINT journal_vente_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
 
 
 --
@@ -11262,6 +15688,22 @@ ALTER TABLE ONLY public.panier_attente
 
 
 --
+-- Name: parametre_formulaire_sms parametre_formulaire_sms_modifie_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_formulaire_sms
+    ADD CONSTRAINT parametre_formulaire_sms_modifie_par_fkey FOREIGN KEY (modifie_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: parametre_substitution parametre_substitution_modifie_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_substitution
+    ADD CONSTRAINT parametre_substitution_modifie_par_fkey FOREIGN KEY (modifie_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: patient patient_centre_payeur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11355,6 +15797,22 @@ ALTER TABLE ONLY public.produit
 
 ALTER TABLE ONLY public.produit
     ADD CONSTRAINT produit_reserve_id_fkey FOREIGN KEY (reserve_id) REFERENCES public.emplacement(id);
+
+
+--
+-- Name: profil_catalogue_grossiste profil_catalogue_grossiste_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.profil_catalogue_grossiste
+    ADD CONSTRAINT profil_catalogue_grossiste_fournisseur_id_fkey FOREIGN KEY (fournisseur_id) REFERENCES public.fournisseur(id);
+
+
+--
+-- Name: profil_catalogue_grossiste profil_catalogue_grossiste_modifie_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.profil_catalogue_grossiste
+    ADD CONSTRAINT profil_catalogue_grossiste_modifie_par_fkey FOREIGN KEY (modifie_par) REFERENCES public.utilisateur(id);
 
 
 --
@@ -11467,6 +15925,14 @@ ALTER TABLE ONLY public.registre_psychotrope
 
 ALTER TABLE ONLY public.registre_psychotrope
     ADD CONSTRAINT registre_psychotrope_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: regle_alerte_psychotrope regle_alerte_psychotrope_modifie_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regle_alerte_psychotrope
+    ADD CONSTRAINT regle_alerte_psychotrope_modifie_par_fkey FOREIGN KEY (modifie_par) REFERENCES public.utilisateur(id);
 
 
 --
@@ -11790,6 +16256,38 @@ ALTER TABLE ONLY public.role_permission
 
 
 --
+-- Name: rupture_grossiste rupture_grossiste_fournisseur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rupture_grossiste
+    ADD CONSTRAINT rupture_grossiste_fournisseur_id_fkey FOREIGN KEY (fournisseur_id) REFERENCES public.fournisseur(id);
+
+
+--
+-- Name: rupture_grossiste rupture_grossiste_import_debut_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rupture_grossiste
+    ADD CONSTRAINT rupture_grossiste_import_debut_id_fkey FOREIGN KEY (import_debut_id) REFERENCES public.import_catalogue_grossiste(id);
+
+
+--
+-- Name: rupture_grossiste rupture_grossiste_import_fin_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rupture_grossiste
+    ADD CONSTRAINT rupture_grossiste_import_fin_id_fkey FOREIGN KEY (import_fin_id) REFERENCES public.import_catalogue_grossiste(id);
+
+
+--
+-- Name: rupture_grossiste rupture_grossiste_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rupture_grossiste
+    ADD CONSTRAINT rupture_grossiste_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
 -- Name: scan_reception scan_reception_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11806,6 +16304,30 @@ ALTER TABLE ONLY public.scan_reception
 
 
 --
+-- Name: sceau_integrite sceau_integrite_auteur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sceau_integrite
+    ADD CONSTRAINT sceau_integrite_auteur_id_fkey FOREIGN KEY (auteur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: sceau_integrite sceau_integrite_journal_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sceau_integrite
+    ADD CONSTRAINT sceau_integrite_journal_fkey FOREIGN KEY (journal) REFERENCES public.chaine_integrite(journal);
+
+
+--
+-- Name: serveur_officine serveur_officine_modifie_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.serveur_officine
+    ADD CONSTRAINT serveur_officine_modifie_par_fkey FOREIGN KEY (modifie_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: session_caisse session_caisse_releve_de_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11819,6 +16341,30 @@ ALTER TABLE ONLY public.session_caisse
 
 ALTER TABLE ONLY public.session_caisse
     ADD CONSTRAINT session_caisse_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: substitution_liste_blanche substitution_liste_blanche_cree_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.substitution_liste_blanche
+    ADD CONSTRAINT substitution_liste_blanche_cree_par_fkey FOREIGN KEY (cree_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: substitution_liste_blanche substitution_liste_blanche_produit_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.substitution_liste_blanche
+    ADD CONSTRAINT substitution_liste_blanche_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES public.produit(id);
+
+
+--
+-- Name: substitution_liste_blanche substitution_liste_blanche_remplacant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.substitution_liste_blanche
+    ADD CONSTRAINT substitution_liste_blanche_remplacant_id_fkey FOREIGN KEY (remplacant_id) REFERENCES public.produit(id);
 
 
 --
@@ -11974,6 +16520,30 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: verification_integrite verification_integrite_declenchee_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.verification_integrite
+    ADD CONSTRAINT verification_integrite_declenchee_par_fkey FOREIGN KEY (declenchee_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: verification_integrite verification_integrite_journal_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.verification_integrite
+    ADD CONSTRAINT verification_integrite_journal_fkey FOREIGN KEY (journal) REFERENCES public.chaine_integrite(journal);
+
+
+--
+-- Name: verification_serialisation verification_serialisation_boite_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.verification_serialisation
+    ADD CONSTRAINT verification_serialisation_boite_id_fkey FOREIGN KEY (boite_id) REFERENCES public.boite(id);
+
+
+--
 -- Name: versement_bordereau versement_bordereau_bordereau_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11990,8 +16560,24 @@ ALTER TABLE ONLY public.versement_bordereau
 
 
 --
+-- Name: zone_psychotrope_wilaya zone_psychotrope_wilaya_modifie_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zone_psychotrope_wilaya
+    ADD CONSTRAINT zone_psychotrope_wilaya_modifie_par_fkey FOREIGN KEY (modifie_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: zone_psychotrope_wilaya zone_psychotrope_wilaya_wilaya_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.zone_psychotrope_wilaya
+    ADD CONSTRAINT zone_psychotrope_wilaya_wilaya_fkey FOREIGN KEY (wilaya) REFERENCES public.wilaya(code);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
-\unrestrict n4MqO8nrz4tdATAWHuZqVYgTz7vgi0grvCppkMhsScgWh6S1GP4zE1qa2gsagEr
+\unrestrict o6Zfh7mlmQninAi1cXUwoHGeN4d2aNT5dMnCEW2Jy7iEMOovhQIWXdsXht8QBcm
 

@@ -76,7 +76,7 @@ public sealed record ResultatSauvegarde(string Statut, string? Fichier, long? Ta
 /// en années. Disque absent ou échec : inscrit au journal et signalé au titulaire (SMS et e-mail).
 /// </summary>
 public sealed class LancerSauvegarde(ISauvegardesDepot depot, IStockageSauvegarde stockage, IAlertesTitulaire alertes, IHorloge horloge,
-    Ged.ReglagesGed? ged = null, ITraceErreurs? trace = null)
+    Ged.ReglagesGed? ged = null, ITraceErreurs? trace = null, CopierSauvegardeSecours? secours = null)
 {
     public async Task<ResultatSauvegarde> ExecuterAsync(bool automatique, long? utilisateurId, DateTime maintenantLocal, CancellationToken ct = default)
     {
@@ -135,6 +135,10 @@ public sealed class LancerSauvegarde(ISauvegardesDepot depot, IStockageSauvegard
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { copie += $" Copie des documents de la GED impossible : {ex.Message}"; }
                 copie += Nettoyer(r, maintenantLocal);
             }
+            // Seconde copie (PC de secours, clé USB…) : vérifiée ; son échec est signalé sans rendre la sauvegarde échouée
+            if (secours is not null)
+                try { copie += await secours.ExecuterAsync(fichier, r.Conservation, ct) ?? ""; }
+                catch (Exception ex) when (ex is not OperationCanceledException) { copie += $" Copie de secours impossible : {ex.Message}"; }
             resultat = new ResultatSauvegarde("reussie", fichier, taille,
                 $"Sauvegarde de {taille / 1024.0 / 1024.0:0.0} Mo" + (supprimes > 0 ? $", {supprimes} ancienne(s) supprimée(s)." : ".") + copie);
         }

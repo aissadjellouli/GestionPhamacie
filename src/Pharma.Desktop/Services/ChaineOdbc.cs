@@ -16,7 +16,8 @@ public static class ChaineOdbc
         var p = pilote ?? "";
         bool A(string s) => p.Contains(s, StringComparison.OrdinalIgnoreCase);
         if (A("Text Driver") || A("dBASE") || A("CSV")) return Famille.Dossier;
-        if (A("Access Driver") || A("Excel Driver")) return Famille.Fichier;
+        // Lecteur Excel intégré (.xlsx, sans pilote) : un fichier, une feuille par type de données
+        if (A("Access Driver") || A("Excel Driver") || A("Lecteur Excel")) return Famille.Fichier;
         if (A("Firebird")) return Famille.Firebird;
         if (A("SQLite")) return Famille.Sqlite;
         return Famille.Serveur;     // SQL Server, MySQL, MariaDB, PostgreSQL, HFSQL C/S… : serveur et base

@@ -56,7 +56,7 @@ public sealed class CompteSuperAdminFichier(string chemin) : ICompteSuperAdmin
     }
 
     [SupportedOSPlatform("windows")]
-    private static void Restreindre(string fichier)
+    internal static void Restreindre(string fichier)
     {
         var droits = new FileSecurity();
         droits.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);

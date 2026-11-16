@@ -12,7 +12,8 @@ namespace Pharma.Infrastructure.Sauvegardes;
 /// 3. la base en service est renommée « …_avant_restauration_AAAAMMJJ_HHMM » (jamais supprimée), puis la base neuve prend son nom.
 /// Un échec avant l'étape 3 ne touche pas la base en service (la base neuve, incomplète, est supprimée).
 /// </summary>
-public sealed class RestaurationPostgres(string chaineConnexion, string? cheminPgDump, string dossierScripts, NpgsqlDataSource source) : IRestaurationBase
+public sealed class RestaurationPostgres(string chaineConnexion, string? cheminPgDump, string dossierScripts, NpgsqlDataSource source)
+    : IRestaurationBase, Application.Sauvegardes.ITestRestauration
 {
     private readonly NpgsqlConnectionStringBuilder connexion = new(chaineConnexion);
 
@@ -102,6 +103,45 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
         return existait ? ancienne : null;
     }
 
+    /// <summary>
+    /// Test de restauration (copie de secours) : base temporaire « …_test_restauration_AAAAMMJJ_HHMMSS » remplie par pg_restore, contenu
+    /// compté, puis base supprimée dans tous les cas. La base en service n'est jamais touchée ; aucun script n'est rejoué.
+    /// </summary>
+    public async Task<string> TesterAsync(string fichier, CancellationToken ct = default)
+    {
+        await VerifierAsync(fichier, ct);
+        var essai = Limiter(NomBase, $"_test_restauration_{DateTime.Now:yyyyMMdd_HHmmss}");
+        await AdministrerAsync($"CREATE DATABASE {Nom(essai)} ENCODING 'UTF8' TEMPLATE template0", ct);
+        try
+        {
+            var (code, erreurs) = await LancerAsync("pg_restore.exe",
+                ["--no-password", ..Hote(), $"--dbname={essai}", "--no-owner", "--no-privileges", "--exit-on-error", fichier], ct);
+            if (code != 0) throw new RegleMetierException($"pg_restore a échoué : {erreurs}");
+            await using var cx = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(chaineConnexion) { Database = essai, Pooling = false }.ConnectionString);
+            await cx.OpenAsync(ct);
+            await using var cmd = new NpgsqlCommand("""
+                SELECT (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'),
+                       (SELECT count(*) FROM utilisateur), (SELECT count(*) FROM produit), (SELECT count(*) FROM vente),
+                       (SELECT max(date_vente) FROM vente)
+                """, cx);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            await r.ReadAsync(ct);
+            var (tables, employes) = (r.GetInt64(0), r.GetInt64(1));
+            if (tables == 0 || employes == 0) throw new RegleMetierException("La base restaurée est vide (aucune table ou aucun employé).");
+            return $"{tables} tables, {employes} employé(s), {r.GetInt64(2)} produit(s), {r.GetInt64(3)} vente(s)" +
+                   (r.IsDBNull(4) ? "." : $", dernière vente le {r.GetDateTime(4).ToLocalTime():dd/MM/yyyy HH:mm}.");
+        }
+        catch (PostgresException e)
+        {
+            throw new RegleMetierException($"Contenu restauré incomplet : {e.MessageText}");
+        }
+        finally
+        {
+            try { await AdministrerAsync($"DROP DATABASE IF EXISTS {Nom(essai)} WITH (FORCE)", CancellationToken.None); }
+            catch (NpgsqlException) { /* base d'essai restée : supprimable à la main, la base en service n'est pas concernée */ }
+        }
+    }
+
     /// <summary>Renommage : les connexions ouvertes sur la base sont fermées d'abord (plusieurs essais : le serveur peut en rouvrir).</summary>
     private async Task RenommerAsync(string de, string vers, CancellationToken ct)
     {
@@ -143,7 +183,10 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
     private async Task RejouerScriptsAsync(string baseCible, CancellationToken ct)
     {
         var scripts = Directory.Exists(dossierScripts)
-            ? Directory.GetFiles(dossierScripts, "0*.sql").OrderBy(Path.GetFileName, StringComparer.Ordinal).ToList()
+            // Scripts numérotés « NNN_*.sql » (001 à 999) ; les scripts d'administrateur à part (ex. 111b, superutilisateur) sont exclus
+            ? Directory.GetFiles(dossierScripts, "*.sql")
+                .Where(f => System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(f), @"^\d{3}_"))
+                .OrderBy(Path.GetFileName, StringComparer.Ordinal).ToList()
             : [];
         if (scripts.Count == 0) throw new RegleMetierException($"Scripts de la base introuvables ({dossierScripts}) : réinstallez l'API.");
         static int Numero(string f) => int.TryParse(Path.GetFileName(f)[..3], out var n) ? n : 0;

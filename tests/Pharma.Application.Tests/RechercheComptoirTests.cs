@@ -49,7 +49,8 @@ public class RechercheComptoirTests
         Assert.Equal((3L, true), (c.Remplacant!.ProduitId, c.Remplacant.Exact));
         Assert.Null(c.MoinsCher);
 
-        var sansExact = RechercherAuComptoir.Proposer(p, Info(1, 0, 300), [Info(4, 50, 150, dosage: "500 mg")]);
+        // Autre dosage : seulement si « équivalent exact seulement » est désactivé (2026-11-16)
+        var sansExact = RechercherAuComptoir.Proposer(p, Info(1, 0, 300), [Info(4, 50, 150, dosage: "500 mg")], equivalentExactSeulement: false);
         Assert.Equal((4L, false), (sansExact.Remplacant!.ProduitId, sansExact.Remplacant.Exact));
     }
 

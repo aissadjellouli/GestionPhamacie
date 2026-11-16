@@ -30,3 +30,6 @@ docs/EXEMPLE/aid/Wasfa2/
 
 # Exemples réels (ordonnances, volets, factures) : jamais dans git
 docs/EXEMPLE/
+
+# Échanges entre agents, plans, revues : jamais dans git
+docs/taches/

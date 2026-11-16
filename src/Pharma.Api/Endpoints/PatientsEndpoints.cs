@@ -89,8 +89,15 @@ internal static class PatientsEndpoints
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
-        api.MapGet("/medecins", async (string? q, RechercherMedecins rechercher, CancellationToken ct) =>
-                Results.Ok((await rechercher.ExecuterAsync(q, ct)).Select(m => new MedecinDto(m.Id, m.Nom, m.Specialite, m.Telephone, m.Adresse, m.Email, m.NumeroOrdre, m.CodeCnas))))
+        // sansWilaya : filtre « wilaya à renseigner » de l'écran des médecins (2026-11-16)
+        api.MapGet("/medecins", async (string? q, bool? sansWilaya, RechercherMedecins rechercher, CancellationToken ct) =>
+                Results.Ok((sansWilaya == true ? await rechercher.SansWilayaAsync(q, ct) : await rechercher.ExecuterAsync(q, ct))
+                    .Select(m => new MedecinDto(m.Id, m.Nom, m.Specialite, m.Telephone, m.Adresse, m.Email, m.NumeroOrdre, m.CodeCnas, m.Wilaya))))
+           .ExigerPermission(Permissions.CaisseVendre);
+
+        // Référentiel des wilayas (liste bornée : fiche médecin, zone de l'officine)
+        api.MapGet("/wilayas", async (Pharma.Application.Psychotropes.IZonePsychotropesDepot zone, CancellationToken ct) =>
+                Results.Ok((await zone.WilayasAsync(ct)).Select(w => new WilayaDto(w.Code, w.Nom)).ToList()))
            .ExigerPermission(Permissions.CaisseVendre);
 
         api.MapPost("/medecins", async (NouveauMedecinDto req, CreerMedecin creer, CancellationToken ct) =>
@@ -110,5 +117,5 @@ internal static class PatientsEndpoints
     }
 
     private static Pharma.Application.Patients.SaisieMedecin VersSaisie(NouveauMedecinDto d) =>
-        new(d.Nom, d.Specialite, d.Telephone, d.Adresse, d.Email, d.NumeroOrdre, d.CodeCnas);
+        new(d.Nom, d.Specialite, d.Telephone, d.Adresse, d.Email, d.NumeroOrdre, d.CodeCnas, d.Wilaya);
 }

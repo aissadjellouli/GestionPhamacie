@@ -60,6 +60,9 @@ public static class ErreursMetier
     {
         PostgresErrorCodes.DeadlockDetected or PostgresErrorCodes.SerializationFailure =>
             (StatusCodes.Status409Conflict, "Opération en conflit avec un autre poste : réessayez."),
+        // 2e serveur : base en lecture seule (pas encore basculée) — aucune écriture possible
+        PostgresErrorCodes.ReadOnlySqlTransaction =>
+            (StatusCodes.Status503ServiceUnavailable, "Enregistrement impossible : la base de ce serveur est en lecture seule (2e serveur non basculé). Procédure « 2e serveur »."),
         PostgresErrorCodes.UniqueViolation =>
             (StatusCodes.Status422UnprocessableEntity, "Enregistrement refusé : cette donnée existe déjà. Vérifiez la saisie."),
         PostgresErrorCodes.CheckViolation =>

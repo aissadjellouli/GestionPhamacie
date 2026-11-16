@@ -31,6 +31,9 @@ public static class DependencyInjection
         services.AddScoped<TraiterAlerte>();
         services.AddScoped<RappelerLot>();
         services.AddScoped<ConsulterRappelLot>();
+        // Sérialisation DataMatrix (script 120, lot 10) : file hors ligne vers la base nationale
+        services.AddScoped<Serialisation.TraiterFileSerialisation>();
+        services.AddScoped<Serialisation.PiloterFileSerialisation>();
         services.AddScoped<ListerMesPermissions>();
         services.AddScoped<Encaisser>();
         services.AddScoped<Caisse.ListerRemisesAutomatiques>();
@@ -84,6 +87,29 @@ public static class DependencyInjection
         services.AddScoped<Achats.ModifierLigneCommande>();
         services.AddScoped<Achats.EmettreCommande>();
         services.AddScoped<Achats.ImprimerCommande>();
+        // Multi-grossistes (lot 6) : connecteurs « fichier » et « email », catalogue, comparaison, répartition, envoi
+        services.AddScoped<Achats.IGrossisteConnecteur, Achats.GrossisteConnecteurFichier>();
+        services.AddScoped<Achats.IGrossisteConnecteur, Achats.GrossisteConnecteurEmail>();
+        services.AddScoped<Achats.ConsulterProfilCatalogue>();
+        services.AddScoped<Achats.EnregistrerProfilCatalogue>();
+        services.AddScoped<Achats.LireColonnesCatalogue>();
+        services.AddScoped<Achats.ImporterCatalogueGrossiste>();
+        services.AddScoped<Achats.ListerImportsCatalogue>();
+        services.AddScoped<Achats.ComparerGrossistes>();
+        services.AddScoped<Achats.RepartirCommande>();
+        services.AddScoped<Achats.EnvoyerBonParEmail>();
+        // Ruptures et substitution (lot 7) : historique des ruptures, patients en attente, liste blanche, fabriqué en Algérie
+        services.AddScoped<Achats.ConsulterRuptures>();
+        services.AddScoped<Achats.DemanderPrevenirPatient>();
+        services.AddScoped<Achats.ConsulterDemandesPatients>();
+        services.AddScoped<Achats.PrevenirPatient>();
+        services.AddScoped<Achats.CloturerDemandePatient>();
+        services.AddScoped<Achats.ConsentementSmsPatient>();
+        services.AddScoped<Achats.FormulaireAccordSmsPatient>();
+        services.AddScoped<Catalogue.ConsulterParametreSubstitution>();
+        services.AddScoped<Catalogue.ModifierParametreSubstitution>();
+        services.AddScoped<Catalogue.GererListeBlanche>();
+        services.AddScoped<Catalogue.GererFabricationLocale>();
         services.AddScoped<Achats.AnnulerCommande>();
         services.AddScoped<Achats.Receptionner>();
         services.AddScoped<Achats.ModeReception>();
@@ -198,6 +224,9 @@ public static class DependencyInjection
         services.AddScoped<Stock.ConsulterInventaireComplet>();
         services.AddScoped<Stock.GererInventaireComplet>();
         services.AddScoped<Pilotage.ObtenirPilotage>();
+        // Tableau de bord financier du titulaire (lot 11) : lecture seule
+        services.AddScoped<Pilotage.ObtenirPilotageFinancier>();
+        services.AddScoped<Pilotage.ExporterPilotageFinancier>();
         services.AddScoped<Rapports.ObtenirRapport>();
         services.AddScoped<Rapports.ObtenirVentesDuJour>();
         services.AddScoped<Rapports.ExporterRapport>();
@@ -210,6 +239,9 @@ public static class DependencyInjection
         services.AddScoped<Reprise.AnnulerReprise>();
         services.AddScoped<Reprise.ListerDoublonsImport>();
         services.AddScoped<Reprise.DeciderDoublonImport>();
+        services.AddScoped<Reprise.ListerProfilsReprise>();
+        services.AddScoped<Reprise.EnregistrerProfilReprise>();
+        services.AddScoped<Reprise.ConsulterHistoriqueChifa>();
         services.AddScoped<Administration.ObtenirSeuilStock>();
         services.AddScoped<Administration.ListerSeuilsStockManuels>();
         services.AddScoped<Administration.DefinirSeuilStock>();
@@ -245,6 +277,29 @@ public static class DependencyInjection
         services.AddScoped<Surveillance.ReglerSurveillance>();
         services.AddScoped<Surveillance.GererProduitsSensibles>();
         services.AddScoped<Surveillance.ObtenirTableauRisques>();
+        // Intégrité des journaux (lot 2) : scellement, vérification planifiée et écran du titulaire
+        services.AddScoped<Integrite.ScellerJournal>();
+        services.AddScoped<Integrite.VerifierIntegrite>();
+        services.AddScoped<Integrite.ObtenirIntegrite>();
+        services.AddScoped<Integrite.VerifierIntegriteMaintenant>();
+        // Registre des psychotropes renforcé (lot 8) : alertes et forçage, annulations, concordance, scellement mensuel, antibiotiques
+        services.AddScoped<Psychotropes.ControlerDelivrancePsychotrope>();
+        services.AddScoped<Psychotropes.ForcerAlertesPsychotropes>();
+        services.AddScoped<Psychotropes.ControleAlertesPsychotropes>();
+        services.AddScoped<Psychotropes.ParametrerAlertesPsychotropes>();
+        services.AddScoped<Psychotropes.ParametrerZonePsychotropes>();
+        services.AddScoped<Psychotropes.ListerForcagesPsychotropes>();
+        services.AddScoped<Psychotropes.AnnulerEcritureRegistre>();
+        services.AddScoped<Psychotropes.ScellerRegistreMensuel>();
+        services.AddScoped<Psychotropes.SuiviClassesTherapeutiques>();
+        services.AddScoped<Integrite.IControleJournal, Psychotropes.ConcordanceRegistre>();
+        // Journal fiscal des ventes (lot 3) : clôtures scellées, continuité des tickets, écran et export du titulaire
+        services.AddScoped<Fiscal.ScellerClotureCaisse>();
+        services.AddScoped<Fiscal.ScellerMois>();
+        services.AddScoped<Fiscal.ScellerPeriodesEchues>();
+        services.AddScoped<Fiscal.ControlerNumerotation>();
+        services.AddScoped<Fiscal.ObtenirJournalFiscal>();
+        services.AddScoped<Fiscal.ExporterJournalFiscal>();
         services.AddScoped<ObtenirInventaire>();
         services.AddScoped<CompterLot>();
         services.AddScoped<ScannerBoiteInventaire>();
@@ -273,6 +328,18 @@ public static class DependencyInjection
         services.AddScoped<Sauvegardes.SauvegardeAutomatique>();
         services.AddScoped<Sauvegardes.ObtenirSauvegardes>();
         services.AddScoped<Sauvegardes.ModifierReglagesSauvegarde>();
+        // PC de secours : seconde copie vérifiée, alerte de retard, test de restauration (2026-11-16)
+        services.AddScoped<Sauvegardes.CopierSauvegardeSecours>();
+        services.AddScoped<Sauvegardes.SurveillerCopieSecours>();
+        services.AddScoped<Sauvegardes.ModifierReglagesCopieSecours>();
+        // 2e serveur (2026-11-16, script 122) : écran, alerte de réplication, réglages par serveur, export / import de la clé
+        services.AddScoped<SecondServeur.ObtenirSecondServeur>();
+        services.AddScoped<SecondServeur.SurveillerReplication>();
+        services.AddScoped<SecondServeur.ModifierServeurOfficine>();
+        services.AddScoped<SecondServeur.ModifierSeuilsReplication>();
+        services.AddScoped<SecondServeur.ExporterCleScellement>();
+        services.AddScoped<SecondServeur.ImporterCleScellement>();
+        services.AddScoped<Sauvegardes.TesterRestaurationCopie>();
         return services;
     }
 }

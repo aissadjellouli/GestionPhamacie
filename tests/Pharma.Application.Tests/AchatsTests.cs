@@ -17,7 +17,9 @@ internal sealed class AchatsEnMemoire : IAchats
     public CommandeDetail? Commande { get; set; }
 
     public Task<Fournisseur?> FournisseurAsync(long id, CancellationToken ct = default) =>
-        Task.FromResult<Fournisseur?>(id is 1 or 2 ? new Fournisseur(id, $"Grossiste {id}", null, 0, null) : null);
+        Task.FromResult<Fournisseur?>(id is 1 or 2 ? new Fournisseur(id, $"Grossiste {id}", null, 0, null, Emails.GetValueOrDefault(id)) : null);
+    /// <summary>Adresse e-mail des grossistes 1 et 2 (aucune par défaut).</summary>
+    public Dictionary<long, string> Emails { get; } = [];
     public Task<string?> NomProduitAsync(long produitId, CancellationToken ct = default) =>
         Task.FromResult<string?>(produitId == 99 ? null : $"Produit {produitId}");
     public Task<DernierAchat?> DernierAchatAsync(long produitId, long fournisseurId, CancellationToken ct = default) => Task.FromResult(Dernier);
