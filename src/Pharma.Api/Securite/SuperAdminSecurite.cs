@@ -48,8 +48,8 @@ public static class SuperAdminSecurite
             var validation = http.RequestServices.GetRequiredService<ValidationsSuperAdmin>().Verifier(demande, parties[1], action);
             http.RequestServices.GetRequiredService<SuperAdminCourant>().Validation = validation;
             http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.SuperAdmin").LogWarning(
-                "Super admin {Identifiant} : action {Action} validée par code ({Canal} {Destinataire})",
-                http.User.IdentifiantSuperAdmin(), action, validation.Canal, validation.Destinataire);
+                "Super admin {Identifiant} : action {Action} validée par code ({Canal})",
+                http.User.IdentifiantSuperAdmin(), action, validation.Canal);
             return await next(ctx);
         });
         return builder;

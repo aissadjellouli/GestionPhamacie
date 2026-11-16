@@ -24,3 +24,11 @@
 - Le titulaire garde tous ses droits, et il reste toujours au moins un titulaire actif.
 - `journal_audit`, `registre_psychotrope` et `boite_evenement` ne peuvent être ni modifiés ni supprimés.
 - PostgreSQL n’accepte que les connexions locales de l’API (à régler dans `pg_hba.conf` à l’installation).
+
+## Journaux sans données personnelles
+
+Règle (2026-11-16) : les fichiers journaux du serveur (`C:\ProgramData\PharmaOfficine\Journaux\pharma-api-*.log`) et du poste (`%LOCALAPPDATA%\PharmaOfficine\erreurs.log`) ne contiennent aucune donnée personnelle : ni nom ou prénom de patient, de médecin ou d'employé, ni n° d'assuré, n° de pièce, téléphone, e-mail, adresse, ni texte libre saisi (motifs, observations). Le journal d'audit en base (`journal_audit`) n'est pas concerné.
+
+- **À la source** : on journalise des identifiants techniques (id, code d'action, type d'alerte, code d'erreur), jamais le texte. Refus métier : chemin, type d'exception, champ et statut, jamais le message (qui part au poste seulement). Refus de la base : code SQL, contrainte, table, sans le texte de la base. Requête mal formée : nom du paramètre seulement. Code super admin : action et canal (SMS ou e-mail), jamais le destinataire.
+- **Filet de sécurité** : `Pharma.Shared.MasqueurJournal` est appliqué à chaque ligne écrite (message rendu et pile d'exception complète) par `JournalFichierProvider` (serveur) et par `App.NoterErreur` (poste). Il masque : e-mail → `a***@d***.dz` (1er caractère, 1er caractère du domaine, extension) ; téléphone mobile algérien 05/06/07 ou +213/00213, séparateurs espace, point ou tiret admis → `06******12` ; nombre de 9 à 12 chiffres avec suffixe `/NN` facultatif (n° d'assuré) → `6907******42/80`. Les noms et textes libres ne sont pas reconnaissables : seule la règle « à la source » les protège.
+- Contrôlé par `tests/Pharma.Architecture.Tests/JournauxSansDonneesPersonnellesTests.cs`.

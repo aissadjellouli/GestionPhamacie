@@ -496,7 +496,8 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
         catch (Exception e) when (e is not OperationCanceledException)
         {
             // Panne : toujours signalée
-            trace?.Erreur($"Alerte au titulaire non mise en file : {objet}", e);
+            // Au journal : le type seulement (l'objet peut citer un employé ou un patient)
+            trace?.Erreur($"Alerte au titulaire non mise en file : {type}", e);
             await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, type, objet, $"Mise en file impossible : {e.Message}");
             return;
         }
@@ -533,7 +534,7 @@ public static class AlerteNonEnvoyeeSignalee
         try { await nonEnvoyees.NoterAsync(type, objet, raison, CancellationToken.None); }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            trace?.Erreur($"Alerte non envoyée non mémorisée pour le titulaire : {objet} ({raison})", e);
+            trace?.Erreur($"Alerte non envoyée non mémorisée pour le titulaire : {type}", e);
         }
     }
 

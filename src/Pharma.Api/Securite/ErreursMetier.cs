@@ -9,41 +9,46 @@ namespace Pharma.Api.Securite;
 /// Refus prévus (règle métier, droit manquant, refus d'un déclencheur de la base) : réponse claire au poste, sans les
 /// traiter comme des pannes. Ils ne remontent plus jusqu'au gestionnaire global d'erreurs : pas d'inscription en erreur
 /// au journal du serveur, et le débogueur ne s'arrête plus dessus. Les vraies pannes restent gérées par UseExceptionHandler.
+/// Journal sans données personnelles : le message du refus (qui peut citer un patient, un médecin, un employé ou une
+/// saisie libre) part au poste mais n'est jamais écrit au journal ; seuls le chemin, le type, le champ, le droit ou le
+/// code de la base y figurent.
 /// </summary>
 public static class ErreursMetier
 {
     public static TBuilder GererErreursMetier<TBuilder>(this TBuilder builder) where TBuilder : IEndpointConventionBuilder
     {
-        builder.AddEndpointFilter(async (ctx, suite) =>
-        {
-            try
-            {
-                return await suite(ctx);
-            }
-            catch (RegleMetierException e)
-            {
-                return Refus(ctx.HttpContext, StatusCodes.Status422UnprocessableEntity, e.Message, e, e.Champ);
-            }
-            catch (DroitRefuseException e)
-            {
-                ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus")
-                    .LogInformation("{Chemin} refusé (droit {Droit}) : {Message}", ctx.HttpContext.Request.Path, e.Permission, e.Message);
-                return await PermissionExtensions.RefusAsync(ctx.HttpContext, e.Permission, e.Message, e.Seuil);
-            }
-            catch (PostgresException e) when (e.SqlState == "P0001")
-            {
-                return Refus(ctx.HttpContext, StatusCodes.Status422UnprocessableEntity, e.MessageText, e);
-            }
-            catch (PostgresException e) when (Traduire(e) is { } refus)
-            {
-                // Le détail technique (code, contrainte, table) reste au journal du serveur, jamais dans la réponse au poste
-                ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus")
-                    .LogInformation("{Chemin} : refus de la base {Code} (contrainte {Contrainte}, table {Table}) : {Detail}",
-                        ctx.HttpContext.Request.Path, e.SqlState, e.ConstraintName, e.TableName, e.MessageText);
-                return Refus(ctx.HttpContext, refus.Statut, refus.Message, e);
-            }
-        });
+        builder.AddEndpointFilter(Filtrer);
         return builder;
+    }
+
+    /// <summary>Filtre des refus prévus (public pour les tests).</summary>
+    public static async ValueTask<object?> Filtrer(EndpointFilterInvocationContext ctx, EndpointFilterDelegate suite)
+    {
+        try
+        {
+            return await suite(ctx);
+        }
+        catch (RegleMetierException e)
+        {
+            return Refus(ctx.HttpContext, StatusCodes.Status422UnprocessableEntity, e.Message, e, e.Champ);
+        }
+        catch (DroitRefuseException e)
+        {
+            Journal(ctx.HttpContext).LogInformation("{Chemin} refusé (droit {Droit})", ctx.HttpContext.Request.Path, e.Permission);
+            return await PermissionExtensions.RefusAsync(ctx.HttpContext, e.Permission, e.Message, e.Seuil);
+        }
+        catch (PostgresException e) when (e.SqlState == "P0001")
+        {
+            return Refus(ctx.HttpContext, StatusCodes.Status422UnprocessableEntity, e.MessageText, e);
+        }
+        catch (PostgresException e) when (Traduire(e) is { } refus)
+        {
+            // Le détail technique (code, contrainte, table) reste au journal du serveur, jamais dans la réponse au poste ;
+            // le texte de la base (qui peut citer la valeur saisie) n'est pas journalisé
+            Journal(ctx.HttpContext).LogInformation("{Chemin} : refus de la base {Code} (contrainte {Contrainte}, table {Table})",
+                ctx.HttpContext.Request.Path, e.SqlState, e.ConstraintName, e.TableName);
+            return Refus(ctx.HttpContext, refus.Statut, refus.Message, e, journaliser: false);
+        }
     }
 
     /// <summary>
@@ -66,10 +71,15 @@ public static class ErreursMetier
         _ => null
     };
 
-    private static IResult Refus(HttpContext http, int statut, string message, Exception e, string? champ = null)
+    private static ILogger Journal(HttpContext http) =>
+        http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus");
+
+    private static IResult Refus(HttpContext http, int statut, string message, Exception e, string? champ = null, bool journaliser = true)
     {
-        http.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus")
-            .LogInformation("{Chemin} refusé ({Type}) : {Message}", http.Request.Path, e.GetType().Name, message);
+        // Au journal : type et champ du refus (P0001 : code de la base), jamais le message
+        if (journaliser)
+            Journal(http).LogInformation("{Chemin} refusé ({Type}, champ {Champ}, statut {Statut})",
+                http.Request.Path, e is PostgresException p ? $"{e.GetType().Name} {p.SqlState}" : e.GetType().Name, champ ?? "-", statut);
         return Results.Json(new ErreurDto(message, champ), statusCode: statut);
     }
 }

@@ -9,8 +9,12 @@ namespace Pharma.Api.Endpoints;
 /// Compte super admin (hors de la base) : connexion, puis code de validation avant chaque action sensible.
 /// Ces routes ne lisent pas la base : elles marchent même si elle est détruite (le code part alors avec la copie des réglages).
 /// </summary>
-internal static class SuperAdminEndpoints
+public static class SuperAdminEndpoints
 {
+    /// <summary>Code super admin demandé : action et canal au journal, jamais le destinataire (téléphone ou e-mail).</summary>
+    public static void JournaliserCodeDemande(ILogger journal, string action, string canal) =>
+        journal.LogWarning("Super admin : code demandé pour {Action}, envoyé par {Canal}", action, canal);
+
     public static void MapSuperAdmin(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/super-admin/connexion", (ConnexionRequete req, SeConnecterSuperAdmin connecter, JetonService jetons, ILoggerFactory journaux) =>
@@ -37,7 +41,7 @@ internal static class SuperAdminEndpoints
         super.MapPost("/validations", async (ValidationSuperAdminRequete req, DemanderValidationSuperAdmin demander, ILoggerFactory journaux, CancellationToken ct) =>
         {
             var d = await demander.ExecuterAsync(req.Action, req.MotDePasse, ct);
-            journaux.CreateLogger("Pharma.SuperAdmin").LogWarning("Super admin : code demandé pour {Action}, envoyé par {Canal} au {Destinataire}", req.Action, d.Canal, d.Destinataire);
+            JournaliserCodeDemande(journaux.CreateLogger("Pharma.SuperAdmin"), req.Action, d.Canal);
             return Results.Ok(new DemandeValidationDto(d.Id, d.Canal, d.Destinataire, d.ExpireLe));
         });
 

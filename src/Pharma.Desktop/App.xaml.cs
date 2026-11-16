@@ -82,14 +82,17 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    /// <summary>Journal local des erreurs imprévues du poste : %LOCALAPPDATA%\PharmaOfficine\erreurs.log.</summary>
+    /// <summary>
+    /// Journal local des erreurs imprévues du poste : %LOCALAPPDATA%\PharmaOfficine\erreurs.log.
+    /// Message et pile masqués (téléphones, e-mails, n° d'assuré) : aucune donnée personnelle au journal.
+    /// </summary>
     private static void NoterErreur(Exception ex)
     {
         try
         {
             var dossier = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PharmaOfficine");
             System.IO.Directory.CreateDirectory(dossier);
-            System.IO.File.AppendAllText(System.IO.Path.Combine(dossier, "erreurs.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {ex}{Environment.NewLine}{Environment.NewLine}");
+            System.IO.File.AppendAllText(System.IO.Path.Combine(dossier, "erreurs.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {Pharma.Shared.MasqueurJournal.Masquer(ex)}{Environment.NewLine}{Environment.NewLine}");
         }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { }
     }

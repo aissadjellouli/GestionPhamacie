@@ -134,7 +134,7 @@ app.Use(async (ctx, suite) =>
         var nom = System.Text.RegularExpressions.Regex.Match(b.Message, @"parameter ""(?:\S+ )?(\w+)""") is { Success: true } m ? m.Groups[1].Value : null;
         var message = nom is null ? "Requête invalide : données mal formées." : $"Requête invalide : le paramètre « {nom} » est manquant ou mal formé.";
         ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Refus")
-            .LogInformation("{Chemin} refusé (requête mal formée) : {Message}", ctx.Request.Path, b.Message);
+            .LogInformation("{Chemin} refusé (requête mal formée, paramètre {Parametre})", ctx.Request.Path, nom ?? "-");
         ctx.Response.StatusCode = b.StatusCode;
         await ctx.Response.WriteAsJsonAsync(new ErreurDto(message));
     }

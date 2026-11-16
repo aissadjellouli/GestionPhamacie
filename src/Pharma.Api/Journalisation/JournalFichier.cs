@@ -184,8 +184,9 @@ public sealed class JournalFichierProvider : ILoggerProvider
             if (!IsEnabled(niveau)) return;
             var texte = new StringBuilder()
                 .Append(DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture))
-                .Append(" [").Append(Abrege(niveau)).Append("] ").Append(categorie).Append(" : ").Append(formateur(etat, exception));
-            if (exception is not null) texte.AppendLine().Append(exception);
+                .Append(" [").Append(Abrege(niveau)).Append("] ").Append(categorie).Append(" : ").Append(Pharma.Shared.MasqueurJournal.Masquer(formateur(etat, exception)));
+            // Filet de sécurité : données personnelles reconnaissables masquées dans le message et la pile d'exception
+            if (exception is not null) texte.AppendLine().Append(Pharma.Shared.MasqueurJournal.Masquer(exception));
             fournisseur.Ajouter(texte.ToString());
         }
 
