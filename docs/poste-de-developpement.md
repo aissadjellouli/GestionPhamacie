@@ -140,6 +140,8 @@ dotnet run --project src\Pharma.Desktop
 
 Le dossier contient deux solutions (`.sln` et `.slnx`) : toujours préciser le fichier dans les commandes `dotnet build` et `dotnet test`.
 
+**Essayer l'officine et le serveur central ensemble** : `scripts\dev\essai_cloud_officine.ps1 -Demarrer` lance une officine d'essai et un serveur central d'essai reliés entre eux, sur des bases jetables (vos bases de démonstration ne sont pas modifiées). Guide pas à pas : [essai-cloud-officine.md](essai-cloud-officine.md).
+
 **Vidéos : jamais dans git.** Les vidéos (`.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.3gp`…), y compris celles des exemples
 (`docs/EXEMPLE/`), restent sur le disque ou se partagent à part : elles sont exclues par `.gitignore` et ne sont ni commitées
 ni rattachées à la solution. Seules les photos utiles sont gardées.

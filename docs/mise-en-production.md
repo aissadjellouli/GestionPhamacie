@@ -7,6 +7,7 @@ Mise à jour : 2026-11-16. Les points marqués **[À CONFIRMER]** ne sont pas tr
 ## Sommaire
 
 - [Avant de commencer](#avant-de-commencer) : rôles, comptes, conventions, ports, services, variables, fichiers
+- [Scripts de la base de données](scripts-base-de-donnees.md) : quel script lancer (base neuve, mise à jour, serveur central), avec quel compte, et que faire en cas d'échec
 - [Parcours A, installation neuve](#parcours-a-installation-neuve) : une officine qui démarre de zéro (étapes 1 à 15)
 - [Parcours B, mises à jour](#parcours-b-mises-à-jour) : une officine déjà en service (étapes 1 à 14)
 - [Parcours C, 2e serveur](#parcours-c-2e-serveur) : réplication et API de secours (facultatif)
@@ -203,22 +204,17 @@ Calendrier type :
     La version commence par `psql (PostgreSQL) 18`. Le service est `Running` et `Automatic`.
   - **Si échec** : relancer l'installeur ; vérifier qu'aucune autre version PostgreSQL n'est en conflit sur le port 5432.
 
-- [ ] **2.2** Créer le compte de l'application et la base. **Où** : PC serveur. **Compte** : superutilisateur `postgres`.
-  Ouvrir psql en interactif :
-  ```powershell
-  & $psql -h localhost -U postgres -d postgres
-  ```
-  Taper ensuite, ligne par ligne (le mot de passe est demandé par la commande `\password`, il n'est jamais écrit dans une commande) :
+- [ ] **2.2** Compte de l'application `pharma_app`. **Où** : PC serveur. **Compte** : superutilisateur `postgres`.
+  **Rien à faire ici pour une installation neuve** : le script de l'étape 3.1 crée le compte `pharma_app` (avec le droit `CREATEDB`, qui permet au super admin de restaurer une sauvegarde depuis l'application) **et** la base, et demande le mot de passe à lui donner : **propre à cette pharmacie**, jamais celui de démonstration, 12 caractères minimum, noté au coffre. **Ne pas créer la base à la main** : le script refuse une base qui existe déjà.
+  Seul cas où l'on crée le compte à la main (PC de secours, parcours D) : psql en interactif (`& $psql -h localhost -U postgres -d postgres`), puis, ligne par ligne (le mot de passe est demandé par `\password`, jamais écrit dans une commande) :
   ```sql
   CREATE ROLE pharma_app LOGIN CREATEDB;
   \password pharma_app
-  CREATE DATABASE <base> OWNER pharma_app ENCODING 'UTF8' TEMPLATE template0;
   \q
   ```
-  - `<base>` : exemple `pharmacie`. Mot de passe : **propre à cette pharmacie**, jamais celui de démonstration, 12 caractères minimum, noté au coffre.
-  - `CREATEDB` : permet au super admin de restaurer une sauvegarde depuis l'application. Compte déjà créé sans ce droit : `ALTER ROLE pharma_app CREATEDB;`.
-  - **Attendu** : `CREATE ROLE`, `\password` demande deux fois le mot de passe, `CREATE DATABASE`.
-  - **Si échec** : `already exists` signifie que le compte ou la base existe déjà. Vérifier avec `\du pharma_app` et `\l`.
+  - Compte déjà créé sans le droit `CREATEDB` : `ALTER ROLE pharma_app CREATEDB;`.
+  - **Attendu** : `CREATE ROLE`, `\password` demande deux fois le mot de passe.
+  - **Si échec** : `already exists` signifie que le compte existe déjà. Vérifier avec `\du pharma_app`.
 
 - [ ] **2.3** Régler le fuseau horaire de Windows (Algérie, UTC+1 toute l'année). **Où** : PC serveur. **Compte** : administrateur Windows.
   ```powershell
@@ -237,59 +233,33 @@ Calendrier type :
 
 ### 3. Base de données : structure, référentiel, droits
 
-Lancer toutes les commandes **depuis le dossier du dépôt** (ou de la livraison). Chaque commande demande le mot de passe de `pharma_app`.
+Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\mep\creer_base_officine.ps1`. Référence complète (options, étapes internes, retour arrière) : [scripts-base-de-donnees.md](scripts-base-de-donnees.md). Lancer la commande **depuis le dossier du dépôt** (ou de la livraison).
 
-- [ ] **3.1** Créer la structure. **Où** : PC serveur. **Compte** : `pharma_app`.
+- [ ] **3.1** Créer la base, la structure, le référentiel et séparer les rôles. **Où** : PC serveur. **Compte** : superutilisateur `postgres` pour créer le compte et la base (mot de passe saisi à l'écran), puis `pharma_app` pour la structure (mot de passe saisi à l'écran, ou à définir si le compte n'existe pas encore). Aucun mot de passe n'est écrit dans une commande.
   ```powershell
-  & $psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -f database\init\schema.sql
+  .\scripts\mep\creer_base_officine.ps1 -Base <base>
   ```
-  - `schema.sql` crée tout (tables, vues, fonctions, déclencheurs) et équivaut aux scripts `001` à `136`, **sauf** le fuseau horaire (étape 3.2) et les droits (étape 3.4).
-  - **Attendu** : pas d'erreur, retour à l'invite.
-  - Si la base contient déjà le schéma, le script s'arrête sans rien faire. Ce n'est pas une erreur, mais une base neuve doit être vide : voir « Recommencer depuis zéro » plus bas.
-  - **Si échec** : lire la première erreur. Ne jamais relancer `schema.sql` sur une base en service.
+  - `<base>` : exemple `pharmacie`. Pour voir le plan sans rien créer : ajouter `-WhatIf`.
+  - Le script : vérifie que l'init (`schema.sql`, `seed_referentiel.sql`) est à jour (« 001 à NNN » = dernier script) ; vérifie que PostgreSQL répond et que la base **n'existe pas** ; crée le compte `pharma_app` s'il manque (avec le droit `CREATEDB`) ; crée la base ; passe `schema.sql` (tous les scripts `001` à `NNN`, sauf le fuseau horaire), `083_fuseau_horaire.sql`, puis `seed_referentiel.sql` (identité par défaut, rôles, droits, organismes CNAS, CASNOS et MDN, substances surveillées, coffre, catégories, motifs, réglages de synchronisation désactivée, compte de départ `titulaire`) ; puis la séparation des rôles `111b` avec `postgres` (journaux inaltérables : `pharma_app` ne peut plus modifier ni supprimer les journaux, ni désactiver leurs déclencheurs) ; enfin ses vérifications (`objets_encore_a_pharma_app = 0`, comptages de référence, lecture et écriture par `pharma_app`).
+  - **Attendu** : se termine par « Terminé », code de sortie 0 (`$LASTEXITCODE`), message « Référentiel chargé. Connexion : titulaire / Provisoire-2026 (à changer à la première connexion). »
+  - **Interdit** : ne jamais lancer les fichiers `database\data\9xx_*.sql` (données fictives, réservées aux tests). Le script `101b` n'est jamais lancé par le script.
+  - Option `-SansSeparationRoles` : **essais seulement**. Sans `111b`, `pharma_app` peut désactiver les déclencheurs qui protègent les journaux : la vérification nocturne détecte alors la falsification, mais ne l'empêche pas. Le script le signale en avertissement.
+  - Après cette étape, les **futurs** scripts passent par `mettre_a_jour_base_officine.ps1` (parcours B), avec `postgres` et `SET ROLE pharma_proprietaire`. Ne plus jamais les lancer avec `pharma_app`.
+  - **Si échec** : le script s'arrête à la première erreur et affiche la cause. « La base existe déjà » : normal, il ne crée que des bases neuves et ne supprime jamais rien (voir « Recommencer depuis zéro »). « L'en-tête de schema.sql ne cite pas 001 à NNN » : l'init est en retard, rien n'a été fait, voir le développeur. `à exécuter par un superutilisateur` : le compte d'administration n'est pas `postgres`.
 
-- [ ] **3.2** Régler le fuseau horaire de la base. **Où** : PC serveur. **Compte** : `pharma_app`.
+- [ ] **3.2** Contrôler la base (le script l'a déjà fait ; contrôle indépendant, facultatif). **Où** : PC serveur. **Compte** : `pharma_app`.
   ```powershell
-  & $psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -f database\migration\083_fuseau_horaire.sql
   & $psql -h localhost -U pharma_app -d <base> -tAc "show timezone"
-  ```
-  - Ce réglage n'est **pas** repris dans `schema.sql` : il faut le lancer à part. Sans risque, réexécutable.
-  - **Attendu** : `Africa/Algiers`.
-  - L'API ajoute aussi `Timezone=Africa/Algiers` à sa chaîne de connexion si elle n'en précise pas.
-
-- [ ] **3.3** Charger le référentiel de départ. **Où** : PC serveur. **Compte** : `pharma_app`.
-  ```powershell
-  & $psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -f database\init\seed_referentiel.sql
-  ```
-  - Contenu : identité par défaut, rôles, droits, organismes CNAS, CASNOS et MDN, substances surveillées, coffre, catégories, motifs, réglages de synchronisation (désactivée), et le compte de départ `titulaire`.
-  - **Attendu** : le message « Référentiel chargé. Connexion : titulaire / Provisoire-2026 (à changer à la première connexion). »
-  - **Interdit** : ne jamais lancer les fichiers `database\data\9xx_*.sql`. Ce sont des données fictives (patients, produits, comptes « demo »), réservées aux tests.
-
-- [ ] **3.4** Séparer les rôles (journaux inaltérables). **Où** : PC serveur. **Compte** : **superutilisateur** `postgres` (pas `pharma_app`).
-  ```powershell
-  & $psql -h localhost -U postgres -d <base> -v ON_ERROR_STOP=1 -f database\migration\111b_roles_integrite.sql
-  ```
-  - Le script crée le rôle sans connexion `pharma_proprietaire`, lui donne la base et les objets, et retire à `pharma_app` la modification et la suppression des journaux (tables chaînées, `sceau_integrite`, `verification_integrite`, `journal_audit`, `journal_sauvegarde`, `boite_evenement`, `registre_psychotrope`).
-  - Sans cette étape, `pharma_app` peut désactiver les déclencheurs qui protègent les journaux. La vérification nocturne détecte alors la falsification, mais ne l'empêche pas.
-  - **Attendu** : la dernière ligne affichée est `objets_encore_a_pharma_app` avec la valeur **0**.
-  - **Si échec** : `à exécuter par un superutilisateur` : le compte utilisé n'est pas `postgres`. Recommencer avec `postgres`.
-  - Après cette étape, les **futurs** scripts se lancent avec `postgres` et `SET ROLE pharma_proprietaire` (voir parcours B, étape 9). Ne plus jamais les lancer avec `pharma_app`.
-
-- [ ] **3.5** Contrôler la base. **Où** : PC serveur. **Compte** : `pharma_app`.
-  ```powershell
   & $psql -h localhost -U pharma_app -d <base> -tAc "SELECT count(*) FROM utilisateur"
   & $psql -h localhost -U pharma_app -d <base> -tAc "SELECT count(*) FROM vente"
   ```
-  - **Attendu** : le premier nombre est au moins `1` (compte titulaire). Le second vaut `0` (base vierge, aucune donnée de démonstration).
-  - **Si échec** : `relation does not exist` : `schema.sql` n'a pas été lancé correctement (étape 3.1).
+  - **Attendu** : `Africa/Algiers` (l'API ajoute aussi `Timezone=Africa/Algiers` à sa chaîne de connexion si elle n'en précise pas) ; au moins `1` utilisateur (compte titulaire) ; `0` vente (base vierge, aucune donnée de démonstration).
+  - **Si échec** : `relation does not exist` : la structure n'a pas été créée, relancer l'étape 3.1 sur une base neuve.
 
 - **Recommencer depuis zéro** (seulement avant la mise en service, jamais sur une base réelle) :
-  1. Faire une sauvegarde (étape 11.2).
-  2. Lancer la remise à vide en confirmant le nom de la base. Sans `-v confirmer=<base>` identique, rien n'est supprimé :
-     ```powershell
-     & $psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -v confirmer=<base> -f database\init\clean.sql
-     ```
-  3. Reprendre à l'étape 3.1. Le compte doit être propriétaire de la base (c'est le cas à l'étape 2.2 ; après `111b`, `clean.sql` ne convient plus : **[À CONFIRMER : procédure de remise à vide après 111b]**).
+  1. Faire une sauvegarde (étape 11.2) si la base contient quoi que ce soit à garder.
+  2. Le script refuse une base qui existe. La supprimer à la main est une **décision humaine**, jamais faite par un script : avec `postgres`, en psql interactif (`& $psql -h localhost -U postgres -d postgres`), taper la commande de suppression de la base `<base>` en toute connaissance de cause, puis `\q`.
+  3. Reprendre à l'étape 3.1. (Le fichier `database\init\clean.sql`, qui vide une base sans la supprimer, ne sert plus à ce parcours : le script a besoin d'une base absente.)
 
 ### 4. PC serveur : API, configuration, HTTPS, service
 
@@ -537,12 +507,13 @@ Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou s
   ```powershell
   & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --super-admin
   ```
-  - Saisir : identifiant, mot de passe (12 caractères au moins), **téléphone mobile obligatoire** et **e-mail obligatoire** (il reçoit, comme le téléphone, le même code de validation).
-  - Un code est envoyé par SMS au numéro saisi, pour le vérifier (modem GSM de l'étape 9.10), puis un code est envoyé à l'adresse e-mail saisie, pour la vérifier (serveur e-mail de l'étape 9.10) : les deux se saisissent dans la console. **[À CONFIRMER : sans modem, le compte peut-il être créé sans vérification ? Le manuel précédent l'affirmait ; le code ne l'a pas confirmé.]**
+  - Saisir : identifiant, mot de passe (12 caractères au moins), puis un **téléphone mobile** (SMS), une **adresse e-mail**, ou les deux. **Au moins un canal vérifié est obligatoire.** Avec les deux, le même code part sur les deux à chaque action.
+  - Un code est envoyé par SMS au numéro saisi, pour le vérifier (modem GSM de l'étape 9.10), et un code est envoyé à l'adresse e-mail saisie, pour la vérifier (serveur e-mail de l'étape 9.10) : ils se saisissent dans la console. Un canal saisi mais non vérifié n'est pas enregistré, et la console le dit.
+  - **Si aucun canal ne fonctionne, le compte n'est pas créé** : la console demande de régler le modem GSM ou le serveur e-mail (Administration › Notifications, étape 9.10), puis de relancer la commande. Il n'y a plus de création « sans vérification ».
   - Le compte est chiffré pour ce PC (`super-admin.dat`). Il fonctionne même si la base est détruite, et il est illisible sur un autre PC.
   - **Attendu** : le compte est créé, puis l'invite revient.
 - [ ] **10.2** Sauvegarder `super-admin.dat` sur le disque externe (dossier `E:\Securite\`), comme `cle-integrite.dat` (étape 4.9).
-- [ ] **10.3** Pour changer le mot de passe, le téléphone ou l'e-mail : relancer la même commande. Il faut le mot de passe actuel et le code envoyé par SMS et par e-mail (un canal suffit), puis, si le numéro change, le code reçu par SMS sur le nouveau numéro ; si l'adresse change, le code reçu à la nouvelle adresse.
+- [ ] **10.3** Pour changer le mot de passe, le téléphone ou l'e-mail : relancer la même commande. Il faut le mot de passe actuel et le code envoyé sur les canaux vérifiés du compte (un seul code, reçu par l'un ou l'autre), puis, si le numéro change, le code reçu par SMS sur le nouveau numéro ; si l'adresse change, le code reçu par e-mail à la nouvelle adresse. Pour une saisie, laisser vide garde la valeur actuelle et « - » retire le canal ; **le dernier canal vérifié ne peut pas être retiré**, et un nouveau canal non vérifié n'est pas enregistré (l'ancien reste).
 - [ ] **10.4** Téléphone et e-mail perdus : un administrateur du PC serveur supprime `super-admin.dat`, puis recrée le compte (étape 10.1). Ne jamais supprimer le compte sans cette procédure.
 
 ### 11. Sauvegardes (avant toute vraie donnée)
@@ -619,7 +590,7 @@ L'ancienne base n'est **jamais** modifiée : on travaille sur une copie. Préreq
 
 Pour une officine **déjà en service**. Ordre : étapes 1 à 14. Ne jamais relancer `schema.sql` ni `clean.sql` sur une base en service.
 
-Les scripts `database\migration\0xx_*.sql` sont réexécutables sans dégât. Ils se lancent **hors transaction**, avec `-v ON_ERROR_STOP=1`.
+Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât. Le script `scripts\mep\mettre_a_jour_base_officine.ps1` (étape 4) les lance un par un, **hors transaction**, avec `ON_ERROR_STOP`, après une sauvegarde obligatoire. Les scripts « b » (`101b`, `111b`) se lancent à part (étapes 6 et 8).
 
 Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas** .NET. À chaque correctif de sécurité .NET important, republier l'API et les postes avec le SDK à jour, même sans nouvelle fonction.
 
@@ -630,65 +601,36 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
     dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
     ```
   - Copier `<dossier de livraison>` (avec son dossier `Api\database\migration`) et le dossier `scripts` du dépôt sur la clé USB. Copier aussi `database\migration\111b_roles_integrite.sql` du dépôt (il est exclu du dossier publié) si la séparation des rôles n'est pas encore faite.
-  - **Attendu** : `Api\Pharma.Api.exe`, `Api\database\migration\136_synchronisation_corrections_revue.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
-- [ ] **2.** Si l'officine est synchronisée avec le serveur central : **mettre le serveur central à jour d'abord** (parcours E, étape 9), puis l'officine.
-- [ ] **3.** Sauvegarder la base avant toute modification. **Où** : PC serveur. **Compte** : `pharma_app`.
-  ```powershell
-  & "C:\Program Files\PostgreSQL\18\bin\pg_dump.exe" -h localhost -U pharma_app -Fc -f "E:\Sauvegardes\Pharmacie\pharmacie_avant_maj_<AAAAMMJJ>.dump" <base>
-  ```
-  - Copier aussi `super-admin.dat` et `cle-integrite.dat` (sauvegarde du disque externe, déjà faite à l'étape 4.9 : vérifier qu'elle est à jour).
-  - **Attendu** : le fichier `.dump` existe. Vérifier sa lisibilité : `pg_restore --list` renvoie `0` (voir parcours A, étape 11.2).
-- [ ] **4.** Arrêter le service. **Où** : PC serveur. **Compte** : administrateur Windows.
+  - **Attendu** : `Api\Pharma.Api.exe`, `Api\database\migration\136_synchronisation_colonnes_figees_descendant.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
+- [ ] **2.** Si l'officine est synchronisée avec le serveur central : **mettre le serveur central à jour d'abord** (parcours E, étape 10), puis l'officine.
+- [ ] **3.** Arrêter le service. **Où** : PC serveur. **Compte** : administrateur Windows. Le script de l'étape 4 refuse de travailler si le service tourne.
   ```powershell
   Stop-Service "PharmaOfficine API"
   Get-Service "PharmaOfficine API"
   ```
   - **Attendu** : `Status : Stopped`.
-- [ ] **5.** Vérifier l'état de la base (lecture seule). **Où** : PC serveur. **Compte** : `pharma_app`.
+- [ ] **4.** Lancer le script de mise à jour de la base : **sauvegarde, détection des rôles, contrôle Chifa, rejeu des scripts**. **Où** : PC serveur. **Compte** : `pharma_app` (mot de passe saisi à l'écran) ; si la séparation des rôles est déjà faite ou demandée : aussi le superutilisateur `postgres` (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence complète : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
   ```powershell
-  & $psql -h localhost -U pharma_app -d <base> -tAc "SELECT count(*) FROM pg_roles WHERE rolname = 'pharma_proprietaire'"
-  & $psql -h localhost -U pharma_app -d <base> -tAc "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()"
-  & $psql -h localhost -U pharma_app -d <base> -c "SELECT tableowner, count(*) FROM pg_tables WHERE schemaname = 'public' GROUP BY tableowner"
+  .\scripts\mep\mettre_a_jour_base_officine.ps1 -Base <base> -DossierSauvegarde "E:\Sauvegardes\Pharmacie" -DossierMigration "E:\<dossier de livraison>\Api\database\migration" -Script111b "E:\111b_roles_integrite.sql"
   ```
-  - **Lire le résultat** :
-    - la première valeur : `1` = la séparation des rôles (`111b`) est **déjà faite** : aller à l'étape 9 (chemin 2). `0` = pas encore : suivre les étapes 6 à 8 (chemin 1) ;
-    - la deuxième et la troisième : le propriétaire de la base et des tables. Si le propriétaire est `pharma_app`, la base n'est pas encore séparée.
-- [ ] **6.** **Chemin 1** (séparation pas encore faite) : appliquer les scripts **083 à 100**. **Où** : PC serveur. **Compte** : `pharma_app`.
-  ```powershell
-  $dossier = "E:\<dossier de livraison>\Api\database\migration"   # préparé à l'étape 1
-  Get-ChildItem $dossier -Filter *.sql | Where-Object { $_.Name -match '^(08[3-9]|09\d|100)_' } | Sort-Object Name | ForEach-Object {
-      Write-Host $_.Name
-      & $psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -q -f $_.FullName
-      if ($LASTEXITCODE -ne 0) { throw "Arrêt sur $($_.Name)" }
-  }
-  ```
-  - **Attendu** : chaque nom s'affiche sans erreur.
-  - **Si échec** : le script s'arrête au premier fichier en erreur. Corriger la cause, puis relancer la commande (les scripts sont réexécutables).
-  - Le script `113` et le script `119` n'existent pas dans le dépôt : c'est voulu.
-- [ ] **7.** **Chemin 1** : contrôler les n° de facture Chifa **avant** `101`. **Où** : PC serveur. **Compte** : `pharma_app`. Ouvrir psql en interactif (`& $psql -h localhost -U pharma_app -d <base>`) et lancer ces requêtes en lecture seule. Garder le résultat :
-  ```sql
-  -- n° de facture Chifa non conformes (8 chiffres). S'il y en a, 101 ne pose pas le contrôle « 8 chiffres » et les affiche : les corriger avec le titulaire, puis relancer 101.
-  SELECT id, numero, date_vente, chifa_facture, num_facture_chifa FROM vente
-  WHERE chifa_facture !~ '^[0-9]{8}$' OR num_facture_chifa !~ '^[0-9]{8}$' ORDER BY id;
-  -- conflits : les deux colonnes remplies et différentes. 101 les range dans vente_chifa_facture_conflit, à trancher par le titulaire (Administration, Conflits de n° de facture Chifa).
-  SELECT id, numero, date_vente, num_facture_chifa, chifa_facture FROM vente
-  WHERE num_facture_chifa IS NOT NULL AND chifa_facture IS NOT NULL AND btrim(num_facture_chifa) <> btrim(chifa_facture) ORDER BY id;
-  -- recopie impossible : n° de l'ancienne colonne déjà porté par une autre vente non annulée.
-  SELECT v.id, v.numero, v.num_facture_chifa, a.numero AS deja_sur FROM vente v
-  JOIN vente a ON a.id <> v.id AND a.statut <> 'annulee' AND a.chifa_facture = btrim(v.num_facture_chifa)
-  WHERE v.chifa_facture IS NULL AND v.statut <> 'annulee';
-  ```
-  - **Décision** : si une requête renvoie des lignes, **ne pas continuer** avant d'en parler au titulaire. Ces anomalies ne se corrigent pas sans lui.
-  - **Attendu** : aucune ligne, ou des lignes examinées et tranchées.
-- [ ] **8.** **Chemin 1** : appliquer les scripts **101 à 111** (sauf `111b`). **Où** : PC serveur. **Compte** : `pharma_app`.
-  ```powershell
-  Get-ChildItem $dossier -Filter *.sql | Where-Object { $_.Name -match '^(10[1-9]|110|111)_' } | Sort-Object Name | ForEach-Object {
-      Write-Host $_.Name
-      & $psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -q -f $_.FullName
-      if ($LASTEXITCODE -ne 0) { throw "Arrêt sur $($_.Name)" }
-  }
-  ```
-  - Après `101` : le contrôle de conflit doit être tranché dans l'application (Administration, Conflits de n° de facture Chifa). Vérifier : `SELECT count(*) FROM vente_chifa_facture_conflit WHERE tranche_le IS NULL;` doit valoir `0`. **[À CONFIRMER : faut-il attendre ce `0` avant la remise en service ?]**
+  - `-DossierMigration` et `-Script111b` : le dossier de livraison et le fichier copiés à l'étape 1 (depuis le dépôt, ces deux options sont inutiles). Ajouter `-SeparerRoles` si les rôles ne sont pas encore séparés et qu'on les sépare maintenant (étape 6). Pour voir le plan sans rien modifier : ajouter `-WhatIf`.
+  - Le script : vérifie que le service est arrêté ; lit l'état des rôles (`111b` fait ou non : rôle `pharma_proprietaire` présent, propriétaire de la base et des tables) ; fait la **sauvegarde** `pg_dump -Fc` (`<base>_avant_maj_<date>_<heure>.dump`) et la relit avec `pg_restore --list` (sans sauvegarde valide, rien n'est modifié) ; contrôle les n° de facture Chifa avant le script `101` (étape 5) ; rejoue les scripts numérotés dans l'ordre, un par un, hors transaction (le `033` ne peut pas être dans une transaction), toujours depuis le script `001` (toute la suite est rejouable sur une base à jour ; l'option `-ScriptDepart` est réservée aux incidents) ; passe par `pharma_app` avant `111b`, par `postgres` avec `SET ROLE pharma_proprietaire` après (méthode **[À VÉRIFIER]**, voir étape 7) ; affiche le résumé (scripts joués, durée, état des rôles). Le script `101b` n'est **jamais** lancé (étape 8).
+  - Copier aussi `super-admin.dat` et `cle-integrite.dat` et la sauvegarde `.dump` hors du PC serveur (disque externe, déjà fait à l'étape 4.9 du parcours A : vérifier qu'elle est à jour).
+  - **Attendu** : « Terminé », code de sortie 0 (`$LASTEXITCODE`), la sauvegarde existe, « N scripts rejoués sans erreur ».
+  - **Si échec** : le message donne le script en cause. Corriger la cause, relancer le même script sans `-ScriptDepart` (toute la suite est rejouable ; `-ScriptDepart` n'est qu'un secours en cas d'incident). La restauration d'une sauvegarde depuis l'application rejoue de la même façon toute la suite. Voir l'étape 10 pour le retour arrière.
+- [ ] **5.** Si le script s'arrête sur des **n° de facture Chifa à examiner**. **Où** : PC serveur. **Compte** : aucun (le titulaire décide). Le script contrôle, avant `101`, trois cas en lecture seule : n° non conformes (pas 8 chiffres), conflits (les deux colonnes remplies et différentes), recopie impossible (n° déjà porté par une autre vente non annulée). Il affiche les lignes et s'arrête.
+  - **Décision** : **ne pas continuer** avant d'en parler au titulaire. Ces anomalies ne se corrigent pas sans lui. La suite (`101`) range les conflits dans `vente_chifa_facture_conflit`, à trancher dans l'application (Administration, Conflits de n° de facture Chifa).
+  - Après la décision du titulaire, relancer la commande de l'étape 4 avec `-ContinuerMalgreConflitsChifa`.
+  - **Attendu** : aucune ligne, ou des lignes examinées et tranchées. Après `101`, `SELECT count(*) FROM vente_chifa_facture_conflit WHERE tranche_le IS NULL;` doit valoir `0` une fois les conflits tranchés. **[À CONFIRMER : faut-il attendre ce `0` avant la remise en service ?]**
+- [ ] **6.** **Séparation des rôles** (`111b`), **une fois par base**. **Où** : PC serveur. **Compte** : **superutilisateur** `postgres`. Si l'étape 4 a été lancée avec `-SeparerRoles` : fait (juste après le script `111`). Sinon, et si l'état affiché à l'étape 4 est « pas encore faite » : relancer l'étape 4 avec `-SeparerRoles`.
+  - Le script `111b` retire à `pharma_app` la modification et la suppression des journaux (tables chaînées, `sceau_integrite`, `verification_integrite`, `journal_audit`, `journal_sauvegarde`, `boite_evenement`, `registre_psychotrope`) et donne la base et les objets à `pharma_proprietaire`.
+  - **Attendu** : `objets_encore_a_pharma_app` vaut **0** (le script le contrôle).
+  - Ensuite, **tous les scripts suivants** passent par `postgres` avec `SET ROLE pharma_proprietaire` : le script de l'étape 4 le fait seul. Ne plus utiliser `pharma_app` pour les scripts.
+  - **Si échec** : `à exécuter par un superutilisateur` : le compte utilisé n'est pas `postgres`.
+- [ ] **7.** Rôles déjà séparés (base déjà passée par `111b`) : méthode `SET ROLE`. **Où** : PC serveur. **Compte** : `postgres` avec `SET ROLE pharma_proprietaire`. Le script rejoue alors tous les scripts avec ce compte, dans la même session `psql` (`-c "SET ROLE pharma_proprietaire" -f <script>`) : il contrôle au départ que `SET ROLE` donne bien le rôle attendu.
+  - **[À VÉRIFIER : cette méthode n'a pas encore été validée par un essai avec le compte `postgres`. À essayer sur une COPIE de la base (restaurée sous un autre nom) avant la production.]**
+  - **Si échec** : « SET ROLE pharma_proprietaire n'a pas donné le rôle attendu » : ne pas continuer, voir le technicien.
+- [ ] **8.** Script `101b` (suppression de `num_facture_chifa`) : **jamais lancé par le script**, seulement sur décision du titulaire. **Où** : PC serveur. **Compte** : voir ci-dessous.
   - `num_facture_chifa` est **conservée** (obsolète) par `101`. Sa suppression est le script **`101b`** (`database/migration/101b_suppression_num_facture_chifa.sql`), **écrit mais non exécuté** : opération **destructive et irréversible** (sauf restauration), **à ne lancer qu'après la validation explicite du titulaire**. Il n'est pas dans le dossier des scripts publiés (comme `111b`) : le prendre dans le dépôt. Sans la décision du titulaire, **ne rien lancer** : la colonne reste, sans effet sur le logiciel.
   - **Procédure `101b`** (dans cet ordre, seulement si le titulaire a dit « go ») :
     1. **Prérequis** : `101` exécuté, logiciel et API **arrêtés** (le script prend un verrou exclusif sur `vente`), aucune autre session ouverte sur la base.
@@ -703,7 +645,7 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
                                       AND NOT EXISTS (SELECT 1 FROM vente_chifa_facture_conflit c WHERE c.vente_id = v.id AND c.tranche_le IS NOT NULL); -- écarts sans décision
        ```
        Le script refait ces contrôles lui-même et **refuse** (sans rien modifier) s'ils ne valent pas 0 : il affiche alors les comptes.
-    4. **Compte** : **avant `111b`** (cas normal de cette étape) : `pharma_app` (propriétaire de `vente`). **Après `111b`** (chemin 2) : `postgres` avec `SET ROLE pharma_proprietaire` (`pharma_app` n'est plus propriétaire : le script refuse).
+    4. **Compte** : **avant `111b`** (cas normal de cette étape) : `pharma_app` (propriétaire de `vente`). **Après `111b`** (rôles déjà séparés) : `postgres` avec `SET ROLE pharma_proprietaire` (`pharma_app` n'est plus propriétaire : le script refuse).
     5. **Commande** (avant `111b`) :
        ```powershell
        & $psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -f "<dépôt>\database\migration\101b_suppression_num_facture_chifa.sql"
@@ -711,26 +653,16 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
        Après `111b` : même commande avec `-U postgres` et `-c "SET ROLE pharma_proprietaire"` placé **avant** `-f` (psql exécute les `-c` et `-f` dans l'ordre, dans la même session).
     6. **Résultat attendu** : `101b : colonne vente.num_facture_chifa supprimée (… vente(s), dont … avec une valeur, toutes déjà portées par chifa_facture)`, puis deux lignes d'historique conservé. Relancé, le script affiche « n'existe déjà plus, rien à faire ». Une ligne `colonne_supprimee` apparaît dans `journal_audit`. En cas de refus (`101b REFUSÉ`), rien n'a été modifié : lire les comptes affichés, corriger (trancher les conflits, relancer `101`), reprendre à l'étape 3.
     7. **Vérification** : `SELECT count(*) FROM information_schema.columns WHERE table_name = 'vente' AND column_name = 'num_facture_chifa';` doit valoir `0` ; redémarrer l'API et le logiciel, ouvrir une vente et la liste des ventes Chifa.
-    8. **Retour arrière** : **restauration de la sauvegarde de l'étape 2** (aucun `Down`). Les ventes saisies depuis la sauvegarde sont alors perdues : décider vite, avant la reprise de l'activité.
+    8. **Retour arrière** : **restauration de la sauvegarde du point 2** (aucun `Down`). Les ventes saisies depuis la sauvegarde sont alors perdues : décider vite, avant la reprise de l'activité.
     9. **Après la suppression** (à faire par le développeur, dans le dépôt) : retirer la colonne de `database/init/schema.sql` (colonne et commentaire de `vente`), régénérer le miroir du serveur central (`database/cloud/002_tables_miroir.sql`), voir `docs/a-faire.md`.
-- [ ] **9.** **Séparation des rôles** (`111b`), **une fois par base**. **Chemin 1** : juste après l'étape 8. **Chemin 2** : si ce n'est pas encore fait.
-  - **Où** : PC serveur. **Compte** : **superutilisateur** `postgres`.
-    ```powershell
-    & $psql -h localhost -U postgres -d <base> -v ON_ERROR_STOP=1 -f "E:\111b_roles_integrite.sql"   # copié à l'étape 1
-    ```
-  - **Attendu** : la dernière valeur affichée, `objets_encore_a_pharma_app`, vaut **0**.
-  - Ensuite, **tous les scripts suivants** (112 à 136) se lancent **avec `postgres` et `SET ROLE pharma_proprietaire`**. Ne plus utiliser `pharma_app` pour les scripts.
-  - **Chemin 2** (déjà fait) : passer directement ici, et lancer aussi les scripts 083 à 111 (réexécutables) avec `postgres` et `SET ROLE` (**[À CONFIRMER : méthode retenue : le manuel propose `postgres`, superutilisateur, qui peut prendre le rôle `pharma_proprietaire`]**).
-- [ ] **10.** Appliquer les scripts **112 à 136** **avec le rôle propriétaire**. **Où** : PC serveur. **Compte** : `postgres` avec `SET ROLE pharma_proprietaire`.
+- [ ] **9.** Vérifier l'état de la base après le script (lecture seule). **Où** : PC serveur. **Compte** : `pharma_app`.
   ```powershell
-  Get-ChildItem $dossier -Filter *.sql | Where-Object { $_.Name -match '^(11[2-9]|1[2-3]\d)_' } | Sort-Object Name | ForEach-Object {
-      Write-Host $_.Name
-      & $psql -h localhost -U postgres -d <base> -c "SET ROLE pharma_proprietaire" -v ON_ERROR_STOP=1 -q -f $_.FullName
-      if ($LASTEXITCODE -ne 0) { throw "Arrêt sur $($_.Name)" }
-  }
+  & $psql -h localhost -U pharma_app -d <base> -c "SELECT tableowner, count(*) FROM pg_tables WHERE schemaname = 'public' GROUP BY tableowner"
   ```
-  - **[À CONFIRMER : la commande `-c "SET ROLE …"` suivie de `-f` dans la même session doit être testée sur une copie avant la production.]**
-  - Si la base est en chemin 2, lancer aussi les scripts 083 à 111 avec le même schéma de commande.
+  - **Attendu** : si les rôles sont séparés, toutes les tables appartiennent à `pharma_proprietaire` ; sinon à `pharma_app` (et le résumé du script l'a signalé : les journaux ne sont pas protégés).
+- [ ] **10.** Retour arrière si la mise à jour de la base échoue et que la base reste inutilisable. **Où** : PC serveur. **Compte** : administrateur Windows et `postgres`.
+  - Laisser le service **arrêté**. Restaurer la sauvegarde `.dump` faite à l'étape 4 (procédure F1, « Restauration », en base neuve puis renommage). Les ventes saisies depuis la sauvegarde sont perdues : décider vite, avant la reprise de l'activité.
+  - Les scripts déjà appliqués avant l'échec sont sans perte de données : le retour arrière n'est nécessaire que si la base reste inutilisable.
 - [ ] **11.** Remplacer les fichiers de l'API. **Où** : PC serveur. **Compte** : administrateur Windows.
   - Utiliser le dossier `Api` préparé à l'étape 1 (clé USB).
   - Renommer l'ancien dossier (`C:\Program Files\PharmaOfficine\Api` devient `Api_ancien`) pour pouvoir revenir en arrière. Copier le nouveau dossier à la place.
@@ -956,7 +888,7 @@ Option facultative. Le serveur central reçoit la copie des données des officin
 
 Règles : aucun secret dans un fichier du dépôt ni dans `appsettings*.json`. Tout passe par des variables d'environnement du compte de service. **Ne jamais copier le dossier `Synchronisation` d'un serveur d'officine à l'autre.**
 
-Les scripts de la base centrale sont dans `database\cloud\` (001 à 009). Ils ne se passent **jamais** sur la base d'une officine.
+Les scripts de la base centrale sont dans `database\cloud\` (001 à 010). Ils ne se passent **jamais** sur la base d'une officine.
 
 ### 1. Hébergement et prérequis
 
@@ -966,26 +898,22 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 009). Ils ne
 
 ### 2. Base centrale
 
-- [ ] **2.1** Créer la base. **Où** : serveur central. **Compte** : superutilisateur `postgres`.
-  ```sql
-  CREATE DATABASE <base centrale> OWNER <propriétaire> ENCODING 'UTF8' TEMPLATE template0;
-  ```
-- [ ] **2.2** Lancer les scripts **dans l'ordre**, avec le compte propriétaire. **Où** : serveur central. **Compte** : `<propriétaire>`.
+- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `010` **dans l'ordre**. **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
   ```powershell
-  foreach ($f in "001_base_centrale.sql", "002_tables_miroir.sql", "003_chargement.sql", "004_reglages.sql", "005_descendant.sql", "006_debit_chargement.sql", "007_familles_banque_clients.sql", "008_famille_banque_elargie.sql", "009_corrections_revue.sql") {
-      & $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\$f"
-      if ($LASTEXITCODE -ne 0) { throw "Arrêt sur $f" }
-  }
+  .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
-  - `001` crée le rôle applicatif `pharma_cloud_api` **sans connexion**.
-  - **Attendu** : aucune erreur.
-- [ ] **2.3** Tests (en transaction annulée). **Où** : serveur central. **Compte** : `<propriétaire>`. Lancer, chacun doit finir par « tous réussis » :
+  - Le compte `<propriétaire>` doit exister (étape 1.3) ; le script ne le crée pas. Pour voir le plan sans rien créer : ajouter `-WhatIf`. Si le serveur est distant : `-Hote <hôte>`.
+  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` à `009` ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
+  - `001` crée le rôle applicatif `pharma_cloud_api` **sans connexion** et non propriétaire des tables.
+  - **Attendu** : « Terminé », code de sortie 0 (`$LASTEXITCODE`).
+  - **Si échec** : le script s'arrête au premier script en erreur et le nomme. « Le compte propriétaire n'existe pas » : l'étape 1.3 n'est pas faite. « contient déjà des tables centrales » : base déjà installée ; pour une mise à jour du central, voir l'étape 10.
+- [ ] **2.2** Tests (en transaction annulée, rien n'est conservé). **Où** : serveur central. **Compte** : `<propriétaire>`. Les tests se lancent avec le même script, à la création, en ajoutant `-AvecTests` à la commande de l'étape 2.1 : chaque fichier de `database\cloud\tests` doit finir par « tous réussis », sinon le script s'arrête.
+  - Il n'existe pas de fichier de test pour `002`. **[À CONFIRMER : faut-il lancer les tests sur la base de production, ou seulement sur une copie ?]** En attendant : les lancer sur une base d'essai (autre nom de base, même commande avec `-AvecTests`).
+- [ ] **2.3** Contrôle indépendant (facultatif, le script l'a déjà fait). **Où** : serveur central. **Compte** : `<propriétaire>`.
   ```powershell
-  foreach ($t in "001_base_centrale_tests.sql", "003_chargement_tests.sql", "004_reglages_tests.sql", "005_descendant_tests.sql", "006_debit_chargement_tests.sql", "007_familles_banque_clients_tests.sql", "008_famille_banque_elargie_tests.sql", "009_corrections_revue_tests.sql") {
-      & $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\tests\$t"
-  }
+  & $psql -h <hôte> -U <propriétaire> -d <base centrale> -tAc "SELECT rolcanlogin FROM pg_roles WHERE rolname = 'pharma_cloud_api'"
   ```
-  - Il n'existe pas de fichier de test pour `002`. **[À CONFIRMER : faut-il lancer les tests sur la base de production, ou seulement sur une copie ?]**
+  - **Attendu** : `f` (le rôle applicatif n'a pas encore de connexion : étape 2.4).
 - [ ] **2.4** Mot de passe du rôle applicatif. **Où** : serveur central. **Compte** : superutilisateur `postgres`.
   ```sql
   ALTER ROLE pharma_cloud_api LOGIN;
@@ -1103,6 +1031,11 @@ Une officine installée ou mise à jour **avant** le serveur central n'envoie ri
 - **Effet** : l'état actuel de chaque donnée envoyée repart, minimisé (codes patients, colonnes retirées, textes filtrés), par lots de 500 lignes ou 1 Mo. Le travail continue : les ventes ne sont retenues que le temps d'un verrou court (2 s au plus).
 - **Suivi** : la progression s'affiche (lignes accusées / total). Après une coupure, l'envoi reprend au premier lot non accusé.
 
+### Supervision et purge de la file (script 140)
+
+- **Bandeau et alertes** : réglés dans Administration, Synchronisation, **Supervision et purge** (droit `admin.parametres`). Valeurs de départ : bandeau après 60 minutes, alerte de retard après 24 h, alerte d'erreur après 60 minutes. Le droit **« Voir le bandeau de synchronisation »** (`sync.suivre`) est donné au titulaire ; l'attribuer aux autres rôles voulus dans Administration, Droits par rôle. Les alertes partent aux destinataires vérifiés abonnés au sujet **« Synchronisation »** (Administration, Notifications) : vérifier qu'il y en a au moins un.
+- **Purge** : les lots accusés sont gardés **30 jours** (réglable), puis leurs lignes sont retirées de la file ; si le serveur central perd ensuite un lot purgé, l'officine demande seule un chargement complet. Si l'hébergeur garde les sauvegardes du serveur central plus de 30 jours, allonger la conservation.
+
 ### Lots manquants
 
 Le serveur central a perdu des lots déjà accusés (restauration du central) :
@@ -1112,12 +1045,57 @@ Le serveur central a perdu des lots déjà accusés (restauration du central) :
 - si le même message revient alors qu'un chargement « lots manquants » est déjà annoncé (« reprise impossible automatiquement … procédure »), comparer `officine_epoque`, `lot_recu` et `chargement` du central avec `sync_lot` et `sync_chargement` de l'officine. Les opérations restent en attente dans l'officine : rien n'est perdu. **Appeler le développeur.**
 - **Restauration de la base de l'officine** (n° de lots revenus en arrière : lots « déjà reçus avec un autre contenu ») : nouvelle époque, **non réalisée** à ce jour. **[À FAIRE]**
 
-### 9. Mise à jour du serveur central
+### 9. Réglages mutualisés (titulaire et technicien)
 
-- [ ] **9.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **9.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `009`, **dans cet ordre**, avec le compte propriétaire (même boucle qu'à l'étape 2.2, en partant de `002`). Scripts idempotents.
-- [ ] **9.3** Relancer les tests de l'étape 2.3 sur la copie.
-- [ ] **9.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
+Le serveur central peut proposer ou imposer aux officines la valeur de 11 réglages (`docs/conception-synchronisation.md`, § 16 bis). Prérequis : script central `010` passé (étape 2.1) et variables de l'étape 3.2 (`PHARMA_CLOUD_ADMIN_CONNEXION`, jamais `PHARMA_CLOUD_CONNEXION`). **Rien n'est publié par défaut** : tant que vous n'avez rien publié pour une table, rien ne descend et l'officine reste maîtresse de cette table. Chaque action est inscrite au journal central (ajout seul) avec l'**auteur** (obligatoire), le compte Windows et le poste. Les 11 tables : `motif_reglable`, `parametre_alerte`, `parametre_fiscal`, `parametre_formulaire_sms`, `parametre_inventaire`, `parametre_serialisation`, `parametre_substitution`, `parametre_surveillance`, `parametre_tracabilite`, `regle_alerte_psychotrope`, `remise_automatique`. **Où** : serveur central. **Compte** : compte d'administration, dans une session PowerShell où les variables sont réglées.
+
+- [ ] **9.1** Voir l'état des 11 tables : mode, version, auteur, date, nombre d'officines qui ont appliqué ou rejeté (et le motif de chaque rejet).
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --reglages-mutualises
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --reglages-mutualises parametre_inventaire
+  ```
+  - Avec un nom de table : le détail officine par officine. L'état des officines est celui de leur dernier envoi au central.
+- [ ] **9.2** Premier modèle (facultatif) : fabriquer un fichier à partir des valeurs réelles d'une officine de référence (reçues au central). **Ne publie rien.**
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --modele-depuis-officine <code officine> parametre_inventaire --fichier "D:\PharmaCentral\Modeles\inventaire.json" [--mode propose|impose] [--ecraser]
+  ```
+  - Aucun identifiant propre à l'officine n'est repris. Pour les remises, seules les catégories en cours sont gardées ; pour les motifs, **relire** : les motifs locaux de cette officine y figurent, retirer ceux qui ne doivent pas être communs.
+  - Le fichier est au format `mutu-v1` : version, date et auteur du fichier sont remplacés par le central à la publication.
+  - **Si échec** : « L'officine n'a encore rien envoyé pour cette table » : l'officine n'a pas encore envoyé cette table (attendre son chargement complet).
+- [ ] **9.3** Simuler, puis publier un modèle.
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --publier-reglage <table> --fichier "<modèle.json>" --auteur "<nom>" --simulation
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --publier-reglage <table> --fichier "<modèle.json>" --auteur "<nom>" [--motif "<texte>"]
+  ```
+  - Le modèle est contrôlé en entier avant publication (mêmes règles métier que la saisie dans l'officine, remises terminées refusées à la date du jour). **Une seule erreur : rien n'est publié**, code de sortie 1 ; `--simulation` montre le mode, la version et les erreurs sans rien écrire.
+  - Publier un modèle **identique** à celui en vigueur ne crée aucune version. Une publication en mode **imposé** demande une confirmation (taper `oui`, ou `--oui`).
+  - Le modèle descend dans chaque officine à son prochain échange (une minute environ), puis l'officine l'applique ; elle peut le **rejeter** s'il ne passe pas ses contrôles (visible en 9.1).
+- [ ] **9.4** Changer le mode d'une table (`propose` ou `impose`).
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --mode-reglage <table> impose|propose --auteur "<nom>" [--motif "<texte>"] [--oui]
+  ```
+  - **Passer en imposé remplace, dans chaque officine, les valeurs modifiées localement** par celles du modèle, avec un message au titulaire de chacune : la commande l'affiche et demande de taper `oui` (sauf `--oui`). **C'est une décision du titulaire.**
+  - Le mode « local » n'existe pas pour une table : pour qu'une officine redevienne maîtresse de ses réglages, voir 9.5.
+  - Une table non publiée : le mode est seulement noté, rien ne descend.
+- [ ] **9.5** Départ d'une officine : la libérer (ses tables repassent en `local`, valeurs gardées), ou annuler la libération.
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --liberer-reglages <code officine> --auteur "<nom>" [--motif "<texte>"]
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --retablir-reglages <code officine> --auteur "<nom>" [--motif "<texte>"]
+  ```
+- [ ] **9.6** Lire le journal (qui, quand, quelle table, mode avant et après, version).
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --journal-reglages [<table>] [--depuis AAAA-MM-JJ] [--limite <n>]
+  ```
+  - Les 200 dernières entrées par défaut, affichées de la plus ancienne à la plus récente.
+- **Codes de sortie** : 0 si tout est bon, 1 en cas d'erreur (auteur manquant, modèle invalide, confirmation refusée, officine inconnue, base inaccessible). Aucune commande n'écrit sans passer par les fonctions du script `010`.
+- **[À VÉRIFIER]** L'application d'un modèle dans l'officine (lot M4) est en cours de réalisation : tant qu'elle n'est pas livrée avec la mise à jour des officines, un modèle publié descend mais n'est pas appliqué. **Ne pas publier en production avant ce lot.**
+
+### 10. Mise à jour du serveur central
+
+- [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `010`, **dans cet ordre**, avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
+- [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 
 ---
 
@@ -1155,7 +1133,7 @@ Les sauvegardes utiles sont sur le **disque externe**. La copie de la base dans 
   - La GED est recopiée dans `C:\ProgramData\PharmaOfficine\GED` sans rien supprimer, en gardant un document plus récent déjà présent.
   - `-SansGed` ou `-SansBase` pour ne restaurer que l'une des deux. Les paramètres `-Base`, `-DossierGed`, `-PgBin`, `-HostPg`, `-Port` existent aussi.
   - **Attendu** : le script se termine sans erreur et affiche le nombre de ventes et la date de la dernière.
-- [ ] **4.** Sauvegarde plus ancienne que la version du logiciel : appliquer les scripts `database\migration\0xx_*.sql` plus récents (parcours B, étapes 5 à 10).
+- [ ] **4.** Sauvegarde plus ancienne que la version du logiciel : rejouer les scripts de mise à jour avec `scripts\mep\mettre_a_jour_base_officine.ps1` (parcours B, étapes 3 à 10).
 - [ ] **5.** Démarrer le service et vérifier : `Start-Service "PharmaOfficine API"`, puis `http://localhost:5080/api/sante`. Les documents restés sur les postes (« A envoyer ») repartent dans la GED à la connexion suivante.
 - [ ] **6.** Ressaisir les opérations faites depuis la sauvegarde. Sur un nouveau PC, ressaisir le mot de passe des notifications (chiffré pour le PC d'origine).
 - [ ] **7.** Si le PC serveur a changé : refaire le parcours A, étape 4.9, et **restaurer l'autorité HTTPS** depuis le PFX du coffre, puis créer le certificat du nouveau PC (procédure F2 bis ci-dessous). L'autorité est **unique pour la pharmacie** : les postes et téléphones n'ont **rien à réinstaller**. Sans le PFX du coffre, une nouvelle autorité serait créée et il faudrait réinstaller `autorite-pharmacie.crt` partout (parcours A, étapes 5.3 à 5.4 et 6.2).
@@ -1363,7 +1341,7 @@ Cocher tout avant le jour J.
 - [ ] Administration : identité, RC, NIF, NIS, AI, n° Chifa, organismes, paramétrage (caisse, alertes, emplacements), imprimantes **sur chaque poste**
 - [ ] Nomenclature nationale importée, compteurs contrôlés
 - [ ] Notifications : message d'essai reçu
-- [ ] Compte super admin créé ; téléphone et e-mail renseignés
+- [ ] Compte super admin créé ; au moins un canal vérifié (téléphone ou e-mail)
 - [ ] Sauvegarde de l'application réglée, première sauvegarde faite, fichier lisible (ou script planifié, mais **un seul** des deux)
 - [ ] Test de restauration dans une base d'essai fait, base d'essai supprimée
 - [ ] Reprise de données (si besoin) : totaux contrôlés et rapport signé par le pharmacien

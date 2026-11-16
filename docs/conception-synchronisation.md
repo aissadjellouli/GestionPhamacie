@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation ». Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. Lots S3 à S7 non lancés.
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).**
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -293,7 +293,7 @@ Décisions nouvelles du titulaire (2026-11-16) : **tables communes + RLS** (remp
 ### 12.5 Reste à faire
 
 - **Chargement initial** : **réalisé au lot S6** (§ 13, ordre garanti autrement que par le verrou long décrit ici). Conception : à l'activation, inscrire dans la file une ligne `creation` par ligne existante de chaque table envoyée (même minimisation que le déclencheur), dans un instantané pris **après** la pose des déclencheurs et sous un verrou court qui ordonne l'instantané avant les modifications suivantes (sinon un état ancien pourrait recevoir un n° plus grand qu'une modification plus récente) ; pour les chaînes, depuis le rang 1. Durée et verrou à mesurer sur une vraie base.
-- Purge de `sync_sortie` après accusé et délai de garde ; bandeau poste et alertes (S3) ; vérification des chaînes au central (S4) ; ordres descendants (S5) ; nouvelle époque après restauration, bascule (S6) ; écrans à distance (S7).
+- ~~Purge de `sync_sortie` après accusé et délai de garde ; bandeau poste et alertes (S3)~~ **réalisés (§ 20)** ; vérification des chaînes au central (S4) ; ordres descendants (S5) ; nouvelle époque après restauration, bascule (S6) ; écrans à distance (S7).
 - Tables miroir des tables **descendantes** : non créées (référentiels diffusés par le central, S5).
 - Changement de **type** d'une colonne envoyée : script central à part (le générateur n'ajoute que des colonnes).
 - Hébergement réel, certificat HTTPS en production, sauvegarde de la base centrale : **[À VÉRIFIER : hébergeur]**.
@@ -343,7 +343,7 @@ d'instantané plus ancienne : inversion).
 Un seul chargement en cours (`ux_sync_chargement_en_cours`). Une demande pendant l'envoi d'un instantané est refusée ; une réactivation ou
 des lots manquants **remplacent** le chargement en cours (état `remplace`, instantané périmé).
 
-### 13.3 Serveur central (`database/cloud/003_chargement.sql`)
+### 13.3 Serveur central (`database/cloud/003_chargement_complet_officine.sql`)
 
 - Table `chargement` (RLS), `cloud_debut_chargement`, `cloud_fin_chargement` ; `cloud_appliquer_lot` remplacée : ligne `instantane`
   appliquée comme une création et marquée `sync_chargement` = n° du chargement en cours **si son n° est le repère annoncé** (une ligne
@@ -380,7 +380,7 @@ signalées, bouton « Recharger toutes les données » avec confirmation (droit 
 - **Restauration de la base de l'officine** (n° de lots revenus en arrière) : nouvelle époque + chargement, non réalisé.
 - Gros volumes : durée de l'instantané et taille de la transaction à mesurer sur une vraie base **[À VÉRIFIER]** ; débit plafonné par la
   limite de dépôts et le quota journalier.
-- Purge de `sync_sortie` après accusé (S3) ; écran central de consultation des lignes absentes (S7).
+- ~~Purge de `sync_sortie` après accusé (S3)~~ **réalisée (§ 20)** ; écran central de consultation des lignes absentes (S7).
 - Sous-rubrique propre « Chargement » de l'écran : demande une modification de `NavAdmin.razor` (non touché ici).
 
 ## 14. Réglages du serveur central (2026-11-16, GO du titulaire)
@@ -455,7 +455,7 @@ fournisseurs et de la pharmacie présentes, aucun nom d'employé dans les lots b
 déjà en file envoyée sans téléphone ; `--effacer-famille` : simulation sans effet, mauvaise confirmation refusée, puis 10 + 7 + 5 valeurs et
 1 lot brut effacés, refus pour une famille encore envoyée ; central coupé, lot formé avec les fournisseurs, famille décochée entre-temps :
 lot reformé et accepté sans téléphone (empreinte identique des deux côtés) ; conservation à 5 ans refusée ; `--purger-lots` sans effet
-(désactivé). Tests SQL `130_synchronisation_familles_nominatives_tests.sql` et `cloud/tests/004_reglages_tests.sql`,
+(désactivé). Tests SQL `130_synchronisation_familles_nominatives_tests.sql` et `cloud/tests/004_reglage_familles_envoyees_tests.sql`,
 tests `EnvoiSynchronisationTests` (réglage jamais lu, ligne déjà en file, lot reformé, lot reformé déjà reçu) et `FamillesNominativesTests`.
 
 ### 14.4 Reste à faire
@@ -474,7 +474,7 @@ que sa base. C'est toujours l'officine qui initie (aucune connexion vers l'offic
 donneesJson }] }`. Générique : table locale de destination, clé, version, objet JSON ; réutilisable en S3 (prix, réglages, commandes en brouillon :
 une table locale = un cas de `sync_appliquer_descendant`). Un autre contrat est ignoré par l'officine (journalisé).
 
-| Élément | Central (`database/cloud/005_descendant.sql`) | Officine (`131_synchronisation_descendant.sql`) |
+| Élément | Central (`database/cloud/005_voie_descendante_elements.sql`) | Officine (`131_synchronisation_descendant.sql`) |
 |---|---|---|
 | Stockage | `descendant` (officine, table, clé, version, données ; RLS) ; `officine_descendant` (version max, version acquittée) | `reglage_central` (clé, version, valeur ; **classée descendante**) ; `sync_parametre.descendant_version` |
 | Version | **monotone par officine** ; nouvelle version seulement si les données changent | jamais écrasée par une version plus ancienne ou égale ; table non prévue refusée |
@@ -513,10 +513,442 @@ Rien n'est codé ; les classements de `sync_table` ne changent pas maintenant.
   administration ; le choix est enregistré au central et descend vers les officines par la voie descendante (§ 15), comme les autres
   réglages. Rien n'est figé dans le logiciel : les classements du groupe 2 ci-dessus ne sont que des **valeurs de départ proposées**,
   y compris pour `regle_alerte_psychotrope` et `parametre_fiscal`. Le groupe 3 n'est jamais proposé à la mutualisation.
-  **[À PRÉCISER en S3]** : granularité du choix (par table ou par réglage), traçabilité du changement (qui, quand, avant/après) et
-  effet d'un passage de « proposé » à « imposé » sur une valeur déjà modifiée localement.
+  **Précisé par le titulaire le 2026-11-16** : (1) le choix se fait **par table** (tout un groupe de réglages imposé ou proposé
+  ensemble) ; (2) chaque changement est **tracé au central et dans l'officine** (qui, quand, valeur avant / après) ; (3) au passage
+  de « proposé » à « imposé », la valeur du central **remplace** la valeur modifiée localement, l'ancienne valeur est gardée au
+  journal et le titulaire de l'officine est **prévenu** par message. Réalisation : à lancer (reste du lot S3).
 - **Groupe 3, strictement locaux, jamais mutualisés** : `parametre_caisse`, `parametre_sauvegarde`, `parametre_notification`,
   `parametre_rapport`, `serveur_officine`, `compteur_ticket`, `chaine_integrite`, `parametre_integrite`.
+
+## 16 bis. Mutualisation des réglages : conception détaillée (2026-11-16, « go mutualisation », reste du lot S3)
+
+**Décisions D1 à D14 (§ 16 bis) : toutes les recommandations sont acceptées par le titulaire le 2026-11-16 (« ok recommandations mutualisation »).** Développement par lots M1 à M9.
+
+**Statut : conception ; les scripts de base de données (lots M2 et M3) et l'outil d'administration du central (lot M6) sont réalisés (§ 16 bis.12), le reste n'est pas codé ici.** Les décisions du titulaire du § 16 et de `regles-metier.md` (2026-11-16) s'appliquent telles quelles.
+Les points **[À DÉCIDER]** sont regroupés au § 16 bis.9 avec une recommandation ; les points **[À VÉRIFIER]** ne sont pas établis.
+« Constaté » = lu dans le code ou les scripts à la date de cette conception.
+
+### 16 bis.1 Résumé
+
+- **Au central** : un **modèle par table** du groupe 2 (`cloud_reglage_modele`) : mode **imposé / proposé**, valeur (JSON, format `mutu-v1`),
+  version du modèle, auteur. Tant que l'administrateur n'a **rien publié** pour une table, rien ne descend : l'officine reste maître de cette table.
+  Chaque action de l'administrateur est inscrite dans un journal central en ajout seul (`cloud_journal_reglage` : qui, quand, avant / après).
+- **Transport** : la voie descendante existante, **sans nouveau contrat** : un élément `reglage_central` par table, clé `mutu_<table>`
+  (mêmes protections que § 15 et § 18 : version monotone, version maximale, saut borné, 64 Kio, élément inconnu ou mal formé journalisé, jamais bloquant).
+- **À l'officine** : le modèle reçu est **rangé** (`reglage_central`) puis **appliqué en C#** par un cas d'usage qui passe la valeur par les
+  **mêmes règles métier que la saisie locale** (validateurs extraits dans `Pharma.Domain`) ; une valeur invalide est **rejetée**, journalisée,
+  signalée au central par l'état montant, et la synchronisation continue. L'état de chaque table est tenu dans `reglage_mutualise` (montante).
+- **Table imposée** : refus côté serveur (exception métier, 409) **et** garde dans la base (déclencheur), grisé dans l'écran avec la mention
+  « fixé par le serveur central ». Le passage proposé → imposé remplace la valeur locale, garde l'ancienne au journal et prévient le titulaire.
+- **Sans serveur central** (synchronisation jamais activée ou désactivée) : mode effectif « local » pour les 11 tables, aucun changement de comportement.
+
+### 16 bis.2 Constats dans le code (11 tables)
+
+| Table | Forme | Écran local (constaté) | Route d'écriture | Contrôles métier (constatés) | Droit |
+|---|---|---|---|---|---|
+| `parametre_fiscal` | ligne unique (`id = 1`) : conservation, format, séparateur, fuseau | **aucun écran de modification** (lecture dans `JournalFiscal.razor`) | **aucune** | contraintes SQL seulement : conservation 6 à 30 ans, format `csv-v1`, séparateur `;` `,` tabulation | — |
+| `regle_alerte_psychotrope` | 5 lignes à code fixe | `AdminPsychotropes.razor` | `PUT /api/psychotropes/regles` | `ParametrerAlertesPsychotropes` : code connu, seuil 1–1000, période 1–3650, unités 1–100 ou vide | titulaire |
+| `parametre_tracabilite` | ligne unique : boîte obligatoire, patient obligatoire | **aucun écran de modification** (lu par la caisse et par le déclencheur du script 007) | **aucune** | contrainte SQL (`jamais`, `psychotrope`, `ordonnance`, `toujours`) | — |
+| `parametre_serialisation` | ligne unique : actif, connecteur, factice hors ligne | `AdminSerialisation.razor` | `PUT /api/serialisation/parametres` | connecteur fixé à `factice` (contrainte SQL) | voir `SerialisationEndpoints` |
+| `parametre_substitution` | ligne unique : équivalent exact seulement | `Achats › OngletSubstitution.razor` | `PUT /api/substitution/parametre` | aucun hors type | `admin.parametres` |
+| `motif_reglable` | lignes, clé métier `(liste, code)` unique, id local | `AdminMotifs.razor` | `POST/PUT /api/motifs` | `EnregistrerMotifReglable` + `RegleMotifs` : liste connue, libellé 1–80 unique dans la liste (C# seulement), ajout seulement dans 8 listes, motif système jamais désactivé, effet du tiroir fixé à la création, **jamais de suppression** | `admin.parametres` |
+| `parametre_formulaire_sms` | ligne unique : texte (1–4000 ou vide) | `AdminNotifications.razor` | `PUT /api/parametres/formulaire-sms` | `FormulaireAccordSmsPatient` | voir le cas d'usage |
+| `parametre_surveillance` | ligne unique, 23 colonnes dont **horaires d'ouverture** | `AdminControleInterne.razor` | `PUT /api/surveillance/parametres` | `ReglerSurveillance` : seuils ≥ 1, bornes de jours et minutes, horaires tous deux vides ou différents | titulaire |
+| `parametre_alerte` | ligne unique | `AdminSeuils.razor` (même enregistrement que seuils par grossiste et exceptions par produit) | `PUT /api/admin/seuils` | `EnregistrerSeuils` + `RegleSeuils` : rouge < orange, positifs ; **recalcule les alertes** après enregistrement | `admin.parametres` |
+| `parametre_inventaire` | ligne unique : seuils boîtes, montant | `Inventaire.razor` | `PUT /api/inventaires/parametres` | `ModifierParametresInventaire` : non négatifs | titulaire |
+| `remise_automatique` | lignes : **`produit_id` local** ou `categorie` (code de `categorie_produit`), `cree_par` **NOT NULL** (clé étrangère vers `utilisateur`) | `Mise/RemisesAutomatiques.razor` | `POST/PUT /api/remises-automatiques`, `…/arreter` | `GererRemisesAutomatiques` : produit **ou** catégorie, entier 1–100, fin ≥ début et ≥ aujourd'hui, motif ≤ 200, jamais sur un produit remboursable, **pas de chevauchement** sur la même cible | `caisse.remises_auto` |
+
+Autres constats utiles :
+- Les 11 tables sont classées **bidirectionnelles** (script 126) : leur état part déjà au central (tables miroir), donc le central connaît la valeur réelle de chaque officine.
+- **TVA** : aucune des 11 tables ne porte de taux ni de réglage de TVA ; les réglages « TVA reversée » sont dans `parametre_rapport` (groupe 3, local).
+  La mention « TVA » du § 16 ne correspond donc à aucune table du groupe 2 **[À VÉRIFIER avec le titulaire]**.
+- Journal local : `journal_audit` (`utilisateur_id` facultatif) ; certains cas d'usage n'y écrivent que la valeur **après** (inventaire, substitution, psychotropes).
+- Erreurs de l'API locale : `RegleMetierException` → 422, `DroitRefuseException` → 403, erreur `P0001` de la base → 422, corps `ErreurDto(Message, Champ)` lu par le poste (`Program.cs`) : c'est le format du projet (pas un `ProblemDetails` au sens strict).
+- Voie descendante (scripts 131, 136) : `sync_recevoir_descendant` n'accepte que la table `reglage_central`, garde la plus grande version, journalise (`sync_journal_descendant`) ;
+  la version acquittée s'arrête **avant** un élément refusé (redonné à chaque passage). Central (005, 009) : `cloud_publier_descendant` ne crée une version que si les données changent ;
+  `cloud_descendants` publie à chaque échange le réglage effectif puis renvoie les éléments plus récents.
+- Notifications : `IAlertesTitulaire` (sujets dans la contrainte `destinataire_notification_types_check`, dernier ajout : `synchronisation`, script 140).
+- `journal_securite` au central : détail limité à 500 caractères, insuffisant pour une valeur avant / après.
+- Aucun cache en mémoire de ces réglages repéré dans l'API locale (recherche ciblée, non exhaustive **[À VÉRIFIER au lot M4]**).
+
+### 16 bis.3 Modèle de données
+
+#### Au central (script `database/cloud/010_mutualisation_reglages.sql`)
+
+| Élément | Contenu | Accès |
+|---|---|---|
+| `cloud_reglage_table` | une ligne par table du groupe 2 (liste fermée de 11 noms, contrainte) : `nom_table`, `libelle`, `mode_depart` (valeur de départ du § 16, pour information) | lecture par l'outil |
+| `cloud_reglage_modele` | `perimetre` (voir D1), `nom_table`, `mode` (`propose` / `impose`), `valeur jsonb` (**NULL = rien publié**), `version_modele int` (+1 à chaque publication ou changement de mode), `ajouts_locaux boolean` (motifs, remises), `modifie_le`, `modifie_par`. Clé `(perimetre, nom_table)`. Créée **sans valeur** pour les 11 tables, mode = valeur de départ du § 16. | propriétaire seul (outil d'administration) ; aucun droit du rôle `pharma_cloud_api` |
+| `officine.mutualisation_liberee_le` | officine sortie de la mutualisation (départ, D3) : toutes ses tables publiées en mode `local` | outil |
+| `cloud_journal_reglage` | **ajout seul** (`cloud_ajout_seul`) : `le`, `perimetre`, `officine_id` (si action propre à une officine), `nom_table`, `action` (`publication`, `mode`, `liberation`, `retour`), `mode_avant`, `mode_apres`, `version_modele`, `valeur_avant`, `valeur_apres`, `auteur` (obligatoire), `compte_systeme`, `poste`, `motif` | outil (écriture et lecture) |
+| Miroir `reglage_mutualise` | état montant de chaque officine (appliqué, rejeté, non adopté, origine…) : table miroir générée comme les autres (`--generer-miroir`) | RLS comme toutes les tables miroir |
+
+**Où vit la valeur « modèle »** : au central seulement (`cloud_reglage_modele.valeur`) ; l'officine n'en garde que la **dernière version reçue**
+(`reglage_central`, clé `mutu_<table>`) pour pouvoir la réappliquer sans le central. **L'état imposé / proposé** : au central (décision), recopié dans
+l'élément descendant. **La version** : `version_modele` (propre à la table, lisible par l'administrateur) ; la version de transport reste celle de la
+voie descendante (monotone par officine, § 15). **L'historique** : `cloud_journal_reglage` au central ; `journal_audit` à l'officine (§ 16 bis.6).
+
+**Publication vers les officines (retenu : à l'échange, comme les familles)** : `cloud_descendants` (remplacée par 010, en reprenant **à l'identique**
+la logique de 009 : central restauré, acquittement) appelle `cloud_publier_descendant('reglage_central', 'mutu_' || nom_table, élément)` pour chaque table
+**publiée** du périmètre de l'officine ; `cloud_publier_descendant` ne crée une nouvelle version que si l'élément a changé. Une officine libérée reçoit
+l'élément `{ "mode": "local" }` pour chaque table déjà publiée. Écarté : diffuser à toutes les officines au moment de la commande (des milliers d'écritures
+d'un coup, officines inscrites plus tard oubliées). Coût : 11 comparaisons au plus par échange et par officine **[À VÉRIFIER par mesure, test de charge
+§ 12.4 à rejouer]** ; si nécessaire, comparer d'abord `version_modele` (entier) avant le JSON.
+
+#### Format de l'élément descendant (`mutu-v1`, dans le champ `donneesJson` du contrat `desc-v1`, inchangé)
+
+```json
+{ "format": "mutu-v1", "mode": "impose", "version_modele": 4, "ajouts_locaux": true,
+  "publie_le": "2026-11-20T09:12:00Z", "auteur": "admin-central-1",
+  "valeur": { "…": "selon la table" } }
+```
+
+| Table | `valeur` |
+|---|---|
+| tables à ligne unique | objet des colonnes métier, noms de la base (sans `id`, `officine_id`, `modifie_le`, `modifie_par`) ; `parametre_surveillance` **sans** `heure_ouverture` / `heure_fermeture` (D7) ; `parametre_serialisation` sans `connecteur` |
+| `regle_alerte_psychotrope` | `{ "regles": [ { code, active, seuil, periode_jours, exiger_valideur, unites_par_jour } ] }` : les 5 codes, ni `libelle` ni `ordre` (affichage local) |
+| `motif_reglable` | `{ "motifs": [ { liste, code, libelle, actif, ordre, effet, detail } ] }` : clé `(liste, code)` ; un motif nouveau du central a un code préfixé `c_` |
+| `remise_automatique` | `{ "remises": [ { cle, categorie, pourcentage, date_debut, date_fin, motif } ] }` : `cle` = identifiant stable du central (`c_` + 12 caractères) ; **catégories seulement** (D6) |
+
+Mode `local` : `{ "format": "mutu-v1", "mode": "local", "version_modele": n }`, sans valeur (libération).
+Taille : un élément reste sous 64 Kio (borne existante) ; l'outil refuse de publier au-delà (environ 300 motifs ou 400 remises **[À VÉRIFIER par mesure]**).
+
+#### À l'officine (script `database/migration/141_mutualisation_reglages.sql`)
+
+| Élément | Contenu |
+|---|---|
+| `reglage_mutualise` (classée **montante**, colonne `modele` exclue de l'envoi) | une ligne par table (11 lignes créées, `mode = 'local'`) : `nom_table`, `mode` (`local`/`propose`/`impose`, **reçu** du central), `version_modele_recue`, `recu_le`, `version_modele_appliquee`, `applique_le`, `etat` (`aucun`, `applique`, `non_adopte`, `rejete`), `motif_rejet` (≤ 500, sans donnée personnelle), `origine` (`locale` / `central` : la valeur en vigueur vient-elle du modèle), `modifie_localement_le`, `ajouts_locaux` |
+| `reglage_mode_effectif(table)` | `CASE WHEN sync_parametre.active AND officine inscrite THEN mode ELSE 'local' END` : la désactivation libère **sans rien effacer** (D3) |
+| Déclencheur `zz_reglage_garde` sur les 11 tables (BEFORE INSERT/UPDATE/DELETE) | si `current_setting('pharma.reglage_central', true) = 'on'` (posé par `SET LOCAL` dans la transaction d'application) : laisse passer ; sinon, mode effectif `impose` : **refus** `P0001` « Réglage fixé par le serveur central : … » (cas particuliers des motifs et remises ci-dessous) ; sinon : note `origine = 'locale'`, `modifie_localement_le = now()` dans `reglage_mutualise` (même transaction). Prend un verrou partagé sur la ligne de `reglage_mutualise` (l'application prend un verrou exclusif : § 16 bis.5) |
+| `motif_reglable.modele_code_central boolean` (défaut false) | vrai pour un motif créé ou réglé par le modèle ; le déclencheur refuse en mode imposé toute modification d'un motif central, et l'ajout d'un motif local si `ajouts_locaux = false` |
+| `remise_automatique.modele_cle text` (NULL = remise locale) ; `cree_par` devient facultatif **seulement** pour une remise du central (contrainte `cree_par IS NOT NULL OR modele_cle IS NOT NULL`) | une remise du central n'a pas d'auteur local ; aucune donnée existante modifiée (ajout de colonne, NOT NULL remplacé par une contrainte équivalente pour les lignes existantes) |
+| Sujet de notification `reglages_centraux` (D4) | ajouté aux contraintes `destinataire_notification_types_check` et `message_sortant_type_check` (même garde rejouable qu'au script 140) |
+| `sync_journal_descendant` | pour une clé `mutu_*`, `avant` / `apres` = version de modèle et mode (pas la valeur entière : elle est dans `journal_audit`) |
+
+Le script est idempotent, ne modifie aucune valeur de réglage, met à jour `database/init` (schéma, `seed_referentiel.sql` : `sync_table` et les 11 lignes) dans la
+même modification. Les scripts futurs qui écrivent dans une de ces 11 tables (par exemple un nouveau motif système) devront poser `SET LOCAL pharma.reglage_central = 'on'`
+(règle à inscrire dans `base-de-donnees.md`).
+
+**Cas de `motif_reglable` et des ajouts locaux.** Identité commune = `(liste, code)` (contrainte unique existante) ; l'id local n'est jamais transmis.
+- Motif du modèle dont le code existe déjà (motifs système, codes fixes de `sortie_stock` et `retour_fournisseur`) : libellé, activation et ordre réglés, marqué `modele_code_central`.
+- Motif nouveau du central : code `c_…` ; créé seulement dans une liste qui accepte l'ajout (`RegleMotifs.AjoutPermis`), effet du tiroir contrôlé (`RegleTiroir.VerifierEffet`).
+  Le générateur de codes locaux (`RegleMotifs.CodeDepuisLibelle`) ne doit plus produire de code commençant par `c_` (règle ajoutée, codes existants inchangés).
+- Ajout local : toujours un motif ordinaire (`modele_code_central = false`) ; permis en mode proposé, et en mode imposé si `ajouts_locaux` (vrai par défaut, D5).
+- Libellé d'un motif du central identique à celui d'un motif local de la même liste : **rejet** du modèle (la règle d'unicité locale reste vraie), motif donné au central.
+- Motif retiré du modèle : **jamais supprimé** (règle « jamais de suppression », motifs cités par des ventes) ; il redevient local, inchangé (D5).
+
+### 16 bis.4 Application d'un modèle à l'officine
+
+Cas d'usage `AppliquerReglagesMutualises` (Application), appelé dans le passage d'envoi (`EnvoyerLotsSync`, sous `VerrouSync`) **après** les éléments descendants,
+**même si l'échange avec le central a échoué** (les modèles déjà reçus sont dans la base) ; jamais sur une base en lecture seule (2e serveur : tout se réplique).
+Pour chaque table dont le modèle reçu n'est pas appliqué, ou qui est imposée et dont la valeur locale a changé depuis (`modifie_localement_le > applique_le`) :
+
+1. Transaction ; `SELECT … FROM reglage_mutualise WHERE nom_table = … FOR UPDATE` ; `SET LOCAL pharma.reglage_central = 'on'`.
+2. Lecture du modèle (`reglage_central`) : format inconnu → `rejete` (« format non pris en charge »).
+3. **Validation** par les validateurs du domaine (ceux de la saisie locale, lot M1), puis contrôles qui demandent la base
+   (catégorie existante, chevauchement de remises, libellé de motif en double, liste qui accepte l'ajout). Une erreur → `rejete` avec le message métier ;
+   **tout ou rien par table** (D9) ; la valeur en vigueur et le mode précédent restent.
+4. Décision selon le mode reçu :
+
+| Mode reçu | Valeur locale = modèle | Valeur locale différente, `origine = central` | Valeur locale différente, `origine = locale` |
+|---|---|---|---|
+| `local` | rien ; `etat = aucun`, mode local (libération, journal) | idem | idem |
+| `propose` | `origine = central`, `applique` | **remplacée** par le modèle (personne ne l'a modifiée ici) | **gardée** : `etat = non_adopte` ; l'écran montre la valeur proposée et le bouton « Adopter la valeur du serveur central » (D2) |
+| `impose` | `origine = central`, `applique` | remplacée | **remplacée** ; ancienne valeur au journal ; titulaire prévenu (§ 16 bis.6) |
+
+5. Écriture de la table **par le dépôt de l'infrastructure** (`ReglagesMutualisesSql`, une seule transaction : valeur, `reglage_mutualise`, `journal_audit`),
+   contraintes SQL en dernier rempart ; effets de bord des cas d'usage reproduits : `parametre_alerte` → recalcul des alertes (`IMoteurAlertes.GenererAsync`) après validation.
+   Remises imposées : les remises **locales** en cours ou à venir sont **arrêtées** (`arretee_le`, `arretee_par` vide, journal), jamais supprimées (D6).
+6. Validation de la transaction, puis notification (hors transaction, jamais bloquante).
+
+Un rejet n'est **pas** un refus de transport : l'élément `reglage_central` est rangé et acquitté (la voie descendante continue, rien n'est redonné en boucle) ;
+le rejet est un **état** (`reglage_mutualise.etat = rejete`, `motif_rejet`) qui monte au central par la file. Écarté : faire valider dans `sync_recevoir_descendant`
+(SQL) : les règles métier sont en C# et seraient dupliquées ; un refus de transport bloquerait l'acquittement de tous les éléments suivants (§ 18).
+
+### 16 bis.5 Lecture, refus et conflits à l'officine
+
+**Lecture** : l'API locale ne lit que sa base ; le central en panne ne bloque rien (dernier modèle appliqué).
+`GET /api/reglages-mutualises` (tout employé connecté, aucune donnée sensible) : pour les 11 tables, mode effectif, version, état, origine, date de réception, motif de rejet.
+`GET /api/reglages-mutualises/{table}/modele` (droit de la table) : valeur proposée, pour comparaison. `POST /api/reglages-mutualises/{table}/adopter` (droit de la table,
+corps `{ versionModele }`) : applique le modèle proposé (mêmes étapes), 409 si la version a changé entre-temps, 422 si la valeur est rejetée.
+
+**Refus côté serveur (table imposée)**, deux couches :
+1. **Cas d'usage** : chacun des cas d'usage d'écriture (11 tables, tableau du § 16 bis.2) appelle d'abord `IGardeReglagesCentraux.ExigerModifiableAsync(table, cible)` ;
+   refus = `ReglageImposeException` (dérivée de `RegleMetierException`), **409**, `ErreurDto("Ce réglage est fixé par le serveur central : il ne peut pas être modifié dans l'officine.", "reglage_impose")`.
+   Cas particuliers : `PUT /api/admin/seuils` reste permis pour les seuils par grossiste et les exceptions par produit, refusé seulement si la partie générale change ;
+   motifs : refus sur un motif central, ajout local selon `ajouts_locaux` ; remises : refus sur une remise du central, création locale refusée en mode imposé.
+2. **Base** : déclencheur `zz_reglage_garde` (même règle), pour tout autre chemin d'écriture ; message `P0001` → 422 (correspondance existante).
+
+**Conflits (modification locale pendant que le central publie)** :
+- Les deux écritures se sérialisent sur la ligne de `reglage_mutualise` (verrou partagé du déclencheur, exclusif de l'application).
+- Écriture locale validée **avant** l'application : en mode proposé, `origine = locale` → la valeur locale gagne (§ 4, « l'officine gagne ») ; en mode imposé, elle est remplacée et gardée au journal.
+- Application validée **avant** l'écriture locale : en mode imposé, l'écriture est refusée (409 ou 422) ; en mode proposé, elle passe et devient la valeur locale.
+- Deux publications rapprochées : seule la dernière version est rangée (versions monotones) ; le journal central garde les deux.
+- Désactivation pendant une application : sans effet (le mode effectif est relu dans la transaction).
+- Valeur imposée modifiée malgré tout (script, restauration d'une sauvegarde) : remise au modèle au passage suivant (étape « valeur locale changée »), journalisée.
+
+### 16 bis.6 Traçabilité et message au titulaire
+
+- **Central** : chaque commande d'écriture inscrit une ligne de `cloud_journal_reglage` (auteur obligatoire, compte Windows et poste relevés par l'outil, valeur et mode avant / après, version).
+  L'état de chaque officine (appliqué, rejeté, non adopté) se lit dans le miroir `reglage_mutualise` (lecture par une fonction de l'outil qui parcourt les officines en posant `app.officine_id`, sécurité par ligne oblige).
+- **Officine** : `journal_audit`, `utilisateur_id` vide, actions `reglage_central_applique`, `reglage_central_remplace` (valeur locale écrasée), `reglage_central_rejete`,
+  `reglage_central_adopte` (bouton, avec l'employé), `reglage_central_libere` ; détails : table, mode avant / après, version du modèle, auteur au central, **valeur avant et après**.
+  Ces actions rejoignent la catégorie « modifications » du journal (`CategoriesJournal`). Les cas d'usage locaux des 11 tables écrivent aussi **avant / après** (aujourd'hui l'après seul pour l'inventaire, la substitution et les psychotropes ; D13).
+- **Message** au titulaire par `IAlertesTitulaire` (nouvelle méthode `ReglagesImposesAsync`, sujet `reglages_centraux`, D4) à chaque table qui **devient imposée**, en précisant
+  si la valeur locale a été remplacée (« Seuils d'alerte de péremption : fixés par le serveur central le … ; votre valeur a été remplacée, l'ancienne est au journal »).
+  Un seul message par passage pour toutes les tables concernées ; pas de limite « une par heure » (chaque événement est distinct). Sans destinataire : bandeau de l'accueil (mécanisme existant `alerte_non_envoyee`).
+  Aucune donnée de patient. Rejet d'un modèle : pas de message (problème du central), visible dans l'écran et au central (D9).
+
+### 16 bis.7 Première activation, rien de publié, désactivation, départ
+
+- **Première activation** : les 11 lignes de `reglage_mutualise` sont en `local` ; rien ne change tant que le central n'a rien publié. L'échange suivant apporte les modèles
+  **déjà publiés** du périmètre ; ils sont appliqués selon le tableau du § 16 bis.4 (en mode proposé, une valeur locale différente n'est **pas** écrasée à la première réception, D2).
+- **Rien publié pour une table** : aucun élément ne descend ; table locale. Le central ne publie **jamais** de lui-même les valeurs de départ (D12) : l'administrateur publie
+  explicitement, après une simulation qui montre, officine par officine, les valeurs qui seraient remplacées.
+- **Désactivation de la synchronisation** (proposition, **[À DÉCIDER par le titulaire]**, D3) : mode effectif `local` pour toutes les tables, immédiatement ; valeurs gardées ; journal `reglage_central_libere`.
+  À la réactivation, le mode reçu redevient effectif ; une table imposée modifiée entre-temps est remise au modèle, journalisée, titulaire prévenu.
+- **Départ d'une officine** (proposition, **[À DÉCIDER par le titulaire]**, D3) : commande `--liberer-reglages --officine <code>` (journal central), qui publie le mode `local` pour toutes ses tables ; puis la révocation habituelle.
+  Si l'officine ne se reconnecte plus, la désactivation locale la libère (point précédent).
+- **2e serveur et bascule** : tout est en base, donc répliqué ; l'application ne tourne que sur le principal.
+
+### 16 bis.8 Sécurité
+
+- **Seul l'administrateur du central publie** : fonctions `cloud_publier_reglage`, `cloud_regler_mode_reglage`, `cloud_liberer_reglages` sans `EXECUTE` pour `PUBLIC` ni pour `pharma_cloud_api` ;
+  appelées par l'outil d'administration (propriétaire de la base), comme `cloud_regler_famille`. L'API centrale ne fait que lire (`cloud_descendants`, `SECURITY DEFINER`). Aucune route nouvelle au central.
+- **Validation à la publication** (outil) : mêmes validateurs du domaine (`Pharma.Cloud.Api` référencera `Pharma.Domain`, qui n'a aucune dépendance) ;
+  liste fermée des 11 tables (le groupe 3 est refusé, contrainte SQL et validateur) ; taille ≤ 64 Kio.
+- **Validation à la réception** (officine) : de nouveau, toutes les règles métier (§ 16 bis.4) ; valeur invalide rejetée, journalisée, synchronisation poursuivie.
+- **Garde locale** : refus dans les cas d'usage et dans la base (§ 16 bis.5). Le drapeau `pharma.reglage_central` protège contre une erreur de l'application, pas contre le compte
+  de la base de l'API (de confiance par construction) ; il n'est posé que par `ReglagesMutualisesSql`.
+- **Données** : aucune donnée personnelle dans les modèles ; `auteur` = identifiant de l'administrateur du central (pas de nom de patient, pas de mot de passe).
+  `parametre_formulaire_sms.texte` part déjà au central (décision du § 14.1).
+
+### 16 bis.9 Points à décider par le titulaire
+
+| N° | Question | Recommandation |
+|---|---|---|
+| D1 | **Périmètre d'un modèle** : un seul modèle pour toutes les officines du serveur central, ou un modèle par groupe d'officines (réseau d'un même titulaire) ? Un serveur central prévu pour des milliers d'officines rend un modèle unique discutable (remises, motifs). | Clé `(perimetre, nom_table)` dès le script 010, avec un seul périmètre `tous` créé ; l'option `--perimetre` et le rattachement des officines à un groupe viendront avec S7, sans migration de schéma. |
+| D2 | **Mode proposé, valeur locale différente** (première réception ou modification locale) : écraser ou garder ? | **Garder** la valeur locale, montrer la valeur proposée et un bouton « Adopter » (conforme au § 4 : l'officine gagne). Une valeur jamais modifiée ici suit le modèle. |
+| D3 | **Désactivation de la synchronisation, départ d'une officine** : les tables imposées redeviennent-elles modifiables ? | **Oui** : mode effectif local dès la désactivation (valeurs gardées, journal) ; à la réactivation, l'imposition revient (valeur remise, message). Départ : `--liberer-reglages` avant la révocation. Sinon le titulaire resterait sans moyen de régler sa propre officine. |
+| D4 | **Sujet du message** quand une table devient imposée | Nouveau sujet « Réglages fixés par le serveur central » (`reglages_centraux`), abonnable dans Administration › Notifications ; premiers abonnés : ceux du sujet « synchronisation » (une seule fois, comme au script 140). |
+| D5 | **Motifs en mode imposé** : ajouts locaux permis ? Motif retiré du modèle ? | Ajouts locaux **permis par défaut** (`ajouts_locaux`, réglable par table au central) ; motifs du central verrouillés ; motif retiré du modèle : **gardé, redevient local**, jamais supprimé ni désactivé d'office. |
+| D6 | **Remises automatiques du central** : `produit_id` est un identifiant local, inconnu du central. | **Catégories seulement** dans cette version ; produits par n° d'enregistrement plus tard si besoin. En mode imposé, les remises locales en cours sont **arrêtées** (jamais supprimées), journalisées, titulaire prévenu. |
+| D7 | **Colonnes propres à chaque officine** dans une table mutualisée | `parametre_surveillance.heure_ouverture` / `heure_fermeture` **toujours locales** (hors modèle, modifiables même si la table est imposée). |
+| D8 | `parametre_fiscal` et `parametre_tracabilite` **n'ont pas d'écran de modification** (constaté), alors que la décision veut tous les réglages dans l'administration de l'officine. | Créer deux écrans simples (lot M7) : fiscal (conservation 6 à 30 ans, séparateur, fuseau ; format fixe), traçabilité (boîte obligatoire, patient obligatoire), droit titulaire, journal avant / après. |
+| D9 | **Valeur rejetée par une officine** | Tout ou rien par table ; état « rejeté » + motif visible à l'écran et au central (`--reglages-mutualises`) ; pas de SMS. |
+| D10 | **« Qui » au central avant les écrans S7** | `--auteur <identifiant>` obligatoire sur chaque commande d'écriture, plus le compte Windows et le poste relevés par l'outil. |
+| D11 | **Format du refus local** | `ErreurDto` (format actuel de l'API locale, lu par le poste), code **409**, champ `reglage_impose` ; un passage général à `ProblemDetails` serait un chantier séparé. |
+| D12 | **Valeurs de départ du § 16** (fiscal, traçabilité, sérialisation imposés ; autres proposés) | Enregistrées comme mode de départ **sans valeur** : rien ne descend tant que l'administrateur n'a pas publié (simulation d'abord). |
+| D13 | **Modifications locales des tables mutualisées** tracées avant / après | Oui, aligner les 11 cas d'usage (petit travail, même lot que la garde). |
+| D14 | **TVA** citée au § 16 : aucune table du groupe 2 ne la porte (constaté) | Confirmer qu'il n'y a rien à mutualiser pour la TVA dans ce lot ; sinon désigner la table (`parametre_rapport` est du groupe 3). |
+
+### 16 bis.10 Lots de développement
+
+| Lot | Contenu | Agent | Dépend de | Taille |
+|---|---|---|---|---|
+| **M1. Contrat et règles** | `Pharma.Shared/DtosMutualisation.cs` (élément `mutu-v1`, valeurs par table, état, DTO des routes locales) ; `Pharma.Domain/Reglages/` : liste fermée des 11 tables, **validateurs purs** extraits des cas d'usage existants (seuils, surveillance, inventaire, psychotropes, motifs, remises, fiscal, traçabilité, sérialisation, formulaire, substitution) ; les cas d'usage existants les appellent (comportement inchangé) ; règle « code local jamais `c_` » | backend | décisions D1, D2, D5–D7 | M |
+| **M2. Script officine 141** `141_mutualisation_reglages.sql` | `reglage_mutualise` (montante), `reglage_mode_effectif`, déclencheur `zz_reglage_garde`, colonnes `motif_reglable.modele_code_central`, `remise_automatique.modele_cle` + contrainte `cree_par`, sujet `reglages_centraux`, journal descendant ; `database/tests/141_mutualisation_reglages_tests.sql` ; `database/init` (schéma, seed) dans la même modification | base-de-donnees | décisions D3, D4, D6 | M |
+| **M3. Script central 010** `010_mutualisation_reglages.sql` | `cloud_reglage_table`, `cloud_reglage_modele` (11 lignes sans valeur), `cloud_journal_reglage`, `officine.mutualisation_liberee_le`, fonctions d'administration, `cloud_descendants` remplacée (logique 009 conservée), lecture de l'état des officines ; `database/cloud/tests/010_mutualisation_reglages_tests.sql` ; `002_tables_miroir.sql` **régénéré** pour la nouvelle table montante (à coordonner : un autre travail modifie d'anciens scripts) | base-de-donnees | D1, D10, D12 ; M2 pour le miroir | M |
+| **M4. Application et infrastructure officine** | `AppliquerReglagesMutualises`, `AdopterReglageCentral`, `IGardeReglagesCentraux` et sa mise en place dans les 11 cas d'usage (cas particuliers seuils, motifs, remises), journal avant / après (D13), `ReglagesMutualisesSql` (transaction unique, `SET LOCAL`), appel dans `EnvoyerLotsSync`, `IAlertesTitulaire.ReglagesImposesAsync` | backend | M1, M2 | L |
+| **M5. API locale** | `GET /api/reglages-mutualises`, `GET …/{table}/modele`, `POST …/{table}/adopter` ; `ReglageImposeException` → 409 dans `Program.cs` ; champ `mutualisation` dans `GET /api/admin/synchronisation` | backend | M4 (peut commencer sur M1) | S |
+| **M6. Outil d'administration central** (`Pharma.Cloud.Api`) | `--reglages-mutualises [--table] [--officine]` (modèles, modes, état par officine, rejets), `--publier-reglage <table> --fichier <json> --auteur <id> [--simulation]`, `--mode-reglage <table> impose\|propose --auteur <id>`, `--modele-depuis-officine <table> --officine <code> --auteur <id>` (prépare un fichier depuis le miroir d'une officine de référence), `--liberer-reglages --officine <code> --auteur <id>`, `--journal-reglages` ; validation par M1 | backend | M1, M3 | M |
+| **M7. Écrans du poste** | composant commun « fixé par le serveur central » (mention, champs grisés, bouton Adopter, valeur proposée) dans les 9 écrans existants ; deux écrans nouveaux fiscal et traçabilité (D8) ; Administration › Synchronisation : sous-rubrique « Réglages mutualisés » (état des 11 tables, rejets) ; charte graphique, sans défilement, captures clair et sombre | frontend (poste) | M5 (routes fixées ici : peut commencer en parallèle) | L |
+| **M8. Essais de bout en bout** | copies jetables, les deux API réelles : publication proposée puis imposée (valeur locale remplacée, journal des deux côtés, message), refus 409 et refus de la base, valeur invalide rejetée sans arrêt de l'envoi, central coupé (réglage gardé, rien bloqué), conflit simultané, désactivation puis réactivation, libération, 2e serveur en lecture seule ; tests C# (`Pharma.Application.Tests`, `Pharma.Cloud.Tests`, test d'architecture : même liste de 11 tables dans le domaine, le script 141, le script 010 et `sync_table`) | testeur | M2–M7 | M |
+| **M9. Documentation** | `regles-metier.md` (chaque règle, même modification que le code), ce document (réalisé), `base-de-donnees.md`, `securite-et-droits.md`, `mise-en-production.md` (scripts 141 et 010), `a-faire.md` ; scripts passés sur dev et test | documentaliste | au fil des lots | S |
+
+**Ordre et parallélisme** :
+1. Décisions D1 à D14 (au moins D1, D2, D3, D5, D6, D8 avant de coder).
+2. **En parallèle** : M1, M2, M3 (le format `mutu-v1` et les noms sont fixés ici).
+3. **En parallèle** : M4 (après M1 + M2) et M6 (après M1 + M3) ; M7 peut démarrer sur les routes du § 16 bis.5.
+4. M5 (après M4), fin de M7.
+5. M8, puis clôture de M9.
+
+### 16 bis.11 Risques
+
+- **Déclencheur de garde et scripts futurs** : un script qui écrit dans une table imposée échouera s'il ne pose pas le drapeau ; à documenter et à tester.
+- **Coût de la publication à l'échange** pour un très grand nombre d'officines : à mesurer (test de charge).
+- **Régénération de `002_tables_miroir.sql`** pendant qu'un autre travail touche d'anciens scripts : à faire en dernier dans M3, après coordination.
+- **Extraction des validateurs** : risque de changer un comportement existant ; les tests actuels des cas d'usage doivent passer sans modification.
+- **Remises par catégorie imposées** : arrêter des remises locales en cours change les prix au comptoir ; le message au titulaire est indispensable.
+- **Obligations légales** (seuils psychotropes, conservation fiscale) qui justifieraient d'imposer : **[À VÉRIFIER]** (déjà noté au § 16).
+
+### 16 bis.12 Lot M1 : réalisé (2026-11-16) — format `mutu-v1` et règles extraites
+
+**Où** : `Pharma.Shared/DtosMutualisation.cs` (forme et sérialisation), `Pharma.Domain/Reglages/` (règles et validation). `Pharma.Shared` et `Pharma.Domain`
+ne dépendent de rien (test d'architecture existant) : le format ne porte donc que la **forme** ; les règles métier et la validation d'un modèle complet sont dans
+le domaine, qui lit le JSON lui-même (`System.Text.Json`) pour servir à la fois `Pharma.Application` (réception, lot M4) et l'outil central (lot M6). Un test vérifie
+que ce que le format écrit passe la validation du domaine, et que les deux listes de 11 tables sont identiques.
+
+**Format** (champ `donneesJson` du contrat `desc-v1`, table `reglage_central`, clé `mutu_<table>`) :
+- Enveloppe : `format` (`mutu-v1`), `mode` (`impose`, `propose`, `local`), `version_modele` (entier ≥ 1) ; sauf en mode `local` : `publie_le` (UTC, `AAAA-MM-JJTHH:MM:SSZ`),
+  `auteur` (1 à 100 caractères), `valeur`, et `ajouts_locaux` (booléen, **motifs et remises seulement**, interdit ailleurs). Mode `local` : les trois premiers champs, rien d'autre.
+- **Lecture stricte** : champ inconnu, manquant ou mal typé refusé. Aucun identifiant propre à une officine : `id`, `officine_id`, `produit_id`, `cree_par`, `cree_le`,
+  `modifie_*`, `arretee_*`, `heure_ouverture`, `heure_fermeture` sont refusés avec un message explicite ; le connecteur de sérialisation (fixé à `factice`) n'est pas dans le modèle.
+- **Déterministe** : JSON UTF-8 compact, clés triées par ordinal, listes triées par clé métier (règles par `code`, motifs par `liste` puis `code`, remises par `cle`), nombres sans zéro final
+  (`5000.00` s'écrit `5000`), dates `AAAA-MM-JJ`, accents écrits tels quels. Deux sérialisations d'un même modèle donnent les mêmes octets.
+- **Borné** : 64 Kio (octets UTF-8), refusé à l'écriture comme à la lecture ; en pratique environ 340 motifs de 70 à 80 caractères (mesuré : 400 dépassent la borne).
+
+Exemple (`parametre_inventaire`, impose) :
+
+```json
+{"auteur":"admin-central-1","format":"mutu-v1","mode":"impose","publie_le":"2026-11-20T09:12:00Z","valeur":{"seuil_boites":2,"seuil_montant":2000.5},"version_modele":4}
+```
+
+| Table | `valeur` (noms de colonnes de la base) |
+|---|---|
+| `parametre_fiscal` | `conservation_annees`, `format_export_dgi`, `separateur_csv`, `fuseau` |
+| `regle_alerte_psychotrope` | `regles[]` : `code`, `active`, `seuil`, `periode_jours`, `exiger_valideur`, `unites_par_jour` (entier ou `null`, clé obligatoire) ; les 5 codes exactement |
+| `parametre_tracabilite` | `boite_obligatoire`, `patient_obligatoire` |
+| `parametre_serialisation` | `actif`, `factice_hors_ligne` |
+| `parametre_substitution` | `equivalent_exact_seulement` |
+| `motif_reglable` | `motifs[]` : `liste`, `code`, `libelle`, `actif`, `ordre`, `effet`, `detail` |
+| `parametre_formulaire_sms` | `texte` (texte ou `null` = texte par défaut, clé obligatoire) |
+| `parametre_surveillance` | les 21 seuils, **sans** les horaires d'ouverture (D7) |
+| `parametre_alerte` | `jours_orange`, `jours_rouge`, `horizon_risque_jours`, `delai_fournisseur_jours`, `jours_securite`, `jours_cible_commande`, `jours_dormant`, `seuil_lot_delaisse`, `seuil_lot_delaisse_collectif` |
+| `parametre_inventaire` | `seuil_boites`, `seuil_montant` |
+| `remise_automatique` | `remises[]` : `cle`, `categorie`, `pourcentage`, `date_debut`, `date_fin`, `motif` (texte ou `null`) ; catégories seulement (D6) |
+
+**Écarts avec la conception ci-dessus** (à valider) :
+- `parametre_alerte` : seules les 9 colonnes que l'écran des seuils règle sont dans le modèle ; `fenetre_conso_jours` et `jours_surstock` existent dans la base mais aucun code ne les lit ni ne les règle (constaté par recherche dans le code C#).
+- `publie_le` est à la seconde (le § 16 bis.3 donnait déjà ce niveau) ; `ajouts_locaux` n'est présent que pour les motifs et les remises (l'exemple générique du § 16 bis.3 le montrait toujours).
+- Remises : `date_fin ≥ aujourd'hui` n'est exigé qu'à la **publication** (paramètre « aujourd'hui » de la validation) ; à la réception une remise qui arrive à son terme ne fait pas rejeter toute la table.
+- Règles qui n'existaient qu'en SQL, reprises comme fonctions du domaine : fiscal (conservation 6 à 30, format `csv-v1`, séparateur `;` `,` tabulation) et traçabilité (4 valeurs). **Nouvelles** (pas de contrainte SQL aujourd'hui) : fuseau (identifiant de 64 caractères au plus, forme `Zone/Ville`), `ordre` d'un motif de 0 à 10 000, montants à deux décimales et moins de 10 chiffres entiers (`numeric(12,2)`). **[À VÉRIFIER]** par le titulaire.
+- Contrôles qui demandent la base, **laissés au lot M4** : catégorie de remise existante, remise locale qui chevauche, libellé de motif déjà pris par un motif local, motif système non désactivable (`RegleMotifs.VerifierModification`), code existant d'un motif système.
+- Aucune règle n'était enfouie dans `Pharma.Cloud.Api` ni dans `Pharma.Infrastructure` (seul le chevauchement de remises est en SQL : sa définition, bornes incluses, est reprise dans `RegleRemisesAutomatiques.Chevauche`, utilisée par la validation du modèle ; la requête SQL de la saisie locale reste en place).
+- Les nouvelles règles fiscales et de traçabilité n'ont pas de nom de champ d'écran (le test `ChampsObligatoiresTests` exige un `data-champ` sur l'écran pour tout champ nommé) : à ajouter avec les écrans du lot M7.
+
+**Règles extraites dans `Pharma.Domain` (comportement des cas d'usage inchangé, tests existants non modifiés)** :
+
+| Table | Règles (classe de `Pharma.Domain.Reglages` sauf mention) | Cas d'usage qui les appelle |
+|---|---|---|
+| `parametre_fiscal` | `RegleFiscale` : conservation, format, séparateur, fuseau | aucun aujourd'hui (pas d'écran, lot M7) |
+| `regle_alerte_psychotrope` | `RegleAlertesPsychotropes` : code connu, seuil 1–1000, période 1–3650, unités 1–100 ou vide ; codes (`CodesAlertePsychotrope` y renvoie) | `ParametrerAlertesPsychotropes` |
+| `parametre_tracabilite` | `RegleTracabilite` : patient obligatoire | aucun aujourd'hui (lot M7) |
+| `parametre_serialisation` | aucune règle de valeur (deux booléens) | — |
+| `parametre_substitution` | aucune règle de valeur (un booléen) | — |
+| `motif_reglable` | `RegleMotifs` (existante, complétée) : `ExigerListe`, `VerifierLibelle`, `VerifierCode`, `ExigerLibelleUnique`, `ExigerAjoutPermis`, `ExigerEffetAutorise`, `EstCodeCentral` ; `RegleTiroir.VerifierEffet` ; **un code local ne commence plus jamais par `c_`** (préfixe `local_`, codes existants inchangés) | `EnregistrerMotifReglable` |
+| `parametre_formulaire_sms` | `RegleFormulaireSms` : texte rogné, 4000 caractères au plus, texte par défaut = vide | `FormulaireAccordSmsPatient.ModifierTexteAsync` |
+| `parametre_surveillance` | `RegleSurveillance.VerifierSeuils` (21 seuils, mêmes messages et même ordre) ; `VerifierHoraires` (locaux, hors modèle) | `ReglerSurveillance` |
+| `parametre_alerte` | `RegleSeuils.VerifierReglageGeneral` (+ `VerifierGeneral` et `VerifierParticulier` existantes) | `EnregistrerSeuils` |
+| `parametre_inventaire` | `RegleInventaire.VerifierSeuils` | `ModifierParametresInventaire` |
+| `remise_automatique` | `RegleRemisesAutomatiques` : cible exclusive, pourcentage entier 1–100, période, motif ≤ 200, produit non remboursable, chevauchement | `GererRemisesAutomatiques` |
+
+`TablesMutualisables` (liste fermée des 11 tables, clé `mutu_<table>`) ; `ValidationModele.ValiderElement(table, json, aujourdhui?)` et `ValiderValeur` renvoient **la liste des erreurs** en français
+(liste vide = valide), tout ou rien par table (D9). Tests : `ReglesReglagesTests`, `ValidationModeleTests` (Pharma.Domain.Tests), `FormatMutuV1Tests` (Pharma.Application.Tests).
+
+### 16 bis.12 Réalisation des lots M2 (officine) et M3 (central) (2026-11-16)
+
+**Fait : les deux scripts de base de données, rien n'est imposé ni publié.** À la fin des essais toutes les tables sont « locales » sans modèle ; le comportement de l'officine est inchangé.
+
+**M2, officine : `database/migration/141_mutualisation_reglages.sql`** (tests `database/tests/141_mutualisation_reglages_tests.sql`) :
+- `reglage_mutualise` (11 lignes, mode `local`, classée **montante**, colonne `modele` non envoyée, `motif_rejet` filtré comme les textes libres) ; colonnes ajoutées par rapport au § 16 bis.3 : `mode_recu` (mode reçu, distinct du mode **en vigueur** `mode` : un modèle rejeté ne change pas le mode précédent) et `version_modele_rejetee` (une version déjà rejetée n'est pas réexaminée à chaque passage) ; `modele` garde l'élément `mutu-v1` reçu.
+- `reglage_tables_mutualisables()` (liste fermée des 11 tables, utilisée par la contrainte), `reglage_mode_effectif(table)` (mode en vigueur si la synchronisation est active **et** l'officine inscrite, sinon `local`).
+- Garde `zz_reglage_garde` (BEFORE INSERT/UPDATE/DELETE, 11 tables) : refus `P0001` « Réglage fixé par le serveur central : … » sur une table imposée, sauf marqueur `pharma.reglage_central = on`. Cas particuliers : horaires de `parametre_surveillance` toujours locaux (D7) ; motifs : ajout local selon `ajouts_locaux`, motif du central verrouillé (D5) ; remises : aucune création locale en mode imposé, remise du central verrouillée (D6) ; le repérage `modele_code_central` / `modele_cle` ne se pose pas hors application d'un modèle ; écriture sans effet permise. Hors mode imposé, la modification locale est notée (`origine = locale`, `modifie_localement_le`) par une écriture dans la ligne de `reglage_mutualise` (ce verrou de ligne sérialise avec `SELECT … FOR UPDATE` de l'application ; remplace le « verrou partagé » du § 16 bis.3, sans risque d'interblocage entre deux écritures locales) ; aucune écriture quand la table est locale et sans valeur venue du central.
+- `reglage_journaliser(…)` : une ligne du journal d'audit (actions `reglage_central_applique`, `_remplace`, `_rejete`, `_adopte`, `_libere`), valeurs avant et après.
+- `motif_reglable.modele_code_central`, `remise_automatique.modele_cle` (catégorie seulement, `c_` + 12 caractères, unique), `cree_par` facultatif seulement pour une remise du central.
+- Voie descendante : `sync_recevoir_descendant` (définition de 136 gardée sur la base à jour, plus recréée) reconnaît `mutu_<table>`. Table non mutualisable : journal `invalide`, élément **acquitté** (le statut `invalide` ne bloque pas l'acquittement, contrairement à `refuse` et `table_inconnue`). Table connue mais élément mal formé (format, mode, version, valeur) : acquitté, table `rejete` avec motif. Élément valide : rangé dans `reglage_central` et `reglage_mutualise` (`mode_recu`, `version_modele_recue`, `recu_le`, `modele`) ; c'est le cas d'usage C# (lot M4) qui l'applique. Protections de transport inchangées (version maximale, saut, 64 Kio) ; une clé inutilisable est maintenant refusée au lieu de lever une erreur.
+- Sujet de notification `reglages_centraux` (les abonnés du sujet « synchronisation » y sont abonnés une fois). `init/schema.sql` et `seed_referentiel.sql` mis à jour (en-têtes « 001 à 141 »).
+- **Point d'attention** : une table imposée refuse aussi les scripts. Les outils qui rejouent toute la suite (`mettre_a_jour_base_officine.ps1`, restauration depuis l'application) devront poser `PGOPTIONS="-c pharma.reglage_central=on"` (ou `SET LOCAL`) avant que la première table soit imposée ; à traiter avec le lot M4.
+
+**M3, central : `database/cloud/010_mutualisation_reglages.sql`** (tests `database/cloud/tests/010_mutualisation_reglages_tests.sql`) :
+- `cloud_reglage_table` (11 tables, mode de départ du § 16 ; `regle_alerte_psychotrope` démarre en « proposé »), `cloud_reglage_modele` (clé `(perimetre, nom_table)`, un seul périmètre `tous`, D1 ; 11 modèles créés **sans valeur**, version 0, D12), `cloud_journal_reglage` (ajout seul, auteur obligatoire, compte Windows et poste), `officine.mutualisation_liberee_le`.
+- Fonctions d'administration (sans `EXECUTE` pour `PUBLIC` ni `pharma_cloud_api`) : `cloud_publier_reglage`, `cloud_regler_mode_reglage`, `cloud_liberer_reglages`, `cloud_retablir_reglages`, `cloud_etat_reglages` (état des officines lu dans le miroir, officine posée une par une). La validation métier de la valeur reste celle de l'outil (lot M6) ; la base contrôle la table, l'auteur, la forme et la taille.
+- `cloud_descendants` remplacée : logique de 009 à l'identique, plus un élément `mutu_<table>` par table publiée (nouvelle version descendante seulement si l'élément change ; `publie_le` est la date de la dernière modification du modèle, donc stable). Officine libérée : élément `{ mode: local }`.
+- Droits : `pharma_cloud_api` ne fait que **lire** les modèles (sécurité par ligne : politique de lecture seule), aucun droit sur le journal.
+- `002_tables_miroir.sql` régénéré (`--generer-miroir`) : miroir de `reglage_mutualise` (sans `modele`) et colonnes `motif_reglable.modele_code_central`, `remise_automatique.modele_cle`. `101b` (suppression de `vente.num_facture_chifa`, jamais lancée par les scripts) n'est pas appliqué dans `schema.sql` : le miroir garde donc la colonne `vente.num_facture_chifa`, qui restera simplement vide pour une officine où `101b` a été passé.
+
+**Essais (2026-11-16)** : sauvegardes `pg_dump -Fc` avant ; 141 passé deux fois sur dev et test (empreinte du schéma identique entre les deux passages et entre dev et test, comptages inchangés), `rejeu_complet.ps1` sur une copie jetable (001 à 141 deux fois : structure, données, comptages identiques) ; base centrale jetable créée par `creer_base_centrale.ps1` (001 à 010, tests 001 à 010 réussis), 010 rejoué trois fois sans changement ; `pharmacie_cloud_dev` : 002 puis 010 deux fois (dump du **schéma seul** et des tables sans sécurité par ligne : le dump complet est impossible, les tables de données ont la sécurité par ligne forcée ; la base ne contenait aucune donnée d'officine), tests centraux 001 à 010 réussis.
+
+### 16 bis.12 Réalisation du lot M6 : outil d'administration du central (2026-11-16)
+
+**Où** : `src/Pharma.Cloud.Api/Reglages/` (`ArgumentsReglages`, `ModelePublication`, `ModeleDepuisOfficine`, `AdministrationReglages`), branché dans `ConsoleAdministration` (7 commandes). `Pharma.Cloud.Api` référence maintenant `Pharma.Domain` (validation du lot M1) ; aucun changement dans `Pharma.Shared` ni `Pharma.Domain`. Tout passe par les fonctions du script 010 avec `PHARMA_CLOUD_ADMIN_CONNEXION` ; messages en français ; code de sortie 1 en cas d'erreur.
+
+| Commande | Effet |
+|---|---|
+| `--reglages-mutualises [table]` | 11 tables : mode, version, auteur, date, officines qui ont appliqué (dont à la dernière version), rejeté (avec motif), non adopté, sans information (`cloud_etat_reglages`) ; avec une table, détail par officine |
+| `--publier-reglage <table> --fichier <json> --auteur <nom> [--motif] [--simulation] [--oui]` | validation complète (`ValidationModele.ValiderElement` avec la date du jour, puis forme canonique `SerialisationMutuV1`), puis `cloud_publier_reglage` ; simulation : mode, version avant / après, erreurs, rien d'écrit ; modèle identique : aucune version ; mode imposé : confirmation |
+| `--mode-reglage <table> <impose ou propose> --auteur <nom> [--motif] [--oui]` | `cloud_regler_mode_reglage` ; « imposé » : avertissement (valeurs locales remplacées, message au titulaire) et confirmation « oui » sauf `--oui` ; sans saisie possible : refus |
+| `--modele-depuis-officine <code> <table> --fichier <sortie> [--mode] [--ecraser]` | lit le miroir de l'officine (officine posée par transaction), écrit un fichier `mutu-v1` sans identifiant propre à l'officine ; ne publie rien ; signale ce qui est écarté et les erreurs que la publication refuserait |
+| `--liberer-reglages <code>` et `--retablir-reglages <code>` (avec `--auteur <nom> [--motif]`) | `cloud_liberer_reglages` et `cloud_retablir_reglages` (D3) ; déjà libérée ou pas libérée : message, rien d'écrit |
+| `--journal-reglages [table] [--depuis AAAA-MM-JJ] [--limite n]` | lecture de `cloud_journal_reglage` (200 entrées par défaut) |
+
+**Écarts et choix à valider** :
+- **Mode « local » d'une table** : `--mode-reglage <table> local` est **refusé** avec explication, car `cloud_regler_mode_reglage` (script 010) ne connaît que `propose` et `impose` ; le retour d'une officine en « local » se fait par `--liberer-reglages`. Si le titulaire veut un « local » par table pour toutes les officines, c'est une évolution du script 010.
+- La conception (§ 16 bis.10) écrivait `--modele-depuis-officine <table> --officine <code>` et `--reglages-mutualises [--table] [--officine]` ; la forme retenue suit la demande du lot (code d'officine puis table en positions, table seule pour le détail).
+- Une **publication en mode imposé** demande aussi la confirmation (pas seulement le changement de mode) : elle remplace de la même façon les valeurs locales.
+- Dans le fichier à publier, `version_modele`, `publie_le` et `auteur` sont exigés par le format mais **remplacés** par le central (version +1, auteur de `--auteur`) ; `ajouts_locaux` du fichier est repris (motifs et remises).
+- Le modèle depuis une officine reprend tout le miroir de la table : pour les motifs, les motifs locaux de l'officine s'y trouvent (à retirer à la main) ; les remises sur produit, arrêtées ou terminées sont écartées ; la clé d'une remise sans clé du central est dérivée (`c_` + 12 caractères d'une empreinte de l'officine et de la remise), donc stable d'un essai à l'autre.
+
+**Essais (2026-11-16)** : tests `ReglagesMutualisesAdminTests` (analyse des arguments, simulation, refus d'un modèle invalide, auteur obligatoire, confirmation, modèle depuis le miroir ; sans base). Essai réel sur une base centrale **jetable** `pharmacie_cloud_jetable_m6_essai` créée par `creer_base_centrale.ps1` (001 à 010, tests 001 à 010 réussis) **dans une instance PostgreSQL temporaire du poste de développement (port 6231, compte d'essai propre, arrêtée et base supprimée à la fin)**, `pharmacie_cloud_dev` non touchée : modèle invalide refusé (journal vide), simulation sans écriture, publication imposée refusée sans confirmation puis acceptée, modèle identique sans nouvelle version, changement de mode (version 3), état et journal lus, `cloud_descendants` renvoie l'élément `mutu_parametre_inventaire` (mode, version, valeur ; mode `local` après libération, de nouveau imposé après rétablissement), commandes lancées aussi en ligne (`Pharma.Cloud.Api.dll`). Le test réel est ignoré sauf si `PHARMA_ESSAI_M6_CONNEXION` désigne une base jetable **neuve** `pharmacie_cloud_jetable_m6_*`.
+
+### 16 bis.12 Réalisation du lot M4 : application à l'officine (2026-11-16)
+
+**Fait** : application des modèles reçus, « Adopter », garde des 11 cas d'usage de saisie locale, journal avant / après (D13), sujet de notification, marqueur des outils de rejeu. Pas de route d'API (lot M5) ni d'écran (lot M7). Aucun script SQL nouveau : le script 141 a suffi (aucun défaut constaté).
+
+**Où** : `Pharma.Application/Reglages/ReglagesMutualises.cs` (`AppliquerReglagesMutualises`, `AdopterReglageCentral`, `LibererReglagesMutualises`, `GardeReglagesCentraux` / `IGardeReglagesCentraux`, `ReglageImposeException`, `ModeleReglageChangeException`, ports `IReglagesMutualisesDepot` et `ITransactionReglage`), `Pharma.Infrastructure/Reglages/ReglagesMutualisesSql.cs` (une transaction par table : `SELECT … FOR UPDATE` de la ligne d'état, `set_config('pharma.reglage_central', 'on', true)`, valeur, état, journal). Application et infrastructure ne connaissent pas `Pharma.Shared` (test d'architecture) : elles lisent la valeur du modèle en JSON, la validation est celle de `Pharma.Domain.Reglages.ValidationModele` (lot M1).
+
+**Appels** : `EnvoyerLotsSync` applique les modèles après l'échange descendant (même s'il a échoué) et, si des éléments sont arrivés avec l'accusé d'un lot, une seconde fois en fin de passage ; une panne n'arrête jamais l'envoi (note « Réglages mutualisés non appliqués »). `EnvoiSynchronisation` (tâche de fond) l'applique aussi au démarrage. Sans synchronisation active, officine inscrite et base en écriture, rien n'est appliqué. `ReglerSync` écrit la libération au journal quand la synchronisation est désactivée (D3).
+
+**Examen d'une table** : à examiner si la version reçue n'est ni appliquée ni rejetée, si l'état est « non adopté » (réévalué : une valeur redevenue égale au modèle est appliquée), ou si la table est imposée et modifiée localement depuis son application (`modifie_localement_le > applique_le`). Décision : voir § 16 bis.4 ; comparaison des valeurs par écriture canonique (clés et listes triées, nombres sans zéro final) ; motifs : seulement les motifs du modèle comptent dans la valeur locale ; remises : les remises du serveur central en vigueur.
+
+| Cas | Résultat |
+|---|---|
+| imposé, valeur différente | remplacée ; journal `reglage_central_remplace` (avant / après) ; un message par passage (`ReglagesImposesAsync`) |
+| imposé, valeur égale | `reglage_central_applique` ; message « fixé par le serveur central » |
+| proposé, jamais modifiée (origine central) | suit le modèle |
+| proposé, modifiée localement | gardée, état `non_adopte`, rien écrit, rien journalisé |
+| modèle invalide (domaine ou base) | `rejete` + motif (500 caractères) + `version_modele_rejetee`, mode et valeur gardés, journal `reglage_central_rejete`, aucun message |
+| mode `local` reçu | libération, `reglage_central_libere` |
+| Adopter | droit de saisie locale de la table (`admin.parametres` : motifs, seuils, substitution, texte SMS ; `caisse.remises_auto` : remises ; titulaire : les autres) ; 409 si la version a changé (`ModeleReglageChangeException`) ; `reglage_central_adopte` avec l'employé |
+
+**Contrôles qui demandent la base** (`ControlerAsync`) : catégorie de remise existante, remise locale qui chevauche (mode proposé seulement : en imposé elle est arrêtée), libellé de motif déjà pris par un motif de l'officine hors modèle, motif système non désactivable, effet du tiroir d'un motif existant inchangé, code de motif inconnu qui n'est pas « c_ ».
+
+**Refus de saisie locale** : `ReglageImposeException` → 409, `ErreurDto("Ce réglage est fixé par le serveur central.", "reglage_impose")`, levé AVANT d'écrire dans `EnregistrerSeuils` (partie générale seulement), `EnregistrerMotifReglable` (ajout selon `ajouts_locaux`, motif du central), `GererRemisesAutomatiques` (création, remise du central), `ReglerSurveillance` (un seuil change ; horaires jamais refusés, D7), `ModifierParametreSubstitution`, `ModifierParametresInventaire`, `ParametrerAlertesPsychotropes`, `FormulaireAccordSmsPatient.ModifierTexteAsync`, `PiloterFileSerialisation.EnregistrerAsync`. Fiscal et traçabilité n'ont pas de cas d'usage (lot M7). Correspondance HTTP : `Program.cs` et `ErreursMetier.Filtrer` (nécessaire pour que le 409 existe, le reste de l'API est le lot M5).
+
+**Journal avant / après (D13)** : clés `avant` et `apres` ajoutées aux journaux des 11 cas d'usage (inventaire, substitution, psychotropes, texte SMS, sérialisation, motifs, remises, en plus des seuils et du contrôle interne qui les avaient).
+
+**Notifications** : sujet `reglages_centraux` dans `TypeNotification` (`Abonnables`), `IAlertesTitulaire.ReglagesImposesAsync`, abonnement possible dans l'écran Administration › Notifications (deux chaînes ajoutées au poste, sans autre changement d'écran). `StatutsDescendant.Invalide` ajouté (n'arrête pas l'acquittement).
+
+**Marqueur des outils de rejeu** : `RestaurationPostgres.OptionsScripts`, `scripts/mep/outils_mep.ps1` (donc `mettre_a_jour_base_officine.ps1`), `database/tests/rejeu_complet.ps1` (option `-SansMarqueurReglages`, preuve seulement), `scripts/initialiser_base_locale.ps1`, `scripts/paquet/installer.ps1`. Test : `MarqueurRejeuReglagesTests`. Preuve manuelle (copie de `pharmacie_dev`, 11 tables imposées, synchronisation active, déclencheurs installés) : `rejeu_complet.ps1 -SansMarqueurReglages` échoue (`002_alertes_stock.sql : Réglage fixé par le serveur central`), sans l'option les 139 scripts passent deux fois et structure, données et comptages restent identiques.
+
+**Hypothèses du lot (à confirmer)** : (1) une remise du serveur central retirée du modèle est **arrêtée** (jamais supprimée) ; (2) les règles d'alerte des psychotropes absentes de la base sont créées à l'application (`database/init` n'en sème qu'une) ; (3) la valeur locale d'une table « non adoptée » est réévaluée à chaque passage (pas de colonne de version dédiée dans `reglage_mutualise`, script 141 inchangé) ; (4) en mode proposé, un chevauchement avec une remise locale rejette la table (en imposé, la remise locale est arrêtée).
+
+### 16 bis.12 Réalisation des lots M5 (routes de l'API locale) et M7 (écrans du poste) (2026-11-16)
+
+**Fait** : routes de lecture et d'adoption, saisie locale du réglage fiscal et de la traçabilité (D8), bandeau commun « serveur central » dans les 9 écrans de réglage, deux nouveaux écrans d'administration, sous-rubrique Synchronisation › Réglages mutualisés. **Aucun script SQL nouveau** (les scripts 141 et 010 ont suffi). Aucune librairie ajoutée.
+
+**M5, routes** (`Pharma.Api/Endpoints/ReglagesMutualisesEndpoints.cs`, cas d'usage dans `Pharma.Application/Reglages/ConsultationReglages.cs` et `ParametresFiscalTracabilite.cs`) :
+
+| Route | Droit | Effet et codes |
+|---|---|---|
+| `GET /api/reglages-mutualises` | `admin.parametres` (le titulaire l'a) | les 11 tables dans l'ordre de la liste fermée : mode en vigueur (« local » tant que la synchronisation est désactivée), mode et version reçus, version appliquée, dates de réception et d'application, état (`aucun`, `applique`, `non_adopte`, `rejete`), motif du refus, origine, auteur au central ; **pour une valeur proposée et non adoptée seulement** : `Ecarts` = valeur de l'officine à côté de celle du modèle (libellé, valeur locale, valeur du central ; 500 au plus). Lecture seule de la base de l'officine, sans verrou ni marqueur (`ILectureValeurReglage`) |
+| `GET /api/reglages-mutualises/{table}` | celui de la saisie locale de la table (comme « Adopter ») | même contenu pour une table (utilisé par le bandeau d'un écran) ; 404 si la table n'est pas mutualisable |
+| `POST /api/reglages-mutualises/{table}/adopter` | idem | corps `{ versionModele }` ; `AdopterReglageCentral` ; 204 ; **409** si la version a changé ou si la valeur n'est plus à adopter, **409** `reglage_impose` si la table est imposée, **422** si la valeur est refusée par les règles, 403 sans le droit |
+| `GET`, `PUT /api/fiscal/parametres` | titulaire | `ModifierParametreFiscal` : `RegleFiscale` (conservation 6 à 30, format `csv-v1`, séparateur, fuseau), fuseau aussi contrôlé par la base (`pg_timezone_names`), garde des tables imposées (`ReglageImposeException` → 409), journal `parametre_fiscal` avant / après ; 204 |
+| `GET`, `PUT /api/tracabilite/parametres` | titulaire | `ModifierParametreTracabilite` : `RegleTracabilite`, même garde, journal `parametre_tracabilite` avant / après ; 204 |
+
+**Les réponses des routes existantes indiquent si la table est imposée : un en-tête de réponse, pas un champ.** Choix : les 9 routes de lecture des écrans de réglage (et les deux nouvelles) répondent aussi par l'en-tête `X-Reglage-Central: table=…; mode=impose; etat=applique; version=4; ajouts=1` (filtre `AvecEtatReglageCentral(table)`, `Pharma.Api/Securite/EtatReglageCentral.cs`, format dans `Pharma.Shared/DtosReglagesLocaux.cs`) ; le poste le retient à chaque lecture (`ApiClient.ReglageCentral(table)`) et le bandeau commun grise l'écran sans appel de plus. Pourquoi plutôt qu'un champ dans chaque réponse : trois des neuf routes renvoient une liste ou une page (motifs, remises, règles des psychotropes), qu'il aurait fallu emballer (contrats JSON et tests existants changés), et l'état est le même quelle que soit la forme de la réponse. Seul ajout au JSON : `DuCentral` (fin de `MotifReglableDto` et de `RemiseAutomatiqueDto`, valeur par défaut `false`) pour verrouiller les lignes venues du serveur central. Le détail (écarts, motif de refus) n'est lu (`GET …/{table}`) que pour une valeur proposée non adoptée ou une table refusée. Une lecture impossible de l'état n'empêche jamais la route (journal d'avertissement, réponse sans en-tête : l'écran se comporte comme sans serveur central, le refus 409 reste la garde). Test d'architecture : chacune des 11 tables a son bandeau et son en-tête (`ReglagesCentrauxEcransTests`).
+
+**M7, écrans** (`Pharma.Desktop/Composants`) :
+- `Mise/ReglageCentral.razor` : bandeau commun, paramètres `Table`, `Detail`, `OnAdopte`. Imposé : « **Fixé par le serveur central.** » + précision ; champs grisés par un `fieldset disabled` (classe `panneau` conservée) et Enregistrer désactivé. Proposé et différent : « **Proposé par le serveur central** (version n) : n écart(s) avec la valeur de l'officine », boutons « Comparer » (fenêtre : réglage, valeur de l'officine, valeur du serveur central ; écarts seulement, filtrés et paginés) et « Adopter » (409 : message du serveur) ; proposé et égal : rien. Refusé : « Valeur du serveur central refusée par l'officine » + motif. `data-champ="reglage_impose"` sur le bandeau : un refus 409 le met en évidence et le message dit d'actualiser l'écran.
+- 9 écrans : Alertes et seuils (bandeau sur Péremption et Stock seulement ; seuils par grossiste et exceptions par produit restent modifiables, Enregistrer actif), Motifs et catégories (motifs du central « Fixé par le serveur central », ajout selon `ajouts_locaux`, D5), Remises automatiques (remises du central verrouillées, aucune création en mode imposé, remises locales arrêtées « Arrêtée par le serveur central », D6), Contrôle interne (seuils grisés, **horaires et Enregistrer toujours actifs**, D7), Substitution (seulement « équivalent exact seulement »), Inventaire › Seuils, Psychotropes › Alertes du registre (zone de l'officine locale), Notifications › Formulaire d'accord SMS, Sérialisation.
+- Nouveaux écrans, titulaire : **Réglages fiscaux** (`/admin/reglage-fiscal`, sous Contrôle interne dans `NavAdmin`) et **Traçabilité** (`/admin/reglage-tracabilite`, sous Sérialisation DataMatrix). Fuseau en saisie contrôlée (liste de plusieurs centaines de valeurs : pas de liste déroulante), séparateur et patient obligatoire en liste (valeurs bornées).
+- Administration › Synchronisation › **Réglages mutualisés** : tableau des 11 tables (mode, versions, état, reçu le, motif du refus), lien vers l'écran de chaque réglage ; liste fermée donc non paginée (exception inscrite dans `ListesTests`).
+- Règles nommées (`conservation_annees`, `format_export_dgi`, `separateur_csv`, `fuseau`, `patient_obligatoire`) : les messages de `RegleFiscale` et `RegleTracabilite` désignent de nouveau leur champ (retiré au lot M1 faute d'écran) ; `ChampsObligatoiresTests` passe, chacun a son `data-champ`.
+
+**Écarts avec la conception et choix à valider** :
+1. En-tête de réponse plutôt que champ `mutualisation` dans `GET /api/admin/synchronisation` (non fait : la sous-rubrique lit `GET /api/reglages-mutualises`) et plutôt qu'un champ dans chaque réponse (ci-dessus).
+2. `GET …/{table}` remplace `GET …/{table}/modele` : il rend l'état et les écarts déjà calculés côté serveur (valeur de l'officine et du modèle comparées), pas la valeur brute du modèle.
+3. Valeur proposée **égale** à celle de l'officine : aucun bandeau (rien à décider) ; l'état « appliqué » se lit dans la sous-rubrique.
+4. Le droit de `GET /api/reglages-mutualises` est `admin.parametres` (le titulaire l'a), comme demandé ; la sous-rubrique est dans l'écran Synchronisation (même droit).
+5. Mise en page : pour que les écrans tiennent sans défilement avec le bandeau à 1 366 × 768 et 1 536 × 890, `poste.js` accepte `data-hauteur-min` sur un cadre défilant (240 px par défaut, inchangé), Contrôle interne place ses trois panneaux dans un cadre défilant, Psychotropes garde son bouton à côté du titre (`titre-actions-cote`), le texte du formulaire SMS passe de 12 à 8 lignes (il défile dans sa zone).
+6. Remise arrêtée sans auteur : libellé « Arrêtée par le serveur central » (une remise arrêtée par un employé garde son nom).
+
+**Essais (2026-11-16)** :
+- Tests : `ReglagesMutualisesLocauxTests` (18 : état des 11 tables, écarts d'une valeur proposée, table refusée, comparaison des motifs, des remises et des règles des psychotropes, en-tête, réglage fiscal et traçabilité : valeurs refusées avec leur champ, droit du titulaire, table imposée → 409, journal avant / après) et `ReglagesCentrauxEcransTests` (les 11 tables ont leur bandeau et leur en-tête, routes fiscal et traçabilité réservées au titulaire). Les règles de saisie locale et de modèle n'ont pas changé : les tests des lots M1 et M4 passent sans modification.
+- À l'écran, sur **deux copies jetables de `pharmacie_dev`** (`pharmacie_jetable_m7_a` et `_b`, supprimées ensuite ; `pharmacie_dev` et `pharmacie_test` non touchées, synchronisation jamais activée dessus) : synchronisation activée dans la copie (adresse vide : rien n'est envoyé), puis les modèles **reçus comme par la voie descendante** (`sync_recevoir_descendant`, éléments `mutu-v1`), appliqués par l'API au démarrage (aucun serveur central lancé). Copie « a » : les 11 tables **imposées** (valeurs remplacées, remise locale arrêtée, motif local gardé). Copie « b » : les 11 tables **proposées** avec valeurs différentes (`non_adopte`), puis « Comparer », « Adopter » (inventaire : valeur appliquée, `reglage_central_adopte` au journal avec les valeurs avant et après), refus 409 (écran fiscal ouvert, table devenue imposée entre-temps : message « Ce réglage est fixé par le serveur central. Actualisez l'écran… »), puis états **mélangés** (fiscal imposé, inventaire refusé avec son motif, sérialisation libérée, les autres proposées) pour la sous-rubrique.
+- Mesures (poste à 1 536 × 890 et 1 366 × 768, clair et sombre, titulaire) : 133 vues, **page à 0 px, aucun élément coupé, aucun chevauchement, aucun élément hors fenêtre** après corrections. Dépassements trouvés puis corrigés : Alertes et seuils › Par grossiste à 1 366 (23 px : bandeau retiré des rubriques sans réglage général), Contrôle interne (22 px à 1 536, 179 px à 1 366 : cadre défilant), Psychotropes (27 / 170 px, puis 24 : bouton à côté du titre, `data-hauteur-min`), Formulaire SMS (65 px à 1 366 : 8 lignes), Motifs en mode proposé (41 px : actions du bandeau en `.lien-bouton`). Captures : `scratchpad\verif-mutualisation\captures` (écran, état, thème, taille dans le nom).
+- Non vérifié : le serveur central réel (aucun serveur central lancé ; le lot M8 le fera), le poste d'un employé sans le droit du réglage (Adopter masqué faute de détail lisible : codé, non essayé à l'écran), un modèle de plus de 500 écarts.
 
 ## 17. Débit pendant un chargement complet (2026-11-16, GO du titulaire)
 
@@ -566,4 +998,55 @@ Pharma.Api (officine) et Pharma.Cloud.Api (central) réellement lancés, central
 
 - Activation (officine créée, code adopté, certificat), envoi d'une vente, familles (réglage descendant qui ajoute puis retire les noms des employés), chargements complets (37 060 lignes, 100 tables, 5 en 24 h puis refus 429 au début, plafond d'octets sur 24 h refusé au premier lot, `quota_depasse` au journal du central), lots perdus par le central (lots accusés renvoyés sans reforme, filtrés par la liste en vigueur), colonne ajoutée à une famille après constitution d'un lot, réglage descendant d'une table inconnue (ignoré, journal local, l'envoi continue) : conformes à ce qui est décrit aux § 13, 15 et 18.
 - **Défaut trouvé et corrigé (script officine 138)** : les messages d'alerte (`alerte_surveillance.message`, `alerte.message`) citent le nom complet d'un employé ; le filtre des textes libres ne masquait que les patients et les porteurs, donc ce nom partait au central même famille « employes » décochée. `sync_filtrer_texte` remplace désormais tout nom complet d'utilisateur par `[PERSONNEL]` tant que la famille « employes » n'est pas envoyée. Seules les nouvelles lignes de file sont concernées (la file est en ajout seul) ; sur une officine déjà active, un chargement complet renvoie l'état minimisé avec le nouveau filtre.
-- Constats sans correction : `sync_sortie` reste en ajout seul (purge après accusé non réalisée, § 12.5) ; le « en attente » de l'écran tombe à 0 mais la file n'est pas vidée. Par défaut partent aussi les familles « pharmacie », « fournisseurs » et « courriel_commandes » (décision du § 14).
+- Constats sans correction : `sync_sortie` reste en ajout seul (purge après accusé non réalisée à ce stade ; réalisée ensuite, § 20) ; le « en attente » de l'écran tombe à 0 mais la file n'est pas vidée. Par défaut partent aussi les familles « pharmacie », « fournisseurs » et « courriel_commandes » (décision du § 14).
+
+## 20. Lot S3 : supervision et purge de la file (2026-11-16, GO « go S3 », script 140)
+
+Hors périmètre de ce lot : la mutualisation imposé / proposé des réglages (§ 16), qui attend des décisions du titulaire. Aucune connexion nouvelle vers le serveur central ; tout est lu et écrit dans la base de l'officine.
+
+### 20.1 Purge de `sync_sortie` après accusé (§ 12.5, § 13.6)
+
+**Règle** : `sync_purger(délai, n)` retire les lignes de `sync_sortie` des lots **accusés depuis plus longtemps que le délai de conservation**, par **lots entiers**, dans l'ordre des numéros et **sans trou** à partir du dernier lot déjà purgé (`sync_parametre.purge_epoque`, `purge_dernier_lot`). Jamais une ligne hors lot, jamais une ligne d'un lot non accusé, jamais un lot qui contient des lignes d'un chargement complet non terminé (la purge s'arrête avant lui). Les gardes ne changent pas : celle de `sync_sortie` (script 126) n'autorise toujours la suppression d'une ligne qu'après l'accusé de son lot (une erreur de l'application ne peut donc pas purger une ligne non accusée) ; celle de `sync_lot` (126, 130, 136) interdit toujours de supprimer ou de modifier un lot : **la ligne du lot reste** (numéro, empreinte, `colonnes_retirees` et `familles` figées, accusé). Le renvoi à l'identique d'un lot (§ 18, point 1) reste donc possible tant que ses lignes sont là, et impossible ensuite, ce que l'application sait (`LotEnregistre.Purge`).
+
+**Ce que l'officine garde pour la reprise après une restauration du central — décision : une durée (30 jours), puis le chargement complet.** Trois choix ont été comparés :
+
+| Choix | Verdict |
+|---|---|
+| Ne jamais purger | La file grossit sans borne (une ligne par modification de chaque table envoyée) : écarté. |
+| Garder le dernier chargement complet (ses lignes d'instantané) | Revient à garder en permanence une copie minimisée de toute la base, pour un cas rare ; et inutile, car la base de l'officine **est** la source de cet état : écarté. |
+| **Garder chaque lot accusé N jours ; au-delà, recourir au chargement complet** | **Retenu.** |
+
+Justification : (1) la file n'est qu'une copie de ce que la base de l'officine contient déjà ; (2) le serveur central ne garde que **l'état final de chaque donnée** (§ 12.1) : un chargement complet lui redonne exactement l'état qu'il aurait eu en recevant tous les lots ; la seule chose qu'il ne retrouve pas est la **preuve brute** des lots perdus dans sa propre restauration (`lot_recu`), et la base de l'officine, qui fait foi, garde les journaux et leurs chaînes ; (3) le délai couvre le cas courant, une restauration du central depuis une sauvegarde récente : les lots accusés depuis sont renvoyés **à l'identique**, sans recharger toute l'officine ; (4) 30 jours est le délai de garde déjà proposé au § 3.4. **[À VÉRIFIER]** : la fréquence et la durée des sauvegardes de la base centrale chez l'hébergeur ; si l'hébergeur garde ses sauvegardes plus de 30 jours, allonger le délai ou accepter le chargement complet.
+
+**Après la purge, côté envoi** (`EnvoyerLotsSync`) : si le serveur central répond « trou » et que parmi les lots manquants l'un est **purgé** (ou absent), l'officine ne renvoie rien d'incomplet : elle demande un **chargement complet** (motif « lots perdus par le serveur central », § 13.3 : le central abandonne les lots perdus, reprend après le dernier lot accusé ici, et reçoit l'état actuel). Un chargement complet déjà tenté sans succès arrête l'envoi avec la procédure de `mise-en-production.md`. Un lot purgé n'est jamais envoyé (arrêt avec message). Coût d'un chargement complet : limites du § 17 et du § 18 (5 chargements et 16 Gio sur 24 h, environ 10 000 lignes par minute mesurées au § 13.5).
+
+**Réglages** (`sync_parametre`, écran Supervision et purge) : purge active (**oui**), conservation **30 jours** (1 à 365). **Valeurs de départ proposées, non décidées par le titulaire.** Désactivée : tout est gardé.
+
+**Exécution** : tâche de fond `PurgeSynchronisation` (5 minutes après le démarrage, puis toutes les heures), `PurgerSortieSync` : paquets de 20 lots par transaction (jusqu'à 10 000 lignes), 40 lots au plus par passage ; elle prend le **verrou d'envoi** (`VerrouSync`) et passe son tour si un passage d'envoi est en cours (un renvoi de lots manquants ne lit jamais des lignes en train d'être purgées) ; rien sur une base en lecture seule (2e serveur en veille : la purge se réplique). Journal du serveur : nombre de lots et de lignes, aucune donnée ; une erreur est mémorisée sans détail (`derniere_purge_erreur`) et affichée à l'écran. L'espace libéré est réutilisé par PostgreSQL (nettoyage automatique) ; l'écran montre la taille de la file.
+
+**Limites** : la purge ne traite que l'**époque courante** (le repère est par époque) ; à la création d'une nouvelle époque après restauration de la base de l'officine (§ 13.6, non réalisée), il faudra décider du sort des lots de l'ancienne époque. `sync_lot` n'est jamais purgée (environ 100 octets par lot).
+
+### 20.2 Bandeau sur les postes (§ 8)
+
+« **Synchronisation en attente depuis hh:mm (n opérations).** » en bas de la fenêtre, au même emplacement que « Serveur injoignable » (il le remplace quand le serveur est injoignable), style `bandeau-attention`, sans bouton : **jamais bloquant**. Affiché seulement si la synchronisation est **activée** (`sync_parametre.active`), si la base n'est pas en lecture seule et si la plus ancienne opération non accusée a au moins **le seuil** (60 minutes, **valeur de départ de la conception, § 8**, réglable de 1 minute à 7 jours). « En attente » = lignes hors lot + lignes des lots non accusés ; « depuis » = plus ancienne de ces lignes. Réservé au **titulaire et aux rôles qui ont le droit `sync.suivre`** (« Voir le bandeau de synchronisation », script 140, donné au titulaire ; le titulaire l'attribue aux rôles choisis dans Administration › Droits par rôle ; droit non sensible). Route `GET /api/synchronisation/attente` (tout employé connecté ; la réponse est vide sans le droit) ; état mémorisé 30 secondes côté API pour ne pas interroger la base à chaque poste ; la barre d'état l'actualise une fois par minute ; une erreur de lecture masque le bandeau sans rien bloquer.
+
+### 20.3 Alertes au titulaire (§ 8)
+
+Par le mécanisme de notification existant (`IAlertesTitulaire`, nouveau sujet **« synchronisation »**, abonnable dans Administration › Notifications ; SMS court sans accents si l'option « SMS sauvegarde » est cochée et un modem réglé, sinon e-mail). **Au plus une alerte par heure et par sujet** tant que le problème dure (date de la dernière alerte par sujet dans `sync_parametre`, jamais remise à zéro : un problème qui revient dans l'heure ne rappelle pas) ; tâche `SurveillanceSynchronisation` chaque minute ; rien si la synchronisation est désactivée ou la base en lecture seule.
+
+| Sujet | Condition | Seuil |
+|---|---|---|
+| `retard` | plus ancienne opération non accusée au-delà du seuil | **24 h** (valeur de départ, réglable 1 à 720 h) |
+| `erreur` | passages d'envoi en erreur sans interruption (début gardé par `sync_noter_passage`) | **60 min** (valeur de départ, réglable 1 à 10 080 min) ; l'erreur de quota est traitée à part |
+| `certificat` | certificat à moins de **30 jours** de l'échéance, ou échu | 30 jours, fixe. **Vérifié dans le code** : le renouvellement automatique démarre 60 jours avant l'échéance (`EnvoyerLotsSync.RenouvelerAvant`) et le serveur central ne le permet que dans les 60 derniers jours (§ 12.6) : une alerte à 30 jours signale un renouvellement qui échoue depuis 30 jours |
+| `quota` | le serveur central refuse l'envoi pour quota ou plafond (quota du jour, plafond d'un chargement, chargements sur 24 h) | immédiat |
+
+Comme les autres alertes : dédoublonnage par sujet, **destinataires vérifiés** seulement (`Destinataire.Recoit`), alerte qui ne part vers personne ou mise en file impossible **signalée au bandeau de l'accueil du titulaire** (`alerte_non_envoyee`), jamais bloquante. Contenu : nombres, dates, durée et dernier message technique de l'envoi (e-mail seulement) ; **aucune donnée de patient**. **Détection du quota** : un refus 429 **accompagné d'un motif** (ProblemDetails `detail`) est un quota ou un plafond ; la limite de débit seule répond 429 sans motif et n'alerte pas **[À VÉRIFIER avec le serveur central réel : un répartiteur d'hébergement qui répondrait 429 avec un motif ferait alerter à tort ; un champ explicite dans la réponse du central serait plus sûr]**. Premier abonnement : les destinataires déjà abonnés aux alertes de sauvegarde (alertes techniques) sont abonnés au nouveau sujet par le script 140, une seule fois **(choix du développement, à confirmer)**.
+
+### 20.4 Réglages et écran
+
+Administration › Synchronisation › **Supervision et purge** (droit `admin.parametres`, réglages journalisés `reglages_supervision_synchronisation`) : seuils du bandeau, du retard et de l'erreur persistante ; purge active et conservation ; lecture : opérations en attente et depuis quand, erreur en cours, dernière purge (date, lignes), lots purgés (jusqu'au lot n°, total de lignes), taille de la file (lignes estimées, octets), dernière erreur de purge. Route `PUT /api/admin/synchronisation/supervision` ; ces données figurent aussi dans `GET /api/admin/synchronisation` (champ `supervision`). Vérifié sur copie jetable à 1 366 × 768 et 1 536 × 890, clair et sombre : la page ne défile pas ; à 1 536 × 890 rien ne défile (hors le menu de gauche de l'Administration, commun à tous ses écrans) ; à 1 366 × 768 le cadre des deux panneaux défile de 97 px (le bandeau du bas en recouvre 40). La sous-rubrique « Chargement » propre (§ 13.6) reste facultative et non faite.
+
+### 20.5 Essais (2026-11-16, copie jetable de `pharmacie_dev`, supprimée ; `pharmacie_dev` et `pharmacie_test` intactes : synchronisation inactive, 0 lot, 0 ligne de file)
+
+API et poste réellement lancés (ports 5921 et 5922), file alimentée par les vrais déclencheurs (25 modifications), deux lots accusés (il y a 40 et 5 jours), 5 opérations en attente depuis 3 h, un destinataire vérifié sur le sujet « synchronisation » (aucun serveur SMTP ni modem : les messages restent en file) : bandeau visible au titulaire (mesures et captures en clair et en sombre) ; alerte d'erreur persistante envoyée une fois (rien de plus en plus de 2 minutes), alerte de retard après abaissement du seuil à 2 h ; **tâche de purge réelle** : le lot accusé il y a 40 jours purgé (10 lignes), celui de 5 jours et les lignes en attente intacts, journal sans donnée ; réglages enregistrés depuis l'écran (valeur hors bornes refusée avec message), audit écrit. Tests : SQL `140_synchronisation_supervision_purge_tests.sql` (purge, gardes, chargement en cours, bornes, alertes, droit) ; C# `SupervisionSynchronisationTests` (bandeau, alertes, une par heure, purge) et `ChargementSynchronisationTests` (lot purgé : chargement complet sans renvoi, lot conservé : renvoi à l'identique, passage noté pour la supervision). **Non essayé** : un vrai refus 429 du serveur central, une restauration réelle du central après purge, un certificat à moins de 30 jours (cas couverts par les tests unitaires seulement).

@@ -21,7 +21,7 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 146 tables — 78 montantes, 22 bidirectionnelles, 18 descendantes, 28 jamais envoyées (`sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
+**Récapitulatif** : 147 tables — 79 montantes, 22 bidirectionnelles, 18 descendantes, 28 jamais envoyées (`reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
 
 ## Familles de données nominatives (script 130, 2026-11-16)
 
@@ -126,6 +126,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `verification_integrite` | montante | id | - | - | |
 | `verification_serialisation` | montante | id | - | - | |
 | `versement_bordereau` | montante | id | - | - | |
+| `reglage_mutualise` | montante | nom_table | modele | - | État de la mutualisation des réglages par table (mode, version appliquée, rejet) ; la valeur du modèle reçue ne repart pas ; texte libre `motif_rejet` filtré, script 141 |
 | `commande_fournisseur` | bidirectionnelle | id | - | - | Commande en brouillon préparée à distance |
 | `ligne_commande` | bidirectionnelle | id | - | - | |
 | `motif_reglable` | bidirectionnelle | id | - | - | |
