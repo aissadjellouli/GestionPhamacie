@@ -110,7 +110,8 @@ public static class RegleFactureAchat
         if (timbre < 0) throw new RegleMetierException("Le timbre ne peut pas être négatif.", "timbre");
         foreach (var l in lignes)
         {
-            if (l.RemisePct is < 0 or > 100) throw new RegleMetierException($"{l.Nom} : la remise doit être comprise entre 0 et 100 %.");
+            if (l.RemisePct < 0) throw new RegleMetierException($"{l.Nom} : la remise ne peut pas être négative (0 à 100 %).");
+            if (l.RemisePct > 100) throw new RegleMetierException($"{l.Nom} : la remise doit être comprise entre 0 et 100 %.");
             if (l.Ppa is < 0) throw new RegleMetierException($"{l.Nom} : le PPA ne peut pas être négatif.");
             if (l.Shp is < 0) throw new RegleMetierException($"{l.Nom} : le SHP ne peut pas être négatif.");
             if (l.Ug < 0 || l.Ug > l.Quantite)

@@ -1214,14 +1214,15 @@
                     <div class="champ champ-ligne">
                         <label for="remise" title="Sur la part du patient, hors SHP (honoraire du pharmacien) : remise sur la parapharmacie, don partiel sur un médicament">Remise ou don (%, hors SHP)</label>
                         <input id="remise" data-champ="remise" @ref="champRemise" type="text" inputmode="numeric" maxlength="3" autocomplete="off" value="@RemiseTexte"
-                               onfocus="this.select()" onbeforeinput="@CodeComptoirSaisie.FiltreChiffres"
-                               @oninput="SaisieRemiseAsync" @onchange="RecalculerAsync" />
+                               onfocus="this.select()" onbeforeinput="@SaisieRemise.Filtre"
+                               aria-invalid="@(erreurRemise is null ? null : "true")" @oninput="SaisieRemiseAsync" @onchange="RecalculerAsync" />
                         @if (remisePct > 0 && apercu?.Reductions?.Any(r => r.RemiseAutoPct > 0) == true)
                         {
                             <label class="case" title="Coché : votre remise s’ajoute à la remise automatique. Décoché : elle ne vaut que pour les produits sans remise automatique.">
                                 <input type="checkbox" checked="@remiseAdditionnee" @onchange="ChoisirAdditionAsync" /><span>+ remise auto</span></label>
                         }
                     </div>
+                    @if (erreurRemise is not null) { <div class="erreur" role="alert" data-erreur="remise">@erreurRemise</div> }
                     @if (remisePct > 0 && !Session.A("caisse.remise") && !Session.A("stock.donner"))
                     {
                         <p class="sous-titre">Le code d’un collègue qui en a le droit vous sera demandé à l’encaissement.</p>
@@ -1345,6 +1346,7 @@
     private DateOnly datePrescription = DateOnly.FromDateTime(DateTime.Today);
     private string? numeroOrdonnance;
     private decimal remisePct;
+    private string? erreurRemise;
     private bool remiseAdditionnee;
     private ElementReference champRemise;
 
@@ -1357,14 +1359,15 @@
 
     /// <summary>
     /// Saisie de la remise : chiffres seulement, zéros de tête retirés (le 0 par défaut s'efface dès qu'on tape), champ vidé : 0 ;
-    /// 2 chiffres au plus, sauf 100 ; une frappe qui dépasserait 100 est refusée (la valeur précédente reste).
+    /// 2 chiffres au plus, sauf 100. Une saisie négative ou supérieure à 100 est refusée avec un message (la valeur précédente reste,
+    /// elle n'est jamais ramenée à 0 en silence) ; le serveur revérifie.
     /// </summary>
     private async Task SaisieRemiseAsync(ChangeEventArgs e)
     {
         var brut = e.Value?.ToString() ?? "";
-        var chiffres = CodeComptoirSaisie.Chiffres(brut).TrimStart('0');
-        if (chiffres.Length == 0) remisePct = 0;
-        else if (int.TryParse(chiffres, System.Globalization.CultureInfo.InvariantCulture, out var v) && v <= 100) remisePct = v;
+        var (valeur, refus) = SaisieRemise.Lire(brut);
+        erreurRemise = refus;
+        if (valeur is { } v) remisePct = v;
         // Affichage corrigé si la saisie a été retouchée (Blazor ne réécrit pas un champ dont la valeur rendue n'a pas changé)
         if (brut != RemiseTexte) await JS.InvokeVoidAsync("pharma.fixerValeur", champRemise, RemiseTexte);
     }
@@ -3012,6 +3015,7 @@
         lignes.Clear();
         cleEncaissement = Guid.NewGuid();
         (apercu, bandeau, erreur, montantRecu, remisePct, remiseAdditionnee) = (null, null, null, null, 0, false);
+        erreurRemise = null;
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
         (nouveauPatient, np, controlePatient, patientTexte, patients, medecins, alerterPatient) = (false, new(), false, "", [], [], false);
         (clientDeplie, remiseDemandee, attentesOuvertes, nouveauMedecin, erreurMedecin, clientEdition, reduitDemande) = (false, false, false, null, null, false, false);

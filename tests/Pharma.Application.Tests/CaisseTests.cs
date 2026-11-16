@@ -468,6 +468,34 @@ public class CaisseApplicationTests
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(Avec(1, 100, 101), 5, "Caisse 1"));
     }
 
+    [Theory]
+    [InlineData(-5, "La remise ne peut pas être négative : saisissez un nombre entier de 0 à 100 %.")]
+    [InlineData(-0.5, "La remise ne peut pas être négative : saisissez un nombre entier de 0 à 100 %.")]
+    [InlineData(101, "La remise est un nombre entier de 0 à 100 %.")]
+    [InlineData(12.5, "La remise est un nombre entier de 0 à 100 %.")]
+    public async Task Remise_negative_ou_hors_limites_refusee_avec_message_et_aucune_vente(double remise, string message)
+    {
+        var ventes = new VentesEspion();
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() =>
+            Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "caisse.remise") { RemiseMax = 100 }, ventes)
+                .ExecuterAsync(Commande(11, 110, remise: (decimal)remise), 5, "Caisse 1"));
+        Assert.Equal(message, ex.Message);
+        Assert.Equal("remise", ex.Champ);
+        Assert.Null(ventes.Recu);
+    }
+
+    [Fact]
+    public async Task Remise_nulle_ou_de_100_pour_cent_acceptee()
+    {
+        foreach (var remise in new[] { 0m, 100m })
+        {
+            var ventes = new VentesEspion();
+            await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "caisse.remise") { RemiseMax = 100 }, ventes)
+                .ExecuterAsync(Commande(11, 110, remise: remise), 5, "Caisse 1");
+            Assert.NotNull(ventes.Recu);
+        }
+    }
+
     [Fact]
     public async Task Remise_sans_le_droit_refusee()
     {

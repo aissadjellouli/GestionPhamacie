@@ -198,6 +198,15 @@ public class AdministrationTests
             .ExecuterAsync(3, new DonRemiseEmploye(false, remise, false), 1));
 
     [Fact]
+    public async Task Remise_maximale_negative_refusee_avec_message()
+    {
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerDonRemise(new UtilisateursEnMemoire(), new JournalEspion(), new DroitsFactices { Titulaire = true })
+            .ExecuterAsync(3, new DonRemiseEmploye(false, -5, false), 1));
+        Assert.Equal("La remise maximale ne peut pas être négative : saisissez un nombre entier de 0 à 100 %.", ex.Message);
+        Assert.Equal("remise_max", ex.Champ);
+    }
+
+    [Fact]
     public async Task Le_titulaire_a_toujours_don_et_remise() =>
         await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerDonRemise(new UtilisateursEnMemoire(), new JournalEspion(), new DroitsFactices { Titulaire = true })
             .ExecuterAsync(1, new DonRemiseEmploye(false, 0, false), 1));

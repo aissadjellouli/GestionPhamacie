@@ -117,7 +117,9 @@ public sealed class ReglerDonRemise(IUtilisateursAdmin admin, IJournal journal, 
     public async Task ExecuterAsync(long utilisateurId, DonRemiseEmploye reglage, long auteurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(auteurId, "régler le don et la remise d’un employé", ct);
-        if (reglage.RemiseMaxPct is < 0 or > 100 || reglage.RemiseMaxPct != Math.Truncate(reglage.RemiseMaxPct))
+        if (reglage.RemiseMaxPct < 0)
+            throw new RegleMetierException("La remise maximale ne peut pas être négative : saisissez un nombre entier de 0 à 100 %.", "remise_max");
+        if (reglage.RemiseMaxPct > 100 || reglage.RemiseMaxPct != Math.Truncate(reglage.RemiseMaxPct))
             throw new RegleMetierException("La remise maximale est un nombre entier de 0 à 100 %.", "remise_max");
         var cible = (await admin.LireAsync(ct)).Utilisateurs.FirstOrDefault(u => u.Id == utilisateurId)
                     ?? throw new RegleMetierException("Utilisateur introuvable.");

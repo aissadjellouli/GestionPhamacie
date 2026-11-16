@@ -161,7 +161,9 @@ public class Vente
     /// <param name="additionner">Vrai : s'ajoute aux remises automatiques ; faux : ne vaut que pour les lignes sans remise automatique.</param>
     public void AppliquerRemise(decimal pourcentage, bool additionner = false)
     {
-        if (pourcentage is < 0 or > 100 || pourcentage != Math.Truncate(pourcentage))
+        if (pourcentage < 0)
+            throw new RegleMetierException("La remise ne peut pas être négative : saisissez un nombre entier de 0 à 100 %.", "remise");
+        if (pourcentage > 100 || pourcentage != Math.Truncate(pourcentage))
             throw new RegleMetierException("La remise est un nombre entier de 0 à 100 %.", "remise");
         RemisePct = pourcentage;
         RemiseAdditionnee = additionner;

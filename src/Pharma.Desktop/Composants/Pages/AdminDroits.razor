@@ -1,5 +1,6 @@
 @page "/admin/droits"
 @inject ApiClient Api
+@inject IJSRuntime JS
 @inject SessionPoste Session
 
 <div class="page admin">
@@ -70,9 +71,9 @@
                                     <label class="case"><input type="checkbox" @bind="fiche.PeutDonner" /><span>Peut faire un don (boîtes données, don partiel sur un médicament)</span></label>
                                     <div class="champ">
                                         <label for="u-remise">Remise maximale (%)</label>
-                                        <input id="u-remise" data-champ="remise_max" type="text" inputmode="numeric" maxlength="3" autocomplete="off"
+                                        <input id="u-remise" @ref="champRemiseMax" data-champ="remise_max" type="text" inputmode="numeric" maxlength="3" autocomplete="off"
                                                value="@(((int)fiche.RemiseMaxPct).ToString(System.Globalization.CultureInfo.InvariantCulture))" onfocus="this.select()"
-                                               onbeforeinput="@CodeComptoirSaisie.FiltreChiffres" @onchange="e => fiche.RemiseMaxPct = Pourcentage(e.Value)" />
+                                               onbeforeinput="@SaisieRemise.Filtre" @onchange="SaisieRemiseMaxAsync" />
                                     </div>
                                     <label class="case"><input type="checkbox" @bind="fiche.GereRemisesAuto" /><span>Peut gérer les remises automatiques</span></label>
                                 </div>
@@ -224,8 +225,22 @@
                                       u.GereRemisesAuto ? "remises auto" : null }.Where(x => x is not null));
 
     /// <summary>Remise maximale saisie : entier de 0 à 100 (vide : 0 ; au-delà de 100 : 100).</summary>
-    private static decimal Pourcentage(object? valeur) =>
-        int.TryParse(CodeComptoirSaisie.Chiffres(valeur?.ToString()), out var v) ? Math.Min(v, 100) : 0;
+    private ElementReference champRemiseMax;
+
+    /// <summary>Remise maximale : entier de 0 à 100 ; une saisie négative ou trop grande est refusée avec un message, la valeur précédente reste.</summary>
+    private async Task SaisieRemiseMaxAsync(ChangeEventArgs e)
+    {
+        if (fiche is not { } f) return;
+        var (valeur, refus) = SaisieRemise.Lire(e.Value?.ToString());
+        if (refus is not null)
+        {
+            erreur = refus;
+            await JS.InvokeVoidAsync("pharma.fixerValeur", champRemiseMax, ((int)f.RemiseMaxPct).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return;
+        }
+        if (erreur is SaisieRemise.MessageNegative or SaisieRemise.MessageTropGrande) erreur = null;
+        f.RemiseMaxPct = valeur ?? 0;
+    }
 
     private EtatDroitsDto? etat;
     private Dictionary<long, HashSet<string>> droits = [];

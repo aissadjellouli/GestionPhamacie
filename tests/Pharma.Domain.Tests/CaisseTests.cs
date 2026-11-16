@@ -193,6 +193,19 @@ public class CaisseTests
     public void Remise_nombre_entier_de_0_a_100(decimal pct) =>
         Assert.Throws<RegleMetierException>(() => new Vente().AppliquerRemise(pct));
 
+    [Fact]
+    public void Remise_negative_refusee_avec_un_message_clair()
+    {
+        var ex = Assert.Throws<RegleMetierException>(() => new Vente().AppliquerRemise(-1));
+        Assert.Equal("La remise ne peut pas être négative : saisissez un nombre entier de 0 à 100 %.", ex.Message);
+        Assert.Equal("remise", ex.Champ);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    public void Remise_de_0_et_de_100_acceptee(decimal pct) => new Vente().AppliquerRemise(pct);
+
     private static readonly Produit Creme = new() { Id = 11, NomCommercial = "Crème", PrixPublic = 1000m, EstMedicament = false, Categorie = "dermo_cosmetique" };
 
     [Fact]

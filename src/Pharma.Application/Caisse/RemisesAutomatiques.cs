@@ -44,6 +44,8 @@ public sealed class GererRemisesAutomatiques(IRemisesAutomatiquesAdmin admin, IP
     {
         if ((s.ProduitId is null) == string.IsNullOrWhiteSpace(s.Categorie))
             throw new RegleMetierException("Choisissez un produit ou une catégorie (l’un ou l’autre).", "cible_remise");
+        if (s.Pourcentage < 0)
+            throw new RegleMetierException("La remise ne peut pas être négative : saisissez un nombre entier de 1 à 100 %.", "pourcentage_remise");
         if (s.Pourcentage is < 1 or > 100 || s.Pourcentage != Math.Truncate(s.Pourcentage))
             throw new RegleMetierException("La remise est un nombre entier de 1 à 100 %.", "pourcentage_remise");
         if (s.Fin < s.Debut)

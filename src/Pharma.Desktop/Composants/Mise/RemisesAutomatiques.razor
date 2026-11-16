@@ -1,4 +1,5 @@
 @inject ApiClient Api
+@inject IJSRuntime JS
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
 
@@ -45,9 +46,9 @@
             }
             <div class="champ" style="flex: 0 1 120px">
                 <label for="ra-pct" class="requis">Remise (%)</label>
-                <input id="ra-pct" data-champ="pourcentage_remise" type="text" inputmode="numeric" maxlength="3" autocomplete="off"
+                <input id="ra-pct" @ref="champPct" data-champ="pourcentage_remise" type="text" inputmode="numeric" maxlength="3" autocomplete="off"
                        value="@(f.Pourcentage?.ToString(System.Globalization.CultureInfo.InvariantCulture))" onfocus="this.select()"
-                       onbeforeinput="@CodeComptoirSaisie.FiltreChiffres" @onchange="e => f.Pourcentage = int.TryParse(CodeComptoirSaisie.Chiffres(e.Value?.ToString()), out var v) ? Math.Min(v, 100) : null" />
+                       onbeforeinput="@SaisieRemise.Filtre" @onchange="SaisiePourcentageAsync" />
             </div>
             <div class="champ" style="flex: 0 1 160px"><label for="ra-debut" class="requis">Du</label><input id="ra-debut" data-champ="debut_remise" type="date" @bind="f.Debut" /></div>
             <div class="champ" style="flex: 0 1 160px"><label for="ra-fin" class="requis">Au (inclus)</label><input id="ra-fin" data-champ="fin_remise" type="date" @bind="f.Fin" /></div>
@@ -188,6 +189,23 @@
         Id = r.Id, SurProduit = r.ProduitId is not null, ProduitId = r.ProduitId, ProduitNom = r.Produit, Categorie = r.Categorie,
         Pourcentage = (int)r.Pourcentage, Debut = r.Debut, Fin = r.Fin, Motif = r.Motif
     }, null, null);
+
+    private ElementReference champPct;
+
+    /// <summary>Pourcentage saisi : entier de 0 à 100 ; une saisie négative ou trop grande est refusée avec un message, la valeur précédente reste.</summary>
+    private async Task SaisiePourcentageAsync(ChangeEventArgs e)
+    {
+        if (fiche is not { } f) return;
+        var (valeur, refus) = SaisieRemise.Lire(e.Value?.ToString());
+        if (refus is not null)
+        {
+            erreur = refus;
+            await JS.InvokeVoidAsync("pharma.fixerValeur", champPct, f.Pourcentage?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "");
+            return;
+        }
+        if (erreur is SaisieRemise.MessageNegative or SaisieRemise.MessageTropGrande) erreur = null;
+        f.Pourcentage = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : valeur;
+    }
 
     private async Task EnregistrerAsync()
     {

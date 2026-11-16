@@ -93,4 +93,23 @@ public class RegleFactureAchatTests
         Assert.Throws<RegleMetierException>(() => RegleFactureAchat.Verifier([Ligne(1, 1, 10, shp: -1)], 0));
         Assert.Throws<RegleMetierException>(() => RegleFactureAchat.Verifier([Ligne(1, 1, 10)], -1));
     }
+
+    [Fact]
+    public void Remise_de_ligne_negative_refusee_avec_message()
+    {
+        var ex = Assert.Throws<RegleMetierException>(() => RegleFactureAchat.Verifier([Ligne(1, 1, 10, remise: -5)], 0));
+        Assert.Equal("P1 : la remise ne peut pas être négative (0 à 100 %).", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    public void Remise_de_ligne_de_0_et_de_100_acceptee(decimal remise) => RegleFactureAchat.Verifier([Ligne(1, 1, 10, remise: remise)], 0);
+
+    [Fact]
+    public void Remise_de_ligne_superieure_a_100_refusee_avec_message()
+    {
+        var ex = Assert.Throws<RegleMetierException>(() => RegleFactureAchat.Verifier([Ligne(1, 1, 10, remise: 101)], 0));
+        Assert.Equal("P1 : la remise doit être comprise entre 0 et 100 %.", ex.Message);
+    }
 }
