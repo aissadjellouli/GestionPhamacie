@@ -17,7 +17,7 @@
 - Action sensible non autorisée : le poste demande le code d'un employé qui a le droit ; le journal enregistre qui a agi et qui a autorisé, et l'opération (annulation ancienne, retour) garde ce collègue comme validateur. Jamais par code : la délivrance d'un psychotrope (un employé habilité reprend la vente), et, sur une connexion par code comptoir, un droit hors du comptoir.
 - Mot de passe provisoire : aucun droit, ni par mot de passe ni par code comptoir, tant qu'il n'est pas changé. Les routes sans droit particulier (`ExigerConnexion`) refusent aussi le provisoire et le super admin, sauf ce qui leur reste permis.
 - Connexions révoquées (script 063) : mot de passe changé ou réinitialisé, compte désactivé, code comptoir effacé ou base restaurée → les connexions déjà ouvertes sont refusées à l'appel suivant (l'API relit l'état du compte à chaque appel).
-- Réseau : chiffrer les échanges en HTTPS à la mise en production (étape 3.5 bis de [mise-en-production.md](mise-en-production.md)).
+- Réseau : chiffrer les échanges en HTTPS à la mise en production (parcours A, étape 4.6 de [mise-en-production.md](mise-en-production.md)).
 
 ## Garanties en base
 

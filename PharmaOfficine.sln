@@ -275,7 +275,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-1
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{5C0D6A1E-7B2F-4E83-9A14-3D5E6F708192}"
 	ProjectSection(SolutionItems) = preProject
-		scripts\certificat_mobile.ps1 = scripts\certificat_mobile.ps1
+		scripts\certificat_https.ps1 = scripts\certificat_https.ps1
 		scripts\initialiser_base_locale.ps1 = scripts\initialiser_base_locale.ps1
 		scripts\restaurer_pharmacie.ps1 = scripts\restaurer_pharmacie.ps1
 		scripts\sauvegarde_pharmacie.ps1 = scripts\sauvegarde_pharmacie.ps1

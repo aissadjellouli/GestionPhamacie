@@ -509,6 +509,12 @@ Rien n'est codé ; les classements de `sync_table` ne changent pas maintenant.
   locaux), `parametre_formulaire_sms` (proposé), `parametre_surveillance` (proposé), `parametre_alerte` (proposé), `parametre_inventaire`
   (proposé), `remise_automatique` (proposé). « Imposé / proposé » est une proposition : obligations légales à confirmer **[À VÉRIFIER]**
   (seuils psychotropes, TVA).
+- **Qui décide « imposé » ou « proposé »** (décision du titulaire 2026-11-16) : l'**administrateur du serveur central**, dans son
+  administration ; le choix est enregistré au central et descend vers les officines par la voie descendante (§ 15), comme les autres
+  réglages. Rien n'est figé dans le logiciel : les classements du groupe 2 ci-dessus ne sont que des **valeurs de départ proposées**,
+  y compris pour `regle_alerte_psychotrope` et `parametre_fiscal`. Le groupe 3 n'est jamais proposé à la mutualisation.
+  **[À PRÉCISER en S3]** : granularité du choix (par table ou par réglage), traçabilité du changement (qui, quand, avant/après) et
+  effet d'un passage de « proposé » à « imposé » sur une valeur déjà modifiée localement.
 - **Groupe 3, strictement locaux, jamais mutualisés** : `parametre_caisse`, `parametre_sauvegarde`, `parametre_notification`,
   `parametre_rapport`, `serveur_officine`, `compteur_ticket`, `chaine_integrite`, `parametre_integrite`.
 

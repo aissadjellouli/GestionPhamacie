@@ -27,9 +27,9 @@ Les Data Matrix contiennent un séparateur invisible (GS) entre le lot et la sé
 
 1. En administrateur, lancer (clé USB en `E:\`) :
    ```powershell
-   .\scripts\certificat_mobile.ps1 -DossierApi "<dossier de l'API>" -DossierExport E:\ -PareFeu
+   .\scripts\certificat_https.ps1 -DossierApi "<dossier de l'API>" -DossierExport E:\ -PareFeu
    ```
-   Le script crée une autorité de certification propre à la pharmacie (clé non exportable, magasin Windows de la machine), un certificat pour le PC (noms et adresses ajoutables : `-NomsSupplementaires`, `-AdressesSupplementaires`), le fichier `appsettings.Https.json` (HTTP sur `localhost:5080` seulement, HTTPS sur 5443, aucun secret), exporte le certificat **public** de l'autorité et son empreinte SHA-256 dans le dossier choisi, et ouvre le port 5443 sur le réseau **privé** uniquement. `-WhatIf` simule sans rien écrire. Le détail et les noms/adresses à renseigner (2e serveur, VPN) sont dans `mise-en-production.md`, étape 3.5 bis.
+   Le script crée une autorité de certification propre à la pharmacie (clé non exportable, magasin Windows de la machine), un certificat pour le PC (noms et adresses ajoutables : `-NomsSupplementaires`, `-AdressesSupplementaires`), le fichier `appsettings.Https.json` (HTTP sur `localhost:5080` seulement, HTTPS sur 5443, aucun secret), exporte le certificat **public** de l'autorité et son empreinte SHA-256 dans le dossier choisi, et ouvre le port 5443 sur le réseau **privé** uniquement. `-WhatIf` simule sans rien écrire. Le détail et les noms/adresses à renseigner (2e serveur, VPN) sont dans `mise-en-production.md`, parcours A, étape 4.6.
 2. Redémarrer le service « PharmaOfficine API ».
 3. Donner une **adresse IP fixe** au PC serveur dans la box ; sinon relancer le script quand elle change.
 

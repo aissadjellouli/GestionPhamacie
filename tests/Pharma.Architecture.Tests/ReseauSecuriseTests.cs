@@ -44,7 +44,7 @@ public class ReseauSecuriseTests
     [Fact]
     public void Configuration_ecrite_par_le_script_donne_http_localhost_et_https_reseau_sans_autorisation_http_reseau()
     {
-        var script = File.ReadAllText(Path.Combine(RacineDepot(), "scripts", "certificat_mobile.ps1"));
+        var script = File.ReadAllText(Path.Combine(RacineDepot(), "scripts", "certificat_https.ps1"));
         Assert.Contains("Url = \"http://localhost:$PortHttp\"", script);
         Assert.Contains("Url         = \"https://0.0.0.0:$PortHttps\"", script);
         Assert.DoesNotContain("http://0.0.0.0", script);

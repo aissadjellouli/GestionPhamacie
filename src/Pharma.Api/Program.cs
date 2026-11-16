@@ -13,7 +13,7 @@ using Pharma.Shared;
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 var builder = WebApplication.CreateBuilder(args);
 
-// HTTPS pour le scanner mobile (caméra du téléphone) : fichier écrit par scripts/certificat_mobile.ps1
+// HTTPS sur le réseau de la pharmacie (postes et téléphones) : fichier écrit par scripts/certificat_https.ps1
 builder.Configuration.AddJsonFile("appsettings.Https.json", optional: true, reloadOnChange: false);
 
 // Clé de signature des jetons : la valeur d'exemple n'est tolérée que sur un poste de développement

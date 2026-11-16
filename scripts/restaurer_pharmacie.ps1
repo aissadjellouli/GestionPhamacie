@@ -27,7 +27,7 @@
 
 .EXAMPLE
     .\scripts\restaurer_pharmacie.ps1 -Sauvegardes "E:\Sauvegardes\Pharmacie" -Base pharmacie_essai -SansGed
-    Test mensuel de restauration (étape 8.3) dans une base d'essai, sans toucher à la base en service.
+    Test mensuel de restauration (docs/mise-en-production.md, parcours A, étape 11.4) dans une base d'essai, sans toucher à la base en service.
 #>
 param(
     [string]$Sauvegardes = "",           # dossier des sauvegardes sur le disque externe (réglé dans Administration › Sauvegardes)

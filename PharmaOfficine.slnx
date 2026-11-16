@@ -250,7 +250,7 @@
     <File Path="database/data/NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx" />
   </Folder>
   <Folder Name="/scripts/">
-    <File Path="scripts/certificat_mobile.ps1" />
+    <File Path="scripts/certificat_https.ps1" />
     <File Path="scripts/initialiser_base_locale.ps1" />
     <File Path="scripts/restaurer_pharmacie.ps1" />
     <File Path="scripts/sauvegarde_pharmacie.ps1" />

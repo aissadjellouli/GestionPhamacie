@@ -13,7 +13,7 @@
        Sans « AutoriserHttpReseau » : l'API refuse de démarrer si une adresse HTTP du réseau est configurée.
     4. Exporte le certificat PUBLIC de l'autorité (autorite-pharmacie.crt) et son empreinte SHA-256
        (empreinte-autorite-pharmacie.txt) dans le dossier -DossierExport. Rien n'est publié par l'API : le fichier se
-       transmet par clé USB ou câble, jamais par le réseau (voir docs/mise-en-production.md, étape 3.5 bis).
+       transmet par clé USB ou câble, jamais par le réseau (voir docs/mise-en-production.md, parcours A, étape 4.6).
     5. Pare-feu Windows (avec -PareFeu) : port https ouvert en réseau privé seulement. Le port http n'est jamais ouvert par ce
        script ; les règles existantes qui l'ouvrent sont signalées pour être fermées.
 
@@ -41,13 +41,13 @@
     Adresses IP en plus (ex. l'adresse IP du 2e serveur, l'adresse VPN du serveur). Rien n'est deviné : à saisir telles quelles.
 
 .EXAMPLE
-    .\certificat_mobile.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu
+    .\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu
 
 .EXAMPLE
-    .\certificat_mobile.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -AdressesSupplementaires 10.8.0.1 -NomsSupplementaires SERVEUR2 -PareFeu
+    .\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -AdressesSupplementaires 10.8.0.1 -NomsSupplementaires SERVEUR2 -PareFeu
 
 .EXAMPLE
-    .\certificat_mobile.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu -WhatIf
+    .\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu -WhatIf
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(

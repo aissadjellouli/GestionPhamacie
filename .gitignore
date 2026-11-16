@@ -7,7 +7,7 @@ obj/
 TestResults/
 appsettings.Development.json
 *.dump
-# HTTPS du scanner mobile : propres à chaque PC serveur (scripts/certificat_mobile.ps1)
+# HTTPS de l'API sur le réseau : propres à chaque PC serveur (scripts/certificat_https.ps1)
 appsettings.Https.json
 autorite-pharmacie.crt
 # Vidéos : jamais dans git, où qu'elles soient (démonstrations, exemples de docs/EXEMPLE…) :

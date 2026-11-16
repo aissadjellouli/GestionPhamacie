@@ -14,10 +14,10 @@ Commits `5db185c` (écrans), `4a0bfaa` (contenance), `97340dc` (synchronisation)
 
 ## HTTPS sur le réseau de l'officine (décidé le 2026-11-16 : oui)
 
-Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localhost:5080`). Voir `docs/mise-en-production.md`, étapes 3.2 et 3.5 bis.
-- [x] `scripts/certificat_mobile.ps1` : HTTP sur `localhost:5080`, HTTPS sur `0.0.0.0:5443`, pare-feu 5443 en réseau privé, 5080 jamais ouvert (règles existantes signalées), export du `.crt` et de l'empreinte dans un dossier choisi, `-WhatIf`, idempotent. Essai en simulation seulement ; jamais exécuté en réel sur ce poste.
+Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localhost:5080`). Voir `docs/mise-en-production.md`, parcours A, étapes 4.6 et 7.
+- [x] `scripts/certificat_https.ps1` : HTTP sur `localhost:5080`, HTTPS sur `0.0.0.0:5443`, pare-feu 5443 en réseau privé, 5080 jamais ouvert (règles existantes signalées), export du `.crt` et de l'empreinte dans un dossier choisi, `-WhatIf`, idempotent. Essai en simulation seulement ; jamais exécuté en réel sur ce poste.
 - [x] Distribution du certificat : clé USB pour les postes, hors réseau HTTP pour les téléphones, empreinte SHA-256 en texte (pas de QR code : aucune librairie dans la solution). L'API ne publie plus le `.crt` ; l'ancien chemin n'est servi qu'à 127.0.0.1 / ::1.
-- [x] Noms et adresses supplémentaires (2e serveur de bascule, adresse VPN) : `-NomsSupplementaires` / `-AdressesSupplementaires`, à renseigner par le titulaire ; rien n'est supposé. Documenté dans `mise-en-production.md` (3.5 bis) et `acces-distant.md`.
+- [x] Noms et adresses supplémentaires (2e serveur de bascule, adresse VPN) : `-NomsSupplementaires` / `-AdressesSupplementaires`, à renseigner par le titulaire ; rien n'est supposé. Documenté dans `mise-en-production.md` (parcours A, étape 4.6) et `acces-distant.md`.
 - [x] Mise à jour de `docs/mise-en-production.md` (installation du certificat sur chaque poste, `PHARMA_API=https://<serveur>:5443/`, vérifications), `scanner-mobile.md`, `acces-distant.md`.
 - [ ] Essai réel en HTTPS : connexion, vente, impression, scanner mobile ; API en production en HTTPS jamais vérifiée.
 - [ ] Port 5432 de la base fermé aux autres postes : aucune vérification tracée.
@@ -31,7 +31,7 @@ Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localho
 - [ ] **Majorations Chifa** : quels types en plus de « Garde » ? (question posée le 15/11, sans réponse ; voir `docs/chifa.md`).
 - [ ] **Démo** : « page démo », « démo interactive » ou « préparation démo cloud » (Dockerfile, docker-compose local, mode démo).
 - [ ] **Script 111b** (séparation des rôles PostgreSQL) : à passer par le titulaire avec un superutilisateur ; sans lui, une falsification est détectée mais pas empêchée (voir `docs/securite-et-droits.md`).
-- [ ] **Réglages communs aux officines** : `regle_alerte_psychotrope` imposé ou proposé ? TVA bien imposée ? (voir `docs/conception-synchronisation.md` § 16).
+- [x] **Réglages communs aux officines** : tranché le 2026-11-16 : « imposé » ou « proposé » est décidé par l'administrateur du serveur central, rien n'est figé dans le logiciel (à réaliser en S3 ; points à préciser : `docs/conception-synchronisation.md` § 16).
 - [ ] **Ancienne colonne `num_facture_chifa`** : suppression (opération destructive, script rédigé non exécuté) à décider à la mise à jour de l'officine.
 - [ ] **Note « Pharma : de quoi s'agit-il »** (section « Questions pour la V2 » ci-dessous) : à reformuler ou supprimer.
 - [ ] **Messages de démo sur `pharmacie_dev`** : purge proposée (seule `pharmacie_test` a été purgée) ; jamais sans validation explicite.
@@ -226,9 +226,30 @@ récemment »). Restent :
 - [x] Champs obligatoires : astérisque rouge, champ en rouge et curseur sur le premier manquant, sur tous les formulaires du poste.
 - [x] Seuil d'alerte de stock par produit, saisi par le pharmacien (Administration > Seuils), sinon automatique.
 - [x] Caisse : stock restant affiché ; boîte scannée servie avec son lot et avertissement si un lot proche de la péremption doit partir avant.
-- [x] Scanner mobile (lot 3) : contrôle en rayon, dates à vérifier, rangement, inventaire, scans de réception importés sur le poste ; HTTPS local (scripts/certificat_mobile.ps1).
+- [x] Scanner mobile (lot 3) : contrôle en rayon, dates à vérifier, rangement, inventaire, scans de réception importés sur le poste ; HTTPS local (scripts/certificat_https.ps1).
 - [x] Saisie assistée du produit (liste sous le champ, flèches et Entrée) dans Commandes et dans Réception.
 - [x] Lot unique par produit, n° de lot et grossiste ; étiquette interne créée et imprimée pour chaque boîte sans Data Matrix à la réception.
 - [x] Inventaire tournant (lot 2), emplacements (lot 1), notifications au titulaire et sauvegardes.
 
 - [ ] Chifa : confirmer le sens du suffixe du n° d'assuré (« /00 », « /80 »…) en comparant les cartes Chifa d'un assuré et d'un membre de sa famille (ou numéro vert CNAS 3010) ; rien n'en est déduit aujourd'hui (voir docs/chifa.md).
+
+## Mise en production : à décider (2026-11-16)
+
+Points que `docs/mise-en-production.md` ne peut pas trancher sans le titulaire ou le développeur (marqués **[À CONFIRMER]** dans le manuel) :
+
+- [ ] Sauvegardes : un seul mécanisme, sauvegarde de l'application ou script planifié `scripts/sauvegarde_pharmacie.ps1` (son en-tête dit « pas les deux »). Régler aussi ses variables `D:\` et `E:\`.
+- [ ] Script `101b` (suppression de `num_facture_chifa`) : il n'existe pas dans `database/migration/`. Écrire le script, puis décision du titulaire.
+- [ ] Conflits de n° de facture Chifa (script 101) : bloquent-ils la remise en service ?
+- [ ] HTTPS sur le 2e serveur et le PC de secours : le script crée une autorité par PC, et les postes ne font confiance qu'à celle installée. Définir la procédure (même autorité, ou réinstallation sur les postes et téléphones).
+- [ ] `AdresseApiSecours` des postes : passer en HTTPS (`https://<IP>:5443/`). Le manuel précédent donnait `http://…:5080/`, incompatible avec la décision HTTPS seul.
+- [ ] Super admin : création sans modem GSM (sans code SMS) possible ou non ?
+- [ ] Livraison officielle : aucun paquet de production dans le dépôt (`scripts/paquet` = essai). Définir la publication et le dossier de destination de l'API, des postes et des `scripts` sur chaque PC.
+- [ ] Partage de la copie de secours : compte du service de l'API (compte système par défaut) et droits sur le partage.
+- [ ] Port 5432 vers le 2e serveur : aucun script ne crée la règle de pare-feu. Valider la commande proposée.
+- [ ] `Jwt__Cle` identique sur le PC de secours et le 2e serveur, ou reconnexion acceptée après bascule ?
+- [ ] `pharma_proprietaire` : méthode d'exécution des scripts après 111b (`postgres` avec `SET ROLE`, à tester sur une copie) et compte d'administration à retenir.
+- [ ] Remise à vide (`clean.sql`) après 111b : le compte propriétaire n'est plus `pharma_app`.
+- [ ] Restauration du PC de secours : rôles `pharma_proprietaire` et `pharma_app` requis avant `basculer-pc-secours.ps1` ?
+- [ ] `--importer-cle` quand une clé existe déjà ; `Sauvegardes__PgDump` vide.
+- [ ] Serveur central : hébergement, adresse d'écoute (`Cloud:Adresse` vaut `127.0.0.1` par défaut), mode de lancement et compte de service (pas de service Windows dans le code), point de contrôle de santé, nom de la base et compte propriétaire de production, tests sur la production ou sur une copie.
+- [ ] CHIFA-Officine, lecteur de carte et Token : procédure d'installation et PC concerné (hors dépôt).
