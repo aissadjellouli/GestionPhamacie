@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Tests du script central 009 (corrections après revue), en transaction ANNULÉE :
---   psql -U <propriétaire> -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database/cloud/tests/009_corrections_revue_tests.sql
+--   psql -U <propriétaire> -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database/cloud/tests/009_central_restaure_quota_chargement_tests.sql
 -- =====================================================================
 BEGIN;
 

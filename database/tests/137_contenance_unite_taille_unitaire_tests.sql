@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Tests du script 137 (contenance : unité de délivrance suivie de sa taille unitaire), en transaction ANNULÉE :
---   psql -U pharma_app -d pharmacie_test -v ON_ERROR_STOP=1 -f database/tests/137_contenance_extension_tests.sql
+--   psql -U pharma_app -d pharmacie_test -v ON_ERROR_STOP=1 -f database/tests/137_contenance_unite_taille_unitaire_tests.sql
 -- Les exemples sont ceux de ContenanceDepuisNomenclatureTests (tests C#) : même résultat attendu.
 -- =====================================================================
 BEGIN;
@@ -60,7 +60,7 @@ INSERT INTO nomenclature_produit (version_id, situation, num_enregistrement, con
     ((SELECT recente  FROM t137_version), 'en_vigueur', 'T137-versions', 'B/20 AMP. DE 2ML');
 INSERT INTO t137_cas VALUES ('versions', NULL, '{"B/20 AMP. DE 2ML"}', 20);
 
-\ir ../migration/137_contenance_extension.sql
+\ir ../migration/137_contenance_unite_taille_unitaire.sql
 
 DO $$
 DECLARE r record;
@@ -90,7 +90,7 @@ CREATE TEMP TABLE t137_journal AS SELECT count(*) AS n FROM journal_audit;
 CREATE TEMP TABLE t137_remplis AS SELECT count(contenance) AS n FROM produit;
 
 -- Idempotence : 2e passage sans effet
-\ir ../migration/137_contenance_extension.sql
+\ir ../migration/137_contenance_unite_taille_unitaire.sql
 
 DO $$
 BEGIN

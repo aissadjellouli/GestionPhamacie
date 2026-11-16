@@ -10,7 +10,7 @@
 --     employé qui l'a ;
 --   * psychotropes et stupéfiants : l'ordonnance reste obligatoire pour
 --     tous, ce droit ne s'y applique pas.
--- Idempotent. A exécuter après 048_reprise_corrections.sql.
+-- Idempotent. A exécuter après 048_reprise_classe_prix_achat_lots.sql.
 -- =====================================================================
 
 -- Le droit et ses attributions de départ ne sont posés qu'à la première exécution :

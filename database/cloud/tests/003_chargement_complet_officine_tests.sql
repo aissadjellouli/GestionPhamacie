@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Tests du chargement complet (script 003), en transaction ANNULÉE :
---   psql -U <propriétaire> -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database/cloud/tests/003_chargement_tests.sql
+--   psql -U <propriétaire> -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database/cloud/tests/003_chargement_complet_officine_tests.sql
 -- =====================================================================
 BEGIN;
 

@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Tests de la voie descendante (script 005), en transaction ANNULÉE :
---   psql -U <propriétaire> -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database/cloud/tests/005_descendant_tests.sql
+--   psql -U <propriétaire> -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database/cloud/tests/005_voie_descendante_elements_tests.sql
 -- =====================================================================
 BEGIN;
 

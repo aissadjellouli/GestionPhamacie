@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Tests du script 136 (corrections après revue), en transaction ANNULÉE :
---   psql -U pharma_app -d pharmacie_test -v ON_ERROR_STOP=1 -f database/tests/136_synchronisation_corrections_revue_tests.sql
+--   psql -U pharma_app -d pharmacie_test -v ON_ERROR_STOP=1 -f database/tests/136_synchronisation_colonnes_figees_descendant_tests.sql
 -- =====================================================================
 BEGIN;
 

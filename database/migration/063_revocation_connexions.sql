@@ -7,7 +7,7 @@
 --     remis en « mot de passe à changer », et quand l'administrateur efface
 --     le code comptoir (code oublié ou divulgué) ;
 --   * posée pour tous les comptes après une restauration de la base.
--- Idempotent. A exécuter après 062_vues_parametres_nommes.sql.
+-- Idempotent. A exécuter après 062_vues_alertes_colonnes_nommees.sql.
 -- =====================================================================
 
 SET client_encoding = 'UTF8';

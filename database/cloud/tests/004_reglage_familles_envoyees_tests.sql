@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Tests des réglages du serveur central (script 004), en transaction ANNULÉE :
---   psql -U <propriétaire> -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database/cloud/tests/004_reglages_tests.sql
+--   psql -U <propriétaire> -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database/cloud/tests/004_reglage_familles_envoyees_tests.sql
 -- =====================================================================
 BEGIN;
 

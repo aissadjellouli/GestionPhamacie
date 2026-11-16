@@ -3,7 +3,7 @@
 -- sur le serveur (coupure, redémarrage) et repris par n'importe quel
 -- employé du poste. Le contenu est celui du panier du poste ; les prix et
 -- le stock sont recalculés par le serveur à la reprise et à l'encaissement.
--- Idempotent. A exécuter après 025_affichage.sql.
+-- Idempotent. A exécuter après 025_affichage_clair_sombre.sql.
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS panier_attente (

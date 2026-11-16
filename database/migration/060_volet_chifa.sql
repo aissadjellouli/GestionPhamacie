@@ -8,7 +8,7 @@
 --     qu'une fois (sauf vente annulée).
 -- Le format du QR est déduit d'un seul volet réel : à confirmer avec
 -- l'éditeur de Chifa (docs/chifa.md, docs/a-faire.md).
--- Idempotent. A exécuter après 059_corrections_surveillance.sql.
+-- Idempotent. A exécuter après 059_surveillance_fantomes_remises_horaires.sql.
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS chifa_code_produit (

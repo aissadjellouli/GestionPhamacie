@@ -17,7 +17,7 @@
 -- Redéfinit import.controler, import.charger et
 -- import.controle_apres_chargement (définis dans 008) : les scripts se
 -- rejouent tous, dans l'ordre, sur une base déjà installée.
--- Idempotent. A exécuter après 047_recette_corrections.sql.
+-- Idempotent. A exécuter après 047_numeros_recus_autorisation_code.sql.
 -- =====================================================================
 
 ALTER TABLE import.produit_src ADD COLUMN IF NOT EXISTS classe text;

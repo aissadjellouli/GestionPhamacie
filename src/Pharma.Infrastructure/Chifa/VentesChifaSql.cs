@@ -8,7 +8,7 @@ using Pharma.Domain.Ventes;
 namespace Pharma.Infrastructure.Chifa;
 
 /// <summary>
-/// Informations Chifa et exclusion d'une vente (database/migration/100_volet_chifa_complements.sql) : date des soins, centre payeur,
+/// Informations Chifa et exclusion d'une vente (database/migration/100_volet_chifa_centres_payeurs_exclusion.sql) : date des soins, centre payeur,
 /// saisi dans Chifa par, majoration, exclusion du traitement (colonnes chifa_exclue_*, sans nouveau statut de vente).
 /// </summary>
 public sealed class VentesChifaSql(NpgsqlDataSource db) : IVentesChifa

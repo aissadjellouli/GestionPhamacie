@@ -12,7 +12,7 @@
 
 SET client_encoding = 'UTF8';
 
--- Mêmes calculs que 059_corrections_surveillance.sql
+-- Mêmes calculs que 059_surveillance_fantomes_remises_horaires.sql
 CREATE OR REPLACE FUNCTION surveillance_candidats(p_jour date)
 RETURNS TABLE (o_type text, o_niveau text, o_utilisateur_id bigint, o_jour date, o_cle text, o_message text, o_notification text, o_valeur numeric)
 LANGUAGE sql STABLE AS $$

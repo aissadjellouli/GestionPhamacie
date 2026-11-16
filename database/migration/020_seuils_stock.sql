@@ -5,7 +5,7 @@
 --   * seuil appliqué = seuil saisi s'il existe, sinon automatique :
 --     ventes moyennes par jour × (délai de livraison + stock de sécurité) ;
 --   * un seuil saisi à 0 = pas d'alerte de stock pour ce produit.
--- Idempotent. A exécuter après 019_mobile.sql.
+-- Idempotent. A exécuter après 019_scan_reception_mobile.sql.
 -- =====================================================================
 
 -- Une seule fois : l'ancien 0 par défaut signifiait « rien de saisi »

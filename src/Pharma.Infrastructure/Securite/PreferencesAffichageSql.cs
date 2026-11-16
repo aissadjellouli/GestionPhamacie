@@ -3,7 +3,7 @@ using Pharma.Application.Securite;
 
 namespace Pharma.Infrastructure.Securite;
 
-/// <summary>Colonne utilisateur.affichage (025_affichage.sql).</summary>
+/// <summary>Colonne utilisateur.affichage (025_affichage_clair_sombre.sql).</summary>
 public sealed class PreferencesAffichageSql(NpgsqlDataSource db) : IPreferencesAffichage
 {
     public async Task<string> LireAsync(long utilisateurId, CancellationToken ct = default)

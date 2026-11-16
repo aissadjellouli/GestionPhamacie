@@ -27,7 +27,7 @@ public class FamillesNominativesTests
     {
         var racine = Depot.Racine();
         var officine = Lire(racine, "migration", "130_synchronisation_familles_nominatives.sql", "133_synchronisation_familles_banque_clients.sql", "135_synchronisation_famille_banque_elargie.sql");
-        var central = Lire(racine, "cloud", "004_reglages.sql", "007_familles_banque_clients.sql", "008_famille_banque_elargie.sql");
+        var central = Lire(racine, "cloud", "004_reglage_familles_envoyees.sql", "007_familles_banque_clients.sql", "008_famille_banque_elargie.sql");
         Assert.Equal(Attendues(), Colonnes(officine, "sync_famille_colonne"));
         Assert.Equal(Attendues(), Colonnes(central, "cloud_famille_colonne"));
         var seed = File.ReadAllText(Path.Combine(racine, "database", "init", "seed_referentiel.sql"));
@@ -37,7 +37,7 @@ public class FamillesNominativesTests
     [Fact]
     public void Defauts_du_titulaire_employes_non_les_autres_oui()
     {
-        var central = Lire(Depot.Racine(), "cloud", "004_reglages.sql", "007_familles_banque_clients.sql", "008_famille_banque_elargie.sql");
+        var central = Lire(Depot.Racine(), "cloud", "004_reglage_familles_envoyees.sql", "007_familles_banque_clients.sql", "008_famille_banque_elargie.sql");
         foreach (var (famille, f) in FamillesNominativesSync.Familles)
         {
             Assert.Matches($@"\('{famille}',\s*'[^']+',\s*{(f.Defaut ? "true" : "false")}\)", central);
