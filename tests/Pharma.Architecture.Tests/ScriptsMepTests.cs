@@ -129,10 +129,10 @@ public partial class ScriptsMepTests
     public void Le_script_033_est_hors_transaction()
     {
         // 033 contient CREATE INDEX CONCURRENTLY : interdit dans une transaction ; c'est le seul script concerné
-        var concurrents = Directory.GetFiles(Path.Combine(RacineDepot(), "database", "migration"), "*.sql")
+        var scriptsIndexEnLigne = Directory.GetFiles(Path.Combine(RacineDepot(), "database", "migration"), "*.sql")
             .Where(f => Regex.IsMatch(File.ReadAllText(f), @"(?im)^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY"))
             .Select(Path.GetFileName).ToList();
-        Assert.Equal(["033_index_performance.sql"], concurrents);
+        Assert.Equal(["033_index_performance.sql"], scriptsIndexEnLigne);
 
         foreach (var fichier in TousLesFichiersMep())
         {
