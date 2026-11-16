@@ -8,8 +8,8 @@ namespace Pharma.Api.Securite;
 
 /// <summary>
 /// Création ou modification du compte super admin, sur le PC serveur seulement : « Pharma.Api.exe --super-admin ».
-/// Compte existant : mot de passe actuel et code envoyé par SMS et par e-mail (un canal suffit) ; nouveau téléphone : code reçu par SMS
-/// sur ce numéro ; nouvelle adresse e-mail : code reçu à cette adresse.
+/// Au moins un canal vérifié (SMS ou e-mail), sinon refus. Compte existant : mot de passe actuel et code envoyé sur chaque canal
+/// vérifié ; nouveau téléphone : code reçu par SMS sur ce numéro ; nouvelle adresse e-mail : code reçu à cette adresse ; le dernier canal ne se retire pas.
 /// </summary>
 public static class ConsoleSuperAdmin
 {
@@ -28,7 +28,7 @@ public static class ConsoleSuperAdmin
             var actuel = comptes.Lire();
             if (actuel is not null)
             {
-                Console.WriteLine($"Un compte existe ({actuel.Identifiant}, téléphone {RegleDestinataire.MasquerTelephone(actuel.Telephone)}). Il sera modifié.");
+                Console.WriteLine($"Un compte existe ({actuel.Identifiant}, {Canaux(actuel)}). Il sera modifié.");
                 if (!sp.GetRequiredService<IVerificateurMotDePasse>().Verifier(LireSecret("Mot de passe actuel : "), actuel.MotDePasseHash))
                     return Echec("Mot de passe faux : rien n'a été modifié.");
                 if (!await CodeAsync(c => envoi.EnvoyerAsync(actuel, null, c), "modifier le compte super admin"))
@@ -38,37 +38,41 @@ public static class ConsoleSuperAdmin
             var identifiant = Lire($"Identifiant{(actuel is null ? "" : $" [{actuel.Identifiant}]")} : ") is { Length: > 0 } s ? s : actuel?.Identifiant ?? "";
             var motDePasse = LireSecret($"Nouveau mot de passe ({CreerCompteSuperAdmin.LongueurMin} caractères au moins) : ");
             var confirmation = LireSecret("Confirmation : ");
-            var telephone = Lire($"Téléphone mobile (obligatoire){(actuel is null ? "" : " [inchangé]")} : ") is { Length: > 0 } t ? t : actuel?.Telephone ?? "";
-            var email = Lire($"E-mail (obligatoire, secours si le SMS ne part pas){(actuel is null ? "" : $" [{actuel.Email}]")} : ") is { Length: > 0 } e ? e : actuel?.Email ?? "";
-            CreerCompteSuperAdmin.Verifier(identifiant, motDePasse, confirmation, telephone, email);
+            Console.WriteLine("Au moins un canal vérifié est obligatoire : SMS (modem GSM) ou e-mail (serveur d'e-mail). Avec les deux, chaque code part sur les deux.");
+            var saisieTelephone = Lire(actuel is null ? "Téléphone mobile (SMS, vide = aucun) : "
+                : $"Téléphone mobile [{(actuel.ASms ? RegleDestinataire.MasquerTelephone(actuel.Telephone!) : "aucun")}] (vide = inchangé, « {CanauxSuperAdmin.Retrait} » = retirer) : ");
+            var saisieEmail = Lire(actuel is null ? "E-mail (vide = aucun) : "
+                : $"E-mail [{(actuel.AEmail ? actuel.Email : "aucun")}] (vide = inchangé, « {CanauxSuperAdmin.Retrait} » = retirer) : ");
+            var souhaites = CanauxSuperAdmin.Souhaites(actuel, saisieTelephone, saisieEmail);
+            CreerCompteSuperAdmin.Verifier(identifiant, motDePasse, confirmation, souhaites.Telephone, souhaites.Email);
 
-            // Nouveau numéro : il doit recevoir le code (SMS seulement, l'e-mail ne prouve pas le numéro)
-            var nouveauNumero = RegleDestinataire.NormaliserTelephone(telephone);
-            if (actuel is null || nouveauNumero != actuel.Telephone)
+            // Nouveau numéro : il doit recevoir le code par SMS sur ce numéro (l'e-mail ne prouve pas le numéro)
+            var telephoneVerifie = false;
+            if (CanauxSuperAdmin.ADeVerifier(actuel?.Telephone, souhaites.Telephone))
             {
-                var provisoire = new CompteSuperAdmin(identifiant, "", nouveauNumero, email, actuel?.Envoi);
-                if (!await CodeAsync(c => envoi.EnvoyerAsync(provisoire, nouveauNumero, c), "verifier le telephone du super admin"))
-                {
-                    if (actuel is not null) return Echec("Nouveau téléphone non vérifié : rien n'a été modifié.");
-                    if (!Lire("Téléphone non vérifié (modem GSM absent ?). Créer le compte quand même ? (o/n) : ").StartsWith('o'))
-                        return Echec("Compte non créé.");
-                }
+                var provisoire = new CompteSuperAdmin(identifiant, "", souhaites.Telephone, null, actuel?.Envoi);
+                telephoneVerifie = await CodeAsync(c => envoi.EnvoyerAsync(provisoire, souhaites.Telephone, c), "verifier le telephone du super admin");
             }
 
-            // Nouvelle adresse : elle doit recevoir le code (aucune dérogation : l'e-mail est obligatoire et sert de canal)
-            var nouvelEmail = email.Trim();
-            if (actuel is null || !string.Equals(nouvelEmail, actuel.Email, StringComparison.OrdinalIgnoreCase))
+            // Nouvelle adresse : elle doit recevoir le code par e-mail à cette adresse (le SMS ne prouve pas l'adresse)
+            var emailVerifie = false;
+            if (CanauxSuperAdmin.ADeVerifier(actuel?.Email, souhaites.Email))
             {
-                var provisoire = new CompteSuperAdmin(identifiant, "", nouveauNumero, nouvelEmail, actuel?.Envoi);
-                if (!await CodeAsync(c => envoi.EnvoyerAAdresseAsync(provisoire, nouvelEmail, c), "verifier l'e-mail du super admin"))
-                    return Echec(actuel is null ? "Adresse e-mail non vérifiée : compte non créé." : "Nouvelle adresse e-mail non vérifiée : rien n'a été modifié.");
+                var provisoire = new CompteSuperAdmin(identifiant, "", null, souhaites.Email, actuel?.Envoi);
+                emailVerifie = await CodeAsync(c => envoi.EnvoyerAAdresseAsync(provisoire, souhaites.Email!, c), "verifier l'e-mail du super admin");
             }
+
+            // Un canal saisi mais non vérifié n'est pas enregistré ; sans aucun canal vérifié, rien n'est créé ni modifié
+            var (telephone, email) = CanauxSuperAdmin.Retenir(actuel, souhaites, telephoneVerifie, emailVerifie);
+            if (souhaites.Telephone is not null && telephone != souhaites.Telephone)
+                Console.WriteLine("Téléphone non vérifié : il n'est pas enregistré" + (actuel?.ASms == true ? " (l'ancien numéro est conservé)." : "."));
+            if (souhaites.Email is not null && email != souhaites.Email)
+                Console.WriteLine("Adresse e-mail non vérifiée : elle n'est pas enregistrée" + (actuel?.AEmail == true ? " (l'ancienne adresse est conservée)." : "."));
 
             var compte = sp.GetRequiredService<CreerCompteSuperAdmin>().Executer(identifiant, motDePasse, confirmation, telephone, email);
             sp.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.SuperAdmin").LogWarning(
-                "Compte super admin {Action} : {Identifiant}, téléphone {Telephone}", actuel is null ? "créé" : "modifié",
-                compte.Identifiant, RegleDestinataire.MasquerTelephone(compte.Telephone));
-            Console.WriteLine($"Compte super admin {(actuel is null ? "créé" : "modifié")} : {compte.Identifiant}, téléphone {RegleDestinataire.MasquerTelephone(compte.Telephone)}.");
+                "Compte super admin {Action} : {Identifiant}, {Canaux}", actuel is null ? "créé" : "modifié", compte.Identifiant, Canaux(compte));
+            Console.WriteLine($"Compte super admin {(actuel is null ? "créé" : "modifié")} : {compte.Identifiant}, {Canaux(compte)}.");
             return 0;
         }
         catch (RegleMetierException e) { return Echec(e.Message); }
@@ -94,6 +98,15 @@ public static class ConsoleSuperAdmin
             else Console.WriteLine("Code faux.");
         return false;
     }
+
+    /// <summary>Canaux vérifiés du compte, masqués : « téléphone 06•••••512 et e-mail t•••@exemple.dz ».</summary>
+    private static string Canaux(CompteSuperAdmin c) => (c.ASms, c.AEmail) switch
+    {
+        (true, true) => $"téléphone {RegleDestinataire.MasquerTelephone(c.Telephone!)} et e-mail {RegleDestinataire.MasquerEmail(c.Email!)}",
+        (true, false) => $"téléphone {RegleDestinataire.MasquerTelephone(c.Telephone!)} (seul canal)",
+        (false, true) => $"e-mail {RegleDestinataire.MasquerEmail(c.Email!)} (seul canal)",
+        _ => "aucun canal"
+    };
 
     private static int Echec(string message)
     {

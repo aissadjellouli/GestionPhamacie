@@ -34,7 +34,7 @@ public static class SuperAdminEndpoints
 
         super.MapGet("/compte", (ICompteSuperAdmin comptes) =>
             comptes.Lire() is { } c
-                ? Results.Ok(new CompteSuperAdminDto(c.Identifiant, RegleDestinataire.MasquerTelephone(c.Telephone), RegleDestinataire.MasquerEmail(c.Email)))
+                ? Results.Ok(new CompteSuperAdminDto(c.Identifiant, c.ASms ? RegleDestinataire.MasquerTelephone(c.Telephone!) : null, c.AEmail ? RegleDestinataire.MasquerEmail(c.Email!) : null))
                 : Results.NotFound(new ErreurDto("Compte super admin introuvable sur le serveur.")));
 
         // Avant chaque action sensible : mot de passe ressaisi, puis le même code envoyé par SMS et par e-mail (un canal suffit)

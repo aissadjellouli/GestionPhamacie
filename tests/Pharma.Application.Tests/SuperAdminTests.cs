@@ -222,9 +222,9 @@ public class SuperAdminTests
     }
 
     [Theory]
-    [InlineData("admin.pharma", "Secret-Super-2026", "Secret-Super-2026", "", "admin@pharmacie.dz")]          // téléphone obligatoire
+    [InlineData("admin.pharma", "Secret-Super-2026", "Secret-Super-2026", "", "")]                              // au moins un canal
     [InlineData("admin.pharma", "Secret-Super-2026", "Secret-Super-2026", "0213456789", "admin@pharmacie.dz")] // pas un mobile
-    [InlineData("admin.pharma", "Secret-Super-2026", "Secret-Super-2026", "0661234512", "")]                   // e-mail obligatoire
+    [InlineData("admin.pharma", "Secret-Super-2026", "Secret-Super-2026", "0661234512", "pas-un-email")]       // e-mail invalide
     [InlineData("admin.pharma", "court", "court", "0661234512", "admin@pharmacie.dz")]
     [InlineData("admin.pharma", "Secret-Super-2026", "Autre-Super-2026", "0661234512", "admin@pharmacie.dz")]
     public void Creation_refusee_si_incomplete(string identifiant, string mdp, string confirmation, string telephone, string email)
@@ -240,6 +240,127 @@ public class SuperAdminTests
         var comptes = new CompteSuperAdminEnMemoire();
         new CreerCompteSuperAdmin(comptes, new HacheurFactice()).Executer(" admin.pharma ", "Secret-Super-2026", "Secret-Super-2026", "0661 23 45 12", "admin@pharmacie.dz");
         Assert.Equal(("admin.pharma", "hash:Secret-Super-2026", "0661234512"), (comptes.Compte!.Identifiant, comptes.Compte.MotDePasseHash, comptes.Compte.Telephone));
+    }
+
+    [Fact]
+    public void Creation_avec_SMS_seul_ou_email_seul_ou_les_deux()
+    {
+        var hacheur = new HacheurFactice();
+        var sms = new CompteSuperAdminEnMemoire();
+        new CreerCompteSuperAdmin(sms, hacheur).Executer("admin.pharma", MotDePasse, MotDePasse, "0661234512", "");
+        Assert.Equal(("0661234512", null, 1), (sms.Compte!.Telephone, sms.Compte.Email, sms.Compte.NombreCanaux));
+
+        var mail = new CompteSuperAdminEnMemoire();
+        new CreerCompteSuperAdmin(mail, hacheur).Executer("admin.pharma", MotDePasse, MotDePasse, "", " admin@pharmacie.dz ");
+        Assert.Equal((null, "admin@pharmacie.dz", 1), (mail.Compte!.Telephone, mail.Compte.Email, mail.Compte.NombreCanaux));
+
+        var deux = new CompteSuperAdminEnMemoire();
+        new CreerCompteSuperAdmin(deux, hacheur).Executer("admin.pharma", MotDePasse, MotDePasse, "0661234512", "admin@pharmacie.dz");
+        Assert.Equal(2, deux.Compte!.NombreCanaux);
+    }
+
+    [Fact]
+    public async Task Creation_refusee_quand_aucun_canal_ne_fonctionne_et_rien_n_est_enregistre()
+    {
+        // Modem et serveur e-mail en panne : aucun code ne part, donc aucun canal n'est vérifié
+        var comptes = new CompteSuperAdminEnMemoire();
+        var envoi = new EnvoiCodeSuperAdmin(comptes, new SmsEnPanne(), new EmailTexte(enPanne: true), new SecretsFactices(), new NotificationsEnMemoire());
+        var provisoire = new CompteSuperAdmin("admin.pharma", "", "0661234512", null);
+        await Assert.ThrowsAsync<RegleMetierException>(() => envoi.EnvoyerAsync(provisoire, "0661234512", "code 123456"));
+        await Assert.ThrowsAsync<RegleMetierException>(() => envoi.EnvoyerAAdresseAsync(provisoire, "admin@pharmacie.dz", "code 123456"));
+
+        var souhaites = CanauxSuperAdmin.Souhaites(null, "0661234512", "admin@pharmacie.dz");
+        var ex = Assert.Throws<RegleMetierException>(() => CanauxSuperAdmin.Retenir(null, souhaites, telephoneVerifie: false, emailVerifie: false));
+        Assert.Contains("modem GSM", ex.Message);
+        Assert.Contains("serveur e-mail", ex.Message);
+        Assert.Contains("Administration › Notifications", ex.Message);
+        Assert.Null(comptes.Compte);
+    }
+
+    [Fact]
+    public void Canal_saisi_mais_non_verifie_n_est_pas_enregistre()
+    {
+        var souhaites = CanauxSuperAdmin.Souhaites(null, "0661234512", "admin@pharmacie.dz");
+        Assert.Equal((null, "admin@pharmacie.dz"), CanauxSuperAdmin.Retenir(null, souhaites, telephoneVerifie: false, emailVerifie: true));
+        Assert.Equal(("0661234512", null), CanauxSuperAdmin.Retenir(null, souhaites, telephoneVerifie: true, emailVerifie: false));
+    }
+
+    [Fact]
+    public void Modification_le_dernier_canal_verifie_ne_se_retire_pas()
+    {
+        var seulSms = new CompteSuperAdmin("admin.pharma", "h", "0661234512", null);
+        var ex = Assert.Throws<RegleMetierException>(() => CanauxSuperAdmin.Souhaites(seulSms, CanauxSuperAdmin.Retrait, ""));
+        Assert.Contains("dernier canal", ex.Message);
+
+        // Retrait du SMS pendant que la nouvelle adresse n'est pas vérifiée : le compte resterait sans canal
+        var souhaites = CanauxSuperAdmin.Souhaites(seulSms, CanauxSuperAdmin.Retrait, "nouveau@pharmacie.dz");
+        Assert.Throws<RegleMetierException>(() => CanauxSuperAdmin.Retenir(seulSms, souhaites, false, emailVerifie: false));
+        Assert.Equal((null, "nouveau@pharmacie.dz"), CanauxSuperAdmin.Retenir(seulSms, souhaites, false, emailVerifie: true));
+
+        // Avec deux canaux, on peut en retirer un
+        var deux = Compte();
+        Assert.Equal(("0661234512", null), CanauxSuperAdmin.Souhaites(deux, "", CanauxSuperAdmin.Retrait));
+    }
+
+    [Fact]
+    public void Modification_nouveau_numero_ou_nouvelle_adresse_a_verifier_inchange_non()
+    {
+        var compte = Compte();
+        Assert.False(CanauxSuperAdmin.ADeVerifier(compte.Telephone, CanauxSuperAdmin.Souhaites(compte, "06 61 23 45 12", "").Telephone));
+        Assert.True(CanauxSuperAdmin.ADeVerifier(compte.Telephone, CanauxSuperAdmin.Souhaites(compte, "0770000000", "").Telephone));
+        Assert.True(CanauxSuperAdmin.ADeVerifier(compte.Email, CanauxSuperAdmin.Souhaites(compte, "", "autre@pharmacie.dz").Email));
+        // Nouveau numéro non vérifié : l'ancien reste
+        var souhaites = CanauxSuperAdmin.Souhaites(compte, "0770000000", "");
+        Assert.Equal(("0661234512", "admin@pharmacie.dz"), CanauxSuperAdmin.Retenir(compte, souhaites, telephoneVerifie: false, emailVerifie: false));
+    }
+
+    [Fact]
+    public void Compte_existant_a_un_seul_canal_ou_ancien_format_reste_lisible()
+    {
+        var json = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        // Ancien fichier : téléphone et e-mail renseignés
+        var ancien = System.Text.Json.JsonSerializer.Deserialize<CompteSuperAdmin>(
+            """{"identifiant":"a.b","motDePasseHash":"h","telephone":"0661234512","email":"a@b.dz","envoi":null,"dossierSauvegardes":"E:\\S"}""", json)!;
+        Assert.Equal((2, "E:\\S"), (ancien.NombreCanaux, ancien.DossierSauvegardes));
+
+        // Fichier à un seul canal : champ absent ou null
+        var seul = System.Text.Json.JsonSerializer.Deserialize<CompteSuperAdmin>("""{"identifiant":"a.b","motDePasseHash":"h","telephone":"0661234512"}""", json)!;
+        Assert.Equal((true, false, null), (seul.ASms, seul.AEmail, seul.Email));
+
+        // Les propriétés calculées ne sont pas écrites dans le fichier
+        var ecrit = System.Text.Json.JsonSerializer.Serialize(seul, json);
+        Assert.DoesNotContain("nombreCanaux", ecrit);
+        Assert.Equal(seul, System.Text.Json.JsonSerializer.Deserialize<CompteSuperAdmin>(ecrit, json));
+    }
+
+    [Fact]
+    public async Task Compte_a_un_seul_canal_le_code_ne_part_que_sur_ce_canal_et_le_message_le_dit()
+    {
+        var compte = new CompteSuperAdmin("admin.pharma", "hash:" + MotDePasse, null, "admin@pharmacie.dz");
+        var courriel = new EmailTexte();
+        var (cas, etat, sms, _) = Demandeur(compte: compte, courriel: courriel);
+        var d = await cas.ExecuterAsync(ActionsSuperAdmin.RestaurerBase, MotDePasse);
+
+        Assert.Empty(sms.Envoyes);   // aucun SMS : le compte n'a pas de téléphone
+        Assert.Equal("Code envoyé par e-mail à a•••@pharmacie.dz (seul canal vérifié du compte)", d.Message);
+        Assert.NotNull(etat.Verifier(d.Id, CodeDans(courriel.Envoyes.Single().Texte), ActionsSuperAdmin.RestaurerBase));
+
+        var parSms = new CompteSuperAdmin("admin.pharma", "hash:" + MotDePasse, "0661234512", null);
+        var (cas2, _, sms2, email2) = Demandeur(compte: parSms);
+        var d2 = await cas2.ExecuterAsync(ActionsSuperAdmin.RestaurerBase, MotDePasse);
+        Assert.Single(sms2.Envoyes);
+        Assert.Empty(email2.Envoyes);
+        Assert.Equal("Code envoyé par SMS au 06•••••512 (seul canal vérifié du compte)", d2.Message);
+    }
+
+    [Fact]
+    public async Task Compte_a_un_seul_canal_en_panne_l_action_est_refusee()
+    {
+        var compte = new CompteSuperAdmin("admin.pharma", "hash:" + MotDePasse, "0661234512", null);
+        var (cas, _, _, email) = Demandeur(sms: new SmsEnPanne(), compte: compte);
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(ActionsSuperAdmin.RestaurerBase, MotDePasse));
+        Assert.Contains("Modem débranché", ex.Message);
+        Assert.Empty(email.Envoyes);   // pas de repli vers un canal que le compte n'a pas
     }
 
     [Fact]

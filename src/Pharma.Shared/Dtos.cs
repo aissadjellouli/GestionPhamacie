@@ -665,7 +665,7 @@ public sealed record ValidationSuperAdminRequete(string Action, string MotDePass
 /// <summary>Code envoyé : par quel canal, à quel destinataire (masqué), jusqu'à quand.</summary>
 /// <summary>Code envoyé : canaux utilisés et destinataires masqués ; Message = phrase à montrer (canal en échec dit).</summary>
 public sealed record DemandeValidationDto(Guid Id, string Canal, string Destinataire, DateTime ExpireLe, string? Message = null);
-public sealed record CompteSuperAdminDto(string Identifiant, string Telephone, string Email);
+public sealed record CompteSuperAdminDto(string Identifiant, string? Telephone, string? Email);
 public sealed record ProduitAConfirmerDto(string RefSource, string Nom, string? Dosage, string? CodeBarre, long? ProduitPropose, string? NomPropose, decimal? Score);
 public sealed record AnomalieRepriseDto(string Entite, string? RefSource, string Gravite, string Message);
 public sealed record VerificationRepriseDto(string Indicateur, decimal Ancien, decimal Nouveau, decimal Ecart);

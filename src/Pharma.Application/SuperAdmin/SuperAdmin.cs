@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Serialization;
 using Pharma.Application.Commun;
 using Pharma.Application.Notifications;
 using Pharma.Application.Securite;
@@ -21,16 +22,79 @@ public sealed record CopieEnvoi(string? ModemPort, string? SmtpServeur, int Smtp
     public bool SmtpConfigure => !string.IsNullOrWhiteSpace(SmtpServeur) && !string.IsNullOrWhiteSpace(SmtpExpediteur);
 }
 
-/// <summary>Compte du super admin : hors de la base, dans un fichier chiffré du PC serveur. Téléphone et e-mail obligatoires.</summary>
+/// <summary>
+/// Compte du super admin : hors de la base, dans un fichier chiffré du PC serveur. Au moins un canal vérifié (téléphone ou e-mail) ;
+/// un canal absent est null. Un fichier ancien (téléphone et e-mail renseignés) reste lisible tel quel.
+/// </summary>
 /// <param name="DossierSauvegardes">Copie du dossier des sauvegardes (disque externe) : la restauration le retrouve même base détruite.</param>
-public sealed record CompteSuperAdmin(string Identifiant, string MotDePasseHash, string Telephone, string Email, CopieEnvoi? Envoi = null,
-    string? DossierSauvegardes = null);
+public sealed record CompteSuperAdmin(string Identifiant, string MotDePasseHash, string? Telephone, string? Email, CopieEnvoi? Envoi = null,
+    string? DossierSauvegardes = null)
+{
+    [JsonIgnore] public bool ASms => !string.IsNullOrWhiteSpace(Telephone);
+    [JsonIgnore] public bool AEmail => !string.IsNullOrWhiteSpace(Email);
+    [JsonIgnore] public int NombreCanaux => (ASms ? 1 : 0) + (AEmail ? 1 : 0);
+}
+
+/// <summary>
+/// Canaux du compte (création et modification, commande --super-admin). Seuls les canaux dont le code a été reçu sont retenus :
+/// un canal saisi mais non vérifié n'est PAS enregistré (jamais de canal « non vérifié » dans le fichier, car il pourrait recevoir
+/// des codes à la place du titulaire ou n'en recevoir aucun).
+/// </summary>
+public static class CanauxSuperAdmin
+{
+    public const string Retrait = "-";
+
+    public const string AucunCanalCreation = "Aucun canal de validation ne fonctionne : le compte serait inutilisable, car chaque action demande un code. " +
+        "Réglez le modem GSM (SMS) ou le serveur e-mail, dans Administration › Notifications, puis recommencez. Compte non créé.";
+
+    public const string DernierCanal = "Impossible de retirer le dernier canal vérifié : il faut au moins un téléphone ou une adresse e-mail vérifié. Rien n'a été modifié.";
+
+    /// <summary>Canaux souhaités d'après la saisie : vide = inchangé, « - » = retirer, sinon nouvelle valeur (format contrôlé, numéro normalisé).</summary>
+    public static (string? Telephone, string? Email) Souhaites(CompteSuperAdmin? actuel, string? saisieTelephone, string? saisieEmail)
+    {
+        string? tel = actuel?.Telephone, mail = actuel?.Email;
+        if (saisieTelephone?.Trim() == Retrait) tel = null;
+        else if (!string.IsNullOrWhiteSpace(saisieTelephone))
+        {
+            if (!RegleDestinataire.EstMobile(saisieTelephone))
+                throw new RegleMetierException("Téléphone invalide : mobile 05, 06 ou 07 suivi de 8 chiffres, ou +213.");
+            tel = RegleDestinataire.NormaliserTelephone(saisieTelephone);
+        }
+        if (saisieEmail?.Trim() == Retrait) mail = null;
+        else if (!string.IsNullOrWhiteSpace(saisieEmail))
+        {
+            if (!RegleDestinataire.EstEmail(saisieEmail)) throw new RegleMetierException("Adresse e-mail invalide.");
+            mail = saisieEmail.Trim();
+        }
+        if (string.IsNullOrWhiteSpace(tel) && string.IsNullOrWhiteSpace(mail))
+            throw new RegleMetierException(actuel is null ? "Au moins un canal est obligatoire : un téléphone mobile (SMS) ou une adresse e-mail." : DernierCanal);
+        return (string.IsNullOrWhiteSpace(tel) ? null : tel, string.IsNullOrWhiteSpace(mail) ? null : mail);
+    }
+
+    /// <summary>Un canal est-il nouveau (ou modifié) et donc à vérifier par un code ?</summary>
+    public static bool ADeVerifier(string? ancien, string? souhaite) =>
+        souhaite is not null && !string.Equals(ancien?.Trim(), souhaite.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Canaux à enregistrer après les vérifications : un canal modifié et non vérifié garde son ancienne valeur (ou reste absent à la création).
+    /// Aucun canal vérifié : refus (création : message des réglages à faire ; modification : rien n'est modifié).
+    /// </summary>
+    public static (string? Telephone, string? Email) Retenir(CompteSuperAdmin? actuel, (string? Telephone, string? Email) souhaites,
+        bool telephoneVerifie, bool emailVerifie)
+    {
+        var tel = souhaites.Telephone is null ? null : !ADeVerifier(actuel?.Telephone, souhaites.Telephone) || telephoneVerifie ? souhaites.Telephone : actuel?.Telephone;
+        var mail = souhaites.Email is null ? null : !ADeVerifier(actuel?.Email, souhaites.Email) || emailVerifie ? souhaites.Email : actuel?.Email;
+        if (string.IsNullOrWhiteSpace(tel) && string.IsNullOrWhiteSpace(mail))
+            throw new RegleMetierException(actuel is null ? AucunCanalCreation : DernierCanal);
+        return (tel, mail);
+    }
+}
 
 /// <summary>
 /// Où le même code est réellement parti : numéro et adresse masqués, null si le canal n'a pas fonctionné.
 /// Les messages d'échec (techniques) ne servent qu'au journal du serveur.
 /// </summary>
-public sealed record ResultatEnvoi(string? Sms, string? Email, string? EchecSms = null, string? EchecEmail = null)
+public sealed record ResultatEnvoi(string? Sms, string? Email, string? EchecSms = null, string? EchecEmail = null, bool CanalUnique = false)
 {
     /// <summary>Canaux utilisés : « SMS et e-mail », « SMS » ou « e-mail ».</summary>
     public string Canal => Sms is not null && Email is not null ? "SMS et e-mail" : Sms is not null ? "SMS" : "e-mail";
@@ -48,7 +112,8 @@ public sealed record ResultatEnvoi(string? Sms, string? Email, string? EchecSms 
     };
 
     /// <summary>Phrase montrée au super admin ; un canal en échec est dit.</summary>
-    public string Message => $"Code envoyé {Libelle}" + (Sms is null && EchecSms is not null ? " ; SMS non parti" : Email is null && EchecEmail is not null ? " ; e-mail non parti" : "");
+    public string Message => $"Code envoyé {Libelle}" + (Sms is null && EchecSms is not null ? " ; SMS non parti" : Email is null && EchecEmail is not null ? " ; e-mail non parti" : "")
+        + (CanalUnique ? " (seul canal vérifié du compte)" : "");
 }
 
 /// <summary>Demande de validation envoyée : où le code est parti (numéros et adresses masqués) et jusqu'à quand il vaut.</summary>
@@ -220,10 +285,13 @@ public sealed class EnvoiCodeSuperAdmin(
     ICompteSuperAdmin comptes, IEnvoiSms sms, IEnvoiEmail email, IProtectionSecret secrets, INotificationsDepot? depot = null,
     Action<string>? signaler = null)
 {
-    /// <summary>Action sensible ou validation d'identité : SMS au numéro du compte (ou au nouveau numéro à vérifier) et e-mail à l'adresse du compte.</summary>
+    /// <summary>
+    /// Action sensible ou validation d'identité : le même code part sur chaque canal vérifié du compte (SMS au téléphone, e-mail à l'adresse) ;
+    /// un compte à un seul canal ne reçoit que sur celui-là. Avec un nouveau numéro : SMS à ce numéro seulement.
+    /// </summary>
     public Task<ResultatEnvoi> EnvoyerAsync(CompteSuperAdmin compte, string? numero, string texte, CancellationToken ct = default) =>
         numero is null
-            ? EnvoyerCoreAsync(compte, compte.Telephone, compte.Email, true, true, texte, ct)
+            ? EnvoyerCoreAsync(compte, compte.Telephone, compte.Email, compte.ASms, compte.AEmail, texte, ct, compte.NombreCanaux == 1)
             // Nouveau numéro : le code ne part que par SMS à ce numéro (l'e-mail ne prouve pas le numéro)
             : EnvoyerCoreAsync(compte, numero, compte.Email, true, false, texte, ct);
 
@@ -231,9 +299,11 @@ public sealed class EnvoiCodeSuperAdmin(
     public Task<ResultatEnvoi> EnvoyerAAdresseAsync(CompteSuperAdmin compte, string adresse, string texte, CancellationToken ct = default) =>
         EnvoyerCoreAsync(compte, compte.Telephone, adresse, false, true, texte, ct);
 
-    private async Task<ResultatEnvoi> EnvoyerCoreAsync(CompteSuperAdmin compte, string telephone, string adresse, bool parSms, bool parEmail,
-        string texte, CancellationToken ct)
+    private async Task<ResultatEnvoi> EnvoyerCoreAsync(CompteSuperAdmin compte, string? telephone, string? adresse, bool parSms, bool parEmail,
+        string texte, CancellationToken ct, bool canalUnique = false)
     {
+        if (!parSms && !parEmail)
+            throw new RegleMetierException("Ce compte n'a aucun canal vérifié : recréez-le avec Pharma.Api.exe --super-admin.");
         var enBase = await ReglagesBaseAsync(ct);
         var essais = new List<(CopieEnvoi Reglages, string Origine)>();
         if (enBase is not null) essais.Add((enBase, "réglages de la base"));
@@ -252,8 +322,8 @@ public sealed class EnvoiCodeSuperAdmin(
                 else
                     try
                     {
-                        await sms.EnvoyerAsync(reglages.ModemPort, telephone, TexteSms.Preparer(texte), ct);
-                        smsOk = RegleDestinataire.MasquerTelephone(telephone);
+                        await sms.EnvoyerAsync(reglages.ModemPort, telephone!, TexteSms.Preparer(texte), ct);
+                        smsOk = RegleDestinataire.MasquerTelephone(telephone!);
                     }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
@@ -269,8 +339,8 @@ public sealed class EnvoiCodeSuperAdmin(
                     try
                     {
                         await email.EnvoyerAsync(new ConnexionSmtp(reglages.SmtpServeur!, reglages.SmtpPort, reglages.SmtpTls, reglages.SmtpExpediteur!, reglages.SmtpIdentifiant, reglages.SmtpMotDePasse),
-                            adresse, "Code de validation du super admin", texte, null, ct);
-                        emailOk = RegleDestinataire.MasquerEmail(adresse);
+                            adresse!, "Code de validation du super admin", texte, null, ct);
+                        emailOk = RegleDestinataire.MasquerEmail(adresse!);
                     }
                     catch (Exception e) when (e is not OperationCanceledException)
                     {
@@ -293,10 +363,11 @@ public sealed class EnvoiCodeSuperAdmin(
             var detail = new List<string>();
             if (echecSms is not null) detail.Add($"SMS : {echecSms}");
             if (echecEmail is not null) detail.Add($"e-mail : {echecEmail}");
-            throw new RegleMetierException($"Code non envoyé, ni par SMS ni par e-mail ({string.Join(" ; ", detail)}). Vérifiez le modem GSM et le serveur e-mail " +
+            var canaux = parSms && parEmail ? "ni par SMS ni par e-mail" : parSms ? "par SMS (seul canal du compte)" : "par e-mail (seul canal du compte)";
+            throw new RegleMetierException($"Code non envoyé, {canaux} ({string.Join(" ; ", detail)}). Vérifiez le modem GSM et le serveur e-mail " +
                                            "(Administration › Notifications au titulaire), ou restaurez depuis le PC serveur (scripts\restaurer_pharmacie.ps1).");
         }
-        return new ResultatEnvoi(smsOk, emailOk, echecSms, echecEmail);
+        return new ResultatEnvoi(smsOk, emailOk, echecSms, echecEmail, canalUnique);
     }
 
     /// <summary>Réglages lus en base ; null si elle ne répond pas (détruite, en cours de restauration…).</summary>
@@ -381,7 +452,7 @@ public sealed class DemanderValidationSuperAdmin(
     }
 }
 
-/// <summary>Création du compte sur le PC serveur (commande Pharma.Api.exe --super-admin) : téléphone et e-mail obligatoires.</summary>
+/// <summary>Création du compte sur le PC serveur (commande Pharma.Api.exe --super-admin) : au moins un canal (téléphone ou e-mail), déjà vérifié par l'appelant.</summary>
 public sealed class CreerCompteSuperAdmin(ICompteSuperAdmin comptes, Administration.IHacheurMotDePasse hacheur)
 {
     public const int LongueurMin = 12;
@@ -393,16 +464,19 @@ public sealed class CreerCompteSuperAdmin(ICompteSuperAdmin comptes, Administrat
         if (motDePasse is null || motDePasse.Length < LongueurMin)
             throw new RegleMetierException($"Mot de passe de {LongueurMin} caractères au moins.");
         if (motDePasse != confirmation) throw new RegleMetierException("Les deux mots de passe sont différents.");
-        if (!RegleDestinataire.EstMobile(telephone))
-            throw new RegleMetierException("Téléphone obligatoire : mobile 05, 06 ou 07 suivi de 8 chiffres, ou +213.");
-        if (!RegleDestinataire.EstEmail(email)) throw new RegleMetierException("E-mail obligatoire (secours si le SMS ne part pas).");
+        var (aTel, aMail) = (!string.IsNullOrWhiteSpace(telephone), !string.IsNullOrWhiteSpace(email));
+        if (!aTel && !aMail) throw new RegleMetierException("Au moins un canal est obligatoire : un téléphone mobile (SMS) ou une adresse e-mail.");
+        if (aTel && !RegleDestinataire.EstMobile(telephone))
+            throw new RegleMetierException("Téléphone invalide : mobile 05, 06 ou 07 suivi de 8 chiffres, ou +213.");
+        if (aMail && !RegleDestinataire.EstEmail(email)) throw new RegleMetierException("Adresse e-mail invalide.");
     }
 
-    public CompteSuperAdmin Executer(string identifiant, string motDePasse, string confirmation, string telephone, string email)
+    public CompteSuperAdmin Executer(string identifiant, string motDePasse, string confirmation, string? telephone, string? email)
     {
         Verifier(identifiant, motDePasse, confirmation, telephone, email);
         var compte = new CompteSuperAdmin(identifiant.Trim(), hacheur.Hacher(motDePasse),
-            RegleDestinataire.NormaliserTelephone(telephone), email.Trim(), comptes.Lire()?.Envoi, comptes.Lire()?.DossierSauvegardes);
+            string.IsNullOrWhiteSpace(telephone) ? null : RegleDestinataire.NormaliserTelephone(telephone),
+            string.IsNullOrWhiteSpace(email) ? null : email.Trim(), comptes.Lire()?.Envoi, comptes.Lire()?.DossierSauvegardes);
         comptes.Enregistrer(compte);
         return compte;
     }
