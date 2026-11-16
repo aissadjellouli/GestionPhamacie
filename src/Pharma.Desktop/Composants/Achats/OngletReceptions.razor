@@ -566,8 +566,10 @@ else
 @code {
     // En attente : une liste à la fois quand les deux en ont (écran fixe) ; les écarts à valider d'abord s'il y en a
     private string? partieChoisie;
-    private string partieAttente { get => partieChoisie ?? (comptages.Any(c => c.Statut == "ecart") ? "comptees" : "receptions"); set => partieChoisie = value; }
-    private bool DeuxListesAttente => Vue == "attente" && attentes.Count > 0 && comptages.Count > 0 && resultat is null
+    // Aucune réception en attente mais des livraisons comptées (2026-11-16) : les deux pastilles restent, « Livraisons comptées » d'abord
+    // (la liste vide des réceptions et celle des livraisons empilées faisaient défiler la page)
+    private string partieAttente { get => partieChoisie ?? (attentes.Count == 0 || comptages.Any(c => c.Statut == "ecart") ? "comptees" : "receptions"); set => partieChoisie = value; }
+    private bool DeuxListesAttente => Vue == "attente" && comptages.Count > 0 && resultat is null
         // Facture déjà validée avec un écart : la livraison n'est plus « en saisie », les deux pastilles restent proposées (2026-11-15)
         && (ecartFacture is not null || (aFacturer is null && aRecompter is null));
 

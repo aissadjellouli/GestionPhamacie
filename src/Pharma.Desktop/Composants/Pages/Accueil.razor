@@ -92,6 +92,8 @@
         }
         else
         {
+            @* Écran fixe (2026-11-16) : les tuiles défilent dans leur cadre si elles dépassent la fenêtre, jamais la page *@
+            <div class="cadre-defilant accueil-tuiles">
             @if (jour is { } j)
             {
                 @* Ventes du jour : droits « rapports.ventes » et « caisse.voir_ecart » (sans lui, le chiffre trahirait l'attendu du tiroir :
@@ -243,6 +245,7 @@
                     }
                 </div>
             }
+            </div>
         }
     </div>
 </div>

@@ -61,6 +61,32 @@ poste de référence, zoom 100 %). Seul un tableau défile, dans son cadre (règ
 dépasse la fenêtre est **découpé en rubriques** avec le menu vertical à gauche (ci-dessous) : une rubrique = ce qui tient dans
 la fenêtre. Exceptions : les fenêtres au-dessus de l'écran (`.voile`), qui défilent dans leur cadre.
 
+### Vérification de l’écran fixe
+
+**Méthode de mesure** (poste lancé à 1 536 × 890, zoom 100 %, WebView2 ouvert au débogage distant) : sur chaque écran, chaque
+rubrique (`?rubrique=`, `?onglet=`, `?vue=`) et les états qui ajoutent du contenu (formulaires « Nouveau … », panneaux
+dépliés), la valeur `document.scrollingElement.scrollHeight - innerHeight` doit valoir **0**. Un dépassement se corrige
+dans cet ordre : contenu dans un cadre défilant (`.tableau-cadre` ou `.cadre-defilant`, hauteur ajustée par `poste.js` ;
+`.cadre-unique` pour un seul cadre englobant), éléments regroupés sur une ligne ou en colonnes, sinon rubriques à gauche.
+Aucune information n’est masquée pour gagner de la place. Accueil : les tuiles (ventes du jour, à faire, contrôle) sont
+dans un cadre défilant (`.accueil-tuiles`), grille dense (tuiles de 150 px au moins).
+
+Le test `tests/Pharma.Architecture.Tests/EcranFixeTests.cs` exige que chaque écran du poste (`@page`) figure dans la liste
+ci-dessous : un nouvel écran est mesuré, puis ajouté ici avec la date.
+
+**Écrans vérifiés le 2026-11-16 (0 px partout ; titulaire, toutes rubriques ; Accueil et Caisse aussi en assistant et
+vendeur)** : `/`, `/accueil`, `/caisse`, `/caisse/etat`, `/cloture`, `/stock`, `/stock/etiquettes`, `/stock/registre`,
+`/inventaire`, `/tracabilite`, `/achats`, `/factures`, `/dettes`, `/tresorerie`, `/financements`, `/rapports`,
+`/surveillance`, `/surveillance/risques`, `/surveillance/tiroir`, `/bordereaux-chifa`, `/chifa`, `/patients/droits-chifa`,
+`/admin/caisse`, `/admin/centres-payeurs`, `/admin/doublons-import`, `/admin/conflits-facture-chifa`, `/admin/indications`,
+`/admin/motifs`, `/admin/prestations`, `/admin/controle-interne`, `/admin/droits`, `/admin/emplacements`,
+`/admin/imprimantes`, `/admin/nomenclature`, `/admin/notifications`, `/admin/pharmacie`, `/admin/reprise`,
+`/admin/restauration`, `/admin/sauvegardes`, `/admin/seuils`, `/guide`, `/mon-code`, `/mot-de-passe`.
+Corrigés ce jour : Accueil (27 px), Administration › Contrôle interne (29 px, horaires sous « Stock et réception » sur une
+ligne), Trésorerie › Chèques à remettre (4 632 px, liste en cadre défilant) et › Caisses à verser (10 px), Achats ›
+Réceptions › En attente (272 px : pastilles dès qu’il y a des livraisons comptées), Achats › À commander avec un produit
+choisi (33 px : produit, bouton et note sur une ligne).
+
 ### Écran trop chargé : menu vertical de rubriques
 
 Un écran qui empile trop de panneaux est découpé en **rubriques**, avec le menu vertical de l'Administration (même rendu :

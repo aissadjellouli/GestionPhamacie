@@ -39,10 +39,6 @@
                         <div class="reglage-ligne"><label for="sv-remises">Ventes avec remise</label><input id="sv-remises" type="number" min="1" @bind="r.SeuilRemises" /></div>
                         <div class="reglage-ligne"><label for="sv-remises-p">Remises au même patient (30 jours)</label><input id="sv-remises-p" type="number" min="1" @bind="r.SeuilRemisesPatient" /></div>
                         <div class="reglage-ligne"><label for="sv-baisses">Baisses de prix (hors titulaire)</label><input id="sv-baisses" type="number" min="1" @bind="r.SeuilBaissesPrix" /></div>
-                        <h3 id="t-horaires" style="margin: 8px 0 0">Horaires d’ouverture</h3>
-                        <p class="detail" style="margin: 0">Une vente encaissée en dehors crée une anomalie urgente. Vide : pas de contrôle (garde, horaires variables).</p>
-                        <div class="reglage-ligne"><label for="sv-ouverture">Ouverture</label><input id="sv-ouverture" data-champ="heure_ouverture" type="time" @bind="r.HeureOuverture" /></div>
-                        <div class="reglage-ligne"><label for="sv-fermeture">Fermeture</label><input id="sv-fermeture" type="time" @bind="r.HeureFermeture" /></div>
                     </section>
 
                     <section class="panneau" aria-labelledby="t-stock">
@@ -55,6 +51,10 @@
                         <div class="reglage-ligne"><label for="sv-avoir">Retour fournisseur sans avoir (après … jours)</label><input id="sv-avoir" data-champ="jours_avoir" type="number" min="1" max="365" @bind="r.JoursAvoirRetour" /></div>
                         <label class="case" style="display: flex; gap: 8px; align-items: flex-start; margin-top: 4px"><input type="checkbox" @bind="r.ReceptionAveugle" />
                             <span>Réception à l’aveugle : les boîtes sont comptées sans voir le bon de livraison, puis la facture est saisie et comparée (un écart bloque la réception jusqu’à votre validation).</span></label>
+                        @* Horaires placés sous « Stock et réception » (2026-11-16) : la colonne Caisse dépassait la fenêtre (écran fixe) *@
+                        <h3 id="t-horaires" style="margin: 8px 0 0">Horaires d’ouverture</h3>
+                        <p class="detail" style="margin: 0">Une vente encaissée en dehors crée une anomalie urgente. Vide : pas de contrôle (garde, horaires variables).</p>
+                        <div class="reglage-ligne" style="grid-template-columns: auto 1fr auto 1fr; gap: 8px; align-items: center"><label for="sv-ouverture">Ouverture</label><input id="sv-ouverture" data-champ="heure_ouverture" type="time" @bind="r.HeureOuverture" /><label for="sv-fermeture">Fermeture</label><input id="sv-fermeture" type="time" @bind="r.HeureFermeture" /></div>
                     </section>
 
                     <section class="panneau" aria-labelledby="t-credits">

@@ -44,6 +44,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{
 		docs\scanner-mobile.md = docs\scanner-mobile.md
 		docs\securite-et-droits.md = docs\securite-et-droits.md
 		docs\tracabilite.md = docs\tracabilite.md
+		docs\analyse-ecarts.md = docs\analyse-ecarts.md
+		docs\opportunites-logiciels-algerie.md = docs\opportunites-logiciels-algerie.md
+		docs\pharma-officine-differenciation.md = docs\pharma-officine-differenciation.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "adr", "adr", "{35D7AF71-198B-4464-B00C-B4E49C87A256}"
@@ -258,6 +261,40 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{5C0D
 		scripts\sauvegarde_pharmacie.ps1 = scripts\sauvegarde_pharmacie.ps1
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "taches", "taches", "{AFEB1849-9F28-4855-ADCD-9D2A0C55F685}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2026-11-15-analyse-wasfa", "2026-11-15-analyse-wasfa", "{F486720F-41B3-48A1-9C16-8F142BEE192A}"
+	ProjectSection(SolutionItems) = preProject
+		docs\taches\2026-11-15-analyse-wasfa\analyse-wasfa.md = docs\taches\2026-11-15-analyse-wasfa\analyse-wasfa.md
+		docs\taches\2026-11-15-analyse-wasfa\echanges.md = docs\taches\2026-11-15-analyse-wasfa\echanges.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2026-11-15-modele-wasfa", "2026-11-15-modele-wasfa", "{70E526E0-159C-473D-A0DB-CD9267005570}"
+	ProjectSection(SolutionItems) = preProject
+		docs\taches\2026-11-15-modele-wasfa\contrat-api.md = docs\taches\2026-11-15-modele-wasfa\contrat-api.md
+		docs\taches\2026-11-15-modele-wasfa\echanges.md = docs\taches\2026-11-15-modele-wasfa\echanges.md
+		docs\taches\2026-11-15-modele-wasfa\lot0-constat.md = docs\taches\2026-11-15-modele-wasfa\lot0-constat.md
+		docs\taches\2026-11-15-modele-wasfa\lot2-partie-b.md = docs\taches\2026-11-15-modele-wasfa\lot2-partie-b.md
+		docs\taches\2026-11-15-modele-wasfa\modele-wasfa.md = docs\taches\2026-11-15-modele-wasfa\modele-wasfa.md
+		docs\taches\2026-11-15-modele-wasfa\plan.md = docs\taches\2026-11-15-modele-wasfa\plan.md
+		docs\taches\2026-11-15-modele-wasfa\recette.md = docs\taches\2026-11-15-modele-wasfa\recette.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2026-11-15-recette-complete", "2026-11-15-recette-complete", "{770091CC-9838-4C1C-A0B6-AB6C69A30089}"
+	ProjectSection(SolutionItems) = preProject
+		docs\taches\2026-11-15-recette-complete\conception-chifa-mdn.md = docs\taches\2026-11-15-recette-complete\conception-chifa-mdn.md
+		docs\taches\2026-11-15-recette-complete\demande-cnas.md = docs\taches\2026-11-15-recette-complete\demande-cnas.md
+		docs\taches\2026-11-15-recette-complete\echanges.md = docs\taches\2026-11-15-recette-complete\echanges.md
+		docs\taches\2026-11-15-recette-complete\recette.md = docs\taches\2026-11-15-recette-complete\recette.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "2026-11-15-revue-develop", "2026-11-15-revue-develop", "{F68ED391-69E0-4AA3-A329-7B3FF0263B4E}"
+	ProjectSection(SolutionItems) = preProject
+		docs\taches\2026-11-15-revue-develop\echanges.md = docs\taches\2026-11-15-revue-develop\echanges.md
+		docs\taches\2026-11-15-revue-develop\review.md = docs\taches\2026-11-15-revue-develop\review.md
+		docs\taches\2026-11-15-revue-develop\securite.md = docs\taches\2026-11-15-revue-develop\securite.md
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -305,6 +342,11 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{F68ED391-69E0-4AA3-A329-7B3FF0263B4E} = {AFEB1849-9F28-4855-ADCD-9D2A0C55F685}
+		{770091CC-9838-4C1C-A0B6-AB6C69A30089} = {AFEB1849-9F28-4855-ADCD-9D2A0C55F685}
+		{70E526E0-159C-473D-A0DB-CD9267005570} = {AFEB1849-9F28-4855-ADCD-9D2A0C55F685}
+		{F486720F-41B3-48A1-9C16-8F142BEE192A} = {AFEB1849-9F28-4855-ADCD-9D2A0C55F685}
+		{AFEB1849-9F28-4855-ADCD-9D2A0C55F685} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{6230CD90-B24B-45AC-86F9-2336EFECC80D} = {0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1}
 		{35D7AF71-198B-4464-B00C-B4E49C87A256} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{E1DF76AA-DD72-4CD5-8AD0-81C6533C0213} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}

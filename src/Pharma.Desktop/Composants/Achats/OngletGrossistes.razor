@@ -31,6 +31,9 @@
         </div>
     </section>
 }
+@* Fiche ouverte : elle prend la place de la liste, comme dans l'Administration (écran fixe, 2026-11-16) *@
+@if (fiche is null)
+{
 @* Liste courte (grossistes de la pharmacie) : filtrée et paginée sur le poste, comme le veut la règle des listes *@
 <div class="filtres-liste" role="search" aria-label="Filtrer les grossistes">
     <div class="champ" style="flex: 1 1 240px"><label for="fg-texte">Nom, téléphone ou e-mail</label>
@@ -70,6 +73,7 @@
 </section>
 <Pagination Total="Filtres.Count" Numero="page" Taille="taille" Libelle="Pages des grossistes" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
 <p class="detail" style="margin: 0">La dette augmente du montant de chaque réception et diminue de chaque avoir et de chaque règlement. Un grossiste désactivé n’est plus proposé aux commandes ni aux réceptions ; son historique est conservé.</p>
+}
 
 @code {
     // Dette envers les grossistes : envoyée par le serveur seulement avec le droit « achats.regler » (ou au titulaire), colonne cachée sinon

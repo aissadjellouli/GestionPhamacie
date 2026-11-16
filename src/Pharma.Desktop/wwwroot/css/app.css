@@ -390,6 +390,9 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
   background: var(--surface); border-right: 1px solid var(--bordure); }
 /* Menu et contenu au-dessus de la colonne (sinon le fond de la page la recouvre) ; l'en-tête (z-index 20) reste au-dessus de tout */
 .page.admin > *, .page.avec-menu > * { position: relative; z-index: 1; }
+/* Fenêtre (voile) ouverte depuis le menu ou le contenu (ex. « Ouvrir le tiroir », F8) : la colonne qui la contient passe devant l'autre,
+   sinon la fenêtre reste enfermée sous la caisse (même niveau 1) et s'affiche derrière la recherche de produit (2026-11-16) */
+.page.admin > *:has(.voile), .page.avec-menu > *:has(.voile) { z-index: 41; }
 .admin-nav, .nav-laterale { flex: 0 0 var(--largeur-menu, 220px); box-sizing: border-box; padding: 0 12px; display: flex; flex-direction: column; gap: 2px; }
 .admin-nav a, .admin-nav .nav-inactif, .nav-laterale a { padding: 10px 12px; border-radius: 6px; font-size: 14px; color: var(--texte-3); text-decoration: none; }
 .admin-nav a.active, .nav-laterale a.active { color: var(--accent-texte); background: var(--accent-clair); font-weight: 600; box-shadow: inset 3px 0 0 var(--ambre); }
@@ -823,7 +826,9 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 /* Accueil, synthèse du jour (2026-11-15) : tuiles compactes, trois sections tenant dans la fenêtre sans défilement */
 .section-accueil { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--texte-2); margin: 14px 0 8px; }
 .section-accueil .detail { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
-.tuiles-compactes { grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px; }
+.tuiles-compactes { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+/* Accueil (2026-11-16) : zone des tuiles = cadre défilant (hauteur ajustée par poste.js) ; la page ne défile jamais */
+.accueil-tuiles > .section-accueil:first-child { margin-top: 0; }
 .tuiles-compactes .tuile { padding: 10px 14px; gap: 2px; }
 .tuiles-compactes .tuile-valeur { font-size: 22px; }
 .tuiles-compactes .tuile-valeur.petite { font-size: 18px; }

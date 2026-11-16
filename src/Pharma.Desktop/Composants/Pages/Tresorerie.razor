@@ -92,6 +92,8 @@
             }
             else
             {
+                @* Caisses dans un cadre défilant (2026-11-16) : la page ne défile jamais *@
+                <div class="cadre-defilant" style="display: grid; gap: 8px; align-content: start">
                 @foreach (var c in caisses)
                 {
                     <div class="carte" style="display: grid; gap: 6px">
@@ -103,6 +105,7 @@
                         </div>
                     </div>
                 }
+                </div>
                 <p class="detail" style="margin: 0">Proposé : le compté moins le fond de caisse qui reste dans le tiroir.</p>
             }
 
@@ -112,8 +115,9 @@
             <div class="achats-ligne" style="align-items: flex-end">
                 <div class="champ" style="flex: 0 0 150px"><label for="v-poste">Montant (DA)</label><input id="v-poste" type="number" min="0.01" step="0.01" @bind="prelevement" /></div>
                 <button type="button" class="btn" disabled="@(enCours || prelevement <= 0)" @onclick="PreleverAsync">Porter au coffre</button>
+                @* Note sur la même ligne (2026-11-16) : écran fixe *@
+                <p class="detail" style="margin: 0; flex: 1 1 300px; align-self: center">Pendant la journée : l’argent sort du tiroir ouvert de « @Config.Poste », son attendu de clôture diminue d’autant.</p>
             </div>
-            <p class="detail" style="margin: 0">Pendant la journée : l’argent sort du tiroir ouvert de « @Config.Poste », son attendu de clôture diminue d’autant.</p>
 
         </section>
                 break;
@@ -127,6 +131,8 @@
             }
             else
             {
+                @* Liste des chèques dans un cadre défilant (2026-11-16) : la page ne défile jamais *@
+                <div class="cadre-defilant" style="display: grid; gap: 4px; align-content: start">
                 @foreach (var q in cheques)
                 {
                     <label class="case">
@@ -134,6 +140,7 @@
                         <span>@Libelles.Dinars(q.Montant, 2) · @q.Origine@if (q.Patient is { } p) { <text> · </text><LienContact Type="patient" Id="q.PatientId" Nom="@p" /> } <span class="detail">(@Libelles.DateHeureLocale(q.Date))</span></span>
                     </label>
                 }
+                </div>
                 <div class="achats-ligne" style="align-items: flex-end">
                     <div class="champ" style="flex: 1 1 150px">
                         <label for="q-banque">Banque</label>

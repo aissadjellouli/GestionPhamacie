@@ -982,19 +982,44 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     // ---- Achats ------------------------------------------------------------------
 
-    /// <summary>Barre d'état : le serveur répond-il ? (route publique /api/sante, 4 secondes au plus)</summary>
+    /// <summary>
+    /// Barre d'état : le serveur répond-il ? (route publique /api/sante, 4 secondes au plus). Sans exception (2026-11-15) : le port est
+    /// d'abord testé par une connexion qui renvoie un code d'erreur au lieu de lever une exception ; la requête n'est jamais annulée
+    /// pendant qu'on l'attend (on cesse seulement de l'attendre après 4 secondes) ; son issue, même en échec, est relevée à part. Le
+    /// débogueur ne s'arrête donc plus sur une TaskCanceledException quand l'API est arrêtée, en pause ou lente à démarrer.
+    /// </summary>
     public async Task<bool> ServeurJoignableAsync()
     {
-        try
+        var delai = TimeSpan.FromSeconds(4);
+        if (http.BaseAddress is not { } adresse || !await PortOuvertAsync(adresse.Host, adresse.Port, delai)) return false;
+
+        // Requête bornée à 30 s en arrière-plan (jamais attendue au-delà de 4 s) ; issue relevée sans relancer d'exception
+        var borne = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var requete = http.GetAsync("api/sante", HttpCompletionOption.ResponseHeadersRead, borne.Token);
+        _ = requete.ContinueWith(t =>
         {
-            using var delai = new CancellationTokenSource(TimeSpan.FromSeconds(4));
-            using var rep = await http.GetAsync("api/sante", delai.Token);
-            return rep.IsSuccessStatusCode;
-        }
-        catch (Exception ex) when (ex is OperationCanceledException || EstEchecAppel(ex))
-        {
-            return false;
-        }
+            if (t.IsCompletedSuccessfully) t.Result.Dispose();
+            _ = t.Exception;
+            borne.Dispose();
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+        var premier = await Task.WhenAny(requete, Task.Delay(delai));
+        return premier == requete && requete.IsCompletedSuccessfully && requete.Result.IsSuccessStatusCode;
+    }
+
+    /// <summary>Connexion TCP de test sans exception (code d'erreur du socket) ; abandonnée après le délai.</summary>
+    private static async Task<bool> PortOuvertAsync(string hote, int port, TimeSpan delai)
+    {
+        var fin = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var args = new System.Net.Sockets.SocketAsyncEventArgs { RemoteEndPoint = new DnsEndPoint(hote, port) };
+        args.Completed += (_, e) => fin.TrySetResult(e.SocketError == System.Net.Sockets.SocketError.Success);
+        if (!System.Net.Sockets.Socket.ConnectAsync(System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp, args))
+            fin.TrySetResult(args.SocketError == System.Net.Sockets.SocketError.Success);
+        var premier = await Task.WhenAny(fin.Task, Task.Delay(delai));
+        if (premier != fin.Task) System.Net.Sockets.Socket.CancelConnectAsync(args);
+        var ouvert = premier == fin.Task && fin.Task.Result;
+        args.ConnectSocket?.Close();
+        return ouvert;
     }
 
     public Task<(EtatPosteDto?, string?)> EtatPosteAsync() => GetAsync<EtatPosteDto?>("api/etat-poste", null);

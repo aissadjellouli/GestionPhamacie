@@ -47,16 +47,17 @@
                     </div>
                     }
                 </div>
-                @if (produitChoisi is not null)
-                {
-                    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+                @* Produit choisi, bouton et note (ou message) sur une même ligne (2026-11-16) : le tableau garde sa place, la page ne défile pas *@
+                <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
+                    @if (produitChoisi is not null)
+                    {
                         <span>Choisi : <strong>@produitChoisi.NomCommercial</strong> · stock @produitChoisi.Stock</span>
                         <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => AjouterAsync(produitChoisi.Id)">Ajouter au bon</button>
-                    </div>
-                }
-                @if (MessageDansAjout && erreur is not null) { <div class="erreur" role="alert" style="padding: 6px 12px">@erreur</div> }
-                else if (MessageDansAjout && message is not null) { <div class="succes" role="status" style="padding: 6px 12px">@message</div> }
-                else { <p class="detail" style="margin: 0">Ajouté au bon en brouillon du grossiste (créé au besoin) ; sans prix, le dernier prix d’achat est repris.</p> }
+                    }
+                    @if (MessageDansAjout && erreur is not null) { <div class="erreur" role="alert" style="padding: 6px 12px; margin: 0; flex: 1 1 300px">@erreur</div> }
+                    else if (MessageDansAjout && message is not null) { <div class="succes" role="status" style="padding: 6px 12px; margin: 0; flex: 1 1 300px">@message</div> }
+                    else { <p class="detail" style="margin: 0; flex: 1 1 300px">Ajouté au bon en brouillon du grossiste (créé au besoin) ; sans prix, le dernier prix d’achat est repris.</p> }
+                </div>
             </section>
 
             <h2 id="t-sugg" style="margin: 0">À commander (ruptures et stocks critiques)</h2>

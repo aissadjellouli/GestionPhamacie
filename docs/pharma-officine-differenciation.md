@@ -16,7 +16,8 @@
 2. Propose ensuite un **plan de livraison par lots** respectant l'ordre de priorité de la section 3, et fais-le valider.
 3. Chaque module est un chantier back + front + BDD : utilise `/equipe` pour les modules P1 et P2.
 4. Les points marqués **[À VÉRIFIER]** sont des hypothèses réglementaires : ne pas les coder en dur, les rendre **paramétrables**, et les lister dans le rapport.
-5. Les interfaces avec des systèmes nationaux qui n'existent pas encore (sérialisation, répertoire des ordonnances, plateforme officines) doivent passer par une **couche d'abstraction (port/adaptateur)** avec une implémentation factice, pour brancher l'API réelle plus tard sans toucher au métier.
+5. **La section 4 bis (hébergement et données) est une contrainte bloquante** : toute dépendance externe ou tout choix d'infrastructure qui envoie des données personnelles hors d'Algérie doit être signalé et refusé.
+6. Les interfaces avec des systèmes nationaux qui n'existent pas encore (sérialisation, répertoire des ordonnances, plateforme officines) doivent passer par une **couche d'abstraction (port/adaptateur)** avec une implémentation factice, pour brancher l'API réelle plus tard sans toucher au métier.
 
 ---
 
@@ -148,6 +149,62 @@
 
 ---
 
+## 4 bis. Hébergement et protection des données (contrainte forte)
+
+### Cadre légal (résumé)
+- **Loi 18-07** (protection des données personnelles) : tout transfert de données personnelles à l'étranger exige une **autorisation préalable de l'ANPDP**, l'autorité de protection des données.
+- Selon une délibération de l'ANPDP, il y a transfert hors du territoire dès qu'**une entité étrangère héberge, stocke, traite ou accède aux données depuis l'étranger**. Un cloud étranger (AWS, Azure, OVH…) = transfert.
+- Sanctions : jusqu'à **5 ans de prison et 500 000 DA d'amende**.
+- **Données de santé = données sensibles** : registre des psychotropes (identité des patients), ventes Chifa, fiches clients.
+- Projet de loi modifiant la loi 18-07 : maintien de l'autorisation préalable pour tout transfert, et **délégué à la protection des données obligatoire** pour toute entité publique ou privée **[À VÉRIFIER]** : statut d'adoption.
+- **Conclusion : toutes les données personnelles et de santé sont hébergées en Algérie.** C'est aussi un argument commercial.
+
+### Règles pour le code et l'infrastructure
+1. **Base centrale, fichiers et sauvegardes en Algérie uniquement**, chez un hébergeur **autorisé par l'ARPCE** : AYRADE, ICOSNET, AT Cloud, Djezzy Cloud… La liste officielle est sur arpce.dz **[À VÉRIFIER]** au moment du choix.
+2. **Aucune donnée personnelle vers un service étranger**, et c'est le piège le plus courant. Interdit pour toute donnée patient ou client :
+   - envoi d'emails ou de SMS via des services étrangers (SendGrid, Twilio…) → passer par des opérateurs algériens ;
+   - suivi d'erreurs et télémétrie (Sentry SaaS, Application Insights, Google Analytics…) → auto-héberger (Sentry, Seq, Grafana/Loki) ou supprimer les données personnelles des journaux ;
+   - API d'IA étrangères sur des données patients ;
+   - CDN ou stockage objet étrangers pour des documents patients.
+   → Chaque intégration externe passe par une interface (port) ; une **revue de conformité** valide toute nouvelle dépendance.
+3. **Journaux applicatifs sans données personnelles** : masquage des noms, numéros de pièce et numéros d'assuré dans les logs (ajouter une règle dans l'agent `securite`).
+4. **Chiffrement** : TLS partout ; chiffrement au repos des colonnes sensibles (identité patient, numéro de pièce, numéro d'assuré) ; clés stockées hors de la base.
+5. **Hors ligne d'abord** (déjà prévu) : la base locale du poste de comptoir reste dans la pharmacie ; seule la synchronisation part vers le cloud algérien.
+6. **Droits des personnes** : export des données d'un patient, rectification, et effacement quand la loi le permet. Attention : le registre des psychotropes doit être conservé, donc **anonymisation** plutôt que suppression **[À VÉRIFIER]** : durée de conservation légale.
+7. **Traçabilité des accès** : journal de qui consulte quelles données patient, conservé et consultable.
+
+### Architecture d'hébergement cible (démarrage)
+Contexte : pas de région AWS, Azure ou GCP en Algérie ; l'offre locale est surtout de la location de serveurs virtuels (IaaS) ; **pas de base de données gérée** → PostgreSQL administré par nos soins.
+
+```
+[Pharmacie]                          [Cloud algérien autorisé ARPCE]
+Poste comptoir (base locale) ──TLS──▶ VPS 1 : reverse proxy (Nginx/Caddy) + API .NET + Angular (Docker)
+Mobile titulaire ────────────TLS──▶          │
+                                              ▼
+                                     VPS 2 : PostgreSQL (primaire)
+                                              │ réplication en continu
+                                              ▼
+                                     VPS 3 (autre hébergeur algérien) : PostgreSQL réplica + sauvegardes
+```
+
+- **Démarrage** : 2 serveurs de 4 à 8 Go de RAM (environ 12 000 à 34 000 DA par mois chacun chez AYRADE ; Octenium dès environ 2 000 à 5 000 DA par mois) suffisent pour quelques dizaines de pharmacies, puisque les ventes tournent en local.
+- **Sauvegardes** : `pg_dump` quotidien + archivage WAL pour restaurer à un instant précis (PITR, via pgBackRest ou WAL-G), chiffrées, copiées **chez un second hébergeur algérien** ; **test de restauration mensuel automatisé**.
+- **Déploiement** : Docker Compose au départ ; scripts d'infrastructure versionnés (Ansible ou scripts shell) ; aucun service managé étranger dans la chaîne de production.
+- **Supervision** : Prometheus + Grafana + Uptime Kuma auto-hébergés ; alertes vers des canaux qui ne transportent pas de données personnelles.
+- **Option** : infogérance proposée par l'hébergeur (ICOSNET la propose) si l'équipe ne veut pas administrer les serveurs.
+- **CI/CD** : le code peut rester sur GitHub ou Azure DevOps (pas de données personnelles dedans). Les **données de test sont synthétiques**, jamais une copie de base réelle.
+
+### Contrat avec l'hébergeur (à exiger)
+- Preuve de l'autorisation ARPCE et localisation exacte des centres de données.
+- Contrat de sous-traitance des données personnelles ; engagement de disponibilité (SLA) ; procédure en cas de violation de données.
+- Réversibilité : export complet des données et des sauvegardes en fin de contrat.
+
+### Obligations côté éditeur
+- Déclaration des traitements à l'ANPDP ; délégué à la protection des données dès que l'obligation est confirmée.
+- Contrat type de sous-traitance avec chaque pharmacie (la pharmacie est responsable du traitement, l'éditeur est sous-traitant).
+
+---
+
 ## 5. Commercialisation (pour information, hors périmètre technique)
 
 - **Cibles prioritaires** : les nouvelles officines, sans logiciel à remplacer. Un décret en préparation prévoit de traiter via une plateforme numérique les dossiers des pharmaciens en liste d'attente, ce qui pourrait entraîner une vague d'ouvertures.
@@ -180,4 +237,11 @@
 - Loi de finances 2026, article 51 bis : https://www.upgrowth.dz/loi-de-finances-2026-articles-cles-algerie
 - Projet de décret, exercice de la pharmacie : https://news.radioalgerie.dz/fr/node/77727
 - Tarifs concurrents : https://chifa.plus/ · http://xpertsoft-dz.com/tarifs.php · https://pharmapro.tkawen.com/
+- ANPDP, diffusion en ligne = transfert à l'étranger : https://www.tsa-algerie.com/?p=297365
+- Projet de loi modifiant la loi 18-07 : https://fr.apanews.net/?p=245610
+- Loi 18-07, sanctions : https://www.gide.com/sites/default/files/2023-07gide_alerteclient_anpdp_fr_7.pdf
+- Clouds algériens (comparatif) : https://algeriatech.news/?p=29728
+- Absence de région hyperscaler en Algérie : https://algeriatech.news/?p=18111
+- Offres AYRADE : https://www.whtop.com/fr/plans/ayrade.com/154618
+- Offres ICOSNET : https://icosnet.com.dz/wp-content/uploads/2025/08/CloudX.pdf
 - Part de marché (étude université de Sétif) : https://repository.univ-setif.dz/bitstreams/ac2e4408-7e60-4162-8684-3356523302aa/download

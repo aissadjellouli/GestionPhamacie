@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/Documents/">
+    <File Path="docs/analyse-ecarts.md" />
+    <File Path="docs/opportunites-logiciels-algerie.md" />
+    <File Path="docs/pharma-officine-differenciation.md" />
     <File Path="docs/a-faire.md" />
     <File Path="docs/acces-distant.md" />
     <File Path="docs/architecture.md" />
@@ -77,6 +80,30 @@
     <File Path="docs/maquettes/source/Reception.dc.html" />
     <File Path="docs/maquettes/source/Stock.dc.html" />
     <File Path="docs/maquettes/source/Tracabilite.dc.html" />
+  </Folder>
+  <Folder Name="/Documents/taches/2026-11-15-analyse-wasfa/">
+    <File Path="docs/taches/2026-11-15-analyse-wasfa/analyse-wasfa.md" />
+    <File Path="docs/taches/2026-11-15-analyse-wasfa/echanges.md" />
+  </Folder>
+  <Folder Name="/Documents/taches/2026-11-15-modele-wasfa/">
+    <File Path="docs/taches/2026-11-15-modele-wasfa/contrat-api.md" />
+    <File Path="docs/taches/2026-11-15-modele-wasfa/echanges.md" />
+    <File Path="docs/taches/2026-11-15-modele-wasfa/lot0-constat.md" />
+    <File Path="docs/taches/2026-11-15-modele-wasfa/lot2-partie-b.md" />
+    <File Path="docs/taches/2026-11-15-modele-wasfa/modele-wasfa.md" />
+    <File Path="docs/taches/2026-11-15-modele-wasfa/plan.md" />
+    <File Path="docs/taches/2026-11-15-modele-wasfa/recette.md" />
+  </Folder>
+  <Folder Name="/Documents/taches/2026-11-15-recette-complete/">
+    <File Path="docs/taches/2026-11-15-recette-complete/conception-chifa-mdn.md" />
+    <File Path="docs/taches/2026-11-15-recette-complete/demande-cnas.md" />
+    <File Path="docs/taches/2026-11-15-recette-complete/echanges.md" />
+    <File Path="docs/taches/2026-11-15-recette-complete/recette.md" />
+  </Folder>
+  <Folder Name="/Documents/taches/2026-11-15-revue-develop/">
+    <File Path="docs/taches/2026-11-15-revue-develop/echanges.md" />
+    <File Path="docs/taches/2026-11-15-revue-develop/review.md" />
+    <File Path="docs/taches/2026-11-15-revue-develop/securite.md" />
   </Folder>
   <Folder Name="/database/migration/">
     <File Path="database/migration/001_schema.sql" />
