@@ -1,6 +1,6 @@
 # Analyse des écarts : cible produit / dépôt actuel
 
-> Réponse au § 0 de `docs/pharma-officine-differenciation.md`. Analyse en lecture seule, au 16/11/2026 : aucun code, script ni réglage n'a été modifié.
+> Réponse au § 0 de la note de différenciation (note interne hors dépôt). Analyse en lecture seule, au 16/11/2026 : aucun code, script ni réglage n'a été modifié.
 > Notation : **[Constaté]** = vu dans le dépôt (fichier cité) ; **[Supposé]** = déduction à confirmer ; **[À VÉRIFIER]** = point réglementaire du document de cadrage.
 > Statuts : **Fait** / **Partiel** / **Absent**.
 
@@ -102,7 +102,7 @@ durée de traitement saisie à la caisse, nomenclature des antibiotiques et seui
 | Fonction | Statut | Constat |
 |---|---|---|
 | Assistant de reprise (produits, stock, lots, fournisseurs, clients, crédits) | **Fait** (générique) | Schéma `import` (`048`, `052`, `092`), `src/Pharma.Application/Reprise/Reprise.cs`, `RepriseSql.cs`, sources ODBC (Access, DBF, Firebird…) et CSV (`SourceOdbc.cs`, `LecteurCsv.cs`), correspondance proposée puis confirmée, anomalies bloquantes, tout ou rien, contrôle des totaux, doublons d'import (`AdminDoublonsImport.razor`, `093`). Règles : `docs/regles-metier.md` § Reprise. |
-| Profils par concurrent (Chifa Plus, XpertPharm, PharmaPro, Profficine) | **Absent** | Aucun profil nommé ; détection générique (`DetectionReprise.cs`). Formats réels [À VÉRIFIER]. |
+| Profils par logiciel précédent (modèles de reprise 1 à 4) | **Absent** | Aucun profil nommé ; détection générique (`DetectionReprise.cs`). Formats réels [À VÉRIFIER]. |
 | Historique Chifa | **Absent** | Non repris. |
 | Excel (.xlsx) direct | **Absent** | CSV et ODBC seulement [Supposé : export CSV demandé à l'utilisateur]. |
 | Rapport d'import avec anomalies | **Fait** | Compte rendu avant chargement, contrôle après chargement. |
@@ -111,7 +111,7 @@ durée de traitement saisie à la caisse, nomenclature des antibiotiques et seui
 | Multi-officines | **Absent** | Aucun `officine_id` ; `pharmacie` est une ligne unique. |
 | Pilotage mobile du titulaire | **Partiel** | `GET /api/pilotage` (`PilotageEndpoints.cs`, `src/Pharma.Application/Pilotage/Pilotage.cs`, `PilotageSql.cs`) : CA, caisses, alertes, pertes ; accessible hors pharmacie via VPN seulement (`docs/acces-distant.md`). Activité par employé : partielle (écarts par employé). |
 
-**Bilan M4 : Partiel** (reprise générique solide ; profils concurrents, xlsx, Chifa, résilience et multi-officines absents).
+**Bilan M4 : Partiel** (reprise générique solide ; profils des anciens logiciels, xlsx, Chifa, résilience et multi-officines absents).
 
 ### M5 — Pilotage financier
 
@@ -216,7 +216,7 @@ Colonne **Version** : **A** = faisable sur la **version actuelle** (installée d
 | 1 | Journaux sans données personnelles | Masquage dans `Pharma.Refus` et super admin, tests — **fait le 16/11/2026** (commit `b5b52bb`) | A → C | S | — | — | — |
 | 2 | P1 · M6a Brique d'intégrité | Fonction de hachage, chaînage générique, vérification planifiée + alerte titulaire, rôle propriétaire séparé | A → C | M | 111 | 0 | Algorithme, fréquence |
 | 3 | P1 · M6b Journal des ventes | `journal_vente` ajout seul chaîné, numérotation sans trou, clôtures journalières/mensuelles scellées, récap TVA | A → C | L | 112-113 | 2 | Format d'export DGI, durée 6 ans, TVA médicaments/parapharmacie |
-| 4 | P1 · M4a Reprise concurrents | Profils Chifa Plus / XpertPharm / PharmaPro / Profficine, import xlsx, historique Chifa | A → C | M par profil | 114 | exports réels | Format de chaque logiciel |
+| 4 | P1 · M4a Reprise des anciens logiciels | Modèles de reprise 1 à 4, import xlsx, historique Chifa | A → C | M par profil | 114 | exports réels | Format de chaque logiciel |
 | 5 | P1 · M4b Résilience | Mode dégradé si PC serveur indisponible : **A** = PC de secours / sauvegarde restaurable sur un autre poste (**A fait le 16/11/2026** : copie de secours vérifiée, test de restauration, bandeau poste, script de bascule ; **2e serveur fait le 16/11/2026** : réplication PostgreSQL en continu, API de secours en veille, bascule par une personne, export/import protégé de la clé de scellement, écran « 2e serveur », script 122) ; **C** = base de l'officine (PC serveur local, partagé par tous les postes) synchronisée avec le serveur central — pas de base par poste (décision du titulaire, 16/11/2026) | A puis C | L | — | décision | — |
 | 6 | P1 · M3a Multi-grossistes | `IGrossisteConnecteur` (fichier, e-mail), catalogue et dispo, comparaison, répartition de commande | A → C (API grossistes : C) | L | 115 | — | Formats grossistes |
 | 7 | P1 · M3b Ruptures et substitution | Historique ruptures, file patients en attente, liste blanche, génériques locaux, paramètre « équivalent exact seulement » | A → C | M | 116 | 6 | Consentement SMS/WhatsApp |
@@ -238,7 +238,7 @@ Principe (décision du titulaire, 16/11/2026) : la **version cloud part de la ve
 | Psychotropes (M2) | Registre chaîné, alertes, exports d'inspection, antibiotiques, connecteur du répertoire national en **factice** | Branchement réel quand le répertoire existera. |
 | Sérialisation (M1) | Lecture GS1, stock à la boîte, « jamais vendue deux fois », rappels de lot (déjà fait) ; connecteur de vérification **factice** et file d'attente | La vérification réelle demande Internet et l'API du MIPH. |
 | Ruptures (M3) | Multi-grossistes par **fichier ou e-mail**, historique des ruptures, patients en attente, substitution, liste blanche | Le partage entre officines est cloud. |
-| Changement de logiciel (M4) | Profils d'import des concurrents, import Excel, multi-postes (déjà fait) | — |
+| Changement de logiciel (M4) | Profils d'import des anciens logiciels, import Excel, multi-postes (déjà fait) | — |
 | Pilotage (M5) | Marges, stock dormant, périmés, rejets Chifa, suggestions | — |
 | Données de santé | Journaux sans données personnelles (fait), journal des accès, chiffrement des colonnes et des **sauvegardes**, anonymisation | Rien ne sort de l'officine : conforme § 4 bis par construction. |
 | Résilience | PC de secours ou restauration rapide de la sauvegarde sur un autre poste | Une seule base par officine, partagée par tous les postes. |
@@ -264,6 +264,10 @@ Principe (décision du titulaire, 16/11/2026) : la **version cloud part de la ve
 4. **Journaux inaltérables** (M6, M2) : conçus pour être recopiés vers le serveur central sans recalcul (chaînage par officine).
 5. **Aucune dépendance étrangère** : déjà le cas (§ 3) ; à garder.
 
+### Lot 12 : conception de la synchronisation (2026-11-16, conception seulement)
+
+GO « go conception sync » : conception écrite, rien n'est réalisé. Local d'abord (l'API et la base de l'officine font foi, les postes ne parlent jamais au cloud) ; synchronisation par un service de l'API locale (journal des modifications alimenté dans la transaction, lots idempotents ordonnés, accusés), pas par réplication PostgreSQL ; API cloud seule exposée, base centrale cloisonnée par officine ; le cloud vérifie les chaînes d'intégrité sans pouvoir les réécrire ; compatibilité N-1. Découpage proposé en lots S0 à S7 et décisions attendues du titulaire : [conception-synchronisation.md](conception-synchronisation.md).
+
 ---
 
 ## 7. Points [À VÉRIFIER] et traitement actuel
@@ -276,7 +280,7 @@ Principe (décision du titulaire, 16/11/2026) : la **version cloud part de la ve
 | Répertoire national des ordonnances | Rien. |
 | Consentement SMS/WhatsApp patients (M3) | Aucun message aux patients. |
 | CNOP : application patient, partage entre officines | Rien. |
-| Formats des logiciels concurrents (M4) | Reprise générique ODBC/CSV avec correspondance confirmée par une personne. |
+| Formats des anciens logiciels (M4) | Reprise générique ODBC/CSV avec correspondance confirmée par une personne. |
 | Article 51 bis, TVA médicaments/parapharmacie (M6) | Taux par produit ; TVA reversée sur pertes paramétrable (`061`, « règle fiscale à confirmer », `docs/a-faire.md`). |
 | Format d'export DGI | Rien. |
 | Loi 18-07, déclaration ANPDP, DPO | Patient anonyme par défaut hors ordonnance (`parametre_tracabilite.patient_obligatoire`) ; pas de registre des traitements. |

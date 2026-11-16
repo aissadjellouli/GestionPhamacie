@@ -44,7 +44,7 @@ internal sealed class TransitEspion : IRepriseImport
 
 internal sealed class ProfilsEnMemoire : IProfilsReprise
 {
-    public List<ProfilReprise> Profils { get; } = [new(1, "Chifa Plus", "", "a_completer", null, [], TransformationsReprise.Aucune)];
+    public List<ProfilReprise> Profils { get; } = [new(1, "Logiciel A", "", "a_completer", null, [], TransformationsReprise.Aucune)];
     public Task<Page<ProfilReprise>> ListerAsync(FiltreProfilsReprise filtre, DemandePage page, CancellationToken ct = default) =>
         Task.FromResult(new Page<ProfilReprise>(Profils, Profils.Count, page.Page, page.Taille));
     public Task<ProfilReprise?> LireAsync(long id, CancellationToken ct = default) => Task.FromResult(Profils.FirstOrDefault(p => p.Id == id));
@@ -82,11 +82,11 @@ public class ProfilsRepriseTests
         var journal = new JournalEspion();
         var t = new TransformationsReprise(SeparateurDecimal.Virgule, "dd/MM/yyyy", new Dictionary<string, string> { ["P"] = "psychotrope" });
         await new ExtraireReprise(new SourceValeurs(["A1", "DOLIPRANE", "12.500", "p"]), import, SuperAdmin(ActionsSuperAdmin.RepriseExtraire), journal)
-            .ExecuterAsync("x", "Chifa Plus", [new(CibleReprise.Produits, "Feuil1",
-                new Dictionary<string, string> { ["ref_source"] = "C", ["nom"] = "N", ["prix_vente"] = "PV", ["classe"] = "CL" })], t, "Chifa Plus", 1);
+            .ExecuterAsync("x", "Logiciel A", [new(CibleReprise.Produits, "Feuil1",
+                new Dictionary<string, string> { ["ref_source"] = "C", ["nom"] = "N", ["prix_vente"] = "PV", ["classe"] = "CL" })], t, "Logiciel A", 1);
 
         Assert.Equal(["A1", "DOLIPRANE", "12500", "psychotrope"], import.Inserts[0].Lignes[0]);
-        Assert.Equal("Chifa Plus", journal.Details[0]["profil"]);
+        Assert.Equal("Logiciel A", journal.Details[0]["profil"]);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class ProfilsRepriseTests
     {
         var profils = new ProfilsEnMemoire();
         var journal = new JournalEspion();
-        var profil = new ProfilReprise(1, "Chifa Plus", "", "verifie", null,
+        var profil = new ProfilReprise(1, "Logiciel A", "", "verifie", null,
             [new(CibleReprise.Produits, "Articles", new Dictionary<string, string> { ["ref_source"] = "CODE" })], TransformationsReprise.Aucune);
 
         await Assert.ThrowsAsync<DroitRefuseException>(() => new EnregistrerProfilReprise(profils, new SuperAdminCourant(), journal).ExecuterAsync(profil, 1));

@@ -117,7 +117,7 @@ public class ImputationCreditTests
     }
 
     [Fact]
-    public void Deux_avoirs_concurrents_le_second_refuse_au_dela_de_la_facture()
+    public void Deux_avoirs_simultanes_le_second_refuse_au_dela_de_la_facture()
     {
         // F de 120 : un premier avoir de 80 est émis ; le second (80), revérifié sous verrou, dépasse ce qui reste (40)
         RegleFacture.VerifierAvoir("facture", "emise", 120, 0, 80, "retour");

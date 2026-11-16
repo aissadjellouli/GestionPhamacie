@@ -14,7 +14,7 @@ public class ProfilRepriseTests
         new(s, date, codes ?? []);
 
     private static ProfilReprise Profil(params CorrespondanceProfil[] c) =>
-        new(0, " Chifa Plus ", " 3.1 ", "a_completer", "  ", c, TransformationsReprise.Aucune);
+        new(0, " Logiciel A ", " 3.1 ", "a_completer", "  ", c, TransformationsReprise.Aucune);
 
     [Theory]
     [InlineData("1.234,50", SeparateurDecimal.Virgule, "1234.5")]
@@ -58,7 +58,7 @@ public class ProfilRepriseTests
         var p = ProfilsReprise.Valider(Profil(
             new(CibleReprise.Produits, " Feuil1 ", new Dictionary<string, string> { ["ref_source"] = " CODE ", ["nom"] = "", ["dosage"] = "DOS" }),
             new(CibleReprise.Stock, "  ", new Dictionary<string, string>())));
-        Assert.Equal(("Chifa Plus", "3.1", (string?)null), (p.Logiciel, p.Version, p.Remarque));
+        Assert.Equal(("Logiciel A", "3.1", (string?)null), (p.Logiciel, p.Version, p.Remarque));
         var c = Assert.Single(p.Correspondances);
         Assert.Equal("Feuil1", c.Table);
         Assert.Equal(new Dictionary<string, string> { ["ref_source"] = "CODE", ["dosage"] = "DOS" }, c.Colonnes);

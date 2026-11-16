@@ -40,13 +40,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{
 		docs\notifications.md = docs\notifications.md
 		docs\poste-de-developpement.md = docs\poste-de-developpement.md
 		docs\regles-metier.md = docs\regles-metier.md
-		docs\idees-pharma.md = docs\idees-pharma.md
 		docs\scanner-mobile.md = docs\scanner-mobile.md
 		docs\securite-et-droits.md = docs\securite-et-droits.md
 		docs\tracabilite.md = docs\tracabilite.md
 		docs\analyse-ecarts.md = docs\analyse-ecarts.md
-		docs\opportunites-logiciels-algerie.md = docs\opportunites-logiciels-algerie.md
-		docs\pharma-officine-differenciation.md = docs\pharma-officine-differenciation.md
+		docs\conception-synchronisation.md = docs\conception-synchronisation.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "adr", "adr", "{35D7AF71-198B-4464-B00C-B4E49C87A256}"
@@ -97,26 +95,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "source", "source", "{DA96FB
 		docs\maquettes\source\Reception.dc.html = docs\maquettes\source\Reception.dc.html
 		docs\maquettes\source\Stock.dc.html = docs\maquettes\source\Stock.dc.html
 		docs\maquettes\source\Tracabilite.dc.html = docs\maquettes\source\Tracabilite.dc.html
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EXEMPLE", "EXEMPLE", "{0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1}"
-	ProjectSection(SolutionItems) = preProject
-		docs\EXEMPLE\WhatsApp Image 2025-11-27 at 12.41.09.jpeg = docs\EXEMPLE\WhatsApp Image 2025-11-27 at 12.41.09.jpeg
-		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.14.09.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.14.09.jpeg
-		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09 (1).jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09 (1).jpeg
-		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09.jpeg
-		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.10.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.10.jpeg
-		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.11.07.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.11.07.jpeg
-		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.10.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.10.jpeg
-		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.16.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.16.jpeg
-		docs\EXEMPLE\chifa+.png = docs\EXEMPLE\chifa+.png
-		docs\EXEMPLE\xpertpharma.jpeg = docs\EXEMPLE\xpertpharma.jpeg
-	EndProjectSection
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "aid", "aid", "{6230CD90-B24B-45AC-86F9-2336EFECC80D}"
-	ProjectSection(SolutionItems) = preProject
-		docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58 (1).jpeg = docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58 (1).jpeg
-		docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58.jpeg = docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58.jpeg
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "database", "database", "{386EBD72-0D5B-4454-978E-2D35C00026D8}"
@@ -255,6 +233,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\120_serialisation_file.sql = database\migration\120_serialisation_file.sql
 		database\migration\122_second_serveur.sql = database\migration\122_second_serveur.sql
 		database\migration\123_formulaire_accord_sms.sql = database\migration\123_formulaire_accord_sms.sql
+		database\migration\124_profils_reprise_noms_neutres.sql = database\migration\124_profils_reprise_noms_neutres.sql
+		database\migration\125_wilayas_59_69.sql = database\migration\125_wilayas_59_69.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -331,10 +311,8 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{6230CD90-B24B-45AC-86F9-2336EFECC80D} = {0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1}
 		{35D7AF71-198B-4464-B00C-B4E49C87A256} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{E1DF76AA-DD72-4CD5-8AD0-81C6533C0213} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
-		{0C0ECB57-1DAF-4520-BB5C-4B37DA74D2B1} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{DA96FB93-3AB9-4F60-8D17-2B0C79F7E87D} = {E1DF76AA-DD72-4CD5-8AD0-81C6533C0213}
 		{A8314956-6467-45DE-90F5-6E180390EA5B} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{37188A88-124B-4C94-9543-9F8284DA8D73} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}

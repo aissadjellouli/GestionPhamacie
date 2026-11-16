@@ -36,7 +36,19 @@
                 <label class="case" style="align-self: center" title="@(Session.A("prix.modifier") ? null : "Droit « modifier un prix de vente » nécessaire")"><input type="checkbox" disabled="@(!Session.A("prix.modifier"))" @bind="f.Remboursable" /><span>Remboursable</span></label>
                 <label class="case" style="align-self: center"><input type="checkbox" @bind="f.Actif" /><span>Actif</span></label>
             </div>
-            <p class="detail" style="margin: 0">Classe : @Libelles.Classe(f.Classe) (se confirme dans Administration › Nomenclature).</p>
+            @* Contenance (unités par boîte, facultative) : sert à l'alerte « quantité anormale » du registre ; vide : valeur de la nomenclature si elle est lisible *@
+            <div class="achats-ligne" style="align-items: center">
+                <div class="champ" style="flex: 0 1 210px" title="Facultatif, 1 à 10000. Vide : la valeur de la nomenclature nationale est utilisée si elle est lisible.">
+                    <label for="mp-contenance">Contenance (unités par boîte)</label>
+                    <input id="mp-contenance" data-champ="contenance" type="number" min="1" max="10000" step="1"
+                           placeholder="@(f.ContenanceNomenclature?.ToString() ?? "")" @bind="f.Contenance" />
+                </div>
+                <p class="detail" style="margin: 0; flex: 1 1 400px">
+                    Nomenclature : @(f.ConditionnementNomenclature ?? "aucun conditionnement")
+                    @(f.ContenanceNomenclature is { } cn ? $" → {cn} unités (utilisées si la contenance est vide)" : f.ConditionnementNomenclature is null ? "" : " → non lisible, rien n’est retenu")
+                    · Classe : @Libelles.Classe(f.Classe) (se confirme dans Administration › Nomenclature).
+                </p>
+            </div>
             @* Indications thérapeutiques (script 104) : recherche au comptoir par indication (« toux », « fièvre ») *@
             <div class="achats-ligne" style="align-items: flex-end">
                 <div class="champ" style="flex: 0 1 280px; position: relative">
@@ -83,6 +95,9 @@
         public decimal TauxTva { get; set; }
         public bool Actif { get; set; } = true;
         public string Classe { get; init; } = "libre";
+        public int? Contenance { get; set; }
+        public int? ContenanceNomenclature { get; init; }
+        public string? ConditionnementNomenclature { get; init; }
     }
 
     private Fiche? fiche;
@@ -127,7 +142,8 @@
         fiche = f is null ? null : new Fiche
         {
             Id = f.Id, NomCommercial = f.NomCommercial, Dci = f.Dci, Dosage = f.Dosage, Forme = f.Forme, CodeBarre = f.CodeBarre, PrixPublic = f.PrixPublic,
-            TarifReference = f.TarifReference, Remboursable = f.Remboursable, TauxTva = f.TauxTva, Actif = f.Actif, Classe = f.Classe
+            TarifReference = f.TarifReference, Remboursable = f.Remboursable, TauxTva = f.TauxTva, Actif = f.Actif, Classe = f.Classe,
+            Contenance = f.Contenance, ContenanceNomenclature = f.ContenanceNomenclature, ConditionnementNomenclature = f.ConditionnementNomenclature
         };
     }
 
@@ -138,7 +154,7 @@
         try
         {
             var (information, e) = await Api.ModifierProduitAsync(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic,
-                f.TarifReference, f.Remboursable, f.TauxTva, f.Actif, f.Classe));
+                f.TarifReference, f.Remboursable, f.TauxTva, f.Actif, f.Classe, f.Contenance));
             if (e is not null) { erreur = e; return; }
             if (await Api.AssocierIndicationsAsync(f.Id, indications.Select(i => i.Id).ToList()) is { } ei)
             {

@@ -2924,7 +2924,7 @@
                 l.Boites.ToList(), l.RaisonLot, l.LotConseilleServi, l.TypePrestationId, l.TauxTva)).ToList(),
             tiersPayant, organismeId, taux, patient, medecin, datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu, voletBrut,
             resteSaisi, porteurAutre, porteurNom, porteurAdresse, porteurPiece, remiseAdditionnee, remiseProcheId, remiseProcheNom, remiseAutre ? remiseNom : null,
-            ChoixChifaAttente.Garder(voletBrut, choixChifa));
+            ChoixChifaAttente.Garder(voletBrut, choixChifa), dureeTraitement);
         var libelle = (patient is { } p ? $"{p.Nom} {p.Prenom}".Trim() : $"Vente de {DateTime.Now:HH:mm}") + precision;
         var total = apercu?.MontantTotal ?? lignes.Sum(l => l.Prix * l.Quantite);
         return new MiseEnAttenteRequete(libelle, lignes.Count, total, System.Text.Json.JsonSerializer.Serialize(panier));
@@ -2984,6 +2984,7 @@
         (datePrescription, numeroOrdonnance, remisePct, jetonScan, texteReconnu) = (p.DatePrescription, p.NumeroOrdonnance, p.RemisePct, p.JetonScan, p.TexteReconnu);
         (resteSaisi, porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (p.ResteSaisi, p.PorteurAutre, p.PorteurNom, p.PorteurAdresse, p.PorteurPiece);
         remiseAdditionnee = p.RemiseAdditionnee;
+        dureeTraitement = p.DureeTraitementJours;   // durée du traitement gardée avec la vente (2026-11-16)
         (remiseProcheId, remiseProcheNom, remiseAutre, remiseNom) = (p.RemiseProcheId, p.RemiseProcheNom, p.RemiseNom is not null, p.RemiseNom);
         if (remiseProcheId is { } rp && proches.All(x => x.Id != rp)) proches = [.. proches, new ProchePatientDto(rp, remiseProcheNom ?? "", null, null)];
         if (medecin is not null) medecinTexte = medecin.Nom;

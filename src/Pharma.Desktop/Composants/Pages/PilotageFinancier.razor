@@ -94,7 +94,7 @@
                         <span class="tuile-pied">crédits patients @Libelles.Dinars(t.Creances.CreditsPatients) (@t.Creances.PatientsDebiteurs)</span>
                     </div>
                     <div class="tuile tuile-lien" @onclick='() => Aller("stock")'>
-                        <span class="tuile-libelle">Stock au prix d’achat HT</span>
+                        <span class="tuile-libelle">Stock au prix d’achat HT (hors périmés/bloqués)</span>
                         <span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurAchat)</span>
                         <span class="tuile-pied">rotation @(t.Stock.RotationAnnuelle?.ToString("0.0") ?? "—") / an · couverture @(t.Stock.CouvertureJours?.ToString("0") ?? "—") j</span>
                         <span class="tuile-pied">dormant @Libelles.Dinars(t.Stock.ValeurDormante) (@t.Stock.Dormants) · ruptures @t.Stock.RupturesOfficine / grossistes @t.Stock.RupturesGrossistes</span>
@@ -153,7 +153,7 @@
 
             case "stock":
                 <div class="tuiles">
-                    <div class="tuile"><span class="tuile-libelle">Valeur du stock (achat HT)</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurAchat)</span><span class="tuile-pied">@t.Stock.Produits produit(s) en stock</span></div>
+                    <div class="tuile"><span class="tuile-libelle">Valeur du stock (achat HT)</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurAchat)</span><span class="tuile-pied">@t.Stock.Produits produit(s) · hors lots périmés/bloqués</span><span class="tuile-pied" title="Non compté dans la valeur, la rotation ni la couverture">pour information, exclus : @Libelles.Dinars(t.Stock.ValeurExclue) (@t.Stock.LotsExclus lot(s))</span></div>
                     <div class="tuile"><span class="tuile-libelle">Rotation · couverture</span><span class="tuile-valeur">@(t.Stock.RotationAnnuelle?.ToString("0.0") ?? "—") / an</span><span class="tuile-pied">couverture @(t.Stock.CouvertureJours?.ToString("0") ?? "—") jours · coût des ventes @Libelles.Dinars(t.Stock.CoutVentesPeriode)</span></div>
                     <div class="tuile"><span class="tuile-libelle">Stock dormant</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurDormante)</span><span class="tuile-pied">@t.Stock.Dormants produit(s) sans vente depuis @t.Stock.SeuilDormantJours jours</span></div>
                     <div class="tuile"><span class="tuile-libelle">Ruptures en cours</span><span class="tuile-valeur">@t.Stock.RupturesOfficine</span><span class="tuile-pied">à l’officine · @t.Stock.RupturesGrossistes produit(s) en rupture chez un grossiste</span></div>

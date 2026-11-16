@@ -251,7 +251,7 @@ public sealed record ProchePatientDto(long Id, string Nom, string? NumAssure, st
 
 public sealed record NouveauPatientDto(string Nom, string? Prenom, string? Telephone, string? NumAssure, long? OrganismeId, decimal PlafondCredit, string? Email = null);
 /// <summary>Médecin prescripteur ; coordonnées facultatives (2026-11-15).</summary>
-/// <remarks>Wilaya : code 01 à 58 (2026-11-16), facultatif.</remarks>
+/// <remarks>Wilaya : code 01 à 69 (2026-11-16), facultatif.</remarks>
 public sealed record MedecinDto(long Id, string Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
     string? NumeroOrdre = null, string? CodeCnas = null, string? Wilaya = null);
 /// <summary>Création ou correction d'un médecin : le nom seul est obligatoire.</summary>
@@ -494,9 +494,13 @@ public sealed record NouveauRetourEssaiDto(string? Ecran, string? Genre, string?
 /// </summary>
 public sealed record ProduitEnregistreDto(long Id, string? Information = null);
 
-/// <summary>Fiche modifiable d'un produit (Classe en lecture seule).</summary>
+/// <summary>
+/// Fiche modifiable d'un produit (Classe en lecture seule). Contenance : unités par boîte saisies (facultatif, 1 à 10000) ;
+/// ContenanceNomenclature et ConditionnementNomenclature : lecture seule, utilisées seulement si la saisie est vide.
+/// </summary>
 public sealed record FicheProduitModifiableDto(long Id, string NomCommercial, string? Dci, string? Dosage, string? Forme, string? CodeBarre,
-    decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre");
+    decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre",
+    int? Contenance = null, int? ContenanceNomenclature = null, string? ConditionnementNomenclature = null);
 
 /// <summary>Lot en stock proposé à la sortie (périmé ou cassé).</summary>
 public sealed record LotEnStockDto(long LotId, long ProduitId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, bool Bloque, bool SousRegistre);
@@ -640,7 +644,7 @@ public sealed record CorrespondanceTableDto(string Cible, string Table, IReadOnl
 /// <summary>ProfilId : profil de reprise dont les transformations (séparateur décimal, format de date, codes de classe) s'appliquent (114).</summary>
 public sealed record ExtractionRepriseRequete(string ChaineConnexion, string Logiciel, IReadOnlyList<CorrespondanceTableDto> Correspondances, long? ProfilId = null);
 /// <summary>
-/// Profil de reprise d'un logiciel concurrent (114). Statut : a_completer (modèle vide, format réel inconnu) ou verifie.
+/// Profil de reprise d'un logiciel précédent (114). Statut : a_completer (modèle vide, format réel inconnu) ou verifie.
 /// SeparateurDecimal : auto, virgule, point ; FormatDate : motif proposé par FormatsProfilRepriseDto ; CodesClasse : code de l'ancien logiciel → classe.
 /// </summary>
 public sealed record ProfilRepriseDto(long Id, string Logiciel, string Version, string Statut, string? Remarque,
@@ -770,7 +774,8 @@ public sealed record PanierAttenteDto(
     MedecinDto? Medecin, DateOnly DatePrescription, string? NumeroOrdonnance, decimal RemisePct, string? JetonScan, string? TexteReconnu,
     string? VoletChifa = null, decimal? ResteSaisi = null, bool PorteurAutre = false, string? PorteurNom = null, string? PorteurAdresse = null,
     string? PorteurPiece = null, bool RemiseAdditionnee = false, long? RemiseProcheId = null, string? RemiseProcheNom = null, string? RemiseNom = null,
-    IReadOnlyList<ChoixChifaAttenteDto>? ChoixChifa = null);
+    IReadOnlyList<ChoixChifaAttenteDto>? ChoixChifa = null,
+    int? DureeTraitementJours = null);   // durée du traitement saisie (2026-11-16) : gardée avec la vente, rendue à la reprise ; format ancien : vide
 
 /// <summary>Choix de prix d'une ligne du volet Chifa gardé avec la vente en attente (2026-11-15) : aligne, garde ou plus_eleve.</summary>
 public sealed record ChoixChifaAttenteDto(long ProduitId, string Choix);

@@ -132,9 +132,22 @@ public class RegistreWilayaDureeTests
         Assert.Equal("09", new SaisieMedecin("Dr Fictif", null, Wilaya: "9").Verifier().Wilaya);
         Assert.Null(new SaisieMedecin("Dr Fictif", null).Verifier().Wilaya);
         Assert.Equal("58", RegleWilaya.Normaliser("58"));
-        Assert.Throws<RegleMetierException>(() => new SaisieMedecin("Dr Fictif", null, Wilaya: "59").Verifier());
+        Assert.Throws<RegleMetierException>(() => new SaisieMedecin("Dr Fictif", null, Wilaya: "70").Verifier());
         Assert.Throws<RegleMetierException>(() => RegleWilaya.Normaliser("00"));
         Assert.Throws<RegleMetierException>(() => RegleWilaya.Normaliser("1a"));
+    }
+
+    [Fact]
+    public void Wilayas_59_a_69_acceptees_70_refusee_liste_a_69()
+    {
+        Assert.Equal(69, RegleWilaya.Max);
+        Assert.Equal("59", new SaisieMedecin("Dr Fictif", null, Wilaya: "59").Verifier().Wilaya);
+        Assert.Equal("69", RegleWilaya.Normaliser("69"));
+        Assert.Throws<RegleMetierException>(() => RegleWilaya.Normaliser("70"));
+        var liste = Enumerable.Range(1, 99).Select(n => n.ToString("00"))
+            .Where(c => { try { return RegleWilaya.Normaliser(c) is not null; } catch (RegleMetierException) { return false; } }).ToList();
+        Assert.Equal(69, liste.Count);
+        Assert.Equal("69", liste[^1]);
     }
 
     [Fact]

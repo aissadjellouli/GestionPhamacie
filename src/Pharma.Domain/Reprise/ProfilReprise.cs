@@ -20,7 +20,7 @@ public sealed record TransformationsReprise(SeparateurDecimal Separateur, string
 public sealed record CorrespondanceProfil(CibleReprise Cible, string Table, IReadOnlyDictionary<string, string> Colonnes);
 
 /// <summary>
-/// Profil de reprise d'un logiciel concurrent : correspondance de colonnes enregistrée et réutilisable.
+/// Profil de reprise d'un logiciel précédent : correspondance de colonnes enregistrée et réutilisable.
 /// Statut : a_completer (modèle livré vide, format réel inconnu) ou verifie (établi avec un export réel).
 /// </summary>
 public sealed record ProfilReprise(long Id, string Logiciel, string Version, string Statut, string? Remarque,

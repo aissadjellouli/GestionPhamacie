@@ -46,7 +46,8 @@ public sealed partial class DocumentsPdf : IDocumentsPilotageFinancier
 
         SousTitre(section, "Stock");
         var st = Tableau(section, 10, 4);
-        Ligne(st, "Valeur au prix d'achat HT", Da(t.Stock.ValeurAchat));
+        Ligne(st, "Valeur au prix d'achat HT (hors lots périmés ou bloqués)", Da(t.Stock.ValeurAchat));
+        Ligne(st, $"Pour information : lots périmés ou bloqués exclus ({t.Stock.LotsExclus})", Da(t.Stock.ValeurExclue));
         Ligne(st, "Rotation annuelle (coût des ventes / stock)", t.Stock.RotationAnnuelle?.ToString("0.0", Fr) ?? "—");
         Ligne(st, "Couverture", t.Stock.CouvertureJours is { } cj ? $"{cj.ToString("0", Fr)} jours" : "—");
         Ligne(st, $"Stock dormant (sans vente depuis {t.Stock.SeuilDormantJours} jours) : {t.Stock.Dormants} produit(s)", Da(t.Stock.ValeurDormante));

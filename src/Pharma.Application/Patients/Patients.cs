@@ -116,7 +116,7 @@ public static class FamillePatient
 }
 
 /// <summary>Médecin prescripteur ; coordonnées facultatives (script 082).</summary>
-/// <remarks>Wilaya : code de wilaya d'exercice (01 à 58, script 118), facultatif.</remarks>
+/// <remarks>Wilaya : code de wilaya d'exercice (01 à 69, scripts 118 et 125), facultatif.</remarks>
 public sealed record Medecin(long Id, string Nom, string? Specialite, string? Telephone = null, string? Adresse = null, string? Email = null,
     string? NumeroOrdre = null, string? CodeCnas = null, string? Wilaya = null);
 

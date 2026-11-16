@@ -6,7 +6,7 @@ using Pharma.Domain.Securite;
 
 namespace Pharma.Application.Reprise;
 
-// ---- Profils de reprise par logiciel concurrent (script 114) ------------------------------------------
+// ---- Profils de reprise par logiciel précédent (script 114) ------------------------------------------
 
 /// <summary>Filtre de la liste des profils : texte cherché dans le logiciel et la version, statut (vide : tous).</summary>
 public sealed record FiltreProfilsReprise(string? Recherche = null, string? Statut = null);

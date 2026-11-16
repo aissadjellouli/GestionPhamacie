@@ -11,15 +11,25 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
     {
         await using var cmd = db.CreateCommand("""
             SELECT p.id, p.nom_commercial, d.nom, p.dosage, p.forme, p.code_barre, p.prix_public, p.tarif_reference, p.remboursable,
-                   p.taux_tva, p.actif, p.classe, p.num_enregistrement, p.classe_confirmee_par IS NOT NULL
+                   p.taux_tva, p.actif, p.classe, p.num_enregistrement, p.classe_confirmee_par IS NOT NULL, p.contenance,
+                   ARRAY(SELECT COALESCE(n.conditionnement, '') FROM nomenclature_produit n
+                         WHERE n.num_enregistrement = p.num_enregistrement
+                           AND n.version_id = (SELECT max(x.version_id) FROM nomenclature_produit x WHERE x.num_enregistrement = p.num_enregistrement)
+                         ORDER BY n.id)
             FROM produit p LEFT JOIN dci d ON d.id = p.dci_id WHERE p.id = $1
             """);
         cmd.Parameters.AddWithValue(id);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
         string? T(int i) => r.IsDBNull(i) ? null : r.GetString(i);
+        // Conditionnement de la nomenclature : contenance retenue seulement si toutes les lignes du n° donnent la même valeur analysable
+        var conditionnements = r.GetFieldValue<string[]>(15);
+        var conditionnement = conditionnements.Length == 0 ? null : string.Join(" ; ", conditionnements.Distinct());
         return new FicheProduitModifiable(r.GetInt64(0), r.GetString(1), T(2), T(3), T(4), T(5), r.GetDecimal(6),
-            r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetBoolean(8), r.GetDecimal(9), r.GetBoolean(10), r.GetString(11), T(12), r.GetBoolean(13));
+            r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetBoolean(8), r.GetDecimal(9), r.GetBoolean(10), r.GetString(11), T(12), r.GetBoolean(13),
+            r.IsDBNull(14) ? null : r.GetInt32(14),
+            conditionnements.Length == 0 ? null : ContenanceProduit.DepuisNomenclature(conditionnements),
+            string.IsNullOrWhiteSpace(conditionnement) ? null : conditionnement);
     }
 
     public async Task<bool> CodeBarreAutreProduitAsync(string codeBarre, long id, CancellationToken ct = default)
@@ -53,7 +63,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         // DCI changée : la confirmation de classe du titulaire (080) tombe, elle portait sur l'ancienne DCI
         await using var cmd = new NpgsqlCommand("""
             UPDATE produit SET nom_commercial = $2, dci_id = $3, dosage = $4, forme = $5, code_barre = $6, prix_public = $7,
-                               tarif_reference = $8, remboursable = $9, taux_tva = $10, actif = $11,
+                               tarif_reference = $8, remboursable = $9, taux_tva = $10, actif = $11, contenance = $12,
                                classe_confirmee_par = CASE WHEN dci_id IS DISTINCT FROM $3 THEN NULL ELSE classe_confirmee_par END,
                                classe_confirmee_le = CASE WHEN dci_id IS DISTINCT FROM $3 THEN NULL ELSE classe_confirmee_le END
             WHERE id = $1
@@ -68,6 +78,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         cmd.Parameters.AddWithValue(f.Remboursable);
         cmd.Parameters.AddWithValue(f.TauxTva);
         cmd.Parameters.AddWithValue(f.Actif);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.Contenance ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
         try { await cmd.ExecuteNonQueryAsync(ct); }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {

@@ -23,7 +23,7 @@ public sealed record RegleAlertePsychotropeDto(string Code, string Libelle, bool
 
 public sealed record WilayaDto(string Code, string Nom);
 
-/// <summary>Zone de l'officine : sa wilaya et des wilayas voisines (codes 01 à 58).</summary>
+/// <summary>Zone de l'officine : sa wilaya et des wilayas voisines (codes 01 à 69).</summary>
 public sealed record ZoneOfficineDto(string? Officine, IReadOnlyList<string> Voisines);
 
 public sealed record ForcageAlerteDto(long Id, DateTime Date, string Employe, string? Valideur, IReadOnlyList<string> Codes, string Messages,

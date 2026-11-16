@@ -10,7 +10,7 @@ public class FactureChifaColonneUniqueTests
     private static readonly HashSet<string> Autorises = ["Pharma.Infrastructure/Chifa/ConflitsFactureChifaSql.cs"];
 
     [Fact]
-    public void Ancienne_colonne_num_facture_chifa_plus_lue_ni_ecrite_dans_le_code()
+    public void Ancienne_colonne_num_facture_chifa_jamais_lue_ni_ecrite_dans_le_code()
     {
         var src = Path.Combine(RacineDepot(), "src");
         var fautifs = Directory.GetFiles(src, "*.*", SearchOption.AllDirectories)

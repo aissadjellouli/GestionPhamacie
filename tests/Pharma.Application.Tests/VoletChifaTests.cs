@@ -199,7 +199,7 @@ public class VoletChifaTests
     [Fact]
     public async Task Ecart_au_dela_du_seuil_avec_le_droit_le_vendeur_choisit_aligner_ou_garder()
     {
-        // Prix Chifa plus bas (300) : aligné, la ligne passe à 300 ; gardé, l'écart de 50 x 2 est payé par le patient
+        // Prix Chifa inférieur (300) : aligné, la ligne passe à 300 ; gardé, l'écart de 50 x 2 est payé par le patient
         var (cas, ventes, _) = CasChifa("prix.modifier");
         await cas.ExecuterAsync(CommandeChifa(300, new ChoixPrixChifa(2, EcartPrixChifa.Aligne, 300)), 5, "Caisse 1");
         var v = ventes.Recu!.Vente;
@@ -213,7 +213,7 @@ public class VoletChifaTests
         // Part de l'organisme sur le prix Chifa : 300 x 2 x 80 % = 480 ; le patient paie le reste (dont l'écart)
         Assert.Equal((480m, 220m), (v.PartOrganisme, v.PartPatient));
 
-        // Prix Chifa plus haut (400) : même choix
+        // Prix Chifa supérieur (400) : même choix
         (cas, ventes, _) = CasChifa("prix.modifier");
         await cas.ExecuterAsync(CommandeChifa(400, new ChoixPrixChifa(2, EcartPrixChifa.Garde, 350)), 5, "Caisse 1");
         Assert.Equal(350m, ventes.Recu!.Vente.Lignes[0].PrixUnitaire);
@@ -229,8 +229,8 @@ public class VoletChifaTests
     }
 
     [Theory]
-    [InlineData(300, 350)]   // prix Chifa plus bas : notre prix, écart payé par le patient
-    [InlineData(400, 400)]   // prix Chifa plus haut : le prix Chifa
+    [InlineData(300, 350)]   // prix Chifa inférieur : notre prix, écart payé par le patient
+    [InlineData(400, 400)]   // prix Chifa supérieur : le prix Chifa
     public async Task Sans_le_droit_le_prix_le_plus_eleve_d_office(decimal prixChifa, decimal attendu)
     {
         var (cas, ventes, journal) = CasChifa();

@@ -69,13 +69,13 @@ internal static class CatalogueEndpoints
             {
                 var f = await lire.ExecuterAsync(id, ct);
                 return Results.Ok(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic, f.TarifReference,
-                    f.Remboursable, f.TauxTva, f.Actif, f.Classe));
+                    f.Remboursable, f.TauxTva, f.Actif, f.Classe, f.Contenance, f.ContenanceNomenclature, f.ConditionnementNomenclature));
             })
            .ExigerPermission(Permissions.CatalogueCreer);
         api.MapPut("/produits/{id:long}", async (long id, FicheProduitModifiableDto d, ModifierProduit modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 var information = await modifier.ExecuterAsync(new FicheProduitModifiable(id, d.NomCommercial, d.Dci, d.Dosage, d.Forme, d.CodeBarre, d.PrixPublic,
-                    d.TarifReference, d.Remboursable, d.TauxTva, d.Actif), user.UtilisateurId(), ct);
+                    d.TarifReference, d.Remboursable, d.TauxTva, d.Actif, Contenance: d.Contenance), user.UtilisateurId(), ct);
                 return Results.Ok(new ProduitEnregistreDto(id, information));
             })
            .ExigerPermission(Permissions.CatalogueCreer);

@@ -34,7 +34,7 @@ Rien ci-dessous n'est confirmé.
 - **SHP et PPA des factures de grossiste (2026-11-15)** : le PPA des factures de grossiste n'inclut pas la SHP ; reste à vérifier si le prix du volet Chifa l'inclut (comparer un même médicament sur un volet et une facture).
 - **Suffixe du n° d'assuré (« /00 », « /80 »…)** : sens non confirmé (assuré / ayant droit, ou clé de contrôle). Ne rien en déduire ; comparer les cartes Chifa d'un assuré et d'un membre de sa famille. Depuis le 15/11/2026 (script 102, modèle Pharma qui affiche un « Rang » de 2 chiffres), le suffixe est affiché « rang NN » à côté du n° d'assuré (fonction `rang_assure`) : **sens du suffixe = rang de l'ayant droit, à confirmer sur cartes réelles** ; rien d'autre n'en est déduit.
 - **Hypothèse « même QR pour CNAS et CASNOS »** : également à vérifier.
-- **Méthode de vérification** : comparer un volet CASNOS, deux volets CNAS d'agences différentes et deux volets du même assuré ; regarder le centre payeur affiché par CHIFA-Officine ou Chifa Plus ; demander le format à la CNAS.
+- **Méthode de vérification** : comparer un volet CASNOS, deux volets CNAS d'agences différentes et deux volets du même assuré ; regarder le centre payeur affiché par CHIFA-Officine ou par l’ancien logiciel ; demander le format à la CNAS.
 - **Suite** : quand l'organisme sera identifiable dans le QR, le choix de l'organisme pourra devenir automatique.
 
 ## Bordereaux, rejets et paiements (2026-11-15, script 110)

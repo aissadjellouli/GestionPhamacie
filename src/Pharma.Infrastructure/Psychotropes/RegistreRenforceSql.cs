@@ -1,5 +1,6 @@
 using Npgsql;
 using NpgsqlTypes;
+using Pharma.Application.Catalogue;
 using Pharma.Application.Commun;
 using Pharma.Application.Psychotropes;
 using Pharma.Infrastructure.Lecture;
@@ -117,8 +118,13 @@ public sealed class RegistreRenforceSql(NpgsqlDataSource db) : IRegistreRenforce
                  AND $2::bigint IS NOT NULL AND r.medecin_id = $2 AND r.cree_le >= now() - make_interval(days => $6))::int,
               (SELECT m.wilaya FROM medecin m WHERE m.id = $2),
               ARRAY(SELECT z.wilaya FROM zone_psychotrope_wilaya z),
-              ARRAY(SELECT p.id FROM produit p WHERE p.id = ANY($7) AND p.contenance IS NOT NULL ORDER BY p.id),
-              ARRAY(SELECT p.contenance FROM produit p WHERE p.id = ANY($7) AND p.contenance IS NOT NULL ORDER BY p.id)
+              ARRAY(SELECT p.id FROM produit p WHERE p.id = ANY($7) ORDER BY p.id),
+              ARRAY(SELECT COALESCE(p.contenance, 0) FROM produit p WHERE p.id = ANY($7) ORDER BY p.id),
+              ARRAY(SELECT COALESCE((SELECT string_agg(COALESCE(n.conditionnement, ''), E'\n') FROM nomenclature_produit n
+                                     WHERE n.num_enregistrement = p.num_enregistrement
+                                       AND n.version_id = (SELECT max(x.version_id) FROM nomenclature_produit x
+                                                           WHERE x.num_enregistrement = p.num_enregistrement)), '')
+                    FROM produit p WHERE p.id = ANY($7) ORDER BY p.id)
             """);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)d.PatientId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)d.MedecinId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
@@ -130,10 +136,17 @@ public sealed class RegistreRenforceSql(NpgsqlDataSource db) : IRegistreRenforce
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
         var ids = r.GetFieldValue<long[]>(5);
-        var contenances = r.GetFieldValue<int[]>(6);
+        var saisies = r.GetFieldValue<int[]>(6);
+        var nomenclature = r.GetFieldValue<string[]>(7);
+        // Saisie du pharmacien d'abord ; sinon conditionnement de la nomenclature s'il est analysable (sinon : contenance inconnue)
+        var contenances = new Dictionary<long, int>();
+        for (var i = 0; i < ids.Length; i++)
+        {
+            var nom = nomenclature[i].Length == 0 ? null : ContenanceProduit.DepuisNomenclature(nomenclature[i].Split('\n'));
+            if (ContenanceProduit.Retenue(saisies[i] > 0 ? saisies[i] : null, nom) is { } c) contenances[ids[i]] = c;
+        }
         return new HistoriquePsychotrope(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.IsDBNull(3) ? null : r.GetString(3),
-            r.GetFieldValue<string[]>(4).ToHashSet(StringComparer.Ordinal),
-            ids.Zip(contenances).ToDictionary(x => x.First, x => x.Second));
+            r.GetFieldValue<string[]>(4).ToHashSet(StringComparer.Ordinal), contenances);
     }
 
     public async Task<long> EnregistrerForcageAsync(NouveauForcage f, CancellationToken ct = default)

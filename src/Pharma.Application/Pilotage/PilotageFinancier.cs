@@ -54,11 +54,12 @@ public sealed record Creances(IReadOnlyList<CreanceBordereau> Bordereaux, decima
 }
 
 /// <summary>
-/// Stock au prix d'achat HT (lots non périmés et non bloqués comme les autres écrans : tous les lots disponibles ici),
-/// coût d'achat des boîtes vendues sur la période, rotation et couverture qui en découlent, stock dormant, ruptures en cours.
+/// Stock au prix d'achat HT hors lots périmés et bloqués (même périmètre que le stock dormant), coût d'achat des boîtes
+/// vendues sur la période, rotation et couverture calculées sur cette valeur, stock dormant, ruptures en cours.
+/// ValeurExclue / LotsExclus : lots périmés ou bloqués encore en stock, affichés à part pour information (règle du 2026-11-16).
 /// </summary>
 public sealed record StockPilotage(decimal ValeurAchat, int Produits, decimal CoutVentesPeriode, int JoursPeriode, int SeuilDormantJours,
-    int Dormants, decimal ValeurDormante, int RupturesOfficine, int RupturesGrossistes)
+    int Dormants, decimal ValeurDormante, int RupturesOfficine, int RupturesGrossistes, decimal ValeurExclue = 0, int LotsExclus = 0)
 {
     public decimal? RotationAnnuelle => CalculsPilotage.RotationAnnuelle(CoutVentesPeriode, JoursPeriode, ValeurAchat);
     public decimal? CouvertureJours => CalculsPilotage.CouvertureJours(CoutVentesPeriode, JoursPeriode, ValeurAchat);
@@ -313,6 +314,7 @@ public static class PilotageFinancierXlsx
             L("Stock", "Valeur"),
             L("Valeur du stock au prix d'achat HT (DA)", t.Stock.ValeurAchat),
             L("Produits en stock", t.Stock.Produits),
+            L("Lots périmés ou bloqués exclus, pour information (DA)", t.Stock.ValeurExclue),
             L("Rotation annuelle", t.Stock.RotationAnnuelle),
             L("Couverture (jours)", t.Stock.CouvertureJours),
             L($"Produits dormants (sans vente depuis {t.Stock.SeuilDormantJours} jours)", t.Stock.Dormants),

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 123 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 125 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 123 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 125 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -30,10 +30,12 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
+--
 -- PostgreSQL database dump
 --
 
-\restrict o6Zfh7mlmQninAi1cXUwoHGeN4d2aNT5dMnCEW2Jy7iEMOovhQIWXdsXht8QBcm
+\restrict WeAK3jYFDgmtkwsscfOe7nXQEpd4GLhgsLVnrFz8BvlgNid7vEW9LPjlk2WFcpG
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3648,7 +3650,7 @@ CREATE TABLE import.profil_reprise (
 -- Name: TABLE profil_reprise; Type: COMMENT; Schema: import; Owner: -
 --
 
-COMMENT ON TABLE import.profil_reprise IS 'Profil de reprise d''un logiciel concurrent (114) : correspondance de colonnes et transformations ; a_completer = modèle vide, format réel inconnu';
+COMMENT ON TABLE import.profil_reprise IS 'Profil de reprise d''un logiciel précédent (114) : correspondance de colonnes et transformations ; a_completer = modèle vide, format réel inconnu';
 
 
 --
@@ -10657,6 +10659,7 @@ ALTER TABLE public.versement_bordereau ALTER COLUMN id ADD GENERATED ALWAYS AS I
 CREATE TABLE public.wilaya (
     code text NOT NULL,
     nom text NOT NULL,
+    wilaya_origine text,
     CONSTRAINT ck_wilaya_code CHECK ((code ~ '^[0-9]{2}$'::text))
 );
 
@@ -15056,6 +15059,14 @@ ALTER TABLE ONLY public.vente
 
 
 --
+-- Name: wilaya fk_wilaya_origine; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.wilaya
+    ADD CONSTRAINT fk_wilaya_origine FOREIGN KEY (wilaya_origine) REFERENCES public.wilaya(code);
+
+
+--
 -- Name: forcage_alerte_psychotrope forcage_alerte_psychotrope_medecin_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16579,5 +16590,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict o6Zfh7mlmQninAi1cXUwoHGeN4d2aNT5dMnCEW2Jy7iEMOovhQIWXdsXht8QBcm
+\unrestrict WeAK3jYFDgmtkwsscfOe7nXQEpd4GLhgsLVnrFz8BvlgNid7vEW9LPjlk2WFcpG
 

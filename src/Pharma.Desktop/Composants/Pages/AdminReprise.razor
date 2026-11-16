@@ -195,7 +195,7 @@
                             <label for="rp-logiciel" class="requis">Ancien logiciel (nom et version)</label>
                             <input id="rp-logiciel" type="text" @bind="logiciel" @bind:event="oninput" aria-invalid="@Obligatoire.Aria(Obligatoire.Manque(controle, logiciel))" />
                         </div>
-                        @* Profil de reprise (114) : correspondance enregistrée et transformations ; formats réels des concurrents à vérifier *@
+                        @* Profil de reprise (114) : correspondance enregistrée et transformations ; formats réels des anciens logiciels à vérifier *@
                         <div class="champ" style="flex: 1 1 280px; max-width: 380px">
                             <label for="rp-profil">Profil de reprise</label>
                             <select id="rp-profil" class="selection" @bind="profilId">

@@ -423,10 +423,10 @@ public interface IZonePsychotropesDepot
     Task EnregistrerZoneAsync(ZoneOfficine zone, long auteurId, CancellationToken ct = default);
 }
 
-/// <summary>Code de wilaya : deux chiffres, de 01 à <see cref="Max"/> (référentiel en données, script 118).</summary>
+/// <summary>Code de wilaya : deux chiffres, de 01 à <see cref="Max"/> (référentiel en données, scripts 118 et 125).</summary>
 public static class RegleWilaya
 {
-    public const int Max = 58;
+    public const int Max = 69;
 
     /// <summary>Met en forme (« 9 » → « 09 ») ; vide → null ; hors bornes → refus.</summary>
     public static string? Normaliser(string? code, string champ = "wilaya")

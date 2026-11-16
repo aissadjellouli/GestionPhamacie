@@ -49,7 +49,7 @@ internal static class RepriseEndpoints
             })
             .ValidationSuperAdmin(ActionsSuperAdmin.RepriseExtraire);
 
-        // Profils de reprise par logiciel concurrent (114) : correspondance enregistrée et réutilisable
+        // Profils de reprise par logiciel précédent (114) : correspondance enregistrée et réutilisable
         reprise.MapGet("/profils", async (string? q, string? statut, int? page, int? taille, ListerProfilsReprise lister, CancellationToken ct) =>
         {
             var p = await lister.ExecuterAsync(new FiltreProfilsReprise(q, statut), Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);

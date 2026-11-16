@@ -1357,7 +1357,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         PostAsync<DecisionProduitRepriseRequete, NombreDto>($"api/admin/reprise/sessions/{id}/produits", d);
     public Task<(EtatRepriseDto?, string?)> ChargerRepriseAsync(long id) => PostAsync<object, EtatRepriseDto>($"api/admin/reprise/sessions/{id}/charger", new());
     public async Task<string?> AnnulerRepriseAsync(long id) => (await PostAsync<object, object>($"api/admin/reprise/sessions/{id}/annuler", new())).Item2;
-    // Profils de reprise par logiciel concurrent et historique Chifa repris (114)
+    // Profils de reprise par logiciel précédent et historique Chifa repris (114)
     public Task<(PageDto<ProfilRepriseDto>?, string?)> ProfilsRepriseAsync(string? texte, string? statut, int page, int taille) =>
         GetAsync<PageDto<ProfilRepriseDto>?>("api/admin/reprise/profils?" + Requete(("q", texte), ("statut", statut), ("page", page), ("taille", taille)), null);
     public Task<(ProfilRepriseDto?, string?)> ProfilRepriseAsync(long id) => GetAsync<ProfilRepriseDto?>($"api/admin/reprise/profils/{id}", null);

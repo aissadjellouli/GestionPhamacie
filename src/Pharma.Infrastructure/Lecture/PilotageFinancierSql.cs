@@ -100,17 +100,21 @@ public sealed class PilotageFinancierSql(NpgsqlDataSource db) : IPilotageFinanci
     {
         await using var cmd = Commande($"""
             {Dormants}
-            SELECT (SELECT COALESCE(ROUND(sum(quantite_disponible * COALESCE(prix_achat_ht, 0)), 2), 0) FROM lot WHERE quantite_disponible > 0),
-                   (SELECT count(DISTINCT produit_id)::int FROM lot WHERE quantite_disponible > 0),
+            SELECT (SELECT COALESCE(sum(val), 0) FROM s),
+                   (SELECT count(*)::int FROM s),
                    (SELECT j FROM prm),
                    (SELECT count(*)::int FROM x),
                    (SELECT COALESCE(sum(val), 0) FROM x),
                    (SELECT count(*)::int FROM v_etat_stock WHERE statut = 'rupture'),
-                   (SELECT count(DISTINCT produit_id)::int FROM rupture_grossiste WHERE fin IS NULL)
+                   (SELECT count(DISTINCT produit_id)::int FROM rupture_grossiste WHERE fin IS NULL),
+                   (SELECT COALESCE(ROUND(sum(quantite_disponible * COALESCE(prix_achat_ht, 0)), 2), 0) FROM lot
+                    WHERE quantite_disponible > 0 AND (bloque OR date_peremption <= current_date)),
+                   (SELECT count(*)::int FROM lot WHERE quantite_disponible > 0 AND (bloque OR date_peremption <= current_date))
             """, Seuil(seuilDormantJours));
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
-        return new StockPilotage(r.GetDecimal(0), r.GetInt32(1), 0, 0, r.GetInt32(2), r.GetInt32(3), r.GetDecimal(4), r.GetInt32(5), r.GetInt32(6));
+        return new StockPilotage(r.GetDecimal(0), r.GetInt32(1), 0, 0, r.GetInt32(2), r.GetInt32(3), r.GetDecimal(4), r.GetInt32(5), r.GetInt32(6),
+            r.GetDecimal(7), r.GetInt32(8));
     }
 
     public async Task<Page<ProduitDormant>> DormantsAsync(int? seuilDormantJours, string? recherche, DemandePage page, CancellationToken ct = default)

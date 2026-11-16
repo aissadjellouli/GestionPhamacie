@@ -16,7 +16,8 @@ public sealed record CreancesDto(List<CreanceBordereauDto> Bordereaux, decimal T
     decimal HorsBordereau, decimal CreditsPatients, int PatientsDebiteurs, List<MontantParTrancheDto> CreditsParAge);
 
 public sealed record StockPilotageDto(decimal ValeurAchat, int Produits, decimal CoutVentesPeriode, decimal? RotationAnnuelle, decimal? CouvertureJours,
-    int SeuilDormantJours, int Dormants, decimal ValeurDormante, int RupturesOfficine, int RupturesGrossistes);
+    int SeuilDormantJours, int Dormants, decimal ValeurDormante, int RupturesOfficine, int RupturesGrossistes,
+    decimal ValeurExclue = 0, int LotsExclus = 0);
 
 public sealed record AchatsGrossisteDto(long FournisseurId, string Grossiste, int Receptions, decimal MontantHt, decimal MontantTtc);
 

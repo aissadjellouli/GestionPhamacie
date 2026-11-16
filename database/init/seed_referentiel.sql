@@ -21,7 +21,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 123 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 125 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -337,6 +337,13 @@ INSERT INTO wilaya (code, nom) VALUES
     ('46', 'Aïn Témouchent'), ('47', 'Ghardaïa'), ('48', 'Relizane'),
     ('49', 'Timimoun'), ('50', 'Bordj Badji Mokhtar'), ('51', 'Ouled Djellal'), ('52', 'Béni Abbès'), ('53', 'In Salah'),
     ('54', 'In Guezzam'), ('55', 'Touggourt'), ('56', 'Djanet'), ('57', 'El M''Ghair'), ('58', 'El Meniaa')
+ON CONFLICT (code) DO NOTHING;
+
+-- Wilayas 59 à 69 (125) : loi 26-06 et décret présidentiel 26-206 [À VÉRIFIER au Journal officiel] ; wilaya d'origine renseignée
+INSERT INTO wilaya (code, nom, wilaya_origine) VALUES
+    ('59', 'Aflou', '03'), ('60', 'Barika', '05'), ('61', 'El Kantara', '07'), ('62', 'Bir El Ater', '12'),
+    ('63', 'El Aricha', '13'), ('64', 'Ksar Chellala', '14'), ('65', 'Aïn Oussera', '17'), ('66', 'Messaad', '17'),
+    ('67', 'Ksar El Boukhari', '26'), ('68', 'Bou Saâda', '28'), ('69', 'El Abiodh Sidi Cheikh', '32')
 ON CONFLICT (code) DO NOTHING;
 
 -- Alerte « prescripteur hors zone » du registre des psychotropes (118) : sans effet tant que la zone n'est pas réglée

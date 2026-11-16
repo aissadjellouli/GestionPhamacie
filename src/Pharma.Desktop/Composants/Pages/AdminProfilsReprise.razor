@@ -3,8 +3,8 @@
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
 
-@* Profils de reprise par logiciel concurrent (script 114) : correspondance de colonnes enregistrée et réutilisable, transformations simples.
-   Les formats réels des logiciels concurrents ne sont pas connus : les modèles livrés sont vides, à compléter avec un export réel.
+@* Profils de reprise par logiciel précédent (script 114) : correspondance de colonnes enregistrée et réutilisable, transformations simples.
+   Les formats réels des anciens logiciels ne sont pas connus : les modèles livrés sont vides, à compléter avec un export réel.
    Liste filtrée et paginée par le serveur ; écran fixe, seul le tableau défile ; édition dans une fenêtre qui défile dans son cadre. *@
 <div class="page admin">
     <NavAdmin Actif="admin/profils-reprise" />
@@ -13,7 +13,7 @@
         <div class="titre-page">
             <div>
                 <h1>Profils de reprise</h1>
-                <p class="sous-titre">Une correspondance de colonnes par logiciel concurrent, établie à partir d’un fichier exemple (classeur .xlsx ou dossier CSV), puis réutilisée à chaque reprise. Les modèles livrés sont vides : leur format est à compléter avec un export réel.</p>
+                <p class="sous-titre">Une correspondance de colonnes par logiciel précédent, établie à partir d’un fichier exemple (classeur .xlsx ou dossier CSV), puis réutilisée à chaque reprise. Les modèles livrés sont vides : leur format est à compléter avec un export réel.</p>
             </div>
             @if (Session.SuperAdmin) { <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="Nouveau">Nouveau profil</button> }
         </div>

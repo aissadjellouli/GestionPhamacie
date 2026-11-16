@@ -10,10 +10,13 @@ namespace Pharma.Application.Catalogue;
 /// Fiche modifiable d'un produit du catalogue (la classe réglementaire se confirme à part, par le titulaire). NumEnregistrement : lu
 /// en base, jamais modifié ici. ClasseConfirmee : lue en base (produit.classe_confirmee_par, 080), jamais saisie : le titulaire a
 /// confirmé une classe moins stricte que celle de la substance surveillée ou de la nomenclature.
+/// Contenance : unités par boîte saisies par le pharmacien (facultatif, 1 à 10000, produit.contenance). ContenanceNomenclature et
+/// ConditionnementNomenclature : lus en base (nomenclature nationale, version la plus récente du n° d'enregistrement), jamais saisis ;
+/// la contenance de la nomenclature ne sert que si la saisie est vide (ContenanceProduit).
 /// </summary>
 public sealed record FicheProduitModifiable(long Id, string NomCommercial, string? Dci, string? Dosage, string? Forme, string? CodeBarre,
     decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre", string? NumEnregistrement = null,
-    bool ClasseConfirmee = false);
+    bool ClasseConfirmee = false, int? Contenance = null, int? ContenanceNomenclature = null, string? ConditionnementNomenclature = null);
 
 public interface IProduitsModification
 {
@@ -55,7 +58,10 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         var actuel = await produits.LireAsync(saisie.Id, ct) ?? throw new RegleMetierException("Produit introuvable.");
         static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         var f = saisie with { NomCommercial = saisie.NomCommercial?.Trim() ?? "", Dci = N(saisie.Dci), Dosage = N(saisie.Dosage), Forme = N(saisie.Forme),
-            CodeBarre = N(saisie.CodeBarre), Classe = actuel.Classe, NumEnregistrement = actuel.NumEnregistrement, ClasseConfirmee = actuel.ClasseConfirmee };
+            CodeBarre = N(saisie.CodeBarre), Classe = actuel.Classe, NumEnregistrement = actuel.NumEnregistrement, ClasseConfirmee = actuel.ClasseConfirmee,
+            ContenanceNomenclature = actuel.ContenanceNomenclature, ConditionnementNomenclature = actuel.ConditionnementNomenclature };
+        if (!ContenanceProduit.SaisieValide(f.Contenance))
+            throw new RegleMetierException($"Contenance : nombre entier d’unités par boîte, de {ContenanceProduit.Minimum} à {ContenanceProduit.Maximum} (ou vide).", "contenance");
         if (f.NomCommercial.Length == 0) throw new RegleMetierException("Nom commercial obligatoire.", "nom_commercial");
         if (f.NomCommercial.Length > 120) throw new RegleMetierException("Nom commercial : 120 caractères au plus.", "nom_commercial");
         // Prix encore non fixé (produit créé sans prix) : la fiche reste modifiable sans fixer le prix
@@ -106,7 +112,7 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         Comparer("dosage", actuel.Dosage, f.Dosage); Comparer("forme", actuel.Forme, f.Forme); Comparer("code_barre", actuel.CodeBarre, f.CodeBarre);
         Comparer("tarif_reference", actuel.TarifReference, f.TarifReference); Comparer("remboursable", actuel.Remboursable, f.Remboursable);
         Comparer("taux_tva", actuel.TauxTva, f.TauxTva); Comparer("actif", actuel.Actif, f.Actif);
-        Comparer("classe", actuel.Classe, f.Classe);
+        Comparer("classe", actuel.Classe, f.Classe); Comparer("contenance", actuel.Contenance, f.Contenance);
         if (information is not null) changes["a_verifier"] = true;
         if (confirmationRetiree) changes["confirmation_classe_retiree"] = true;
         if (changes.Count > 1)

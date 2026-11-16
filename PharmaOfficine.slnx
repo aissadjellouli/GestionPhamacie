@@ -1,8 +1,7 @@
 <Solution>
   <Folder Name="/Documents/">
     <File Path="docs/analyse-ecarts.md" />
-    <File Path="docs/opportunites-logiciels-algerie.md" />
-    <File Path="docs/pharma-officine-differenciation.md" />
+    <File Path="docs/conception-synchronisation.md" />
     <File Path="docs/a-faire.md" />
     <File Path="docs/acces-distant.md" />
     <File Path="docs/architecture.md" />
@@ -16,7 +15,6 @@
     <File Path="docs/notifications.md" />
     <File Path="docs/poste-de-developpement.md" />
     <File Path="docs/regles-metier.md" />
-    <File Path="docs/idees-pharma.md" />
     <File Path="docs/scanner-mobile.md" />
     <File Path="docs/securite-et-droits.md" />
     <File Path="docs/tracabilite.md" />
@@ -26,22 +24,6 @@
     <File Path="docs/adr/0002-schema-pilote-par-sql.md" />
     <File Path="docs/adr/0003-blazor-hybrid-wpf.md" />
     <File Path="docs/adr/0004-clean-architecture.md" />
-  </Folder>
-  <Folder Name="/Documents/EXEMPLE/">
-    <File Path="docs/EXEMPLE/WhatsApp Image 2025-11-27 at 12.41.09.jpeg" />
-    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.14.09.jpeg" />
-    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.09 (1).jpeg" />
-    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.09.jpeg" />
-    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.10.jpeg" />
-    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.11.07.jpeg" />
-    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.23.10.jpeg" />
-    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.23.16.jpeg" />
-    <File Path="docs/EXEMPLE/chifa+.png" />
-    <File Path="docs/EXEMPLE/xpertpharma.jpeg" />
-  </Folder>
-  <Folder Name="/Documents/EXEMPLE/aid/">
-    <File Path="docs/EXEMPLE/aid/WhatsApp Image 2026-11-11 at 16.21.58 (1).jpeg" />
-    <File Path="docs/EXEMPLE/aid/WhatsApp Image 2026-11-11 at 16.21.58.jpeg" />
   </Folder>
   <Folder Name="/Documents/maquettes/">
     <File Path="docs/maquettes/Achats.html" />
@@ -203,6 +185,8 @@
     <File Path="database/migration/120_serialisation_file.sql" />
     <File Path="database/migration/122_second_serveur.sql" />
     <File Path="database/migration/123_formulaire_accord_sms.sql" />
+    <File Path="database/migration/124_profils_reprise_noms_neutres.sql" />
+    <File Path="database/migration/125_wilayas_59_69.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />

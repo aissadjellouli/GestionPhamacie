@@ -1,13 +1,13 @@
 -- =====================================================================
--- 114 — Reprise des logiciels concurrents : profils de reprise et
+-- 114 — Reprise depuis un logiciel précédent : profils de reprise et
 -- historique des ventes Chifa (2026-11-16, lot 4, M4a)
 --
 --   * import.profil_reprise : correspondance de colonnes ENREGISTRÉE et
---     réutilisable pour un logiciel concurrent (nom, version, feuille ou
+--     réutilisable pour un logiciel précédent (nom, version, feuille ou
 --     table → colonne de chaque champ de reprise) et transformations
 --     simples (séparateur décimal, format de date, codes de classe).
---     Les formats réels de Chifa Plus, XpertPharm, PharmaPro et
---     Profficine sont INCONNUS : quatre modèles VIDES sont livrés,
+--     Les formats réels des anciens logiciels sont INCONNUS : quatre
+--     modèles VIDES sont livrés (« Modèle de reprise 1 » à « 4 »),
 --     statut « a_completer », à compléter avec un export réel depuis
 --     Administration › Profils de reprise. Rien n'est supposé.
 --   * import.historique_chifa_src : transit de l'historique des ventes
@@ -44,13 +44,13 @@ CREATE TABLE IF NOT EXISTS import.profil_reprise (
     CONSTRAINT profil_reprise_codes_objet CHECK (jsonb_typeof(codes_classe) = 'object')
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_profil_reprise_logiciel_version ON import.profil_reprise (lower(logiciel), lower(version));
-COMMENT ON TABLE import.profil_reprise IS 'Profil de reprise d''un logiciel concurrent (114) : correspondance de colonnes et transformations ; a_completer = modèle vide, format réel inconnu';
+COMMENT ON TABLE import.profil_reprise IS 'Profil de reprise d''un logiciel précédent (114) : correspondance de colonnes et transformations ; a_completer = modèle vide, format réel inconnu';
 
 -- Modèles vides : formats réels inconnus, à compléter avec un export réel
 INSERT INTO import.profil_reprise (logiciel, version, statut, remarque)
 SELECT v.logiciel, '', 'a_completer',
        'Modèle vide livré avec Pharma Officine : le format d''export de ce logiciel n''est pas connu. À compléter avec un export réel (fichier exemple), puis passer le statut à « vérifié ».'
-FROM (VALUES ('Chifa Plus'), ('XpertPharm'), ('PharmaPro'), ('Profficine')) v(logiciel)
+FROM (VALUES ('Modèle de reprise 1'), ('Modèle de reprise 2'), ('Modèle de reprise 3'), ('Modèle de reprise 4')) v(logiciel)
 WHERE NOT EXISTS (SELECT 1 FROM import.profil_reprise p WHERE lower(p.logiciel) = lower(v.logiciel) AND p.version = '');
 
 -- ---- 2. Historique des ventes Chifa : transit ---------------------------------
