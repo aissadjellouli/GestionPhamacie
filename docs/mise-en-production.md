@@ -62,7 +62,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `127`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `128`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -531,3 +531,63 @@ la plus sûre :
 4. **Rebascule à un moment calme** (facultatif, pour revenir à la répartition d'origine) : arrêter l'API et PostgreSQL du serveur principal
    actuel, lancer `basculer-second-serveur.ps1` sur l'autre, puis `remettre-en-second.ps1` sur celui qu'on vient d'arrêter, et remettre
    `AdresseApi` des postes (rubrique Serveur et PC de secours).
+
+## Serveur central de synchronisation (lot S2, 2026-11-16)
+
+Le serveur central reçoit la copie des données des officines (docs/conception-synchronisation.md § 12). **Pour l'instant il tourne
+sur le PC de développement** (base `pharmacie_cloud_dev`, port 5090) ; hébergement réel **[À VÉRIFIER : hébergeur agréé]**.
+Aucun secret dans un fichier du dépôt ni dans `appsettings*.json` : tout passe par des variables d'environnement du compte de service.
+
+### Installation du serveur central (une fois)
+
+1. **Base** (compte propriétaire, jamais le rôle applicatif) : créer la base, puis passer dans l'ordre `database/cloud/001_base_centrale.sql`
+   et `database/cloud/002_tables_miroir.sql` (`psql -v ON_ERROR_STOP=1 -f …`), puis `database/cloud/tests/001_base_centrale_tests.sql`
+   (doit finir par « tous réussis »).
+2. **Rôle applicatif** : `ALTER ROLE pharma_cloud_api LOGIN PASSWORD '<mot de passe tiré au sort>';` (tapé à la main, jamais enregistré
+   dans un script) ; il n'est **pas** propriétaire des tables (la sécurité au niveau des lignes s'applique).
+3. **Dossier de l'autorité** hors de tout dépôt de sources (ex. `D:\PharmaCentral\Autorite`), accès réservé au compte du service et aux
+   administrateurs. Variables d'environnement du compte du service :
+   - `PHARMA_CLOUD_DOSSIER` = ce dossier ;
+   - `PHARMA_CLOUD_MOT_DE_PASSE` = mot de passe des clés (16 caractères au moins, à ranger au coffre : sans lui, l'autorité est perdue) ;
+   - `PHARMA_CLOUD_CONNEXION` = connexion PostgreSQL de `pharma_cloud_api` ;
+   - `PHARMA_CLOUD_ADMIN_CONNEXION` = connexion du propriétaire (outil d'administration seulement).
+4. **Autorité de certification** : `Pharma.Cloud.Api.exe --initialiser-autorite` (affiche l'empreinte SHA-256 de l'autorité : la noter ;
+   l'autorité n'est jamais remplacée). **Sauvegarder** `autorite.crt`, `autorite.cle` (chiffrée) et le mot de passe séparément.
+5. **Certificat HTTPS** : `Pharma.Cloud.Api.exe --certificat-serveur --noms <nom DNS>,<adresse IP>` (2 ans, à refaire avant l'échéance).
+6. **Démarrage** : `Pharma.Cloud.Api.exe` (HTTPS seul, `Cloud:Adresse` / `Cloud:Port` dans appsettings ; 127.0.0.1:5090 par défaut).
+   Seul le port HTTPS est ouvert ; la base n'est jamais exposée.
+7. **Chaque mois** (tâche planifiée) : `Pharma.Cloud.Api.exe --partitions` (partitions mensuelles des lots reçus).
+
+### Activer une officine
+
+1. Côté serveur central : `Pharma.Cloud.Api.exe --creer-officine "<nom commercial>"` → affiche le code provisoire de l'officine et un
+   **code d'activation** du serveur principal (usage unique, 24 h). Pour le 2e serveur de la même officine :
+   `Pharma.Cloud.Api.exe --code-activation <code officine> --serveur second` (son propre code, son propre certificat).
+2. Transmettre le code au titulaire par un canal sûr (jamais par le même message que le nom de l'officine).
+3. Sur un poste de l'officine, **Administration › Synchronisation** (droit `admin.parametres`) : sous-rubrique **Réglages** → adresse du
+   serveur central (`https://…`), cocher « Synchronisation activée », Enregistrer ; sous-rubrique **Activation** → coller le code,
+   Activer. La clé privée est créée sur le PC serveur (`C:\ProgramData\PharmaOfficine\Synchronisation`, DPAPI machine) et ne le quitte
+   jamais ; à la première activation, le serveur central adopte le code de l'officine installée.
+4. Vérifier dans **État** : « activé (certificat) », dernier envoi et dernier accusé à jour en une à deux minutes.
+5. **Révocation** (PC volé, officine résiliée) : `Pharma.Cloud.Api.exe --lister` puis `--revoquer <empreinte> --motif "<motif>"` ;
+   effet au prochain appel ; un nouveau code permet de réactiver. Le certificat (3 ans) se renouvelle seul 60 jours avant l'échéance.
+
+**Ne jamais** copier le dossier `Synchronisation` d'un serveur à l'autre : chaque serveur a sa clé (DPAPI : illisible ailleurs).
+
+### Synchronisation : compléments (revue de sécurité du lot S2)
+
+- **Révoquer tous les certificats d'un serveur d'officine** (PC volé) : `Pharma.Cloud.Api.exe --revoquer-serveur <code officine> <serveur> --motif "<motif>"`.
+  Révoquer un certificat révoque aussi ceux obtenus en le renouvelant.
+- **Renouvellement** : accepté seulement dans les 60 derniers jours (réglage `cloud_parametre.renouveler_avant_j`), une fois par jour au plus.
+- **Quota** : `UPDATE cloud_parametre SET quota_octets_jour = <octets>` (512 Mio par défaut) ; un refus pour quota est inscrit au journal de sécurité.
+- **Proxy inverse** : les limites de débit par adresse lisent l'adresse de la connexion ; derrière un proxy, c'est celle du proxy
+  (l'en-tête X-Forwarded-For n'est pas lu) : **[À VÉRIFIER]** à l'hébergement. Réglage `Cloud:LimiteParAdresseMinute` (600 par défaut).
+- **Conservation des lots bruts** (`lot_recu`, partitions mensuelles) : durée **[DÉCISION]** du titulaire (preuve fiscale : 6 ans
+  proposés). Purge prévue par détachement puis suppression des partitions plus anciennes que la durée choisie (non codée).
+
+### Synchronisation, lots manquants
+
+Message à l'écran « le serveur central n'a reçu que jusqu'au lot N … reprise impossible automatiquement » : le serveur central a perdu des
+lots déjà accusés (restauration du central) et l'officine ne les a plus. Ne rien supprimer dans l'officine. L'éditeur compare l'état du
+central (`--lister`, tables `officine_epoque`, `lot_recu`) avec `sync_lot` de l'officine ; la remise à niveau passera par une nouvelle
+époque et un chargement complet (lot S6, non réalisé). En attendant, les opérations restent en attente dans l'officine, rien n'est perdu.

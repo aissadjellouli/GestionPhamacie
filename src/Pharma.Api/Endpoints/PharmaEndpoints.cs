@@ -52,5 +52,6 @@ public static class PharmaEndpoints
         api.MapEtatPoste();
         api.MapGed();
         api.MapSecondServeur();
+        api.MapSynchronisation();
     }
 }

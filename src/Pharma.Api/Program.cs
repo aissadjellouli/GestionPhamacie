@@ -73,7 +73,8 @@ builder.Services.AddInfrastructure(new InfrastructureOptions(
     builder.Configuration["Sauvegardes:PgDump"],
     ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa),
     builder.Configuration["SuperAdmin:Fichier"],
-    builder.Configuration["Integrite:FichierCle"]));
+    builder.Configuration["Integrite:FichierCle"],
+    builder.Configuration["Synchronisation:Dossier"]));
 builder.Services.AddSingleton<JetonService>();
 builder.Services.AddSingleton<IGenerateurJeton>(sp => sp.GetRequiredService<JetonService>());
 // Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
@@ -85,6 +86,9 @@ builder.Services.AddScoped(sp => new Pharma.Application.Securite.ListerValidateu
     sp.GetRequiredService<Pharma.Application.Securite.ICodesComptoir>(), sp.GetRequiredService<Pharma.Infrastructure.Securite.PermissionService>()));
 // Synchronisation, lot S1 : mise en forme sync-v1 des lots (aucun envoi, aucune adresse de serveur central)
 builder.Services.AddSingleton<Pharma.Application.Synchronisation.IFormatLotSync, Pharma.Api.Synchronisation.FormatLotSyncV1>();
+// Synchronisation, lot S2 : envoi au serveur central (adresse réglée en base ; rien ne part tant que désactivée ou non activée)
+builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientServeurCentral, Pharma.Api.Synchronisation.ClientServeurCentralHttp>();
+builder.Services.AddHostedService<Pharma.Api.Taches.EnvoiSynchronisation>();
 builder.Services.AddHostedService<AlertesQuotidiennes>();
 builder.Services.AddHostedService<EnvoiNotifications>();
 builder.Services.AddHostedService<SauvegardesAutomatiques>();

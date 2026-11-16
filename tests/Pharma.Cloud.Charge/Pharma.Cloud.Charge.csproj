@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Test de charge du serveur central (lot S2) : outil lancé à la main, hors suite de tests normale -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Pharma.Cloud.Api\Pharma.Cloud.Api.csproj" />
+    <ProjectReference Include="..\..\src\Pharma.Shared\Pharma.Shared.csproj" />
+  </ItemGroup>
+</Project>

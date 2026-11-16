@@ -97,7 +97,11 @@ ROLLBACK TO SAVEPOINT s4;
 DO $$
 DECLARE v_user bigint := (SELECT min(id) FROM utilisateur);
 BEGIN
-    IF (SELECT count(*) FROM regle_alerte_psychotrope) <> 4 THEN RAISE EXCEPTION 'Test 5 : 4 règles attendues'; END IF;
+    -- Les 4 règles du script 117 (d'autres scripts en ajoutent, ex. 118 : prescripteur_hors_zone)
+    IF (SELECT count(*) FROM regle_alerte_psychotrope
+        WHERE code IN ('ordonnance_reutilisee', 'patient_repete', 'prescripteur_inhabituel', 'quantite_anormale')) <> 4 THEN
+        RAISE EXCEPTION 'Test 5 : les 4 règles du script 117 sont attendues';
+    END IF;
     BEGIN
         INSERT INTO forcage_alerte_psychotrope (utilisateur_id, codes, messages, motif, produits) VALUES (v_user, ARRAY['patient_repete'], 'x', 'ok', ARRAY[1::bigint]);
         RAISE EXCEPTION 'Test 5 : motif trop court accepté';

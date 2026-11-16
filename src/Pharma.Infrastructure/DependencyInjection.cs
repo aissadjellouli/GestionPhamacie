@@ -26,9 +26,10 @@ namespace Pharma.Infrastructure;
 
 /// <summary>DossierArchiveChifa : copie des fichiers Chifa lus (GED\Chifa).</summary>
 /// <param name="FichierSuperAdmin">Fichier chiffré du compte super admin (vide : C:\ProgramData\PharmaOfficine\super-admin.dat).</param>
+/// <param name="DossierSynchronisation">Dossier de la clé et du certificat de synchronisation de ce serveur (vide : C:ProgramDataPharmaOfficineSynchronisation).</param>
 /// <param name="FichierCleIntegrite">Fichier chiffré de la clé de scellement des journaux (vide : C:\ProgramData\PharmaOfficine\cle-integrite.dat).</param>
 public sealed record InfrastructureOptions(string ChaineConnexion, string DossierExportChifa, string DossierOrdonnances, string? CheminPgDump = null,
-    string? DossierArchiveChifa = null, string? FichierSuperAdmin = null, string? FichierCleIntegrite = null);
+    string? DossierArchiveChifa = null, string? FichierSuperAdmin = null, string? FichierCleIntegrite = null, string? DossierSynchronisation = null);
 
 public static class DependencyInjection
 {
@@ -207,6 +208,12 @@ public static class DependencyInjection
         services.AddScoped<Application.SecondServeur.ISecondServeurDepot, SecondServeur.SecondServeurSql>();
         services.AddScoped<Application.Integrite.IIntegriteDepot, Securite.IntegriteSql>();
         services.AddScoped<Application.Synchronisation.ISortieSyncDepot, Synchronisation.SortieSyncSql>();
+        // Synchronisation, lot S2 : envoi et accusés (script 128) ; clé et certificat de CE serveur hors base (DPAPI machine)
+        services.AddScoped<Application.Synchronisation.IEnvoiSyncDepot, Synchronisation.EnvoiSyncSql>();
+        services.AddSingleton<Application.Synchronisation.ICertificatSync>(new Synchronisation.CertificatSyncFichier(
+            string.IsNullOrWhiteSpace(options.DossierSynchronisation)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Synchronisation")
+                : options.DossierSynchronisation));
         // Registre des psychotropes renforcé (lot 8, script 117) ; répertoire national des ordonnances : adaptateur FACTICE
         services.AddScoped<Application.Psychotropes.IRegistreRenforceDepot, Psychotropes.RegistreRenforceSql>();
         services.AddScoped<Application.Psychotropes.IZonePsychotropesDepot, Psychotropes.RegistreRenforceSql>();

@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (GO « go S1 », 2026-11-16, voir § 11)** : inventaire, contrat `sync-v1`, file locale et constitution des lots, **sans aucun envoi**. Lots S2 à S7 non lancés.
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation ». Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. Lots S3 à S7 non lancés.
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -223,7 +223,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | 4 | Accès du support de l'éditeur | **Jamais de données nominatives** : état technique seulement (synchronisation, versions, erreurs) |
 | 5 | Certificat de l'officine | **Valable 3 ans**, renouvelé automatiquement avant l'échéance, révocable à tout moment ; **le 2e serveur a son propre certificat** (révocation de l'un sans toucher l'autre) |
 | 6 | Mode d'échange | **Interrogation toutes les minutes** environ à l'initiative de l'officine (envoi des nouveautés, relève des ordres) ; un ordre à distance arrive en une minute au plus |
-| 7 | Séparation des officines dans le cloud | **Un schéma par officine** dans une base commune, avec un compte PostgreSQL propre à chaque schéma (plus le contrôle de l'officine du jeton dans l'API) |
+| 7 | Séparation des officines dans le cloud | ~~Un schéma par officine~~ **Remplacée le 2026-11-16 (lot S2)** : **tables communes** dans une seule base centrale, mêmes tables et colonnes que la base locale, chaque ligne portant le code officine (`officine_id`, dans la clé primaire côté central) ; cloisonnement par **Row Level Security** PostgreSQL (`FORCE ROW LEVEL SECURITY`, rôle applicatif non propriétaire, officine posée par `SET LOCAL app.officine_id` dans chaque transaction, déduite du certificat) ; plus le contrôle de l'officine du jeton dans l'API. Voir § 12 |
 | 8 | Lignes reçues par le cloud mais absentes de l'officine après une bascule ou une restauration | **Signaler et garder** : le cloud ne les efface jamais, les marque « absentes de l'officine » et alerte le titulaire, qui décide (ressaisie, annulation tracée ou justification pour le contrôle fiscal) |
 
 ## 11. Lot S1 : réalisé (2026-11-16, GO « go S1 »)
@@ -248,3 +248,60 @@ Côté officine seulement : **aucun appel réseau, aucune adresse de serveur cen
 - S6 : chargement initial (instantané des tables montantes), nouvelle époque après restauration.
 - Points ouverts de l'inventaire : textes libres envoyés, `medecin` jamais, volume de `catalogue_grossiste` (voir l'inventaire).
 - `init/schema.sql` à régénérer (tables, fonctions et déclencheurs du script 126).
+
+## 12. Lot S2 : réalisé (2026-11-16, GO du titulaire)
+
+Décisions nouvelles du titulaire (2026-11-16) : **tables communes + RLS** (remplace la décision 7 « un schéma par officine ») ; **serveur central local** sur le PC de développement pour l'instant (base `pharmacie_cloud_dev`, API `src/Pharma.Cloud.Api`, port 5090, aucune connexion vers l'extérieur) ; **même schéma que la base locale** (mêmes tables et colonnes pour les tables envoyées, plus le code officine) ; **code officine sur les tables locales** (option B : colonne `officine_id`, hors clé primaire locale).
+
+### 12.1 Base centrale (`database/cloud`, voir son README)
+
+| Élément | Réalisation |
+|---|---|
+| Tables miroir | `002_tables_miroir.sql` **généré** depuis `database/init/schema.sql` et le classement `sync_table` (`Pharma.Cloud.Api.exe --generer-miroir`) : 101 tables (78 montantes, 22 bidirectionnelles, `medecin` en option). Colonnes locales moins les colonnes exclues ; patients sous code (`P-…`, donc `text`), porteur remplacé par `porteur_code` ; clé `(officine_id, clé locale)` ; `sync_epoque`, `sync_numero`, `sync_recu_le`. Test `SchemaMiroirTests` : échoue si une table envoyée diverge, si une table envoyée ou reçue n'a pas `officine_id` localement, ou si une colonne de nom de patient apparaît. |
+| État final | `cloud_appliquer_lot` : lignes groupées par table, dernier état par donnée dans le lot (plus grand n°), `INSERT … ON CONFLICT DO UPDATE … WHERE (sync_epoque, sync_numero) < nouveau` (une ligne ancienne ne remplace jamais une récente), suppression = ligne retirée. Seul l'état final est gardé, pas chaque modification. |
+| Preuve | `lot_recu` : lot brut canonique (octets couverts par l'empreinte), **partitionné par mois** de réception, ajout seul. |
+| Cloisonnement | RLS `ENABLE` + `FORCE` sur `officine_epoque`, `lot_recu` et chaque table miroir ; politique `officine_id = cloud_officine_courante()` ; rôle `pharma_cloud_api` non propriétaire, sans accès direct aux tables d'administration (fonctions `SECURITY DEFINER`). Test SQL : l'officine B ne lit, ne modifie, ne supprime ni n'écrit au nom de A, même sans filtre ; sans officine posée, rien n'est visible, propriétaire compris. |
+| Administration | `officine`, `certificat` (empreinte SHA-256, échéance, révocation), `code_activation` (seul le condensé du code ; usage unique ; 24 h), `journal_securite` (ajout seul, sans donnée personnelle). |
+
+**Partitionnement des tables miroir** : non fait. Une table d'état final mise à jour par clé ne peut pas être partitionnée **par mois** dans PostgreSQL (la clé unique doit contenir la colonne de partition, et le mois d'une donnée qui change n'est pas stable). Seule `lot_recu` est partitionnée par mois. Pour 12 000 officines, la voie prévue est un partitionnement des grosses tables miroir (ventes, lignes, mouvements, journaux) **par hachage de `officine_id`** — **Décision du titulaire (2026-11-16) : découpage par officine** (hachage de `officine_id`, par ex. 32 partitions, nombre à fixer par mesure) pour les grosses tables miroir ; `lot_recu` reste découpée par mois. À réaliser avant l'arrivée d'un grand nombre d'officines (non codé).
+
+**Répartition future sur plusieurs serveurs** (conçue, non codée) : toutes les clés commencent par `officine_id` et aucune requête ne croise deux officines ; une table d'aiguillage `officine → serveur de base` (tenue par l'API centrale) permettra de placer chaque officine sur une base parmi N, l'API ouvrant la connexion de la base de l'officine du certificat. Déplacer une officine = copier ses lignes (toutes filtrées par `officine_id`) puis changer l'aiguillage.
+
+### 12.2 Autorité de certification et API centrale (`src/Pharma.Cloud.Api`)
+
+- **Autorité propre** (ECDSA P-256, 10 ans) dans un dossier **hors dépôt** (`--dossier` ou `PHARMA_CLOUD_DOSSIER` ; refus d'un dossier situé dans un dépôt de sources) ; clé chiffrée PKCS#8 AES-256 par `PHARMA_CLOUD_MOT_DE_PASSE` (16 caractères au moins), jamais dans appsettings ni dans git. Commandes : `--initialiser-autorite`, `--certificat-serveur`, `--creer-officine`, `--code-activation <officine> --serveur <nom>`, `--revoquer <empreinte>`, `--lister`, `--partitions`, `--generer-miroir`.
+- **Code d'activation** : `XXXXX-XXXXX-XXXXX-XXXXX.<32 hex>` ; la seconde partie est le début de l'empreinte SHA-256 de l'autorité : l'officine épingle le serveur central **dès la première connexion**. Usage unique, 24 h. Le 2e serveur reçoit son propre code et son propre certificat.
+- **Certificat client** : signé à partir de la demande (CSR) de l'officine, sujet imposé (`CN=<code officine>, OU=<serveur>`), 3 ans, authentification client seulement ; renouvellement par `POST /api/v1/certificat/renouveler` (jeton et certificat valables), l'ancien restant valable jusqu'à son échéance.
+- **Routes** : `POST /api/v1/activation` (code + CSR + code officine → certificat et autorité), `POST /api/v1/jeton` (certificat → JWT ES256 10 min, `cnf.x5t#S256`, portée `sync.envoyer`), `POST /api/v1/lots` (corps = lot `sync-v1` ; accusé `accepte`, `deja_recu`, `trou` + dernier reçu ; refus `empreinte_differente`), `GET /api/v1/etat?epoque=` (dernier lot reçu). HTTPS seul (TLS 1.2/1.3), certificat client vérifié contre l'autorité **et** la base (révocation, échéance, officine résiliée) à chaque appel ; limites de débit (§ 12.6), 10 activations / 10 min par adresse ; ProblemDetails ; journal structuré (officine, n° de lot) sans donnée personnelle.
+- **Première activation** : l'officine créée par l'outil (code provisoire) prend le **code de l'officine installée** (`sync_parametre.officine_id`) ; ensuite, un autre code est refusé.
+- **Clé de l'autorité dans l'API** : l'API centrale charge la clé de l'autorité pour signer à l'activation. En production, une autorité intermédiaire dédiée à l'API (racine hors ligne) est conseillée **[DÉCISION]**.
+
+### 12.3 Côté officine
+
+| Élément | Réalisation |
+|---|---|
+| Script 128 | Code officine généré une fois (`sync_parametre.officine_id`, ne se modifie plus), `officine_courante()`, colonne `officine_id` (NOT NULL, défaut `officine_courante()`) sur les **118** tables montantes, bidirectionnelles, descendantes et `medecin`, ajoutée sans UPDATE (défaut constant puis défaut fonction) : journaux chaînés vérifiés identiques avant et après (`integrite_verifier`, `journal_vente_continuite`), gardes intactes. Réglages : `adresse_serveur` (https seulement), `inscrite_le`, `dernier_envoi_le`, `dernier_accuse_le`, `derniere_erreur(_le)` ; fonctions `sync_enregistrer_accuse`, `sync_noter_envoi`, `sync_enregistrer_inscription`, `sync_regler_adresse`. |
+| Clé et certificat | `CertificatSyncFichier` : comme la clé de scellement (DPAPI portée machine, fichier restreint), dossier `C:\ProgramData\PharmaOfficine\Synchronisation` (réglage `Synchronisation:Dossier`) ; **hors base** (le 2e serveur a les siens). |
+| Envoi | `EnvoyerLotsSync` + tâche `EnvoiSynchronisation` (chaque minute, attente 1, 2, 4… 30 min en erreur) : constitue les lots (S1), renvoie chaque lot non accusé **à l'identique** (vérifie que le contenu redonne l'empreinte enregistrée), enregistre l'accusé (`sync_lot.accuse_le`, `dernier_accuse`). Client `ClientServeurCentralHttp` : certificat client, autorité épinglée (`EpinglageServeur`), jeton redemandé avant expiration. |
+| Écran | « Admin › Synchronisation » (droit `admin.parametres`) : État, Réglages, Activation. |
+
+### 12.4 Essais réalisés (2026-11-16, poste de développement)
+
+- De bout en bout sur une **copie jetable** de `pharmacie_test` (base d'essai supprimée ensuite) : activation (mauvais code refusé, code réutilisé refusé), code officine adopté par le serveur central, 718 lignes en 4 lots accusés, patients sous code, suppression propagée, réactivation par un nouveau code, certificat révoqué → envoi refusé (401) et lot gardé en attente.
+- **Test de charge** (`tests/Pharma.Cloud.Charge`, lancé à la main ; client et serveur sur le même PC, PostgreSQL 18 local) : 200 officines × 5 lots × 200 lignes : 310 lots/s, 62 059 lignes/s, médiane 52 ms par dépôt ; 1 000 officines × 5 × 200 : 342 lots/s, 68 320 lignes/s, 95 % sous 155 ms, 1 échec de connexion TLS sur 1 000 ; 5 000 officines × 2 × 200 : 304 lots/s, 60 706 lignes/s, 3 échecs de connexion TLS sur 5 000 (cause non examinée **[À VÉRIFIER]**). Place : environ 275 Ko pour 1 000 lignes « vente » par officine (lot brut compris). L'objectif de 60 M lignes/jour représente environ 700 lignes/s en moyenne ; les pointes, la volumétrie disque et la durée de conservation des lots bruts restent **[À VÉRIFIER / DÉCISION]**.
+
+### 12.5 Reste à faire
+
+- **Chargement initial** (première émission de l'existant) : **non codé** (S6). Conception : à l'activation, inscrire dans la file une ligne `creation` par ligne existante de chaque table envoyée (même minimisation que le déclencheur), dans un instantané pris **après** la pose des déclencheurs et sous un verrou court qui ordonne l'instantané avant les modifications suivantes (sinon un état ancien pourrait recevoir un n° plus grand qu'une modification plus récente) ; pour les chaînes, depuis le rang 1. Durée et verrou à mesurer sur une vraie base.
+- Purge de `sync_sortie` après accusé et délai de garde ; bandeau poste et alertes (S3) ; vérification des chaînes au central (S4) ; ordres descendants (S5) ; nouvelle époque après restauration, bascule (S6) ; écrans à distance (S7).
+- Tables miroir des tables **descendantes** : non créées (référentiels diffusés par le central, S5).
+- Changement de **type** d'une colonne envoyée : script central à part (le générateur n'ajoute que des colonnes).
+- Hébergement réel, certificat HTTPS en production, sauvegarde de la base centrale : **[À VÉRIFIER : hébergeur]**.
+
+### 12.6 Corrections après revue de code et audit de sécurité (2026-11-16)
+
+- Renouvellement borné (60 derniers jours, depuis le certificat le plus récent, 1/jour), successeurs chaînés et révoqués en cascade, révocation par serveur ; quota d'octets par officine et par jour (`officine_volume_jour`, `cloud_parametre`) ; limites de débit par certificat vérifié, globale par adresse, corps limité hors dépôt ; erreurs génériques au client ; refus journalisés une fois par heure ; dossier de la clé de l'officine à accès restreint ; identifiants du schéma miroir validés et entre guillemets.
+- Officine : verrou unique (`VerrouSync`) ; reprise automatique d'un trou côté central ; contrôle de l'accusé ; erreurs imprévues notées sans détail ; refus définitif sans renvoi en boucle ; garde `pg_is_in_recovery()` ; réglages dans une transaction ; client HTTP réutilisé par certificat.
+- Suppression au central : clé relue depuis l'id `sync-v1` (format S1 inchangé, valeurs jointes par « | ») et convertie au type de la colonne ; pour une clé composée, l'id reconstitué doit être identique : une valeur contenant « | » ne peut jamais retirer une autre ligne (au pire la suppression n'est pas appliquée).
+- **Défaut de `officine_id` non remplacé par une constante** : mesuré sur 200 000 insertions, la fonction coûte environ 0,4 s de plus (≈ 2 µs par ligne : 88 ms avec une constante, 430 à 530 ms avec la fonction). Une constante inscrirait le code d'une officine dans le schéma : `init/schema.sql` diffèrerait d'une base à l'autre (comparaison init en échec) et une installation neuve hériterait du code de la base de référence. Gardé tel quel, à reconsidérer si un import massif le justifie **[DÉCISION]**.
+- Non traité, décision du titulaire en attente : noms du personnel et coordonnées des fournisseurs et de la pharmacie envoyés au central.

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 127 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 128 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 127 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 128 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -34,10 +34,11 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
 -- PostgreSQL database dump
 --
 
-\restrict hd85PEvehjENS1u0wgdjP9rHPJMfTYelXpfhzXPY36nTBfL3v4f5zOeAZYdZAXS
+\restrict eawbs3B7Gkhvc0oyGgibhJPGgmiX0QwZLyKjB7fxSO55Vj6wuaJX9YatVNsw6ix
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -2155,6 +2156,31 @@ END $$;
 
 
 --
+-- Name: officine_courante(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.officine_courante() RETURNS uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE v uuid;
+BEGIN
+    SELECT officine_id INTO v FROM sync_parametre WHERE id = 1;
+    IF v IS NOT NULL THEN RETURN v; END IF;
+    INSERT INTO sync_parametre (id, officine_id) VALUES (1, gen_random_uuid())
+    ON CONFLICT (id) DO UPDATE SET officine_id = coalesce(sync_parametre.officine_id, EXCLUDED.officine_id);
+    SELECT officine_id INTO v FROM sync_parametre WHERE id = 1;
+    RETURN v;
+END $$;
+
+
+--
+-- Name: FUNCTION officine_courante(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.officine_courante() IS 'Code de l''officine installée (sync_parametre.officine_id), défaut de la colonne officine_id des tables synchronisées (script 128).';
+
+
+--
 -- Name: prochain_numero_commande(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2429,6 +2455,7 @@ CREATE TABLE public.registre_psychotrope (
     porteur_piece text,
     numero_ordre bigint,
     duree_traitement_jours integer,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_registre_porteur_complet CHECK (((porteur_nom IS NULL) OR ((porteur_adresse IS NOT NULL) AND (porteur_piece IS NOT NULL)))),
     CONSTRAINT ck_registre_psy_duree CHECK (((duree_traitement_jours IS NULL) OR ((duree_traitement_jours >= 1) AND (duree_traitement_jours <= 3650)))),
     CONSTRAINT registre_psychotrope_check CHECK (((type_mouvement <> 'sortie'::text) OR (ordonnance_id IS NOT NULL))),
@@ -3194,6 +3221,42 @@ END $$;
 
 
 --
+-- Name: sync_enregistrer_accuse(integer, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_enregistrer_accuse(p_epoque integer, p_numero bigint) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE p sync_parametre;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
+    IF p_epoque <> p.epoque OR p_numero > p.dernier_lot THEN
+        RAISE EXCEPTION 'Synchronisation : accusé % de l''époque % incohérent (dernier lot constitué %, époque %)', p_numero, p_epoque, p.dernier_lot, p.epoque;
+    END IF;
+    UPDATE sync_lot SET accuse_le = now() WHERE epoque = p_epoque AND numero <= p_numero AND accuse_le IS NULL;
+    UPDATE sync_parametre SET dernier_accuse = greatest(dernier_accuse, p_numero), dernier_accuse_le = now(),
+                              dernier_envoi_le = now(), derniere_erreur = NULL, derniere_erreur_le = NULL
+    WHERE id = 1;
+    RETURN greatest(p.dernier_accuse, p_numero);
+END $$;
+
+
+--
+-- Name: sync_enregistrer_inscription(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_enregistrer_inscription(p_officine uuid) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF p_officine IS DISTINCT FROM officine_courante() THEN
+        RAISE EXCEPTION 'Synchronisation : le serveur central a répondu pour une autre officine';
+    END IF;
+    UPDATE sync_parametre SET inscrite_le = coalesce(inscrite_le, now()), derniere_erreur = NULL, derniere_erreur_le = NULL WHERE id = 1;
+END $$;
+
+
+--
 -- Name: sync_enregistrer_lot(bigint, bigint[], integer, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3381,13 +3444,52 @@ END $$;
 
 
 --
+-- Name: sync_noter_envoi(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_envoi(p_erreur text) RETURNS void
+    LANGUAGE sql
+    AS $$
+    UPDATE sync_parametre SET dernier_envoi_le = now(), derniere_erreur = left(p_erreur, 500),
+                              derniere_erreur_le = CASE WHEN p_erreur IS NULL THEN NULL ELSE now() END
+    WHERE id = 1
+$$;
+
+
+--
+-- Name: sync_parametre_garde_officine(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_parametre_garde_officine() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF OLD.officine_id IS NOT NULL AND NEW.officine_id IS DISTINCT FROM OLD.officine_id THEN
+        RAISE EXCEPTION 'Synchronisation : le code de l''officine ne se modifie pas';
+    END IF;
+    RETURN NEW;
+END $$;
+
+
+--
+-- Name: sync_regler_adresse(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_regler_adresse(p_adresse text) RETURNS void
+    LANGUAGE sql
+    AS $$
+    UPDATE sync_parametre SET adresse_serveur = nullif(btrim(p_adresse), ''), modifie_le = now() WHERE id = 1
+$$;
+
+
+--
 -- Name: sync_parametre; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.sync_parametre (
     id integer DEFAULT 1 NOT NULL,
     active boolean DEFAULT false NOT NULL,
-    officine_id uuid,
+    officine_id uuid DEFAULT gen_random_uuid(),
     epoque integer DEFAULT 1 NOT NULL,
     version_contrat text DEFAULT 'sync-v1'::text NOT NULL,
     lot_max_lignes integer DEFAULT 500 NOT NULL,
@@ -3397,6 +3499,13 @@ CREATE TABLE public.sync_parametre (
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
     textes_libres text DEFAULT 'filtres'::text NOT NULL,
     envoyer_medecins boolean DEFAULT false NOT NULL,
+    adresse_serveur text,
+    inscrite_le timestamp with time zone,
+    dernier_envoi_le timestamp with time zone,
+    dernier_accuse_le timestamp with time zone,
+    derniere_erreur text,
+    derniere_erreur_le timestamp with time zone,
+    CONSTRAINT sync_parametre_adresse_serveur_check CHECK (((adresse_serveur IS NULL) OR (adresse_serveur ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'::text))),
     CONSTRAINT sync_parametre_check CHECK (((dernier_accuse >= 0) AND (dernier_accuse <= dernier_lot))),
     CONSTRAINT sync_parametre_dernier_lot_check CHECK ((dernier_lot >= 0)),
     CONSTRAINT sync_parametre_epoque_check CHECK ((epoque >= 1)),
@@ -4120,6 +4229,7 @@ CREATE TABLE public.alerte (
     mise_a_jour_le timestamp with time zone DEFAULT now() NOT NULL,
     traitee_par bigint,
     traitee_le timestamp with time zone,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT alerte_niveau_check CHECK ((niveau = ANY (ARRAY['info'::text, 'attention'::text, 'urgent'::text]))),
     CONSTRAINT alerte_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'vue'::text, 'reportee'::text, 'traitee'::text, 'resolue'::text]))),
     CONSTRAINT alerte_type_check CHECK ((type = ANY (ARRAY['peremption'::text, 'perime'::text, 'risque_ecoulement'::text, 'rupture'::text, 'stock_critique'::text, 'dormant'::text, 'surstock'::text, 'lot_delaisse'::text])))
@@ -4196,6 +4306,7 @@ CREATE TABLE public.alerte_surveillance (
     mise_a_jour_le timestamp with time zone DEFAULT now() NOT NULL,
     traitee_par bigint,
     traitee_le timestamp with time zone,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT alerte_surveillance_niveau_check CHECK ((niveau = ANY (ARRAY['attention'::text, 'urgent'::text]))),
     CONSTRAINT alerte_surveillance_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'traitee'::text]))),
     CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text, 'ecart_reception'::text, 'reception_meme_personne'::text, 'retour_sans_avoir'::text, 'avoir_incomplet'::text, 'credit_nouveau_patient'::text, 'credits_employe'::text, 'credit_sans_remboursement'::text, 'autorisations_valideur'::text, 'autorisations_employe'::text, 'postes_simultanes'::text, 'baisses_prix'::text, 'sorties_tiroir'::text])))
@@ -4233,6 +4344,7 @@ CREATE TABLE public.annulation_registre (
     motif text NOT NULL,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_annulation_registre_motif CHECK (((char_length(btrim(motif)) >= 5) AND (char_length(btrim(motif)) <= 500)))
 );
 
@@ -4267,6 +4379,7 @@ CREATE TABLE public.annulation_vente (
     session_caisse_id bigint,
     poste text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT annulation_vente_check CHECK (((NOT ancienne) OR (valide_par IS NOT NULL))),
     CONSTRAINT annulation_vente_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text]))),
     CONSTRAINT annulation_vente_montant_rembourse_check CHECK ((montant_rembourse >= (0)::numeric)),
@@ -4311,6 +4424,7 @@ CREATE TABLE public.avoir_mouvement (
     motif text,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_avoir_mouvement_liens CHECK ((((origine <> ALL (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'retour_client'::text])) OR (vente_id IS NOT NULL)) AND ((origine <> 'paiement'::text) OR (paiement_id IS NOT NULL)) AND ((origine <> 'remboursement'::text) OR (mouvement_tiroir_id IS NOT NULL)))),
     CONSTRAINT ck_avoir_mouvement_montant CHECK ((montant > (0)::numeric)),
     CONSTRAINT ck_avoir_mouvement_origine CHECK ((origine = ANY (ARRAY['annulation_vente'::text, 'trop_paye_regularisation'::text, 'saisie'::text, 'paiement'::text, 'remboursement'::text, 'retour_client'::text]))),
@@ -4355,6 +4469,7 @@ CREATE TABLE public.boite (
     code_etiquette text,
     reception_id bigint NOT NULL,
     prix_achat_ht numeric(12,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT boite_prix_achat_ht_check CHECK ((prix_achat_ht >= (0)::numeric)),
     CONSTRAINT boite_statut_check CHECK ((statut = ANY (ARRAY['en_stock'::text, 'vendue'::text, 'retournee_fournisseur'::text, 'detruite'::text, 'retour_client'::text, 'donnee'::text, 'manquante'::text]))),
     CONSTRAINT ck_boite_identifiant CHECK ((((gtin IS NOT NULL) AND (numero_serie IS NOT NULL)) OR (code_etiquette IS NOT NULL)))
@@ -4377,6 +4492,7 @@ CREATE TABLE public.boite_evenement (
     commentaire text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     inventaire_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT boite_evenement_type_check CHECK ((type = ANY (ARRAY['reception'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'destruction'::text, 'blocage'::text, 'correction'::text, 'inventaire'::text, 'echantillon'::text, 'manquant_reception'::text])))
 );
 
@@ -4436,6 +4552,7 @@ CREATE TABLE public.bordereau (
     cree_par bigint,
     depose_le timestamp with time zone,
     depose_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT bordereau_check CHECK ((periode_fin >= periode_debut)),
     CONSTRAINT bordereau_statut_check CHECK ((statut = ANY (ARRAY['preparation'::text, 'depose'::text, 'paye_partiel'::text, 'paye'::text, 'solde'::text]))),
     CONSTRAINT ck_bordereau_canal CHECK ((canal = ANY (ARRAY['chifa'::text, 'mdn'::text]))),
@@ -4513,6 +4630,7 @@ CREATE TABLE public.bordereau_vente (
     suite_le timestamp with time zone,
     suite_par bigint,
     credit_mouvement_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_bordereau_vente_rejet CHECK ((((rejete_le IS NULL) AND (rejete_par IS NULL) AND (rejet_motif_code IS NULL) AND (rejet_texte IS NULL) AND (montant_rejete = (0)::numeric) AND (suite IS NULL)) OR ((rejete_le IS NOT NULL) AND (rejete_par IS NOT NULL) AND (rejet_motif_code IS NOT NULL) AND (montant_rejete > (0)::numeric) AND (montant_rejete <= (part_organisme + 0.01))))),
     CONSTRAINT ck_bordereau_vente_suite CHECK ((((suite IS NULL) AND (suite_le IS NULL) AND (suite_par IS NULL) AND (credit_mouvement_id IS NULL)) OR ((suite = ANY (ARRAY['redeposer'::text, 'perte'::text, 'patient'::text])) AND (suite_le IS NOT NULL) AND (suite_par IS NOT NULL) AND ((suite = 'patient'::text) = (credit_mouvement_id IS NOT NULL)))))
 );
@@ -4576,6 +4694,7 @@ CREATE TABLE public.campagne_inventaire (
     nombre_boites integer,
     valeur_stock numeric(14,2),
     commentaire text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT campagne_inventaire_mode_check CHECK ((mode = ANY (ARRAY['ouverte'::text, 'fermee'::text]))),
     CONSTRAINT campagne_inventaire_statut_check CHECK ((statut = ANY (ARRAY['en_cours'::text, 'cloturee'::text, 'annulee'::text])))
 );
@@ -4608,7 +4727,8 @@ CREATE TABLE public.campagne_inventaire_ligne (
     rayon text NOT NULL,
     quantite integer NOT NULL,
     prix_achat_ht numeric(12,2) NOT NULL,
-    valeur numeric(14,2) NOT NULL
+    valeur numeric(14,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -4627,6 +4747,7 @@ CREATE TABLE public.catalogue_grossiste (
     delai_jours integer,
     import_id bigint,
     maj_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT catalogue_grossiste_delai_jours_check CHECK (((delai_jours IS NULL) OR (delai_jours >= 0))),
     CONSTRAINT catalogue_grossiste_prix_ht_check CHECK (((prix_ht IS NULL) OR (prix_ht >= (0)::numeric))),
     CONSTRAINT catalogue_grossiste_quantite_disponible_check CHECK (((quantite_disponible IS NULL) OR (quantite_disponible >= 0)))
@@ -4642,7 +4763,8 @@ CREATE TABLE public.categorie_produit (
     libelle text NOT NULL,
     medicament boolean DEFAULT false NOT NULL,
     ordre integer DEFAULT 0 NOT NULL,
-    actif boolean DEFAULT true NOT NULL
+    actif boolean DEFAULT true NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -4664,6 +4786,7 @@ CREATE TABLE public.centre_payeur (
     nom text NOT NULL,
     actif boolean DEFAULT true NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_centre_payeur_code CHECK (((code = btrim(code)) AND ((char_length(code) >= 1) AND (char_length(code) <= 10)))),
     CONSTRAINT ck_centre_payeur_nom CHECK (((char_length(btrim(nom)) >= 1) AND (char_length(btrim(nom)) <= 120)))
 );
@@ -4714,7 +4837,8 @@ CREATE TABLE public.chifa_code_produit (
     code text NOT NULL,
     produit_id bigint NOT NULL,
     associe_par bigint,
-    associe_le timestamp with time zone DEFAULT now() NOT NULL
+    associe_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -4733,6 +4857,7 @@ CREATE TABLE public.classe_suivie (
     code text NOT NULL,
     libelle text NOT NULL,
     active boolean DEFAULT true NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_classe_suivie_code CHECK ((code ~ '^[a-z0-9_]{2,40}$'::text))
 );
 
@@ -4745,7 +4870,8 @@ CREATE TABLE public.classe_suivie_dci (
     classe_code text NOT NULL,
     dci_id bigint NOT NULL,
     ajoute_le timestamp with time zone DEFAULT now() NOT NULL,
-    ajoute_par bigint
+    ajoute_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -4766,6 +4892,7 @@ CREATE TABLE public.client_facture (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     email text,
     delai_paiement_jours integer DEFAULT 30 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_client_facture_delai_paiement CHECK (((delai_paiement_jours >= 1) AND (delai_paiement_jours <= 365)))
 );
 
@@ -4816,6 +4943,7 @@ CREATE TABLE public.cloture_fiscale (
     fichier_archive text,
     empreinte_archive bytea,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_cloture_fiscale_periode CHECK ((periode_au >= periode_du)),
     CONSTRAINT ck_cloture_fiscale_session CHECK (((type = 'journaliere'::text) = (session_caisse_id IS NOT NULL))),
     CONSTRAINT ck_cloture_fiscale_type CHECK ((type = ANY (ARRAY['journaliere'::text, 'mensuelle'::text])))
@@ -4850,6 +4978,7 @@ CREATE TABLE public.commande_fournisseur (
     utilisateur_id bigint,
     envoyee_email_le timestamp with time zone,
     envoyee_email_a text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT commande_fournisseur_statut_check CHECK ((statut = ANY (ARRAY['brouillon'::text, 'envoyee'::text, 'recue_partielle'::text, 'recue'::text, 'annulee'::text])))
 );
 
@@ -4877,6 +5006,7 @@ CREATE TABLE public.comptage_caisse (
     coupure text NOT NULL,
     nombre integer NOT NULL,
     montant numeric(12,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT comptage_caisse_coupure_check CHECK ((coupure = ANY (ARRAY['b2000'::text, 'b1000'::text, 'b500'::text, 'b200'::text, 'p100'::text, 'autres'::text]))),
     CONSTRAINT comptage_caisse_montant_check CHECK ((montant >= (0)::numeric)),
     CONSTRAINT comptage_caisse_nombre_check CHECK ((nombre >= 0))
@@ -4896,6 +5026,7 @@ CREATE TABLE public.comptage_intermediaire (
     ecart numeric(12,2) NOT NULL,
     comptage jsonb NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT comptage_intermediaire_compte_check CHECK ((compte >= (0)::numeric))
 );
 
@@ -4942,6 +5073,7 @@ CREATE TABLE public.comptage_reception (
     decide_par bigint,
     decide_le timestamp with time zone,
     reception_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT comptage_reception_boites_en_trop_check CHECK ((boites_en_trop >= 0)),
     CONSTRAINT comptage_reception_boites_manquantes_check CHECK ((boites_manquantes >= 0)),
     CONSTRAINT comptage_reception_statut_check CHECK ((statut = ANY (ARRAY['compte'::text, 'ecart'::text, 'receptionne'::text, 'a_recompter'::text, 'annule'::text]))),
@@ -4998,6 +5130,7 @@ CREATE TABLE public.comptage_reception_ligne (
     quantite integer NOT NULL,
     numeros_serie text[] DEFAULT '{}'::text[] NOT NULL,
     scans_mobile bigint[] DEFAULT '{}'::bigint[] NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT comptage_reception_ligne_quantite_check CHECK (((quantite >= 1) AND (quantite <= 10000)))
 );
 
@@ -5025,6 +5158,7 @@ CREATE TABLE public.compte_carte_periode (
     compte_id bigint NOT NULL,
     du date NOT NULL,
     au date,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT compte_carte_periode_check CHECK (((au IS NULL) OR (au >= du)))
 );
 
@@ -5065,6 +5199,7 @@ CREATE TABLE public.compte_tresorerie (
     date_initiale date DEFAULT CURRENT_DATE NOT NULL,
     actif boolean DEFAULT true NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT compte_tresorerie_check CHECK (((type = 'banque'::text) OR (NOT recoit_carte))),
     CONSTRAINT compte_tresorerie_type_check CHECK ((type = ANY (ARRAY['coffre'::text, 'banque'::text])))
 );
@@ -5109,6 +5244,7 @@ CREATE TABLE public.connexion_employe (
     poste text,
     methode text NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT connexion_employe_methode_check CHECK ((methode = ANY (ARRAY['mot_de_passe'::text, 'code'::text])))
 );
 
@@ -5148,6 +5284,7 @@ CREATE TABLE public.correction_lot (
     mouvement_id bigint,
     utilisateur_id bigint NOT NULL,
     corrige_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_correction_lot_champ CHECK ((champ = ANY (ARRAY['ppa'::text, 'numero_lot'::text, 'date_peremption'::text, 'shp'::text, 'quantite'::text]))),
     CONSTRAINT ck_correction_lot_motif CHECK ((length(btrim(motif)) > 0))
 );
@@ -5198,6 +5335,7 @@ CREATE TABLE public.correspondance_echeancier (
     utilisateur_id bigint NOT NULL,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
     col_assurance integer,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT correspondance_echeancier_col_assurance_check CHECK ((col_assurance >= 0)),
     CONSTRAINT correspondance_echeancier_col_capital_check CHECK ((col_capital >= 0)),
     CONSTRAINT correspondance_echeancier_col_date_check CHECK ((col_date >= 0)),
@@ -5234,6 +5372,7 @@ CREATE TABLE public.correspondance_echeancier_preteur (
     utilisateur_id bigint NOT NULL,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
     col_assurance integer,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT correspondance_echeancier_preteur_col_assurance_check CHECK ((col_assurance >= 0)),
     CONSTRAINT correspondance_echeancier_preteur_col_capital_check CHECK ((col_capital >= 0)),
     CONSTRAINT correspondance_echeancier_preteur_col_date_check CHECK ((col_date >= 0)),
@@ -5264,6 +5403,7 @@ CREATE TABLE public.credit_imputation (
     vente_id bigint NOT NULL,
     montant numeric(12,2) NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_credit_imputation_montant CHECK ((montant > (0)::numeric))
 );
 
@@ -5297,6 +5437,7 @@ CREATE TABLE public.credit_mouvement (
     poste text,
     reference text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT credit_mouvement_montant_check CHECK ((montant <> (0)::numeric)),
     CONSTRAINT credit_mouvement_type_check CHECK ((type = ANY (ARRAY['ouverture'::text, 'reprise'::text, 'vente_credit'::text, 'remboursement'::text, 'retour'::text, 'annulation'::text, 'correction'::text])))
 );
@@ -5330,6 +5471,7 @@ ALTER TABLE public.credit_mouvement ALTER COLUMN id ADD GENERATED ALWAYS AS IDEN
 CREATE TABLE public.credit_ouverture (
     patient_id bigint NOT NULL,
     montant numeric(12,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT credit_ouverture_montant_check CHECK ((montant >= (0)::numeric))
 );
 
@@ -5347,7 +5489,8 @@ COMMENT ON TABLE public.credit_ouverture IS 'Dette antérieure aux ventes à cr�
 
 CREATE TABLE public.dci (
     id bigint NOT NULL,
-    nom text NOT NULL
+    nom text NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -5383,6 +5526,7 @@ CREATE TABLE public.demande_patient (
     sms_erreur text,
     cloture_le timestamp with time zone,
     cloture_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT demande_patient_prevenu_canal_check CHECK (((prevenu_canal IS NULL) OR (prevenu_canal = ANY (ARRAY['comptoir'::text, 'sms'::text])))),
     CONSTRAINT demande_patient_quantite_check CHECK (((quantite >= 1) AND (quantite <= 1000))),
     CONSTRAINT demande_patient_statut_check CHECK ((statut = ANY (ARRAY['en_attente'::text, 'prevenu'::text, 'servie'::text, 'annulee'::text])))
@@ -5455,7 +5599,8 @@ ALTER TABLE public.destinataire_notification ALTER COLUMN id ADD GENERATED ALWAY
 CREATE TABLE public.ecart_caisse_vu (
     session_id bigint NOT NULL,
     vu_le timestamp with time zone DEFAULT now() NOT NULL,
-    vu_par bigint NOT NULL
+    vu_par bigint NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -5482,6 +5627,7 @@ CREATE TABLE public.echeance_pret (
     montant numeric(12,2) NOT NULL,
     capital_restant numeric(12,2) NOT NULL,
     assurance numeric(12,2) DEFAULT 0 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT echeance_pret_assurance_check CHECK ((assurance >= (0)::numeric)),
     CONSTRAINT echeance_pret_capital_check CHECK ((capital >= (0)::numeric)),
     CONSTRAINT echeance_pret_capital_restant_check CHECK ((capital_restant >= (0)::numeric)),
@@ -5543,6 +5689,7 @@ CREATE TABLE public.emplacement (
     zone text DEFAULT 'vente'::text NOT NULL,
     actif boolean DEFAULT true NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT emplacement_check CHECK (((tiroir IS NULL) OR (etagere IS NOT NULL))),
     CONSTRAINT emplacement_code_check CHECK ((code = upper(code))),
     CONSTRAINT emplacement_zone_check CHECK ((zone = ANY (ARRAY['vente'::text, 'reserve'::text])))
@@ -5579,6 +5726,7 @@ CREATE TABLE public.evenement_caisse (
     montant numeric(12,2),
     detail text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_evenement_caisse_type CHECK ((type = ANY (ARRAY['ligne_retiree'::text, 'tiroir_ouvert'::text, 'attente_abandonnee'::text])))
 );
 
@@ -5639,6 +5787,7 @@ CREATE TABLE public.facture_client (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     date_echeance date,
     part_credit numeric(12,2) DEFAULT 0 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_facture_client_part_credit CHECK (((part_credit >= (0)::numeric) AND ((part_credit = (0)::numeric) OR ((type = 'avoir'::text) AND (part_credit <= montant_ttc))))),
     CONSTRAINT ck_facture_echeance CHECK ((((type = 'facture'::text) AND (date_echeance IS NOT NULL) AND (date_echeance >= date_facture)) OR ((type = 'avoir'::text) AND (date_echeance IS NULL)))),
     CONSTRAINT facture_client_check CHECK (((destinataire <> 'patient'::text) OR (patient_id IS NOT NULL))),
@@ -5696,6 +5845,7 @@ CREATE TABLE public.facture_client_ligne (
     prix_unitaire_ttc numeric(12,2) NOT NULL,
     taux_tva numeric(5,2) DEFAULT 0 NOT NULL,
     montant_ttc numeric(12,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT facture_client_ligne_check CHECK (((part = 'libre'::text) OR (vente_id IS NOT NULL))),
     CONSTRAINT facture_client_ligne_part_check CHECK ((part = ANY (ARRAY['patient'::text, 'organisme'::text, 'libre'::text])))
 );
@@ -5725,7 +5875,8 @@ CREATE TABLE public.facture_client_version (
     contenu jsonb NOT NULL,
     motif text,
     utilisateur_id bigint NOT NULL,
-    cree_le timestamp with time zone DEFAULT now() NOT NULL
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -5758,6 +5909,7 @@ CREATE TABLE public.forcage_alerte_psychotrope (
     numero_ordonnance text,
     produits bigint[] NOT NULL,
     poste text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_forcage_psy_codes CHECK ((cardinality(codes) > 0)),
     CONSTRAINT ck_forcage_psy_motif CHECK (((char_length(btrim(motif)) >= 5) AND (char_length(btrim(motif)) <= 500)))
 );
@@ -5794,6 +5946,7 @@ CREATE TABLE public.fournisseur (
     delai_reprise_jours integer,
     email text,
     actif boolean DEFAULT true NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_seuils_fournisseur CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
     CONSTRAINT fournisseur_delai_reprise_jours_check CHECK ((delai_reprise_jours > 0)),
     CONSTRAINT fournisseur_jours_orange_check CHECK ((jours_orange > 0)),
@@ -5842,6 +5995,7 @@ CREATE TABLE public.fournisseur_mouvement (
     utilisateur_id bigint,
     reference text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT fournisseur_mouvement_montant_check CHECK ((montant <> (0)::numeric)),
     CONSTRAINT fournisseur_mouvement_type_check CHECK ((type = ANY (ARRAY['ouverture'::text, 'reprise'::text, 'reception'::text, 'reglement'::text, 'avoir'::text, 'correction'::text, 'annulation_reglement'::text])))
 );
@@ -5993,6 +6147,7 @@ CREATE TABLE public.indication (
     libelle text NOT NULL,
     actif boolean DEFAULT true NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_indication_libelle CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 80)))
 );
 
@@ -6055,6 +6210,7 @@ CREATE TABLE public.inventaire (
     termine_par bigint,
     campagne_id bigint,
     produit_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT inventaire_statut_check CHECK ((statut = ANY (ARRAY['en_cours'::text, 'termine'::text, 'annule'::text])))
 );
 
@@ -6093,7 +6249,8 @@ CREATE TABLE public.journal_audit (
     details jsonb,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     permission_code text,
-    autorise_par bigint
+    autorise_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -6145,6 +6302,7 @@ CREATE TABLE public.journal_registre_psychotrope (
     rang bigint,
     hash bytea,
     hash_precedent bytea,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_journal_registre_ligne CHECK (((nature = 'ouverture'::text) OR (registre_id IS NOT NULL))),
     CONSTRAINT ck_journal_registre_nature CHECK ((nature = ANY (ARRAY['ouverture'::text, 'inscription'::text, 'annulation'::text]))),
     CONSTRAINT ck_journal_registre_ouverture CHECK (((nature <> 'ouverture'::text) OR ((lignes_anterieures IS NOT NULL) AND (empreinte_anterieure IS NOT NULL))))
@@ -6179,6 +6337,7 @@ CREATE TABLE public.journal_sauvegarde (
     taille_octets bigint,
     message text,
     utilisateur_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT journal_sauvegarde_declenchement_check CHECK ((declenchement = ANY (ARRAY['automatique'::text, 'manuel'::text]))),
     CONSTRAINT journal_sauvegarde_statut_check CHECK ((statut = ANY (ARRAY['reussie'::text, 'echouee'::text, 'disque_absent'::text])))
 );
@@ -6230,6 +6389,7 @@ CREATE TABLE public.journal_vente (
     rang bigint,
     hash bytea,
     hash_precedent bytea,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_journal_vente_evenement CHECK ((evenement = ANY (ARRAY['ouverture'::text, 'vente'::text, 'annulation'::text, 'retour'::text, 'avoir'::text, 'regularisation'::text, 'annulation_regularisation'::text]))),
     CONSTRAINT ck_journal_vente_montants CHECK (((montant_ht + montant_tva) = montant_ttc))
 );
@@ -6256,7 +6416,8 @@ ALTER TABLE public.journal_vente ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTIT
 CREATE TABLE public.laboratoire (
     id bigint NOT NULL,
     nom text NOT NULL,
-    pays text
+    pays text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -6285,6 +6446,7 @@ CREATE TABLE public.ligne_commande (
     qte_commandee integer NOT NULL,
     qte_recue integer DEFAULT 0 NOT NULL,
     prix_achat_ht numeric(12,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ligne_commande_prix_achat_ht_check CHECK ((prix_achat_ht >= (0)::numeric)),
     CONSTRAINT ligne_commande_qte_commandee_check CHECK ((qte_commandee > 0)),
     CONSTRAINT ligne_commande_qte_recue_check CHECK ((qte_recue >= 0))
@@ -6323,6 +6485,7 @@ CREATE TABLE public.ligne_inventaire (
     statut text DEFAULT 'a_compter'::text NOT NULL,
     decide_par bigint,
     decide_le timestamp with time zone,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ligne_inventaire_compte_check CHECK ((compte >= 0)),
     CONSTRAINT ligne_inventaire_statut_check CHECK ((statut = ANY (ARRAY['a_compter'::text, 'compte'::text, 'conforme'::text, 'ajuste'::text, 'a_valider'::text, 'valide'::text, 'refuse'::text])))
 );
@@ -6351,6 +6514,7 @@ CREATE TABLE public.ligne_retour_fournisseur (
     retour_id bigint NOT NULL,
     lot_id bigint NOT NULL,
     quantite integer NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ligne_retour_fournisseur_quantite_check CHECK ((quantite > 0))
 );
 
@@ -6395,6 +6559,7 @@ CREATE TABLE public.ligne_vente (
     type_prestation_id bigint,
     libelle text,
     taux_tva numeric(5,2),
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_ligne_vente_choix_prix_chifa CHECK (((choix_prix_chifa IS NULL) OR ((prix_chifa IS NOT NULL) AND (choix_prix_chifa = ANY (ARRAY['aligne_auto'::text, 'aligne'::text, 'garde'::text, 'plus_eleve'::text]))))),
     CONSTRAINT ck_ligne_vente_prix_chifa CHECK (((prix_chifa IS NULL) OR (prix_chifa >= (0)::numeric))),
     CONSTRAINT ck_ligne_vente_produit_ou_prestation CHECK ((((produit_id IS NOT NULL) AND (lot_id IS NOT NULL) AND (type_prestation_id IS NULL) AND (libelle IS NULL) AND (taux_tva IS NULL)) OR ((type_prestation_id IS NOT NULL) AND (produit_id IS NULL) AND (lot_id IS NULL) AND (libelle IS NOT NULL) AND (taux_tva IS NOT NULL) AND (taux_tva >= (0)::numeric) AND (taux_tva <= (100)::numeric) AND (shp = (0)::numeric) AND (prix_chifa IS NULL) AND (raison_lot IS NULL)))),
@@ -6519,6 +6684,7 @@ CREATE TABLE public.lot (
     date_a_verifier boolean DEFAULT false NOT NULL,
     ppa numeric(12,2),
     shp numeric(10,2) DEFAULT 0 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_lot_ppa CHECK (((ppa IS NULL) OR (ppa >= (0)::numeric))),
     CONSTRAINT ck_lot_shp CHECK ((shp >= (0)::numeric)),
     CONSTRAINT lot_quantite_disponible_check CHECK ((quantite_disponible >= 0))
@@ -6581,6 +6747,7 @@ CREATE TABLE public.medecin (
     email text,
     numero_ordre text,
     wilaya text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_medecin_coordonnees CHECK ((((telephone IS NULL) OR (length(telephone) <= 30)) AND ((adresse IS NULL) OR (length(adresse) <= 300)) AND ((email IS NULL) OR (length(email) <= 120)) AND ((numero_ordre IS NULL) OR (length(numero_ordre) <= 30)) AND ((code_prestataire IS NULL) OR (length(code_prestataire) <= 30))))
 );
 
@@ -6662,6 +6829,7 @@ CREATE TABLE public.motif_reglable (
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
     effet text DEFAULT 'aucun'::text NOT NULL,
     detail text DEFAULT 'aucun'::text NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_motif_reglable_effet CHECK ((((effet = 'aucun'::text) AND (detail = 'aucun'::text)) OR ((effet = 'sortie'::text) AND (detail = ANY (ARRAY['depense'::text, 'fournisseur'::text, 'patient'::text, 'coffre'::text]))) OR ((effet = 'entree'::text) AND (detail = 'fond'::text)))),
     CONSTRAINT ck_motif_reglable_effet_tiroir CHECK (((effet = 'aucun'::text) OR (liste = 'tiroir'::text))),
     CONSTRAINT ck_motif_reglable_liste CHECK ((liste = ANY ('{attente,charge,chifa_exclusion,majoration_chifa,rejet_chifa,retour_client,retour_fournisseur,sortie_stock,tiroir,volet_absent}'::text[]))),
@@ -6720,6 +6888,7 @@ CREATE TABLE public.mouvement_stock (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     reception_id bigint,
     prix_achat_ht numeric(12,2),
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT mouvement_stock_type_check CHECK ((type = ANY (ARRAY['entree'::text, 'vente'::text, 'retour_client'::text, 'retour_fournisseur'::text, 'perime'::text, 'casse'::text, 'ajustement_inventaire'::text, 'destruction'::text, 'echantillon'::text, 'manquant_reception'::text])))
 );
 
@@ -6768,6 +6937,7 @@ CREATE TABLE public.mouvement_tiroir (
     motif_correction text,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     regularisation_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_mouvement_tiroir_correction CHECK (((corrige_id IS NULL) = (motif_correction IS NULL))),
     CONSTRAINT ck_mouvement_tiroir_depense CHECK (((detail <> 'depense'::text) OR (corrige_id IS NOT NULL) OR ((categorie IS NOT NULL) AND (libelle IS NOT NULL)))),
     CONSTRAINT ck_mouvement_tiroir_fournisseur CHECK (((detail <> 'fournisseur'::text) OR (corrige_id IS NOT NULL) OR (fournisseur_id IS NOT NULL) OR (beneficiaire IS NOT NULL))),
@@ -6843,6 +7013,7 @@ CREATE TABLE public.mouvement_tresorerie (
     transfert_de bigint,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT mouvement_tresorerie_check CHECK (((nature <> 'versement_organisme'::text) OR (organisme_id IS NOT NULL))),
     CONSTRAINT mouvement_tresorerie_check1 CHECK (((nature <> 'versement_caisse'::text) OR ((session_caisse_id IS NOT NULL) AND (sens = 'entree'::text)))),
     CONSTRAINT mouvement_tresorerie_check2 CHECK (((nature <> 'depense'::text) OR ((sens = 'sortie'::text) AND (categorie IS NOT NULL)))),
@@ -6892,6 +7063,7 @@ CREATE TABLE public.nomenclature_produit (
     type text,
     statut text,
     stabilite text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT nomenclature_produit_situation_check CHECK ((situation = ANY (ARRAY['en_vigueur'::text, 'non_renouvele'::text, 'retire'::text])))
 );
 
@@ -6922,7 +7094,8 @@ CREATE TABLE public.nomenclature_version (
     non_renouveles integer NOT NULL,
     retraits integer NOT NULL,
     utilisateur_id bigint NOT NULL,
-    importee_le timestamp with time zone DEFAULT now() NOT NULL
+    importee_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -6984,6 +7157,7 @@ CREATE TABLE public.organisme (
     telephone text,
     email text,
     delai_paiement_jours integer DEFAULT 30 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_organisme_delai_paiement CHECK (((delai_paiement_jours >= 1) AND (delai_paiement_jours <= 365)))
 );
 
@@ -7037,6 +7211,7 @@ CREATE TABLE public.paiement (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     session_caisse_id bigint,
     numero_recu text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT paiement_check CHECK (((vente_id IS NOT NULL) OR (patient_id IS NOT NULL))),
     CONSTRAINT paiement_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text, 'remboursement_credit'::text, 'avoir'::text]))),
     CONSTRAINT paiement_montant_check CHECK ((montant > (0)::numeric))
@@ -7067,6 +7242,7 @@ CREATE TABLE public.paiement_echeance_pret (
     mouvement_charges_id bigint,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT paiement_echeance_pret_check CHECK (((moyen = 'especes'::text) OR ((compte_id IS NOT NULL) AND (reference IS NOT NULL)))),
     CONSTRAINT paiement_echeance_pret_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (versement_id IS NOT NULL)))),
     CONSTRAINT paiement_echeance_pret_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text]))),
@@ -7110,6 +7286,7 @@ CREATE TABLE public.paiement_effet (
     versement_id bigint,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT paiement_effet_check CHECK (((moyen = ANY (ARRAY['especes'::text, 'financement'::text])) OR (compte_id IS NOT NULL))),
     CONSTRAINT paiement_effet_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (versement_id IS NOT NULL)))),
     CONSTRAINT paiement_effet_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text, 'financement'::text]))),
@@ -7231,6 +7408,7 @@ CREATE TABLE public.parametre_alerte (
     jours_surstock integer DEFAULT 180 NOT NULL,
     seuil_lot_delaisse integer DEFAULT 5 NOT NULL,
     seuil_lot_delaisse_collectif integer DEFAULT 10 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_parametre_alerte_lot_delaisse CHECK ((seuil_lot_delaisse >= 1)),
     CONSTRAINT ck_parametre_alerte_lot_delaisse_collectif CHECK ((seuil_lot_delaisse_collectif >= 1)),
     CONSTRAINT ck_parametre_alerte_positifs CHECK (((jours_orange > 0) AND (jours_rouge > 0) AND (horizon_risque_jours > 0) AND (fenetre_conso_jours > 0) AND (delai_fournisseur_jours >= 0) AND (jours_securite >= 0) AND (jours_cible_commande > 0) AND (jours_dormant > 0) AND (jours_surstock > 0))),
@@ -7275,6 +7453,7 @@ CREATE TABLE public.parametre_caisse (
     chifa_delai_depot_jours integer DEFAULT 7 NOT NULL,
     chifa_delai_paiement_jours integer DEFAULT 45 NOT NULL,
     reprise_exiger_produits_historique boolean DEFAULT true NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_chifa_delai_depot CHECK (((chifa_delai_depot_jours >= 1) AND (chifa_delai_depot_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_chifa_delai_paiement CHECK (((chifa_delai_paiement_jours >= 1) AND (chifa_delai_paiement_jours <= 365))),
@@ -7379,6 +7558,7 @@ CREATE TABLE public.parametre_fiscal (
     format_export_dgi text DEFAULT 'csv-v1'::text NOT NULL,
     separateur_csv text DEFAULT ';'::text NOT NULL,
     fuseau text DEFAULT 'Africa/Algiers'::text NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_parametre_fiscal_conservation CHECK (((conservation_annees >= 6) AND (conservation_annees <= 30))),
     CONSTRAINT ck_parametre_fiscal_format CHECK ((format_export_dgi = 'csv-v1'::text)),
     CONSTRAINT ck_parametre_fiscal_separateur CHECK ((separateur_csv = ANY (ARRAY[';'::text, ','::text, '	'::text]))),
@@ -7395,6 +7575,7 @@ CREATE TABLE public.parametre_formulaire_sms (
     texte text,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
     modifie_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT parametre_formulaire_sms_id_check CHECK ((id = 1)),
     CONSTRAINT parametre_formulaire_sms_texte_check CHECK (((texte IS NULL) OR ((char_length(texte) >= 1) AND (char_length(texte) <= 4000))))
 );
@@ -7411,6 +7592,7 @@ CREATE TABLE public.parametre_gs1_ai (
     longueur_max integer,
     libelle text NOT NULL,
     actif boolean DEFAULT true NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT parametre_gs1_ai_champ_check CHECK ((champ = ANY (ARRAY['gtin'::text, 'peremption'::text, 'lot'::text, 'serie'::text]))),
     CONSTRAINT parametre_gs1_ai_code_check CHECK ((code ~ '^[0-9]{2,4}$'::text)),
     CONSTRAINT parametre_gs1_ai_longueur_fixe_check CHECK ((longueur_fixe > 0)),
@@ -7442,6 +7624,7 @@ CREATE TABLE public.parametre_inventaire (
     id integer DEFAULT 1 NOT NULL,
     seuil_boites integer DEFAULT 2 NOT NULL,
     seuil_montant numeric(12,2) DEFAULT 2000 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT parametre_inventaire_id_check CHECK ((id = 1)),
     CONSTRAINT parametre_inventaire_seuil_boites_check CHECK ((seuil_boites >= 0)),
     CONSTRAINT parametre_inventaire_seuil_montant_check CHECK ((seuil_montant >= (0)::numeric))
@@ -7467,6 +7650,7 @@ CREATE TABLE public.parametre_notification (
     sms_lot_bloque boolean DEFAULT true NOT NULL,
     sms_sauvegarde boolean DEFAULT true NOT NULL,
     signaler_sans_destinataire boolean DEFAULT true NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT parametre_notification_id_check CHECK ((id = 1)),
     CONSTRAINT parametre_notification_sms_seuil_ecart_check CHECK ((sms_seuil_ecart >= (0)::numeric)),
     CONSTRAINT parametre_notification_smtp_port_check CHECK (((smtp_port >= 1) AND (smtp_port <= 65535)))
@@ -7489,6 +7673,7 @@ CREATE TABLE public.parametre_rapport (
     tva_reversee_perime boolean DEFAULT false NOT NULL,
     tva_reversee_casse boolean DEFAULT false NOT NULL,
     tva_reversee_don boolean DEFAULT false NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT parametre_rapport_id_check CHECK ((id = 1))
 );
 
@@ -7534,6 +7719,7 @@ CREATE TABLE public.parametre_sauvegarde (
     derniere_execution date,
     retention_ged_jours integer,
     nettoyage_ged_annees integer,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_sauvegarde_nettoyage_ged CHECK (((nettoyage_ged_annees IS NULL) OR ((nettoyage_ged_annees >= 1) AND (nettoyage_ged_annees <= 100)))),
     CONSTRAINT ck_sauvegarde_retention_ged CHECK (((retention_ged_jours IS NULL) OR ((retention_ged_jours >= 1) AND (retention_ged_jours <= 365)))),
     CONSTRAINT parametre_sauvegarde_conservation_check CHECK (((conservation >= 1) AND (conservation <= 365))),
@@ -7565,6 +7751,7 @@ CREATE TABLE public.parametre_serialisation (
     connecteur text DEFAULT 'factice'::text NOT NULL,
     factice_hors_ligne boolean DEFAULT false NOT NULL,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT parametre_serialisation_connecteur_check CHECK ((connecteur = 'factice'::text)),
     CONSTRAINT parametre_serialisation_id_check CHECK ((id = 1))
 );
@@ -7579,6 +7766,7 @@ CREATE TABLE public.parametre_substitution (
     equivalent_exact_seulement boolean DEFAULT true NOT NULL,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
     modifie_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT parametre_substitution_id_check CHECK ((id = 1))
 );
 
@@ -7612,6 +7800,7 @@ CREATE TABLE public.parametre_surveillance (
     seuil_changements_poste integer DEFAULT 3 NOT NULL,
     seuil_baisses_prix integer DEFAULT 1 NOT NULL,
     seuil_sorties_tiroir integer DEFAULT 5 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_parametre_surveillance_achats CHECK (((jours_avoir_retour >= 1) AND (jours_avoir_retour <= 365))),
     CONSTRAINT ck_parametre_surveillance_comptes CHECK (((seuil_credit_nouveau_patient > (0)::numeric) AND ((jours_patient_recent >= 1) AND (jours_patient_recent <= 90)) AND (seuil_credits_jour > (0)::numeric) AND ((jours_credit_sans_remboursement >= 1) AND (jours_credit_sans_remboursement <= 365)) AND (seuil_autorisations_valideur >= 1) AND (seuil_autorisations_employe >= 1) AND ((minutes_postes_simultanes >= 1) AND (minutes_postes_simultanes <= 120)) AND (seuil_changements_poste >= 1) AND (seuil_baisses_prix >= 1))),
     CONSTRAINT ck_parametre_surveillance_horaires CHECK (((heure_ouverture IS NULL) = (heure_fermeture IS NULL))),
@@ -7655,6 +7844,7 @@ CREATE TABLE public.parametre_tracabilite (
     id integer DEFAULT 1 NOT NULL,
     boite_obligatoire boolean DEFAULT false NOT NULL,
     patient_obligatoire text DEFAULT 'ordonnance'::text NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT parametre_tracabilite_id_check CHECK ((id = 1)),
     CONSTRAINT parametre_tracabilite_patient_obligatoire_check CHECK ((patient_obligatoire = ANY (ARRAY['jamais'::text, 'psychotrope'::text, 'ordonnance'::text, 'toujours'::text])))
 );
@@ -7686,6 +7876,7 @@ CREATE TABLE public.patient (
     consentement_sms_le timestamp with time zone,
     formulaire_sms_recu boolean DEFAULT false NOT NULL,
     formulaire_sms_recu_le timestamp with time zone,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_patient_assure_principal CHECK ((assure_principal_id <> id)),
     CONSTRAINT ck_patient_lien CHECK ((lien = ANY (ARRAY['assure'::text, 'conjoint'::text, 'enfant'::text, 'ascendant'::text, 'autre'::text])))
 );
@@ -7783,6 +7974,7 @@ CREATE TABLE public.pharmacie (
     rc text,
     nis text,
     article_imposition text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT pharmacie_id_check CHECK ((id = 1)),
     CONSTRAINT pharmacie_langue_defaut_check CHECK ((langue_defaut = ANY (ARRAY['ar'::text, 'fr'::text, 'en'::text])))
 );
@@ -7805,6 +7997,7 @@ CREATE TABLE public.pret_bancaire (
     preteur text,
     taux numeric(7,4),
     duree_mois integer,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT pret_bancaire_duree_mois_check CHECK (((duree_mois >= 1) AND (duree_mois <= 600))),
     CONSTRAINT pret_bancaire_montant_check CHECK ((montant > (0)::numeric)),
     CONSTRAINT pret_bancaire_preteur_check CHECK ((((compte_id IS NOT NULL) AND (preteur IS NULL)) OR ((compte_id IS NULL) AND (btrim(preteur) <> ''::text)))),
@@ -7900,6 +8093,7 @@ CREATE TABLE public.produit (
     classe_confirmee_le timestamp with time zone,
     fabrication_locale boolean,
     contenance integer,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_produit_contenance CHECK (((contenance IS NULL) OR ((contenance >= 1) AND (contenance <= 10000)))),
     CONSTRAINT ck_produit_liste_psychotrope CHECK (((liste_psychotrope IS NULL) OR (liste_psychotrope = ANY (ARRAY['liste_i'::text, 'liste_ii'::text])))),
     CONSTRAINT ck_seuils_produit CHECK (((jours_rouge IS NULL) OR (jours_orange IS NULL) OR (jours_rouge < jours_orange))),
@@ -8004,7 +8198,8 @@ ALTER TABLE public.produit ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 CREATE TABLE public.produit_indication (
     produit_id bigint NOT NULL,
     indication_id bigint NOT NULL,
-    cree_le timestamp with time zone DEFAULT now() NOT NULL
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -8046,6 +8241,7 @@ CREATE TABLE public.reception (
     timbre numeric(12,2) DEFAULT 0 NOT NULL,
     shp_total numeric(12,2) DEFAULT 0 NOT NULL,
     date_facture date,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_reception_montants CHECK (((remise >= (0)::numeric) AND (timbre >= (0)::numeric) AND (shp_total >= (0)::numeric) AND ((montant_ht IS NULL) OR (montant_ht >= (0)::numeric)) AND ((montant_tva IS NULL) OR (montant_tva >= (0)::numeric)))),
     CONSTRAINT reception_montant_ttc_check CHECK ((montant_ttc >= (0)::numeric))
 );
@@ -8173,6 +8369,7 @@ CREATE TABLE public.reception_ligne (
     ug integer DEFAULT 0 NOT NULL,
     ug_cout text DEFAULT 'zero'::text NOT NULL,
     prix_catalogue_remplace boolean DEFAULT false NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_reception_ligne_quantites CHECK (((quantite >= 0) AND (ug >= 0) AND ((quantite + ug) > 0) AND (ug_cout = ANY (ARRAY['zero'::text, 'reparti'::text])))),
     CONSTRAINT reception_ligne_ppa_check CHECK (((ppa IS NULL) OR (ppa >= (0)::numeric))),
     CONSTRAINT reception_ligne_prix_achat_ht_check CHECK ((prix_achat_ht >= (0)::numeric)),
@@ -8258,6 +8455,7 @@ CREATE TABLE public.regle_alerte_psychotrope (
     modifie_le timestamp with time zone,
     modifie_par bigint,
     unites_par_jour integer,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_regle_alerte_psy_code CHECK ((code = ANY (ARRAY['patient_repete'::text, 'ordonnance_reutilisee'::text, 'quantite_anormale'::text, 'prescripteur_inhabituel'::text, 'prescripteur_hors_zone'::text]))),
     CONSTRAINT ck_regle_alerte_psy_periode CHECK (((periode_jours >= 1) AND (periode_jours <= 3650))),
     CONSTRAINT ck_regle_alerte_psy_seuil CHECK (((seuil >= 1) AND (seuil <= 1000))),
@@ -8273,6 +8471,7 @@ CREATE TABLE public.reglement_facture (
     reglement_id bigint NOT NULL,
     reception_id bigint NOT NULL,
     montant numeric(12,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT reglement_facture_montant_check CHECK ((montant > (0)::numeric))
 );
 
@@ -8286,6 +8485,7 @@ CREATE TABLE public.reglement_facture_client (
     facture_id bigint NOT NULL,
     montant numeric(12,2) NOT NULL,
     part_credit numeric(12,2) DEFAULT 0 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT reglement_facture_client_check CHECK (((part_credit >= (0)::numeric) AND (part_credit <= montant))),
     CONSTRAINT reglement_facture_client_montant_check CHECK ((montant > (0)::numeric))
 );
@@ -8323,6 +8523,7 @@ CREATE TABLE public.reglement_fournisseur (
     annule_par bigint,
     motif_annulation text,
     annulation_valide_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_reglement_fournisseur_statut CHECK ((((statut = 'valide'::text) AND (annule_le IS NULL) AND (annule_par IS NULL) AND (motif_annulation IS NULL)) OR ((statut = 'annule'::text) AND (annule_le IS NOT NULL) AND (annule_par IS NOT NULL) AND ((char_length(btrim(motif_annulation)) >= 3) AND (char_length(btrim(motif_annulation)) <= 300)) AND (moyen = 'especes'::text) AND (part_tiroir = montant)))),
     CONSTRAINT reglement_fournisseur_check CHECK ((part_tiroir <= montant)),
     CONSTRAINT reglement_fournisseur_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (session_caisse_id IS NOT NULL)))),
@@ -8397,6 +8598,7 @@ CREATE TABLE public.regularisation_part_organisme (
     annulation_trop_paye_impute numeric(12,2) DEFAULT 0 CONSTRAINT regularisation_part_organis_annulation_trop_paye_imput_not_null NOT NULL,
     annulation_rembourse numeric(12,2) DEFAULT 0 NOT NULL,
     annulation_mouvement_tiroir_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_regularisation_annulation_montants CHECK (((annulation_dette_annulee >= (0)::numeric) AND (annulation_trop_paye_impute >= (0)::numeric) AND (annulation_rembourse >= (0)::numeric) AND (((annulation_dette_annulee + annulation_trop_paye_impute) + annulation_rembourse) <= montant_patient))),
     CONSTRAINT ck_regularisation_avoir CHECK (((sort <> 'avoir_patient'::text) OR ((montant_patient > (0)::numeric) AND (montant_patient = (montant_dette_diminuee + montant_a_rendre))))),
     CONSTRAINT ck_regularisation_patient CHECK (((sort <> 'charge_patient'::text) OR ((montant_patient = ecart) AND (credit_mouvement_id IS NOT NULL)))),
@@ -8488,6 +8690,7 @@ CREATE TABLE public.remboursement_titulaire (
     reference text,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT remboursement_titulaire_montant_check CHECK ((montant > (0)::numeric))
 );
 
@@ -8531,6 +8734,7 @@ CREATE TABLE public.remise_automatique (
     modifiee_le timestamp with time zone,
     arretee_par bigint,
     arretee_le timestamp with time zone,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_remise_auto_cible CHECK (((produit_id IS NULL) <> (categorie IS NULL))),
     CONSTRAINT ck_remise_auto_dates CHECK ((date_fin >= date_debut)),
     CONSTRAINT ck_remise_auto_motif CHECK (((motif IS NULL) OR (length(motif) <= 200))),
@@ -8565,7 +8769,8 @@ ALTER TABLE public.remise_automatique ALTER COLUMN id ADD GENERATED ALWAYS AS ID
 
 CREATE TABLE public.remise_cheque_paiement (
     remise_id bigint NOT NULL,
-    paiement_id bigint NOT NULL
+    paiement_id bigint NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -8579,7 +8784,8 @@ CREATE TABLE public.remise_cheques (
     date_remise date NOT NULL,
     reference text,
     utilisateur_id bigint NOT NULL,
-    cree_le timestamp with time zone DEFAULT now() NOT NULL
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -8614,6 +8820,7 @@ CREATE TABLE public.retour_client (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     motif_code text,
     motif_texte text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_retour_client_motif_texte CHECK (((motif_texte IS NULL) OR ((motif_code IS NOT NULL) AND ((length(btrim(motif_texte)) >= 1) AND (length(btrim(motif_texte)) <= 200))))),
     CONSTRAINT retour_client_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text, 'avoir'::text]))),
     CONSTRAINT retour_client_montant_rembourse_check CHECK ((montant_rembourse >= (0)::numeric)),
@@ -8646,6 +8853,7 @@ CREATE TABLE public.retour_client_ligne (
     quantite integer NOT NULL,
     destination text NOT NULL,
     montant numeric(12,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT retour_client_ligne_destination_check CHECK ((destination = ANY (ARRAY['stock'::text, 'destruction'::text]))),
     CONSTRAINT retour_client_ligne_montant_check CHECK ((montant >= (0)::numeric)),
     CONSTRAINT retour_client_ligne_quantite_check CHECK ((quantite > 0))
@@ -8682,6 +8890,7 @@ CREATE TABLE public.retour_fournisseur (
     envoye_le timestamp with time zone,
     avoir_recu_le timestamp with time zone,
     montant_attendu numeric(12,2),
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT retour_fournisseur_montant_attendu_check CHECK ((montant_attendu >= (0)::numeric)),
     CONSTRAINT retour_fournisseur_motif_check CHECK ((motif = ANY (ARRAY['peremption_proche'::text, 'perime'::text, 'defaut'::text, 'erreur_livraison'::text, 'rappel_lot'::text]))),
     CONSTRAINT retour_fournisseur_statut_check CHECK ((statut = ANY (ARRAY['brouillon'::text, 'envoye'::text, 'avoir_recu'::text, 'refuse'::text])))
@@ -8712,6 +8921,7 @@ CREATE TABLE public.role (
     nom text NOT NULL,
     systeme boolean DEFAULT false NOT NULL,
     remise_max_pct numeric(5,2) DEFAULT 0 NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT role_remise_max_pct_check CHECK (((remise_max_pct >= (0)::numeric) AND (remise_max_pct <= (100)::numeric)))
 );
 
@@ -8736,7 +8946,8 @@ ALTER TABLE public.role ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 CREATE TABLE public.role_permission (
     role_id bigint NOT NULL,
-    permission_code text NOT NULL
+    permission_code text NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -8752,6 +8963,7 @@ CREATE TABLE public.rupture_grossiste (
     import_debut_id bigint,
     fin timestamp with time zone,
     import_fin_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_rupture_grossiste_periode CHECK (((fin IS NULL) OR (fin >= debut)))
 );
 
@@ -8828,6 +9040,7 @@ CREATE TABLE public.sceau_integrite (
     empreinte_cle text NOT NULL,
     sceau bytea NOT NULL,
     auteur_id bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_sceau_integrite_motif CHECK ((motif = ANY (ARRAY['cloture_journaliere'::text, 'cloture_mensuelle'::text, 'manuel'::text]))),
     CONSTRAINT ck_sceau_integrite_periode CHECK ((periode_au >= periode_du)),
     CONSTRAINT ck_sceau_integrite_rang CHECK ((dernier_rang >= 0))
@@ -9014,6 +9227,7 @@ CREATE TABLE public.session_caisse (
     montant_compte numeric(12,2),
     ecart numeric(12,2),
     releve_de bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT session_caisse_check CHECK (((fermee_le IS NULL) = (montant_compte IS NULL))),
     CONSTRAINT session_caisse_fond_caisse_check CHECK ((fond_caisse >= (0)::numeric))
 );
@@ -9055,6 +9269,7 @@ CREATE TABLE public.substance_surveillee (
     motif text NOT NULL,
     classe text NOT NULL,
     source text NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT substance_surveillee_classe_check CHECK ((classe = ANY (ARRAY['psychotrope'::text, 'stupefiant'::text])))
 );
 
@@ -9068,6 +9283,7 @@ CREATE TABLE public.substitution_liste_blanche (
     remplacant_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     cree_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_substitution_liste_blanche_distincts CHECK ((produit_id <> remplacant_id))
 );
 
@@ -9197,6 +9413,7 @@ CREATE TABLE public.type_prestation (
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     remboursable boolean DEFAULT false NOT NULL,
     tarif_reference numeric(12,2),
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_type_prestation_code CHECK (((length(btrim(code)) >= 1) AND (length(btrim(code)) <= 20))),
     CONSTRAINT ck_type_prestation_libelle CHECK (((length(btrim(libelle)) >= 1) AND (length(btrim(libelle)) <= 120))),
     CONSTRAINT ck_type_prestation_prix CHECK ((prix >= (0)::numeric)),
@@ -9271,6 +9488,7 @@ CREATE TABLE public.utilisateur (
     peut_donner boolean DEFAULT false NOT NULL,
     remise_max_pct numeric(5,2) DEFAULT 0 NOT NULL,
     gere_remises_auto boolean DEFAULT false NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_utilisateur_affichage CHECK ((affichage = ANY (ARRAY['auto'::text, 'clair'::text, 'sombre'::text]))),
     CONSTRAINT ck_utilisateur_remise_max CHECK (((remise_max_pct >= (0)::numeric) AND (remise_max_pct <= (100)::numeric) AND (remise_max_pct = trunc(remise_max_pct))))
 );
@@ -9364,6 +9582,7 @@ CREATE TABLE public.utilisation_financement (
     paiement_effet_id bigint,
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT utilisation_financement_check CHECK (((source = 'pret'::text) = (pret_id IS NOT NULL))),
     CONSTRAINT utilisation_financement_check1 CHECK (((usage <> 'tresorerie'::text) OR (mouvement_id IS NOT NULL))),
     CONSTRAINT utilisation_financement_check2 CHECK (((usage <> 'depense'::text) OR ((mouvement_id IS NOT NULL) AND (depense_id IS NOT NULL)))),
@@ -9462,6 +9681,7 @@ CREATE TABLE public.vente (
     chifa_exclue_par bigint,
     chifa_exclusion_motif_code text,
     chifa_exclusion_texte text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_vente_canal_organisme CHECK ((canal_organisme = ANY (ARRAY['logiciel'::text, 'chifa'::text, 'mdn'::text]))),
     CONSTRAINT ck_vente_chifa_attente_motif_texte CHECK (((chifa_attente_motif_texte IS NULL) OR ((char_length(btrim(chifa_attente_motif_texte)) >= 1) AND (char_length(btrim(chifa_attente_motif_texte)) <= 200)))),
     CONSTRAINT ck_vente_chifa_ecart_motif CHECK (((chifa_ecart_motif IS NULL) OR ((char_length(btrim(chifa_ecart_motif)) >= 1) AND (char_length(btrim(chifa_ecart_motif)) <= 500)))),
@@ -9824,6 +10044,7 @@ CREATE TABLE public.versement_bordereau (
     mouvement_id bigint NOT NULL,
     bordereau_id bigint NOT NULL,
     montant numeric(12,2) NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT versement_bordereau_montant_check CHECK ((montant > (0)::numeric))
 );
 
@@ -10959,6 +11180,7 @@ CREATE TABLE public.vente_chifa_facture_conflit (
     tranche_le timestamp with time zone,
     tranche_par bigint,
     valeur_retenue text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_vente_chifa_facture_conflit_tranche CHECK ((((tranche_le IS NULL) AND (valeur_retenue IS NULL)) OR ((tranche_le IS NOT NULL) AND (valeur_retenue IS NOT NULL))))
 );
 
@@ -11022,6 +11244,7 @@ CREATE TABLE public.verification_integrite (
     attendu text,
     trouve text,
     declenchee_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_verification_integrite_statut CHECK ((statut = ANY (ARRAY['ok'::text, 'rupture'::text, 'erreur'::text])))
 );
 
@@ -11057,6 +11280,7 @@ CREATE TABLE public.verification_serialisation (
     prochain_essai_le timestamp with time zone DEFAULT now() NOT NULL,
     dernier_essai_le timestamp with time zone,
     traite_le timestamp with time zone,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT verification_serialisation_essais_check CHECK ((essais >= 0)),
     CONSTRAINT verification_serialisation_operation_check CHECK ((operation = ANY (ARRAY['verifier'::text, 'decommissionner'::text, 'reactiver'::text]))),
     CONSTRAINT verification_serialisation_resultat_check CHECK ((resultat = ANY (ARRAY['authentique'::text, 'inconnue'::text, 'deja_decommissionnee'::text, 'rappelee'::text, 'expiree'::text]))),
@@ -11100,6 +11324,7 @@ CREATE TABLE public.wilaya (
     code text NOT NULL,
     nom text NOT NULL,
     wilaya_origine text,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_wilaya_code CHECK ((code ~ '^[0-9]{2}$'::text))
 );
 
@@ -11112,7 +11337,8 @@ CREATE TABLE public.zone_psychotrope_wilaya (
     wilaya text NOT NULL,
     officine boolean DEFAULT false NOT NULL,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
-    modifie_par bigint
+    modifie_par bigint,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL
 );
 
 
@@ -14558,6 +14784,13 @@ CREATE TRIGGER trg_sync_lot_non_vidable BEFORE TRUNCATE ON public.sync_lot FOR E
 
 
 --
+-- Name: sync_parametre trg_sync_parametre_garde_officine; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_sync_parametre_garde_officine BEFORE UPDATE ON public.sync_parametre FOR EACH ROW EXECUTE FUNCTION public.sync_parametre_garde_officine();
+
+
+--
 -- Name: sync_sortie trg_sync_sortie_garde; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -17142,5 +17375,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict hd85PEvehjENS1u0wgdjP9rHPJMfTYelXpfhzXPY36nTBfL3v4f5zOeAZYdZAXS
+\unrestrict eawbs3B7Gkhvc0oyGgibhJPGgmiX0QwZLyKjB7fxSO55Vj6wuaJX9YatVNsw6ix
 

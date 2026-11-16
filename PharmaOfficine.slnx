@@ -190,12 +190,20 @@
     <File Path="database/migration/125_wilayas_59_69.sql" />
     <File Path="database/migration/126_synchronisation_sortie.sql" />
     <File Path="database/migration/127_synchronisation_textes_medecins.sql" />
+    <File Path="database/migration/128_synchronisation_envoi.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
     <File Path="database/tests/126_synchronisation_sortie_tests.sql" />
     <File Path="database/tests/127_synchronisation_textes_medecins_tests.sql" />
+    <File Path="database/tests/128_synchronisation_envoi_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
+  </Folder>
+  <Folder Name="/database/cloud/">
+    <File Path="database/cloud/README.md" />
+    <File Path="database/cloud/001_base_centrale.sql" />
+    <File Path="database/cloud/002_tables_miroir.sql" />
+    <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -232,10 +240,13 @@
     <Project Path="src/Pharma.Infrastructure/Pharma.Infrastructure.csproj" />
     <Project Path="src/Pharma.Api/Pharma.Api.csproj" />
     <Project Path="src/Pharma.Desktop/Pharma.Desktop.csproj" />
+    <Project Path="src/Pharma.Cloud.Api/Pharma.Cloud.Api.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Pharma.Domain.Tests/Pharma.Domain.Tests.csproj" />
     <Project Path="tests/Pharma.Application.Tests/Pharma.Application.Tests.csproj" />
     <Project Path="tests/Pharma.Architecture.Tests/Pharma.Architecture.Tests.csproj" />
+    <Project Path="tests/Pharma.Cloud.Tests/Pharma.Cloud.Tests.csproj" />
+    <Project Path="tests/Pharma.Cloud.Charge/Pharma.Cloud.Charge.csproj" />
   </Folder>
 </Solution>

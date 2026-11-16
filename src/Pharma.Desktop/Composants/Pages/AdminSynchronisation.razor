@@ -1,0 +1,157 @@
+@page "/admin/synchronisation"
+@inject ApiClient Api
+
+@* Synchronisation avec le serveur central (2026-11-16, lot S2, script 128) : état de l'envoi, réglages (activer, adresse, options),
+   activation de ce serveur par code. Droit admin.parametres. Écran fixe : une sous-rubrique à la fois, aucun défilement de page. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/synchronisation" Rubrique="@Rubrique" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Synchronisation · @NavAdmin.Libelle("admin/synchronisation", Rubrique)</h1>
+                <p class="sous-titre">Copie des données de l’officine vers le serveur central, envoyée par l’officine environ chaque minute. Une coupure d’Internet n’a aucun effet sur le travail.</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn" disabled="@enCours" @onclick="ChargerAsync">Actualiser</button>
+                @if (t is { Active: true, Activee: true })
+                {
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnvoyerAsync">Synchroniser maintenant</button>
+                }
+            </div>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
+
+        @if (t is not null && rubrique == "etat")
+        {
+            @if (t.BaseEnLectureSeule) { <div class="bandeau-attention" role="status">Base en lecture seule (2e serveur en veille) : seul le serveur principal envoie.</div> }
+            @if (t.LotsAutresEpoques > 0) { <div class="bandeau-attention" role="status">@t.LotsAutresEpoques lot(s) d’une époque précédente jamais accusé(s) : à examiner avec l’éditeur (non renvoyés automatiquement).</div> }
+            @if (t.DerniereErreur is { } de) { <div class="bandeau-attention" role="status">Dernière erreur@(t.DerniereErreurLe is { } dl ? $" ({Libelles.DateHeureLocale(dl)})" : "") : @de</div> }
+            <section class="panneau" aria-labelledby="s-etat">
+                <h2 id="s-etat">État</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Synchronisation</span>
+                        <span class="pastille @(t.Active ? "ok" : "attention")">@(t.Active ? "activée" : "désactivée")</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Ce serveur</span>
+                        <span class="pastille @(t.Activee ? "ok" : "attention")">@(t.Activee ? "activé (certificat)" : "non activé")</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Dernier envoi</span><span>@Date(t.DernierEnvoi)</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Dernier accusé</span><span>@(t.DernierAccuse > 0 ? $"lot {t.DernierAccuse} · {Date(t.DernierAccuseLe)}" : "aucun")</span></div>
+                </div>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">En attente</span><span>@t.LignesEnAttente opération(s) · @t.LotsEnAttente lot(s) non accusé(s)</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Lots constitués</span><span>@t.DernierLot (époque @t.Epoque, @t.VersionContrat)</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Certificat</span>
+                        <span class="pastille @Echeance.Classe">@Echeance.Texte</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Code de l’officine</span><span class="detail">@(t.OfficineId ?? "—")</span></div>
+                </div>
+                <p class="detail" style="margin: 0">Rien n’est retiré de l’attente sans accusé du serveur central ; après une coupure, l’envoi reprend au premier lot non accusé. Le nom des patients n’est jamais envoyé (code à la place).</p>
+            </section>
+        }
+
+        @if (t is not null && rubrique == "reglages")
+        {
+            <section class="panneau" aria-labelledby="s-reglages">
+                <h2 id="s-reglages">Réglages</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 2 1 360px"><label for="s-adresse">Adresse du serveur central</label>
+                        <input id="s-adresse" data-champ="adresse" type="text" placeholder="https://serveur-central:5090" @bind="adresse" @bind:event="oninput" /></div>
+                    <div class="champ" style="flex: 1 1 260px"><label for="s-textes">Textes libres (motifs, commentaires)</label>
+                        <select id="s-textes" data-champ="textes_libres" @bind="textesLibres">
+                            <option value="filtres">Envoyés filtrés (courriels, téléphones, n°, noms masqués)</option>
+                            <option value="retires">Jamais envoyés</option>
+                        </select></div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center">
+                    <label class="case"><input type="checkbox" @bind="active" /><span>Synchronisation activée</span></label>
+                    <label class="case"><input type="checkbox" @bind="envoyerMedecins" /><span>Envoyer les médecins (nom, spécialité, wilaya)</span></label>
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
+                </div>
+                <p class="detail" style="margin: 0">Désactivée, rien n’est inscrit ni envoyé. Activée sans activation de ce serveur, les modifications sont gardées en attente et partiront après l’activation.</p>
+            </section>
+        }
+
+        @if (t is not null && rubrique == "activation")
+        {
+            <section class="panneau" aria-labelledby="s-activation">
+                <h2 id="s-activation">Activer ce serveur</h2>
+                <p class="detail" style="margin: 0">@(t.Activee ? $"Ce serveur est activé (certificat {t.EmpreinteCertificat}…, échéance {Date(t.EcheanceCertificat)}). Un nouveau code remplace le certificat." : "Saisissez le code d’activation remis par l’éditeur (usage unique, valable 24 h). Le 2e serveur de l’officine a son propre code.")</p>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 2 1 420px"><label for="s-code" class="requis">Code d’activation</label>
+                        <input id="s-code" data-champ="code" type="text" autocomplete="off" placeholder="XXXXX-XXXXX-XXXXX-XXXXX.0123…" @bind="code" @bind:event="oninput" /></div>
+                    <div class="champ" style="flex: 0 0 auto; align-self: flex-end"><button type="button" class="btn btn-principal" disabled="@(enCours || string.IsNullOrWhiteSpace(t.Adresse))" @onclick="ActiverAsync">Activer</button></div>
+                </div>
+                @if (string.IsNullOrWhiteSpace(t.Adresse)) { <p class="detail" style="margin: 0">Réglez d’abord l’adresse du serveur central (sous-rubrique Réglages).</p> }
+                <p class="detail" style="margin: 0">La clé privée de ce serveur est créée ici et ne le quitte jamais ; le certificat est valable 3 ans et renouvelé automatiquement avant l’échéance.</p>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
+    private string rubrique => NavAdmin.RubriqueCourante("admin/synchronisation", Rubrique);
+
+    private EtatSynchronisationDto? t;
+    private bool active, envoyerMedecins;
+    private string? adresse;
+    private string textesLibres = "filtres";
+    private string code = "";
+    private bool enCours;
+    private string? erreur, message;
+
+    protected override Task OnInitializedAsync() => ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        var (d, e) = await Api.SynchronisationAsync();
+        if (d is null) { erreur = e; return; }
+        (t, active, adresse, textesLibres, envoyerMedecins, erreur) = (d, d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins, null);
+    }
+
+    private static string Date(DateTime? d) => d is { } v ? Libelles.DateHeureLocale(v) : "jamais";
+
+    private (string Classe, string Texte) Echeance => t?.EcheanceCertificat switch
+    {
+        null => ("attention", "aucun"),
+        { } e when e <= DateTime.UtcNow => ("urgent", $"échu le {e.ToLocalTime():dd/MM/yyyy}"),
+        { } e when e <= DateTime.UtcNow.AddDays(60) => ("attention", $"échéance {e.ToLocalTime():dd/MM/yyyy}"),
+        { } e => ("ok", $"valable jusqu’au {e.ToLocalTime():dd/MM/yyyy}")
+    };
+
+    private Task EnregistrerAsync() => Executer(async () =>
+    {
+        var e = await Api.ReglerSynchronisationAsync(new ReglagesSynchronisationDto(active, adresse, textesLibres, envoyerMedecins));
+        if (e is not null) return e;
+        message = "Réglages de synchronisation enregistrés.";
+        await ChargerAsync();
+        return null;
+    });
+
+    private Task ActiverAsync() => Executer(async () =>
+    {
+        var e = await Api.ActiverSynchronisationAsync(code);
+        if (e is not null) return e;
+        code = "";
+        message = "Ce serveur est activé auprès du serveur central.";
+        await ChargerAsync();
+        return null;
+    });
+
+    private Task EnvoyerAsync() => Executer(async () =>
+    {
+        var (r, e) = await Api.EnvoyerSynchronisationAsync();
+        if (r is null) return e;
+        message = r.Erreur is null ? (r.Arret ?? $"{r.LotsAccuses} lot(s) accusé(s) par le serveur central.") : null;
+        await ChargerAsync();
+        return r.Erreur;
+    });
+
+    private async Task Executer(Func<Task<string?>> action)
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try { erreur = await action(); }
+        finally { enCours = false; }
+    }
+}

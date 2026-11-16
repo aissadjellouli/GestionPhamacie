@@ -284,6 +284,11 @@ public static class DependencyInjection
         services.AddScoped<Integrite.VerifierIntegriteMaintenant>();
         // Synchronisation, lot S1 : constitution des lots montants, sans envoi (aucune tâche de fond ne l'appelle encore)
         services.AddScoped<Synchronisation.ConstitutionLotsSync>();
+        // Synchronisation, lot S2 : envoi au serveur central, activation, réglages
+        services.AddSingleton<Synchronisation.VerrouSync>();
+        services.AddScoped<Synchronisation.EnvoyerLotsSync>();
+        services.AddScoped<Synchronisation.ActiverSync>();
+        services.AddScoped<Synchronisation.ReglerSync>();
         // Registre des psychotropes renforcé (lot 8) : alertes et forçage, annulations, concordance, scellement mensuel, antibiotiques
         services.AddScoped<Psychotropes.ControlerDelivrancePsychotrope>();
         services.AddScoped<Psychotropes.ForcerAlertesPsychotropes>();

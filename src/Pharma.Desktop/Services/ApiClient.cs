@@ -862,6 +862,14 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         PostAsync<object, ResultatTestRestaurationDto>("api/admin/sauvegardes/secours/tester", new());
 
     // ---- 2e serveur (titulaire, script 122) ----
+    // Synchronisation (lot S2) : écran Admin › Synchronisation
+    public Task<(EtatSynchronisationDto?, string?)> SynchronisationAsync() => GetAsync<EtatSynchronisationDto?>("api/admin/synchronisation", null);
+    public async Task<string?> ReglerSynchronisationAsync(ReglagesSynchronisationDto d) =>
+        (await EnvoyerCorpsAsync<ReglagesSynchronisationDto, object>(HttpMethod.Put, "api/admin/synchronisation/reglages", d)).Item2;
+    public async Task<string?> ActiverSynchronisationAsync(string code) =>
+        (await PostAsync<ActivationSynchronisationDto, object>("api/admin/synchronisation/activation", new(code))).Item2;
+    public Task<(ResultatEnvoiSynchronisationDto?, string?)> EnvoyerSynchronisationAsync() =>
+        PostAsync<object, ResultatEnvoiSynchronisationDto>("api/admin/synchronisation/envoyer", new());
     public Task<(SecondServeurDto?, string?)> SecondServeurAsync() => GetAsync<SecondServeurDto?>("api/admin/second-serveur", null);
     public async Task<string?> ModifierServeurOfficineAsync(ModifierServeurOfficineDto d) =>
         (await EnvoyerCorpsAsync<ModifierServeurOfficineDto, object>(HttpMethod.Put, "api/admin/second-serveur/serveurs", d)).Item2;

@@ -88,6 +88,8 @@ vendeur)** : `/`, `/accueil`, `/caisse`, `/caisse/etat`, `/cloture`, `/stock`, `
 à 1 536 × 890 à faire à l'écran** : `/admin/serialisation`.
 **Écran ajouté le 2026-11-16 (lot 5, 2e serveur), conçu fixe 1 536 × 890 (trois sous-rubriques à gauche : État de la réplication,
 Réglages par serveur, Clé de scellement ; tableau des serveurs seul défilant) ; mesure à 0 px à faire à l'écran** : `/admin/second-serveur`.
+**Écran ajouté le 2026-11-16 (lot S2, synchronisation), conçu fixe 1 536 × 890 (trois sous-rubriques à gauche : État, Réglages,
+Activation ; aucun tableau, aucun défilement) ; mesure à 0 px à faire à l'écran** : `/admin/synchronisation`.
 **Écran ajouté le 2026-11-16 (lot 11, tableau de bord financier), conçu fixe 1 536 × 890 (sept rubriques à gauche : Synthèse,
 Créances, Stock et dormant, Marges, Achats par grossiste, Rejets Chifa, TVA par taux ; tuiles, puis un seul tableau défilant,
 paginé ; marges et stock dormant filtrés et paginés par le serveur) ; mesure à 0 px à faire à l'écran** : `/pilotage-financier`.
