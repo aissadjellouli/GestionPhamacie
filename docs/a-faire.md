@@ -240,8 +240,8 @@ Points que `docs/mise-en-production.md` ne peut pas trancher sans le titulaire o
 - [ ] Sauvegardes : un seul mécanisme, sauvegarde de l'application ou script planifié `scripts/sauvegarde_pharmacie.ps1` (son en-tête dit « pas les deux »). Régler aussi ses variables `D:\` et `E:\`.
 - [ ] Script `101b` (suppression de `num_facture_chifa`) : il n'existe pas dans `database/migration/`. Écrire le script, puis décision du titulaire.
 - [ ] Conflits de n° de facture Chifa (script 101) : bloquent-ils la remise en service ?
-- [ ] HTTPS sur le 2e serveur et le PC de secours : le script crée une autorité par PC, et les postes ne font confiance qu'à celle installée. Définir la procédure (même autorité, ou réinstallation sur les postes et téléphones).
-- [ ] `AdresseApiSecours` des postes : passer en HTTPS (`https://<IP>:5443/`). Le manuel précédent donnait `http://…:5080/`, incompatible avec la décision HTTPS seul.
+- [x] HTTPS sur le 2e serveur et le PC de secours : une seule autorité par pharmacie (PFX protégé au coffre), certificats des autres PC signés par elle (`-CertificatPourAutrePc`, `-Importer`, `-RestaurerAutorite`), procédures dans `docs/mise-en-production.md` (parcours A 4.6, C 8, D 6, F2 bis, F6, F7). Essai de chaîne en mémoire (`CertificatsHttpsTests`) ; script jamais exécuté en réel (à essayer sur le terrain).
+- [x] `AdresseApiSecours` des postes : `https://<nom ou IP>:5443/` documentée (manuel, `basculer-pc-secours.ps1`). Reste à corriger l'exemple affiché dans l'écran Administration › Imprimantes (`http://192.168.1.20:5080/`, `src/Pharma.Desktop/Composants/Pages/AdminImprimantes.razor`) et le message de refus de `ReglagesPoste.ControlerAdresse` ; et le message du bandeau, identique pour un certificat refusé.
 - [ ] Super admin : création sans modem GSM (sans code SMS) possible ou non ?
 - [ ] Livraison officielle : aucun paquet de production dans le dépôt (`scripts/paquet` = essai). Définir la publication et le dossier de destination de l'API, des postes et des `scripts` sur chaque PC.
 - [ ] Partage de la copie de secours : compte du service de l'API (compte système par défaut) et droits sur le partage.

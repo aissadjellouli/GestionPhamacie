@@ -349,8 +349,9 @@ Lancer toutes les commandes **depuis le dossier du dépôt** (ou de la livraison
   - `Sauvegardes__PgDump` : chemin de `pg_dump.exe` si l'API ne le trouve pas. **[À CONFIRMER : comportement de l'API quand la valeur est vide.]**
   - Ne pas modifier `Urls` dans `appsettings.json` : c'est le fichier `appsettings.Https.json` (étape 4.6) qui prend le relais.
 
-- [ ] **4.6** Chiffrer les échanges (HTTPS). **Où** : PC serveur. **Compte** : administrateur Windows. Clé USB branchée (ici `E:\`).
-  Ce script crée l'autorité de la pharmacie (une fois), le certificat du serveur, écrit `appsettings.Https.json`, ouvre le port 5443 en réseau **privé** seulement, et exporte le certificat **public** de l'autorité et son empreinte sur la clé USB.
+- [ ] **4.6** Chiffrer les échanges (HTTPS) : **une seule autorité pour toute la pharmacie**. **Où** : PC serveur. **Compte** : administrateur Windows. Deux clés USB : celle des **postes** (ici `E:\`, certificat public) et celle du **coffre** (ici `F:\`, clé privée de l'autorité).
+  Le script crée l'autorité de la pharmacie (une seule fois, valable 10 ans) et sauvegarde sa clé **une fois** dans un fichier PFX protégé par une phrase de passe saisie à l'écran. Il crée ensuite le certificat du serveur (825 jours), écrit `appsettings.Https.json`, ouvre le port 5443 en réseau **privé** seulement, et exporte le certificat **public** de l'autorité et son empreinte sur la clé USB des postes. Cette autorité signera aussi les certificats du 2e serveur et du PC de secours : les postes l'installent **une seule fois** (étape 5.4).
+  Dans le magasin Windows du PC, la clé de l'autorité est **non exportable** : le PFX du coffre est donc le **seul exemplaire de sauvegarde**, et il ne peut pas être refait plus tard. Le perdre oblige, le jour d'un remplacement du PC serveur, à créer une nouvelle autorité et à la réinstaller sur tous les postes et téléphones.
 
   0. **Se placer dans le dossier qui contient `scripts`** (celui de l'étape 4.3) :
      ```powershell
@@ -358,30 +359,33 @@ Lancer toutes les commandes **depuis le dossier du dépôt** (ou de la livraison
      Test-Path .\scripts\certificat_https.ps1
      ```
      - **Attendu** : `True`. Si PowerShell refuse ensuite le script, voir « Conventions de commandes » (stratégie d'exécution).
-  1. **Essai à blanc d'abord** (rien n'est écrit) :
+  1. **Essai à blanc d'abord** (rien n'est écrit, aucune phrase de passe demandée) :
      ```powershell
-     .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu -WhatIf
+     .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -FichierSauvegardeAutorite F:utorite-pharmacie.pfx -PareFeu -WhatIf
      ```
-     - **Attendu** : chaque action est annoncée avec la mention `[SIMULATION]`, et la fin dit « rien n'a été modifié ».
-  2. **Lancement réel** :
+     - **Attendu** : chaque action est annoncée avec la mention `[SIMULATION]` (création de l'autorité, sauvegarde du PFX, certificat du serveur, configuration, export, pare-feu), et la fin dit « rien n'a été modifié ».
+  2. **Lancement réel** (clé USB du coffre `F:\` branchée) :
      ```powershell
-     .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu
+     .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -FichierSauvegardeAutorite F:utorite-pharmacie.pfx -PareFeu
      ```
+     - Le script demande une **phrase de passe** (12 caractères au moins), puis la même une seconde fois. Elle protège le PFX ; elle n'est jamais passée en paramètre ni écrite dans un fichier ou un journal. **La noter sur papier, au coffre, à part de la clé USB.**
      - Le script affiche les noms et adresses du certificat (par défaut : `localhost`, `127.0.0.1`, le nom du PC et ses adresses IPv4 privées), puis l'empreinte SHA-256 de l'autorité.
      - Noter cette empreinte. Elle est aussi écrite dans `E:\empreinte-autorite-pharmacie.txt`.
-  3. **Noms et adresses supplémentaires** : un poste ne fait confiance au serveur que pour un nom ou une adresse **présents dans le certificat**. Rien n'est deviné : ajouter seulement ce qui sert, par exemple :
-     - adresse VPN du PC serveur (accès du titulaire, parcours « acces-distant.md ») : `-AdressesSupplementaires <adresse VPN>` ;
-     - nom et IP du 2e serveur, si le parcours C est fait : `-NomsSupplementaires <nom> -AdressesSupplementaires <IP>`.
-     Relancer alors la commande complète avec les paramètres ajoutés. Chaque relance est sûre (idempotente).
-  4. **Fichiers créés** : vérifier.
+     - Relancé plus tard, le script réutilise l'autorité (il n'a plus besoin de `-FichierSauvegardeAutorite`) et ne recrée pas le fichier PFX.
+  3. **Noms et adresses supplémentaires** : un poste ne fait confiance au serveur que pour un nom ou une adresse **présents dans le certificat**. Rien n'est deviné : ajouter seulement ce qui sert, par exemple l'adresse VPN du PC serveur (accès du titulaire, parcours « acces-distant.md ») : `-AdressesSupplementaires <adresse VPN>`, `-NomsSupplementaires <nom>`. Relancer alors la commande avec les paramètres ajoutés (idempotente : l'autorité est conservée, seul le certificat du serveur est refait). **Le certificat du 2e serveur et du PC de secours se génère à part** (parcours C, étape 8, et parcours D, étape 6) : ne pas mettre leurs noms ici.
+  4. **Ranger le PFX au coffre** : retirer la clé USB `F:\` ; la ranger **hors ligne**, au coffre ou à l'extérieur de l'officine. Faire une **seconde copie** du PFX sur une autre clé (même phrase de passe) conservée ailleurs. Ne jamais copier ce PFX sur un poste, un téléphone, la clé USB `E:\`, ni par le réseau ou courriel.
+  5. **Fichiers créés** : vérifier.
      ```powershell
-     Get-Content "C:\Program Files\PharmaOfficine\Api\appsettings.Https.json"
-     Get-ChildItem E:\ | Select-Object Name
+     Get-Content "C:\Program Files\PharmaOfficine\Apippsettings.Https.json"
+     Get-ChildItem E:\, F:\ | Select-Object FullName
      Get-NetFirewallRule -DisplayName "PharmaOfficine API (https 5443)" | Select-Object DisplayName, Enabled
+     Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*PharmaOfficine*" } | Select-Object Subject, NotAfter, HasPrivateKey
      ```
-     - **Attendu** : `appsettings.Https.json` contient `"Url": "http://localhost:5080"` et `"Url": "https://0.0.0.0:5443"`. La clé USB contient `autorite-pharmacie.crt` et `empreinte-autorite-pharmacie.txt`. La règle de pare-feu est `Enabled : True`.
-  - **Décision** : le certificat du serveur est valable 825 jours. Relancer le script avant son échéance (il le renouvelle).
-  - **Si échec** : « Dossier de l'API introuvable » : étape 4.2 non faite. « Adresse IP supplémentaire invalide » : vérifier la syntaxe.
+     - **Attendu** : `appsettings.Https.json` contient `"Url": "http://localhost:5080"` et `"Url": "https://0.0.0.0:5443"`. `E:\` contient `autorite-pharmacie.crt` et `empreinte-autorite-pharmacie.txt` (et **pas** de `.pfx`). `F:\` contient `autorite-pharmacie.pfx`. La règle de pare-feu est `Enabled : True`. Le magasin contient deux certificats : `CN=PharmaOfficine Autorite pharmacie` (10 ans) et `CN=PharmaOfficine Mobile` (825 jours), `HasPrivateKey : True`.
+  6. **Test de relecture du PFX** (conseillé, sans rien modifier ; le script ne l'importe pas) : sur le PC serveur, `certutil -dump F:utorite-pharmacie.pfx` demande la phrase de passe ; une phrase juste affiche le certificat, une fausse est refusée.
+  - **Décision** : le certificat du serveur est valable 825 jours : le renouveler avant l'échéance (procédure F6).
+  - **Si échec** : « Dossier de l'API introuvable » : étape 4.2 non faite. « Adresse IP supplémentaire invalide » : vérifier la syntaxe. « Première exécution : … Préciser -FichierSauvegardeAutorite » : ajouter le paramètre. « Dossier introuvable pour -FichierSauvegardeAutorite » : clé du coffre non branchée. « Le fichier existe déjà » : le PFX n'est jamais écrasé ; pour l'utiliser, voir F2 bis. « Les deux saisies sont différentes » ou « 12 caractères au moins » : recommencer, rien n'a été écrit. « ne doit pas être rangé avec le certificat public » : choisir un autre dossier que celui des postes.
+  - **Ancienne autorité « par PC »** : si le script avertit « Ancienne autorité … trouvée », suivre la procédure F7. Elle n'est jamais supprimée automatiquement.
 
 - [ ] **4.7** Installer l'API comme service Windows (démarrage automatique). **Où** : PC serveur. **Compte** : administrateur Windows.
   Le service doit démarrer **après** l'étape 4.6.
@@ -432,7 +436,7 @@ Faire ces étapes **sur chaque poste**, une caisse après l'autre.
 - [ ] **5.4** Installer l'autorité dans les racines de confiance de l'ordinateur. **Où** : chaque poste. **Compte** : administrateur Windows.
   ```powershell
   certutil -addstore -f Root "C:\Temp\autorite-pharmacie.crt"
-  Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -eq "CN=PharmaOfficine Autorite locale" } | Select-Object Subject, NotAfter
+  Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -eq "CN=PharmaOfficine Autorite pharmacie" } | Select-Object Subject, NotAfter
   ```
   - Alternative graphique : double-clic sur le fichier, « Installer le certificat… », « Ordinateur local », « Placer tous les certificats dans le magasin suivant », **Autorités de certification racines de confiance**.
   - **Attendu** : la commande `Get-ChildItem` affiche une ligne.
@@ -787,10 +791,30 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - **Ne pas** régler `AutoriserHttpReseau`.
   - Vérifier la longueur de `Jwt__Cle` (64 ou plus) comme à l'étape 4.4 du parcours A.
 
-- [ ] **8.** 2e serveur : certificat HTTPS. **Où** : 2e serveur. **Compte** : administrateur Windows.
-  - Refaire l'étape 4.6 du parcours A **sur le 2e serveur**, avec `-NomsSupplementaires <nom du 2e>` et `-AdressesSupplementaires <IP du 2e>`.
-  - **[À CONFIRMER, point bloquant : le script crée une autorité de certification **par PC**. Les postes ne font confiance qu'à l'autorité installée à l'étape 5.4. Il faut décider : installer sur le 2e serveur **la même autorité** que le PC serveur (le script ne sait pas exporter la clé privée de l'autorité : procédure à définir), ou réinstaller l'autorité du 2e serveur sur tous les postes et téléphones.]**
-  - Sans réponse, ne pas basculer les postes vers le 2e serveur en HTTPS.
+- [ ] **8.** 2e serveur : certificat HTTPS, **signé par la même autorité que le PC serveur**. Les postes et téléphones lui font déjà confiance (parcours A, étapes 5.4 et 6.2) : **rien à réinstaller sur les postes**. Aucune autorité n'est créée sur le 2e serveur. Clé USB branchée (ici `E:\`). Prérequis : parcours A, étape 4.6 fait (autorité créée et PFX au coffre).
+
+  **8a. Sur le PC serveur** (administrateur Windows) : générer le certificat du 2e serveur.
+  ```powershell
+  Set-Location "<dossier qui contient scripts>"
+  .\scripts\certificat_https.ps1 -CertificatPourAutrePc -NomsAutrePc <nom du 2e> -AdressesAutrePc <IP du 2e> -FichierCertificat E:\certificat-second.pfx -WhatIf
+  .\scripts\certificat_https.ps1 -CertificatPourAutrePc -NomsAutrePc <nom du 2e> -AdressesAutrePc <IP du 2e> -FichierCertificat E:\certificat-second.pfx
+  ```
+  - Rien n'est deviné : saisir **exactement** le nom et l'IP que les postes utiliseront (étape 13). Plusieurs valeurs : `-NomsAutrePc SERVEUR2,SERVEUR2.local`, `-AdressesAutrePc 192.168.1.30,10.8.0.30` (adresse VPN comprise si elle sert).
+  - Le script demande une **phrase de passe** (12 caractères au moins, deux fois). La noter à part, au coffre ; elle n'est jamais écrite par le script.
+  - **Attendu** : `Certificat de l'autre PC écrit : E:\certificat-second.pfx (valable jusqu'au …)` et la liste des noms et adresses du certificat. L'essai `-WhatIf` annonce chaque action avec `[SIMULATION]` sans rien écrire ni demander de phrase.
+  - **Si échec** : « Aucune autorité … dans Cert:\LocalMachine\My » = ce n'est pas le PC serveur (ou l'autorité n'y est pas : procédure F2 bis). « Le fichier existe déjà » : choisir un autre nom (par exemple avec la date). « Les deux saisies sont différentes » : recommencer.
+
+  **8b. Sur le 2e serveur** (administrateur Windows) : importer, avec la clé USB.
+  ```powershell
+  .\scripts\certificat_https.ps1 -Importer -FichierCertificat E:\certificat-second.pfx -DossierApi "C:\Program Files\PharmaOfficine\Api" -PareFeu -WhatIf
+  .\scripts\certificat_https.ps1 -Importer -FichierCertificat E:\certificat-second.pfx -DossierApi "C:\Program Files\PharmaOfficine\Api" -PareFeu
+  ```
+  - Le script demande la phrase de passe, importe le certificat (clé **non exportable** dans le magasin Windows), écrit `appsettings.Https.json` (HTTP `localhost:5080`, HTTPS `0.0.0.0:5443`) et ouvre le port 5443 en réseau privé, comme sur le PC serveur. Il affiche les noms et adresses du certificat et avertit si ni le nom ni une adresse de ce PC n'y figure.
+  - Vérifier : `Get-Content "C:\Program Files\PharmaOfficine\Api\appsettings.Https.json"` et `Get-NetFirewallRule -DisplayName "PharmaOfficine API (https 5443)" | Select-Object DisplayName, Enabled`.
+  - **Attendu** : `Certificat importé dans Cert:\LocalMachine\My …`, fichier de configuration identique à celui du PC serveur, règle `Enabled : True`. Le service de l'API reste **arrêté** (étape 10) : il est démarré par la bascule seulement.
+  - **Si échec** : « phrase de passe incorrecte » = ressaisir. « Ce fichier est une autorité » = mauvais fichier (l'autorité ne s'importe qu'avec `-RestaurerAutorite`, procédure F2 bis). Le certificat est valable **825 jours** : voir F6 pour le renouveler.
+  - Supprimer ensuite le PFX de la clé USB des postes ; le garder au coffre avec sa phrase, à part.
+  - Essai réel après la bascule (étape F3) : un poste ouvre `https://<IP du 2e>:5443/api/sante` sans avertissement.
 
 - [ ] **9.** 2e serveur : initialiser la réplique. **Où** : 2e serveur. **Compte** : administrateur Windows (+ mot de passe `postgres`, mot de passe de réplication).
   ```powershell
@@ -823,7 +847,7 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - **Attendu** : tout est vert. Un écart de version est affiché en rouge.
 
 - [ ] **13.** Postes : adresse de secours. **Où** : chaque poste. **Compte** : titulaire.
-  - Administration, Imprimantes et étiquettes, **Serveur et PC de secours** : « PC de secours » = adresse de l'API du 2e serveur, en HTTPS : `https://<IP du 2e>:5443/`. **[À CONFIRMER : le manuel précédent donnait `http://…:5080/`, incompatible avec la décision HTTPS seul.]**
+  - Administration, Imprimantes et étiquettes, **Serveur et PC de secours** : « PC de secours » = adresse de l'API du 2e serveur, en HTTPS : `https://<nom ou IP du 2e>:5443/`. Le port 5080 n'écoute que sur le PC lui-même : jamais `http://…:5080/` pour un poste. Le nom ou l'IP saisi doit figurer dans le certificat du 2e serveur (étape 8a), sinon le poste refuse de basculer. L'écran de réglage du poste propose encore l'exemple `http://192.168.1.20:5080/` : ne pas le suivre.
   - Délai avant le bandeau : 60 s par défaut.
 
 - [ ] **14.** Alertes. **Où** : application. **Compte** : titulaire.
@@ -849,7 +873,8 @@ Les copies ne sont **pas chiffrées** : les ranger comme les sauvegardes (accès
   Créer aussi le rôle `pharma_proprietaire` (sans connexion) : `CREATE ROLE pharma_proprietaire NOLOGIN;`. **[À CONFIRMER : la restauration rejoue les propriétaires des objets ; les rôles doivent exister avant la restauration.]**
 - [ ] **4.** API à la **même version** que le PC serveur, dans `C:\Program Files\PharmaOfficine\Api` (parcours A, étape 4.1 et 4.2). **Où** : PC de secours. **Compte** : administrateur Windows.
 - [ ] **5.** Variables de l'API (parcours A, étape 4.4) : `ConnectionStrings__Pharmacie` (base `<base>`, même compte, même mot de passe), `Jwt__Cle` **[À CONFIRMER : même valeur que le PC serveur ? Sinon, reconnexion obligatoire après bascule.]**, `Chifa__DossierExport` propre à ce PC.
-- [ ] **6.** Certificat HTTPS : refaire le parcours A, étape 4.6, **sur le PC de secours**, avec `-NomsSupplementaires <nom du PC de secours> -AdressesSupplementaires <IP du PC de secours>`. **[Même point bloquant que le 2e serveur (parcours C, étape 8) : l'autorité est propre à chaque PC.]**
+- [ ] **6.** Certificat HTTPS du PC de secours : **la même autorité** que le PC serveur (aucune autorité n'est créée sur le PC de secours, rien à réinstaller sur les postes). Deux temps, comme pour le 2e serveur (parcours C, étape 8) : **6a** sur le PC serveur, génération du certificat du PC de secours ; **6b** sur le PC de secours, import. Voir ces deux sous-étapes à l'étape 8 du parcours C, en remplaçant « 2e serveur » par « PC de secours » ; fichier conseillé : `E:\certificat-secours.pfx`, noms et adresses : ceux que les postes saisiront dans « PC de secours » (étape 13). **Où** : PC serveur (6a) puis PC de secours (6b). **Compte** : administrateur Windows.
+  - Le script `basculer-pc-secours.ps1` (procédure F2) affiche les adresses du PC de secours en `https://<IP>:5443/` : cette IP doit figurer dans le certificat.
 - [ ] **7.** Service de l'API : créer, puis **arrêter et passer en démarrage manuel** (la bascule le démarre). **Où** : PC de secours. **Compte** : administrateur Windows.
   ```powershell
   New-Service -Name "PharmaOfficine API" -BinaryPathName '"C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe"' -DisplayName "PharmaOfficine API" -StartupType Manual
@@ -886,7 +911,7 @@ Les copies ne sont **pas chiffrées** : les ranger comme les sauvegardes (accès
     .\basculer-pc-secours.ps1 -Copies "D:\CopieSecours" -Essai
     ```
     Le script se trouve dans `scripts\` (étape 4.3 du parcours A). **[À CONFIRMER : copie du script sur le PC de secours.]**
-- [ ] **13.** Postes : adresse de secours (parcours C, étape 13) : `https://<IP du PC de secours>:5443/`, délai 60 s. **Où** : chaque poste. **Compte** : titulaire.
+- [ ] **13.** Postes : adresse de secours (parcours C, étape 13) : `https://<IP du PC de secours>:5443/`, délai 60 s. **Où** : chaque poste. **Compte** : titulaire. Cette IP (ou ce nom) doit être **dans le certificat du PC de secours** (étape 6a) ; le poste vérifie le certificat avec l'autorité de la pharmacie déjà installée (étape 5.4 du parcours A).
 
 ---
 
@@ -1098,7 +1123,7 @@ Les sauvegardes utiles sont sur le **disque externe**. La copie de la base dans 
 - [ ] **4.** Sauvegarde plus ancienne que la version du logiciel : appliquer les scripts `database\migration\0xx_*.sql` plus récents (parcours B, étapes 5 à 10).
 - [ ] **5.** Démarrer le service et vérifier : `Start-Service "PharmaOfficine API"`, puis `http://localhost:5080/api/sante`. Les documents restés sur les postes (« A envoyer ») repartent dans la GED à la connexion suivante.
 - [ ] **6.** Ressaisir les opérations faites depuis la sauvegarde. Sur un nouveau PC, ressaisir le mot de passe des notifications (chiffré pour le PC d'origine).
-- [ ] **7.** Si le PC serveur a changé : refaire le parcours A, étapes 4.6 et 4.9. **L'autorité HTTPS est propre au PC** : relancer le script crée une nouvelle autorité. Il faut alors **réinstaller** `autorite-pharmacie.crt` sur tous les postes et téléphones (parcours A, étapes 5.3 à 5.4 et 6.2). **[Constaté dans le script : clé de l'autorité non exportable.]**
+- [ ] **7.** Si le PC serveur a changé : refaire le parcours A, étape 4.9, et **restaurer l'autorité HTTPS** depuis le PFX du coffre, puis créer le certificat du nouveau PC (procédure F2 bis ci-dessous). L'autorité est **unique pour la pharmacie** : les postes et téléphones n'ont **rien à réinstaller**. Sans le PFX du coffre, une nouvelle autorité serait créée et il faudrait réinstaller `autorite-pharmacie.crt` partout (parcours A, étapes 5.3 à 5.4 et 6.2).
 
 > La copie de la GED sur le disque externe n'a qu'un exemplaire par document : un document abîmé sur le serveur remplace sa copie à la sauvegarde suivante. Garder deux disques externes en rotation.
 
@@ -1119,9 +1144,38 @@ Prérequis : parcours D fait. La pharmacie repart à partir de la **dernière co
   - Le script prend la copie la plus récente (ou `-Fichier`), contrôle l'empreinte SHA-256 et la lisibilité, restaure dans une base neuve, **rejoue tous les scripts de la base** livrés avec l'API (le dernier rejoué est affiché : il doit être le dernier de la version installée), garde une base existante sous `<base>_avant_bascule_<date>` (jamais supprimée), démarre le service et affiche l'adresse à donner aux postes.
   - **Attendu** : le script se termine sans erreur et affiche l'adresse du PC de secours.
 - [ ] **4.** Sur **chaque poste** : bouton **« Basculer sur le 2e serveur »** du bandeau (il ne règle le poste que si l'API de secours répond déjà), ou rubrique Serveur et PC de secours. Puis fermer et rouvrir Pharma Officine.
+  - **Fonctionnement constaté dans le code** : le bouton appelle `https://<adresse de secours>/api/sante` (4 secondes). Le poste vérifie le certificat avec les autorités installées dans Windows (aucune exception) : la bascule ne marche que si l'autorité de la pharmacie est installée sur le poste (parcours A, étape 5.4) **et** si le nom ou l'IP saisi dans « PC de secours » figure dans le certificat du PC de secours (parcours C étape 8 et parcours D étape 6). Sinon, le poste n'est pas basculé et affiche « Le 2e serveur n'est pas encore basculé… » : le même message sert aussi quand le certificat est refusé (autorité absente du poste, ou nom absent du certificat). Si la bascule du PC de secours est faite et que ce message persiste, ouvrir `https://<adresse de secours>/api/sante` dans un navigateur du poste : un avertissement de certificat en est la cause.
+  - Aucune réinstallation d'autorité n'est nécessaire sur les postes : c'est la même autorité que celle du PC serveur.
 - [ ] **5.** GED : recopier le dossier `GED` du disque externe si besoin : `.\scripts\restaurer_pharmacie.ps1 -SansBase` (paramètre `-DossierGed` du PC de secours).
 - [ ] **6.** Ressaisir les opérations faites depuis la copie. Ressaisir le mot de passe des notifications.
 - [ ] **7.** Retour sur le PC serveur réparé : procédure F4.
+
+### F2 bis. Restaurer l'autorité HTTPS (PC serveur détruit ou remplacé)
+
+À faire quand le PC serveur principal est **remplacé définitivement** (ou qu'un PC de secours devient le nouveau principal) : le nouveau PC doit pouvoir **signer** les certificats. Le PFX de l'autorité, rangé au coffre à l'étape 4.6 du parcours A, est restauré : les postes et téléphones continuent à faire confiance à la même autorité, **rien à réinstaller sur eux**.
+
+Prérequis : la clé USB du coffre (`F:\autorite-pharmacie.pfx`) et sa phrase de passe (papier du coffre).
+
+- [ ] **1.** Sur le **nouveau** PC principal (PowerShell **en administrateur**, dans le dossier qui contient `scripts`), essai à blanc :
+  ```powershell
+  .\scripts\certificat_https.ps1 -RestaurerAutorite -FichierSauvegardeAutorite F:\autorite-pharmacie.pfx -WhatIf
+  ```
+  - **Attendu** : `[SIMULATION] L'autorité serait importée …`, aucune phrase demandée.
+- [ ] **2.** Restauration réelle :
+  ```powershell
+  .\scripts\certificat_https.ps1 -RestaurerAutorite -FichierSauvegardeAutorite F:\autorite-pharmacie.pfx
+  ```
+  - Le script demande la phrase de passe du fichier (saisie masquée), vérifie que c'est bien l'autorité de la pharmacie avec sa clé, et l'importe avec une clé **non exportable**.
+  - **Attendu** : `Autorité importée dans Cert:\LocalMachine\My …` et l'empreinte SHA-256. **La comparer** à l'empreinte notée à l'étape 4.6 (ou à `empreinte-autorite-pharmacie.txt`) : elles doivent être **identiques**.
+  - **Si échec** : « phrase de passe incorrecte » : ressaisir (la phrase est celle choisie à l'étape 4.6). « Une autre autorité … est déjà dans le magasin » : rien n'est écrasé ; vérifier laquelle est la bonne, retirer l'autre à la main. Phrase ou fichier perdus : voir l'étape 5.
+- [ ] **3.** Créer le certificat du nouveau PC et reconstituer la configuration (étape 4.6, sans `-FichierSauvegardeAutorite` puisque l'autorité existe) :
+  ```powershell
+  .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu
+  ```
+  - Ajouter `-NomsSupplementaires` / `-AdressesSupplementaires` si le nouveau PC a un nom ou une IP différents : **les postes doivent utiliser un nom ou une IP présent dans ce certificat** (variable `PHARMA_API`, étape 5.6 du parcours A, à mettre à jour si l'adresse a changé).
+  - **Attendu** : `Autorité de la pharmacie existante réutilisée`, `Certificat du serveur créé`, et la même empreinte d'autorité qu'avant. Redémarrer le service de l'API.
+- [ ] **4.** Un poste ouvre `https://<nouveau serveur>:5443/api/sante`. **Attendu** : 200, **sans avertissement**. Les 2e serveur et PC de secours déjà configurés **gardent leur certificat** (signé par la même autorité) : rien à refaire sur eux.
+- [ ] **5.** Si le PFX ou sa phrase sont perdus : la clé n'est pas récupérable (non exportable dans le magasin de l'ancien PC, détruit). Il faut **une nouvelle autorité** : lancer le script avec un nouveau `-FichierSauvegardeAutorite` (étape 4.6), puis **réinstaller** `autorite-pharmacie.crt` sur tous les postes et téléphones (étapes 5.3, 5.4, 6.1, 6.2) et régénérer les certificats du 2e serveur et du PC de secours (parcours C étape 8, parcours D étape 6).
 
 ### F3. Bascule du 2e serveur
 
@@ -1131,9 +1185,10 @@ Prérequis : parcours C fait. Décision du titulaire.
 - [ ] **2.** Sur le PC principal, si possible : arrêter le service de l'API et PostgreSQL, ou **débrancher son câble réseau**.
 - [ ] **3.** Sur le 2e serveur, PowerShell **en administrateur**, dossier `scripts\second-serveur` :
   ```powershell
-  .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal> -Essai
-  .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal>
+  .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal> -Schema https -PortApi 5443 -Essai
+  .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal> -Schema https -PortApi 5443
   ```
+  - `-Schema https -PortApi 5443` : c'est le port que les postes utilisent. Le port 5080 n'écoute que sur le PC lui-même : le contrôle « l'ancien principal répond-il encore ? » doit donc viser 5443, et l'adresse affichée pour les postes devient `https://<IP>:5443/`. Le contrôle local de `/api/sante` en HTTPS peut avertir si l'autorité n'est pas installée sur le 2e serveur lui-même (sans conséquence pour les postes).
   - Le script **refuse** si l'ancien principal répond encore (PostgreSQL ou API). Il demande de taper `BASCULER`.
   - **Attendu** : le script affiche l'heure de la dernière transaction reçue. Ce qui a été saisi après (rare) est à ressaisir.
 - [ ] **4.** Sur chaque poste : bouton **« Basculer sur le 2e serveur »**, puis fermer et rouvrir Pharma Officine.
@@ -1171,6 +1226,29 @@ Prérequis : parcours C fait. Décision du titulaire.
   Ou tous les certificats d'un serveur d'officine (PC volé) : `--revoquer-serveur <code officine> <serveur> --motif "<motif>"`. Révoquer un certificat révoque aussi ceux obtenus en le renouvelant.
 - [ ] **3.** Effet au prochain appel. Un nouveau code d'activation permet de réactiver l'officine. Le certificat (3 ans) se renouvelle seul 60 jours avant l'échéance.
 
+### F6. Renouveler le certificat HTTPS (825 jours)
+
+Le certificat de chaque PC dure **825 jours** (environ 27 mois). L'autorité dure 10 ans : son renouvellement (nouvelle autorité) est une réinstallation sur tous les postes ; le prévoir **avant** l'échéance. Noter les dates : `Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*PharmaOfficine*" } | Select-Object Subject, NotAfter`. Renouveler **au moins 2 mois avant** l'échéance (le script refait le certificat de lui-même à moins d'un mois de l'échéance).
+
+- [ ] **1.** **PC serveur principal** (administrateur) : relancer la commande de l'étape 4.6 (sans `-FichierSauvegardeAutorite`) :
+  ```powershell
+  .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -PareFeu
+  ```
+  - Le certificat est refait seulement s'il expire dans moins d'un mois ou si la liste des noms change. Pour renouveler plus tôt : retirer le certificat `CN=PharmaOfficine Mobile` du magasin à la main (`Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -eq 'CN=PharmaOfficine Mobile' | Remove-Item`) puis relancer, en reprenant la **même liste de noms et adresses** que la première fois.
+  - Puis redémarrer le service de l'API. **Attendu** : `Certificat du serveur créé`, nouvelle date d'échéance. Les postes ne changent rien (même autorité).
+- [ ] **2.** **2e serveur et PC de secours** : sur le PC serveur, refaire l'étape 8a du parcours C (`-CertificatPourAutrePc`, mêmes noms et adresses, **nouveau nom de fichier**, par exemple `E:\certificat-second-AAAAMMJJ.pfx`) ; sur l'autre PC, refaire l'étape 8b (`-Importer`). Le script retire l'ancien certificat **après** avoir mis le nouveau en place. Redémarrer le service de l'API s'il tourne ; sinon rien (il est arrêté jusqu'à la bascule).
+- [ ] **3.** Vérifier sur un poste : `https://<serveur>:5443/api/sante` sans avertissement ; pour le 2e serveur et le PC de secours, au prochain essai de bascule.
+- [ ] **4.** Détruire les PFX temporaires de la clé USB des postes ; garder le PFX **de l'autorité** au coffre (inchangé).
+
+### F7. Ancienne autorité « une par PC » trouvée
+
+La première version du script créait une autorité « `PharmaOfficine Autorite locale` » **propre à chaque PC** (jamais exécutée en réel en production). Si le script avertit « Ancienne autorité … trouvée sur ce PC », ou si un poste a reçu un ancien `autorite-pharmacie.crt` :
+
+- [ ] **1.** Constater (sans rien supprimer) : `Get-ChildItem Cert:\LocalMachine\My, Cert:\LocalMachine\Root | Where-Object { $_.Subject -eq "CN=PharmaOfficine Autorite locale" } | Select-Object PSParentPath, Thumbprint, NotAfter`.
+- [ ] **2.** Le script **ne la supprime jamais**. La nouvelle autorité porte un nom différent (`PharmaOfficine Autorite pharmacie`) : les deux coexistent le temps de la transition. Le nouveau certificat du serveur est signé par la nouvelle autorité seulement.
+- [ ] **3.** Faire (ou refaire) l'étape 4.6 du parcours A, puis installer la **nouvelle** autorité sur les postes et téléphones (étapes 5.3, 5.4, 6.1, 6.2).
+- [ ] **4.** Quand **tous** les postes fonctionnent en HTTPS : retirer l'ancienne **à la main**. Sur le PC serveur : `Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -eq "CN=PharmaOfficine Autorite locale" } | Remove-Item`. Sur chaque poste : `certutil -delstore Root "PharmaOfficine Autorite locale"`. Décision du titulaire ; garder une trace de l'empreinte retirée.
+
 ---
 
 ## Annexes
@@ -1182,7 +1260,9 @@ Prérequis : parcours C fait. Décision du titulaire.
 | Le service se ferme aussitôt | `Démarrage refusé : l'API écoute en HTTP (non chiffré) sur le réseau` | Parcours A, étape 4.6 non faite, ou `appsettings.Https.json` absent |
 | Le service se ferme : message sur `Jwt:Cle` | Variable absente ou de moins de 64 caractères | Parcours A, étape 4.4 |
 | Service `Running`, mais rien ne répond | Pare-feu ou mauvais port | `netstat -ano \| findstr :5443`, puis règle `PharmaOfficine API (https 5443)` |
-| Avertissement de certificat sur un poste | Autorité non installée, ou nom du serveur absent du certificat | Parcours A, étape 5.4, ou relancer le script de l'étape 4.6 avec `-NomsSupplementaires` / `-AdressesSupplementaires` |
+| Avertissement de certificat sur un poste | Autorité non installée, ou nom du serveur absent du certificat | Parcours A, étape 5.4 ; sur le PC serveur, relancer l'étape 4.6 avec `-NomsSupplementaires` / `-AdressesSupplementaires` ; sur le 2e serveur ou le PC de secours, regénérer le certificat (parcours C, étape 8) avec le nom ou l'IP utilisé par les postes |
+| Le poste n'arrive pas à basculer sur le PC de secours (« pas encore basculé ») alors que son API tourne | Autorité absente du poste, ou nom/IP de « PC de secours » absent du certificat du PC de secours | `https://<adresse de secours>/api/sante` dans le navigateur du poste ; procédure F2, étape 4 |
+| `Première exécution : … Préciser -FichierSauvegardeAutorite` | L'autorité n'existe pas encore sur ce PC | Étape 4.6 (nouvelle pharmacie) ou procédure F2 bis (PC remplacé, PFX du coffre) |
 | Avertissement d'heure dans le journal au démarrage | Fuseau Windows incorrect | Parcours A, étape 2.3 |
 | Le poste dit « Serveur injoignable » | API arrêtée, ou adresse `PHARMA_API` erronée | Vérifier le service, puis la variable |
 | Message « base en lecture seule » | Base d'un 2e serveur non basculé | Normal : écrire sur le PC principal |
@@ -1229,6 +1309,7 @@ Cocher tout avant le jour J.
 - [ ] Base : `schema.sql`, `083`, `seed_referentiel.sql`, `111b` faits, `objets_encore_a_pharma_app = 0`
 - [ ] Variables de l'API réglées (`ConnectionStrings__Pharmacie`, `Jwt__Cle` ≥ 64, `Chifa__DossierExport`)
 - [ ] Certificat HTTPS créé ; `appsettings.Https.json` présent ; règle de pare-feu 5443 active
+- [ ] PFX de l'autorité au coffre (hors ligne, seconde copie ailleurs), phrase de passe notée à part ; empreinte de l'autorité notée
 - [ ] Service `PharmaOfficine API` en démarrage automatique et `Running`
 - [ ] `http://localhost:5080/api/sante` répond ; le réseau ne répond pas sur 5080
 - [ ] Tous les postes : autorité installée (empreinte vérifiée), `PHARMA_API` en HTTPS, `PHARMA_POSTE` unique, écran de connexion sans avertissement

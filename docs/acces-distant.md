@@ -43,10 +43,11 @@ Rien n'est installé par le logiciel : ces réglages relèvent du prestataire in
 
 ## Étapes, une fois le VPN en place
 
-1. Le certificat HTTPS de la page mobile doit aussi couvrir l'adresse VPN du serveur. Relancer le script en administrateur en ajoutant l'adresse VPN (les noms et adresses par défaut du PC sont gardés ; ne renseigner que l'adresse réellement utilisée, rien n'est deviné) :
+1. Le certificat HTTPS de la page mobile doit aussi couvrir l'adresse VPN du serveur. Relancer le script en administrateur en ajoutant l'adresse VPN (les noms et adresses par défaut du PC sont gardés ; ne renseigner que l'adresse réellement utilisée, rien n'est deviné). L'autorité de la pharmacie existe déjà : aucun fichier PFX à fournir, et rien à réinstaller sur les postes ni sur les téléphones déjà configurés :
    ```powershell
    .\scripts\certificat_https.ps1 -DossierApi "<dossier de l'API>" -DossierExport <clé USB> -AdressesSupplementaires <adresse VPN du serveur> -PareFeu
    ```
+   Si le 2e serveur ou le PC de secours doit aussi être joignable par le VPN, son certificat se génère à part sur le PC serveur (`-CertificatPourAutrePc`, voir `mise-en-production.md`, parcours C, étape 8).
 2. Installer le certificat racine sur le téléphone du titulaire, comme pour le scanner mobile : voir `scanner-mobile.md`.
 3. Sur le téléphone, activer le VPN, puis ouvrir `https://<adresse VPN du serveur>:5443/mobile/`. Se connecter avec le compte du titulaire, puis « Ajouter à l'écran d'accueil ».
 

@@ -28,7 +28,7 @@ param(
     [string]$PgBin       = "",
     [string]$HostPg      = "localhost",
     [int]   $Port        = 5432,
-    [int]   $PortApi     = 5080,
+    [int]   $PortApi     = 5443,                    # port HTTPS de l'API : celui des postes (5080 n'écoute que sur le PC lui-même)
     [string]$SuperUser   = "postgres",
     [string]$AppUser     = "pharma_app",
     [switch]$Essai
@@ -85,7 +85,7 @@ $adresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
 if ($Essai) {
     Write-Host "$mode Restauration dans la base $Base (une base $Base existante serait gardée sous ${Base}_avant_bascule_<date>)."
     Write-Host "$mode Démarrage du service « $Service »."
-    foreach ($ip in $adresses) { Write-Host "$mode Adresse à donner aux postes : http://${ip}:$PortApi/ (ou https selon l'installation)" }
+    foreach ($ip in $adresses) { Write-Host "$mode Adresse à donner aux postes (PC de secours) : https://${ip}:$PortApi/ (un nom ou une IP présent dans le certificat de ce PC)" }
     Write-Host "$mode Simulation terminée : aucune base ni aucun service n'a été modifié."
     return
 }
@@ -141,6 +141,6 @@ finally {
 & sc.exe start $Service | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Warning "Le service « $Service » n'a pas démarré : voir les journaux de l'API (clé de scellement des journaux, procédure « PC serveur en panne »)." }
 else { Write-Host "Service « $Service » démarré." }
-foreach ($ip in $adresses) { Write-Host "Adresse à donner aux postes : http://${ip}:$PortApi/ (ou https selon l'installation)" }
+foreach ($ip in $adresses) { Write-Host "Adresse à donner aux postes (PC de secours) : https://${ip}:$PortApi/ (un nom ou une IP présent dans le certificat de ce PC)" }
 Write-Host "Sur chaque poste : bouton « Utiliser le PC de secours » du bandeau, ou Administration › Imprimantes › Serveur et PC de secours, puis redémarrer le poste."
 Write-Host "Les opérations faites après cette copie sont à ressaisir."

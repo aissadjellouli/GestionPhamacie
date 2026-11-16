@@ -23,11 +23,11 @@
 param(
     [Parameter(Mandatory)] [string]$AncienPrincipal,    # IPv4 du serveur principal en panne
     [int]   $Port        = 5432,
-    [int]   $PortApi     = 5080,
+    [int]   $PortApi     = 5443,
     [string]$PgBin       = "",
     [string]$SuperUser   = "postgres",
     [string]$ServiceApi  = "PharmaOfficine API",
-    [string]$Schema      = "http",                      # http ou https, comme l'installation de l'API
+    [string]$Schema      = "https",                     # https (5443) : seul port de l'API ouvert au réseau ; http (5080) n'écoute que sur le PC lui-même
     [switch]$Essai
 )
 . (Join-Path $PSScriptRoot "commun.ps1")
