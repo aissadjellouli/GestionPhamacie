@@ -70,7 +70,11 @@ public class RegistreChaineTests
     {
         if (Environment.GetEnvironmentVariable("PHARMA_TEST_CNX") is { Length: > 0 } cnx) return cnx;
         var racine = Environment.GetEnvironmentVariable("PHARMA_RACINE_DEPOT") is { Length: > 0 } r ? r : Racine();
-        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(racine, "src", "Pharma.Api", "appsettings.json")),
+        // Le mot de passe de développement est dans appsettings.Development.json (ignoré par git), sinon appsettings.json
+        var dossierApi = Path.Combine(racine, "src", "Pharma.Api");
+        var appsettings = Path.Combine(dossierApi, "appsettings.Development.json");
+        if (!File.Exists(appsettings)) appsettings = Path.Combine(dossierApi, "appsettings.json");
+        using var doc = JsonDocument.Parse(File.ReadAllText(appsettings),
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
         return doc.RootElement.GetProperty("ConnectionStrings").GetProperty("Pharmacie").GetString()!;
     }

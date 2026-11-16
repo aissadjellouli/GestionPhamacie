@@ -49,6 +49,9 @@ Publier "Pharma.Desktop" "poste"
 # La configuration de développement (base pharmacie_dev, clé d'exemple) ne part pas dans le paquet :
 # installer.ps1 écrit appsettings.Production.json sur le PC du pharmacien
 Remove-Item (Join-Path $Sortie "api\appsettings.Development.json") -ErrorAction SilentlyContinue
+# Contrôle : aucun mot de passe dans la configuration livrée (il est tiré au sort par installer.ps1)
+$livree = Get-Content (Join-Path $Sortie "api\appsettings.json") -Raw
+if ($livree -match "Password=[^;`"]+") { throw "Mot de passe présent dans api\appsettings.json : paquet refusé" }
 
 # Base : scripts numérotés (structure et référentiel), puis données fictives de démonstration
 $db = New-Item -ItemType Directory -Force (Join-Path $Sortie "database\data")

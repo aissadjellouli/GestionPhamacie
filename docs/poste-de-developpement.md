@@ -51,8 +51,16 @@ Le script :
 - trouve tout seul la dernière version de PostgreSQL installée (sinon : `-PgBin "C:\Program Files\PostgreSQL\18\bin"`) ;
 - règle l’encodage UTF-8 de psql (les scripts contiennent des accents) ;
 - demande le mot de passe de `postgres` ;
-- crée le compte applicatif `pharma_app` (mot de passe de développement `pharma_dev`, celui de `src/Pharma.Api/appsettings.json`) ;
+- crée le compte applicatif `pharma_app` (mot de passe de développement `pharma_dev`) ;
 - crée les bases manquantes, puis applique `database/migration/001` à `009` dans l’ordre et les données fictives `database/data/9xx_*.sql`.
+
+**Connexion de l'API en développement** : le mot de passe n'est jamais dans `src/Pharma.Api/appsettings.json` (versionné et livré dans le paquet, `Password=` vide). Créer une fois, sur le poste de développement, `src/Pharma.Api/appsettings.Development.json` (ignoré par git, retiré du paquet ; Visual Studio le charge avec l'environnement `Development`) :
+```json
+{
+  "ConnectionStrings": { "Pharmacie": "Host=localhost;Port=5432;Database=pharmacie_test;Username=pharma_app;Password=pharma_dev" }
+}
+```
+Les tests d'intégrité lisent la même connexion (ou la variable `PHARMA_TEST_CNX`). Chez le pharmacien, `installer.ps1` tire au sort le mot de passe et l'écrit dans `apiappsettings.Production.json`.
 
 Les scripts SQL sont **idempotents** (voir [base-de-donnees.md](base-de-donnees.md#scripts-idempotents)) : sur une base existante, le script la **met à jour** sans rien perdre.
 

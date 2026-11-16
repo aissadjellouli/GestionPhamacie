@@ -159,7 +159,10 @@ public class JournalVentesSqlTests
     private static string ChaineConnexion()
     {
         if (Environment.GetEnvironmentVariable("PHARMA_TEST_CNX") is { Length: > 0 } cnx) return cnx;
-        var appsettings = Path.Combine(RacineDepot(), "src", "Pharma.Api", "appsettings.json");
+        // Le mot de passe de développement est dans appsettings.Development.json (ignoré par git), sinon appsettings.json
+        var dossierApi = Path.Combine(RacineDepot(), "src", "Pharma.Api");
+        var appsettings = Path.Combine(dossierApi, "appsettings.Development.json");
+        if (!File.Exists(appsettings)) appsettings = Path.Combine(dossierApi, "appsettings.json");
         using var doc = JsonDocument.Parse(File.ReadAllText(appsettings), new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
         return doc.RootElement.GetProperty("ConnectionStrings").GetProperty("Pharmacie").GetString()!;
     }
