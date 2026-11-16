@@ -33,7 +33,7 @@ public class DecisionsTitulaire20261116Tests
     [InlineData("B/30 ET B/90", null)]
     [InlineData("B/30 SACHETS", 30)]
     [InlineData("B/30 SACHETS DE 5 G", 30)]
-    [InlineData("B/1FL", null)]
+    [InlineData("B/1FL", 1)]   // flacon : règle du script 139
     [InlineData("FL/10ML", null)]
     [InlineData("T/15G", null)]
     [InlineData("B/0", null)]
