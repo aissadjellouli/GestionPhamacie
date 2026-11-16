@@ -15,7 +15,7 @@
 --     (médicament, dermo-cosmétique, hygiène…) ; motifs et catégories réglables
 --     (tiroir, mise en attente, charges, sorties de stock, retours ; 094 ;
 --     vente Chifa sans n° de facture ; 097) ;
---   * synchronisation (126 à 131) : réglage par défaut (désactivée), classement
+--   * synchronisation (126 à 131, 141) : réglage par défaut (désactivée), classement
 --     sync_table, familles nominatives (sync_famille_colonne) ;
 --   * compte « titulaire » avec le mot de passe provisoire « Provisoire-2026 » :
 --     changement obligatoire à la première connexion (rien d'autre n'est
@@ -23,7 +23,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 140 (095, 098, 099, 132, 134, 137, 138 et 139 n'ajoutent aucune donnée de référence ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 141 (095, 098, 099, 132, 134, 137, 138 et 139 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -465,6 +465,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('reception_ligne', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('registre_psychotrope', 'montante', '{id}', '{porteur_nom,porteur_adresse,porteur_piece}', '{patient_id}', '{}', true, NULL),
     ('reglage_central', 'descendante', '{cle}', '{}', '{}', '{}', false, 'Réglages décidés au serveur central (familles nominatives…), script 131'),
+    ('reglage_mutualise', 'montante', '{nom_table}', '{modele}', '{}', '{motif_rejet}', false, 'État de la mutualisation des réglages (mode, version appliquée, rejet), script 141'),
     ('regle_alerte_psychotrope', 'bidirectionnelle', '{code}', '{}', '{}', '{}', false, NULL),
     ('reglement_facture', 'montante', '{reglement_id,reception_id}', '{}', '{}', '{}', false, NULL),
     ('reglement_facture_client', 'montante', '{mouvement_id,facture_id}', '{}', '{}', '{}', false, NULL),
@@ -506,6 +507,11 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('versement_bordereau', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('wilaya', 'descendante', '{code}', '{}', '{}', '{}', false, NULL),
     ('zone_psychotrope_wilaya', 'descendante', '{wilaya}', '{}', '{}', '{}', false, NULL)
+ON CONFLICT (nom_table) DO NOTHING;
+
+-- Mutualisation des réglages (141) : une ligne d'état par table mutualisable, mode « local », aucun modèle reçu (rien n'est imposé ni publié)
+INSERT INTO reglage_mutualise (nom_table)
+SELECT t FROM unnest(reglage_tables_mutualisables()) AS t
 ON CONFLICT (nom_table) DO NOTHING;
 
 -- Synchronisation (130, 133) : colonnes des familles de données nominatives réglées au serveur central (retirées avant envoi

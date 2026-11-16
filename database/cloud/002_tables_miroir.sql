@@ -1421,6 +1421,7 @@ ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "cree_le" timestamp
 ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "modifie_le" timestamp with time zone;
 ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "effet" text;
 ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "detail" text;
+ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "modele_code_central" boolean;
 ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."motif_reglable" ENABLE ROW LEVEL SECURITY;
@@ -1428,7 +1429,7 @@ ALTER TABLE public."motif_reglable" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."motif_reglable";
 CREATE POLICY cloisonnement ON public."motif_reglable" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."motif_reglable" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('motif_reglable', '{id}', '{id,liste,code,libelle,actif,systeme,ordre,cree_le,modifie_le,effet,detail,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('motif_reglable', '{id}', '{id,liste,code,libelle,actif,systeme,ordre,cree_le,modifie_le,effet,detail,officine_id,modele_code_central}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."mouvement_stock" (
@@ -2155,6 +2156,36 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public."registre_psychotrope" TO pharma_
 INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('registre_psychotrope', '{id}', '{id,lot_id,ligne_vente_id,type_mouvement,quantite,solde_apres,patient_id,medecin_id,ordonnance_id,utilisateur_id,cree_le,mouvement_id,reference,numero_ordre,duree_traitement_jours,officine_id,porteur_code}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
+CREATE TABLE IF NOT EXISTS public."reglage_mutualise" (
+    officine_id uuid NOT NULL,
+    "nom_table" text NOT NULL,
+    sync_epoque integer NOT NULL,
+    sync_numero bigint NOT NULL,
+    sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (officine_id, "nom_table")
+);
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "mode" text;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "ajouts_locaux" boolean;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "mode_recu" text;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "version_modele_recue" bigint;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "recu_le" timestamp with time zone;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "version_modele_appliquee" bigint;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "applique_le" timestamp with time zone;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "etat" text;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "motif_rejet" text;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "version_modele_rejetee" bigint;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "origine" text;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS "modifie_localement_le" timestamp with time zone;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."reglage_mutualise" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
+ALTER TABLE public."reglage_mutualise" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."reglage_mutualise" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cloisonnement ON public."reglage_mutualise";
+CREATE POLICY cloisonnement ON public."reglage_mutualise" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public."reglage_mutualise" TO pharma_cloud_api;
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('reglage_mutualise', '{nom_table}', '{nom_table,mode,ajouts_locaux,mode_recu,version_modele_recue,recu_le,version_modele_appliquee,applique_le,etat,motif_rejet,version_modele_rejetee,origine,modifie_localement_le,officine_id}')
+    ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
+
 CREATE TABLE IF NOT EXISTS public."regle_alerte_psychotrope" (
     officine_id uuid NOT NULL,
     "code" text NOT NULL,
@@ -2347,6 +2378,7 @@ ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "modifiee_par" 
 ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "modifiee_le" timestamp with time zone;
 ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "arretee_par" bigint;
 ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "arretee_le" timestamp with time zone;
+ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "modele_cle" text;
 ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."remise_automatique" ENABLE ROW LEVEL SECURITY;
@@ -2354,7 +2386,7 @@ ALTER TABLE public."remise_automatique" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."remise_automatique";
 CREATE POLICY cloisonnement ON public."remise_automatique" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."remise_automatique" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('remise_automatique', '{id}', '{id,produit_id,categorie,pourcentage,date_debut,date_fin,motif,cree_par,cree_le,modifiee_par,modifiee_le,arretee_par,arretee_le,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('remise_automatique', '{id}', '{id,produit_id,categorie,pourcentage,date_debut,date_fin,motif,cree_par,cree_le,modifiee_par,modifiee_le,arretee_par,arretee_le,officine_id,modele_cle}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."remise_cheque_paiement" (

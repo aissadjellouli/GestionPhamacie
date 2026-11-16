@@ -124,6 +124,13 @@ ON CONFLICT (nom_table) DO NOTHING;
 
 -- Élément reçu : 'applique', 'ancien' (version déjà là ou plus récente), 'table_inconnue' ou 'refuse' ; jamais d'exception
 -- pour un élément mal formé ; la version acquittée n'est PAS modifiée ici (sync_noter_version_descendante)
+-- Rejouable : sur une base où le script 141 est passé (éléments « mutu_ »), la version de 141 est la version finale ;
+-- la remplacer par celle-ci ramènerait une définition périmée.
+DO $garde$
+BEGIN
+    IF to_regprocedure('sync_recevoir_descendant(text,text,bigint,jsonb,bigint)') IS NULL
+       OR position('mutu-v1' IN pg_get_functiondef(to_regprocedure('sync_recevoir_descendant(text,text,bigint,jsonb,bigint)'))) = 0 THEN
+        EXECUTE $f$
 CREATE OR REPLACE FUNCTION sync_recevoir_descendant(p_table text, p_cle text, p_version bigint, p_donnees jsonb, p_version_max bigint)
 RETURNS text LANGUAGE plpgsql AS $$
 DECLARE p sync_parametre; v_avant jsonb; n int;
@@ -162,6 +169,9 @@ BEGIN
             CASE WHEN p_cle = 'familles_envoyees' THEN p_donnees -> 'familles' END);
     RETURN 'applique';
 END $$;
+        $f$;
+    END IF;
+END $garde$;
 
 CREATE OR REPLACE FUNCTION sync_noter_version_descendante(p_version bigint) RETURNS bigint
 LANGUAGE sql AS $$

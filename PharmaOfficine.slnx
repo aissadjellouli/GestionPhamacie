@@ -7,6 +7,8 @@
     <File Path="docs/acces-distant.md" />
     <File Path="docs/architecture.md" />
     <File Path="docs/base-de-donnees.md" />
+    <File Path="docs/scripts-base-de-donnees.md" />
+    <File Path="docs/essai-cloud-officine.md" />
     <File Path="docs/charte-graphique.md" />
     <File Path="docs/chifa.md" />
     <File Path="docs/feuille-de-route.md" />
@@ -74,7 +76,7 @@
     <File Path="database/migration/007_tracabilite_boite.sql" />
     <File Path="database/migration/008_reprise_donnees.sql" />
     <File Path="database/migration/009_caisse.sql" />
-    <File Path="database/migration/010_administration.sql" />
+    <File Path="database/migration/010_identite_pharmacie_seuils_titulaire.sql" />
     <File Path="database/migration/011_ordonnance_scannee.sql" />
     <File Path="database/migration/012_achats.sql" />
     <File Path="database/migration/013_notifications.sql" />
@@ -83,13 +85,13 @@
     <File Path="database/migration/016_emplacements.sql" />
     <File Path="database/migration/017_inventaire.sql" />
     <File Path="database/migration/018_lot_unique.sql" />
-    <File Path="database/migration/019_mobile.sql" />
+    <File Path="database/migration/019_scan_reception_mobile.sql" />
     <File Path="database/migration/020_seuils_stock.sql" />
     <File Path="database/migration/021_prix_boite.sql" />
     <File Path="database/migration/022_caisse_partagee.sql" />
     <File Path="database/migration/023_nomenclature.sql" />
     <File Path="database/migration/024_registre_psychotropes.sql" />
-    <File Path="database/migration/025_affichage.sql" />
+    <File Path="database/migration/025_affichage_clair_sombre.sql" />
     <File Path="database/migration/026_ventes_attente.sql" />
     <File Path="database/migration/027_annulation_vente.sql" />
     <File Path="database/migration/028_retour_client.sql" />
@@ -111,8 +113,8 @@
     <File Path="database/migration/044_reception_detaillee.sql" />
     <File Path="database/migration/045_prix_lot_ug_categories.sql" />
     <File Path="database/migration/046_blocage_produit.sql" />
-    <File Path="database/migration/047_recette_corrections.sql" />
-    <File Path="database/migration/048_reprise_corrections.sql" />
+    <File Path="database/migration/047_numeros_recus_autorisation_code.sql" />
+    <File Path="database/migration/048_reprise_classe_prix_achat_lots.sql" />
     <File Path="database/migration/049_vente_sans_ordonnance.sql" />
     <File Path="database/migration/050_ged.sql" />
     <File Path="database/migration/051_rappel_lot_deja_bloque.sql" />
@@ -123,10 +125,10 @@
     <File Path="database/migration/056_droit_don.sql" />
     <File Path="database/migration/057_reception_aveugle.sql" />
     <File Path="database/migration/058_surveillance_comptes.sql" />
-    <File Path="database/migration/059_corrections_surveillance.sql" />
+    <File Path="database/migration/059_surveillance_fantomes_remises_horaires.sql" />
     <File Path="database/migration/060_volet_chifa.sql" />
     <File Path="database/migration/061_tva_sorties.sql" />
-    <File Path="database/migration/062_vues_parametres_nommes.sql" />
+    <File Path="database/migration/062_vues_alertes_colonnes_nommees.sql" />
     <File Path="database/migration/063_revocation_connexions.sql" />
     <File Path="database/migration/064_caisse_cloturee.sql" />
     <File Path="database/migration/065_stock_vendable_hors_bloque.sql" />
@@ -164,7 +166,7 @@
     <File Path="database/migration/097_rapprochement_decisions.sql" />
     <File Path="database/migration/098_annulations_regularisation_reglement.sql" />
     <File Path="database/migration/099_remboursement_regularisation.sql" />
-    <File Path="database/migration/100_volet_chifa_complements.sql" />
+    <File Path="database/migration/100_volet_chifa_centres_payeurs_exclusion.sql" />
     <File Path="database/migration/101_fusion_facture_chifa.sql" />
     <File Path="database/migration/101b_suppression_num_facture_chifa.sql" />
     <File Path="database/migration/102_rang_fin_droit.sql" />
@@ -199,9 +201,12 @@
     <File Path="database/migration/133_synchronisation_familles_banque_clients.sql" />
     <File Path="database/migration/134_contenance_sachets_ampoules.sql" />
     <File Path="database/migration/135_synchronisation_famille_banque_elargie.sql" />
-    <File Path="database/migration/136_synchronisation_corrections_revue.sql" />
-    <File Path="database/migration/137_contenance_extension.sql" />
+    <File Path="database/migration/136_synchronisation_colonnes_figees_descendant.sql" />
+    <File Path="database/migration/137_contenance_unite_taille_unitaire.sql" />
     <File Path="database/migration/138_synchronisation_noms_personnel_textes.sql" />
+    <File Path="database/migration/139_contenance_flacons_seringues_stylos.sql" />
+    <File Path="database/migration/140_synchronisation_supervision_purge.sql" />
+    <File Path="database/migration/141_mutualisation_reglages.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -215,9 +220,12 @@
     <File Path="database/tests/133_synchronisation_familles_banque_clients_tests.sql" />
     <File Path="database/tests/134_contenance_sachets_ampoules_tests.sql" />
     <File Path="database/tests/135_synchronisation_famille_banque_elargie_tests.sql" />
-    <File Path="database/tests/136_synchronisation_corrections_revue_tests.sql" />
-    <File Path="database/tests/137_contenance_extension_tests.sql" />
+    <File Path="database/tests/136_synchronisation_colonnes_figees_descendant_tests.sql" />
+    <File Path="database/tests/137_contenance_unite_taille_unitaire_tests.sql" />
     <File Path="database/tests/138_synchronisation_noms_personnel_textes_tests.sql" />
+    <File Path="database/tests/139_contenance_flacons_seringues_stylos_tests.sql" />
+    <File Path="database/tests/140_synchronisation_supervision_purge_tests.sql" />
+    <File Path="database/tests/141_mutualisation_reglages_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
   </Folder>
@@ -225,21 +233,23 @@
     <File Path="database/cloud/README.md" />
     <File Path="database/cloud/001_base_centrale.sql" />
     <File Path="database/cloud/002_tables_miroir.sql" />
-    <File Path="database/cloud/003_chargement.sql" />
-    <File Path="database/cloud/004_reglages.sql" />
-    <File Path="database/cloud/005_descendant.sql" />
+    <File Path="database/cloud/003_chargement_complet_officine.sql" />
+    <File Path="database/cloud/004_reglage_familles_envoyees.sql" />
+    <File Path="database/cloud/005_voie_descendante_elements.sql" />
     <File Path="database/cloud/006_debit_chargement.sql" />
     <File Path="database/cloud/007_familles_banque_clients.sql" />
     <File Path="database/cloud/008_famille_banque_elargie.sql" />
-    <File Path="database/cloud/009_corrections_revue.sql" />
+    <File Path="database/cloud/009_central_restaure_quota_chargement.sql" />
+    <File Path="database/cloud/010_mutualisation_reglages.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
-    <File Path="database/cloud/tests/003_chargement_tests.sql" />
-    <File Path="database/cloud/tests/004_reglages_tests.sql" />
-    <File Path="database/cloud/tests/005_descendant_tests.sql" />
+    <File Path="database/cloud/tests/003_chargement_complet_officine_tests.sql" />
+    <File Path="database/cloud/tests/004_reglage_familles_envoyees_tests.sql" />
+    <File Path="database/cloud/tests/005_voie_descendante_elements_tests.sql" />
     <File Path="database/cloud/tests/006_debit_chargement_tests.sql" />
     <File Path="database/cloud/tests/007_familles_banque_clients_tests.sql" />
     <File Path="database/cloud/tests/008_famille_banque_elargie_tests.sql" />
-    <File Path="database/cloud/tests/009_corrections_revue_tests.sql" />
+    <File Path="database/cloud/tests/009_central_restaure_quota_chargement_tests.sql" />
+    <File Path="database/cloud/tests/010_mutualisation_reglages_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -260,6 +270,15 @@
     <File Path="scripts/initialiser_base_locale.ps1" />
     <File Path="scripts/restaurer_pharmacie.ps1" />
     <File Path="scripts/sauvegarde_pharmacie.ps1" />
+  </Folder>
+  <Folder Name="/scripts/mep/">
+    <File Path="scripts/mep/outils_mep.ps1" />
+    <File Path="scripts/mep/creer_base_officine.ps1" />
+    <File Path="scripts/mep/mettre_a_jour_base_officine.ps1" />
+    <File Path="scripts/mep/creer_base_centrale.ps1" />
+  </Folder>
+  <Folder Name="/scripts/dev/">
+    <File Path="scripts/dev/essai_cloud_officine.ps1" />
   </Folder>
   <Folder Name="/scripts/second-serveur/">
     <File Path="scripts/second-serveur/commun.ps1" />

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 140 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 141 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 140 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 141 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -44,7 +44,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict JDFortVDu6caLmZAgf202A76AKv6UKd1eB9SDUaDS0PWrmLnUhE7ZsHghYacNy9
+\restrict zTdqLqtMm1kyzJykeOyUMoZl6TfgVjTGErvIrHohcwMjhx4yNWmZ0BB0RYQPVbz
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -2622,6 +2622,140 @@ $$;
 
 
 --
+-- Name: reglage_garde(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reglage_garde() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_mode   text;
+    v_autre  boolean := false;
+    v_refus  text := 'Réglage fixé par le serveur central : ' || TG_TABLE_NAME || ' ne peut pas être modifié dans l''officine.';
+BEGIN
+    -- Application d'un modèle (poste le marqueur par SET LOCAL dans sa transaction) : tout passe
+    IF coalesce(current_setting('pharma.reglage_central', true), '') = 'on' THEN
+        IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+        RETURN NEW;
+    END IF;
+
+    -- Le repérage « venu du modèle » n'est jamais posé ni changé hors application d'un modèle
+    IF TG_TABLE_NAME = 'motif_reglable' AND TG_OP <> 'DELETE' THEN
+        IF TG_OP = 'INSERT' THEN v_autre := NEW.modele_code_central; ELSE v_autre := NEW.modele_code_central IS DISTINCT FROM OLD.modele_code_central; END IF;
+        IF v_autre THEN
+            RAISE EXCEPTION 'Réglage fixé par le serveur central : le repérage des motifs du serveur central ne se modifie pas dans l''officine.';
+        END IF;
+    ELSIF TG_TABLE_NAME = 'remise_automatique' AND TG_OP <> 'DELETE' THEN
+        IF TG_OP = 'INSERT' THEN v_autre := NEW.modele_cle IS NOT NULL; ELSE v_autre := NEW.modele_cle IS DISTINCT FROM OLD.modele_cle; END IF;
+        IF v_autre THEN
+            RAISE EXCEPTION 'Réglage fixé par le serveur central : le repérage des remises du serveur central ne se modifie pas dans l''officine.';
+        END IF;
+    END IF;
+    v_autre := false;
+
+    v_mode := reglage_mode_effectif(TG_TABLE_NAME);
+    IF v_mode = 'impose' THEN
+        -- Écriture sans effet : permise
+        IF TG_OP = 'UPDATE' AND NEW IS NOT DISTINCT FROM OLD THEN RETURN NEW; END IF;
+        IF TG_TABLE_NAME = 'parametre_surveillance' THEN
+            -- D7 : les horaires d'ouverture restent locaux ; toute autre colonne est fixée
+            IF TG_OP = 'UPDATE' AND (to_jsonb(NEW) - ARRAY['heure_ouverture', 'heure_fermeture'])
+                                  = (to_jsonb(OLD) - ARRAY['heure_ouverture', 'heure_fermeture']) THEN
+                v_autre := true;
+            END IF;
+        ELSIF TG_TABLE_NAME = 'motif_reglable' THEN
+            -- D5 : motifs du central verrouillés ; ajout local permis si le modèle l'accorde (ajouts_locaux)
+            IF TG_OP = 'INSERT' THEN
+                v_autre := coalesce((SELECT r.ajouts_locaux FROM reglage_mutualise r WHERE r.nom_table = 'motif_reglable'), true);
+                v_refus := 'Réglage fixé par le serveur central : l''ajout de motifs n''est pas permis dans l''officine.';
+            ELSE
+                v_autre := NOT OLD.modele_code_central;
+            END IF;
+        ELSIF TG_TABLE_NAME = 'remise_automatique' THEN
+            -- D6 : aucune création locale ; une remise locale existante reste modifiable (arrêt) ; une remise du central est verrouillée
+            IF TG_OP <> 'INSERT' THEN v_autre := OLD.modele_cle IS NULL; END IF;
+        END IF;
+        IF NOT v_autre THEN RAISE EXCEPTION '%', v_refus; END IF;
+    END IF;
+
+    -- Modification locale permise : notée (origine locale), dans la même transaction ; la ligne est verrouillée jusqu'à la fin,
+    -- ce qui sérialise avec l'application d'un modèle (SELECT … FOR UPDATE). Sans serveur central et sans modèle : rien à noter.
+    UPDATE reglage_mutualise SET origine = 'locale', modifie_localement_le = now()
+    WHERE nom_table = TG_TABLE_NAME AND (mode <> 'local' OR origine = 'central');
+    IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+    RETURN NEW;
+END $$;
+
+
+--
+-- Name: FUNCTION reglage_garde(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.reglage_garde() IS 'Refus d''écriture sur une table imposée par le serveur central, sauf pendant l''application d''un modèle (pharma.reglage_central = on) (script 141).';
+
+
+--
+-- Name: reglage_journaliser(text, text, text, text, bigint, text, jsonb, jsonb, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reglage_journaliser(p_action text, p_table text, p_mode_avant text, p_mode_apres text, p_version_modele bigint, p_auteur text, p_valeur_avant jsonb, p_valeur_apres jsonb, p_utilisateur bigint DEFAULT NULL::bigint) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE v_id bigint;
+BEGIN
+    IF p_action IS NULL OR p_action NOT IN ('reglage_central_applique', 'reglage_central_remplace', 'reglage_central_rejete',
+                                            'reglage_central_adopte', 'reglage_central_libere') THEN
+        RAISE EXCEPTION 'Mutualisation : action de journal inconnue (%)', p_action;
+    END IF;
+    IF p_table IS NULL OR NOT p_table = ANY (reglage_tables_mutualisables()) THEN
+        RAISE EXCEPTION 'Mutualisation : table non mutualisable (%)', p_table;
+    END IF;
+    INSERT INTO journal_audit (utilisateur_id, action, table_cible, details)
+    VALUES (p_utilisateur, p_action, p_table,
+            jsonb_build_object('table', p_table,
+                               'mode', jsonb_build_object('avant', p_mode_avant, 'apres', p_mode_apres),
+                               'version_modele', p_version_modele,
+                               'auteur_central', left(p_auteur, 100),
+                               'valeur', jsonb_build_object('avant', p_valeur_avant, 'apres', p_valeur_apres)))
+    RETURNING id INTO v_id;
+    RETURN v_id;
+END $$;
+
+
+--
+-- Name: reglage_mode_effectif(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reglage_mode_effectif(p_table text) RETURNS text
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT CASE WHEN EXISTS (SELECT 1 FROM sync_parametre p WHERE p.id = 1 AND p.active AND p.inscrite_le IS NOT NULL)
+                THEN coalesce((SELECT r.mode FROM reglage_mutualise r WHERE r.nom_table = p_table), 'local')
+                ELSE 'local' END
+$$;
+
+
+--
+-- Name: FUNCTION reglage_mode_effectif(p_table text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.reglage_mode_effectif(p_table text) IS 'Mode en vigueur d''une table mutualisable ; « local » tant que la synchronisation est désactivée ou l''officine non inscrite (script 141).';
+
+
+--
+-- Name: reglage_tables_mutualisables(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reglage_tables_mutualisables() RETURNS text[]
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT ARRAY['motif_reglable', 'parametre_alerte', 'parametre_fiscal', 'parametre_formulaire_sms', 'parametre_inventaire',
+                 'parametre_serialisation', 'parametre_substitution', 'parametre_surveillance', 'parametre_tracabilite',
+                 'regle_alerte_psychotrope', 'remise_automatique']::text[]
+$$;
+
+
+--
 -- Name: revoquer_connexions_utilisateur(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3893,8 +4027,15 @@ COMMENT ON FUNCTION public.sync_purger(p_delai_jours integer, p_max_lots integer
 
 CREATE FUNCTION public.sync_recevoir_descendant(p_table text, p_cle text, p_version bigint, p_donnees jsonb, p_version_max bigint) RETURNS text
     LANGUAGE plpgsql
-    AS $$
-DECLARE p sync_parametre; v_avant jsonb; n int;
+    AS $_$
+DECLARE
+    p        sync_parametre;
+    v_avant  jsonb;
+    n        int;
+    v_table  text;
+    v_mode   text;
+    v_motif  text;
+    v_modele bigint;
 BEGIN
     SELECT * INTO p FROM sync_parametre WHERE id = 1;
     IF p_version IS NULL OR p_version < 1 OR p_donnees IS NULL OR jsonb_typeof(p_donnees) <> 'object'
@@ -3918,18 +4059,68 @@ BEGIN
                           AND j.cle = left(coalesce(p_cle, '?'), 200) AND j.version IS NOT DISTINCT FROM p_version);
         RETURN 'table_inconnue';
     END IF;
+    IF p_cle IS NULL OR p_cle !~ '^[a-z_]{1,63}$' THEN
+        -- Clé inutilisable (la table reglage_central la refuserait) : même traitement qu'un élément mal formé
+        INSERT INTO sync_journal_descendant (nom_table, cle, version, statut, motif)
+        SELECT left(p_table, 63), left(coalesce(p_cle, '?'), 200), p_version, 'refuse', 'élément mal formé'
+        WHERE NOT EXISTS (SELECT 1 FROM sync_journal_descendant j WHERE j.statut = 'refuse' AND j.nom_table = left(p_table, 63)
+                          AND j.cle = left(coalesce(p_cle, '?'), 200) AND j.version IS NOT DISTINCT FROM p_version);
+        RETURN 'refuse';
+    END IF;
+    IF p_cle LIKE 'mutu\_%' THEN
+        v_table := substr(p_cle, 6);
+        IF NOT v_table = ANY (reglage_tables_mutualisables()) THEN
+            -- Élément de mutualisation d'une table qui n'est pas mutualisable : journalisé, ignoré, ACQUITTÉ (ne bloque pas les suivants)
+            INSERT INTO sync_journal_descendant (nom_table, cle, version, statut, motif)
+            SELECT p_table, left(p_cle, 200), p_version, 'invalide', 'table non mutualisable : élément ignoré'
+            WHERE NOT EXISTS (SELECT 1 FROM sync_journal_descendant j WHERE j.statut = 'invalide' AND j.nom_table = p_table
+                              AND j.cle = left(p_cle, 200) AND j.version IS NOT DISTINCT FROM p_version);
+            RETURN 'invalide';
+        END IF;
+    END IF;
     SELECT valeur INTO v_avant FROM reglage_central WHERE cle = p_cle;
     INSERT INTO reglage_central AS r (cle, version, valeur) VALUES (p_cle, p_version, p_donnees)
     ON CONFLICT (cle) DO UPDATE SET version = EXCLUDED.version, valeur = EXCLUDED.valeur, recu_le = now()
     WHERE r.version < EXCLUDED.version;
     GET DIAGNOSTICS n = ROW_COUNT;
     IF n = 0 THEN RETURN 'ancien'; END IF;
+
+    IF v_table IS NOT NULL THEN
+        -- État de la table : modèle reçu rangé (appliqué ensuite par l'application) ; élément mal formé : table « rejetée », rien d'autre ne change
+        v_mode := p_donnees ->> 'mode';
+        v_motif := CASE
+            WHEN p_donnees ->> 'format' IS DISTINCT FROM 'mutu-v1' THEN 'format non pris en charge'
+            WHEN v_mode IS NULL OR v_mode NOT IN ('local', 'propose', 'impose') THEN 'mode inconnu'
+            WHEN jsonb_typeof(p_donnees -> 'version_modele') IS DISTINCT FROM 'number' OR (p_donnees ->> 'version_modele') !~ '^[0-9]{1,15}$'
+                 THEN 'version du modèle absente ou invalide'
+            WHEN (p_donnees ->> 'version_modele')::bigint < 1 THEN 'version du modèle absente ou invalide'
+            WHEN v_mode <> 'local' AND jsonb_typeof(p_donnees -> 'valeur') IS DISTINCT FROM 'object' THEN 'valeur du modèle absente'
+            WHEN p_donnees ? 'ajouts_locaux' AND jsonb_typeof(p_donnees -> 'ajouts_locaux') IS DISTINCT FROM 'boolean' THEN 'indicateur des ajouts locaux invalide'
+            ELSE NULL END;
+        v_modele := CASE WHEN jsonb_typeof(p_donnees -> 'version_modele') = 'number' AND (p_donnees ->> 'version_modele') ~ '^[0-9]{1,15}$'
+                              AND (p_donnees ->> 'version_modele')::bigint >= 1
+                         THEN (p_donnees ->> 'version_modele')::bigint END;
+        INSERT INTO reglage_mutualise (nom_table) VALUES (v_table) ON CONFLICT (nom_table) DO NOTHING;
+        IF v_motif IS NULL THEN
+            UPDATE reglage_mutualise SET mode_recu = v_mode, version_modele_recue = v_modele, recu_le = now(), modele = p_donnees
+            WHERE nom_table = v_table;
+        ELSE
+            UPDATE reglage_mutualise SET etat = 'rejete', motif_rejet = left('Élément du serveur central mal formé : ' || v_motif, 500),
+                                         version_modele_rejetee = v_modele
+            WHERE nom_table = v_table;
+        END IF;
+    END IF;
+
     INSERT INTO sync_journal_descendant (nom_table, cle, version, statut, avant, apres)
     VALUES (p_table, p_cle, p_version, 'applique',
-            CASE WHEN p_cle = 'familles_envoyees' THEN v_avant -> 'familles' END,
-            CASE WHEN p_cle = 'familles_envoyees' THEN p_donnees -> 'familles' END);
+            CASE WHEN p_cle = 'familles_envoyees' THEN v_avant -> 'familles'
+                 WHEN v_table IS NOT NULL AND v_avant IS NOT NULL
+                      THEN jsonb_build_object('version_modele', v_avant -> 'version_modele', 'mode', v_avant -> 'mode') END,
+            CASE WHEN p_cle = 'familles_envoyees' THEN p_donnees -> 'familles'
+                 WHEN v_table IS NOT NULL
+                      THEN jsonb_build_object('version_modele', p_donnees -> 'version_modele', 'mode', p_donnees -> 'mode') END);
     RETURN 'applique';
-END $$;
+END $_$;
 
 
 --
@@ -6143,7 +6334,7 @@ CREATE TABLE public.destinataire_notification (
     code_verification_essais integer DEFAULT 0 NOT NULL,
     CONSTRAINT destinataire_notification_check CHECK (((NOT canal_email) OR (email IS NOT NULL))),
     CONSTRAINT destinataire_notification_check1 CHECK (((NOT canal_sms) OR (telephone IS NOT NULL))),
-    CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'synchronisation'::text]))
+    CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'synchronisation'::text, 'reglages_centraux'::text]))
 );
 
 
@@ -7364,7 +7555,7 @@ CREATE TABLE public.message_sortant (
     signale_le timestamp with time zone,
     CONSTRAINT message_sortant_canal_check CHECK ((canal = ANY (ARRAY['email'::text, 'sms'::text]))),
     CONSTRAINT message_sortant_statut_check CHECK ((statut = ANY (ARRAY['en_attente'::text, 'envoye'::text, 'echec'::text]))),
-    CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'synchronisation'::text, 'test'::text])))
+    CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'synchronisation'::text, 'reglages_centraux'::text, 'test'::text])))
 );
 
 
@@ -7406,6 +7597,7 @@ CREATE TABLE public.motif_reglable (
     effet text DEFAULT 'aucun'::text NOT NULL,
     detail text DEFAULT 'aucun'::text NOT NULL,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    modele_code_central boolean DEFAULT false NOT NULL,
     CONSTRAINT ck_motif_reglable_effet CHECK ((((effet = 'aucun'::text) AND (detail = 'aucun'::text)) OR ((effet = 'sortie'::text) AND (detail = ANY (ARRAY['depense'::text, 'fournisseur'::text, 'patient'::text, 'coffre'::text]))) OR ((effet = 'entree'::text) AND (detail = 'fond'::text)))),
     CONSTRAINT ck_motif_reglable_effet_tiroir CHECK (((effet = 'aucun'::text) OR (liste = 'tiroir'::text))),
     CONSTRAINT ck_motif_reglable_liste CHECK ((liste = ANY ('{attente,charge,chifa_exclusion,majoration_chifa,rejet_chifa,retour_client,retour_fournisseur,sortie_stock,tiroir,volet_absent}'::text[]))),
@@ -7434,6 +7626,13 @@ COMMENT ON COLUMN public.motif_reglable.effet IS 'Tiroir : aucun, sortie ou entr
 --
 
 COMMENT ON COLUMN public.motif_reglable.detail IS 'Tiroir : détail exigé : depense (catégorie de charge), fournisseur (grossiste ou nom), patient, coffre (retrait vers le coffre), fond (remise d''un fonds de caisse)';
+
+
+--
+-- Name: COLUMN motif_reglable.modele_code_central; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.motif_reglable.modele_code_central IS 'Vrai pour un motif créé ou réglé par le modèle du serveur central : verrouillé en mode imposé (script 141).';
 
 
 --
@@ -9040,6 +9239,46 @@ COMMENT ON TABLE public.reglage_central IS 'Synchronisation : réglages décidé
 
 
 --
+-- Name: reglage_mutualise; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reglage_mutualise (
+    nom_table text NOT NULL,
+    mode text DEFAULT 'local'::text NOT NULL,
+    ajouts_locaux boolean DEFAULT true NOT NULL,
+    mode_recu text,
+    version_modele_recue bigint,
+    recu_le timestamp with time zone,
+    modele jsonb,
+    version_modele_appliquee bigint,
+    applique_le timestamp with time zone,
+    etat text DEFAULT 'aucun'::text NOT NULL,
+    motif_rejet text,
+    version_modele_rejetee bigint,
+    origine text DEFAULT 'locale'::text NOT NULL,
+    modifie_localement_le timestamp with time zone,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    CONSTRAINT reglage_mutualise_etat_check CHECK ((etat = ANY (ARRAY['aucun'::text, 'applique'::text, 'non_adopte'::text, 'rejete'::text]))),
+    CONSTRAINT reglage_mutualise_mode_check CHECK ((mode = ANY (ARRAY['local'::text, 'propose'::text, 'impose'::text]))),
+    CONSTRAINT reglage_mutualise_mode_recu_check CHECK (((mode_recu IS NULL) OR (mode_recu = ANY (ARRAY['local'::text, 'propose'::text, 'impose'::text])))),
+    CONSTRAINT reglage_mutualise_modele_check CHECK (((modele IS NULL) OR (jsonb_typeof(modele) = 'object'::text))),
+    CONSTRAINT reglage_mutualise_motif_rejet_check CHECK (((motif_rejet IS NULL) OR (length(motif_rejet) <= 500))),
+    CONSTRAINT reglage_mutualise_nom_table_check CHECK ((nom_table = ANY (public.reglage_tables_mutualisables()))),
+    CONSTRAINT reglage_mutualise_origine_check CHECK ((origine = ANY (ARRAY['locale'::text, 'central'::text]))),
+    CONSTRAINT reglage_mutualise_version_modele_appliquee_check CHECK (((version_modele_appliquee IS NULL) OR (version_modele_appliquee >= 1))),
+    CONSTRAINT reglage_mutualise_version_modele_recue_check CHECK (((version_modele_recue IS NULL) OR (version_modele_recue >= 1))),
+    CONSTRAINT reglage_mutualise_version_modele_rejetee_check CHECK (((version_modele_rejetee IS NULL) OR (version_modele_rejetee >= 1)))
+);
+
+
+--
+-- Name: TABLE reglage_mutualise; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.reglage_mutualise IS 'Mutualisation des réglages : état de chacune des 11 tables (mode en vigueur, modèle reçu, version appliquée, rejet, origine de la valeur) ; montante, la valeur du modèle ne repart pas (script 141).';
+
+
+--
 -- Name: regle_alerte_psychotrope; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9327,15 +9566,18 @@ CREATE TABLE public.remise_automatique (
     date_debut date NOT NULL,
     date_fin date NOT NULL,
     motif text,
-    cree_par bigint NOT NULL,
+    cree_par bigint,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     modifiee_par bigint,
     modifiee_le timestamp with time zone,
     arretee_par bigint,
     arretee_le timestamp with time zone,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    modele_cle text,
     CONSTRAINT ck_remise_auto_cible CHECK (((produit_id IS NULL) <> (categorie IS NULL))),
+    CONSTRAINT ck_remise_auto_createur CHECK (((cree_par IS NOT NULL) OR (modele_cle IS NOT NULL))),
     CONSTRAINT ck_remise_auto_dates CHECK ((date_fin >= date_debut)),
+    CONSTRAINT ck_remise_auto_modele CHECK (((modele_cle IS NULL) OR ((categorie IS NOT NULL) AND (modele_cle ~ '^c_[A-Za-z0-9]{12}$'::text)))),
     CONSTRAINT ck_remise_auto_motif CHECK (((motif IS NULL) OR (length(motif) <= 200))),
     CONSTRAINT ck_remise_auto_pct CHECK (((pourcentage > (0)::numeric) AND (pourcentage <= (100)::numeric) AND (pourcentage = trunc(pourcentage))))
 );
@@ -9346,6 +9588,13 @@ CREATE TABLE public.remise_automatique (
 --
 
 COMMENT ON TABLE public.remise_automatique IS 'Remises automatiques (%) par produit ou par catégorie, appliquées par la caisse en vente libre (jamais sur un produit remboursable)';
+
+
+--
+-- Name: COLUMN remise_automatique.modele_cle; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.remise_automatique.modele_cle IS 'Clé stable (c_ + 12 caractères) d''une remise du serveur central, par catégorie ; NULL pour une remise locale (script 141).';
 
 
 --
@@ -9993,7 +10242,7 @@ CREATE TABLE public.sync_journal_descendant (
     motif text,
     avant jsonb,
     apres jsonb,
-    CONSTRAINT sync_journal_descendant_statut_check CHECK ((statut = ANY (ARRAY['applique'::text, 'table_inconnue'::text, 'refuse'::text])))
+    CONSTRAINT sync_journal_descendant_statut_check CHECK ((statut = ANY (ARRAY['applique'::text, 'table_inconnue'::text, 'refuse'::text, 'invalide'::text])))
 );
 
 
@@ -13204,6 +13453,14 @@ ALTER TABLE ONLY public.reglage_central
 
 
 --
+-- Name: reglage_mutualise reglage_mutualise_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reglage_mutualise
+    ADD CONSTRAINT reglage_mutualise_pkey PRIMARY KEY (nom_table);
+
+
+--
 -- Name: regle_alerte_psychotrope regle_alerte_psychotrope_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14631,6 +14888,13 @@ CREATE INDEX ix_vente_remis_a_patient ON public.vente USING btree (remis_a_patie
 
 
 --
+-- Name: uq_remise_auto_modele_cle; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_remise_auto_modele_cle ON public.remise_automatique USING btree (modele_cle) WHERE (modele_cle IS NOT NULL);
+
+
+--
 -- Name: uq_rupture_grossiste_ouverte; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15659,6 +15923,83 @@ CREATE TRIGGER zz_integrite_chainer BEFORE INSERT ON public.journal_vente FOR EA
 --
 
 CREATE TRIGGER zz_registre_journal_chaine AFTER INSERT ON public.registre_psychotrope FOR EACH ROW EXECUTE FUNCTION public.registre_vers_journal();
+
+
+--
+-- Name: motif_reglable zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.motif_reglable FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: parametre_alerte zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.parametre_alerte FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: parametre_fiscal zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.parametre_fiscal FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: parametre_formulaire_sms zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.parametre_formulaire_sms FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: parametre_inventaire zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.parametre_inventaire FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: parametre_serialisation zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.parametre_serialisation FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: parametre_substitution zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.parametre_substitution FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: parametre_surveillance zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.parametre_surveillance FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: parametre_tracabilite zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.parametre_tracabilite FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: regle_alerte_psychotrope zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.regle_alerte_psychotrope FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
+
+
+--
+-- Name: remise_automatique zz_reglage_garde; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER zz_reglage_garde BEFORE INSERT OR DELETE OR UPDATE ON public.remise_automatique FOR EACH ROW EXECUTE FUNCTION public.reglage_garde();
 
 
 --
@@ -18169,5 +18510,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict JDFortVDu6caLmZAgf202A76AKv6UKd1eB9SDUaDS0PWrmLnUhE7ZsHghYacNy9
+\unrestrict zTdqLqtMm1kyzJykeOyUMoZl6TfgVjTGErvIrHohcwMjhx4yNWmZ0BB0RYQPVbz
 
