@@ -537,12 +537,12 @@ Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou s
   ```powershell
   & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --super-admin
   ```
-  - Saisir : identifiant, mot de passe (12 caractères au moins), **téléphone mobile obligatoire** et **e-mail obligatoire** (secours si le SMS ne part pas).
-  - Un code est envoyé par SMS au numéro saisi, pour le vérifier (modem GSM de l'étape 9.10). **[À CONFIRMER : sans modem, le compte peut-il être créé sans vérification ? Le manuel précédent l'affirmait ; le code ne l'a pas confirmé.]**
+  - Saisir : identifiant, mot de passe (12 caractères au moins), **téléphone mobile obligatoire** et **e-mail obligatoire** (il reçoit, comme le téléphone, le même code de validation).
+  - Un code est envoyé par SMS au numéro saisi, pour le vérifier (modem GSM de l'étape 9.10), puis un code est envoyé à l'adresse e-mail saisie, pour la vérifier (serveur e-mail de l'étape 9.10) : les deux se saisissent dans la console. **[À CONFIRMER : sans modem, le compte peut-il être créé sans vérification ? Le manuel précédent l'affirmait ; le code ne l'a pas confirmé.]**
   - Le compte est chiffré pour ce PC (`super-admin.dat`). Il fonctionne même si la base est détruite, et il est illisible sur un autre PC.
   - **Attendu** : le compte est créé, puis l'invite revient.
 - [ ] **10.2** Sauvegarder `super-admin.dat` sur le disque externe (dossier `E:\Securite\`), comme `cle-integrite.dat` (étape 4.9).
-- [ ] **10.3** Pour changer le mot de passe, le téléphone ou l'e-mail : relancer la même commande. Il faut le mot de passe actuel, le code envoyé au téléphone actuel, puis le code reçu par SMS sur le nouveau numéro.
+- [ ] **10.3** Pour changer le mot de passe, le téléphone ou l'e-mail : relancer la même commande. Il faut le mot de passe actuel et le code envoyé par SMS et par e-mail (un canal suffit), puis, si le numéro change, le code reçu par SMS sur le nouveau numéro ; si l'adresse change, le code reçu à la nouvelle adresse.
 - [ ] **10.4** Téléphone et e-mail perdus : un administrateur du PC serveur supprime `super-admin.dat`, puis recrée le compte (étape 10.1). Ne jamais supprimer le compte sans cette procédure.
 
 ### 11. Sauvegardes (avant toute vraie donnée)
@@ -580,7 +580,7 @@ Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou s
 
 L'ancienne base n'est **jamais** modifiée : on travaille sur une copie. Prérequis : étapes 9.8 (nomenclature) et 10.1 (super admin) faites.
 
-- [ ] **12.1** Super admin : sur l'écran de connexion, « Connexion super admin ». Ce compte ne voit que la reprise de données, et se déconnecte après 10 minutes sans activité. L'**extraction**, le **chargement** et l'**abandon** d'une reprise demandent chacun : un avertissement, le mot de passe ressaisi, puis le **code à 6 chiffres reçu par SMS** (par e-mail si le SMS ne part pas), valable 5 minutes, à usage unique. 3 codes faux bloquent les validations 15 minutes.
+- [ ] **12.1** Super admin : sur l'écran de connexion, « Connexion super admin ». Ce compte ne voit que la reprise de données, et se déconnecte après 10 minutes sans activité. L'**extraction**, le **chargement** et l'**abandon** d'une reprise demandent chacun : un avertissement, le mot de passe ressaisi, puis le **code à 6 chiffres, le même envoyé par SMS et par e-mail** (un seul canal suffit ; la fenêtre dit si l'un n'est pas parti, et l'action est refusée si aucun ne part), valable 5 minutes, à usage unique. 3 codes faux bloquent les validations 15 minutes.
 - [ ] **12.2** Transit : Administration, Reprise de données (super admin). L'assistant lit l'ancienne base en lecture seule.
   - Sources : fichiers CSV ou Excel (lus sans pilote, encodage UTF-8 ou ANSI et séparateur détectés ; si les accents sont faux, imposer l'encodage dans « Encodage des fichiers »), ou une base accessible par un pilote ODBC installé sur le PC, ou une connexion saisie champ par champ.
   - L'assistant propose la correspondance des tables et des colonnes, à confirmer, puis copie les données dans le schéma `import`.
@@ -689,7 +689,30 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
   }
   ```
   - Après `101` : le contrôle de conflit doit être tranché dans l'application (Administration, Conflits de n° de facture Chifa). Vérifier : `SELECT count(*) FROM vente_chifa_facture_conflit WHERE tranche_le IS NULL;` doit valoir `0`. **[À CONFIRMER : faut-il attendre ce `0` avant la remise en service ?]**
-  - `num_facture_chifa` est **conservée** (obsolète). Sa suppression (script `101b`) est destructive, **à valider par le titulaire**. **Le script `101b` n'existe pas dans le dépôt** : rien à lancer. **[À CONFIRMER : écriture de `101b` et décision du titulaire.]**
+  - `num_facture_chifa` est **conservée** (obsolète) par `101`. Sa suppression est le script **`101b`** (`database/migration/101b_suppression_num_facture_chifa.sql`), **écrit mais non exécuté** : opération **destructive et irréversible** (sauf restauration), **à ne lancer qu'après la validation explicite du titulaire**. Il n'est pas dans le dossier des scripts publiés (comme `111b`) : le prendre dans le dépôt. Sans la décision du titulaire, **ne rien lancer** : la colonne reste, sans effet sur le logiciel.
+  - **Procédure `101b`** (dans cet ordre, seulement si le titulaire a dit « go ») :
+    1. **Prérequis** : `101` exécuté, logiciel et API **arrêtés** (le script prend un verrou exclusif sur `vente`), aucune autre session ouverte sur la base.
+    2. **Sauvegarde complète obligatoire** de la base (`pg_dump`, ou la sauvegarde de l'application), vérifiée lisible et copiée hors du PC serveur. Sans elle, ne pas continuer : l'opération est irréversible.
+    3. **Contrôles en lecture seule** (psql interactif), qui doivent tous renvoyer **0** :
+       ```sql
+       SELECT count(*) FROM vente_chifa_facture_conflit WHERE tranche_le IS NULL;                       -- conflits non tranchés
+       SELECT count(*) FROM vente WHERE NULLIF(btrim(num_facture_chifa), '') IS NOT NULL
+                                    AND NULLIF(btrim(chifa_facture), '') IS NULL;                        -- valeurs qui seraient perdues
+       SELECT count(*) FROM vente v WHERE NULLIF(btrim(v.num_facture_chifa), '') IS NOT NULL AND NULLIF(btrim(v.chifa_facture), '') IS NOT NULL
+                                      AND btrim(v.num_facture_chifa) <> btrim(v.chifa_facture)
+                                      AND NOT EXISTS (SELECT 1 FROM vente_chifa_facture_conflit c WHERE c.vente_id = v.id AND c.tranche_le IS NOT NULL); -- écarts sans décision
+       ```
+       Le script refait ces contrôles lui-même et **refuse** (sans rien modifier) s'ils ne valent pas 0 : il affiche alors les comptes.
+    4. **Compte** : **avant `111b`** (cas normal de cette étape) : `pharma_app` (propriétaire de `vente`). **Après `111b`** (chemin 2) : `postgres` avec `SET ROLE pharma_proprietaire` (`pharma_app` n'est plus propriétaire : le script refuse).
+    5. **Commande** (avant `111b`) :
+       ```powershell
+       & $psql -h localhost -U pharma_app -d <base> -v ON_ERROR_STOP=1 -f "<dépôt>\database\migration\101b_suppression_num_facture_chifa.sql"
+       ```
+       Après `111b` : même commande avec `-U postgres` et `-c "SET ROLE pharma_proprietaire"` placé **avant** `-f` (psql exécute les `-c` et `-f` dans l'ordre, dans la même session).
+    6. **Résultat attendu** : `101b : colonne vente.num_facture_chifa supprimée (… vente(s), dont … avec une valeur, toutes déjà portées par chifa_facture)`, puis deux lignes d'historique conservé. Relancé, le script affiche « n'existe déjà plus, rien à faire ». Une ligne `colonne_supprimee` apparaît dans `journal_audit`. En cas de refus (`101b REFUSÉ`), rien n'a été modifié : lire les comptes affichés, corriger (trancher les conflits, relancer `101`), reprendre à l'étape 3.
+    7. **Vérification** : `SELECT count(*) FROM information_schema.columns WHERE table_name = 'vente' AND column_name = 'num_facture_chifa';` doit valoir `0` ; redémarrer l'API et le logiciel, ouvrir une vente et la liste des ventes Chifa.
+    8. **Retour arrière** : **restauration de la sauvegarde de l'étape 2** (aucun `Down`). Les ventes saisies depuis la sauvegarde sont alors perdues : décider vite, avant la reprise de l'activité.
+    9. **Après la suppression** (à faire par le développeur, dans le dépôt) : retirer la colonne de `database/init/schema.sql` (colonne et commentaire de `vente`), régénérer le miroir du serveur central (`database/cloud/002_tables_miroir.sql`), voir `docs/a-faire.md`.
 - [ ] **9.** **Séparation des rôles** (`111b`), **une fois par base**. **Chemin 1** : juste après l'étape 8. **Chemin 2** : si ce n'est pas encore fait.
   - **Où** : PC serveur. **Compte** : **superutilisateur** `postgres`.
     ```powershell
@@ -752,7 +775,7 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - 2e serveur : un PC de l'officine **allumé en permanence**, sur le même réseau local (sans Internet), avec une **IP fixe**.
   - **La même version majeure de PostgreSQL** sur les deux serveurs (parcours A, étape 2.1).
   - **La même version de l'API**, publiée de la même façon (parcours A, étape 4.1), dans `C:\Program Files\PharmaOfficine\Api`. **[À CONFIRMER : livraison officielle de l'API sur le 2e serveur.]**
-  - Pare-feu du 2e serveur : port 5080 ouvert, 5443 ouvert aux postes et au PC serveur. Port 5432 seulement pour l'autre serveur (voir étape 4 ci-dessous).
+  - Pare-feu du 2e serveur : 5443 ouvert aux postes (réglé par `certificat_https.ps1 -Importer -PareFeu`), 5080 jamais ouvert au réseau. Port 5432 jamais ouvert, sauf à l'autre serveur après une bascule ou un retour (`ouvrir-port-base.ps1`, étape 4 bis, lancé sur le serveur devenu principal).
 
 - [ ] **2.** Copier le dossier `scripts\second-serveur` sur les **deux** serveurs. **Où** : les deux serveurs. **Compte** : administrateur Windows. **[À CONFIRMER : dossier de destination.]**
 
@@ -769,8 +792,20 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   ```
   - Noter le **mot de passe du rôle de réplication** (12 caractères au moins, au coffre).
   - Si le script demande un redémarrage de PostgreSQL, ajouter `-Redemarrer` à un moment calme.
-  - Ouverture du port 5432 vers le 2e serveur seulement : **[À CONFIRMER : les scripts ne créent pas de règle de pare-feu. Commande proposée à valider : `New-NetFirewallRule -DisplayName "PostgreSQL réplication 2e serveur" -Direction Inbound -Protocol TCP -LocalPort 5432 -RemoteAddress <IP du 2e> -Action Allow`.]`
-  - **Attendu** : le script se termine sans erreur.
+  - **Attendu** : le script se termine sans erreur. Il règle aussi `pg_hba.conf` (lignes limitées à `<IP>/32`) et `listen_addresses`.
+
+- [ ] **4 bis.** Principal : ouvrir le port 5432 au 2e serveur **seulement**. **Où** : PC serveur. **Compte** : administrateur Windows.
+  ```powershell
+  cd "<dossier>\scripts\second-serveur"
+  .\ouvrir-port-base.ps1 -AdresseSecond <IP du 2e> -WhatIf
+  .\ouvrir-port-base.ps1 -AdresseSecond <IP du 2e>
+  Get-NetFirewallRule -DisplayName "PharmaOfficine PostgreSQL 5432 (2e serveur)" | Get-NetFirewallAddressFilter | Select-Object RemoteAddress
+  ```
+  - Le script crée la règle entrante « PharmaOfficine PostgreSQL 5432 (2e serveur) » : TCP 5432, profil Privé, adresse distante = **l'IP du 2e serveur seulement**. Rien n'est deviné : saisir l'IP fixe du 2e serveur (étape 1). Relancé, il remplace la règle sans doublon.
+  - **Le port 5432 ne doit JAMAIS être ouvert au reste du réseau** (postes, Wi-Fi, téléphones) : l'application passe par l'API, pas par PostgreSQL.
+  - **Attendu** : « Pare-feu : port 5432 ouvert en entrée, profil Privé, au seul 2e serveur (<IP>). » puis « Contrôle : aucune autre règle active n'ouvre le port 5432. » ; la vérification affiche `RemoteAddress` = l'IP du 2e serveur (jamais `Any`).
+  - **Si échec** : « À lancer dans PowerShell en administrateur » = rouvrir PowerShell en administrateur. « Adresse IPv4 invalide » = une seule IP, sans masque ni plage. Avertissement « Une autre règle ouvre le port 5432 » = vérifier son adresse distante et la désactiver (`Disable-NetFirewallRule -DisplayName '<nom affiché>'`), puis relancer le script ; **ne pas continuer** tant que l'avertissement demeure.
+  - **Changement d'IP du 2e serveur** : relancer ce script avec la nouvelle adresse, relancer `preparer-principal.ps1` avec la nouvelle IP, puis supprimer à la main les anciennes lignes `/32` de `pg_hba.conf` (une copie datée est gardée) et lancer `SELECT pg_reload_conf();`. Plus de 2e serveur : `.\ouvrir-port-base.ps1 -AdresseSecond <IP> -Retirer`.
 
 - [ ] **5.** Principal : déclarer le 2e serveur à l'API. **Où** : PC serveur. **Compte** : administrateur Windows.
   ```powershell
@@ -847,7 +882,7 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - **Attendu** : tout est vert. Un écart de version est affiché en rouge.
 
 - [ ] **13.** Postes : adresse de secours. **Où** : chaque poste. **Compte** : titulaire.
-  - Administration, Imprimantes et étiquettes, **Serveur et PC de secours** : « PC de secours » = adresse de l'API du 2e serveur, en HTTPS : `https://<nom ou IP du 2e>:5443/`. Le port 5080 n'écoute que sur le PC lui-même : jamais `http://…:5080/` pour un poste. Le nom ou l'IP saisi doit figurer dans le certificat du 2e serveur (étape 8a), sinon le poste refuse de basculer. L'écran de réglage du poste propose encore l'exemple `http://192.168.1.20:5080/` : ne pas le suivre.
+  - Administration, Imprimantes et étiquettes, **Serveur et PC de secours** : « PC de secours » = adresse de l'API du 2e serveur, en HTTPS : `https://<nom ou IP du 2e>:5443/`. Le port 5080 n'écoute que sur le PC lui-même : jamais `http://…:5080/` pour un poste. Le nom ou l'IP saisi doit figurer dans le certificat du 2e serveur (étape 8a), sinon le poste refuse de basculer. L'écran de réglage du poste propose l'exemple `https://192.168.1.20:5443/` ; une adresse `http://` autre que `localhost` est acceptée mais signalée par un bandeau d'attention (le poste ne pourrait pas se connecter).
   - Délai avant le bandeau : 60 s par défaut.
 
 - [ ] **14.** Alertes. **Où** : application. **Compte** : titulaire.
@@ -1100,7 +1135,7 @@ Les sauvegardes utiles sont sur le **disque externe**. La copie de la base dans 
 **Méthode 1 : depuis l'application** (super admin, étape 10). L'API doit tourner sur le PC serveur. La base peut être détruite : le compte du super admin et le dossier des sauvegardes sont hors de la base.
 
 - [ ] **1.** Sur un poste, « Connexion super admin », écran **Restauration**.
-- [ ] **2.** **Base** : choisir la sauvegarde (disque externe ou `GED\Sauvegardes`, la plus récente en haut), puis valider : avertissement, mot de passe, code reçu par SMS (e-mail en secours).
+- [ ] **2.** **Base** : choisir la sauvegarde (disque externe ou `GED\Sauvegardes`, la plus récente en haut), puis valider : avertissement, mot de passe, code reçu par SMS et par e-mail (le même ; un canal suffit).
 - [ ] **3.** Le serveur, en tâche de fond, met les postes en attente, fait une **copie de sécurité** de la base actuelle (`GED\Sauvegardes\pharmacie_avant_restauration_….dump`, à supprimer à la main quand elle n'est plus utile), restaure la sauvegarde dans une base neuve, la **met à la version du logiciel** (scripts `0xx` livrés avec l'API), puis lui donne le nom de la base en service. L'ancienne est **gardée** sous `<base>_avant_restauration_AAAAMMJJ_HHMM`. L'écran suit les étapes.
   - Un échec avant l'échange laisse la base en service intacte.
   - Il faut le droit `CREATEDB` du compte `pharma_app` (parcours A, étape 2.2).
@@ -1144,7 +1179,7 @@ Prérequis : parcours D fait. La pharmacie repart à partir de la **dernière co
   - Le script prend la copie la plus récente (ou `-Fichier`), contrôle l'empreinte SHA-256 et la lisibilité, restaure dans une base neuve, **rejoue tous les scripts de la base** livrés avec l'API (le dernier rejoué est affiché : il doit être le dernier de la version installée), garde une base existante sous `<base>_avant_bascule_<date>` (jamais supprimée), démarre le service et affiche l'adresse à donner aux postes.
   - **Attendu** : le script se termine sans erreur et affiche l'adresse du PC de secours.
 - [ ] **4.** Sur **chaque poste** : bouton **« Basculer sur le 2e serveur »** du bandeau (il ne règle le poste que si l'API de secours répond déjà), ou rubrique Serveur et PC de secours. Puis fermer et rouvrir Pharma Officine.
-  - **Fonctionnement constaté dans le code** : le bouton appelle `https://<adresse de secours>/api/sante` (4 secondes). Le poste vérifie le certificat avec les autorités installées dans Windows (aucune exception) : la bascule ne marche que si l'autorité de la pharmacie est installée sur le poste (parcours A, étape 5.4) **et** si le nom ou l'IP saisi dans « PC de secours » figure dans le certificat du PC de secours (parcours C étape 8 et parcours D étape 6). Sinon, le poste n'est pas basculé et affiche « Le 2e serveur n'est pas encore basculé… » : le même message sert aussi quand le certificat est refusé (autorité absente du poste, ou nom absent du certificat). Si la bascule du PC de secours est faite et que ce message persiste, ouvrir `https://<adresse de secours>/api/sante` dans un navigateur du poste : un avertissement de certificat en est la cause.
+  - **Fonctionnement constaté dans le code** : le bouton appelle `https://<adresse de secours>/api/sante` (4 secondes). Le poste vérifie le certificat avec les autorités installées dans Windows (aucune exception) : la bascule ne marche que si l'autorité de la pharmacie est installée sur le poste (parcours A, étape 5.4) **et** si le nom ou l'IP saisi dans « PC de secours » figure dans le certificat du PC de secours (parcours C étape 8 et parcours D étape 6). Sinon, le poste n'est pas basculé et le bandeau distingue trois cas : **« Le 2e serveur ne répond pas… »** (PC éteint, service pas démarré, port 5443 fermé ou adresse erronée) ; **« Le certificat du 2e serveur est refusé par ce poste… »** (autorité absente du poste : installer l'autorité de la pharmacie, étape 5.4 ; ou adresse saisie absente du certificat : la corriger) ; **« Le 2e serveur est joignable mais n'est pas encore basculé… »** (lancer « Basculer sur le 2e serveur » sur le 2e serveur). Le poste ne contourne jamais la vérification du certificat. Le journal local du poste (`%LOCALAPPDATA%\PharmaOfficine\liaison.log`) note l'état à chaque changement (sans adresse ni donnée personnelle). Si le bandeau indique un certificat refusé, ouvrir `https://<adresse de secours>/api/sante` dans un navigateur du poste : un avertissement de certificat en est la cause.
   - Aucune réinstallation d'autorité n'est nécessaire sur les postes : c'est la même autorité que celle du PC serveur.
 - [ ] **5.** GED : recopier le dossier `GED` du disque externe si besoin : `.\scripts\restaurer_pharmacie.ps1 -SansBase` (paramètre `-DossierGed` du PC de secours).
 - [ ] **6.** Ressaisir les opérations faites depuis la copie. Ressaisir le mot de passe des notifications.
@@ -1204,6 +1239,12 @@ Prérequis : parcours C fait. Décision du titulaire.
   .\preparer-principal.ps1 -AdresseSecond <IP de l'ancien> -AdressePrincipal <IP du nouveau>
   ```
   (slot de réplication, `pg_hba.conf`).
+  Puis, toujours sur le **nouveau** principal, ouvrir le port 5432 à l'ancien seulement (parcours C, étape 4 bis) :
+  ```powershell
+  .\ouvrir-port-base.ps1 -AdresseSecond <IP de l'ancien> -WhatIf
+  .\ouvrir-port-base.ps1 -AdresseSecond <IP de l'ancien>
+  ```
+  - **Attendu** : règle créée pour la seule IP de l'ancien, « aucune autre règle active n'ouvre le port 5432 ».
 - [ ] **3.** Sur l'**ancien** principal :
   ```powershell
   .\remettre-en-second.ps1 -NouveauPrincipal <IP du nouveau> -Essai
@@ -1261,7 +1302,10 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
 | Le service se ferme : message sur `Jwt:Cle` | Variable absente ou de moins de 64 caractères | Parcours A, étape 4.4 |
 | Service `Running`, mais rien ne répond | Pare-feu ou mauvais port | `netstat -ano \| findstr :5443`, puis règle `PharmaOfficine API (https 5443)` |
 | Avertissement de certificat sur un poste | Autorité non installée, ou nom du serveur absent du certificat | Parcours A, étape 5.4 ; sur le PC serveur, relancer l'étape 4.6 avec `-NomsSupplementaires` / `-AdressesSupplementaires` ; sur le 2e serveur ou le PC de secours, regénérer le certificat (parcours C, étape 8) avec le nom ou l'IP utilisé par les postes |
-| Le poste n'arrive pas à basculer sur le PC de secours (« pas encore basculé ») alors que son API tourne | Autorité absente du poste, ou nom/IP de « PC de secours » absent du certificat du PC de secours | `https://<adresse de secours>/api/sante` dans le navigateur du poste ; procédure F2, étape 4 |
+| Le poste n'arrive pas à basculer sur le PC de secours : bandeau « Le certificat du 2e serveur est refusé par ce poste… » | Autorité absente du poste, ou nom/IP de « PC de secours » absent du certificat du PC de secours | Installer l'autorité (étape 5.4) ou corriger l'adresse ; `https://<adresse de secours>/api/sante` dans le navigateur du poste ; procédure F2, étape 4 |
+| Bandeau « Le 2e serveur ne répond pas… » | 2e serveur éteint, service pas démarré (il ne démarre qu'après la bascule), port 5443 fermé, adresse erronée | Vérifier le 2e serveur, le pare-feu, l'adresse saisie |
+| Bandeau « Le 2e serveur est joignable mais n'est pas encore basculé… » | API répond mais base pas encore promue | Lancer la bascule sur le 2e serveur (procédure F2) |
+| Bandeau « Le certificat du serveur est refusé par ce poste… » (serveur principal) | Autorité absente du poste ou adresse `PHARMA_API` absente du certificat | Étape 5.4 ; vérifier l'adresse (Administration, Imprimantes et étiquettes) |
 | `Première exécution : … Préciser -FichierSauvegardeAutorite` | L'autorité n'existe pas encore sur ce PC | Étape 4.6 (nouvelle pharmacie) ou procédure F2 bis (PC remplacé, PFX du coffre) |
 | Avertissement d'heure dans le journal au démarrage | Fuseau Windows incorrect | Parcours A, étape 2.3 |
 | Le poste dit « Serveur injoignable » | API arrêtée, ou adresse `PHARMA_API` erronée | Vérifier le service, puis la variable |

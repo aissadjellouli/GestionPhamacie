@@ -559,3 +559,11 @@ Chaque point est rejouable (scripts idempotents) ; le script 130 rejoué seul ap
   C# lit ce motif. Nouveau passage borné aux produits encore sans contenance, journal d'audit comme au script 134 (aucune écriture en double au rejeu).
   La contenance reste figée dans le produit (décision du titulaire).
 - **Non fait** : lecture en base de `SuiviChargementCentral` avant la limite de débit (point facultatif, la valeur est déjà gardée 30 s par certificat).
+
+## 19. Essai de bout en bout avec les vraies API (2026-11-16, copies jetables, supprimées)
+
+Pharma.Api (officine) et Pharma.Cloud.Api (central) réellement lancés, central créé par `database/cloud` 001 à 009, officine copiée de `pharmacie_dev` avec les scripts jusqu'au 136, autorité et certificat d'essai en fichiers (aucun magasin Windows), adresses locales seulement.
+
+- Activation (officine créée, code adopté, certificat), envoi d'une vente, familles (réglage descendant qui ajoute puis retire les noms des employés), chargements complets (37 060 lignes, 100 tables, 5 en 24 h puis refus 429 au début, plafond d'octets sur 24 h refusé au premier lot, `quota_depasse` au journal du central), lots perdus par le central (lots accusés renvoyés sans reforme, filtrés par la liste en vigueur), colonne ajoutée à une famille après constitution d'un lot, réglage descendant d'une table inconnue (ignoré, journal local, l'envoi continue) : conformes à ce qui est décrit aux § 13, 15 et 18.
+- **Défaut trouvé et corrigé (script officine 138)** : les messages d'alerte (`alerte_surveillance.message`, `alerte.message`) citent le nom complet d'un employé ; le filtre des textes libres ne masquait que les patients et les porteurs, donc ce nom partait au central même famille « employes » décochée. `sync_filtrer_texte` remplace désormais tout nom complet d'utilisateur par `[PERSONNEL]` tant que la famille « employes » n'est pas envoyée. Seules les nouvelles lignes de file sont concernées (la file est en ajout seul) ; sur une officine déjà active, un chargement complet renvoie l'état minimisé avec le nouveau filtre.
+- Constats sans correction : `sync_sortie` reste en ajout seul (purge après accusé non réalisée, § 12.5) ; le « en attente » de l'écran tombe à 0 mais la file n'est pas vidée. Par défaut partent aussi les familles « pharmacie », « fournisseurs » et « courriel_commandes » (décision du § 14).

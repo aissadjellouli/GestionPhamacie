@@ -9,7 +9,7 @@ Dernière mise à jour : 2026-11-16 (bilan de la session du 13 au 16/11/2026).
 Commits `5db185c` (écrans), `4a0bfaa` (contenance), `97340dc` (synchronisation), `db955f4` (ce fichier).
 
 - [x] **Synchronisation** : réglages descendants (scripts 130-131, central 004-005, table `reglage_central`) ; limite pendant un chargement et activation par groupes (central 006) ; familles nominatives (130), Pharmacie et Clients facturés (133, central 007), Banque élargie (135, central 008) ; conservation réglable au central (004) ; corrections de la revue globale et de l'audit de sécurité (136, central 009). Build et 1 918 tests verts, scripts rejoués deux fois sans effet.
-- [x] **Contenance** : enregistrement depuis la nomenclature et sachets / ampoules (scripts 132 à 134, motif corrigé au 136).
+- [x] **Contenance** : enregistrement depuis la nomenclature et sachets / ampoules (scripts 132 à 134, motif corrigé au 136, étendu au 137).
 - [x] **Écrans du super admin** : Reprise, Restauration, accès aux Profils de reprise.
 
 ## HTTPS sur le réseau de l'officine (décidé le 2026-11-16 : oui)
@@ -19,6 +19,7 @@ Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localho
 - [x] Distribution du certificat : clé USB pour les postes, hors réseau HTTP pour les téléphones, empreinte SHA-256 en texte (pas de QR code : aucune librairie dans la solution). L'API ne publie plus le `.crt` ; l'ancien chemin n'est servi qu'à 127.0.0.1 / ::1.
 - [x] Noms et adresses supplémentaires (2e serveur de bascule, adresse VPN) : `-NomsSupplementaires` / `-AdressesSupplementaires`, à renseigner par le titulaire ; rien n'est supposé. Documenté dans `mise-en-production.md` (parcours A, étape 4.6) et `acces-distant.md`.
 - [x] Mise à jour de `docs/mise-en-production.md` (installation du certificat sur chaque poste, `PHARMA_API=https://<serveur>:5443/`, vérifications), `scanner-mobile.md`, `acces-distant.md`.
+- [x] Poste : exemple d'adresse `https://192.168.1.20:5443/` (écran Imprimantes), avertissement pour `http://` hors localhost, bandeau à trois messages (injoignable, certificat refusé, pas encore basculé) ; journal local `liaison.log`.
 - [ ] Essai réel en HTTPS : connexion, vente, impression, scanner mobile ; API en production en HTTPS jamais vérifiée.
 - [ ] Port 5432 de la base fermé aux autres postes : aucune vérification tracée.
 
@@ -32,7 +33,7 @@ Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localho
 - [ ] **Démo** : « page démo », « démo interactive » ou « préparation démo cloud » (Dockerfile, docker-compose local, mode démo).
 - [ ] **Script 111b** (séparation des rôles PostgreSQL) : à passer par le titulaire avec un superutilisateur ; sans lui, une falsification est détectée mais pas empêchée (voir `docs/securite-et-droits.md`).
 - [x] **Réglages communs aux officines** : tranché le 2026-11-16 : « imposé » ou « proposé » est décidé par l'administrateur du serveur central, rien n'est figé dans le logiciel (à réaliser en S3 ; points à préciser : `docs/conception-synchronisation.md` § 16).
-- [ ] **Ancienne colonne `num_facture_chifa`** : suppression (opération destructive, script rédigé non exécuté) à décider à la mise à jour de l'officine.
+- [ ] **Ancienne colonne `num_facture_chifa`** : le script `101b` est **écrit et testé sur copies jetables** (`database/migration/101b_suppression_num_facture_chifa.sql`) ; la **décision d'exécution reste en attente** du titulaire (destructif, sauvegarde obligatoire, procédure : `docs/mise-en-production.md`, étape 8). Le jour de l'exécution : retirer la colonne de `database/init/schema.sql` (colonne et son commentaire dans `vente`) et régénérer `database/cloud/002_tables_miroir.sql`.
 - [ ] **Note « Pharma : de quoi s'agit-il »** (section « Questions pour la V2 » ci-dessous) : à reformuler ou supprimer.
 - [ ] **Messages de démo sur `pharmacie_dev`** : purge proposée (seule `pharmacie_test` a été purgée) ; jamais sans validation explicite.
 - [ ] **Message du commit `6f971e8`** : il cite un nom de tiers ; réécriture facultative, l'historique étant déjà poussé.
@@ -63,10 +64,11 @@ Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localho
 
 ## À vérifier (aucune trace de vérification)
 
-- [ ] Bases `pharmacie_recette_*` et `pharmacie_essai_restauration*` : en retard d'au moins le script 128 ; à mettre à jour ou supprimer (avec accord).
+- [ ] Bases `pharmacie_recette_*` et `pharmacie_essai_restauration*` : mises à niveau le 2026-11-16 (scripts 060 à 136, sauf 101b et 111b) pour `pharmacie_recette_1` à `_4`, `pharmacie_recette_ui` et `pharmacie_essai_restauration` ; elles étaient en réalité à la version 060-069, pas 128. Tests 117 et 126 à 136 réussis (sauf le test 126 sur `pharmacie_recette_4`, faux positif lié aux données : le patient s'appelle « Patient »). `pharmacie_essai_restauration_avant_restauration_20261111_1909` : plus ancienne que 054, non mise à niveau (échec au script 067, remise en l'état d'origine). Rôles 111b non séparés, synchronisation désactivée. Reste à décider avec le titulaire : garder ou supprimer chaque base.
 - [ ] Fichiers de l'autorité de certification d'essai restés dans un dossier temporaire de travail : à effacer.
 - [ ] 1 à 3 échecs de connexion sécurisée (TLS) sous forte charge : cause non examinée.
-- [ ] Contenance : un produit AMP. et un produit SACH. non remplis sans cause connue ; 4 019 cas douteux ; valeur proposée en grisé à vérifier à l'écran.
+- [x] Contenance, les deux produits non remplis (2026-11-16) : cause trouvée, ce n'étaient pas des erreurs du motif. « ENERMAG » (« B/20AMP.AUTOCASSABLES », unité suivie d'un complément) et « GEOLAX » (« B/10 SACH. ET B/20 SACH. », deux nombres) sont exclus par la règle du script 134, C# et SQL donnent le même résultat. Les 4 019 cas douteux sont classés dans `docs/regles-metier.md` (règle « script 137 ») : le script 137 en remplit 246 (unité de délivrance suivie de sa taille, « B/5 AMP. DE 2ML »), 3 773 restent vides, aucune autre extension n'est sûre. Script 137 validé par le titulaire le 2026-11-16 (« garder 137 »).
+- [ ] Contenance : valeur proposée en grisé sur la fiche produit à vérifier à l'écran (non fait) ; décider si les conditionnements « B/N FL », « B/N SERINGUE » (854 produits) doivent donner N, et si une saisie en lot (écran « Contenance manquante ») est utile pour les 3 773 restants.
 - [ ] Contrôles à l'écran non tracés : écran Synchronisation (libellé « Banque » allongé), bordereaux, « Durée du traitement » à la caisse, bandeau « produit redevenu disponible », parcours du 15/11 (majoration au rapprochement, annulation « rendu en espèces », ticket PDF).
 - [ ] Étape 2 « Correspondance » de la reprise : défilement non mesuré (il faut une vraie base).
 - [ ] Origine des écritures du 16/11 entre 03:01 et 03:03 dans `pharmacie_test` (scellement, intégrité, `patient_modifie`).
@@ -120,7 +122,7 @@ récemment »). Restent :
 **Défauts mineurs**
 - [x] Alerte immédiate perdue sans trace quand l'envoi est refusé (destinataire non vérifié, base indisponible) : l'erreur est avalée (`RappelerLot`, clôture, inventaire…) ; à inscrire au journal du serveur et à signaler au titulaire. (Corrigé le 2026-11-14 : jamais bloquant ; erreur inscrite au journal du serveur ; alerte qui n'a pas pu partir — mise en file impossible, aucun destinataire vérifié, envoi abandonné — mémorisée, script 077, et signalée au titulaire par un bandeau de l'Accueil, « Marquer comme vues ».)
 - [x] Erreurs techniques (500) au lieu d'un message clair : reprise « Autre » sans produit. (Corrigé le 2026-11-14 : reprise « Autre » avec un produit inexistant — « Produit introuvable dans le catalogue » ; lot d'un autre produit à l'encaissement, règlement grossiste au millième, liste à null dans une requête, pagination très grande, refus techniques de la base — doublon, contrainte, nombre trop grand, conflit entre postes — traduits en message clair.)
-- [ ] Remise négative acceptée sans message (ramenée à 0) ; coupure inconnue ignorée à la clôture (caisse fermée avec 0 compté) ; saisie énorme au comptage. (Corrigé le 2026-11-14 pour la clôture : coupure inconnue refusée ; au plus 100 000 billets ou pièces par coupure et 10 000 000 DA en « autres » ; clôture ou relève à 0 DA compté sur confirmation explicite. Reste : remise négative.)
+- [x] Remise négative acceptée sans message (ramenée à 0) ; coupure inconnue ignorée à la clôture (caisse fermée avec 0 compté) ; saisie énorme au comptage. (Corrigé le 2026-11-14 pour la clôture : coupure inconnue refusée ; au plus 100 000 billets ou pièces par coupure et 10 000 000 DA en « autres » ; clôture ou relève à 0 DA compté sur confirmation explicite. Corrigé le 2026-11-16 : remise négative refusée avec un message au poste et au serveur, voir docs/regles-metier.md. Rien ne reste.)
 - [x] Doublons selon les majuscules : client facturé, compte de trésorerie ; zone d'emplacement inconnue enregistrée « vente » ; emplacement créé « inactif » enregistré actif. (Corrigé le 2026-11-14 : doublon refusé avec un message clair, majuscules et espaces autour ignorés, index uniques sur lower(btrim()) au script 077 si la base n'a pas de doublon ; zone autre que « vente » ou « reserve » refusée ; emplacement créé inactif enregistré inactif.)
 - [x] Recherche d'un patient par téléphone : numéro exact, espaces compris (l'écran des crédits cherche par début de numéro). (Corrigé le 2026-11-14 : même règle à la caisse et aux crédits — début de numéro à partir de 4 chiffres, espaces et séparateurs ignorés, « +213 » ou « 00213 » valent « 0 ».)
 - [x] « Dernier prix d'achat » repris à 0 DA quand la dernière entrée est une unité gratuite. (Corrigé le 2026-11-14 : prix net de remise de la dernière entrée payante ; entrées à 0 DA ignorées, à la commande et dans les suggestions.)
@@ -238,14 +240,14 @@ récemment »). Restent :
 Points que `docs/mise-en-production.md` ne peut pas trancher sans le titulaire ou le développeur (marqués **[À CONFIRMER]** dans le manuel) :
 
 - [ ] Sauvegardes : un seul mécanisme, sauvegarde de l'application ou script planifié `scripts/sauvegarde_pharmacie.ps1` (son en-tête dit « pas les deux »). Régler aussi ses variables `D:\` et `E:\`.
-- [ ] Script `101b` (suppression de `num_facture_chifa`) : il n'existe pas dans `database/migration/`. Écrire le script, puis décision du titulaire.
+- [ ] Script `101b` (suppression de `num_facture_chifa`) : écrit et testé ; reste la décision d'exécution du titulaire (procédure dans `docs/mise-en-production.md`, étape 8).
 - [ ] Conflits de n° de facture Chifa (script 101) : bloquent-ils la remise en service ?
 - [x] HTTPS sur le 2e serveur et le PC de secours : une seule autorité par pharmacie (PFX protégé au coffre), certificats des autres PC signés par elle (`-CertificatPourAutrePc`, `-Importer`, `-RestaurerAutorite`), procédures dans `docs/mise-en-production.md` (parcours A 4.6, C 8, D 6, F2 bis, F6, F7). Essai de chaîne en mémoire (`CertificatsHttpsTests`) ; script jamais exécuté en réel (à essayer sur le terrain).
-- [x] `AdresseApiSecours` des postes : `https://<nom ou IP>:5443/` documentée (manuel, `basculer-pc-secours.ps1`). Reste à corriger l'exemple affiché dans l'écran Administration › Imprimantes (`http://192.168.1.20:5080/`, `src/Pharma.Desktop/Composants/Pages/AdminImprimantes.razor`) et le message de refus de `ReglagesPoste.ControlerAdresse` ; et le message du bandeau, identique pour un certificat refusé.
-- [ ] Super admin : création sans modem GSM (sans code SMS) possible ou non ?
+- [x] `AdresseApiSecours` des postes : `https://<nom ou IP>:5443/` documentée (manuel, `basculer-pc-secours.ps1`). Corrigé (2026-11-16) : l'exemple affiché dans l'écran Administration › Imprimantes (`http://192.168.1.20:5080/`, `src/Pharma.Desktop/Composants/Pages/AdminImprimantes.razor`), le message de refus de `ReglagesPoste.ControlerAdresse` (avertissement non bloquant pour `http://` hors localhost) et le bandeau (injoignable, certificat refusé, pas encore basculé : trois messages distincts).
+- [ ] Super admin : création sans modem GSM (sans code SMS) possible ou non ? Décision du 2026-11-16 : codes de validation envoyés par SMS ET e-mail (un canal suffit) et nouvelle adresse e-mail vérifiée à la création ; la règle « sans modem, création possible après confirmation explicite » est conservée telle quelle (reste à trancher par le titulaire).
 - [ ] Livraison officielle : aucun paquet de production dans le dépôt (`scripts/paquet` = essai). Définir la publication et le dossier de destination de l'API, des postes et des `scripts` sur chaque PC.
 - [ ] Partage de la copie de secours : compte du service de l'API (compte système par défaut) et droits sur le partage.
-- [ ] Port 5432 vers le 2e serveur : aucun script ne crée la règle de pare-feu. Valider la commande proposée.
+- [x] Port 5432 vers le 2e serveur : `scripts/second-serveur/ouvrir-port-base.ps1` crée la règle (entrée TCP, profil Privé, adresse du 2e serveur seulement, `-WhatIf`, avertissement si une autre règle ouvre 5432). Reste : intégrer l'étape au parcours C du manuel (remplace le [À CONFIRMER]) et l'essayer sur le vrai PC serveur.
 - [ ] `Jwt__Cle` identique sur le PC de secours et le 2e serveur, ou reconnexion acceptée après bascule ?
 - [ ] `pharma_proprietaire` : méthode d'exécution des scripts après 111b (`postgres` avec `SET ROLE`, à tester sur une copie) et compte d'administration à retenir.
 - [ ] Remise à vide (`clean.sql`) après 111b : le compte propriétaire n'est plus `pharma_app`.
