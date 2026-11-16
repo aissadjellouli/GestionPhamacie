@@ -874,6 +874,33 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> ReglerSupervisionSynchronisationAsync(ReglagesSupervisionSynchronisationDto d) =>
         (await EnvoyerCorpsAsync<ReglagesSupervisionSynchronisationDto, object>(HttpMethod.Put, "api/admin/synchronisation/supervision", d)).Item2;
     public Task<(AttenteSynchronisationDto?, string?)> AttenteSynchronisationAsync() => GetAsync<AttenteSynchronisationDto?>("api/synchronisation/attente", null);
+    // Mutualisation des réglages (lots M5 et M7) : état des 11 tables, « Adopter », réglage fiscal et traçabilité
+    public Task<(List<ReglageMutualiseDto>, string?)> ReglagesMutualisesAsync() => GetAsync<List<ReglageMutualiseDto>>("api/reglages-mutualises", []);
+    public Task<(ReglageMutualiseDto?, string?)> ReglageMutualiseAsync(string table) =>
+        GetAsync<ReglageMutualiseDto?>($"api/reglages-mutualises/{Uri.EscapeDataString(table)}", null);
+    public async Task<string?> AdopterReglageAsync(string table, long versionModele) =>
+        (await PostAsync<AdopterReglageRequete, object>($"api/reglages-mutualises/{Uri.EscapeDataString(table)}/adopter", new(versionModele))).Item2;
+    public Task<(ParametreFiscalDto?, string?)> ParametreFiscalAsync() => GetAsync<ParametreFiscalDto?>("api/fiscal/parametres", null);
+    public async Task<string?> EnregistrerParametreFiscalAsync(ParametreFiscalDto d) =>
+        (await EnvoyerCorpsAsync<ParametreFiscalDto, object>(HttpMethod.Put, "api/fiscal/parametres", d)).Item2;
+    public Task<(ParametreTracabiliteDto?, string?)> ParametreTracabiliteAsync() => GetAsync<ParametreTracabiliteDto?>("api/tracabilite/parametres", null);
+    public async Task<string?> EnregistrerParametreTracabiliteAsync(ParametreTracabiliteDto d) =>
+        (await EnvoyerCorpsAsync<ParametreTracabiliteDto, object>(HttpMethod.Put, "api/tracabilite/parametres", d)).Item2;
+
+    // État de chaque table de réglages, retenu depuis l'en-tête « X-Reglage-Central » des lectures des écrans de réglage (aucun appel de plus)
+    private readonly Dictionary<string, EtatReglageEntete> reglagesCentraux = [];
+    /// <summary>Levé quand une lecture vient de renseigner l'état d'une table : le bandeau « serveur central » de l'écran se met à jour.</summary>
+    public event Action? ReglageCentralChange;
+    /// <summary>État connu de la table (local et sans écart tant qu'aucune lecture ne l'a renseigné : comportement sans serveur central).</summary>
+    public EtatReglageEntete ReglageCentral(string table) => reglagesCentraux.GetValueOrDefault(table) ?? EtatReglageEntete.Aucun with { Table = table };
+
+    private void RetenirReglageCentral(HttpResponseMessage rep)
+    {
+        if (!rep.Headers.TryGetValues(EtatReglageEntete.Nom, out var valeurs) || EtatReglageEntete.Lire(valeurs.FirstOrDefault()) is not { } etat) return;
+        reglagesCentraux[etat.Table] = etat;
+        ReglageCentralChange?.Invoke();
+    }
+
     // Synchronisation (lot S6) : rechargement complet
     public async Task<string?> RechargerSynchronisationAsync() =>
         (await PostAsync<object, object>("api/admin/synchronisation/recharger", new())).Item2;
@@ -1489,6 +1516,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             using var rep = await EnvoyerAsync(url);
             if (rep.StatusCode == HttpStatusCode.Unauthorized) return (defaut, SessionExpiree());
             if (!rep.IsSuccessStatusCode) return (defaut, await MessageAsync(rep));
+            RetenirReglageCentral(rep);
             return ((await rep.Content.ReadFromJsonAsync<T>())!, null);
         }
         catch (Exception ex) when (EstEchecAppel(ex))
@@ -1616,6 +1644,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
                     if (doc.RootElement.TryGetProperty("champ", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String
                         && c.GetString() is { Length: > 0 } champ)
                         ChampEnErreur?.Invoke(champ, texte);
+                    // Réglage devenu imposé depuis l'affichage de l'écran : dire quoi faire
+                    if (doc.RootElement.TryGetProperty("champ", out var cr) && cr.GetString() == "reglage_impose")
+                        return texte + " Actualisez l’écran : la valeur du serveur central s’affiche et n’est plus modifiable ici.";
                     return texte;
                 }
         }

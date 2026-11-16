@@ -62,14 +62,20 @@ public sealed class ConsulterParametreSubstitution(ISubstitution substitution)
     public Task<ParametreSubstitution> ExecuterAsync(CancellationToken ct = default) => substitution.ParametreAsync(ct);
 }
 
-public sealed class ModifierParametreSubstitution(ISubstitution substitution, IPermissionService droits, IJournal journal)
+public sealed class ModifierParametreSubstitution(ISubstitution substitution, IPermissionService droits, IJournal journal, Reglages.IGardeReglagesCentraux? garde = null)
 {
     public async Task ExecuterAsync(bool equivalentExactSeulement, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AdminParametres, "régler la substitution", ct);
+        if (garde is not null) await garde.ExigerModifiableAsync(Pharma.Domain.Reglages.TablesMutualisables.Substitution, ct);
+        var avant = (await substitution.ParametreAsync(ct)).EquivalentExactSeulement;
         await substitution.EnregistrerParametreAsync(equivalentExactSeulement, utilisateurId, ct);
         await journal.EcrireAsync(utilisateurId, "parametre_substitution", "parametre_substitution", 1,
-            new Dictionary<string, object?> { ["equivalent_exact_seulement"] = equivalentExactSeulement }, Permissions.AdminParametres, ct);
+            new Dictionary<string, object?>
+            {
+                ["equivalent_exact_seulement"] = equivalentExactSeulement,
+                ["avant"] = new { equivalent_exact_seulement = avant }, ["apres"] = new { equivalent_exact_seulement = equivalentExactSeulement }
+            }, Permissions.AdminParametres, ct);
     }
 }
 

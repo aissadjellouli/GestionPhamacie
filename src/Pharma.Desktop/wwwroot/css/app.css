@@ -232,7 +232,7 @@ input[type=text], input[type=password], input[type=search], input[type=number], 
   font-size: 15px; background: var(--surface); color: var(--texte); box-sizing: border-box;
 }
 input.grand { height: 48px; padding: 0 16px; }
-input:disabled { background: var(--surface-2); color: var(--texte-2); }
+input:disabled, select:disabled, textarea:disabled { background: var(--surface-2); color: var(--texte-2); }
 .btn { height: 44px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--bordure-champ); background: var(--surface); color: var(--texte-3); font-size: 14px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; box-sizing: border-box; }
 .btn-principal { border: none; background: var(--accent); color: #FFFFFF; font-weight: 500; }
 .btn-contour { border-color: var(--accent); color: var(--accent-texte); font-weight: 500; }
@@ -843,6 +843,14 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 .suggestions-caisse .suggestion-aucun { display: block; padding: 0 14px 10px 32px; }
 /* Caisse (2026-11-15) : bloc ordonnance compact — encadré d'une ligne, médecin + date + n° sur une ligne */
 .info-bandeau.compact { padding: 6px 10px; font-size: 13px; }
+/* Mutualisation des réglages (lot M7) : bandeau « Fixé / Proposé par le serveur central » ; un panneau de réglages fixé est un fieldset désactivé
+   (tous ses champs grisés d'un coup) qui garde l'aspect d'un panneau */
+.bandeau-central { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.bandeau-central > span:first-child { flex: 1 1 320px; min-width: 0; }
+.bandeau-central .actions { display: flex; gap: 16px; flex: 0 0 auto; }
+fieldset.panneau { margin: 0; min-width: 0; }
+.groupe-reglage { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: inherit; }
+fieldset.panneau:disabled { opacity: 0.85; }
 .ordonnance-ligne { display: flex; gap: 8px; align-items: stretch; }
 .ordonnance-ligne .ordonnance-medecin { flex: 2 1 0; min-width: 0; }
 .ordonnance-ligne .ordonnance-date { flex: 0 0 140px; min-width: 0; }

@@ -88,7 +88,9 @@
         ("admin/historique-chifa", "chifa.bordereaux"),
         ("admin/nomenclature", "role.titulaire"),
         ("admin/serialisation", "role.titulaire"),
-        ("admin/psychotropes", "role.titulaire")
+        ("admin/psychotropes", "role.titulaire"),
+        ("admin/reglage-fiscal", "role.titulaire"),
+        ("admin/reglage-tracabilite", "role.titulaire")
     ];
 
     private static readonly Rubrique_[] Rubriques =
@@ -97,6 +99,7 @@
         new("Utilisateurs et droits", "admin/droits", "admin.utilisateurs"),
         new("Caisse et contrôle", "admin/caisse", "admin.parametres"),
         new("Contrôle interne", "admin/controle-interne", "role.titulaire"),
+        new("Réglages fiscaux", "admin/reglage-fiscal", "role.titulaire"),
         new("Emplacements", "admin/emplacements", "admin.parametres"),
         new("Motifs et catégories", "admin/motifs", "admin.parametres"),
         new("Centres payeurs Chifa", "admin/centres-payeurs", "admin.parametres"),
@@ -114,6 +117,7 @@
         new("Historique des organismes repris", "admin/historique-chifa", "chifa.bordereaux"),
         new("Nomenclature nationale", "admin/nomenclature", "role.titulaire"),
         new("Sérialisation DataMatrix", "admin/serialisation", "role.titulaire"),
+        new("Traçabilité", "admin/reglage-tracabilite", "role.titulaire"),
         new("Psychotropes et antibiotiques", "admin/psychotropes", "role.titulaire"),
         new("Langue et pharmacie", "admin/pharmacie", "admin.parametres")
     ];
@@ -128,7 +132,7 @@
         ["admin/imprimantes"] = [("tickets", "Tickets et afficheur"), ("etiquettes", "Étiquettes"), ("serveur", "Serveur et PC de secours")],
         ["admin/sauvegardes"] = [("reglages", "Réglages"), ("secours", "Copie de secours"), ("journal", "Journal des sauvegardes")],
         ["admin/second-serveur"] = [("etat", "État de la réplication"), ("serveurs", "Réglages par serveur"), ("cle", "Clé de scellement")],
-        ["admin/synchronisation"] = [("etat", "État"), ("reglages", "Réglages"), ("supervision", "Supervision et purge"), ("activation", "Activation")],
+        ["admin/synchronisation"] = [("etat", "État"), ("reglages", "Réglages"), ("supervision", "Supervision et purge"), ("reglages-mutualises", "Réglages mutualisés"), ("activation", "Activation")],
         ["admin/notifications"] = [("envoi", "E-mail et SMS"), ("destinataires", "Destinataires"), ("fiche", "Ajouter ou modifier"), ("file", "File d’attente"), ("formulaire-sms", "Formulaire d’accord SMS")],
         ["admin/nomenclature"] = [("version", "Version et catégories"), ("verifier", "Produits à vérifier")],
         ["admin/psychotropes"] = [("alertes", "Alertes du registre"), ("antibiotiques", "Suivi des antibiotiques")],

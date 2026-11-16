@@ -276,15 +276,17 @@
 
         @if (rubrique == "seuils" && EstTitulaire)
         {
-            <section class="panneau" aria-labelledby="t-seuils">
+            @* Mutualisation (lot M7) : seuils fixés ou proposés par le serveur central *@
+            <ReglageCentral Table="parametre_inventaire" OnAdopte="ChargerAsync" />
+            <fieldset class="panneau" aria-labelledby="t-seuils" disabled="@Fixe">
                 <h2 id="t-seuils">Seuils de correction automatique (titulaire)</h2>
                 <div class="achats-ligne">
                     <div class="champ" style="flex: 0 0 200px"><label for="i-sb">Seuil d’écart (boîtes)</label><input id="i-sb" type="number" min="0" @bind="seuilBoites" /></div>
                     <div class="champ" style="flex: 0 0 240px"><label for="i-sm">Seuil d’écart (DA, prix d’achat)</label><input id="i-sm" type="number" min="0" step="0.01" @bind="seuilMontant" /></div>
-                    <button type="button" class="btn" disabled="@enCours" @onclick="EnregistrerSeuilsAsync">Enregistrer</button>
+                    <button type="button" class="btn" disabled="@(enCours || Fixe)" @onclick="EnregistrerSeuilsAsync">Enregistrer</button>
                 </div>
                 <p class="detail" style="margin: 0">Un écart est corrigé tout de suite s’il reste strictement sous les deux seuils ; un écart égal à un seuil, ou au-delà, attend votre validation et vous êtes prévenu (Notifications, « Écart d’inventaire »).</p>
-            </section>
+            </fieldset>
         }
 
         @if (rubrique == "historique")
@@ -343,6 +345,8 @@
     private BilanInventaireDto? bilan;
     private List<LotAEtiqueterDto> aEtiqueter = [];
     private string? rayonChoisi, scan, infoScan, erreur, message;
+    /// <summary>Seuils fixés par le serveur central (table parametre_inventaire imposée).</summary>
+    private bool Fixe => Api.ReglageCentral("parametre_inventaire").Impose;
     private int seuilBoites;
     private decimal seuilMontant;
     private bool enCours;

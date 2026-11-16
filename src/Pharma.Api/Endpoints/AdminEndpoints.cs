@@ -64,7 +64,8 @@ internal static class AdminEndpoints
 
         admin.MapGet("/seuils", async (ObtenirSeuils obtenir, CancellationToken ct) =>
                 Results.Ok(VersDto(await obtenir.ExecuterAsync(ct))))
-           .ExigerPermission(Permissions.AdminParametres);
+           .ExigerPermission(Permissions.AdminParametres)
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Alertes);
 
         admin.MapPut("/seuils", async (ReglagesSeuilsDto req, EnregistrerSeuils enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
             {

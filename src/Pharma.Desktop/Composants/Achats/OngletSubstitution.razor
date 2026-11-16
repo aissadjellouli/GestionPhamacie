@@ -8,12 +8,14 @@
 <div class="achats-grille" style="@(premiereLecture ? null : "visibility: hidden")">
     <section class="panneau cadre-defilant" aria-labelledby="t-subst">
         <h2 id="t-subst">Substitution</h2>
+        @* Mutualisation (lot M7) : seul « équivalent exact seulement » peut être fixé ou proposé par le serveur central ; la liste blanche reste locale *@
+        <ReglageCentral Table="parametre_substitution" Detail="« Équivalent exact seulement » ne se modifie pas ici ; la liste blanche et « fabriqué en Algérie » restent à l’officine." OnAdopte="RechargerParametreAsync" />
         @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }
         else if (message is not null) { <div class="succes" role="status" style="margin: 0">@message</div> }
         @if (parametre is not null)
         {
             <label style="display: flex; gap: 8px; align-items: center">
-                <input type="checkbox" checked="@parametre.EquivalentExactSeulement" disabled="@(enCours || !PeutRegler)"
+                <input type="checkbox" checked="@parametre.EquivalentExactSeulement" disabled="@(enCours || !PeutRegler || Fixe)"
                        @onchange="e => ParametreAsync(e.Value is true)" />
                 Équivalent exact seulement (même DCI, dosage et forme)
             </label>
@@ -92,6 +94,10 @@
     private bool enCours, premiereLecture;
 
     private bool PeutRegler => Session.A("admin.parametres");
+    /// <summary>« Équivalent exact seulement » fixé par le serveur central (table parametre_substitution imposée).</summary>
+    private bool Fixe => Api.ReglageCentral("parametre_substitution").Impose;
+
+    private async Task RechargerParametreAsync() => (parametre, erreur) = await Api.ParametreSubstitutionAsync();
 
     protected override async Task OnInitializedAsync()
     {

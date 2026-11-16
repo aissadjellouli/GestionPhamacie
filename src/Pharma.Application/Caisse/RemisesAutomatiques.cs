@@ -1,13 +1,14 @@
 using Pharma.Application.Commun;
 using Pharma.Application.Securite;
 using Pharma.Domain.Commun;
+using Pharma.Domain.Reglages;
 using Pharma.Domain.Securite;
 
 namespace Pharma.Application.Caisse;
 
 /// <summary>Remise automatique telle qu'on la liste : cible (produit ou catégorie), pourcentage, période, auteur, arrêt éventuel.</summary>
 public sealed record RemiseAutomatique(long Id, long? ProduitId, string? Produit, string? Categorie, string? CategorieLibelle, decimal Pourcentage,
-    DateOnly Debut, DateOnly Fin, string? Motif, string CreePar, DateTime CreeLe, DateTime? ArreteeLe, string? ArreteePar);
+    DateOnly Debut, DateOnly Fin, string? Motif, string CreePar, DateTime CreeLe, DateTime? ArreteeLe, string? ArreteePar, string? ModeleCle = null);
 
 /// <summary>Saisie d'une remise automatique : un produit OU une catégorie, pourcentage entier, du Debut au Fin inclus.</summary>
 public sealed record RemiseAutomatiqueSaisie(long? ProduitId, string? Categorie, decimal Pourcentage, DateOnly Debut, DateOnly Fin, string? Motif);
@@ -38,37 +39,28 @@ public sealed class ListerRemisesAutomatiques(IRemisesAutomatiquesAdmin admin)
 /// Pourcentage entier de 1 à 100, produit OU catégorie, période du début à la fin incluse, jamais sur un produit remboursable, jamais deux
 /// remises qui se chevauchent sur la même cible. Chaque création, modification ou arrêt est inscrit au journal.
 /// </summary>
-public sealed class GererRemisesAutomatiques(IRemisesAutomatiquesAdmin admin, IPermissionService droits, IJournal journal, IHorloge horloge)
+public sealed class GererRemisesAutomatiques(IRemisesAutomatiquesAdmin admin, IPermissionService droits, IJournal journal, IHorloge horloge,
+    Reglages.IGardeReglagesCentraux? garde = null)
 {
     private async Task<(string Cible, RemiseAutomatiqueSaisie Saisie)> VerifierAsync(RemiseAutomatiqueSaisie s, long? saufId, CancellationToken ct)
     {
-        if ((s.ProduitId is null) == string.IsNullOrWhiteSpace(s.Categorie))
-            throw new RegleMetierException("Choisissez un produit ou une catégorie (l’un ou l’autre).", "cible_remise");
-        if (s.Pourcentage < 0)
-            throw new RegleMetierException("La remise ne peut pas être négative : saisissez un nombre entier de 1 à 100 %.", "pourcentage_remise");
-        if (s.Pourcentage is < 1 or > 100 || s.Pourcentage != Math.Truncate(s.Pourcentage))
-            throw new RegleMetierException("La remise est un nombre entier de 1 à 100 %.", "pourcentage_remise");
-        if (s.Fin < s.Debut)
-            throw new RegleMetierException("La date de fin doit être le jour du début ou après.", "fin_remise");
-        if (s.Fin < horloge.Aujourdhui)
-            throw new RegleMetierException("La date de fin est déjà passée.", "fin_remise");
-        var motif = string.IsNullOrWhiteSpace(s.Motif) ? null : s.Motif.Trim();
-        if (motif is { Length: > 200 }) throw new RegleMetierException("Motif trop long (200 caractères au plus).", "motif_remise");
+        RegleRemisesAutomatiques.VerifierCibleExclusive(s.ProduitId is not null, s.Categorie);
+        RegleRemisesAutomatiques.VerifierPourcentage(s.Pourcentage);
+        RegleRemisesAutomatiques.VerifierPeriode(s.Debut, s.Fin, horloge.Aujourdhui);
+        var motif = RegleRemisesAutomatiques.NettoyerMotif(s.Motif);
 
         string cible;
         if (s.ProduitId is { } pid)
         {
             var p = await admin.ProduitAsync(pid, ct) ?? throw new RegleMetierException("Produit introuvable.", "cible_remise");
-            if (p.Remboursable)
-                throw new RegleMetierException($"{p.Nom} est remboursable : jamais de remise automatique (une réduction sur un médicament remboursable est un don partiel, accordé à la caisse).", "cible_remise");
+            RegleRemisesAutomatiques.VerifierProduit(p.Nom, p.Remboursable);
             cible = p.Nom;
         }
         else
             cible = await admin.CategorieAsync(s.Categorie!.Trim(), ct) ?? throw new RegleMetierException("Catégorie inconnue.", "cible_remise");
 
         var saisie = s with { Categorie = s.Categorie?.Trim(), Motif = motif };
-        if (await admin.ChevaucheAsync(saisie, saufId, ct))
-            throw new RegleMetierException($"{cible} a déjà une remise automatique sur une partie de cette période : modifiez-la ou arrêtez-la d’abord.", "debut_remise");
+        RegleRemisesAutomatiques.ExigerSansChevauchement(cible, await admin.ChevaucheAsync(saisie, saufId, ct));
         return (cible, saisie);
     }
 
@@ -81,9 +73,13 @@ public sealed class GererRemisesAutomatiques(IRemisesAutomatiquesAdmin admin, IP
     public async Task<long> CreerAsync(RemiseAutomatiqueSaisie s, long auteurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(auteurId, Permissions.CaisseRemisesAuto, "créer une remise automatique", ct);
+        if (garde is not null) await garde.ExigerAjoutLocalAsync(Pharma.Domain.Reglages.TablesMutualisables.Remises, ct);
         var (cible, saisie) = await VerifierAsync(s, null, ct);
         var id = await admin.CreerAsync(saisie, auteurId, ct);
-        await journal.EcrireAsync(auteurId, "remise_automatique_creee", "remise_automatique", id, Details(cible, saisie), Permissions.CaisseRemisesAuto, ct);
+        var creation = Details(cible, saisie);
+        creation["avant"] = null;
+        creation["apres"] = new { pourcentage = saisie.Pourcentage, debut = saisie.Debut.ToString("yyyy-MM-dd"), fin = saisie.Fin.ToString("yyyy-MM-dd"), cible };
+        await journal.EcrireAsync(auteurId, "remise_automatique_creee", "remise_automatique", id, creation, Permissions.CaisseRemisesAuto, ct);
         return id;
     }
 
@@ -92,9 +88,11 @@ public sealed class GererRemisesAutomatiques(IRemisesAutomatiquesAdmin admin, IP
         await droits.ExigerAsync(auteurId, Permissions.CaisseRemisesAuto, "modifier une remise automatique", ct);
         var avant = await admin.LireAsync(id, ct) ?? throw new RegleMetierException("Remise automatique introuvable.");
         if (avant.ArreteeLe is not null) throw new RegleMetierException("Cette remise est arrêtée : créez-en une nouvelle.");
+        if (garde is not null) await garde.ExigerElementLocalAsync(Pharma.Domain.Reglages.TablesMutualisables.Remises, avant.ModeleCle is not null, ct);
         var (cible, saisie) = await VerifierAsync(s, id, ct);
         await admin.ModifierAsync(id, saisie, auteurId, ct);
         var details = Details(cible, saisie);
+        details["apres"] = new { pourcentage = saisie.Pourcentage, debut = saisie.Debut.ToString("yyyy-MM-dd"), fin = saisie.Fin.ToString("yyyy-MM-dd"), cible };
         details["avant"] = new { pourcentage = avant.Pourcentage, debut = avant.Debut.ToString("yyyy-MM-dd"), fin = avant.Fin.ToString("yyyy-MM-dd"), cible = avant.Produit ?? avant.CategorieLibelle };
         await journal.EcrireAsync(auteurId, "remise_automatique_modifiee", "remise_automatique", id, details, Permissions.CaisseRemisesAuto, ct);
     }
@@ -105,8 +103,13 @@ public sealed class GererRemisesAutomatiques(IRemisesAutomatiquesAdmin admin, IP
         await droits.ExigerAsync(auteurId, Permissions.CaisseRemisesAuto, "arrêter une remise automatique", ct);
         var r = await admin.LireAsync(id, ct) ?? throw new RegleMetierException("Remise automatique introuvable.");
         if (r.ArreteeLe is not null) return;
+        if (garde is not null) await garde.ExigerElementLocalAsync(Pharma.Domain.Reglages.TablesMutualisables.Remises, r.ModeleCle is not null, ct);
         await admin.ArreterAsync(id, auteurId, ct);
         await journal.EcrireAsync(auteurId, "remise_automatique_arretee", "remise_automatique", id,
-            new Dictionary<string, object?> { ["cible"] = r.Produit ?? r.CategorieLibelle, ["pourcentage"] = r.Pourcentage }, Permissions.CaisseRemisesAuto, ct);
+            new Dictionary<string, object?>
+            {
+                ["cible"] = r.Produit ?? r.CategorieLibelle, ["pourcentage"] = r.Pourcentage,
+                ["avant"] = new { arretee = false }, ["apres"] = new { arretee = true }
+            }, Permissions.CaisseRemisesAuto, ct);
     }
 }

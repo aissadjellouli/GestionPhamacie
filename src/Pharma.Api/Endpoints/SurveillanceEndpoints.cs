@@ -73,7 +73,8 @@ internal static class SurveillanceEndpoints
                     p.ReceptionAveugle, p.JoursAvoirRetour, p.SeuilCreditNouveauPatient, p.JoursPatientRecent, p.SeuilCreditsJour,
                     p.JoursCreditSansRemboursement, p.SeuilAutorisationsValideur, p.SeuilAutorisationsEmploye, p.MinutesPostesSimultanes,
                     p.SeuilChangementsPoste, p.SeuilBaissesPrix, p.SeuilSortiesTiroir));
-            });
+            })
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Surveillance);
 
         surveillance.MapPut("/parametres", async (ParametresSurveillanceDto req, ReglerSurveillance regler, ClaimsPrincipal user, CancellationToken ct) =>
             {

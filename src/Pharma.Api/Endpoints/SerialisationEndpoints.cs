@@ -19,7 +19,8 @@ internal static class SerialisationEndpoints
                     p.Actif, p.Connecteur, p.FacticeHorsLigne,
                     ai.Select(i => new IdentifiantGs1Dto(i.Code, i.Champ.ToString().ToLowerInvariant(), i.LongueurFixe, i.LongueurMax)).ToList()));
             })
-           .ExigerTitulaire();
+           .ExigerTitulaire()
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Serialisation);
 
         api.MapGet("/serialisation/file", async (string? statut, int? page, int? taille, PiloterFileSerialisation piloter, CancellationToken ct) =>
             {

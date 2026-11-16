@@ -289,6 +289,16 @@ public static class DependencyInjection
         services.AddScoped<Synchronisation.EnvoyerLotsSync>();
         services.AddScoped<Synchronisation.ActiverSync>();
         services.AddScoped<Synchronisation.ReglerSync>();
+        // Mutualisation des réglages, lot M4 : application des modèles du serveur central, adoption, garde des cas d'usage de saisie locale
+        services.AddScoped<Reglages.IGardeReglagesCentraux, Reglages.GardeReglagesCentraux>();
+        services.AddScoped<Reglages.AppliquerReglagesMutualises>();
+        services.AddScoped<Reglages.AdopterReglageCentral>();
+        services.AddScoped<Reglages.LibererReglagesMutualises>();
+        services.AddScoped<Reglages.ConsulterReglagesMutualises>();
+        services.AddScoped<Reglages.ConsulterParametreFiscal>();
+        services.AddScoped<Reglages.ModifierParametreFiscal>();
+        services.AddScoped<Reglages.ConsulterParametreTracabilite>();
+        services.AddScoped<Reglages.ModifierParametreTracabilite>();
         // Synchronisation, lot S6 : chargement complet (activation, demande, réactivation, lots manquants)
         services.AddSingleton<Synchronisation.SuiviChargementSync>();
         services.AddScoped<Synchronisation.ChargementCompletSync>();

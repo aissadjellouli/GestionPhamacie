@@ -13,11 +13,13 @@
                 <h1>Motifs et catégories</h1>
                 <p class="sous-titre">Listes proposées à la saisie. Un motif utilisé n’est jamais supprimé : désactivé, il n’est plus proposé et les anciennes saisies le gardent.</p>
             </div>
-            <button type="button" class="btn btn-principal" @onclick="Ajouter">Ajouter un motif</button>
+            <button type="button" class="btn btn-principal" disabled="@AjoutImpossible" @onclick="Ajouter">Ajouter un motif</button>
         </div>
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
         @if (message is not null) { <div class="succes" role="status">@message</div> }
+        @* Mutualisation (lot M7, D5) : les motifs du serveur central sont verrouillés ; les ajouts locaux sont permis selon « ajouts locaux » *@
+        <ReglageCentral Table="motif_reglable" Detail="@(Etat.AjoutsLocaux ? "Ses motifs sont verrouillés ; vous pouvez ajouter les vôtres." : "Ses motifs sont verrouillés et aucun motif ne peut être ajouté dans l’officine.")" OnAdopte="() => ChargerAsync(page, taille)" />
 
         @if (fiche is not null)
         {
@@ -85,9 +87,9 @@
                     {
                         <tr>
                             <td>@NomListe(m.Liste)</td>
-                            <td>@m.Libelle <span class="detail">@(m.Systeme ? "(indispensable)" : "")@(m.Effet == "aucun" ? "" : $" · {LibelleEffet(m.Effet, m.Detail)}")</span></td>
+                            <td>@m.Libelle <span class="detail">@(m.DuCentral ? "(serveur central) " : "")@(m.Systeme ? "(indispensable)" : "")@(m.Effet == "aucun" ? "" : $" · {LibelleEffet(m.Effet, m.Detail)}")</span></td>
                             <td><span class="pastille @(m.Actif ? "ok" : "info")">@(m.Actif ? "Proposé" : "Désactivé")</span></td>
-                            <td><button type="button" class="btn" @onclick="() => Editer(m)">Modifier</button></td>
+                            <td>@if (Fixe && m.DuCentral) { <span class="pastille info">Fixé par le serveur central</span> } else { <button type="button" class="btn" @onclick="() => Editer(m)">Modifier</button> }</td>
                         </tr>
                     }
                     @if (motifs.Count == 0 && erreur is null)
@@ -138,6 +140,12 @@
         public bool Systeme { get; init; }
         public string Effet { get; set; } = "aucun";
     }
+
+    private EtatReglageEntete Etat => Api.ReglageCentral("motif_reglable");
+    /// <summary>Table imposée : les motifs du serveur central ne se modifient pas.</summary>
+    private bool Fixe => Etat.Impose;
+    /// <summary>Table imposée sans ajouts locaux : aucun motif ne peut être ajouté dans l'officine.</summary>
+    private bool AjoutImpossible => Etat.Impose && !Etat.AjoutsLocaux;
 
     private List<MotifReglableDto> motifs = [];
     private Fiche? fiche;

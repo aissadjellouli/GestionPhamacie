@@ -203,7 +203,7 @@ public sealed class TraiterFileSerialisation(IFileSerialisation file, ISerialisa
 }
 
 /// <summary>Consultation et pilotage de la file (écran Administration › Sérialisation, titulaire).</summary>
-public sealed class PiloterFileSerialisation(IFileSerialisation file, TraiterFileSerialisation traiter)
+public sealed class PiloterFileSerialisation(IFileSerialisation file, TraiterFileSerialisation traiter, Reglages.IGardeReglagesCentraux? garde = null)
 {
     public static readonly string[] Statuts = ["en_attente", "reussie", "refusee"];
 
@@ -227,8 +227,11 @@ public sealed class PiloterFileSerialisation(IFileSerialisation file, TraiterFil
 
     public Task<ParametresSerialisation> ParametresAsync(CancellationToken ct = default) => file.ParametresAsync(ct);
 
-    public Task EnregistrerAsync(bool actif, bool facticeHorsLigne, long utilisateurId, CancellationToken ct = default) =>
-        file.EnregistrerParametresAsync(actif, facticeHorsLigne, utilisateurId, ct);
+    public async Task EnregistrerAsync(bool actif, bool facticeHorsLigne, long utilisateurId, CancellationToken ct = default)
+    {
+        if (garde is not null) await garde.ExigerModifiableAsync(Pharma.Domain.Reglages.TablesMutualisables.Serialisation, ct);
+        await file.EnregistrerParametresAsync(actif, facticeHorsLigne, utilisateurId, ct);
+    }
 
     public Task<IReadOnlyList<Gs1Identifiant>> IdentifiantsGs1Async(CancellationToken ct = default) => file.IdentifiantsGs1Async(ct);
 }

@@ -53,7 +53,7 @@ public sealed class ListerMotifsReglables(IMotifsReglables motifs, IPermissionSe
 }
 
 /// <summary>Ajout (tiroir, attente, charges) ou modification du libellé et de l'activation ; journalisé (droit admin.parametres).</summary>
-public sealed class EnregistrerMotifReglable(IMotifsReglables motifs, IPermissionService droits, IJournal journal)
+public sealed class EnregistrerMotifReglable(IMotifsReglables motifs, IPermissionService droits, IJournal journal, Reglages.IGardeReglagesCentraux? garde = null)
 {
     /// <param name="effet">Tiroir seulement, à la création (script 096) : aucun, sortie ou entree, avec le détail exigé ; fixé ensuite.</param>
     public async Task<long> ExecuterAsync(long? id, string? liste, string? libelle, bool actif, long utilisateurId, CancellationToken ct = default,
@@ -63,18 +63,17 @@ public sealed class EnregistrerMotifReglable(IMotifsReglables motifs, IPermissio
         var l = RegleMotifs.ExigerListe(liste);
         var lib = RegleMotifs.VerifierLibelle(libelle);
         var existants = await motifs.ListerAsync(l, ct);
-        if (existants.Any(m => m.Id != id && string.Equals(m.Libelle, lib, StringComparison.CurrentCultureIgnoreCase)))
-            throw new RegleMetierException($"« {lib} » existe déjà dans cette liste (réactivez-le s’il est désactivé).", "libelle");
+        RegleMotifs.ExigerLibelleUnique(lib, existants.Where(m => m.Id != id).Select(m => m.Libelle));
 
         string code;
+        object? avantMotif = null;
         if (id is null)
         {
-            if (!RegleMotifs.AjoutPermis(l))
-                throw new RegleMetierException("Cette liste ne reçoit pas de nouveau motif : seuls les libellés et l’activation se règlent.", "liste");
+            RegleMotifs.ExigerAjoutPermis(l);
+            if (garde is not null) await garde.ExigerAjoutLocalAsync(Pharma.Domain.Reglages.TablesMutualisables.Motifs, ct);
             code = RegleMotifs.CodeDepuisLibelle(lib, existants.Select(m => m.Code));
             var (e, d) = Pharma.Domain.Caisse.RegleTiroir.VerifierEffet(effet, detail);
-            if (e != Pharma.Domain.Caisse.RegleTiroir.Aucun && l != RegleMotifs.Tiroir)
-                throw new RegleMetierException("Seuls les motifs du tiroir ont un effet sur l’argent de la caisse.", "effet");
+            RegleMotifs.ExigerEffetAutorise(l, e);
             id = e == Pharma.Domain.Caisse.RegleTiroir.Aucun ? await motifs.CreerAsync(l, code, lib, ct) : await motifs.CreerAsync(l, code, lib, e, d, ct);
             (effet, detail) = (e, d);
             actif = true;
@@ -83,12 +82,18 @@ public sealed class EnregistrerMotifReglable(IMotifsReglables motifs, IPermissio
         {
             var m = existants.FirstOrDefault(x => x.Id == id) ?? throw new RegleMetierException("Motif introuvable.");
             RegleMotifs.VerifierModification(m, actif);
+            if (garde is not null) await garde.ExigerElementLocalAsync(Pharma.Domain.Reglages.TablesMutualisables.Motifs, m.ModeleCodeCentral, ct);
+            avantMotif = new { libelle = m.Libelle, actif = m.Actif };
             code = m.Code;
             if (!await motifs.ModifierAsync(id.Value, lib, actif, ct)) throw new RegleMetierException("Motif introuvable.");
         }
 
         await journal.EcrireAsync(utilisateurId, "motif_reglable", "motif_reglable", id,
-            new Dictionary<string, object?> { ["liste"] = l, ["code"] = code, ["libelle"] = lib, ["actif"] = actif, ["effet"] = effet, ["detail"] = detail },
+            new Dictionary<string, object?>
+            {
+                ["liste"] = l, ["code"] = code, ["libelle"] = lib, ["actif"] = actif, ["effet"] = effet, ["detail"] = detail,
+                ["avant"] = avantMotif, ["apres"] = new { libelle = lib, actif }
+            },
             Permissions.AdminParametres, ct);
         return id.Value;
     }

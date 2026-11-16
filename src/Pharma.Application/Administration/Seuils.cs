@@ -30,18 +30,13 @@ public sealed class ObtenirSeuils(ISeuilsAdmin seuils)
 }
 
 /// <summary>Enregistre les seuils, recalcule les alertes aussitôt et inscrit la modification au journal.</summary>
-public sealed class EnregistrerSeuils(ISeuilsAdmin seuils, IMoteurAlertes alertes, IJournal journal)
+public sealed class EnregistrerSeuils(ISeuilsAdmin seuils, IMoteurAlertes alertes, IJournal journal, Reglages.IGardeReglagesCentraux? garde = null)
 {
     public async Task<int> ExecuterAsync(ReglagesSeuils r, long utilisateurId, CancellationToken ct = default)
     {
         var g = r.General;
-        RegleSeuils.VerifierGeneral(g.JoursOrange, g.JoursRouge);
-        if (g.HorizonRisqueJours <= 0 || g.JoursCibleCommande <= 0 || g.JoursDormant <= 0)
-            throw new RegleMetierException("Le risque d’écoulement, le stock visé et le délai « dormant » doivent être d’au moins 1 jour.");
-        if (g.SeuilLotDelaisse < 1 || g.SeuilLotDelaisseCollectif < 1)
-            throw new RegleMetierException("Ancien lot délaissé : les seuils doivent être d’au moins 1 boîte.", "seuil_lot_delaisse");
-        if (g.DelaiFournisseurJours < 0 || g.JoursSecurite < 0)
-            throw new RegleMetierException("Le délai de livraison et le stock de sécurité ne peuvent pas être négatifs.");
+        RegleSeuils.VerifierReglageGeneral(g.JoursOrange, g.JoursRouge, g.HorizonRisqueJours, g.DelaiFournisseurJours, g.JoursSecurite,
+            g.JoursCibleCommande, g.JoursDormant, g.SeuilLotDelaisse, g.SeuilLotDelaisseCollectif);
 
         foreach (var f in r.Grossistes)
         {
@@ -59,6 +54,8 @@ public sealed class EnregistrerSeuils(ISeuilsAdmin seuils, IMoteurAlertes alerte
 
         var avant = await seuils.LireAsync(ct);
         var nouveaux = r with { Exceptions = exceptions };
+        // Réglage général imposé par le serveur central : refus seulement si la partie générale change (seuils par grossiste et exceptions par produit restent locaux)
+        if (garde is not null && avant.General != nouveaux.General) await garde.ExigerModifiableAsync(Pharma.Domain.Reglages.TablesMutualisables.Alertes, ct);
         await seuils.EnregistrerAsync(nouveaux, ct);
         var misesAJour = await alertes.GenererAsync(ct);
 

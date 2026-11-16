@@ -154,6 +154,33 @@
             </div>
         }
 
+        @if (t is not null && rubrique == "reglages-mutualises")
+        {
+            @* Lot M7 : état des 11 tables de réglages que le serveur central peut fixer (imposé) ou proposer. Liste fermée de 11 lignes (bornée par nature), seul le cadre défile. *@
+            <p class="detail" style="margin: 0">Réglages que le serveur central peut fixer pour toutes les officines (« fixé ») ou proposer (« proposé » : votre valeur est gardée tant que vous ne l’adoptez pas, depuis l’écran du réglage).
+                @(t.Active ? "" : "La synchronisation est désactivée : tous les réglages sont modifiables ici, les valeurs du serveur central ne s’appliquent plus.")</p>
+            <div class="tableau-cadre" data-zone="reglages-mutualises">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Réglage</th><th scope="col">Mode</th><th scope="col" class="nombre">Version reçue</th><th scope="col" class="nombre">Version appliquée</th><th scope="col">État</th><th scope="col">Reçu le</th><th scope="col">Motif du refus</th></tr></thead>
+                    <tbody>
+                        @foreach (var g in reglagesMutualises)
+                        {
+                            <tr data-table="@g.Table">
+                                <td class="nom"><a href="@Ecran(g.Table)">@g.Libelle</a></td>
+                                <td><span class="pastille @ClasseMode(g)">@LibelleMode(g)</span></td>
+                                <td class="nombre">@(g.VersionRecue?.ToString() ?? "—")</td>
+                                <td class="nombre">@(g.VersionAppliquee?.ToString() ?? "—")</td>
+                                <td><span class="pastille @ClasseEtat(g.Etat)">@LibelleEtat(g.Etat)</span></td>
+                                <td>@(g.RecuLe is { } rl ? Libelles.DateHeureLocale(rl) : "—")</td>
+                                <td class="detail">@(g.MotifRejet ?? "—")</td>
+                            </tr>
+                        }
+                        @if (reglagesMutualises.Count == 0) { <tr><td colspan="7" class="vide">@(erreur is null ? "Aucun réglage." : "Réglages illisibles.")</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+        }
+
         @if (t is not null && rubrique == "activation")
         {
             <section class="panneau" aria-labelledby="s-activation">
@@ -187,8 +214,60 @@
 
     protected override Task OnInitializedAsync() => ChargerAsync();
 
+    private List<ReglageMutualiseDto> reglagesMutualises = [];
+
+    // Lot M7 : écran où se règle chacune des 11 tables
+    private static string Ecran(string table) => table switch
+    {
+        "parametre_fiscal" => "admin/reglage-fiscal",
+        "regle_alerte_psychotrope" => "admin/psychotropes",
+        "parametre_tracabilite" => "admin/reglage-tracabilite",
+        "parametre_serialisation" => "admin/serialisation",
+        "parametre_substitution" => "achats?onglet=substitution",
+        "motif_reglable" => "admin/motifs",
+        "parametre_formulaire_sms" => "admin/notifications?rubrique=formulaire-sms",
+        "parametre_surveillance" => "admin/controle-interne",
+        "parametre_alerte" => "admin/seuils",
+        "parametre_inventaire" => "inventaire?rubrique=seuils",
+        _ => "stock?rubrique=remises"
+    };
+
+    private static string LibelleMode(ReglageMutualiseDto g) => g.Mode switch
+    {
+        "impose" => "Fixé par le serveur central",
+        "propose" => "Proposé par le serveur central",
+        _ => g.ModeRecu is "impose" or "propose" ? "Local (synchronisation désactivée)" : "Local"
+    };
+
+    private static string ClasseMode(ReglageMutualiseDto g) => g.Mode switch { "impose" => "attention", "propose" => "info", _ => "" };
+
+    private static string LibelleEtat(string etat) => etat switch
+    {
+        "applique" => "Appliqué", "non_adopte" => "Non adopté", "rejete" => "Refusé", _ => "Aucun"
+    };
+
+    private static string ClasseEtat(string etat) => etat switch { "applique" => "ok", "non_adopte" => "info", "rejete" => "urgent", _ => "" };
+
+    // Lu quand la sous-rubrique s'affiche (le lien du menu ne recrée pas l'écran), relu par « Actualiser »
+    private string? reglagesCharges;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (rubrique != "reglages-mutualises") { reglagesCharges = null; return; }
+        if (reglagesCharges is null) await ChargerReglagesMutualisesAsync();
+    }
+
+    private async Task ChargerReglagesMutualisesAsync()
+    {
+        reglagesCharges = rubrique;
+        var (liste, el) = await Api.ReglagesMutualisesAsync();
+        reglagesMutualises = liste;
+        erreur = el;
+    }
+
     private async Task ChargerAsync()
     {
+        if (rubrique == "reglages-mutualises") await ChargerReglagesMutualisesAsync();
         var (d, e) = await Api.SynchronisationAsync();
         if (d is null) { erreur = e; return; }
         (t, active, adresse, textesLibres, envoyerMedecins, erreur) = (d, d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins, null);

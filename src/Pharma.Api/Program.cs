@@ -153,6 +153,8 @@ app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
     var (code, message) = ex switch
     {
         RegleMetierException r => (StatusCodes.Status422UnprocessableEntity, r.Message),
+        Pharma.Application.Reglages.ReglageImposeException i => (StatusCodes.Status409Conflict, i.Message),
+        Pharma.Application.Reglages.ModeleReglageChangeException c => (StatusCodes.Status409Conflict, c.Message),
         Pharma.Application.Commun.DroitRefuseException d => (StatusCodes.Status403Forbidden, d.Message),
         PostgresException { SqlState: "P0001" } p => (StatusCodes.Status422UnprocessableEntity, p.MessageText),
         PostgresException p when ErreursMetier.Traduire(p) is { } refus => refus,
@@ -160,7 +162,8 @@ app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
         _ => (StatusCodes.Status500InternalServerError, "Erreur interne : voir le journal du serveur.")
     };
     ctx.Response.StatusCode = code;
-    await ctx.Response.WriteAsJsonAsync(new ErreurDto(message, (ex as RegleMetierException)?.Champ));
+    await ctx.Response.WriteAsJsonAsync(new ErreurDto(message,
+        ex is Pharma.Application.Reglages.ReglageImposeException ? Pharma.Application.Reglages.ReglageImposeException.Champ : (ex as RegleMetierException)?.Champ));
 }));
 
 // Requête mal formée (paramètre manquant ou illisible) : refus clair, noté comme simple information au journal du serveur,

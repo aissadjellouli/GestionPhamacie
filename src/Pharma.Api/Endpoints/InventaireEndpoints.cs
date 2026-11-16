@@ -22,7 +22,8 @@ internal static class InventaireEndpoints
                     t.EcartsAValider.Select(VersDto).ToList(),
                     t.Sensibles is { } s ? new EtatSensiblesDto(s.Produits, s.Dernier, s.EnCoursId) : null));
             })
-           .ExigerPermission(Permissions.StockConsulter);
+           .ExigerPermission(Permissions.StockConsulter)
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Inventaire);
 
         // Historique des inventaires par page et filtré (règle des listes)
         inv.MapGet("/historique", async (string? rayon, string? statut, DateOnly? du, DateOnly? au, int? page, int? taille,

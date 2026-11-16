@@ -32,6 +32,15 @@ public static class ErreursMetier
         {
             return Refus(ctx.HttpContext, StatusCodes.Status422UnprocessableEntity, e.Message, e, e.Champ);
         }
+        catch (Pharma.Application.Reglages.ReglageImposeException e)
+        {
+            // Réglage fixé par le serveur central (mutualisation) : conflit avec l'état de l'officine, champ « reglage_impose »
+            return Refus(ctx.HttpContext, StatusCodes.Status409Conflict, e.Message, e, Pharma.Application.Reglages.ReglageImposeException.Champ);
+        }
+        catch (Pharma.Application.Reglages.ModeleReglageChangeException e)
+        {
+            return Refus(ctx.HttpContext, StatusCodes.Status409Conflict, e.Message, e);
+        }
         catch (DroitRefuseException e)
         {
             Journal(ctx.HttpContext).LogInformation("{Chemin} refusé (droit {Droit})", ctx.HttpContext.Request.Path, e.Permission);

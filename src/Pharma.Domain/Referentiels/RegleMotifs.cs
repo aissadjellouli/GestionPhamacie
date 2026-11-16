@@ -8,7 +8,7 @@ namespace Pharma.Domain.Referentiels;
 /// (aucun, depense, fournisseur, patient, coffre, fond), voir <see cref="Caisse.RegleTiroir"/>.
 /// </summary>
 public sealed record MotifReglable(long Id, string Liste, string Code, string Libelle, bool Actif, bool Systeme, int Ordre,
-    string Effet = Caisse.RegleTiroir.Aucun, string Detail = Caisse.RegleTiroir.Aucun);
+    string Effet = Caisse.RegleTiroir.Aucun, string Detail = Caisse.RegleTiroir.Aucun, bool ModeleCodeCentral = false);
 
 /// <summary>
 /// Motifs et catégories réglables par le titulaire (Administration › Motifs et catégories) : ajout, libellé, désactivation ;
@@ -51,6 +51,41 @@ public static partial class RegleMotifs
     /// <summary>Ajout de motifs : tiroir, attente et charges ; pas les sorties ni les retours (codes fixés par la base).</summary>
     public static bool AjoutPermis(string liste) => liste is Tiroir or Attente or Charge or VoletAbsent or ChifaExclusion or MajorationChifa or RetourClient or RejetChifa;
 
+    /// <summary>Préfixe des codes des motifs créés par un modèle du serveur central (D5) : jamais produit par un code local.</summary>
+    public const string PrefixeCodeCentral = "c_";
+    public const int CodeMax = 40;
+    public const int OrdreMax = 10000;
+
+    public static bool EstCodeCentral(string? code) => code is not null && code.StartsWith(PrefixeCodeCentral, StringComparison.Ordinal);
+
+    /// <summary>Code d'un motif : minuscules, chiffres et « _ », 1 à 40 caractères (contrainte motif_reglable_code_check).</summary>
+    public static void VerifierCode(string? code)
+    {
+        if (code is null || code.Length is 0 or > CodeMax || !CodeValide().IsMatch(code))
+            throw new RegleMetierException($"Code du motif : minuscules, chiffres et « _ », {CodeMax} caractères au plus.", "code");
+    }
+
+    /// <summary>Libellé déjà pris par un autre motif de la liste (comparaison insensible à la casse), message de EnregistrerMotifReglable.</summary>
+    public static void ExigerLibelleUnique(string libelle, IEnumerable<string> autresLibelles)
+    {
+        if (autresLibelles.Any(l => string.Equals(l, libelle, StringComparison.CurrentCultureIgnoreCase)))
+            throw new RegleMetierException($"« {libelle} » existe déjà dans cette liste (réactivez-le s’il est désactivé).", "libelle");
+    }
+
+    /// <summary>Un nouveau motif n'est permis que dans les listes qui l'acceptent (message de EnregistrerMotifReglable).</summary>
+    public static void ExigerAjoutPermis(string liste)
+    {
+        if (!AjoutPermis(liste))
+            throw new RegleMetierException("Cette liste ne reçoit pas de nouveau motif : seuls les libellés et l’activation se règlent.", "liste");
+    }
+
+    /// <summary>Seuls les motifs du tiroir ont un effet sur l'argent de la caisse (contrainte ck_motif_reglable_effet_tiroir).</summary>
+    public static void ExigerEffetAutorise(string liste, string effet)
+    {
+        if (effet != Caisse.RegleTiroir.Aucun && liste != Tiroir)
+            throw new RegleMetierException("Seuls les motifs du tiroir ont un effet sur l’argent de la caisse.", "effet");
+    }
+
     public static string ExigerListe(string? liste) =>
         ListeConnue(liste) ? liste! : throw new RegleMetierException("Liste de motifs inconnue.", "liste");
 
@@ -70,6 +105,8 @@ public static partial class RegleMotifs
             != System.Globalization.UnicodeCategory.NonSpacingMark).ToArray());
         var baseCode = NonAlphanumerique().Replace(sansAccent, "_").Trim('_');
         if (baseCode.Length == 0) baseCode = "motif";
+        // « c_ » est réservé aux motifs du serveur central (D5)
+        if (EstCodeCentral(baseCode)) baseCode = "local_" + baseCode;
         if (baseCode.Length > 34) baseCode = baseCode[..34].TrimEnd('_');
         var pris = existants.ToHashSet();
         var code = baseCode;
@@ -99,6 +136,9 @@ public static partial class RegleMotifs
         if (m.Code != Autre) t = null;
         return (m.Code, t is null ? m.Libelle : $"Autre : {t}", t);
     }
+
+    [GeneratedRegex("^[a-z0-9_]+$")]
+    private static partial Regex CodeValide();
 
     [GeneratedRegex("[^a-z0-9]+")]
     private static partial Regex NonAlphanumerique();

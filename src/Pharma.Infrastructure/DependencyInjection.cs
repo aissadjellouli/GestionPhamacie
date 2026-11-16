@@ -210,6 +210,10 @@ public static class DependencyInjection
         services.AddScoped<Application.Synchronisation.ISortieSyncDepot, Synchronisation.SortieSyncSql>();
         // Synchronisation, lot S2 : envoi et accusés (script 128) ; clé et certificat de CE serveur hors base (DPAPI machine)
         services.AddScoped<Application.Synchronisation.IEnvoiSyncDepot, Synchronisation.EnvoiSyncSql>();
+        // Mutualisation des réglages, lot M4 : état des 11 tables et application des modèles du serveur central (script 141)
+        services.AddScoped<Application.Reglages.IReglagesMutualisesDepot, Reglages.ReglagesMutualisesSql>();
+        services.AddScoped<Application.Reglages.ILectureValeurReglage>(sp => (Reglages.ReglagesMutualisesSql)sp.GetRequiredService<Application.Reglages.IReglagesMutualisesDepot>());
+        services.AddScoped<Application.Reglages.IParametresFiscalTracabilite, Reglages.ParametresFiscalTracabiliteSql>();
         // Synchronisation, lot S6 : chargement complet (script 129)
         services.AddScoped<Application.Synchronisation.IChargementSyncDepot, Synchronisation.ChargementSyncSql>();
         // Synchronisation, lot S3 : supervision (bandeau, alertes) et purge de la file (script 140)

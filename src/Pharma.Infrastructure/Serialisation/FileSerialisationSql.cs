@@ -153,6 +153,11 @@ public sealed class FileSerialisationSql(NpgsqlDataSource db) : IFileSerialisati
     {
         await using var connexion = await db.OpenConnectionAsync(ct);
         await using var tx = await connexion.BeginTransactionAsync(ct);
+        // Valeur avant (journal avant / après, D13)
+        bool? actifAvant = null, horsLigneAvant = null;
+        await using (var lecture = new NpgsqlCommand("SELECT actif, factice_hors_ligne FROM parametre_serialisation WHERE id = 1", connexion, tx))
+        await using (var r = await lecture.ExecuteReaderAsync(ct))
+            if (await r.ReadAsync(ct)) (actifAvant, horsLigneAvant) = (r.GetBoolean(0), r.GetBoolean(1));
         await using (var cmd = new NpgsqlCommand(
             "UPDATE parametre_serialisation SET actif = $1, factice_hors_ligne = $2, modifie_le = now() WHERE id = 1", connexion, tx))
         {
@@ -162,12 +167,15 @@ public sealed class FileSerialisationSql(NpgsqlDataSource db) : IFileSerialisati
         }
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO journal_audit (utilisateur_id, action, table_cible, details)
-            VALUES ($1, 'serialisation_parametres', 'parametre_serialisation', jsonb_build_object('actif', $2, 'factice_hors_ligne', $3))
+            VALUES ($1, 'serialisation_parametres', 'parametre_serialisation', jsonb_build_object('actif', $2, 'factice_hors_ligne', $3,
+                'avant', jsonb_build_object('actif', $4, 'factice_hors_ligne', $5), 'apres', jsonb_build_object('actif', $2, 'factice_hors_ligne', $3)))
             """, connexion, tx))
         {
             cmd.Parameters.AddWithValue(utilisateurId);
             cmd.Parameters.AddWithValue(actif);
             cmd.Parameters.AddWithValue(facticeHorsLigne);
+            cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Boolean, Value = (object?)actifAvant ?? DBNull.Value });
+            cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Boolean, Value = (object?)horsLigneAvant ?? DBNull.Value });
             await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);

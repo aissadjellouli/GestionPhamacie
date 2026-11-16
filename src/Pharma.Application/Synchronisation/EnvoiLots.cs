@@ -35,6 +35,8 @@ public static class StatutsDescendant
     public const string Ancien = "ancien";
     public const string TableInconnue = "table_inconnue";
     public const string Refuse = "refuse";
+    /// <summary>Élément « mutu_ » d'une table non mutualisable (script 141) : journalisé et ignoré, acquitté (ne bloque pas les suivants).</summary>
+    public const string Invalide = "invalide";
 }
 
 /// <summary>Lot constitué (accusé ou non).</summary>
@@ -151,7 +153,7 @@ public sealed record ResultatEnvoi(int LotsAccuses, string? Arret, string? Erreu
 /// <summary>Un passage d'envoi : constitue les lots en attente puis envoie, dans l'ordre, chaque lot non accusé.</summary>
 /// <param name="chargement">Chargement complet (lot S6) ; null : aucun (tests du lot S2).</param>
 public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync constitution, IFormatLotSync format, ICertificatSync certificat,
-    IClientServeurCentral client, VerrouSync verrou, ChargementCompletSync? chargement = null)
+    IClientServeurCentral client, VerrouSync verrou, ChargementCompletSync? chargement = null, Reglages.AppliquerReglagesMutualises? reglages = null)
 {
     public const string ArretDesactivee = "Synchronisation désactivée.";
     public const string ArretSansAdresse = "Adresse du serveur central non réglée.";
@@ -161,6 +163,7 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     private long versionDescendante;
     private IReadOnlyList<string> interdites = [];
     private string? erreurDescendante;
+    private bool descendantsAAppliquer;
     public static readonly TimeSpan RenouvelerAvant = TimeSpan.FromDays(60);
 
     public async Task<ResultatEnvoi> ExecuterAsync(DateTime maintenantUtc, int maxLots = 20, CancellationToken ct = default)
@@ -188,6 +191,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
             // version appliquée ; rien jamais reçu : rien de nominatif)
             (versionDescendante, erreurDescendante) = (p.DescendantVersion, null);
             await EchangerDescendantsAsync(p.Adresse, ct);
+            // Mutualisation des réglages (lot M4) : les modèles déjà reçus sont dans la base, même si l'échange vient d'échouer
+            await AppliquerReglagesAsync(ct);
             interdites = (await depot.ParametresAsync(ct)).ColonnesInterdites ?? [];
             // Chargement complet demandé : instantané puis annonce, AVANT de former les lots (lot S6)
             if (chargement is not null) await chargement.PreparerAsync(p.Adresse, p.DernierAccuse, ct);
@@ -228,6 +233,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
                 }
             }
             if (chargement is not null) await chargement.TerminerSiAccuseAsync(p.Adresse, ct);
+            // Éléments reçus avec l'accusé d'un lot : appliqués dans le même passage
+            if (descendantsAAppliquer) await AppliquerReglagesAsync(ct);
             if (cert.EcheanceUtc - maintenantUtc < RenouvelerAvant) await RenouvelerAsync(p.Adresse, ct);
             var note = string.Join(" ", new[] { p.LotsAutresEpoques > 0
                 ? $"{p.LotsAutresEpoques} lot(s) d'une époque précédente jamais accusé(s) : à examiner (non renvoyés automatiquement)." : null, erreurDescendante }
@@ -313,6 +320,7 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     private async Task AppliquerDescendantsAsync(DescendantsRecus d, CancellationToken ct)
     {
         if (d.Changements.Count == 0) return;
+        descendantsAAppliquer = true;
         try
         {
             var statuts = await depot.AppliquerDescendantsAsync(d.Changements, d.VersionMax, ct);
@@ -328,6 +336,18 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             erreurDescendante = $"Réglages du serveur central non appliqués ({e.GetType().Name}) : envoi poursuivi avec le dernier réglage appliqué.";
+        }
+    }
+
+    /// <summary>Applique les modèles de réglages reçus (un échec ne fait jamais échouer l'envoi : noté, repris au passage suivant).</summary>
+    private async Task AppliquerReglagesAsync(CancellationToken ct)
+    {
+        descendantsAAppliquer = false;
+        if (reglages is null) return;
+        try { await reglages.ExecuterAsync(ct); }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            erreurDescendante = $"Réglages mutualisés non appliqués ({e.GetType().Name}) : repris au prochain passage.";
         }
     }
 
@@ -386,7 +406,8 @@ public sealed record ReglagesSync(bool Active, string? Adresse, string TextesLib
 
 /// <param name="chargements">Lot S6 : réactivation d'une officine inscrite = chargement complet (les modifications faites
 /// pendant la désactivation n'ont pas été inscrites) ; null : aucun.</param>
-public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal, IChargementSyncDepot? chargements = null)
+public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal, IChargementSyncDepot? chargements = null,
+    Reglages.LibererReglagesMutualises? liberation = null)
 {
     public static readonly IReadOnlySet<string> ModesTextes = new HashSet<string>(StringComparer.Ordinal) { "filtres", "retires" };
 
@@ -400,6 +421,9 @@ public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal, IChargem
         if (!ModesTextes.Contains(r.TextesLibres)) throw new RegleMetierException("Textes libres : « filtres » ou « retires ».", "textes_libres");
         var avant = await depot.ParametresAsync(ct);
         var adresse = string.IsNullOrWhiteSpace(r.Adresse) ? null : r.Adresse.Trim().TrimEnd('/');
+        // Désactivation (D3) : les réglages imposés par le serveur central redeviennent modifiables aussitôt (mode en vigueur « local »), valeurs gardées ;
+        // une ligne par table au journal, écrite AVANT la désactivation pour que l'état de chaque table soit encore celui reçu du serveur central
+        if (avant.Active && !r.Active && liberation is not null) await liberation.ExecuterAsync(utilisateurId, ct);
         await depot.ReglerAsync(adresse, r.TextesLibres, r.EnvoyerMedecins, r.Active, ct);
         if (!avant.Active && r.Active && avant.InscriteLe is not null && chargements is not null)
             await chargements.DemanderAsync(MotifsChargement.Reactivation, utilisateurId, ct);

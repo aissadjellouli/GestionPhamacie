@@ -29,7 +29,7 @@ public sealed record ContenuFormulaireAccordSms(Administration.IdentitePharmacie
 
 public static class RegleFormulaireAccordSms
 {
-    public const int LongueurMax = 4000;
+    public const int LongueurMax = Pharma.Domain.Reglages.RegleFormulaireSms.LongueurMax;
 
     /// <summary>Texte par défaut. [À VÉRIFIER : texte à faire valider par le titulaire / ANPDP]</summary>
     public const string TexteParDefaut =
@@ -44,7 +44,7 @@ public static class RegleFormulaireAccordSms
 }
 
 public sealed class FormulaireAccordSmsPatient(IFormulaireAccordSmsDepot depot, IDocumentsAccordSms documents, Administration.IPharmacie pharmacie,
-    IPermissionService droits, IJournal journal, IHorloge horloge)
+    IPermissionService droits, IJournal journal, IHorloge horloge, Reglages.IGardeReglagesCentraux? garde = null)
 {
     public async Task<(byte[] Contenu, string NomFichier)> ImprimerAsync(long patientId, long utilisateurId, CancellationToken ct = default)
     {
@@ -81,11 +81,15 @@ public sealed class FormulaireAccordSmsPatient(IFormulaireAccordSmsDepot depot, 
     public async Task ModifierTexteAsync(string? texte, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AdminParametres, "régler le texte du formulaire d’accord SMS", ct);
-        var t = string.IsNullOrWhiteSpace(texte) || texte.Trim() == RegleFormulaireAccordSms.TexteParDefaut ? null : texte.Trim();
-        if (t is { Length: > RegleFormulaireAccordSms.LongueurMax })
-            throw new RegleMetierException($"Texte trop long (au plus {RegleFormulaireAccordSms.LongueurMax} caractères).", "texte_formulaire_sms");
+        var t = Pharma.Domain.Reglages.RegleFormulaireSms.Normaliser(texte, RegleFormulaireAccordSms.TexteParDefaut);
+        if (garde is not null) await garde.ExigerModifiableAsync(Pharma.Domain.Reglages.TablesMutualisables.FormulaireSms, ct);
+        var avant = await depot.TexteAsync(ct);
         await depot.EnregistrerTexteAsync(t, utilisateurId, ct);
         await journal.EcrireAsync(utilisateurId, "formulaire_sms_texte_modifie", "parametre", 1,
-            new Dictionary<string, object?> { ["par_defaut"] = t is null }, Permissions.AdminParametres, ct);
+            new Dictionary<string, object?>
+            {
+                ["par_defaut"] = t is null,
+                ["avant"] = new { texte = avant }, ["apres"] = new { texte = t }
+            }, Permissions.AdminParametres, ct);
     }
 }

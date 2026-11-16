@@ -77,7 +77,8 @@ internal static class RupturesEndpoints
                 var (texte, parDefaut) = await f.TexteAsync(ct);
                 return Results.Ok(new TexteFormulaireSmsDto(texte, parDefaut));
             })
-           .ExigerPermission(Permissions.AdminParametres);
+           .ExigerPermission(Permissions.AdminParametres)
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.FormulaireSms);
         api.MapPut("/parametres/formulaire-sms", async (TexteFormulaireSmsDto r, FormulaireAccordSmsPatient f, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await f.ModifierTexteAsync(r.Texte, user.UtilisateurId(), ct);
@@ -96,7 +97,8 @@ internal static class RupturesEndpoints
             {
                 var p = await c.ExecuterAsync(ct);
                 return Results.Ok(new ParametreSubstitutionDto(p.EquivalentExactSeulement, p.ModifieLe, p.ModifiePar));
-            });
+            })
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Substitution);
         s.MapPut("/parametre", async (ParametreSubstitutionDto r, ModifierParametreSubstitution m, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await m.ExecuterAsync(r.EquivalentExactSeulement, user.UtilisateurId(), ct);

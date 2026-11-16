@@ -32,9 +32,10 @@ internal static class CatalogueEndpoints
                 var jour = DateOnly.FromDateTime(DateTime.Today);
                 return Results.Ok((await lister.ExecuterAsync(ct)).Select(r => new RemiseAutomatiqueDto(r.Id, r.ProduitId, r.Produit, r.Categorie, r.CategorieLibelle,
                     r.Pourcentage, r.Debut, r.Fin, r.Motif, r.CreePar, r.CreeLe, r.ArreteeLe, r.ArreteePar,
-                    r.ArreteeLe is not null ? "arretee" : r.Fin < jour ? "terminee" : r.Debut > jour ? "a_venir" : "en_cours")).ToList());
+                    r.ArreteeLe is not null ? "arretee" : r.Fin < jour ? "terminee" : r.Debut > jour ? "a_venir" : "en_cours", r.ModeleCle is not null)).ToList());
             })
-           .ExigerPermission(Permissions.StockConsulter, Permissions.CaisseVendre, Permissions.CaisseRemisesAuto);
+           .ExigerPermission(Permissions.StockConsulter, Permissions.CaisseVendre, Permissions.CaisseRemisesAuto)
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Remises);
         api.MapPost("/remises-automatiques", async (RemiseAutomatiqueSaisieDto d, Pharma.Application.Caisse.GererRemisesAutomatiques gerer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await gerer.CreerAsync(VersSaisie(d), user.UtilisateurId(), ct))))
            .ExigerPermission(Permissions.CaisseRemisesAuto);

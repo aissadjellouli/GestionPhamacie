@@ -1,0 +1,153 @@
+@implements IDisposable
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* « Réglage du serveur central » (mutualisation des réglages, lot M7, docs/conception-synchronisation.md § 16 bis) : bandeau commun aux écrans de réglage.
+   - imposé : « Fixé par le serveur central » ; l'écran grise ses champs (fieldset disabled) et désactive Enregistrer (Api.ReglageCentral(table).Impose) ;
+   - proposé et différent de la valeur de l'officine : « Proposé par le serveur central » avec « Comparer » (valeur de l'officine à côté de celle du central)
+     et « Adopter » ; sans écart, rien n'est affiché ;
+   - table rejetée : motif du refus. L'état vient de l'en-tête des lectures de l'écran (aucun appel de plus) ; le détail (écarts, motif) n'est lu que pour
+     une valeur proposée non adoptée ou une table rejetée. Sans serveur central : rien ne s'affiche. *@
+@if (etat.Impose)
+{
+    <div class="info-bandeau compact bandeau-central" role="status" data-champ="reglage_impose" data-reglage-central="impose">
+        <span><strong>Fixé par le serveur central.</strong> @(Detail ?? "Ce réglage ne se modifie pas dans l’officine : la valeur du serveur central s’applique.")</span>
+    </div>
+}
+@if (etat.ANonAdopte)
+{
+    <div class="info-bandeau compact bandeau-central" role="status" data-reglage-central="propose">
+        <span><strong>Proposé par le serveur central</strong>@(etat.Version is { } v ? $" (version {v})" : "")@(detail is { Ecarts.Count: > 0 } d ? $" : {d.Ecarts.Count} écart(s) avec la valeur de l’officine." : " : la valeur de l’officine est différente.") Votre valeur est gardée tant que vous ne l’adoptez pas.</span>
+        @* Sans le droit de saisir ce réglage, le détail n'a pas pu être lu (403) : ni « Comparer » ni « Adopter » *@
+        @if (detail is not null)
+        {
+            <span class="actions">
+                @if (detail.Ecarts.Count > 0) { <button type="button" class="lien-bouton" @onclick="Comparer">Comparer</button> }
+                <button type="button" class="lien-bouton" disabled="@enCours" @onclick="AdopterAsync">Adopter</button>
+            </span>
+        }
+    </div>
+}
+@if (etat.Rejete)
+{
+    <div class="bandeau-attention" role="status" data-reglage-central="rejete">
+        <strong>Valeur du serveur central refusée par l’officine.</strong> @(detail?.MotifRejet ?? "Le motif n’est pas disponible.") La valeur actuelle de l’officine est gardée ; le serveur central en est informé.
+    </div>
+}
+@if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+@if (fenetre && detail is not null)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-comparaison" tabindex="-1" @ref="voile" @onkeydown="Touche" @onclick="() => fenetre = false">
+        <section class="panneau fenetre-facture" @onclick:stopPropagation="true">
+            <div class="titre-fenetre">
+                <div>
+                    <h2 id="t-comparaison">@detail.Libelle · valeur proposée par le serveur central</h2>
+                    <p class="sous-titre">Seuls les écarts sont listés@(detail.Auteur is { } a ? $" · publié par {a}" : "")@(detail.RecuLe is { } r ? $" · reçu le {Libelles.DateHeureLocale(r)}" : "").</p>
+                </div>
+                <button type="button" class="btn" @onclick="() => fenetre = false">Fermer</button>
+            </div>
+            <div class="filtres-liste" role="search" aria-label="Filtrer les écarts">
+                <div class="champ" style="flex: 1 1 260px"><label for="rc-texte">Réglage</label>
+                    <input id="rc-texte" type="search" autocomplete="off" placeholder="Ex. seuil" @bind="filtre" @bind:event="oninput" @bind:after="() => page = 1" /></div>
+                @if (filtre.Trim() != "") { <button type="button" class="btn" @onclick="() => (filtre, page) = (string.Empty, 1)">Tout afficher</button> }
+            </div>
+            <div class="tableau-cadre">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Réglage</th><th scope="col">Valeur de l’officine</th><th scope="col">Valeur du serveur central</th></tr></thead>
+                    <tbody>
+                        @foreach (var e in Ecarts.Skip((page - 1) * taille).Take(taille))
+                        {
+                            <tr><td>@e.Libelle</td><td>@e.Local</td><td><strong>@e.Central</strong></td></tr>
+                        }
+                        @if (Ecarts.Count == 0) { <tr><td colspan="3" class="vide">Aucun écart pour ce filtre.</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+            <Pagination Total="Ecarts.Count" Numero="page" Taille="taille" Libelle="Pages des écarts" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
+            <div style="display: flex; gap: 8px; justify-content: flex-end">
+                <button type="button" class="btn" @onclick="() => fenetre = false">Fermer</button>
+                <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="AdopterAsync">Adopter la valeur du serveur central</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    /// <summary>Table de réglages (nom de la base, ex. « parametre_alerte »).</summary>
+    [Parameter, EditorRequired] public string Table { get; set; } = "";
+    /// <summary>Précision affichée à la suite de « Fixé par le serveur central » (ex. ce qui reste modifiable).</summary>
+    [Parameter] public string? Detail { get; set; }
+    /// <summary>Appelé après « Adopter » : l'écran relit sa valeur.</summary>
+    [Parameter] public EventCallback OnAdopte { get; set; }
+
+    private EtatReglageEntete etat = EtatReglageEntete.Aucun;
+    private ReglageMutualiseDto? detail;
+    private string? detailCle, erreur;
+    private bool fenetre, enCours, focusDemande;
+    private string filtre = "";
+    private int page = 1, taille = Pagination.TailleParDefaut;
+    private ElementReference voile;
+
+    private List<EcartReglageDto> Ecarts => (detail?.Ecarts ?? []).Where(e => RechercheTexte.Contient(filtre, e.Libelle)).ToList();
+
+    protected override void OnInitialized()
+    {
+        // « ← Retour » : filtre, page et taille de page de la liste des écarts retrouvés (la fenêtre, elle, se rouvre par « Comparer »)
+        var cle = $"reglage-central-{Table}";
+        Historique.Suivre(cle, e => { e.Mettre("filtre", filtre); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer(cle) is { } h)
+            (filtre, page, taille) = (h.Texte("filtre") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Api.ReglageCentralChange -= Change;
+        Api.ReglageCentralChange += Change;
+        await ActualiserAsync();
+    }
+
+    private void Change() => _ = InvokeAsync(async () => { await ActualiserAsync(); StateHasChanged(); });
+
+    private async Task ActualiserAsync()
+    {
+        etat = Api.ReglageCentral(Table);
+        if (!etat.ANonAdopte && !etat.Rejete) { (detail, detailCle) = (null, null); fenetre = false; return; }
+        var cle = $"{Table}|{etat.Etat}|{etat.Version}";
+        if (cle == detailCle) return;
+        detailCle = cle;
+        // Détail (écarts, motif de rejet) : une seule lecture par version ; un refus de droit laisse le bandeau sans « Comparer »
+        (detail, _) = await Api.ReglageMutualiseAsync(Table);
+    }
+
+    private void Comparer() => (fenetre, focusDemande) = (true, true);
+
+    private void Touche(KeyboardEventArgs e) { if (e.Key == "Escape") fenetre = false; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focusDemande || !fenetre) return;
+        focusDemande = false;
+        try { await voile.FocusAsync(); }
+        catch (InvalidOperationException) { }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task AdopterAsync()
+    {
+        if (etat.Version is not { } version) return;
+        (enCours, erreur) = (true, null);
+        try
+        {
+            erreur = await Api.AdopterReglageAsync(Table, version);
+            if (erreur is null)
+            {
+                fenetre = false;
+                await OnAdopte.InvokeAsync();
+            }
+        }
+        finally { enCours = false; }
+    }
+
+    public void Dispose() => Api.ReglageCentralChange -= Change;
+}

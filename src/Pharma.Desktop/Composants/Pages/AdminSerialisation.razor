@@ -19,14 +19,16 @@
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
         @if (message is not null) { <div class="succes" role="status">@message</div> }
+        @* Mutualisation (lot M7) : « file active » et « base nationale simulée hors ligne » fixés ou proposés par le serveur central *@
+        <ReglageCentral Table="parametre_serialisation" OnAdopte="() => ChargerAsync(numero, taille)" />
 
         @if (etat is not null)
         {
             <div class="filtres">
                 <span class="detail"><strong>@etat.EnAttente</strong> en attente · <strong>@etat.Reussies</strong> réussie(s) · <strong>@etat.Refusees</strong> refusée(s)@(etat.DernierEssaiLe is { } d ? $" · dernier envoi {Libelles.DateHeureLocale(d)}" : "")</span>
                 <span class="detail">Connecteur : @(etat.Connecteur == "factice" ? "factice (démonstration)" : etat.Connecteur) · AI GS1 : @string.Join(", ", etat.IdentifiantsGs1.Select(i => $"{i.Code} {i.Champ}{(i.LongueurFixe is { } n ? $" ({n})" : " (variable)")}"))</span>
-                <label class="case"><input type="checkbox" checked="@etat.Actif" disabled="@enCours" @onchange="e => EnregistrerAsync((bool)e.Value!, etat.FacticeHorsLigne)" /><span>File active</span></label>
-                <label class="case"><input type="checkbox" checked="@etat.FacticeHorsLigne" disabled="@enCours" @onchange="e => EnregistrerAsync(etat.Actif, (bool)e.Value!)" /><span>Simuler la base nationale hors ligne</span></label>
+                <label class="case"><input type="checkbox" checked="@etat.Actif" disabled="@(enCours || Fixe)" @onchange="e => EnregistrerAsync((bool)e.Value!, etat.FacticeHorsLigne)" /><span>File active</span></label>
+                <label class="case"><input type="checkbox" checked="@etat.FacticeHorsLigne" disabled="@(enCours || Fixe)" @onchange="e => EnregistrerAsync(etat.Actif, (bool)e.Value!)" /><span>Simuler la base nationale hors ligne</span></label>
             </div>
             @if (etat.DerniereErreur is not null && etat.EnAttente > 0)
             {
@@ -96,6 +98,8 @@
     private int numero = 1, taille = Pagination.TailleParDefaut;
     private bool enCours;
     private string? erreur, message;
+    /// <summary>Réglages fixés par le serveur central (table parametre_serialisation imposée).</summary>
+    private bool Fixe => Api.ReglageCentral("parametre_serialisation").Impose;
 
     protected override async Task OnInitializedAsync()
     {

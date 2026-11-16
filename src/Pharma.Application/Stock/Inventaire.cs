@@ -273,14 +273,21 @@ public sealed class DeciderEcartInventaire(IInventaires inventaires, IPermission
     }
 }
 
-public sealed class ModifierParametresInventaire(IInventaires inventaires, IPermissionService droits, IJournal journal)
+public sealed class ModifierParametresInventaire(IInventaires inventaires, IPermissionService droits, IJournal journal, Reglages.IGardeReglagesCentraux? garde = null)
 {
     public async Task ExecuterAsync(ParametresInventaire p, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "régler les seuils d’inventaire", ct);
-        if (p.SeuilBoites < 0 || p.SeuilMontant < 0) throw new RegleMetierException("Les seuils ne peuvent pas être négatifs.");
+        Pharma.Domain.Reglages.RegleInventaire.VerifierSeuils(p.SeuilBoites, p.SeuilMontant);
+        if (garde is not null) await garde.ExigerModifiableAsync(Pharma.Domain.Reglages.TablesMutualisables.Inventaire, ct);
+        var avant = await inventaires.ParametresAsync(ct);
         await inventaires.ModifierParametresAsync(p, ct);
         await journal.EcrireAsync(utilisateurId, "seuils_inventaire", "parametre_inventaire", 1,
-            new Dictionary<string, object?> { ["seuil_boites"] = p.SeuilBoites, ["seuil_montant"] = p.SeuilMontant }, Permissions.AdminParametres, ct);
+            new Dictionary<string, object?>
+            {
+                ["seuil_boites"] = p.SeuilBoites, ["seuil_montant"] = p.SeuilMontant,
+                ["avant"] = new { seuil_boites = avant.SeuilBoites, seuil_montant = avant.SeuilMontant },
+                ["apres"] = new { seuil_boites = p.SeuilBoites, seuil_montant = p.SeuilMontant }
+            }, Permissions.AdminParametres, ct);
     }
 }

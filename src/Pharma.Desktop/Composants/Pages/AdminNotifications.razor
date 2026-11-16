@@ -93,16 +93,18 @@
         @if (rubrique == "formulaire-sms")
         {
             @* Texte du formulaire d'accord SMS des patients (2026-11-16) : imprimé depuis la fiche patient ou « Patients en attente » *@
-            <section class="panneau" aria-labelledby="t-formulaire-sms" style="display: flex; flex-direction: column; gap: 8px">
+            @* Mutualisation (lot M7) : texte fixé ou proposé par le serveur central *@
+            <ReglageCentral Table="parametre_formulaire_sms" OnAdopte="ChargerTexteFormulaireAsync" />
+            <fieldset class="panneau" aria-labelledby="t-formulaire-sms" disabled="@Fixe" style="display: flex; flex-direction: column; gap: 8px">
                 <h2 id="t-formulaire-sms">Formulaire d’accord SMS des patients</h2>
                 <p class="detail" style="margin: 0">Imprimé avec l’en-tête de la pharmacie, le nom et le téléphone du patient, la date, la signature et le cachet.
                     Texte à faire valider (loi 18-07, ANPDP). Vide : texte par défaut.@(texteFormulaireParDefaut ? " Texte par défaut en cours." : "")</p>
-                <textarea id="n-formulaire-sms" data-champ="texte_formulaire_sms" rows="12" maxlength="4000" aria-labelledby="t-formulaire-sms" @bind="texteFormulaire"></textarea>
+                <textarea id="n-formulaire-sms" data-champ="texte_formulaire_sms" rows="8" maxlength="4000" aria-labelledby="t-formulaire-sms" @bind="texteFormulaire"></textarea>
                 <div style="display: flex; gap: 8px">
                     <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => EnregistrerTexteFormulaireAsync(false)">Enregistrer le texte</button>
                     <button type="button" class="btn" disabled="@enCours" @onclick="() => EnregistrerTexteFormulaireAsync(true)">Revenir au texte par défaut</button>
                 </div>
-            </section>
+            </fieldset>
         }
 
         @if (rubrique == "destinataires")
@@ -276,7 +278,7 @@
         public HashSet<string> Types { get; set; } = [.. TypesAbonnables];
     }
 
-    private static readonly string[] TypesAbonnables = ["rapport_quotidien", "ecart_caisse", "lot_bloque", "sauvegarde", "ecart_inventaire", "lot_delaisse", "surveillance", "synchronisation"];
+    private static readonly string[] TypesAbonnables = ["rapport_quotidien", "ecart_caisse", "lot_bloque", "sauvegarde", "ecart_inventaire", "lot_delaisse", "surveillance", "synchronisation", "reglages_centraux"];
 
     private Reglages? r;
     private bool motDePasseEnregistre;
@@ -288,6 +290,8 @@
     private bool enCours;
     private string? erreur, message;
 
+    /// <summary>Texte fixé par le serveur central (table parametre_formulaire_sms imposée).</summary>
+    private bool Fixe => Api.ReglageCentral("parametre_formulaire_sms").Impose;
     private string? texteFormulaire;
     private bool texteFormulaireParDefaut;
 
@@ -508,7 +512,7 @@
 
     private static string LibelleType(string t) => t switch
     {
-        "rapport_quotidien" => "Rapport du soir", "ecart_caisse" => "Écart de caisse", "lot_bloque" => "Lot bloqué", "sauvegarde" => "Sauvegarde", "ecart_inventaire" => "Écart d’inventaire", "lot_delaisse" => "Ancien lot délaissé", "surveillance" => "Contrôle interne", "synchronisation" => "Synchronisation", _ => t
+        "rapport_quotidien" => "Rapport du soir", "ecart_caisse" => "Écart de caisse", "lot_bloque" => "Lot bloqué", "sauvegarde" => "Sauvegarde", "ecart_inventaire" => "Écart d’inventaire", "lot_delaisse" => "Ancien lot délaissé", "surveillance" => "Contrôle interne", "synchronisation" => "Synchronisation", "reglages_centraux" => "Réglages fixés par le serveur central", _ => t
     };
 
     private static string LibelleStatut(string s) => s switch { "envoye" => "Envoyé", "echec" => "Abandonné", _ => "En attente" };

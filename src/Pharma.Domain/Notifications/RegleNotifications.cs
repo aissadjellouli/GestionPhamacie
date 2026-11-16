@@ -8,7 +8,7 @@ namespace Pharma.Domain.Notifications;
 public enum CanalNotification { Email, Sms }
 
 /// <summary>Sujets auxquels un destinataire s'abonne ; Test sert à vérifier une adresse.</summary>
-public enum TypeNotification { RapportQuotidien, EcartCaisse, LotBloque, Sauvegarde, EcartInventaire, Test, LotDelaisse, Surveillance, Synchronisation }
+public enum TypeNotification { RapportQuotidien, EcartCaisse, LotBloque, Sauvegarde, EcartInventaire, Test, LotDelaisse, Surveillance, Synchronisation, ReglagesCentraux }
 
 public static class CodesNotification
 {
@@ -24,6 +24,7 @@ public static class CodesNotification
         TypeNotification.LotDelaisse => "lot_delaisse",
         TypeNotification.Surveillance => "surveillance",
         TypeNotification.Synchronisation => "synchronisation",
+        TypeNotification.ReglagesCentraux => "reglages_centraux",
         _ => "test"
     };
 
@@ -34,7 +35,7 @@ public static class CodesNotification
     /// <summary>Types auxquels un destinataire peut s'abonner (le test n'en fait pas partie).</summary>
     public static readonly TypeNotification[] Abonnables =
         [TypeNotification.RapportQuotidien, TypeNotification.EcartCaisse, TypeNotification.LotBloque, TypeNotification.Sauvegarde, TypeNotification.EcartInventaire,
-         TypeNotification.LotDelaisse, TypeNotification.Surveillance, TypeNotification.Synchronisation];
+         TypeNotification.LotDelaisse, TypeNotification.Surveillance, TypeNotification.Synchronisation, TypeNotification.ReglagesCentraux];
 }
 
 /// <summary>Nouvelle tentative après un échec : 1, 5, 15, 60 minutes, puis toutes les heures.</summary>

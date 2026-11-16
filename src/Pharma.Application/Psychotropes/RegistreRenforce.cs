@@ -14,14 +14,13 @@ namespace Pharma.Application.Psychotropes;
 
 public static class CodesAlertePsychotrope
 {
-    public const string PatientRepete = "patient_repete";
-    public const string OrdonnanceReutilisee = "ordonnance_reutilisee";
-    public const string QuantiteAnormale = "quantite_anormale";
-    public const string PrescripteurInhabituel = "prescripteur_inhabituel";
+    public const string PatientRepete = Pharma.Domain.Reglages.RegleAlertesPsychotropes.PatientRepete;
+    public const string OrdonnanceReutilisee = Pharma.Domain.Reglages.RegleAlertesPsychotropes.OrdonnanceReutilisee;
+    public const string QuantiteAnormale = Pharma.Domain.Reglages.RegleAlertesPsychotropes.QuantiteAnormale;
+    public const string PrescripteurInhabituel = Pharma.Domain.Reglages.RegleAlertesPsychotropes.PrescripteurInhabituel;
     /// <summary>Wilaya du médecin connue et hors de la zone de l'officine (script 118).</summary>
-    public const string PrescripteurHorsZone = "prescripteur_hors_zone";
-    public static readonly IReadOnlySet<string> Tous = new HashSet<string>
-        { PatientRepete, OrdonnanceReutilisee, QuantiteAnormale, PrescripteurInhabituel, PrescripteurHorsZone };
+    public const string PrescripteurHorsZone = Pharma.Domain.Reglages.RegleAlertesPsychotropes.PrescripteurHorsZone;
+    public static readonly IReadOnlySet<string> Tous = Pharma.Domain.Reglages.RegleAlertesPsychotropes.Codes;
 }
 
 /// <summary>
@@ -297,7 +296,8 @@ public sealed class ControleAlertesPsychotropes(IRegistreRenforceDepot depot, IH
 }
 
 /// <summary>Réglage des alertes (titulaire).</summary>
-public sealed class ParametrerAlertesPsychotropes(IRegistreRenforceDepot depot, IPermissionService droits, IJournal? journal = null)
+public sealed class ParametrerAlertesPsychotropes(IRegistreRenforceDepot depot, IPermissionService droits, IJournal? journal = null,
+    Reglages.IGardeReglagesCentraux? garde = null)
 {
     public async Task<IReadOnlyList<RegleAlertePsychotrope>> LireAsync(long utilisateurId, CancellationToken ct = default)
     {
@@ -310,15 +310,19 @@ public sealed class ParametrerAlertesPsychotropes(IRegistreRenforceDepot depot, 
         await droits.ExigerTitulaireAsync(utilisateurId, "régler les alertes du registre des psychotropes", ct);
         foreach (var r in regles)
         {
-            if (!CodesAlertePsychotrope.Tous.Contains(r.Code)) throw new RegleMetierException($"Règle inconnue : {r.Code}.");
-            if (r.Seuil is < 1 or > 1000) throw new RegleMetierException($"{r.Libelle} : seuil entre 1 et 1000.", r.Code);
-            if (r.PeriodeJours is < 1 or > 3650) throw new RegleMetierException($"{r.Libelle} : période entre 1 et 3650 jours.", r.Code);
-            if (r.UnitesParJour is < 1 or > 100) throw new RegleMetierException($"{r.Libelle} : unités par jour entre 1 et 100 (ou vide).", r.Code);
+            Pharma.Domain.Reglages.RegleAlertesPsychotropes.VerifierRegle(r.Code, r.Libelle, r.Seuil, r.PeriodeJours, r.UnitesParJour);
         }
+        if (garde is not null) await garde.ExigerModifiableAsync(Pharma.Domain.Reglages.TablesMutualisables.AlertesPsychotropes, ct);
+        var avant = journal is null ? null : await depot.ReglesAsync(ct);
         await depot.EnregistrerReglesAsync(regles, utilisateurId, ct);
         if (journal is not null)
-            await journal.EcrireAsync(utilisateurId, "reglages_alertes_psychotropes", "regle_alerte_psychotrope", null,
-                regles.ToDictionary(r => r.Code, r => (object?)new { r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur }), null, ct);
+        {
+            var details = regles.ToDictionary(r => r.Code, r => (object?)new { r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur });
+            // Valeurs avant et après (D13)
+            details["avant"] = avant!.ToDictionary(r => r.Code, r => (object?)new { r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur, r.UnitesParJour });
+            details["apres"] = regles.ToDictionary(r => r.Code, r => (object?)new { r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur, r.UnitesParJour });
+            await journal.EcrireAsync(utilisateurId, "reglages_alertes_psychotropes", "regle_alerte_psychotrope", null, details, null, ct);
+        }
     }
 }
 

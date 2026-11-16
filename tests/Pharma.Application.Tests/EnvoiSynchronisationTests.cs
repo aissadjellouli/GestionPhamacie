@@ -57,6 +57,8 @@ public class EnvoiSynchronisationTests
         public readonly List<(string Famille, string Colonne)> Catalogue = [("fournisseurs", "fournisseur.telephone"), ("employes", "utilisateur.nom_complet")];
         public readonly List<ChangementDescendantSync> Recus = [];
         public bool PanneDescendants;
+        /// <summary>Statut imposé à un élément (par clé), comme sync_recevoir_descendant pour un élément « mutu_ » d'une table non mutualisable.</summary>
+        public readonly Dictionary<string, string> StatutsForces = [];
 
         private IReadOnlyList<string> Interdites(IReadOnlyList<string>? familles) =>
             Catalogue.Where(c => !(familles ?? []).Contains(c.Famille)).Select(c => c.Colonne).Distinct().Order(StringComparer.Ordinal).ToList();
@@ -96,6 +98,7 @@ public class EnvoiSynchronisationTests
             {
                 Recus.Add(c);
                 if (c.Version > versionMax) { statuts.Add(StatutsDescendant.Refuse); continue; }
+                if (StatutsForces.TryGetValue(c.Cle, out var force)) { statuts.Add(force); continue; }
                 if (c.Table != "reglage_central") { statuts.Add(StatutsDescendant.TableInconnue); continue; }
                 if (c.Version <= P.FamillesVersion) { statuts.Add(StatutsDescendant.Ancien); continue; }
                 var f = System.Text.Json.JsonDocument.Parse(c.DonneesJson).RootElement.GetProperty("familles").EnumerateArray().Select(x => x.GetString()!);
@@ -612,6 +615,98 @@ public class EnvoiSynchronisationTests
         Assert.Equal(4, b.P.DescendantVersion); // jamais jusqu'à l'élément ignoré (redonné à chaque passage)
         Assert.Contains("ignoré", b.Envois[^1]);
         Assert.Equal(1, b.P.FamillesVersion); // le réglage valide, lui, est appliqué
+    }
+
+    [Fact]
+    public async Task Un_element_mutu_invalide_est_acquitte_et_ne_bloque_pas_les_suivants()
+    {
+        // Script 141 : l'élément d'une table non mutualisable est journalisé et ignoré, mais acquitté (contrairement à « table_inconnue »)
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        s.Autres.Add(new("reglage_central", "mutu_table_inconnue", 5, "{}"));
+        b.StatutsForces["mutu_table_inconnue"] = StatutsDescendant.Invalide;
+        b.Ajouter(1);
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Equal(5, b.P.DescendantVersion);
+        Assert.DoesNotContain("ignoré", b.Envois[^1] ?? "");
+    }
+
+    private static EnvoyerLotsSync EnvoiAvecReglages(Base b, Certificat c, Central s, DepotReglagesEnMemoire reglages)
+    {
+        var f = new FormatV1();
+        return new EnvoyerLotsSync(b, new ConstitutionLotsSync(b, f), f, c, s, new VerrouSync(), null,
+            new Pharma.Application.Reglages.AppliquerReglagesMutualises(reglages));
+    }
+
+    private static DepotReglagesEnMemoire ReglageInventaireRecu()
+    {
+        var d = new DepotReglagesEnMemoire();
+        var t = Pharma.Domain.Reglages.TablesMutualisables.Inventaire;
+        var element = System.Text.Encoding.UTF8.GetString(Pharma.Shared.SerialisationMutuV1.Serialiser(t, new Pharma.Shared.ElementMutuDto("impose", 1, null,
+            new DateTime(2026, 11, 20, 9, 12, 0, DateTimeKind.Utc), "admin-central-1", new Pharma.Shared.MutuInventaireDto(5, 4000m))));
+        d.Etats[t] = d.Etats[t] with { ModeRecu = "impose", VersionRecue = 1, ModeleJson = element };
+        d.Locales[t] = "{\"seuil_boites\":2,\"seuil_montant\":2000}";
+        return d;
+    }
+
+    [Fact]
+    public async Task Les_reglages_recus_sont_appliques_a_chaque_passage_meme_si_le_central_est_coupe()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central { Coupure = true });
+        var d = ReglageInventaireRecu();
+        b.Ajouter(1);
+        var r = await EnvoiAvecReglages(b, c, s, d).ExecuterAsync(Maintenant);
+        Assert.NotNull(r.Erreur);                                          // le dépôt du lot échoue (central coupé)
+        Assert.Equal("applique", d.Etats[Pharma.Domain.Reglages.TablesMutualisables.Inventaire].Etat);   // mais le modèle déjà reçu est appliqué
+    }
+
+    [Fact]
+    public async Task Rien_n_est_applique_si_la_synchronisation_est_desactivee()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        b.P = b.P with { Active = false };
+        var d = ReglageInventaireRecu();
+        await EnvoiAvecReglages(b, c, s, d).ExecuterAsync(Maintenant);
+        Assert.Equal("aucun", d.Etats[Pharma.Domain.Reglages.TablesMutualisables.Inventaire].Etat);
+    }
+
+    [Fact]
+    public async Task Une_panne_de_l_application_des_reglages_n_arrete_pas_l_envoi_des_lots()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        var d = new PanneReglages();
+        b.Ajouter(1);
+        var f = new FormatV1();
+        var r = await new EnvoyerLotsSync(b, new ConstitutionLotsSync(b, f), f, c, s, new VerrouSync(), null,
+            new Pharma.Application.Reglages.AppliquerReglagesMutualises(d)).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Equal(1, s.Dernier);
+        Assert.Contains("Réglages mutualisés non appliqués", b.Envois[^1]);
+    }
+
+    private sealed class PanneReglages : Pharma.Application.Reglages.IReglagesMutualisesDepot
+    {
+        public Task<bool> ApplicationPossibleAsync(CancellationToken ct = default) => throw new InvalidOperationException("panne de la base");
+        public Task<(string Mode, bool AjoutsLocaux)> ModeEffectifAsync(string table, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<Pharma.Application.Reglages.EtatReglage>> EtatsAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<Pharma.Application.Reglages.ITransactionReglage> OuvrirAsync(string table, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task JournaliserAsync(string action, string table, string modeAvant, string modeApres, long? version, string? auteur, long? utilisateurId, CancellationToken ct = default) =>
+            throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task Desactiver_la_synchronisation_libere_les_reglages_imposes_au_journal_pas_la_reactivation()
+    {
+        var b = new Base();
+        var d = new DepotReglagesEnMemoire();
+        d.Etats[Pharma.Domain.Reglages.TablesMutualisables.Inventaire] = d.Etats[Pharma.Domain.Reglages.TablesMutualisables.Inventaire] with { Mode = "impose" };
+        var regler = new ReglerSync(b, new JournalEspion(), null, new Pharma.Application.Reglages.LibererReglagesMutualises(d));
+        await regler.ExecuterAsync(new ReglagesSync(false, "https://central:5090", "filtres", false), 3);
+        var j = Assert.Single(d.Journal);
+        Assert.Equal(("reglage_central_libere", "impose", "local", 3L), (j.Action, j.ModeAvant, j.ModeApres, j.Utilisateur));
+        d.Journal.Clear();
+        await regler.ExecuterAsync(new ReglagesSync(true, "https://central:5090", "filtres", false), 3);   // réactivation : rien à journaliser ici
+        Assert.Empty(d.Journal);
     }
 
     [Fact]

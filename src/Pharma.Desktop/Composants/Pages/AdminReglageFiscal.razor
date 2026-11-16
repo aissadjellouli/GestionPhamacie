@@ -1,0 +1,111 @@
+@page "/admin/reglage-fiscal"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Réglages fiscaux (lot M7, D8, titulaire) : conservation des documents fiscaux (6 à 30 ans), séparateur du CSV de l'export et fuseau qui découpe
+   les périodes du journal fiscal ; le format d'export est fixe. Chaque modification est inscrite au journal avec la valeur avant et après.
+   Peut être fixé ou proposé par le serveur central (bandeau commun). Écran fixe : un seul panneau, aucun tableau. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/reglage-fiscal" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Réglages fiscaux</h1>
+                <p class="sous-titre">Réservé au titulaire · chaque modification est inscrite au journal (valeur avant et après)</p>
+            </div>
+            <button type="button" class="btn btn-principal" disabled="@(p is null || enCours || Fixe)" @onclick="EnregistrerAsync">Enregistrer</button>
+        </div>
+
+        @if (!Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Écran réservé au pharmacien titulaire.</div>
+        }
+        else
+        {
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+            <ReglageCentral Table="parametre_fiscal" OnAdopte="ChargerAsync" />
+
+            @if (p is not null)
+            {
+                <fieldset class="panneau" aria-labelledby="t-fiscal" disabled="@Fixe">
+                    <div>
+                        <h2 id="t-fiscal">Conservation et export du journal fiscal</h2>
+                        <p class="sous-titre">Le journal fiscal des ventes, ses sceaux et son export CSV (Administration › Contrôle interne › Journal fiscal) suivent ces réglages.</p>
+                    </div>
+                    <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))">
+                        <div class="champ">
+                            <label for="f-conservation" class="requis">Conservation des documents (années)</label>
+                            <input id="f-conservation" data-champ="conservation_annees" type="number" min="6" max="30" @bind="p.ConservationAnnees" />
+                            <span class="tuile-note">de 6 à 30 ans</span>
+                        </div>
+                        <div class="champ">
+                            <label for="f-format">Format de l’export</label>
+                            <input id="f-format" data-champ="format_export_dgi" type="text" value="@p.FormatExportDgi" disabled />
+                            <span class="tuile-note">fixe : seul csv-v1 est pris en charge</span>
+                        </div>
+                        <div class="champ">
+                            <label for="f-separateur" class="requis">Séparateur du fichier CSV</label>
+                            <select id="f-separateur" data-champ="separateur_csv" @bind="p.SeparateurCsv">
+                                <option value=";">Point-virgule ( ; )</option>
+                                <option value=",">Virgule ( , )</option>
+                                <option value="&#9;">Tabulation</option>
+                            </select>
+                        </div>
+                        <div class="champ">
+                            <label for="f-fuseau" class="requis">Fuseau horaire</label>
+                            <input id="f-fuseau" data-champ="fuseau" type="text" maxlength="64" placeholder="Africa/Algiers" autocomplete="off" @bind="p.Fuseau" @bind:event="oninput" />
+                            <span class="tuile-note">découpe les jours du journal fiscal</span>
+                        </div>
+                    </div>
+                </fieldset>
+            }
+            else if (erreur is null) { <Chargement /> }
+        }
+        <p class="pied-page">Sans serveur central, ces réglages se font ici. Avec un serveur central, il peut les fixer pour toutes les officines (« Fixé par le serveur central ») ou les proposer.</p>
+    </div>
+</div>
+
+@code {
+    private sealed class Saisie
+    {
+        public int ConservationAnnees { get; set; }
+        public string FormatExportDgi { get; set; } = "csv-v1";
+        public string SeparateurCsv { get; set; } = ";";
+        public string Fuseau { get; set; } = "";
+    }
+
+    private Saisie? p;
+    private bool enCours;
+    private string? erreur, message;
+
+    /// <summary>Réglages fixés par le serveur central (table parametre_fiscal imposée).</summary>
+    private bool Fixe => Api.ReglageCentral("parametre_fiscal").Impose;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.A("role.titulaire")) await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        var (d, e) = await Api.ParametreFiscalAsync();
+        erreur = e;
+        if (d is not null) p = new Saisie { ConservationAnnees = d.ConservationAnnees, FormatExportDgi = d.FormatExportDgi, SeparateurCsv = d.SeparateurCsv, Fuseau = d.Fuseau };
+    }
+
+    private async Task EnregistrerAsync()
+    {
+        if (p is null) return;
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            erreur = await Api.EnregistrerParametreFiscalAsync(new ParametreFiscalDto(p.ConservationAnnees, p.FormatExportDgi, p.SeparateurCsv, p.Fuseau.Trim()));
+            if (erreur is not null) return;
+            message = "Réglages fiscaux enregistrés.";
+            await ChargerAsync();
+        }
+        finally { enCours = false; }
+    }
+}

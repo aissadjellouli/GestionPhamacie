@@ -372,6 +372,11 @@ public interface IAlertesTitulaire
     /// <paramref name="sms"/> court, sans accents. Le SMS suit le réglage « SMS sauvegarde » (alertes techniques).
     /// </summary>
     Task SynchronisationAsync(string objet, string detail, string sms, CancellationToken ct = default) => Task.CompletedTask;
+    /// <summary>
+    /// Tables de réglages devenues imposées par le serveur central (sujet « reglages_centraux », mutualisation, docs/conception-synchronisation.md § 16 bis.6) :
+    /// un seul message par passage ; précise si la valeur de l'officine a été remplacée (l'ancienne est au journal). Aucune donnée de patient.
+    /// </summary>
+    Task ReglagesImposesAsync(IReadOnlyList<Reglages.ReglageImpose> tables, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>
@@ -466,6 +471,23 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
             return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Synchronisation, objet,
                 detail, null, r.SmsSauvegarde ? sms : null), ct);
         });
+
+    public Task ReglagesImposesAsync(IReadOnlyList<Reglages.ReglageImpose> tables, CancellationToken ct = default)
+    {
+        if (tables.Count == 0) return Task.CompletedTask;
+        const string objet = "Réglages fixés par le serveur central";
+        return ProtegerAsync(TypeNotification.ReglagesCentraux, objet, async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            var lignes = tables.Select(t => $"- {t.Libelle} : fixé par le serveur central" +
+                (t.ValeurRemplacee ? " ; votre valeur a été remplacée, l’ancienne est au journal" : "") +
+                (t.RemisesLocalesArretees > 0 ? $" ; {t.RemisesLocalesArretees} remise(s) locale(s) arrêtée(s) (conservées dans la liste, jamais supprimées)" : "") + ".");
+            var detail = "Le serveur central impose désormais ces réglages à l’officine :" + Environment.NewLine + string.Join(Environment.NewLine, lignes)
+                + Environment.NewLine + Environment.NewLine + "Le détail (valeur avant et après) est dans le journal du logiciel.";
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.ReglagesCentraux, objet, detail, null,
+                r.SmsSauvegarde ? $"{objet}: {tables.Count} reglage(s), voir le journal du logiciel." : null), ct);
+        });
+    }
 
     public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default)
     {

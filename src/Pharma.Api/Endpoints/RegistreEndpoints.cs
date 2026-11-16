@@ -88,7 +88,8 @@ internal static class RegistreEndpoints
         // Réglages des alertes (titulaire)
         psy.MapGet("/regles", async (ParametrerAlertesPsychotropes p, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok((await p.LireAsync(user.UtilisateurId(), ct)).Select(r => new RegleAlertePsychotropeDto(r.Code, r.Libelle, r.Active, r.Seuil,
-                r.PeriodeJours, r.ExigerValideur, r.UnitesParJour)).ToList()));
+                r.PeriodeJours, r.ExigerValideur, r.UnitesParJour)).ToList()))
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.AlertesPsychotropes);
         psy.MapPut("/regles", async (List<RegleAlertePsychotropeDto> regles, ParametrerAlertesPsychotropes p, ClaimsPrincipal user, CancellationToken ct) =>
         {
             await p.EnregistrerAsync(user.UtilisateurId(), regles.Select(r => new RegleAlertePsychotrope(r.Code, r.Libelle, r.Active, r.Seuil,

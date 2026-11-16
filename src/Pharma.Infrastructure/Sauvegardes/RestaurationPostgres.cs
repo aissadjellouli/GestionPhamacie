@@ -218,6 +218,12 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
     /// <summary>Nom de base de 63 caractères au plus (limite de PostgreSQL), suffixe gardé.</summary>
     private static string Limiter(string nom, string suffixe) => (nom.Length + suffixe.Length > 63 ? nom[..(63 - suffixe.Length)] : nom) + suffixe;
 
+    /// <summary>
+    /// Options de session des scripts rejoués après une restauration : avertissements seulement, et marqueur « pharma.reglage_central = on »
+    /// (script 141) sans lequel la garde des réglages mutualisés refuserait les écritures des scripts dans une table imposée par le serveur central.
+    /// </summary>
+    public const string OptionsScripts = "-c client_min_messages=warning -c pharma.reglage_central=on";
+
     private async Task<(int Code, string Erreurs)> LancerAsync(string outil, string[] arguments, CancellationToken ct, bool scripts = false)
     {
         var info = new ProcessStartInfo(Outil(outil))
@@ -227,7 +233,7 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
         foreach (var a in arguments) info.ArgumentList.Add(a);
         info.Environment["PGPASSWORD"] = connexion.Password ?? "";   // jamais sur la ligne de commande
         info.Environment["PGCLIENTENCODING"] = "UTF8";
-        if (scripts) info.Environment["PGOPTIONS"] = "-c client_min_messages=warning";
+        if (scripts) info.Environment["PGOPTIONS"] = OptionsScripts;
         using var p = Process.Start(info) ?? throw new InvalidOperationException($"{outil} n'a pas pu démarrer.");
         var sortie = p.StandardOutput.ReadToEndAsync(ct);
         var erreurs = p.StandardError.ReadToEndAsync(ct);

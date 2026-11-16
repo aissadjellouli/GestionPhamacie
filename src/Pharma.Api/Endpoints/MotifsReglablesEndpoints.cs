@@ -26,7 +26,8 @@ internal static class MotifsReglablesEndpoints
                 var p = await lister.ExecuterAsync(liste, etat, q, DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
                 return Results.Ok(new PageDto<MotifReglableDto>(p.Lignes.Select(Dto).ToList(), p.Total, p.Numero, p.Taille));
             })
-           .ExigerPermission(Permissions.AdminParametres);
+           .ExigerPermission(Permissions.AdminParametres)
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Motifs);
 
         api.MapPost("/motifs", async (SaisieMotifReglableDto d, EnregistrerMotifReglable enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await enregistrer.ExecuterAsync(null, d.Liste, d.Libelle, true, user.UtilisateurId(), ct, d.Effet, d.Detail))))
@@ -37,5 +38,5 @@ internal static class MotifsReglablesEndpoints
            .ExigerPermission(Permissions.AdminParametres);
     }
 
-    private static MotifReglableDto Dto(MotifReglable m) => new(m.Id, m.Liste, m.Code, m.Libelle, m.Actif, m.Systeme, m.Effet, m.Detail);
+    private static MotifReglableDto Dto(MotifReglable m) => new(m.Id, m.Liste, m.Code, m.Libelle, m.Actif, m.Systeme, m.Effet, m.Detail, m.ModeleCodeCentral);
 }

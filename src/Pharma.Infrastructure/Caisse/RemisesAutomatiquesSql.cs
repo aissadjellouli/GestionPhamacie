@@ -35,11 +35,11 @@ public sealed class RemisesAutomatiquesSql(NpgsqlDataSource db) : IRemisesAutoma
 
     private const string Selection = """
         SELECT ra.id, ra.produit_id, p.nom_commercial, ra.categorie, c.libelle, ra.pourcentage, ra.date_debut, ra.date_fin, ra.motif,
-               uc.nom_complet, ra.cree_le, ra.arretee_le, ua.nom_complet
+               coalesce(uc.nom_complet, 'Serveur central'), ra.cree_le, ra.arretee_le, ua.nom_complet, ra.modele_cle
         FROM remise_automatique ra
         LEFT JOIN produit p ON p.id = ra.produit_id
         LEFT JOIN categorie_produit c ON c.code = ra.categorie
-        JOIN utilisateur uc ON uc.id = ra.cree_par
+        LEFT JOIN utilisateur uc ON uc.id = ra.cree_par
         LEFT JOIN utilisateur ua ON ua.id = ra.arretee_par
         """;
 
@@ -47,7 +47,7 @@ public sealed class RemisesAutomatiquesSql(NpgsqlDataSource db) : IRemisesAutoma
         r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3),
         r.IsDBNull(4) ? null : r.GetString(4), r.GetDecimal(5), r.GetFieldValue<DateOnly>(6), r.GetFieldValue<DateOnly>(7),
         r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9), r.GetDateTime(10), r.IsDBNull(11) ? null : r.GetDateTime(11),
-        r.IsDBNull(12) ? null : r.GetString(12));
+        r.IsDBNull(12) ? null : r.GetString(12), r.IsDBNull(13) ? null : r.GetString(13));
 
     public async Task<IReadOnlyList<RemiseAutomatique>> ListerAsync(CancellationToken ct = default)
     {

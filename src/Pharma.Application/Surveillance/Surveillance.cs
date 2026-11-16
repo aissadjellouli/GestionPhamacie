@@ -141,7 +141,7 @@ public sealed class TraiterSurveillance(ISurveillance surveillance, IPermissionS
     }
 }
 
-public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionService droits, IJournal journal)
+public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionService droits, IJournal journal, Reglages.IGardeReglagesCentraux? garde = null)
 {
     public async Task<ParametresSurveillance> LireAsync(long utilisateurId, CancellationToken ct = default)
     {
@@ -152,32 +152,20 @@ public sealed class ReglerSurveillance(ISurveillance surveillance, IPermissionSe
     public async Task EnregistrerAsync(ParametresSurveillance p, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "régler le contrôle interne", ct);
-        if (p.SeuilLignesRetirees < 1 || p.SeuilTiroir < 1 || p.SeuilAttentesAbandonnees < 1 || p.SeuilRemises < 1 || p.SeuilRemisesPatient < 1
-            || p.SeuilAjustements < 1 || p.SeuilCasses < 1 || p.SeuilEchantillons < 1 || p.SeuilAutorisationsValideur < 1
-            || p.SeuilAutorisationsEmploye < 1 || p.SeuilChangementsPoste < 1 || p.SeuilBaissesPrix < 1 || p.SeuilSortiesTiroir < 1)
-            throw new RegleMetierException("Chaque seuil doit être d’au moins 1.");
-        if (p.SeuilCreditNouveauPatient <= 0 || p.SeuilCreditsJour <= 0)
-            throw new RegleMetierException("Les montants de crédit surveillés doivent être supérieurs à 0.", "seuil_credit");
-        if (p.JoursComptageSensibles is < 1 or > 90)
-            throw new RegleMetierException("Comptage des produits sensibles : tous les 1 à 90 jours.", "jours_sensibles");
-        if (p.JoursAvoirRetour is < 1 or > 365)
-            throw new RegleMetierException("Retour sans avoir : délai de 1 à 365 jours.", "jours_avoir");
-        if (p.JoursPatientRecent is < 1 or > 90)
-            throw new RegleMetierException("Patient récent : de 1 à 90 jours.", "jours_patient_recent");
-        if (p.JoursCreditSansRemboursement is < 1 or > 365)
-            throw new RegleMetierException("Crédit jamais remboursé : délai de 1 à 365 jours.", "jours_credit");
-        if (p.MinutesPostesSimultanes is < 1 or > 120)
-            throw new RegleMetierException("Postes simultanés : de 1 à 120 minutes.", "minutes_postes");
-        if ((p.HeureOuverture is null) != (p.HeureFermeture is null))
-            throw new RegleMetierException("Horaires : renseignez l’ouverture et la fermeture, ou aucune des deux (pas de contrôle).", "heure_ouverture");
-        // Une plage peut passer minuit (ouverture 08:00, fermeture 00:30) ; ouverture et fermeture identiques n'ont pas de sens
-        if (p.HeureOuverture is { } o && p.HeureFermeture is { } f && o == f)
-            throw new RegleMetierException("Horaires : l’ouverture et la fermeture doivent être différentes.", "heure_ouverture");
+        Pharma.Domain.Reglages.RegleSurveillance.VerifierSeuils(new Pharma.Domain.Reglages.SeuilsSurveillance(p.SeuilLignesRetirees, p.SeuilTiroir,
+            p.SeuilAttentesAbandonnees, p.SeuilRemises, p.SeuilRemisesPatient, p.SeuilAjustements, p.SeuilCasses, p.SeuilEchantillons,
+            p.JoursComptageSensibles, p.ReceptionAveugle, p.JoursAvoirRetour, p.SeuilCreditNouveauPatient, p.JoursPatientRecent, p.SeuilCreditsJour,
+            p.JoursCreditSansRemboursement, p.SeuilAutorisationsValideur, p.SeuilAutorisationsEmploye, p.MinutesPostesSimultanes,
+            p.SeuilChangementsPoste, p.SeuilBaissesPrix, p.SeuilSortiesTiroir));
+        Pharma.Domain.Reglages.RegleSurveillance.VerifierHoraires(p.HeureOuverture, p.HeureFermeture);
         var avant = Valeurs(await surveillance.ParametresAsync(ct));
-        await surveillance.EnregistrerParametresAsync(p, ct);
         // Journal des modifications : chaque réglage changé, avec l'ancienne et la nouvelle valeur
         var changes = Valeurs(p).Where(v => !Equals(avant.GetValueOrDefault(v.Key), v.Value))
             .ToDictionary(v => v.Key, v => (object?)new { avant = avant.GetValueOrDefault(v.Key), apres = v.Value });
+        // Seuils imposés par le serveur central : refus si un seuil change ; les horaires d'ouverture restent locaux (D7)
+        if (garde is not null && changes.Keys.Any(k => k != "horaires"))
+            await garde.ExigerModifiableAsync(Pharma.Domain.Reglages.TablesMutualisables.Surveillance, ct);
+        await surveillance.EnregistrerParametresAsync(p, ct);
         if (changes.Count > 0)
             await journal.EcrireAsync(utilisateurId, "reglages_surveillance", "parametre_surveillance", 1, changes, null, ct);
     }

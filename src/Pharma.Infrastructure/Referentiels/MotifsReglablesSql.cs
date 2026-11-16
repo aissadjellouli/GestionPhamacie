@@ -10,7 +10,7 @@ public sealed class MotifsReglablesSql(NpgsqlDataSource db) : IMotifsReglables
     public async Task<IReadOnlyList<MotifReglable>> ListerAsync(string? liste, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT id, liste, code, libelle, actif, systeme, ordre, effet, detail FROM motif_reglable
+            SELECT id, liste, code, libelle, actif, systeme, ordre, effet, detail, modele_code_central FROM motif_reglable
             WHERE $1::text IS NULL OR liste = $1 ORDER BY liste, ordre, libelle
             """);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)liste ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
@@ -18,7 +18,7 @@ public sealed class MotifsReglablesSql(NpgsqlDataSource db) : IMotifsReglables
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
             resultat.Add(new MotifReglable(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetBoolean(4), r.GetBoolean(5), r.GetInt32(6),
-                r.GetString(7), r.GetString(8)));
+                r.GetString(7), r.GetString(8), r.GetBoolean(9)));
         return resultat;
     }
 

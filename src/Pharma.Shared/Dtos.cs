@@ -515,7 +515,7 @@ public sealed record CategorieProduitDto(string Code, string Libelle, bool Medic
 
 /// <summary>Remise automatique (produit OU catégorie) ; Etat : en_cours, a_venir, terminee ou arretee.</summary>
 public sealed record RemiseAutomatiqueDto(long Id, long? ProduitId, string? Produit, string? Categorie, string? CategorieLibelle, decimal Pourcentage,
-    DateOnly Debut, DateOnly Fin, string? Motif, string CreePar, DateTime CreeLe, DateTime? ArreteeLe, string? ArreteePar, string Etat);
+    DateOnly Debut, DateOnly Fin, string? Motif, string CreePar, DateTime CreeLe, DateTime? ArreteeLe, string? ArreteePar, string Etat, bool DuCentral = false);
 public sealed record RemiseAutomatiqueSaisieDto(long? ProduitId, string? Categorie, decimal Pourcentage, DateOnly Debut, DateOnly Fin, string? Motif);
 public sealed record ClassementProduitDto(long ProduitId, string Nom, string Classe, string Categorie, string? ListePsychotrope);
 public sealed record ClassementProduitRequete(string? Categorie, string? ListePsychotrope);

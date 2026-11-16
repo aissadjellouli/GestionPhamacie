@@ -22,6 +22,16 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var echecs = 0;
+        // Au démarrage : les modèles de réglages déjà reçus du serveur central sont appliqués sans attendre un échange (central injoignable, redémarrage)
+        try
+        {
+            using var demarrage = services.CreateScope();
+            await demarrage.ServiceProvider.GetRequiredService<Pharma.Application.Reglages.AppliquerReglagesMutualises>().ExecuterAsync(stoppingToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Réglages mutualisés : application au démarrage impossible");
+        }
         await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {

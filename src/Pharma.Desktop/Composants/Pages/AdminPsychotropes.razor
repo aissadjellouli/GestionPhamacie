@@ -16,19 +16,21 @@
         }
         else if (rubrique == "alertes")
         {
-            <div class="titre-page">
+            <div class="titre-page titre-actions-cote">
                 <div>
                     <h1>Psychotropes · Alertes du registre</h1>
                     <p class="sous-titre">À la délivrance d’un psychotrope ou stupéfiant : avertissement ; « Forcer » demande un motif, garde l’employé et, si la règle l’exige, le valideur (code comptoir).</p>
                 </div>
-                @if (regles.Count > 0) { <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerReglesAsync">Enregistrer</button> }
+                @if (regles.Count > 0) { <div class="actions"><button type="button" class="btn btn-principal" disabled="@(enCours || Fixe)" @onclick="EnregistrerReglesAsync">Enregistrer</button></div> }
             </div>
             @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
             @if (message is not null) { <div class="succes" role="status">@message</div> }
+            @* Mutualisation (lot M7) : règles fixées ou proposées par le serveur central ; la zone de l'officine reste locale *@
+            <ReglageCentral Table="regle_alerte_psychotrope" Detail="Les règles ne se modifient pas ici ; la zone de l’officine (wilayas) reste locale." OnAdopte="RechargerReglesAsync" />
             @if (regles.Count == 0 && erreur is null) { <Chargement /> }
             else
             {
-                <div class="tableau-cadre">
+                <div class="tableau-cadre" data-hauteur-min="120">
                     <table class="tableau">
                         <thead><tr><th scope="col">Alerte</th><th scope="col">Active</th><th scope="col" class="nombre">Seuil</th><th scope="col" class="nombre">Période (jours)</th><th scope="col" class="nombre">Unités / jour</th><th scope="col">Valideur exigé</th><th scope="col">Règle</th></tr></thead>
                         <tbody>
@@ -36,26 +38,26 @@
                             {
                                 <tr>
                                     <td>@r.Libelle</td>
-                                    <td><input type="checkbox" aria-label="@($"{r.Libelle} : active")" @bind="r.Active" /></td>
+                                    <td><input type="checkbox" aria-label="@($"{r.Libelle} : active")" disabled="@Fixe" @bind="r.Active" /></td>
                                     @if (r.Code == "prescripteur_hors_zone")
                                     {
                                         <td class="nombre detail">—</td><td class="nombre detail">—</td>
                                     }
                                     else
                                     {
-                                        <td class="nombre"><input type="number" min="1" max="1000" style="width: 90px" aria-label="@($"{r.Libelle} : seuil")" @bind="r.Seuil" /></td>
-                                        <td class="nombre"><input type="number" min="1" max="3650" style="width: 90px" aria-label="@($"{r.Libelle} : période")" @bind="r.PeriodeJours" /></td>
+                                        <td class="nombre"><input type="number" min="1" max="1000" style="width: 90px" aria-label="@($"{r.Libelle} : seuil")" disabled="@Fixe" @bind="r.Seuil" /></td>
+                                        <td class="nombre"><input type="number" min="1" max="3650" style="width: 90px" aria-label="@($"{r.Libelle} : période")" disabled="@Fixe" @bind="r.PeriodeJours" /></td>
                                     }
                                     @if (r.Code == "quantite_anormale")
                                     {
                                         <td class="nombre"><input type="number" min="1" max="100" style="width: 80px" aria-label="Quantité anormale : unités par jour de traitement (vide : contrôle inactif)"
-                                                                  title="Boîtes × contenance comparées à la durée du traitement × ce nombre (vide : contrôle inactif)" @bind="r.UnitesParJour" /></td>
+                                                                  title="Boîtes × contenance comparées à la durée du traitement × ce nombre (vide : contrôle inactif)" disabled="@Fixe" @bind="r.UnitesParJour" /></td>
                                     }
                                     else
                                     {
                                         <td class="nombre detail">—</td>
                                     }
-                                    <td><input type="checkbox" aria-label="@($"{r.Libelle} : valideur exigé")" @bind="r.ExigerValideur" /></td>
+                                    <td><input type="checkbox" aria-label="@($"{r.Libelle} : valideur exigé")" disabled="@Fixe" @bind="r.ExigerValideur" /></td>
                                     <td class="detail">@Explication(r.Code)</td>
                                 </tr>
                             }
@@ -202,6 +204,15 @@
     }
 
     private int? pageSuiviRestauree;
+
+    /// <summary>Règles fixées par le serveur central (table regle_alerte_psychotrope imposée).</summary>
+    private bool Fixe => Api.ReglageCentral("regle_alerte_psychotrope").Impose;
+
+    private async Task RechargerReglesAsync()
+    {
+        charge = null;
+        await OnParametersSetAsync();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
