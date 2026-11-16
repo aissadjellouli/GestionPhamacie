@@ -18,7 +18,12 @@ d'œil, et éloignées du menu pour ne pas être confondues avec un écran. Leur
 
 L'en-tête occupe **toute la largeur de la fenêtre** (validé le 2026-11-13) : logo et nom dans les 240 px de gauche, au-dessus de la
 colonne du menu vertical, le reste réparti jusqu'au bord droit. Nom du logiciel et « pharmacie · poste » restent sur une ligne,
-coupés par « … » s'ils sont trop longs (texte complet au survol).
+coupés par « … » s'ils sont trop longs (texte complet au survol). Quand la fenêtre se resserre (≤ 1 450 px, dont 1 366 × 768), le nom de
+la pharmacie est **le premier masqué** (logo seul, nom au survol) : le libellé de « ← *écran précédent* » reste lisible **en entier**
+(« Administration », « Dettes et créances », « Tableau de bord financier »…, plafond 200 px) ; si la place manquait vraiment (nom d'employé très
+long, zoom), seul ce bouton se coupe par « … » (complet en infobulle et pour les lecteurs d'écran), jamais un retour à la ligne ni un
+chevauchement. Règle de vérification d'un changement d'en-tête : 1 366 × 768 et 1 536 × 890, clair et sombre, sans défilement, sans
+libellé tronqué, rectangles des éléments sans chevauchement.
 
 - **Premier niveau : les écrans du quotidien** : Caisse, Stock, Achats, Alertes (avec le compteur des alertes urgentes).
 - **Groupes déroulants** : **Finances ▾** (Factures, Trésorerie, Dettes et créances, Chifa « à venir ») et **Pilotage ▾**

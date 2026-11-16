@@ -744,9 +744,10 @@ a.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-
 @media (prefers-reduced-motion: reduce) { .entete .chevron { transition: none; } }
 /* Flèches des pastilles « ← écran précédent » et « ⇄ Changer » : agrandies, le texte garde sa taille */
 .entete .fleche { font-size: 22px; line-height: 1; font-weight: 700; margin-top: -2px; }
-/* En-tête sur une ligne même avec un long nom d'écran précédent (« ← Dettes et créances ») : nom raccourci par « … »,
-   complet au survol (title) ; espaces resserrés */
-.entete .libelle-retour { display: inline-block; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* En-tête sur une ligne même avec un long nom d'écran précédent (« ← Tableau de bord financier », 183 px, le plus long) : le nom
+   s'affiche en entier à toutes les largeurs (plafond 200 px) ; seul le bouton peut se resserrer, par « … » (complet au survol),
+   si l'en-tête manque de place (nom d'employé très long, zoom) ; espaces resserrés */
+.entete .libelle-retour { display: inline-block; min-width: 0; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .entete-interieur { gap: 12px 16px; }
 .nav a, .nav .nav-bouton { padding-left: 10px; padding-right: 10px; }
 /* En-tête des employés : une seule ligne ; si la fenêtre est étroite, c'est le menu qui se resserre (ses entrées passent
@@ -754,6 +755,7 @@ a.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-
 .entete-interieur:has(.outils-utilisateur) { flex-wrap: nowrap; }
 .entete-interieur:has(.outils-utilisateur) .nav { flex: 1 1 auto; min-width: 0; }
 .entete-interieur:has(.outils-utilisateur) > :is(.marque, .bouton-retour, .outils-utilisateur) { flex: none; }
+.entete-interieur:has(.outils-utilisateur) > .bouton-retour { flex: 0 1 auto; min-width: 0; }
 /* Menu des domaines toujours sur une ligne et toujours entier (2026-11-14) : il garde sa largeur ; quand la fenêtre se resserre
    (ou au zoom), ce sont les autres éléments de l'en-tête qui se compactent, par étapes. L'en-tête garde sa hauteur : l'écran reste fixe. */
 .entete-interieur:has(.outils-utilisateur) .nav { flex: 1 0 auto; flex-wrap: nowrap; min-width: max-content; }
@@ -762,11 +764,10 @@ a.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-
 .largeur-1850 .entete .nav .touche { display: none; }
 /* 2. « Rechercher… » devient la loupe seule (Ctrl K reste affiché) */
 .largeur-1650 .entete .bouton-recherche .texte-recherche { display: none; }
-/* 3. Logo seul à gauche (nom au survol), espaces resserrés, écran précédent abrégé */
+/* 3. Logo seul à gauche (nom au survol), espaces resserrés ; le nom de l'écran précédent reste entier */
 .largeur-1450 .entete .marque { width: auto; flex: none; padding-left: 16px; }
 .largeur-1450 .entete .marque-textes { display: none; }
 .largeur-1450 .entete-interieur:has(.outils-utilisateur) .nav :is(a, .nav-bouton) { padding-left: 6px; padding-right: 6px; letter-spacing: 0; }
-.largeur-1450 .entete .libelle-retour { max-width: 110px; }
 /* 4. Très étroit : « Ctrl K » et le nom de l'écran précédent disparaissent aussi (la flèche ← reste) */
 .largeur-1250 .entete .bouton-recherche .touche, .largeur-1250 .entete .libelle-retour { display: none; }
 /* Menu un peu resserré (l'en-tête ne dépasse jamais 1 440 px de large) pour rester sur un rang */
@@ -777,7 +778,6 @@ a.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-
 /* Fenêtres étroites : le logo reste, le nom du logiciel et de la pharmacie passent dans l'info-bulle du logo */
 @media (max-width: 1450px) {
   .entete-interieur:has(.outils-utilisateur) .marque-textes { display: none; }
-  .entete-interieur:has(.outils-utilisateur) .libelle-retour { max-width: 110px; }
 }
 /* Zoom dans le menu à son nom : − 100 % + */
 .entete .menu-panneau .ligne-zoom { display: flex; align-items: center; gap: 6px; padding: 6px 12px; color: var(--texte); font-size: 14px; font-weight: 500; }

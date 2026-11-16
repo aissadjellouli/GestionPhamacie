@@ -57,7 +57,9 @@
   avant d'afficher le bon mode.
 - **En-tête toujours sur une ligne**, menu des domaines toujours entier : selon la largeur utile (fenêtre ÷ zoom du poste, classes
   `largeur-*` posées par `poste.js`), d'abord les lettres de raccourci disparaissent (≤ 1 850 px), puis « Rechercher… » devient la loupe
-  (≤ 1 650 px), puis le nom du logiciel et l'écran précédent se réduisent (≤ 1 450 px, ≤ 1 250 px).
+  (≤ 1 650 px), puis le nom du logiciel et de la pharmacie se réduisent au logo (≤ 1 450 px, texte au survol du logo). Le nom de
+  l'écran précédent reste **entier** (plafond 200 px, le plus long : « Tableau de bord financier », 183 px ; mesuré à 1 366 × 768 et
+  1 536 × 890, clair et sombre) : seul le bouton se resserre, par « … » et infobulle, si la place manque ; il disparaît sous 1 250 px.
 - **Caisse : F7** remet le curseur dans « Scanner ou rechercher un produit » (repris de l'exemple Pharma) ; F12 encaisse.
 
 ## Retour à l'écran précédent
