@@ -23,7 +23,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 138 (095, 098, 099, 132, 134, 137 et 138 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 140 (095, 098, 099, 132, 134, 137, 138 et 139 n'ajoutent aucune donnée de référence ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -98,6 +98,7 @@ INSERT INTO permission (code, module, libelle, sensible) VALUES
     ('admin.sauvegardes', 'Administration', 'Gérer les sauvegardes', true),
     ('admin.utilisateurs', 'Administration', 'Gérer les utilisateurs et les droits', true),
     ('reprise.doublons', 'Administration', 'Valider les doublons d''import', true),
+    ('sync.suivre', 'Administration', 'Voir le bandeau de synchronisation', false),
     ('caisse.annuler_vente', 'Caisse', 'Annuler une vente validée', true),
     ('caisse.cloturer', 'Caisse', 'Faire la relève et clôturer la caisse', true),
     ('caisse.ouvrir_tiroir', 'Caisse', 'Ouvrir le tiroir sans vente', true),
@@ -148,6 +149,7 @@ SELECT r.id, d.permission FROM (VALUES
     ('titulaire', 'admin.sauvegardes'),
     ('titulaire', 'admin.utilisateurs'),
     ('titulaire', 'reprise.doublons'),
+    ('titulaire', 'sync.suivre'),
     ('titulaire', 'caisse.annuler_vente'),
     ('titulaire', 'caisse.cloturer'),
     ('titulaire', 'caisse.ouvrir_tiroir'),

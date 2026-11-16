@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 138 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 140 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 138 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 140 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -1033,7 +1033,7 @@ CREATE FUNCTION public.contenance_depuis_conditionnement(p_conditionnement text)
     LANGUAGE sql IMMUTABLE
     AS $_$
     -- motif de ContenanceProduit.Boite(), recopié tel quel (test ContenanceDepuisNomenclatureTests)
-    SELECT substring(p_conditionnement FROM '(?i)^\s*(?:B|BTE|BO[IÎiî]TE)\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})(?:\s*(?:SACHETS?(?:(?:\s+|-)DOSES?)?|SACH|SCH|AMPOULES?|AMPS?|AMP\.?\s+BUV|CPR?S?|CP\.?\s+EFF|COMPRIM[EÉeé]S?(?:\s+EFFERVESCENTS?)?|G[EÉeé]LULES?|SUPPOSITOIRES?|SUPPO|OVULES?|CAPSULES?|PATCH(?:E?S)?|DISPOSITIFS?\s+TRANSDERMIQUES?|UNIDOSES?|R[EÉeé]CIPIENTS\s+UNIDOSES)\.?(?:\s*(?:DE\s*)?[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L))?)?\s*$')::int
+    SELECT substring(p_conditionnement FROM '(?i)^\s*(?:B|BTE|BO[IÎiî]TE)\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})(?:\s*(?:SACHETS?(?:(?:\s+|-)DOSES?)?|SACH|SCH|AMPOULES?|AMPS?|AMP\.?\s+BUV|CPR?S?|CP\.?\s+EFF|COMPRIM[EÉeé]S?(?:\s+EFFERVESCENTS?)?|G[EÉeé]LULES?|SUPPOSITOIRES?|SUPPO|OVULES?|CAPSULES?|PATCH(?:E?S)?|DISPOSITIFS?\s+TRANSDERMIQUES?|UNIDOSES?|R[EÉeé]CIPIENTS\s+UNIDOSES|FLACONS?|FLC|FL|(?:SERINGUES?|SERING\.?|SERIN|SER)(?:\s*PR[EÉeé][\s-]*REMPL[A-Za-zÉéÈè]*\.?)?|STYLOS?(?:\s*PR[EÉeé][\s-]*REMPL[A-Za-zÉéÈè]*\.?)?|CART(?:OUCHES?)?|POCHES?|TUBES?)\.?(?:\s*(?:DE\s*|/\s*)?[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L)|\s*\(\s*[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L)\s*\))?)?\s*$')::int
 $_$;
 
 
@@ -3737,6 +3737,26 @@ END $$;
 
 
 --
+-- Name: sync_noter_alerte(text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_alerte(p_nature text, p_quand timestamp with time zone) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF p_nature NOT IN ('retard', 'erreur', 'certificat', 'quota') THEN
+        RAISE EXCEPTION 'Synchronisation : sujet d''alerte inconnu (%)', p_nature;
+    END IF;
+    UPDATE sync_parametre SET
+        alerte_retard_le     = CASE WHEN p_nature = 'retard'     THEN p_quand ELSE alerte_retard_le END,
+        alerte_erreur_le     = CASE WHEN p_nature = 'erreur'     THEN p_quand ELSE alerte_erreur_le END,
+        alerte_certificat_le = CASE WHEN p_nature = 'certificat' THEN p_quand ELSE alerte_certificat_le END,
+        alerte_quota_le      = CASE WHEN p_nature = 'quota'      THEN p_quand ELSE alerte_quota_le END
+    WHERE id = 1;
+END $$;
+
+
+--
 -- Name: sync_noter_envoi(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3746,6 +3766,35 @@ CREATE FUNCTION public.sync_noter_envoi(p_erreur text) RETURNS void
     UPDATE sync_parametre SET dernier_envoi_le = now(), derniere_erreur = left(p_erreur, 500),
                               derniere_erreur_le = CASE WHEN p_erreur IS NULL THEN NULL ELSE now() END
     WHERE id = 1
+$$;
+
+
+--
+-- Name: sync_noter_passage(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_passage(p_nature text) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF p_nature IS NOT NULL AND p_nature NOT IN ('autre', 'quota') THEN
+        RAISE EXCEPTION 'Synchronisation : nature d''erreur inconnue (%)', p_nature;
+    END IF;
+    UPDATE sync_parametre
+    SET erreur_depuis_le = CASE WHEN p_nature IS NULL THEN NULL ELSE coalesce(erreur_depuis_le, now()) END,
+        erreur_nature = p_nature
+    WHERE id = 1;
+END $$;
+
+
+--
+-- Name: sync_noter_purge_erreur(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_purge_erreur(p_erreur text) RETURNS void
+    LANGUAGE sql
+    AS $$
+    UPDATE sync_parametre SET derniere_purge_erreur = left(p_erreur, 500) WHERE id = 1
 $$;
 
 
@@ -3773,6 +3822,69 @@ BEGIN
     END IF;
     RETURN NEW;
 END $$;
+
+
+--
+-- Name: sync_purger(integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_purger(p_delai_jours integer, p_max_lots integer DEFAULT 20) RETURNS TABLE(lots integer, lignes bigint, octets bigint, jusqu_au_lot bigint)
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    p          sync_parametre;
+    v_depart   bigint;
+    v_dernier  bigint;
+    v_lot      record;
+    v_n        bigint;
+    v_lots     int := 0;
+    v_lignes   bigint := 0;
+    v_octets   bigint := 0;
+BEGIN
+    IF p_delai_jours IS NULL OR p_delai_jours < 1 THEN
+        RAISE EXCEPTION 'Synchronisation : délai de conservation invalide (1 jour au moins)';
+    END IF;
+    IF p_max_lots IS NULL OR p_max_lots < 1 OR p_max_lots > 1000 THEN
+        RAISE EXCEPTION 'Synchronisation : nombre de lots à purger invalide (1 à 1000)';
+    END IF;
+    IF pg_is_in_recovery() THEN
+        RAISE EXCEPTION 'Synchronisation : purge impossible sur une base en lecture seule';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtext('sync_purger'));
+    SELECT * INTO p FROM sync_parametre WHERE id = 1;
+    v_depart := CASE WHEN p.purge_epoque = p.epoque THEN p.purge_dernier_lot ELSE 0 END;
+    v_dernier := v_depart;
+    FOR v_lot IN
+        SELECT l.numero AS numero, l.octets AS taille FROM sync_lot l
+        WHERE l.epoque = p.epoque AND l.numero > v_depart AND l.accuse_le IS NOT NULL
+          AND l.accuse_le < now() - make_interval(days => p_delai_jours)
+        ORDER BY l.numero LIMIT p_max_lots
+    LOOP
+        EXIT WHEN v_lot.numero <> v_dernier + 1;
+        EXIT WHEN EXISTS (SELECT 1 FROM sync_sortie s JOIN sync_chargement c ON c.numero = s.chargement
+                          WHERE s.epoque = p.epoque AND s.lot_numero = v_lot.numero AND c.etat IN ('demande', 'constitution', 'pret', 'annonce'));
+        DELETE FROM sync_sortie s WHERE s.epoque = p.epoque AND s.lot_numero = v_lot.numero;   -- garde : lot accusé seulement
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+        v_lots := v_lots + 1;
+        v_lignes := v_lignes + v_n;
+        v_octets := v_octets + v_lot.taille;
+        v_dernier := v_lot.numero;
+    END LOOP;
+    IF v_lots > 0 THEN
+        UPDATE sync_parametre SET purge_epoque = p.epoque, purge_dernier_lot = v_dernier, derniere_purge_le = now(),
+                                  derniere_purge_lignes = v_lignes, purge_lignes_total = purge_lignes_total + v_lignes,
+                                  derniere_purge_erreur = NULL
+        WHERE id = 1;
+    END IF;
+    RETURN QUERY SELECT v_lots, v_lignes, v_octets, CASE WHEN v_lots > 0 THEN v_dernier ELSE 0::bigint END;
+END $$;
+
+
+--
+-- Name: FUNCTION sync_purger(p_delai_jours integer, p_max_lots integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_purger(p_delai_jours integer, p_max_lots integer) IS 'Purge de sync_sortie : lignes des lots accusés depuis plus de p_delai_jours jours, jamais un lot non accusé ni un chargement en cours (script 140).';
 
 
 --
@@ -3862,6 +3974,20 @@ $$;
 
 
 --
+-- Name: sync_regler_supervision(integer, integer, integer, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_regler_supervision(p_bandeau_minutes integer, p_retard_heures integer, p_erreur_minutes integer, p_purge_active boolean, p_purge_jours integer) RETURNS void
+    LANGUAGE sql
+    AS $$
+    UPDATE sync_parametre SET bandeau_minutes = p_bandeau_minutes, alerte_retard_heures = p_retard_heures,
+                              alerte_erreur_minutes = p_erreur_minutes, purge_active = p_purge_active, purge_jours = p_purge_jours,
+                              modifie_le = now()
+    WHERE id = 1
+$$;
+
+
+--
 -- Name: sync_retirer_colonnes(text, jsonb, text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3912,14 +4038,34 @@ CREATE TABLE public.sync_parametre (
     derniere_erreur_le timestamp with time zone,
     descendant_version bigint DEFAULT 0 NOT NULL,
     descendant_saut_max bigint DEFAULT 1000 NOT NULL,
+    bandeau_minutes integer DEFAULT 60 NOT NULL,
+    alerte_retard_heures integer DEFAULT 24 NOT NULL,
+    alerte_erreur_minutes integer DEFAULT 60 NOT NULL,
+    purge_active boolean DEFAULT true NOT NULL,
+    purge_jours integer DEFAULT 30 NOT NULL,
+    purge_epoque integer,
+    purge_dernier_lot bigint DEFAULT 0 NOT NULL,
+    derniere_purge_le timestamp with time zone,
+    derniere_purge_lignes bigint DEFAULT 0 NOT NULL,
+    purge_lignes_total bigint DEFAULT 0 NOT NULL,
+    derniere_purge_erreur text,
+    erreur_depuis_le timestamp with time zone,
+    erreur_nature text,
+    alerte_retard_le timestamp with time zone,
+    alerte_erreur_le timestamp with time zone,
+    alerte_certificat_le timestamp with time zone,
+    alerte_quota_le timestamp with time zone,
     CONSTRAINT sync_parametre_adresse_serveur_check CHECK (((adresse_serveur IS NULL) OR (adresse_serveur ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'::text))),
     CONSTRAINT sync_parametre_check CHECK (((dernier_accuse >= 0) AND (dernier_accuse <= dernier_lot))),
     CONSTRAINT sync_parametre_dernier_lot_check CHECK ((dernier_lot >= 0)),
     CONSTRAINT sync_parametre_descendant_saut_max_check CHECK ((descendant_saut_max >= 1)),
     CONSTRAINT sync_parametre_epoque_check CHECK ((epoque >= 1)),
+    CONSTRAINT sync_parametre_erreur_check CHECK ((((erreur_nature IS NULL) = (erreur_depuis_le IS NULL)) AND ((erreur_nature IS NULL) OR (erreur_nature = ANY (ARRAY['autre'::text, 'quota'::text]))))),
     CONSTRAINT sync_parametre_id_check CHECK ((id = 1)),
     CONSTRAINT sync_parametre_lot_max_lignes_check CHECK (((lot_max_lignes >= 1) AND (lot_max_lignes <= 10000))),
     CONSTRAINT sync_parametre_lot_max_octets_check CHECK (((lot_max_octets >= 1024) AND (lot_max_octets <= 16777216))),
+    CONSTRAINT sync_parametre_purge_check CHECK (((purge_dernier_lot >= 0) AND (purge_dernier_lot <= dernier_accuse) AND (derniere_purge_lignes >= 0) AND (purge_lignes_total >= 0))),
+    CONSTRAINT sync_parametre_supervision_check CHECK ((((bandeau_minutes >= 1) AND (bandeau_minutes <= 10080)) AND ((alerte_retard_heures >= 1) AND (alerte_retard_heures <= 720)) AND ((alerte_erreur_minutes >= 1) AND (alerte_erreur_minutes <= 10080)) AND ((purge_jours >= 1) AND (purge_jours <= 365)))),
     CONSTRAINT sync_parametre_textes_libres_check CHECK ((textes_libres = ANY (ARRAY['filtres'::text, 'retires'::text]))),
     CONSTRAINT sync_parametre_version_contrat_check CHECK ((version_contrat ~ '^sync-v[0-9]+$'::text))
 );
@@ -5997,7 +6143,7 @@ CREATE TABLE public.destinataire_notification (
     code_verification_essais integer DEFAULT 0 NOT NULL,
     CONSTRAINT destinataire_notification_check CHECK (((NOT canal_email) OR (email IS NOT NULL))),
     CONSTRAINT destinataire_notification_check1 CHECK (((NOT canal_sms) OR (telephone IS NOT NULL))),
-    CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text]))
+    CONSTRAINT destinataire_notification_types_check CHECK ((types <@ ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'synchronisation'::text]))
 );
 
 
@@ -7218,7 +7364,7 @@ CREATE TABLE public.message_sortant (
     signale_le timestamp with time zone,
     CONSTRAINT message_sortant_canal_check CHECK ((canal = ANY (ARRAY['email'::text, 'sms'::text]))),
     CONSTRAINT message_sortant_statut_check CHECK ((statut = ANY (ARRAY['en_attente'::text, 'envoye'::text, 'echec'::text]))),
-    CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'test'::text])))
+    CONSTRAINT message_sortant_type_check CHECK ((type = ANY (ARRAY['rapport_quotidien'::text, 'ecart_caisse'::text, 'lot_bloque'::text, 'sauvegarde'::text, 'ecart_inventaire'::text, 'lot_delaisse'::text, 'surveillance'::text, 'synchronisation'::text, 'test'::text])))
 );
 
 
