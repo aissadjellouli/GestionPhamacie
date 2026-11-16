@@ -25,6 +25,7 @@
             <nav class="nav" aria-label="Navigation du super admin">
                 <a href="admin/restauration" class="@Actif("admin/restauration")" aria-current="@Courant("admin/restauration")">Restauration</a>
                 <a href="admin/reprise" class="@Actif("admin/reprise")" aria-current="@Courant("admin/reprise")">Reprise de données</a>
+                <a href="admin/profils-reprise" class="@Actif("admin/profils-reprise")" aria-current="@Courant("admin/profils-reprise")">Profils de reprise</a>
             </nav>
             <div class="utilisateur">
                 <span>Connecté : @Session.NomComplet</span>
@@ -267,7 +268,7 @@
         .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))
     ];
     private string? messageAcces;
-    private static readonly string[] EcransSuperAdmin = ["admin/restauration", "admin/reprise"];
+    private static readonly string[] EcransSuperAdmin = ["admin/restauration", "admin/reprise", "admin/profils-reprise"];
 
     private bool VerifierAcces()
     {

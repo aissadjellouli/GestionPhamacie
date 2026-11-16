@@ -24,72 +24,78 @@
     {
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
 
-        @if (etat is { Type: not null } e)
-        {
-            <section class="panneau" aria-labelledby="t-suivi" aria-live="polite">
-                <h2 id="t-suivi">@(e.Type == "base" ? "Restauration de la base" : "Restauration de la GED") · @(e.EnCours ? "en cours…" : e.Erreur is null ? "terminée" : "échouée")</h2>
-                <ol class="detail" style="margin: 0; padding-left: 20px">
-                    @foreach (var etape in e.Etapes) { <li>@etape</li> }
-                </ol>
-                @if (e.Resultat is not null) { <div class="succes" role="status">@e.Resultat</div> }
-                @if (e.Erreur is not null) { <div class="erreur" role="alert">@e.Erreur</div> }
-            </section>
-        }
-
-        @if (choix is { } c)
-        {
-            <section class="panneau" aria-labelledby="t-base">
-                <h2 id="t-base">Base de données</h2>
-                <p style="margin: 0">
-                    Base en service : <strong>@c.NomBase</strong> @(c.BaseExiste ? "" : "(absente : la sauvegarde choisie la recréera)") ·
-                    disque externe : @(c.DossierExterne is null ? "dossier des sauvegardes non réglé" : c.DisqueBranche ? c.DossierExterne : $"{c.DossierExterne} (non branché)")
-                </p>
-                @if (c.Sauvegardes.Count == 0)
+        @* Écran fixe (2026-11-16) : sauvegardes de la base à gauche (seul le tableau défile), suivi et GED à droite *@
+        <div class="restauration-colonnes">
+            @if (choix is { } c)
+            {
+                <section class="panneau" aria-labelledby="t-base">
+                    <h2 id="t-base">Base de données</h2>
+                    <p style="margin: 0">
+                        Base en service : <strong>@c.NomBase</strong> @(c.BaseExiste ? "" : "(absente : la sauvegarde choisie la recréera)") ·
+                        disque externe : @(c.DossierExterne is null ? "dossier des sauvegardes non réglé" : c.DisqueBranche ? c.DossierExterne : $"{c.DossierExterne} (non branché)")
+                    </p>
+                    @if (c.Sauvegardes.Count == 0)
+                    {
+                        <p class="detail" style="margin: 0">Aucune sauvegarde trouvée : branchez le disque externe des sauvegardes, puis « Actualiser ».</p>
+                    }
+                    else
+                    {
+                        @* Sauvegardes trouvées : filtrées par période et paginées à l'écran (règle des listes) *@
+                        <div class="filtres-liste" role="search" aria-label="Filtrer les sauvegardes">
+                            <div class="champ" style="flex: 0 0 160px"><label for="fr-du">Du</label><input id="fr-du" type="date" @bind="fDu" @bind:after="() => page = 1" /></div>
+                            <div class="champ" style="flex: 0 0 160px"><label for="fr-au">Au</label><input id="fr-au" type="date" @bind="fAu" @bind:after="() => page = 1" /></div>
+                            @if (fDu is not null || fAu is not null) { <button type="button" class="btn" @onclick="() => (fDu, fAu, page) = (null, null, 1)">Tout afficher</button> }
+                        </div>
+                        <div class="tableau-cadre">
+                            <table class="tableau" style="min-width: 0">
+                                <thead><tr><th scope="col">Sauvegarde du</th><th scope="col">Emplacement</th><th scope="col">Fichier</th><th scope="col" class="nombre">Taille</th><th scope="col"></th></tr></thead>
+                                <tbody>
+                                    @foreach (var s in Filtrees(c.Sauvegardes).Skip((page - 1) * taille).Take(taille))
+                                    {
+                                        <tr>
+                                            <td>@Libelles.DateHeureLocale(s.Date)</td><td>@s.Emplacement</td>
+                                            <td class="detail">@System.IO.Path.GetFileName(s.Fichier)</td>
+                                            <td class="nombre">@((s.Taille / 1048576.0).ToString("N1")) Mo</td>
+                                            <td><button type="button" class="btn btn-danger" disabled="@EnCours" @onclick="() => DemanderBase(s)">Restaurer</button></td>
+                                        </tr>
+                                    }
+                                    @if (Filtrees(c.Sauvegardes).Count == 0) { <tr><td colspan="5" class="vide">Aucune sauvegarde sur cette période.</td></tr> }
+                                </tbody>
+                            </table>
+                        </div>
+                        <Pagination Total="Filtrees(c.Sauvegardes).Count" Numero="page" Taille="taille" Libelle="Pages des sauvegardes" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
+                    }
+                </section>
+            }
+            <div class="restauration-droite">
+                @if (etat is { Type: not null } e)
                 {
-                    <p class="detail" style="margin: 0">Aucune sauvegarde trouvée : branchez le disque externe des sauvegardes, puis « Actualiser ».</p>
+                <section class="panneau" aria-labelledby="t-suivi" aria-live="polite">
+                    <h2 id="t-suivi">@(e.Type == "base" ? "Restauration de la base" : "Restauration de la GED") · @(e.EnCours ? "en cours…" : e.Erreur is null ? "terminée" : "échouée")</h2>
+                    <ol class="detail" style="margin: 0; padding-left: 20px">
+                        @foreach (var etape in e.Etapes) { <li>@etape</li> }
+                    </ol>
+                    @if (e.Resultat is not null) { <div class="succes" role="status">@e.Resultat</div> }
+                    @if (e.Erreur is not null) { <div class="erreur" role="alert">@e.Erreur</div> }
+                </section>
                 }
-                else
+                @if (choix is not null)
                 {
-                    @* Sauvegardes trouvées : filtrées par période et paginées à l'écran (règle des listes) *@
-                    <div class="filtres-liste" role="search" aria-label="Filtrer les sauvegardes">
-                        <div class="champ" style="flex: 0 0 160px"><label for="fr-du">Du</label><input id="fr-du" type="date" @bind="fDu" @bind:after="() => page = 1" /></div>
-                        <div class="champ" style="flex: 0 0 160px"><label for="fr-au">Au</label><input id="fr-au" type="date" @bind="fAu" @bind:after="() => page = 1" /></div>
-                        @if (fDu is not null || fAu is not null) { <button type="button" class="btn" @onclick="() => (fDu, fAu, page) = (null, null, 1)">Tout afficher</button> }
-                    </div>
-                    <div class="tableau-cadre">
-                        <table class="tableau" style="min-width: 0">
-                            <thead><tr><th scope="col">Sauvegarde du</th><th scope="col">Emplacement</th><th scope="col">Fichier</th><th scope="col" class="nombre">Taille</th><th scope="col"></th></tr></thead>
-                            <tbody>
-                                @foreach (var s in Filtrees(c.Sauvegardes).Skip((page - 1) * taille).Take(taille))
-                                {
-                                    <tr>
-                                        <td>@Libelles.DateHeureLocale(s.Date)</td><td>@s.Emplacement</td>
-                                        <td class="detail">@System.IO.Path.GetFileName(s.Fichier)</td>
-                                        <td class="nombre">@((s.Taille / 1048576.0).ToString("N1")) Mo</td>
-                                        <td><button type="button" class="btn btn-danger" disabled="@EnCours" @onclick="() => DemanderBase(s)">Restaurer</button></td>
-                                    </tr>
-                                }
-                                @if (Filtrees(c.Sauvegardes).Count == 0) { <tr><td colspan="5" class="vide">Aucune sauvegarde sur cette période.</td></tr> }
-                            </tbody>
-                        </table>
-                    </div>
-                    <Pagination Total="Filtrees(c.Sauvegardes).Count" Numero="page" Taille="taille" Libelle="Pages des sauvegardes" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
+                <section class="panneau" aria-labelledby="t-ged">
+                    <h2 id="t-ged">Documents de la GED</h2>
+                    @if (choix.SourceGed is { } source)
+                    {
+                        <p style="margin: 0">Copie trouvée : <strong>@source</strong>. Les documents absents ou plus anciens au serveur sont recopiés ; rien n’est supprimé et les documents plus récents du serveur sont gardés.</p>
+                        <div><button type="button" class="btn btn-danger" disabled="@EnCours" @onclick="DemanderGed">Recopier les documents de la GED</button></div>
+                    }
+                    else
+                    {
+                        <p class="detail" style="margin: 0">Copie de la GED introuvable : branchez le disque externe des sauvegardes (sous-dossier GED).</p>
+                    }
+                </section>
                 }
-            </section>
-
-            <section class="panneau" aria-labelledby="t-ged">
-                <h2 id="t-ged">Documents de la GED</h2>
-                @if (c.SourceGed is { } source)
-                {
-                    <p style="margin: 0">Copie trouvée : <strong>@source</strong>. Les documents absents ou plus anciens au serveur sont recopiés ; rien n’est supprimé et les documents plus récents du serveur sont gardés.</p>
-                    <div><button type="button" class="btn btn-danger" disabled="@EnCours" @onclick="DemanderGed">Recopier les documents de la GED</button></div>
-                }
-                else
-                {
-                    <p class="detail" style="margin: 0">Copie de la GED introuvable : branchez le disque externe des sauvegardes (sous-dossier GED).</p>
-                }
-            </section>
-        }
+            </div>
+        </div>
     }
 </div>
 

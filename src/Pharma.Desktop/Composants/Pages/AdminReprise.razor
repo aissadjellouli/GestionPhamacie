@@ -32,6 +32,8 @@
             @* ---- 1. Source -------------------------------------------------------- *@
             @if (etape == 1)
             {
+                @* Écran fixe (2026-11-16) : source à gauche ; connexion et reprises précédentes à droite ; la liste des sources, la connexion (pilote choisi) et le tableau défilent dans leur cadre *@
+                <div class="reprise-source">
                 <section class="panneau" aria-labelledby="t-source">
                     <h2 id="t-source">Où est l’ancienne base ?</h2>
                     <div class="achats-ligne">
@@ -49,6 +51,7 @@
 
                     @if (sources.Count > 0)
                     {
+                        <div class="cadre-defilant">
                         <ul class="liste-lecture" aria-label="Sources trouvées">
                             @foreach (var s in sources)
                             {
@@ -60,6 +63,7 @@
                                 </li>
                             }
                         </ul>
+                        </div>
                     }
                     else if (recherche)
                     {
@@ -67,7 +71,8 @@
                     }
                 </section>
 
-                <section class="panneau" aria-labelledby="t-connexion">
+                <div class="reprise-colonne">
+                <section class="panneau cadre-defilant" aria-labelledby="t-connexion">
                     <h2 id="t-connexion">Connexion à l’ancienne base</h2>
                     <div class="achats-ligne">
                         <div class="champ" style="flex: 1 1 320px">
@@ -172,6 +177,8 @@
                     </section>
                     <Pagination Total="sessions.Count" Numero="pageSessions" Taille="tailleSessions" Libelle="Pages des reprises" OnChange="p => (pageSessions, tailleSessions) = (p.Numero, p.Taille)" />
                 }
+                </div>
+                </div>
             }
 
             @* ---- 2. Correspondance -------------------------------------------------- *@
@@ -273,6 +280,7 @@
             {
                 var bloquants = et.Anomalies.Count(a => a.Gravite == "bloquant");
                 <section class="panneau" aria-labelledby="t-session">
+                    <div class="reprise-entete">
                     <h2 id="t-session">Reprise n° @et.Session.Id · @et.Session.Logiciel · <span class="pastille @(et.Session.Statut == "charge" ? "ok" : "attention")">@LibelleStatut(et.Session.Statut)</span></h2>
                     <p class="detail" style="margin: 0">
                         Extraction le @Libelles.DateHeureLocale(et.Session.Debut)@(et.Session.LancePar is { } lp ? $" par {lp}" : "")
@@ -281,13 +289,13 @@
                             <text> · <strong>import réalisé le @Libelles.DateHeureLocale(cl)@(et.Session.ChargePar is { } cp ? $" par {cp}" : "")</strong> (données attribuées au pharmacien titulaire)</text>
                         }
                     </p>
-                    <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
+                    </div>
+                    @* Écran fixe (2026-11-16) : les douze compteurs en deux lignes compactes (libellé et nombre côte à côte) *@
+                    <div class="tuiles tuiles-reprise">
                         @foreach (var (cle, lib) in new[] { ("produits", "Produits"), ("stock", "Lignes de stock"), ("grossistes", "Grossistes"), ("clients", "Clients"), ("historique_chifa", "Factures Chifa (historique)"), ("historique_mdn", "Factures MDN (historique)") })
                         {
                             <div class="tuile"><span class="tuile-libelle">@lib</span><span class="tuile-valeur petite">@et.Lignes.GetValueOrDefault(cle)</span></div>
                         }
-                    </div>
-                    <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))">
                         @foreach (var (cle, lib) in new[] { ("code_barre", "Par code-barres"), ("num_enregistrement", "Par n° d’enregistrement"), ("nom_a_confirmer", "Par nom, à confirmer"),
                                                              ("manuel", "Choisis à la main"), ("nouveau", "À créer"), ("aucune", "Sans correspondance") })
                         {
@@ -296,6 +304,47 @@
                     </div>
                 </section>
 
+                @* Écran fixe (2026-11-16) : contrôles à gauche (seul le tableau défile) ; à confirmer, chargement et vérification
+                   à droite, dans un cadre défilant *@
+                <div class="reprise-suite">
+                @if (et.Anomalies.Count > 0)
+                {
+                    <div class="reprise-colonne">
+                    <div class="filtres-liste" role="search" aria-label="Filtrer les contrôles">
+                        <div class="champ" style="flex: 0 0 150px"><label for="fa-gravite">Gravité</label>
+                            <select id="fa-gravite" @bind="fGravite" @bind:after="() => pageAnomalies = 1">
+                                <option value="">Toutes</option>
+                                <option value="bloquant">Bloquant</option>
+                                <option value="avertissement">À vérifier</option>
+                            </select></div>
+                        <div class="champ" style="flex: 0 0 170px"><label for="fa-entite">Donnée</label>
+                            <select id="fa-entite" @bind="fEntite" @bind:after="() => pageAnomalies = 1">
+                                <option value="">Toutes</option>
+                                @foreach (var en in et.Anomalies.Select(a => a.Entite).Distinct().Order()) { <option value="@en">@en</option> }
+                            </select></div>
+                        <div class="champ" style="flex: 1 1 180px"><label for="fa-texte">Réf. ou message</label>
+                            <input id="fa-texte" type="search" autocomplete="off" @bind="fTexteAnomalie" @bind:event="oninput" @bind:after="() => pageAnomalies = 1" /></div>
+                        @if (fGravite != "" || fEntite != "" || fTexteAnomalie.Trim() != "") { <button type="button" class="btn" @onclick="() => (fGravite, fEntite, fTexteAnomalie, pageAnomalies) = (string.Empty, string.Empty, string.Empty, 1)">Tout afficher</button> }
+                    </div>
+                    <section class="tableau-cadre" aria-label="Contrôles avant chargement">
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col">Contrôle</th><th scope="col">Donnée</th><th scope="col">Réf.</th><th scope="col">Message</th></tr></thead>
+                            <tbody>
+                                @foreach (var a in AnomaliesFiltrees(et).Skip((pageAnomalies - 1) * tailleAnomalies).Take(tailleAnomalies))
+                                {
+                                    <tr>
+                                        <td><span class="pastille @(a.Gravite == "bloquant" ? "urgent" : "attention")">@(a.Gravite == "bloquant" ? "Bloquant" : "À vérifier")</span></td>
+                                        <td>@a.Entite</td><td>@a.RefSource</td><td>@a.Message</td>
+                                    </tr>
+                                }
+                                @if (AnomaliesFiltrees(et).Count == 0) { <tr><td colspan="4" class="vide">Aucun contrôle pour ces filtres.</td></tr> }
+                            </tbody>
+                        </table>
+                    </section>
+                    <Pagination Total="AnomaliesFiltrees(et).Count" Numero="pageAnomalies" Taille="tailleAnomalies" Libelle="Pages des contrôles" OnChange="p => (pageAnomalies, tailleAnomalies) = (p.Numero, p.Taille)" />
+                    </div>
+                }
+                <div class="reprise-colonne cadre-defilant">
                 @if (et.Session.Statut == "en_cours" && et.AConfirmer.Count > 0)
                 {
                     <section class="panneau" aria-labelledby="t-confirmer">
@@ -337,41 +386,6 @@
                     </section>
                 }
 
-                @if (et.Anomalies.Count > 0)
-                {
-                    <div class="filtres-liste" role="search" aria-label="Filtrer les contrôles">
-                        <div class="champ" style="flex: 0 0 180px"><label for="fa-gravite">Gravité</label>
-                            <select id="fa-gravite" @bind="fGravite" @bind:after="() => pageAnomalies = 1">
-                                <option value="">Toutes</option>
-                                <option value="bloquant">Bloquant</option>
-                                <option value="avertissement">À vérifier</option>
-                            </select></div>
-                        <div class="champ" style="flex: 0 0 200px"><label for="fa-entite">Donnée</label>
-                            <select id="fa-entite" @bind="fEntite" @bind:after="() => pageAnomalies = 1">
-                                <option value="">Toutes</option>
-                                @foreach (var en in et.Anomalies.Select(a => a.Entite).Distinct().Order()) { <option value="@en">@en</option> }
-                            </select></div>
-                        <div class="champ" style="flex: 1 1 220px"><label for="fa-texte">Réf. ou message</label>
-                            <input id="fa-texte" type="search" autocomplete="off" @bind="fTexteAnomalie" @bind:event="oninput" @bind:after="() => pageAnomalies = 1" /></div>
-                        @if (fGravite != "" || fEntite != "" || fTexteAnomalie.Trim() != "") { <button type="button" class="btn" @onclick="() => (fGravite, fEntite, fTexteAnomalie, pageAnomalies) = (string.Empty, string.Empty, string.Empty, 1)">Tout afficher</button> }
-                    </div>
-                    <section class="tableau-cadre" aria-label="Contrôles avant chargement">
-                        <table class="tableau" style="min-width: 0">
-                            <thead><tr><th scope="col">Contrôle</th><th scope="col">Donnée</th><th scope="col">Réf.</th><th scope="col">Message</th></tr></thead>
-                            <tbody>
-                                @foreach (var a in AnomaliesFiltrees(et).Skip((pageAnomalies - 1) * tailleAnomalies).Take(tailleAnomalies))
-                                {
-                                    <tr>
-                                        <td><span class="pastille @(a.Gravite == "bloquant" ? "urgent" : "attention")">@(a.Gravite == "bloquant" ? "Bloquant" : "À vérifier")</span></td>
-                                        <td>@a.Entite</td><td>@a.RefSource</td><td>@a.Message</td>
-                                    </tr>
-                                }
-                                @if (AnomaliesFiltrees(et).Count == 0) { <tr><td colspan="4" class="vide">Aucun contrôle pour ces filtres.</td></tr> }
-                            </tbody>
-                        </table>
-                    </section>
-                    <Pagination Total="AnomaliesFiltrees(et).Count" Numero="pageAnomalies" Taille="tailleAnomalies" Libelle="Pages des contrôles" OnChange="p => (pageAnomalies, tailleAnomalies) = (p.Numero, p.Taille)" />
-                }
 
                 @if (et.Session.Statut == "en_cours")
                 {
@@ -420,6 +434,8 @@
                 }
 
                 <div><button type="button" class="btn" @onclick="RetourAsync">Nouvelle reprise ou autre session</button></div>
+                </div>
+                </div>
             }
         }
     </div>

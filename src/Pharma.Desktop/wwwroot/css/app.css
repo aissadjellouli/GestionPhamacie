@@ -71,7 +71,8 @@ input, select, button { font: inherit; }
 .nav .nav-inactif { color: rgba(255, 255, 255, 0.42); cursor: not-allowed; }
 .compteur { margin-left: 4px; padding: 1px 7px; border-radius: 999px; background: var(--urgent-fond); color: var(--urgent); font-size: 12px; font-weight: 600; }
 /* Personne connectée : toujours sur sa propre ligne, en bas à gauche du bandeau, quelle que soit la largeur */
-.utilisateur { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; flex-basis: 100%; order: 10; font-size: 13px; color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
+/* Super admin (2026-11-16) : « Connecté : … » à droite sur la ligne de l’en-tête, comme le bouton de l’employé (plus collé au bord gauche) */
+.utilisateur { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-left: auto; font-size: 13px; color: rgba(255, 255, 255, 0.85); white-space: nowrap; }
 .entete .lien-bouton { color: #FFFFFF; font-weight: 600; }
 .entete .lien-bouton:hover { color: #FFFFFF; }
 /* « ← Retour » : pastille cerclée, premier élément de la ligne de l'employé ; estompée quand il n'y a pas d'écran précédent */
@@ -390,6 +391,10 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
   background: var(--surface); border-right: 1px solid var(--bordure); }
 /* Menu et contenu au-dessus de la colonne (sinon le fond de la page la recouvre) ; l'en-tête (z-index 20) reste au-dessus de tout */
 .page.admin > *, .page.avec-menu > * { position: relative; z-index: 1; }
+/* Écran d'administration sans menu de gauche (super admin, 2026-11-16) : ni colonne vide ni contenu collé au bord,
+   mêmes marges que les écrans sans menu vertical (page centrée, 1 280 px au plus) */
+.page.admin:not(:has(> .admin-nav)) { max-width: 1280px; margin: 0 auto; padding-left: 24px; }
+.page.admin:not(:has(> .admin-nav))::before { content: none; }
 /* Fenêtre (voile) ouverte depuis le menu ou le contenu (ex. « Ouvrir le tiroir », F8) : la colonne qui la contient passe devant l'autre,
    sinon la fenêtre reste enfermée sous la caisse (même niveau 1) et s'affiche derrière la recherche de produit (2026-11-16) */
 .page.admin > *:has(.voile), .page.avec-menu > *:has(.voile) { z-index: 41; }
@@ -525,6 +530,21 @@ label.requis::after, .etiquette-champ.requis::after { content: " *"; color: var(
 .etapes-reprise li { padding: 6px 12px; border-radius: 999px; background: var(--info-fond); color: var(--info); font-size: 14px; }
 .etapes-reprise li.faite { background: var(--accent-clair); color: var(--accent-fonce); }
 .etapes-reprise li.en-cours { background: var(--accent); color: #FFFFFF; font-weight: 600; }
+/* Étape 1 (2026-11-16, écran fixe) : « Où est l’ancienne base ? » à gauche, « Connexion » et reprises précédentes à droite, liste des sources dans un cadre défilant */
+/* Restauration (2026-11-16, écran fixe) : sauvegardes à gauche, suivi et GED à droite */
+.restauration-colonnes { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+.restauration-droite { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.reprise-source { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.reprise-colonne { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.reprise-colonne .pagination { margin-top: 0; }
+.reprise-colonne > .panneau.cadre-defilant { box-sizing: border-box; }   /* hauteur posée par poste.js, marges intérieures comprises */
+/* Étapes 3 à 5 (2026-11-16, écran fixe) : en-tête sur une ligne, douze compteurs compacts, contrôles à gauche, suite à droite */
+.reprise-entete { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+.tuiles-reprise { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.tuiles-reprise .tuile { flex-direction: row; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 10px; border-radius: 8px; }
+.tuiles-reprise .tuile-valeur.petite { font-size: 18px; }
+.reprise-suite { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.reprise-suite > .reprise-colonne.cadre-defilant { box-sizing: border-box; }
 .liste-reprise { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .liste-reprise li { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--bordure); border-radius: 8px; }
 .liste-reprise .choix-conflit { display: flex; gap: 8px; flex-wrap: wrap; }

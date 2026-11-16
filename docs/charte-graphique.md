@@ -97,6 +97,20 @@ Corrigés ce jour : Accueil (27 px), Administration › Contrôle interne (29 px
 ligne), Trésorerie › Chèques à remettre (4 632 px, liste en cadre défilant) et › Caisses à verser (10 px), Achats ›
 Réceptions › En attente (272 px : pastilles dès qu’il y a des livraisons comptées), Achats › À commander avec un produit
 choisi (33 px : produit, bouton et note sur une ligne).
+**Reprise de données mesurée et corrigée le 2026-11-16** (1 536 × 890, super admin, thèmes clair et sombre, 0 px après
+correction, ni vertical ni horizontal) : étape 1 Source (393 px avant : « Où est l’ancienne base ? » à gauche, liste des
+sources en `.cadre-defilant` ; à droite « Connexion » en cadre défilant quand un pilote est choisi, puis le tableau des
+reprises précédentes, seul à défiler, et sa pagination) ; étapes 3 à 5 avec une reprise ouverte (260 px et 686 px avant :
+en-tête sur une ligne, douze compteurs compacts sur deux lignes, contrôles filtrés et paginés à gauche, à confirmer,
+chargement et vérification à droite dans un cadre défilant). Étape 2 non mesurée (demande une ancienne base réelle).
+**Écrans du super admin corrigés le 2026-11-16** (1 536 × 890, clair et sombre, captures comparées) : en-tête sur une ligne,
+« Connecté : … » à droite (il était collé au bord gauche, sur une 2e ligne) ; un écran `.page.admin` sans menu de gauche
+(`NavAdmin` vide pour le super admin) n'a plus la colonne vide de 240 px ni le contenu collé au bord : page centrée de
+1 280 px au plus, comme les écrans sans menu vertical. Écrans des employés inchangés (Accueil, Administration › Notifications,
+captures identiques). Restauration : 104 px → 0 (sauvegardes à gauche, seul le tableau défile ; suivi et GED à droite, 360 px).
+Reprise de données : 0 px à toutes les étapes mesurées (filtres des contrôles resserrés). Profils de reprise (ajouté aux
+écrans du super admin) : liste 0 px ; fenêtre « Nouveau profil » / « Modifier… » : 77 px de défilement du voile → 0, seule
+la fenêtre défile dans son cadre (hauteur 88 vh, marges comprises).
 Mesurés et corrigés le 2026-11-16 (1 536 × 890, titulaire, 0 px après correction, ni vertical ni horizontal) :
 Contrôle interne › Journal fiscal (505 px en largeur : colonnes `minmax(0, 1fr) 380px` et tableaux de la colonne de droite
 en `min-width: 0`), `/pilotage-financier` › Synthèse (248 px : six tuiles compactes sur une ligne, histogramme de 200 px),
