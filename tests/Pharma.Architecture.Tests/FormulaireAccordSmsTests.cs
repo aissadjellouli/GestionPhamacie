@@ -26,7 +26,7 @@ public class FormulaireAccordSmsTests
                     case Text t: morceaux.Add(t.Content ?? ""); break;
                 }
         }
-        foreach (Section s in doc.Sections) Lire(s.Elements);
+        foreach (var o in doc.Sections) if (o is Section s) Lire(s.Elements);
         return string.Join(" ", morceaux);
     }
 

@@ -119,7 +119,7 @@ public partial class EssaiCloudOfficineTests
     {
         var code = Code();
         // pharmacie_dev : une seule constante, lue par pg_dump
-        Assert.Equal(1, Regex.Matches(code, @"pharmacie_dev").Count);
+        Assert.Single(Regex.Matches(code, @"pharmacie_dev"));
         Assert.Contains("$BaseSource = \"pharmacie_dev\"", code);
         Assert.Matches(@"PgDump[^\n]*\$BaseSource\)", code);
         // Toute commande qui écrit vise une base d'essai ou la base de maintenance, jamais $BaseSource ni pharmacie_test
@@ -142,7 +142,7 @@ public partial class EssaiCloudOfficineTests
         Assert.Contains("$BasesJetables = @($BaseCentrale, $BaseOfficine)", code);
         // Un seul DROP DATABASE, dans la fonction gardée, qui refuse tout nom hors liste
         var drops = Regex.Matches(code, @"(?i)DROP\s+DATABASE");
-        Assert.Equal(1, drops.Count);
+        Assert.Single(drops);
         var debut = code.IndexOf("function Remove-BaseJetable", StringComparison.Ordinal);
         Assert.True(debut > 0);
         var fin = code.IndexOf("\n}", debut, StringComparison.Ordinal);
@@ -155,7 +155,7 @@ public partial class EssaiCloudOfficineTests
         Assert.Contains("foreach ($b in $restes) { Remove-BaseJetable $b", code);
         Assert.Contains("$restes = @($BasesJetables | Where-Object", code);
         // Un seul rôle supprimé, nommé en dur ; un seul dossier supprimé, le dossier d'essai exact
-        Assert.Equal(1, Regex.Matches(code, @"(?i)DROP\s+ROLE").Count);
+        Assert.Single(Regex.Matches(code, @"(?i)DROP\s+ROLE"));
         Assert.Contains("DROP ROLE IF EXISTS $RoleCentral", code);
         Assert.Contains("$RoleCentral = \"pharma_cloud_essai\"", code);
         Assert.Contains("Remove-Item -LiteralPath $DossierEssai -Recurse -Force", code);

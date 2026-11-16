@@ -308,7 +308,7 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
         largeurMm = FormatTicket.Borner(largeurMm);
         var premier = new PdfDocumentRenderer { Document = DocumentTicket(t, rendu, largeurMm, 2000) };
         premier.PrepareRenderPages();
-        var bas = premier.DocumentRenderer.GetRenderInfoFromPage(1)
+        var bas = (premier.DocumentRenderer.GetRenderInfoFromPage(1) ?? [])
             .Select(i => (i.LayoutInfo.ContentArea.Y + i.LayoutInfo.ContentArea.Height).Point).DefaultIfEmpty(0).Max();
         var hauteurMm = Math.Max(40, bas / 72 * 25.4 + MargeTicketMm(largeurMm) + 2);
         return Rendre(DocumentTicket(t, rendu, largeurMm, hauteurMm));
@@ -325,7 +325,7 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
         largeurMm = FormatTicket.Borner(largeurMm);
         var premier = new PdfDocumentRenderer { Document = DocumentBon(b, largeurMm, 2000) };
         premier.PrepareRenderPages();
-        var bas = premier.DocumentRenderer.GetRenderInfoFromPage(1)
+        var bas = (premier.DocumentRenderer.GetRenderInfoFromPage(1) ?? [])
             .Select(i => (i.LayoutInfo.ContentArea.Y + i.LayoutInfo.ContentArea.Height).Point).DefaultIfEmpty(0).Max();
         return Rendre(DocumentBon(b, largeurMm, Math.Max(40, bas / 72 * 25.4 + MargeTicketMm(largeurMm) + 2)));
     }
@@ -448,7 +448,7 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
             row.Cells[1].AddParagraph(b);
         }
 
-        if (!string.IsNullOrWhiteSpace(t.Pharmacie)) Centre(t.Pharmacie, gras: true, taille: normal.Font.Size + 1);
+        if (!string.IsNullOrWhiteSpace(t.Pharmacie)) Centre(t.Pharmacie, gras: true, taille: normal.Font.Size.Point + 1);
         if (!string.IsNullOrWhiteSpace(t.Adresse)) Centre(t.Adresse);
         if (!string.IsNullOrWhiteSpace(t.Telephone)) Centre($"Tél. {t.Telephone}");
         if (!string.IsNullOrWhiteSpace(t.Nif)) Centre($"NIF {t.Nif}");

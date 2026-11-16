@@ -64,7 +64,7 @@ public static class DroitsChifa
 /// « Mettre à jour la date » de fin de droits (caisse, liste de suivi) : saisie immédiate, avec le droit existant de modifier un
 /// patient (vendre), inscrite au journal comme toute modification de la fiche (patient_modifie, ancienne et nouvelle valeur).
 /// </summary>
-public sealed class MettreAJourFinDroit(IPatients patients, IJournal journal, IHorloge horloge)
+public sealed class MettreAJourFinDroit(IPatients patients, IJournal journal)
 {
     public async Task ExecuterAsync(long patientId, DateOnly? dateFinDroit, long utilisateurId, CancellationToken ct = default)
     {

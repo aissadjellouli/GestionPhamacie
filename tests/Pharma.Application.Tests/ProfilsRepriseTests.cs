@@ -85,7 +85,7 @@ public class ProfilsRepriseTests
             .ExecuterAsync("x", "Logiciel A", [new(CibleReprise.Produits, "Feuil1",
                 new Dictionary<string, string> { ["ref_source"] = "C", ["nom"] = "N", ["prix_vente"] = "PV", ["classe"] = "CL" })], t, "Logiciel A", 1);
 
-        Assert.Equal(["A1", "DOLIPRANE", "12500", "psychotrope"], import.Inserts[0].Lignes[0]);
+        Assert.Equal(new string?[] { "A1", "DOLIPRANE", "12500", "psychotrope" }, import.Inserts[0].Lignes[0]);
         Assert.Equal("Logiciel A", journal.Details[0]["profil"]);
     }
 
@@ -100,7 +100,7 @@ public class ProfilsRepriseTests
                 new TransformationsReprise(SeparateurDecimal.Virgule, "dd/MM/yyyy", new Dictionary<string, string>()), null, 1);
 
         var h = import.Inserts.Single(i => i.Cible == CibleReprise.HistoriqueChifa);
-        Assert.Equal(["F1", "2024-03-12", "1200"], h.Lignes[0]);
+        Assert.Equal(new string?[] { "F1", "2024-03-12", "1200" }, h.Lignes[0]);
     }
 
     [Fact]

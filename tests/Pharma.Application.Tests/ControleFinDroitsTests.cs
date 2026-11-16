@@ -101,7 +101,7 @@ public class ControleFinDroitsTests
         var patients = Patient(Aujourdhui.AddDays(-10));
         var journal = new JournalEspion();
         var nouvelle = new DateOnly(2027, 6, 30);
-        await new MettreAJourFinDroit(patients, journal, new HorlogeFixe(Aujourdhui)).ExecuterAsync(12, nouvelle, 5);
+        await new MettreAJourFinDroit(patients, journal).ExecuterAsync(12, nouvelle, 5);
         Assert.Equal(nouvelle, patients.Modifiee!.DateFinDroit);
         Assert.Equal("Benali", patients.Modifiee.Nom);   // le reste de la fiche est inchangé
         Assert.Equal(["patient_modifie"], journal.Actions);
@@ -113,7 +113,7 @@ public class ControleFinDroitsTests
     {
         var patients = Patient(Aujourdhui);
         var journal = new JournalEspion();
-        var cas = new MettreAJourFinDroit(patients, journal, new HorlogeFixe(Aujourdhui));
+        var cas = new MettreAJourFinDroit(patients, journal);
         await cas.ExecuterAsync(12, Aujourdhui, 5);
         Assert.Empty(journal.Actions);
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(99, Aujourdhui, 5));

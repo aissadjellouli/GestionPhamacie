@@ -91,7 +91,7 @@ public class CertificatsHttpsTests
         Assert.DoesNotContain("http://0.0.0.0", script);
         Assert.DoesNotContain("AutoriserHttpReseau", script);
         // Mode importer : même écriture et même règle de pare-feu que le principal (une seule fonction)
-        Assert.Equal(1, Regex.Matches(script, @"Url\s+= ""https://0\.0\.0\.0").Count);
+        Assert.Single(Regex.Matches(script, @"Url\s+= ""https://0\.0\.0\.0"));
         var importer = script[script.IndexOf("# Mode -Importer :", StringComparison.Ordinal)..script.IndexOf("# Mode principal (par défaut)", StringComparison.Ordinal)];
         Assert.Contains("Write-ConfigurationApi", importer);
         Assert.Contains("Set-ReglePareFeu", importer);

@@ -64,12 +64,12 @@ public sealed class LecteurExcelTests : IDisposable
 
         var lignes = new List<string?[]>();
         await foreach (var l in source.LireAsync(chaine, "produits", ["PRIX", "CODE", "Désignation"])) lignes.Add(l);
-        Assert.Equal(["12.5", "1001", "DOLIPRANE"], lignes[0]);
-        Assert.Equal(["1.2340", "A2", null], lignes[1]);
+        Assert.Equal(new string?[] { "12.5", "1001", "DOLIPRANE" }, lignes[0]);
+        Assert.Equal(new string?[] { "1.2340", "A2", null }, lignes[1]);
 
         var factures = new List<string?[]>();
         await foreach (var l in source.LireAsync(chaine, "Factures Chifa", ["N_FACTURE", "DATE"])) factures.Add(l);
-        Assert.Equal(["F-001", "2024-03-12"], factures.Single());
+        Assert.Equal(new string?[] { "F-001", "2024-03-12" }, factures.Single());
     }
 
     [Fact]
