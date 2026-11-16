@@ -198,21 +198,61 @@
 
 ## 6. Plan de livraison proposé (à valider, rien n'est lancé)
 
-| Ordre | Lot | Contenu | Effort | Scripts | Dépend de | Paramétrable [À VÉRIFIER] |
-|---|---|---|---|---|---|---|
-| 0 | Cadrage | Valider les écarts du § 1 (Blazor, PostgreSQL seul, scripts SQL, hébergement local) ; adapter les agents | S | — | — | — |
-| 1 | Journaux sans données personnelles | Masquage dans `Pharma.Refus` et super admin, tests | S | — | — | — |
-| 2 | P1 · M6a Brique d'intégrité | Fonction de hachage, chaînage générique, vérification planifiée + alerte titulaire, rôle propriétaire séparé | M | 111 | 0 | Algorithme, fréquence |
-| 3 | P1 · M6b Journal des ventes | `journal_vente` ajout seul chaîné, numérotation sans trou, clôtures journalières/mensuelles scellées, récap TVA | L | 112-113 | 2 | Format d'export DGI, durée 6 ans, TVA médicaments/parapharmacie |
-| 4 | P1 · M4a Reprise concurrents | Profils Chifa Plus / XpertPharm / PharmaPro / Profficine, import xlsx, historique Chifa | M par profil | 114 | exports réels | Format de chaque logiciel |
-| 5 | P1 · M4b Résilience | Mode dégradé si PC serveur indisponible (à définir : caisse locale minimale ou serveur de secours) | L | — | décision | — |
-| 6 | P1 · M3a Multi-grossistes | `IGrossisteConnecteur` (fichier, e-mail), catalogue et dispo, comparaison, répartition de commande | L | 115 | — | Formats grossistes |
-| 7 | P1 · M3b Ruptures et substitution | Historique ruptures, file patients en attente, liste blanche, génériques locaux, paramètre « équivalent exact seulement » | M | 116 | 6 | Consentement SMS/WhatsApp |
-| 8 | P2 · M2 Registre renforcé | Chaînage du registre, écritures d'annulation, alertes paramétrables avec forçage tracé, exports Excel et filtres, antibiotiques, `IRepertoireOrdonnancesConnecteur` factice | L | 117-118 | 2 | Nomenclature des molécules, seuils |
-| 9 | P2 · Données de santé | Journal des accès patient, chiffrement des colonnes sensibles, export/anonymisation | L | 119 | 8 | Loi 18-07, durée de conservation |
-| 10 | P2 · M1 Sérialisation | `ISerialisationConnecteur` factice, file de vérification hors ligne, décommissionnement, AI GS1 paramétrables | M | 120 | file générique | API MIPH, normes IANOR |
-| 11 | P3 · M5 Pilotage | Marge par produit/labo/temps, valeur dormante, suggestions de retour, taux de rejet Chifa par motif, suggestions saisonnières | M | 121 | 7 | — |
-| 12 | P3 · Réseau | Serveur central en Algérie, multi-officines, partage opt-in agrégé, puis application patient | L+ | 122+ | hébergement ARPCE | Règles CNOP |
+Colonne **Version** : **A** = faisable sur la **version actuelle** (installée dans l'officine, PC serveur local, sans Internet) ; **C** = propre à la **version cloud** ; **A → C** = fait sur la version actuelle et repris tel quel par la version cloud (voir § 6 bis).
+
+| Ordre | Lot | Contenu | Version | Effort | Scripts | Dépend de | Paramétrable [À VÉRIFIER] |
+|---|---|---|---|---|---|---|---|
+| 0 | Cadrage | Valider les écarts du § 1 (Blazor, PostgreSQL seul, scripts SQL, hébergement local) ; adapter les agents | A → C | S | — | — | — |
+| 1 | Journaux sans données personnelles | Masquage dans `Pharma.Refus` et super admin, tests — **fait le 16/11/2026** (commit `b5b52bb`) | A → C | S | — | — | — |
+| 2 | P1 · M6a Brique d'intégrité | Fonction de hachage, chaînage générique, vérification planifiée + alerte titulaire, rôle propriétaire séparé | A → C | M | 111 | 0 | Algorithme, fréquence |
+| 3 | P1 · M6b Journal des ventes | `journal_vente` ajout seul chaîné, numérotation sans trou, clôtures journalières/mensuelles scellées, récap TVA | A → C | L | 112-113 | 2 | Format d'export DGI, durée 6 ans, TVA médicaments/parapharmacie |
+| 4 | P1 · M4a Reprise concurrents | Profils Chifa Plus / XpertPharm / PharmaPro / Profficine, import xlsx, historique Chifa | A → C | M par profil | 114 | exports réels | Format de chaque logiciel |
+| 5 | P1 · M4b Résilience | Mode dégradé si PC serveur indisponible : **A** = PC de secours / sauvegarde restaurable sur un autre poste ; **C** = base locale par poste et synchronisation | A puis C | L | — | décision | — |
+| 6 | P1 · M3a Multi-grossistes | `IGrossisteConnecteur` (fichier, e-mail), catalogue et dispo, comparaison, répartition de commande | A → C (API grossistes : C) | L | 115 | — | Formats grossistes |
+| 7 | P1 · M3b Ruptures et substitution | Historique ruptures, file patients en attente, liste blanche, génériques locaux, paramètre « équivalent exact seulement » | A → C | M | 116 | 6 | Consentement SMS/WhatsApp |
+| 8 | P2 · M2 Registre renforcé | Chaînage du registre, écritures d'annulation, alertes paramétrables avec forçage tracé, exports Excel et filtres, antibiotiques, `IRepertoireOrdonnancesConnecteur` factice | A → C (connecteur réel : C) | L | 117-118 | 2 | Nomenclature des molécules, seuils |
+| 9 | P2 · Données de santé | Journal des accès patient, chiffrement des colonnes sensibles, export/anonymisation | A → C | L | 119 | 8 | Loi 18-07, durée de conservation |
+| 10 | P2 · M1 Sérialisation | `ISerialisationConnecteur` factice, file de vérification hors ligne, décommissionnement, AI GS1 paramétrables | A (factice) → C (base nationale) | M | 120 | file générique | API MIPH, normes IANOR |
+| 11 | P3 · M5 Pilotage | Marge par produit/labo/temps, valeur dormante, suggestions de retour, taux de rejet Chifa par motif, suggestions saisonnières | A → C | M | 121 | 7 | — |
+| 12 | P3 · Réseau | Serveur central en Algérie, multi-officines, partage opt-in agrégé, puis application patient | **C** | L+ | 122+ | hébergement ARPCE | Règles CNOP |
+
+## 6 bis. Version actuelle et version cloud
+
+Principe (décision du titulaire, 16/11/2026) : la **version cloud part de la version actuelle**. Il n'y a qu'**un seul code** (domaine, application, scripts SQL, écrans Blazor) ; ce qui change est le **déploiement** et quelques **adaptateurs** (ports/connecteurs). Tout ce qui est fait sur la version actuelle est donc repris par la version cloud sans être refait.
+
+### Ce qui se fait sur la version actuelle (installée dans l'officine)
+
+| Domaine | Faisable maintenant | Remarque |
+|---|---|---|
+| Conformité fiscale (M6) | Brique d'intégrité, journal des ventes chaîné, numérotation sans trou, clôtures scellées, archivage 6 ans **local** et chiffré, récapitulatif TVA | Aucun besoin d'Internet. Prioritaire (échéance 1ᵉʳ janvier 2027). |
+| Psychotropes (M2) | Registre chaîné, alertes, exports d'inspection, antibiotiques, connecteur du répertoire national en **factice** | Branchement réel quand le répertoire existera. |
+| Sérialisation (M1) | Lecture GS1, stock à la boîte, « jamais vendue deux fois », rappels de lot (déjà fait) ; connecteur de vérification **factice** et file d'attente | La vérification réelle demande Internet et l'API du MIPH. |
+| Ruptures (M3) | Multi-grossistes par **fichier ou e-mail**, historique des ruptures, patients en attente, substitution, liste blanche | Le partage entre officines est cloud. |
+| Changement de logiciel (M4) | Profils d'import des concurrents, import Excel, multi-postes (déjà fait) | — |
+| Pilotage (M5) | Marges, stock dormant, périmés, rejets Chifa, suggestions | — |
+| Données de santé | Journaux sans données personnelles (fait), journal des accès, chiffrement des colonnes et des **sauvegardes**, anonymisation | Rien ne sort de l'officine : conforme § 4 bis par construction. |
+| Résilience | PC de secours ou restauration rapide de la sauvegarde sur un autre poste | Pas de base locale par poste dans cette version. |
+| Mobile du titulaire | Onglet Pilotage dans l'officine, ou à distance par **VPN** | Sans serveur extérieur. |
+
+### Ce qui n'existe que dans la version cloud
+
+| Domaine | Propre au cloud | Pourquoi |
+|---|---|---|
+| Hébergement | Serveur central chez un hébergeur **algérien autorisé ARPCE**, réplica et sauvegardes chez un second hébergeur | § 4 bis : aucune donnée hors d'Algérie. |
+| Postes | **Base locale par poste** (caisse hors ligne) et **synchronisation** avec le serveur central ; gestion des conflits | Changement d'architecture : identifiants GUID ou clé de synchronisation pour les nouvelles tables, horodatage UTC (déjà en place). |
+| Multi-officines | Un titulaire suit plusieurs officines | Demande le serveur central. |
+| Réseau entre officines (M3) | Disponibilités agrégées opt-in, dépannage entre confrères, puis application patient | Demande le serveur central et l'accord CNOP. |
+| Connecteurs nationaux réels | Base nationale de sérialisation (MIPH), répertoire des ordonnances, plateforme des officines, API des grossistes | Les versions factices de la version actuelle sont remplacées par les réelles. |
+| Application mobile du titulaire | Accès sans VPN, notifications | Passe par le serveur central. |
+| Exploitation | Supervision, sauvegardes PITR, test de restauration mensuel, déploiement Docker | Côté éditeur. |
+
+### Comment préparer la version cloud dès la version actuelle (sans surcoût)
+
+1. **Un seul code** : pas de branche séparée ; un réglage de déploiement (« local » / « cloud ») choisit les adaptateurs.
+2. **Ports partout** pour les systèmes externes (sérialisation, répertoire, grossistes, Chifa, SMS, e-mail) : la version actuelle utilise des adaptateurs locaux ou factices, la version cloud les adaptateurs réels.
+3. **Nouvelles tables** : prévoir une clé de synchronisation (GUID) sur les tables créées désormais, sans toucher aux `bigint` existants.
+4. **Journaux inaltérables** (M6, M2) : conçus pour être recopiés vers le serveur central sans recalcul (chaînage par officine).
+5. **Aucune dépendance étrangère** : déjà le cas (§ 3) ; à garder.
 
 ---
 
