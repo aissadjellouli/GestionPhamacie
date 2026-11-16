@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 136 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 138 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 136 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 138 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -1033,7 +1033,7 @@ CREATE FUNCTION public.contenance_depuis_conditionnement(p_conditionnement text)
     LANGUAGE sql IMMUTABLE
     AS $_$
     -- motif de ContenanceProduit.Boite(), recopié tel quel (test ContenanceDepuisNomenclatureTests)
-    SELECT substring(p_conditionnement FROM '(?i)^\s*(?:B|BTE|BO[IÎiî]TE)\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})(?:\s*(?:SACHETS?(?:(?:\s+|-)DOSES?)?|SACH|SCH|AMPOULES?|AMPS?|AMP\.?\s+BUV|CPR?S?|CP\.?\s+EFF|COMPRIM[EÉeé]S?(?:\s+EFFERVESCENTS?)?|G[EÉeé]LULES?|SUPPOSITOIRES?|SUPPO|OVULES?|CAPSULES?|PATCH(?:E?S)?|DISPOSITIFS?\s+TRANSDERMIQUES?|UNIDOSES?|R[EÉeé]CIPIENTS\s+UNIDOSES)\.?)?\s*$')::int
+    SELECT substring(p_conditionnement FROM '(?i)^\s*(?:B|BTE|BO[IÎiî]TE)\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})(?:\s*(?:SACHETS?(?:(?:\s+|-)DOSES?)?|SACH|SCH|AMPOULES?|AMPS?|AMP\.?\s+BUV|CPR?S?|CP\.?\s+EFF|COMPRIM[EÉeé]S?(?:\s+EFFERVESCENTS?)?|G[EÉeé]LULES?|SUPPOSITOIRES?|SUPPO|OVULES?|CAPSULES?|PATCH(?:E?S)?|DISPOSITIFS?\s+TRANSDERMIQUES?|UNIDOSES?|R[EÉeé]CIPIENTS\s+UNIDOSES)\.?(?:\s*(?:DE\s*)?[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L))?)?\s*$')::int
 $_$;
 
 
@@ -3526,12 +3526,31 @@ DECLARE
     m       text;
     v_ids   bigint[];
     v_rempl text;
+    v_sortie text;
+    v_reste text;
+    v_pos   int;
 BEGIN
     IF t IS NULL OR btrim(t) = '' THEN RETURN t; END IF;
     t := regexp_replace(t, '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}', '[COURRIEL]', 'g');
     t := regexp_replace(t, '(\+|00)?213[ .-]?[0-9]([ .-]?[0-9]){7,8}', '[TÉL]', 'g');
     t := regexp_replace(t, '\m0[2-7]([ .-]?[0-9]){8}\M', '[TÉL]', 'g');
     t := regexp_replace(t, '[0-9]([ .-]?[0-9]){8,}', '[N°]', 'g');
+    -- Noms du personnel : masqués tant que la famille « employes » n'est pas envoyée (les plus longs d'abord, sans tenir compte de la casse)
+    IF NOT ('employes' = ANY (sync_familles_effectives())) THEN
+        FOR m IN SELECT btrim(u.nom_complet) FROM utilisateur u
+                 WHERE length(btrim(u.nom_complet)) >= 3
+                 ORDER BY length(btrim(u.nom_complet)) DESC, 1 LOOP
+            v_sortie := '';
+            v_reste := t;
+            LOOP
+                v_pos := strpos(lower(v_reste), lower(m));
+                EXIT WHEN v_pos = 0;
+                v_sortie := v_sortie || left(v_reste, v_pos - 1) || '[PERSONNEL]';
+                v_reste := substr(v_reste, v_pos + length(m));
+            END LOOP;
+            t := v_sortie || v_reste;
+        END LOOP;
+    END IF;
     FOR m IN SELECT DISTINCT lower(x[1]) FROM regexp_matches(t, '([[:alpha:]][[:alpha:]''-]{2,})', 'g') AS x LOOP
         SELECT array_agg(DISTINCT id) INTO v_ids FROM patient WHERE lower(nom) = m OR lower(prenom) = m;
         IF v_ids IS NOT NULL THEN

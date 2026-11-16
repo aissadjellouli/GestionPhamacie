@@ -23,7 +23,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 136 (095, 098, 099, 132 et 134 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 138 (095, 098, 099, 132, 134, 137 et 138 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute

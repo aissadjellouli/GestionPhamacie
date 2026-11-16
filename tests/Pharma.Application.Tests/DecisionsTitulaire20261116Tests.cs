@@ -32,7 +32,7 @@ public class DecisionsTitulaire20261116Tests
     [InlineData("B/1+1", null)]
     [InlineData("B/30 ET B/90", null)]
     [InlineData("B/30 SACHETS", 30)]
-    [InlineData("B/30 SACHETS DE 5 G", null)]
+    [InlineData("B/30 SACHETS DE 5 G", 30)]
     [InlineData("B/1FL", null)]
     [InlineData("FL/10ML", null)]
     [InlineData("T/15G", null)]
