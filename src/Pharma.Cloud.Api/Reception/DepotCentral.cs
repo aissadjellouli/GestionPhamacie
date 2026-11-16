@@ -98,6 +98,36 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         return n;
     }
 
+    /// <summary>Chargement complet annoncé et non terminé pour l'officine de ce certificat (script 006).</summary>
+    public async Task<bool> ChargementEnCoursAsync(string empreinteCertificat, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT cloud_chargement_en_cours($1)");
+        cmd.Parameters.AddWithValue(empreinteCertificat);
+        return await cmd.ExecuteScalarAsync(ct) is true;
+    }
+
+    /// <summary>Voie descendante (script 005) : éléments de version plus grande que celle appliquée par l'officine (acquittement enregistré).</summary>
+    public async Task<Pharma.Shared.ChangementsDescendantsDto> DescendantsAsync(Guid officine, long versionAppliquee, CancellationToken ct)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await PoserOfficineAsync(cnx, tx, officine, ct);
+        await using var cmd = new NpgsqlCommand("SELECT nom_table, cle, version, donnees::text, version_max FROM cloud_descendants($1)", cnx, tx);
+        cmd.Parameters.AddWithValue(versionAppliquee);
+        var liste = new List<Pharma.Shared.ChangementDescendantDto>();
+        long max = versionAppliquee;
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await r.ReadAsync(ct))
+            {
+                liste.Add(new(r.GetString(0), r.GetString(1), r.GetInt64(2), r.GetString(3)));
+                max = r.GetInt64(4);
+            }
+        }
+        await tx.CommitAsync(ct);
+        return new(Pharma.Shared.ChangementsDescendantsDto.ContratV1, max, liste);
+    }
+
     /// <summary>Début d'un chargement complet (script 003) : (dernier lot attendu avant les suivants, lots abandonnés).</summary>
     public async Task<(long Dernier, long Abandonnes)> DebuterChargementAsync(Guid officine, Pharma.Shared.DebutChargementDto d, CancellationToken ct)
     {

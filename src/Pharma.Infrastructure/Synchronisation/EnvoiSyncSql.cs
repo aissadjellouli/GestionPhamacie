@@ -15,51 +15,64 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
                    (SELECT count(*) FROM sync_sortie s WHERE s.lot_numero IS NULL AND s.epoque = p.epoque),
                    (SELECT count(*) FROM sync_lot l WHERE l.accuse_le IS NULL AND l.epoque = p.epoque),
                    pg_is_in_recovery(),
-                   (SELECT count(*) FROM sync_lot l WHERE l.accuse_le IS NULL AND l.epoque < p.epoque)
-            FROM sync_parametre p WHERE p.id = 1
+                   (SELECT count(*) FROM sync_lot l WHERE l.accuse_le IS NULL AND l.epoque < p.epoque),
+                   CASE WHEN rc.cle IS NULL THEN NULL ELSE sync_familles_effectives() END, rc.recu_le, p.descendant_version, coalesce(rc.version, 0),
+                   sync_colonnes_interdites()
+            FROM sync_parametre p LEFT JOIN reglage_central rc ON rc.cle = 'familles_envoyees'
+            WHERE p.id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) throw new InvalidOperationException("Réglage de synchronisation absent (script 126).");
         return new ParametresEnvoiSync(r.GetBoolean(0), r.IsDBNull(1) ? null : r.GetGuid(1), r.GetInt32(2), r.GetString(3), r.GetInt64(4), r.GetInt64(5),
             r.IsDBNull(6) ? null : r.GetString(6), Date(r, 7), Date(r, 8), Date(r, 9), r.IsDBNull(10) ? null : r.GetString(10), Date(r, 11),
-            r.GetString(12), r.GetBoolean(13), r.GetInt64(14), r.GetInt64(15), r.GetBoolean(16), r.GetInt64(17));
+            r.GetString(12), r.GetBoolean(13), r.GetInt64(14), r.GetInt64(15), r.GetBoolean(16), r.GetInt64(17),
+            r.IsDBNull(18) ? null : r.GetFieldValue<string[]>(18), Date(r, 19), r.GetInt64(20), r.GetInt64(21), r.GetFieldValue<string[]>(22));
     }
 
     public async Task<IReadOnlyList<LotEnregistre>> LotsNonAccusesAsync(int maximum, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
-            SELECT l.epoque, l.numero, l.version_contrat, l.empreinte FROM sync_lot l JOIN sync_parametre p ON p.id = 1 AND p.epoque = l.epoque
+        await using var cmd = db.CreateCommand($"""
+            SELECT l.epoque, l.numero, l.version_contrat, l.empreinte, {Colonnes} FROM sync_lot l JOIN sync_parametre p ON p.id = 1 AND p.epoque = l.epoque
             WHERE l.accuse_le IS NULL ORDER BY l.numero LIMIT $1
             """);
         cmd.Parameters.AddWithValue(maximum);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        var res = new List<LotEnregistre>();
-        while (await r.ReadAsync(ct)) res.Add(new LotEnregistre(r.GetInt32(0), r.GetInt64(1), r.GetString(2), r.GetString(3)));
-        return res;
+        return await LotsAsync(cmd, ct);
     }
 
     public async Task<IReadOnlyList<LotEnregistre>> LotsEntreAsync(int epoque, long du, long au, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
-            SELECT epoque, numero, version_contrat, empreinte FROM sync_lot WHERE epoque = $1 AND numero BETWEEN $2 AND $3 ORDER BY numero
+        await using var cmd = db.CreateCommand($"""
+            SELECT l.epoque, l.numero, l.version_contrat, l.empreinte, {Colonnes} FROM sync_lot l WHERE l.epoque = $1 AND l.numero BETWEEN $2 AND $3 ORDER BY l.numero
             """);
         cmd.Parameters.AddWithValue(epoque);
         cmd.Parameters.AddWithValue(du);
         cmd.Parameters.AddWithValue(au);
+        return await LotsAsync(cmd, ct);
+    }
+
+    /// <summary>Colonnes retirées figées (script 136) ou, pour un lot antérieur, reconstituées depuis ses familles et le catalogue actuel.</summary>
+    private const string Colonnes = "coalesce(l.colonnes_retirees, CASE WHEN l.familles IS NULL THEN '{}'::text[] ELSE sync_colonnes_hors_familles(l.familles) END), "
+        + "l.colonnes_retirees IS NOT NULL, l.accuse_le IS NOT NULL, l.reforme_le";
+
+    private static async Task<IReadOnlyList<LotEnregistre>> LotsAsync(NpgsqlCommand cmd, CancellationToken ct)
+    {
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var res = new List<LotEnregistre>();
-        while (await r.ReadAsync(ct)) res.Add(new LotEnregistre(r.GetInt32(0), r.GetInt64(1), r.GetString(2), r.GetString(3)));
+        while (await r.ReadAsync(ct))
+            res.Add(new LotEnregistre(r.GetInt32(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetFieldValue<string[]>(4), r.GetBoolean(5),
+                r.GetBoolean(6), r.IsDBNull(7) ? null : DateTime.SpecifyKind(r.GetDateTime(7), DateTimeKind.Utc)));
         return res;
     }
 
-    public async Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, CancellationToken ct = default)
+    public async Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, IReadOnlyList<string>? colonnesRetirees, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT s.id, s.nom_table, s.id_local, s.operation, s.survenu_le, s.donnees::text, s.ordre
+            SELECT s.id, s.nom_table, s.id_local, s.operation, s.survenu_le, sync_retirer_colonnes(s.nom_table, s.donnees, $3)::text, s.ordre
             FROM sync_sortie s WHERE s.epoque = $1 AND s.lot_numero = $2 ORDER BY coalesce(s.ordre, s.id), s.id
             """);
         cmd.Parameters.AddWithValue(epoque);
         cmd.Parameters.AddWithValue(numero);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)colonnesRetirees?.ToArray() ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<LigneSortieSync>();
         while (await r.ReadAsync(ct))
@@ -75,6 +88,44 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
     {
         await using var cmd = db.CreateCommand("SELECT sync_noter_envoi($1)");
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)erreur ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Éléments descendants reçus dans une transaction (sync_recevoir_descendant, script 136) : un statut par élément.</summary>
+    public async Task<IReadOnlyList<string>> AppliquerDescendantsAsync(IReadOnlyList<ChangementDescendantSync> changements, long versionMax, CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        var statuts = new string[changements.Count];
+        foreach (var (c, i) in changements.Select((c, i) => (c, i)).OrderBy(x => x.c.Version))
+        {
+            await using var cmd = new NpgsqlCommand("SELECT sync_recevoir_descendant($1, $2, $3, $4::jsonb, $5)", cnx, tx);
+            cmd.Parameters.AddWithValue(c.Table);
+            cmd.Parameters.AddWithValue(c.Cle);
+            cmd.Parameters.AddWithValue(c.Version);
+            cmd.Parameters.AddWithValue(c.DonneesJson);
+            cmd.Parameters.AddWithValue(versionMax);
+            statuts[i] = (string)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        await tx.CommitAsync(ct);
+        return statuts;
+    }
+
+    public async Task NoterVersionDescendanteAsync(long version, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_noter_version_descendante($1)");
+        cmd.Parameters.AddWithValue(version);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task ReformerLotAsync(int epoque, long numero, string empreinte, int octets, IReadOnlyList<string> colonnesRetirees, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_reformer_lot_colonnes($1, $2, $3, $4, $5)");
+        cmd.Parameters.AddWithValue(epoque);
+        cmd.Parameters.AddWithValue(numero);
+        cmd.Parameters.AddWithValue(empreinte);
+        cmd.Parameters.AddWithValue(octets);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = colonnesRetirees.ToArray(), NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Text });
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

@@ -15,13 +15,15 @@
 --     (médicament, dermo-cosmétique, hygiène…) ; motifs et catégories réglables
 --     (tiroir, mise en attente, charges, sorties de stock, retours ; 094 ;
 --     vente Chifa sans n° de facture ; 097) ;
+--   * synchronisation (126 à 131) : réglage par défaut (désactivée), classement
+--     sync_table, familles nominatives (sync_famille_colonne) ;
 --   * compte « titulaire » avec le mot de passe provisoire « Provisoire-2026 » :
 --     changement obligatoire à la première connexion (rien d'autre n'est
 --     possible avant).
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 129 (095, 098 et 099 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 136 (095, 098, 099, 132 et 134 n'ajoutent aucune donnée de référence ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -350,6 +352,177 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO regle_alerte_psychotrope (code, libelle, seuil, periode_jours, ordre) VALUES
     ('prescripteur_hors_zone', 'Prescripteur hors zone (wilaya du médecin hors de la zone de l''officine)', 1, 1, 5)
 ON CONFLICT (code) DO NOTHING;
+
+-- Synchronisation (126 à 131) : ligne de réglage (désactivée, code officine tiré au sort une fois) et classement de chaque
+-- table (sens, clé, colonnes exclues, sous code, textes filtrés). Sans ces lignes, une installation neuve depuis init ne
+-- pourrait pas activer la synchronisation (sync_tables_non_classees). Test : SynchronisationInventaireTests (Le_seed_contient_le_classement_de_synchronisation_des_scripts).
+INSERT INTO sync_parametre DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
+INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonnes_patient, colonnes_texte, porteur, motif) VALUES
+    ('alerte', 'montante', '{id}', '{}', '{}', '{action_prise,message}', false, NULL),
+    ('alerte_non_envoyee', 'jamais', '{id}', '{}', '{}', '{}', false, 'Technique, local'),
+    ('alerte_surveillance', 'montante', '{id}', '{}', '{}', '{action_prise,message}', false, NULL),
+    ('annulation_registre', 'montante', '{id}', '{}', '{}', '{motif}', false, NULL),
+    ('annulation_vente', 'montante', '{id}', '{}', '{}', '{motif}', false, NULL),
+    ('avoir_mouvement', 'montante', '{id}', '{}', '{patient_id}', '{motif}', false, NULL),
+    ('boite', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('boite_evenement', 'montante', '{id}', '{}', '{patient_id}', '{commentaire}', false, NULL),
+    ('bordereau', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('bordereau_vente', 'montante', '{id}', '{}', '{}', '{rejet_texte}', false, NULL),
+    ('campagne_inventaire', 'montante', '{id}', '{}', '{}', '{commentaire}', false, NULL),
+    ('campagne_inventaire_ligne', 'montante', '{campagne_id,lot_id}', '{}', '{}', '{}', false, NULL),
+    ('catalogue_grossiste', 'montante', '{fournisseur_id,produit_id}', '{}', '{}', '{}', false, NULL),
+    ('categorie_produit', 'descendante', '{code}', '{}', '{}', '{}', false, NULL),
+    ('centre_payeur', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('chaine_integrite', 'jamais', '{journal}', '{}', '{}', '{}', false, 'Registre technique local'),
+    ('chifa_code_produit', 'descendante', '{code}', '{}', '{}', '{}', false, NULL),
+    ('classe_suivie', 'descendante', '{code}', '{}', '{}', '{}', false, NULL),
+    ('classe_suivie_dci', 'descendante', '{classe_code,dci_id}', '{}', '{}', '{}', false, NULL),
+    ('client_facture', 'montante', '{id}', '{telephone,email}', '{}', '{}', false, NULL),
+    ('cloture_fiscale', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('commande_fournisseur', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, 'Commande en brouillon préparée à distance'),
+    ('comptage_caisse', 'montante', '{session_id,coupure}', '{}', '{}', '{}', false, NULL),
+    ('comptage_intermediaire', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('comptage_reception', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('comptage_reception_ligne', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('compte_carte_periode', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('compte_tresorerie', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('compteur_ticket', 'jamais', '{id}', '{}', '{}', '{}', false, 'Compteur local'),
+    ('connexion_employe', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('correction_lot', 'montante', '{id}', '{}', '{}', '{motif}', false, NULL),
+    ('correspondance_echeancier', 'montante', '{compte_id}', '{}', '{}', '{}', false, NULL),
+    ('correspondance_echeancier_preteur', 'montante', '{preteur}', '{}', '{}', '{}', false, NULL),
+    ('credit_imputation', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('credit_mouvement', 'montante', '{id}', '{}', '{patient_id}', '{}', false, NULL),
+    ('credit_ouverture', 'montante', '{patient_id}', '{}', '{patient_id}', '{}', false, NULL),
+    ('dci', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('demande_patient', 'montante', '{id}', '{sms_erreur}', '{patient_id}', '{}', false, NULL),
+    ('destinataire_notification', 'jamais', '{id}', '{}', '{}', '{}', false, 'Coordonnées personnelles'),
+    ('ecart_caisse_vu', 'montante', '{session_id}', '{}', '{}', '{}', false, NULL),
+    ('echeance_pret', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('emplacement', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('evenement_caisse', 'montante', '{id}', '{}', '{}', '{detail}', false, NULL),
+    ('facture_client', 'montante', '{id}', '{destinataire_nom,destinataire_infos}', '{patient_id}', '{commentaire,destinataire,motif,motif_hors_suivi,motif_rejet}', false, NULL),
+    ('facture_client_ligne', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('facture_client_version', 'montante', '{facture_id,version}', '{contenu}', '{}', '{motif}', false, 'Contenu figé retiré (nom du destinataire)'),
+    ('facture_compteur', 'jamais', '{type,annee}', '{}', '{}', '{}', false, 'Compteur local'),
+    ('forcage_alerte_psychotrope', 'montante', '{id}', '{messages}', '{patient_id}', '{motif}', false, NULL),
+    ('fournisseur', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('fournisseur_mouvement', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('historique_chifa', 'jamais', '{id}', '{}', '{}', '{}', false, 'Reprise : nom et n° d''assuré en clair'),
+    ('import_catalogue_grossiste', 'jamais', '{id}', '{}', '{}', '{}', false, 'Journal d''import local'),
+    ('indication', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('integrite_essai', 'jamais', '{id}', '{}', '{}', '{}', false, 'Table d''essai interne'),
+    ('inventaire', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('journal_audit', 'montante', '{id}', '{details}', '{}', '{}', false, 'Détails libres retirés (peuvent contenir des données personnelles)'),
+    ('journal_registre_psychotrope', 'montante', '{id}', '{porteur_nom,porteur_adresse,porteur_piece}', '{patient_id}', '{motif}', true, 'Journal chaîné : colonnes du porteur retirées, le serveur central ne peut pas recalculer l''empreinte (lot S4)'),
+    ('journal_sauvegarde', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('journal_vente', 'montante', '{id}', '{}', '{}', '{motif}', false, 'Journal chaîné, envoyé avec rang et empreinte'),
+    ('laboratoire', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('ligne_commande', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('ligne_inventaire', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('ligne_retour_fournisseur', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('ligne_vente', 'montante', '{id}', '{}', '{}', '{raison_lot}', false, NULL),
+    ('lot', 'montante', '{id}', '{}', '{}', '{motif_blocage}', false, NULL),
+    ('medecin', 'jamais', '{id}', '{telephone,adresse,email,numero_ordre,code_prestataire}', '{}', '{}', false, 'Envoi en option (sync_parametre.envoyer_medecins, défaut non) : nom, spécialité, wilaya'),
+    ('message_sortant', 'jamais', '{id}', '{}', '{}', '{}', false, 'Contenu et adresse des SMS et courriels'),
+    ('motif_reglable', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('mouvement_stock', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('mouvement_tiroir', 'montante', '{id}', '{}', '{}', '{beneficiaire,detail,libelle,motif_correction,raison}', false, NULL),
+    ('mouvement_tresorerie', 'montante', '{id}', '{}', '{}', '{libelle}', false, NULL),
+    ('nomenclature_produit', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('nomenclature_version', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('ordonnance', 'jamais', '{id}', '{}', '{}', '{}', false, 'Ordonnances et images scannées restent dans l''officine (décision 2)'),
+    ('organisme', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('paiement', 'montante', '{id}', '{}', '{patient_id}', '{}', false, NULL),
+    ('paiement_echeance_pret', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('paiement_effet', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('panier_attente', 'jamais', '{id}', '{}', '{}', '{}', false, 'Transitoire'),
+    ('parametre_alerte', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_caisse', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_fiscal', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_formulaire_sms', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_gs1_ai', 'descendante', '{code}', '{}', '{}', '{}', false, NULL),
+    ('parametre_integrite', 'jamais', '{id}', '{}', '{}', '{}', false, 'Technique, local'),
+    ('parametre_inventaire', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_notification', 'bidirectionnelle', '{id}', '{smtp_identifiant,smtp_mot_de_passe}', '{}', '{}', false, 'Jamais le compte de messagerie'),
+    ('parametre_rapport', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_sauvegarde', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_serialisation', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_substitution', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_surveillance', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('parametre_tracabilite', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('patient', 'montante', '{id}', '{nom,prenom,date_naissance,telephone,num_assure,email}', '{id,assure_principal_id}', '{lien}', false, 'Pseudonyme : le code remplace l''identifiant'),
+    ('permission', 'jamais', '{code}', '{}', '{}', '{}', false, 'Livrée par les scripts du logiciel'),
+    ('pharmacie', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('pret_bancaire', 'montante', '{id}', '{}', '{}', '{objet}', false, NULL),
+    ('produit', 'bidirectionnelle', '{id}', '{}', '{}', '{motif_blocage}', false, 'Prix et marges'),
+    ('produit_indication', 'descendante', '{produit_id,indication_id}', '{}', '{}', '{}', false, NULL),
+    ('profil_catalogue_grossiste', 'jamais', '{fournisseur_id}', '{}', '{}', '{}', false, 'Réglage d''import local'),
+    ('reception', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('reception_attente', 'jamais', '{id}', '{}', '{}', '{}', false, 'Transitoire'),
+    ('reception_ligne', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('registre_psychotrope', 'montante', '{id}', '{porteur_nom,porteur_adresse,porteur_piece}', '{patient_id}', '{}', true, NULL),
+    ('reglage_central', 'descendante', '{cle}', '{}', '{}', '{}', false, 'Réglages décidés au serveur central (familles nominatives…), script 131'),
+    ('regle_alerte_psychotrope', 'bidirectionnelle', '{code}', '{}', '{}', '{}', false, NULL),
+    ('reglement_facture', 'montante', '{reglement_id,reception_id}', '{}', '{}', '{}', false, NULL),
+    ('reglement_facture_client', 'montante', '{mouvement_id,facture_id}', '{}', '{}', '{}', false, NULL),
+    ('reglement_fournisseur', 'montante', '{id}', '{}', '{}', '{commentaire,motif_annulation}', false, NULL),
+    ('regularisation_part_organisme', 'montante', '{id}', '{}', '{}', '{motif_annulation}', false, NULL),
+    ('remboursement_titulaire', 'montante', '{id}', '{}', '{}', '{libelle}', false, NULL),
+    ('remise_automatique', 'bidirectionnelle', '{id}', '{}', '{}', '{motif}', false, NULL),
+    ('remise_cheque_paiement', 'montante', '{remise_id,paiement_id}', '{}', '{}', '{}', false, NULL),
+    ('remise_cheques', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('retour_client', 'montante', '{id}', '{}', '{}', '{motif,motif_texte}', false, NULL),
+    ('retour_client_ligne', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('retour_fournisseur', 'montante', '{id}', '{}', '{}', '{motif}', false, NULL),
+    ('role', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
+    ('role_permission', 'bidirectionnelle', '{role_id,permission_code}', '{}', '{}', '{}', false, NULL),
+    ('rupture_grossiste', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('scan_reception', 'jamais', '{id}', '{}', '{}', '{}', false, 'Transitoire'),
+    ('sceau_integrite', 'montante', '{id}', '{}', '{}', '{}', false, 'Sceaux recopiés tels quels ; la clé ne part jamais'),
+    ('serialisation_reponse_factice', 'jamais', '{id}', '{}', '{}', '{}', false, 'Essai'),
+    ('serveur_officine', 'jamais', '{nom}', '{}', '{}', '{}', false, 'Réglages propres à chaque serveur'),
+    ('session_caisse', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('substance_surveillee', 'descendante', '{motif}', '{}', '{}', '{}', false, NULL),
+    ('substitution_liste_blanche', 'bidirectionnelle', '{produit_id,remplacant_id}', '{}', '{}', '{}', false, NULL),
+    ('surveillance_replication', 'jamais', '{id}', '{}', '{}', '{}', false, 'Réplication locale'),
+    ('sync_chargement', 'jamais', '{numero}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('sync_famille_colonne', 'jamais', '{famille,nom_table,colonne}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('sync_journal_descendant', 'jamais', '{id}', '{}', '{}', '{}', false, 'Synchronisation elle-même (journal de la voie descendante, script 136)'),
+    ('sync_lot', 'jamais', '{epoque,numero}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('sync_parametre', 'jamais', '{id}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('sync_pseudonyme', 'jamais', '{nature,cle_locale}', '{}', '{}', '{}', false, 'Correspondance personne <-> code : ne quitte jamais l''officine'),
+    ('sync_sortie', 'jamais', '{id}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('sync_table', 'jamais', '{nom_table}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('type_prestation', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('utilisateur', 'bidirectionnelle', '{id}', '{mot_de_passe_hash,pin_hash,code_comptoir_essais,code_comptoir_bloque_jusqu,telephone,email,jetons_revoques_le}', '{}', '{}', false, 'Jamais de mot de passe ni de code comptoir'),
+    ('utilisation_financement', 'montante', '{id}', '{}', '{}', '{libelle}', false, NULL),
+    ('vente', 'montante', '{id}', '{remis_a_nom,pour_nom,chifa_qr}', '{patient_id,remis_a_patient_id,pour_patient_id}', '{chifa_attente_motif_texte,chifa_ecart_detail,chifa_ecart_motif,chifa_exclusion_texte}', false, NULL),
+    ('vente_chifa_facture_conflit', 'montante', '{vente_id}', '{}', '{}', '{}', false, NULL),
+    ('verification_integrite', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('verification_serialisation', 'montante', '{id}', '{}', '{}', '{message}', false, NULL),
+    ('versement_bordereau', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('wilaya', 'descendante', '{code}', '{}', '{}', '{}', false, NULL),
+    ('zone_psychotrope_wilaya', 'descendante', '{wilaya}', '{}', '{}', '{}', false, NULL)
+ON CONFLICT (nom_table) DO NOTHING;
+
+-- Synchronisation (130, 133) : colonnes des familles de données nominatives réglées au serveur central (retirées avant envoi
+-- si la famille n'est pas autorisée ; sans ces lignes, rien ne serait retiré)
+INSERT INTO sync_famille_colonne (famille, nom_table, colonne) VALUES
+    ('employes', 'utilisateur', 'nom_complet'), ('employes', 'utilisateur', 'identifiant'),
+    ('pharmacie', 'pharmacie', 'titulaire'), ('pharmacie', 'pharmacie', 'adresse'), ('pharmacie', 'pharmacie', 'telephone'),
+    ('pharmacie', 'parametre_notification', 'smtp_expediteur'),
+    ('fournisseurs', 'fournisseur', 'telephone'), ('fournisseurs', 'fournisseur', 'email'), ('fournisseurs', 'fournisseur', 'adresse'),
+    ('courriel_commandes', 'commande_fournisseur', 'envoyee_email_a'),
+    -- 133 : identifiants de la pharmacie, banque (défaut non), clients facturés (défaut non)
+    ('pharmacie', 'pharmacie', 'nom'), ('pharmacie', 'pharmacie', 'nif'), ('pharmacie', 'pharmacie', 'nis'), ('pharmacie', 'pharmacie', 'rc'),
+    ('pharmacie', 'pharmacie', 'article_imposition'),
+    ('banque', 'compte_tresorerie', 'numero_compte'), ('banque', 'pret_bancaire', 'preteur'),
+    ('clients_factures', 'client_facture', 'adresse'),
+    -- 135 : famille banque élargie (défaut non)
+    ('banque', 'compte_tresorerie', 'banque'), ('banque', 'reglement_fournisseur', 'banque'), ('banque', 'reglement_fournisseur', 'reference'),
+    ('banque', 'paiement_effet', 'reference'), ('banque', 'remise_cheques', 'reference'), ('banque', 'pret_bancaire', 'reference')
+ON CONFLICT DO NOTHING;
 
 COMMIT;
 

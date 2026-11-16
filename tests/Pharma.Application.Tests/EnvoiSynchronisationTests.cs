@@ -34,26 +34,91 @@ public class EnvoiSynchronisationTests
         public readonly List<(LotEnregistre Lot, bool Accuse)> Lots = [];
         public readonly List<string?> Envois = [];
 
+        public int Reformes;
+
         public void Ajouter(int n) => Sortie.AddRange(Enumerable.Range(Sortie.Count + 1, n).Select(i =>
             new LigneSortieSync(i, "vente", i.ToString(), ContratSync.Creation, Maintenant, $$"""{"id":{{i}}}""")));
 
+        /// <summary>Fournisseur avec son téléphone (famille « fournisseurs », script 130).</summary>
+        public void AjouterFournisseur()
+        {
+            var i = Sortie.Count + 1;
+            Sortie.Add(new LigneSortieSync(i, "fournisseur", i.ToString(), ContratSync.Creation, Maintenant, $$"""{"id":{{i}},"telephone":"0550000000"}"""));
+        }
+
+        /// <summary>Utilisateur avec son nom complet (famille « employes », script 130).</summary>
+        public void AjouterUtilisateur()
+        {
+            var i = Sortie.Count + 1;
+            Sortie.Add(new LigneSortieSync(i, "utilisateur", i.ToString(), ContratSync.Creation, Maintenant, $$"""{"id":{{i}},"nom_complet":"Nom Secret"}"""));
+        }
+
+        /// <summary>Catalogue des familles (comme sync_famille_colonne, réduit aux colonnes des essais).</summary>
+        public readonly List<(string Famille, string Colonne)> Catalogue = [("fournisseurs", "fournisseur.telephone"), ("employes", "utilisateur.nom_complet")];
+        public readonly List<ChangementDescendantSync> Recus = [];
+        public bool PanneDescendants;
+
+        private IReadOnlyList<string> Interdites(IReadOnlyList<string>? familles) =>
+            Catalogue.Where(c => !(familles ?? []).Contains(c.Famille)).Select(c => c.Colonne).Distinct().Order(StringComparer.Ordinal).ToList();
+
+        /// <summary>Comme sync_retirer_colonnes : colonnes « table.colonne » retirées (null : aucun retrait).</summary>
+        private static LigneSortieSync Filtrer(LigneSortieSync l, IReadOnlyList<string>? colonnes)
+        {
+            if (colonnes is null || l.DonneesJson is null) return l;
+            var o = System.Text.Json.Nodes.JsonNode.Parse(l.DonneesJson)!.AsObject();
+            foreach (var c in colonnes.Where(c => c.StartsWith(l.Table + ".", StringComparison.Ordinal))) o.Remove(c[(l.Table.Length + 1)..]);
+            return l with { DonneesJson = o.ToJsonString() };
+        }
+
         public Task<EtatSync> EtatAsync(CancellationToken ct = default) => Task.FromResult(new EtatSync(P.Active, P.OfficineId, P.Epoque,
-            P.VersionContrat, P.DernierLot, P.DernierAccuse, 2, 1_048_576, Sortie.Count(l => !Rattachement.ContainsKey(l.Numero))));
-        public Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<LigneSortieSync>>(Sortie.Where(l => !Rattachement.ContainsKey(l.Numero)).Take(maximum).ToList());
+            P.VersionContrat, P.DernierLot, P.DernierAccuse, 2, 1_048_576, Sortie.Count(l => !Rattachement.ContainsKey(l.Numero)), Interdites(P.FamillesEnvoyees)));
+        public Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, IReadOnlyList<string> colonnes, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<LigneSortieSync>>(Sortie.Where(l => !Rattachement.ContainsKey(l.Numero)).Take(maximum).Select(l => Filtrer(l, colonnes)).ToList());
         public Task<bool> EnregistrerLotAsync(LotConstitue lot, CancellationToken ct = default)
         {
             foreach (var l in lot.Lignes) Rattachement[l] = lot.Numero;
-            Lots.Add((new LotEnregistre(P.Epoque, lot.Numero, P.VersionContrat, lot.Empreinte), false));
+            Lots.Add((new LotEnregistre(P.Epoque, lot.Numero, P.VersionContrat, lot.Empreinte, lot.ColonnesRetirees), false));
             P = P with { DernierLot = lot.Numero };
             return Task.FromResult(true);
         }
 
-        public Task<ParametresEnvoiSync> ParametresAsync(CancellationToken ct = default) => Task.FromResult(P);
+        public Task<ParametresEnvoiSync> ParametresAsync(CancellationToken ct = default) => Task.FromResult(P with { ColonnesInterdites = Interdites(P.FamillesEnvoyees) });
         public Task<IReadOnlyList<LotEnregistre>> LotsNonAccusesAsync(int maximum, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<LotEnregistre>>(Lots.Where(l => !l.Accuse).Select(l => l.Lot).OrderBy(l => l.Numero).Take(maximum).ToList());
-        public Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<LigneSortieSync>>(Sortie.Where(l => Rattachement.TryGetValue(l.Numero, out var n) && n == numero).ToList());
+        public Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, IReadOnlyList<string>? colonnes, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<LigneSortieSync>>(Sortie.Where(l => Rattachement.TryGetValue(l.Numero, out var n) && n == numero).Select(l => Filtrer(l, colonnes)).ToList());
+        /// <summary>Comme sync_recevoir_descendant : statut par élément, table inconnue ignorée, version acquittée non modifiée.</summary>
+        public Task<IReadOnlyList<string>> AppliquerDescendantsAsync(IReadOnlyList<ChangementDescendantSync> changements, long versionMax, CancellationToken ct = default)
+        {
+            if (PanneDescendants) throw new InvalidOperationException("panne de la base");
+            var statuts = new List<string>();
+            foreach (var c in changements)
+            {
+                Recus.Add(c);
+                if (c.Version > versionMax) { statuts.Add(StatutsDescendant.Refuse); continue; }
+                if (c.Table != "reglage_central") { statuts.Add(StatutsDescendant.TableInconnue); continue; }
+                if (c.Version <= P.FamillesVersion) { statuts.Add(StatutsDescendant.Ancien); continue; }
+                var f = System.Text.Json.JsonDocument.Parse(c.DonneesJson).RootElement.GetProperty("familles").EnumerateArray().Select(x => x.GetString()!);
+                P = P with { FamillesEnvoyees = f.Distinct().Order(StringComparer.Ordinal).ToList(), FamillesLuesLe = Maintenant, FamillesVersion = c.Version };
+                statuts.Add(StatutsDescendant.Applique);
+            }
+            return Task.FromResult<IReadOnlyList<string>>(statuts);
+        }
+        public Task NoterVersionDescendanteAsync(long version, CancellationToken ct = default)
+        {
+            P = P with { DescendantVersion = Math.Max(P.DescendantVersion, version) };
+            return Task.CompletedTask;
+        }
+        public Task ReformerLotAsync(int epoque, long numero, string empreinte, int octets, IReadOnlyList<string> colonnes, CancellationToken ct = default)
+        {
+            var i = Lots.FindIndex(l => l.Lot.Numero == numero && !l.Accuse);
+            Assert.True(i >= 0, "lot non accusé attendu (jamais de reforme d'un lot accusé)");
+            var avant = Lots[i].Lot.ColonnesRetirees ?? [];
+            Assert.True(avant.All(colonnes.Contains) && colonnes.Count > avant.Count, "reforme : retirer davantage seulement");
+            Lots[i] = (Lots[i].Lot with { Empreinte = empreinte, ColonnesRetirees = colonnes, ReformeLe = Maintenant }, false);
+            Reformes++;
+            return Task.CompletedTask;
+        }
         public Task EnregistrerAccuseAsync(int epoque, long numero, CancellationToken ct = default)
         {
             for (var i = 0; i < Lots.Count; i++) if (Lots[i].Lot.Numero <= numero) Lots[i] = (Lots[i].Lot, true);
@@ -68,7 +133,7 @@ public class EnvoiSynchronisationTests
             return Task.CompletedTask;
         }
         public Task<IReadOnlyList<LotEnregistre>> LotsEntreAsync(int epoque, long du, long au, CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<LotEnregistre>>(Lots.Select(l => l.Lot).Where(l => l.Numero >= du && l.Numero <= au).OrderBy(l => l.Numero).ToList());
+            Task.FromResult<IReadOnlyList<LotEnregistre>>(Lots.Select(l => l.Lot with { Accuse = l.Accuse }).Where(l => l.Numero >= du && l.Numero <= au).OrderBy(l => l.Numero).ToList());
     }
 
     private sealed class Certificat : ICertificatSync
@@ -95,24 +160,49 @@ public class EnvoiSynchronisationTests
         public bool Coupure;
         public Exception? Panne;
         public long? NumeroAccuseFaux;
+        private IReadOnlyList<string> reglage = ["courriel_commandes", "fournisseurs", "pharmacie"];
+        /// <summary>Réglage du central : chaque changement publie une nouvelle version (comme cloud_publier_descendant).</summary>
+        public IReadOnlyList<string> Reglage { get => reglage; set { reglage = value; VersionReglage++; } }
+        public long VersionReglage = 1;
+        public bool ReglagesEnPanne;
+        public readonly List<string> Contenus = [];
+        public readonly List<long> VersionsRecues = [];
+
+        /// <summary>Éléments en plus (table inconnue…), renvoyés tant que leur version dépasse la version acquittée.</summary>
+        public readonly List<ChangementDescendantSync> Autres = [];
+
+        private DescendantsRecus Plus(long apres)
+        {
+            var l = Autres.Where(a => a.Version > apres).ToList();
+            if (VersionReglage > apres) l.Add(new("reglage_central", "familles_envoyees", VersionReglage, System.Text.Json.JsonSerializer.Serialize(new { familles = reglage })));
+            return new DescendantsRecus(l, Math.Max(VersionReglage, Autres.Select(a => a.Version).DefaultIfEmpty(0).Max()));
+        }
+
+        public Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default)
+        {
+            if (ReglagesEnPanne || Coupure) throw new HttpRequestException("Connexion impossible");
+            VersionsRecues.Add(versionAppliquee);
+            return Task.FromResult(Plus(versionAppliquee));
+        }
         public Guid OfficineRendue = Officine;
         public int Renouvellements;
 
         public Task<ReponseActivationSync> ActiverAsync(string adresse, string code, string demandePem, Guid officine, CancellationToken ct = default) =>
             Task.FromResult(new ReponseActivationSync(OfficineRendue, "principal", "CERT", "AC", Maintenant.AddYears(3), "0123"));
 
-        public Task<AccuseLotSync> DeposerAsync(string adresse, byte[] contenu, CancellationToken ct = default)
+        public Task<AccuseLotSync> DeposerAsync(string adresse, byte[] contenu, long versionDescendante, CancellationToken ct = default)
         {
             if (Coupure) throw new HttpRequestException("Connexion impossible");
             if (Panne is not null) throw Panne;
             var lot = SerialisationSyncV1.Lire(contenu);
             Assert.True(SerialisationSyncV1.EmpreinteValide(lot));
+            Contenus.Add(System.Text.Encoding.UTF8.GetString(contenu));
             var n = lot.EnTete.NumeroLot;
             if (n <= Dernier) return Task.FromResult(new AccuseLotSync(1, n, Recus[n] == lot.EnTete.Empreinte ? StatutsLotSync.DejaRecu : StatutsLotSync.EmpreinteDifferente, Dernier));
             if (n > Dernier + 1) return Task.FromResult(new AccuseLotSync(1, n, StatutsLotSync.Trou, Dernier));
             Recus[n] = lot.EnTete.Empreinte;
             Dernier = n;
-            return Task.FromResult(new AccuseLotSync(1, NumeroAccuseFaux ?? n, StatutsLotSync.Accepte, Dernier));
+            return Task.FromResult(new AccuseLotSync(1, NumeroAccuseFaux ?? n, StatutsLotSync.Accepte, Dernier, Plus(versionDescendante)));
         }
 
         public Task<ReponseActivationSync> RenouvelerAsync(string adresse, string demandePem, CancellationToken ct = default)
@@ -318,5 +408,221 @@ public class EnvoiSynchronisationTests
         Assert.Equal(["reglages_synchronisation"], journal.Actions);
         await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerSync(b, journal).ExecuterAsync(new ReglagesSync(true, "http://x", "filtres", false), 3));
         await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerSync(b, journal).ExecuterAsync(new ReglagesSync(true, null, "tout", false), 3));
+    }
+
+    // ---- Familles nominatives réglées au serveur central (script 130) ----
+
+    [Fact]
+    public async Task Reglage_jamais_lu_rien_de_nominatif_ne_part_puis_le_reglage_lu_s_applique()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        s.ReglagesEnPanne = true;
+        b.AjouterFournisseur();
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur); // le dépôt passe, seul l'échange léger a échoué
+        Assert.DoesNotContain("0550000000", s.Contenus[^1]); // lot formé avant tout réglage reçu
+        Assert.Equal(1, b.P.FamillesVersion); // réglage descendu par l'accusé du lot
+        s.ReglagesEnPanne = false;
+        b.AjouterFournisseur();
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Equal(new[] { "courriel_commandes", "fournisseurs", "pharmacie" }, b.P.FamillesEnvoyees);
+        Assert.Contains("0550000000", s.Contenus[^1]);
+        Assert.Equal(new[] { "utilisateur.nom_complet" }, b.Lots[^1].Lot.ColonnesRetirees); // figées à la constitution
+    }
+
+    [Fact]
+    public async Task Une_ligne_deja_en_file_est_filtree_si_sa_famille_est_decochee_et_le_cache_sert_si_le_central_est_injoignable()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        b.P = b.P with { FamillesEnvoyees = ["fournisseurs"] };
+        b.AjouterFournisseur(); // inscrite pendant que la famille était envoyée
+        s.Reglage = ["pharmacie"];
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.DoesNotContain("0550000000", s.Contenus[^1]);
+        // Central injoignable pour le réglage : dernier réglage connu gardé (jamais élargi par défaut)
+        s.ReglagesEnPanne = true;
+        b.AjouterFournisseur();
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Equal(new[] { "pharmacie" }, b.P.FamillesEnvoyees);
+        Assert.DoesNotContain("0550000000", s.Contenus[^1]);
+    }
+
+    [Fact]
+    public async Task Un_lot_non_accuse_est_reforme_sans_la_famille_decochee_avant_envoi()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        await Envoi(b, c, s).ExecuterAsync(Maintenant); // réglage reçu (fournisseurs envoyés)
+        b.AjouterFournisseur();
+        s.Coupure = true;
+        await Envoi(b, c, s).ExecuterAsync(Maintenant); // lot 1 formé avec le téléphone, non envoyé
+        Assert.DoesNotContain("fournisseur.telephone", b.Lots[0].Lot.ColonnesRetirees!);
+        var origine = b.Lots[0].Lot.Empreinte;
+        s.Coupure = false;
+        s.Reglage = ["pharmacie"];
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Equal(1, b.Reformes);
+        Assert.NotEqual(origine, b.Lots[0].Lot.Empreinte);
+        Assert.True(b.Lots[0].Accuse);
+        Assert.DoesNotContain("0550000000", s.Contenus[^1]);
+        Assert.All(s.Contenus, x => Assert.DoesNotContain("0550000000", x));
+    }
+
+    [Fact]
+    public async Task Un_lot_reforme_deja_recu_sous_sa_forme_d_origine_vaut_accuse()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        await Envoi(b, c, s).ExecuterAsync(Maintenant); // réglage reçu (fournisseurs envoyés)
+        b.AjouterFournisseur();
+        s.Coupure = true;
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        // Le central avait reçu le lot d'origine (accusé perdu), puis la famille est décochée
+        s.Coupure = false;
+        (s.Recus[1], s.Dernier) = (b.Lots[0].Lot.Empreinte, 1);
+        s.Reglage = [];
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.True(b.Lots[0].Accuse);
+        Assert.Equal(1, b.Reformes);
+    }
+
+    [Fact]
+    public async Task Le_reglage_descend_meme_sans_lot_et_le_dernier_applique_sert_si_le_central_est_coupe()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant); // rien à envoyer : l'échange léger fait quand même descendre
+        Assert.Null(r.Erreur);
+        Assert.Equal(1, b.P.FamillesVersion);
+        Assert.Equal(new[] { "courriel_commandes", "fournisseurs", "pharmacie" }, b.P.FamillesEnvoyees);
+        s.Reglage = ["pharmacie"];
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Equal(2, b.P.DescendantVersion);
+        Assert.Equal(1, s.VersionsRecues[^1]); // acquittement de la version appliquée
+        // Central coupé : aucun blocage local, dernière version appliquée gardée, rien de nominatif décoché ne part
+        s.Coupure = true;
+        b.AjouterFournisseur();
+        r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Contains("injoignable", r.Erreur);
+        Assert.Equal(new[] { "pharmacie" }, b.P.FamillesEnvoyees);
+        s.Coupure = false;
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.DoesNotContain("0550000000", s.Contenus[^1]);
+    }
+
+    [Fact]
+    public async Task Un_reglage_porte_par_l_accuse_d_un_lot_est_applique()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        b.Ajouter(1);
+        s.ReglagesEnPanne = true; // échange léger en échec : seul l'accusé du lot fait descendre
+        s.Reglage = ["employes"];
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Equal(new[] { "employes" }, b.P.FamillesEnvoyees);
+        Assert.Equal(2, b.P.FamillesVersion);
+    }
+
+    // ---- Corrections après revue (script 136) ----
+
+    [Fact]
+    public async Task Une_colonne_ajoutee_a_une_famille_apres_coup_ne_rend_pas_un_lot_deja_constitue_non_renvoyable()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        s.Reglage = ["pharmacie"];
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        b.AjouterFournisseur();
+        s.Panne = new HttpRequestException("coupure");
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Equal(["fournisseur.telephone", "utilisateur.nom_complet"], b.Lots[0].Lot.ColonnesRetirees);
+        b.Catalogue.Add(("pharmacie", "fournisseur.nif")); // colonne ajoutée à une famille envoyée : le lot figé ne change pas
+        s.Panne = null;
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Equal(0, b.Reformes);
+        Assert.True(b.Lots[0].Accuse);
+    }
+
+    [Fact]
+    public async Task Un_lot_deja_accuse_renvoye_apres_un_trou_est_filtre_sans_reforme_en_base()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        await Envoi(b, c, s).ExecuterAsync(Maintenant); // réglage reçu (fournisseurs envoyés)
+        b.AjouterFournisseur();
+        b.Ajouter(3);
+        s.Panne = new HttpRequestException("coupure");
+        await Envoi(b, c, s).ExecuterAsync(Maintenant); // lots 1 et 2 formés avec le téléphone
+        b.Lots[0] = (b.Lots[0].Lot, true); // lot 1 accusé ici, perdu côté central (restauration)
+        s.Panne = null;
+        s.Reglage = ["pharmacie"]; // famille « fournisseurs » décochée depuis
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Equal(2, s.Dernier);
+        Assert.All(s.Contenus, x => Assert.DoesNotContain("0550000000", x));
+        Assert.Equal(0, b.Reformes); // jamais de reforme du lot 1 déjà accusé (le lot 2 n'a rien de nominatif)
+        Assert.DoesNotContain("fournisseur.telephone", b.Lots[0].Lot.ColonnesRetirees!); // base du lot 1 inchangée
+    }
+
+    [Fact]
+    public async Task Un_lot_anterieur_au_script_130_sans_familles_ne_laisse_rien_de_nominatif_partir_lors_d_une_reprise()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        b.AjouterUtilisateur();
+        b.Ajouter(3);
+        s.Panne = new HttpRequestException("coupure");
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        b.Lots[0] = (b.Lots[0].Lot with { ColonnesRetirees = [], ColonnesFigees = false }, true); // lot ancien, familles NULL
+        s.Panne = null;
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Equal(2, s.Dernier);
+        Assert.All(s.Contenus, x => Assert.DoesNotContain("Nom Secret", x));
+    }
+
+    [Fact]
+    public async Task Un_lot_reforme_dont_l_accuse_s_est_perdu_est_tenu_pour_recu_d_apres_la_base_et_non_une_variable_locale()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        b.AjouterFournisseur();
+        s.Panne = new HttpRequestException("coupure");
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        var origine = b.Lots[0].Lot.Empreinte;
+        s.Reglage = [];
+        await Envoi(b, c, s).ExecuterAsync(Maintenant); // reforme en base, envoi encore en panne
+        Assert.NotNull(b.Lots[0].Lot.ReformeLe);
+        // Nouveau passage (autre instance) : le central a la forme d'origine ; la décision vient de reforme_le
+        s.Panne = null;
+        (s.Recus[1], s.Dernier) = (origine, 1);
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.True(b.Lots[0].Accuse);
+        Assert.Equal(1, b.Reformes);
+    }
+
+    [Fact]
+    public async Task Un_element_descendant_d_une_table_inconnue_est_ignore_sans_arreter_l_envoi_ni_sauter_de_version()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        s.Autres.Add(new("prix_central", "x", 5, "{}"));
+        b.Ajouter(1);
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Equal(1, s.Dernier);
+        Assert.Equal(4, b.P.DescendantVersion); // jamais jusqu'à l'élément ignoré (redonné à chaque passage)
+        Assert.Contains("ignoré", b.Envois[^1]);
+        Assert.Equal(1, b.P.FamillesVersion); // le réglage valide, lui, est appliqué
+    }
+
+    [Fact]
+    public async Task Une_erreur_d_application_des_descendants_n_arrete_pas_l_envoi_des_lots()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        b.PanneDescendants = true;
+        b.Ajouter(1);
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Equal(1, s.Dernier);
+        Assert.Contains("non appliqués", b.Envois[^1]);
     }
 }

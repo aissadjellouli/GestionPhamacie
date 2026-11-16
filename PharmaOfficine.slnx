@@ -192,6 +192,13 @@
     <File Path="database/migration/127_synchronisation_textes_medecins.sql" />
     <File Path="database/migration/128_synchronisation_envoi.sql" />
     <File Path="database/migration/129_synchronisation_chargement.sql" />
+    <File Path="database/migration/130_synchronisation_familles_nominatives.sql" />
+    <File Path="database/migration/131_synchronisation_descendant.sql" />
+    <File Path="database/migration/132_contenance_depuis_nomenclature.sql" />
+    <File Path="database/migration/133_synchronisation_familles_banque_clients.sql" />
+    <File Path="database/migration/134_contenance_sachets_ampoules.sql" />
+    <File Path="database/migration/135_synchronisation_famille_banque_elargie.sql" />
+    <File Path="database/migration/136_synchronisation_corrections_revue.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -199,6 +206,13 @@
     <File Path="database/tests/127_synchronisation_textes_medecins_tests.sql" />
     <File Path="database/tests/128_synchronisation_envoi_tests.sql" />
     <File Path="database/tests/129_synchronisation_chargement_tests.sql" />
+    <File Path="database/tests/130_synchronisation_familles_nominatives_tests.sql" />
+    <File Path="database/tests/131_synchronisation_descendant_tests.sql" />
+    <File Path="database/tests/132_contenance_depuis_nomenclature_tests.sql" />
+    <File Path="database/tests/133_synchronisation_familles_banque_clients_tests.sql" />
+    <File Path="database/tests/134_contenance_sachets_ampoules_tests.sql" />
+    <File Path="database/tests/135_synchronisation_famille_banque_elargie_tests.sql" />
+    <File Path="database/tests/136_synchronisation_corrections_revue_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
   </Folder>
   <Folder Name="/database/cloud/">
@@ -206,8 +220,20 @@
     <File Path="database/cloud/001_base_centrale.sql" />
     <File Path="database/cloud/002_tables_miroir.sql" />
     <File Path="database/cloud/003_chargement.sql" />
+    <File Path="database/cloud/004_reglages.sql" />
+    <File Path="database/cloud/005_descendant.sql" />
+    <File Path="database/cloud/006_debit_chargement.sql" />
+    <File Path="database/cloud/007_familles_banque_clients.sql" />
+    <File Path="database/cloud/008_famille_banque_elargie.sql" />
+    <File Path="database/cloud/009_corrections_revue.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
     <File Path="database/cloud/tests/003_chargement_tests.sql" />
+    <File Path="database/cloud/tests/004_reglages_tests.sql" />
+    <File Path="database/cloud/tests/005_descendant_tests.sql" />
+    <File Path="database/cloud/tests/006_debit_chargement_tests.sql" />
+    <File Path="database/cloud/tests/007_familles_banque_clients_tests.sql" />
+    <File Path="database/cloud/tests/008_famille_banque_elargie_tests.sql" />
+    <File Path="database/cloud/tests/009_corrections_revue_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

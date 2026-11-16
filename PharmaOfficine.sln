@@ -240,6 +240,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\127_synchronisation_textes_medecins.sql = database\migration\127_synchronisation_textes_medecins.sql
 		database\migration\128_synchronisation_envoi.sql = database\migration\128_synchronisation_envoi.sql
 		database\migration\129_synchronisation_chargement.sql = database\migration\129_synchronisation_chargement.sql
+		database\migration\130_synchronisation_familles_nominatives.sql = database\migration\130_synchronisation_familles_nominatives.sql
+		database\migration\131_synchronisation_descendant.sql = database\migration\131_synchronisation_descendant.sql
+		database\migration\132_contenance_depuis_nomenclature.sql = database\migration\132_contenance_depuis_nomenclature.sql
+		database\migration\133_synchronisation_familles_banque_clients.sql = database\migration\133_synchronisation_familles_banque_clients.sql
+		database\migration\134_contenance_sachets_ampoules.sql = database\migration\134_contenance_sachets_ampoules.sql
+		database\migration\135_synchronisation_famille_banque_elargie.sql = database\migration\135_synchronisation_famille_banque_elargie.sql
+		database\migration\136_synchronisation_corrections_revue.sql = database\migration\136_synchronisation_corrections_revue.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -249,6 +256,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\127_synchronisation_textes_medecins_tests.sql = database\tests\127_synchronisation_textes_medecins_tests.sql
 		database\tests\128_synchronisation_envoi_tests.sql = database\tests\128_synchronisation_envoi_tests.sql
 		database\tests\129_synchronisation_chargement_tests.sql = database\tests\129_synchronisation_chargement_tests.sql
+		database\tests\130_synchronisation_familles_nominatives_tests.sql = database\tests\130_synchronisation_familles_nominatives_tests.sql
+		database\tests\131_synchronisation_descendant_tests.sql = database\tests\131_synchronisation_descendant_tests.sql
+		database\tests\132_contenance_depuis_nomenclature_tests.sql = database\tests\132_contenance_depuis_nomenclature_tests.sql
+		database\tests\133_synchronisation_familles_banque_clients_tests.sql = database\tests\133_synchronisation_familles_banque_clients_tests.sql
+		database\tests\134_contenance_sachets_ampoules_tests.sql = database\tests\134_contenance_sachets_ampoules_tests.sql
+		database\tests\135_synchronisation_famille_banque_elargie_tests.sql = database\tests\135_synchronisation_famille_banque_elargie_tests.sql
+		database\tests\136_synchronisation_corrections_revue_tests.sql = database\tests\136_synchronisation_corrections_revue_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 	EndProjectSection
 EndProject
@@ -285,8 +299,20 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\001_base_centrale.sql = database\cloud\001_base_centrale.sql
 		database\cloud\002_tables_miroir.sql = database\cloud\002_tables_miroir.sql
 		database\cloud\003_chargement.sql = database\cloud\003_chargement.sql
+		database\cloud\004_reglages.sql = database\cloud\004_reglages.sql
+		database\cloud\005_descendant.sql = database\cloud\005_descendant.sql
+		database\cloud\006_debit_chargement.sql = database\cloud\006_debit_chargement.sql
+		database\cloud\007_familles_banque_clients.sql = database\cloud\007_familles_banque_clients.sql
+		database\cloud\008_famille_banque_elargie.sql = database\cloud\008_famille_banque_elargie.sql
+		database\cloud\009_corrections_revue.sql = database\cloud\009_corrections_revue.sql
 		database\cloud\tests\001_base_centrale_tests.sql = database\cloud\tests\001_base_centrale_tests.sql
 		database\cloud\tests\003_chargement_tests.sql = database\cloud\tests\003_chargement_tests.sql
+		database\cloud\tests\004_reglages_tests.sql = database\cloud\tests\004_reglages_tests.sql
+		database\cloud\tests\005_descendant_tests.sql = database\cloud\tests\005_descendant_tests.sql
+		database\cloud\tests\006_debit_chargement_tests.sql = database\cloud\tests\006_debit_chargement_tests.sql
+		database\cloud\tests\007_familles_banque_clients_tests.sql = database\cloud\tests\007_familles_banque_clients_tests.sql
+		database\cloud\tests\008_famille_banque_elargie_tests.sql = database\cloud\tests\008_famille_banque_elargie_tests.sql
+		database\cloud\tests\009_corrections_revue_tests.sql = database\cloud\tests\009_corrections_revue_tests.sql
 	EndProjectSection
 EndProject
 Global

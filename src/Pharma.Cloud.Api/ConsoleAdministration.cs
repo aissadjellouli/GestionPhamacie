@@ -14,7 +14,8 @@ namespace Pharma.Cloud.Api;
 public static class ConsoleAdministration
 {
     public static readonly string[] Commandes =
-        ["--initialiser-autorite", "--certificat-serveur", "--creer-officine", "--code-activation", "--revoquer", "--revoquer-serveur", "--lister", "--partitions", "--generer-miroir"];
+        ["--initialiser-autorite", "--certificat-serveur", "--creer-officine", "--code-activation", "--revoquer", "--revoquer-serveur", "--lister", "--partitions", "--generer-miroir",
+         "--reglages", "--regler-famille", "--effacer-famille", "--conservation", "--purge-lots", "--purger-lots"];
 
     public static bool Concerne(string[] args) => args.Length > 0 && Commandes.Contains(args[0]);
 
@@ -107,6 +108,116 @@ public static class ConsoleAdministration
                     Console.WriteLine($"Partitions mensuelles créées : {await cmd.ExecuteScalarAsync()}");
                     return 0;
                 }
+                case "--reglages":
+                {
+                    await using var db = Admin();
+                    await AfficherReglagesAsync(db);
+                    return 0;
+                }
+                case "--regler-famille":
+                {
+                    // --regler-famille <famille> oui|non|global [--officine <code>]
+                    var famille = args.Length > 2 ? args[1] : throw new ArgumentException("Attendu : --regler-famille <famille> oui|non|global [--officine <code>].");
+                    bool? envoyee = args[2] switch
+                    {
+                        "oui" => true,
+                        "non" => false,
+                        "global" => null,
+                        _ => throw new ArgumentException("Valeur attendue : oui, non ou global (retour à la valeur globale, avec --officine).")
+                    };
+                    var officine = OfficineOption(args);
+                    await using var db = Admin();
+                    await using var cmd = db.CreateCommand("SELECT cloud_regler_famille($1, $2, $3)");
+                    cmd.Parameters.AddWithValue(famille);
+                    cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)envoyee ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Boolean });
+                    cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)officine ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
+                    await cmd.ExecuteNonQueryAsync();
+                    Console.WriteLine($"Famille « {famille} » : {(envoyee is null ? "valeur globale" : envoyee.Value ? "envoyée" : "non envoyée")}"
+                        + $"{(officine is null ? " (toutes les officines sans surcharge)" : $" (officine {officine})")} ; pris en compte au prochain passage d'envoi de l'officine.");
+                    if (envoyee == false)
+                        Console.WriteLine($"Ce qui a déjà été reçu reste gardé : pour l'effacer, --effacer-famille {famille}{(officine is null ? "" : $" --officine {officine}")} (simulation, puis --confirmer {famille}).");
+                    return 0;
+                }
+                case "--effacer-famille":
+                {
+                    // SUPPRESSION de données : simulation sans --confirmer <famille> (le nom de la famille répété)
+                    var famille = args.Length > 1 ? args[1] : throw new ArgumentException("Attendu : --effacer-famille <famille> [--officine <code>] [--confirmer <famille>].");
+                    var officine = OfficineOption(args);
+                    var confirmee = Option(args, "--confirmer") is { } c && c == famille;
+                    if (Option(args, "--confirmer") is not null && !confirmee) throw new ArgumentException("Confirmation refusée : --confirmer doit répéter le nom de la famille.");
+                    await using var db = Admin();
+                    await using var cmd = db.CreateCommand("SELECT officine_id, nom_table, colonne, lignes, lots FROM cloud_effacer_famille($1, $2, $3)");
+                    cmd.Parameters.AddWithValue(famille);
+                    cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)officine ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
+                    cmd.Parameters.AddWithValue(confirmee);
+                    await using var r = await cmd.ExecuteReaderAsync();
+                    var vu = false;
+                    while (await r.ReadAsync())
+                    {
+                        vu = true;
+                        Console.WriteLine(r.IsDBNull(1)
+                            ? $"{r.GetGuid(0)}  lots bruts contenant la famille : {r.GetInt64(4)}"
+                            : $"{r.GetGuid(0)}  {r.GetString(1)}.{r.GetString(2)} : {r.GetInt64(3)} valeur(s)");
+                    }
+                    if (!vu) Console.WriteLine("Aucune officine où cette famille est décochée.");
+                    Console.WriteLine(confirmee ? "Effacement fait et journalisé (famille_effacee)."
+                        : $"SIMULATION : rien n'a été effacé. Pour effacer (définitif) : ajoutez --confirmer {famille}.");
+                    return 0;
+                }
+                case "--conservation":
+                {
+                    // --conservation <ans>|global [--officine <code>] : 6 ans minimum, pas de maximum
+                    var valeur = args.Length > 1 ? args[1] : throw new ArgumentException("Attendu : --conservation <ans>|global [--officine <code>].");
+                    int? ans = valeur == "global" ? null : int.TryParse(valeur, out var a) ? a : throw new ArgumentException("Nombre d'années attendu (6 minimum).");
+                    var officine = OfficineOption(args);
+                    await using var db = Admin();
+                    await using var cmd = db.CreateCommand("SELECT cloud_regler_conservation($1, $2)");
+                    cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ans ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer });
+                    cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)officine ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
+                    await cmd.ExecuteNonQueryAsync();
+                    Console.WriteLine($"Conservation des lots bruts : {(ans is null ? "valeur globale" : $"{ans} ans")}{(officine is null ? " (globale)" : $" (officine {officine})")}.");
+                    return 0;
+                }
+                case "--purge-lots":
+                {
+                    var active = args.Length > 1 && args[1] == "activer" ? true
+                        : args.Length > 1 && args[1] == "desactiver" ? false
+                        : throw new ArgumentException("Attendu : --purge-lots activer|desactiver.");
+                    await using var db = Admin();
+                    await using var cmd = db.CreateCommand("SELECT cloud_regler_purge($1)");
+                    cmd.Parameters.AddWithValue(active);
+                    await cmd.ExecuteNonQueryAsync();
+                    Console.WriteLine(active
+                        ? "Effacement des lots bruts trop anciens ACTIVÉ : chaque --purger-lots (tâche planifiée) effacera les lots dont la durée de conservation est dépassée."
+                        : "Effacement des lots bruts trop anciens désactivé.");
+                    return 0;
+                }
+                case "--purger-lots":
+                {
+                    // Tâche planifiée : sans effet tant que l'effacement n'est pas activé ; --simulation : compte seulement
+                    var simulation = args.Contains("--simulation");
+                    await using var db = Admin();
+                    if (!simulation)
+                    {
+                        await using var etat = db.CreateCommand("SELECT purge_lots_active FROM cloud_parametre WHERE id = 1");
+                        if (await etat.ExecuteScalarAsync() is not true)
+                        {
+                            Console.WriteLine("Effacement des lots bruts désactivé (défaut) : rien n'est effacé. Activation : --purge-lots activer.");
+                            return 0;
+                        }
+                    }
+                    await using var cmd = db.CreateCommand("SELECT officine_id, conservation_ans, lots, recus_du, recus_au FROM cloud_purger_lots($1)");
+                    cmd.Parameters.AddWithValue(simulation);
+                    await using var r = await cmd.ExecuteReaderAsync();
+                    long total = 0;
+                    while (await r.ReadAsync())
+                    {
+                        total += r.GetInt64(2);
+                        Console.WriteLine($"{r.GetGuid(0)}  {r.GetInt64(2)} lot(s) reçus du {r.GetDateTime(3):yyyy-MM-dd} au {r.GetDateTime(4):yyyy-MM-dd} (conservation {r.GetInt32(1)} ans)");
+                    }
+                    Console.WriteLine(simulation ? $"SIMULATION : {total} lot(s) seraient effacés." : $"{total} lot(s) effacé(s), journalisé(s) (lots_purges).");
+                    return 0;
+                }
             }
         }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException or NpgsqlException or IOException)
@@ -132,6 +243,52 @@ public static class ConsoleAdministration
         Console.WriteLine($"Code d'activation du serveur « {serveur} » (usage unique, 24 h) :");
         Console.WriteLine(code);
     }
+
+    /// <summary>Familles nominatives (globales et surcharges), conservation des lots bruts, effacement automatique.</summary>
+    private static async Task AfficherReglagesAsync(NpgsqlDataSource db)
+    {
+        await using (var cmd = db.CreateCommand("""
+            SELECT f.famille, f.envoyee, f.libelle, (SELECT string_agg(c.nom_table || '.' || c.colonne, ', ' ORDER BY 1) FROM cloud_famille_colonne c WHERE c.famille = f.famille)
+            FROM cloud_famille f ORDER BY 1
+            """))
+        await using (var r = await cmd.ExecuteReaderAsync())
+        {
+            Console.WriteLine("Familles nominatives (valeur globale) :");
+            while (await r.ReadAsync())
+                Console.WriteLine($"  [{(r.GetBoolean(1) ? "x" : " ")}] {r.GetString(0),-20} {r.GetString(2)} : {(r.IsDBNull(3) ? "-" : r.GetString(3))}");
+        }
+        await using (var cmd = db.CreateCommand("""
+            SELECT o.officine_id, x.libelle, o.famille, o.envoyee FROM officine_famille o JOIN officine x ON x.id = o.officine_id ORDER BY 1, 3
+            """))
+        await using (var r = await cmd.ExecuteReaderAsync())
+        {
+            Console.WriteLine("Surcharges par officine :");
+            var aucune = true;
+            while (await r.ReadAsync())
+            {
+                aucune = false;
+                Console.WriteLine($"  {r.GetGuid(0)}  {r.GetString(1)}  {r.GetString(2)} : {(r.GetBoolean(3) ? "envoyée" : "non envoyée")}");
+            }
+            if (aucune) Console.WriteLine("  (aucune)");
+        }
+        await using (var cmd = db.CreateCommand("""
+            SELECT p.conservation_lots_ans, p.purge_lots_active,
+                   (SELECT string_agg(o.id || ' : ' || o.conservation_lots_ans || ' ans', ', ') FROM officine o WHERE o.conservation_lots_ans IS NOT NULL)
+            FROM cloud_parametre p WHERE p.id = 1
+            """))
+        await using (var r = await cmd.ExecuteReaderAsync())
+        {
+            if (await r.ReadAsync())
+            {
+                Console.WriteLine($"Conservation des lots bruts : {r.GetInt32(0)} ans (6 minimum){(r.IsDBNull(2) ? "" : " ; officines : " + r.GetString(2))}");
+                Console.WriteLine($"Effacement automatique des lots trop anciens : {(r.GetBoolean(1) ? "ACTIVÉ" : "désactivé")}");
+            }
+        }
+    }
+
+    private static Guid? OfficineOption(string[] args) => Option(args, "--officine") is { } o
+        ? Guid.TryParse(o, out var g) ? g : throw new ArgumentException("Code officine (uuid) attendu après --officine.")
+        : null;
 
     private static NpgsqlDataSource Admin() =>
         NpgsqlDataSource.Create(Environment.GetEnvironmentVariable("PHARMA_CLOUD_ADMIN_CONNEXION") is { Length: > 0 } c ? c

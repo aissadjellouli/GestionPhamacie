@@ -17,8 +17,27 @@ public sealed record DemandeRenouvellementDto(string DemandePem);
 
 public sealed record ReponseJetonDto(string Jeton, DateTimeOffset Expire);
 
-/// <summary>Accusé d'un lot : statut (accepte, deja_recu, trou, empreinte_differente) et dernier lot reçu pour l'époque.</summary>
-public sealed record AccuseLotDto(int Epoque, long Numero, string Statut, long DernierRecu);
+/// <summary>Accusé d'un lot : statut (accepte, deja_recu, trou, empreinte_differente), dernier lot reçu pour l'époque et changements
+/// descendants non encore appliqués par l'officine (si elle a donné sa version dans l'en-tête X-Sync-Descendants).</summary>
+public sealed record AccuseLotDto(int Epoque, long Numero, string Statut, long DernierRecu, ChangementsDescendantsDto? Descendants = null);
+
+/// <summary>
+/// Voie descendante (contrat desc-v1, première brique de S3) : éléments que le serveur central fait descendre dans la base de l'officine.
+/// Chaque élément : table locale de destination, clé, version (monotone par officine) et données (objet JSON). L'officine n'applique
+/// jamais une version plus ancienne que celle qu'elle a, et redonne la plus grande version appliquée à l'échange suivant (acquittement) ;
+/// le serveur central ne renvoie que les versions plus grandes.
+/// </summary>
+public sealed record ChangementsDescendantsDto(string Contrat, long VersionMax, IReadOnlyList<ChangementDescendantDto> Changements)
+{
+    public const string ContratV1 = "desc-v1";
+    /// <summary>En-tête HTTP portant la plus grande version descendante appliquée par l'officine.</summary>
+    public const string EnTeteVersion = "X-Sync-Descendants";
+}
+
+public sealed record ChangementDescendantDto(string Table, string Cle, long Version, string DonneesJson);
+
+/// <summary>Échange léger (chaque passage, même sans lot à envoyer) : version descendante appliquée par l'officine.</summary>
+public sealed record EchangeDescendantDto(long VersionAppliquee);
 
 public sealed record EtatCentralDto(int Epoque, long DernierRecu);
 
@@ -48,6 +67,39 @@ public sealed record FinChargementDto(int Numero, IReadOnlyDictionary<string, lo
 
 /// <summary>Fin accusée : lignes du serveur central absentes de l'officine (signalées, jamais effacées), par table.</summary>
 public sealed record ReponseFinChargementDto(int Numero, long Absentes, IReadOnlyDictionary<string, long> AbsentesParTable, IReadOnlyDictionary<string, long> LignesVues);
+
+/// <summary>
+/// Familles de données nominatives réglables au serveur central (2026-11-16, docs/conception-synchronisation.md § 14). Une colonne
+/// d'une famille non autorisée ne quitte jamais l'officine (retirée à la constitution des lots, script 130) et le serveur central
+/// l'efface s'il la reçoit quand même (script central 004). Même liste dans database/migration/130 (sync_famille_colonne) et
+/// database/cloud/004 (cloud_famille_colonne) : test FamillesNominativesTests.
+/// </summary>
+public static class FamillesNominativesSync
+{
+    public const string Employes = "employes";
+    public const string Pharmacie = "pharmacie";
+    public const string Fournisseurs = "fournisseurs";
+    public const string CourrielCommandes = "courriel_commandes";
+    public const string Banque = "banque";
+    public const string ClientsFactures = "clients_factures";
+
+    /// <summary>Famille -> (libellé, défaut au serveur central, colonnes « table.colonne »).</summary>
+    public static readonly IReadOnlyDictionary<string, (string Libelle, bool Defaut, IReadOnlyList<string> Colonnes)> Familles =
+        new Dictionary<string, (string, bool, IReadOnlyList<string>)>(StringComparer.Ordinal)
+        {
+            [Employes] = ("Noms et identifiants du personnel", false, ["utilisateur.nom_complet", "utilisateur.identifiant"]),
+            [Pharmacie] = ("Nom, titulaire, identifiants fiscaux et coordonnées de la pharmacie", true,
+                ["pharmacie.titulaire", "pharmacie.adresse", "pharmacie.telephone", "parametre_notification.smtp_expediteur",
+                 "pharmacie.nom", "pharmacie.nif", "pharmacie.nis", "pharmacie.rc", "pharmacie.article_imposition"]),
+            [Fournisseurs] = ("Coordonnées des fournisseurs", true, ["fournisseur.telephone", "fournisseur.email", "fournisseur.adresse"]),
+            [CourrielCommandes] = ("Adresse courriel des commandes envoyées", true, ["commande_fournisseur.envoyee_email_a"]),
+            [Banque] = ("Coordonnées bancaires (n° de compte, banque, références, prêteur)", false,
+                ["compte_tresorerie.numero_compte", "pret_bancaire.preteur",
+                 "compte_tresorerie.banque", "reglement_fournisseur.banque", "reglement_fournisseur.reference",
+                 "paiement_effet.reference", "remise_cheques.reference", "pret_bancaire.reference"]),
+            [ClientsFactures] = ("Adresse des clients facturés", false, ["client_facture.adresse"])
+        };
+}
 
 public static class StatutsLot
 {
@@ -103,7 +155,8 @@ public sealed record EtatSynchronisationDto(bool Active, string? OfficineId, str
     DateTime? DernierEnvoi, DateTime? DernierAccuseLe, long DernierLot, long DernierAccuse, long LignesEnAttente, long LotsEnAttente,
     DateTime? EcheanceCertificat, string? EmpreinteCertificat, string? DerniereErreur, DateTime? DerniereErreurLe, string TextesLibres,
     bool EnvoyerMedecins, int Epoque, string VersionContrat, long LotsAutresEpoques = 0, bool BaseEnLectureSeule = false,
-    ChargementSynchronisationDto? Chargement = null);
+    ChargementSynchronisationDto? Chargement = null, IReadOnlyList<string>? FamillesEnvoyees = null, DateTime? FamillesLuesLe = null,
+    long FamillesVersion = 0);
 
 /// <summary>
 /// Dernier chargement complet (lot S6) : état (demande, constitution, pret, annonce, termine, remplace), progression (lignes

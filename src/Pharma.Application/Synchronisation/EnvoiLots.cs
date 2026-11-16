@@ -15,10 +15,36 @@ namespace Pharma.Application.Synchronisation;
 /// <param name="LotsAutresEpoques">Lots non accusés d'une époque précédente (signalés, jamais envoyés automatiquement).</param>
 public sealed record ParametresEnvoiSync(bool Active, Guid? OfficineId, int Epoque, string VersionContrat, long DernierLot, long DernierAccuse,
     string? Adresse, DateTime? InscriteLe, DateTime? DernierEnvoiLe, DateTime? DernierAccuseLe, string? DerniereErreur, DateTime? DerniereErreurLe,
-    string TextesLibres, bool EnvoyerMedecins, long LignesEnAttente, long LotsEnAttente, bool BaseEnLectureSeule = false, long LotsAutresEpoques = 0);
+    string TextesLibres, bool EnvoyerMedecins, long LignesEnAttente, long LotsEnAttente, bool BaseEnLectureSeule = false, long LotsAutresEpoques = 0,
+    IReadOnlyList<string>? FamillesEnvoyees = null, DateTime? FamillesLuesLe = null, long DescendantVersion = 0, long FamillesVersion = 0,
+    IReadOnlyList<string>? ColonnesInterdites = null);
+
+/// <summary>Élément descendant reçu du serveur central (contrat desc-v1) : table locale, clé, version, données JSON.</summary>
+public sealed record ChangementDescendantSync(string Table, string Cle, long Version, string DonneesJson);
+
+/// <summary>Éléments descendants reçus et version maximale annoncée par le serveur central.</summary>
+public sealed record DescendantsRecus(IReadOnlyList<ChangementDescendantSync> Changements, long VersionMax)
+{
+    public static readonly DescendantsRecus Aucun = new([], 0);
+}
+
+/// <summary>Statuts de sync_recevoir_descendant (script 136).</summary>
+public static class StatutsDescendant
+{
+    public const string Applique = "applique";
+    public const string Ancien = "ancien";
+    public const string TableInconnue = "table_inconnue";
+    public const string Refuse = "refuse";
+}
 
 /// <summary>Lot constitué (accusé ou non).</summary>
-public sealed record LotEnregistre(int Epoque, long Numero, string VersionContrat, string Empreinte);
+/// <param name="ColonnesRetirees">Colonnes (« table.colonne ») retirées à sa constitution, figées (script 136) ; pour un lot antérieur,
+/// reconstituées depuis ses familles et le catalogue actuel.</param>
+/// <param name="ColonnesFigees">false : lot antérieur au script 136, liste reconstituée (non garantie).</param>
+/// <param name="Accuse">Déjà accusé par le serveur central (jamais reformé en base).</param>
+/// <param name="ReformeLe">Lot déjà reformé (un 409 « autre contenu » veut alors dire que le central a la forme d'origine).</param>
+public sealed record LotEnregistre(int Epoque, long Numero, string VersionContrat, string Empreinte, IReadOnlyList<string>? ColonnesRetirees = null,
+    bool ColonnesFigees = true, bool Accuse = false, DateTime? ReformeLe = null);
 
 /// <summary>Certificat client de ce serveur (fichiers hors base : chaque serveur de l'officine a le sien).</summary>
 public sealed record CertificatSyncInfo(string Empreinte, DateTime EcheanceUtc, string EmpreinteAutorite);
@@ -30,8 +56,15 @@ public interface IEnvoiSyncDepot
     Task<IReadOnlyList<LotEnregistre>> LotsNonAccusesAsync(int maximum, CancellationToken ct = default);
     /// <summary>Lots de l'époque, accusés ou non, de n° compris entre les bornes (reprise après un trou côté central).</summary>
     Task<IReadOnlyList<LotEnregistre>> LotsEntreAsync(int epoque, long du, long au, CancellationToken ct = default);
-    /// <summary>Lignes rattachées à un lot, par n° croissant (pour le renvoyer à l'identique).</summary>
-    Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, CancellationToken ct = default);
+    /// <summary>Lignes rattachées à un lot, par n° croissant, sans les colonnes listées (« table.colonne » ; null : aucun retrait).</summary>
+    Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, IReadOnlyList<string>? colonnesRetirees, CancellationToken ct = default);
+    /// <summary>Éléments descendants reçus (sync_recevoir_descendant, script 136), dans une transaction : un statut par élément
+    /// (StatutsDescendant), jamais d'exception pour un élément inconnu ou refusé ; la version acquittée n'est pas modifiée.</summary>
+    Task<IReadOnlyList<string>> AppliquerDescendantsAsync(IReadOnlyList<ChangementDescendantSync> changements, long versionMax, CancellationToken ct = default);
+    /// <summary>Version descendante acquittée (jamais en arrière).</summary>
+    Task NoterVersionDescendanteAsync(long version, CancellationToken ct = default);
+    /// <summary>Lot NON accusé reformé en retirant davantage de colonnes (sync_reformer_lot_colonnes).</summary>
+    Task ReformerLotAsync(int epoque, long numero, string empreinte, int octets, IReadOnlyList<string> colonnesRetirees, CancellationToken ct = default);
     Task EnregistrerAccuseAsync(int epoque, long numero, CancellationToken ct = default);
     Task NoterEnvoiAsync(string? erreur, CancellationToken ct = default);
     Task EnregistrerInscriptionAsync(Guid officine, CancellationToken ct = default);
@@ -57,7 +90,7 @@ public interface ICertificatSync
 public sealed record ReponseActivationSync(Guid OfficineId, string Serveur, string CertificatPem, string AutoritePem, DateTime EcheanceUtc, string? Epinglage);
 
 /// <summary>Accusé d'un lot (statuts : StatutsLotSync).</summary>
-public sealed record AccuseLotSync(int Epoque, long Numero, string Statut, long DernierRecu);
+public sealed record AccuseLotSync(int Epoque, long Numero, string Statut, long DernierRecu, DescendantsRecus? Descendants = null);
 
 public static class StatutsLotSync
 {
@@ -79,8 +112,11 @@ public interface IClientServeurCentral
 {
     /// <summary>Code mal formé : ServeurCentralException. La réponse porte l'épinglage lu dans le code.</summary>
     Task<ReponseActivationSync> ActiverAsync(string adresse, string code, string demandePem, Guid officine, CancellationToken ct = default);
-    Task<AccuseLotSync> DeposerAsync(string adresse, byte[] lot, CancellationToken ct = default);
+    /// <param name="versionDescendante">Plus grande version descendante appliquée ici (acquittement) ; l'accusé porte les éléments plus récents.</param>
+    Task<AccuseLotSync> DeposerAsync(string adresse, byte[] lot, long versionDescendante, CancellationToken ct = default);
     Task<ReponseActivationSync> RenouvelerAsync(string adresse, string demandePem, CancellationToken ct = default);
+    /// <summary>Échange léger (chaque passage, même sans lot) : éléments descendants plus récents que la version appliquée.</summary>
+    Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default);
 }
 
 /// <summary>Un seul passage de synchronisation à la fois dans l'API (singleton).</summary>
@@ -106,7 +142,10 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     public const string ArretSansAdresse = "Adresse du serveur central non réglée.";
     public const string ArretNonActivee = "Ce serveur n'est pas encore activé auprès du serveur central (code d'activation).";
     public const string ArretLectureSeule = "Base en lecture seule (2e serveur en veille) : seul le serveur principal envoie.";
-    public const string ArretEnCours = "Envoi déjà en cours.";
+    public const string ArretEnCours = "Envoi déjà en cours (passage automatique ou autre poste) : réessayez dans un instant.";
+    private long versionDescendante;
+    private IReadOnlyList<string> interdites = [];
+    private string? erreurDescendante;
     public static readonly TimeSpan RenouvelerAvant = TimeSpan.FromDays(60);
 
     public async Task<ResultatEnvoi> ExecuterAsync(DateTime maintenantUtc, int maxLots = 20, CancellationToken ct = default)
@@ -129,6 +168,12 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         var accuses = 0;
         try
         {
+            // Voie descendante (script 131) : échange léger à chaque passage, même sans rien à envoyer, AVANT de former ou d'envoyer
+            // un lot ; les réglages reçus sont écrits dans la base locale, seule source lue ensuite (central en panne : dernière
+            // version appliquée ; rien jamais reçu : rien de nominatif)
+            (versionDescendante, erreurDescendante) = (p.DescendantVersion, null);
+            await EchangerDescendantsAsync(p.Adresse, ct);
+            interdites = (await depot.ParametresAsync(ct)).ColonnesInterdites ?? [];
             // Chargement complet demandé : instantané puis annonce, AVANT de former les lots (lot S6)
             if (chargement is not null) await chargement.PreparerAsync(p.Adresse, p.DernierAccuse, ct);
             await constitution.ConstituerAsync(10, ct);
@@ -167,8 +212,10 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
             }
             if (chargement is not null) await chargement.TerminerSiAccuseAsync(p.Adresse, ct);
             if (cert.EcheanceUtc - maintenantUtc < RenouvelerAvant) await RenouvelerAsync(p.Adresse, ct);
-            await depot.NoterEnvoiAsync(p.LotsAutresEpoques > 0
-                ? $"{p.LotsAutresEpoques} lot(s) d'une époque précédente jamais accusé(s) : à examiner (non renvoyés automatiquement)." : null, ct);
+            var note = string.Join(" ", new[] { p.LotsAutresEpoques > 0
+                ? $"{p.LotsAutresEpoques} lot(s) d'une époque précédente jamais accusé(s) : à examiner (non renvoyés automatiquement)." : null, erreurDescendante }
+                .Where(m => m is not null));
+            await depot.NoterEnvoiAsync(note.Length > 0 ? note : null, ct);
             return new(accuses, null, null);
         }
         catch (LotIncoherentException e) { return await ErreurAsync(accuses, e.Message, true, ct); }
@@ -187,17 +234,81 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         }
     }
 
-    /// <summary>Dépose le lot reconstitué à l'identique ; l'accusé doit porter la même époque et le même n°.</summary>
+    /// <summary>
+    /// Dépose un lot. Il est d'abord reconstitué avec les colonnes retirées FIGÉES à sa constitution (script 136) et doit redonner
+    /// son empreinte (sinon arrêt, sauf lot antérieur au script 136 dont la liste n'est que reconstituée). S'il faut retirer DAVANTAGE
+    /// (famille décochée ou colonne ajoutée à une famille depuis), le contenu envoyé est recalculé en retirant aussi les colonnes
+    /// interdites maintenant : une donnée non autorisée ne quitte jamais l'officine. Lot non accusé : reformé en base (réduction
+    /// seulement). Lot déjà accusé renvoyé après un trou du central : contenu filtré envoyé SANS toucher la base (le central l'a perdu
+    /// et l'accepte comme nouveau). Un lot reformé (ou au contenu recalculé) que le central a encore sous sa forme d'origine est refusé
+    /// là-bas comme « autre contenu » (409) : il est tenu pour reçu (n° propre à l'officine, rien d'autre ne peut l'avoir envoyé).
+    /// </summary>
     private async Task<AccuseLotSync> DeposerAsync(string adresse, Guid officine, LotEnregistre lot, CancellationToken ct)
     {
-        var lignes = await depot.LignesDuLotAsync(lot.Epoque, lot.Numero, ct);
-        var f = format.Formuler(new EnTeteLotSync(lot.VersionContrat, officine, lot.Epoque, lot.Numero), lignes);
-        if (f.Empreinte != lot.Empreinte)
+        var entete = new EnTeteLotSync(lot.VersionContrat, officine, lot.Epoque, lot.Numero);
+        var reference = lot.ColonnesRetirees ?? [];
+        var f = format.Formuler(entete, await depot.LignesDuLotAsync(lot.Epoque, lot.Numero, reference, ct));
+        var reproduit = f.Empreinte == lot.Empreinte;
+        if (!reproduit && lot.ColonnesFigees)
             throw new LotIncoherentException($"Lot {lot.Epoque}/{lot.Numero} : contenu différent de son empreinte enregistrée (envoi arrêté).");
-        var a = await client.DeposerAsync(adresse, f.Contenu, ct);
+        var autreForme = lot.ReformeLe is not null;
+        if (!reproduit || interdites.Except(reference, StringComparer.Ordinal).Any())
+        {
+            var aRetirer = reference.Union(interdites, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+            var fr = format.Formuler(entete, await depot.LignesDuLotAsync(lot.Epoque, lot.Numero, aRetirer, ct));
+            // Le contenu envoyé est TOUJOURS le contenu filtré (lot antérieur au script 136 : l'empreinte stockée peut être celle du filtré)
+            if (fr.Empreinte != lot.Empreinte)
+            {
+                if (!lot.Accuse) await depot.ReformerLotAsync(lot.Epoque, lot.Numero, fr.Empreinte, fr.Contenu.Length, aRetirer, ct);
+                autreForme = true;
+            }
+            f = fr;
+        }
+        AccuseLotSync a;
+        try { a = await client.DeposerAsync(adresse, f.Contenu, versionDescendante, ct); }
+        catch (ServeurCentralException e) when (autreForme && e.CodeHttp == 409)
+        {
+            return new AccuseLotSync(lot.Epoque, lot.Numero, StatutsLotSync.DejaRecu, lot.Numero);
+        }
         if (a.Epoque != lot.Epoque || a.Numero != lot.Numero)
             throw new LotIncoherentException($"Accusé incohérent du serveur central (lot {a.Epoque}/{a.Numero} pour {lot.Epoque}/{lot.Numero}) : rien n'est marqué accusé.");
-        return a;
+        if (a.Descendants is { } d) await AppliquerDescendantsAsync(d, ct);
+        return autreForme && a.Statut == StatutsLotSync.EmpreinteDifferente ? a with { Statut = StatutsLotSync.DejaRecu } : a;
+    }
+
+    /// <summary>Échange léger : éléments descendants plus récents que la version appliquée ; échec : rien ne change ici.</summary>
+    private async Task EchangerDescendantsAsync(string adresse, CancellationToken ct)
+    {
+        DescendantsRecus d;
+        try { d = await client.EchangerAsync(adresse, versionDescendante, ct); }
+        catch (Exception e) when (e is ServeurCentralException or HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested)) { return; }
+        await AppliquerDescendantsAsync(d, ct);
+    }
+
+    /// <summary>
+    /// Écrit les éléments reçus dans la base locale (jamais une version plus ancienne). La version acquittée n'avance que jusqu'avant
+    /// le premier élément ignoré (table non prévue) ou refusé : il sera redonné, et rien n'est sauté. Une erreur d'application
+    /// n'arrête pas le passage : les lots partent quand même (avec le dernier réglage appliqué) et l'erreur est notée.
+    /// </summary>
+    private async Task AppliquerDescendantsAsync(DescendantsRecus d, CancellationToken ct)
+    {
+        if (d.Changements.Count == 0) return;
+        try
+        {
+            var statuts = await depot.AppliquerDescendantsAsync(d.Changements, d.VersionMax, ct);
+            var bloquants = d.Changements.Zip(statuts).Where(x => x.Second is StatutsDescendant.TableInconnue or StatutsDescendant.Refuse)
+                .Select(x => x.First.Version).ToList();
+            var version = bloquants.Count > 0 ? bloquants.Min() - 1 : d.Changements.Max(c => c.Version);
+            if (version > versionDescendante) await depot.NoterVersionDescendanteAsync(version, ct);
+            var p = await depot.ParametresAsync(ct);
+            (versionDescendante, interdites) = (p.DescendantVersion, p.ColonnesInterdites ?? []);
+            if (bloquants.Count > 0)
+                erreurDescendante = $"{bloquants.Count} élément(s) descendant(s) ignoré(s) (table non prévue ou refusé) : voir le journal sync_journal_descendant.";
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            erreurDescendante = $"Réglages du serveur central non appliqués ({e.GetType().Name}) : envoi poursuivi avec le dernier réglage appliqué.";
+        }
     }
 
     private async Task RenouvelerAsync(string adresse, CancellationToken ct)

@@ -30,23 +30,24 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         return new ReponseActivationSync(r.OfficineId, r.Serveur, r.CertificatPem, r.AutoritePem, r.Echeance.UtcDateTime, lu.Epinglage);
     }
 
-    public async Task<AccuseLotSync> DeposerAsync(string adresse, byte[] lot, CancellationToken ct = default)
+    public async Task<AccuseLotSync> DeposerAsync(string adresse, byte[] lot, long versionDescendante, CancellationToken ct = default)
     {
         var (http, cert) = await ClientCertifieAsync(adresse, ct);
         var j = await JetonAsync(http, cert, ct);
         using var req = new HttpRequestMessage(HttpMethod.Post, "api/v1/lots") { Content = new ByteArrayContent(lot) };
         req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", j);
+        req.Headers.Add(ChangementsDescendantsDto.EnTeteVersion, versionDescendante.ToString(System.Globalization.CultureInfo.InvariantCulture));
         using var rep = await http.SendAsync(req, ct);
         if (rep.StatusCode == System.Net.HttpStatusCode.Conflict && rep.Content.Headers.ContentType?.MediaType == "application/json")
         {
             // Trou : accusé portant le dernier lot reçu
             var a = await rep.Content.ReadFromJsonAsync<AccuseLotDto>(ct);
-            if (a is not null) return new AccuseLotSync(a.Epoque, a.Numero, a.Statut, a.DernierRecu);
+            if (a is not null) return new AccuseLotSync(a.Epoque, a.Numero, a.Statut, a.DernierRecu, Descendants(a.Descendants));
         }
         if (rep.StatusCode == System.Net.HttpStatusCode.Unauthorized) await OublierJetonAsync(ct);
         var acc = await LireAsync<AccuseLotDto>(rep, ct);
-        return new AccuseLotSync(acc.Epoque, acc.Numero, acc.Statut, acc.DernierRecu);
+        return new AccuseLotSync(acc.Epoque, acc.Numero, acc.Statut, acc.DernierRecu, Descendants(acc.Descendants));
     }
 
     public async Task<ReponseActivationSync> RenouvelerAsync(string adresse, string demandePem, CancellationToken ct = default)
@@ -62,6 +63,45 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         return new ReponseActivationSync(r.OfficineId, r.Serveur, r.CertificatPem, r.AutoritePem, r.Echeance.UtcDateTime, null);
     }
 
+    /// <summary>Échange léger de la voie descendante (chaque passage, même sans lot à envoyer).</summary>
+    public async Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default) =>
+        Descendants(await PosterAsync<EchangeDescendantDto, ChangementsDescendantsDto>(adresse, "api/v1/echange", new EchangeDescendantDto(versionAppliquee), ct));
+
+    /// <summary>Plafonds de la voie descendante : réponse (MaxReponse, toutes routes), nombre d'éléments, taille d'un élément.</summary>
+    public const int MaxReponse = 1024 * 1024, MaxElements = 1000, MaxDonnees = 64 * 1024;
+
+    /// <summary>
+    /// Contrat desc-v1 seulement ; au-delà de MaxElements, seuls les premiers par version sont gardés ; un élément trop gros, sans
+    /// table ni clé ou dont les données ne sont pas un objet JSON est ignoré (journalisé sans données) ; il reviendra au passage suivant.
+    /// </summary>
+    public DescendantsRecus Descendants(ChangementsDescendantsDto? d)
+    {
+        if (d is null || d.Changements is null || d.Changements.Count == 0) return DescendantsRecus.Aucun;
+        if (d.Contrat != ChangementsDescendantsDto.ContratV1)
+        {
+            logger.LogWarning("Synchronisation : contrat descendant {Contrat} non pris en charge, éléments ignorés", d.Contrat);
+            return DescendantsRecus.Aucun;
+        }
+        var gardes = new List<ChangementDescendantSync>();
+        foreach (var c in d.Changements.Where(c => c is not null).OrderBy(c => c.Version).Take(MaxElements))
+        {
+            if (string.IsNullOrEmpty(c.Table) || string.IsNullOrEmpty(c.Cle) || c.DonneesJson is null || c.DonneesJson.Length > MaxDonnees || !ObjetJson(c.DonneesJson))
+            {
+                logger.LogWarning("Synchronisation : élément descendant {Table} version {Version} ignoré (mal formé ou trop gros)", c.Table?.Length > 63 ? "?" : c.Table, c.Version);
+                continue;
+            }
+            gardes.Add(new ChangementDescendantSync(c.Table, c.Cle, c.Version, c.DonneesJson));
+        }
+        if (d.Changements.Count > MaxElements)
+            logger.LogWarning("Synchronisation : {Nombre} éléments descendants reçus, {Max} gardés pour ce passage", d.Changements.Count, MaxElements);
+        return new DescendantsRecus(gardes, d.VersionMax);
+    }
+
+    private static bool ObjetJson(string json)
+    {
+        try { using var doc = System.Text.Json.JsonDocument.Parse(json); return doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object; }
+        catch (System.Text.Json.JsonException) { return false; }
+    }
     // ---- Lot S6 : chargement complet ----
     public async Task<ReponseDebutChargementSync> DebuterAsync(string adresse, DebutChargementSync d, CancellationToken ct = default)
     {
@@ -144,7 +184,7 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
                     EpinglageServeur.Accepter(c as X509Certificate2 ?? (c is null ? null : X509CertificateLoader.LoadCertificate(c.GetRawCertData())), chaine, erreurs, autorite, epinglage)
             }
         };
-        return new HttpClient(gestionnaire, disposeHandler: true) { BaseAddress = new Uri(adresse.TrimEnd('/') + "/"), Timeout = Delai };
+        return new HttpClient(gestionnaire, disposeHandler: true) { BaseAddress = new Uri(adresse.TrimEnd('/') + "/"), Timeout = Delai, MaxResponseContentBufferSize = MaxReponse };
     }
 
     private static async Task<T> LireAsync<T>(HttpResponseMessage rep, CancellationToken ct)

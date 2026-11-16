@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 129 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 136 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 129 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 136 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -36,10 +36,15 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
+--
+--
+--
+--
 -- PostgreSQL database dump
 --
 
-\restrict rKwWEafdaSzNGw1nhq4gHBJNImAIEM6pnAqTaVYSFlPYCSeSLyz3Ow5n83shNDw
+\restrict JDFortVDu6caLmZAgf202A76AKv6UKd1eB9SDUaDS0PWrmLnUhE7ZsHghYacNy9
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1018,6 +1023,18 @@ BEGIN
     RETURN OLD;
 END;
 $$;
+
+
+--
+-- Name: contenance_depuis_conditionnement(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.contenance_depuis_conditionnement(p_conditionnement text) RETURNS integer
+    LANGUAGE sql IMMUTABLE
+    AS $_$
+    -- motif de ContenanceProduit.Boite(), recopié tel quel (test ContenanceDepuisNomenclatureTests)
+    SELECT substring(p_conditionnement FROM '(?i)^\s*(?:B|BTE|BO[IÎiî]TE)\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})(?:\s*(?:SACHETS?(?:(?:\s+|-)DOSES?)?|SACH|SCH|AMPOULES?|AMPS?|AMP\.?\s+BUV|CPR?S?|CP\.?\s+EFF|COMPRIM[EÉeé]S?(?:\s+EFFERVESCENTS?)?|G[EÉeé]LULES?|SUPPOSITOIRES?|SUPPO|OVULES?|CAPSULES?|PATCH(?:E?S)?|DISPOSITIFS?\s+TRANSDERMIQUES?|UNIDOSES?|R[EÉeé]CIPIENTS\s+UNIDOSES)\.?)?\s*$')::int
+$_$;
 
 
 --
@@ -3142,6 +3159,31 @@ $$;
 
 
 --
+-- Name: sync_appliquer_descendant(text, text, bigint, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_appliquer_descendant(p_table text, p_cle text, p_version bigint, p_donnees jsonb) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE n int;
+BEGIN
+    IF p_version IS NULL OR p_version < 1 OR p_donnees IS NULL OR jsonb_typeof(p_donnees) <> 'object' THEN
+        RAISE EXCEPTION 'Synchronisation : élément descendant mal formé (%/%)', p_table, p_cle;
+    END IF;
+    IF p_table = 'reglage_central' THEN
+        INSERT INTO reglage_central AS r (cle, version, valeur) VALUES (p_cle, p_version, p_donnees)
+        ON CONFLICT (cle) DO UPDATE SET version = EXCLUDED.version, valeur = EXCLUDED.valeur, recu_le = now()
+        WHERE r.version < EXCLUDED.version;
+        GET DIAGNOSTICS n = ROW_COUNT;
+    ELSE
+        RAISE EXCEPTION 'Synchronisation : table descendante non prévue : %', p_table;
+    END IF;
+    UPDATE sync_parametre SET descendant_version = greatest(descendant_version, p_version) WHERE id = 1;
+    RETURN n > 0;
+END $$;
+
+
+--
 -- Name: sync_chargement_accuse(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3274,6 +3316,53 @@ END $$;
 
 
 --
+-- Name: sync_colonnes_hors_familles(text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_colonnes_hors_familles(p_familles text[]) RETURNS text[]
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT coalesce(array_agg(f.nom_table || '.' || f.colonne ORDER BY f.nom_table || '.' || f.colonne COLLATE "C"), '{}'::text[])
+    FROM sync_famille_colonne f WHERE NOT f.famille = ANY (coalesce(p_familles, '{}'::text[]))
+$$;
+
+
+--
+-- Name: sync_colonnes_interdites(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_colonnes_interdites() RETURNS text[]
+    LANGUAGE sql STABLE
+    AS $$ SELECT sync_colonnes_hors_familles(sync_familles_effectives()) $$;
+
+
+--
+-- Name: sync_constituer_lot(bigint, bigint[], integer, text, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_constituer_lot(p_numero bigint, p_lignes bigint[], p_octets integer, p_empreinte text, p_colonnes text[]) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE p sync_parametre; n int; v_cols text[] := sync_colonnes_interdites();
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
+    IF p.dernier_lot + 1 <> p_numero OR coalesce(array_length(p_lignes, 1), 0) = 0 THEN RETURN NULL; END IF;
+    IF EXISTS (SELECT 1 FROM sync_chargement WHERE etat = 'constitution') THEN RETURN NULL; END IF;
+    IF ARRAY(SELECT x FROM unnest(coalesce(p_colonnes, '{}'::text[])) x ORDER BY x COLLATE "C") IS DISTINCT FROM v_cols THEN RETURN NULL; END IF;
+    INSERT INTO sync_lot (epoque, numero, version_contrat, nb_lignes, octets, empreinte, familles, colonnes_retirees)
+    VALUES (p.epoque, p_numero, p.version_contrat, array_length(p_lignes, 1), p_octets, p_empreinte, sync_familles_effectives(), v_cols);
+    UPDATE sync_sortie SET lot_numero = p_numero
+    WHERE id = ANY (p_lignes) AND lot_numero IS NULL AND epoque = p.epoque;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n <> array_length(p_lignes, 1) THEN
+        RAISE EXCEPTION 'Synchronisation : lot % incohérent (% lignes rattachées sur %)', p_numero, n, array_length(p_lignes, 1);
+    END IF;
+    UPDATE sync_parametre SET dernier_lot = p_numero WHERE id = 1;
+    RETURN p_numero;
+END $$;
+
+
+--
 -- Name: sync_definir_active(boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3377,15 +3466,30 @@ END $$;
 --
 
 CREATE FUNCTION public.sync_enregistrer_lot(p_numero bigint, p_lignes bigint[], p_octets integer, p_empreinte text) RETURNS bigint
+    LANGUAGE sql
+    AS $$
+    SELECT sync_enregistrer_lot(p_numero, p_lignes, p_octets, p_empreinte, NULL::text[])
+$$;
+
+
+--
+-- Name: sync_enregistrer_lot(bigint, bigint[], integer, text, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_enregistrer_lot(p_numero bigint, p_lignes bigint[], p_octets integer, p_empreinte text, p_familles text[]) RETURNS bigint
     LANGUAGE plpgsql
     AS $$
-DECLARE p sync_parametre; n int;
+DECLARE p sync_parametre; n int; v_familles text[] := sync_familles_effectives();
 BEGIN
     SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
     IF p.dernier_lot + 1 <> p_numero OR coalesce(array_length(p_lignes, 1), 0) = 0 THEN RETURN NULL; END IF;
     IF EXISTS (SELECT 1 FROM sync_chargement WHERE etat = 'constitution') THEN RETURN NULL; END IF;
-    INSERT INTO sync_lot (epoque, numero, version_contrat, nb_lignes, octets, empreinte)
-    VALUES (p.epoque, p_numero, p.version_contrat, array_length(p_lignes, 1), p_octets, p_empreinte);
+    IF p_familles IS NOT NULL AND ARRAY(SELECT x FROM unnest(p_familles) x ORDER BY x COLLATE "C") IS DISTINCT FROM v_familles THEN
+        RETURN NULL;
+    END IF;
+    INSERT INTO sync_lot (epoque, numero, version_contrat, nb_lignes, octets, empreinte, familles)
+    VALUES (p.epoque, p_numero, p.version_contrat, array_length(p_lignes, 1), p_octets, p_empreinte,
+            CASE WHEN p_familles IS NULL THEN NULL ELSE v_familles END);
     UPDATE sync_sortie SET lot_numero = p_numero
     WHERE id = ANY (p_lignes) AND lot_numero IS NULL AND epoque = p.epoque;
     GET DIAGNOSTICS n = ROW_COUNT;
@@ -3395,6 +3499,19 @@ BEGIN
     UPDATE sync_parametre SET dernier_lot = p_numero WHERE id = 1;
     RETURN p_numero;
 END $$;
+
+
+--
+-- Name: sync_familles_effectives(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_familles_effectives() RETURNS text[]
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT coalesce((SELECT array_agg(x ORDER BY x COLLATE "C")
+                     FROM reglage_central r, jsonb_array_elements_text(r.valeur -> 'familles') x
+                     WHERE r.cle = 'familles_envoyees' AND EXISTS (SELECT 1 FROM sync_famille_colonne f WHERE f.famille = x)), '{}'::text[])
+$$;
 
 
 --
@@ -3528,6 +3645,18 @@ BEGIN
        AND (to_jsonb(NEW) - 'accuse_le') = (to_jsonb(OLD) - 'accuse_le') THEN
         RETURN NEW;
     END IF;
+    IF TG_OP = 'UPDATE' AND OLD.accuse_le IS NULL AND NEW.accuse_le IS NULL AND NEW.familles IS NOT NULL
+       AND (OLD.familles IS NULL OR (NEW.familles <@ OLD.familles AND NOT OLD.familles <@ NEW.familles))
+       AND (to_jsonb(NEW) - ARRAY['empreinte', 'octets', 'familles', 'reforme_le'])
+         = (to_jsonb(OLD) - ARRAY['empreinte', 'octets', 'familles', 'reforme_le']) THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' AND OLD.accuse_le IS NULL AND NEW.accuse_le IS NULL AND NEW.colonnes_retirees IS NOT NULL
+       AND (OLD.colonnes_retirees IS NULL OR (OLD.colonnes_retirees <@ NEW.colonnes_retirees AND NOT NEW.colonnes_retirees <@ OLD.colonnes_retirees))
+       AND (to_jsonb(NEW) - ARRAY['empreinte', 'octets', 'colonnes_retirees', 'reforme_le'])
+         = (to_jsonb(OLD) - ARRAY['empreinte', 'octets', 'colonnes_retirees', 'reforme_le']) THEN
+        RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'sync_lot : lot figé (seul l''accusé peut être enregistré)';
 END $$;
 
@@ -3602,6 +3731,17 @@ $$;
 
 
 --
+-- Name: sync_noter_version_descendante(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_version_descendante(p_version bigint) RETURNS bigint
+    LANGUAGE sql
+    AS $$
+    UPDATE sync_parametre SET descendant_version = greatest(descendant_version, coalesce(p_version, 0)) WHERE id = 1 RETURNING descendant_version
+$$;
+
+
+--
 -- Name: sync_parametre_garde_officine(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3617,6 +3757,81 @@ END $$;
 
 
 --
+-- Name: sync_recevoir_descendant(text, text, bigint, jsonb, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_recevoir_descendant(p_table text, p_cle text, p_version bigint, p_donnees jsonb, p_version_max bigint) RETURNS text
+    LANGUAGE plpgsql
+    AS $$
+DECLARE p sync_parametre; v_avant jsonb; n int;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1;
+    IF p_version IS NULL OR p_version < 1 OR p_donnees IS NULL OR jsonb_typeof(p_donnees) <> 'object'
+       OR p_version > coalesce(p_version_max, 0) OR p_version > p.descendant_version + p.descendant_saut_max
+       OR length(p_donnees::text) > 65536 THEN
+        -- Une ligne par élément refusé (renvoyé à chaque passage tant qu'il n'est pas acquitté : pas de doublon)
+        INSERT INTO sync_journal_descendant (nom_table, cle, version, statut, motif)
+        SELECT left(coalesce(p_table, '?'), 63), left(coalesce(p_cle, '?'), 200), p_version, 'refuse',
+               CASE WHEN p_version > coalesce(p_version_max, 0) THEN 'version au-delà de la version maximale annoncée'
+                    WHEN p_version > p.descendant_version + p.descendant_saut_max THEN 'saut de version anormal'
+                    WHEN length(p_donnees::text) > 65536 THEN 'données trop volumineuses (plus de 64 Kio)'
+                    ELSE 'élément mal formé' END
+        WHERE NOT EXISTS (SELECT 1 FROM sync_journal_descendant j WHERE j.statut = 'refuse' AND j.nom_table = left(coalesce(p_table, '?'), 63)
+                          AND j.cle = left(coalesce(p_cle, '?'), 200) AND j.version IS NOT DISTINCT FROM p_version);
+        RETURN 'refuse';
+    END IF;
+    IF p_table IS DISTINCT FROM 'reglage_central' THEN
+        INSERT INTO sync_journal_descendant (nom_table, cle, version, statut, motif)
+        SELECT left(coalesce(p_table, '?'), 63), left(coalesce(p_cle, '?'), 200), p_version, 'table_inconnue', 'table descendante non prévue ici : ignorée'
+        WHERE NOT EXISTS (SELECT 1 FROM sync_journal_descendant j WHERE j.statut = 'table_inconnue' AND j.nom_table = left(coalesce(p_table, '?'), 63)
+                          AND j.cle = left(coalesce(p_cle, '?'), 200) AND j.version IS NOT DISTINCT FROM p_version);
+        RETURN 'table_inconnue';
+    END IF;
+    SELECT valeur INTO v_avant FROM reglage_central WHERE cle = p_cle;
+    INSERT INTO reglage_central AS r (cle, version, valeur) VALUES (p_cle, p_version, p_donnees)
+    ON CONFLICT (cle) DO UPDATE SET version = EXCLUDED.version, valeur = EXCLUDED.valeur, recu_le = now()
+    WHERE r.version < EXCLUDED.version;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n = 0 THEN RETURN 'ancien'; END IF;
+    INSERT INTO sync_journal_descendant (nom_table, cle, version, statut, avant, apres)
+    VALUES (p_table, p_cle, p_version, 'applique',
+            CASE WHEN p_cle = 'familles_envoyees' THEN v_avant -> 'familles' END,
+            CASE WHEN p_cle = 'familles_envoyees' THEN p_donnees -> 'familles' END);
+    RETURN 'applique';
+END $$;
+
+
+--
+-- Name: sync_reformer_lot(integer, bigint, text, integer, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_reformer_lot(p_epoque integer, p_numero bigint, p_empreinte text, p_octets integer, p_familles text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE sync_lot SET empreinte = p_empreinte, octets = p_octets,
+                        familles = ARRAY(SELECT x FROM unnest(p_familles) x ORDER BY x COLLATE "C"), reforme_le = now()
+    WHERE epoque = p_epoque AND numero = p_numero AND accuse_le IS NULL;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Synchronisation : lot %/% absent ou déjà accusé', p_epoque, p_numero; END IF;
+END $$;
+
+
+--
+-- Name: sync_reformer_lot_colonnes(integer, bigint, text, integer, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_reformer_lot_colonnes(p_epoque integer, p_numero bigint, p_empreinte text, p_octets integer, p_colonnes text[]) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE sync_lot SET empreinte = p_empreinte, octets = p_octets, reforme_le = now(),
+                        colonnes_retirees = ARRAY(SELECT DISTINCT x COLLATE "C" FROM unnest(p_colonnes) x ORDER BY 1)
+    WHERE epoque = p_epoque AND numero = p_numero AND accuse_le IS NULL;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Synchronisation : lot %/% absent ou déjà accusé', p_epoque, p_numero; END IF;
+END $$;
+
+
+--
 -- Name: sync_regler_adresse(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3624,6 +3839,32 @@ CREATE FUNCTION public.sync_regler_adresse(p_adresse text) RETURNS void
     LANGUAGE sql
     AS $$
     UPDATE sync_parametre SET adresse_serveur = nullif(btrim(p_adresse), ''), modifie_le = now() WHERE id = 1
+$$;
+
+
+--
+-- Name: sync_retirer_colonnes(text, jsonb, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_retirer_colonnes(p_table text, p_donnees jsonb, p_colonnes text[]) RETURNS jsonb
+    LANGUAGE sql IMMUTABLE
+    AS $$
+    SELECT CASE WHEN p_donnees IS NULL OR p_colonnes IS NULL THEN p_donnees
+                ELSE p_donnees - ARRAY(SELECT split_part(c, '.', 2) FROM unnest(p_colonnes) c WHERE split_part(c, '.', 1) = p_table) END
+$$;
+
+
+--
+-- Name: sync_retirer_familles(text, jsonb, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_retirer_familles(p_table text, p_donnees jsonb, p_familles text[]) RETURNS jsonb
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT CASE WHEN p_donnees IS NULL OR p_familles IS NULL THEN p_donnees
+                ELSE p_donnees - coalesce((SELECT array_agg(f.colonne) FROM sync_famille_colonne f
+                                           WHERE f.nom_table = p_table AND NOT f.famille = ANY (p_familles)), '{}'::text[])
+           END
 $$;
 
 
@@ -3650,9 +3891,12 @@ CREATE TABLE public.sync_parametre (
     dernier_accuse_le timestamp with time zone,
     derniere_erreur text,
     derniere_erreur_le timestamp with time zone,
+    descendant_version bigint DEFAULT 0 NOT NULL,
+    descendant_saut_max bigint DEFAULT 1000 NOT NULL,
     CONSTRAINT sync_parametre_adresse_serveur_check CHECK (((adresse_serveur IS NULL) OR (adresse_serveur ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'::text))),
     CONSTRAINT sync_parametre_check CHECK (((dernier_accuse >= 0) AND (dernier_accuse <= dernier_lot))),
     CONSTRAINT sync_parametre_dernier_lot_check CHECK ((dernier_lot >= 0)),
+    CONSTRAINT sync_parametre_descendant_saut_max_check CHECK ((descendant_saut_max >= 1)),
     CONSTRAINT sync_parametre_epoque_check CHECK ((epoque >= 1)),
     CONSTRAINT sync_parametre_id_check CHECK ((id = 1)),
     CONSTRAINT sync_parametre_lot_max_lignes_check CHECK (((lot_max_lignes >= 1) AND (lot_max_lignes <= 10000))),
@@ -3667,6 +3911,13 @@ CREATE TABLE public.sync_parametre (
 --
 
 COMMENT ON TABLE public.sync_parametre IS 'Synchronisation : réglage (désactivée par défaut), officine, époque, contrat, bornes des lots (script 126).';
+
+
+--
+-- Name: COLUMN sync_parametre.descendant_version; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.descendant_version IS 'Plus grande version descendante appliquée (acquittement redonné au serveur central) (script 131).';
 
 
 --
@@ -8601,6 +8852,29 @@ ALTER TABLE public.registre_psychotrope ALTER COLUMN id ADD GENERATED ALWAYS AS 
 
 
 --
+-- Name: reglage_central; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reglage_central (
+    cle text NOT NULL,
+    version bigint NOT NULL,
+    valeur jsonb NOT NULL,
+    recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    CONSTRAINT reglage_central_cle_check CHECK ((cle ~ '^[a-z_]{1,63}$'::text)),
+    CONSTRAINT reglage_central_valeur_check CHECK ((jsonb_typeof(valeur) = 'object'::text)),
+    CONSTRAINT reglage_central_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: TABLE reglage_central; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.reglage_central IS 'Synchronisation : réglages décidés au serveur central, descendus par la synchronisation, jamais écrasés par une version plus ancienne (script 131).';
+
+
+--
 -- Name: regle_alerte_psychotrope; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9522,6 +9796,64 @@ ALTER TABLE public.sync_chargement ALTER COLUMN numero ADD GENERATED ALWAYS AS I
 
 
 --
+-- Name: sync_famille_colonne; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_famille_colonne (
+    famille text NOT NULL,
+    nom_table text NOT NULL,
+    colonne text NOT NULL,
+    CONSTRAINT sync_famille_colonne_famille_check CHECK ((famille = ANY (ARRAY['employes'::text, 'pharmacie'::text, 'fournisseurs'::text, 'courriel_commandes'::text, 'banque'::text, 'clients_factures'::text])))
+);
+
+
+--
+-- Name: TABLE sync_famille_colonne; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_famille_colonne IS 'Synchronisation : colonnes des familles de données nominatives réglées au serveur central (script 130).';
+
+
+--
+-- Name: sync_journal_descendant; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_journal_descendant (
+    id bigint NOT NULL,
+    le timestamp with time zone DEFAULT now() NOT NULL,
+    nom_table text NOT NULL,
+    cle text NOT NULL,
+    version bigint,
+    statut text NOT NULL,
+    motif text,
+    avant jsonb,
+    apres jsonb,
+    CONSTRAINT sync_journal_descendant_statut_check CHECK ((statut = ANY (ARRAY['applique'::text, 'table_inconnue'::text, 'refuse'::text])))
+);
+
+
+--
+-- Name: TABLE sync_journal_descendant; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_journal_descendant IS 'Synchronisation : journal local de la voie descendante (appliqué, ignoré, refusé), sans donnée personnelle (script 136).';
+
+
+--
+-- Name: sync_journal_descendant_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sync_journal_descendant ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.sync_journal_descendant_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: sync_lot; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9534,6 +9866,9 @@ CREATE TABLE public.sync_lot (
     empreinte text NOT NULL,
     constitue_le timestamp with time zone DEFAULT now() NOT NULL,
     accuse_le timestamp with time zone,
+    familles text[],
+    reforme_le timestamp with time zone,
+    colonnes_retirees text[],
     CONSTRAINT sync_lot_empreinte_check CHECK ((empreinte ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT sync_lot_nb_lignes_check CHECK ((nb_lignes >= 1)),
     CONSTRAINT sync_lot_numero_check CHECK ((numero >= 1)),
@@ -9546,6 +9881,20 @@ CREATE TABLE public.sync_lot (
 --
 
 COMMENT ON TABLE public.sync_lot IS 'Synchronisation : lots constitués, numérotés sans trou par époque à la constitution (script 126).';
+
+
+--
+-- Name: COLUMN sync_lot.familles; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_lot.familles IS 'Familles nominatives appliquées à la constitution (NULL : lot antérieur au script 130, sans retrait) (script 130).';
+
+
+--
+-- Name: COLUMN sync_lot.colonnes_retirees; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_lot.colonnes_retirees IS 'Colonnes (« table.colonne ») retirées à la constitution, figées pour le renvoi à l''identique ; NULL : lot antérieur au script 136 (script 136).';
 
 
 --
@@ -12682,6 +13031,14 @@ ALTER TABLE ONLY public.registre_psychotrope
 
 
 --
+-- Name: reglage_central reglage_central_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reglage_central
+    ADD CONSTRAINT reglage_central_pkey PRIMARY KEY (cle);
+
+
+--
 -- Name: regle_alerte_psychotrope regle_alerte_psychotrope_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12895,6 +13252,22 @@ ALTER TABLE ONLY public.surveillance_replication
 
 ALTER TABLE ONLY public.sync_chargement
     ADD CONSTRAINT sync_chargement_pkey PRIMARY KEY (numero);
+
+
+--
+-- Name: sync_famille_colonne sync_famille_colonne_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_famille_colonne
+    ADD CONSTRAINT sync_famille_colonne_pkey PRIMARY KEY (famille, nom_table, colonne);
+
+
+--
+-- Name: sync_journal_descendant sync_journal_descendant_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_journal_descendant
+    ADD CONSTRAINT sync_journal_descendant_pkey PRIMARY KEY (id);
 
 
 --
@@ -14006,6 +14379,13 @@ CREATE INDEX ix_remise_auto_categorie ON public.remise_automatique USING btree (
 --
 
 CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (produit_id) WHERE (produit_id IS NOT NULL);
+
+
+--
+-- Name: ix_sync_famille_colonne_table; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_famille_colonne_table ON public.sync_famille_colonne USING btree (nom_table);
 
 
 --
@@ -17624,5 +18004,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict rKwWEafdaSzNGw1nhq4gHBJNImAIEM6pnAqTaVYSFlPYCSeSLyz3Ow5n83shNDw
+\unrestrict JDFortVDu6caLmZAgf202A76AKv6UKd1eB9SDUaDS0PWrmLnUhE7ZsHghYacNy9
 

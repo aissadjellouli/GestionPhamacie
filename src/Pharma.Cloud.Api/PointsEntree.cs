@@ -93,10 +93,15 @@ public static class PointsEntree
                     log.LogWarning("Officine {Officine} : quota journalier atteint (lot {Epoque}/{Numero})", appelant.Officine, e.Epoque, e.NumeroLot);
                     return Results.Problem("Quota journalier de l'officine atteint : nouvel essai plus tard.", statusCode: StatusCodes.Status429TooManyRequests);
                 }
+                // Voie descendante : l'accusé porte les éléments plus récents que la version donnée par l'officine (en-tête facultatif)
+                ChangementsDescendantsDto? desc = null;
+                if (long.TryParse(ctx.Request.Headers[ChangementsDescendantsDto.EnTeteVersion].ToString(), System.Globalization.NumberStyles.None,
+                        System.Globalization.CultureInfo.InvariantCulture, out var vd))
+                    desc = await depot.DescendantsAsync(appelant.Officine, vd, ct);
                 if (statut is StatutsLot.Trou)
-                    return Results.Json(new AccuseLotDto(e.Epoque, e.NumeroLot, statut, dernier), statusCode: StatusCodes.Status409Conflict);
+                    return Results.Json(new AccuseLotDto(e.Epoque, e.NumeroLot, statut, dernier, desc), statusCode: StatusCodes.Status409Conflict);
                 log.LogInformation("Officine {Officine} : lot {Epoque}/{Numero} {Statut} ({Lignes} lignes)", appelant.Officine, e.Epoque, e.NumeroLot, statut, e.NombreLignes);
-                return Results.Ok(new AccuseLotDto(e.Epoque, e.NumeroLot, statut, dernier));
+                return Results.Ok(new AccuseLotDto(e.Epoque, e.NumeroLot, statut, dernier, desc));
             }
             catch (Npgsql.PostgresException p) when (p.SqlState == "P0001" || p.SqlState.StartsWith("22", StringComparison.Ordinal) || p.SqlState.StartsWith("23", StringComparison.Ordinal))
             {
@@ -116,6 +121,15 @@ public static class PointsEntree
             return Results.Ok(new EtatCentralDto(epoque, await depot.DernierLotAsync(appelant.Officine, epoque, ct)));
         }).RequireRateLimiting("officine");
 
+        // Voie descendante (script 005) : échange léger initié par l'officine à chaque passage, même sans lot à envoyer
+        v1.MapPost("/echange", async (EchangeDescendantDto d, HttpContext ctx, DepotCentral depot, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            if (d.VersionAppliquee < 0) return Results.Problem("Version descendante hors bornes.", statusCode: 400);
+            return Results.Ok(await depot.DescendantsAsync(appelant.Officine, d.VersionAppliquee, ct));
+        }).RequireRateLimiting("officine");
+
         // Lot S6 : début d'un chargement complet (avant le premier lot qui contient ses lignes « instantane »)
         v1.MapPost("/chargement/debut", async (DebutChargementDto d, HttpContext ctx, DepotCentral depot, ILoggerFactory lf, CancellationToken ct) =>
         {
@@ -126,9 +140,17 @@ public static class PointsEntree
             try
             {
                 var (dernier, abandonnes) = await depot.DebuterChargementAsync(appelant.Officine, d, ct);
+                ctx.RequestServices.GetRequiredService<SuiviChargementCentral>().Oublier(appelant.EmpreinteCertificat);
                 log.LogInformation("Officine {Officine} : début du chargement {Numero} ({Motif}, {Tables} tables, {Abandonnes} lot(s) abandonné(s))",
                     appelant.Officine, d.Numero, d.Motif, d.Tables.Count, abandonnes);
                 return Results.Ok(new ReponseDebutChargementDto(d.Numero, dernier, abandonnes));
+            }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "P0001" && p.MessageText.StartsWith("quota_depasse", StringComparison.Ordinal))
+            {
+                // Trop de chargements complets sur 24 h (script 009) : refus temporaire, l'officine réessaiera plus tard
+                await depot.JournaliserAsync(appelant.Officine, appelant.EmpreinteCertificat, "quota_depasse", $"début du chargement {d.Numero}", ct);
+                log.LogWarning("Officine {Officine} : début du chargement {Numero} refusé (quota de chargements sur 24 h)", appelant.Officine, d.Numero);
+                return Results.Problem("Trop de chargements complets sur 24 heures : réessayez plus tard.", statusCode: 429);
             }
             catch (Npgsql.PostgresException p) when (p.SqlState == "P0001")
             {
@@ -150,6 +172,7 @@ public static class PointsEntree
             {
                 var (absentes, parTable, vues) = await depot.TerminerChargementAsync(appelant.Officine, d.Numero,
                     System.Text.Json.JsonSerializer.Serialize(d.Lignes), ct);
+                ctx.RequestServices.GetRequiredService<SuiviChargementCentral>().Oublier(appelant.EmpreinteCertificat);
                 if (absentes > 0)
                     log.LogWarning("Officine {Officine} : chargement {Numero} terminé, {Absentes} ligne(s) absente(s) de l'officine signalée(s) et gardée(s)",
                         appelant.Officine, d.Numero, absentes);
@@ -186,7 +209,7 @@ public static class PointsEntree
     }
 
     /// <summary>Certificat client émis par l'autorité, connu, ni révoqué ni échu, officine non résiliée.</summary>
-    private static async Task<((EtatCertificat Etat, string Empreinte)? , IResult?)> CertificatAsync(HttpContext ctx, CancellationToken ct)
+    private static async Task<((EtatCertificat Etat, string Empreinte)?, IResult?)> CertificatAsync(HttpContext ctx, CancellationToken ct)
     {
         var c = ctx.Connection.ClientCertificate ?? await ctx.Connection.GetClientCertificateAsync(ct);
         if (c is null) return (null, Results.Problem("Certificat client exigé.", statusCode: 401));

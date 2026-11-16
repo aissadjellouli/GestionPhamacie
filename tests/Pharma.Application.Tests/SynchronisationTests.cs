@@ -96,7 +96,7 @@ public class SynchronisationTests
         public bool Simultanee { get; set; }
 
         public Task<EtatSync> EtatAsync(CancellationToken ct = default) => Task.FromResult(Etat);
-        public Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, CancellationToken ct = default) =>
+        public Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, IReadOnlyList<string> familles, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<LigneSortieSync>>(Attente.OrderBy(l => l.Numero).Take(maximum).ToList());
         public Task<bool> EnregistrerLotAsync(LotConstitue lot, CancellationToken ct = default)
         {

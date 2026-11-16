@@ -42,6 +42,9 @@ builder.Services.AddSingleton(autorite);
 builder.Services.AddSingleton(new JetonsCentral(JetonsCentral.ChargerOuCreerCle(dossier, motDePasse)));
 builder.Services.AddSingleton(NpgsqlDataSource.Create(connexion));
 builder.Services.AddSingleton<DepotCentral>();
+builder.Services.AddSingleton(sp => new SuiviChargementCentral(sp.GetRequiredService<DepotCentral>().ChargementEnCoursAsync, TimeProvider.System));
+var lotsParMinute = builder.Configuration.GetValue("Cloud:LotsParMinute", 60);
+var lotsParMinuteChargement = builder.Configuration.GetValue("Cloud:LotsParMinuteChargement", 600);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddProblemDetails();
 var limiteAdresse = builder.Configuration.GetValue("Cloud:LimiteParAdresseMinute", 600);
@@ -54,8 +57,13 @@ builder.Services.AddRateLimiter(o =>
         "ip:" + ctx.Connection.RemoteIpAddress, _ => new FixedWindowRateLimiterOptions { PermitLimit = limiteAdresse, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     o.AddPolicy("officine", ctx => RateLimitPartition.GetTokenBucketLimiter(Cle(ctx),
         _ => new TokenBucketRateLimiterOptions { TokenLimit = 30, TokensPerPeriod = 30, ReplenishmentPeriod = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
-    o.AddPolicy("lots", ctx => RateLimitPartition.GetTokenBucketLimiter(Cle(ctx),
-        _ => new TokenBucketRateLimiterOptions { TokenLimit = 60, TokensPerPeriod = 60, ReplenishmentPeriod = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    // Dépôts : limite relevée pendant un chargement complet annoncé et non terminé (seau distinct, script 006)
+    o.AddPolicy("lots", ctx =>
+    {
+        var (cle, limite) = SuiviChargementCentral.Politique(Cle(ctx), ctx.Items[ChargementEnCours] is true, lotsParMinute, lotsParMinuteChargement);
+        return RateLimitPartition.GetTokenBucketLimiter(cle,
+            _ => new TokenBucketRateLimiterOptions { TokenLimit = limite, TokensPerPeriod = limite, ReplenishmentPeriod = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true });
+    });
     // Renouvellement : une fois par jour par (officine, serveur) = sujet imposé du certificat
     o.AddPolicy("renouvellement", ctx => RateLimitPartition.GetFixedWindowLimiter(
         ctx.Items[CertificatVerifie] is X509Certificate2 c ? "sujet:" + c.Subject : "ip:" + ctx.Connection.RemoteIpAddress,
@@ -74,7 +82,12 @@ app.Use(async (ctx, suite) =>
     if (!chemin.StartsWithSegments("/api/v1/lots")
         && ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } taille)
         taille.MaxRequestBodySize = 16 * 1024;
-    if (ctx.Connection.ClientCertificate is { } c && autorite.ValiderClient(c, DateTimeOffset.UtcNow)) ctx.Items[CertificatVerifie] = c;
+    if (ctx.Connection.ClientCertificate is { } c && autorite.ValiderClient(c, DateTimeOffset.UtcNow))
+    {
+        ctx.Items[CertificatVerifie] = c;
+        if (chemin.StartsWithSegments("/api/v1/lots"))
+            ctx.Items[ChargementEnCours] = await ctx.RequestServices.GetRequiredService<SuiviChargementCentral>().EnCoursAsync(AutoriteCertification.Empreinte(c), ctx.RequestAborted);
+    }
     await suite();
 });
 app.UseRateLimiter();
@@ -86,6 +99,7 @@ return 0;
 public partial class Program
 {
     internal const string CertificatVerifie = "certificat-verifie";
+    internal const string ChargementEnCours = "chargement-en-cours";
 
     private static string Cle(HttpContext ctx) =>
         ctx.Items[CertificatVerifie] is X509Certificate2 c ? "cert:" + AutoriteCertification.Empreinte(c) : "ip:" + ctx.Connection.RemoteIpAddress;

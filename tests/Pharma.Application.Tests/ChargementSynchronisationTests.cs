@@ -44,7 +44,7 @@ public class ChargementSynchronisationTests
         // ISortieSyncDepot
         public Task<EtatSync> EtatAsync(CancellationToken ct = default) => Task.FromResult(new EtatSync(P.Active, P.OfficineId, P.Epoque,
             P.VersionContrat, P.DernierLot, P.DernierAccuse, 3, 1_048_576, Sortie.Count(l => !Rattachement.ContainsKey(l.Numero))));
-        public Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, CancellationToken ct = default) =>
+        public Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, IReadOnlyList<string> familles, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<LigneSortieSync>>(Sortie.Where(l => !Rattachement.ContainsKey(l.Numero))
                 .OrderBy(l => l.NumeroEnvoye).ThenBy(l => l.Numero).Take(maximum).ToList());
         public Task<bool> EnregistrerLotAsync(LotConstitue lot, CancellationToken ct = default)
@@ -62,9 +62,14 @@ public class ChargementSynchronisationTests
             Task.FromResult<IReadOnlyList<LotEnregistre>>(Lots.Where(l => !l.Accuse).Select(l => l.Lot).OrderBy(l => l.Numero).Take(maximum).ToList());
         public Task<IReadOnlyList<LotEnregistre>> LotsEntreAsync(int epoque, long du, long au, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<LotEnregistre>>(Lots.Select(l => l.Lot).Where(l => l.Numero >= du && l.Numero <= au).OrderBy(l => l.Numero).ToList());
-        public Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, CancellationToken ct = default) =>
+        public Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, IReadOnlyList<string>? familles, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<LigneSortieSync>>(Sortie.Where(l => Rattachement.TryGetValue(l.Numero, out var n) && n == numero)
                 .OrderBy(l => l.NumeroEnvoye).ThenBy(l => l.Numero).ToList());
+        public Task<IReadOnlyList<string>> AppliquerDescendantsAsync(IReadOnlyList<ChangementDescendantSync> changements, long versionMax, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<string>>(changements.Select(_ => StatutsDescendant.Ancien).ToList());
+        public Task NoterVersionDescendanteAsync(long version, CancellationToken ct = default) => Task.CompletedTask;
+        public Task ReformerLotAsync(int epoque, long numero, string empreinte, int octets, IReadOnlyList<string> familles, CancellationToken ct = default) =>
+            throw new InvalidOperationException("aucune famille nominative dans ces essais");
         public Task EnregistrerAccuseAsync(int epoque, long numero, CancellationToken ct = default)
         {
             for (var i = 0; i < Lots.Count; i++) if (Lots[i].Lot.Numero <= numero) Lots[i] = (Lots[i].Lot, true);
@@ -153,10 +158,12 @@ public class ChargementSynchronisationTests
 
         public Task<ReponseActivationSync> ActiverAsync(string adresse, string code, string demandePem, Guid officine, CancellationToken ct = default) =>
             Task.FromResult(new ReponseActivationSync(Officine, "principal", "CERT", "AC", Maintenant.AddYears(3), "0123"));
+        public Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default) => Task.FromResult(DescendantsRecus.Aucun);
+
         public Task<ReponseActivationSync> RenouvelerAsync(string adresse, string demandePem, CancellationToken ct = default) =>
             Task.FromResult(new ReponseActivationSync(Officine, "principal", "CERT", "AC", Maintenant.AddYears(3), null));
 
-        public Task<AccuseLotSync> DeposerAsync(string adresse, byte[] contenu, CancellationToken ct = default)
+        public Task<AccuseLotSync> DeposerAsync(string adresse, byte[] contenu, long versionDescendante, CancellationToken ct = default)
         {
             var lot = SerialisationSyncV1.Lire(contenu);
             var n = lot.EnTete.NumeroLot;

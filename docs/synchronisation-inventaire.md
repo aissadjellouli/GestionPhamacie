@@ -21,7 +21,22 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 143 tables — 78 montantes, 22 bidirectionnelles, 17 descendantes, 26 jamais envoyées (`sync_chargement` ajoutée par le script 129, lot S6).
+**Récapitulatif** : 146 tables — 78 montantes, 22 bidirectionnelles, 18 descendantes, 28 jamais envoyées (`sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
+
+## Familles de données nominatives (script 130, 2026-11-16)
+
+Réglées **au serveur central** (case à cocher globale + surcharge par officine, script central `004`) ; le réglage **descend** par la synchronisation dans la table locale `reglage_central` (script 131, voie descendante : réponse au dépôt d'un lot et échange léger à chaque passage), seule source lue par l'API locale (aucun appel au serveur central pour l'obtenir ; central en panne : dernière version reçue), affichée en lecture seule dans « Admin › Synchronisation › Réglages » ; l'officine **retire avant envoi** les colonnes d'une famille non autorisée (à la constitution des lots : une ligne déjà en file est filtrée elle aussi ; un lot non accusé est reformé). Réglage jamais reçu : **aucune** famille envoyée. Le serveur central efface à la réception toute colonne d'une famille non autorisée (double sécurité). Liste commune : `sync_famille_colonne` (officine), `cloud_famille_colonne` (central), `Pharma.Shared.FamillesNominativesSync` (test `FamillesNominativesTests`).
+
+| Famille | Colonnes | Défaut (titulaire) | Ce qui part si décochée |
+|---|---|---|---|
+| `employes` | `utilisateur.nom_complet`, `utilisateur.identifiant` | **Non** | Le code (`utilisateur.id`, identifiant local opaque, déjà la clé de la ligne au central), le rôle (`role_id`) et les autres colonnes non nominatives. Les autres tables ne désignent le personnel que par cet id (`utilisateur_id`, `traitee_par`…). |
+| `pharmacie` | `pharmacie.titulaire`, `.adresse`, `.telephone`, `parametre_notification.smtp_expediteur` ; **script 133** : `pharmacie.nom`, `.nif`, `.nis`, `.rc`, `.article_imposition` | Oui | N° Chifa (`chifa_officine`), langue. |
+| `fournisseurs` | `fournisseur.telephone`, `fournisseur.email`, `fournisseur.adresse` | Oui | Raison sociale, `nif`, `rc`, soldes et délais. |
+| `courriel_commandes` | `commande_fournisseur.envoyee_email_a` | Oui | La date d'envoi (`envoyee_email_le`). |
+| `banque` (scripts 133 et 135) | `compte_tresorerie.numero_compte`, `.banque`, `pret_bancaire.preteur`, `.reference`, `reglement_fournisseur.banque`, `.reference`, `paiement_effet.reference`, `remise_cheques.reference` | **Non** | Nom du compte, montants, dates. |
+| `clients_factures` (script 133) | `client_facture.adresse` | **Non** | Raison sociale, `nif`, `rc`, `nis`, `article_imposition` du client (identifiants d'entreprise, pas des coordonnées). |
+
+Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_formulaire_sms.texte` (modèle de message) reste **toujours envoyé**. Décision « ok banque » (2026-11-16) : la famille `banque` couvre aussi la banque et les références des règlements, effets, remises de chèques et prêts (script 135) ; vérifié : aucune n'est dans la clé de sa table (clé = `id`) ni utilisée par le serveur central pour une jointure ou un contrôle. `correspondance_echeancier_preteur.preteur` **n'est pas** ajoutée : c'est la clé de sa ligne (la retirer rendrait la ligne non identifiable au serveur central). Restent hors familles : identifiants fiscaux des fournisseurs et des clients facturés, `client_facture.raison_sociale`. `utilisateur.telephone` et `utilisateur.email` sont déjà exclus (script 126). Textes libres : filtrés (script 127).
 
 **Points [À VÉRIFIER] / [DÉCISION]** relevés pendant l'inventaire :
 - Champs de texte libre envoyés (motifs, commentaires, messages d'alerte, `chifa_ecart_detail`…) : **décision du titulaire (script 127)** : listés dans `sync_table.colonnes_texte` et **filtrés** avant envoi (courriel → `[COURRIEL]`, téléphone → `[TÉL]`, suite de 9 chiffres et plus → `[N°]`, nom ou prénom d'un patient → son code `P-…`, ou `[NOM]` s'il est porté par plusieurs patients, nom d'un porteur du registre → `[NOM]`) ; option `sync_parametre.textes_libres = 'retires'` pour ne pas les envoyer du tout (valeur nulle). Limite : un nom inconnu de la base ou mal orthographié n'est pas repéré. `journal_audit.details`, `forcage_alerte_psychotrope.messages`, `facture_client_version.contenu` et `demande_patient.sms_erreur` sont déjà exclus par prudence.
@@ -132,7 +147,7 @@
 | `role` | bidirectionnelle | id | - | - | |
 | `role_permission` | bidirectionnelle | role_id, permission_code | - | - | |
 | `substitution_liste_blanche` | bidirectionnelle | produit_id, remplacant_id | - | - | |
-| `utilisateur` | bidirectionnelle | id | mot_de_passe_hash, pin_hash, code_comptoir_essais, code_comptoir_bloque_jusqu, telephone, email, jetons_revoques_le | - | Jamais de mot de passe ni de code comptoir |
+| `utilisateur` | bidirectionnelle | id | mot_de_passe_hash, pin_hash, code_comptoir_essais, code_comptoir_bloque_jusqu, telephone, email, jetons_revoques_le | - | Jamais de mot de passe ni de code comptoir ; nom et identifiant : famille `employes` (défaut non) |
 | `categorie_produit` | descendante | code | - | - | |
 | `centre_payeur` | descendante | id | - | - | |
 | `chifa_code_produit` | descendante | code | - | - | |
@@ -150,6 +165,7 @@
 | `type_prestation` | descendante | id | - | - | |
 | `wilaya` | descendante | code | - | - | |
 | `zone_psychotrope_wilaya` | descendante | wilaya | - | - | |
+| `reglage_central` | descendante | cle | - | - | Réglages décidés au serveur central (familles nominatives), voie descendante, script 131 |
 | `alerte_non_envoyee` | jamais | id | - | - | Technique, local |
 | `chaine_integrite` | jamais | journal | - | - | Registre technique local |
 | `compteur_ticket` | jamais | id | - | - | Compteur local |
@@ -171,6 +187,8 @@
 | `serveur_officine` | jamais | nom | - | - | Réglages propres à chaque serveur |
 | `surveillance_replication` | jamais | id | - | - | Réplication locale |
 | `sync_chargement` | jamais | numero | - | - | Synchronisation elle-même (chargements complets, script 129) |
+| `sync_famille_colonne` | jamais | famille, nom_table, colonne | - | - | Synchronisation elle-même (familles nominatives, script 130) |
+| `sync_journal_descendant` | jamais | id | - | - | Synchronisation elle-même (journal de la voie descendante, script 136) |
 | `sync_lot` | jamais | epoque, numero | - | - | Synchronisation elle-même |
 | `sync_parametre` | jamais | id | - | - | Synchronisation elle-même |
 | `sync_pseudonyme` | jamais | nature, cle_locale | - | - | Correspondance personne <-> code : ne quitte jamais l'officine |

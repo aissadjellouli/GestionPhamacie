@@ -90,6 +90,18 @@
                     <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
                 </div>
                 <p class="detail" style="margin: 0">Désactivée, rien n’est inscrit ni envoyé. Activée sans activation de ce serveur, les modifications sont gardées en attente et partiront après l’activation.</p>
+                <h3 style="margin: 12px 0 4px">Données nominatives envoyées (réglées par le serveur central)</h3>
+                <ul data-zone="familles-envoyees" style="margin: 0; padding-left: 18px">
+                    @foreach (var (cle, f) in Pharma.Shared.FamillesNominativesSync.Familles)
+                    {
+                        var envoyee = t.FamillesEnvoyees?.Contains(cle) == true;
+                        <li data-famille="@cle">@(envoyee ? "✔ Envoyées" : "✘ Non envoyées") : @f.Libelle</li>
+                    }
+                </ul>
+                <p class="detail" style="margin: 0">
+                    <span data-zone="reglage-recu">@(t.FamillesLuesLe is { } lu ? $"Réglage reçu le {lu.ToLocalTime():dd/MM/yyyy HH:mm} (version {t.FamillesVersion})." : "Réglage jamais reçu : aucune donnée nominative n’est envoyée tant qu’il n’est pas connu.")</span>
+                    Lecture seule : le réglage se fait au serveur central et descend par la synchronisation ; une donnée non envoyée ne quitte jamais l’officine.
+                </p>
             </section>
         }
 

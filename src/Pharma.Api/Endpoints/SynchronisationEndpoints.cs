@@ -27,7 +27,8 @@ public static class SynchronisationEndpoints
                 c?.EcheanceUtc, c?.Empreinte[..16], p.DerniereErreur, p.DerniereErreurLe, p.TextesLibres, p.EnvoyerMedecins, p.Epoque, p.VersionContrat,
                 p.LotsAutresEpoques, p.BaseEnLectureSeule,
                 ch is null ? null : new ChargementSynchronisationDto(ch.Numero, ch.Motif, ch.Etat, ch.DemandeLe, ch.LignesTotal, ch.LignesAccusees,
-                    enCours == ch.Numero ? faites : 0, enCours == ch.Numero ? total : 0, ch.TermineLe, ch.AbsentesCentral)));
+                    enCours == ch.Numero ? faites : 0, enCours == ch.Numero ? total : 0, ch.TermineLe, ch.AbsentesCentral),
+                p.FamillesEnvoyees, p.FamillesLuesLe, p.FamillesVersion));
         });
 
         // Lot S6 : rechargement complet demandé par le titulaire (traité par le passage d'envoi suivant)

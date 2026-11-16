@@ -62,7 +62,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `129`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `136`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -541,9 +541,9 @@ Aucun secret dans un fichier du dépôt ni dans `appsettings*.json` : tout passe
 ### Installation du serveur central (une fois)
 
 1. **Base** (compte propriétaire, jamais le rôle applicatif) : créer la base, puis passer dans l'ordre `database/cloud/001_base_centrale.sql`
-   `database/cloud/002_tables_miroir.sql` et `database/cloud/003_chargement.sql` (`psql -v ON_ERROR_STOP=1 -f …`), puis
-   `database/cloud/tests/001_base_centrale_tests.sql` et `database/cloud/tests/003_chargement_tests.sql` (doivent finir par « tous réussis »).
-   Mise à jour d'un serveur central du lot S2 : repasser `002` (colonnes `sync_chargement`, `sync_absente_le`) puis `003`.
+   `database/cloud/002_tables_miroir.sql`, `database/cloud/003_chargement.sql`, `004_reglages.sql` et `005_descendant.sql` (`psql -v ON_ERROR_STOP=1 -f …`), puis
+   `database/cloud/tests/001_base_centrale_tests.sql`, `003_chargement_tests.sql`, `004_reglages_tests.sql` et `005_descendant_tests.sql` (doivent finir par « tous réussis »).
+   Mise à jour d'un serveur central du lot S2 : repasser `002` (colonnes `sync_chargement`, `sync_absente_le`) puis `003`, `004` et `005` ; toujours dans cet ordre.
 2. **Rôle applicatif** : `ALTER ROLE pharma_cloud_api LOGIN PASSWORD '<mot de passe tiré au sort>';` (tapé à la main, jamais enregistré
    dans un script) ; il n'est **pas** propriétaire des tables (la sécurité au niveau des lignes s'applique).
 3. **Dossier de l'autorité** hors de tout dépôt de sources (ex. `D:\PharmaCentral\Autorite`), accès réservé au compte du service et aux
@@ -558,6 +558,8 @@ Aucun secret dans un fichier du dépôt ni dans `appsettings*.json` : tout passe
 6. **Démarrage** : `Pharma.Cloud.Api.exe` (HTTPS seul, `Cloud:Adresse` / `Cloud:Port` dans appsettings ; 127.0.0.1:5090 par défaut).
    Seul le port HTTPS est ouvert ; la base n'est jamais exposée.
 7. **Chaque mois** (tâche planifiée) : `Pharma.Cloud.Api.exe --partitions` (partitions mensuelles des lots reçus).
+8. **Chaque jour** (tâche planifiée, facultative) : `Pharma.Cloud.Api.exe --purger-lots` : **sans effet** tant que l'effacement des lots trop anciens
+   n'est pas activé (défaut) ; voir « Réglages du serveur central ».
 
 ### Activer une officine
 
@@ -574,6 +576,56 @@ Aucun secret dans un fichier du dépôt ni dans `appsettings*.json` : tout passe
    effet au prochain appel ; un nouveau code permet de réactiver. Le certificat (3 ans) se renouvelle seul 60 jours avant l'échéance.
 
 **Ne jamais** copier le dossier `Synchronisation` d'un serveur à l'autre : chaque serveur a sa clé (DPAPI : illisible ailleurs).
+
+### Procédure d'activation des officines (2026-11-16)
+
+1. **Officines avant le serveur central** : une officine peut être installée ou mise à jour (scripts jusqu'au dernier) avant que le serveur
+   central existe. La synchronisation est **désactivée par défaut** : aucun déclencheur, rien d'inscrit ni d'envoyé, aucun coût sur les ventes ;
+   rien ne change pour l'officine tant que le titulaire ne l'active pas.
+2. **Activation par groupes progressifs** (ex. 10 officines, puis 100, puis le reste) : chaque première activation déclenche un **chargement
+   complet** (toutes les données envoyées de l'officine). Étaler les groupes étale ces chargements (CPU, disque et réseau du serveur central) ;
+   attendre qu'un groupe ait fini (« État » de chaque officine : chargement « terminé » ; au central : table `chargement`, état `termine`)
+   avant le suivant.
+3. **Compatibilité des versions** — règle retenue : *le serveur central accepte la version actuelle du contrat et la précédente*.
+   **Constaté dans le code (2026-11-16)** : une seule version existe et une seule est acceptée : lots `sync-v1` (`ControleLot.VersionsAcceptees`)
+   et éléments descendants `desc-v1` (l'officine ignore et journalise un autre contrat). La liste des versions acceptées par le central est
+   déjà un ensemble : à l'arrivée de `sync-v2`, il faudra y garder `sync-v1` et faire lire les deux formats par `cloud_appliquer_lot` ; même
+   chose côté officine pour `desc-v2` (reste à faire, non codé : rien à tolérer aujourd'hui). Ordre de mise à jour : **serveur central d'abord**,
+   officines ensuite.
+4. **Ce qui se passe à la première activation** : (a) le serveur central **adopte le code de l'officine installée** (`sync_parametre.officine_id`)
+   à la place du code provisoire de `--creer-officine` ; (b) le **réglage des familles nominatives descend** dans la base de l'officine au
+   premier passage (table `reglage_central`) ; tant qu'il n'est pas reçu, rien de nominatif ne part ; (c) un **chargement complet** part
+   (limite de dépôts relevée et plafond d'octets propre au chargement, ci-dessous) ; (d) ensuite, seules les modifications partent, chaque minute.
+5. **Débit pendant un chargement** : 600 lots/min par certificat (`Cloud:LotsParMinuteChargement` dans appsettings, au lieu de
+   `Cloud:LotsParMinute` = 60) tant que le chargement est annoncé et non terminé ; ses lots ne comptent pas dans le quota du jour mais dans un
+   plafond par chargement : `UPDATE cloud_parametre SET quota_chargement_octets = <octets>` (8 Gio par défaut). Base centrale : passer
+   `database/cloud/006_debit_chargement.sql` après `005`.
+
+### Réglages du serveur central (2026-11-16)
+
+Outil d'administration (`PHARMA_CLOUD_ADMIN_CONNEXION`), chaque réglage est inscrit au journal de sécurité. `Pharma.Cloud.Api.exe --reglages` affiche tout.
+
+**Données nominatives envoyées** (familles `employes`, `pharmacie`, `fournisseurs`, `courriel_commandes`, `banque`, `clients_factures` ; défauts : employés, banque et clients facturés **non**, les autres oui ; base centrale : passer `database/cloud/007_familles_banque_clients.sql` après `006`) :
+
+- `--regler-famille <famille> oui|non` : valeur globale ; `--regler-famille <famille> oui|non --officine <code>` : surcharge pour une officine ;
+  `--regler-famille <famille> global --officine <code>` : retour à la valeur globale. Le réglage est enregistré en base centrale et **descend** dans la base de l'officine à son prochain passage
+  (une minute environ, même si elle n'a rien à envoyer ; voie descendante, table locale `reglage_central`) ; ce qu'elle a déjà en file ou dans un lot non accusé est filtré aussi. Visible (lecture seule) dans son écran
+  « Administration › Synchronisation › Réglages ».
+- Cocher de nouveau une famille ne renvoie pas les valeurs déjà retirées : elles repartent à la prochaine modification de la ligne, ou toutes
+  par « Recharger toutes les données » dans l'officine.
+- **Effacer ce qui a déjà été reçu** pour une famille décochée (SUPPRESSION de données, tables miroir et lots bruts) :
+  `--effacer-famille <famille> [--officine <code>]` affiche d'abord ce qui serait effacé (simulation, rien n'est touché) ; l'effacement
+  n'a lieu qu'avec `--confirmer <famille>` (nom de la famille répété). Refusé tant que la famille est encore envoyée par l'officine.
+  Un lot brut expurgé est marqué (`lot_recu.expurge_le`, `colonnes_effacees`) : son empreinte ne couvre plus le contenu gardé.
+
+**Conservation des lots bruts** (`lot_recu`) : 6 ans par défaut, **6 ans minimum** (refus en dessous), pas de maximum.
+
+- `--conservation <ans>` (globale) ; `--conservation <ans> --officine <code>` ; `--conservation global --officine <code>` (retour à la globale).
+- Effacement des lots trop anciens **désactivé par défaut** : `--purger-lots --simulation` compte ce qui serait effacé ;
+  `--purge-lots activer` (ou `desactiver`) ; une fois activé, `--purger-lots` efface, pour chaque officine, les lots reçus avant sa durée de
+  conservation, journalise (officine, nombre, période ; `lots_purges`) et supprime les partitions mensuelles devenues vides de plus de 6 ans
+  (`partition_supprimee`). Tout autre effacement ou modification d'un lot brut reste refusé par la base.
+- **[À VÉRIFIER]** avant d'activer : durées réglementaires (6 ans fiscaux ; registre des psychotropes : durée à confirmer).
 
 ### Synchronisation : compléments (revue de sécurité du lot S2)
 

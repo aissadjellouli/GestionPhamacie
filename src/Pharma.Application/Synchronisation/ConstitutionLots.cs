@@ -7,8 +7,9 @@ namespace Pharma.Application.Synchronisation;
 // attribué dans la transaction d'enregistrement, donc sans trou. L'envoi au serveur central est le lot S3.
 
 /// <summary>État de la synchronisation (ligne unique sync_parametre) et taille de la file.</summary>
+/// <param name="ColonnesInterdites">Colonnes (« table.colonne ») à retirer maintenant (script 136 ; familles non autorisées).</param>
 public sealed record EtatSync(bool Active, Guid? OfficineId, int Epoque, string VersionContrat, long DernierLot, long DernierAccuse,
-    int LotMaxLignes, int LotMaxOctets, long LignesEnAttente);
+    int LotMaxLignes, int LotMaxOctets, long LignesEnAttente, IReadOnlyList<string>? ColonnesInterdites = null);
 
 /// <summary>Ligne de la file, données déjà minimisées par la base (patients et porteurs sous code).</summary>
 /// <param name="Numero">N° de la ligne dans la file (sync_sortie.id).</param>
@@ -25,8 +26,8 @@ public sealed record EnTeteLotSync(string VersionContrat, Guid OfficineId, int E
 /// <summary>Lot mis en forme : contenu sérialisé et empreinte SHA-256 (hexadécimal).</summary>
 public sealed record LotFormule(byte[] Contenu, string Empreinte);
 
-/// <summary>Lot à enregistrer : n° attendu, lignes rattachées, taille et empreinte.</summary>
-public sealed record LotConstitue(long Numero, IReadOnlyList<long> Lignes, int Octets, string Empreinte);
+/// <summary>Lot à enregistrer : n° attendu, lignes rattachées, taille, empreinte et colonnes retirées, figées (script 136).</summary>
+public sealed record LotConstitue(long Numero, IReadOnlyList<long> Lignes, int Octets, string Empreinte, IReadOnlyList<string>? ColonnesRetirees = null);
 
 public sealed record ResultatConstitution(int Lots, int Lignes, string? Motif)
 {
@@ -37,9 +38,13 @@ public sealed record ResultatConstitution(int Lots, int Lignes, string? Motif)
 public interface ISortieSyncDepot
 {
     Task<EtatSync> EtatAsync(CancellationToken ct = default);
-    /// <summary>Lignes pas encore rattachées à un lot, de l'époque courante, par (ordre, n°) croissants (lot S6).</summary>
-    Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, CancellationToken ct = default);
-    /// <summary>Enregistre le lot (sync_enregistrer_lot) ; false si son n° n'est plus le suivant (constitution simultanée).</summary>
+    /// <summary>
+    /// Lignes pas encore rattachées à un lot, de l'époque courante, par (ordre, n°) croissants (lot S6), SANS les colonnes des
+    /// familles nominatives non autorisées (script 130 : une donnée décochée ne quitte jamais l'officine, même déjà en file).
+    /// </summary>
+    Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, IReadOnlyList<string> colonnesRetirees, CancellationToken ct = default);
+    /// <summary>Enregistre le lot (sync_enregistrer_lot) ; false si son n° n'est plus le suivant (constitution simultanée) ou si le
+    /// réglage des familles a changé depuis la lecture des lignes.</summary>
     Task<bool> EnregistrerLotAsync(LotConstitue lot, CancellationToken ct = default);
 }
 
@@ -69,14 +74,15 @@ public sealed class ConstitutionLotsSync(ISortieSyncDepot depot, IFormatLotSync 
 
         int lots = 0, lignes = 0;
         var numero = etat.DernierLot;
+        var colonnes = etat.ColonnesInterdites ?? [];
         while (lots < maxLots)
         {
-            var attente = await depot.LignesEnAttenteAsync(etat.LotMaxLignes, ct);
+            var attente = await depot.LignesEnAttenteAsync(etat.LotMaxLignes, colonnes, ct);
             if (attente.Count == 0) break;
             var choisies = Borner(attente, etat.LotMaxLignes, etat.LotMaxOctets);
             numero++;
             var formule = format.Formuler(new EnTeteLotSync(etat.VersionContrat, officine, etat.Epoque, numero), choisies);
-            var lot = new LotConstitue(numero, choisies.Select(l => l.Numero).ToList(), formule.Contenu.Length, formule.Empreinte);
+            var lot = new LotConstitue(numero, choisies.Select(l => l.Numero).ToList(), formule.Contenu.Length, formule.Empreinte, colonnes);
             if (!await depot.EnregistrerLotAsync(lot, ct)) return new ResultatConstitution(lots, lignes, MotifSimultanee);
             lots++;
             lignes += choisies.Count;

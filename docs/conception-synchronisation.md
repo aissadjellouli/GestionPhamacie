@@ -304,7 +304,7 @@ Décisions nouvelles du titulaire (2026-11-16) : **tables communes + RLS** (remp
 - Officine : verrou unique (`VerrouSync`) ; reprise automatique d'un trou côté central ; contrôle de l'accusé ; erreurs imprévues notées sans détail ; refus définitif sans renvoi en boucle ; garde `pg_is_in_recovery()` ; réglages dans une transaction ; client HTTP réutilisé par certificat.
 - Suppression au central : clé relue depuis l'id `sync-v1` (format S1 inchangé, valeurs jointes par « | ») et convertie au type de la colonne ; pour une clé composée, l'id reconstitué doit être identique : une valeur contenant « | » ne peut jamais retirer une autre ligne (au pire la suppression n'est pas appliquée).
 - **Défaut de `officine_id` non remplacé par une constante** : mesuré sur 200 000 insertions, la fonction coûte environ 0,4 s de plus (≈ 2 µs par ligne : 88 ms avec une constante, 430 à 530 ms avec la fonction). Une constante inscrirait le code d'une officine dans le schéma : `init/schema.sql` diffèrerait d'une base à l'autre (comparaison init en échec) et une installation neuve hériterait du code de la base de référence. Gardé tel quel, à reconsidérer si un import massif le justifie **[DÉCISION]**.
-- Non traité, décision du titulaire en attente : noms du personnel et coordonnées des fournisseurs et de la pharmacie envoyés au central.
+- Noms du personnel et coordonnées des fournisseurs et de la pharmacie : **décidé et réalisé le 2026-11-16** (§ 14, familles nominatives réglables).
 
 ## 13. Lot S6 : réalisé (2026-11-16, GO du titulaire) — chargement complet
 
@@ -382,3 +382,174 @@ signalées, bouton « Recharger toutes les données » avec confirmation (droit 
   limite de dépôts et le quota journalier.
 - Purge de `sync_sortie` après accusé (S3) ; écran central de consultation des lignes absentes (S7).
 - Sous-rubrique propre « Chargement » de l'écran : demande une modification de `NavAdmin.razor` (non touché ici).
+
+## 14. Réglages du serveur central (2026-11-16, GO du titulaire)
+
+### 14.1 Données nominatives envoyées (familles)
+
+Décision du titulaire : quatre **familles** réglables par case à cocher au serveur central, valeur globale + surcharge par officine.
+
+| Famille | Colonnes | Défaut |
+|---|---|---|
+| `employes` | `utilisateur.nom_complet`, `utilisateur.identifiant` | **non** |
+| `pharmacie` | `pharmacie.titulaire`, `.adresse`, `.telephone`, `parametre_notification.smtp_expediteur` | oui |
+| `fournisseurs` | `fournisseur.telephone`, `.email`, `.adresse` | oui |
+| `courriel_commandes` | `commande_fournisseur.envoyee_email_a` | oui |
+| `pharmacie` (complément, script 133 / central 007) | `pharmacie.nom`, `.nif`, `.nis`, `.rc`, `.article_imposition` (identifiants fiscaux de l'officine, l'article d'imposition étant du même ordre que NIF, NIS et RC) | oui |
+| `banque` (script 133 / central 007, élargie : script 135 / central 008) | `compte_tresorerie.numero_compte`, `.banque`, `pret_bancaire.preteur`, `.reference`, `reglement_fournisseur.banque`, `.reference`, `paiement_effet.reference`, `remise_cheques.reference` (aucune dans une clé) | **non** |
+| `clients_factures` (script 133 / central 007) | `client_facture.adresse` (seule colonne de contact du client facturé) | **non** |
+
+Colonnes nominatives du personnel cherchées dans toutes les tables envoyées (`002_tables_miroir.sql`) : seules ces deux-là ; `utilisateur.telephone`
+et `.email` sont déjà exclues (script 126) ; ailleurs le personnel n'est désigné que par son id (`utilisateur_id`, `traitee_par`, `vu_par`…).
+**Code d'un employé = son id local**, gardé : il est déjà la clé de la ligne au central (le changer casserait les liens de toutes les tables) et
+ne désigne personne sans la base de l'officine ; un pseudonyme en plus n'apporterait rien. Le rôle (`role_id`) et les colonnes non nominatives partent.
+Décision du titulaire (2026-11-16) : `parametre_formulaire_sms.texte` reste toujours envoyé. Colonnes bancaires du même ordre ajoutées le 2026-11-16
+(« ok banque », scripts 135 / 008) ; `correspondance_echeancier_preteur.preteur` reste envoyée : c'est la clé de sa ligne (non retirable). Détail : synchronisation-inventaire.md.
+
+**Où filtrer — retenu : à la constitution des lots** (`sync_retirer_familles` dans la lecture des lignes en attente, script 130), et non dans
+`sync_minimiser` (déclencheur) : la file `sync_sortie` est en ajout seul (garde du script 126), une ligne déjà inscrite ne peut pas être réécrite ;
+filtrer à la lecture applique le réglage **du moment** à tout ce qui n'est pas encore parti, y compris les lignes inscrites avant le changement
+et l'instantané d'un chargement complet (S6). La ligne complète reste dans la file, donc dans l'officine.
+
+- **Réglage descendu dans la base locale** (remplace le 2026-11-16 la lecture par `GET /api/v1/reglages`, retirée) : le réglage choisi au central
+  est enregistré en base centrale et **descend** par la voie descendante (§ 15) dans la table locale `reglage_central` (clé `familles_envoyees`,
+  version). L'API locale le lit **uniquement** dans sa base (`sync_familles_effectives()`) : aucun appel au central pour l'obtenir, central en
+  panne = dernière version appliquée, rien bloqué. **Jamais reçu : aucune famille** (rien de nominatif).
+- **Lot déjà formé** : `sync_lot.familles` garde les familles appliquées (renvoi à l'identique). Si l'une a été décochée depuis et que le lot n'est
+  pas accusé, il est **reformé** sans elle avant l'envoi (`sync_reformer_lot` ; la garde de `sync_lot` ne permet que cette réduction stricte,
+  jamais un élargissement). Si le central avait déjà reçu la forme d'origine (accusé perdu), il répond « autre empreinte » : le lot est tenu pour
+  accusé (n° propre à l'officine, rien d'autre ne peut l'avoir envoyé) ; une ligne `lot_anomalie` reste au journal central.
+- **Constitution** : `sync_enregistrer_lot` (5 arguments) refuse si le réglage a changé entre la lecture des lignes et l'enregistrement
+  (reprise au passage suivant).
+- **Double sécurité au central** : `cloud_appliquer_lot` (script 004) retire **avant toute écriture** les colonnes d'une famille non autorisée
+  pour l'officine du certificat (tables miroir **et** lot brut gardé, marqué `expurge_le` / `colonnes_effacees` ; l'empreinte reçue est gardée
+  pour l'idempotence, elle ne couvre plus le contenu) ; journal `familles_effacees_reception` une fois par jour et par officine.
+- **Décocher ensuite** ne supprime rien de ce qui a déjà été reçu (une mise à jour de la ligne vide la colonne au central) ; effacement par
+  commande séparée `--effacer-famille` : simulation par défaut, `--confirmer <famille>` exigé, refus si la famille est encore envoyée, journal
+  `famille_effacee`. **Recocher** ne renvoie pas les valeurs déjà retirées : prochaine modification ou « Recharger toutes les données ».
+- Écran de l'officine « Admin › Synchronisation › Réglages » : familles envoyées, date de réception et version, **lecture seule**.
+
+### 14.2 Conservation des lots bruts (`lot_recu`)
+
+Durée globale (`cloud_parametre.conservation_lots_ans`) et par officine (`officine.conservation_lots_ans`) : **6 ans par défaut et minimum**
+(contrainte et refus de `cloud_regler_conservation`), pas de maximum. Effacement codé (`cloud_purger_lots`) mais **désactivé**
+(`purge_lots_active = false`) ; activé seulement par `--purge-lots activer` ; chaque effacement est journalisé (`lots_purges` : officine,
+nombre de lots, première et dernière date de réception, durée).
+
+**Retenu : fonction dédiée contrôlée, ligne par ligne, puis suppression des partitions vides.** Les partitions mensuelles sont communes à
+toutes les officines et la durée est propre à chacune : détacher une partition entière n'est possible que si toutes ses lignes ont dépassé la
+durée de leur officine, ce que seule une lecture de la partition établit ; le plus simple et sûr est d'effacer les lignes expirées (par officine)
+puis de supprimer les partitions **vides** entièrement plus anciennes que 6 ans (`partition_supprimee`). Le déclencheur `cloud_lot_recu_garde`
+remplace « ajout seul » mais refuse toujours toute modification ou suppression, sauf : suppression d'un lot dont la durée de **son** officine
+est dépassée, effacement activé **et** opération posée par la fonction ; retrait de colonnes nominatives par `cloud_effacer_famille` (le contenu
+nouveau doit être exactement l'ancien moins les colonnes listées). Le rôle applicatif n'a ni UPDATE ni DELETE sur `lot_recu`.
+Effacement lancé par l'outil d'administration (tâche planifiée `--purger-lots`), pas par l'API : moindre privilège.
+Non couvert par un déclencheur : `DROP`/`TRUNCATE` d'une partition par le propriétaire (droit d'administrateur de la base) **[À VÉRIFIER :
+séparation des comptes à l'hébergement]**.
+
+### 14.3 Essais (2026-11-16, copie jetable de `pharmacie_test`, supprimée)
+
+De bout en bout (API officine sur 5181, serveur central sur 5090, base centrale recréée ensuite) : avant le premier passage, réglage
+inconnu ; activation puis chargement complet (69 lots) : 9 employés au central sans nom ni identifiant (rôle présent), coordonnées des
+fournisseurs et de la pharmacie présentes, aucun nom d'employé dans les lots bruts ; « fournisseurs » décochée pour l'officine : ligne
+déjà en file envoyée sans téléphone ; `--effacer-famille` : simulation sans effet, mauvaise confirmation refusée, puis 10 + 7 + 5 valeurs et
+1 lot brut effacés, refus pour une famille encore envoyée ; central coupé, lot formé avec les fournisseurs, famille décochée entre-temps :
+lot reformé et accepté sans téléphone (empreinte identique des deux côtés) ; conservation à 5 ans refusée ; `--purger-lots` sans effet
+(désactivé). Tests SQL `130_synchronisation_familles_nominatives_tests.sql` et `cloud/tests/004_reglages_tests.sql`,
+tests `EnvoiSynchronisationTests` (réglage jamais lu, ligne déjà en file, lot reformé, lot reformé déjà reçu) et `FamillesNominativesTests`.
+
+### 14.4 Reste à faire
+
+- Durées réglementaires de conservation (registre des psychotropes) avant d'activer l'effacement **[À VÉRIFIER]**.
+- Écran central de réglage (S7) : aujourd'hui commandes de l'outil d'administration seulement.
+- Données de référence de synchronisation dans `database/init/seed_referentiel.sql` : **corrigé le 2026-11-16** (`sync_table` des scripts 126 à 131,
+  ligne `sync_parametre`, `sync_famille_colonne` ; test `Le_seed_contient_le_classement_de_synchronisation_des_scripts`).
+
+## 15. Voie descendante (2026-11-16, GO du titulaire « réglages descendants », première brique de S3)
+
+**Principe** : ce que décide le serveur central est enregistré en base centrale et **descend** dans la base de l'officine ; l'API locale ne lit
+que sa base. C'est toujours l'officine qui initie (aucune connexion vers l'officine) ; une panne du central ne bloque rien localement.
+
+**Format (contrat `desc-v1`, `Pharma.Shared.ChangementsDescendantsDto`)** : `{ contrat, versionMax, changements: [{ table, cle, version,
+donneesJson }] }`. Générique : table locale de destination, clé, version, objet JSON ; réutilisable en S3 (prix, réglages, commandes en brouillon :
+une table locale = un cas de `sync_appliquer_descendant`). Un autre contrat est ignoré par l'officine (journalisé).
+
+| Élément | Central (`database/cloud/005_descendant.sql`) | Officine (`131_synchronisation_descendant.sql`) |
+|---|---|---|
+| Stockage | `descendant` (officine, table, clé, version, données ; RLS) ; `officine_descendant` (version max, version acquittée) | `reglage_central` (clé, version, valeur ; **classée descendante**) ; `sync_parametre.descendant_version` |
+| Version | **monotone par officine** ; nouvelle version seulement si les données changent | jamais écrasée par une version plus ancienne ou égale ; table non prévue refusée |
+| Publication | à chaque échange, le réglage effectif (global + surcharge, script 004) est comparé au dernier publié (`cloud_descendants`) | — |
+| Transport | **réponse au dépôt d'un lot** (`AccuseLotDto.Descendants`, si l'en-tête `X-Sync-Descendants` donne la version appliquée) et **échange léger** `POST /api/v1/echange` à chaque passage (chaque minute), même sans rien à envoyer | `EnvoyerLotsSync` : échange en tête de passage, puis éléments portés par chaque accusé |
+| Acquittement | la version donnée par l'officine (`version_acquittee`) ; seules les versions plus grandes sont renvoyées | la plus grande version appliquée est redonnée à l'échange suivant |
+
+Jeton : la réponse de `POST /api/v1/jeton` ne porte pas d'éléments (le jeton est obtenu à l'intérieur du client HTTP) ; l'échange léger de chaque
+passage joue ce rôle. Le central continue d'effacer à la réception ce qui n'est pas autorisé (§ 14.1).
+
+**Essais (2026-11-16, copie jetable de `pharmacie_test`, supprimée)** : activation → réglage version 1 descendu au premier passage, chargement
+complet sans nom d'employé ; famille décochée au central → version 2 descendue par un passage **sans rien à envoyer** ; **central coupé** : réglage
+local gardé (version 2), lot formé sans le téléphone du fournisseur modifié, réponse 502 avec message ; central relancé : lot accepté sans
+téléphone. Installation neuve depuis `database/init` : 0 table non classée, activation possible (transaction annulée).
+
+**Réponses d'erreur « vides » vues pendant l'essai précédent** : examinées le 2026-11-16 : l'API renvoyait bien un ProblemDetails avec un message
+(502 « Serveur central injoignable : … », 409 passage simultané). Le vide venait de l'outil d'essai (Windows PowerShell 5.1 ne remplit pas le détail
+d'erreur pour `application/problem+json`) ; le poste lit le champ `detail`. Message du 409 précisé (« passage automatique ou autre poste :
+réessayez dans un instant »).
+
+## 16. Mutualisation des réglages (prévue en S3, décision du titulaire 2026-11-16)
+
+**Principe** : sans serveur central, tous les réglages se font dans les écrans d'administration de l'officine (aucun script). Avec le serveur
+central, un **modèle central par table** ; chaque réglage est marqué **« imposé »** (affiché grisé dans l'écran de l'officine avec la mention
+« fixé par le serveur central ») ou **« proposé »** (modifiable localement). Les écrans locaux sont conservés. Transport : la voie descendante (§ 15).
+Rien n'est codé ; les classements de `sync_table` ne changent pas maintenant.
+
+- **Groupe 1, référentiels nationaux** (descendants, le central fait foi, diffusion S5) : `wilaya`, `organisme`, `centre_payeur`,
+  `type_prestation`, `categorie_produit`, `classe_suivie`, `classe_suivie_dci`, `parametre_gs1_ai`.
+- **Groupe 2, mutualisables avec imposé / proposé** : `parametre_fiscal` (imposé), `regle_alerte_psychotrope` (imposé ou proposé : à décider),
+  `parametre_tracabilite` (imposé), `parametre_serialisation` (imposé), `parametre_substitution` (proposé), `motif_reglable` (proposé + ajouts
+  locaux), `parametre_formulaire_sms` (proposé), `parametre_surveillance` (proposé), `parametre_alerte` (proposé), `parametre_inventaire`
+  (proposé), `remise_automatique` (proposé). « Imposé / proposé » est une proposition : obligations légales à confirmer **[À VÉRIFIER]**
+  (seuils psychotropes, TVA).
+- **Groupe 3, strictement locaux, jamais mutualisés** : `parametre_caisse`, `parametre_sauvegarde`, `parametre_notification`,
+  `parametre_rapport`, `serveur_officine`, `compteur_ticket`, `chaine_integrite`, `parametre_integrite`.
+
+## 17. Débit pendant un chargement complet (2026-11-16, GO du titulaire)
+
+- **Limite de dépôts** : 60 lots/min par certificat en temps normal (`Cloud:LotsParMinute`), **600/min** (`Cloud:LotsParMinuteChargement`)
+  tant que l'officine a un chargement annoncé et non terminé. L'API lit l'état en base (`cloud_chargement_en_cours`, script central 006)
+  avant la limite de débit, le garde 30 s par certificat (`SuiviChargementCentral`) et l'efface au début et à la fin du chargement ; seau
+  distinct, la limite globale par adresse (600/min) reste.
+- **Quota d'octets — retenu : plafond par chargement à la place du quota du jour.** Le quota du jour (512 Mio) protège contre un flux anormal
+  au quotidien ; un chargement complet est un envoi unique et borné par la taille de l'officine : s'il comptait dans le quota du jour, une
+  grosse officine serait arrêtée à mi-chemin et reprendrait le lendemain. Pendant un chargement, ses lots comptent dans
+  `chargement.octets_recus`, plafonné par `cloud_parametre.quota_chargement_octets` (8 Gio par défaut, réglable) : un chargement anormal reste
+  borné (429, nouvel essai), et le quota du jour n'est pas entamé.
+- **Compatibilité de contrat** : voir mise-en-production.md, « Procédure d'activation des officines » (une seule version acceptée aujourd'hui).
+
+## 18. Corrections après revue et audit de sécurité (2026-11-16, scripts officine 136 et central 009)
+
+Chaque point est rejouable (scripts idempotents) ; le script 130 rejoué seul après 131 ne fait plus rien (garde en tête de fichier).
+
+- **Colonnes figées par lot** (`sync_lot.colonnes_retirees`, « table.colonne ») : constituées avec les lignes, elles servent au renvoi à l'identique ;
+  une colonne ajoutée ensuite à une famille ne rend plus un lot non renvoyable. La reforme d'un lot non accusé ne peut que retirer davantage
+  (garde `sync_lot_garde`). Lots antérieurs (colonne NULL) : liste reconstituée depuis leurs familles (`sync_colonnes_hors_familles`), `{}` si les
+  familles sont NULL (avant 130) ; ils sont toujours renvoyés **filtrés** par la liste en vigueur (jamais l'empreinte stockée comme seule référence).
+- **Reprise des lots manquants** : `LotEnregistre` expose `Accuse` et `ReformeLe`. Un lot accusé renvoyé après un trou du central n'est jamais
+  reformé en base (`sync_reformer_lot_colonnes` refuse un lot accusé) : son contenu filtré est envoyé tel quel ; le central l'accepte comme lot manquant
+  (il n'a pas ce numéro, aucune empreinte à comparer). Si le central l'a encore avec une autre empreinte, 409 : le lot est tenu pour reçu
+  (numéro propre à l'officine). Lot reformé dont l'accusé s'est perdu : décision par `reforme_le IS NOT NULL`.
+- **Voie descendante** : `sync_recevoir_descendant` renvoie un statut (`applique`, `ancien`, `table_inconnue`, `refuse`), n'avance pas la version
+  acquittée (`sync_noter_version_descendante`, monotone), refuse une version au-delà de la version maximale annoncée, un saut supérieur à
+  `descendant_saut_max` (1000) et une donnée de plus de 64 Kio ; journal local `sync_journal_descendant` (sans donnée personnelle ; familles avant / après).
+  Côté application, la version acquittée s'arrête avant le premier élément ignoré ou refusé (redonné à chaque passage) et une erreur d'application n'arrête
+  pas l'envoi des lots. Le client HTTP borne la réponse (1 Mio), le nombre d'éléments (1000) et la taille d'une donnée (64 Kio).
+- **Central restauré** (`cloud_descendants`) : version annoncée > version maximale (et <= 10^12) : la version maximale est remontée, les éléments de l'officine
+  sont republiés au-dessus, événement `descendant_remonte`.
+- **Plafonds de chargement** (central 009) : `chargements_max_24h` (5) et `quota_chargements_octets_24h` (16 Gio) par officine sur 24 h glissantes, tous chargements
+  (remplacés compris), en plus du plafond par chargement (8 Gio). Refus journalisé `quota_depasse` ; 429 au début d'un chargement.
+- **`cloud_chargement_en_cours`** : le `set_config('app.officine_id')` est conservé. La table `chargement` est sous sécurité par ligne forcée, y compris pour
+  le propriétaire de la fonction : sans lui la fonction ne voit jamais le chargement (test central 009). Non retiré malgré la demande.
+- **Lots reçus** : le rôle applicatif n'a ni UPDATE, ni DELETE, ni TRUNCATE sur `lot_recu` et ses partitions (test central 009).
+- **Contenance** (script 136, fonction `contenance_depuis_conditionnement`) : motif sans dépendance à la locale (classes `[EÉeé]` écrites en entier) ; le test
+  C# lit ce motif. Nouveau passage borné aux produits encore sans contenance, journal d'audit comme au script 134 (aucune écriture en double au rejeu).
+  La contenance reste figée dans le produit (décision du titulaire).
+- **Non fait** : lecture en base de `SuiviChargementCentral` avant la limite de débit (point facultatif, la valeur est déjà gardée 30 s par certificat).
