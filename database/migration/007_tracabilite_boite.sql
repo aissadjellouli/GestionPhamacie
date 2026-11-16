@@ -225,6 +225,13 @@ $$;
 -- ---------------------------------------------------------------------
 -- 7. Parcours complet d'une boîte
 -- ---------------------------------------------------------------------
+-- Rejouable : sur une base déjà à la version finale (colonne chifa_facture présente, script 101), la vue n'est pas recréée
+-- (CREATE OR REPLACE ne peut ni renommer ni supprimer de colonne) ; sur une base neuve ou ancienne, elle est créée ou remplacée.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema() AND table_name = 'v_parcours_boite' AND column_name = 'chifa_facture') THEN
+        EXECUTE $vue$
 CREATE OR REPLACE VIEW v_parcours_boite AS
 SELECT b.id AS boite_id,
        COALESCE(b.code_etiquette, b.gtin || ' / ' || b.numero_serie) AS identifiant,
@@ -241,7 +248,10 @@ JOIN fournisseur f  ON f.id = l.fournisseur_id
 JOIN reception r    ON r.id = l.reception_id
 LEFT JOIN ligne_vente lv ON lv.id = b.ligne_vente_id
 LEFT JOIN vente v        ON v.id = lv.vente_id
-LEFT JOIN patient pt     ON pt.id = v.patient_id;
+LEFT JOIN patient pt     ON pt.id = v.patient_id
+        $vue$;
+    END IF;
+END $$;
 
 -- Avancement de l'étiquetage initial (avant d'activer le mode strict)
 CREATE OR REPLACE VIEW v_lots_a_etiqueter AS

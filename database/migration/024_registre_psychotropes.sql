@@ -142,7 +142,9 @@ WHERE p.classe IN ('psychotrope', 'stupefiant')
 -- Lecture : numéro d'ordre, entrées, sorties, solde par produit (à partir de l'ouverture) et par lot
 CREATE OR REPLACE VIEW v_registre_psychotrope AS
 WITH base AS (
-    SELECT r.*, l.produit_id, l.numero_lot,
+    -- Colonnes nommées (pas de r.*) : la vue ne change pas si la table reçoit des colonnes plus tard (rejeu des scripts)
+    SELECT r.id, r.lot_id, r.ligne_vente_id, r.type_mouvement, r.quantite, r.solde_apres, r.patient_id, r.medecin_id, r.ordonnance_id,
+           r.utilisateur_id, r.cree_le, r.mouvement_id, r.reference, r.porteur_nom, r.porteur_adresse, r.porteur_piece, r.numero_ordre, l.produit_id, l.numero_lot,
            CASE WHEN r.type_mouvement IN ('ouverture', 'entree', 'retour_client', 'retour_refuse', 'ecart_plus')
                 THEN r.quantite ELSE -r.quantite END AS signe,
            min(r.numero_ordre) FILTER (WHERE r.type_mouvement = 'ouverture') OVER (PARTITION BY l.produit_id) AS ouverture_id

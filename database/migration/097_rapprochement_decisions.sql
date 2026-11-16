@@ -118,11 +118,21 @@ BEGIN
     END IF;
 END $$;
 
+-- Rejouable : sur une base déjà à la version finale (colonne majoration_chifa présente, script 101), la vue n'est pas recréée
+-- (CREATE OR REPLACE ne peut ni renommer ni supprimer de colonne) ; sur une base neuve ou ancienne, elle est créée ou remplacée.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema() AND table_name = 'v_vente_part_organisme' AND column_name = 'majoration_chifa') THEN
+        EXECUTE $vue$
 CREATE OR REPLACE VIEW v_vente_part_organisme AS
 SELECT v.id AS vente_id, v.organisme_id, v.part_organisme AS part_organisme_caisse,
        COALESCE(r.part_organisme_chifa, v.part_organisme) AS part_organisme_retenue
 FROM vente v
-LEFT JOIN regularisation_part_organisme r ON r.vente_id = v.id;
+LEFT JOIN regularisation_part_organisme r ON r.vente_id = v.id
+        $vue$;
+    END IF;
+END $$;
 COMMENT ON VIEW v_vente_part_organisme IS 'Créance de l''organisme par vente : part Chifa si l''écart a été régularisé (script 097), sinon part enregistrée à la caisse';
 
 -- Ventes à crédit nettes des retours, plus la part « à la charge du patient » d'une régularisation (une vente annulée n'est plus due)

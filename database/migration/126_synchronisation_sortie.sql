@@ -430,6 +430,12 @@ CREATE TRIGGER trg_sync_lot_non_vidable BEFORE TRUNCATE ON sync_lot FOR EACH STA
 -- Constitution d'un lot (appelée par l'application, une transaction) : n° = dernier + 1 sous verrou de la ligne de
 -- réglage, lignes rattachées toutes ou aucune. Renvoie le n° du lot, ou NULL si le n° attendu n'est plus le suivant
 -- (constitution simultanée) ou si une ligne est déjà rattachée.
+-- Rejouable : sur une base où le script 130 est passé (version à 5 arguments présente), l'ancienne signature est déjà la
+-- version finale (appel de la version à 5 arguments) ; la remplacer par cette version ramènerait une définition périmée.
+DO $garde$
+BEGIN
+    IF to_regprocedure('sync_enregistrer_lot(bigint,bigint[],integer,text,text[])') IS NULL THEN
+        EXECUTE $f$
 CREATE OR REPLACE FUNCTION sync_enregistrer_lot(p_numero bigint, p_lignes bigint[], p_octets int, p_empreinte text)
 RETURNS bigint LANGUAGE plpgsql AS $$
 DECLARE p sync_parametre; n int;
@@ -447,6 +453,9 @@ BEGIN
     UPDATE sync_parametre SET dernier_lot = p_numero WHERE id = 1;
     RETURN p_numero;
 END $$;
+        $f$;
+    END IF;
+END $garde$;
 
 -- Désactivée par défaut : la pose suit le réglage (aucun déclencheur tant que active = false)
 SELECT sync_installer_declencheurs();
