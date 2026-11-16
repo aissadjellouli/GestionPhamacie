@@ -109,6 +109,51 @@
             </section>
         }
 
+        @if (t is { Supervision: { } sv } && rubrique == "supervision")
+        {
+            @* Lot S3 : bandeau des postes, alertes au titulaire, purge de la file d'envoi. Deux panneaux dans un cadre défilant (page fixe). *@
+            <div class="cadre-defilant" style="display: flex; flex-direction: column; gap: 20px">
+            <section class="panneau" aria-labelledby="s-supervision">
+                <h2 id="s-supervision">Bandeau des postes et alertes</h2>
+                <div class="achats-ligne ligne-lecture">
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">En attente d’envoi</span>
+                        <span data-zone="attente">@(sv.AttenteOperations == 0 ? "rien" : $"{sv.AttenteOperations} opération(s) depuis {Date(sv.AttenteDepuis)}")</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Erreur d’envoi</span>
+                        <span data-zone="erreur-envoi">@(sv.ErreurDepuisLe is { } ed ? $"depuis {Date(ed)}{(sv.ErreurNature == "quota" ? " (quota refusé par le serveur central)" : "")}" : "aucune")</span></div>
+                </div>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 200px"><label for="s-bandeau">Bandeau sur les postes après (minutes)</label>
+                        <input id="s-bandeau" data-champ="bandeau_minutes" type="number" min="1" max="10080" @bind="bandeauMinutes" /></div>
+                    <div class="champ" style="flex: 1 1 200px"><label for="s-retard">Alerte de retard après (heures)</label>
+                        <input id="s-retard" data-champ="retard_heures" type="number" min="1" max="720" @bind="retardHeures" /></div>
+                    <div class="champ" style="flex: 1 1 200px"><label for="s-erreur">Alerte d’erreur persistante après (minutes)</label>
+                        <input id="s-erreur" data-champ="erreur_minutes" type="number" min="1" max="10080" @bind="erreurMinutes" /></div>
+                </div>
+                <p class="detail" style="margin: 0">Valeurs de départ : 60 min, 24 h, 60 min. Le bandeau « en attente depuis… » s’affiche au titulaire et aux rôles qui ont le droit « Voir le bandeau de synchronisation » (Droits par rôle), si la synchronisation est activée ; il ne bloque jamais.
+                    Alertes (retard, erreur persistante, certificat à moins de 30 jours de l’échéance, quota refusé) par e-mail ou SMS aux destinataires abonnés à « Synchronisation » (Notifications), au plus une par heure et par sujet.</p>
+            </section>
+            <section class="panneau" aria-labelledby="s-purge">
+                <h2 id="s-purge">Purge de la file d’envoi</h2>
+                <div class="achats-ligne ligne-lecture">
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Dernière purge</span>
+                        <span data-zone="derniere-purge">@(sv.Purge.DernierePurgeLe is { } dp ? $"{Date(dp)} · {sv.Purge.DernieresLignes} ligne(s)" : "jamais")</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Lots purgés</span>
+                        <span data-zone="lots-purges">@(sv.Purge.DernierLotPurge > 0 ? $"jusqu’au lot {sv.Purge.DernierLotPurge} (époque {sv.Purge.EpoquePurge}) · {sv.Purge.TotalLignes} ligne(s) au total" : "aucun")</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">File gardée</span>
+                        <span data-zone="file-gardee">@(sv.Purge.LignesGardees is { } lg ? $"environ {lg} ligne(s)" : "taille inconnue") · @Taille(sv.Purge.OctetsFile)</span></div>
+                </div>
+                @if (sv.Purge.DerniereErreur is { } pe) { <div class="bandeau-attention" role="status">Dernière purge en erreur : @pe</div> }
+                <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end">
+                    <label class="case"><input type="checkbox" data-champ="purge_active" @bind="purgeActive" /><span>Purger les lots accusés</span></label>
+                    <div class="champ" style="flex: 0 1 260px"><label for="s-purge-jours">Conserver les lots accusés (jours)</label>
+                        <input id="s-purge-jours" data-champ="purge_jours" type="number" min="1" max="365" @bind="purgeJours" /></div>
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerSupervisionAsync">Enregistrer</button>
+                </div>
+                <p class="detail" style="margin: 0">Valeur de départ : 30 jours. Seules les lignes de lots accusés sont retirées (jamais une ligne en attente ni celles d’un chargement en cours). Si le serveur central perd un lot après sa purge, il reçoit un rechargement complet, demandé automatiquement.</p>
+            </section>
+            </div>
+        }
+
         @if (t is not null && rubrique == "activation")
         {
             <section class="panneau" aria-labelledby="s-activation">
@@ -134,6 +179,8 @@
     private bool active, envoyerMedecins;
     private string? adresse;
     private string textesLibres = "filtres";
+    private int bandeauMinutes = 60, retardHeures = 24, erreurMinutes = 60, purgeJours = 30;
+    private bool purgeActive = true;
     private string code = "";
     private bool enCours;
     private string? erreur, message;
@@ -145,7 +192,24 @@
         var (d, e) = await Api.SynchronisationAsync();
         if (d is null) { erreur = e; return; }
         (t, active, adresse, textesLibres, envoyerMedecins, erreur) = (d, d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins, null);
+        if (d.Supervision is { } s) (bandeauMinutes, retardHeures, erreurMinutes, purgeActive, purgeJours) = (s.BandeauMinutes, s.RetardHeures, s.ErreurMinutes, s.PurgeActive, s.PurgeJours);
     }
+
+    private static string Taille(long octets) => octets switch
+    {
+        >= 1_073_741_824 => $"{octets / 1_073_741_824.0:0.#} Go",
+        >= 1_048_576 => $"{octets / 1_048_576.0:0.#} Mo",
+        _ => $"{Math.Max(1, octets / 1024)} Ko"
+    };
+
+    private Task EnregistrerSupervisionAsync() => Executer(async () =>
+    {
+        var e = await Api.ReglerSupervisionSynchronisationAsync(new ReglagesSupervisionSynchronisationDto(bandeauMinutes, retardHeures, erreurMinutes, purgeActive, purgeJours));
+        if (e is not null) return e;
+        message = "Réglages de supervision et de purge enregistrés.";
+        await ChargerAsync();
+        return null;
+    });
 
     private static string Date(DateTime? d) => d is { } v ? Libelles.DateHeureLocale(v) : "jamais";
 

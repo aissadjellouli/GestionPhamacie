@@ -77,6 +77,8 @@ public class ChargementSynchronisationTests
             return Task.CompletedTask;
         }
         public Task NoterEnvoiAsync(string? erreur, CancellationToken ct = default) { Envois.Add(erreur); P = P with { DerniereErreur = erreur }; return Task.CompletedTask; }
+        public readonly List<string?> Passages = [];
+        public Task NoterPassageAsync(string? natureErreur, CancellationToken ct = default) { Passages.Add(natureErreur); return Task.CompletedTask; }
         public Task EnregistrerInscriptionAsync(Guid officine, CancellationToken ct = default) { P = P with { InscriteLe = Maintenant }; return Task.CompletedTask; }
         public Task ReglerAsync(string? a, string t, bool m, bool active, CancellationToken ct = default)
         {
@@ -155,6 +157,7 @@ public class ChargementSynchronisationTests
         public readonly List<DebutChargementSync> Debuts = [];
         public readonly List<int> Fins = [];
         public long AbsentesARendre;
+        public ServeurCentralException? Panne;
 
         public Task<ReponseActivationSync> ActiverAsync(string adresse, string code, string demandePem, Guid officine, CancellationToken ct = default) =>
             Task.FromResult(new ReponseActivationSync(Officine, "principal", "CERT", "AC", Maintenant.AddYears(3), "0123"));
@@ -165,6 +168,7 @@ public class ChargementSynchronisationTests
 
         public Task<AccuseLotSync> DeposerAsync(string adresse, byte[] contenu, long versionDescendante, CancellationToken ct = default)
         {
+            if (Panne is not null) throw Panne;
             var lot = SerialisationSyncV1.Lire(contenu);
             var n = lot.EnTete.NumeroLot;
             if (n <= Dernier) return Task.FromResult(new AccuseLotSync(1, n, StatutsLotSync.DejaRecu, Dernier));
@@ -298,6 +302,58 @@ public class ChargementSynchronisationTests
         Assert.Equal(2L, s.Debuts.Single().ReprendreApres);
         Assert.Equal(EtatsChargement.Termine, (await b.DernierAsync())!.Etat);
         Assert.Equal(b.P.DernierLot, s.Dernier);
+    }
+
+    [Fact]
+    public async Task Lot_purge_apres_le_delai_et_perdu_par_le_central_rechargement_complet_sans_renvoi_du_lot()
+    {
+        var (b, s) = (new Base(), new Central());
+        for (var i = 1; i <= 6; i++) b.Sortie.Add(Ligne(i));
+        var (envoi, _) = Envoi(b, s);
+        Assert.Null((await envoi.ExecuterAsync(Maintenant)).Erreur);     // lots 1 et 2 accusés
+        // Lot 1 purgé (lignes retirées de la file, sa ligne de lot reste) ; le central a tout perdu
+        b.Lots[0] = (b.Lots[0].Lot with { Purge = true }, true);
+        foreach (var l in b.Rattachement.Where(x => x.Value == 1).Select(x => x.Key).ToList()) b.Sortie.RemoveAll(x => x.Numero == l);
+        s.Dernier = 0;
+        s.Recus.Clear();
+        b.Sortie.Add(Ligne(7));
+        var r = await envoi.ExecuterAsync(Maintenant);
+        Assert.Contains("rechargement complet", r.Erreur);
+        Assert.False(r.Bloquant);
+        Assert.Equal([MotifsChargement.LotsManquants], b.Demandes);
+        Assert.Empty(s.Recus);                                           // le lot purgé n'a jamais été renvoyé (ni un lot incomplet)
+    }
+
+    [Fact]
+    public async Task Lot_accuse_encore_conserve_est_renvoye_a_l_identique_apres_une_restauration_du_central()
+    {
+        var (b, s) = (new Base(), new Central());
+        for (var i = 1; i <= 6; i++) b.Sortie.Add(Ligne(i));
+        var (envoi, _) = Envoi(b, s);
+        Assert.Null((await envoi.ExecuterAsync(Maintenant)).Erreur);     // lots 1 et 2 accusés, lignes encore là (délai non écoulé)
+        var empreintes = s.Recus.ToDictionary(x => x.Key, x => x.Value);
+        s.Dernier = 0;
+        s.Recus.Clear();
+        b.Sortie.Add(Ligne(7));
+        Assert.Null((await envoi.ExecuterAsync(Maintenant)).Erreur);
+        Assert.Empty(b.Demandes);
+        Assert.Equal(empreintes[1], s.Recus[1]);
+        Assert.Equal(empreintes[2], s.Recus[2]);
+    }
+
+    [Fact]
+    public async Task Passage_note_a_la_supervision_succes_erreur_ordinaire_et_quota()
+    {
+        var (b, s) = (new Base(), new Central());
+        b.Sortie.Add(Ligne(1));
+        var (envoi, _) = Envoi(b, s);
+        s.Panne = new ServeurCentralException("serveur central : 429 Quota journalier atteint", 429, quota: true);
+        Assert.NotNull((await envoi.ExecuterAsync(Maintenant)).Erreur);
+        s.Panne = new ServeurCentralException("serveur central : 503", 503);
+        Assert.NotNull((await envoi.ExecuterAsync(Maintenant)).Erreur);
+        s.Panne = null;
+        Assert.Null((await envoi.ExecuterAsync(Maintenant)).Erreur);
+        Assert.Equal([NaturesErreurSync.Quota, NaturesErreurSync.Autre, null], b.Passages);
     }
 
     [Fact]

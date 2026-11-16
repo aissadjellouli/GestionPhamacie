@@ -870,6 +870,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         (await PostAsync<ActivationSynchronisationDto, object>("api/admin/synchronisation/activation", new(code))).Item2;
     public Task<(ResultatEnvoiSynchronisationDto?, string?)> EnvoyerSynchronisationAsync() =>
         PostAsync<object, ResultatEnvoiSynchronisationDto>("api/admin/synchronisation/envoyer", new());
+    // Synchronisation (lot S3) : seuils du bandeau et des alertes, conservation des lots accusés ; bandeau de la barre d'état
+    public async Task<string?> ReglerSupervisionSynchronisationAsync(ReglagesSupervisionSynchronisationDto d) =>
+        (await EnvoyerCorpsAsync<ReglagesSupervisionSynchronisationDto, object>(HttpMethod.Put, "api/admin/synchronisation/supervision", d)).Item2;
+    public Task<(AttenteSynchronisationDto?, string?)> AttenteSynchronisationAsync() => GetAsync<AttenteSynchronisationDto?>("api/synchronisation/attente", null);
     // Synchronisation (lot S6) : rechargement complet
     public async Task<string?> RechargerSynchronisationAsync() =>
         (await PostAsync<object, object>("api/admin/synchronisation/recharger", new())).Item2;

@@ -51,4 +51,6 @@ public static class Permissions
     public const string AdminSauvegardes = "admin.sauvegardes";
     /// <summary>Valider les doublons d'import de patients (093) ; décision d'administration, jamais autorisable par code comptoir.</summary>
     public const string RepriseDoublons = "reprise.doublons";
+    /// <summary>Voir le bandeau « Synchronisation en attente » sur son poste (titulaire et rôles choisis dans la matrice des droits).</summary>
+    public const string SynchronisationSuivre = "sync.suivre";
 }

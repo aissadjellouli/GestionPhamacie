@@ -43,8 +43,10 @@ public static class StatutsDescendant
 /// <param name="ColonnesFigees">false : lot antérieur au script 136, liste reconstituée (non garantie).</param>
 /// <param name="Accuse">Déjà accusé par le serveur central (jamais reformé en base).</param>
 /// <param name="ReformeLe">Lot déjà reformé (un 409 « autre contenu » veut alors dire que le central a la forme d'origine).</param>
+/// <param name="Purge">Lot accusé dont les lignes ont été retirées de la file après le délai de conservation (script 140) : il ne peut
+/// plus être renvoyé, seul un chargement complet remplace son contenu au serveur central.</param>
 public sealed record LotEnregistre(int Epoque, long Numero, string VersionContrat, string Empreinte, IReadOnlyList<string>? ColonnesRetirees = null,
-    bool ColonnesFigees = true, bool Accuse = false, DateTime? ReformeLe = null);
+    bool ColonnesFigees = true, bool Accuse = false, DateTime? ReformeLe = null, bool Purge = false);
 
 /// <summary>Certificat client de ce serveur (fichiers hors base : chaque serveur de l'officine a le sien).</summary>
 public sealed record CertificatSyncInfo(string Empreinte, DateTime EcheanceUtc, string EmpreinteAutorite);
@@ -67,6 +69,9 @@ public interface IEnvoiSyncDepot
     Task ReformerLotAsync(int epoque, long numero, string empreinte, int octets, IReadOnlyList<string> colonnesRetirees, CancellationToken ct = default);
     Task EnregistrerAccuseAsync(int epoque, long numero, CancellationToken ct = default);
     Task NoterEnvoiAsync(string? erreur, CancellationToken ct = default);
+    /// <summary>Résultat du passage pour la supervision (script 140) : null = passage sans erreur, sinon nature de l'erreur
+    /// (<see cref="NaturesErreurSync"/>). Sert à dater le début d'une erreur persistante.</summary>
+    Task NoterPassageAsync(string? natureErreur, CancellationToken ct = default) => Task.CompletedTask;
     Task EnregistrerInscriptionAsync(Guid officine, CancellationToken ct = default);
     /// <summary>Adresse, options et activation dans UNE transaction.</summary>
     Task ReglerAsync(string? adresse, string textesLibres, bool envoyerMedecins, bool active, CancellationToken ct = default);
@@ -92,6 +97,14 @@ public sealed record ReponseActivationSync(Guid OfficineId, string Serveur, stri
 /// <summary>Accusé d'un lot (statuts : StatutsLotSync).</summary>
 public sealed record AccuseLotSync(int Epoque, long Numero, string Statut, long DernierRecu, DescendantsRecus? Descendants = null);
 
+/// <summary>Nature de l'erreur du dernier passage (sync_parametre.erreur_nature).</summary>
+public static class NaturesErreurSync
+{
+    public const string Autre = "autre";
+    /// <summary>Quota ou plafond refusé par le serveur central (429 avec un motif).</summary>
+    public const string Quota = "quota";
+}
+
 public static class StatutsLotSync
 {
     public const string Accepte = "accepte";
@@ -101,9 +114,11 @@ public static class StatutsLotSync
 }
 
 /// <param name="Definitif">Refus du serveur central sur le contenu (400, 403, 409, 413, 422) : renvoyer le même lot ne changera rien.</param>
-public sealed class ServeurCentralException(string message, int? codeHttp = null) : Exception(message)
+/// <param name="quota">Refus pour quota ou plafond (429 accompagné d'un motif ; la limite de débit seule n'en porte pas).</param>
+public sealed class ServeurCentralException(string message, int? codeHttp = null, bool quota = false) : Exception(message)
 {
     public int? CodeHttp { get; } = codeHttp;
+    public bool Quota { get; } = quota;
     public bool Definitif => CodeHttp is 400 or 403 or 409 or 413 or 422;
 }
 
@@ -184,10 +199,12 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
                 {
                     // Le serveur central n'a pas des lots déjà accusés ici (restauration du central) : renvoi des lots manquants
                     var manquants = await depot.LotsEntreAsync(lot.Epoque, a.DernierRecu + 1, lot.Numero - 1, ct);
-                    if (manquants.Count != lot.Numero - 1 - a.DernierRecu && chargement is not null && await chargement.DemanderPourLotsManquantsAsync(ct))
+                    // Lots purgés (délai de conservation dépassé, script 140) : leur contenu n'est plus ici, le chargement complet le remplace
+                    var introuvables = manquants.Count != lot.Numero - 1 - a.DernierRecu || manquants.Any(m => m.Purge);
+                    if (introuvables && chargement is not null && await chargement.DemanderPourLotsManquantsAsync(ct))
                         return await ErreurAsync(accuses, $"Le serveur central n'a reçu que jusqu'au lot {a.DernierRecu} de l'époque {lot.Epoque} et les lots suivants ne sont plus disponibles ici : "
                             + "rechargement complet de l'officine demandé (il part au prochain passage).", false, ct);
-                    if (manquants.Count != lot.Numero - 1 - a.DernierRecu)
+                    if (introuvables)
                         return await ErreurAsync(accuses, $"Le serveur central n'a reçu que jusqu'au lot {a.DernierRecu} de l'époque {lot.Epoque} et les lots suivants ne sont plus disponibles ici : "
                             + "reprise impossible automatiquement, prévenez l'éditeur (procédure « Synchronisation, lots manquants » de docs/mise-en-production.md).", true, ct);
                     foreach (var m in manquants)
@@ -216,11 +233,12 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
                 ? $"{p.LotsAutresEpoques} lot(s) d'une époque précédente jamais accusé(s) : à examiner (non renvoyés automatiquement)." : null, erreurDescendante }
                 .Where(m => m is not null));
             await depot.NoterEnvoiAsync(note.Length > 0 ? note : null, ct);
+            await depot.NoterPassageAsync(null, ct);
             return new(accuses, null, null);
         }
         catch (LotIncoherentException e) { return await ErreurAsync(accuses, e.Message, true, ct); }
         catch (ChargementReporteException e) { return await ErreurAsync(accuses, e.Message, false, ct); }
-        catch (ServeurCentralException e) { return await ErreurAsync(accuses, e.Message, e.Definitif, ct); }
+        catch (ServeurCentralException e) { return await ErreurAsync(accuses, e.Message, e.Definitif, ct, e.Quota); }
         catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // Message technique sans donnée : type d'erreur seulement pour les cas imprévus
@@ -245,6 +263,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     /// </summary>
     private async Task<AccuseLotSync> DeposerAsync(string adresse, Guid officine, LotEnregistre lot, CancellationToken ct)
     {
+        if (lot.Purge)
+            throw new LotIncoherentException($"Lot {lot.Epoque}/{lot.Numero} : lignes purgées de la file après le délai de conservation, renvoi impossible (chargement complet nécessaire).");
         var entete = new EnTeteLotSync(lot.VersionContrat, officine, lot.Epoque, lot.Numero);
         var reference = lot.ColonnesRetirees ?? [];
         var f = format.Formuler(entete, await depot.LignesDuLotAsync(lot.Epoque, lot.Numero, reference, ct));
@@ -318,9 +338,10 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         certificat.Installer(r.CertificatPem, r.AutoritePem, null);
     }
 
-    private async Task<ResultatEnvoi> ErreurAsync(int accuses, string erreur, bool bloquant, CancellationToken ct)
+    private async Task<ResultatEnvoi> ErreurAsync(int accuses, string erreur, bool bloquant, CancellationToken ct, bool quota = false)
     {
         await depot.NoterEnvoiAsync(erreur, ct);
+        await depot.NoterPassageAsync(quota ? NaturesErreurSync.Quota : NaturesErreurSync.Autre, ct);
         return new(accuses, null, erreur, bloquant);
     }
 

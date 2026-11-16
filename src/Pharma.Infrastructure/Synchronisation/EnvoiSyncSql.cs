@@ -42,7 +42,8 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
     public async Task<IReadOnlyList<LotEnregistre>> LotsEntreAsync(int epoque, long du, long au, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand($"""
-            SELECT l.epoque, l.numero, l.version_contrat, l.empreinte, {Colonnes} FROM sync_lot l WHERE l.epoque = $1 AND l.numero BETWEEN $2 AND $3 ORDER BY l.numero
+            SELECT l.epoque, l.numero, l.version_contrat, l.empreinte, {Colonnes} FROM sync_lot l JOIN sync_parametre p ON p.id = 1
+            WHERE l.epoque = $1 AND l.numero BETWEEN $2 AND $3 ORDER BY l.numero
             """);
         cmd.Parameters.AddWithValue(epoque);
         cmd.Parameters.AddWithValue(du);
@@ -52,7 +53,7 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
 
     /// <summary>Colonnes retirées figées (script 136) ou, pour un lot antérieur, reconstituées depuis ses familles et le catalogue actuel.</summary>
     private const string Colonnes = "coalesce(l.colonnes_retirees, CASE WHEN l.familles IS NULL THEN '{}'::text[] ELSE sync_colonnes_hors_familles(l.familles) END), "
-        + "l.colonnes_retirees IS NOT NULL, l.accuse_le IS NOT NULL, l.reforme_le";
+        + "l.colonnes_retirees IS NOT NULL, l.accuse_le IS NOT NULL, l.reforme_le, coalesce(p.purge_epoque = l.epoque AND l.numero <= p.purge_dernier_lot, false)";
 
     private static async Task<IReadOnlyList<LotEnregistre>> LotsAsync(NpgsqlCommand cmd, CancellationToken ct)
     {
@@ -60,7 +61,7 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
         var res = new List<LotEnregistre>();
         while (await r.ReadAsync(ct))
             res.Add(new LotEnregistre(r.GetInt32(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetFieldValue<string[]>(4), r.GetBoolean(5),
-                r.GetBoolean(6), r.IsDBNull(7) ? null : DateTime.SpecifyKind(r.GetDateTime(7), DateTimeKind.Utc)));
+                r.GetBoolean(6), r.IsDBNull(7) ? null : DateTime.SpecifyKind(r.GetDateTime(7), DateTimeKind.Utc), r.GetBoolean(8)));
         return res;
     }
 
@@ -88,6 +89,13 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
     {
         await using var cmd = db.CreateCommand("SELECT sync_noter_envoi($1)");
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)erreur ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task NoterPassageAsync(string? natureErreur, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_noter_passage($1)");
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)natureErreur ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

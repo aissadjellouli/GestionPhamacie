@@ -293,6 +293,12 @@ public static class DependencyInjection
         services.AddSingleton<Synchronisation.SuiviChargementSync>();
         services.AddScoped<Synchronisation.ChargementCompletSync>();
         services.AddScoped<Synchronisation.RechargerSync>();
+        // Synchronisation, lot S3 : bandeau, alertes au titulaire, réglages de supervision, purge de la file
+        services.AddSingleton<Synchronisation.MemoireSupervisionSync>();
+        services.AddScoped<Synchronisation.ConsulterAttenteSync>();
+        services.AddScoped<Synchronisation.SurveillerSynchronisation>();
+        services.AddScoped<Synchronisation.ReglerSupervisionSync>();
+        services.AddScoped<Synchronisation.PurgerSortieSync>();
         // Registre des psychotropes renforcé (lot 8) : alertes et forçage, annulations, concordance, scellement mensuel, antibiotiques
         services.AddScoped<Psychotropes.ControlerDelivrancePsychotrope>();
         services.AddScoped<Psychotropes.ForcerAlertesPsychotropes>();

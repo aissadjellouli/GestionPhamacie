@@ -194,7 +194,10 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
             string? detail = null;
             try { detail = (await rep.Content.ReadFromJsonAsync<Microsoft.AspNetCore.Mvc.ProblemDetails>(ct))?.Detail; }
             catch (Exception e) when (e is System.Text.Json.JsonException or NotSupportedException or InvalidOperationException) { }
-            throw new ServeurCentralException($"serveur central : {(int)rep.StatusCode} {detail ?? rep.ReasonPhrase}".Trim(), (int)rep.StatusCode);
+            // 429 avec un motif = quota ou plafond du serveur central (limite par jour, par chargement, chargements sur 24 h) ;
+            // la limite de débit seule répond 429 sans motif
+            throw new ServeurCentralException($"serveur central : {(int)rep.StatusCode} {detail ?? rep.ReasonPhrase}".Trim(), (int)rep.StatusCode,
+                quota: (int)rep.StatusCode == 429 && !string.IsNullOrWhiteSpace(detail));
         }
         return await rep.Content.ReadFromJsonAsync<T>(ct) ?? throw new ServeurCentralException("réponse vide du serveur central");
     }

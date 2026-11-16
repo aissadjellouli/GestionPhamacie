@@ -367,6 +367,11 @@ public interface IAlertesTitulaire
     Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default);
     /// <summary>Point du contrôle interne (caisse, stock, réception, retours) : texte court, employé et chiffres, aucune donnée de patient.</summary>
     Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default);
+    /// <summary>
+    /// Synchronisation avec le serveur central (retard, erreur persistante, certificat, quota) : texte sans donnée de patient ;
+    /// <paramref name="sms"/> court, sans accents. Le SMS suit le réglage « SMS sauvegarde » (alertes techniques).
+    /// </summary>
+    Task SynchronisationAsync(string objet, string detail, string sms, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>
@@ -453,6 +458,14 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
                 null, r.SmsLotBloque ? $"{objet}. {message}" : null), ct);
         });
     }
+
+    public Task SynchronisationAsync(string objet, string detail, string sms, CancellationToken ct = default) =>
+        ProtegerAsync(TypeNotification.Synchronisation, objet, async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Synchronisation, objet,
+                detail, null, r.SmsSauvegarde ? sms : null), ct);
+        });
 
     public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default)
     {

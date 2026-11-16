@@ -212,6 +212,10 @@ public static class DependencyInjection
         services.AddScoped<Application.Synchronisation.IEnvoiSyncDepot, Synchronisation.EnvoiSyncSql>();
         // Synchronisation, lot S6 : chargement complet (script 129)
         services.AddScoped<Application.Synchronisation.IChargementSyncDepot, Synchronisation.ChargementSyncSql>();
+        // Synchronisation, lot S3 : supervision (bandeau, alertes) et purge de la file (script 140)
+        services.AddScoped<Synchronisation.SupervisionSyncSql>();
+        services.AddScoped<Application.Synchronisation.ISupervisionSyncDepot>(sp => sp.GetRequiredService<Synchronisation.SupervisionSyncSql>());
+        services.AddScoped<Application.Synchronisation.IPurgeSyncDepot>(sp => sp.GetRequiredService<Synchronisation.SupervisionSyncSql>());
         services.AddSingleton<Application.Synchronisation.ICertificatSync>(new Synchronisation.CertificatSyncFichier(
             string.IsNullOrWhiteSpace(options.DossierSynchronisation)
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Synchronisation")

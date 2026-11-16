@@ -27,6 +27,15 @@
         @if (LiaisonServeur.MessageSecours(etatSecours) is { } messageSecours) { <strong data-champ="message_secours" style="display: block; margin-top: 6px">@messageSecours</strong> }
     </div>
 }
+else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
+{
+    @* Synchronisation en attente (conception § 8) : même emplacement que « Serveur injoignable », jamais bloquant (aucun bouton, rien ne
+       couvre l'écran de travail au-delà de cette ligne) ; titulaire et rôles ayant le droit « sync.suivre » ; seuil réglé dans
+       Administration › Synchronisation › Supervision *@
+    <div class="bandeau-attention" role="status" data-zone="synchronisation-attente" style="position: fixed; left: 0; right: 0; bottom: 32px; z-index: 50; margin: 0">
+        Synchronisation en attente depuis @QuandSync(Local(depuisSync)) (@attenteSync.Operations opération@(attenteSync.Operations > 1 ? "s" : "")). Le travail n’est pas affecté ; les opérations partent dès que le serveur central répond.
+    </div>
+}
 <footer class="barre-etat" aria-label="État du poste">
     <button type="button" class="element-etat @(serveurJoignable == false ? "anormal" : null)" title="Vérifier la liaison avec le serveur maintenant"
             @onclick="VerifierServeurAsync">
@@ -90,6 +99,7 @@
         basculeFaite = Reglages.Enregistrer(v) is null;
     }
     private EtatPosteDto? etat;
+    private AttenteSynchronisationDto? attenteSync;
     private DateTime maintenant = DateTime.Now;
     private PeriodicTimer? minuterie;
     private int tours;
@@ -132,8 +142,11 @@
         {
             var (e, erreur) = await Api.EtatPosteAsync();
             if (erreur is null) etat = e;
+            // Bandeau de synchronisation : lecture seule, une erreur de lecture le masque sans rien bloquer
+            var (a, erreurSync) = await Api.AttenteSynchronisationAsync();
+            attenteSync = erreurSync is null ? a : null;
         }
-        if (!Session.EstConnecte) etat = null;
+        if (!Session.EstConnecte) (etat, attenteSync) = (null, null);
     }
 
     private async Task VerifierServeurAsync()
@@ -182,6 +195,9 @@
         { DerniereSauvegarde: { } d } when Local(d).Date < DateTime.Today.AddDays(-1) => "attention",   // plus vieille qu'hier
         _ => null
     };
+
+    private static string QuandSync(DateTime d) =>
+        DateTime.Now - d < TimeSpan.FromHours(24) ? $"{d:HH:mm}" : $"le {d:dd/MM à HH:mm}";
 
     private static string Quand(DateTime d) =>
         d.Date == DateTime.Today ? $"aujourd’hui {d:HH:mm}"

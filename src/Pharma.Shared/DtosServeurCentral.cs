@@ -156,7 +156,7 @@ public sealed record EtatSynchronisationDto(bool Active, string? OfficineId, str
     DateTime? EcheanceCertificat, string? EmpreinteCertificat, string? DerniereErreur, DateTime? DerniereErreurLe, string TextesLibres,
     bool EnvoyerMedecins, int Epoque, string VersionContrat, long LotsAutresEpoques = 0, bool BaseEnLectureSeule = false,
     ChargementSynchronisationDto? Chargement = null, IReadOnlyList<string>? FamillesEnvoyees = null, DateTime? FamillesLuesLe = null,
-    long FamillesVersion = 0);
+    long FamillesVersion = 0, SupervisionSynchronisationDto? Supervision = null);
 
 /// <summary>
 /// Dernier chargement complet (lot S6) : état (demande, constitution, pret, annonce, termine, remplace), progression (lignes
@@ -164,6 +164,19 @@ public sealed record EtatSynchronisationDto(bool Active, string? OfficineId, str
 /// </summary>
 public sealed record ChargementSynchronisationDto(int Numero, string Motif, string Etat, DateTime DemandeLe, long LignesTotal,
     long LignesAccusees, int TablesFaites, int TablesTotal, DateTime? TermineLe, long? AbsentesCentral);
+
+/// <summary>Supervision (lot S3) : réglages du bandeau, des alertes et de la purge, ce qui attend, état de la purge de la file.</summary>
+public sealed record SupervisionSynchronisationDto(int BandeauMinutes, int RetardHeures, int ErreurMinutes, bool PurgeActive, int PurgeJours,
+    DateTime? AttenteDepuis, long AttenteOperations, string? ErreurNature, DateTime? ErreurDepuisLe, PurgeSynchronisationDto Purge);
+
+/// <summary>Purge de sync_sortie : lots purgés jusqu'au n° (époque), dernière exécution, cumul, taille de la file.</summary>
+public sealed record PurgeSynchronisationDto(int? EpoquePurge, long DernierLotPurge, DateTime? DernierePurgeLe, long DernieresLignes, long TotalLignes,
+    string? DerniereErreur, long? LignesGardees, long OctetsFile);
+
+public sealed record ReglagesSupervisionSynchronisationDto(int BandeauMinutes, int RetardHeures, int ErreurMinutes, bool PurgeActive, int PurgeJours);
+
+/// <summary>Bandeau « Synchronisation en attente » d'un poste : Affiche faux = rien à montrer (désactivée, sous le seuil, droit absent).</summary>
+public sealed record AttenteSynchronisationDto(bool Affiche, DateTime? Depuis, long Operations);
 
 public sealed record ReglagesSynchronisationDto(bool Active, string? Adresse, string TextesLibres, bool EnvoyerMedecins);
 
