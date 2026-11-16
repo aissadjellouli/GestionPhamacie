@@ -2,6 +2,75 @@
 
 Liste de travail tenue à jour à chaque lot. Cocher un point quand il est livré et vérifié dans le poste client.
 
+Dernière mise à jour : 2026-11-16 (bilan de la session du 13 au 16/11/2026).
+
+## Livré mais pas encore commité
+
+- [ ] **Synchronisation** : réglages descendants (scripts 130-131, central 004-005, table `reglage_central`) ; limite pendant un chargement et activation par groupes (central 006) ; familles nominatives (130), Pharmacie et Clients facturés (133, central 007), Banque élargie (135, central 008) ; conservation réglable au central (004) ; corrections de la revue globale et de l'audit de sécurité (136, central 009). Build et 1 918 tests verts, scripts rejoués deux fois sans effet.
+- [ ] **Contenance** : enregistrement depuis la nomenclature et sachets / ampoules (scripts 132 à 134, motif corrigé au 136).
+- [ ] **Écrans du super admin** : Reprise, Restauration, accès aux Profils de reprise.
+- [ ] **Avant de commiter** : l'index git contient 61 fichiers indexés lors de la session précédente, dont 15 modifiés depuis et 3 nouveaux fichiers non indexés ; désindexer, puis indexer et commiter par sujet (synchronisation, contenance, écrans), sans `docs/taches/`.
+
+## HTTPS sur le réseau de l'officine (décidé le 2026-11-16 : oui)
+
+Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localhost:5080`). Voir `docs/mise-en-production.md`, étapes 3.2 et 3.5 bis.
+- [ ] `scripts/certificat_mobile.ps1` : il écrit encore `http://0.0.0.0:5080` (HTTP ouvert au réseau) ; le limiter à `localhost`, HTTPS sur 5443, fermer le port 5080 aux autres postes dans le pare-feu.
+- [ ] Distribution du certificat de la pharmacie aux postes et aux téléphones : aujourd'hui téléchargé en HTTP (`/mobile/autorite-pharmacie.crt`). **À décider** : petite porte HTTP limitée à ce fichier, ou clé USB / QR code.
+- [ ] **À décider** : le certificat doit-il couvrir dès maintenant le 2e serveur (bascule) et l'adresse VPN (`docs/acces-distant.md`) ?
+- [ ] Mise à jour de `docs/mise-en-production.md` (installation du certificat sur chaque poste, `PHARMA_API=https://<serveur>:5443/`, vérifications).
+- [ ] Essai réel en HTTPS : connexion, vente, impression, scanner mobile ; API en production en HTTPS jamais vérifiée.
+- [ ] Port 5432 de la base fermé aux autres postes : aucune vérification tracée.
+
+## Décisions en attente du titulaire
+
+- [ ] **Écrans de vente** :
+  - seuils d'alerte des psychotropes (valeurs de départ proposées : 2 fois en 30 jours, 1 fois par ordonnance et par an, plus de 3 boîtes ou plus de 28 jours, prescripteur à moins d'une délivrance par an) ;
+  - liste des 214 DCI d'antibiotiques ;
+  - format de l'export pour les impôts et taux de TVA.
+- [ ] **Majorations Chifa** : quels types en plus de « Garde » ? (question posée le 15/11, sans réponse ; voir `docs/chifa.md`).
+- [ ] **Démo** : « page démo », « démo interactive » ou « préparation démo cloud » (Dockerfile, docker-compose local, mode démo).
+- [ ] **Script 111b** (séparation des rôles PostgreSQL) : à passer par le titulaire avec un superutilisateur ; sans lui, une falsification est détectée mais pas empêchée (voir `docs/securite-et-droits.md`).
+- [ ] **Réglages communs aux officines** : `regle_alerte_psychotrope` imposé ou proposé ? TVA bien imposée ? (voir `docs/conception-synchronisation.md` § 16).
+- [ ] **Ancienne colonne `num_facture_chifa`** : suppression (opération destructive, script rédigé non exécuté) à décider à la mise à jour de l'officine.
+- [ ] **Note « Pharma : de quoi s'agit-il »** (section « Questions pour la V2 » ci-dessous) : à reformuler ou supprimer.
+- [ ] **Messages de démo sur `pharmacie_dev`** : purge proposée (seule `pharmacie_test` a été purgée) ; jamais sans validation explicite.
+- [ ] **Message du commit `6f971e8`** : il cite un nom de tiers ; réécriture facultative, l'historique étant déjà poussé.
+
+## Démarches du titulaire
+
+- [ ] Hébergeur en Algérie agréé ARPCE et nom de domaine `.dz` (CERIST) : préalable au serveur central réel.
+- [ ] Déclaration à l'ANPDP (rôles : responsable du traitement, sous-traitant) ; texte du consentement SMS à faire valider.
+- [ ] Test d'intrusion par un prestataire externe avant la mise en service du serveur central.
+- [ ] Clé de l'autorité de certification du serveur central : la garder hors ligne, clé intermédiaire en production.
+- [ ] Lettre à la CNAS : rédigée, à envoyer (questions de la section « À confirmer avec l'éditeur de Chifa »).
+- [ ] Wilayas 59 à 69 : sources à vérifier sur le Journal officiel.
+- [ ] Exports réels de l'ancien logiciel et catalogues des grossistes (reprise et profils de reprise).
+- [ ] Modèle de feuille CVM/MDN anonymisé.
+- [ ] Avant la mise à jour de l'officine : passer les scripts 083 à 136, vérifier que le compte de la base en est propriétaire, lancer le contrôle des n° Chifa (voir `docs/mise-en-production.md`).
+
+## Plus tard (sur accord explicite du titulaire)
+
+- [ ] Synchronisation S3 (ordres du central vers l'officine : prix, réglages communs, brouillons de commande, employés ; purge de `sync_sortie`, bandeau), S4 (contrôle d'intégrité au central), S5 (diffusion des référentiels), S7 (écrans du central). Voir `docs/conception-synchronisation.md`.
+- [ ] Découpage par officine des grandes tables du central, avant d'accueillir beaucoup d'officines.
+- [ ] Multi-officines (lot 12) et partie cloud du lot 5 : après le choix de l'hébergeur.
+- [ ] Restauration de la base d'une officine depuis le central (nouvelle époque + chargement) : non réalisée (`docs/conception-synchronisation.md` § 13.6).
+- [ ] Compatibilité des versions du format d'échange : à coder à l'arrivée d'une version 2.
+- [ ] Envoi des produits vers CHIFA-Officine et import de son fichier : selon la réponse de la CNAS.
+- [ ] Effacement automatique au central : désactivé ; à activer après vérification des durées réglementaires.
+- [ ] Nettoyage des données d'essai de `pharmacie_test` : sur une liste validée par le titulaire.
+- [ ] **Lot 9, chiffrement** (colonnes sensibles, données au repos, sauvegardes) : en dernier, uniquement sur « go chiffrement ».
+
+## À vérifier (aucune trace de vérification)
+
+- [ ] Bases `pharmacie_recette_*` et `pharmacie_essai_restauration*` : en retard d'au moins le script 128 ; à mettre à jour ou supprimer (avec accord).
+- [ ] Fichiers de l'autorité de certification d'essai restés dans un dossier temporaire de travail : à effacer.
+- [ ] 1 à 3 échecs de connexion sécurisée (TLS) sous forte charge : cause non examinée.
+- [ ] Contenance : un produit AMP. et un produit SACH. non remplis sans cause connue ; 4 019 cas douteux ; valeur proposée en grisé à vérifier à l'écran.
+- [ ] Contrôles à l'écran non tracés : écran Synchronisation (libellé « Banque » allongé), bordereaux, « Durée du traitement » à la caisse, bandeau « produit redevenu disponible », parcours du 15/11 (majoration au rapprochement, annulation « rendu en espèces », ticket PDF).
+- [ ] Étape 2 « Correspondance » de la reprise : défilement non mesuré (il faut une vraie base).
+- [ ] Origine des écritures du 16/11 entre 03:01 et 03:03 dans `pharmacie_test` (scellement, intégrité, `patient_modifie`).
+- [ ] Synchronisation : essai de bout en bout avec les vraies API après les corrections 136 / 009, dont le refus 429 au dépassement du plafond de chargement (seule la fonction SQL est testée).
+
 ## Prochaines demandes
 
 - [ ] **Registre des psychotropes, suites** :
@@ -112,6 +181,7 @@ récemment »). Restent :
 - [ ] **Data Matrix** : part des boîtes qui en portent un dans la pharmacie (cela dépend des laboratoires et de la réglementation).
 - [ ] **Modem GSM** : code PIN, opérateur, longueur réelle des SMS.
 - [ ] **Compte SMTP** : serveur, port et mode TLS du fournisseur de la pharmacie.
+- [ ] **Matériel** : scanner, caméra, tiroir-caisse, imprimantes ; essai sur iPhone ; SQL Server jamais essayé.
 - [ ] **Disque externe de sauvegarde** : lettre de lecteur stable et droits d'écriture du service Windows.
 - [ ] **Imprimante d'étiquettes thermique** : adresse IP (variable `PHARMA_IMPRIMANTE_ETIQUETTES`).
 - [ ] **DPAPI** : le service de l'API doit tourner sur le PC serveur qui a enregistré le mot de passe SMTP.
