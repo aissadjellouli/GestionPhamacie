@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Pharma.Shared;
 
 namespace Pharma.Desktop.Services;
 
@@ -43,11 +44,11 @@ public sealed class ReglagesPoste
         return api.EndsWith('/') ? api : api + "/";
     }
 
-    /// <summary>Adresse d'API valide (http ou https absolue) ; sinon message d'erreur.</summary>
-    public static string? ControlerAdresse(string? adresse) =>
-        string.IsNullOrWhiteSpace(adresse) ? null
-        : Uri.TryCreate(adresse.Trim(), UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? null
-        : "Adresse invalide : par exemple https://PC-SECOURS:5443/ ou http://192.168.1.20:5080/.";
+    /// <summary>Adresse d'API valide (http ou https absolue) ; sinon message d'erreur bloquant.</summary>
+    public static string? ControlerAdresse(string? adresse) => AdresseApiPoste.Controler(adresse);
+
+    /// <summary>Avertissement non bloquant : adresse http:// qui n'est pas celle du PC lui-même (réseau en HTTPS seul).</summary>
+    public static string? AvertirAdresse(string? adresse) => AdresseApiPoste.Avertir(adresse);
 
     private static readonly string Fichier =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "poste.json");

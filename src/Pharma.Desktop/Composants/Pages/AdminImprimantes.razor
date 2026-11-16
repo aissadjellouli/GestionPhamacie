@@ -23,6 +23,7 @@
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
         @if (message is not null) { <div class="succes" role="status">@message</div> }
+        @if (avertissement is not null) { <div class="bandeau-attention" role="status" data-champ="avertissement_adresse">@avertissement</div> }
 
         @if (rubrique == "tickets")
         {
@@ -152,7 +153,7 @@
                 <div class="champ" style="flex: 1 1 300px"><label for="p-api">Adresse de l’API utilisée par ce poste</label>
                     <input id="p-api" data-champ="adresse_api" type="text" placeholder="vide : variable PHARMA_API ou ce PC" @bind="v.AdresseApi" @bind:event="oninput" /></div>
                 <div class="champ" style="flex: 1 1 300px"><label for="p-secours">Adresse de l’API du PC de secours</label>
-                    <input id="p-secours" data-champ="adresse_api_secours" type="text" placeholder="ex. http://192.168.1.20:5080/" @bind="v.AdresseApiSecours" @bind:event="oninput" /></div>
+                    <input id="p-secours" data-champ="adresse_api_secours" type="text" placeholder="ex. https://192.168.1.20:5443/" @bind="v.AdresseApiSecours" @bind:event="oninput" /></div>
                 <div class="champ" style="flex: 0 0 220px"><label for="p-delai">Bandeau après (secondes)</label>
                     <input id="p-delai" type="number" min="10" max="3600" placeholder="60" @bind="v.DelaiServeurInjoignableSecondes" /></div>
             </div>
@@ -181,7 +182,7 @@
     private string ModeAfficheur => v.Afficheur ?? "aucun";
     private IReadOnlyList<(string Nom, bool ParDefaut)> imprimantes = [];
     private int largeur = 80;
-    private string? erreur, message;
+    private string? erreur, message, avertissement;
     private bool enCours;
 
     private string? Defaut => imprimantes.FirstOrDefault(i => i.ParDefaut).Nom;
@@ -237,7 +238,7 @@
 
     private void Enregistrer()
     {
-        (erreur, message) = (null, null);
+        (erreur, message, avertissement) = (null, null, null);
         if (Saisie().ImprimanteEtiquettes is { } ip && !System.Net.IPAddress.TryParse(ip, out _))
         {
             erreur = Api.SignalerChamp("ip_etiquettes", "Adresse IP de l’imprimante d’étiquettes invalide (ex. 192.168.1.50).");
@@ -247,6 +248,7 @@
             if (ReglagesPoste.ControlerAdresse(adresse) is { } invalide) { erreur = Api.SignalerChamp(champ, invalide); return; }
         erreur = Reglages.Enregistrer(Saisie());
         if (erreur is null) { message = "Réglages du poste enregistrés."; Afficheur.Reappliquer(); }
+        avertissement = ReglagesPoste.AvertirAdresse(v.AdresseApi) ?? ReglagesPoste.AvertirAdresse(v.AdresseApiSecours);
     }
 
     // L'essai applique la saisie affichée le temps de l'impression, sans l'enregistrer

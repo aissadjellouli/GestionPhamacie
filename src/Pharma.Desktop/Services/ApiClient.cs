@@ -152,7 +152,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         }
     }
 
-    /// <summary>Mot de passe ressaisi : le serveur envoie un code au téléphone du super admin (e-mail en secours).</summary>
+    /// <summary>Mot de passe ressaisi : le serveur envoie le même code par SMS au téléphone et par e-mail à l'adresse du super admin.</summary>
     public Task<(DemandeValidationDto?, string?)> DemanderValidationSuperAdminAsync(string action, string motDePasse) =>
         PostAsync<ValidationSuperAdminRequete, DemandeValidationDto>("api/super-admin/validations", new(action, motDePasse));
 
@@ -882,19 +882,32 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         PostAsync<ExportCleDto, FichierCleDto>("api/admin/second-serveur/cle/exporter", new(motDePasse, confirmation));
 
     /// <summary>
-    /// Bascule d'un poste : l'API du 2e serveur répond-elle (donc a-t-elle été basculée : elle ne démarre pas tant que sa base est en
-    /// lecture seule) ? Port puis /api/sante, 4 secondes au plus.
+    /// Bascule d'un poste : état de la liaison avec l'API du 2e serveur (elle ne démarre qu'une fois sa base promue : jamais un poste
+    /// dirigé vers une copie en lecture seule). Port puis /api/sante, 4 secondes au plus. Le certificat est toujours vérifié par Windows :
+    /// un refus est seulement reconnu (EtatLiaison.CertificatRefuse) pour afficher la bonne consigne.
     /// </summary>
-    public static async Task<bool> ApiRepondAsync(string adresse)
+    public static async Task<EtatLiaison> VerifierApiAsync(string adresse)
     {
-        if (!Uri.TryCreate(adresse, UriKind.Absolute, out var uri) || !await PortOuvertAsync(uri.Host, uri.Port, TimeSpan.FromSeconds(4))) return false;
+        if (!Uri.TryCreate(adresse, UriKind.Absolute, out var uri)) return EtatLiaison.Injoignable;
+        if (!await PortOuvertAsync(uri.Host, uri.Port, TimeSpan.FromSeconds(4)))
+        {
+            JournalLiaison.Noter("2e serveur", EtatLiaison.Injoignable, null);
+            return EtatLiaison.Injoignable;
+        }
         try
         {
             using var client = new HttpClient { BaseAddress = uri, Timeout = TimeSpan.FromSeconds(4) };
             using var rep = await client.GetAsync("api/sante");
-            return rep.IsSuccessStatusCode;
+            var etat = LiaisonServeur.Classer(rep.StatusCode);
+            JournalLiaison.Noter("2e serveur", etat, null);
+            return etat;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Security.Authentication.AuthenticationException) { return false; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Security.Authentication.AuthenticationException)
+        {
+            var etat = LiaisonServeur.Classer(ex);
+            JournalLiaison.Noter("2e serveur", etat, ex);
+            return etat;
+        }
     }
 
     /// <summary>Paramètres de pagination et filtres facultatifs d'une liste, en chaîne de requête.</summary>
@@ -1103,7 +1116,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<bool> ServeurJoignableAsync()
     {
         var delai = TimeSpan.FromSeconds(4);
-        if (http.BaseAddress is not { } adresse || !await PortOuvertAsync(adresse.Host, adresse.Port, delai)) return false;
+        if (http.BaseAddress is not { } adresse || !await PortOuvertAsync(adresse.Host, adresse.Port, delai))
+        {
+            Liaison = EtatLiaison.Injoignable;
+            JournalLiaison.Noter("serveur", Liaison, null);
+            return false;
+        }
 
         // Requête bornée à 30 s en arrière-plan (jamais attendue au-delà de 4 s) ; issue relevée sans relancer d'exception
         var borne = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -1111,13 +1129,21 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         _ = requete.ContinueWith(t =>
         {
             if (t.IsCompletedSuccessfully) t.Result.Dispose();
-            _ = t.Exception;
+            // Certificat refusé : relevé ici (la requête échoue avant les 4 secondes) ; le certificat n'est jamais contourné
+            if (t.IsFaulted) { Liaison = LiaisonServeur.Classer(t.Exception); JournalLiaison.Noter("serveur", Liaison, t.Exception!.GetBaseException()); }
             borne.Dispose();
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
         var premier = await Task.WhenAny(requete, Task.Delay(delai));
-        return premier == requete && requete.IsCompletedSuccessfully && requete.Result.IsSuccessStatusCode;
+        var joignable = premier == requete && requete.IsCompletedSuccessfully && requete.Result.IsSuccessStatusCode;
+        if (joignable) { Liaison = EtatLiaison.Joignable; JournalLiaison.Noter("serveur", Liaison, null); }
+        else if (!requete.IsFaulted) { Liaison = EtatLiaison.Injoignable; JournalLiaison.Noter("serveur", Liaison, null); }
+        else Liaison = LiaisonServeur.Classer(requete.Exception);
+        return joignable;
     }
+
+    /// <summary>Dernier état de la liaison avec le serveur de ce poste (Injoignable ou CertificatRefuse quand la vérification échoue).</summary>
+    public EtatLiaison Liaison { get; private set; } = EtatLiaison.Joignable;
 
     /// <summary>Connexion TCP de test sans exception (code d'erreur du socket) ; abandonnée après le délai.</summary>
     private static async Task<bool> PortOuvertAsync(string hote, int port, TimeSpan delai)
