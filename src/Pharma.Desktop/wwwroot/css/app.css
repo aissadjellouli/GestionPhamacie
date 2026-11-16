@@ -169,6 +169,10 @@ td.vide .action-suivante { justify-content: center; }
 .page-serree { gap: 20px; }
 .titre-page { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; }
 .titre-page > div:first-child { display: flex; flex-direction: column; gap: 4px; }
+/* Titre et actions toujours sur une ligne : le sous-titre passe à la ligne plutôt que les boutons (écran fixe en fenêtre étroite) */
+.titre-page.titre-actions-cote { flex-wrap: nowrap; }
+.titre-page.titre-actions-cote > div:first-child { flex: 1 1 auto; min-width: 0; }
+.titre-page.titre-actions-cote > .actions { flex: 0 0 auto; flex-wrap: nowrap; }
 h1 { margin: 0; font-size: 26px; font-weight: 600; color: var(--accent-texte); letter-spacing: -0.01em; }
 h2 { margin: 0; }
 .sous-titre { margin: 0; font-size: 14px; color: var(--texte-2); }
@@ -202,6 +206,8 @@ h3 { margin: 0; font-size: 15px; font-weight: 600; }
 .carte { background: var(--surface); border: 1px solid var(--bordure); border-radius: 12px; padding: 18px 20px; }
 .liste { display: flex; flex-direction: column; gap: 12px; }
 .pastille { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+/* Pastille sous une étiquette de champ : ajustée à son texte, jamais étirée sur la largeur du champ */
+.champ > .pastille { align-self: flex-start; }
 .urgent { background: var(--urgent-fond); color: var(--urgent); }
 .attention { background: var(--attention-fond); color: var(--attention); }
 .info { background: var(--info-fond); color: var(--info); }
@@ -441,6 +447,8 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 .achats-grille > aside .tableau th, .achats-grille > aside .tableau td { padding: 8px; }
 @media (max-width: 1100px) { .achats-grille { grid-template-columns: 1fr; } }
 .achats-ligne { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+/* Ligne de valeurs en lecture seule (étiquette + valeur ou pastille) : étiquettes alignées en haut */
+.achats-ligne.ligne-lecture { align-items: flex-start; }
 .ligne-cliquable { cursor: pointer; }
 .ligne-cliquable:hover { background: var(--surface-2); }
 .ligne-cliquable.choisie { background: var(--accent-clair); }

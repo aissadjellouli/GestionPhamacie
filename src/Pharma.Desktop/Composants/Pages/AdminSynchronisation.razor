@@ -7,7 +7,7 @@
     <NavAdmin Actif="admin/synchronisation" Rubrique="@Rubrique" />
 
     <div class="admin-contenu">
-        <div class="titre-page">
+        <div class="titre-page titre-actions-cote">
             <div>
                 <h1>Synchronisation · @NavAdmin.Libelle("admin/synchronisation", Rubrique)</h1>
                 <p class="sous-titre">Copie des données de l’officine vers le serveur central, envoyée par l’officine environ chaque minute. Une coupure d’Internet n’a aucun effet sur le travail.</p>
@@ -29,31 +29,34 @@
             @if (t.BaseEnLectureSeule) { <div class="bandeau-attention" role="status">Base en lecture seule (2e serveur en veille) : seul le serveur principal envoie.</div> }
             @if (t.LotsAutresEpoques > 0) { <div class="bandeau-attention" role="status">@t.LotsAutresEpoques lot(s) d’une époque précédente jamais accusé(s) : à examiner avec l’éditeur (non renvoyés automatiquement).</div> }
             @if (t.DerniereErreur is { } de) { <div class="bandeau-attention" role="status">Dernière erreur@(t.DerniereErreurLe is { } dl ? $" ({Libelles.DateHeureLocale(dl)})" : "") : @de</div> }
+            @* Bandeaux toujours visibles ; les deux panneaux dans un cadre défilant (hauteur posée par poste.js) : la page reste fixe même avec
+               plusieurs bandeaux, un message ou une fenêtre basse (docs/charte-graphique.md, écran fixe) *@
+            <div class="cadre-defilant" style="display: flex; flex-direction: column; gap: 20px">
             <section class="panneau" aria-labelledby="s-etat">
                 <h2 id="s-etat">État</h2>
-                <div class="achats-ligne">
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Synchronisation</span>
+                <div class="achats-ligne ligne-lecture">
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Synchronisation</span>
                         <span class="pastille @(t.Active ? "ok" : "attention")">@(t.Active ? "activée" : "désactivée")</span></div>
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Ce serveur</span>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Ce serveur</span>
                         <span class="pastille @(t.Activee ? "ok" : "attention")">@(t.Activee ? "activé (certificat)" : "non activé")</span></div>
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Dernier envoi</span><span>@Date(t.DernierEnvoi)</span></div>
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Dernier accusé</span><span>@(t.DernierAccuse > 0 ? $"lot {t.DernierAccuse} · {Date(t.DernierAccuseLe)}" : "aucun")</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Dernier envoi</span><span>@Date(t.DernierEnvoi)</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Dernier accusé</span><span>@(t.DernierAccuse > 0 ? $"lot {t.DernierAccuse} · {Date(t.DernierAccuseLe)}" : "aucun")</span></div>
                 </div>
-                <div class="achats-ligne">
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">En attente</span><span>@t.LignesEnAttente opération(s) · @t.LotsEnAttente lot(s) non accusé(s)</span></div>
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Lots constitués</span><span>@t.DernierLot (époque @t.Epoque, @t.VersionContrat)</span></div>
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Certificat</span>
+                <div class="achats-ligne ligne-lecture">
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">En attente</span><span>@t.LignesEnAttente opération(s) · @t.LotsEnAttente lot(s) non accusé(s)</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Lots constitués</span><span>@t.DernierLot (époque @t.Epoque, @t.VersionContrat)</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Certificat</span>
                         <span class="pastille @Echeance.Classe">@Echeance.Texte</span></div>
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Code de l’officine</span><span class="detail">@(t.OfficineId ?? "—")</span></div>
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Code de l’officine</span><span class="detail">@(t.OfficineId ?? "—")</span></div>
                 </div>
                 <p class="detail" style="margin: 0">Rien n’est retiré de l’attente sans accusé du serveur central ; après une coupure, l’envoi reprend au premier lot non accusé. Le nom des patients n’est jamais envoyé (code à la place).</p>
             </section>
             <section class="panneau" aria-labelledby="s-chargement">
                 <h2 id="s-chargement">Chargement complet</h2>
-                <div class="achats-ligne">
-                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Dernier chargement</span>
+                <div class="achats-ligne ligne-lecture">
+                    <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Dernier chargement</span>
                         <span class="pastille @Chargement.Classe">@Chargement.Texte</span></div>
-                    <div class="champ" style="flex: 2 1 320px"><span class="libelle-champ">Progression</span><span>@Progression</span></div>
+                    <div class="champ" style="flex: 2 1 320px"><span class="etiquette-champ">Progression</span><span>@Progression</span></div>
                     <div class="champ" style="flex: 0 0 auto; align-self: flex-end; flex-direction: row; gap: 8px">
                         @if (confirmerRecharge)
                         {
@@ -69,6 +72,7 @@
                 </div>
                 <p class="detail" style="margin: 0">Renvoie l’état actuel de chaque donnée envoyée (mêmes codes et mêmes retraits que d’habitude), par lots, sans arrêter le travail ; les modifications faites pendant l’envoi suivent dans l’ordre. Le serveur central signale, sans les effacer, les données qu’il a et que l’officine n’a plus.</p>
             </section>
+            </div>
         }
 
         @if (t is not null && rubrique == "reglages")

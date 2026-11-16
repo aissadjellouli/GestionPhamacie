@@ -1,11 +1,12 @@
 @inject SessionPoste Session
+@inject IJSRuntime JS
 
 @* Menu latéral de l'administration : chaque rubrique selon le droit de l'employé.
    Menu à deux niveaux : sous la rubrique affichée, ses sous-rubriques (adresse admin/…?rubrique=…), une partie à la fois,
    pour que l'écran reste fixe (docs/charte-graphique.md). *@
 @if (!Session.SuperAdmin)
 {
-<nav class="admin-nav" aria-label="Rubriques d’administration">
+<nav @ref="menu" class="admin-nav" aria-label="Rubriques d’administration">
     @foreach (var r in Rubriques)
     {
         // Écran à venir ou sans droit (ex. reprise de données : super admin) : absent du menu, pas grisé (docs/navigation.md)
@@ -41,6 +42,21 @@
 }
 
 @code {
+    private ElementReference menu;
+    private string? lienVu;
+
+    // Lien affiché toujours visible dans le menu de gauche (bandeau ambre), même en bas d'un long menu ou en fenêtre basse :
+    // le menu défile jusqu'à lui dès le rendu, à chaque changement d'écran ou de sous-rubrique (docs/charte-graphique.md)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var lien = $"{Actif}?{RubriqueCourante(Actif, Rubrique)}";
+        if (Session.SuperAdmin || lien == lienVu) return;
+        lienVu = lien;
+        try { await JS.InvokeVoidAsync("pharma.voirLienActif", menu); }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
     /// <summary>Lien de la rubrique affichée (ex. « admin/seuils »).</summary>
     [Parameter] public string Actif { get; set; } = "";
     /// <summary>Sous-rubrique demandée dans l'adresse (?rubrique=…) ; vide ou inconnue : la première.</summary>

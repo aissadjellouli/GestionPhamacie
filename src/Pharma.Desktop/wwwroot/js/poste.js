@@ -18,6 +18,17 @@ window.pharma = {
     setTimeout(voir, 500);
   },
 
+  // Menu de gauche de l'Administration : amène le lien affiché (bandeau ambre) dans le cadre du menu, au plus près
+  // (comme scrollIntoView block « nearest »), en ne déplaçant que le menu, jamais l'écran
+  voirLienActif: function (nav) {
+    if (!nav) return;
+    var lien = nav.querySelector("a.active");
+    if (!lien) return;
+    var cadre = nav.getBoundingClientRect(), r = lien.getBoundingClientRect(), marge = 8;
+    if (r.bottom > cadre.bottom) nav.scrollTop += r.bottom - cadre.bottom + marge;
+    else if (r.top < cadre.top) nav.scrollTop -= cadre.top - r.top + marge;
+  },
+
   // Champ dont la saisie a été corrigée par l'écran (ex. remise : « 05 » → « 5 », champ vidé → « 0 ») : valeur affichée réécrite,
   // curseur en fin de champ
   fixerValeur: function (champ, valeur) {
@@ -296,6 +307,8 @@ window.pharma.largeur = {
   }
 };
 window.addEventListener("resize", function () { window.pharma.largeur.maj(); });
+// Fenêtre redimensionnée : le lien affiché du menu de l'Administration reste visible
+window.addEventListener("resize", function () { window.pharma.voirLienActif(document.querySelector(".admin-nav")); });
 window.pharma.zoom.appliquer(window.pharma.zoom.lire());
 
 // Tableaux : l'écran reste fixe (titre, menu, filtres, pagination), seul le tableau défile dans son cadre

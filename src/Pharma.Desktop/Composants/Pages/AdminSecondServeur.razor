@@ -36,12 +36,12 @@
                 }
                 else
                 {
-                    <div class="achats-ligne">
-                        <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Liaison</span>
+                    <div class="achats-ligne ligne-lecture">
+                        <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Liaison</span>
                             <span class="pastille @(t.Connecte ? "ok" : "urgent")">@(t.Connecte ? "2e serveur connecté" : "2e serveur décroché")</span></div>
-                        <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">État</span><span>@(t.Etat ?? (t.DetailsVisibles ? "—" : "non visible (droit pg_monitor manquant)"))</span></div>
-                        <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Retard</span><span>@Retard</span></div>
-                        <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Slot de réplication</span><span>@(t.SlotExiste ? (t.SlotActif ? "actif" : "inactif (modifications gardées en attente)") : "absent")</span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">État</span><span>@(t.Etat ?? (t.DetailsVisibles ? "—" : "non visible (droit pg_monitor manquant)"))</span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Retard</span><span>@Retard</span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Slot de réplication</span><span>@(t.SlotExiste ? (t.SlotActif ? "actif" : "inactif (modifications gardées en attente)") : "absent")</span></div>
                     </div>
                     @if (t.Client is { } c) { <p class="detail" style="margin: 0">2e serveur : @c</p> }
                 }

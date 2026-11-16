@@ -90,6 +90,9 @@ vendeur)** : `/`, `/accueil`, `/caisse`, `/caisse/etat`, `/cloture`, `/stock`, `
 Réglages par serveur, Clé de scellement ; tableau des serveurs seul défilant) ; mesure à 0 px à faire à l'écran** : `/admin/second-serveur`.
 **Écran ajouté le 2026-11-16 (lot S2, synchronisation), conçu fixe 1 536 × 890 (trois sous-rubriques à gauche : État, Réglages,
 Activation ; aucun tableau, aucun défilement) ; mesure à 0 px à faire à l'écran** : `/admin/synchronisation`.
+Mesurée le 2026-11-16 (titulaire, clair et sombre, 1 536 × 890 et 1 366 × 768) : 0 px dans les trois rubriques, y compris
+synchronisation activée avec bandeaux d'attention, chargement en cours et confirmation « Tout renvoyer » ; rubrique État : bandeaux
+au-dessus, panneaux État et Chargement complet dans un `.cadre-defilant` ; titre et boutons sur une ligne (`.titre-actions-cote`).
 **Écran ajouté le 2026-11-16 (lot 11, tableau de bord financier), conçu fixe 1 536 × 890 (sept rubriques à gauche : Synthèse,
 Créances, Stock et dormant, Marges, Achats par grossiste, Rejets Chifa, TVA par taux ; tuiles, puis un seul tableau défilant,
 paginé ; marges et stock dormant filtrés et paginés par le serveur) ; mesure à 0 px à faire à l'écran** : `/pilotage-financier`.
@@ -206,8 +209,13 @@ une action qui n'est pas un écran, comme ouvrir le tiroir, demande une confirma
   d'ajout ou de modification trop long pour tenir sous sa liste a sa propre sous-rubrique (ex. Notifications › Ajouter ou modifier).
 - **La rubrique est lue dès l'ouverture de l'écran** (dans `OnInitialized`, avant tout chargement) : le titre affiché pendant le
   chargement est déjà le bon, il ne change pas sous les yeux.
+- **Le lien affiché reste visible dans le menu** : `NavAdmin` fait défiler le menu de gauche jusqu'à lui (au plus près, sans
+  faire défiler l'écran) à l'ouverture, au changement de sous-rubrique et au redimensionnement de la fenêtre (`pharma.voirLienActif`).
 - Réglages nombreux (seuils) : groupés par thème en colonnes, une ligne par réglage, libellé à gauche et petite valeur à droite
   (`.reglages-groupes`, `.reglage-ligne`), pour tenir sans défilement.
+- Valeurs en lecture seule sur une ligne (état d'un service) : `.achats-ligne.ligne-lecture` (étiquettes alignées en haut),
+  étiquette `.etiquette-champ`, pastille ajustée à son texte (`.champ > .pastille`, jamais étirée). Titre long avec boutons :
+  `.titre-page.titre-actions-cote` garde les boutons à droite, le sous-titre passe à la ligne.
 
 ## Hiérarchie du texte
 
@@ -220,7 +228,7 @@ une action qui n'est pas un écran, comme ouvrir le tiroir, demande une confirma
 | Information principale | texte courant, cellules de tableau | 15 px | texte |
 | Information secondaire explicative | `.detail` | 13 px | texte secondaire (gris) |
 | Note de bas d'écran | `.pied-page` | 13 px, filet au-dessus | texte secondaire (gris) |
-| Étiquette de champ | `label` dans `.champ` | 13 px | texte secondaire (gris) |
+| Étiquette de champ | `label` dans `.champ` ; `.etiquette-champ` pour une valeur en lecture seule | 13 px | texte secondaire (gris) |
 | En-tête de tableau | `th` dans `.tableau thead` | 12 px, majuscules, gras 600 | texte 3, bandeau `--surface-2` souligné de 2 px |
 | Liste vide | `.vide` | 15 px | texte secondaire (gris) |
 
