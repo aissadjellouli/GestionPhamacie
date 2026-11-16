@@ -166,6 +166,7 @@
     <File Path="database/migration/099_remboursement_regularisation.sql" />
     <File Path="database/migration/100_volet_chifa_complements.sql" />
     <File Path="database/migration/101_fusion_facture_chifa.sql" />
+    <File Path="database/migration/101b_suppression_num_facture_chifa.sql" />
     <File Path="database/migration/102_rang_fin_droit.sql" />
     <File Path="database/migration/103_stock_shp_correction_facture.sql" />
     <File Path="database/migration/104_indications_motif_retour.sql" />
@@ -199,6 +200,8 @@
     <File Path="database/migration/134_contenance_sachets_ampoules.sql" />
     <File Path="database/migration/135_synchronisation_famille_banque_elargie.sql" />
     <File Path="database/migration/136_synchronisation_corrections_revue.sql" />
+    <File Path="database/migration/137_contenance_extension.sql" />
+    <File Path="database/migration/138_synchronisation_noms_personnel_textes.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -213,7 +216,10 @@
     <File Path="database/tests/134_contenance_sachets_ampoules_tests.sql" />
     <File Path="database/tests/135_synchronisation_famille_banque_elargie_tests.sql" />
     <File Path="database/tests/136_synchronisation_corrections_revue_tests.sql" />
+    <File Path="database/tests/137_contenance_extension_tests.sql" />
+    <File Path="database/tests/138_synchronisation_noms_personnel_textes_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
+    <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
   </Folder>
   <Folder Name="/database/cloud/">
     <File Path="database/cloud/README.md" />
@@ -260,6 +266,7 @@
     <File Path="scripts/second-serveur/preparer-principal.ps1" />
     <File Path="scripts/second-serveur/initialiser-second-serveur.ps1" />
     <File Path="scripts/second-serveur/verifier-second-serveur.ps1" />
+    <File Path="scripts/second-serveur/ouvrir-port-base.ps1" />
     <File Path="scripts/second-serveur/basculer-second-serveur.ps1" />
     <File Path="scripts/second-serveur/remettre-en-second.ps1" />
   </Folder>

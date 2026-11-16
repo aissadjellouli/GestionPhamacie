@@ -214,6 +214,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\099_remboursement_regularisation.sql = database\migration\099_remboursement_regularisation.sql
 		database\migration\100_volet_chifa_complements.sql = database\migration\100_volet_chifa_complements.sql
 		database\migration\101_fusion_facture_chifa.sql = database\migration\101_fusion_facture_chifa.sql
+		database\migration\101b_suppression_num_facture_chifa.sql = database\migration\101b_suppression_num_facture_chifa.sql
 		database\migration\102_rang_fin_droit.sql = database\migration\102_rang_fin_droit.sql
 		database\migration\103_stock_shp_correction_facture.sql = database\migration\103_stock_shp_correction_facture.sql
 		database\migration\104_indications_motif_retour.sql = database\migration\104_indications_motif_retour.sql
@@ -247,6 +248,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\134_contenance_sachets_ampoules.sql = database\migration\134_contenance_sachets_ampoules.sql
 		database\migration\135_synchronisation_famille_banque_elargie.sql = database\migration\135_synchronisation_famille_banque_elargie.sql
 		database\migration\136_synchronisation_corrections_revue.sql = database\migration\136_synchronisation_corrections_revue.sql
+		database\migration\137_contenance_extension.sql = database\migration\137_contenance_extension.sql
+		database\migration\138_synchronisation_noms_personnel_textes.sql = database\migration\138_synchronisation_noms_personnel_textes.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -263,7 +266,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\134_contenance_sachets_ampoules_tests.sql = database\tests\134_contenance_sachets_ampoules_tests.sql
 		database\tests\135_synchronisation_famille_banque_elargie_tests.sql = database\tests\135_synchronisation_famille_banque_elargie_tests.sql
 		database\tests\136_synchronisation_corrections_revue_tests.sql = database\tests\136_synchronisation_corrections_revue_tests.sql
+		database\tests\137_contenance_extension_tests.sql = database\tests\137_contenance_extension_tests.sql
+		database\tests\138_synchronisation_noms_personnel_textes_tests.sql = database\tests\138_synchronisation_noms_personnel_textes_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
+		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"
@@ -283,6 +289,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{5C0D
 		scripts\second-serveur\preparer-principal.ps1 = scripts\second-serveur\preparer-principal.ps1
 		scripts\second-serveur\initialiser-second-serveur.ps1 = scripts\second-serveur\initialiser-second-serveur.ps1
 		scripts\second-serveur\verifier-second-serveur.ps1 = scripts\second-serveur\verifier-second-serveur.ps1
+		scripts\second-serveur\ouvrir-port-base.ps1 = scripts\second-serveur\ouvrir-port-base.ps1
 		scripts\second-serveur\basculer-second-serveur.ps1 = scripts\second-serveur\basculer-second-serveur.ps1
 		scripts\second-serveur\remettre-en-second.ps1 = scripts\second-serveur\remettre-en-second.ps1
 	EndProjectSection
