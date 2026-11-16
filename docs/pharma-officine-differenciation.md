@@ -1,13 +1,13 @@
 # Logiciel de gestion d'officine (Algérie) — Axes de différenciation
 
-> Document de cadrage produit à destination de Claude Code.
+> Document de cadrage produit à destination de l'équipe de développement.
 > Stack : .NET (API) / Angular (front) / PostgreSQL et SQL Server.
 > Le développement est **déjà commencé** : ce document décrit la cible, pas un point de départ.
 > Rédigé le 15/11/2026 à partir d'une veille marché et réglementaire (sources en fin de document).
 
 ---
 
-## 0. Instructions pour Claude Code
+## 0. Instructions pour l'équipe de développement
 
 1. **Ne rien coder tout de suite.** Commence par lire le code existant, puis produis `docs/analyse-ecarts.md` :
    - pour chaque module ci-dessous : *déjà fait / partiel / absent*, avec les fichiers concernés ;
