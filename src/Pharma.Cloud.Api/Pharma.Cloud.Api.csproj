@@ -10,6 +10,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pharma.Shared\Pharma.Shared.csproj" />
+    <!-- Règles métier des réglages mutualisés : même validation que la saisie locale (lot M6) -->
+    <ProjectReference Include="..\Pharma.Domain\Pharma.Domain.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Scripts de la base centrale livrés avec l'API centrale -->
