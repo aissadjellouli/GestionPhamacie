@@ -116,6 +116,56 @@ public static class PointsEntree
             return Results.Ok(new EtatCentralDto(epoque, await depot.DernierLotAsync(appelant.Officine, epoque, ct)));
         }).RequireRateLimiting("officine");
 
+        // Lot S6 : début d'un chargement complet (avant le premier lot qui contient ses lignes « instantane »)
+        v1.MapPost("/chargement/debut", async (DebutChargementDto d, HttpContext ctx, DepotCentral depot, ILoggerFactory lf, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            if (d.Refus() is { } motif) return Results.Problem(motif, statusCode: 400);
+            var log = lf.CreateLogger("Pharma.Cloud.Chargement");
+            try
+            {
+                var (dernier, abandonnes) = await depot.DebuterChargementAsync(appelant.Officine, d, ct);
+                log.LogInformation("Officine {Officine} : début du chargement {Numero} ({Motif}, {Tables} tables, {Abandonnes} lot(s) abandonné(s))",
+                    appelant.Officine, d.Numero, d.Motif, d.Tables.Count, abandonnes);
+                return Results.Ok(new ReponseDebutChargementDto(d.Numero, dernier, abandonnes));
+            }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "P0001")
+            {
+                await depot.JournaliserAsync(appelant.Officine, appelant.EmpreinteCertificat, "chargement_refuse", $"début du chargement {d.Numero} : SQL {p.SqlState}", ct);
+                log.LogWarning("Officine {Officine} : début du chargement {Numero} refusé", appelant.Officine, d.Numero);
+                return Results.Problem("Chargement refusé (détail au journal du serveur central).", statusCode: 422);
+            }
+        }).RequireRateLimiting("officine");
+
+        // Lot S6 : fin d'un chargement complet (toutes ses lignes accusées) ; lignes absentes de l'officine signalées et gardées
+        v1.MapPost("/chargement/fin", async (FinChargementDto d, HttpContext ctx, DepotCentral depot, ILoggerFactory lf, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            if (d.Numero < 1 || d.Lignes is null || d.Lignes.Count > 300 || d.Lignes.Values.Any(v => v < 0))
+                return Results.Problem("Fin de chargement mal formée.", statusCode: 400);
+            var log = lf.CreateLogger("Pharma.Cloud.Chargement");
+            try
+            {
+                var (absentes, parTable, vues) = await depot.TerminerChargementAsync(appelant.Officine, d.Numero,
+                    System.Text.Json.JsonSerializer.Serialize(d.Lignes), ct);
+                if (absentes > 0)
+                    log.LogWarning("Officine {Officine} : chargement {Numero} terminé, {Absentes} ligne(s) absente(s) de l'officine signalée(s) et gardée(s)",
+                        appelant.Officine, d.Numero, absentes);
+                else log.LogInformation("Officine {Officine} : chargement {Numero} terminé", appelant.Officine, d.Numero);
+                return Results.Ok(new ReponseFinChargementDto(d.Numero, absentes,
+                    System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, long>>(parTable) ?? [],
+                    System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, long>>(vues) ?? []));
+            }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "P0001")
+            {
+                await depot.JournaliserAsync(appelant.Officine, appelant.EmpreinteCertificat, "chargement_refuse", $"fin du chargement {d.Numero} : SQL {p.SqlState}", ct);
+                log.LogWarning("Officine {Officine} : fin du chargement {Numero} refusée", appelant.Officine, d.Numero);
+                return Results.Problem("Fin de chargement refusée (chargement inconnu ou remplacé).", statusCode: 422);
+            }
+        }).RequireRateLimiting("officine");
+
         // Renouvellement avant l'échéance : nouveau certificat (nouvelle clé), l'ancien reste valable jusqu'à son échéance
         v1.MapPost("/certificat/renouveler", async (DemandeRenouvellementDto d, HttpContext ctx, AutoriteCertification ac, DepotCentral depot,
             TimeProvider temps, CancellationToken ct) =>

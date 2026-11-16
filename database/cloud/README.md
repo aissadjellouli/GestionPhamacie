@@ -7,6 +7,8 @@ Ils ne se passent **jamais** sur la base d'une officine (celle-ci a ses scripts 
 |---|---|
 | `001_base_centrale.sql` | Rôle applicatif `pharma_cloud_api` (créé **sans connexion**, non propriétaire), tables d'administration (`officine`, `certificat`, `code_activation`, `journal_securite`), `officine_epoque` (dernier lot par officine et époque), `lot_recu` (lots bruts gardés pour preuve, **partitionné par mois**), catalogue `cloud_table_miroir`, fonctions de l'API centrale (`cloud_activer`, `cloud_certificat`, `cloud_appliquer_lot`…), Row Level Security. |
 | `002_tables_miroir.sql` | **Généré** : une table miroir par table envoyée par les officines, mêmes colonnes que la table locale (dont `officine_id`), clé `(officine_id, clé locale)`, colonnes `sync_epoque`, `sync_numero`, `sync_recu_le`, RLS forcée. Ne pas modifier à la main. |
+| `003_chargement.sql` | Lot S6 : chargement complet d'une officine (table `chargement`, `cloud_debut_chargement`, `cloud_fin_chargement`), `cloud_appliquer_lot` remplacée (lignes `instantane` marquées vues, lots perdus abandonnés au début, lignes absentes de l'officine marquées `sync_absente_le`, jamais effacées). À passer après `002`. |
+| `tests/003_chargement_tests.sql` | Tests du chargement : ordre instantané / modifications, saut des lots perdus, absentes signalées et gardées, idempotence, cloisonnement. |
 | `tests/001_base_centrale_tests.sql` | Tests en transaction annulée : cloisonnement (l'officine B ne lit ni n'écrit les lignes de A, même sans filtre), idempotence, trou, empreinte différente, suppression, état final, codes d'activation, journal en ajout seul, absence de nom de patient. |
 
 ## Règles
@@ -31,7 +33,7 @@ Ils ne se passent **jamais** sur la base d'une officine (celle-ci a ses scripts 
 ```powershell
 $env:PGPASSWORD = "<mot de passe de pharma_app>"
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U pharma_app -h localhost -d postgres -c "CREATE DATABASE pharmacie_cloud_dev"
-foreach ($f in "001_base_centrale.sql", "002_tables_miroir.sql") {
+foreach ($f in "001_base_centrale.sql", "002_tables_miroir.sql", "003_chargement.sql") {
     & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U pharma_app -h localhost -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f "database\cloud\$f" }
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U pharma_app -h localhost -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database\cloud\tests\001_base_centrale_tests.sql
 ```

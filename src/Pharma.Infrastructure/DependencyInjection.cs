@@ -210,6 +210,8 @@ public static class DependencyInjection
         services.AddScoped<Application.Synchronisation.ISortieSyncDepot, Synchronisation.SortieSyncSql>();
         // Synchronisation, lot S2 : envoi et accusés (script 128) ; clé et certificat de CE serveur hors base (DPAPI machine)
         services.AddScoped<Application.Synchronisation.IEnvoiSyncDepot, Synchronisation.EnvoiSyncSql>();
+        // Synchronisation, lot S6 : chargement complet (script 129)
+        services.AddScoped<Application.Synchronisation.IChargementSyncDepot, Synchronisation.ChargementSyncSql>();
         services.AddSingleton<Application.Synchronisation.ICertificatSync>(new Synchronisation.CertificatSyncFichier(
             string.IsNullOrWhiteSpace(options.DossierSynchronisation)
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Synchronisation")

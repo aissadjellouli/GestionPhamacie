@@ -98,6 +98,51 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         return n;
     }
 
+    /// <summary>Début d'un chargement complet (script 003) : (dernier lot attendu avant les suivants, lots abandonnés).</summary>
+    public async Task<(long Dernier, long Abandonnes)> DebuterChargementAsync(Guid officine, Pharma.Shared.DebutChargementDto d, CancellationToken ct)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await PoserOfficineAsync(cnx, tx, officine, ct);
+        await using var cmd = new NpgsqlCommand("SELECT dernier, abandonnes FROM cloud_debut_chargement($1, $2, $3, $4, $5, $6)", cnx, tx);
+        cmd.Parameters.AddWithValue(d.Numero);
+        cmd.Parameters.AddWithValue(d.Epoque);
+        cmd.Parameters.AddWithValue(d.Repere);
+        cmd.Parameters.AddWithValue(d.ReprendreApres);
+        cmd.Parameters.AddWithValue(d.Motif);
+        cmd.Parameters.AddWithValue(d.Tables.ToArray());
+        (long, long) res;
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            await r.ReadAsync(ct);
+            res = (r.GetInt64(0), r.GetInt64(1));
+        }
+        await tx.CommitAsync(ct);
+        return res;
+    }
+
+    /// <summary>Fin d'un chargement complet : lignes absentes de l'officine (marquées, jamais effacées), par table, et lignes vues.</summary>
+    public async Task<(long Absentes, string ParTable, string Vues)> TerminerChargementAsync(Guid officine, int numero, string lignesJson, CancellationToken ct)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await PoserOfficineAsync(cnx, tx, officine, ct);
+        await using var cmd = new NpgsqlCommand("SELECT absentes, absentes_par_table::text, lignes_vues::text FROM cloud_fin_chargement($1, $2::jsonb)", cnx, tx)
+        {
+            CommandTimeout = 600
+        };
+        cmd.Parameters.AddWithValue(numero);
+        cmd.Parameters.AddWithValue(lignesJson);
+        (long, string, string) res;
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            await r.ReadAsync(ct);
+            res = (r.GetInt64(0), r.GetString(1), r.GetString(2));
+        }
+        await tx.CommitAsync(ct);
+        return res;
+    }
+
     private static async Task PoserOfficineAsync(NpgsqlConnection cnx, NpgsqlTransaction tx, Guid officine, CancellationToken ct)
     {
         await using var cmd = new NpgsqlCommand("SELECT set_config('app.officine_id', $1, true)", cnx, tx);

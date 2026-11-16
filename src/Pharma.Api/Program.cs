@@ -87,7 +87,9 @@ builder.Services.AddScoped(sp => new Pharma.Application.Securite.ListerValidateu
 // Synchronisation, lot S1 : mise en forme sync-v1 des lots (aucun envoi, aucune adresse de serveur central)
 builder.Services.AddSingleton<Pharma.Application.Synchronisation.IFormatLotSync, Pharma.Api.Synchronisation.FormatLotSyncV1>();
 // Synchronisation, lot S2 : envoi au serveur central (adresse réglée en base ; rien ne part tant que désactivée ou non activée)
-builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientServeurCentral, Pharma.Api.Synchronisation.ClientServeurCentralHttp>();
+builder.Services.AddSingleton<Pharma.Api.Synchronisation.ClientServeurCentralHttp>();
+builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientServeurCentral>(sp => sp.GetRequiredService<Pharma.Api.Synchronisation.ClientServeurCentralHttp>());
+builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientChargementCentral>(sp => sp.GetRequiredService<Pharma.Api.Synchronisation.ClientServeurCentralHttp>());
 builder.Services.AddHostedService<Pharma.Api.Taches.EnvoiSynchronisation>();
 builder.Services.AddHostedService<AlertesQuotidiennes>();
 builder.Services.AddHostedService<EnvoiNotifications>();

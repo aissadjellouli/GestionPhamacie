@@ -18,5 +18,5 @@ public sealed class FormatLotSyncV1 : IFormatLotSync
         return new LotFormule(SerialisationSyncV1.Serialiser(lot), lot.EnTete.Empreinte);
     }
 
-    private static LigneSyncDto Dto(LigneSortieSync l) => new(l.Numero, l.Table, l.IdLocal, l.Operation, l.SurvenuLeUtc, l.DonneesJson);
+    private static LigneSyncDto Dto(LigneSortieSync l) => new(l.NumeroEnvoye, l.Table, l.IdLocal, l.Operation, l.SurvenuLeUtc, l.DonneesJson);
 }

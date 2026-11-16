@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 128 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 129 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 128 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 129 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -35,10 +35,11 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 --
 --
 --
+--
 -- PostgreSQL database dump
 --
 
-\restrict eawbs3B7Gkhvc0oyGgibhJPGgmiX0QwZLyKjB7fxSO55Vj6wuaJX9YatVNsw6ix
+\restrict rKwWEafdaSzNGw1nhq4gHBJNImAIEM6pnAqTaVYSFlPYCSeSLyz3Ow5n83shNDw
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3141,6 +3142,97 @@ $$;
 
 
 --
+-- Name: sync_chargement_accuse(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_chargement_accuse(p_numero integer) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT NOT EXISTS (SELECT 1 FROM sync_sortie s
+                       LEFT JOIN sync_lot l ON l.epoque = s.epoque AND l.numero = s.lot_numero
+                       WHERE s.chargement = p_numero AND (s.lot_numero IS NULL OR l.accuse_le IS NULL))
+$$;
+
+
+--
+-- Name: sync_chargement_annonce(integer, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_chargement_annonce(p_numero integer, p_reprendre_apres bigint) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE sync_chargement SET etat = 'annonce', annonce_le = coalesce(annonce_le, now()), reprendre_apres = p_reprendre_apres
+    WHERE numero = p_numero AND etat IN ('pret', 'annonce');
+    IF NOT FOUND THEN RAISE EXCEPTION 'Synchronisation : chargement % non prêt', p_numero; END IF;
+END $$;
+
+
+--
+-- Name: sync_chargement_preparer(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_chargement_preparer(p_numero integer) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE n int;
+BEGIN
+    UPDATE sync_chargement SET etat = 'constitution' WHERE numero = p_numero AND etat IN ('demande', 'constitution');
+    IF NOT FOUND THEN RAISE EXCEPTION 'Synchronisation : chargement % absent ou déjà constitué', p_numero; END IF;
+    PERFORM sync_code_patient(id) FROM patient;
+    PERFORM sync_code_porteur(porteur_nom, porteur_piece) FROM registre_psychotrope;
+    PERFORM sync_code_porteur(porteur_nom, porteur_piece) FROM journal_registre_psychotrope;
+    SELECT count(*) INTO n FROM sync_tables_envoyees();
+    RETURN n;
+END $$;
+
+
+--
+-- Name: sync_chargement_pret(integer, bigint, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_chargement_pret(p_numero integer, p_repere bigint, p_lignes jsonb) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE sync_chargement
+    SET etat = 'pret', repere = p_repere, epoque = (SELECT epoque FROM sync_parametre WHERE id = 1),
+        tables = ARRAY(SELECT jsonb_object_keys(p_lignes) ORDER BY 1), lignes = p_lignes,
+        lignes_total = (SELECT coalesce(sum(v::bigint), 0) FROM jsonb_each_text(p_lignes) AS e(k, v)),
+        constitue_le = now()
+    WHERE numero = p_numero AND etat = 'constitution';
+    IF NOT FOUND THEN RAISE EXCEPTION 'Synchronisation : chargement % n''est pas en constitution', p_numero; END IF;
+END $$;
+
+
+--
+-- Name: sync_chargement_progression(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_chargement_progression(p_numero integer) RETURNS TABLE(inscrites bigint, en_lot bigint, accusees bigint)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT count(*), count(*) FILTER (WHERE s.lot_numero IS NOT NULL), count(*) FILTER (WHERE l.accuse_le IS NOT NULL)
+    FROM sync_sortie s LEFT JOIN sync_lot l ON l.epoque = s.epoque AND l.numero = s.lot_numero
+    WHERE s.chargement = p_numero
+$$;
+
+
+--
+-- Name: sync_chargement_terminer(integer, bigint, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_chargement_terminer(p_numero integer, p_absentes bigint, p_detail jsonb) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    UPDATE sync_chargement SET etat = 'termine', termine_le = now(), absentes_central = p_absentes, absentes_detail = p_detail
+    WHERE numero = p_numero AND etat = 'annonce';
+    IF NOT FOUND THEN RAISE EXCEPTION 'Synchronisation : chargement % non annoncé', p_numero; END IF;
+END $$;
+
+
+--
 -- Name: sync_code_patient(bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3221,6 +3313,30 @@ END $$;
 
 
 --
+-- Name: sync_demander_chargement(text, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_demander_chargement(p_motif text, p_utilisateur bigint) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE c sync_chargement; n int;
+BEGIN
+    IF p_motif NOT IN ('activation', 'demande', 'reactivation', 'lots_manquants') THEN
+        RAISE EXCEPTION 'Synchronisation : motif de chargement inconnu : %', p_motif;
+    END IF;
+    PERFORM 1 FROM sync_parametre WHERE id = 1 FOR UPDATE;
+    SELECT * INTO c FROM sync_chargement WHERE etat NOT IN ('termine', 'remplace');
+    IF FOUND THEN
+        IF c.etat IN ('demande', 'constitution') THEN RETURN c.numero; END IF;
+        IF p_motif IN ('demande', 'activation') THEN RETURN NULL; END IF;
+        UPDATE sync_chargement SET etat = 'remplace' WHERE numero = c.numero;
+    END IF;
+    INSERT INTO sync_chargement (motif, demande_par) VALUES (p_motif, p_utilisateur) RETURNING numero INTO n;
+    RETURN n;
+END $$;
+
+
+--
 -- Name: sync_enregistrer_accuse(integer, bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3267,6 +3383,7 @@ DECLARE p sync_parametre; n int;
 BEGIN
     SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
     IF p.dernier_lot + 1 <> p_numero OR coalesce(array_length(p_lignes, 1), 0) = 0 THEN RETURN NULL; END IF;
+    IF EXISTS (SELECT 1 FROM sync_chargement WHERE etat = 'constitution') THEN RETURN NULL; END IF;
     INSERT INTO sync_lot (epoque, numero, version_contrat, nb_lignes, octets, empreinte)
     VALUES (p.epoque, p_numero, p.version_contrat, array_length(p_lignes, 1), p_octets, p_empreinte);
     UPDATE sync_sortie SET lot_numero = p_numero
@@ -3369,6 +3486,34 @@ BEGIN
     END IF;
     RETURN n;
 END $$;
+
+
+--
+-- Name: sync_instantane_table(integer, text, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_instantane_table(p_chargement integer, p_table text, p_repere bigint) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE t sync_table; p sync_parametre; v_ordre text; n bigint;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1;
+    SELECT * INTO t FROM sync_table WHERE nom_table = p_table;
+    IF NOT FOUND OR sync_sens_effectif(t, p) NOT IN ('montante', 'bidirectionnelle')
+       OR NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = p_table) THEN
+        RAISE EXCEPTION 'Synchronisation : table % non envoyée', p_table;
+    END IF;
+    SELECT string_agg(format('x.%I', c), ', ' ORDER BY k) INTO v_ordre FROM unnest(t.cle_colonnes) WITH ORDINALITY u(c, k);
+    EXECUTE format($f$
+        INSERT INTO sync_sortie (nom_table, id_local, operation, donnees, version_contrat, epoque, ordre, chargement)
+        SELECT %L,
+               (SELECT string_agg(coalesce(m.j ->> k.col, ''), '|' ORDER BY k.n) FROM unnest($1::text[]) WITH ORDINALITY AS k(col, n)),
+               'instantane', m.j, $2, $3, $4, $5
+        FROM (SELECT sync_minimiser($6, to_jsonb(x)) AS j FROM public.%I x ORDER BY %s) m$f$, p_table, p_table, v_ordre)
+    USING t.cle_colonnes, p.version_contrat, p.epoque, p_repere, p_chargement, t;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    RETURN n;
+END $_$;
 
 
 --
@@ -3557,6 +3702,21 @@ BEGIN
     END IF;
     RAISE EXCEPTION 'sync_sortie : vidage interdit';
 END $$;
+
+
+--
+-- Name: sync_tables_envoyees(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_tables_envoyees() RETURNS SETOF text
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT s.nom_table FROM sync_table s
+    JOIN pg_tables t ON t.schemaname = 'public' AND t.tablename = s.nom_table
+    JOIN sync_parametre p ON p.id = 1
+    WHERE sync_sens_effectif(s, p) IN ('montante', 'bidirectionnelle')
+    ORDER BY 1
+$$;
 
 
 --
@@ -9312,6 +9472,56 @@ COMMENT ON TABLE public.surveillance_replication IS 'Seuils d''alerte de retard 
 
 
 --
+-- Name: sync_chargement; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_chargement (
+    numero integer NOT NULL,
+    motif text NOT NULL,
+    etat text DEFAULT 'demande'::text NOT NULL,
+    demande_le timestamp with time zone DEFAULT now() NOT NULL,
+    demande_par bigint,
+    epoque integer,
+    repere bigint,
+    tables text[],
+    lignes jsonb,
+    lignes_total bigint DEFAULT 0 NOT NULL,
+    constitue_le timestamp with time zone,
+    reprendre_apres bigint,
+    annonce_le timestamp with time zone,
+    termine_le timestamp with time zone,
+    absentes_central bigint,
+    absentes_detail jsonb,
+    CONSTRAINT ck_sync_chargement_pret CHECK (((etat = ANY (ARRAY['demande'::text, 'constitution'::text, 'remplace'::text])) OR ((repere IS NOT NULL) AND (epoque IS NOT NULL)))),
+    CONSTRAINT sync_chargement_etat_check CHECK ((etat = ANY (ARRAY['demande'::text, 'constitution'::text, 'pret'::text, 'annonce'::text, 'termine'::text, 'remplace'::text]))),
+    CONSTRAINT sync_chargement_lignes_total_check CHECK ((lignes_total >= 0)),
+    CONSTRAINT sync_chargement_motif_check CHECK ((motif = ANY (ARRAY['activation'::text, 'demande'::text, 'reactivation'::text, 'lots_manquants'::text]))),
+    CONSTRAINT sync_chargement_repere_check CHECK ((repere >= 0))
+);
+
+
+--
+-- Name: TABLE sync_chargement; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_chargement IS 'Synchronisation : chargements complets (activation, demande, réactivation, lots manquants), un seul en cours (script 129).';
+
+
+--
+-- Name: sync_chargement_numero_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.sync_chargement ALTER COLUMN numero ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.sync_chargement_numero_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: sync_lot; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9373,8 +9583,11 @@ CREATE TABLE public.sync_sortie (
     epoque integer NOT NULL,
     survenu_le timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
     lot_numero bigint,
+    ordre bigint,
+    chargement integer,
     CONSTRAINT ck_sync_sortie_donnees CHECK (((operation = 'suppression'::text) = (donnees IS NULL))),
-    CONSTRAINT sync_sortie_operation_check CHECK ((operation = ANY (ARRAY['creation'::text, 'modification'::text, 'suppression'::text])))
+    CONSTRAINT ck_sync_sortie_instantane CHECK (((operation = 'instantane'::text) = ((chargement IS NOT NULL) AND (ordre IS NOT NULL)))),
+    CONSTRAINT sync_sortie_operation_check CHECK ((operation = ANY (ARRAY['creation'::text, 'modification'::text, 'suppression'::text, 'instantane'::text])))
 );
 
 
@@ -9383,6 +9596,13 @@ CREATE TABLE public.sync_sortie (
 --
 
 COMMENT ON TABLE public.sync_sortie IS 'Synchronisation : file des modifications à envoyer (outbox), ajout seul tant que non acquittée (script 126).';
+
+
+--
+-- Name: COLUMN sync_sortie.ordre; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_sortie.ordre IS 'Ordre d''envoi d''une ligne d''instantané (repère du chargement) ; NULL = n° de la ligne (script 129).';
 
 
 --
@@ -12670,6 +12890,14 @@ ALTER TABLE ONLY public.surveillance_replication
 
 
 --
+-- Name: sync_chargement sync_chargement_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_chargement
+    ADD CONSTRAINT sync_chargement_pkey PRIMARY KEY (numero);
+
+
+--
 -- Name: sync_lot sync_lot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13781,10 +14009,24 @@ CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (pr
 
 
 --
+-- Name: ix_sync_sortie_chargement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_sortie_chargement ON public.sync_sortie USING btree (chargement) WHERE (chargement IS NOT NULL);
+
+
+--
 -- Name: ix_sync_sortie_en_attente; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_sync_sortie_en_attente ON public.sync_sortie USING btree (id) WHERE (lot_numero IS NULL);
+
+
+--
+-- Name: ix_sync_sortie_en_attente_ordre; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_sortie_en_attente_ordre ON public.sync_sortie USING btree (COALESCE(ordre, id), id) WHERE (lot_numero IS NULL);
 
 
 --
@@ -14072,6 +14314,13 @@ CREATE UNIQUE INDEX ux_scan_reception_serie ON public.scan_reception USING btree
 --
 
 CREATE UNIQUE INDEX ux_session_poste_ouverte ON public.session_caisse USING btree (poste) WHERE (fermee_le IS NULL);
+
+
+--
+-- Name: ux_sync_chargement_en_cours; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_sync_chargement_en_cours ON public.sync_chargement USING btree ((true)) WHERE (etat <> ALL (ARRAY['termine'::text, 'remplace'::text]));
 
 
 --
@@ -17375,5 +17624,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict eawbs3B7Gkhvc0oyGgibhJPGgmiX0QwZLyKjB7fxSO55Vj6wuaJX9YatVNsw6ix
+\unrestrict rKwWEafdaSzNGw1nhq4gHBJNImAIEM6pnAqTaVYSFlPYCSeSLyz3Ow5n83shNDw
 

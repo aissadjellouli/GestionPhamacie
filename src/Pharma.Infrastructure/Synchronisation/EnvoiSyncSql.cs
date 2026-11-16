@@ -55,8 +55,8 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
     public async Task<IReadOnlyList<LigneSortieSync>> LignesDuLotAsync(int epoque, long numero, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT s.id, s.nom_table, s.id_local, s.operation, s.survenu_le, s.donnees::text
-            FROM sync_sortie s WHERE s.epoque = $1 AND s.lot_numero = $2 ORDER BY s.id
+            SELECT s.id, s.nom_table, s.id_local, s.operation, s.survenu_le, s.donnees::text, s.ordre
+            FROM sync_sortie s WHERE s.epoque = $1 AND s.lot_numero = $2 ORDER BY coalesce(s.ordre, s.id), s.id
             """);
         cmd.Parameters.AddWithValue(epoque);
         cmd.Parameters.AddWithValue(numero);
@@ -64,7 +64,7 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
         var liste = new List<LigneSortieSync>();
         while (await r.ReadAsync(ct))
             liste.Add(new LigneSortieSync(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetString(3),
-                DateTime.SpecifyKind(r.GetDateTime(4), DateTimeKind.Utc), r.IsDBNull(5) ? null : r.GetString(5)));
+                DateTime.SpecifyKind(r.GetDateTime(4), DateTimeKind.Utc), r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetInt64(6)));
         return liste;
     }
 

@@ -289,6 +289,10 @@ public static class DependencyInjection
         services.AddScoped<Synchronisation.EnvoyerLotsSync>();
         services.AddScoped<Synchronisation.ActiverSync>();
         services.AddScoped<Synchronisation.ReglerSync>();
+        // Synchronisation, lot S6 : chargement complet (activation, demande, réactivation, lots manquants)
+        services.AddSingleton<Synchronisation.SuiviChargementSync>();
+        services.AddScoped<Synchronisation.ChargementCompletSync>();
+        services.AddScoped<Synchronisation.RechargerSync>();
         // Registre des psychotropes renforcé (lot 8) : alertes et forçage, annulations, concordance, scellement mensuel, antibiotiques
         services.AddScoped<Psychotropes.ControlerDelivrancePsychotrope>();
         services.AddScoped<Psychotropes.ForcerAlertesPsychotropes>();

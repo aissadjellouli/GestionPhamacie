@@ -9,7 +9,8 @@
 -- colonnes jamais envoyées (exclues, porteur remplacé par porteur_code,
 -- patients sous code P-… donc en texte) ; clé = (officine_id, clé
 -- locale) ; colonnes sync_epoque, sync_numero, sync_recu_le (état final
--- = ligne de plus grand n°). RLS forcée par officine. Idempotent ; une
+-- = ligne de plus grand n°), sync_chargement et sync_absente_le
+-- (rechargement complet, script 003). RLS forcée par officine. Idempotent ; une
 -- colonne ajoutée localement est ajoutée ici (ADD COLUMN IF NOT EXISTS) ;
 -- un changement de type se traite par un script central à part.
 -- =====================================================================
@@ -35,6 +36,8 @@ ALTER TABLE public."alerte" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with ti
 ALTER TABLE public."alerte" ADD COLUMN IF NOT EXISTS "mise_a_jour_le" timestamp with time zone;
 ALTER TABLE public."alerte" ADD COLUMN IF NOT EXISTS "traitee_par" bigint;
 ALTER TABLE public."alerte" ADD COLUMN IF NOT EXISTS "traitee_le" timestamp with time zone;
+ALTER TABLE public."alerte" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."alerte" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."alerte" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."alerte" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."alerte";
@@ -64,6 +67,8 @@ ALTER TABLE public."alerte_surveillance" ADD COLUMN IF NOT EXISTS "cree_le" time
 ALTER TABLE public."alerte_surveillance" ADD COLUMN IF NOT EXISTS "mise_a_jour_le" timestamp with time zone;
 ALTER TABLE public."alerte_surveillance" ADD COLUMN IF NOT EXISTS "traitee_par" bigint;
 ALTER TABLE public."alerte_surveillance" ADD COLUMN IF NOT EXISTS "traitee_le" timestamp with time zone;
+ALTER TABLE public."alerte_surveillance" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."alerte_surveillance" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."alerte_surveillance" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."alerte_surveillance" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."alerte_surveillance";
@@ -84,6 +89,8 @@ ALTER TABLE public."annulation_registre" ADD COLUMN IF NOT EXISTS "registre_id" 
 ALTER TABLE public."annulation_registre" ADD COLUMN IF NOT EXISTS "motif" text;
 ALTER TABLE public."annulation_registre" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."annulation_registre" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."annulation_registre" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."annulation_registre" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."annulation_registre" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."annulation_registre" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."annulation_registre";
@@ -110,6 +117,8 @@ ALTER TABLE public."annulation_vente" ADD COLUMN IF NOT EXISTS "montant_rembours
 ALTER TABLE public."annulation_vente" ADD COLUMN IF NOT EXISTS "session_caisse_id" bigint;
 ALTER TABLE public."annulation_vente" ADD COLUMN IF NOT EXISTS "poste" text;
 ALTER TABLE public."annulation_vente" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."annulation_vente" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."annulation_vente" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."annulation_vente" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."annulation_vente" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."annulation_vente";
@@ -136,6 +145,8 @@ ALTER TABLE public."avoir_mouvement" ADD COLUMN IF NOT EXISTS "mouvement_tiroir_
 ALTER TABLE public."avoir_mouvement" ADD COLUMN IF NOT EXISTS "motif" text;
 ALTER TABLE public."avoir_mouvement" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."avoir_mouvement" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."avoir_mouvement" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."avoir_mouvement" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."avoir_mouvement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."avoir_mouvement" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."avoir_mouvement";
@@ -161,6 +172,8 @@ ALTER TABLE public."boite" ADD COLUMN IF NOT EXISTS "scannee_le" timestamp with 
 ALTER TABLE public."boite" ADD COLUMN IF NOT EXISTS "code_etiquette" text;
 ALTER TABLE public."boite" ADD COLUMN IF NOT EXISTS "reception_id" bigint;
 ALTER TABLE public."boite" ADD COLUMN IF NOT EXISTS "prix_achat_ht" numeric(12,2);
+ALTER TABLE public."boite" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."boite" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."boite" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."boite" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."boite";
@@ -187,6 +200,8 @@ ALTER TABLE public."boite_evenement" ADD COLUMN IF NOT EXISTS "utilisateur_id" b
 ALTER TABLE public."boite_evenement" ADD COLUMN IF NOT EXISTS "commentaire" text;
 ALTER TABLE public."boite_evenement" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."boite_evenement" ADD COLUMN IF NOT EXISTS "inventaire_id" bigint;
+ALTER TABLE public."boite_evenement" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."boite_evenement" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."boite_evenement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."boite_evenement" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."boite_evenement";
@@ -217,6 +232,8 @@ ALTER TABLE public."bordereau" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with
 ALTER TABLE public."bordereau" ADD COLUMN IF NOT EXISTS "cree_par" bigint;
 ALTER TABLE public."bordereau" ADD COLUMN IF NOT EXISTS "depose_le" timestamp with time zone;
 ALTER TABLE public."bordereau" ADD COLUMN IF NOT EXISTS "depose_par" bigint;
+ALTER TABLE public."bordereau" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."bordereau" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."bordereau" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."bordereau" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."bordereau";
@@ -247,6 +264,8 @@ ALTER TABLE public."bordereau_vente" ADD COLUMN IF NOT EXISTS "suite" text;
 ALTER TABLE public."bordereau_vente" ADD COLUMN IF NOT EXISTS "suite_le" timestamp with time zone;
 ALTER TABLE public."bordereau_vente" ADD COLUMN IF NOT EXISTS "suite_par" bigint;
 ALTER TABLE public."bordereau_vente" ADD COLUMN IF NOT EXISTS "credit_mouvement_id" bigint;
+ALTER TABLE public."bordereau_vente" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."bordereau_vente" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."bordereau_vente" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."bordereau_vente" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."bordereau_vente";
@@ -273,6 +292,8 @@ ALTER TABLE public."campagne_inventaire" ADD COLUMN IF NOT EXISTS "nombre_lots" 
 ALTER TABLE public."campagne_inventaire" ADD COLUMN IF NOT EXISTS "nombre_boites" integer;
 ALTER TABLE public."campagne_inventaire" ADD COLUMN IF NOT EXISTS "valeur_stock" numeric(14,2);
 ALTER TABLE public."campagne_inventaire" ADD COLUMN IF NOT EXISTS "commentaire" text;
+ALTER TABLE public."campagne_inventaire" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."campagne_inventaire" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."campagne_inventaire" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."campagne_inventaire" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."campagne_inventaire";
@@ -297,6 +318,8 @@ ALTER TABLE public."campagne_inventaire_ligne" ADD COLUMN IF NOT EXISTS "rayon" 
 ALTER TABLE public."campagne_inventaire_ligne" ADD COLUMN IF NOT EXISTS "quantite" integer;
 ALTER TABLE public."campagne_inventaire_ligne" ADD COLUMN IF NOT EXISTS "prix_achat_ht" numeric(12,2);
 ALTER TABLE public."campagne_inventaire_ligne" ADD COLUMN IF NOT EXISTS "valeur" numeric(14,2);
+ALTER TABLE public."campagne_inventaire_ligne" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."campagne_inventaire_ligne" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."campagne_inventaire_ligne" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."campagne_inventaire_ligne" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."campagne_inventaire_ligne";
@@ -322,6 +345,8 @@ ALTER TABLE public."catalogue_grossiste" ADD COLUMN IF NOT EXISTS "quantite_disp
 ALTER TABLE public."catalogue_grossiste" ADD COLUMN IF NOT EXISTS "delai_jours" integer;
 ALTER TABLE public."catalogue_grossiste" ADD COLUMN IF NOT EXISTS "import_id" bigint;
 ALTER TABLE public."catalogue_grossiste" ADD COLUMN IF NOT EXISTS "maj_le" timestamp with time zone;
+ALTER TABLE public."catalogue_grossiste" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."catalogue_grossiste" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."catalogue_grossiste" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."catalogue_grossiste" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."catalogue_grossiste";
@@ -347,6 +372,8 @@ ALTER TABLE public."client_facture" ADD COLUMN IF NOT EXISTS "article_imposition
 ALTER TABLE public."client_facture" ADD COLUMN IF NOT EXISTS "actif" boolean;
 ALTER TABLE public."client_facture" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."client_facture" ADD COLUMN IF NOT EXISTS "delai_paiement_jours" integer;
+ALTER TABLE public."client_facture" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."client_facture" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."client_facture" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."client_facture" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."client_facture";
@@ -375,6 +402,8 @@ ALTER TABLE public."cloture_fiscale" ADD COLUMN IF NOT EXISTS "montant_tva" nume
 ALTER TABLE public."cloture_fiscale" ADD COLUMN IF NOT EXISTS "fichier_archive" text;
 ALTER TABLE public."cloture_fiscale" ADD COLUMN IF NOT EXISTS "empreinte_archive" bytea;
 ALTER TABLE public."cloture_fiscale" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."cloture_fiscale" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."cloture_fiscale" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."cloture_fiscale" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."cloture_fiscale" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."cloture_fiscale";
@@ -399,6 +428,8 @@ ALTER TABLE public."commande_fournisseur" ADD COLUMN IF NOT EXISTS "montant_tota
 ALTER TABLE public."commande_fournisseur" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."commande_fournisseur" ADD COLUMN IF NOT EXISTS "envoyee_email_le" timestamp with time zone;
 ALTER TABLE public."commande_fournisseur" ADD COLUMN IF NOT EXISTS "envoyee_email_a" text;
+ALTER TABLE public."commande_fournisseur" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."commande_fournisseur" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."commande_fournisseur" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."commande_fournisseur" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."commande_fournisseur";
@@ -418,6 +449,8 @@ CREATE TABLE IF NOT EXISTS public."comptage_caisse" (
 );
 ALTER TABLE public."comptage_caisse" ADD COLUMN IF NOT EXISTS "nombre" integer;
 ALTER TABLE public."comptage_caisse" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
+ALTER TABLE public."comptage_caisse" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."comptage_caisse" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."comptage_caisse" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."comptage_caisse" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."comptage_caisse";
@@ -441,6 +474,8 @@ ALTER TABLE public."comptage_intermediaire" ADD COLUMN IF NOT EXISTS "attendu" n
 ALTER TABLE public."comptage_intermediaire" ADD COLUMN IF NOT EXISTS "ecart" numeric(12,2);
 ALTER TABLE public."comptage_intermediaire" ADD COLUMN IF NOT EXISTS "comptage" jsonb;
 ALTER TABLE public."comptage_intermediaire" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."comptage_intermediaire" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."comptage_intermediaire" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."comptage_intermediaire" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."comptage_intermediaire" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."comptage_intermediaire";
@@ -472,6 +507,8 @@ ALTER TABLE public."comptage_reception" ADD COLUMN IF NOT EXISTS "valeur_manquan
 ALTER TABLE public."comptage_reception" ADD COLUMN IF NOT EXISTS "decide_par" bigint;
 ALTER TABLE public."comptage_reception" ADD COLUMN IF NOT EXISTS "decide_le" timestamp with time zone;
 ALTER TABLE public."comptage_reception" ADD COLUMN IF NOT EXISTS "reception_id" bigint;
+ALTER TABLE public."comptage_reception" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."comptage_reception" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."comptage_reception" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."comptage_reception" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."comptage_reception";
@@ -496,6 +533,8 @@ ALTER TABLE public."comptage_reception_ligne" ADD COLUMN IF NOT EXISTS "gtin" te
 ALTER TABLE public."comptage_reception_ligne" ADD COLUMN IF NOT EXISTS "quantite" integer;
 ALTER TABLE public."comptage_reception_ligne" ADD COLUMN IF NOT EXISTS "numeros_serie" text[];
 ALTER TABLE public."comptage_reception_ligne" ADD COLUMN IF NOT EXISTS "scans_mobile" bigint[];
+ALTER TABLE public."comptage_reception_ligne" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."comptage_reception_ligne" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."comptage_reception_ligne" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."comptage_reception_ligne" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."comptage_reception_ligne";
@@ -515,6 +554,8 @@ CREATE TABLE IF NOT EXISTS public."compte_carte_periode" (
 ALTER TABLE public."compte_carte_periode" ADD COLUMN IF NOT EXISTS "compte_id" bigint;
 ALTER TABLE public."compte_carte_periode" ADD COLUMN IF NOT EXISTS "du" date;
 ALTER TABLE public."compte_carte_periode" ADD COLUMN IF NOT EXISTS "au" date;
+ALTER TABLE public."compte_carte_periode" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."compte_carte_periode" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."compte_carte_periode" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."compte_carte_periode" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."compte_carte_periode";
@@ -540,6 +581,8 @@ ALTER TABLE public."compte_tresorerie" ADD COLUMN IF NOT EXISTS "solde_initial" 
 ALTER TABLE public."compte_tresorerie" ADD COLUMN IF NOT EXISTS "date_initiale" date;
 ALTER TABLE public."compte_tresorerie" ADD COLUMN IF NOT EXISTS "actif" boolean;
 ALTER TABLE public."compte_tresorerie" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."compte_tresorerie" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."compte_tresorerie" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."compte_tresorerie" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."compte_tresorerie" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."compte_tresorerie";
@@ -560,6 +603,8 @@ ALTER TABLE public."connexion_employe" ADD COLUMN IF NOT EXISTS "utilisateur_id"
 ALTER TABLE public."connexion_employe" ADD COLUMN IF NOT EXISTS "poste" text;
 ALTER TABLE public."connexion_employe" ADD COLUMN IF NOT EXISTS "methode" text;
 ALTER TABLE public."connexion_employe" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."connexion_employe" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."connexion_employe" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."connexion_employe" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."connexion_employe" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."connexion_employe";
@@ -584,6 +629,8 @@ ALTER TABLE public."correction_lot" ADD COLUMN IF NOT EXISTS "motif" text;
 ALTER TABLE public."correction_lot" ADD COLUMN IF NOT EXISTS "mouvement_id" bigint;
 ALTER TABLE public."correction_lot" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."correction_lot" ADD COLUMN IF NOT EXISTS "corrige_le" timestamp with time zone;
+ALTER TABLE public."correction_lot" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."correction_lot" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."correction_lot" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."correction_lot" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."correction_lot";
@@ -611,6 +658,8 @@ ALTER TABLE public."correspondance_echeancier" ADD COLUMN IF NOT EXISTS "lignes_
 ALTER TABLE public."correspondance_echeancier" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."correspondance_echeancier" ADD COLUMN IF NOT EXISTS "modifie_le" timestamp with time zone;
 ALTER TABLE public."correspondance_echeancier" ADD COLUMN IF NOT EXISTS "col_assurance" integer;
+ALTER TABLE public."correspondance_echeancier" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."correspondance_echeancier" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."correspondance_echeancier" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."correspondance_echeancier" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."correspondance_echeancier";
@@ -638,6 +687,8 @@ ALTER TABLE public."correspondance_echeancier_preteur" ADD COLUMN IF NOT EXISTS 
 ALTER TABLE public."correspondance_echeancier_preteur" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."correspondance_echeancier_preteur" ADD COLUMN IF NOT EXISTS "modifie_le" timestamp with time zone;
 ALTER TABLE public."correspondance_echeancier_preteur" ADD COLUMN IF NOT EXISTS "col_assurance" integer;
+ALTER TABLE public."correspondance_echeancier_preteur" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."correspondance_echeancier_preteur" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."correspondance_echeancier_preteur" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."correspondance_echeancier_preteur" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."correspondance_echeancier_preteur";
@@ -658,6 +709,8 @@ ALTER TABLE public."credit_imputation" ADD COLUMN IF NOT EXISTS "credit_mouvemen
 ALTER TABLE public."credit_imputation" ADD COLUMN IF NOT EXISTS "vente_id" bigint;
 ALTER TABLE public."credit_imputation" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
 ALTER TABLE public."credit_imputation" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."credit_imputation" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."credit_imputation" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."credit_imputation" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."credit_imputation" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."credit_imputation";
@@ -683,6 +736,8 @@ ALTER TABLE public."credit_mouvement" ADD COLUMN IF NOT EXISTS "utilisateur_id" 
 ALTER TABLE public."credit_mouvement" ADD COLUMN IF NOT EXISTS "poste" text;
 ALTER TABLE public."credit_mouvement" ADD COLUMN IF NOT EXISTS "reference" text;
 ALTER TABLE public."credit_mouvement" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."credit_mouvement" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."credit_mouvement" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."credit_mouvement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."credit_mouvement" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."credit_mouvement";
@@ -700,6 +755,8 @@ CREATE TABLE IF NOT EXISTS public."credit_ouverture" (
     PRIMARY KEY (officine_id, "patient_id")
 );
 ALTER TABLE public."credit_ouverture" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
+ALTER TABLE public."credit_ouverture" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."credit_ouverture" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."credit_ouverture" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."credit_ouverture" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."credit_ouverture";
@@ -727,6 +784,8 @@ ALTER TABLE public."demande_patient" ADD COLUMN IF NOT EXISTS "prevenu_par" bigi
 ALTER TABLE public."demande_patient" ADD COLUMN IF NOT EXISTS "prevenu_canal" text;
 ALTER TABLE public."demande_patient" ADD COLUMN IF NOT EXISTS "cloture_le" timestamp with time zone;
 ALTER TABLE public."demande_patient" ADD COLUMN IF NOT EXISTS "cloture_par" bigint;
+ALTER TABLE public."demande_patient" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."demande_patient" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."demande_patient" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."demande_patient" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."demande_patient";
@@ -745,6 +804,8 @@ CREATE TABLE IF NOT EXISTS public."ecart_caisse_vu" (
 );
 ALTER TABLE public."ecart_caisse_vu" ADD COLUMN IF NOT EXISTS "vu_le" timestamp with time zone;
 ALTER TABLE public."ecart_caisse_vu" ADD COLUMN IF NOT EXISTS "vu_par" bigint;
+ALTER TABLE public."ecart_caisse_vu" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."ecart_caisse_vu" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."ecart_caisse_vu" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."ecart_caisse_vu" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."ecart_caisse_vu";
@@ -771,6 +832,8 @@ ALTER TABLE public."echeance_pret" ADD COLUMN IF NOT EXISTS "marge" numeric(12,2
 ALTER TABLE public."echeance_pret" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
 ALTER TABLE public."echeance_pret" ADD COLUMN IF NOT EXISTS "capital_restant" numeric(12,2);
 ALTER TABLE public."echeance_pret" ADD COLUMN IF NOT EXISTS "assurance" numeric(12,2);
+ALTER TABLE public."echeance_pret" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."echeance_pret" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."echeance_pret" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."echeance_pret" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."echeance_pret";
@@ -795,6 +858,8 @@ ALTER TABLE public."emplacement" ADD COLUMN IF NOT EXISTS "libelle" text;
 ALTER TABLE public."emplacement" ADD COLUMN IF NOT EXISTS "zone" text;
 ALTER TABLE public."emplacement" ADD COLUMN IF NOT EXISTS "actif" boolean;
 ALTER TABLE public."emplacement" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."emplacement" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."emplacement" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."emplacement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."emplacement" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."emplacement";
@@ -821,6 +886,8 @@ ALTER TABLE public."evenement_caisse" ADD COLUMN IF NOT EXISTS "quantite" intege
 ALTER TABLE public."evenement_caisse" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
 ALTER TABLE public."evenement_caisse" ADD COLUMN IF NOT EXISTS "detail" text;
 ALTER TABLE public."evenement_caisse" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."evenement_caisse" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."evenement_caisse" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."evenement_caisse" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."evenement_caisse" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."evenement_caisse";
@@ -864,6 +931,8 @@ ALTER TABLE public."facture_client" ADD COLUMN IF NOT EXISTS "utilisateur_id" bi
 ALTER TABLE public."facture_client" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."facture_client" ADD COLUMN IF NOT EXISTS "date_echeance" date;
 ALTER TABLE public."facture_client" ADD COLUMN IF NOT EXISTS "part_credit" numeric(12,2);
+ALTER TABLE public."facture_client" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."facture_client" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."facture_client" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."facture_client" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."facture_client";
@@ -890,6 +959,8 @@ ALTER TABLE public."facture_client_ligne" ADD COLUMN IF NOT EXISTS "quantite" nu
 ALTER TABLE public."facture_client_ligne" ADD COLUMN IF NOT EXISTS "prix_unitaire_ttc" numeric(12,2);
 ALTER TABLE public."facture_client_ligne" ADD COLUMN IF NOT EXISTS "taux_tva" numeric(5,2);
 ALTER TABLE public."facture_client_ligne" ADD COLUMN IF NOT EXISTS "montant_ttc" numeric(12,2);
+ALTER TABLE public."facture_client_ligne" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."facture_client_ligne" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."facture_client_ligne" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."facture_client_ligne" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."facture_client_ligne";
@@ -910,6 +981,8 @@ CREATE TABLE IF NOT EXISTS public."facture_client_version" (
 ALTER TABLE public."facture_client_version" ADD COLUMN IF NOT EXISTS "motif" text;
 ALTER TABLE public."facture_client_version" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."facture_client_version" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."facture_client_version" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."facture_client_version" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."facture_client_version" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."facture_client_version" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."facture_client_version";
@@ -936,6 +1009,8 @@ ALTER TABLE public."forcage_alerte_psychotrope" ADD COLUMN IF NOT EXISTS "medeci
 ALTER TABLE public."forcage_alerte_psychotrope" ADD COLUMN IF NOT EXISTS "numero_ordonnance" text;
 ALTER TABLE public."forcage_alerte_psychotrope" ADD COLUMN IF NOT EXISTS "produits" bigint[];
 ALTER TABLE public."forcage_alerte_psychotrope" ADD COLUMN IF NOT EXISTS "poste" text;
+ALTER TABLE public."forcage_alerte_psychotrope" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."forcage_alerte_psychotrope" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."forcage_alerte_psychotrope" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."forcage_alerte_psychotrope" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."forcage_alerte_psychotrope";
@@ -963,6 +1038,8 @@ ALTER TABLE public."fournisseur" ADD COLUMN IF NOT EXISTS "jours_rouge" integer;
 ALTER TABLE public."fournisseur" ADD COLUMN IF NOT EXISTS "delai_reprise_jours" integer;
 ALTER TABLE public."fournisseur" ADD COLUMN IF NOT EXISTS "email" text;
 ALTER TABLE public."fournisseur" ADD COLUMN IF NOT EXISTS "actif" boolean;
+ALTER TABLE public."fournisseur" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."fournisseur" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."fournisseur" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."fournisseur" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."fournisseur";
@@ -986,6 +1063,8 @@ ALTER TABLE public."fournisseur_mouvement" ADD COLUMN IF NOT EXISTS "solde_apres
 ALTER TABLE public."fournisseur_mouvement" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."fournisseur_mouvement" ADD COLUMN IF NOT EXISTS "reference" text;
 ALTER TABLE public."fournisseur_mouvement" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."fournisseur_mouvement" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."fournisseur_mouvement" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."fournisseur_mouvement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."fournisseur_mouvement" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."fournisseur_mouvement";
@@ -1010,6 +1089,8 @@ ALTER TABLE public."inventaire" ADD COLUMN IF NOT EXISTS "termine_le" timestamp 
 ALTER TABLE public."inventaire" ADD COLUMN IF NOT EXISTS "termine_par" bigint;
 ALTER TABLE public."inventaire" ADD COLUMN IF NOT EXISTS "campagne_id" bigint;
 ALTER TABLE public."inventaire" ADD COLUMN IF NOT EXISTS "produit_id" bigint;
+ALTER TABLE public."inventaire" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."inventaire" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."inventaire" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."inventaire" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."inventaire";
@@ -1033,6 +1114,8 @@ ALTER TABLE public."journal_audit" ADD COLUMN IF NOT EXISTS "enregistrement_id" 
 ALTER TABLE public."journal_audit" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."journal_audit" ADD COLUMN IF NOT EXISTS "permission_code" text;
 ALTER TABLE public."journal_audit" ADD COLUMN IF NOT EXISTS "autorise_par" bigint;
+ALTER TABLE public."journal_audit" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."journal_audit" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."journal_audit" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."journal_audit" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."journal_audit";
@@ -1075,6 +1158,8 @@ ALTER TABLE public."journal_registre_psychotrope" ADD COLUMN IF NOT EXISTS "rang
 ALTER TABLE public."journal_registre_psychotrope" ADD COLUMN IF NOT EXISTS "hash" bytea;
 ALTER TABLE public."journal_registre_psychotrope" ADD COLUMN IF NOT EXISTS "hash_precedent" bytea;
 ALTER TABLE public."journal_registre_psychotrope" ADD COLUMN IF NOT EXISTS "porteur_code" text;
+ALTER TABLE public."journal_registre_psychotrope" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."journal_registre_psychotrope" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."journal_registre_psychotrope" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."journal_registre_psychotrope" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."journal_registre_psychotrope";
@@ -1099,6 +1184,8 @@ ALTER TABLE public."journal_sauvegarde" ADD COLUMN IF NOT EXISTS "fichier" text;
 ALTER TABLE public."journal_sauvegarde" ADD COLUMN IF NOT EXISTS "taille_octets" bigint;
 ALTER TABLE public."journal_sauvegarde" ADD COLUMN IF NOT EXISTS "message" text;
 ALTER TABLE public."journal_sauvegarde" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
+ALTER TABLE public."journal_sauvegarde" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."journal_sauvegarde" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."journal_sauvegarde" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."journal_sauvegarde" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."journal_sauvegarde";
@@ -1141,6 +1228,8 @@ ALTER TABLE public."journal_vente" ADD COLUMN IF NOT EXISTS "cle_chaine" text;
 ALTER TABLE public."journal_vente" ADD COLUMN IF NOT EXISTS "rang" bigint;
 ALTER TABLE public."journal_vente" ADD COLUMN IF NOT EXISTS "hash" bytea;
 ALTER TABLE public."journal_vente" ADD COLUMN IF NOT EXISTS "hash_precedent" bytea;
+ALTER TABLE public."journal_vente" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."journal_vente" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."journal_vente" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."journal_vente" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."journal_vente";
@@ -1162,6 +1251,8 @@ ALTER TABLE public."ligne_commande" ADD COLUMN IF NOT EXISTS "produit_id" bigint
 ALTER TABLE public."ligne_commande" ADD COLUMN IF NOT EXISTS "qte_commandee" integer;
 ALTER TABLE public."ligne_commande" ADD COLUMN IF NOT EXISTS "qte_recue" integer;
 ALTER TABLE public."ligne_commande" ADD COLUMN IF NOT EXISTS "prix_achat_ht" numeric(12,2);
+ALTER TABLE public."ligne_commande" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."ligne_commande" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."ligne_commande" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."ligne_commande" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."ligne_commande";
@@ -1190,6 +1281,8 @@ ALTER TABLE public."ligne_inventaire" ADD COLUMN IF NOT EXISTS "valeur_ecart" nu
 ALTER TABLE public."ligne_inventaire" ADD COLUMN IF NOT EXISTS "statut" text;
 ALTER TABLE public."ligne_inventaire" ADD COLUMN IF NOT EXISTS "decide_par" bigint;
 ALTER TABLE public."ligne_inventaire" ADD COLUMN IF NOT EXISTS "decide_le" timestamp with time zone;
+ALTER TABLE public."ligne_inventaire" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."ligne_inventaire" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."ligne_inventaire" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."ligne_inventaire" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."ligne_inventaire";
@@ -1209,6 +1302,8 @@ CREATE TABLE IF NOT EXISTS public."ligne_retour_fournisseur" (
 ALTER TABLE public."ligne_retour_fournisseur" ADD COLUMN IF NOT EXISTS "retour_id" bigint;
 ALTER TABLE public."ligne_retour_fournisseur" ADD COLUMN IF NOT EXISTS "lot_id" bigint;
 ALTER TABLE public."ligne_retour_fournisseur" ADD COLUMN IF NOT EXISTS "quantite" integer;
+ALTER TABLE public."ligne_retour_fournisseur" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."ligne_retour_fournisseur" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."ligne_retour_fournisseur" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."ligne_retour_fournisseur" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."ligne_retour_fournisseur";
@@ -1245,6 +1340,8 @@ ALTER TABLE public."ligne_vente" ADD COLUMN IF NOT EXISTS "choix_prix_chifa" tex
 ALTER TABLE public."ligne_vente" ADD COLUMN IF NOT EXISTS "type_prestation_id" bigint;
 ALTER TABLE public."ligne_vente" ADD COLUMN IF NOT EXISTS "libelle" text;
 ALTER TABLE public."ligne_vente" ADD COLUMN IF NOT EXISTS "taux_tva" numeric(5,2);
+ALTER TABLE public."ligne_vente" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."ligne_vente" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."ligne_vente" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."ligne_vente" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."ligne_vente";
@@ -1275,6 +1372,8 @@ ALTER TABLE public."lot" ADD COLUMN IF NOT EXISTS "motif_blocage" text;
 ALTER TABLE public."lot" ADD COLUMN IF NOT EXISTS "date_a_verifier" boolean;
 ALTER TABLE public."lot" ADD COLUMN IF NOT EXISTS "ppa" numeric(12,2);
 ALTER TABLE public."lot" ADD COLUMN IF NOT EXISTS "shp" numeric(10,2);
+ALTER TABLE public."lot" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."lot" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."lot" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."lot" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."lot";
@@ -1294,6 +1393,8 @@ CREATE TABLE IF NOT EXISTS public."medecin" (
 ALTER TABLE public."medecin" ADD COLUMN IF NOT EXISTS "nom" text;
 ALTER TABLE public."medecin" ADD COLUMN IF NOT EXISTS "specialite" text;
 ALTER TABLE public."medecin" ADD COLUMN IF NOT EXISTS "wilaya" text;
+ALTER TABLE public."medecin" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."medecin" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."medecin" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."medecin" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."medecin";
@@ -1320,6 +1421,8 @@ ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "cree_le" timestamp
 ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "modifie_le" timestamp with time zone;
 ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "effet" text;
 ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS "detail" text;
+ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."motif_reglable" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."motif_reglable" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."motif_reglable" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."motif_reglable";
@@ -1344,6 +1447,8 @@ ALTER TABLE public."mouvement_stock" ADD COLUMN IF NOT EXISTS "utilisateur_id" b
 ALTER TABLE public."mouvement_stock" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."mouvement_stock" ADD COLUMN IF NOT EXISTS "reception_id" bigint;
 ALTER TABLE public."mouvement_stock" ADD COLUMN IF NOT EXISTS "prix_achat_ht" numeric(12,2);
+ALTER TABLE public."mouvement_stock" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."mouvement_stock" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."mouvement_stock" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."mouvement_stock" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."mouvement_stock";
@@ -1384,6 +1489,8 @@ ALTER TABLE public."mouvement_tiroir" ADD COLUMN IF NOT EXISTS "corrige_id" bigi
 ALTER TABLE public."mouvement_tiroir" ADD COLUMN IF NOT EXISTS "motif_correction" text;
 ALTER TABLE public."mouvement_tiroir" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."mouvement_tiroir" ADD COLUMN IF NOT EXISTS "regularisation_id" bigint;
+ALTER TABLE public."mouvement_tiroir" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."mouvement_tiroir" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."mouvement_tiroir" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."mouvement_tiroir" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."mouvement_tiroir";
@@ -1416,6 +1523,8 @@ ALTER TABLE public."mouvement_tresorerie" ADD COLUMN IF NOT EXISTS "automatique"
 ALTER TABLE public."mouvement_tresorerie" ADD COLUMN IF NOT EXISTS "transfert_de" bigint;
 ALTER TABLE public."mouvement_tresorerie" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."mouvement_tresorerie" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."mouvement_tresorerie" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."mouvement_tresorerie" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."mouvement_tresorerie" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."mouvement_tresorerie" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."mouvement_tresorerie";
@@ -1440,6 +1549,8 @@ ALTER TABLE public."paiement" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."paiement" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."paiement" ADD COLUMN IF NOT EXISTS "session_caisse_id" bigint;
 ALTER TABLE public."paiement" ADD COLUMN IF NOT EXISTS "numero_recu" text;
+ALTER TABLE public."paiement" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."paiement" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."paiement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."paiement" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."paiement";
@@ -1467,6 +1578,8 @@ ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "mouvement_
 ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "mouvement_charges_id" bigint;
 ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."paiement_echeance_pret" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."paiement_echeance_pret" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."paiement_echeance_pret";
@@ -1492,6 +1605,8 @@ ALTER TABLE public."paiement_effet" ADD COLUMN IF NOT EXISTS "part_tiroir" numer
 ALTER TABLE public."paiement_effet" ADD COLUMN IF NOT EXISTS "versement_id" bigint;
 ALTER TABLE public."paiement_effet" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."paiement_effet" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."paiement_effet" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."paiement_effet" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."paiement_effet" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."paiement_effet" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."paiement_effet";
@@ -1519,6 +1634,8 @@ ALTER TABLE public."parametre_alerte" ADD COLUMN IF NOT EXISTS "jours_dormant" i
 ALTER TABLE public."parametre_alerte" ADD COLUMN IF NOT EXISTS "jours_surstock" integer;
 ALTER TABLE public."parametre_alerte" ADD COLUMN IF NOT EXISTS "seuil_lot_delaisse" integer;
 ALTER TABLE public."parametre_alerte" ADD COLUMN IF NOT EXISTS "seuil_lot_delaisse_collectif" integer;
+ALTER TABLE public."parametre_alerte" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_alerte" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_alerte" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_alerte" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_alerte";
@@ -1551,6 +1668,8 @@ ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "jours_alerte_fin
 ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "chifa_delai_depot_jours" integer;
 ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "chifa_delai_paiement_jours" integer;
 ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "reprise_exiger_produits_historique" boolean;
+ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_caisse" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_caisse" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_caisse";
@@ -1571,6 +1690,8 @@ ALTER TABLE public."parametre_fiscal" ADD COLUMN IF NOT EXISTS "conservation_ann
 ALTER TABLE public."parametre_fiscal" ADD COLUMN IF NOT EXISTS "format_export_dgi" text;
 ALTER TABLE public."parametre_fiscal" ADD COLUMN IF NOT EXISTS "separateur_csv" text;
 ALTER TABLE public."parametre_fiscal" ADD COLUMN IF NOT EXISTS "fuseau" text;
+ALTER TABLE public."parametre_fiscal" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_fiscal" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_fiscal" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_fiscal" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_fiscal";
@@ -1590,6 +1711,8 @@ CREATE TABLE IF NOT EXISTS public."parametre_formulaire_sms" (
 ALTER TABLE public."parametre_formulaire_sms" ADD COLUMN IF NOT EXISTS "texte" text;
 ALTER TABLE public."parametre_formulaire_sms" ADD COLUMN IF NOT EXISTS "modifie_le" timestamp with time zone;
 ALTER TABLE public."parametre_formulaire_sms" ADD COLUMN IF NOT EXISTS "modifie_par" bigint;
+ALTER TABLE public."parametre_formulaire_sms" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_formulaire_sms" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_formulaire_sms" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_formulaire_sms" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_formulaire_sms";
@@ -1608,6 +1731,8 @@ CREATE TABLE IF NOT EXISTS public."parametre_inventaire" (
 );
 ALTER TABLE public."parametre_inventaire" ADD COLUMN IF NOT EXISTS "seuil_boites" integer;
 ALTER TABLE public."parametre_inventaire" ADD COLUMN IF NOT EXISTS "seuil_montant" numeric(12,2);
+ALTER TABLE public."parametre_inventaire" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_inventaire" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_inventaire" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_inventaire" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_inventaire";
@@ -1635,6 +1760,8 @@ ALTER TABLE public."parametre_notification" ADD COLUMN IF NOT EXISTS "sms_seuil_
 ALTER TABLE public."parametre_notification" ADD COLUMN IF NOT EXISTS "sms_lot_bloque" boolean;
 ALTER TABLE public."parametre_notification" ADD COLUMN IF NOT EXISTS "sms_sauvegarde" boolean;
 ALTER TABLE public."parametre_notification" ADD COLUMN IF NOT EXISTS "signaler_sans_destinataire" boolean;
+ALTER TABLE public."parametre_notification" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_notification" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_notification" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_notification" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_notification";
@@ -1654,6 +1781,8 @@ CREATE TABLE IF NOT EXISTS public."parametre_rapport" (
 ALTER TABLE public."parametre_rapport" ADD COLUMN IF NOT EXISTS "tva_reversee_perime" boolean;
 ALTER TABLE public."parametre_rapport" ADD COLUMN IF NOT EXISTS "tva_reversee_casse" boolean;
 ALTER TABLE public."parametre_rapport" ADD COLUMN IF NOT EXISTS "tva_reversee_don" boolean;
+ALTER TABLE public."parametre_rapport" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_rapport" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_rapport" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_rapport" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_rapport";
@@ -1677,6 +1806,8 @@ ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "conservation
 ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "derniere_execution" date;
 ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "retention_ged_jours" integer;
 ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "nettoyage_ged_annees" integer;
+ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_sauvegarde" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_sauvegarde" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_sauvegarde";
@@ -1697,6 +1828,8 @@ ALTER TABLE public."parametre_serialisation" ADD COLUMN IF NOT EXISTS "actif" bo
 ALTER TABLE public."parametre_serialisation" ADD COLUMN IF NOT EXISTS "connecteur" text;
 ALTER TABLE public."parametre_serialisation" ADD COLUMN IF NOT EXISTS "factice_hors_ligne" boolean;
 ALTER TABLE public."parametre_serialisation" ADD COLUMN IF NOT EXISTS "modifie_le" timestamp with time zone;
+ALTER TABLE public."parametre_serialisation" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_serialisation" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_serialisation" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_serialisation" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_serialisation";
@@ -1716,6 +1849,8 @@ CREATE TABLE IF NOT EXISTS public."parametre_substitution" (
 ALTER TABLE public."parametre_substitution" ADD COLUMN IF NOT EXISTS "equivalent_exact_seulement" boolean;
 ALTER TABLE public."parametre_substitution" ADD COLUMN IF NOT EXISTS "modifie_le" timestamp with time zone;
 ALTER TABLE public."parametre_substitution" ADD COLUMN IF NOT EXISTS "modifie_par" bigint;
+ALTER TABLE public."parametre_substitution" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_substitution" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_substitution" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_substitution" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_substitution";
@@ -1755,6 +1890,8 @@ ALTER TABLE public."parametre_surveillance" ADD COLUMN IF NOT EXISTS "minutes_po
 ALTER TABLE public."parametre_surveillance" ADD COLUMN IF NOT EXISTS "seuil_changements_poste" integer;
 ALTER TABLE public."parametre_surveillance" ADD COLUMN IF NOT EXISTS "seuil_baisses_prix" integer;
 ALTER TABLE public."parametre_surveillance" ADD COLUMN IF NOT EXISTS "seuil_sorties_tiroir" integer;
+ALTER TABLE public."parametre_surveillance" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_surveillance" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_surveillance" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_surveillance" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_surveillance";
@@ -1773,6 +1910,8 @@ CREATE TABLE IF NOT EXISTS public."parametre_tracabilite" (
 );
 ALTER TABLE public."parametre_tracabilite" ADD COLUMN IF NOT EXISTS "boite_obligatoire" boolean;
 ALTER TABLE public."parametre_tracabilite" ADD COLUMN IF NOT EXISTS "patient_obligatoire" text;
+ALTER TABLE public."parametre_tracabilite" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."parametre_tracabilite" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_tracabilite" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."parametre_tracabilite" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_tracabilite";
@@ -1803,6 +1942,8 @@ ALTER TABLE public."patient" ADD COLUMN IF NOT EXISTS "consentement_sms" boolean
 ALTER TABLE public."patient" ADD COLUMN IF NOT EXISTS "consentement_sms_le" timestamp with time zone;
 ALTER TABLE public."patient" ADD COLUMN IF NOT EXISTS "formulaire_sms_recu" boolean;
 ALTER TABLE public."patient" ADD COLUMN IF NOT EXISTS "formulaire_sms_recu_le" timestamp with time zone;
+ALTER TABLE public."patient" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."patient" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."patient" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."patient" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."patient";
@@ -1829,6 +1970,8 @@ ALTER TABLE public."pharmacie" ADD COLUMN IF NOT EXISTS "langue_defaut" text;
 ALTER TABLE public."pharmacie" ADD COLUMN IF NOT EXISTS "rc" text;
 ALTER TABLE public."pharmacie" ADD COLUMN IF NOT EXISTS "nis" text;
 ALTER TABLE public."pharmacie" ADD COLUMN IF NOT EXISTS "article_imposition" text;
+ALTER TABLE public."pharmacie" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."pharmacie" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."pharmacie" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."pharmacie" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."pharmacie";
@@ -1856,6 +1999,8 @@ ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "cree_le" timestamp 
 ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "preteur" text;
 ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "taux" numeric(7,4);
 ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "duree_mois" integer;
+ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."pret_bancaire" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."pret_bancaire" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."pret_bancaire";
@@ -1905,6 +2050,8 @@ ALTER TABLE public."produit" ADD COLUMN IF NOT EXISTS "classe_confirmee_par" big
 ALTER TABLE public."produit" ADD COLUMN IF NOT EXISTS "classe_confirmee_le" timestamp with time zone;
 ALTER TABLE public."produit" ADD COLUMN IF NOT EXISTS "fabrication_locale" boolean;
 ALTER TABLE public."produit" ADD COLUMN IF NOT EXISTS "contenance" integer;
+ALTER TABLE public."produit" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."produit" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."produit" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."produit" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."produit";
@@ -1934,6 +2081,8 @@ ALTER TABLE public."reception" ADD COLUMN IF NOT EXISTS "montant_tva" numeric(12
 ALTER TABLE public."reception" ADD COLUMN IF NOT EXISTS "timbre" numeric(12,2);
 ALTER TABLE public."reception" ADD COLUMN IF NOT EXISTS "shp_total" numeric(12,2);
 ALTER TABLE public."reception" ADD COLUMN IF NOT EXISTS "date_facture" date;
+ALTER TABLE public."reception" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."reception" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."reception" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."reception" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."reception";
@@ -1963,6 +2112,8 @@ ALTER TABLE public."reception_ligne" ADD COLUMN IF NOT EXISTS "taux_tva" numeric
 ALTER TABLE public."reception_ligne" ADD COLUMN IF NOT EXISTS "ug" integer;
 ALTER TABLE public."reception_ligne" ADD COLUMN IF NOT EXISTS "ug_cout" text;
 ALTER TABLE public."reception_ligne" ADD COLUMN IF NOT EXISTS "prix_catalogue_remplace" boolean;
+ALTER TABLE public."reception_ligne" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."reception_ligne" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."reception_ligne" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."reception_ligne" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."reception_ligne";
@@ -1994,6 +2145,8 @@ ALTER TABLE public."registre_psychotrope" ADD COLUMN IF NOT EXISTS "reference" t
 ALTER TABLE public."registre_psychotrope" ADD COLUMN IF NOT EXISTS "numero_ordre" bigint;
 ALTER TABLE public."registre_psychotrope" ADD COLUMN IF NOT EXISTS "duree_traitement_jours" integer;
 ALTER TABLE public."registre_psychotrope" ADD COLUMN IF NOT EXISTS "porteur_code" text;
+ALTER TABLE public."registre_psychotrope" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."registre_psychotrope" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."registre_psychotrope" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."registre_psychotrope" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."registre_psychotrope";
@@ -2019,6 +2172,8 @@ ALTER TABLE public."regle_alerte_psychotrope" ADD COLUMN IF NOT EXISTS "ordre" s
 ALTER TABLE public."regle_alerte_psychotrope" ADD COLUMN IF NOT EXISTS "modifie_le" timestamp with time zone;
 ALTER TABLE public."regle_alerte_psychotrope" ADD COLUMN IF NOT EXISTS "modifie_par" bigint;
 ALTER TABLE public."regle_alerte_psychotrope" ADD COLUMN IF NOT EXISTS "unites_par_jour" integer;
+ALTER TABLE public."regle_alerte_psychotrope" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."regle_alerte_psychotrope" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."regle_alerte_psychotrope" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."regle_alerte_psychotrope" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."regle_alerte_psychotrope";
@@ -2037,6 +2192,8 @@ CREATE TABLE IF NOT EXISTS public."reglement_facture" (
     PRIMARY KEY (officine_id, "reglement_id", "reception_id")
 );
 ALTER TABLE public."reglement_facture" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
+ALTER TABLE public."reglement_facture" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."reglement_facture" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."reglement_facture" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."reglement_facture" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."reglement_facture";
@@ -2056,6 +2213,8 @@ CREATE TABLE IF NOT EXISTS public."reglement_facture_client" (
 );
 ALTER TABLE public."reglement_facture_client" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
 ALTER TABLE public."reglement_facture_client" ADD COLUMN IF NOT EXISTS "part_credit" numeric(12,2);
+ALTER TABLE public."reglement_facture_client" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."reglement_facture_client" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."reglement_facture_client" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."reglement_facture_client" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."reglement_facture_client";
@@ -2091,6 +2250,8 @@ ALTER TABLE public."reglement_fournisseur" ADD COLUMN IF NOT EXISTS "annule_le" 
 ALTER TABLE public."reglement_fournisseur" ADD COLUMN IF NOT EXISTS "annule_par" bigint;
 ALTER TABLE public."reglement_fournisseur" ADD COLUMN IF NOT EXISTS "motif_annulation" text;
 ALTER TABLE public."reglement_fournisseur" ADD COLUMN IF NOT EXISTS "annulation_valide_par" bigint;
+ALTER TABLE public."reglement_fournisseur" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."reglement_fournisseur" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."reglement_fournisseur" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."reglement_fournisseur" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."reglement_fournisseur";
@@ -2130,6 +2291,8 @@ ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "ann
 ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "annulation_trop_paye_impute" numeric(12,2);
 ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "annulation_rembourse" numeric(12,2);
 ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "annulation_mouvement_tiroir_id" bigint;
+ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."regularisation_part_organisme" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."regularisation_part_organisme" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."regularisation_part_organisme";
@@ -2154,6 +2317,8 @@ ALTER TABLE public."remboursement_titulaire" ADD COLUMN IF NOT EXISTS "libelle" 
 ALTER TABLE public."remboursement_titulaire" ADD COLUMN IF NOT EXISTS "reference" text;
 ALTER TABLE public."remboursement_titulaire" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."remboursement_titulaire" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."remboursement_titulaire" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."remboursement_titulaire" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."remboursement_titulaire" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."remboursement_titulaire" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."remboursement_titulaire";
@@ -2182,6 +2347,8 @@ ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "modifiee_par" 
 ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "modifiee_le" timestamp with time zone;
 ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "arretee_par" bigint;
 ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS "arretee_le" timestamp with time zone;
+ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."remise_automatique" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."remise_automatique" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."remise_automatique" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."remise_automatique";
@@ -2199,6 +2366,8 @@ CREATE TABLE IF NOT EXISTS public."remise_cheque_paiement" (
     sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
     PRIMARY KEY (officine_id, "remise_id", "paiement_id")
 );
+ALTER TABLE public."remise_cheque_paiement" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."remise_cheque_paiement" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."remise_cheque_paiement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."remise_cheque_paiement" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."remise_cheque_paiement";
@@ -2220,6 +2389,8 @@ ALTER TABLE public."remise_cheques" ADD COLUMN IF NOT EXISTS "date_remise" date;
 ALTER TABLE public."remise_cheques" ADD COLUMN IF NOT EXISTS "reference" text;
 ALTER TABLE public."remise_cheques" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."remise_cheques" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."remise_cheques" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."remise_cheques" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."remise_cheques" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."remise_cheques" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."remise_cheques";
@@ -2247,6 +2418,8 @@ ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "poste" text;
 ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "motif_code" text;
 ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "motif_texte" text;
+ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."retour_client" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."retour_client" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."retour_client";
@@ -2268,6 +2441,8 @@ ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "ligne_vente_i
 ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "quantite" integer;
 ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "destination" text;
 ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
+ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."retour_client_ligne" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."retour_client_ligne" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."retour_client_ligne";
@@ -2294,6 +2469,8 @@ ALTER TABLE public."retour_fournisseur" ADD COLUMN IF NOT EXISTS "utilisateur_id
 ALTER TABLE public."retour_fournisseur" ADD COLUMN IF NOT EXISTS "envoye_le" timestamp with time zone;
 ALTER TABLE public."retour_fournisseur" ADD COLUMN IF NOT EXISTS "avoir_recu_le" timestamp with time zone;
 ALTER TABLE public."retour_fournisseur" ADD COLUMN IF NOT EXISTS "montant_attendu" numeric(12,2);
+ALTER TABLE public."retour_fournisseur" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."retour_fournisseur" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."retour_fournisseur" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."retour_fournisseur" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."retour_fournisseur";
@@ -2314,6 +2491,8 @@ ALTER TABLE public."role" ADD COLUMN IF NOT EXISTS "code" text;
 ALTER TABLE public."role" ADD COLUMN IF NOT EXISTS "nom" text;
 ALTER TABLE public."role" ADD COLUMN IF NOT EXISTS "systeme" boolean;
 ALTER TABLE public."role" ADD COLUMN IF NOT EXISTS "remise_max_pct" numeric(5,2);
+ALTER TABLE public."role" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."role" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."role" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."role" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."role";
@@ -2331,6 +2510,8 @@ CREATE TABLE IF NOT EXISTS public."role_permission" (
     sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
     PRIMARY KEY (officine_id, "role_id", "permission_code")
 );
+ALTER TABLE public."role_permission" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."role_permission" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."role_permission" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."role_permission" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."role_permission";
@@ -2353,6 +2534,8 @@ ALTER TABLE public."rupture_grossiste" ADD COLUMN IF NOT EXISTS "debut" timestam
 ALTER TABLE public."rupture_grossiste" ADD COLUMN IF NOT EXISTS "import_debut_id" bigint;
 ALTER TABLE public."rupture_grossiste" ADD COLUMN IF NOT EXISTS "fin" timestamp with time zone;
 ALTER TABLE public."rupture_grossiste" ADD COLUMN IF NOT EXISTS "import_fin_id" bigint;
+ALTER TABLE public."rupture_grossiste" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."rupture_grossiste" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."rupture_grossiste" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."rupture_grossiste" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."rupture_grossiste";
@@ -2382,6 +2565,8 @@ ALTER TABLE public."sceau_integrite" ADD COLUMN IF NOT EXISTS "algorithme" text;
 ALTER TABLE public."sceau_integrite" ADD COLUMN IF NOT EXISTS "empreinte_cle" text;
 ALTER TABLE public."sceau_integrite" ADD COLUMN IF NOT EXISTS "sceau" bytea;
 ALTER TABLE public."sceau_integrite" ADD COLUMN IF NOT EXISTS "auteur_id" bigint;
+ALTER TABLE public."sceau_integrite" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."sceau_integrite" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."sceau_integrite" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."sceau_integrite" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."sceau_integrite";
@@ -2408,6 +2593,8 @@ ALTER TABLE public."session_caisse" ADD COLUMN IF NOT EXISTS "montant_attendu" n
 ALTER TABLE public."session_caisse" ADD COLUMN IF NOT EXISTS "montant_compte" numeric(12,2);
 ALTER TABLE public."session_caisse" ADD COLUMN IF NOT EXISTS "ecart" numeric(12,2);
 ALTER TABLE public."session_caisse" ADD COLUMN IF NOT EXISTS "releve_de" bigint;
+ALTER TABLE public."session_caisse" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."session_caisse" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."session_caisse" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."session_caisse" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."session_caisse";
@@ -2427,6 +2614,8 @@ CREATE TABLE IF NOT EXISTS public."substitution_liste_blanche" (
 );
 ALTER TABLE public."substitution_liste_blanche" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."substitution_liste_blanche" ADD COLUMN IF NOT EXISTS "cree_par" bigint;
+ALTER TABLE public."substitution_liste_blanche" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."substitution_liste_blanche" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."substitution_liste_blanche" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."substitution_liste_blanche" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."substitution_liste_blanche";
@@ -2454,6 +2643,8 @@ ALTER TABLE public."utilisateur" ADD COLUMN IF NOT EXISTS "doit_changer_mot_de_p
 ALTER TABLE public."utilisateur" ADD COLUMN IF NOT EXISTS "peut_donner" boolean;
 ALTER TABLE public."utilisateur" ADD COLUMN IF NOT EXISTS "remise_max_pct" numeric(5,2);
 ALTER TABLE public."utilisateur" ADD COLUMN IF NOT EXISTS "gere_remises_auto" boolean;
+ALTER TABLE public."utilisateur" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."utilisateur" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."utilisateur" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."utilisateur" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."utilisateur";
@@ -2482,6 +2673,8 @@ ALTER TABLE public."utilisation_financement" ADD COLUMN IF NOT EXISTS "reglement
 ALTER TABLE public."utilisation_financement" ADD COLUMN IF NOT EXISTS "paiement_effet_id" bigint;
 ALTER TABLE public."utilisation_financement" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."utilisation_financement" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."utilisation_financement" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."utilisation_financement" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."utilisation_financement" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."utilisation_financement" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."utilisation_financement";
@@ -2541,6 +2734,8 @@ ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "chifa_exclue_le" timestamp 
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "chifa_exclue_par" bigint;
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "chifa_exclusion_motif_code" text;
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "chifa_exclusion_texte" text;
+ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."vente" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."vente" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."vente";
@@ -2563,6 +2758,8 @@ ALTER TABLE public."vente_chifa_facture_conflit" ADD COLUMN IF NOT EXISTS "const
 ALTER TABLE public."vente_chifa_facture_conflit" ADD COLUMN IF NOT EXISTS "tranche_le" timestamp with time zone;
 ALTER TABLE public."vente_chifa_facture_conflit" ADD COLUMN IF NOT EXISTS "tranche_par" bigint;
 ALTER TABLE public."vente_chifa_facture_conflit" ADD COLUMN IF NOT EXISTS "valeur_retenue" text;
+ALTER TABLE public."vente_chifa_facture_conflit" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."vente_chifa_facture_conflit" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."vente_chifa_facture_conflit" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."vente_chifa_facture_conflit" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."vente_chifa_facture_conflit";
@@ -2590,6 +2787,8 @@ ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "motif" tex
 ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "attendu" text;
 ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "trouve" text;
 ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "declenchee_par" bigint;
+ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."verification_integrite" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."verification_integrite" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."verification_integrite";
@@ -2617,6 +2816,8 @@ ALTER TABLE public."verification_serialisation" ADD COLUMN IF NOT EXISTS "cree_l
 ALTER TABLE public."verification_serialisation" ADD COLUMN IF NOT EXISTS "prochain_essai_le" timestamp with time zone;
 ALTER TABLE public."verification_serialisation" ADD COLUMN IF NOT EXISTS "dernier_essai_le" timestamp with time zone;
 ALTER TABLE public."verification_serialisation" ADD COLUMN IF NOT EXISTS "traite_le" timestamp with time zone;
+ALTER TABLE public."verification_serialisation" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."verification_serialisation" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."verification_serialisation" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."verification_serialisation" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."verification_serialisation";
@@ -2636,6 +2837,8 @@ CREATE TABLE IF NOT EXISTS public."versement_bordereau" (
 ALTER TABLE public."versement_bordereau" ADD COLUMN IF NOT EXISTS "mouvement_id" bigint;
 ALTER TABLE public."versement_bordereau" ADD COLUMN IF NOT EXISTS "bordereau_id" bigint;
 ALTER TABLE public."versement_bordereau" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
+ALTER TABLE public."versement_bordereau" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."versement_bordereau" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."versement_bordereau" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."versement_bordereau" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."versement_bordereau";

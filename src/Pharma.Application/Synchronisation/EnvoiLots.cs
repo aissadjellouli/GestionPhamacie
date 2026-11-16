@@ -98,8 +98,9 @@ public sealed record ResultatEnvoi(int LotsAccuses, string? Arret, string? Erreu
 }
 
 /// <summary>Un passage d'envoi : constitue les lots en attente puis envoie, dans l'ordre, chaque lot non accusé.</summary>
+/// <param name="chargement">Chargement complet (lot S6) ; null : aucun (tests du lot S2).</param>
 public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync constitution, IFormatLotSync format, ICertificatSync certificat,
-    IClientServeurCentral client, VerrouSync verrou)
+    IClientServeurCentral client, VerrouSync verrou, ChargementCompletSync? chargement = null)
 {
     public const string ArretDesactivee = "Synchronisation désactivée.";
     public const string ArretSansAdresse = "Adresse du serveur central non réglée.";
@@ -128,6 +129,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         var accuses = 0;
         try
         {
+            // Chargement complet demandé : instantané puis annonce, AVANT de former les lots (lot S6)
+            if (chargement is not null) await chargement.PreparerAsync(p.Adresse, p.DernierAccuse, ct);
             await constitution.ConstituerAsync(10, ct);
             foreach (var lot in await depot.LotsNonAccusesAsync(maxLots, ct))
             {
@@ -136,6 +139,9 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
                 {
                     // Le serveur central n'a pas des lots déjà accusés ici (restauration du central) : renvoi des lots manquants
                     var manquants = await depot.LotsEntreAsync(lot.Epoque, a.DernierRecu + 1, lot.Numero - 1, ct);
+                    if (manquants.Count != lot.Numero - 1 - a.DernierRecu && chargement is not null && await chargement.DemanderPourLotsManquantsAsync(ct))
+                        return await ErreurAsync(accuses, $"Le serveur central n'a reçu que jusqu'au lot {a.DernierRecu} de l'époque {lot.Epoque} et les lots suivants ne sont plus disponibles ici : "
+                            + "rechargement complet de l'officine demandé (il part au prochain passage).", false, ct);
                     if (manquants.Count != lot.Numero - 1 - a.DernierRecu)
                         return await ErreurAsync(accuses, $"Le serveur central n'a reçu que jusqu'au lot {a.DernierRecu} de l'époque {lot.Epoque} et les lots suivants ne sont plus disponibles ici : "
                             + "reprise impossible automatiquement, prévenez l'éditeur (procédure « Synchronisation, lots manquants » de docs/mise-en-production.md).", true, ct);
@@ -159,12 +165,14 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
                         return await ErreurAsync(accuses, $"Lot {lot.Epoque}/{lot.Numero} refusé par le serveur central ({a.Statut}).", true, ct);
                 }
             }
+            if (chargement is not null) await chargement.TerminerSiAccuseAsync(p.Adresse, ct);
             if (cert.EcheanceUtc - maintenantUtc < RenouvelerAvant) await RenouvelerAsync(p.Adresse, ct);
             await depot.NoterEnvoiAsync(p.LotsAutresEpoques > 0
                 ? $"{p.LotsAutresEpoques} lot(s) d'une époque précédente jamais accusé(s) : à examiner (non renvoyés automatiquement)." : null, ct);
             return new(accuses, null, null);
         }
         catch (LotIncoherentException e) { return await ErreurAsync(accuses, e.Message, true, ct); }
+        catch (ChargementReporteException e) { return await ErreurAsync(accuses, e.Message, false, ct); }
         catch (ServeurCentralException e) { return await ErreurAsync(accuses, e.Message, e.Definitif, ct); }
         catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -209,7 +217,9 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
 }
 
 /// <summary>Activation de ce serveur : code à usage unique (24 h) -> certificat client de 3 ans ; inscrit l'officine.</summary>
-public sealed class ActiverSync(IEnvoiSyncDepot depot, ICertificatSync certificat, IClientServeurCentral client, IJournal journal, VerrouSync verrou)
+/// <param name="chargements">Lot S6 : première activation = chargement complet demandé (null : aucun).</param>
+public sealed class ActiverSync(IEnvoiSyncDepot depot, ICertificatSync certificat, IClientServeurCentral client, IJournal journal, VerrouSync verrou,
+    IChargementSyncDepot? chargements = null)
 {
     public async Task<CertificatSyncInfo> ExecuterAsync(string code, long utilisateurId, CancellationToken ct = default)
     {
@@ -232,6 +242,7 @@ public sealed class ActiverSync(IEnvoiSyncDepot depot, ICertificatSync certifica
         if (r.OfficineId != officine) throw new RegleMetierException("Le serveur central a répondu pour une autre officine : activation abandonnée.");
         certificat.Installer(r.CertificatPem, r.AutoritePem, r.Epinglage);
         await depot.EnregistrerInscriptionAsync(officine, ct);
+        if (p.InscriteLe is null && chargements is not null) await chargements.DemanderAsync(MotifsChargement.Activation, utilisateurId, ct);
         await journal.EcrireAsync(utilisateurId, "synchronisation_activee", "sync_parametre", 1,
             new Dictionary<string, object?> { ["serveur"] = r.Serveur, ["echeance"] = r.EcheanceUtc.ToString("yyyy-MM-dd") }, null, ct);
         return certificat.Lire() ?? throw new InvalidOperationException("Certificat installé illisible.");
@@ -241,7 +252,9 @@ public sealed class ActiverSync(IEnvoiSyncDepot depot, ICertificatSync certifica
 /// <summary>Réglages de l'écran Admin › Synchronisation.</summary>
 public sealed record ReglagesSync(bool Active, string? Adresse, string TextesLibres, bool EnvoyerMedecins);
 
-public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal)
+/// <param name="chargements">Lot S6 : réactivation d'une officine inscrite = chargement complet (les modifications faites
+/// pendant la désactivation n'ont pas été inscrites) ; null : aucun.</param>
+public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal, IChargementSyncDepot? chargements = null)
 {
     public static readonly IReadOnlySet<string> ModesTextes = new HashSet<string>(StringComparer.Ordinal) { "filtres", "retires" };
 
@@ -256,6 +269,8 @@ public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal)
         var avant = await depot.ParametresAsync(ct);
         var adresse = string.IsNullOrWhiteSpace(r.Adresse) ? null : r.Adresse.Trim().TrimEnd('/');
         await depot.ReglerAsync(adresse, r.TextesLibres, r.EnvoyerMedecins, r.Active, ct);
+        if (!avant.Active && r.Active && avant.InscriteLe is not null && chargements is not null)
+            await chargements.DemanderAsync(MotifsChargement.Reactivation, utilisateurId, ct);
         await journal.EcrireAsync(utilisateurId, "reglages_synchronisation", "sync_parametre", 1, new Dictionary<string, object?>
         {
             ["active"] = $"{avant.Active} -> {r.Active}",

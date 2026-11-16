@@ -21,12 +21,12 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 142 tables — 78 montantes, 22 bidirectionnelles, 17 descendantes, 25 jamais envoyées.
+**Récapitulatif** : 143 tables — 78 montantes, 22 bidirectionnelles, 17 descendantes, 26 jamais envoyées (`sync_chargement` ajoutée par le script 129, lot S6).
 
 **Points [À VÉRIFIER] / [DÉCISION]** relevés pendant l'inventaire :
 - Champs de texte libre envoyés (motifs, commentaires, messages d'alerte, `chifa_ecart_detail`…) : **décision du titulaire (script 127)** : listés dans `sync_table.colonnes_texte` et **filtrés** avant envoi (courriel → `[COURRIEL]`, téléphone → `[TÉL]`, suite de 9 chiffres et plus → `[N°]`, nom ou prénom d'un patient → son code `P-…`, ou `[NOM]` s'il est porté par plusieurs patients, nom d'un porteur du registre → `[NOM]`) ; option `sync_parametre.textes_libres = 'retires'` pour ne pas les envoyer du tout (valeur nulle). Limite : un nom inconnu de la base ou mal orthographié n'est pas repéré. `journal_audit.details`, `forcage_alerte_psychotrope.messages`, `facture_client_version.contenu` et `demande_patient.sms_erreur` sont déjà exclus par prudence.
 - `journal_registre_psychotrope` est chaîné : les colonnes du porteur étant retirées, le serveur central **ne pourra pas recalculer** l'empreinte de ces lignes (§ 5 de la conception) ; il pourra contrôler la continuité des rangs et conserver les empreintes reçues, la vérification complète restant dans l'officine. **Validé par le titulaire le 2026-11-16.**
-- `medecin` classée jamais par défaut ; **option du titulaire** `sync_parametre.envoyer_medecins` (script 127, défaut non) : activée, nom, spécialité et wilaya sont envoyés (téléphone, adresse, courriel, n° d'ordre et code prestataire retirés) ; les ordonnances restent dans l'officine ; les médecins déjà enregistrés ne partent qu'à leur prochaine modification (chargement initial : lot S2) ; `catalogue_grossiste` montante (volume à mesurer) ; référentiels descendants : diffusion à concevoir au lot S5.
+- `medecin` classée jamais par défaut ; **option du titulaire** `sync_parametre.envoyer_medecins` (script 127, défaut non) : activée, nom, spécialité et wilaya sont envoyés (téléphone, adresse, courriel, n° d'ordre et code prestataire retirés) ; les ordonnances restent dans l'officine ; les médecins déjà enregistrés partent avec le prochain chargement complet (lot S6, « Recharger toutes les données ») ; `catalogue_grossiste` montante (volume à mesurer) ; référentiels descendants : diffusion à concevoir au lot S5.
 - Le schéma `import` (tables de reprise) n'est pas synchronisé.
 
 ## Inventaire
@@ -170,6 +170,7 @@
 | `serialisation_reponse_factice` | jamais | id | - | - | Essai |
 | `serveur_officine` | jamais | nom | - | - | Réglages propres à chaque serveur |
 | `surveillance_replication` | jamais | id | - | - | Réplication locale |
+| `sync_chargement` | jamais | numero | - | - | Synchronisation elle-même (chargements complets, script 129) |
 | `sync_lot` | jamais | epoque, numero | - | - | Synchronisation elle-même |
 | `sync_parametre` | jamais | id | - | - | Synchronisation elle-même |
 | `sync_pseudonyme` | jamais | nature, cle_locale | - | - | Correspondance personne <-> code : ne quitte jamais l'officine |

@@ -292,7 +292,7 @@ Décisions nouvelles du titulaire (2026-11-16) : **tables communes + RLS** (remp
 
 ### 12.5 Reste à faire
 
-- **Chargement initial** (première émission de l'existant) : **non codé** (S6). Conception : à l'activation, inscrire dans la file une ligne `creation` par ligne existante de chaque table envoyée (même minimisation que le déclencheur), dans un instantané pris **après** la pose des déclencheurs et sous un verrou court qui ordonne l'instantané avant les modifications suivantes (sinon un état ancien pourrait recevoir un n° plus grand qu'une modification plus récente) ; pour les chaînes, depuis le rang 1. Durée et verrou à mesurer sur une vraie base.
+- **Chargement initial** : **réalisé au lot S6** (§ 13, ordre garanti autrement que par le verrou long décrit ici). Conception : à l'activation, inscrire dans la file une ligne `creation` par ligne existante de chaque table envoyée (même minimisation que le déclencheur), dans un instantané pris **après** la pose des déclencheurs et sous un verrou court qui ordonne l'instantané avant les modifications suivantes (sinon un état ancien pourrait recevoir un n° plus grand qu'une modification plus récente) ; pour les chaînes, depuis le rang 1. Durée et verrou à mesurer sur une vraie base.
 - Purge de `sync_sortie` après accusé et délai de garde ; bandeau poste et alertes (S3) ; vérification des chaînes au central (S4) ; ordres descendants (S5) ; nouvelle époque après restauration, bascule (S6) ; écrans à distance (S7).
 - Tables miroir des tables **descendantes** : non créées (référentiels diffusés par le central, S5).
 - Changement de **type** d'une colonne envoyée : script central à part (le générateur n'ajoute que des colonnes).
@@ -305,3 +305,80 @@ Décisions nouvelles du titulaire (2026-11-16) : **tables communes + RLS** (remp
 - Suppression au central : clé relue depuis l'id `sync-v1` (format S1 inchangé, valeurs jointes par « | ») et convertie au type de la colonne ; pour une clé composée, l'id reconstitué doit être identique : une valeur contenant « | » ne peut jamais retirer une autre ligne (au pire la suppression n'est pas appliquée).
 - **Défaut de `officine_id` non remplacé par une constante** : mesuré sur 200 000 insertions, la fonction coûte environ 0,4 s de plus (≈ 2 µs par ligne : 88 ms avec une constante, 430 à 530 ms avec la fonction). Une constante inscrirait le code d'une officine dans le schéma : `init/schema.sql` diffèrerait d'une base à l'autre (comparaison init en échec) et une installation neuve hériterait du code de la base de référence. Gardé tel quel, à reconsidérer si un import massif le justifie **[DÉCISION]**.
 - Non traité, décision du titulaire en attente : noms du personnel et coordonnées des fournisseurs et de la pharmacie envoyés au central.
+
+## 13. Lot S6 : réalisé (2026-11-16, GO du titulaire) — chargement complet
+
+### 13.1 Ordre entre l'instantané et les modifications simultanées (risque du § 12.5)
+
+Retenu : **instantané en deux transactions REPEATABLE READ, repère de n° de file, même époque**.
+
+1. Transaction courte validée : chargement en état « constitution » (`sync_enregistrer_lot` refuse alors tout nouveau lot) et codes
+   patients/porteurs créés d'avance (l'instantané n'a presque jamais à en créer, ce qui évite les conflits de sérialisation).
+2. **A** : `LOCK sync_sortie IN SHARE MODE` (attente plafonnée à 2 s, `lock_timeout`), puis image exportée (`pg_export_snapshot()`)
+   et **repère** = plus grand n° de file visible. Le verrou attend la fin des transactions qui ont déjà inscrit une ligne de file et retient
+   les suivantes avant leur insertion (le verrou de table est pris avant l'attribution du n°). Donc : toute modification **visible** dans
+   l'image a un n° ≤ repère ; toute modification **non visible** reçoit un n° > repère.
+3. **B** importe l'image (`SET TRANSACTION SNAPSHOT`), **A est validée aussitôt** (le verrou ne dure que l'attente des transactions en
+   cours : les ventes ne sont pas bloquées pendant la lecture des tables), puis B inscrit pour chaque ligne de chaque table envoyée une
+   ligne `instantane` minimisée par `sync_minimiser` (exactement comme le déclencheur), **ordre = repère**, n° de chargement.
+4. Les lots sont formés par **(ordre, n°)** : modifications ≤ repère, puis instantané, puis modifications > repère. Le n° envoyé d'une ligne
+   d'instantané est le repère : au central, « plus grand (époque, n°) gagne » donne toujours l'état le plus récent, et une suppression
+   postérieure ne peut pas être suivie d'une résurrection par l'instantané (elle part après lui).
+
+Écartés : un seul gros verrou pendant toute la lecture (ventes bloquées plusieurs minutes) ; une nouvelle époque à chaque chargement (les
+lignes inscrites par une transaction ayant lu l'ancienne époque juste avant le changement seraient restées hors de toute époque envoyée) ;
+numéroter l'instantané avec ses propres n° d'identité (une modification non visible pouvait recevoir un n° plus petit qu'une ligne
+d'instantané plus ancienne : inversion).
+
+### 13.2 Étapes et reprise
+
+| Étape (`sync_chargement.etat`) | Fait | Coupure |
+|---|---|---|
+| demande | `sync_demander_chargement` : activation (première), réactivation, bouton « Recharger toutes les données », lots perdus par le central | — |
+| constitution | instantané (une transaction) | annulé en entier, repris au passage suivant (nouveau repère) ; base occupée : reporté, erreur non bloquante |
+| pret → annonce | `POST /api/v1/chargement/debut` (n°, époque, repère, dernier lot accusé ici, tables) **avant** le premier lot | idempotent |
+| annonce | lots ordinaires (500 lignes / 1 Mo, 20 lots par passage), renvoyés à l'identique après coupure | reprise au premier lot non accusé |
+| termine | quand toutes les lignes d'instantané sont dans des lots accusés : `POST /api/v1/chargement/fin` | idempotent |
+
+Un seul chargement en cours (`ux_sync_chargement_en_cours`). Une demande pendant l'envoi d'un instantané est refusée ; une réactivation ou
+des lots manquants **remplacent** le chargement en cours (état `remplace`, instantané périmé).
+
+### 13.3 Serveur central (`database/cloud/003_chargement.sql`)
+
+- Table `chargement` (RLS), `cloud_debut_chargement`, `cloud_fin_chargement` ; `cloud_appliquer_lot` remplacée : ligne `instantane`
+  appliquée comme une création et marquée `sync_chargement` = n° du chargement en cours **si son n° est le repère annoncé** (une ligne
+  d'un chargement remplacé ne compte pas), même si une version plus récente est déjà là ; colonnes `sync_chargement` et
+  `sync_absente_le` ajoutées par le générateur des tables miroir (`002` régénéré).
+- **Lots perdus** : au début, si le dernier lot accusé de l'officine dépasse le dernier lot reçu, le n° attendu saute (lots abandonnés,
+  journal `lots_abandonnes`) ; le chargement remplace leur contenu. Remplace la procédure manuelle « lots manquants » du lot S2.
+- **Fin** : toute ligne non vue par le chargement et dont (époque, n°) ≤ (époque, repère) est marquée `sync_absente_le` — **jamais
+  effacée** (décision 8) ; compte par table renvoyé à l'officine et affiché ; journal `chargement_absentes`. Une ligne reçue de nouveau
+  perd sa marque. Lignes créées après le repère : jamais signalées.
+- Contrat `sync-v1` : opération `instantane` ajoutée (champ existant, liste des valeurs élargie ; aucun champ ni colonne envoyée changés).
+
+### 13.4 Officine et écran
+
+Script `129_synchronisation_chargement.sql` (`sync_chargement`, classée jamais ; `sync_sortie.ordre` et `.chargement` ; fonctions
+`sync_demander_chargement`, `sync_chargement_preparer`, `sync_instantane_table`, `sync_chargement_pret`, `_annonce`, `_accuse`,
+`_terminer`, `_progression`, `sync_tables_envoyees` ; `sync_enregistrer_lot` refuse pendant la constitution). Application :
+`ChargementCompletSync` (appelé par `EnvoyerLotsSync` sous `VerrouSync`), `RechargerSync` ; `ChargementSyncSql`. Écran
+« Admin › Synchronisation › État » : dernier chargement, progression (tables pendant la préparation, puis lignes accusées), lignes absentes
+signalées, bouton « Recharger toutes les données » avec confirmation (droit `admin.parametres`, journalisé).
+
+### 13.5 Essais (2026-11-16, copie jetable de `pharmacie_test`, supprimée)
+
+- Activation → chargement 34 025 lignes (100 tables) pendant 4 000 modifications simultanées (stock minimum de 300 produits, emplacements
+  créés puis supprimés) et une **coupure du serveur central** au milieu : 0 écart de nombre de lignes sur les 100 tables, `produit`
+  identique valeur par valeur, emplacements supprimés absents au central, aucun nom de patient.
+- Lots perdus par le central (n° ramené de 77 à 40, lots 1 à 60 retirés de la copie) + une vente fantôme au central : rechargement
+  demandé seul, 37 lots abandonnés, vente fantôme signalée absente et gardée ; puis « Recharger toutes les données » (2e demande refusée
+  pendant l'envoi) : terminé, 1 absente.
+- La limite de 60 lots/min par certificat ralentit un gros chargement (429, nouvel essai) : ~10 000 lignes/min.
+
+### 13.6 Reste à faire
+
+- **Restauration de la base de l'officine** (n° de lots revenus en arrière) : nouvelle époque + chargement, non réalisé.
+- Gros volumes : durée de l'instantané et taille de la transaction à mesurer sur une vraie base **[À VÉRIFIER]** ; débit plafonné par la
+  limite de dépôts et le quota journalier.
+- Purge de `sync_sortie` après accusé (S3) ; écran central de consultation des lignes absentes (S7).
+- Sous-rubrique propre « Chargement » de l'écran : demande une modification de `NavAdmin.razor` (non touché ici).

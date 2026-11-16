@@ -62,7 +62,7 @@ Le dossier `database/init/` contient trois fichiers :
 
 | Fichier | Rôle |
 | --- | --- |
-| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `128`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
+| `schema.sql` | Crée toute la structure (tables, vues, fonctions, déclencheurs). Équivaut aux scripts `001` à `129`, sauf le réglage de fuseau horaire de la base (`083`, à lancer en plus : étape 2.1 bis). |
 | `seed_referentiel.sql` | Référentiel de départ : rôles, droits, paramètres, CNAS et CASNOS, substances surveillées, coffre, compte titulaire provisoire. |
 | `clean.sql` | Remet une base à vierge. À utiliser uniquement pour recommencer une installation ratée ou une répétition. |
 
@@ -541,8 +541,9 @@ Aucun secret dans un fichier du dépôt ni dans `appsettings*.json` : tout passe
 ### Installation du serveur central (une fois)
 
 1. **Base** (compte propriétaire, jamais le rôle applicatif) : créer la base, puis passer dans l'ordre `database/cloud/001_base_centrale.sql`
-   et `database/cloud/002_tables_miroir.sql` (`psql -v ON_ERROR_STOP=1 -f …`), puis `database/cloud/tests/001_base_centrale_tests.sql`
-   (doit finir par « tous réussis »).
+   `database/cloud/002_tables_miroir.sql` et `database/cloud/003_chargement.sql` (`psql -v ON_ERROR_STOP=1 -f …`), puis
+   `database/cloud/tests/001_base_centrale_tests.sql` et `database/cloud/tests/003_chargement_tests.sql` (doivent finir par « tous réussis »).
+   Mise à jour d'un serveur central du lot S2 : repasser `002` (colonnes `sync_chargement`, `sync_absente_le`) puis `003`.
 2. **Rôle applicatif** : `ALTER ROLE pharma_cloud_api LOGIN PASSWORD '<mot de passe tiré au sort>';` (tapé à la main, jamais enregistré
    dans un script) ; il n'est **pas** propriétaire des tables (la sécurité au niveau des lignes s'applique).
 3. **Dossier de l'autorité** hors de tout dépôt de sources (ex. `D:\PharmaCentral\Autorite`), accès réservé au compte du service et aux
@@ -585,9 +586,32 @@ Aucun secret dans un fichier du dépôt ni dans `appsettings*.json` : tout passe
 - **Conservation des lots bruts** (`lot_recu`, partitions mensuelles) : durée **[DÉCISION]** du titulaire (preuve fiscale : 6 ans
   proposés). Purge prévue par détachement puis suppression des partitions plus anciennes que la durée choisie (non codée).
 
+### Synchronisation, chargement complet (lot S6, 2026-11-16)
+
+- **Quand** : à la première activation de l'officine, à la réactivation de la synchronisation (les modifications faites pendant la
+  désactivation n'ont pas été inscrites), sur demande (**Administration › Synchronisation › État**, bouton « Recharger toutes les
+  données », droit `admin.parametres`, confirmation), et automatiquement quand le serveur central a perdu des lots que l'officine n'a plus.
+- **Effet** : l'état actuel de chaque donnée envoyée repart, minimisé comme d'habitude (codes patients, colonnes retirées, textes filtrés),
+  par lots ordinaires (500 lignes / 1 Mo). Le travail continue : les ventes ne sont retenues que le temps d'un verrou court (2 s au plus,
+  sinon nouvel essai au passage suivant) ; aucun lot n'est formé pendant la préparation de l'instantané. La progression s'affiche
+  (lignes accusées / total). Après une coupure, l'envoi reprend au premier lot non accusé.
+- **Volume** : avec les limites du serveur central (60 lots/min par certificat, 20 lots par passage), compter environ 10 000 lignes par
+  minute (mesuré sur la copie de la base de démonstration : 34 000 lignes). Vérifier le quota journalier
+  (`cloud_parametre.quota_octets_jour`) avant le chargement d'une grosse officine **[À VÉRIFIER par mesure]**.
+- **Fin** : le serveur central marque « absentes de l'officine » (`sync_absente_le`) les lignes qu'il a et que l'officine n'a plus ;
+  il ne les efface **jamais** (décision 8). L'écran affiche leur nombre ; le détail est dans la table `chargement` du serveur central
+  (`absentes_par_table`) et au journal de sécurité (`chargement_absentes`). Le titulaire décide (ressaisie, annulation tracée ou
+  justification). Une ligne absente reçue de nouveau perd sa marque.
+
 ### Synchronisation, lots manquants
 
-Message à l'écran « le serveur central n'a reçu que jusqu'au lot N … reprise impossible automatiquement » : le serveur central a perdu des
-lots déjà accusés (restauration du central) et l'officine ne les a plus. Ne rien supprimer dans l'officine. L'éditeur compare l'état du
-central (`--lister`, tables `officine_epoque`, `lot_recu`) avec `sync_lot` de l'officine ; la remise à niveau passera par une nouvelle
-époque et un chargement complet (lot S6, non réalisé). En attendant, les opérations restent en attente dans l'officine, rien n'est perdu.
+Le serveur central a perdu des lots déjà accusés (restauration du central) :
+- si l'officine les a encore (`sync_lot`), elle les renvoie à l'identique, sans intervention ;
+- sinon, elle **demande d'elle-même un chargement complet** (message « rechargement complet de l'officine demandé ») : au passage
+  suivant, l'instantané est pris puis annoncé au serveur central, qui abandonne les lots perdus (journal de sécurité `lots_abandonnes`,
+  n° attendu avancé jusqu'au dernier lot accusé de l'officine) ; l'envoi reprend ensuite normalement. Ne rien supprimer dans l'officine.
+- Si le même message revient alors qu'un chargement « lots manquants » est déjà annoncé (« reprise impossible automatiquement … procédure ») :
+  l'éditeur compare `officine_epoque`, `lot_recu` et `chargement` du central avec `sync_lot` et `sync_chargement` de l'officine.
+  Les opérations restent en attente dans l'officine, rien n'est perdu.
+- **Restauration de la base de l'officine** (n° de lots revenus en arrière : lots « déjà reçus avec un autre contenu ») : nouvelle époque,
+  non réalisée **[À FAIRE]**.

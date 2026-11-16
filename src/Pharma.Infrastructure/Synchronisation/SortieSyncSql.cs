@@ -22,17 +22,17 @@ public sealed class SortieSyncSql(NpgsqlDataSource db) : ISortieSyncDepot
     public async Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT s.id, s.nom_table, s.id_local, s.operation, s.survenu_le, s.donnees::text
+            SELECT s.id, s.nom_table, s.id_local, s.operation, s.survenu_le, s.donnees::text, s.ordre
             FROM sync_sortie s JOIN sync_parametre p ON p.id = 1 AND p.epoque = s.epoque
             WHERE s.lot_numero IS NULL
-            ORDER BY s.id LIMIT $1
+            ORDER BY coalesce(s.ordre, s.id), s.id LIMIT $1
             """);
         cmd.Parameters.AddWithValue(maximum);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<LigneSortieSync>();
         while (await r.ReadAsync(ct))
             liste.Add(new LigneSortieSync(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetString(3),
-                DateTime.SpecifyKind(r.GetDateTime(4), DateTimeKind.Utc), r.IsDBNull(5) ? null : r.GetString(5)));
+                DateTime.SpecifyKind(r.GetDateTime(4), DateTimeKind.Utc), r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetInt64(6)));
         return liste;
     }
 

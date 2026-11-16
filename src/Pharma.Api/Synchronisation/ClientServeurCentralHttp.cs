@@ -12,7 +12,7 @@ namespace Pharma.Api.Synchronisation;
 /// épinglée, jeton court (10 min) redemandé avant expiration. Initié par l'officine seulement (aucun port entrant). Aucune donnée
 /// personnelle dans les messages d'erreur rendus (codes et motifs du serveur central).
 /// </summary>
-public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogger<ClientServeurCentralHttp> logger) : IClientServeurCentral
+public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogger<ClientServeurCentralHttp> logger) : IClientServeurCentral, IClientChargementCentral
 {
     private static readonly TimeSpan Delai = TimeSpan.FromSeconds(60);
     private readonly SemaphoreSlim verrou = new(1, 1);
@@ -60,6 +60,33 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         await OublierJetonAsync(ct); // nouveau certificat : nouveau jeton (et nouveau client au prochain appel)
         logger.LogInformation("Certificat de synchronisation renouvelé jusqu'au {Echeance:yyyy-MM-dd}", r.Echeance);
         return new ReponseActivationSync(r.OfficineId, r.Serveur, r.CertificatPem, r.AutoritePem, r.Echeance.UtcDateTime, null);
+    }
+
+    // ---- Lot S6 : chargement complet ----
+    public async Task<ReponseDebutChargementSync> DebuterAsync(string adresse, DebutChargementSync d, CancellationToken ct = default)
+    {
+        var r = await PosterAsync<DebutChargementDto, ReponseDebutChargementDto>(adresse, "api/v1/chargement/debut",
+            new DebutChargementDto(d.Numero, d.Epoque, d.Repere, d.ReprendreApres, d.Motif, d.Tables), ct);
+        if (r.LotsAbandonnes > 0)
+            logger.LogWarning("Synchronisation : {Lots} lot(s) perdus par le serveur central remplacés par le chargement complet {Numero}", r.LotsAbandonnes, r.Numero);
+        return new ReponseDebutChargementSync(r.Numero, r.DernierRecu, r.LotsAbandonnes);
+    }
+
+    public async Task<ReponseFinChargementSync> TerminerAsync(string adresse, int numero, IReadOnlyDictionary<string, long> lignes, CancellationToken ct = default)
+    {
+        var r = await PosterAsync<FinChargementDto, ReponseFinChargementDto>(adresse, "api/v1/chargement/fin", new FinChargementDto(numero, lignes), ct);
+        return new ReponseFinChargementSync(r.Numero, r.Absentes, r.AbsentesParTable);
+    }
+
+    private async Task<TOut> PosterAsync<TIn, TOut>(string adresse, string route, TIn corps, CancellationToken ct)
+    {
+        var (http, cert) = await ClientCertifieAsync(adresse, ct);
+        var j = await JetonAsync(http, cert, ct);
+        using var req = new HttpRequestMessage(HttpMethod.Post, route) { Content = JsonContent.Create(corps) };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", j);
+        using var rep = await http.SendAsync(req, ct);
+        if (rep.StatusCode == System.Net.HttpStatusCode.Unauthorized) await OublierJetonAsync(ct);
+        return await LireAsync<TOut>(rep, ct);
     }
 
     /// <summary>Client HTTP réutilisé tant que l'adresse, le certificat et l'autorité ne changent pas (connexions TLS gardées).</summary>

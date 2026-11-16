@@ -2,7 +2,7 @@
 @inject ApiClient Api
 
 @* Synchronisation avec le serveur central (2026-11-16, lot S2, script 128) : état de l'envoi, réglages (activer, adresse, options),
-   activation de ce serveur par code. Droit admin.parametres. Écran fixe : une sous-rubrique à la fois, aucun défilement de page. *@
+   activation de ce serveur par code, chargement complet (lot S6 : progression, « Recharger toutes les données »). Droit admin.parametres. Écran fixe : une sous-rubrique à la fois, aucun défilement de page. *@
 <div class="page admin">
     <NavAdmin Actif="admin/synchronisation" Rubrique="@Rubrique" />
 
@@ -47,6 +47,27 @@
                     <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Code de l’officine</span><span class="detail">@(t.OfficineId ?? "—")</span></div>
                 </div>
                 <p class="detail" style="margin: 0">Rien n’est retiré de l’attente sans accusé du serveur central ; après une coupure, l’envoi reprend au premier lot non accusé. Le nom des patients n’est jamais envoyé (code à la place).</p>
+            </section>
+            <section class="panneau" aria-labelledby="s-chargement">
+                <h2 id="s-chargement">Chargement complet</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 1 1 200px"><span class="libelle-champ">Dernier chargement</span>
+                        <span class="pastille @Chargement.Classe">@Chargement.Texte</span></div>
+                    <div class="champ" style="flex: 2 1 320px"><span class="libelle-champ">Progression</span><span>@Progression</span></div>
+                    <div class="champ" style="flex: 0 0 auto; align-self: flex-end; flex-direction: row; gap: 8px">
+                        @if (confirmerRecharge)
+                        {
+                            <span class="texte-urgent" style="align-self: center"><strong>Tout renvoyer au serveur central ?</strong></span>
+                            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="RechargerAsync">Confirmer</button>
+                            <button type="button" class="btn" disabled="@enCours" @onclick="() => confirmerRecharge = false">Annuler</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn" disabled="@(enCours || !t.Active || !t.Activee || t.BaseEnLectureSeule || ChargementEnCours)" @onclick="() => confirmerRecharge = true">Recharger toutes les données</button>
+                        }
+                    </div>
+                </div>
+                <p class="detail" style="margin: 0">Renvoie l’état actuel de chaque donnée envoyée (mêmes codes et mêmes retraits que d’habitude), par lots, sans arrêter le travail ; les modifications faites pendant l’envoi suivent dans l’ordre. Le serveur central signale, sans les effacer, les données qu’il a et que l’officine n’a plus.</p>
             </section>
         }
 
@@ -119,6 +140,49 @@
         { } e when e <= DateTime.UtcNow.AddDays(60) => ("attention", $"échéance {e.ToLocalTime():dd/MM/yyyy}"),
         { } e => ("ok", $"valable jusqu’au {e.ToLocalTime():dd/MM/yyyy}")
     };
+
+    // Lot S6 : chargement complet (activation, demande, réactivation, lots manquants au serveur central)
+    private bool confirmerRecharge;
+    private ChargementSynchronisationDto? C => t?.Chargement;
+    private bool ChargementEnCours => C is { Etat: "demande" or "constitution" or "pret" or "annonce" };
+
+    private static string Motif(string m) => m switch
+    {
+        "activation" => "activation",
+        "demande" => "demande",
+        "reactivation" => "réactivation",
+        "lots_manquants" => "lots perdus par le serveur central",
+        _ => m
+    };
+
+    private (string Classe, string Texte) Chargement => C switch
+    {
+        null => ("attention", "aucun"),
+        { Etat: "termine", AbsentesCentral: > 0 } c => ("attention", $"n° {c.Numero} terminé le {Date(c.TermineLe)} · {c.AbsentesCentral} donnée(s) absente(s) ici signalée(s)"),
+        { Etat: "termine" } c => ("ok", $"n° {c.Numero} terminé le {Date(c.TermineLe)}"),
+        { Etat: "remplace" } c => ("attention", $"n° {c.Numero} remplacé"),
+        { } c => ("attention", $"n° {c.Numero} en cours ({Motif(c.Motif)})")
+    };
+
+    private string Progression => C switch
+    {
+        null => "—",
+        { Etat: "demande" } => "en attente du prochain passage d’envoi",
+        { Etat: "constitution", TablesTotal: > 0 } c => $"préparation : {c.TablesFaites} / {c.TablesTotal} tables",
+        { Etat: "constitution" } => "préparation de l’instantané",
+        { } c when c.LignesTotal == 0 => c.Etat == "termine" ? "aucune donnée à envoyer" : "annonce au serveur central",
+        { } c => $"{c.LignesAccusees} / {c.LignesTotal} lignes accusées ({100 * c.LignesAccusees / c.LignesTotal} %)"
+    };
+
+    private Task RechargerAsync() => Executer(async () =>
+    {
+        confirmerRecharge = false;
+        var e = await Api.RechargerSynchronisationAsync();
+        if (e is not null) return e;
+        message = "Rechargement complet demandé : il part au prochain passage d’envoi (« Synchroniser maintenant » pour le lancer tout de suite).";
+        await ChargerAsync();
+        return null;
+    });
 
     private Task EnregistrerAsync() => Executer(async () =>
     {

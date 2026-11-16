@@ -18,7 +18,12 @@ public static class ContratSync
     public const string Creation = "creation";
     public const string Modification = "modification";
     public const string Suppression = "suppression";
-    public static readonly IReadOnlySet<string> Operations = new HashSet<string>(StringComparer.Ordinal) { Creation, Modification, Suppression };
+    /// <summary>
+    /// Ligne d'un chargement complet (lot S6) : état d'une donnée dans l'instantané, appliqué comme une création ; son n° est
+    /// le repère du chargement (plus grand n° de file visible dans l'instantané).
+    /// </summary>
+    public const string Instantane = "instantane";
+    public static readonly IReadOnlySet<string> Operations = new HashSet<string>(StringComparer.Ordinal) { Creation, Modification, Suppression, Instantane };
 }
 
 /// <summary>

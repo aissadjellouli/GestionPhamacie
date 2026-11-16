@@ -239,6 +239,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\126_synchronisation_sortie.sql = database\migration\126_synchronisation_sortie.sql
 		database\migration\127_synchronisation_textes_medecins.sql = database\migration\127_synchronisation_textes_medecins.sql
 		database\migration\128_synchronisation_envoi.sql = database\migration\128_synchronisation_envoi.sql
+		database\migration\129_synchronisation_chargement.sql = database\migration\129_synchronisation_chargement.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -247,6 +248,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\126_synchronisation_sortie_tests.sql = database\tests\126_synchronisation_sortie_tests.sql
 		database\tests\127_synchronisation_textes_medecins_tests.sql = database\tests\127_synchronisation_textes_medecins_tests.sql
 		database\tests\128_synchronisation_envoi_tests.sql = database\tests\128_synchronisation_envoi_tests.sql
+		database\tests\129_synchronisation_chargement_tests.sql = database\tests\129_synchronisation_chargement_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 	EndProjectSection
 EndProject
@@ -282,7 +284,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\README.md = database\cloud\README.md
 		database\cloud\001_base_centrale.sql = database\cloud\001_base_centrale.sql
 		database\cloud\002_tables_miroir.sql = database\cloud\002_tables_miroir.sql
+		database\cloud\003_chargement.sql = database\cloud\003_chargement.sql
 		database\cloud\tests\001_base_centrale_tests.sql = database\cloud\tests\001_base_centrale_tests.sql
+		database\cloud\tests\003_chargement_tests.sql = database\cloud\tests\003_chargement_tests.sql
 	EndProjectSection
 EndProject
 Global

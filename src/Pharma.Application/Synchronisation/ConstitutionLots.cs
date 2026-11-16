@@ -11,7 +11,13 @@ public sealed record EtatSync(bool Active, Guid? OfficineId, int Epoque, string 
     int LotMaxLignes, int LotMaxOctets, long LignesEnAttente);
 
 /// <summary>Ligne de la file, données déjà minimisées par la base (patients et porteurs sous code).</summary>
-public sealed record LigneSortieSync(long Numero, string Table, string IdLocal, string Operation, DateTime SurvenuLeUtc, string? DonneesJson);
+/// <param name="Numero">N° de la ligne dans la file (sync_sortie.id).</param>
+/// <param name="Ordre">Ligne d'instantané (lot S6) : repère du chargement ; null pour une modification (ordre = n° de ligne).</param>
+public sealed record LigneSortieSync(long Numero, string Table, string IdLocal, string Operation, DateTime SurvenuLeUtc, string? DonneesJson, long? Ordre = null)
+{
+    /// <summary>N° transmis au serveur central (état retenu = plus grand) et clé d'ordre d'envoi, avec le n° de ligne.</summary>
+    public long NumeroEnvoye => Ordre ?? Numero;
+}
 
 /// <summary>En-tête d'un lot à mettre en forme.</summary>
 public sealed record EnTeteLotSync(string VersionContrat, Guid OfficineId, int Epoque, long NumeroLot);
@@ -31,7 +37,7 @@ public sealed record ResultatConstitution(int Lots, int Lignes, string? Motif)
 public interface ISortieSyncDepot
 {
     Task<EtatSync> EtatAsync(CancellationToken ct = default);
-    /// <summary>Lignes pas encore rattachées à un lot, de l'époque courante, par n° croissant.</summary>
+    /// <summary>Lignes pas encore rattachées à un lot, de l'époque courante, par (ordre, n°) croissants (lot S6).</summary>
     Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, CancellationToken ct = default);
     /// <summary>Enregistre le lot (sync_enregistrer_lot) ; false si son n° n'est plus le suivant (constitution simultanée).</summary>
     Task<bool> EnregistrerLotAsync(LotConstitue lot, CancellationToken ct = default);
@@ -86,7 +92,7 @@ public sealed class ConstitutionLotsSync(ISortieSyncDepot depot, IFormatLotSync 
     {
         var choisies = new List<LigneSortieSync>();
         long octets = 0;
-        foreach (var l in attente.OrderBy(l => l.Numero))
+        foreach (var l in attente.OrderBy(l => l.NumeroEnvoye).ThenBy(l => l.Numero))
         {
             if (choisies.Count >= maxLignes) break;
             var taille = format.TailleOctets(l);

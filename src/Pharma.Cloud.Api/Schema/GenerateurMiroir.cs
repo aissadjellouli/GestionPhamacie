@@ -24,7 +24,7 @@ public static partial class GenerateurMiroir
     /// <summary>Tables « jamais » envoyées en option (sync_sens_effectif, script 127).</summary>
     public static readonly IReadOnlySet<string> TablesOptionnelles = new HashSet<string>(StringComparer.Ordinal) { "medecin" };
     private static readonly string[] ColonnesPorteur = ["porteur_nom", "porteur_adresse", "porteur_piece"];
-    private static readonly string[] ColonnesSync = ["sync_epoque", "sync_numero", "sync_recu_le"];
+    private static readonly string[] ColonnesSync = ["sync_epoque", "sync_numero", "sync_recu_le", "sync_chargement", "sync_absente_le"];
 
     public static string CheminScript(string racine) => Path.Combine(racine, "database", "cloud", "002_tables_miroir.sql");
 
@@ -123,7 +123,8 @@ public static partial class GenerateurMiroir
             -- colonnes jamais envoyées (exclues, porteur remplacé par porteur_code,
             -- patients sous code P-… donc en texte) ; clé = (officine_id, clé
             -- locale) ; colonnes sync_epoque, sync_numero, sync_recu_le (état final
-            -- = ligne de plus grand n°). RLS forcée par officine. Idempotent ; une
+            -- = ligne de plus grand n°), sync_chargement et sync_absente_le
+            -- (rechargement complet, script 003). RLS forcée par officine. Idempotent ; une
             -- colonne ajoutée localement est ajoutée ici (ADD COLUMN IF NOT EXISTS) ;
             -- un changement de type se traite par un script central à part.
             -- =====================================================================
@@ -140,6 +141,9 @@ public static partial class GenerateurMiroir
             s.Append($"    PRIMARY KEY (officine_id, {cle})\n);\n");
             foreach (var c in t.Colonnes.Where(c => c.Nom != ColonneOfficine && !t.Cle.Contains(c.Nom)))
                 s.Append($"ALTER TABLE {nom} ADD COLUMN IF NOT EXISTS {Q(c.Nom)} {c.Type};\n");
+            // Lot S6 : dernier chargement complet ayant vu la ligne, date à laquelle elle a été trouvée absente de l'officine
+            s.Append($"ALTER TABLE {nom} ADD COLUMN IF NOT EXISTS sync_chargement integer;\n");
+            s.Append($"ALTER TABLE {nom} ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;\n");
             s.Append($"ALTER TABLE {nom} ENABLE ROW LEVEL SECURITY;\n");
             s.Append($"ALTER TABLE {nom} FORCE ROW LEVEL SECURITY;\n");
             s.Append($"DROP POLICY IF EXISTS cloisonnement ON {nom};\n");
