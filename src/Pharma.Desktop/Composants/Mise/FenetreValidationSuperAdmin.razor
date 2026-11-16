@@ -1,6 +1,6 @@
 @inject ApiClient Api
 
-@* Action sensible du super admin : avertissement, mot de passe ressaisi, puis code reçu par SMS (e-mail en secours).
+@* Action sensible du super admin : avertissement, mot de passe ressaisi, puis le même code envoyé par SMS et par e-mail (un canal suffit).
    Le serveur vérifie le code avant l'action ; code faux : la fenêtre reste ouverte (3 codes faux bloquent 15 minutes). *@
 @if (Demande is { } d)
 {
@@ -24,7 +24,7 @@
             }
             else
             {
-                <p style="margin: 0">Code envoyé par <strong>@envoi.Canal</strong> au <strong>@envoi.Destinataire</strong>, valable jusqu’à @envoi.ExpireLe.ToLocalTime().ToString("HH:mm").</p>
+                <p style="margin: 0" data-champ="code_envoye">@(envoi.Message ?? $"Code envoyé par {envoi.Canal} au {envoi.Destinataire}"). Valable jusqu’à @envoi.ExpireLe.ToLocalTime().ToString("HH:mm").</p>
                 <div class="champ">
                     <label for="sa-code" class="requis">Code reçu</label>
                     <input id="sa-code" data-champ="code_validation" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" @ref="champCode"

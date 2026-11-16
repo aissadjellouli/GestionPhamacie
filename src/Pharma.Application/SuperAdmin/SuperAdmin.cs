@@ -26,11 +26,36 @@ public sealed record CopieEnvoi(string? ModemPort, string? SmtpServeur, int Smtp
 public sealed record CompteSuperAdmin(string Identifiant, string MotDePasseHash, string Telephone, string Email, CopieEnvoi? Envoi = null,
     string? DossierSauvegardes = null);
 
-/// <summary>Demande de validation envoyée : où le code est parti (numéro ou adresse masqués) et jusqu'à quand il vaut.</summary>
-public sealed record DemandeValidation(Guid Id, string Canal, string Destinataire, DateTime ExpireLe);
+/// <summary>
+/// Où le même code est réellement parti : numéro et adresse masqués, null si le canal n'a pas fonctionné.
+/// Les messages d'échec (techniques) ne servent qu'au journal du serveur.
+/// </summary>
+public sealed record ResultatEnvoi(string? Sms, string? Email, string? EchecSms = null, string? EchecEmail = null)
+{
+    /// <summary>Canaux utilisés : « SMS et e-mail », « SMS » ou « e-mail ».</summary>
+    public string Canal => Sms is not null && Email is not null ? "SMS et e-mail" : Sms is not null ? "SMS" : "e-mail";
 
-/// <summary>Validation vérifiée pour la requête en cours (code juste, action prévue).</summary>
-public sealed record ValidationAcceptee(string Action, string Canal, string Destinataire);
+    /// <summary>Destinataires masqués, dans l'ordre des canaux.</summary>
+    public string Destinataire => Sms is not null && Email is not null ? $"{Sms} et {Email}" : Sms ?? Email ?? "";
+
+    /// <summary>Canaux utilisés, pour le journal : « par SMS au 06•••••512 et par e-mail à t•••@exemple.dz ». Jamais le code.</summary>
+    public string Libelle => (Sms, Email) switch
+    {
+        ({ } s, { } e) => $"par SMS au {s} et par e-mail à {e}",
+        ({ } s, null) => $"par SMS au {s}",
+        (null, { } e) => $"par e-mail à {e}",
+        _ => "par aucun canal"
+    };
+
+    /// <summary>Phrase montrée au super admin ; un canal en échec est dit.</summary>
+    public string Message => $"Code envoyé {Libelle}" + (Sms is null && EchecSms is not null ? " ; SMS non parti" : Email is null && EchecEmail is not null ? " ; e-mail non parti" : "");
+}
+
+/// <summary>Demande de validation envoyée : où le code est parti (numéros et adresses masqués) et jusqu'à quand il vaut.</summary>
+public sealed record DemandeValidation(Guid Id, string Canal, string Destinataire, DateTime ExpireLe, string? Message = null);
+
+/// <summary>Validation vérifiée pour la requête en cours (code juste, action prévue). Libellé : canaux réellement utilisés.</summary>
+public sealed record ValidationAcceptee(string Action, string Canal, string Destinataire, string? Libelle = null);
 
 // ---- Ports ------------------------------------------------------------------
 
@@ -56,6 +81,7 @@ public static class ActionsSuperAdmin
     public const string RepriseCharger = "reprise.charger";
     public const string RepriseAnnuler = "reprise.annuler";
     public const string ChangerTelephone = "compte.telephone";
+    public const string ChangerEmail = "compte.email";
     public const string RestaurerBase = "restauration.base";
     public const string RestaurerGed = "restauration.ged";
 
@@ -66,6 +92,7 @@ public static class ActionsSuperAdmin
         [RepriseCharger] = "charger la reprise dans la base",
         [RepriseAnnuler] = "annuler la reprise",
         [ChangerTelephone] = "changer le telephone du super admin",
+        [ChangerEmail] = "changer l'e-mail du super admin",
         [RestaurerBase] = "restaurer la base de donnees",
         [RestaurerGed] = "restaurer les documents de la GED"
     };
@@ -88,7 +115,7 @@ public sealed class SuperAdminCourant
             throw new DroitRefuseException(ActionsSuperAdmin.Marque, action, $"Seul le super admin peut {action}.");
     }
 
-    /// <summary>Action sensible : le code reçu par SMS (ou e-mail) doit avoir été vérifié pour cette action précise.</summary>
+    /// <summary>Action sensible : le code reçu par SMS ou par e-mail doit avoir été vérifié pour cette action précise.</summary>
     public ValidationAcceptee ExigerValidation(string action, string libelle)
     {
         Exiger(libelle);
@@ -101,7 +128,7 @@ public sealed class SuperAdminCourant
     public Dictionary<string, object?> Trace() => new()
     {
         ["super_admin"] = Identifiant,
-        ["validation"] = Validation is { } v ? $"code envoyé par {v.Canal} au {v.Destinataire}" : null
+        ["validation"] = Validation is { } v ? $"code envoyé {v.Libelle ?? $"par {v.Canal} au {v.Destinataire}"}" : null
     };
 
     public string Auteur => $"super admin {Identifiant}";
@@ -119,7 +146,7 @@ public sealed class ValidationsSuperAdmin(IHorloge? horloge = null)
     public static readonly TimeSpan Blocage = TimeSpan.FromMinutes(15);
     public const int EssaisMax = 3;
 
-    private sealed record Demande(string Action, byte[] Empreinte, DateTime ExpireLe, string Canal, string Destinataire);
+    private sealed record Demande(string Action, byte[] Empreinte, DateTime ExpireLe, ResultatEnvoi Envoi);
 
     private readonly ConcurrentDictionary<Guid, Demande> demandes = new();
     private readonly object verrou = new();
@@ -138,14 +165,14 @@ public sealed class ValidationsSuperAdmin(IHorloge? horloge = null)
 
     public static string NouveauCode() => RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
 
-    public DemandeValidation Enregistrer(string action, string code, string canal, string destinataire)
+    public DemandeValidation Enregistrer(string action, string code, ResultatEnvoi envoi)
     {
         foreach (var (id, d) in demandes)
             if (d.ExpireLe <= Maintenant) demandes.TryRemove(id, out _);
-        var demande = new Demande(action, Empreinte(code), Maintenant + Duree, canal, destinataire);
+        var demande = new Demande(action, Empreinte(code), Maintenant + Duree, envoi);
         var cle = Guid.NewGuid();
         demandes[cle] = demande;
-        return new DemandeValidation(cle, canal, destinataire, demande.ExpireLe);
+        return new DemandeValidation(cle, envoi.Canal, envoi.Destinataire, demande.ExpireLe, envoi.Message);
     }
 
     /// <summary>Vérifie et consomme le code. Faux : message clair ; trois codes faux bloquent les validations 15 minutes.</summary>
@@ -175,7 +202,7 @@ public sealed class ValidationsSuperAdmin(IHorloge? horloge = null)
         }
         demandes.TryRemove(id, out _);
         lock (verrou) codesFaux = 0;
-        return new ValidationAcceptee(d.Action, d.Canal, d.Destinataire);
+        return new ValidationAcceptee(d.Action, d.Envoi.Canal, d.Envoi.Destinataire, d.Envoi.Libelle);
     }
 
     private static byte[] Empreinte(string code) => SHA256.HashData(Encoding.UTF8.GetBytes(code));
@@ -184,82 +211,96 @@ public sealed class ValidationsSuperAdmin(IHorloge? horloge = null)
 // ---- Envoi du code -----------------------------------------------------------
 
 /// <summary>
-/// Envoie le code au super admin : SMS par le modem GSM, sinon e-mail. Essai avec les réglages de la base, puis, en cas d'échec ou
-/// de base inaccessible, avec la copie gardée dans le fichier du compte. La copie n'est remplacée par les réglages de la base
-/// qu'après un envoi réussi avec eux : une base restaurée avec des réglages périmés ne l'écrase pas.
+/// Envoie le MÊME code au super admin par SMS (modem GSM) ET par e-mail, en même temps. Un seul canal suffit : si l'un échoue,
+/// l'autre part quand même et le résultat le dit ; si les deux échouent, l'envoi est refusé. Pour chaque canal, essai avec les
+/// réglages de la base, puis, en cas d'échec ou de base inaccessible, avec la copie gardée dans le fichier du compte. La copie n'est
+/// remplacée par les réglages de la base qu'après un envoi réussi avec eux : une base restaurée avec des réglages périmés ne l'écrase pas.
 /// </summary>
 public sealed class EnvoiCodeSuperAdmin(
     ICompteSuperAdmin comptes, IEnvoiSms sms, IEnvoiEmail email, IProtectionSecret secrets, INotificationsDepot? depot = null,
     Action<string>? signaler = null)
 {
-    public async Task<(string Canal, string Destinataire)> EnvoyerAsync(CompteSuperAdmin compte, string? numero, string texte, CancellationToken ct = default)
+    /// <summary>Action sensible ou validation d'identité : SMS au numéro du compte (ou au nouveau numéro à vérifier) et e-mail à l'adresse du compte.</summary>
+    public Task<ResultatEnvoi> EnvoyerAsync(CompteSuperAdmin compte, string? numero, string texte, CancellationToken ct = default) =>
+        numero is null
+            ? EnvoyerCoreAsync(compte, compte.Telephone, compte.Email, true, true, texte, ct)
+            // Nouveau numéro : le code ne part que par SMS à ce numéro (l'e-mail ne prouve pas le numéro)
+            : EnvoyerCoreAsync(compte, numero, compte.Email, true, false, texte, ct);
+
+    /// <summary>Nouvelle adresse e-mail : le code ne part que vers cette adresse (elle prouve qu'on la possède).</summary>
+    public Task<ResultatEnvoi> EnvoyerAAdresseAsync(CompteSuperAdmin compte, string adresse, string texte, CancellationToken ct = default) =>
+        EnvoyerCoreAsync(compte, compte.Telephone, adresse, false, true, texte, ct);
+
+    private async Task<ResultatEnvoi> EnvoyerCoreAsync(CompteSuperAdmin compte, string telephone, string adresse, bool parSms, bool parEmail,
+        string texte, CancellationToken ct)
     {
-        var enBase = await ReglagesBaseAsync(compte, ct);
+        var enBase = await ReglagesBaseAsync(ct);
         var essais = new List<(CopieEnvoi Reglages, string Origine)>();
         if (enBase is not null) essais.Add((enBase, "réglages de la base"));
         if (compte.Envoi is not null && compte.Envoi != enBase) essais.Add((compte.Envoi, "copie du compte"));
 
-        var erreurs = new List<string>();
+        string? smsOk = null, emailOk = null, echecSms = null, echecEmail = null;
+        var erreursSms = new List<string>();
+        var erreursEmail = new List<string>();
+        var baseVerifiee = true;   // tous les canaux que les réglages de la base prévoient ont marché avec eux
         foreach (var (reglages, origine) in essais)
         {
-            var avant = erreurs.Count;
-            if (await EssayerAsync(reglages, compte, numero, texte, erreurs, ct) is { } envoye)
+            var estBase = ReferenceEquals(reglages, enBase);
+            if (parSms && smsOk is null)
             {
-                // Réglages de la base vérifiés par cet envoi : ils deviennent la copie du compte
-                if (ReferenceEquals(reglages, enBase) && reglages != compte.Envoi)
-                    try { if (comptes.Lire() is { } c) comptes.Enregistrer(c with { Envoi = reglages }); }
-                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-                return envoye;
+                if (string.IsNullOrWhiteSpace(reglages.ModemPort)) erreursSms.Add($"modem GSM non configuré [{origine}]");
+                else
+                    try
+                    {
+                        await sms.EnvoyerAsync(reglages.ModemPort, telephone, TexteSms.Preparer(texte), ct);
+                        smsOk = RegleDestinataire.MasquerTelephone(telephone);
+                    }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        erreursSms.Add($"{e.Message} [{origine}]");
+                        signaler?.Invoke($"Code super admin : SMS non envoyé ({e.Message}) [{origine}]");
+                        if (estBase) baseVerifiee = false;
+                    }
             }
-            if (essais.Count > 1)
-                for (var i = avant; i < erreurs.Count; i++) erreurs[i] = $"{erreurs[i]} [{origine}]";
+            if (parEmail && emailOk is null)
+            {
+                if (!reglages.SmtpConfigure) erreursEmail.Add($"serveur SMTP non configuré [{origine}]");
+                else
+                    try
+                    {
+                        await email.EnvoyerAsync(new ConnexionSmtp(reglages.SmtpServeur!, reglages.SmtpPort, reglages.SmtpTls, reglages.SmtpExpediteur!, reglages.SmtpIdentifiant, reglages.SmtpMotDePasse),
+                            adresse, "Code de validation du super admin", texte, null, ct);
+                        emailOk = RegleDestinataire.MasquerEmail(adresse);
+                    }
+                    catch (Exception e) when (e is not OperationCanceledException)
+                    {
+                        erreursEmail.Add($"{e.Message} [{origine}]");
+                        signaler?.Invoke($"Code super admin : e-mail non envoyé ({e.Message}) [{origine}]");
+                        if (estBase) baseVerifiee = false;
+                    }
+            }
         }
-        if (essais.Count == 0) erreurs.Add("ni modem GSM ni serveur e-mail réglés");
 
-        throw new RegleMetierException($"Code non envoyé ({string.Join(" ; ", erreurs)}). Vérifiez le modem GSM et le serveur e-mail " +
-                                       "(Administration › Notifications au titulaire), ou restaurez depuis le PC serveur (scripts\\restaurer_pharmacie.ps1).");
-    }
+        // Réglages de la base vérifiés par cet envoi : ils deviennent la copie du compte
+        if (enBase is not null && baseVerifiee && enBase != compte.Envoi && (smsOk is not null || emailOk is not null))
+            try { if (comptes.Lire() is { } c) comptes.Enregistrer(c with { Envoi = enBase }); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
 
-    /// <summary>SMS, puis e-mail ; null si aucun n'est parti (erreurs ajoutées à la liste).</summary>
-    private async Task<(string Canal, string Destinataire)?> EssayerAsync(CopieEnvoi envoi, CompteSuperAdmin compte, string? numero, string texte,
-        List<string> erreurs, CancellationToken ct)
-    {
-        var telephone = numero ?? compte.Telephone;
-        if (!string.IsNullOrWhiteSpace(envoi.ModemPort))
+        if (parSms && smsOk is null) echecSms = erreursSms.Count > 0 ? string.Join(", ", erreursSms) : "ni modem GSM ni serveur e-mail réglés";
+        if (parEmail && emailOk is null) echecEmail = erreursEmail.Count > 0 ? string.Join(", ", erreursEmail) : "ni modem GSM ni serveur e-mail réglés";
+        if (smsOk is null && emailOk is null)
         {
-            try
-            {
-                await sms.EnvoyerAsync(envoi.ModemPort, telephone, TexteSms.Preparer(texte), ct);
-                return ("SMS", RegleDestinataire.MasquerTelephone(telephone));
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                erreurs.Add($"SMS : {e.Message}");
-                signaler?.Invoke($"Code super admin : SMS non envoyé ({e.Message}), essai par e-mail");
-            }
+            var detail = new List<string>();
+            if (echecSms is not null) detail.Add($"SMS : {echecSms}");
+            if (echecEmail is not null) detail.Add($"e-mail : {echecEmail}");
+            throw new RegleMetierException($"Code non envoyé, ni par SMS ni par e-mail ({string.Join(" ; ", detail)}). Vérifiez le modem GSM et le serveur e-mail " +
+                                           "(Administration › Notifications au titulaire), ou restaurez depuis le PC serveur (scripts\restaurer_pharmacie.ps1).");
         }
-        else erreurs.Add("SMS : modem GSM non configuré");
-
-        // Changement de téléphone : le code du nouveau numéro ne peut pas partir par e-mail (il doit prouver le numéro)
-        if (numero is null && envoi.SmtpConfigure)
-        {
-            try
-            {
-                await email.EnvoyerAsync(new ConnexionSmtp(envoi.SmtpServeur!, envoi.SmtpPort, envoi.SmtpTls, envoi.SmtpExpediteur!, envoi.SmtpIdentifiant, envoi.SmtpMotDePasse),
-                    compte.Email, "Code de validation du super admin", texte, null, ct);
-                return ("e-mail", RegleDestinataire.MasquerEmail(compte.Email));
-            }
-            catch (Exception e) when (e is not OperationCanceledException)
-            {
-                erreurs.Add($"e-mail : {e.Message}");
-            }
-        }
-        else if (numero is null) erreurs.Add("e-mail : serveur SMTP non configuré");
-        return null;
+        return new ResultatEnvoi(smsOk, emailOk, echecSms, echecEmail);
     }
 
     /// <summary>Réglages lus en base ; null si elle ne répond pas (détruite, en cours de restauration…).</summary>
-    private async Task<CopieEnvoi?> ReglagesBaseAsync(CompteSuperAdmin compte, CancellationToken ct)
+    private async Task<CopieEnvoi?> ReglagesBaseAsync(CancellationToken ct)
     {
         if (depot is null) return null;
         try
@@ -317,7 +358,7 @@ public sealed class SeConnecterSuperAdmin(ICompteSuperAdmin comptes, IVerificate
 }
 
 /// <summary>
-/// Avant chaque action sensible : le super admin ressaisit son mot de passe, puis un code part sur son téléphone (e-mail en secours).
+/// Avant chaque action sensible : le super admin ressaisit son mot de passe, puis le même code part par SMS et par e-mail (un seul canal suffit).
 /// </summary>
 public sealed class DemanderValidationSuperAdmin(
     SeConnecterSuperAdmin verifier, ValidationsSuperAdmin etat, EnvoiCodeSuperAdmin envoi, SuperAdminCourant courant)
@@ -333,9 +374,10 @@ public sealed class DemanderValidationSuperAdmin(
         var compte = verifier.Executer(courant.Identifiant, motDePasse)
                      ?? throw new RegleMetierException("Mot de passe faux.", "mot_de_passe_validation");
         var code = ValidationsSuperAdmin.NouveauCode();
-        var (canal, destinataire) = await envoi.EnvoyerAsync(compte, null,
+        // Le même code part par SMS et par e-mail ; un seul canal suffit
+        var resultat = await envoi.EnvoyerAsync(compte, null,
             $"PharmaOfficine : code {code} pour {libelle}. Valable 5 min. Ne le donnez a personne.", ct);
-        return etat.Enregistrer(action, code, canal, destinataire);
+        return etat.Enregistrer(action, code, resultat);
     }
 }
 

@@ -33,7 +33,7 @@ public static class SuperAdminSecurite
     }
 
     /// <summary>
-    /// Action sensible : le code reçu par SMS (ou e-mail) est vérifié et consommé avant l'action (en-tête X-Pharma-Validation).
+    /// Action sensible : le code reçu par SMS ou par e-mail est vérifié et consommé avant l'action (en-tête X-Pharma-Validation).
     /// Code faux, expiré ou d'une autre action : refus, l'action n'est pas faite.
     /// </summary>
     public static TBuilder ValidationSuperAdmin<TBuilder>(this TBuilder builder, string action) where TBuilder : IEndpointConventionBuilder

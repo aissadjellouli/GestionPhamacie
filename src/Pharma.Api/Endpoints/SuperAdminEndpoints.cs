@@ -11,7 +11,7 @@ namespace Pharma.Api.Endpoints;
 /// </summary>
 public static class SuperAdminEndpoints
 {
-    /// <summary>Code super admin demandé : action et canal au journal, jamais le destinataire (téléphone ou e-mail).</summary>
+    /// <summary>Code super admin demandé : action et canaux réellement utilisés au journal, jamais le code ni le destinataire (téléphone ou e-mail).</summary>
     public static void JournaliserCodeDemande(ILogger journal, string action, string canal) =>
         journal.LogWarning("Super admin : code demandé pour {Action}, envoyé par {Canal}", action, canal);
 
@@ -37,12 +37,12 @@ public static class SuperAdminEndpoints
                 ? Results.Ok(new CompteSuperAdminDto(c.Identifiant, RegleDestinataire.MasquerTelephone(c.Telephone), RegleDestinataire.MasquerEmail(c.Email)))
                 : Results.NotFound(new ErreurDto("Compte super admin introuvable sur le serveur.")));
 
-        // Avant chaque action sensible : mot de passe ressaisi, puis code envoyé par SMS (e-mail en secours)
+        // Avant chaque action sensible : mot de passe ressaisi, puis le même code envoyé par SMS et par e-mail (un canal suffit)
         super.MapPost("/validations", async (ValidationSuperAdminRequete req, DemanderValidationSuperAdmin demander, ILoggerFactory journaux, CancellationToken ct) =>
         {
             var d = await demander.ExecuterAsync(req.Action, req.MotDePasse, ct);
             JournaliserCodeDemande(journaux.CreateLogger("Pharma.SuperAdmin"), req.Action, d.Canal);
-            return Results.Ok(new DemandeValidationDto(d.Id, d.Canal, d.Destinataire, d.ExpireLe));
+            return Results.Ok(new DemandeValidationDto(d.Id, d.Canal, d.Destinataire, d.ExpireLe, d.Message));
         });
 
         // ---- Restauration : sauvegardes proposées, puis restauration en tâche de fond (le poste suit les étapes) ----

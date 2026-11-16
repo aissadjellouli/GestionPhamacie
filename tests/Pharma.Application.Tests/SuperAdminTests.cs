@@ -32,6 +32,18 @@ internal sealed class EmailParServeur(params string[] enPanne) : IEnvoiEmail
     }
 }
 
+/// <summary>E-mail qui note adresse et texte (doublure : aucun envoi réel), ou échoue.</summary>
+internal sealed class EmailTexte(bool enPanne = false) : IEnvoiEmail
+{
+    public List<(string Adresse, string Texte)> Envoyes { get; } = [];
+    public Task EnvoyerAsync(ConnexionSmtp c, string adresse, string objet, string texte, string? html, CancellationToken ct = default)
+    {
+        if (enPanne) throw new IOException("Serveur SMTP injoignable");
+        Envoyes.Add((adresse, texte));
+        return Task.CompletedTask;
+    }
+}
+
 internal sealed class SmsEnPanne : IEnvoiSms
 {
     public Task EnvoyerAsync(string port, string numero, string texte, CancellationToken ct = default) => throw new IOException("Modem débranché");
@@ -63,17 +75,18 @@ public class SuperAdminTests
     private static CompteSuperAdmin Compte(CopieEnvoi? envoi = null) => new("admin.pharma", "hash:Secret-Super-2026", "0661234512", "admin@pharmacie.dz", envoi);
 
     private static (DemanderValidationSuperAdmin Cas, ValidationsSuperAdmin Etat, SmsEspion Sms, EmailEspion Email) Demandeur(
-        IEnvoiSms? sms = null, INotificationsDepot? depot = null, CompteSuperAdmin? compte = null, IHorloge? horloge = null)
+        IEnvoiSms? sms = null, INotificationsDepot? depot = null, CompteSuperAdmin? compte = null, IHorloge? horloge = null, IEnvoiEmail? courriel = null)
     {
         var comptes = new CompteSuperAdminEnMemoire(compte ?? Compte());
         var etat = new ValidationsSuperAdmin(horloge);
         var (espionSms, email) = (new SmsEspion(), new EmailEspion());
-        var envoi = new EnvoiCodeSuperAdmin(comptes, sms ?? espionSms, email, new SecretsFactices(), depot ?? new NotificationsEnMemoire());
+        var envoi = new EnvoiCodeSuperAdmin(comptes, sms ?? espionSms, courriel ?? email, new SecretsFactices(), depot ?? new NotificationsEnMemoire());
         var cas = new DemanderValidationSuperAdmin(new SeConnecterSuperAdmin(comptes, new VerificateurFactice(), etat, horloge), etat, envoi,
             new SuperAdminCourant { Identifiant = "admin.pharma" });
         return (cas, etat, espionSms, email);
     }
 
+    private static string CodeDans(string texte) => System.Text.RegularExpressions.Regex.Match(texte, @"code (\d{6})").Groups[1].Value;
     private static string CodeDuSms(SmsEspion sms) => System.Text.RegularExpressions.Regex.Match(sms.Envoyes.Single().Texte, @"code (\d{6})").Groups[1].Value;
 
     [Fact]
@@ -82,7 +95,7 @@ public class SuperAdminTests
         var (cas, etat, sms, _) = Demandeur();
         var d = await cas.ExecuterAsync(ActionsSuperAdmin.RepriseCharger, "Secret-Super-2026");
 
-        Assert.Equal(("SMS", "06•••••512"), (d.Canal, d.Destinataire));
+        Assert.Equal(("SMS et e-mail", "06•••••512 et a•••@pharmacie.dz"), (d.Canal, d.Destinataire));
         Assert.Equal("0661234512", sms.Envoyes.Single().Numero);
         Assert.DoesNotContain("é", sms.Envoyes.Single().Texte);   // SMS sans accents (jeu GSM)
         var code = CodeDuSms(sms);
@@ -134,6 +147,7 @@ public class SuperAdminTests
         var (cas, _, _, email) = Demandeur(sms: new SmsEnPanne());
         var d = await cas.ExecuterAsync(ActionsSuperAdmin.RepriseCharger, "Secret-Super-2026");
         Assert.Equal(("e-mail", "a•••@pharmacie.dz"), (d.Canal, d.Destinataire));
+        Assert.Equal("Code envoyé par e-mail à a•••@pharmacie.dz ; SMS non parti", d.Message);
         Assert.Equal("admin@pharmacie.dz", email.Envoyes.Single().Adresse);
     }
 
@@ -146,7 +160,7 @@ public class SuperAdminTests
 
         var copie = new CopieEnvoi("COM4", null, 587, true, null, null, null);
         var (cas, _, sms, _) = Demandeur(depot: new DepotInjoignable(), compte: Compte(copie));
-        Assert.Equal("SMS", (await cas.ExecuterAsync(ActionsSuperAdmin.RepriseCharger, "Secret-Super-2026")).Canal);
+        Assert.Equal("SMS", (await cas.ExecuterAsync(ActionsSuperAdmin.RepriseCharger, "Secret-Super-2026")).Canal);   // copie sans SMTP : SMS seul
         Assert.Single(sms.Envoyes);
     }
 
@@ -169,9 +183,9 @@ public class SuperAdminTests
         var email = new EmailParServeur("127.0.0.1");
         var envoi = new EnvoiCodeSuperAdmin(comptes, new SmsEspion(), email, new SecretsFactices(), depot);
 
-        var (canal, _) = await envoi.EnvoyerAsync(comptes.Compte!, null, "code 123456");
+        var resultat = await envoi.EnvoyerAsync(comptes.Compte!, null, "code 123456");
 
-        Assert.Equal("e-mail", canal);
+        Assert.Equal("e-mail", resultat.Canal);
         Assert.Equal(["smtp.gmail.com"], email.Serveurs);
         Assert.Equal(bonne, comptes.Compte!.Envoi);   // jamais écrasée par les réglages périmés
     }
@@ -233,5 +247,101 @@ public class SuperAdminTests
     {
         Assert.Equal("06•••••512", RegleDestinataire.MasquerTelephone("06 61 23 45 12"));
         Assert.Equal("a•••@pharmacie.dz", RegleDestinataire.MasquerEmail("admin@pharmacie.dz"));
+    }
+
+    private const string MotDePasse = "Secret-Super-2026";
+
+    [Fact]
+    public async Task Le_meme_code_part_par_SMS_et_par_email_et_l_un_ou_l_autre_le_valide()
+    {
+        var courriel = new EmailTexte();
+        var (cas, etat, sms, _) = Demandeur(courriel: courriel);
+        var d = await cas.ExecuterAsync(ActionsSuperAdmin.RestaurerBase, MotDePasse);
+
+        var parSms = CodeDans(sms.Envoyes.Single().Texte);
+        var parEmail = CodeDans(courriel.Envoyes.Single().Texte);
+        Assert.Matches(@"^\d{6}$", parSms);
+        Assert.Equal(parSms, parEmail);
+        Assert.Equal("Code envoyé par SMS au 06•••••512 et par e-mail à a•••@pharmacie.dz", d.Message);
+        Assert.Equal("admin@pharmacie.dz", courriel.Envoyes.Single().Adresse);
+        Assert.Equal(ActionsSuperAdmin.RestaurerBase, etat.Verifier(d.Id, parEmail, ActionsSuperAdmin.RestaurerBase).Action);   // reçu par e-mail
+        Assert.Throws<RegleMetierException>(() => etat.Verifier(d.Id, parSms, ActionsSuperAdmin.RestaurerBase));                 // usage unique, même code
+    }
+
+    [Fact]
+    public async Task Canal_SMS_en_echec_l_email_suffit_et_le_message_le_dit()
+    {
+        var courriel = new EmailTexte();
+        var (cas, etat, _, _) = Demandeur(sms: new SmsEnPanne(), courriel: courriel);
+        var d = await cas.ExecuterAsync(ActionsSuperAdmin.RestaurerGed, MotDePasse);
+        Assert.Equal("Code envoyé par e-mail à a•••@pharmacie.dz ; SMS non parti", d.Message);
+        Assert.NotNull(etat.Verifier(d.Id, CodeDans(courriel.Envoyes.Single().Texte), ActionsSuperAdmin.RestaurerGed));
+    }
+
+    [Fact]
+    public async Task Canal_email_en_echec_le_SMS_suffit_et_le_message_le_dit()
+    {
+        var (cas, etat, sms, _) = Demandeur(courriel: new EmailTexte(enPanne: true));
+        var d = await cas.ExecuterAsync(ActionsSuperAdmin.RepriseExtraire, MotDePasse);
+        Assert.Equal("Code envoyé par SMS au 06•••••512 ; e-mail non parti", d.Message);
+        Assert.Equal("SMS", d.Canal);
+        Assert.NotNull(etat.Verifier(d.Id, CodeDuSms(sms), ActionsSuperAdmin.RepriseExtraire));
+    }
+
+    [Fact]
+    public async Task Deux_canaux_en_echec_l_action_est_refusee_sans_rien_enregistrer()
+    {
+        var (cas, etat, _, _) = Demandeur(sms: new SmsEnPanne(), courriel: new EmailTexte(enPanne: true));
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(ActionsSuperAdmin.RestaurerBase, MotDePasse));
+        Assert.Contains("ni par SMS ni par e-mail", ex.Message);
+        Assert.Contains("Modem débranché", ex.Message);
+        Assert.Contains("Serveur SMTP injoignable", ex.Message);
+        Assert.Throws<RegleMetierException>(() => etat.Verifier(Guid.NewGuid(), "123456", ActionsSuperAdmin.RestaurerBase));
+    }
+
+    [Fact]
+    public async Task Journal_des_actions_note_les_canaux_reellement_utilises_jamais_le_code()
+    {
+        var courriel = new EmailTexte();
+        var (cas, etat, sms, _) = Demandeur(sms: new SmsEnPanne(), courriel: courriel);
+        var d = await cas.ExecuterAsync(ActionsSuperAdmin.RepriseCharger, MotDePasse);
+        var code = CodeDans(courriel.Envoyes.Single().Texte);
+        var courant = new SuperAdminCourant { Identifiant = "admin.pharma", Validation = etat.Verifier(d.Id, code, ActionsSuperAdmin.RepriseCharger) };
+
+        var trace = courant.Trace();
+        Assert.Equal("code envoyé par e-mail à a•••@pharmacie.dz", trace["validation"]);
+        Assert.DoesNotContain(code, string.Join(" ", trace.Values.Select(v => v?.ToString())));
+        Assert.DoesNotContain("0661234512", string.Join(" ", trace.Values.Select(v => v?.ToString())));
+
+        // Les deux canaux : le journal les cite tous les deux
+        var (cas2, etat2, sms2, _) = Demandeur(courriel: new EmailTexte());
+        var d2 = await cas2.ExecuterAsync(ActionsSuperAdmin.RepriseCharger, MotDePasse);
+        var courant2 = new SuperAdminCourant { Identifiant = "admin.pharma", Validation = etat2.Verifier(d2.Id, CodeDuSms(sms2), ActionsSuperAdmin.RepriseCharger) };
+        Assert.Equal("code envoyé par SMS au 06•••••512 et par e-mail à a•••@pharmacie.dz", courant2.Trace()["validation"]);
+    }
+
+    [Fact]
+    public async Task Nouvelle_adresse_email_verifiee_par_un_code_envoye_a_cette_adresse_seulement()
+    {
+        var comptes = new CompteSuperAdminEnMemoire(Compte());
+        var (sms, courriel) = (new SmsEspion(), new EmailTexte());
+        var envoi = new EnvoiCodeSuperAdmin(comptes, sms, courriel, new SecretsFactices(), new NotificationsEnMemoire());
+
+        var r = await envoi.EnvoyerAAdresseAsync(comptes.Compte!, "nouveau@pharmacie.dz", "PharmaOfficine : code 654321 pour verifier l'e-mail");
+
+        Assert.Equal(("nouveau@pharmacie.dz", "PharmaOfficine : code 654321 pour verifier l'e-mail"), courriel.Envoyes.Single());
+        Assert.Empty(sms.Envoyes);   // ni l'ancienne adresse ni le téléphone ne reçoivent ce code
+        Assert.Equal(("e-mail", "n•••@pharmacie.dz"), (r.Canal, r.Destinataire));
+    }
+
+    [Fact]
+    public async Task Nouvelle_adresse_non_joignable_verification_refusee()
+    {
+        var comptes = new CompteSuperAdminEnMemoire(Compte());
+        var sms = new SmsEspion();
+        var envoi = new EnvoiCodeSuperAdmin(comptes, sms, new EmailTexte(enPanne: true), new SecretsFactices(), new NotificationsEnMemoire());
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => envoi.EnvoyerAAdresseAsync(comptes.Compte!, "nouveau@pharmacie.dz", "code 123456"));
+        Assert.Contains("e-mail", ex.Message);
+        Assert.Empty(sms.Envoyes);   // pas de repli par SMS : l'adresse doit prouver qu'elle reçoit
     }
 }

@@ -10,7 +10,7 @@ namespace Pharma.Api.Endpoints;
 
 /// <summary>
 /// Assistant de reprise de données (super admin seulement) : l'ancienne base est lue par ODBC, en lecture seule. Extraction,
-/// chargement et annulation demandent en plus le code reçu par SMS (ou e-mail). Données chargées attribuées au titulaire.
+/// chargement et annulation demandent en plus le code reçu par SMS ou par e-mail. Données chargées attribuées au titulaire.
 /// </summary>
 internal static class RepriseEndpoints
 {
