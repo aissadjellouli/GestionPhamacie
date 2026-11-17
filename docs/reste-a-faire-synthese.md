@@ -10,7 +10,7 @@ sans le chiffrement) ; copie de la GED vers le 2e serveur et sa fréquence (scri
 
 ## 2. Fait, à commiter
 
-- [ ] Copie de la GED : lecture de la fréquence par authentification Windows (SSPI) au lieu de `trust` (`autoriser-lecture-copie-ged.ps1`).
+Rien. La lecture de la fréquence de copie de la GED par authentification Windows (SSPI) est commitée (`8854fb3`).
 
 ## 3. Ensuite
 
