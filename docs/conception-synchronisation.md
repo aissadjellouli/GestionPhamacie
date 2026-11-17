@@ -524,7 +524,7 @@ Rien n'est codé ; les classements de `sync_table` ne changent pas maintenant.
 
 **Décisions D1 à D14 (§ 16 bis) : toutes les recommandations sont acceptées par le titulaire le 2026-11-16 (« ok recommandations mutualisation »).** Développement par lots M1 à M9.
 
-**Statut : conception ; les scripts de base de données (lots M2 et M3) et l'outil d'administration du central (lot M6) sont réalisés (§ 16 bis.12), le reste n'est pas codé ici.** Les décisions du titulaire du § 16 et de `regles-metier.md` (2026-11-16) s'appliquent telles quelles.
+**Statut : réalisé, lots M1 à M9 clos le 2026-11-17 (§ 16 bis.12 et § 16 bis.13).** Le texte qui suit est la conception d'origine ; les écarts retenus pendant la réalisation sont au § 16 bis.12. Les décisions du titulaire du § 16 et de `regles-metier.md` (2026-11-16) s'appliquent telles quelles.
 Les points **[À DÉCIDER]** sont regroupés au § 16 bis.9 avec une recommandation ; les points **[À VÉRIFIER]** ne sont pas établis.
 « Constaté » = lu dans le code ou les scripts à la date de cette conception.
 
@@ -754,7 +754,7 @@ corps `{ versionModele }`) : applique le modèle proposé (mêmes étapes), 409 
 | **M6. Outil d'administration central** (`Pharma.Cloud.Api`) | `--reglages-mutualises [--table] [--officine]` (modèles, modes, état par officine, rejets), `--publier-reglage <table> --fichier <json> --auteur <id> [--simulation]`, `--mode-reglage <table> impose\|propose --auteur <id>`, `--modele-depuis-officine <table> --officine <code> --auteur <id>` (prépare un fichier depuis le miroir d'une officine de référence), `--liberer-reglages --officine <code> --auteur <id>`, `--journal-reglages` ; validation par M1 | backend | M1, M3 | M |
 | **M7. Écrans du poste** | composant commun « fixé par le serveur central » (mention, champs grisés, bouton Adopter, valeur proposée) dans les 9 écrans existants ; deux écrans nouveaux fiscal et traçabilité (D8) ; Administration › Synchronisation : sous-rubrique « Réglages mutualisés » (état des 11 tables, rejets) ; charte graphique, sans défilement, captures clair et sombre | frontend (poste) | M5 (routes fixées ici : peut commencer en parallèle) | L |
 | **M8. Essais de bout en bout** | copies jetables, les deux API réelles : publication proposée puis imposée (valeur locale remplacée, journal des deux côtés, message), refus 409 et refus de la base, valeur invalide rejetée sans arrêt de l'envoi, central coupé (réglage gardé, rien bloqué), conflit simultané, désactivation puis réactivation, libération, 2e serveur en lecture seule ; tests C# (`Pharma.Application.Tests`, `Pharma.Cloud.Tests`, test d'architecture : même liste de 11 tables dans le domaine, le script 141, le script 010 et `sync_table`) | testeur | M2–M7 | M |
-| **M9. Documentation** | `regles-metier.md` (chaque règle, même modification que le code), ce document (réalisé), `base-de-donnees.md`, `securite-et-droits.md`, `mise-en-production.md` (scripts 141 et 010), `a-faire.md` ; scripts passés sur dev et test | documentaliste | au fil des lots | S |
+| **M9. Documentation** (réalisé le 2026-11-17, § 16 bis.13) | `regles-metier.md` (chaque règle, même modification que le code), ce document (réalisé), `base-de-donnees.md`, `securite-et-droits.md`, `mise-en-production.md` (scripts 141 et 010), `a-faire.md` ; scripts passés sur dev et test | documentaliste | au fil des lots | S |
 
 **Ordre et parallélisme** :
 1. Décisions D1 à D14 (au moins D1, D2, D3, D5, D6, D8 avant de coder).
@@ -1000,7 +1000,25 @@ Ce qui restait pour clore M8 : correctif D-M8-1 fait (voir ci-dessus), puis rejo
 
 **Limites constatées** : (1) le journal central porte les modes et versions, pas les valeurs (les valeurs avant/après sont au journal de l'officine) ; (2) un modèle injecté à la main avec un numéro de version que le central n'a pas encore donné (version 1) fait que la première vraie publication portant le même numéro n'est pas réexaminée (version rejetée) : sans objet en production, le compteur du central étant la seule source de version ; contourné dans l'essai par une version suivante ; (3) `-Arreter` répond parfois « droits insuffisants » quand le processus met quelques secondes à se terminer : relancer la commande ; (4) la copie `pharmacie_essai_officine` est faite au démarrage : un script de migration ajouté à `pharmacie_dev` ensuite n'y est pas (écart au rejeu complet).
 
-**État final de l'essai** : laissé en marche (central 5192, API 5193), toutes les tables publiées en « proposé » (`parametre_serialisation`, `parametre_tracabilite`, `parametre_formulaire_sms` v1, `parametre_inventaire`, `motif_reglable`, `remise_automatique`, `parametre_surveillance`, `parametre_alerte`), aucune imposée ; compte `essai_m8` désactivé. M8 est clos ; reste M9 (chiffrement, en dernier, sur « go chiffrement » du titulaire).
+**État final de l'essai** : à la fin de M8, l'essai a été arrêté et entièrement supprimé (`essai_cloud_officine.ps1 -Arreter` : bases `pharmacie_cloud_essai` et `pharmacie_essai_officine`, rôle `pharma_cloud_essai` et dossier d'essai supprimés ; vérifié : aucun processus, aucun port d'essai, aucune base d'essai). M8 est clos. Le chiffrement (lot 9 du plan général) ne fait **pas** partie de la mutualisation : il reste en dernier, sur « go chiffrement » du titulaire.
+
+
+### 16 bis.13 Lot M9 : documentation finale (2026-11-17)
+
+Lot clos sans la tâche de chiffrement (décision du titulaire : le chiffrement des données reste le lot 9 du plan général, sur « go chiffrement »).
+
+| Document | Contenu à jour |
+|---|---|
+| Ce document | Statut « réalisé », résultats de M8 (13 scénarios, défauts D-M8-1 à D-M8-3 corrigés), état final de l'essai. |
+| `regles-metier.md` | Règles de la mutualisation (modes local / proposé / imposé, première réception, Adopter, motifs et remises, horaires toujours locaux, libération, désactivation, modèle rejeté), écrites avec le code de chaque lot. |
+| `base-de-donnees.md` | Tableau des scripts remis en ordre (001 à 143, dont 101b, 111b et 127 à 140 qui manquaient), scripts 141 à 143 décrits. |
+| `securite-et-droits.md` | Rubrique « Réglages mutualisés » : qui publie, qui consulte et adopte, refus local (409 et garde de la base), marqueur `pharma.reglage_central`, traçabilité. |
+| `mise-en-production.md` | Scripts centraux 010 et 011 (parcours E, étapes 2.1 et 10.2), étape 9 « Réglages mutualisés » ; scripts officine 141 et 142 passés par la mise à jour de l'officine. |
+| `database/cloud/README.md` | Scripts centraux 010 et 011 et leurs tests. |
+| `essai-cloud-officine.md` | Essai local des deux serveurs, § 6.9 (mutualisation), suivi en direct et arrêt. |
+| `a-faire.md`, `reste-a-faire-synthese.md` | Mutualisation close ; restent les points à décider listés au § 16 bis.12 (limites constatées). |
+
+**Scripts passés** (contrôlé le 2026-11-17) : `pharmacie_dev` et `pharmacie_test` à jour jusqu'à 143 (garde `reglage_garde` du script 142, colonne `ged_copie_minutes` du script 143), les 11 réglages en mode `local`, synchronisation désactivée ; `pharmacie_cloud_dev` : `cloud_descendants` du script 011.
 
 ## 17. Débit pendant un chargement complet (2026-11-16, GO du titulaire)
 

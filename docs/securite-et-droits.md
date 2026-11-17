@@ -34,6 +34,19 @@
 - **Sceau** : HMAC-SHA256 calculé par l’application avec cette clé sur le dernier rang et la dernière empreinte d’un journal : quelqu’un qui a accès à la base seule peut recalculer les empreintes, pas les sceaux. Version cloud : adaptateur `IScelleurIntegrite` à venir (coffre de clés de l’hébergeur).
 - **Rôles PostgreSQL** : `pharma_app` est encore propriétaire de la base et peut donc désactiver un déclencheur. La séparation (propriétaire `pharma_proprietaire`, `pharma_app` sans `UPDATE`/`DELETE`/`TRUNCATE` sur les journaux) est écrite dans `database/migration/111b_roles_integrite.sql`, **non exécuté** : à faire par l’administrateur (superutilisateur), voir [mise-en-production.md](mise-en-production.md), « Séparation des rôles ».
 
+
+## Réglages mutualisés (2026-11-17)
+
+Détail : [conception-synchronisation.md](conception-synchronisation.md) § 16 bis ; règles : [regles-metier.md](regles-metier.md).
+
+- **Seul l'administrateur du serveur central publie** un modèle, change le mode (proposé, imposé), libère ou rétablit une officine : outil `Pharma.Cloud.Api --publier-reglage`, `--mode-reglage`, `--liberer-reglages`, `--retablir-reglages`, avec `--auteur` obligatoire. Les fonctions SQL d'administration (scripts centraux 010 et 011) n'ont pas de droit `EXECUTE` pour `PUBLIC` ni pour `pharma_cloud_api` : l'API centrale ne fait que lire (`cloud_descendants`).
+- **Double validation** : à la publication (outil) et à la réception (officine), par les mêmes règles du domaine ; liste fermée de 11 tables ; une valeur invalide est rejetée en bloc pour sa table, journalisée, sans arrêter la synchronisation.
+- **Dans l'officine** : la liste des 11 réglages (`GET /api/reglages-mutualises`) exige `admin.parametres` ; consulter une table et adopter sa valeur proposée (« Adopter ») exigent le droit de saisir cette table : `admin.parametres` (motifs, alertes, substitution, formulaire SMS), `caisse.remises_auto` (remises automatiques), sinon le titulaire.
+- **Table imposée** : toute modification locale est refusée par le cas d'usage (409, champ `reglage_impose`) **et** par la base (déclencheur `zz_reglage_garde`, script 141). Seules les heures d'ouverture et de fermeture du contrôle interne restent modifiables.
+- **Marqueur `pharma.reglage_central`** : il laisse passer l'écriture d'un modèle reçu. Il est posé seulement par `ReglagesMutualisesSql` (dans sa transaction) et par les outils de rejeu et de restauration (`PGOPTIONS`). Il protège contre une erreur de l'application, pas contre le compte de la base de l'API.
+- **Traçabilité** : journal du central (`--journal-reglages` : qui, quand, compte Windows, poste, mode et version) ; journal de l'officine (`journal_audit`, valeurs avant et après de chaque application, adoption, libération ou modification locale).
+- **Données** : aucun nom de patient ni mot de passe dans un modèle ; l'auteur est l'identifiant de l'administrateur du central.
+
 ## Journaux sans données personnelles
 
 Règle (2026-11-16) : les fichiers journaux du serveur (`C:\ProgramData\PharmaOfficine\Journaux\pharma-api-*.log`) et du poste (`%LOCALAPPDATA%\PharmaOfficine\erreurs.log`) ne contiennent aucune donnée personnelle : ni nom ou prénom de patient, de médecin ou d'employé, ni n° d'assuré, n° de pièce, téléphone, e-mail, adresse, ni texte libre saisi (motifs, observations). Le journal d'audit en base (`journal_audit`) n'est pas concerné.

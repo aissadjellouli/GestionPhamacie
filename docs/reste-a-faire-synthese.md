@@ -1,36 +1,25 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-17. Vue d'ensemble courte ; le détail de chaque point est dans [a-faire.md](a-faire.md) et dans les
+Point d'avancement du 2026-11-17 (après M9). Vue d'ensemble courte ; le détail de chaque point est dans [a-faire.md](a-faire.md) et dans les
 documents cités. À mettre à jour à chaque point d'avancement.
 
 ## 1. En cours
 
-- [ ] **Mutualisation des réglages, lot M8** : essai de bout en bout avec un vrai serveur central (13 scénarios), sur l'essai local
-      `scripts/dev/essai_cloud_officine.ps1`. Premier passage partiel ; défaut D-M8-1 corrigé (script central 011) ; règle D-M8-2
-      réalisée (script officine 142). Résultats : [conception-synchronisation.md](conception-synchronisation.md) § 16 bis.12.
-- [ ] **Fréquence de la copie de la GED vers le 2e serveur** : réglable dans Administration › 2e serveur, 5 minutes par défaut
-      (script officine 143, `scripts/second-serveur/copier-ged.ps1`).
+Rien. Derniers lots clos le 2026-11-17 : mutualisation des réglages M8 (13 scénarios réussis) et M9 (documentation finale,
+sans le chiffrement) ; copie de la GED vers le 2e serveur et sa fréquence (script 143) ; correctif du journal des actions du 2e serveur.
 
 ## 2. Fait, à commiter
 
-- [ ] Correctif central 011 (`ajouts_locaux` seulement pour motifs et remises) et son test de validation des éléments envoyés.
-- [ ] Essai local sans mot de passe du titulaire (compte temporaire dans la base d'essai seulement).
-- [ ] Copie de la GED vers le 2e serveur (`copier-ged.ps1`, `partager-ged.ps1`, procédures C, F3, F4).
-- [ ] Script 142 : première réception d'un modèle proposé.
-- [ ] Correctif du journal des actions du 2e serveur (réglages des serveurs, seuils de réplication, export de la clé de scellement :
-      erreur 500, code `role.titulaire` hors du catalogue des droits) et son test.
-- [ ] Documentation : guide d'essai ([essai-cloud-officine.md](essai-cloud-officine.md), sections 3 bis, 5 bis, 6.9, 7),
-      [ged-protection-a-decider.md](ged-protection-a-decider.md), conception, règles métier, manuel de mise en production.
+- [ ] Lot M9 : documentation finale de la mutualisation, [base-de-donnees.md](base-de-donnees.md) remis en ordre (001 à 143).
 
 ## 3. Ensuite
 
-- [ ] **Mutualisation, lot M9** : documentation finale ; remettre en ordre [base-de-donnees.md](base-de-donnees.md) (lignes de scripts
-      placées avant le titre, scripts 127 à 140 absents).
 - [ ] **Push** des commits locaux par le titulaire (branche `develop`).
 
 ## 4. Décisions attendues du titulaire
 
-- [ ] **Bases jetables orphelines** : `pharmacie_jetable_m4_2b2cf86a`, `pharmacie_jetable_rejeu_e51efbd8` (suppression sur accord).
+- [ ] **Bases jetables orphelines** : `pharmacie_jetable_m4_2b2cf86a`, `pharmacie_jetable_m4_3b48212e`, `pharmacie_jetable_rejeu_e51efbd8` (suppression sur accord).
+- [ ] **Lecture de la fréquence de copie de la GED par le 2e serveur** : connexion SSPI (recommandée) ou règle `trust` locale.
 - [ ] **Compte `postgres`** : fichier `pgpass.conf` (hors dépôt) pour essayer le script 111b et la méthode `SET ROLE` sur une copie.
 - [ ] **GED** : protection des documents (GED consultable ou non au central, sauvegarde chiffrée hors de l'officine après le lot 9,
       rotation de deux disques pour une officine à un seul serveur, alerte « pas de sauvegarde ») :
