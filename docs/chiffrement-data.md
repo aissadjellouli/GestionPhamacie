@@ -96,9 +96,64 @@ autour** du chiffrement (nonce réutilisé, clé au journal, faille de l'API, ha
 | 4 | Autorité du central (ECDSA P-256, 10 ans) et certificats d'officine (3 ans) | Faux certificats possibles le jour venu | Passage à ML-DSA quand la chaîne TLS de Windows l'acceptera **[À VÉRIFIER]** ; le renouvellement des certificats tous les 3 ans permet une migration progressive |
 | — | AES-256-GCM, SHA-256 (empreintes des journaux), sceaux HMAC-SHA256, PBKDF2 sur un code aléatoire de 128 bits, JWT de 10 min | Résistent (au plus moitié de la marge pour les clés symétriques, soit 128 bits) ou durent trop peu | Aucun changement |
 
-**[À VÉRIFIER]** : prise en charge de ML-KEM et ML-DSA sur les versions de Windows des **serveurs d'officine** (c'est l'officine qui chiffre
-S1 avec la clé publique de l'éditeur) ; si une version ne les a pas, conduite à tenir à décider (mise à jour de Windows exigée, ou
-paquet externe, aujourd'hui exclu par la règle « fonctions de .NET seulement ») **[DÉCISION le moment venu]**.
+**Windows des serveurs d'officine** (c'est l'officine qui chiffre S1 avec la clé publique de l'éditeur) : version minimale **Windows 11
+24H2** ou **Windows Server 2025**, à jour ; l'échange hybride en HTTPS est désactivé par défaut et s'active sur chaque serveur. Détail
+(mises à jour, builds, activation), plancher matériel, configuration conseillée et coût des licences :
+[mise-en-production.md](mise-en-production.md), « Matériel et Windows du PC serveur ». Les versions de Windows réellement installées
+dans les officines sont **inconnues [À VÉRIFIER]**.
+
+**Au lot C2** : au démarrage, l'API locale vérifie `MLKem.IsSupported` et `MLDsa.IsSupported` ; elle choisit l'hybride si la machine le
+gère, le classique sinon (§ 3 ter), avec alerte au titulaire tant qu'elle reste en classique. Un paquet externe reste exclu par la règle
+« fonctions de .NET seulement ».
+
+## 3 ter. Démarrage progressif et officines hétérogènes (titulaire, 2026-11-17, « ok »)
+
+**Principe** : on peut démarrer sans l'algorithme résistant au quantique et basculer plus tard. Règle retenue : **hybride si la machine le
+permet, classique sinon**, officine par officine ; aucune exigence de Windows 11 24H2 pour démarrer. Remplace la règle antérieure
+« aucun envoi chiffré avec un algorithme plus faible ».
+
+**Pourquoi le risque est faible pour les données stockées** :
+- les blocs de données sont en AES-256, qui résiste déjà : ils ne seront **jamais** à rechiffrer ;
+- seule l'enveloppe de la part éditeur S1 serait classique (ECDH P-256), donc cassable un jour ;
+- S1 seule ne révèle rien (§ 3) : il faut aussi S2, protégée par le code aléatoire de 128 bits du titulaire, qui résiste au quantique.
+  Un attaquant qui copie aujourd'hui la base centrale et dispose demain d'un ordinateur quantique **n'obtient rien sans ce code**.
+
+**Là où attendre a un coût** :
+
+| Point | Risque | Parade |
+|---|---|---|
+| Signatures des lots (preuve du journal fiscal) | Une signature classique deviendra imitable : les anciens lots perdraient leur valeur de preuve | À la bascule, **re-signer en hybride les ancrages existants** tant que l'algorithme classique tient encore (pratique de l'archivage de preuves) |
+| Trafic HTTPS enregistré | Déchiffrable plus tard | Données nominatives déjà chiffrées (option C), autres données sous code : risque limité |
+
+**À prévoir dès le début pour basculer sans casse** :
+1. **Identifiant d'algorithme** sur chaque enveloppe, bloc et signature (en plus de l'octet de version de format) : par exemple
+   `1` = classique (ECDH P-256 / ECDSA P-256), `2` = hybride (ML-KEM-768 + ECDH P-256 / ML-DSA-65 + ECDSA P-256) ;
+2. **plusieurs enveloppes** possibles pour une même part (une classique, une hybride), avec leur algorithme (§ 9) ;
+3. **l'officine garde S1** (DPAPI portée machine, comme KD ; pas un recul : elle a déjà KD) pour refaire seule l'enveloppe éditeur avec
+   le nouvel algorithme, **sans redemander le code du titulaire** ;
+4. **lot C6, bascule** (§ 11).
+
+**Comment l'API du central accueille des officines hétérogènes** :
+
+| Élément | Rôle du central | Officines hétérogènes |
+|---|---|---|
+| Blocs de données (AES-256) | Les stocke **sans les ouvrir** (il n'a jamais la clé) | Aucune différence |
+| Enveloppe de la part éditeur | La stocke sans l'ouvrir | Classique ou hybride selon l'officine ; c'est l'**outil hors ligne de l'éditeur** qui sait ouvrir les deux, pas l'API |
+| Signature des lots | **La vérifie** à chaque dépôt | Gère les deux algorithmes, choisit selon l'identifiant ; la clé publique de l'officine est enregistrée à l'activation avec son algorithme |
+| HTTPS | Propose l'hybride en premier, le classique ensuite | Négocié à chaque connexion : chaque officine obtient le meilleur que son Windows gère |
+| Certificats | Fait confiance à **deux autorités** pendant la transition (ECDSA actuelle, ML-DSA future) | Une officine passe à la nouvelle autorité à son prochain renouvellement (3 ans au plus, ou plus tôt) |
+| Jetons JWT | Émis et vérifiés par le central lui-même | Non concernés |
+
+- **Capacités déclarées** : à chaque échange, l'officine déclare la version de son API, le build de Windows, ML-KEM et ML-DSA
+  disponibles ou non. Le central garde pour chaque officine son **niveau atteint** (classique ou hybride) et sa date ; la supervision
+  (écrans S7) liste les officines restées en classique.
+- **Anti-rétrogradation** (indispensable : un attaquant pourrait tenter de forcer le classique) : dès qu'une officine a envoyé une
+  fois en hybride, le central **refuse tout envoi classique** de sa part (refus journalisé, titulaire alerté). Plus tard, une **date
+  butoir** fixée par l'éditeur : après elle, le classique est refusé pour tous, les officines en retard étant prévenues longtemps avant
+  **[DÉCISION le moment venu : date]**.
+- Même principe que la tolérance d'une version de retard de l'API ([conception-synchronisation.md](conception-synchronisation.md) § 0).
+- **[À VÉRIFIER dans le code]** : enregistrement actuel de l'officine et de son certificat à l'activation ; signature des lots déjà
+  codée ou seulement prévue ; champ de version du contrat d'échange réutilisable.
 
 ## 4. Chiffrement à l'envoi
 
@@ -179,12 +234,16 @@ Aucune autre ouverture : en particulier, jamais pour le support technique ni pou
 - `donnee_chiffree` (`officine_id`, `nom_table`, `cle_ligne`, `cle_version`, `format`, `bloc bytea`, `recu_le`) : table **à part**, pour ne pas
   toucher aux tables miroir (« mêmes tables et colonnes que la base locale ») ; dernier état seulement pour les tables qui changent
   (`patient`, `vente`), **ajout seul** pour les journaux (`journal_registre_psychotrope`) ; RLS et `FORCE ROW LEVEL SECURITY` comme les autres tables ;
-- `cle_enveloppe` (`officine_id`, `cle_version`, `partie` `editeur` / `titulaire` / `suppleant`, `enveloppe bytea`, `empreinte_cle_publique`, `cree_le`) ;
-  seules suppressions permises : remplacement d'une enveloppe titulaire et effacement au départ, par une fonction dédiée journalisée ;
+- `cle_enveloppe` (`officine_id`, `cle_version`, `partie` `editeur` / `titulaire` / `suppleant`, `algorithme`, `enveloppe bytea`, `empreinte_cle_publique`, `cree_le`) ;
+  plusieurs enveloppes possibles pour une même part (classique et hybride, § 3 ter) ; seules suppressions permises : remplacement d'une
+  enveloppe titulaire, retrait d'une enveloppe classique après bascule, effacement au départ, par une fonction dédiée journalisée ;
+- `officine_capacite_crypto` (`officine_id`, `niveau` classique / hybride, `niveau_atteint_le`, `version_api`, `build_windows`, `mlkem`, `mldsa`, `declare_le`) :
+  sert à l'anti-rétrogradation (§ 3 ter) et à la supervision ;
 - `ouverture_demande` et son journal (ajout seul, chaîné) ; aucune colonne en clair.
 
 **Officine** (script officine à numéroter après `143`, idempotent, scripts d'initialisation mis à jour dans la même modification) :
-- `chiffrement_cle` (`version`, `empreinte`, `creee_le`, `etat`, `enveloppes_envoyees_le`) : **aucun matériel de clé** en base ;
+- `chiffrement_cle` (`version`, `empreinte`, `algorithme`, `creee_le`, `etat`, `enveloppes_envoyees_le`) : **aucun matériel de clé** en base
+  (KD et S1 sont dans des fichiers DPAPI, § 3 ter) ;
 - `sync_table` : liste des colonnes chiffrées par table (comme `colonnes_texte`).
 
 ## 10. Décisions du titulaire (2026-11-17, « ok recommandations »)
@@ -214,6 +273,7 @@ de santé ; obligations face à une réquisition ; durées de conservation et ef
 | C3 | Chiffrement à la constitution des lots, réception et contrôle au central, `sync-v2`, rattrapage par chargement complet | C2, DC1 |
 | C4 | Ouverture à deux (demande, validations, journal, alertes, reconstitution dans un serveur d'officine), recalcul des empreintes du registre | C3, fin de S6 (restauration), DC2, DC7 |
 | C5 | Changement de code, rotation de KD, effacement cryptographique au départ | C4, DC6 |
+| C6 | Bascule vers l'hybride (§ 3 ter) : enveloppes éditeur refaites en hybride puis classiques retirées, ancrages des journaux re-signés en hybride, échange HTTPS hybride activé, certificats ML-DSA au renouvellement, anti-rétrogradation, date butoir | C1 à C3 ; Windows 11 24H2 ou Server 2025 dans l'officine |
 
 **Essais prévus** : tests unitaires (format, refus d'un bloc déplacé grâce aux données associées, parts S1 / S2, mauvais code) ; essai de bout
 en bout sur copies jetables (central et officine) ; **preuve que la base centrale ne contient aucune donnée lisible** (recherche des valeurs

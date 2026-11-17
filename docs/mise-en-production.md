@@ -6,7 +6,7 @@ Mise à jour : 2026-11-16. Les points marqués **[À CONFIRMER]** ne sont pas tr
 
 ## Sommaire
 
-- [Avant de commencer](#avant-de-commencer) : rôles, comptes, conventions, ports, services, variables, fichiers
+- [Avant de commencer](#avant-de-commencer) : rôles, comptes, matériel et Windows du PC serveur, conventions, ports, services, variables, fichiers
 - [Scripts de la base de données](scripts-base-de-donnees.md) : quel script lancer (base neuve, mise à jour, serveur central), avec quel compte, et que faire en cas d'échec
 - [Parcours A, installation neuve](#parcours-a-installation-neuve) : une officine qui démarre de zéro (étapes 1 à 15)
 - [Parcours B, mises à jour](#parcours-b-mises-à-jour) : une officine déjà en service (étapes 1 à 14)
@@ -46,6 +46,61 @@ Mise à jour : 2026-11-16. Les points marqués **[À CONFIRMER]** ne sont pas tr
 | **Clé USB** | support de transport (exemple : `E:\`). Jamais de certificat ni de secret par le réseau |
 
 Dans les commandes, les valeurs entre `<` et `>` sont **à remplacer** (exemple : `<serveur>`, `<base>`, `<mot de passe>`). Ne jamais écrire de vrai mot de passe dans un fichier du dépôt.
+
+### Matériel et Windows du PC serveur (2026-11-17)
+
+Concerne le **PC serveur** et le **2e serveur** (même configuration : en bascule, il porte toute la charge). Les **postes** ne sont pas
+concernés par le chiffrement ; leur minimum (application du poste et Chifa_Officine) n'est pas mesuré **[À VÉRIFIER]**. Un poste sous
+Windows 10 n'a plus de mises à jour de sécurité depuis octobre 2025 : sujet à traiter à part.
+
+**Version minimale de Windows** (exigée par le chiffrement résistant au quantique, [chiffrement-data.md](chiffrement-data.md) § 3 bis) :
+
+| Fonction | Windows 11 Pro | Windows Server | Source |
+| --- | --- | --- | --- |
+| ML-KEM et ML-DSA (.NET 10, chiffrement et signature) | **24H2** ou 25H2, mise à jour de novembre 2025 (KB5068861, build 26100.7171) ou plus | **2025**, même mise à jour | [Microsoft, novembre 2025](https://techcommunity.microsoft.com/t5/microsoft-security-community/post-quantum-cryptography-apis-now-generally-available-on/ba-p/4469093) |
+| Échange de clé hybride en HTTPS (Schannel, TLS 1.3, `X25519_MLKEM768`) | 24H2 et 25H2 : KB5089573 (builds 26100.8524 et 26200.8524) ; 26H1 : KB5095091 (build 28000.2340) | **2025** : KB5099536 (build 26100.33158, 14 juillet 2026) | [Microsoft, FAQ TLS 1.3 et post-quantique](https://techcommunity.microsoft.com/t5/post-quantum-crypto-tech-blog/windows-tls-1-3-and-post-quantum-crypto-faq/ba-p/4556389) |
+
+- Windows 10, Windows 11 23H2 et avant, Windows Server 2022 et avant : **non cités par Microsoft**, donc considérés comme non pris en charge.
+- L'échange hybride est **désactivé par défaut** : l'activer sur chaque serveur, en PowerShell administrateur
+  `Enable-TlsEccCurve -Name "X25519_MLKEM768" -Position 0`, **ou** par stratégie de groupe (pas les deux : la stratégie l'emporte).
+  Il ne sert que si l'autre côté le gère aussi ; sinon la connexion se fait en échange classique, sans erreur. Central sous Linux :
+  OpenSSL 3.5 ou plus **[À VÉRIFIER avec l'hébergeur]**.
+- Constaté le 2026-11-17 sur le poste de développement (Windows 11 build 26300, .NET 10) : `MLKem.IsSupported`, `MLDsa.IsSupported` et
+  `CompositeMLDsa.IsSupported` vrais ; `SlhDsa.IsSupported` faux.
+- Sources lues le 2026-11-17 : listes complétées par Microsoft au fil des mises à jour, **à revérifier avant la mise en service**.
+
+**Plancher matériel de Windows 11** ([exigences Microsoft](https://www.microsoft.com/fr-fr/windows/windows-11-specifications)) :
+processeur 64 bits de 2 cœurs à 1 GHz **de la liste compatible** (Intel Core 8e génération ou plus, AMD Ryzen 2000 ou plus), 4 Go de
+mémoire, 64 Go de disque, UEFI avec Secure Boot, puce TPM 2.0. Un PC hors de ce plancher ne passe pas en Windows 11 24H2, donc pas de
+chiffrement résistant au quantique.
+
+**Configuration conseillée du PC serveur** (estimation, **non mesurée** sur une officine réelle **[À VÉRIFIER : essai de charge]**) :
+
+| Élément | Conseillé | Pourquoi |
+| --- | --- | --- |
+| Processeur | 4 cœurs : Intel Core i3 12e génération ou plus, ou AMD Ryzen 3 5000 ou plus | PostgreSQL, API, synchronisation et chiffrement ensemble |
+| Mémoire | **16 Go** (8 Go au strict minimum) | PostgreSQL profite de la mémoire libre ; 4 Go trop juste |
+| Disque | SSD NVMe de 512 Go | Rapidité de la base ; place de la GED **[À VÉRIFIER : volume réel]** |
+| Sauvegarde | Disque externe, ou deux en alternance | [ged-protection-a-decider.md](ged-protection-a-decider.md) |
+| Réseau | Ethernet gigabit, pas de Wi-Fi | Liaison stable avec les postes |
+| Onduleur | **Obligatoire** | Une coupure pendant une écriture peut abîmer la base |
+| Windows | Windows 11 Pro 24H2 ou plus, à jour | Tableau ci-dessus |
+
+**Coût de la licence Windows par serveur** (estimation du 2026-11-17 ; prix en dollars relevés chez des revendeurs, taux **supposé**
+1 $ ≈ 132 DA, non vérifié ; au taux du marché parallèle, environ ×1,8 ; aucun prix officiel en dinars trouvé) :
+
+| Licence | Prix | 1 serveur | Avec le 2e serveur | Remarque |
+| --- | --- | --- | --- | --- |
+| **Windows 11 Pro** (recommandé) | ≈ 200 $ (prix public, **[À VÉRIFIER]**) | ≈ 26 000 DA | ≈ 53 000 DA | Suffit pour une officine ; souvent inclus avec un PC neuf ; **0 DA** si le PC a déjà une licence Windows 10 ou 11 et passe le plancher ci-dessus (mise à niveau gratuite) |
+| Windows Server 2025 Essentials | ≈ 500 $ **[À VÉRIFIER : prix non trouvé]** | ≈ 66 000 DA | ≈ 132 000 DA | Sans licence par poste ; n'apporte rien de nécessaire ici |
+| Windows Server 2025 Standard | ≈ 1 176 $ (16 cœurs) + ≈ 40 $ par poste (CAL) ; 5 postes ≈ 1 376 $ | ≈ 182 000 DA | ≈ 364 000 DA | Trop cher pour une officine |
+
+- Pour un vieux PC, le vrai coût est souvent **un PC neuf**, généralement livré avec Windows 11.
+- **Clés vendues 1 000 à 5 000 DA** sur les petites annonces (« licence officielle ») : très probablement des clés de revente non
+  autorisées, désactivables par Microsoft ; **déconseillées** pour une pharmacie (contrôles, données de santé) : exiger la facture
+  d'un revendeur agréé.
+- Pour un chiffre exact **[À VÉRIFIER]** : nombre d'officines et de 2e serveurs, âge et Windows des PC actuels, prix d'un revendeur
+  agréé en Algérie ou taux de change à retenir ; prix des PC conformes en Algérie non relevés.
 
 ### Conventions de commandes
 
