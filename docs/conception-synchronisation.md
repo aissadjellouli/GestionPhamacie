@@ -129,7 +129,7 @@ Le choix « pseudonymiser ou envoyer en clair » est structurant pour la sauvega
 - **Comptes distants** (titulaire, multi-officines, éditeur) : authentification forte (mot de passe + code SMS, comme le super admin) ; droits limités à leurs officines ; l'éditeur (support) n'a pas accès aux données nominatives sans accord tracé **[DÉCISION]**.
 - **Journal des accès** côté cloud : qui, quoi, quand, quelle officine ; ajout seul ; consultable par le titulaire.
 - **Minimisation (loi 18-07)** : voir § 2 ; journaux techniques sans données personnelles (règle du lot 1 reprise).
-- **Lot 9 (non lancé)** : points d'insertion possibles, sans décision — chiffrement des colonnes sensibles avant mise en outbox, chiffrement au repos de la base centrale, chiffrement des sauvegardes cloud.
+- **Lot 9 (non lancé)** : points d'insertion possibles, sans décision — chiffrement des colonnes sensibles avant mise en outbox, chiffrement au repos de la base centrale, chiffrement des sauvegardes cloud. **Option C retenue par le titulaire le 2026-11-17** (copie chiffrée des données nominatives au central, ouverture à deux titulaire + éditeur) : conception et décisions dans [chiffrement-data.md](chiffrement-data.md), non lancée.
 ### 6.1 Protection de l'API cloud, couche par couche (ajouté le 2026-11-16 à la demande du titulaire)
 
 Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'API cloud n'est jamais sur le chemin d'une vente.
@@ -1120,3 +1120,7 @@ Administration › Synchronisation › **Supervision et purge** (droit `admin.pa
 ### 20.5 Essais (2026-11-16, copie jetable de `pharmacie_dev`, supprimée ; `pharmacie_dev` et `pharmacie_test` intactes : synchronisation inactive, 0 lot, 0 ligne de file)
 
 API et poste réellement lancés (ports 5921 et 5922), file alimentée par les vrais déclencheurs (25 modifications), deux lots accusés (il y a 40 et 5 jours), 5 opérations en attente depuis 3 h, un destinataire vérifié sur le sujet « synchronisation » (aucun serveur SMTP ni modem : les messages restent en file) : bandeau visible au titulaire (mesures et captures en clair et en sombre) ; alerte d'erreur persistante envoyée une fois (rien de plus en plus de 2 minutes), alerte de retard après abaissement du seuil à 2 h ; **tâche de purge réelle** : le lot accusé il y a 40 jours purgé (10 lignes), celui de 5 jours et les lignes en attente intacts, journal sans donnée ; réglages enregistrés depuis l'écran (valeur hors bornes refusée avec message), audit écrit. Tests : SQL `140_synchronisation_supervision_purge_tests.sql` (purge, gardes, chargement en cours, bornes, alertes, droit) ; C# `SupervisionSynchronisationTests` (bandeau, alertes, une par heure, purge) et `ChargementSynchronisationTests` (lot purgé : chargement complet sans renvoi, lot conservé : renvoi à l'identique, passage noté pour la supervision). **Non essayé** : un vrai refus 429 du serveur central, une restauration réelle du central après purge, un certificat à moins de 30 jours (cas couverts par les tests unitaires seulement).
+
+## 21. Chiffrement des données nominatives (option C, lot 9)
+
+Conception et décisions DC1 à DC7 (acceptées le 2026-11-17) : [chiffrement-data.md](chiffrement-data.md). Rien n'est codé : lots C1 à C5 sur « go chiffrement » seulement.

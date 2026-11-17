@@ -66,7 +66,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 - [ ] Envoi des produits vers CHIFA-Officine et import de son fichier : selon la réponse de la CNAS.
 - [ ] Effacement automatique au central : désactivé ; à activer après vérification des durées réglementaires.
 - [ ] Nettoyage des données d'essai de `pharmacie_test` : sur une liste validée par le titulaire.
-- [ ] **Lot 9, chiffrement** (colonnes sensibles, données au repos, sauvegardes) : en dernier, uniquement sur « go chiffrement ».
+- [ ] **Lot 9, chiffrement** (colonnes sensibles, données au repos, sauvegardes) : en dernier, uniquement sur « go chiffrement ». Option C retenue le 2026-11-17 (copie chiffrée des données nominatives au central, ouverture à deux titulaire + éditeur) : conception et décisions DC1 à DC7 (acceptées le 2026-11-17) dans `docs/chiffrement-data.md`, lots C1 à C5.
 
 ## À vérifier (aucune trace de vérification)
 

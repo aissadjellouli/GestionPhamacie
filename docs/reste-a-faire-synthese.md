@@ -53,4 +53,4 @@ Rien. La lecture de la fréquence de copie de la GED par authentification Window
 - [ ] Découpage par officine des grandes tables du central ; multi-officines après le choix de l'hébergeur.
 - [ ] Script 101b (suppression de `vente.num_facture_chifa`) : à exécuter à la mise à jour de l'officine, conflits tranchés.
 - [ ] Sauvegarde chiffrée de la GED hors de l'officine (après le lot 9 et l'hébergeur).
-- [ ] **Lot 9, chiffrement** : uniquement sur « go chiffrement ».
+- [ ] **Lot 9, chiffrement** : uniquement sur « go chiffrement ». Option C (ouverture à deux) conçue, décisions DC1 à DC7 acceptées le 2026-11-17 : [chiffrement-data.md](chiffrement-data.md), lots C1 à C5.
