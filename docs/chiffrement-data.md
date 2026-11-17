@@ -61,8 +61,44 @@ Les textes libres restent filtrés comme aujourd'hui (script 127) : leur version
 **Algorithmes** (fonctions intégrées à .NET, sans paquet externe, comme l'export `.pocle`) :
 - données : **AES-256-GCM**, nonce aléatoire de 12 octets par bloc chiffré, étiquette de 16 octets ;
 - part titulaire : code → **PBKDF2-SHA256** (600 000 tours, sel aléatoire de 16 octets) → clé AES-256-GCM qui chiffre S2 ;
-- part éditeur : **RSA-OAEP-SHA256, clé de 3072 bits** (ou ECDH P-256 + HKDF + AES-GCM) **[À VÉRIFIER au lot C1 : choix final selon le coffre de clés retenu]** ;
+- part éditeur : **hybride ML-KEM-768 + ECDH P-256** (les deux secrets combinés par HKDF-SHA256, puis AES-256-GCM) : il faut casser les deux pour ouvrir S1 ; RSA seul est écarté (cassable par un futur ordinateur quantique, voir § 3 bis) ;
 - chaque enveloppe et chaque bloc chiffré commence par un octet de **version de format**, pour pouvoir changer d'algorithme plus tard.
+
+## 3 bis. Résistance au quantique (titulaire, 2026-11-17, « ok »)
+
+**Pourquoi** : un attaquant peut copier aujourd'hui la base centrale ou le trafic et les déchiffrer dans 10 ou 15 ans avec un ordinateur
+quantique (« copier maintenant, déchiffrer plus tard »). Les données de santé et les preuves fiscales se gardent 6 ans et plus.
+L'intelligence artificielle ne casse pas un chiffrement moderne correctement employé : le danger qu'elle aggrave est celui des **erreurs
+autour** du chiffrement (nonce réutilisé, clé au journal, faille de l'API, hameçonnage), d'où les règles : aucun algorithme écrit à la main
+(fonctions de .NET seulement), revue de sécurité et test d'intrusion avant mise en service.
+
+**Principes** (repris des chaînes de blocs qui ont anticipé le quantique) :
+1. **Agilité** : octet de version de format sur chaque bloc, enveloppe et signature ; changer d'algorithme = nouvelle version, sans casser l'existant ;
+2. **Hybride** : un algorithme classique **et** un algorithme résistant au quantique ensemble ; il faut casser les deux ;
+3. **Commencer par ce qui doit durer longtemps.**
+
+**Constaté le 2026-11-17** sur le poste de développement (.NET 10, Windows 11 build 26300), par un essai hors dépôt :
+
+| Algorithme | Rôle | Pris en charge |
+|---|---|---|
+| ML-KEM-768 (FIPS 203) | Échange de clé | Oui (encapsulation et décapsulation réussies, 1 088 octets) |
+| ML-DSA-65 (FIPS 204) | Signature | Oui (signature de 3 309 octets vérifiée) |
+| ML-DSA combiné à ECDSA (`CompositeMLDsa`) | Signature hybride | Oui |
+| SLH-DSA (FIPS 205, à base de hachage) | Signature | **Non** sur ce poste (non bloquant : ML-DSA suffit) |
+
+**Éléments exposés et réponse retenue** :
+
+| Priorité | Élément | Risque quantique | Réponse |
+|---|---|---|---|
+| 1 | Part éditeur S1 (§ 3) | Copiée aujourd'hui, ouverte plus tard | Hybride **ML-KEM-768 + ECDH P-256**, lot C1 |
+| 2 | Signature des lots et ancrage du journal fiscal ([conception-synchronisation.md](conception-synchronisation.md) § 6.1, point 6) | Une signature falsifiable demain ne prouve plus rien | Hybride **ML-DSA-65 + ECDSA P-256**, une signature par lot (pas par ligne), environ 3 Ko par lot **[À VÉRIFIER : signature des lots déjà codée ou seulement prévue]** |
+| 3 | Transport HTTPS officine ↔ central | Trafic enregistré aujourd'hui, déchiffré plus tard | Échange de clé TLS 1.3 hybride (X25519 + ML-KEM-768) **[À VÉRIFIER : prise en charge par Windows (Schannel), Kestrel et le proxy de l'hébergeur]** ; en attendant, les données nominatives sont de toute façon chiffrées (option C) et les autres sont sous code |
+| 4 | Autorité du central (ECDSA P-256, 10 ans) et certificats d'officine (3 ans) | Faux certificats possibles le jour venu | Passage à ML-DSA quand la chaîne TLS de Windows l'acceptera **[À VÉRIFIER]** ; le renouvellement des certificats tous les 3 ans permet une migration progressive |
+| — | AES-256-GCM, SHA-256 (empreintes des journaux), sceaux HMAC-SHA256, PBKDF2 sur un code aléatoire de 128 bits, JWT de 10 min | Résistent (au plus moitié de la marge pour les clés symétriques, soit 128 bits) ou durent trop peu | Aucun changement |
+
+**[À VÉRIFIER]** : prise en charge de ML-KEM et ML-DSA sur les versions de Windows des **serveurs d'officine** (c'est l'officine qui chiffre
+S1 avec la clé publique de l'éditeur) ; si une version ne les a pas, conduite à tenir à décider (mise à jour de Windows exigée, ou
+paquet externe, aujourd'hui exclu par la règle « fonctions de .NET seulement ») **[DÉCISION le moment venu]**.
 
 ## 4. Chiffrement à l'envoi
 
@@ -173,7 +209,7 @@ de santé ; obligations face à une réquisition ; durées de conservation et ef
 
 | Lot | Contenu | Dépend de |
 |---|---|---|
-| C1 | Paire de clés de recouvrement de l'éditeur, outil hors ligne (création, ouverture, rechiffrement de S1), procédure de garde ; script central (tables du § 9) | « go chiffrement », DC4 |
+| C1 | Paire de clés de recouvrement de l'éditeur (hybride ML-KEM-768 + ECDH P-256, § 3 bis), outil hors ligne (création, ouverture, rechiffrement de S1), procédure de garde ; script central (tables du § 9) | « go chiffrement », DC4 |
 | C2 | Officine : création de KD (DPAPI), extension de l'export `.pocle`, écran du code de recouvrement (titulaire), envoi des enveloppes ; script officine | C1, DC3, DC5 |
 | C3 | Chiffrement à la constitution des lots, réception et contrôle au central, `sync-v2`, rattrapage par chargement complet | C2, DC1 |
 | C4 | Ouverture à deux (demande, validations, journal, alertes, reconstitution dans un serveur d'officine), recalcul des empreintes du registre | C3, fin de S6 (restauration), DC2, DC7 |
