@@ -211,6 +211,23 @@ public class SecondServeurTests
         await m.ExecuterAsync(120, 32, 1);
     }
 
+    // ---- Journal des actions du titulaire (2026-11-17) : la clé étrangère de journal_audit n'accepte que les droits du catalogue ----
+
+    [Fact]
+    public async Task Les_actions_du_titulaire_sont_journalisees_sans_code_de_droit_hors_catalogue()
+    {
+        var depot = new DepotFactice();
+        depot.Serveurs.Add(Serveur("SRV-1", RolesServeur.Principal));
+        var journal = new JournalEspion();
+
+        await new ModifierServeurOfficine(depot, journal).ExecuterAsync("SRV-1", new ModificationServeur(null, null, true, true, true, true), 1);
+        await new ModifierSeuilsReplication(depot, journal).ExecuterAsync(120, 32, 1);
+        await new ExporterCleScellement(new CleMemoire(RandomNumberGenerator.GetBytes(32)), journal, new Horloge()).ExecuterAsync(MotDePasse, MotDePasse, 1);
+
+        Assert.Equal([ModifierServeurOfficine.Action, "seuils_replication", ExporterCleScellement.Action], journal.Entrees.Select(e => e.Action));
+        Assert.All(journal.Codes, Assert.Null);
+    }
+
     // ---- Fréquence de la copie de la GED (2026-11-17, script 143) ----
 
     [Fact]
@@ -305,10 +322,12 @@ public class SecondServeurTests
     private sealed class JournalEspion : IJournal
     {
         public List<(string Action, IReadOnlyDictionary<string, object?> Details)> Entrees { get; } = [];
+        public List<string?> Codes { get; } = [];
         public Task EcrireAsync(long utilisateurId, string action, string? tableCible, long? enregistrementId,
             IReadOnlyDictionary<string, object?> details, string? permissionCode, CancellationToken ct = default)
         {
             Entrees.Add((action, details));
+            Codes.Add(permissionCode);
             return Task.CompletedTask;
         }
     }

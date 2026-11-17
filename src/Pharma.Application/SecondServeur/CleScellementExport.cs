@@ -116,7 +116,7 @@ public sealed class ExporterCleScellement(ICleIntegriteStockee cle, IJournal jou
             var contenu = CoffreCle.Chiffrer(brute, motDePasse!);
             var nom = $"cle-scellement-{horloge.Aujourdhui:yyyyMMdd}-{empreinte}.pocle";
             await journal.EcrireAsync(utilisateurId, Action, null, null,
-                new Dictionary<string, object?> { ["empreinte"] = empreinte, ["fichier"] = nom }, PermissionServiceExtensions.MarqueTitulaire, ct);
+                new Dictionary<string, object?> { ["empreinte"] = empreinte, ["fichier"] = nom }, null, ct);   // titulaire seul (groupe ExigerTitulaire) : pas de code de droit, la clé étrangère de journal_audit n'accepte que les droits du catalogue
             return new FichierCleExporte(nom, contenu, empreinte);
         }
         finally { CryptographicOperations.ZeroMemory(brute); }

@@ -161,7 +161,7 @@ public sealed class ModifierServeurOfficine(ISecondServeurDepot depot, IJournal 
         {
             ["serveur"] = nom, ["dossier_chifa"] = propre.DossierChifa, ["dossier_mdn"] = propre.DossierMdn,
             ["chifa_installe"] = m.ChifaInstalle, ["lecteur_token"] = m.LecteurToken, ["mdn_installe"] = m.MdnInstalle, ["douchette_testee"] = m.DouchetteTestee
-        }, PermissionServiceExtensions.MarqueTitulaire, ct);
+        }, null, ct);   // titulaire seul (groupe ExigerTitulaire) : pas de code de droit, la clé étrangère de journal_audit n'accepte que les droits du catalogue
     }
 
     /// <summary>Chemin complet (lecteur ou partage réseau) ou rien (le réglage Chifa:DossierExport du serveur s'applique).</summary>
@@ -215,7 +215,7 @@ public sealed class ModifierSeuilsReplication(ISecondServeurDepot depot, IJourna
         if (seuilMo is < 1 or > 100_000) throw new RegleMetierException("Retard toléré : entre 1 et 100 000 Mo.", "seuil_mo");
         await depot.EnregistrerSeuilsAsync(seuilSecondes, seuilMo * 1024L * 1024, ct);
         await journal.EcrireAsync(utilisateurId, "seuils_replication", null, null,
-            new Dictionary<string, object?> { ["seuil_secondes"] = seuilSecondes, ["seuil_mo"] = seuilMo }, PermissionServiceExtensions.MarqueTitulaire, ct);
+            new Dictionary<string, object?> { ["seuil_secondes"] = seuilSecondes, ["seuil_mo"] = seuilMo }, null, ct);   // titulaire seul (groupe ExigerTitulaire) : pas de code de droit, la clé étrangère de journal_audit n'accepte que les droits du catalogue
     }
 }
 
