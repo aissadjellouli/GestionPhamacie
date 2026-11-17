@@ -210,10 +210,126 @@ ou serveur de l'officine pour un contrôle), et les données en clair n'existent
 
 1. **Reconstruction d'une officine** après perte des serveurs et des sauvegardes (lié à la fin du lot S6, restauration) ;
 2. **Contrôle ou réquisition** d'une autorité, en présence du titulaire ; si le titulaire refuse ou ne peut pas être joint, la conduite
-   à tenir par l'éditeur est une question juridique **[À VÉRIFIER]** — par construction, l'éditeur **ne peut pas** ouvrir seul ;
+   à tenir par l'éditeur est une question juridique **[À VÉRIFIER]** — par construction, l'éditeur **ne peut pas** ouvrir seul (§ 7.1, § 7 bis) ;
 3. **Départ d'une officine** : remise d'un export complet au titulaire, si l'officine n'a plus ses données.
 
 Aucune autre ouverture : en particulier, jamais pour le support technique ni pour une statistique.
+
+### 7.1 Accès d'une autorité aux données d'un patient (2026-11-17)
+
+- **Le central seul ne peut rien révéler** : il n'a que des données sous code (ventes, montants, dates, produits, dossiers Chifa
+  rattachés à `P-…`) et des blocs chiffrés ; aucune recherche par nom, aucun index du nom.
+- **Chemin normal : l'officine.** Les données en clair y sont ; l'autorité s'adresse au titulaire, qui consulte la fiche et remet ce qui
+  est demandé, comme aujourd'hui. **Aucune ouverture au central.**
+- **Officine sans ses données** : ouverture à deux (§ 6) avec la référence de la réquisition ; déchiffrement sur un serveur d'officine ;
+  **seul le patient demandé** est extrait et remis, extraction journalisée.
+- **Limite** : la clé KD est commune à l'officine ; l'ouverture rend lisible toute l'officine **sur ce serveur**, même si la remise est
+  limitée au patient demandé. Une clé par patient permettrait une ouverture ciblée, au prix d'une conception plus lourde : non retenue
+  dans l'option C, sauf exigence d'un juriste (elle est prévue dans l'option A durcie, § 7 bis).
+- **Titulaire qui refuse ou injoignable** : l'éditeur ne peut techniquement rien ouvrir. Conséquences juridiques pour l'éditeur
+  **inconnues [À VÉRIFIER : juriste algérien — loi 18-07, procédure pénale, secret professionnel du pharmacien]**. Si la loi impose à
+  l'éditeur de pouvoir répondre sans le titulaire : variantes du § 7 bis (décision DC8).
+
+## 7 bis. Variantes si la loi impose une réponse sans le titulaire (décision DC8, en attente du juriste)
+
+### 7 bis.1 Option C étendue « 2 parts sur 3 » (recommandée)
+
+| Part | Détenteur |
+|---|---|
+| 1 | Titulaire (code de recouvrement) |
+| 2 | Éditeur (clé hors ligne scindée entre deux personnes, § 5) |
+| 3 | **Tiers de confiance** indépendant : notaire, huissier ou organisme désigné par la loi **[À VÉRIFIER : qui est habilité en Algérie]** |
+
+- **Deux parts quelconques suffisent, une seule ne suffit jamais** : titulaire + éditeur (cas normal), éditeur + tiers (réquisition sans
+  le titulaire, sur présentation de l'acte), titulaire + tiers (éditeur défaillant). Remplace le suppléant de DC5.
+- **Réalisation sans bibliothèque externe** (respecte « fonctions de .NET seulement ») : trois partages « 2 parmi 2 » indépendants, un par
+  paire, au lieu du partage de Shamir. Pour chaque paire (a, b) : R_ab aléatoire de 32 octets ; a reçoit R_ab, b reçoit KD ⊕ R_ab.
+  Chaque détenteur a donc deux morceaux (un par paire dont il fait partie), chacun dans sa propre enveloppe. Aucun morceau seul, ni les
+  deux morceaux d'un même détenteur, ne révèle KD (les R_ab sont indépendants).
+- Le tiers a sa propre paire de clés (mêmes algorithmes que l'éditeur, § 7 ter), sa clé privée hors ligne chez lui ; un contrat avec
+  lui fixe les conditions de remise de sa part (acte d'une autorité, vérification de son authenticité).
+- Une ouverture sans le titulaire est **journalisée et notifiée au titulaire** (sauf interdiction légale de le prévenir **[À VÉRIFIER]**).
+
+### 7 bis.2 Option A durcie : clé au central (solution de repli)
+
+À n'utiliser que si la loi impose à l'éditeur seul de pouvoir répondre. Durcissement :
+1. **Boîtier matériel de sécurité (HSM)** : clés créées dans le boîtier, **jamais exportables** ; tout déchiffrement s'y fait
+   **[À VÉRIFIER : offre de l'hébergeur, prise en charge de ML-KEM par le boîtier]** ;
+2. **quorum dans le boîtier** : 2 cartes sur 3 (par exemple éditeur et délégué à la protection des données) pour toute opération ;
+3. **service de déchiffrement séparé** : l'API du central n'a **aucun** droit de déchiffrer ; seul un poste d'administration isolé,
+   sans Internet, accède au boîtier ;
+4. **une clé par officine et une clé par patient** : l'ouverture vise **le seul patient demandé** ;
+5. **délai et alerte** : titulaire prévenu à chaque demande ; délai de 48 h hors urgence légale pour réagir ou contester **[DÉCISION]** ;
+6. **plafond** : au plus N patients par demande ; extraction en masse bloquée et signalée **[DÉCISION : N]** ;
+7. **journal infalsifiable** : chaîné, **copié hors du central** (titulaire et tiers) ; une ouverture cachée devient impossible ;
+8. **séparation des rôles** : administrateurs système du central sans accès au boîtier ; détenteurs des cartes sans accès aux serveurs ;
+9. inchangé : noms sous code dans les tables, AES-256, hybride ML-KEM si disponible.
+
+**Reste plus faible que l'option C** : l'éditeur avec un complice interne peut ouvrir sans le titulaire ; le journal le rend **visible**,
+pas **impossible**.
+
+### 7 bis.3 Comparaison
+
+| | Réquisition sans le titulaire | Éditeur avec un complice interne | Central piraté | Coût, complexité |
+|---|---|---|---|---|
+| C (2 sur 2, actuelle) | Impossible | Rien | Rien | Moyen |
+| **C étendue (2 sur 3)** | **Oui (éditeur + tiers)** | **Rien** | Rien | Moyen + contrat avec le tiers |
+| A durcie (HSM) | Oui | Ouverture possible, journalisée et visible | Rien | Élevé (boîtier, procédures) |
+
+## 7 ter. Scénarios de chiffrement et de déchiffrement : clé côté officine ou clé au central, classique ou hybride
+
+Deux familles : **« clé côté officine »** (option C et C étendue : la clé n'existe en clair que dans un serveur d'officine) et
+**« clé au central »** (option A durcie : la clé est dans le boîtier HSM du central). Dans les deux, chaque scénario existe en
+**classique** ou **hybride** (§ 3 bis, § 3 ter).
+
+### 7 ter.1 Algorithmes selon le mode
+
+| Élément | Classique (identifiant `1`) | Hybride (identifiant `2`) |
+|---|---|---|
+| Blocs de données | AES-256-GCM | AES-256-GCM (identique : résiste déjà) |
+| Part du titulaire (option C) | PBKDF2-SHA256 + AES-256-GCM | Identique (code aléatoire de 128 bits : résiste déjà) |
+| Part de l'éditeur, du tiers ; clé du HSM (option A) | ECDH P-256 + HKDF-SHA256 + AES-256-GCM | ML-KEM-768 + ECDH P-256, secrets combinés par HKDF-SHA256, puis AES-256-GCM |
+| Signature des lots | ECDSA P-256 | ML-DSA-65 + ECDSA P-256 (composite) |
+| Transport HTTPS | TLS 1.3, échange ECDHE classique | TLS 1.3, `X25519_MLKEM768` |
+
+**Seules les enveloppes à clé publique et les signatures changent** entre les deux modes ; les données et la part du titulaire sont
+identiques. La bascule (lot C6) ne rechiffre donc jamais les données.
+
+### 7 ter.2 Clé côté officine (option C, C étendue)
+
+| Scénario | Où | Déroulement | Classique / hybride |
+|---|---|---|---|
+| **Chiffrement à l'envoi** | Officine | KD (DPAPI) chiffre chaque ligne en AES-256-GCM avec ses données associées (§ 4) ; le bloc part dans le lot ; le central le stocke sans l'ouvrir | Identique |
+| **Création des enveloppes** (activation, rotation, bascule) | Officine | Parts calculées (S1/S2, ou les six morceaux du 2 sur 3) ; part du titulaire chiffrée par son code ; parts de l'éditeur (et du tiers) chiffrées par leur clé publique, vérifiée par l'autorité du central ; seules les enveloppes partent | Enveloppes éditeur / tiers : ECDH (`1`) ou ML-KEM + ECDH (`2`) selon la machine |
+| **Consultation normale** | Officine | Données en clair dans la base locale ; aucun déchiffrement, aucun échange avec le central | Sans objet |
+| **Reconstruction** (officine perdue) | Poste hors ligne de l'éditeur, puis serveur d'officine neuf | Éditeur : ouvre sa part et la rechiffre pour le certificat du serveur neuf ; titulaire : tape son code sur ce serveur ; KD reconstituée **dans le serveur**, blocs déchiffrés localement (§ 6) | L'outil de l'éditeur ouvre les deux types d'enveloppe |
+| **Réquisition avec le titulaire** | Officine | Chemin normal (§ 7.1) ; si l'officine n'a plus ses données : reconstruction, puis extraction du seul patient demandé | Idem reconstruction |
+| **Réquisition sans le titulaire** | C : impossible. C étendue : poste d'ouverture isolé, sans Internet, en présence du tiers | Éditeur et tiers ouvrent chacun leur morceau de la paire (éditeur, tiers) ; KD reconstituée sur ce poste ; extraction du seul patient demandé ; KD et données effacées du poste ; journal, notification au titulaire | L'outil ouvre les deux types d'enveloppe |
+| **Départ d'une officine** | Officine (ou serveur d'officine après reconstruction) | Export complet remis au titulaire ; plus tard, effacement cryptographique (suppression des enveloppes, § 8) | Sans objet |
+
+### 7 ter.3 Clé au central (option A durcie)
+
+| Scénario | Où | Déroulement | Classique / hybride |
+|---|---|---|---|
+| **Chiffrement à l'envoi** | Officine | Pour chaque patient, l'officine tire une clé de patient (AES-256), chiffre ses lignes en AES-256-GCM, et chiffre cette clé pour la **clé publique de son officine dans le HSM** (enveloppe) ; le central stocke blocs et enveloppes sans les ouvrir. Jamais de donnée en clair dans l'API du central | Enveloppe : ECDH (`1`) ou ML-KEM + ECDH (`2`), selon la machine **et le HSM** **[À VÉRIFIER]** |
+| **Consultation normale** | Officine | Inchangée : en clair dans l'officine ; le central reste sous code, ses écrans ne déchiffrent jamais | Sans objet |
+| **Recherche d'un patient demandé par une autorité** | HSM, poste isolé | Le central n'a pas de nom ; l'empreinte du nom normalisé (et de la date de naissance) est calculée **dans le HSM** avec une clé d'index jamais exportée, seulement pendant une demande autorisée (quorum), pour retrouver le code `P-…` **[DÉCISION : index présent ou non]** | Sans objet (empreinte HMAC-SHA256, résiste déjà) |
+| **Réquisition** (avec ou sans le titulaire) | HSM, poste isolé | Demande journalisée, alerte au titulaire, délai ; quorum de 2 cartes sur 3 ; le HSM ouvre **la seule clé du patient demandé** ; déchiffrement et extraction sur le poste isolé ; plafond de N patients ; journal copié chez le titulaire et le tiers | Le HSM ouvre les deux types d'enveloppe |
+| **Reconstruction** (officine perdue) | HSM, puis serveur d'officine neuf | Quorum ; le HSM rechiffre les clés de patients pour le certificat du serveur neuf ; déchiffrement dans ce serveur ; le titulaire n'est pas indispensable | Idem |
+| **Départ d'une officine** | HSM | Export remis au titulaire ; effacement cryptographique = destruction de la clé de l'officine dans le HSM | Sans objet |
+
+### 7 ter.4 Synthèse
+
+| | Clé côté officine (C, C étendue) | Clé au central (A durcie) |
+|---|---|---|
+| Où la clé existe en clair | Seulement dans un serveur d'officine (ou le poste d'ouverture en C étendue) | Seulement dans le HSM |
+| Qui peut ouvrir | C : titulaire + éditeur ; C étendue : deux parts sur trois | Quorum de cartes de l'éditeur (et du délégué) |
+| Ouverture ciblée sur un patient | Non (toute l'officine sur le serveur d'ouverture ; remise limitée) | Oui (clé par patient) |
+| Matériel en plus | Aucun | HSM chez l'hébergeur |
+| Effet du quantique | Seules les enveloppes éditeur / tiers sont exposées en classique, et elles ne suffisent pas sans une autre part | Les enveloppes vers le HSM sont exposées en classique et **suffisent** à qui casse l'algorithme : l'hybride y est plus important |
+
+**Recommandation** : clé côté officine, **C étendue (2 sur 3)** si un tiers habilité existe, en **hybride dès que la machine le permet** ;
+A durcie seulement si la loi l'impose. Décision **DC8** après l'avis du juriste.
 
 ## 8. Cas particuliers
 
@@ -259,6 +375,7 @@ Les sept recommandations sont acceptées telles quelles.
 | DC5 | Titulaire indisponible | Un **suppléant** désigné par le titulaire (seconde enveloppe), facultatif |
 | DC6 | Rotation de KD | Sur incident et à chaque changement de titulaire |
 | DC7 | Délai d'une demande d'ouverture | 30 jours, puis close sans effet |
+| DC8 | Réponse à une autorité sans le titulaire | **En attente de l'avis d'un juriste** (§ 7 bis) : recommandation C étendue « 2 sur 3 » avec un tiers de confiance ; A durcie seulement si la loi l'impose ; C inchangée si rien n'est imposé |
 
 **[À VÉRIFIER] réglementaires** : une copie chiffrée dont l'éditeur détient une part reste vraisemblablement une **donnée personnelle de santé**
 au sens de la loi 18-07 (à faire confirmer) : déclaration ANPDP, rôle de l'éditeur (sous-traitant), exigences d'hébergement des données

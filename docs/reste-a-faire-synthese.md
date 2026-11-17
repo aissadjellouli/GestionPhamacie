@@ -38,6 +38,7 @@ Rien. La lecture de la fréquence de copie de la GED par authentification Window
 - [ ] Wilayas 59 à 69 à vérifier au Journal officiel.
 - [ ] Exports de l'ancien logiciel, catalogues des grossistes, tableaux d'amortissement des banques, modèle de feuille CVM/MDN.
 - [ ] Questions au comptable : TVA des pertes et dons, don partiel, intérêts et marge des prêts (mourabaha).
+- [ ] Question à un juriste (chiffrement, décision DC8) : l'éditeur doit-il pouvoir répondre à une autorité sans le titulaire ? qui peut être tiers de confiance en Algérie ? ([chiffrement-data.md](chiffrement-data.md) § 7 bis).
 
 ## 6. Essais sur le terrain
 
