@@ -259,6 +259,16 @@ GRANT EXECUTE ON FUNCTION cloud_reglage_tables() TO pharma_cloud_api;
 -- ---- Voie descendante : cloud_descendants remplace la version du script 009 ----
 -- Logique de 009 conservée à l'identique (familles, central restauré, acquittement) ; ajout : un élément « mutu_<table> »
 -- par table publiée du périmètre « tous », publié seulement s'il a changé (cloud_publier_descendant).
+-- Défaut D-M8-1 corrigé par le script 011 (ajouts_locaux seulement pour motifs et remises) ; la garde ci-dessous conserve la version 011.
+-- Garde de rejeu : si la fonction en place est déjà celle du script 011 (ajouts_locaux limité aux motifs et aux remises),
+-- on ne la remplace pas (un rejeu de 010 après 011 ramènerait le défaut D-M8-1).
+DO $garde$
+BEGIN
+    IF to_regprocedure('cloud_descendants(bigint)') IS NOT NULL
+       AND pg_get_functiondef(to_regprocedure('cloud_descendants(bigint)')) LIKE '%m.nom_table IN (%' THEN
+        RAISE NOTICE 'cloud_descendants : version du script 011 déjà en place, conservée.';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_descendants(p_apres bigint)
 RETURNS TABLE (nom_table text, cle text, version bigint, donnees jsonb, version_max bigint)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -297,6 +307,9 @@ BEGIN
     RETURN QUERY SELECT d.nom_table, d.cle, d.version, d.donnees, v_max FROM descendant d
                  WHERE d.officine_id = v_off AND d.version > coalesce(p_apres, 0) ORDER BY d.version;
 END $$;
+        $def$;
+    END IF;
+END $garde$;
 REVOKE EXECUTE ON FUNCTION cloud_descendants(bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION cloud_descendants(bigint) TO pharma_cloud_api;
 

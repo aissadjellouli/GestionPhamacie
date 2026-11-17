@@ -154,7 +154,7 @@ BEGIN
     ASSERT r.cle IS NOT NULL, 'élément publié descendu';
     ASSERT r.nom_table = 'reglage_central', 'table locale de destination';
     ASSERT r.donnees ->> 'format' = 'mutu-v1' AND r.donnees ->> 'mode' = 'impose' AND (r.donnees ->> 'version_modele')::int = 3
-           AND (r.donnees ->> 'ajouts_locaux')::boolean AND r.donnees ->> 'auteur' = 'admin-1'
+           AND NOT (r.donnees ? 'ajouts_locaux') AND r.donnees ->> 'auteur' = 'admin-1'
            AND r.donnees -> 'valeur' = '{"equivalent_exact_seulement":false}' AND r.donnees ->> 'publie_le' ~ '^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$', 'format mutu-v1 : ' || r.donnees::text;
     v1 := r.version;
     SELECT max(version) INTO v_max FROM cloud_descendants(0);
