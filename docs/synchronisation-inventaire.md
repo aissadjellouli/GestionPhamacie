@@ -23,6 +23,38 @@
 
 **Récapitulatif** : 147 tables — 79 montantes, 22 bidirectionnelles, 18 descendantes, 28 jamais envoyées (`reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
 
+## Ce que reçoit le serveur central : vue d'ensemble (2026-11-17)
+
+**En pratique aujourd'hui : rien.** La synchronisation est désactivée par défaut (`sync_parametre.active = false` : aucun déclencheur
+posé, rien en file) ; l'hébergeur n'est pas choisi, il n'existe pas de vrai serveur central ; les essais de bout en bout ont été faits sur
+des copies jetables, supprimées (`pharmacie_dev` et `pharmacie_test` : synchronisation inactive, 0 lot).
+
+**Une fois activée** (détail table par table plus bas ; colonnes non nominatives restantes de chaque table : voir le schéma) :
+
+| Famille | Exemples de tables | Ce qui part |
+|---|---|---|
+| Ventes et paiements | `vente`, `ligne_vente`, `paiement`, `annulation_vente`, `retour_client` | Montants, produits, dates, employé par son identifiant ; retirés : `remis_a_nom`, `pour_nom`, `chifa_qr` |
+| Journal fiscal et intégrité | `journal_vente`, `cloture_fiscale`, `sceau_integrite`, `verification_integrite` | Tel quel : rangs, empreintes, sceaux |
+| Patients | `patient`, `credit_*`, `demande_patient` | **Sous code `P-…`** ; retirés : nom, prénom, date de naissance, téléphone, n° d'assuré, courriel |
+| Registre des psychotropes | `registre_psychotrope`, `journal_registre_psychotrope`, `forcage_alerte_psychotrope` | Porteur **sous code `R-…`** ; retirés : nom, adresse, pièce |
+| Chifa | `bordereau`, `bordereau_vente`, `regularisation_part_organisme` | Montants et états, sous code |
+| Stock et traçabilité | `lot`, `boite`, `boite_evenement`, `mouvement_stock`, `inventaire` | Tel quel |
+| Caisse et trésorerie | `session_caisse`, `comptage_caisse`, `mouvement_tresorerie`, `pret_bancaire` | Montants ; banque et références **non par défaut** (famille `banque`) |
+| Achats et fournisseurs | `reception`, `commande_fournisseur`, `fournisseur`, `retour_fournisseur` | Raison sociale, soldes ; coordonnées **oui par défaut** (famille `fournisseurs`) |
+| Factures clients | `facture_client`, `client_facture` | Raison sociale et identifiants d'entreprise ; retirés : destinataire, contenu ; adresse **non par défaut** (famille `clients_factures`) |
+| Réglages | `parametre_*`, `motif_reglable`, `remise_automatique`, `produit` | Tel quel |
+| Employés et droits | `utilisateur`, `role`, `role_permission` | Identifiant et rôle ; nom et identifiant de connexion **non par défaut** (famille `employes`) ; **jamais** : mots de passe, PIN, codes comptoir |
+| Pharmacie | `pharmacie` | Nom, NIF, adresse… **oui par défaut** (famille `pharmacie`) |
+
+- **Textes libres** (motifs, commentaires, `journal_audit.details`…) : filtrés avant envoi (`[COURRIEL]`, `[TÉL]`, `[N°]`, nom d'un patient →
+  son code `P-…`, nom d'un porteur → `[NOM]`), ou non envoyés du tout (`sync_parametre.textes_libres = 'retires'`) ; limite : un nom mal
+  orthographié ou inconnu de la base n'est pas repéré.
+- **Jamais envoyés** : `sync_pseudonyme` (correspondance code ↔ personne), clé de scellement, ordonnances et GED, médecins (sauf option
+  `sync_parametre.envoyer_medecins`), mots de passe et identifiants SMTP.
+- **Familles nominatives** (`employes`, `pharmacie`, `fournisseurs`, `banque`, `clients_factures`, `courriel_commandes`) : réglées au
+  serveur central par officine, le réglage descend, l'officine retire elle-même les colonnes avant envoi (§ suivant).
+- **Cadre légal** : des données sous code restent des données personnelles (loi 18-07) : [chiffrement-data.md](chiffrement-data.md) § 12.
+
 ## Familles de données nominatives (script 130, 2026-11-16)
 
 Réglées **au serveur central** (case à cocher globale + surcharge par officine, script central `004`) ; le réglage **descend** par la synchronisation dans la table locale `reglage_central` (script 131, voie descendante : réponse au dépôt d'un lot et échange léger à chaque passage), seule source lue par l'API locale (aucun appel au serveur central pour l'obtenir ; central en panne : dernière version reçue), affichée en lecture seule dans « Admin › Synchronisation › Réglages » ; l'officine **retire avant envoi** les colonnes d'une famille non autorisée (à la constitution des lots : une ligne déjà en file est filtrée elle aussi ; un lot non accusé est reformé). Réglage jamais reçu : **aucune** famille envoyée. Le serveur central efface à la réception toute colonne d'une famille non autorisée (double sécurité). Liste commune : `sync_famille_colonne` (officine), `cloud_famille_colonne` (central), `Pharma.Shared.FamillesNominativesSync` (test `FamillesNominativesTests`).
