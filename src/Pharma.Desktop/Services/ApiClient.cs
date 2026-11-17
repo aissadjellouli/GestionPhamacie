@@ -907,6 +907,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(SecondServeurDto?, string?)> SecondServeurAsync() => GetAsync<SecondServeurDto?>("api/admin/second-serveur", null);
     public async Task<string?> ModifierServeurOfficineAsync(ModifierServeurOfficineDto d) =>
         (await EnvoyerCorpsAsync<ModifierServeurOfficineDto, object>(HttpMethod.Put, "api/admin/second-serveur/serveurs", d)).Item2;
+    public async Task<string?> ModifierCopieGedAsync(CopieGedDto d) =>
+        (await EnvoyerCorpsAsync<CopieGedDto, object>(HttpMethod.Put, "api/admin/second-serveur/copie-ged", d)).Item2;
     public async Task<string?> ModifierSeuilsReplicationAsync(SeuilsReplicationDto d) =>
         (await EnvoyerCorpsAsync<SeuilsReplicationDto, object>(HttpMethod.Put, "api/admin/second-serveur/seuils", d)).Item2;
     public Task<(FichierCleDto?, string?)> ExporterCleScellementAsync(string motDePasse, string confirmation) =>

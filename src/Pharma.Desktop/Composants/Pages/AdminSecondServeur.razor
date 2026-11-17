@@ -109,6 +109,21 @@
             }
         }
 
+        @if (t is not null && rubrique == "ged")
+        {
+            <section class="panneau" aria-labelledby="t-ged">
+                <h2 id="t-ged">Copie de la GED vers le 2e serveur</h2>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 300px"><label for="g-min">Copier la GED toutes les N minutes</label>
+                        <input id="g-min" data-champ="ged_copie_minutes" type="number" min="1" max="60" @bind="gedMinutes" /></div>
+                    <div class="champ" style="flex: 0 0 auto; align-self: flex-end"><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerCopieGedAsync">Enregistrer</button></div>
+                </div>
+                <p class="detail" style="margin: 0">De 1 à 60 minutes, 5 par défaut. Le 2e serveur lit ce réglage dans sa copie de la base : la nouvelle fréquence s’applique en quelques minutes, sans rien relancer.</p>
+                <p class="bandeau-attention" role="note" style="margin: 0">Documents déposés dans les @t.GedCopieMinutes dernières minutes avant une panne du serveur principal : possiblement absents du 2e serveur.</p>
+                <p class="detail" style="margin: 0">La copie ajoute et met à jour les fichiers, sans jamais rien supprimer. Elle est installée sur le 2e serveur par scripts\second-serveur\copier-ged.ps1 (procédure « 2e serveur » de docs/mise-en-production.md).</p>
+            </section>
+        }
+
         @if (t is not null && rubrique == "cle")
         {
             <section class="panneau" aria-labelledby="t-cle">
@@ -145,7 +160,7 @@
     private SecondServeurDto? t;
     private Fiche? fiche;
     private string? choisi;
-    private int seuilSecondes = 300, seuilMo = 64;
+    private int seuilSecondes = 300, seuilMo = 64, gedMinutes = 5;
     private string motDePasse = "", confirmation = "";
     private string? dossierCle;
     private bool enCours;
@@ -157,7 +172,7 @@
     {
         var (d, e) = await Api.SecondServeurAsync();
         if (d is null) { erreur = e; return; }
-        (t, seuilSecondes, seuilMo, erreur) = (d, d.SeuilSecondes, d.SeuilMo, null);
+        (t, seuilSecondes, seuilMo, gedMinutes, erreur) = (d, d.SeuilSecondes, d.SeuilMo, d.GedCopieMinutes, null);
         if (choisi is not null && d.Serveurs.FirstOrDefault(s => s.Nom == choisi) is { } s) Choisir(s);
     }
 
@@ -198,6 +213,16 @@
         var e = await Api.ModifierSeuilsReplicationAsync(new SeuilsReplicationDto(seuilSecondes, seuilMo));
         if (e is not null) return e;
         message = "Seuils d’alerte enregistrés.";
+        await ChargerAsync();
+        return null;
+    });
+
+    private Task EnregistrerCopieGedAsync() => Executer(async () =>
+    {
+        if (gedMinutes is < 1 or > 60) return "Fréquence de la copie de la GED : entre 1 et 60 minutes.";
+        var e = await Api.ModifierCopieGedAsync(new CopieGedDto(gedMinutes));
+        if (e is not null) return e;
+        message = $"La GED sera copiée vers le 2e serveur toutes les {gedMinutes} minutes.";
         await ChargerAsync();
         return null;
     });

@@ -211,6 +211,74 @@ public class SecondServeurTests
         await m.ExecuterAsync(120, 32, 1);
     }
 
+    // ---- Fréquence de la copie de la GED (2026-11-17, script 143) ----
+
+    [Fact]
+    public void Copie_ged_defaut_5_minutes_et_bornes_1_a_60()
+    {
+        Assert.Equal(5, CopieGed.MinutesParDefaut);
+        Assert.Equal(5, new ReglagesReplication().GedCopieMinutes);
+        Assert.True(CopieGed.EstValide(1));
+        Assert.True(CopieGed.EstValide(60));
+        Assert.False(CopieGed.EstValide(0));
+        Assert.False(CopieGed.EstValide(61));
+        Assert.False(CopieGed.EstValide(-3));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(61)]
+    [InlineData(-1)]
+    [InlineData(1440)]
+    public async Task Copie_ged_hors_bornes_refusee_sans_ecriture_ni_journal(int minutes)
+    {
+        var depot = new DepotFactice();
+        var journal = new JournalEspion();
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => new ModifierCopieGed(depot, journal).ExecuterAsync(minutes, 1));
+        Assert.Contains("entre 1 et 60", ex.Message);
+        Assert.Equal(0, depot.Ecritures);
+        Assert.Equal(5, depot.Reglages.GedCopieMinutes);
+        Assert.Empty(journal.Entrees);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(15)]
+    [InlineData(60)]
+    public async Task Copie_ged_enregistree_et_journalisee_avant_apres(int minutes)
+    {
+        var depot = new DepotFactice();
+        var journal = new JournalEspion();
+        await new ModifierCopieGed(depot, journal).ExecuterAsync(minutes, 7);
+
+        Assert.Equal(minutes, depot.Reglages.GedCopieMinutes);
+        var (action, details) = Assert.Single(journal.Entrees);
+        Assert.Equal(ModifierCopieGed.Action, action);
+        var texte = JsonSerializer.Serialize(details);
+        Assert.Contains("\"avant\":{\"minutes\":5}", texte);
+        Assert.Contains($"\"apres\":{{\"minutes\":{minutes}}}", texte);
+    }
+
+    [Fact]
+    public async Task Copie_ged_valeur_inchangee_ni_ecriture_ni_journal()
+    {
+        var depot = new DepotFactice();
+        var journal = new JournalEspion();
+        await new ModifierCopieGed(depot, journal).ExecuterAsync(5, 1);
+        Assert.Equal(0, depot.Ecritures);
+        Assert.Empty(journal.Entrees);
+    }
+
+    [Fact]
+    public async Task Copie_ged_les_seuils_de_replication_restent_inchanges()
+    {
+        var depot = new DepotFactice { Reglages = new ReglagesReplication(120, 1024 * 1024) };
+        await new ModifierCopieGed(depot, new JournalEspion()).ExecuterAsync(30, 1);
+        Assert.Equal(120, depot.Reglages.SeuilSecondes);
+        Assert.Equal(1024 * 1024, depot.Reglages.SeuilOctets);
+        Assert.Equal(30, depot.Reglages.GedCopieMinutes);
+    }
+
     // ---- Doublures ----
 
     private static IEnumerable<string> Formes(byte[] cle) => [Convert.ToHexString(cle), Convert.ToBase64String(cle)];
@@ -279,6 +347,13 @@ public class SecondServeurTests
             Reglages = Reglages with { SeuilSecondes = seuilSecondes, SeuilOctets = seuilOctets };
             return Task.CompletedTask;
         }
+        public Task EnregistrerCopieGedAsync(int minutes, CancellationToken ct = default)
+        {
+            Reglages = Reglages with { GedCopieMinutes = minutes };
+            Ecritures++;
+            return Task.CompletedTask;
+        }
+        public int Ecritures { get; private set; }
         public Task NoterAlerteAsync(DateTime? alerteUtc, CancellationToken ct = default)
         {
             Reglages = Reglages with { DerniereAlerteUtc = alerteUtc };

@@ -76,9 +76,9 @@ public sealed class SecondServeurSql(NpgsqlDataSource db) : ISecondServeurDepot
 
     public async Task<ReglagesReplication> ReglagesAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT seuil_secondes, seuil_octets, derniere_alerte_le FROM surveillance_replication WHERE id = 1");
+        await using var cmd = db.CreateCommand("SELECT seuil_secondes, seuil_octets, derniere_alerte_le, ged_copie_minutes FROM surveillance_replication WHERE id = 1");
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        return await r.ReadAsync(ct) ? new ReglagesReplication(r.GetInt32(0), r.GetInt64(1), r.IsDBNull(2) ? null : r.GetDateTime(2)) : new ReglagesReplication();
+        return await r.ReadAsync(ct) ? new ReglagesReplication(r.GetInt32(0), r.GetInt64(1), r.IsDBNull(2) ? null : r.GetDateTime(2), r.GetInt32(3)) : new ReglagesReplication();
     }
 
     public async Task EnregistrerSeuilsAsync(int seuilSecondes, long seuilOctets, CancellationToken ct = default)
@@ -89,6 +89,16 @@ public sealed class SecondServeurSql(NpgsqlDataSource db) : ISecondServeurDepot
             """);
         cmd.Parameters.AddWithValue(seuilSecondes);
         cmd.Parameters.AddWithValue(seuilOctets);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task EnregistrerCopieGedAsync(int minutes, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            INSERT INTO surveillance_replication (id, ged_copie_minutes, modifie_le) VALUES (1, $1, now())
+            ON CONFLICT (id) DO UPDATE SET ged_copie_minutes = EXCLUDED.ged_copie_minutes, modifie_le = now()
+            """);
+        cmd.Parameters.AddWithValue(minutes);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

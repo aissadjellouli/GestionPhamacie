@@ -364,6 +364,7 @@ public static class DependencyInjection
         services.AddScoped<SecondServeur.SurveillerReplication>();
         services.AddScoped<SecondServeur.ModifierServeurOfficine>();
         services.AddScoped<SecondServeur.ModifierSeuilsReplication>();
+        services.AddScoped<SecondServeur.ModifierCopieGed>();
         services.AddScoped<SecondServeur.ExporterCleScellement>();
         services.AddScoped<SecondServeur.ImporterCleScellement>();
         services.AddScoped<Sauvegardes.TesterRestaurationCopie>();

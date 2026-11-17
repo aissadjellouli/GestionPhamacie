@@ -22,7 +22,7 @@ public static class SecondServeurEndpoints
             var e = t.Replication;
             return Results.Ok(new SecondServeurDto(ce.Nom, ce.VersionApi, empreinte, e.EnRecovery, e.Connecte, e.Etat, e.Client, e.RetardOctets,
                 e.RetardSecondes, e.SlotExiste, e.SlotActif, e.DetailsVisibles, t.Reglages.SeuilSecondes, (int)(t.Reglages.SeuilOctets / 1024 / 1024),
-                t.Reglages.DerniereAlerteUtc, t.Probleme,
+                t.Reglages.DerniereAlerteUtc, t.Probleme, t.Reglages.GedCopieMinutes,
                 t.Serveurs.Select(v => VersDto(v, ce)).ToList()));
         });
 
@@ -36,6 +36,13 @@ public static class SecondServeurEndpoints
         s.MapPut("/seuils", async (SeuilsReplicationDto d, ModifierSeuilsReplication modifier, ClaimsPrincipal user, CancellationToken ct) =>
         {
             await modifier.ExecuterAsync(d.SeuilSecondes, d.SeuilMo, user.UtilisateurId(), ct);
+            return Results.NoContent();
+        });
+
+        // Fréquence de la copie de la GED vers le 2e serveur (1 à 60 minutes) : lue par la tâche de copie dans la base du 2e serveur
+        s.MapPut("/copie-ged", async (CopieGedDto d, ModifierCopieGed modifier, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            await modifier.ExecuterAsync(d.Minutes, user.UtilisateurId(), ct);
             return Results.NoContent();
         });
 

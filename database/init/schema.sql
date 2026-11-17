@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 141 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 143 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 141 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 143 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -2629,11 +2629,12 @@ CREATE FUNCTION public.reglage_garde() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    v_mode   text;
-    v_autre  boolean := false;
-    v_refus  text := 'Réglage fixé par le serveur central : ' || TG_TABLE_NAME || ' ne peut pas être modifié dans l''officine.';
+    v_mode      text;
+    v_autre     boolean := false;
+    v_refus     text := 'Réglage fixé par le serveur central : ' || TG_TABLE_NAME || ' ne peut pas être modifié dans l''officine.';
+    v_ignorees  text[] := ARRAY['modifie_le', 'modifie_par', 'modifiee_le', 'modifiee_par'];
 BEGIN
-    -- Application d'un modèle (poste le marqueur par SET LOCAL dans sa transaction) : tout passe
+    -- Application d'un modèle, scripts, init, rejeu (marqueur posé par SET LOCAL ou PGOPTIONS) : tout passe, rien n'est noté
     IF coalesce(current_setting('pharma.reglage_central', true), '') = 'on' THEN
         IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
         RETURN NEW;
@@ -2678,10 +2679,15 @@ BEGIN
         IF NOT v_autre THEN RAISE EXCEPTION '%', v_refus; END IF;
     END IF;
 
-    -- Modification locale permise : notée (origine locale), dans la même transaction ; la ligne est verrouillée jusqu'à la fin,
-    -- ce qui sérialise avec l'application d'un modèle (SELECT … FOR UPDATE). Sans serveur central et sans modèle : rien à noter.
-    UPDATE reglage_mutualise SET origine = 'locale', modifie_localement_le = now()
-    WHERE nom_table = TG_TABLE_NAME AND (mode <> 'local' OR origine = 'central');
+    -- Modification locale permise : notée (origine locale, date), dans la même transaction ; la ligne est verrouillée jusqu'à la fin,
+    -- ce qui sérialise avec l'application d'un modèle (SELECT … FOR UPDATE). Notée même sans modèle reçu et en mode « local » :
+    -- c'est ce qui distingue « jamais modifiée depuis l'installation » de « modifiée sur place » (script 142).
+    -- Une mise à jour qui ne change aucune valeur de réglage n'est pas une modification.
+    IF TG_OP = 'UPDATE' THEN
+        IF TG_TABLE_NAME = 'parametre_surveillance' THEN v_ignorees := v_ignorees || ARRAY['heure_ouverture', 'heure_fermeture']; END IF;
+        IF (to_jsonb(NEW) - v_ignorees) IS NOT DISTINCT FROM (to_jsonb(OLD) - v_ignorees) THEN RETURN NEW; END IF;
+    END IF;
+    UPDATE reglage_mutualise SET origine = 'locale', modifie_localement_le = now() WHERE nom_table = TG_TABLE_NAME;
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
     RETURN NEW;
 END $$;
@@ -2691,7 +2697,7 @@ END $$;
 -- Name: FUNCTION reglage_garde(); Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON FUNCTION public.reglage_garde() IS 'Refus d''écriture sur une table imposée par le serveur central, sauf pendant l''application d''un modèle (pharma.reglage_central = on) (script 141).';
+COMMENT ON FUNCTION public.reglage_garde() IS 'Refus d''écriture sur une table imposée par le serveur central, sauf pendant l''application d''un modèle (pharma.reglage_central = on) ; toute modification locale permise est notée dans reglage_mutualise (scripts 141 et 142).';
 
 
 --
@@ -10146,6 +10152,8 @@ CREATE TABLE public.surveillance_replication (
     seuil_octets bigint DEFAULT 67108864 NOT NULL,
     derniere_alerte_le timestamp with time zone,
     modifie_le timestamp with time zone DEFAULT now() NOT NULL,
+    ged_copie_minutes integer DEFAULT 5 NOT NULL,
+    CONSTRAINT ck_surveillance_replication_ged_copie_minutes CHECK (((ged_copie_minutes >= 1) AND (ged_copie_minutes <= 60))),
     CONSTRAINT surveillance_replication_id_check CHECK ((id = 1)),
     CONSTRAINT surveillance_replication_seuil_octets_check CHECK ((seuil_octets > 0)),
     CONSTRAINT surveillance_replication_seuil_secondes_check CHECK (((seuil_secondes >= 10) AND (seuil_secondes <= 86400)))
@@ -10157,6 +10165,13 @@ CREATE TABLE public.surveillance_replication (
 --
 
 COMMENT ON TABLE public.surveillance_replication IS 'Seuils d''alerte de retard de la réplication vers le 2e serveur (script 122).';
+
+
+--
+-- Name: COLUMN surveillance_replication.ged_copie_minutes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.surveillance_replication.ged_copie_minutes IS 'Copie de la GED vers le 2e serveur : toutes les N minutes (1 à 60, défaut 5), réglé dans Administration › 2e serveur, lu par scripts/second-serveur/copier-ged.ps1 dans la base locale du 2e serveur (script 143).';
 
 
 --

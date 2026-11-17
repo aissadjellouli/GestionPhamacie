@@ -34,7 +34,7 @@ public sealed record EtatReplication(bool EnRecovery, bool Connecte, string? Eta
     bool SlotExiste, bool SlotActif, bool DetailsVisibles);
 
 public sealed record ReglagesReplication(int SeuilSecondes = ReglagesReplication.SecondesParDefaut, long SeuilOctets = ReglagesReplication.OctetsParDefaut,
-    DateTime? DerniereAlerteUtc = null)
+    DateTime? DerniereAlerteUtc = null, int GedCopieMinutes = CopieGed.MinutesParDefaut)
 {
     public const int SecondesParDefaut = 300;
     public const long OctetsParDefaut = 64L * 1024 * 1024;
@@ -48,6 +48,7 @@ public interface ISecondServeurDepot
     Task<EtatReplication> ReplicationAsync(string slot, CancellationToken ct = default);
     Task<ReglagesReplication> ReglagesAsync(CancellationToken ct = default);
     Task EnregistrerSeuilsAsync(int seuilSecondes, long seuilOctets, CancellationToken ct = default);
+    Task EnregistrerCopieGedAsync(int minutes, CancellationToken ct = default);
     Task NoterAlerteAsync(DateTime? alerteUtc, CancellationToken ct = default);
     /// <summary>Faux si le serveur n'existe pas.</summary>
     Task<bool> ModifierServeurAsync(string nom, ModificationServeur m, long utilisateurId, CancellationToken ct = default);
@@ -170,6 +171,38 @@ public sealed class ModifierServeurOfficine(ISecondServeurDepot depot, IJournal 
         if (d is not null && !Path.IsPathFullyQualified(d))
             throw new RegleMetierException("Indiquez un chemin complet, par exemple D:\\CHIFA_OFFICINE\\CNAS_SIGNED.", champ);
         return d;
+    }
+}
+
+/// <summary>
+/// Copie de la GED vers le 2e serveur (décision du titulaire, 2026-11-17) : la fréquence se règle ici, de 1 à 60 minutes, 5 par défaut.
+/// Le 2e serveur lit ce réglage dans sa copie locale de la base (scripts/second-serveur/copier-ged.ps1, tâche planifiée chaque minute).
+/// </summary>
+public static class CopieGed
+{
+    public const int MinutesParDefaut = 5;
+    public const int MinutesMin = 1;
+    public const int MinutesMax = 60;
+
+    public static bool EstValide(int minutes) => minutes is >= MinutesMin and <= MinutesMax;
+
+    public static int Valider(int minutes) =>
+        EstValide(minutes) ? minutes : throw new RegleMetierException($"Fréquence de copie de la GED : entre {MinutesMin} et {MinutesMax} minutes.", "ged_copie_minutes");
+}
+
+/// <summary>Fréquence de la copie de la GED vers le 2e serveur (titulaire) ; journal avant / après.</summary>
+public sealed class ModifierCopieGed(ISecondServeurDepot depot, IJournal journal)
+{
+    public const string Action = "copie_ged_frequence";
+
+    public async Task ExecuterAsync(int minutes, long utilisateurId, CancellationToken ct = default)
+    {
+        CopieGed.Valider(minutes);
+        var avant = (await depot.ReglagesAsync(ct)).GedCopieMinutes;
+        if (avant == minutes) return;   // rien à changer : ni écriture ni ligne de journal
+        await depot.EnregistrerCopieGedAsync(minutes, ct);
+        await journal.EcrireAsync(utilisateurId, Action, "surveillance_replication", null,
+            new Dictionary<string, object?> { ["avant"] = new { minutes = avant }, ["apres"] = new { minutes } }, null, ct);   // titulaire seul : pas de code de droit (la clé étrangère de journal_audit n'accepte que les droits du catalogue)
     }
 }
 
