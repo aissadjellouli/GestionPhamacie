@@ -155,7 +155,7 @@ public sealed record BilanReglages(IReadOnlyList<string> Appliquees, IReadOnlyLi
 /// reçue n'est pas appliquée (et pas déjà rejetée), ou imposée et modifiée localement depuis : validation (domaine, puis base), puis, dans UNE transaction :
 /// <list type="bullet">
 /// <item>imposée : la valeur de l'officine est remplacée (l'ancienne au journal) et le titulaire est prévenu (une fois par passage) ;</item>
-/// <item>proposée : une valeur jamais modifiée ici suit le modèle ; une valeur modifiée est gardée (« non adopté », D2) ;</item>
+/// <item>proposée : une valeur jamais modifiée ici (depuis l'installation) suit le modèle, dès la première réception ; une valeur modifiée est gardée (« non adopté », D2) ;</item>
 /// <item>mode local : libération (D3), rien n'est effacé ;</item>
 /// <item>valeur invalide : la table entière est rejetée (D9), avec son motif, sans message ; la valeur et le mode précédents restent.</item>
 /// </list>
@@ -200,7 +200,17 @@ public sealed class AppliquerReglagesMutualises(IReglagesMutualisesDepot depot, 
         && e.VersionRejetee != v
         && (e.VersionAppliquee != v
             || e.Etat == EtatsReglage.NonAdopte
+            // Libération ou rétablissement (D3) : le central republie la MÊME version avec un autre mode ; tant que le mode en vigueur diffère du mode reçu, il reste à appliquer
+            || e.Mode != e.ModeRecu
             || (e.Mode == ValidationModele.ModeImpose && e.ModifieLocalementLe is { } m && (e.AppliqueLe is null || m > e.AppliqueLe)));
+
+    /// <summary>
+    /// Valeur modifiée sur place : origine « locale » avec une date de modification locale (posée par la garde de la base à chaque modification permise,
+    /// script 142, et reprise du journal d'audit pour les modifications antérieures). Une table jamais modifiée depuis l'installation (origine « locale »
+    /// sans date) ou dont la valeur vient du central (origine « central ») n'est pas modifiée : la première réception d'un modèle proposé l'applique,
+    /// puis elle suit le modèle (D2).
+    /// </summary>
+    public static bool ModifieeLocalement(EtatReglage e) => e.Origine == OriginesReglage.Locale && e.ModifieLocalementLe is not null;
 
     /// <summary>« Adopter » : applique la valeur proposée à la demande du titulaire (appelé par AdopterReglageCentral).</summary>
     internal async Task AdopterAsync(string table, long versionModele, long utilisateurId, CancellationToken ct)
@@ -270,9 +280,9 @@ public sealed class AppliquerReglagesMutualises(IReglagesMutualisesDepot depot, 
         var locale = await tx.LireValeurAsync(valeur!, ct);
         var identique = JsonCanonique.Normaliser(locale) == JsonCanonique.Normaliser(valeur!);
 
-        if (!adoption && !impose && !identique && e.Origine == OriginesReglage.Locale)
+        if (!adoption && !impose && !identique && ModifieeLocalement(e))
         {
-            // D2 : valeur modifiée ici, mode proposé : gardée ; le modèle reste à adopter
+            // D2 et première réception : valeur modifiée ici, mode proposé : gardée ; le modèle reste à adopter
             if (e.Etat != EtatsReglage.NonAdopte || e.Mode != ValidationModele.ModePropose || e.AjoutsLocaux != ajouts)
                 await tx.EnregistrerEtatAsync(new MiseAJourEtat(ValidationModele.ModePropose, ajouts, EtatsReglage.NonAdopte, null, null, null, null, false), ct);
             await tx.ValiderAsync(ct);

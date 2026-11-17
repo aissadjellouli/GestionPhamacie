@@ -228,6 +228,7 @@ public class ReglagesMutualisesTests
     public async Task Propose_une_valeur_modifiee_localement_est_gardee_et_le_modele_reste_a_adopter()
     {
         var d = Depot(Inventaire, Element(Inventaire, "propose", 2, new MutuInventaireDto(5, 4000m)), 2, "propose", LocaleDeuxMille);
+        d.Etats[Inventaire] = d.Etats[Inventaire] with { ModifieLocalementLe = new DateTime(2026, 11, 10, 8, 0, 0, DateTimeKind.Utc) };
         var (cas, alertes, _) = Cas(d);
         var bilan = await cas.ExecuterAsync();
         Assert.Equal([Inventaire], bilan.NonAdoptees);
@@ -238,6 +239,76 @@ public class ReglagesMutualisesTests
         // Réexamen au passage suivant : toujours non adopté, aucune écriture de plus
         await cas.ExecuterAsync();
         Assert.Empty(d.Ecritures);
+    }
+
+    [Fact]
+    public async Task Propose_premiere_reception_sur_une_table_jamais_modifiee_sur_place_applique_la_valeur_du_central()
+    {
+        // Origine « locale » sans date de modification locale : état d'installation (script 142), rien n'a été modifié sur place
+        var d = Depot(Inventaire, Element(Inventaire, "propose", 2, new MutuInventaireDto(5, 4000m)), 2, "propose", LocaleDeuxMille);
+        Assert.Null(d.Etats[Inventaire].ModifieLocalementLe);
+        var (cas, alertes, _) = Cas(d);
+        var bilan = await cas.ExecuterAsync();
+        Assert.Equal([Inventaire], bilan.Appliquees);
+        Assert.Empty(bilan.NonAdoptees);
+        Assert.Equal([$"{Inventaire}|propose|differe"], d.Ecritures);
+        Assert.Equal(("propose", "applique", "central", 2L), (d.Etats[Inventaire].Mode, d.Etats[Inventaire].Etat, d.Etats[Inventaire].Origine, d.Etats[Inventaire].VersionAppliquee));
+        Assert.Equal(ActionsReglage.Applique, Assert.Single(d.Journal).Action);
+        Assert.Empty(alertes.Messages);                                  // pas de message : rien n'est imposé
+    }
+
+    [Fact]
+    public async Task Propose_premiere_reception_sur_une_table_modifiee_avant_ou_apres_le_script_141_garde_la_valeur_locale()
+    {
+        // La date de modification locale vient de la garde (après 141) ou de la reprise du journal d'audit (avant 141) : même état pour le code
+        foreach (var modifieLe in new[] { new DateTime(2026, 11, 1, 8, 0, 0, DateTimeKind.Utc), new DateTime(2026, 11, 16, 17, 30, 0, DateTimeKind.Utc) })
+        {
+            var d = Depot(Inventaire, Element(Inventaire, "propose", 1, new MutuInventaireDto(5, 4000m)), 1, "propose", LocaleDeuxMille);
+            d.Etats[Inventaire] = d.Etats[Inventaire] with { ModifieLocalementLe = modifieLe };
+            var (cas, _, _) = Cas(d);
+            var bilan = await cas.ExecuterAsync();
+            Assert.Equal([Inventaire], bilan.NonAdoptees);
+            Assert.Empty(d.Ecritures);
+            Assert.Empty(d.Journal);
+            Assert.Equal(("propose", "non_adopte", "locale", (long?)null), (d.Etats[Inventaire].Mode, d.Etats[Inventaire].Etat, d.Etats[Inventaire].Origine, d.Etats[Inventaire].VersionAppliquee));
+        }
+    }
+
+    [Fact]
+    public async Task Propose_deuxieme_reception_suit_D2_la_valeur_du_central_suit_le_modele_puis_la_modification_locale_est_gardee()
+    {
+        var d = Depot(Inventaire, Element(Inventaire, "propose", 1, new MutuInventaireDto(5, 4000m)), 1, "propose", LocaleDeuxMille);
+        var (cas, _, _) = Cas(d);
+        await cas.ExecuterAsync();                                       // 1re réception : appliquée (table jamais modifiée)
+        Assert.Equal("central", d.Etats[Inventaire].Origine);
+        // 2e réception, valeur jamais modifiée depuis : suit le central
+        d.Locales[Inventaire] = "{\"seuil_boites\":5,\"seuil_montant\":4000.00}";
+        d.Etats[Inventaire] = d.Etats[Inventaire] with { VersionRecue = 2, ModeleJson = Element(Inventaire, "propose", 2, new MutuInventaireDto(6, 4500m)) };
+        var bilan = await cas.ExecuterAsync();
+        Assert.Equal([Inventaire], bilan.Appliquees);
+        Assert.Equal(2L, d.Etats[Inventaire].VersionAppliquee);
+        // Modification locale (la garde de la base note origine « locale » et la date), 3e réception : gardée
+        d.Locales[Inventaire] = "{\"seuil_boites\":9,\"seuil_montant\":4500.00}";
+        d.Etats[Inventaire] = d.Etats[Inventaire] with
+        {
+            Origine = "locale", ModifieLocalementLe = new DateTime(2026, 11, 25, 8, 0, 0, DateTimeKind.Utc), VersionRecue = 3,
+            ModeleJson = Element(Inventaire, "propose", 3, new MutuInventaireDto(7, 4800m))
+        };
+        bilan = await cas.ExecuterAsync();
+        Assert.Equal([Inventaire], bilan.NonAdoptees);
+        Assert.Equal(2L, d.Etats[Inventaire].VersionAppliquee);
+    }
+
+    [Fact]
+    public async Task Impose_est_applique_a_la_premiere_reception_meme_sur_une_table_modifiee_sur_place()
+    {
+        var d = Depot(Inventaire, Element(Inventaire, "impose", 1, new MutuInventaireDto(5, 4000m)), 1, "impose", LocaleDeuxMille);
+        d.Etats[Inventaire] = d.Etats[Inventaire] with { ModifieLocalementLe = new DateTime(2026, 11, 10, 8, 0, 0, DateTimeKind.Utc) };
+        var (cas, _, _) = Cas(d);
+        var bilan = await cas.ExecuterAsync();
+        Assert.Equal([Inventaire], bilan.Appliquees);
+        Assert.Equal([$"{Inventaire}|impose|differe"], d.Ecritures);
+        Assert.Equal(("impose", "applique", "central"), (d.Etats[Inventaire].Mode, d.Etats[Inventaire].Etat, d.Etats[Inventaire].Origine));
     }
 
     [Fact]
@@ -320,6 +391,35 @@ public class ReglagesMutualisesTests
         Assert.Equal(("local", "aucun", 5L), (e.Mode, e.Etat, e.VersionAppliquee));
         var j = Assert.Single(d.Journal);
         Assert.Equal((ActionsReglage.Libere, "impose", "local"), (j.Action, j.ModeAvant, j.ModeApres));
+    }
+
+    [Fact]
+    public async Task Liberation_puis_retablissement_avec_la_meme_version_que_celle_appliquee_sont_executes()
+    {
+        // Constat M8 (essai réel) : le central republie la MÊME version_modele avec le mode « local » (libération), puis de nouveau « impose » (retour)
+        var d = Depot(Inventaire, Element(Inventaire, "local", 4), 4, "local", modeEnVigueur: "impose");
+        d.Etats[Inventaire] = d.Etats[Inventaire] with { VersionAppliquee = 4, Etat = "applique", Origine = "central" };
+        var (cas, alertes, _) = Cas(d);
+
+        var liberation = await cas.ExecuterAsync();
+
+        Assert.Equal([Inventaire], liberation.Liberees);
+        Assert.Equal(("local", "aucun", 4L), (d.Etats[Inventaire].Mode, d.Etats[Inventaire].Etat, d.Etats[Inventaire].VersionAppliquee));
+        Assert.Empty((await cas.ExecuterAsync()).Liberees);       // pas réexaminée tant que rien ne change
+
+        // Retour : même version 4, mode « impose » ; la valeur locale (modifiée entre-temps) est remplacée
+        d.Etats[Inventaire] = d.Etats[Inventaire] with
+        {
+            ModeRecu = "impose", ModeleJson = Element(Inventaire, "impose", 4, new MutuInventaireDto(5, 4000m))
+        };
+        d.Locales[Inventaire] = LocaleDeuxMille;
+        var retour = await cas.ExecuterAsync();
+
+        Assert.Equal([Inventaire], retour.Appliquees);
+        Assert.Equal(("impose", "applique"), (d.Etats[Inventaire].Mode, d.Etats[Inventaire].Etat));
+        Assert.Equal([$"{Inventaire}|impose|differe"], d.Ecritures);
+        Assert.Single(Assert.Single(alertes.Messages));
+        Assert.Empty((await cas.ExecuterAsync()).Appliquees);                                    // puis plus rien à faire
     }
 
     [Fact]
@@ -561,6 +661,8 @@ public class ReglagesMutualisesTests
         var avant = new DateTime(2026, 11, 20, 10, 0, 0, DateTimeKind.Utc);
         Assert.True(AppliquerReglagesMutualises.AAppliquer(Etat(2, 2, null, mode: "impose", modifie: avant.AddHours(1), applique: avant)));
         Assert.False(AppliquerReglagesMutualises.AAppliquer(Etat(2, 2, null, mode: "propose", modifie: avant.AddHours(1), applique: avant)));
+        Assert.True(AppliquerReglagesMutualises.AAppliquer(Etat(2, 2, null, mode: "impose")));              // mode reçu (propose) différent du mode en vigueur : libération ou retour à la même version
+        Assert.False(AppliquerReglagesMutualises.AAppliquer(Etat(2, 2, 2, "rejete", mode: "impose")));      // une version rejetée n'est jamais réexaminée, même si les modes diffèrent
     }
 
     [Fact]

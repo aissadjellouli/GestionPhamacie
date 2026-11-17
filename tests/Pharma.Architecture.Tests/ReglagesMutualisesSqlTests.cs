@@ -347,6 +347,29 @@ public class ReglagesMutualisesSqlTests(BaseJetableM4 base_) : IClassFixture<Bas
         Assert.Equal(3, await Lire<int>("SELECT seuil_boites FROM parametre_inventaire WHERE id = 1"));
     }
 
+    [Fact]
+    public async Task Propose_premiere_reception_applique_si_jamais_modifiee_sur_place_sinon_garde_la_valeur_locale()
+    {
+        if (!await PreparerAsync()) return;
+        var (cas, _, _, _) = Cas();
+        // Inventaire : valeurs d'installation (écrites avec le marqueur par PreparerAsync, donc non notées) ; modèle différent → appliqué toute seul
+        Assert.Null(await Lire<DateTime?>("SELECT modifie_localement_le FROM reglage_mutualise WHERE nom_table = 'parametre_inventaire'"));
+        // Alertes : modifiée sur place (sans modèle reçu, mode local) ; modèle différent → valeur locale gardée
+        await Ecrire("UPDATE parametre_alerte SET jours_orange = 170");
+        Assert.NotNull(await Lire<DateTime?>("SELECT modifie_localement_le FROM reglage_mutualise WHERE nom_table = 'parametre_alerte'"));
+        await RecevoirAsync(TablesMutualisables.Inventaire, "propose", new MutuInventaireDto(5, 4000m));
+        await RecevoirAsync(TablesMutualisables.Alertes, "propose", new MutuAlertesDto(120, 60, 365, 2, 7, 30, 90, 5, 10));
+
+        var bilan = await cas.ExecuterAsync();
+
+        Assert.Equal([TablesMutualisables.Inventaire], bilan.Appliquees);
+        Assert.Equal([TablesMutualisables.Alertes], bilan.NonAdoptees);
+        Assert.Equal(5, await Lire<int>("SELECT seuil_boites FROM parametre_inventaire WHERE id = 1"));
+        Assert.Equal("central", await Lire<string>("SELECT origine FROM reglage_mutualise WHERE nom_table = 'parametre_inventaire'"));
+        Assert.Equal(170, await Lire<int>("SELECT jours_orange FROM parametre_alerte WHERE id = 1"));
+        Assert.Equal("non_adopte", await Lire<string>("SELECT etat FROM reglage_mutualise WHERE nom_table = 'parametre_alerte'"));
+    }
+
     // ---- Rejet (D9) ----
 
     [Fact]

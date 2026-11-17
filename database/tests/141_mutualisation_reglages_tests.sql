@@ -225,7 +225,7 @@ BEGIN
     UPDATE parametre_inventaire SET seuil_boites = seuil_boites + 1;
     ASSERT (SELECT origine = 'locale' AND modifie_localement_le IS NOT NULL FROM reglage_mutualise WHERE nom_table = 'parametre_inventaire'), 'valeur du central modifiée après libération : notée';
     UPDATE parametre_fiscal SET conservation_annees = conservation_annees + 1;
-    ASSERT (SELECT modifie_localement_le IS NULL FROM reglage_mutualise WHERE nom_table = 'parametre_fiscal'), 'local sans modèle : rien à noter (aucune écriture ajoutée)';
+    ASSERT (SELECT origine = 'locale' AND modifie_localement_le IS NOT NULL FROM reglage_mutualise WHERE nom_table = 'parametre_fiscal'), 'local sans modèle : modification notée aussi (script 142)';
 END $$;
 
 -- 8. Journal avant / après
