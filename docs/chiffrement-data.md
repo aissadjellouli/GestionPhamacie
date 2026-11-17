@@ -377,7 +377,7 @@ Les sept recommandations sont acceptées telles quelles.
 | DC7 | Délai d'une demande d'ouverture | 30 jours, puis close sans effet |
 | DC8 | Réponse à une autorité sans le titulaire | **En attente de l'avis d'un juriste** (§ 7 bis) : recommandation C étendue « 2 sur 3 » avec un tiers de confiance ; A durcie seulement si la loi l'impose ; C inchangée si rien n'est imposé |
 
-**[À VÉRIFIER] réglementaires** : une copie chiffrée dont l'éditeur détient une part reste vraisemblablement une **donnée personnelle de santé**
+**[À VÉRIFIER] réglementaires** (détail, constats et questions au juriste : § 12) : une copie chiffrée dont l'éditeur détient une part reste vraisemblablement une **donnée personnelle de santé**
 au sens de la loi 18-07 (à faire confirmer) : déclaration ANPDP, rôle de l'éditeur (sous-traitant), exigences d'hébergement des données
 de santé ; obligations face à une réquisition ; durées de conservation et effacement.
 
@@ -396,3 +396,58 @@ de santé ; obligations face à une réquisition ; durées de conservation et ef
 en bout sur copies jetables (central et officine) ; **preuve que la base centrale ne contient aucune donnée lisible** (recherche des valeurs
 en clair connues dans un export complet du central) ; essai d'une reconstruction complète ; revue de sécurité obligatoire et test
 d'intrusion avant mise en service.
+
+## 12. Cadre légal (recherche du 2026-11-17, à faire valider par un juriste algérien)
+
+> Synthèse de sources publiques lues le 2026-11-17 ; **le texte officiel complet n'a pas été lu** (Journal officiel n° 34 de 2018 pour la
+> loi 18-07, n° 48 de 2025 pour la loi 25-11). Rien ici n'est un avis juridique. **Aucune mise en service du central sans l'avis d'un juriste.**
+
+### 12.1 Constats
+
+| Point | Ce qui a été trouvé | Fiabilité |
+|---|---|---|
+| Données de santé | **Données sensibles** (loi 18-07, art. 18) : régime strict, avec exceptions et conditions | Sources concordantes ; texte de l'article non lu |
+| Transfert hors d'Algérie | **Autorisation préalable de l'ANPDP** (art. 44 et 45), sauf exceptions prévues par la loi | Cabinet Gide ; dépêche APS |
+| Sécurité, hébergement, sous-traitance | Le responsable du traitement doit garantir la sécurité lors de la collecte, du transfert, de l'hébergement et de la sous-traitance | Rappel public de l'ANPDP |
+| Hébergement obligatoire en Algérie | **Non confirmé** : aucun texte trouvé | **[À VÉRIFIER]** |
+| Sanctions | Jusqu'à 5 ans d'emprisonnement et 500 000 DA d'amende | Source secondaire **[À VÉRIFIER]** |
+| Loi 25-11 du 24 juillet 2025 | Modifie et complète la loi 18-07 | **Contenu non vérifié** |
+
+### 12.2 Conséquences pour pharmaofficine
+
+- **Les données sous code restent des données personnelles** : l'officine peut relier chaque code à une personne (pseudonymisation,
+  pas anonymisation). La loi s'applique donc **dès la synchronisation actuelle** (ventes, crédits, Chifa sous code), pas seulement à la
+  copie chiffrée de l'option C ; la copie chiffrée reste elle aussi une donnée personnelle de santé.
+- **Déjà dans le bon sens** :
+  - hébergement en Algérie chez un hébergeur agréé ARPCE ([conception-synchronisation.md](conception-synchronisation.md) § 0) : pas de
+    transfert hors d'Algérie, donc pas d'autorisation au titre de l'art. 44 ; règle à tenir **partout** : sauvegardes du central, outils
+    du support (un accès depuis l'étranger serait aussi un transfert), aucun service étranger dans la chaîne ;
+  - minimisation : codes au lieu des noms, ordonnances et GED dans l'officine, support sans données nominatives (décisions 1, 2, 4) ;
+  - synchronisation **désactivée par défaut** : rien ne part tant qu'elle n'est pas activée.
+- **Très probablement nécessaire avant la mise en service du central [À VÉRIFIER]** :
+  1. **déclaration ou autorisation de l'ANPDP** (autorisation probable pour des données de santé) ;
+  2. **contrat de sous-traitance** entre chaque titulaire (responsable du traitement) et l'éditeur (hébergeur pour son compte) ;
+  3. **information des patients** (affichage à l'officine, mention sur les documents) et exercice de leurs droits (accès, rectification,
+     opposition), conciliés avec les durées légales de conservation ;
+  4. **secret professionnel du pharmacien** : conditions dans lesquelles il permet de confier les données à un sous-traitant.
+- Le jour où la copie chiffrée (lot 9) est ajoutée, la déclaration ou l'autorisation de l'ANPDP est **mise à jour**.
+
+### 12.3 Questions au juriste
+
+1. La synchronisation sous code et la copie chiffrée (option C) exigent-elles une **autorisation** ou une simple **déclaration** à l'ANPDP ?
+2. Le patient doit-il **consentir**, ou une **information** suffit-elle ?
+3. Que change la **loi 25-11 de 2025** pour les données de santé et l'hébergement ?
+4. Le **secret professionnel** du pharmacien permet-il l'hébergement chez l'éditeur, et à quelles conditions ?
+5. L'éditeur doit-il pouvoir répondre à une autorité **sans le titulaire**, et qui peut être tiers de confiance (décision DC8, § 7 bis) ?
+6. L'hébergement des données de santé en Algérie est-il **obligatoire**, et faut-il un agrément particulier pour l'hébergeur ?
+
+### 12.4 Sources (lues le 2026-11-17)
+
+- [Gide, alerte client sur l'ANPDP (2023)](https://www.gide.com/sites/default/files/2023-07gide_alerteclient_anpdp_fr_7.pdf)
+- [Gide, protection des données en Algérie](https://www.gide.com/en/news-insights/protection-of-personal-data-focus-on-algerian-regulations/)
+- [Dzaïr Zoom, loi 18-07 et obligations ANPDP](https://zoomalgerie.com/loi-18-07-protection-donnees-algerie/)
+- [Legal Doctrine, journée de la protection des données](https://legal-doctrine.com/edition/28-janvier-journee-mondiale-de-la-protection-des-donnees)
+- [Radio Algérie, l'ANPDP appelle les hébergeurs à sécuriser les données](https://news.radioalgerie.dz/fr/node/48683)
+- [Radio Algérie, ANPDP et souveraineté numérique](https://news.radioalgerie.dz/fr/node/73973)
+- [Texte de la loi 18-07 (copie universitaire, non officielle)](https://fhc.univ-boumerdes.dz/wp-content/uploads/2026/07/loi_18-07_fr.pdf)
+- [APA News, encadrement de la protection des données](https://fr.apanews.net/society/algerie-protection-des-donnees-personnelles-un-encadrement-plus-symbolique-que-reel/)
