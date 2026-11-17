@@ -154,6 +154,73 @@
             </div>
         }
 
+        @if (t is not null && rubrique == "integrite")
+        {
+            @* Lot S4 : vérification d'intégrité faite par le serveur central (résumé reçu par la voie descendante). Lecture seule, rien à corriger
+               ici. Résumé compact (champs), puis le tableau des 20 dernières anomalies au plus (borné par le central) : seul ce tableau défile,
+               hauteur ajustée par pharma.tableaux (page fixe). *@
+            <div style="display: flex; flex-direction: column; gap: 16px" data-zone="integrite-centrale">
+            @if (t.IntegriteCentrale is not { } ic)
+            {
+                <section class="panneau" aria-labelledby="s-integrite">
+                    <h2 id="s-integrite">Vérification par le serveur central</h2>
+                    <p class="detail" style="margin: 0" data-zone="integrite-absente">Aucune vérification reçue du serveur central : la synchronisation est désactivée, ou le serveur central n’a pas encore vérifié les données de l’officine.</p>
+                </section>
+            }
+            else
+            {
+                <section class="panneau" aria-labelledby="s-integrite">
+                    <h2 id="s-integrite">Vérification par le serveur central</h2>
+                    <div class="achats-ligne ligne-lecture">
+                        <div class="champ" style="flex: 1 1 160px"><span class="etiquette-champ">État</span>
+                            <span><span class="pastille @ClasseIntegrite(ic.Statut)" data-zone="integrite-statut">@LibelleIntegrite(ic.Statut)</span></span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Dernière vérification</span>
+                            <span data-zone="integrite-verifiee">@Date(ic.VerifieLe)</span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Dernière vérification complète</span>
+                            <span>@Date(ic.CompleteLe)</span></div>
+                        <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Sceaux</span>
+                            <span data-zone="integrite-sceaux">@ic.SceauxOk ancré(s)@(ic.SceauxAttente > 0 ? $" · {ic.SceauxAttente} en attente" : "")@(ic.SceauxIncoherents > 0 ? $" · {ic.SceauxIncoherents} incohérent(s)" : "")</span></div>
+                        <div class="champ" style="flex: 1 1 160px"><span class="etiquette-champ">Tickets vérifiés</span>
+                            <span>@(ic.TicketsVerifiesJusquA is { } tv && tv > 0 ? $"jusqu’au n° {tv}" : "—")</span></div>
+                    </div>
+                    <div class="achats-ligne ligne-lecture">
+                        @foreach (var c in ic.Chaines)
+                        {
+                            <div class="champ" style="flex: 1 1 320px" data-journal="@c.Journal"><span class="etiquette-champ">@LibelleJournal(c.Journal)@(c.Cle == "officine" ? "" : $" ({c.Cle})")</span>
+                                <span><span class="pastille @ClasseIntegrite(c.Statut == "rupture" ? "anomalie" : c.Statut)">@LibelleChaine(c.Statut)</span>
+                                    @c.DernierRang ligne(s) vérifiée(s) · @(c.Mode == "complet" ? "empreintes recalculées" : "rangs et chaînage")@(c.NonVerifiables > 0 ? $" · {c.NonVerifiables} au texte filtré" : "")</span></div>
+                        }
+                        @if (ic.Chaines.Count == 0) { <div class="champ"><span class="etiquette-champ">Journaux</span><span>aucun reçu pour l’instant</span></div> }
+                    </div>
+                    <p class="detail" style="margin: 0">Registre : noms des porteurs non envoyés, rangs et chaînage vérifiés. Motif filtré avant l’envoi : ligne comptée à part. Un manque : anomalie après 24 h.</p>
+                </section>
+                <section class="panneau" aria-labelledby="s-anomalies">
+                    <h2 id="s-anomalies">Anomalies constatées (@ic.AnomaliesTotal)</h2>
+                    <div class="tableau-cadre" data-zone="integrite-anomalies">
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col" class="nombre">N°</th><th scope="col">Constatée le</th><th scope="col">Nature</th><th scope="col">Journal</th><th scope="col">Rang ou pièce</th><th scope="col">Détail</th></tr></thead>
+                            <tbody>
+                                @foreach (var a in ic.Anomalies)
+                                {
+                                    <tr data-anomalie="@a.Id">
+                                        <td class="nombre">@a.Id</td>
+                                        <td>@Date(a.DetecteeLe)</td>
+                                        <td class="nom">@a.Libelle</td>
+                                        <td>@LibelleJournal(a.Journal)</td>
+                                        <td>@(a.Rang is { } rg ? $"rang {rg}" : a.Ligne ?? "—")</td>
+                                        <td class="detail">@(a.Detail ?? "—")</td>
+                                    </tr>
+                                }
+                                @if (ic.Anomalies.Count == 0) { <tr><td colspan="6" class="vide">Aucune anomalie.</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="detail" style="margin: 0">Les 20 plus récentes. Ne rien corriger, prévenir l’éditeur. Alerte à chaque nouvelle anomalie (abonnés à « Synchronisation »).</p>
+                </section>
+            }
+            </div>
+        }
+
         @if (t is not null && rubrique == "reglages-mutualises")
         {
             @* Lot M7 : état des 11 tables de réglages que le serveur central peut fixer (imposé) ou proposer. Liste fermée de 11 lignes (bornée par nature), seul le cadre défile. *@
@@ -291,6 +358,18 @@
     });
 
     private static string Date(DateTime? d) => d is { } v ? Libelles.DateHeureLocale(v) : "jamais";
+
+    // Lot S4 : intégrité au central
+    private static string ClasseIntegrite(string statut) => statut switch { "ok" => "ok", "attente" => "info", "anomalie" => "urgent", _ => "" };
+    private static string LibelleIntegrite(string statut) => statut switch { "ok" => "Aucune anomalie", "attente" => "En attente de données", "anomalie" => "Anomalie", _ => statut };
+    private static string LibelleChaine(string statut) => statut switch { "ok" => "Intacte", "attente" => "En attente", "rupture" => "Rompue", _ => statut };
+    private static string LibelleJournal(string journal) => journal switch
+    {
+        "journal_vente" => "Journal des ventes",
+        "journal_registre_psychotrope" => "Registre des psychotropes",
+        "sceau_integrite" => "Sceaux",
+        _ => journal
+    };
 
     private (string Classe, string Texte) Echeance => t?.EcheanceCertificat switch
     {

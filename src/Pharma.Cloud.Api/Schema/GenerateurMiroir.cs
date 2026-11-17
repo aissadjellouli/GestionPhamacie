@@ -36,15 +36,27 @@ public static partial class GenerateurMiroir
         return Script(Tables(schema, Classement(scripts)));
     }
 
-    /// <summary>Classement final des tables : inserts du script 126, puis mises à jour des colonnes exclues des scripts suivants.</summary>
+    /// <summary>
+    /// Classement final des tables : inserts du script 126, puis mises à jour des colonnes exclues des scripts suivants. Un insert
+    /// suivi de « ON CONFLICT … DO UPDATE SET sens » (reclassement, script 144 : compteur_ticket) change le sens d'une table déjà
+    /// classée, sans toucher à ses colonnes ; les autres inserts (« DO NOTHING ») ne changent pas un classement existant.
+    /// </summary>
     public static Dictionary<string, ClassementTable> Classement(IEnumerable<string> scripts)
     {
         var res = new Dictionary<string, ClassementTable>(StringComparer.Ordinal);
         foreach (var sql in scripts)
         {
-            foreach (Match m in InsertClassement().Matches(sql))
-                res.TryAdd(m.Groups[1].Value, new ClassementTable(m.Groups[1].Value, m.Groups[2].Value, Liste(m.Groups[3].Value), Liste(m.Groups[4].Value),
-                    m.Groups[5].Value == "true"));
+            foreach (Match ins in InsertionSyncTable().Matches(sql))
+            {
+                var reclasse = ins.Groups[2].Value.Contains("DO UPDATE SET sens", StringComparison.Ordinal);
+                foreach (Match m in InsertClassement().Matches(ins.Groups[1].Value))
+                {
+                    var c = new ClassementTable(m.Groups[1].Value, m.Groups[2].Value, Liste(m.Groups[3].Value), Liste(m.Groups[4].Value),
+                        m.Groups[5].Value == "true");
+                    if (!reclasse) res.TryAdd(c.Nom, c);
+                    else res[c.Nom] = res.TryGetValue(c.Nom, out var avant) ? avant with { Sens = c.Sens } : c;
+                }
+            }
             foreach (Match m in MajExclues().Matches(sql))
                 if (res.TryGetValue(m.Groups[2].Value, out var c)) res[c.Nom] = c with { Exclues = Liste(m.Groups[1].Value) };
         }
@@ -167,6 +179,9 @@ public static partial class GenerateurMiroir
 
     [GeneratedRegex(@"\('(\w+)', '(montante|bidirectionnelle|descendante|jamais)', '\{([^}]*)\}', '\{([^}]*)\}', (true|false)")]
     private static partial Regex InsertClassement();
+
+    [GeneratedRegex(@"INSERT INTO sync_table\b(.*?)\bON CONFLICT\b([^;]*)", RegexOptions.Singleline)]
+    private static partial Regex InsertionSyncTable();
 
     [GeneratedRegex(@"UPDATE sync_table\s+SET colonnes_exclues = '\{([^}]*)\}'[^;]*?WHERE nom_table = '(\w+)'")]
     private static partial Regex MajExclues();

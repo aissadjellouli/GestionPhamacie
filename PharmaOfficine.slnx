@@ -211,6 +211,7 @@
     <File Path="database/migration/141_mutualisation_reglages.sql" />
     <File Path="database/migration/142_mutualisation_reglages_modification_locale.sql" />
     <File Path="database/migration/143_copie_ged_second_serveur_frequence.sql" />
+    <File Path="database/migration/144_synchronisation_verification_integrite_centrale.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -232,6 +233,7 @@
     <File Path="database/tests/141_mutualisation_reglages_tests.sql" />
     <File Path="database/tests/142_mutualisation_reglages_modification_locale_tests.sql" />
     <File Path="database/tests/143_copie_ged_second_serveur_frequence_tests.sql" />
+    <File Path="database/tests/144_synchronisation_verification_integrite_centrale_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
   </Folder>
@@ -248,6 +250,7 @@
     <File Path="database/cloud/009_central_restaure_quota_chargement.sql" />
     <File Path="database/cloud/010_mutualisation_reglages.sql" />
     <File Path="database/cloud/011_descendant_ajouts_locaux_motifs_remises.sql" />
+    <File Path="database/cloud/012_verification_integrite_central.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
     <File Path="database/cloud/tests/003_chargement_complet_officine_tests.sql" />
     <File Path="database/cloud/tests/004_reglage_familles_envoyees_tests.sql" />
@@ -258,6 +261,7 @@
     <File Path="database/cloud/tests/009_central_restaure_quota_chargement_tests.sql" />
     <File Path="database/cloud/tests/010_mutualisation_reglages_tests.sql" />
     <File Path="database/cloud/tests/011_descendant_ajouts_locaux_motifs_remises_tests.sql" />
+    <File Path="database/cloud/tests/012_verification_integrite_central_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

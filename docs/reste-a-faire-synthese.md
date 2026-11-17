@@ -49,7 +49,7 @@ Rien. La lecture de la fréquence de copie de la GED par authentification Window
 
 ## 7. Plus tard (sur accord explicite du titulaire)
 
-- [ ] **Synchronisation** : S4 (contrôle d'intégrité au central), S5 (prix, commandes, employés envoyés par le central),
+- [ ] **Synchronisation** : S5 (prix, commandes, employés envoyés par le central),
       fin de S6 (restauration de la base d'une officine, bascule, départ), S7 (écrans du central, multi-officines).
 - [ ] Découpage par officine des grandes tables du central ; multi-officines après le choix de l'hébergeur.
 - [ ] Script 101b (suppression de `vente.num_facture_chifa`) : à exécuter à la mise à jour de l'officine, conflits tranchés.

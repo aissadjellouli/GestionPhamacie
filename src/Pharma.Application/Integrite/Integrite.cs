@@ -63,8 +63,9 @@ public sealed record SceauEnregistre(long Id, string Journal, string CleChaine, 
 public sealed record NouveauSceau(string Journal, string CleChaine, string Motif, DateOnly PeriodeDu, DateOnly PeriodeAu, DateTime ScelleLeUtc,
     long DernierRang, long? DernierId, byte[] DernierHash, string Algorithme, string EmpreinteCle, byte[] Sceau, long? AuteurId);
 
+/// <param name="DernierRang">Fin de chaîne constatée (chaîne intacte) : envoyée au serveur central pour la vérification croisée (script 144).</param>
 public sealed record NouvelleVerification(string Journal, string? CleChaine, long Lignes, int Sceaux, string Statut, long? RangRupture,
-    string? Motif, string? Attendu, string? Trouve, long? DeclencheePar);
+    string? Motif, string? Attendu, string? Trouve, long? DeclencheePar, long? DernierRang = null, byte[]? DernierHash = null);
 
 public sealed record DerniereVerification(string Journal, string? CleChaine, DateTime VerifieLe, long Lignes, int Sceaux, string Statut,
     long? RangRupture, string? Motif, string? Attendu, string? Trouve, long? DeclencheePar);
@@ -147,7 +148,7 @@ public sealed class ScellerJournal(IIntegriteDepot depot, IScelleurIntegrite sce
 
 /// <summary>État d'une chaîne après vérification (une ligne par journal et clé de chaîne).</summary>
 public sealed record EtatChaine(string Journal, string Libelle, string? CleChaine, long Lignes, int Sceaux, string Statut,
-    long? RangRupture, string? Motif, string? Attendu, string? Trouve);
+    long? RangRupture, string? Motif, string? Attendu, string? Trouve, long? DernierRang = null, byte[]? DernierHash = null);
 
 /// <summary>
 /// Vérifie chaque journal chaîné et ses sceaux (tâche nocturne, ou « Vérifier maintenant » du titulaire) ; chaque résultat est
@@ -180,7 +181,7 @@ public sealed class VerifierIntegrite(IIntegriteDepot depot, IScelleurIntegrite 
             foreach (var r in resultats)
             {
                 await depot.EnregistrerVerificationAsync(new NouvelleVerification(r.Journal, r.CleChaine, r.Lignes, r.Sceaux, r.Statut,
-                    r.RangRupture, r.Motif, r.Attendu, r.Trouve, declencheePar), ct);
+                    r.RangRupture, r.Motif, r.Attendu, r.Trouve, declencheePar, r.DernierRang, r.DernierHash), ct);
                 if (r.Statut != Ok) await SignalerAsync(r, declencheePar, ct);
             }
             etats.AddRange(resultats);
@@ -206,9 +207,11 @@ public sealed class VerifierIntegrite(IIntegriteDepot depot, IScelleurIntegrite 
                 etats.Add(new EtatChaine(j.Journal, j.Libelle, cle, lignes, sceauxCle.Count, Rupture, c.RangRupture, c.Motif, c.Attendu, c.Trouve));
                 continue;
             }
-            etats.Add(await VerifierSceauxAsync(j, cle, lignes, c?.DernierRang ?? 0, sceauxCle, ct)
-                      ?? await ControlesAsync(j, cle, lignes, sceauxCle.Count, ct)
-                      ?? new EtatChaine(j.Journal, j.Libelle, cle, lignes, sceauxCle.Count, Ok, null, null, null, null));
+            // Chaîne intacte : sa fin (rang, empreinte) est gardée avec le résultat, pour la vérification croisée du serveur central
+            var etat = await VerifierSceauxAsync(j, cle, lignes, c?.DernierRang ?? 0, sceauxCle, ct)
+                       ?? await ControlesAsync(j, cle, lignes, sceauxCle.Count, ct)
+                       ?? new EtatChaine(j.Journal, j.Libelle, cle, lignes, sceauxCle.Count, Ok, null, null, null, null);
+            etats.Add(etat with { DernierRang = c?.DernierRang ?? 0, DernierHash = c?.DernierHash });
         }
         return etats;
     }

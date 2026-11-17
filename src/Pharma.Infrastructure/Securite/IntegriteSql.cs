@@ -102,8 +102,9 @@ public sealed class IntegriteSql(NpgsqlDataSource db) : IIntegriteDepot
     public async Task EnregistrerVerificationAsync(NouvelleVerification v, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            INSERT INTO verification_integrite (journal, cle_chaine, lignes, sceaux, statut, rang_rupture, motif, attendu, trouve, declenchee_par)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO verification_integrite (journal, cle_chaine, lignes, sceaux, statut, rang_rupture, motif, attendu, trouve, declenchee_par,
+                                                dernier_rang, dernier_hash)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """);
         cmd.Parameters.AddWithValue(v.Journal);
         cmd.Parameters.Add(Texte(v.CleChaine));
@@ -115,6 +116,8 @@ public sealed class IntegriteSql(NpgsqlDataSource db) : IIntegriteDepot
         cmd.Parameters.Add(Texte(v.Attendu));
         cmd.Parameters.Add(Texte(v.Trouve));
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)v.DeclencheePar ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)v.DernierRang ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)v.DernierHash ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bytea });
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

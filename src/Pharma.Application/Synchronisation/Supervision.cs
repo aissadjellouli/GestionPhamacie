@@ -37,18 +37,27 @@ public static class NaturesAlerteSync
     public const string Erreur = "erreur";
     public const string Certificat = "certificat";
     public const string Quota = "quota";
+    /// <summary>Nouvelle anomalie d'intégrité constatée par le serveur central (lot S4) : une alerte par nouvelle anomalie, sans délai
+    /// d'une heure ; la dernière anomalie signalée est notée à part (sync_parametre.integrite_anomalie_signalee, script 144).</summary>
+    public const string Integrite = "integrite";
+    /// <summary>Sujets répétés au plus une fois par heure tant que le problème dure (colonnes alerte_*_le, script 140).</summary>
     public static readonly IReadOnlyList<string> Toutes = [Retard, Erreur, Certificat, Quota];
 }
 
 /// <summary>État lu pour la supervision. <paramref name="DernieresAlertes"/> : dernière alerte envoyée par nature.</summary>
+/// <param name="Integrite">Dernier résumé de la vérification du serveur central (lot S4) ; null tant qu'aucun n'est reçu.</param>
+/// <param name="IntegriteSignalee">N° de la dernière anomalie du serveur central déjà signalée au titulaire.</param>
 public sealed record EtatSupervisionSync(bool Active, bool BaseEnLectureSeule, AttenteSync Attente, DateTime? ErreurDepuisLe, string? ErreurNature,
-    string? DerniereErreur, IReadOnlyDictionary<string, DateTime> DernieresAlertes, ReglagesSupervisionSync Reglages);
+    string? DerniereErreur, IReadOnlyDictionary<string, DateTime> DernieresAlertes, ReglagesSupervisionSync Reglages,
+    IntegriteCentrale? Integrite = null, long IntegriteSignalee = 0);
 
 public interface ISupervisionSyncDepot
 {
     Task<EtatSupervisionSync> LireAsync(CancellationToken ct = default);
     /// <summary>Enregistre l'envoi d'une alerte (<see cref="NaturesAlerteSync"/>) : sert à n'en envoyer qu'une par heure.</summary>
     Task NoterAlerteAsync(string nature, DateTime quandUtc, CancellationToken ct = default);
+    /// <summary>Note la dernière anomalie d'intégrité du serveur central signalée au titulaire (jamais en arrière, script 144).</summary>
+    Task NoterIntegriteSignaleeAsync(long derniereAnomalieId, CancellationToken ct = default);
     Task EnregistrerReglagesAsync(ReglagesSupervisionSync reglages, CancellationToken ct = default);
 }
 
@@ -131,10 +140,16 @@ public sealed class SurveillerSynchronisation(ISupervisionSyncDepot depot, ICert
         var envoyees = new List<string>();
         foreach (var (nature, objet, detail, sms) in Constater(e, LireCertificat(), maintenant))
         {
-            if (e.DernieresAlertes.TryGetValue(nature, out var derniere) && maintenant >= derniere && maintenant - derniere < Intervalle) continue;
-            // Le moment est noté AVANT l'envoi : si la mise en file échoue, elle est signalée au titulaire (alerte non envoyée)
-            // et ne se répète pas chaque minute
-            await depot.NoterAlerteAsync(nature, maintenant, ct);
+            if (nature == NaturesAlerteSync.Integrite)
+                // Une alerte par nouvelle anomalie du serveur central : la dernière signalée est notée AVANT l'envoi
+                await depot.NoterIntegriteSignaleeAsync(e.Integrite!.DerniereAnomalieId, ct);
+            else
+            {
+                if (e.DernieresAlertes.TryGetValue(nature, out var derniere) && maintenant >= derniere && maintenant - derniere < Intervalle) continue;
+                // Le moment est noté AVANT l'envoi : si la mise en file échoue, elle est signalée au titulaire (alerte non envoyée)
+                // et ne se répète pas chaque minute
+                await depot.NoterAlerteAsync(nature, maintenant, ct);
+            }
             await AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.SynchronisationAsync(objet, detail, sms, ct), $"synchronisation ({nature})", trace);
             envoyees.Add(nature);
         }
@@ -193,6 +208,20 @@ public sealed class SurveillerSynchronisation(ISupervisionSyncDepot depot, ICert
             liste.Add((NaturesAlerteSync.Quota, "Synchronisation : quota refusé par le serveur central",
                 "Le serveur central refuse les envois (quota ou plafond atteint). L’envoi reprend automatiquement quand il l’autorise ; les opérations restent en attente, rien n’est perdu." + erreur,
                 "Synchronisation : quota ou plafond refuse par le serveur central."));
+        if (e.Integrite is { DerniereAnomalieId: > 0 } integ && integ.DerniereAnomalieId > e.IntegriteSignalee)
+        {
+            // Les 20 plus récentes sont transmises : au-delà, le nombre vient du n° (les n° du central se suivent par officine,
+            // mais peuvent sauter ; « au moins » n'est pas affiché pour rester simple)
+            var nouvelles = integ.Anomalies.Where(a => a.Id > e.IntegriteSignalee).ToList();
+            var natures = string.Join(", ", nouvelles.Select(a => IntegriteCentrale.LibelleNature(a.Nature)).Distinct().Take(3));
+            var nombre = Math.Max(1, nouvelles.Count);
+            liste.Add((NaturesAlerteSync.Integrite, "Synchronisation : anomalie d’intégrité constatée par le serveur central",
+                $"Le serveur central a constaté {nombre} nouvelle(s) anomalie(s) dans les journaux reçus de l’officine"
+                + (natures.Length > 0 ? $" : {natures}." : ".")
+                + " Rien n’a été corrigé, ni ici ni au serveur central : les données reçues sont gardées telles quelles comme preuve."
+                + "\n\nÀ faire : ne rien corriger ; voir Administration › Synchronisation › Intégrité au central, puis prévenir l’éditeur.",
+                $"Synchronisation : {nombre} anomalie(s) d'integrite constatee(s) par le serveur central."));
+        }
         return liste;
     }
 

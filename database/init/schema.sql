@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 143 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 144 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 143 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 144 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -3865,6 +3865,10 @@ BEGIN
     END LOOP;
     IF cardinality(p_table.colonnes_texte) > 0 THEN
         SELECT textes_libres INTO v_mode FROM sync_parametre WHERE id = 1;
+        -- Journal chaîné : jamais vidé (l'empreinte reste recalculable au serveur central), toujours filtré
+        IF EXISTS (SELECT 1 FROM chaine_integrite ci WHERE ci.journal = p_table.nom_table) THEN
+            v_mode := 'filtres';
+        END IF;
         FOREACH c IN ARRAY p_table.colonnes_texte LOOP
             IF jsonb_typeof(j -> c) = 'string' THEN
                 j := jsonb_set(j, ARRAY[c], CASE WHEN v_mode = 'retires' THEN 'null'::jsonb
@@ -3906,6 +3910,17 @@ CREATE FUNCTION public.sync_noter_envoi(p_erreur text) RETURNS void
     UPDATE sync_parametre SET dernier_envoi_le = now(), derniere_erreur = left(p_erreur, 500),
                               derniere_erreur_le = CASE WHEN p_erreur IS NULL THEN NULL ELSE now() END
     WHERE id = 1
+$$;
+
+
+--
+-- Name: sync_noter_integrite_signalee(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_integrite_signalee(p_id bigint) RETURNS void
+    LANGUAGE sql
+    AS $$
+    UPDATE sync_parametre SET integrite_anomalie_signalee = greatest(integrite_anomalie_signalee, coalesce(p_id, 0)) WHERE id = 1
 $$;
 
 
@@ -4252,6 +4267,7 @@ CREATE TABLE public.sync_parametre (
     alerte_erreur_le timestamp with time zone,
     alerte_certificat_le timestamp with time zone,
     alerte_quota_le timestamp with time zone,
+    integrite_anomalie_signalee bigint DEFAULT 0 NOT NULL,
     CONSTRAINT sync_parametre_adresse_serveur_check CHECK (((adresse_serveur IS NULL) OR (adresse_serveur ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'::text))),
     CONSTRAINT sync_parametre_check CHECK (((dernier_accuse >= 0) AND (dernier_accuse <= dernier_lot))),
     CONSTRAINT sync_parametre_dernier_lot_check CHECK ((dernier_lot >= 0)),
@@ -4280,6 +4296,13 @@ COMMENT ON TABLE public.sync_parametre IS 'Synchronisation : réglage (désactiv
 --
 
 COMMENT ON COLUMN public.sync_parametre.descendant_version IS 'Plus grande version descendante appliquée (acquittement redonné au serveur central) (script 131).';
+
+
+--
+-- Name: COLUMN sync_parametre.integrite_anomalie_signalee; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.integrite_anomalie_signalee IS 'N° de la dernière anomalie d''intégrité du serveur central signalée au titulaire (script 144).';
 
 
 --
@@ -6002,6 +6025,7 @@ CREATE TABLE public.compteur_ticket (
     dernier_numero bigint NOT NULL,
     premier_numero_continu bigint NOT NULL,
     mis_en_service_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT ck_compteur_ticket_numero CHECK (((dernier_numero >= 0) AND (premier_numero_continu >= 1))),
     CONSTRAINT compteur_ticket_id_check CHECK ((id = 1))
 );
@@ -12243,8 +12267,25 @@ CREATE TABLE public.verification_integrite (
     trouve text,
     declenchee_par bigint,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    dernier_rang bigint,
+    dernier_hash bytea,
+    CONSTRAINT ck_verification_integrite_dernier_rang CHECK (((dernier_rang IS NULL) OR (dernier_rang >= 0))),
     CONSTRAINT ck_verification_integrite_statut CHECK ((statut = ANY (ARRAY['ok'::text, 'rupture'::text, 'erreur'::text])))
 );
+
+
+--
+-- Name: COLUMN verification_integrite.dernier_rang; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.verification_integrite.dernier_rang IS 'Dernier rang de la chaîne constaté par la vérification (NULL : chaîne rompue ou contrôle sans chaîne) ; envoyé au serveur central (script 144).';
+
+
+--
+-- Name: COLUMN verification_integrite.dernier_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.verification_integrite.dernier_hash IS 'Empreinte de la ligne au dernier rang constaté ; le serveur central la compare à la ligne reçue (script 144).';
 
 
 --

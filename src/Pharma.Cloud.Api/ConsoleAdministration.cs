@@ -17,7 +17,8 @@ public static class ConsoleAdministration
     public static readonly string[] Commandes =
         ["--initialiser-autorite", "--certificat-serveur", "--creer-officine", "--code-activation", "--revoquer", "--revoquer-serveur", "--lister", "--partitions", "--generer-miroir",
          "--reglages", "--regler-famille", "--effacer-famille", "--conservation", "--purge-lots", "--purger-lots",
-         "--reglages-mutualises", "--publier-reglage", "--mode-reglage", "--modele-depuis-officine", "--liberer-reglages", "--retablir-reglages", "--journal-reglages"];
+         "--reglages-mutualises", "--publier-reglage", "--mode-reglage", "--modele-depuis-officine", "--liberer-reglages", "--retablir-reglages", "--journal-reglages",
+         "--verifier-integrite", "--anomalies-integrite"];
 
     public static bool Concerne(string[] args) => args.Length > 0 && Commandes.Contains(args[0]);
 
@@ -105,6 +106,20 @@ public static class ConsoleAdministration
                             Console.WriteLine(r.IsDBNull(2) ? $"{r.GetGuid(0)}  {r.GetString(1)}  (aucun certificat)"
                                 : $"{r.GetGuid(0)}  {r.GetString(1)}  {r.GetString(2)}  {r.GetString(3)}…  échéance {r.GetDateTime(4):yyyy-MM-dd}{(r.GetBoolean(5) ? "  RÉVOQUÉ" : "")}");
                         return 0;
+                    }
+                case "--verifier-integrite":
+                    {
+                        // Lot S4 : tâche planifiée toutes les 15 min ; --complete chaque semaine (depuis le rang 1)
+                        await using var db = Admin();
+                        return await Integrite.VerificationIntegriteCentrale.VerifierAsync(db, args.Contains("--complete"), OfficineOption(args), Console.Out);
+                    }
+                case "--anomalies-integrite":
+                    {
+                        await using var db = Admin();
+                        var nombre = Option(args, "--nombre") is { } n
+                            ? int.TryParse(n, out var v) ? v : throw new ArgumentException("Nombre entier attendu après --nombre.")
+                            : Integrite.VerificationIntegriteCentrale.NombreParDefaut;
+                        return await Integrite.VerificationIntegriteCentrale.AnomaliesAsync(db, OfficineOption(args), nombre, Console.Out);
                     }
                 case "--partitions":
                     {

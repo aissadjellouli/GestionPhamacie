@@ -152,8 +152,11 @@ permet, classique sinon**, officine par officine ; aucune exigence de Windows 11
   butoir** fixée par l'éditeur : après elle, le classique est refusé pour tous, les officines en retard étant prévenues longtemps avant
   **[DÉCISION le moment venu : date]**.
 - Même principe que la tolérance d'une version de retard de l'API ([conception-synchronisation.md](conception-synchronisation.md) § 0).
-- **[À VÉRIFIER dans le code]** : enregistrement actuel de l'officine et de son certificat à l'activation ; signature des lots déjà
-  codée ou seulement prévue ; champ de version du contrat d'échange réutilisable.
+- **Constaté dans le code (2026-11-17)** : l'activation n'accepte que des demandes ECDSA P-256 et une seule autorité racine
+  (`AutoriteCertification.SignerDemande`, `ValiderClient`, empreinte de la racine dans le code d'activation) : à étendre en C6 (demandes
+  ML-DSA, deux racines, colonne d'algorithme dans `certificat`) ; la **signature des lots n'est pas codée** (empreinte SHA-256 seulement) :
+  rien à re-signer, elle sera écrite directement avec un identifiant d'algorithme ; chaque lot porte `sync-v1` et le central tient la
+  liste des versions acceptées, mais il réécrit chaque lot octet pour octet : un champ ajouté (bloc chiffré) exige **`sync-v2`**.
 
 ## 4. Chiffrement à l'envoi
 

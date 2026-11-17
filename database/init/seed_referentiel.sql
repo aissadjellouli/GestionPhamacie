@@ -23,7 +23,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 143 (095, 098, 099, 132, 134, 137, 138, 139, 142 et 143 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 144 (095, 098, 099, 132, 134, 137, 138, 139, 142 et 143 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -388,7 +388,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('comptage_reception_ligne', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('compte_carte_periode', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('compte_tresorerie', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
-    ('compteur_ticket', 'jamais', '{id}', '{}', '{}', '{}', false, 'Compteur local'),
+    ('compteur_ticket', 'montante', '{id}', '{}', '{}', '{}', false, 'Compteur des tickets : continuité vérifiée au serveur central (lot S4, script 144)'),
     ('connexion_employe', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('correction_lot', 'montante', '{id}', '{}', '{}', '{motif}', false, NULL),
     ('correspondance_echeancier', 'montante', '{compte_id}', '{}', '{}', '{}', false, NULL),

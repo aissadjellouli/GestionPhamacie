@@ -41,7 +41,12 @@ public static class SynchronisationEndpoints
                 new SupervisionSynchronisationDto(sup.Reglages.BandeauMinutes, sup.Reglages.RetardHeures, sup.Reglages.ErreurMinutes, sup.Reglages.PurgeActive,
                     sup.Reglages.PurgeJours, sup.Attente.Depuis, sup.Attente.Operations, sup.ErreurNature, sup.ErreurDepuisLe,
                     new PurgeSynchronisationDto(pg.EpoquePurge, pg.DernierLotPurge, pg.DernierePurgeLe, pg.DernieresLignes, pg.TotalLignes, pg.DerniereErreur,
-                        pg.LignesGardees, pg.OctetsFile))));
+                        pg.LignesGardees, pg.OctetsFile)),
+                sup.Integrite is not { } ic ? null : new IntegriteCentraleDto(ic.Statut, ic.VerifieLeUtc, ic.CompleteLeUtc, ic.AnomaliesTotal,
+                    ic.DerniereAnomalieId, ic.SceauxOk, ic.SceauxAttente, ic.SceauxIncoherents, ic.TicketsVerifiesJusquA,
+                    ic.Chaines.Select(c => new ChaineIntegriteCentraleDto(c.Journal, c.Cle, c.Mode, c.Statut, c.DernierRang, c.NonVerifiables)).ToList(),
+                    ic.Anomalies.Select(a => new AnomalieIntegriteCentraleDto(a.Id, a.Nature, IntegriteCentrale.LibelleNature(a.Nature), a.Journal, a.Rang,
+                        a.Ligne, a.Detail, a.DetecteeLeUtc)).ToList())));
         });
 
         // Lot S6 : rechargement complet demandé par le titulaire (traité par le passage d'envoi suivant)

@@ -156,7 +156,22 @@ public sealed record EtatSynchronisationDto(bool Active, string? OfficineId, str
     DateTime? EcheanceCertificat, string? EmpreinteCertificat, string? DerniereErreur, DateTime? DerniereErreurLe, string TextesLibres,
     bool EnvoyerMedecins, int Epoque, string VersionContrat, long LotsAutresEpoques = 0, bool BaseEnLectureSeule = false,
     ChargementSynchronisationDto? Chargement = null, IReadOnlyList<string>? FamillesEnvoyees = null, DateTime? FamillesLuesLe = null,
-    long FamillesVersion = 0, SupervisionSynchronisationDto? Supervision = null);
+    long FamillesVersion = 0, SupervisionSynchronisationDto? Supervision = null, IntegriteCentraleDto? IntegriteCentrale = null);
+
+/// <summary>
+/// Lot S4 : dernière vérification d'intégrité faite par le serveur central (résumé reçu par la voie descendante, format integrite-v1).
+/// Statut : ok, attente (une ligne, un ticket ou un sceau attendu n'est pas encore arrivé) ou anomalie.
+/// </summary>
+public sealed record IntegriteCentraleDto(string Statut, DateTime? VerifieLe, DateTime? CompleteLe, long AnomaliesTotal, long DerniereAnomalieId,
+    long SceauxOk, long SceauxAttente, long SceauxIncoherents, long? TicketsVerifiesJusquA, IReadOnlyList<ChaineIntegriteCentraleDto> Chaines,
+    IReadOnlyList<AnomalieIntegriteCentraleDto> Anomalies);
+
+/// <summary>Chaîne vérifiée au central : mode « complet » (empreintes recalculées) ou « liaison » (rangs et chaînage seulement).</summary>
+public sealed record ChaineIntegriteCentraleDto(string Journal, string Cle, string Mode, string Statut, long DernierRang, long NonVerifiables);
+
+/// <summary>Anomalie constatée au central (20 plus récentes) ; Nature : code, Libelle : texte affiché.</summary>
+public sealed record AnomalieIntegriteCentraleDto(long Id, string Nature, string Libelle, string Journal, long? Rang, string? Ligne, string? Detail,
+    DateTime? DetecteeLe);
 
 /// <summary>
 /// Dernier chargement complet (lot S6) : état (demande, constitution, pret, annonce, termine, remplace), progression (lignes

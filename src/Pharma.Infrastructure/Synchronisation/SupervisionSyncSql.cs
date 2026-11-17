@@ -23,7 +23,8 @@ public sealed class SupervisionSyncSql(NpgsqlDataSource db) : ISupervisionSyncDe
                      + coalesce((SELECT sum(l.nb_lignes) FROM sync_lot l WHERE l.epoque = p.epoque AND l.accuse_le IS NULL), 0),
                    p.erreur_depuis_le, p.erreur_nature, p.derniere_erreur,
                    p.alerte_retard_le, p.alerte_erreur_le, p.alerte_certificat_le, p.alerte_quota_le,
-                   p.bandeau_minutes, p.alerte_retard_heures, p.alerte_erreur_minutes, p.purge_active, p.purge_jours
+                   p.bandeau_minutes, p.alerte_retard_heures, p.alerte_erreur_minutes, p.purge_active, p.purge_jours,
+                   (SELECT rc.valeur::text FROM reglage_central rc WHERE rc.cle = 'integrite_centrale'), p.integrite_anomalie_signalee
             FROM sync_parametre p WHERE p.id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -33,7 +34,15 @@ public sealed class SupervisionSyncSql(NpgsqlDataSource db) : ISupervisionSyncDe
             if (Date(r, 7 + i) is { } d) alertes[Natures[i]] = d;
         return new EtatSupervisionSync(r.GetBoolean(0), r.GetBoolean(1), new AttenteSync(Date(r, 2), Convert.ToInt64(r.GetValue(3))), Date(r, 4),
             r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6), alertes,
-            new ReglagesSupervisionSync(r.GetInt32(11), r.GetInt32(12), r.GetInt32(13), r.GetBoolean(14), r.GetInt32(15)));
+            new ReglagesSupervisionSync(r.GetInt32(11), r.GetInt32(12), r.GetInt32(13), r.GetBoolean(14), r.GetInt32(15)),
+            IntegriteCentrale.Lire(r.IsDBNull(16) ? null : r.GetString(16)), r.GetInt64(17));
+    }
+
+    public async Task NoterIntegriteSignaleeAsync(long derniereAnomalieId, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_noter_integrite_signalee($1)");
+        cmd.Parameters.AddWithValue(derniereAnomalieId);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task NoterAlerteAsync(string nature, DateTime quandUtc, CancellationToken ct = default)

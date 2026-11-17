@@ -32,6 +32,13 @@ public class SupervisionSynchronisationTests
             return Task.CompletedTask;
         }
         public Task EnregistrerReglagesAsync(ReglagesSupervisionSync reglages, CancellationToken ct = default) { Enregistres = reglages; return Task.CompletedTask; }
+        public readonly List<long> IntegriteSignalee = [];
+        public Task NoterIntegriteSignaleeAsync(long derniereAnomalieId, CancellationToken ct = default)
+        {
+            IntegriteSignalee.Add(derniereAnomalieId);
+            Etat = Etat with { IntegriteSignalee = Math.Max(Etat.IntegriteSignalee, derniereAnomalieId) };
+            return Task.CompletedTask;
+        }
     }
 
     private static EtatSupervisionSync UnEtat(bool active = true, AttenteSync? attente = null, DateTime? erreurDepuis = null, string? nature = null,
@@ -147,6 +154,7 @@ public class SupervisionSynchronisationTests
         public Task<EtatSupervisionSync> LireAsync(CancellationToken ct = default) => throw new InvalidOperationException("base indisponible");
         public Task NoterAlerteAsync(string nature, DateTime quandUtc, CancellationToken ct = default) => Task.CompletedTask;
         public Task EnregistrerReglagesAsync(ReglagesSupervisionSync reglages, CancellationToken ct = default) => Task.CompletedTask;
+        public Task NoterIntegriteSignaleeAsync(long derniereAnomalieId, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     [Fact]
@@ -342,5 +350,61 @@ public class SupervisionSynchronisationTests
         Assert.Single(depot.Erreurs);
         Assert.DoesNotContain("données", depot.Erreurs[0]);
         Assert.True(verrou.Prendre());
+    }
+
+    // ---- Lot S4 : vérification d'intégrité du serveur central ----
+
+    private const string ResumeCentral = """
+        {"format":"integrite-v1","statut":"anomalie","verifie_le":"2026-11-17T10:00:00+00:00","complete_le":null,
+         "chaines":[{"journal":"journal_vente","cle":"officine","mode":"complet","statut":"rupture","dernier_rang":12,"non_verifiables":2}],
+         "sceaux":{"ok":3,"attente":1,"incoherents":0,"non_verifiables":0},"tickets_verifies_jusqu_a":5939,
+         "anomalies_total":2,"derniere_anomalie_id":41,
+         "anomalies":[{"id":41,"nature":"ligne_modifiee","journal":"journal_vente","rang":13,"ligne":"13","detail":"empreinte différente","detectee_le":"2026-11-17T10:00:00+00:00"},
+                      {"id":40,"nature":"ticket_manquant","journal":"journal_vente","rang":null,"ligne":"T-000004","detail":"ticket jamais reçu","detectee_le":"2026-11-16T10:00:00+00:00"}]}
+        """;
+
+    [Fact]
+    public void Resume_du_serveur_central_lu_et_format_inconnu_ignore()
+    {
+        var r = IntegriteCentrale.Lire(ResumeCentral)!;
+        Assert.Equal((IntegriteCentrale.StatutAnomalie, 2L, 41L, 3L, 1L, 5939L), (r.Statut, r.AnomaliesTotal, r.DerniereAnomalieId, r.SceauxOk, r.SceauxAttente, r.TicketsVerifiesJusquA ?? 0));
+        var c = Assert.Single(r.Chaines);
+        Assert.Equal(("journal_vente", "complet", "rupture", 12L, 2L), (c.Journal, c.Mode, c.Statut, c.DernierRang, c.NonVerifiables));
+        Assert.Equal([41L, 40L], r.Anomalies.Select(a => a.Id));
+        Assert.Null(r.Anomalies[1].Rang);
+        Assert.Equal(new DateTime(2026, 11, 17, 10, 0, 0, DateTimeKind.Utc), r.VerifieLeUtc);
+        Assert.Null(IntegriteCentrale.Lire(null));
+        Assert.Null(IntegriteCentrale.Lire("{\"format\":\"autre\"}"));
+        Assert.Null(IntegriteCentrale.Lire("pas du json"));
+    }
+
+    [Fact]
+    public async Task Nouvelle_anomalie_du_serveur_central_signalee_une_fois_puis_plus_jusqu_a_la_suivante()
+    {
+        var integrite = IntegriteCentrale.Lire(ResumeCentral)!;
+        var (depot, alertes, horloge) = (new Depot { Etat = UnEtat() with { Integrite = integrite, IntegriteSignalee = 39 } }, new Alertes(), new Horloge(Maintenant));
+        var surveillance = new SurveillerSynchronisation(depot, new Certificat(null), alertes, horloge);
+
+        Assert.Equal([NaturesAlerteSync.Integrite], await surveillance.ExecuterAsync());
+        var a = Assert.Single(alertes.Envoyees);
+        Assert.Contains("2 nouvelle(s) anomalie(s)", a.Detail);
+        Assert.Contains("Ligne modifiée", a.Detail);
+        Assert.Contains("ne rien corriger", a.Detail);
+        Assert.Equal([41L], depot.IntegriteSignalee);
+        Assert.Empty(depot.Alertes);                                      // pas de délai d'une heure pour ce sujet
+
+        horloge.Avancer(TimeSpan.FromHours(3));
+        Assert.Empty(await surveillance.ExecuterAsync());                 // déjà signalée : rien, même plus tard
+        depot.Etat = depot.Etat with { Integrite = integrite with { DerniereAnomalieId = 42 } };
+        Assert.Equal([NaturesAlerteSync.Integrite], await surveillance.ExecuterAsync());   // nouvelle anomalie : nouvelle alerte
+        Assert.Equal([41L, 42L], depot.IntegriteSignalee);
+    }
+
+    [Fact]
+    public void Pas_d_alerte_d_integrite_sans_resume_ni_anomalie()
+    {
+        Assert.Empty(SurveillerSynchronisation.Constater(UnEtat(), null, Maintenant));
+        var sans = IntegriteCentrale.Lire(ResumeCentral)! with { DerniereAnomalieId = 0, AnomaliesTotal = 0, Anomalies = [] };
+        Assert.Empty(SurveillerSynchronisation.Constater(UnEtat() with { Integrite = sans }, null, Maintenant));
     }
 }

@@ -591,6 +591,28 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public."compte_tresorerie" TO pharma_clo
 INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('compte_tresorerie', '{id}', '{id,type,nom,banque,numero_compte,recoit_carte,solde_initial,date_initiale,actif,cree_le,officine_id}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
+CREATE TABLE IF NOT EXISTS public."compteur_ticket" (
+    officine_id uuid NOT NULL,
+    "id" smallint NOT NULL,
+    sync_epoque integer NOT NULL,
+    sync_numero bigint NOT NULL,
+    sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (officine_id, "id")
+);
+ALTER TABLE public."compteur_ticket" ADD COLUMN IF NOT EXISTS "prefixe" text;
+ALTER TABLE public."compteur_ticket" ADD COLUMN IF NOT EXISTS "dernier_numero" bigint;
+ALTER TABLE public."compteur_ticket" ADD COLUMN IF NOT EXISTS "premier_numero_continu" bigint;
+ALTER TABLE public."compteur_ticket" ADD COLUMN IF NOT EXISTS "mis_en_service_le" timestamp with time zone;
+ALTER TABLE public."compteur_ticket" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."compteur_ticket" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
+ALTER TABLE public."compteur_ticket" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."compteur_ticket" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cloisonnement ON public."compteur_ticket";
+CREATE POLICY cloisonnement ON public."compteur_ticket" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public."compteur_ticket" TO pharma_cloud_api;
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('compteur_ticket', '{id}', '{id,prefixe,dernier_numero,premier_numero_continu,mis_en_service_le,officine_id}')
+    ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
+
 CREATE TABLE IF NOT EXISTS public."connexion_employe" (
     officine_id uuid NOT NULL,
     "id" bigint NOT NULL,
@@ -2819,6 +2841,8 @@ ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "motif" tex
 ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "attendu" text;
 ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "trouve" text;
 ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "declenchee_par" bigint;
+ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "dernier_rang" bigint;
+ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS "dernier_hash" bytea;
 ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."verification_integrite" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."verification_integrite" ENABLE ROW LEVEL SECURITY;
@@ -2826,7 +2850,7 @@ ALTER TABLE public."verification_integrite" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."verification_integrite";
 CREATE POLICY cloisonnement ON public."verification_integrite" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."verification_integrite" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('verification_integrite', '{id}', '{id,verifie_le,journal,cle_chaine,lignes,sceaux,statut,rang_rupture,motif,attendu,trouve,declenchee_par,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('verification_integrite', '{id}', '{id,verifie_le,journal,cle_chaine,lignes,sceaux,statut,rang_rupture,motif,attendu,trouve,declenchee_par,officine_id,dernier_rang,dernier_hash}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."verification_serialisation" (

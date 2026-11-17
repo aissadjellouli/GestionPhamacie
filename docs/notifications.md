@@ -17,7 +17,7 @@ Le titulaire est prévenu à distance **sans cloud ni application mobile** : par
 | Sauvegarde | Échec de pg_dump ou disque externe absent | Oui | Si la case « SMS sauvegarde » est cochée |
 | Écart d'inventaire | Fin d'un inventaire tournant avec des écarts au-delà des seuils (à valider par le titulaire) | Oui | Oui |
 | Contrôle interne | Nouvelle anomalie (caisse, stock, comptes, réception) : objet « Contrôle interne : point à examiner » (« URGENT : … » au double du seuil) | Oui | Si la case « SMS lot bloqué » est cochée |
-| Synchronisation | Retard au-delà de 24 h, erreur d'envoi depuis 60 minutes, certificat à moins de 30 jours de l'échéance, quota ou plafond refusé par le serveur central (au plus une par heure et par sujet ; seuils réglables : Administration › Synchronisation › Supervision et purge ; script 140) | Oui | Si la case « SMS sauvegarde » est cochée |
+| Synchronisation | Retard au-delà de 24 h, erreur d'envoi depuis 60 minutes, certificat à moins de 30 jours de l'échéance, quota ou plafond refusé par le serveur central (au plus une par heure et par sujet ; seuils réglables : Administration › Synchronisation › Supervision et purge ; script 140) ; anomalie d'intégrité constatée par le serveur central (une alerte par nouvelle anomalie, lot S4, script 144) | Oui | Si la case « SMS sauvegarde » est cochée |
 | Ancien lot délaissé | Lot récent servi alors qu'un plus ancien reste en stock, au-delà des seuils | Oui | Si la case « SMS lot bloqué » est cochée |
 | Annulations | Annulations au-delà du seuil sur une même caisse | Oui | Oui |
 | Test | Bouton « Test » d'un destinataire | Oui | Oui |

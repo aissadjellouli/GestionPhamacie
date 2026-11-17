@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).**
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)**
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -189,7 +189,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S1 | Inventaire table par table (sens, minimisation), contrat `sync-v1`, outbox locale + séquence (scripts SQL), sans envoi | S0 |
 | S2 | API cloud minimale (réception, idempotence, ordre, accusés), base centrale cloisonnée, authentification par certificat | S0, S1 |
 | S3 | Service de sync local (envoi, reprise, bandeau, écran d'état, alertes) | S1, S2 |
-| S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) | S2 ; lots 2, 3, 8 (faits) |
+| S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
 | S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
 | S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
@@ -1124,3 +1124,74 @@ API et poste réellement lancés (ports 5921 et 5922), file alimentée par les v
 ## 21. Chiffrement des données nominatives (option C, lot 9)
 
 Conception et décisions DC1 à DC7 (acceptées le 2026-11-17) : [chiffrement-data.md](chiffrement-data.md). Rien n'est codé : lots C1 à C5 sur « go chiffrement » seulement.
+
+## 22. Lot S4 : réalisé (2026-11-17, GO « go S4 option A ») — vérification d'intégrité au serveur central
+
+Décisions du titulaire : option A pour le registre des psychotropes (rangs et chaînage seulement, déjà validée le 2026-11-16) ; plan
+validé avec les recommandations S4-D1 à S4-D5 ; « filtré, jamais vidé » pour les textes libres des journaux chaînés (question posée
+pendant le lot, voir 22.2).
+
+### 22.1 Ce qui est vérifié, et comment
+
+| Contrôle | Où | Règle |
+|---|---|---|
+| Rangs sans trou, origine, chaînage | `journal_vente`, `journal_registre_psychotrope` | Rang n+1 après n ; rang 1 chaîné sur l'origine (octets nuls, longueur de l'algorithme déduite de l'empreinte : 32 = SHA-256, 64 = SHA-512, S4-D2) ; empreinte précédente = empreinte de la ligne d'avant |
+| Empreintes recalculées | `journal_vente` (mode « complet ») | Même forme canonique v1 que l'officine (`cloud_integrite_expression`, copie de `integrite_expression`, référentiel `cloud_chaine_reference` = colonnes des scripts officine 112 et 117) |
+| Registre | `journal_registre_psychotrope` (mode « liaison ») | Rangs et chaînage seulement : les colonnes du porteur ne partent pas (option A) |
+| Ancrage des sceaux | `sceau_integrite` | La ligne scellée (rang, id) existe au central avec l'empreinte du sceau ; le HMAC reste vérifié dans l'officine (clé jamais envoyée) |
+| Continuité des tickets « T- » | `compteur_ticket` (montante depuis le script 144, S4-D1), `vente`, `journal_vente`, `annulation_vente` | Même contrôle que `journal_vente_continuite()` : numéro manquant, ticket au-delà du compteur, vente ou annulation sans ligne au journal |
+| Vérification croisée | `verification_integrite.dernier_rang`, `dernier_hash` (script 144) | La fin de chaîne constatée par la vérification de l'officine doit être la ligne reçue au même rang : sinon « réécrite après envoi » ; une ligne reçue au-delà, enregistrée avant la vérification, signale des lignes perdues par l'officine |
+| Ajout seul au central | déclencheur `trg_cloud_integrite_ajout_seul` sur `journal_vente`, `journal_registre_psychotrope`, `sceau_integrite`, `cloture_fiscale`, `verification_integrite` | Une ligne reçue avec un autre contenu n'est **pas** appliquée (l'original reste, preuve ; anomalie « modification refusée ») ; une suppression reçue non plus ; renvoi identique (chargement complet) accepté ; seul un texte filtré différent (listes de l'officine changées) : original gardé sans anomalie |
+
+- **Délai d'attente** (S4-D4) : un rang, un ticket, une ligne scellée ou une fin de chaîne absents ne sont une anomalie qu'après
+  `cloud_parametre.integrite_delai_heures` (24 h) : le temps que tout arrive.
+- **Points de reprise** : `cloud_integrite_etat` (par chaîne), `cloud_integrite_sceau` (par sceau), `cloud_integrite_officine`
+  (tickets, ventes contrôlées, dernière vérification de l'officine lue). Une chaîne en rupture n'est plus relue au passage
+  incrémental ; la vérification complète repart du rang 1 et retrouve aussi une ligne modifiée **directement dans la base centrale**.
+- **Anomalies** : `cloud_anomalie_integrite`, ajout seul, cloisonnée par officine, notée **une seule fois** (index unique), inscrite au
+  journal de sécurité (`integrite_anomalie`, sans valeur de donnée). L'API n'a aucun droit de lancer la vérification ni de modifier
+  une anomalie ; elle n'en écrit que par le déclencheur d'ajout seul.
+
+### 22.2 Textes libres des journaux chaînés : filtrés, jamais vidés (script 144)
+
+Le motif de `journal_vente` et du registre est un texte libre filtré avant l'envoi (script 127). Le central ne peut pas recalculer
+l'empreinte d'une ligne dont le motif a été changé par le filtre. Décision du titulaire (2026-11-17) : pour les **journaux chaînés**
+(`chaine_integrite`), le texte est **toujours filtré, jamais vidé**, même avec l'option « textes libres retirés » (`sync_minimiser`
+redéfinie). Ainsi un motif vide au central est vraiment vide ; un motif qui porte un marqueur du filtre (`[COURRIEL]`, `[TÉL]`,
+`[N°]`, `[PERSONNEL]`, `[NOM]`, code `P-…`) rend la ligne « non vérifiable » (comptée à part, chaînage vérifié, aucune alerte) ;
+toute autre différence est une anomalie. Les autres tables gardent l'option « retirés ».
+
+### 22.3 Résultat vers l'officine, alerte, écran
+
+- `cloud_verifier_integrite` publie un résumé (`integrite-v1` : statut ok / attente / anomalie, chaînes, sceaux, tickets, nombre
+  d'anomalies, 20 dernières) par la voie descendante existante : `reglage_central`, clé `integrite_centrale`. **Aucun changement
+  du contrat ni des échanges.**
+- Officine : une alerte au titulaire (sujet « Synchronisation ») **par nouvelle anomalie**, sans délai d'une heure ; la dernière
+  signalée est gardée dans `sync_parametre.integrite_anomalie_signalee` (`sync_noter_integrite_signalee`, script 144).
+- Écran : Administration › Synchronisation › **Intégrité au central** (droit `admin.parametres`) : état, dernières vérifications,
+  sceaux, tickets, chaque journal (lignes vérifiées, mode, texte filtré), tableau des 20 dernières anomalies. Lecture seule.
+
+### 22.4 Administration du central (S4-D3, S4-D5)
+
+- `Pharma.Cloud.Api.exe --verifier-integrite` : tâche planifiée **toutes les 15 minutes** (incrémental) ;
+  `--verifier-integrite --complete` **chaque semaine** (depuis le rang 1) ; `--officine <code>` pour une seule officine.
+  Une officine en erreur n'arrête pas les autres (code de sortie 1).
+- `Pharma.Cloud.Api.exe --anomalies-integrite [--officine <code>] [--nombre <n>]` : anomalies, les plus récentes d'abord.
+- Écran des anomalies au central : plus tard, avec les écrans du lot S7.
+
+### 22.5 Scripts, code, essais
+
+- Central `012_verification_integrite_central.sql` (+ tests `tests/012_…`) ; officine `144_synchronisation_verification_integrite_centrale.sql`
+  (+ tests `database/tests/144_…`), `database/init` à jour ; tables miroir régénérées (`compteur_ticket`, colonnes de
+  `verification_integrite`) ; le générateur des tables miroir prend désormais en compte un reclassement
+  (`ON CONFLICT … DO UPDATE SET sens`).
+- Les deux scripts posent `SET client_encoding = 'UTF8'` : constaté le 2026-11-17, `psql` sous Windows avec une sortie redirigée
+  lit le fichier en WIN1252 et abîme les accents (ici les marqueurs du filtre).
+- **Essai de bout en bout** (2026-11-17, copies jetables de `pharmacie_test` et d'un central neuf, supprimées) : lot construit avec la
+  vraie minimisation de l'officine (7 lignes de journal dont un motif filtré, registre, 2 sceaux réels, vérification locale,
+  compteur, 3 330 ventes) : empreintes recalculées **identiques** à celles de l'officine, ligne au motif filtré « non vérifiable »,
+  sceaux ancrés, tickets vérifiés, aucune anomalie ; résumé accepté et relu par l'officine ; commandes essayées, ligne altérée dans
+  la base centrale trouvée par la vérification complète. Écran mesuré à 1 536 × 890 (aucun défilement de page), captures en
+  clair et sombre.
+- **Non essayé** : volume réel d'une officine (durée d'une vérification complète sur des centaines de milliers de lignes)
+  **[À VÉRIFIER]** ; tâche planifiée réelle sur le serveur central.

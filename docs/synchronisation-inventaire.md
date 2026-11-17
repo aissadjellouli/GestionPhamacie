@@ -21,7 +21,7 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 147 tables — 79 montantes, 22 bidirectionnelles, 18 descendantes, 28 jamais envoyées (`reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
+**Récapitulatif** : 147 tables — 80 montantes, 22 bidirectionnelles, 18 descendantes, 27 jamais envoyées (`compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
 
 ## Ce que reçoit le serveur central : vue d'ensemble (2026-11-17)
 
@@ -72,7 +72,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 
 **Points [À VÉRIFIER] / [DÉCISION]** relevés pendant l'inventaire :
 - Champs de texte libre envoyés (motifs, commentaires, messages d'alerte, `chifa_ecart_detail`…) : **décision du titulaire (script 127)** : listés dans `sync_table.colonnes_texte` et **filtrés** avant envoi (courriel → `[COURRIEL]`, téléphone → `[TÉL]`, suite de 9 chiffres et plus → `[N°]`, nom ou prénom d'un patient → son code `P-…`, ou `[NOM]` s'il est porté par plusieurs patients, nom d'un porteur du registre → `[NOM]`) ; option `sync_parametre.textes_libres = 'retires'` pour ne pas les envoyer du tout (valeur nulle). Limite : un nom inconnu de la base ou mal orthographié n'est pas repéré. `journal_audit.details`, `forcage_alerte_psychotrope.messages`, `facture_client_version.contenu` et `demande_patient.sms_erreur` sont déjà exclus par prudence.
-- `journal_registre_psychotrope` est chaîné : les colonnes du porteur étant retirées, le serveur central **ne pourra pas recalculer** l'empreinte de ces lignes (§ 5 de la conception) ; il pourra contrôler la continuité des rangs et conserver les empreintes reçues, la vérification complète restant dans l'officine. **Validé par le titulaire le 2026-11-16.**
+- `journal_registre_psychotrope` est chaîné : les colonnes du porteur étant retirées, le serveur central **ne pourra pas recalculer** l'empreinte de ces lignes (§ 5 de la conception) ; il pourra contrôler la continuité des rangs et conserver les empreintes reçues, la vérification complète restant dans l'officine. **Validé par le titulaire le 2026-11-16 ; réalisé au lot S4 (2026-11-17, conception § 22).**
 - `medecin` classée jamais par défaut ; **option du titulaire** `sync_parametre.envoyer_medecins` (script 127, défaut non) : activée, nom, spécialité et wilaya sont envoyés (téléphone, adresse, courriel, n° d'ordre et code prestataire retirés) ; les ordonnances restent dans l'officine ; les médecins déjà enregistrés partent avec le prochain chargement complet (lot S6, « Recharger toutes les données ») ; `catalogue_grossiste` montante (volume à mesurer) ; référentiels descendants : diffusion à concevoir au lot S5.
 - Le schéma `import` (tables de reprise) n'est pas synchronisé.
 
@@ -100,6 +100,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `comptage_reception_ligne` | montante | id | - | - | |
 | `compte_carte_periode` | montante | id | - | - | |
 | `compte_tresorerie` | montante | id | - | - | |
+| `compteur_ticket` | montante | id | - | - | Compteur des tickets : continuité « T- » vérifiée au serveur central (lot S4, script 144 ; jamais envoyée avant) |
 | `connexion_employe` | montante | id | - | - | |
 | `correction_lot` | montante | id | - | - | |
 | `correspondance_echeancier` | montante | compte_id | - | - | |
@@ -155,7 +156,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `utilisation_financement` | montante | id | - | - | |
 | `vente` | montante | id | remis_a_nom, pour_nom, chifa_qr | patient_id, remis_a_patient_id, pour_patient_id | |
 | `vente_chifa_facture_conflit` | montante | vente_id | - | - | |
-| `verification_integrite` | montante | id | - | - | |
+| `verification_integrite` | montante | id | - | - | Avec la fin de chaîne constatée (`dernier_rang`, `dernier_hash`, script 144) : vérification croisée au serveur central |
 | `verification_serialisation` | montante | id | - | - | |
 | `versement_bordereau` | montante | id | - | - | |
 | `reglage_mutualise` | montante | nom_table | modele | - | État de la mutualisation des réglages par table (mode, version appliquée, rejet) ; la valeur du modèle reçue ne repart pas ; texte libre `motif_rejet` filtré, script 141 |
@@ -201,7 +202,6 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `reglage_central` | descendante | cle | - | - | Réglages décidés au serveur central (familles nominatives), voie descendante, script 131 |
 | `alerte_non_envoyee` | jamais | id | - | - | Technique, local |
 | `chaine_integrite` | jamais | journal | - | - | Registre technique local |
-| `compteur_ticket` | jamais | id | - | - | Compteur local |
 | `destinataire_notification` | jamais | id | - | - | Coordonnées personnelles |
 | `facture_compteur` | jamais | type, annee | - | - | Compteur local |
 | `historique_chifa` | jamais | id | - | - | Reprise : nom et n° d'assuré en clair |
