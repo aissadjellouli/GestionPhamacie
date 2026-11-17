@@ -13,7 +13,7 @@
         2. dossier d'essai %TEMP%\pharma-essai-cloud (hors dépôt) : autorité, certificat HTTPS, journaux, PID, mots de passe d'essai
            tirés au hasard (jamais écrits ailleurs) ;
         3. compilation des deux serveurs dans ce dossier (le dépôt et les exécutables en service ne sont pas touchés) ;
-        4. base centrale jetable pharmacie_cloud_essai (scripts database\cloud 001 à 009 par scripts\mep\creer_base_centrale.ps1)
+        4. base centrale jetable pharmacie_cloud_essai (scripts database\cloud 001 à 011 par scripts\mep\creer_base_centrale.ps1)
            et copie jetable pharmacie_essai_officine de pharmacie_dev (pg_dump en lecture seule, puis restauration) ;
         5. autorité d'essai + certificat HTTPS de 127.0.0.1 ; serveur central (port -PortCentral) et API officine (port -PortApi) lancés ;
         6. officine créée au central puis ACTIVÉE par l'API (réglages, code d'activation, certificat), comme le fait l'écran ;
@@ -31,9 +31,13 @@
     pharmacie_dev n'est lue que par pg_dump ; pharmacie_test, pharmacie_cloud_dev, le port 5080 et C:\ProgramData\PharmaOfficine
     ne sont jamais touchés ; les seules bases supprimées sont pharmacie_cloud_essai et pharmacie_essai_officine.
 
-    Mots de passe : jamais en paramètre. Mot de passe PostgreSQL de pharma_app : variable PGPASSWORD déjà définie, ou pgpass.conf,
-    ou saisie masquée. Mot de passe du compte titulaire de démonstration (pour activer l'officine par l'API) : variable
-    PHARMA_ESSAI_MDP_TITULAIRE, ou saisie masquée (voir docs\poste-de-developpement.md, « Comptes de démonstration »).
+    Mots de passe : jamais en paramètre. Le seul mot de passe demandé est celui de PostgreSQL pour pharma_app : variable PGPASSWORD
+    déjà définie, ou pgpass.conf, ou saisie masquée.
+    Activation de l'officine par l'API : sans rien demander, le script crée dans la copie jetable pharmacie_essai_officine (et nulle
+    part ailleurs) un compte titulaire temporaire « essai_activation », au mot de passe aléatoire haché en bcrypt comme le fait
+    l'application et gardé en mémoire seulement, l'utilise pour activer l'officine, puis le désactive. Le compte titulaire de
+    démonstration n'est jamais modifié. Compatibilité : si la variable PHARMA_ESSAI_MDP_TITULAIRE est définie, c'est l'ancien chemin
+    (connexion avec le compte « titulaire » et ce mot de passe, voir docs\poste-de-developpement.md, « Comptes de démonstration »).
 
     Si une étape demande un droit que pharma_app n'a pas, le script s'arrête avec un message qui l'explique.
 
@@ -115,6 +119,7 @@ $BaseCentrale = "pharmacie_cloud_essai"
 $BaseOfficine = "pharmacie_essai_officine"
 $BasesJetables = @($BaseCentrale, $BaseOfficine)
 $RoleCentral = "pharma_cloud_essai"
+$IdentifiantEssai = "essai_activation"      # compte titulaire temporaire, créé seulement dans la copie jetable $BaseOfficine
 $PortsInterdits = @(5080, 5180, 9333, 5186, 9446, 5432)
 $DossierEssai = Join-Path $env:TEMP "pharma-essai-cloud"
 $FichierEtat = Join-Path $DossierEssai "etat.json"
@@ -247,6 +252,64 @@ function Initialize-Pg {
     if ($d -notmatch "\|true$") { throw "Le compte pharma_app n'a pas le droit CREATEDB : il faut que l'administrateur PostgreSQL le lui donne (ALTER ROLE pharma_app CREATEDB). Le script ne s'élève pas lui-même." }
 }
 
+# Compte titulaire temporaire de l'essai : refus dans toute autre base que la copie jetable pharmacie_essai_officine
+function Assert-BaseEssaiSeulement([string]$Base) {
+    if ($Base -cne "pharmacie_essai_officine" -or $BaseOfficine -cne "pharmacie_essai_officine") {
+        throw "Refusé : le compte temporaire d'essai n'est créé que dans la base pharmacie_essai_officine (demandé : « $Base »)."
+    }
+    if ($Base -ceq $BaseSource) { throw "Refusé : jamais de compte temporaire dans la base source $BaseSource." }
+    if ($BasesJetables -notcontains $Base) { throw "Refusé : « $Base » n'est pas une base d'essai de ce script." }
+    $courante = Get-Scalaire -Compte $CompteBase -Base $Base -Sql "SELECT current_database()"
+    if ($courante -cne "pharmacie_essai_officine") { throw "Refusé : la connexion ne pointe pas sur pharmacie_essai_officine (base courante : « $courante »)." }
+}
+
+# Bibliothèque BCrypt.Net-Next de l'application (même version que Directory.Packages.props). Windows PowerShell 5.1 (.NET Framework) ne charge pas
+# la version compilée pour .NET 10 : il prend la version « net35 » du même paquet, sans dépendance, qui produit le même format ($2a$11$...).
+function Get-BibliothequeBcrypt {
+    if ($PSVersionTable.PSEdition -eq "Core") {
+        $dll = Join-Path $Artefacts "bin\Pharma.Api\debug\BCrypt.Net-Next.dll"
+        if (-not (Test-Path -LiteralPath $dll)) { throw "BCrypt.Net-Next.dll introuvable dans $Artefacts : relancer -Demarrer -Recompiler." }
+        return $dll
+    }
+    $version = ([regex]::Match((Get-Content -LiteralPath (Join-Path $Depot "Directory.Packages.props") -Raw), 'Include="BCrypt\.Net-Next"\s+Version="([^"]+)"')).Groups[1].Value
+    if (-not $version) { throw "Version de BCrypt.Net-Next introuvable dans Directory.Packages.props." }
+    $racine = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE ".nuget\packages" }
+    $dll = Join-Path $racine "bcrypt.net-next\$version\lib\net35\BCrypt.Net-Next.dll"
+    if (-not (Test-Path -LiteralPath $dll)) { throw "BCrypt.Net-Next $version (lib\net35) introuvable dans $racine : lancer un dotnet restore du dépôt, ou définir PHARMA_ESSAI_MDP_TITULAIRE (ancien chemin)." }
+    return $dll
+}
+
+# Crée (ou réactive) le compte « essai_activation » avec le mot de passe donné, haché en bcrypt comme l'application
+# (BCrypt.Net, facteur de coût par défaut). Le hachage se fait en mémoire ; le mot de passe n'est écrit nulle part.
+function New-CompteEssaiActivation([string]$MotDePasse) {
+    Assert-BaseEssaiSeulement $BaseOfficine
+    $dll = Get-BibliothequeBcrypt
+    Add-Type -Path $dll
+    $hash = [BCrypt.Net.BCrypt]::HashPassword($MotDePasse)
+    if ($hash -notmatch '^\$2[abxy]\$\d\d\$[./A-Za-z0-9]{53}$') { throw "Hachage bcrypt inattendu : compte d'essai non créé." }
+    $id = $IdentifiantEssai
+    $sql = @"
+UPDATE utilisateur SET mot_de_passe_hash = '$hash', actif = true, doit_changer_mot_de_passe = false
+ WHERE identifiant = '$id';
+INSERT INTO utilisateur (nom_complet, identifiant, mot_de_passe_hash, actif, role_id, doit_changer_mot_de_passe)
+SELECT 'Compte temporaire d''essai (activation)', '$id', '$hash', true, r.id, false FROM role r
+ WHERE r.code = 'titulaire' AND NOT EXISTS (SELECT 1 FROM utilisateur WHERE identifiant = '$id');
+"@
+    [void](Invoke-Psql -Compte $CompteBase -Base $BaseOfficine -Arguments @("-f", "-") -Entree $sql)
+    $n = Get-Scalaire -Compte $CompteBase -Base $BaseOfficine -Sql "SELECT count(*) FROM utilisateur u JOIN role r ON r.id = u.role_id WHERE u.identifiant = '$id' AND u.actif AND r.code = 'titulaire'"
+    if ($n -ne "1") { throw "Le compte temporaire d'essai n'a pas pu être créé dans $BaseOfficine." }
+}
+
+# Désactive le compte temporaire (seul compte touché) ; ne masque jamais une autre erreur
+function Disable-CompteEssaiActivation {
+    try {
+        Assert-BaseEssaiSeulement $BaseOfficine
+        [void](Invoke-Psql -Compte $CompteBase -Base $BaseOfficine -Arguments @("-c", "UPDATE utilisateur SET actif = false WHERE identifiant = '$IdentifiantEssai'"))
+        Write-Ok "Compte temporaire $IdentifiantEssai désactivé."
+    }
+    catch { Write-Avert "Compte temporaire $IdentifiantEssai non désactivé : $($_.Exception.Message) (il disparaît avec -Arreter)." }
+}
+
 # ------------------------------------------------------------------ -Demarrer
 function Invoke-Demarrer {
     $simul = [bool]$WhatIfPreference
@@ -271,11 +334,11 @@ function Invoke-Demarrer {
         Write-Etape2 "Plan (simulation, rien n'est créé)"
         Write-Simul "dossier d'essai $DossierEssai (autorité, journaux, PID, mots de passe d'essai tirés au hasard)"
         Write-Simul "compilation de Pharma.Cloud.Api et Pharma.Api dans $Artefacts si les exécutables manquent"
-        Write-Simul "base centrale $BaseCentrale : scripts\mep\creer_base_centrale.ps1 (database\cloud 001 à 009), rôle $RoleCentral"
+        Write-Simul "base centrale $BaseCentrale : scripts\mep\creer_base_centrale.ps1 (database\cloud 001 à 011), rôle $RoleCentral"
         Write-Simul "copie jetable $BaseOfficine de $BaseSource (pg_dump en lecture seule puis pg_restore)"
         Write-Simul "autorité d'essai et certificat HTTPS de $AdresseLocale,localhost dans $DossierAutorite"
         Write-Simul "lancement du serveur central (port $PortCentralUtilise) et de l'API officine (port $PortApiUtilise), journaux dans $DossierEssai"
-        Write-Simul "création de l'officine au central, réglages et activation par l'API (compte titulaire de démonstration)"
+        Write-Simul "création de l'officine au central, réglages et activation par l'API (compte temporaire $IdentifiantEssai créé dans $BaseOfficine seulement, puis désactivé ; ou, si PHARMA_ESSAI_MDP_TITULAIRE est défini, compte titulaire de démonstration)"
         return
     }
 
@@ -319,7 +382,7 @@ function Invoke-Demarrer {
         Write-Ok "Base centrale déjà prête."
     }
     else {
-        # Le script de production crée la base et passe database\cloud 001 à 009 ; pharma_app est propriétaire (aucun compte postgres)
+        # Le script de production crée la base et passe database\cloud 001 à 011 ; pharma_app est propriétaire (aucun compte postgres)
         $mep = Join-Path (Join-Path (Split-Path $PSScriptRoot -Parent) "mep") "creer_base_centrale.ps1"
         $mdp = Get-MotDePassePg
         $ancien = $env:PGPASSWORD
@@ -329,7 +392,7 @@ function Invoke-Demarrer {
             if ($LASTEXITCODE -ne 0) { throw "creer_base_centrale.ps1 en échec :`n$((@($r | ForEach-Object { "$_" }) | Select-Object -Last 15) -join "`n")" }
         }
         finally { if ($null -eq $ancien) { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue } else { $env:PGPASSWORD = $ancien } }
-        Write-Ok "Base centrale créée (scripts database\cloud 001 à 009)."
+        Write-Ok "Base centrale créée (scripts database\cloud 001 à 011)."
     }
     # Rôle de connexion du serveur central d'essai : membre de pharma_cloud_api (non propriétaire, sécurité au niveau des lignes appliquée)
     $existe = (Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleCentral'") -ne "0"
@@ -417,44 +480,54 @@ function Invoke-Demarrer {
     else {
         $base = "http://${AdresseLocale}:$PortApiUtilise"
         $mdpTit = $env:PHARMA_ESSAI_MDP_TITULAIRE
+        $compteEssai = -not $mdpTit      # sans mot de passe donné : compte temporaire dédié à l'essai (jamais le compte titulaire de démonstration)
         $jeton = $null
         $etatSync = $null
         try {
-            if (-not $mdpTit) {
-                $s = Read-Host "Mot de passe du compte titulaire de démonstration (docs\poste-de-developpement.md, « Comptes de démonstration »)" -AsSecureString
-                $mdpTit = ConvertFrom-SecureStringEnClair $s
+            try {
+                if ($compteEssai) {
+                    $mdpTit = New-MotDePasseEssai 24      # aléatoire, en mémoire seulement
+                    try { New-CompteEssaiActivation $mdpTit }
+                    catch { throw "Création du compte temporaire $IdentifiantEssai impossible : $($_.Exception.Message)" }
+                    Write-Ok "Compte temporaire $IdentifiantEssai créé dans $BaseOfficine (mot de passe aléatoire, en mémoire seulement)."
+                }
+                $corps = @{ identifiant = $(if ($compteEssai) { $IdentifiantEssai } else { "titulaire" }); motDePasse = $mdpTit } | ConvertTo-Json
+                $jeton = (Invoke-RestMethod -Method Post -Uri "$base/api/auth/connexion" -ContentType "application/json" -Body $corps).jeton
             }
-            $corps = @{ identifiant = "titulaire"; motDePasse = $mdpTit } | ConvertTo-Json
-            $jeton = (Invoke-RestMethod -Method Post -Uri "$base/api/auth/connexion" -ContentType "application/json" -Body $corps).jeton
-        }
-        catch { throw "Connexion du compte titulaire de démonstration refusée : vérifier le mot de passe (docs\poste-de-developpement.md). Le reste de l'essai tourne ; relancer -Demarrer." }
-        $entetes = @{ Authorization = "Bearer $jeton" }
-        $etatSync = Invoke-RestMethod -Method Get -Uri "$base/api/admin/synchronisation" -Headers $entetes
-        if ($etatSync.activee) { Write-Ok "Officine déjà activée (certificat en place)." }
-        else {
-            $etat = Lire-Etat
-            $adresseCentral = "https://${AdresseLocale}:$PortCentralUtilise"
-            if (-not $etat.OfficineProvisoire) {
-                $r = Invoke-Enfant -Exe $ExeCentral -Arguments @("--creer-officine", "Officine d'essai") -Variables (Get-VariablesAdmin $secrets)
-                if ($r.Code -ne 0) { throw "--creer-officine en échec :`n$($r.Texte)" }
-                $guid = [regex]::Match($r.Texte, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}').Value
-                $code = ($r.Lignes | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
-                $etat | Add-Member -NotePropertyName OfficineProvisoire -NotePropertyValue $guid -Force
-                Enregistrer-Etat $etat
-                Write-Ok "Officine créée au central ($guid, code provisoire)."
+            catch {
+                if ($compteEssai -and $_.Exception.Message -like "Création du compte temporaire*") { throw $_.Exception.Message }
+                if ($compteEssai) { throw "Connexion avec le compte temporaire $IdentifiantEssai impossible : $($_.Exception.Message) Le reste de l'essai tourne ; relancer -Demarrer." }
+                throw "Connexion du compte titulaire de démonstration refusée : vérifier le mot de passe de PHARMA_ESSAI_MDP_TITULAIRE (docs\poste-de-developpement.md). Le reste de l'essai tourne ; relancer -Demarrer, sans la variable pour utiliser le compte temporaire."
             }
+            $entetes = @{ Authorization = "Bearer $jeton" }
+            $etatSync = Invoke-RestMethod -Method Get -Uri "$base/api/admin/synchronisation" -Headers $entetes
+            if ($etatSync.activee) { Write-Ok "Officine déjà activée (certificat en place)." }
             else {
-                # Reprise : le code précédent a pu être consommé ou périmé, on en demande un neuf pour la même officine
-                $r = Invoke-Enfant -Exe $ExeCentral -Arguments @("--code-activation", $etat.OfficineProvisoire, "--serveur", "principal") -Variables (Get-VariablesAdmin $secrets)
-                if ($r.Code -ne 0) { throw "--code-activation en échec :`n$($r.Texte)" }
-                $code = ($r.Lignes | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
+                $etat = Lire-Etat
+                $adresseCentral = "https://${AdresseLocale}:$PortCentralUtilise"
+                if (-not $etat.OfficineProvisoire) {
+                    $r = Invoke-Enfant -Exe $ExeCentral -Arguments @("--creer-officine", "Officine d'essai") -Variables (Get-VariablesAdmin $secrets)
+                    if ($r.Code -ne 0) { throw "--creer-officine en échec :`n$($r.Texte)" }
+                    $guid = [regex]::Match($r.Texte, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}').Value
+                    $code = ($r.Lignes | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
+                    $etat | Add-Member -NotePropertyName OfficineProvisoire -NotePropertyValue $guid -Force
+                    Enregistrer-Etat $etat
+                    Write-Ok "Officine créée au central ($guid, code provisoire)."
+                }
+                else {
+                    # Reprise : le code précédent a pu être consommé ou périmé, on en demande un neuf pour la même officine
+                    $r = Invoke-Enfant -Exe $ExeCentral -Arguments @("--code-activation", $etat.OfficineProvisoire, "--serveur", "principal") -Variables (Get-VariablesAdmin $secrets)
+                    if ($r.Code -ne 0) { throw "--code-activation en échec :`n$($r.Texte)" }
+                    $code = ($r.Lignes | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
+                }
+                $reglages = @{ active = $true; adresse = $adresseCentral; textesLibres = "filtres"; envoyerMedecins = $false } | ConvertTo-Json
+                [void](Invoke-RestMethod -Method Put -Uri "$base/api/admin/synchronisation/reglages" -Headers $entetes -ContentType "application/json" -Body $reglages)
+                try { [void](Invoke-RestMethod -Method Post -Uri "$base/api/admin/synchronisation/activation" -Headers $entetes -ContentType "application/json" -Body (@{ code = $code } | ConvertTo-Json)) }
+                catch { throw "Activation refusée : $($_.ErrorDetails.Message)" }
+                Write-Ok "Réglages enregistrés, code d'activation utilisé, certificat de l'officine reçu."
             }
-            $reglages = @{ active = $true; adresse = $adresseCentral; textesLibres = "filtres"; envoyerMedecins = $false } | ConvertTo-Json
-            [void](Invoke-RestMethod -Method Put -Uri "$base/api/admin/synchronisation/reglages" -Headers $entetes -ContentType "application/json" -Body $reglages)
-            try { [void](Invoke-RestMethod -Method Post -Uri "$base/api/admin/synchronisation/activation" -Headers $entetes -ContentType "application/json" -Body (@{ code = $code } | ConvertTo-Json)) }
-            catch { throw "Activation refusée : $($_.ErrorDetails.Message)" }
-            Write-Ok "Réglages enregistrés, code d'activation utilisé, certificat de l'officine reçu."
         }
+        finally { if ($compteEssai) { Disable-CompteEssaiActivation } }
         Write-Info "Le chargement complet des données part en arrière-plan (60 lots par minute au plus : environ 7 minutes pour la copie de démonstration). Suivre avec -Etat."
         $etat = Lire-Etat
         $etat | Add-Member -NotePropertyName OfficineActivee -NotePropertyValue $true -Force
@@ -557,6 +630,8 @@ function Invoke-Arreter {
     foreach ($p in $pids) {
         Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
         Wait-Process -Id $p.Id -Timeout 15 -ErrorAction SilentlyContinue
+        # Rien n'est supprimé tant qu'un serveur d'essai tourne encore (processus lancé avec d'autres droits : l'arrêter soi-même)
+        if (Get-Process -Id $p.Id -ErrorAction SilentlyContinue) { throw "Le $($p.Nom) (PID $($p.Id)) n'a pas pu être arrêté (droits insuffisants ?). Arrêter ce processus soi-même (Stop-Process -Id $($p.Id) -Force, dans une fenêtre PowerShell lancée avec les mêmes droits que lui), puis relancer -Arreter. Aucune base n'a été supprimée." }
         Write-Ok "$($p.Nom) arrêté (PID $($p.Id))."
     }
     if ($etat) {

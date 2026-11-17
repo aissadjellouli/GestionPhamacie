@@ -193,7 +193,9 @@ public partial class EssaiCloudOfficineTests
         Assert.DoesNotMatch(@"(?im)^\s*(\[Parameter[^\]]*\]\s*)?\[(string|securestring)\]\s*\$\w*(MotDePasse|Password|Passwd|Mdp|Pwd|Secret)\w*\s*[,=)]?", code.Split("function Write-Etape2")[0]);
         Assert.DoesNotContain("pharma_dev", texte);
         Assert.DoesNotMatch(@"PGPASSWORD\s*=\s*[""'][^""'$]", texte);
-        Assert.Contains("Read-Host", texte);
+        // Le seul mot de passe demandé est celui de pharma_app (par Request-MotDePasse) : le script lui-même ne saisit plus rien
+        Assert.DoesNotContain("Read-Host", code);
+        Assert.Matches(@"Request-MotDePasse -Compte \$CompteBase", code);
         Assert.Contains("New-MotDePasseEssai", texte);
         Assert.Contains("RNGCryptoServiceProvider", texte);
         Assert.DoesNotMatch(@"(?i)Password=[^$;""\s]", code);
@@ -217,12 +219,59 @@ public partial class EssaiCloudOfficineTests
     }
 
     [Fact]
+    public void Le_compte_titulaire_temporaire_n_existe_que_dans_la_base_d_essai_et_le_titulaire_n_est_jamais_modifie()
+    {
+        var code = Code();
+        Assert.Contains("$IdentifiantEssai = \"essai_activation\"", code);
+        // Garde-fou : refus hors de pharmacie_essai_officine (nom exact, base source, base non jetable, base courante vérifiée)
+        var debut = code.IndexOf("function Assert-BaseEssaiSeulement", StringComparison.Ordinal);
+        Assert.True(debut > 0);
+        var garde = code[debut..code.IndexOf("\n}", debut, StringComparison.Ordinal)];
+        Assert.Contains("$Base -cne \"pharmacie_essai_officine\"", garde);
+        Assert.Contains("$Base -ceq $BaseSource", garde);
+        Assert.Contains("$BasesJetables -notcontains $Base", garde);
+        Assert.Contains("SELECT current_database()", garde);
+        // Les deux fonctions qui touchent au compte appellent la garde avant d'écrire, et ne visent que $BaseOfficine
+        foreach (var fonction in new[] { "function New-CompteEssaiActivation", "function Disable-CompteEssaiActivation" })
+        {
+            var d = code.IndexOf(fonction, StringComparison.Ordinal);
+            Assert.True(d > 0, fonction);
+            var corps = code[d..code.IndexOf("\n}", d, StringComparison.Ordinal)];
+            Assert.Contains("Assert-BaseEssaiSeulement $BaseOfficine", corps);
+            Assert.True(corps.IndexOf("Assert-BaseEssaiSeulement", StringComparison.Ordinal) < corps.IndexOf("Invoke-Psql", StringComparison.Ordinal), fonction);
+            foreach (Match m in Regex.Matches(corps, @"Invoke-Psql[^\n]*-Base\s+(\S+)"))
+                Assert.Equal("$BaseOfficine", m.Groups[1].Value);
+        }
+        // Toute écriture sur utilisateur vise le compte d'essai, jamais « titulaire » ni un autre compte
+        foreach (Match m in Regex.Matches(code, @"(?i)\b(UPDATE\s+utilisateur|INSERT\s+INTO\s+utilisateur|DELETE\s+FROM\s+utilisateur)\b"))
+        {
+            var fenetre = code[m.Index..Math.Min(code.Length, m.Index + 300)];
+            Assert.True(fenetre.Contains("'$id'") || fenetre.Contains("'$IdentifiantEssai'"), $"Écriture sur utilisateur hors du compte d'essai : {fenetre}");
+        }
+        Assert.Contains("WHERE identifiant = '$IdentifiantEssai'", code);
+        Assert.DoesNotMatch(@"(?i)(UPDATE|DELETE|INSERT)[^\n]*'titulaire'[^\n]*utilisateur|utilisateur[^\n]*WHERE[^\n]*identifiant\s*=\s*'titulaire'", code);
+        // Mot de passe aléatoire en mémoire, haché en bcrypt comme l'application, jamais écrit ; compte désactivé ensuite
+        Assert.Contains("[BCrypt.Net.BCrypt]::HashPassword($MotDePasse)", code);
+        Assert.Contains("$mdpTit = New-MotDePasseEssai 24", code);
+        Assert.DoesNotMatch(@"(?i)(Set-Content|Out-File|Add-Content|Write-Host|Write-Ok|Write-Info)[^\n]*\$(mdpTit|MotDePasse|hash)\b", code);
+        Assert.Contains("SET actif = false WHERE identifiant = '$IdentifiantEssai'", code);
+        Assert.Contains("finally { if ($compteEssai) { Disable-CompteEssaiActivation } }", code);
+        // Ancien chemin conservé si PHARMA_ESSAI_MDP_TITULAIRE est défini ; nouveau chemin sinon, sans rien demander
+        Assert.Contains("$mdpTit = $env:PHARMA_ESSAI_MDP_TITULAIRE", code);
+        Assert.Contains("$compteEssai = -not $mdpTit", code);
+        // Le compte n'est créé que dans le parcours d'activation, jamais dans pharmacie_dev ni pharmacie_test
+        Assert.Single(Regex.Matches(code, @"New-CompteEssaiActivation \$mdpTit"));
+    }
+
+    [Fact]
     public void Les_documents_sont_relies_entre_eux()
     {
         var guide = File.ReadAllText(Path.Combine(RacineDepot(), "docs", "essai-cloud-officine.md"));
         Assert.Contains("scripts\\dev\\essai_cloud_officine.ps1", guide);
         foreach (var mot in new[] { "-Demarrer", "-Etat", "-Arreter", "-GarderBases", "5190", "5191", "pharmacie_cloud_essai", "pharmacie_essai_officine" })
             Assert.Contains(mot, guide);
+        Assert.Contains("essai_activation", guide);
+        Assert.Contains("PHARMA_ESSAI_MDP_TITULAIRE", guide);
         Assert.Contains("essai-cloud-officine.md", File.ReadAllText(Path.Combine(RacineDepot(), "docs", "scripts-base-de-donnees.md")));
         Assert.Contains("essai-cloud-officine.md", File.ReadAllText(Path.Combine(RacineDepot(), "docs", "poste-de-developpement.md")));
     }
