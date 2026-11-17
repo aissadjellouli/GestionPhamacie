@@ -10,7 +10,7 @@ sans le chiffrement) ; copie de la GED vers le 2e serveur et sa fréquence (scri
 
 ## 2. Fait, à commiter
 
-- [ ] Lot M9 : documentation finale de la mutualisation, [base-de-donnees.md](base-de-donnees.md) remis en ordre (001 à 143).
+- [ ] Copie de la GED : lecture de la fréquence par authentification Windows (SSPI) au lieu de `trust` (`autoriser-lecture-copie-ged.ps1`).
 
 ## 3. Ensuite
 
@@ -19,7 +19,6 @@ sans le chiffrement) ; copie de la GED vers le 2e serveur et sa fréquence (scri
 ## 4. Décisions attendues du titulaire
 
 - [ ] **Bases jetables orphelines** : `pharmacie_jetable_m4_2b2cf86a`, `pharmacie_jetable_m4_3b48212e`, `pharmacie_jetable_rejeu_e51efbd8` (suppression sur accord).
-- [ ] **Lecture de la fréquence de copie de la GED par le 2e serveur** : connexion SSPI (recommandée) ou règle `trust` locale.
 - [ ] **Compte `postgres`** : fichier `pgpass.conf` (hors dépôt) pour essayer le script 111b et la méthode `SET ROLE` sur une copie.
 - [ ] **GED** : protection des documents (GED consultable ou non au central, sauvegarde chiffrée hors de l'officine après le lot 9,
       rotation de deux disques pour une officine à un seul serveur, alerte « pas de sauvegarde ») :
@@ -43,7 +42,7 @@ sans le chiffrement) ; copie de la GED vers le 2e serveur et sa fréquence (scri
 ## 6. Essais sur le terrain
 
 - [ ] HTTPS : script `certificat_https.ps1` en réel, autorité commune aux serveurs, postes et téléphones.
-- [ ] Copie de la GED entre deux vrais serveurs (partage SMB hors domaine, droit du compte de tâche, durée de la première copie).
+- [ ] Copie de la GED entre deux vrais serveurs (partage SMB hors domaine, droit du compte de tâche, durée de la première copie), lecture de la fréquence par authentification Windows (SSPI, nom du compte présenté par Windows).
 - [ ] Matériel (modem GSM, SMTP, imprimantes, disque de sauvegarde, iPhone), SQL Server jamais essayé.
 - [ ] Chifa (double saisie, suffixe du n° d'assuré), reprise de données réelle, étiquetage du stock.
 

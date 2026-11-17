@@ -159,13 +159,25 @@ public class CopieGedSecondServeurTests
         // Droit : cette seule colonne, jamais la table
         Assert.Contains("GRANT SELECT (ged_copie_minutes) ON public.surveillance_replication TO %I", code);
         Assert.DoesNotMatch("GRANT\\s+(ALL|INSERT|UPDATE|DELETE)", code);
-        // pg_hba.conf : trust pour ce rôle seul, boucle locale seulement, jamais « all », jamais un réseau
-        Assert.Contains("host    $Base    $Role    127.0.0.1/32    trust", code);
-        Assert.Contains("host    $Base    $Role    ::1/128         trust", code);
-        Assert.Equal(2, Regex.Matches(code, "\\btrust\\b").Count - Regex.Matches(code, "# .*trust").Count);
+        // pg_hba.conf : authentification Windows (SSPI, décision du titulaire du 2026-11-17) pour ce rôle seul, boucle locale seulement,
+        // jamais « all », jamais un réseau ; aucune ligne « trust » ajoutée, les anciennes sont retirées
+        Assert.Contains("host    $Base    $Role    127.0.0.1/32    sspi    map=$Carte", code);
+        Assert.Contains("host    $Base    $Role    ::1/128         sspi    map=$Carte", code);
+        Assert.DoesNotMatch(@"""host\s+\$Base\s+\$Role\s+\S+\s+trust", code);
+        Assert.Contains(@"$ancienTrust = ""^\s*host\s+$Base\s+$Role\s+\S+\s+trust\b""", code);
+        Assert.Contains("Where-Object { $_ -notmatch $ancienTrust }", code);
+        // pg_ident.conf : seul le compte Windows de la tâche, sur ce PC, devient pharma_ged_lecture (jamais une expression régulière)
+        Assert.Contains("[string]$CompteWindows = \"PharmaGedCopie\"", script);
+        Assert.Contains("$identite = \"{0}@{1}\" -f $CompteWindows, $env:COMPUTERNAME", code);
+        Assert.Contains("$ligneIdent = \"$Carte    $identite    $Role", code);
+        Assert.DoesNotMatch(@"\$Carte\s+/", code);
+        Assert.Contains("pg_hba_file_rules WHERE error IS NOT NULL", code);
+        Assert.Contains("pg_ident_file_mappings WHERE error IS NOT NULL", code);
         Assert.DoesNotContain("0.0.0.0", code);
         Assert.DoesNotMatch("host\\s+\\S+\\s+all\\b", code);
-        Assert.Contains("Copy-Item -LiteralPath $hba", code);                 // copie gardée avant toute modification
+        Assert.Contains("Copier-Avant $hba", code);                           // copie gardée avant toute modification
+        Assert.Contains("Copier-Avant $ident", code);
+        Assert.Contains("Copy-Item -LiteralPath $fichier", code);
         Assert.Contains("pg_reload_conf()", code);
         Assert.DoesNotContain("Restart-Service", code);
         Assert.DoesNotContain("Remove-Item", code);
