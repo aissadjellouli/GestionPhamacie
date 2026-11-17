@@ -9,6 +9,8 @@
     <File Path="docs/base-de-donnees.md" />
     <File Path="docs/scripts-base-de-donnees.md" />
     <File Path="docs/essai-cloud-officine.md" />
+    <File Path="docs/ged-protection-a-decider.md" />
+    <File Path="docs/reste-a-faire-synthese.md" />
     <File Path="docs/charte-graphique.md" />
     <File Path="docs/chifa.md" />
     <File Path="docs/feuille-de-route.md" />
@@ -207,6 +209,8 @@
     <File Path="database/migration/139_contenance_flacons_seringues_stylos.sql" />
     <File Path="database/migration/140_synchronisation_supervision_purge.sql" />
     <File Path="database/migration/141_mutualisation_reglages.sql" />
+    <File Path="database/migration/142_mutualisation_reglages_modification_locale.sql" />
+    <File Path="database/migration/143_copie_ged_second_serveur_frequence.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -226,6 +230,8 @@
     <File Path="database/tests/139_contenance_flacons_seringues_stylos_tests.sql" />
     <File Path="database/tests/140_synchronisation_supervision_purge_tests.sql" />
     <File Path="database/tests/141_mutualisation_reglages_tests.sql" />
+    <File Path="database/tests/142_mutualisation_reglages_modification_locale_tests.sql" />
+    <File Path="database/tests/143_copie_ged_second_serveur_frequence_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
   </Folder>
@@ -241,6 +247,7 @@
     <File Path="database/cloud/008_famille_banque_elargie.sql" />
     <File Path="database/cloud/009_central_restaure_quota_chargement.sql" />
     <File Path="database/cloud/010_mutualisation_reglages.sql" />
+    <File Path="database/cloud/011_descendant_ajouts_locaux_motifs_remises.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
     <File Path="database/cloud/tests/003_chargement_complet_officine_tests.sql" />
     <File Path="database/cloud/tests/004_reglage_familles_envoyees_tests.sql" />
@@ -250,6 +257,7 @@
     <File Path="database/cloud/tests/008_famille_banque_elargie_tests.sql" />
     <File Path="database/cloud/tests/009_central_restaure_quota_chargement_tests.sql" />
     <File Path="database/cloud/tests/010_mutualisation_reglages_tests.sql" />
+    <File Path="database/cloud/tests/011_descendant_ajouts_locaux_motifs_remises_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -286,6 +294,9 @@
     <File Path="scripts/second-serveur/initialiser-second-serveur.ps1" />
     <File Path="scripts/second-serveur/verifier-second-serveur.ps1" />
     <File Path="scripts/second-serveur/ouvrir-port-base.ps1" />
+    <File Path="scripts/second-serveur/copier-ged.ps1" />
+    <File Path="scripts/second-serveur/partager-ged.ps1" />
+    <File Path="scripts/second-serveur/autoriser-lecture-copie-ged.ps1" />
     <File Path="scripts/second-serveur/basculer-second-serveur.ps1" />
     <File Path="scripts/second-serveur/remettre-en-second.ps1" />
   </Folder>

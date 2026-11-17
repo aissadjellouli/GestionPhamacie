@@ -700,6 +700,9 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
 | `verifier-second-serveur.ps1` | l'un ou l'autre | Rôle, réplication, version de l'API, service, empreinte de la clé, dossiers ; inscrit le relevé sur le principal |
 | `basculer-second-serveur.ps1` | 2e serveur | **Bascule** (procédure F3) |
 | `remettre-en-second.ps1` | ancien principal | **Retour** (procédure F4) |
+| `partager-ged.ps1` | serveur qui est principal | Partage de la GED **en lecture seule**, au seul compte de copie ; pare-feu 445 limité à l'IP du serveur qui copie (étape 12 bis) |
+| `copier-ged.ps1` | serveur qui reçoit | **Copie de la GED sans rien supprimer, à la fréquence réglée dans l'application** (1 à 60 minutes, 5 par défaut ; tâche planifiée chaque minute, étapes 12 ter, 12 ter bis et 12 quater ; procédures F3 et F4) |
+| `autoriser-lecture-copie-ged.ps1` | principal, puis 2e serveur | Rôle de lecture sans mot de passe pour que la tâche de copie lise la fréquence réglée dans l'application (étape 12 ter bis) |
 
 ### À préparer
 
@@ -707,7 +710,7 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - 2e serveur : un PC de l'officine **allumé en permanence**, sur le même réseau local (sans Internet), avec une **IP fixe**.
   - **La même version majeure de PostgreSQL** sur les deux serveurs (parcours A, étape 2.1).
   - **La même version de l'API**, publiée de la même façon (parcours A, étape 4.1), dans `C:\Program Files\PharmaOfficine\Api`. **[À CONFIRMER : livraison officielle de l'API sur le 2e serveur.]**
-  - Pare-feu du 2e serveur : 5443 ouvert aux postes (réglé par `certificat_https.ps1 -Importer -PareFeu`), 5080 jamais ouvert au réseau. Port 5432 jamais ouvert, sauf à l'autre serveur après une bascule ou un retour (`ouvrir-port-base.ps1`, étape 4 bis, lancé sur le serveur devenu principal).
+  - Pare-feu du 2e serveur : 5443 ouvert aux postes (réglé par `certificat_https.ps1 -Importer -PareFeu`), 5080 jamais ouvert au réseau. Port 5432 jamais ouvert, sauf à l'autre serveur après une bascule ou un retour (`ouvrir-port-base.ps1`, étape 4 bis, lancé sur le serveur devenu principal). Port 445 (SMB, copie de la GED) jamais ouvert au réseau : seulement à l'IP de l'autre serveur, sur le serveur principal (`partager-ged.ps1`, étape 12 bis).
 
 - [ ] **2.** Copier le dossier `scripts\second-serveur` sur les **deux** serveurs. **Où** : les deux serveurs. **Compte** : administrateur Windows. **[À CONFIRMER : dossier de destination.]**
 
@@ -813,6 +816,56 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - Puis, titulaire : Administration, 2e serveur, **État de la réplication** : « 2e serveur connecté », retard en secondes et en octets, slot actif. Réglages par serveur : versions identiques, clé présente et **identique**, dossiers joignables.
   - **Attendu** : tout est vert. Un écart de version est affiché en rouge.
 
+- [ ] **12 bis.** Principal : partager la GED en lecture seule, au seul 2e serveur. **Où** : PC serveur. **Compte** : administrateur Windows.
+  La GED (ordonnances scannées, factures, fichiers Chifa, pièces des prêts, copies de sauvegarde…) **ne va jamais au serveur central** : le 2e serveur la reçoit par une copie automatique, sinon il ne pourrait pas reprendre l'activité après une bascule (la réplication PostgreSQL ne copie que la base).
+  ```powershell
+  cd "<dossier>\scripts\second-serveur"
+  .\partager-ged.ps1 -AdresseSecond <IP du 2e> -Essai
+  .\partager-ged.ps1 -AdresseSecond <IP du 2e>
+  Get-SmbShareAccess -Name 'PharmaGED$'
+  Get-NetFirewallRule -DisplayName "PharmaOfficine SMB 445 GED (2e serveur)" | Get-NetFirewallAddressFilter | Select-Object RemoteAddress
+  ```
+  - Le script crée : le **compte local `PharmaGedCopie`** (aucun groupe, pas d'administrateur ; il demande son mot de passe, 14 caractères au moins, deux saisies, **à noter au coffre** : il sera ressaisi à l'identique sur le 2e serveur) ; le droit NTFS « lecture et exécution » de ce compte sur la GED (ajout, rien n'est retiré) ; le partage masqué `PharmaGED$`, **lecture seule pour ce compte seulement** (jamais « Tout le monde »), chiffré ; la règle de pare-feu « PharmaOfficine SMB 445 GED (2e serveur) » : TCP 445, profil Privé, **IP du 2e serveur seulement**. Relancé, il remplace sans doublon.
+  - Si `Ged__Dossier` n'est pas réglé, la GED est `C:\ProgramData\PharmaOfficine\GED` (sinon : `-DossierGed`). Si `Ordonnances__Dossier` sort de la GED : ajouter `-DossierOrdonnances <dossier>` (deuxième partage `PharmaOrdonnances$`).
+  - **Attendu** : « Partage "PharmaGED$" créé : lecture seule, PharmaGedCopie seulement » ; `Get-SmbShareAccess` : **une seule ligne**, `PharmaGedCopie`, `Read` ; `RemoteAddress` = l'IP du 2e serveur (jamais `Any`) ; « Contrôle : aucune autre règle active n'ouvre le port 445 ».
+  - **Si échec** : « À lancer dans PowerShell en administrateur » = rouvrir PowerShell en administrateur. « Dossier de la GED introuvable » = préciser `-DossierGed`. Avertissement « donne un droit à … » (partage) = retirer ce droit (la commande est affichée). Avertissement « Une autre règle ouvre le port 445 » = vérifier son adresse distante et la désactiver (`Disable-NetFirewallRule -DisplayName '<nom affiché>'`) ; **ne pas continuer** tant qu'elle ouvre 445 à tout le réseau. Changement d'IP du 2e serveur : relancer avec la nouvelle adresse. Plus de 2e serveur : `.\partager-ged.ps1 -AdresseSecond <IP> -Retirer` (les documents ne sont pas touchés).
+
+- [ ] **12 ter.** 2e serveur : essai de copie de la GED. **Où** : 2e serveur. **Compte** : administrateur Windows.
+  ```powershell
+  cd "<dossier>\scripts\second-serveur"
+  .\copier-ged.ps1 -Source \\<IP du principal>\PharmaGED$ -Essai
+  ```
+  - Le script **tire** les fichiers du principal (le principal n'écrit jamais sur le 2e serveur). Il copie les fichiers **nouveaux et modifiés**, **ne supprime jamais rien** (un fichier supprimé sur le principal reste sur le 2e serveur), ne remplace jamais un fichier par un plus ancien. Destination par défaut : `Ged__Dossier` du 2e serveur, sinon `C:\ProgramData\PharmaOfficine\GED` (sinon `-Destination`). Ordonnances à part : `-SourceOrdonnances \\<IP du principal>\PharmaOrdonnances$ -DestinationOrdonnances <dossier local>`.
+  - **Attendu** : « [ESSAI : rien n'est modifié] GED : fichiers à copier (simulation) » avec la liste, puis « Simulation terminée : rien n'a été écrit ». Rien n'est écrit sur le disque.
+  - **Si échec** : « REFUS : source injoignable … Rien n'a été copié ni modifié » (code 1) = vérifier que l'étape 12 bis est faite, que le principal est allumé, l'IP, et que le 2e serveur a bien l'IP déclarée à l'étape 12 bis. Le contrôle d'une source injoignable peut durer une vingtaine de secondes.
+
+- [ ] **12 ter bis.** Lecture de la fréquence de copie par le 2e serveur (une fois, sans mot de passe). **Où** : d'abord le **principal**, puis le **2e serveur**. **Compte** : administrateur Windows et superutilisateur PostgreSQL (mot de passe saisi à l'écran, jamais écrit).
+  ```powershell
+  cd "<dossier>\scripts\second-serveur"
+  .\autoriser-lecture-copie-ged.ps1 -Essai      # sur le principal puis sur le 2e serveur : affiche ce qui serait fait
+  .\autoriser-lecture-copie-ged.ps1             # sur le principal d'abord, puis sur le 2e serveur (après la réplication)
+  ```
+  - **Pourquoi** : la fréquence de la copie (« toutes les N minutes ») se règle dans l'application, **Administration › 2e serveur › Copie de la GED** (titulaire seul, 1 à 60 minutes, **5 par défaut**). Le 2e serveur a une copie répliquée de la base : la tâche de copie lit ce réglage dans **sa base locale, en lecture seule**. Il faut un compte de lecture, **sans mot de passe stocké nulle part** : un rôle PostgreSQL `pharma_ged_lecture` (connexion seulement, ni superutilisateur ni création, sessions en lecture seule, droit de lire **cette seule colonne**, un nombre de minutes) et deux lignes `trust` dans le `pg_hba.conf` du serveur, pour ce rôle seul et la **boucle locale seulement** (127.0.0.1 et ::1 : aucun accès depuis le réseau). Les autres comptes (`postgres`, `pharma_app`) ne sont pas touchés. Écartée : un fichier de mot de passe du compte de la tâche (secret en clair).
+  - Le script 143 (mise à jour de la base) doit être passé avant. Sur le **principal** : crée le rôle et le droit (répliqués ensuite vers le 2e serveur). Sur le **2e serveur** : vérifie que le rôle est arrivé, ajoute les deux lignes au `pg_hba.conf` (copie datée gardée ; placées avant les autres règles ; rechargement sans redémarrage). À refaire sur l'ancien principal après une bascule si son `pg_hba.conf` n'a pas été recopié (F3/F4).
+  - **Attendu** : « Rôle pharma_ged_lecture : existe », « Droit de lecture de la seule colonne ged_copie_minutes donné », « pg_hba.conf complété ». **Si on saute cette étape** : la copie marche quand même, **toutes les 5 minutes** (valeur par défaut) ; le journal de la copie le dit (« Réglage de la fréquence illisible ») et le réglage de l'écran n'a alors aucun effet sur le 2e serveur.
+
+- [ ] **12 quater.** 2e serveur : installer la copie automatique (fréquence réglée dans l'application, 5 minutes par défaut) et la contrôler. **Où** : 2e serveur. **Compte** : administrateur Windows.
+  ```powershell
+  .\copier-ged.ps1 -Source \\<IP du principal>\PharmaGED$ -Installer -Essai
+  .\copier-ged.ps1 -Source \\<IP du principal>\PharmaGED$ -Installer
+  Start-ScheduledTask -TaskName "PharmaOfficine copie de la GED (2e serveur)"
+  Get-ScheduledTaskInfo -TaskName "PharmaOfficine copie de la GED (2e serveur)" | Select-Object LastRunTime, LastTaskResult
+  Get-Content "C:\ProgramData\PharmaOfficine\Journaux\Copie-GED\copie-ged-$(Get-Date -Format yyyyMM).log" -Tail 20
+  ```
+  - Le script demande le mot de passe du compte `PharmaGedCopie` : **le même que sur le principal** (étape 12 bis). Si le compte n'existe pas encore sur ce serveur, il le crée (aucun groupe, pas d'administrateur). Le mot de passe n'est écrit nulle part : il est gardé par le Planificateur de tâches de Windows.
+  - La tâche « PharmaOfficine copie de la GED (2e serveur) » tourne **sous ce compte dédié** (jamais SYSTEM, jamais administrateur) : lecture seule de la GED du principal, modification de la seule GED locale et du dossier `Journaux\Copie-GED`. Relancée, l'installation **remplace** la tâche (pas de doublon), y compris l'ancienne tâche de 5 minutes. Une seule copie à la fois ; si l'ordinateur était éteint, la copie reprend à son rallumage.
+  - **Fréquence** : la tâche est déclenchée **chaque minute** ; le script ne copie que si **N minutes** (réglage de l'application, **5 par défaut**) se sont écoulées depuis le début de la dernière copie **réussie** (repère : `derniere-copie-ged.txt` dans `Journaux\Copie-GED`). Entre deux copies il sort aussitôt, sans journal. Si le réglage est illisible (base arrêtée, étape 12 ter bis non faite), il prend **5 minutes**, le journalise une fois et copie quand même. Une copie refusée (principal éteint) n'est retentée qu'après N minutes. Le titulaire change la fréquence dans l'application ; elle s'applique **au passage suivant (une minute)**, sans rien relancer. Pour une copie tout de suite (essai, après une bascule) : `.\copier-ged.ps1 -Source \\<IP du principal>\PharmaGED$ -Maintenant`. Priorité : `-Maintenant` > `-ToutesLesMinutes N` (essais seulement) > réglage de l'application > 5 minutes ; la tâche installée n'a ni l'un ni l'autre. `-Installer -Essai` affiche le réglage lu (« Réglage de l'application : toutes les N minute(s) »).
+  - **Première copie** : elle peut durer longtemps (toute la GED). Les copies suivantes ne prennent que ce qui est nouveau ou modifié. Un fichier en cours d'écriture sur le principal est recopié au passage suivant.
+  - **Attendu** : `LastTaskResult` = `0` ; journal : une ligne par **copie** (« rien à copier » ou « fichiers copiés » avec la liste, et la fréquence appliquée : « 5 min (application) »). Le titulaire peut comparer la taille de la GED des deux serveurs : le 2e serveur a **au moins** autant de fichiers que le principal.
+  - **Si échec** : `LastTaskResult` = `1` : le journal dit « REFUS : source injoignable » (principal éteint, partage, pare-feu, IP) ou « paramètre invalide » ; `2` : des fichiers n'ont pas pu être copiés (le détail est au journal, relancer). Tâche qui ne démarre pas (résultat `0x80070569` ou `0x8007052E`) : mot de passe différent de celui du principal (relancer `-Installer`), ou droit « Ouvrir une session en tant que tâche » à accorder au compte `PharmaGedCopie` (stratégie de sécurité locale). **[À CONFIRMER : à essayer sur les deux vrais serveurs (SMB entre PC hors domaine avec un compte local de même nom et même mot de passe).]**
+  - **Limite connue** : la copie a N minutes de retard au plus (5 par défaut, réglable de 1 à 60 : l'écran **Administration › 2e serveur › Copie de la GED** le rappelle : « Documents déposés dans les N dernières minutes avant une panne du serveur principal : possiblement absents du 2e serveur »). Si le principal tombe, les documents déposés dans les **dernières minutes** avant la panne peuvent manquer sur le 2e serveur. Les documents que le poste n'a pas pu envoyer (serveur injoignable) restent sur le poste (dossier « A envoyer ») et partent à la GED à la connexion suivante ; **mais un document déjà reçu par le principal n'est pas gardé au poste** (copie temporaire seulement) : ceux-là ne sont couverts que par la copie. Les copies de sauvegarde de la GED (disque externe) restent la garantie.
+  - **Retrait** : plus de 2e serveur : `.\copier-ged.ps1 -Source \\<IP du principal>\PharmaGED$ -Desinstaller` sur le 2e serveur, `.\partager-ged.ps1 -AdresseSecond <IP> -Retirer` sur le principal. Les fichiers copiés et le compte sont gardés (`Remove-LocalUser PharmaGedCopie` pour supprimer le compte).
+
 - [ ] **13.** Postes : adresse de secours. **Où** : chaque poste. **Compte** : titulaire.
   - Administration, Imprimantes et étiquettes, **Serveur et PC de secours** : « PC de secours » = adresse de l'API du 2e serveur, en HTTPS : `https://<nom ou IP du 2e>:5443/`. Le port 5080 n'écoute que sur le PC lui-même : jamais `http://…:5080/` pour un poste. Le nom ou l'IP saisi doit figurer dans le certificat du 2e serveur (étape 8a), sinon le poste refuse de basculer. L'écran de réglage du poste propose l'exemple `https://192.168.1.20:5443/` ; une adresse `http://` autre que `localhost` est acceptée mais signalée par un bandeau d'attention (le poste ne pourrait pas se connecter).
   - Délai avant le bandeau : 60 s par défaut.
@@ -888,7 +941,7 @@ Option facultative. Le serveur central reçoit la copie des données des officin
 
 Règles : aucun secret dans un fichier du dépôt ni dans `appsettings*.json`. Tout passe par des variables d'environnement du compte de service. **Ne jamais copier le dossier `Synchronisation` d'un serveur d'officine à l'autre.**
 
-Les scripts de la base centrale sont dans `database\cloud\` (001 à 010). Ils ne se passent **jamais** sur la base d'une officine.
+Les scripts de la base centrale sont dans `database\cloud\` (001 à 011). Ils ne se passent **jamais** sur la base d'une officine.
 
 ### 1. Hébergement et prérequis
 
@@ -898,7 +951,7 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 010). Ils ne
 
 ### 2. Base centrale
 
-- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `010` **dans l'ordre**. **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
+- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `011` **dans l'ordre**. **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
   ```powershell
   .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
@@ -1047,7 +1100,7 @@ Le serveur central a perdu des lots déjà accusés (restauration du central) :
 
 ### 9. Réglages mutualisés (titulaire et technicien)
 
-Le serveur central peut proposer ou imposer aux officines la valeur de 11 réglages (`docs/conception-synchronisation.md`, § 16 bis). Prérequis : script central `010` passé (étape 2.1) et variables de l'étape 3.2 (`PHARMA_CLOUD_ADMIN_CONNEXION`, jamais `PHARMA_CLOUD_CONNEXION`). **Rien n'est publié par défaut** : tant que vous n'avez rien publié pour une table, rien ne descend et l'officine reste maîtresse de cette table. Chaque action est inscrite au journal central (ajout seul) avec l'**auteur** (obligatoire), le compte Windows et le poste. Les 11 tables : `motif_reglable`, `parametre_alerte`, `parametre_fiscal`, `parametre_formulaire_sms`, `parametre_inventaire`, `parametre_serialisation`, `parametre_substitution`, `parametre_surveillance`, `parametre_tracabilite`, `regle_alerte_psychotrope`, `remise_automatique`. **Où** : serveur central. **Compte** : compte d'administration, dans une session PowerShell où les variables sont réglées.
+Le serveur central peut proposer ou imposer aux officines la valeur de 11 réglages (`docs/conception-synchronisation.md`, § 16 bis). Prérequis : scripts centraux `010` et `011` (correctif D-M8-1) passés (étape 2.1) et variables de l'étape 3.2 (`PHARMA_CLOUD_ADMIN_CONNEXION`, jamais `PHARMA_CLOUD_CONNEXION`). **Rien n'est publié par défaut** : tant que vous n'avez rien publié pour une table, rien ne descend et l'officine reste maîtresse de cette table. Chaque action est inscrite au journal central (ajout seul) avec l'**auteur** (obligatoire), le compte Windows et le poste. Les 11 tables : `motif_reglable`, `parametre_alerte`, `parametre_fiscal`, `parametre_formulaire_sms`, `parametre_inventaire`, `parametre_serialisation`, `parametre_substitution`, `parametre_surveillance`, `parametre_tracabilite`, `regle_alerte_psychotrope`, `remise_automatique`. **Où** : serveur central. **Compte** : compte d'administration, dans une session PowerShell où les variables sont réglées.
 
 - [ ] **9.1** Voir l'état des 11 tables : mode, version, auteur, date, nombre d'officines qui ont appliqué ou rejeté (et le motif de chaque rejet).
   ```powershell
@@ -1093,7 +1146,7 @@ Le serveur central peut proposer ou imposer aux officines la valeur de 11 régla
 ### 10. Mise à jour du serveur central
 
 - [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `010`, **dans cet ordre**, avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `011`, **dans cet ordre**, avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
 - [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
 - [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 
@@ -1196,6 +1249,11 @@ Prérequis : parcours C fait. Décision du titulaire.
 
 - [ ] **1.** Constater la panne (bandeau « Serveur injoignable » sur les postes). Vérifier le PC principal (allumé, réseau, services). Le titulaire décide.
 - [ ] **2.** Sur le PC principal, si possible : arrêter le service de l'API et PostgreSQL, ou **débrancher son câble réseau**.
+- [ ] **2 bis.** GED : dernière copie, **si le principal est encore joignable** (allumé, réseau, partage ; bascule voulue ou panne partielle). **Où** : 2e serveur. **Compte** : administrateur Windows. À faire **après** l'arrêt de l'API du principal (étape 2) : plus aucun document n'arrive.
+  ```powershell
+  .\copier-ged.ps1 -Source \\<IP du principal>\PharmaGED$
+  ```
+  - **Attendu** : « rien à copier » ou « fichiers copiés », code 0. Principal éteint ou injoignable : « REFUS : source injoignable », **sans rien toucher** ; continuer : les documents déposés dans les dernières minutes avant la panne (N minutes au plus : 5 par défaut, réglage de l'application) manquent sur ce serveur (voir la limite, parcours C étape 12 quater) ; les noter pour les retrouver au retour (F4, étape 3 ter).
 - [ ] **3.** Sur le 2e serveur, PowerShell **en administrateur**, dossier `scripts\second-serveur` :
   ```powershell
   .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal> -Schema https -PortApi 5443 -Essai
@@ -1204,6 +1262,13 @@ Prérequis : parcours C fait. Décision du titulaire.
   - `-Schema https -PortApi 5443` : c'est le port que les postes utilisent. Le port 5080 n'écoute que sur le PC lui-même : le contrôle « l'ancien principal répond-il encore ? » doit donc viser 5443, et l'adresse affichée pour les postes devient `https://<IP>:5443/`. Le contrôle local de `/api/sante` en HTTPS peut avertir si l'autorité n'est pas installée sur le 2e serveur lui-même (sans conséquence pour les postes).
   - Le script **refuse** si l'ancien principal répond encore (PostgreSQL ou API). Il demande de taper `BASCULER`.
   - **Attendu** : le script affiche l'heure de la dernière transaction reçue. Ce qui a été saisi après (rare) est à ressaisir.
+- [ ] **3 bis.** GED : arrêter la copie automatique sur ce serveur, qui est maintenant le principal. **Où** : 2e serveur devenu principal. **Compte** : administrateur Windows.
+  ```powershell
+  .\copier-ged.ps1 -Source \\<IP de l'ancien principal>\PharmaGED$ -Desinstaller -Essai
+  .\copier-ged.ps1 -Source \\<IP de l'ancien principal>\PharmaGED$ -Desinstaller
+  ```
+  - **Pourquoi** : la copie ne va que dans un sens, du principal vers le second. Cette tâche tirerait la GED d'un serveur qui n'est plus le principal. Elle ne supprimerait rien, mais le sens doit être inversé au retour (F4). La GED locale (documents copiés) est **gardée** et l'API de ce serveur l'utilise : **vérifier que `Ged__Dossier` de ce serveur (ou le défaut `C:\ProgramData\PharmaOfficine\GED`) est bien le dossier où la copie a écrit** (`Destination` de la tâche), sinon les documents copiés ne seraient pas vus.
+  - **Attendu** : « Tâche … supprimée ». Si la tâche était déjà absente : « rien à supprimer ».
 - [ ] **4.** Sur chaque poste : bouton **« Basculer sur le 2e serveur »**, puis fermer et rouvrir Pharma Officine.
 - [ ] **5.** Titulaire : écran « 2e serveur ». Ce serveur est maintenant « Principal ». Vérifier les dossiers Chifa et MDN, la clé (identique). **CHIFA-Officine, lecteur de carte et Token** : à confirmer sur ce PC (question posée à la CNAS, `docs/taches/2026-11-15-recette-complete/demande-cnas.md`).
 - [ ] **6.** Le principal ne doit **jamais** redevenir actif sans la procédure F4 : l'API refuse de démarrer si l'autre serveur a aussi une base principale.
@@ -1223,6 +1288,12 @@ Prérequis : parcours C fait. Décision du titulaire.
   .\ouvrir-port-base.ps1 -AdresseSecond <IP de l'ancien>
   ```
   - **Attendu** : règle créée pour la seule IP de l'ancien, « aucune autre règle active n'ouvre le port 5432 ».
+  Puis, toujours sur le **nouveau** principal, partager sa GED en lecture seule à l'ancien seulement (parcours C, étape 12 bis ; le compte `PharmaGedCopie` existe déjà, son mot de passe est celui du coffre) :
+  ```powershell
+  .\partager-ged.ps1 -AdresseSecond <IP de l'ancien> -Essai
+  .\partager-ged.ps1 -AdresseSecond <IP de l'ancien>
+  ```
+  - **Attendu** : partage `PharmaGED$` en lecture seule, règle 445 pour la seule IP de l'ancien, « aucune autre règle active n'ouvre le port 445 ».
 - [ ] **3.** Sur l'**ancien** principal :
   ```powershell
   .\remettre-en-second.ps1 -NouveauPrincipal <IP du nouveau> -Essai
@@ -1230,7 +1301,21 @@ Prérequis : parcours C fait. Décision du titulaire.
   ```
   - Son ancienne base est **gardée** à côté (`<dossier>_ancien_principal_<date>`). Elle peut contenir les dernières saisies d'avant la panne : **à examiner avant toute suppression**.
   - Il redevient 2e serveur et rattrape le nouveau principal.
-- [ ] **4.** Rebascule à un moment calme (facultatif, pour revenir à la répartition d'origine) : arrêter l'API et PostgreSQL du principal actuel, lancer `basculer-second-serveur.ps1` sur l'autre, puis `remettre-en-second.ps1` sur celui qu'on vient d'arrêter, et remettre l'adresse des postes (Serveur et PC de secours).
+- [ ] **3 bis.** GED : les documents déposés pendant la bascule reviennent sur l'ancien principal, **avant** toute remise en service. **Où** : ancien principal (réparé, redevenu 2e serveur). **Compte** : administrateur Windows. Même copie que d'habitude, dans l'autre sens : elle **ne supprime rien** et ne remplace jamais un fichier par un plus ancien (la GED d'avant la panne, gardée sur cette machine, n'est pas touchée).
+  ```powershell
+  .\copier-ged.ps1 -Source \\<IP du nouveau principal>\PharmaGED$ -Essai
+  .\copier-ged.ps1 -Source \\<IP du nouveau principal>\PharmaGED$
+  .\copier-ged.ps1 -Source \\<IP du nouveau principal>\PharmaGED$ -Installer -Essai
+  .\copier-ged.ps1 -Source \\<IP du nouveau principal>\PharmaGED$ -Installer
+  ```
+  - La tâche planifiée existe **uniquement sur le serveur qui est second** : elle a été supprimée sur le nouveau principal (F3, étape 3 bis) et elle est maintenant installée sur l'ancien. Mot de passe de `PharmaGedCopie` : celui du coffre.
+  - **Attendu** : « fichiers copiés » (les documents déposés depuis la bascule), puis `LastTaskResult` = `0` (parcours C, étape 12 quater). **Si échec** : « REFUS : source injoignable » = étape 2 non faite sur le nouveau principal (partage, pare-feu 445, IP).
+  - L'ancien principal a gardé son ancienne GED : ne rien y supprimer à la main avant d'avoir fait l'étape 3 ter.
+- [ ] **3 ter.** GED : retrouver les derniers documents d'avant la panne (**facultatif**, utile si la dernière copie n'avait pas pu être faite, F3 étape 2 bis). Ils n'existent que sur l'ancien principal. **Où** : ancien principal, puis nouveau principal. **Compte** : administrateur Windows.
+  - Sur l'**ancien** : `.\partager-ged.ps1 -AdresseSecond <IP du nouveau> -Essai`, puis sans `-Essai` (partage en lecture seule, 445 limité à l'IP du nouveau).
+  - Sur le **nouveau** (une fois, à la main, **sans** `-Installer`) : `.\copier-ged.ps1 -Source \\<IP de l'ancien>\PharmaGED$ -Essai`, puis sans `-Essai`. **Attendu** : les documents manquants apparaissent ; rien n'est supprimé ni écrasé par un plus ancien.
+  - Sur l'**ancien**, ensuite : `.\partager-ged.ps1 -AdresseSecond <IP du nouveau> -Retirer` (il est redevenu second : plus rien à partager).
+- [ ] **4.** Rebascule à un moment calme (facultatif, pour revenir à la répartition d'origine) : arrêter l'API et PostgreSQL du principal actuel, lancer `basculer-second-serveur.ps1` sur l'autre, puis `remettre-en-second.ps1` sur celui qu'on vient d'arrêter, et remettre l'adresse des postes (Serveur et PC de secours). **GED, dans cet ordre** : (a) avant la bascule, une dernière copie sur le serveur qui va devenir principal (F3, étape 2 bis, après l'arrêt de l'API de l'autre) ; (b) après la bascule, `-Desinstaller` sur lui (F3, étape 3 bis) ; (c) sur celui qui devient second : `partager-ged.ps1 -Retirer` s'il partageait, puis `copier-ged.ps1 -Installer` avec pour source le nouveau principal (étapes 2 et 3 bis ci-dessus). **Une seule tâche de copie à la fois dans l'officine** : toujours sur le serveur qui est second.
 
 ### F5. Révocation d'un certificat (PC volé, officine résiliée)
 
