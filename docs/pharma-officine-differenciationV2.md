@@ -24,7 +24,7 @@
 
 ## 1. Contexte marché
 
-- Concurrents installés, modèle **licence à vie** : concurrent B (~53 000 DA, 2 500+ licences revendiquées, ~30 % des officines), concurrent C (70 000 / 160 000 / 230 000 DA + 15–35 000 DA par poste), concurrent D (45 000 DA), concurrent E, concurrent F, concurrent G, concurrent H.
+- Autres logiciels installés, modèle **licence à vie** : logiciel B (~53 000 DA, 2 500+ licences revendiquées, ~30 % des officines), logiciel C (70 000 / 160 000 / 230 000 DA + 15–35 000 DA par poste), logiciel D (45 000 DA), logiciel E, logiciel F, logiciel G, logiciel H.
 - Fonctions de base déjà couvertes par tous : vente comptoir, Chifa (CNAS/CASNOS), conventions militaires, stock, péremptions, achats, crédits clients, codes-barres.
 - **Conclusion : ne pas se battre sur le prix ni sur les fonctions de base.** Se différencier sur la conformité à venir, la protection du pharmacien, la gestion des ruptures et l'effet réseau.
 
@@ -36,19 +36,19 @@
 
 ## 1 bis. Projets existants dans le secteur du médicament (veille du 18/11/2026)
 
-**Constat** : aucun acteur algérien repéré ne combine un logiciel d'officine en SaaS, une interconnexion avec les grossistes et un réseau de disponibilité des médicaments. Le modèle le plus proche est **marocain (concurrent A)**. C'est la référence à étudier, et un entrant possible en Algérie.
+**Constat** : aucun acteur algérien repéré ne combine un logiciel d'officine en SaaS, une interconnexion avec les grossistes et un réseau de disponibilité des médicaments. Le modèle le plus proche est **marocain (logiciel A)**. C'est la référence à étudier, et un entrant possible en Algérie.
 
 ### En Algérie
 
 | Acteur | Ce qu'il fait | Ce que ça implique pour nous |
 |---|---|---|
-| **concurrent B (application mobile)** | Application de gestion à distance pour le pharmacien : factures, statistiques, clients, vérification des droits CNAS | Complément de concurrent B, pas un logiciel SaaS complet → notre application titulaire (M4) doit faire mieux |
+| **logiciel B (application mobile)** | Application de gestion à distance pour le pharmacien : factures, statistiques, clients, vérification des droits CNAS | Complément de logiciel B, pas un logiciel SaaS complet → notre application titulaire (M4) doit faire mieux |
 | **Vecopharm** (grossiste, 750+ salariés) | Application de commande pour ses pharmaciens clients : commandes, suivi des factures et paiements | **Les grossistes construisent chacun leur application** → personne ne les regroupe : c'est notre module multi-grossistes (M3). Les approcher comme **partenaires à connecter** |
 | **DzairPharm** | Place de marché B2B qui relie laboratoires, cliniques, hôpitaux et professionnels ; nomenclature officielle avec vignettes et notices | Partenaire possible pour la base des médicaments (voir 4 ter) |
 | **e-Sahti / Pharm'Net** (créée en 2017) | Dictionnaire numérique algérien des médicaments ; ordonnance électronique « intelligente » pour les médecins, qui propose un équivalent algérien en cas d'indisponibilité | Partenaire possible : base des médicaments **et** réception des ordonnances électroniques dans notre logiciel |
 | **Application « Médicaments en Algérie »** | Recherche par nom, substance active ou classe ; liste des équivalents | Pas de disponibilité en temps réel → notre réseau (M3) se démarque |
 | **Plateforme nationale de gestion des officines** (ministère de la Santé, Ordre, SNAPO) | Pilotage administratif : stocks, psychotropes, antibiotiques, gardes | Ne gère pas le quotidien d'une officine → nous positionner comme **connecteur** qui lui transmet les données |
-| **Plateforme de veille et d'alerte sur l'approvisionnement** (Haut-Commissariat à la numérisation, MIPH) | Vue nationale du marché du médicament | Idem : connecteur, pas concurrent |
+| **Plateforme de veille et d'alerte sur l'approvisionnement** (Haut-Commissariat à la numérisation, MIPH) | Vue nationale du marché du médicament | Idem : connecteur, pas un logiciel d'officine |
 
 Écosystème : 43 startups algériennes de santé numérique (septembre 2025), dont quelques-unes en technologie pour les pharmacies et en places de marché B2B ; aucune n'a de position forte sur le logiciel d'officine en SaaS.
 
@@ -56,14 +56,14 @@
 
 | Acteur | Pays | Chiffres revendiqués | À retenir |
 |---|---|---|---|
-| **concurrent A Pharma** | Maroc (filiale en France) | 50 %+ du marché, 5 000+ pharmacies, interconnecté à 20 répartiteurs et grossistes et à 30 laboratoires | Logiciel cloud + commandes grossistes + IA anti-ruptures + paiement intégré (Attijari Payment, 2026) + application patient. **C'est notre feuille de route** |
+| **logiciel A Pharma** | Maroc (filiale en France) | 50 %+ du marché, 5 000+ pharmacies, interconnecté à 20 répartiteurs et grossistes et à 30 laboratoires | Logiciel cloud + commandes grossistes + IA anti-ruptures + paiement intégré (Attijari Payment, 2026) + application patient. **C'est notre feuille de route** |
 | **Blink Pharma** | Maroc | 4 500+ pharmaciens, 41+ grossistes, 20+ laboratoires | Place de marché B2B pharmacies, grossistes et laboratoires |
 | **Chefaa** | Égypte | 5,25 M$ levés en 2023 | Application patients : trouver ses médicaments pendant les pénuries |
 | **Alliance Pharma** | Burkina Faso | 10 000+ téléchargements | Localiser les pharmacies qui ont un médicament, alimentée par les pharmacies partenaires |
 | **Meditect** | Côte d'Ivoire | 1 200 pharmacies, 3 000+ médicaments contrefaits détectés | Lutte contre la contrefaçon, proche de notre module M1 |
 
 ### Conséquences pour le projet
-1. **La place est libre en Algérie, mais pour un temps.** Si concurrent A arrive, nos défenses sont l'hébergement en Algérie (loi 18-07), la sérialisation DataMatrix prête et la connaissance du terrain. → **Aller vite sur P1.**
+1. **La place est libre en Algérie, mais pour un temps.** Si logiciel A arrive, nos défenses sont l'hébergement en Algérie (loi 18-07), la sérialisation DataMatrix prête et la connaissance du terrain. → **Aller vite sur P1.**
 2. **Grossistes = partenaires** : proposer de connecter leurs catalogues et commandes à notre module multi-grossistes (import de fichiers d'abord, API ensuite).
 3. **Ne pas reconstruire ce qui existe** : base des médicaments via la nomenclature officielle + un partenaire (section 4 ter).
 4. **Label Startup** : 4 ans d'exonération d'IBS, de TAP et d'IRG pour les fondateurs, accès au fonds ASF, crédibilité auprès des institutions.
@@ -134,7 +134,7 @@
 **Pourquoi** : le vrai frein à l'achat est la peur de perdre ses données et de s'arrêter de travailler, pas le prix.
 
 **Fonctions** :
-- **Assistants d'import** depuis les logiciels concurrents (concurrent B, concurrent C, concurrent D, concurrent E) : produits, stock, lots, fournisseurs, clients, crédits, historique Chifa. Formats source : exports Excel ou CSV, ou lecture de leur base **[À VÉRIFIER]** au cas par cas. Rapport d'import avec anomalies.
+- **Assistants d'import** depuis les autres logiciels (logiciel B, logiciel C, logiciel D, logiciel E) : produits, stock, lots, fournisseurs, clients, crédits, historique Chifa. Formats source : exports Excel ou CSV, ou lecture de leur base **[À VÉRIFIER]** au cas par cas. Rapport d'import avec anomalies.
 - **Mode hors ligne d'abord** : la vente au comptoir fonctionne sans internet (base locale) ; synchronisation cloud en tâche de fond ; gestion des conflits.
 - **Multi-postes et multi-officines** : un titulaire suit plusieurs officines.
 - **Application mobile du titulaire** (pilotage à distance) : chiffre d'affaires du jour, ventes en cours, alertes (ruptures, psychotropes, péremptions), activité par employé.
@@ -164,7 +164,7 @@
 
 | Priorité | Module | Raison |
 |---|---|---|
-| **P1** | M4 (import des concurrents + hors ligne) | Condition pour signer les premiers clients |
+| **P1** | M4 (import des autres logiciels + hors ligne) | Condition pour signer les premiers clients |
 | **P1** | M3 (multi-grossistes + alertes ruptures + substitution) | Gain visible dès le premier jour |
 | **P1** | M6 (journal inaltérable) | Peu cher si fait tôt ; très cher à rajouter ensuite |
 | **P2** | M2 (registre psychotropes + alertes) | Argument fort « protection du pharmacien » |
@@ -311,7 +311,7 @@ Mobile titulaire ────────────TLS──▶          │
 
 - **Cibles prioritaires** : les nouvelles officines, sans logiciel à remplacer. Un décret en préparation prévoit de traiter via une plateforme numérique les dossiers des pharmaciens en liste d'attente, ce qui pourrait entraîner une vague d'ouvertures.
 - **Partenaire naturel** : le SNAPO (syndicat des pharmaciens d'officine), qui milite pour l'ordonnance numérique et la traçabilité.
-- **Offre** : reprise des données, installation et formation sur place offertes ; abonnement pour le cloud, le réseau et les mises à jour réglementaires (à arbitrer face aux licences à vie des concurrents).
+- **Offre** : reprise des données, installation et formation sur place offertes ; abonnement pour le cloud, le réseau et les mises à jour réglementaires (à arbitrer face aux licences à vie des autres logiciels).
 
 ---
 
@@ -324,7 +324,7 @@ Mobile titulaire ────────────TLS──▶          │
 5. Règles de l'Ordre (CNOP) sur une application patient et sur le partage de disponibilités entre officines.
 6. Protection des données de santé (loi 18-07, autorité ANPDP) : déclaration ou autorisation nécessaire pour les registres patients.
 7. Offre réelle d'e-Sahti / Pharm'Net et de DzairPharm (API, licence, prix, qualité des données) ; format et fréquence de publication de la nomenclature officielle du MIPH.
-8. Intentions de concurrent A (ou d'un autre acteur étranger) sur le marché algérien.
+8. Intentions de logiciel A (ou d'un autre acteur étranger) sur le marché algérien.
 
 ---
 
@@ -340,7 +340,7 @@ Mobile titulaire ────────────TLS──▶          │
 - Production nationale (82 %) : https://news.radioalgerie.dz/fr/node/83166
 - Loi de finances 2026, article 51 bis : https://www.upgrowth.dz/loi-de-finances-2026-articles-cles-algerie
 - Projet de décret, exercice de la pharmacie : https://news.radioalgerie.dz/fr/node/77727
-- Tarifs concurrents : https://chifa.plus/ · (lien retiré) · (lien retiré)
+- Tarifs des autres logiciels : (lien retiré) · (lien retiré) · (lien retiré)
 - ANPDP, diffusion en ligne = transfert à l'étranger : https://www.tsa-algerie.com/?p=297365
 - Projet de loi modifiant la loi 18-07 : https://fr.apanews.net/?p=245610
 - Loi 18-07, sanctions : https://www.gide.com/sites/default/files/2023-07gide_alerteclient_anpdp_fr_7.pdf
@@ -348,16 +348,16 @@ Mobile titulaire ────────────TLS──▶          │
 - Absence de région hyperscaler en Algérie : https://algeriatech.news/?p=18111
 - Offres AYRADE : https://www.whtop.com/fr/plans/ayrade.com/154618
 - Offres ICOSNET : https://icosnet.com.dz/wp-content/uploads/2025/08/CloudX.pdf
-- Panorama des startups algériennes de santé (concurrent B (application mobile), DzairPharm) : https://algeriatech.news/healthtech-startups-telemedicine-algeria/
+- Panorama des startups algériennes de santé (logiciel B (application mobile), DzairPharm) : https://algeriatech.news/healthtech-startups-telemedicine-algeria/
 - Vecopharm, application : https://mwm.ai/apps/vecopharm/6504862028
 - Vecopharm, fiche entreprise : https://markets.apistemic.com/companies/syncgroup-65ezwp
 - DzairPharm : https://similarweb.com/app/google/com.dzairpharm.dzair_pharm/vs/com.montunosoftware.dosecast
 - e-Sahti / Pharm'Net : https://www.algerie360.com/karim-ibachirene-co-fondateur-de-e-sahti-pharmnet-dictionnaire-numerique-algerien-medicaments/
 - e-Sahti, ordonnance intelligente : https://maghrebemergent.news/fr/algerie-une-ordonnance-intelligente-sera-bientot-proposee-aux-medecins/
 - Plateforme de veille et d'alerte : https://www.algerie360.com/developpement-dune-plateforme-de-veille-pharmaceutique-pour-lapprovisionnement-et-la-regulation/
-- concurrent A (part de marché, grossistes) : (lien retiré)
-- concurrent A (IA anti-ruptures) : https://www.lecourrierdelatlas.com/?p=195263
-- concurrent A et Attijari Payment : https://en.7news.ma/?p=15177
+- logiciel A (part de marché, grossistes) : (lien retiré)
+- logiciel A (IA anti-ruptures) : https://www.lecourrierdelatlas.com/?p=195263
+- logiciel A et Attijari Payment : https://en.7news.ma/?p=15177
 - Blink Pharma : https://www.wearetech.africa/fr/fils/solutions/maroc-blink-pharmacie-une-application-b2b-fluidifie-les-transactions-entre-les-pharmacies-les-grossistes-et-les-laboratoires
 - Chefaa : https://techcabal.com/fr/?p=162080
 - Alliance Pharma : https://www.wearetech.africa/fr/fils/solutions/alliance-pharma-facilite-la-recherche-de-medicaments-en-ligne-au-burkina-faso

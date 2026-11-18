@@ -1,4 +1,4 @@
-# Autres plateformes « style concurrent A » — fonctionnalités utiles pour PharmaOfficine
+# Autres plateformes « style logiciel A » — fonctionnalités utiles pour PharmaOfficine
 
 > Veille du 18/11/2026 sur 8 plateformes (Inde, Afrique, Égypte, France).
 > Trois idées fortes pour l'Algérie : les **malades chroniques** (renouvellements préparés et rappelés), le **financement du stock** (payer le grossiste au rythme des ventes) et le **tiers payant au-delà de la CNAS** (mutuelles, assurances, conventions d'entreprises).
@@ -35,7 +35,7 @@
 
 ## À retenir
 
-1. **Le hors ligne est un vrai avantage concurrentiel** : Marg l'oppose à eVitalRx, Maisha Meds en a fait sa base pour les zones mal connectées. Cela confirme le choix fait face à concurrent A, 100 % en ligne.
+1. **Le hors ligne est un vrai avantage concurrentiel** : Marg l'oppose à eVitalRx, Maisha Meds en a fait sa base pour les zones mal connectées. Cela confirme le choix fait face à logiciel A, 100 % en ligne.
 2. **Les malades chroniques sont les clients les plus fidèles** : trois plateformes sur huit en ont fait un produit à part.
 3. **Le financement du stock** est le modèle le plus original : il demande un partenaire financier, mais les données de ventes du logiciel en sont la condition.
 4. **La base produits demande une personne dédiée** (exemple de Link) : à prévoir dans l'organisation (voir section 4 ter du fichier `pharma-officine-differenciation.md`).
