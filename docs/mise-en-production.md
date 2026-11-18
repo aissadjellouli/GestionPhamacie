@@ -12,7 +12,7 @@ Mise à jour : 2026-11-16. Les points marqués **[À CONFIRMER]** ne sont pas tr
 - [Parcours B, mises à jour](#parcours-b-mises-à-jour) : une officine déjà en service (étapes 1 à 14)
 - [Parcours C, 2e serveur](#parcours-c-2e-serveur) : réplication et API de secours (facultatif)
 - [Parcours D, PC de secours](#parcours-d-pc-de-secours) : copie de secours (facultatif, fortement conseillé)
-- [Parcours E, Serveur central de synchronisation](#parcours-e-serveur-central-de-synchronisation) : hébergement central (facultatif)
+- [Parcours E, Tracodex Réseau (serveur central de synchronisation)](#parcours-e-tracodex-réseau-serveur-central-de-synchronisation) : hébergement central (facultatif)
 - [Procédures occasionnelles](#procédures-occasionnelles) : restauration, PC serveur en panne, bascule, retour, révocation
 - [Annexes](#annexes) : ports, services, variables, fichiers, dépannage
 - [Checklist avant ouverture](#checklist-avant-ouverture)
@@ -37,7 +37,7 @@ Mise à jour : 2026-11-16. Les points marqués **[À CONFIRMER]** ne sont pas tr
 | Nom dans ce manuel | Ce que c'est |
 | --- | --- |
 | **PC serveur** | PC principal de l'officine : PostgreSQL et API. Toujours allumé, onduleur obligatoire |
-| **Poste** | poste de caisse (un par caisse), qui ouvre Pharma Officine |
+| **Poste** | poste de caisse (un par caisse), qui ouvre Tracodex Officine |
 | **PC des sources** | PC qui a le code du dépôt et le SDK .NET 10 : c'est là qu'on compile (`dotnet publish`) |
 | **2e serveur** | 2e PC de l'officine, réplique de la base (parcours C, facultatif) |
 | **PC de secours** | PC de l'officine avec PostgreSQL et l'API, prêt à prendre le relais (parcours D, facultatif) |
@@ -425,7 +425,7 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
 
 - [ ] **4.8** Vérifier l'API sur le PC serveur. **Où** : PC serveur. **Compte** : administrateur Windows.
   ```powershell
-  (Invoke-WebRequest http://localhost:5080/api/sante -UseBasicParsing).StatusCode
+  (Invoke-WebRequest http://localhost:5080/api/healthcheck -UseBasicParsing).StatusCode
   (Invoke-WebRequest http://localhost:5080/api/auth/comptoir -UseBasicParsing).StatusCode
   ```
   - **Attendu** : `200` pour les deux (le second peut renvoyer un code différent si aucune session n'est ouverte ; dans ce cas, un code de réponse, même 401, prouve que l'API répond).
@@ -485,7 +485,7 @@ Faire ces étapes **sur chaque poste**, une caisse après l'autre.
   - Sur le PC serveur lui-même, `http://localhost:5080/` reste permis.
   - **Attendu** : fermer et rouvrir le poste après le réglage.
 
-- [ ] **5.7** Ouvrir Pharma Officine. **Où** : chaque poste. **Compte** : employé.
+- [ ] **5.7** Ouvrir Tracodex Officine. **Où** : chaque poste. **Compte** : employé.
   - **Attendu** : l'écran de connexion s'affiche, sans avertissement de certificat.
   - **Si échec** : avertissement de certificat = l'autorité n'est pas installée (5.4) ou le nom du serveur n'est pas dans le certificat (4.6, option 3). Message « serveur injoignable » = l'API ne tourne pas ou le pare-feu bloque 5443.
 
@@ -517,8 +517,8 @@ Faire cette étape **après** les postes et les téléphones (sinon ils n'ont pl
 
 - [ ] **7.3** Contrôler depuis un poste. **Où** : un poste. **Compte** : employé.
   ```powershell
-  (Invoke-WebRequest https://<serveur>:5443/api/sante -UseBasicParsing).StatusCode
-  (Invoke-WebRequest https://<serveur>:5443/api/sante -UseBasicParsing).Headers["Strict-Transport-Security"]
+  (Invoke-WebRequest https://<serveur>:5443/api/healthcheck -UseBasicParsing).StatusCode
+  (Invoke-WebRequest https://<serveur>:5443/api/healthcheck -UseBasicParsing).Headers["Strict-Transport-Security"]
   Invoke-WebRequest http://<serveur>:5080/ -UseBasicParsing
   Invoke-WebRequest https://<serveur>:5443/mobile/autorite-pharmacie.crt -UseBasicParsing
   ```
@@ -731,12 +731,12 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
   ```powershell
   Start-Service "PharmaOfficine API"
   Get-Service "PharmaOfficine API"
-  (Invoke-WebRequest http://localhost:5080/api/sante -UseBasicParsing).StatusCode
+  (Invoke-WebRequest http://localhost:5080/api/healthcheck -UseBasicParsing).StatusCode
   ```
   - **Attendu** : `Running`, et `200`.
   - **Si échec** : journal du serveur (annexe, dépannage). Pour revenir en arrière : arrêter le service, remettre `Api_ancien` à la place de `Api`, redémarrer. Les scripts de base déjà appliqués restent (ils sont sans perte).
 - [ ] **13.** Mettre à jour les postes. **Où** : chaque poste. **Compte** : administrateur Windows.
-  - Fermer Pharma Officine sur le poste, puis remplacer le dossier du poste par le dossier `Poste` préparé à l'étape 1 (clé USB). Les variables `PHARMA_API` et `PHARMA_POSTE` ne changent pas.
+  - Fermer Tracodex Officine sur le poste, puis remplacer le dossier du poste par le dossier `Poste` préparé à l'étape 1 (clé USB). Les variables `PHARMA_API` et `PHARMA_POSTE` ne changent pas.
   - Si la nomenclature nationale a été mise à jour : Administration, Nomenclature, « Importer le fichier Excel… ». L'import remplace l'ancienne liste sans toucher au catalogue.
 - [ ] **14.** Vérifications après mise à jour. **Où** : un poste. **Compte** : titulaire.
   - Une vente test, une clôture de caisse.
@@ -844,7 +844,7 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - **Attendu** : `Certificat importé dans Cert:\LocalMachine\My …`, fichier de configuration identique à celui du PC serveur, règle `Enabled : True`. Le service de l'API reste **arrêté** (étape 10) : il est démarré par la bascule seulement.
   - **Si échec** : « phrase de passe incorrecte » = ressaisir. « Ce fichier est une autorité » = mauvais fichier (l'autorité ne s'importe qu'avec `-RestaurerAutorite`, procédure F2 bis). Le certificat est valable **825 jours** : voir F6 pour le renouveler.
   - Supprimer ensuite le PFX de la clé USB des postes ; le garder au coffre avec sa phrase, à part.
-  - Essai réel après la bascule (étape F3) : un poste ouvre `https://<IP du 2e>:5443/api/sante` sans avertissement.
+  - Essai réel après la bascule (étape F3) : un poste ouvre `https://<IP du 2e>:5443/api/healthcheck` sans avertissement.
 
 - [ ] **9.** 2e serveur : initialiser la réplique. **Où** : 2e serveur. **Compte** : administrateur Windows (+ mot de passe `postgres`, mot de passe de réplication).
   ```powershell
@@ -995,7 +995,7 @@ Les copies ne sont **pas chiffrées** : les ranger comme les sauvegardes (accès
 
 ---
 
-## Parcours E, Serveur central de synchronisation
+## Parcours E, Tracodex Réseau (serveur central de synchronisation)
 
 Option facultative. Le serveur central reçoit la copie des données des officines (`docs/conception-synchronisation.md`, section 12). **Il tourne pour l'instant sur le PC de développement** (base `pharmacie_cloud_dev`, port 5090). L'hébergement réel est **[À VÉRIFIER : hébergeur agréé]**.
 
@@ -1016,7 +1016,7 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 019). Ils ne
   .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
   - Le compte `<propriétaire>` doit exister (étape 1.3) ; le script ne le crée pas. Pour voir le plan sans rien créer : ajouter `-WhatIf`. Si le serveur est distant : `-Hote <hôte>`.
-  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` à `021` (tous les scripts numérotés du dossier) ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
+  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` à `023` (tous les scripts numérotés du dossier) ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
   - `001` crée le rôle applicatif `pharma_cloud_api` **sans connexion** et non propriétaire des tables.
   - **Attendu** : « Terminé », code de sortie 0 (`$LASTEXITCODE`).
   - **Si échec** : le script s'arrête au premier script en erreur et le nomme. « Le compte propriétaire n'existe pas » : l'étape 1.3 n'est pas faite. « contient déjà des tables centrales » : base déjà installée ; pour une mise à jour du central, voir l'étape 10.
@@ -1264,7 +1264,7 @@ Les sauvegardes utiles sont sur le **disque externe**. La copie de la base dans 
   - `-SansGed` ou `-SansBase` pour ne restaurer que l'une des deux. Les paramètres `-Base`, `-DossierGed`, `-PgBin`, `-HostPg`, `-Port` existent aussi.
   - **Attendu** : le script se termine sans erreur et affiche le nombre de ventes et la date de la dernière.
 - [ ] **4.** Sauvegarde plus ancienne que la version du logiciel : rejouer les scripts de mise à jour avec `scripts\mep\mettre_a_jour_base_officine.ps1` (parcours B, étapes 3 à 10).
-- [ ] **5.** Démarrer le service et vérifier : `Start-Service "PharmaOfficine API"`, puis `http://localhost:5080/api/sante`. Les documents restés sur les postes (« A envoyer ») repartent dans la GED à la connexion suivante.
+- [ ] **5.** Démarrer le service et vérifier : `Start-Service "PharmaOfficine API"`, puis `http://localhost:5080/api/healthcheck`. Les documents restés sur les postes (« A envoyer ») repartent dans la GED à la connexion suivante.
 - [ ] **6.** Ressaisir les opérations faites depuis la sauvegarde. Sur un nouveau PC, ressaisir le mot de passe des notifications (chiffré pour le PC d'origine).
 - [ ] **6 bis.** Synchronisation activée : après le redémarrage, le **titulaire** repart sur une nouvelle époque (parcours E, « Base de l'officine revenue en arrière »).
 - [ ] **7.** Si le PC serveur a changé : refaire le parcours A, étape 4.9, et **restaurer l'autorité HTTPS** depuis le PFX du coffre, puis créer le certificat du nouveau PC (procédure F2 bis ci-dessous). L'autorité est **unique pour la pharmacie** : les postes et téléphones n'ont **rien à réinstaller**. Sans le PFX du coffre, une nouvelle autorité serait créée et il faudrait réinstaller `autorite-pharmacie.crt` partout (parcours A, étapes 5.3 à 5.4 et 6.2).
@@ -1287,8 +1287,8 @@ Prérequis : parcours D fait. La pharmacie repart à partir de la **dernière co
   ```
   - Le script prend la copie la plus récente (ou `-Fichier`), contrôle l'empreinte SHA-256 et la lisibilité, restaure dans une base neuve, **rejoue tous les scripts de la base** livrés avec l'API (le dernier rejoué est affiché : il doit être le dernier de la version installée), garde une base existante sous `<base>_avant_bascule_<date>` (jamais supprimée), démarre le service et affiche l'adresse à donner aux postes.
   - **Attendu** : le script se termine sans erreur et affiche l'adresse du PC de secours.
-- [ ] **4.** Sur **chaque poste** : bouton **« Basculer sur le 2e serveur »** du bandeau (il ne règle le poste que si l'API de secours répond déjà), ou rubrique Serveur et PC de secours. Puis fermer et rouvrir Pharma Officine.
-  - **Fonctionnement constaté dans le code** : le bouton appelle `https://<adresse de secours>/api/sante` (4 secondes). Le poste vérifie le certificat avec les autorités installées dans Windows (aucune exception) : la bascule ne marche que si l'autorité de la pharmacie est installée sur le poste (parcours A, étape 5.4) **et** si le nom ou l'IP saisi dans « PC de secours » figure dans le certificat du PC de secours (parcours C étape 8 et parcours D étape 6). Sinon, le poste n'est pas basculé et le bandeau distingue trois cas : **« Le 2e serveur ne répond pas… »** (PC éteint, service pas démarré, port 5443 fermé ou adresse erronée) ; **« Le certificat du 2e serveur est refusé par ce poste… »** (autorité absente du poste : installer l'autorité de la pharmacie, étape 5.4 ; ou adresse saisie absente du certificat : la corriger) ; **« Le 2e serveur est joignable mais n'est pas encore basculé… »** (lancer « Basculer sur le 2e serveur » sur le 2e serveur). Le poste ne contourne jamais la vérification du certificat. Le journal local du poste (`%LOCALAPPDATA%\PharmaOfficine\liaison.log`) note l'état à chaque changement (sans adresse ni donnée personnelle). Si le bandeau indique un certificat refusé, ouvrir `https://<adresse de secours>/api/sante` dans un navigateur du poste : un avertissement de certificat en est la cause.
+- [ ] **4.** Sur **chaque poste** : bouton **« Basculer sur le 2e serveur »** du bandeau (il ne règle le poste que si l'API de secours répond déjà), ou rubrique Serveur et PC de secours. Puis fermer et rouvrir Tracodex Officine.
+  - **Fonctionnement constaté dans le code** : le bouton appelle `https://<adresse de secours>/api/healthcheck` (4 secondes). Le poste vérifie le certificat avec les autorités installées dans Windows (aucune exception) : la bascule ne marche que si l'autorité de la pharmacie est installée sur le poste (parcours A, étape 5.4) **et** si le nom ou l'IP saisi dans « PC de secours » figure dans le certificat du PC de secours (parcours C étape 8 et parcours D étape 6). Sinon, le poste n'est pas basculé et le bandeau distingue trois cas : **« Le 2e serveur ne répond pas… »** (PC éteint, service pas démarré, port 5443 fermé ou adresse erronée) ; **« Le certificat du 2e serveur est refusé par ce poste… »** (autorité absente du poste : installer l'autorité de la pharmacie, étape 5.4 ; ou adresse saisie absente du certificat : la corriger) ; **« Le 2e serveur est joignable mais n'est pas encore basculé… »** (lancer « Basculer sur le 2e serveur » sur le 2e serveur). Le poste ne contourne jamais la vérification du certificat. Le journal local du poste (`%LOCALAPPDATA%\PharmaOfficine\liaison.log`) note l'état à chaque changement (sans adresse ni donnée personnelle). Si le bandeau indique un certificat refusé, ouvrir `https://<adresse de secours>/api/healthcheck` dans un navigateur du poste : un avertissement de certificat en est la cause.
   - Aucune réinstallation d'autorité n'est nécessaire sur les postes : c'est la même autorité que celle du PC serveur.
 - [ ] **5.** GED : recopier le dossier `GED` du disque externe si besoin : `.\scripts\restaurer_pharmacie.ps1 -SansBase` (paramètre `-DossierGed` du PC de secours).
 - [ ] **6.** Ressaisir les opérations faites depuis la copie. Ressaisir le mot de passe des notifications.
@@ -1319,7 +1319,7 @@ Prérequis : la clé USB du coffre (`F:\autorite-pharmacie.pfx`) et sa phrase de
   ```
   - Ajouter `-NomsSupplementaires` / `-AdressesSupplementaires` si le nouveau PC a un nom ou une IP différents : **les postes doivent utiliser un nom ou une IP présent dans ce certificat** (variable `PHARMA_API`, étape 5.6 du parcours A, à mettre à jour si l'adresse a changé).
   - **Attendu** : `Autorité de la pharmacie existante réutilisée`, `Certificat du serveur créé`, et la même empreinte d'autorité qu'avant. Redémarrer le service de l'API.
-- [ ] **4.** Un poste ouvre `https://<nouveau serveur>:5443/api/sante`. **Attendu** : 200, **sans avertissement**. Les 2e serveur et PC de secours déjà configurés **gardent leur certificat** (signé par la même autorité) : rien à refaire sur eux.
+- [ ] **4.** Un poste ouvre `https://<nouveau serveur>:5443/api/healthcheck`. **Attendu** : 200, **sans avertissement**. Les 2e serveur et PC de secours déjà configurés **gardent leur certificat** (signé par la même autorité) : rien à refaire sur eux.
 - [ ] **5.** Si le PFX ou sa phrase sont perdus : la clé n'est pas récupérable (non exportable dans le magasin de l'ancien PC, détruit). Il faut **une nouvelle autorité** : lancer le script avec un nouveau `-FichierSauvegardeAutorite` (étape 4.6), puis **réinstaller** `autorite-pharmacie.crt` sur tous les postes et téléphones (étapes 5.3, 5.4, 6.1, 6.2) et régénérer les certificats du 2e serveur et du PC de secours (parcours C étape 8, parcours D étape 6).
 
 ### F3. Bascule du 2e serveur
@@ -1338,7 +1338,7 @@ Prérequis : parcours C fait. Décision du titulaire.
   .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal> -Schema https -PortApi 5443 -Essai
   .\basculer-second-serveur.ps1 -AncienPrincipal <IP du principal> -Schema https -PortApi 5443
   ```
-  - `-Schema https -PortApi 5443` : c'est le port que les postes utilisent. Le port 5080 n'écoute que sur le PC lui-même : le contrôle « l'ancien principal répond-il encore ? » doit donc viser 5443, et l'adresse affichée pour les postes devient `https://<IP>:5443/`. Le contrôle local de `/api/sante` en HTTPS peut avertir si l'autorité n'est pas installée sur le 2e serveur lui-même (sans conséquence pour les postes).
+  - `-Schema https -PortApi 5443` : c'est le port que les postes utilisent. Le port 5080 n'écoute que sur le PC lui-même : le contrôle « l'ancien principal répond-il encore ? » doit donc viser 5443, et l'adresse affichée pour les postes devient `https://<IP>:5443/`. Le contrôle local de `/api/healthcheck` en HTTPS peut avertir si l'autorité n'est pas installée sur le 2e serveur lui-même (sans conséquence pour les postes).
   - Le script **refuse** si l'ancien principal répond encore (PostgreSQL ou API). Il demande de taper `BASCULER`.
   - **Attendu** : le script affiche l'heure de la dernière transaction reçue. Ce qui a été saisi après (rare) est à ressaisir.
 - [ ] **3 bis.** GED : arrêter la copie automatique sur ce serveur, qui est maintenant le principal. **Où** : 2e serveur devenu principal. **Compte** : administrateur Windows.
@@ -1348,7 +1348,7 @@ Prérequis : parcours C fait. Décision du titulaire.
   ```
   - **Pourquoi** : la copie ne va que dans un sens, du principal vers le second. Cette tâche tirerait la GED d'un serveur qui n'est plus le principal. Elle ne supprimerait rien, mais le sens doit être inversé au retour (F4). La GED locale (documents copiés) est **gardée** et l'API de ce serveur l'utilise : **vérifier que `Ged__Dossier` de ce serveur (ou le défaut `C:\ProgramData\PharmaOfficine\GED`) est bien le dossier où la copie a écrit** (`Destination` de la tâche), sinon les documents copiés ne seraient pas vus.
   - **Attendu** : « Tâche … supprimée ». Si la tâche était déjà absente : « rien à supprimer ».
-- [ ] **4.** Sur chaque poste : bouton **« Basculer sur le 2e serveur »**, puis fermer et rouvrir Pharma Officine.
+- [ ] **4.** Sur chaque poste : bouton **« Basculer sur le 2e serveur »**, puis fermer et rouvrir Tracodex Officine.
 - [ ] **5.** Titulaire : écran « 2e serveur ». Ce serveur est maintenant « Principal ». Vérifier les dossiers Chifa et MDN, la clé (identique). **CHIFA-Officine, lecteur de carte et Token** : à confirmer sur ce PC (question posée à la CNAS, `docs/taches/2026-11-15-recette-complete/demande-cnas.md`).
 - [ ] **6.** Le principal ne doit **jamais** redevenir actif sans la procédure F4 : l'API refuse de démarrer si l'autre serveur a aussi une base principale.
 - [ ] **7.** Synchronisation activée : si des transactions non répliquées avaient déjà été envoyées au serveur central, l'envoi se suspend (« Base revenue en arrière… ») ; le **titulaire** repart alors sur une nouvelle époque (parcours E, « Base de l'officine revenue en arrière »). Sans message, rien à faire.
@@ -1421,7 +1421,7 @@ Le certificat de chaque PC dure **825 jours** (environ 27 mois). L'autorité dur
   - Le certificat est refait seulement s'il expire dans moins d'un mois ou si la liste des noms change. Pour renouveler plus tôt : retirer le certificat `CN=PharmaOfficine Mobile` du magasin à la main (`Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -eq 'CN=PharmaOfficine Mobile' | Remove-Item`) puis relancer, en reprenant la **même liste de noms et adresses** que la première fois.
   - Puis redémarrer le service de l'API. **Attendu** : `Certificat du serveur créé`, nouvelle date d'échéance. Les postes ne changent rien (même autorité).
 - [ ] **2.** **2e serveur et PC de secours** : sur le PC serveur, refaire l'étape 8a du parcours C (`-CertificatPourAutrePc`, mêmes noms et adresses, **nouveau nom de fichier**, par exemple `E:\certificat-second-AAAAMMJJ.pfx`) ; sur l'autre PC, refaire l'étape 8b (`-Importer`). Le script retire l'ancien certificat **après** avoir mis le nouveau en place. Redémarrer le service de l'API s'il tourne ; sinon rien (il est arrêté jusqu'à la bascule).
-- [ ] **3.** Vérifier sur un poste : `https://<serveur>:5443/api/sante` sans avertissement ; pour le 2e serveur et le PC de secours, au prochain essai de bascule.
+- [ ] **3.** Vérifier sur un poste : `https://<serveur>:5443/api/healthcheck` sans avertissement ; pour le 2e serveur et le PC de secours, au prochain essai de bascule.
 - [ ] **4.** Détruire les PFX temporaires de la clé USB des postes ; garder le PFX **de l'autorité** au coffre (inchangé).
 
 ### F7. Ancienne autorité « une par PC » trouvée
@@ -1469,7 +1469,7 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
 | Le service se ferme : message sur `Jwt:Cle` | Variable absente ou de moins de 64 caractères | Parcours A, étape 4.4 |
 | Service `Running`, mais rien ne répond | Pare-feu ou mauvais port | `netstat -ano \| findstr :5443`, puis règle `PharmaOfficine API (https 5443)` |
 | Avertissement de certificat sur un poste | Autorité non installée, ou nom du serveur absent du certificat | Parcours A, étape 5.4 ; sur le PC serveur, relancer l'étape 4.6 avec `-NomsSupplementaires` / `-AdressesSupplementaires` ; sur le 2e serveur ou le PC de secours, regénérer le certificat (parcours C, étape 8) avec le nom ou l'IP utilisé par les postes |
-| Le poste n'arrive pas à basculer sur le PC de secours : bandeau « Le certificat du 2e serveur est refusé par ce poste… » | Autorité absente du poste, ou nom/IP de « PC de secours » absent du certificat du PC de secours | Installer l'autorité (étape 5.4) ou corriger l'adresse ; `https://<adresse de secours>/api/sante` dans le navigateur du poste ; procédure F2, étape 4 |
+| Le poste n'arrive pas à basculer sur le PC de secours : bandeau « Le certificat du 2e serveur est refusé par ce poste… » | Autorité absente du poste, ou nom/IP de « PC de secours » absent du certificat du PC de secours | Installer l'autorité (étape 5.4) ou corriger l'adresse ; `https://<adresse de secours>/api/healthcheck` dans le navigateur du poste ; procédure F2, étape 4 |
 | Bandeau « Le 2e serveur ne répond pas… » | 2e serveur éteint, service pas démarré (il ne démarre qu'après la bascule), port 5443 fermé, adresse erronée | Vérifier le 2e serveur, le pare-feu, l'adresse saisie |
 | Bandeau « Le 2e serveur est joignable mais n'est pas encore basculé… » | API répond mais base pas encore promue | Lancer la bascule sur le 2e serveur (procédure F2) |
 | Bandeau « Le certificat du serveur est refusé par ce poste… » (serveur principal) | Autorité absente du poste ou adresse `PHARMA_API` absente du certificat | Étape 5.4 ; vérifier l'adresse (Administration, Imprimantes et étiquettes) |
@@ -1522,7 +1522,7 @@ Cocher tout avant le jour J.
 - [ ] Certificat HTTPS créé ; `appsettings.Https.json` présent ; règle de pare-feu 5443 active
 - [ ] PFX de l'autorité au coffre (hors ligne, seconde copie ailleurs), phrase de passe notée à part ; empreinte de l'autorité notée
 - [ ] Service `PharmaOfficine API` en démarrage automatique et `Running`
-- [ ] `http://localhost:5080/api/sante` répond ; le réseau ne répond pas sur 5080
+- [ ] `http://localhost:5080/api/healthcheck` répond ; le réseau ne répond pas sur 5080
 - [ ] Tous les postes : autorité installée (empreinte vérifiée), `PHARMA_API` en HTTPS, `PHARMA_POSTE` unique, écran de connexion sans avertissement
 - [ ] Téléphones : autorité installée (empreinte vérifiée), scanner mobile testé
 - [ ] `cle-integrite.dat` et `super-admin.dat` sauvegardés sur le disque externe, avec le mot de passe de la clé de scellement au coffre
@@ -1542,7 +1542,7 @@ Cocher tout avant le jour J.
 
 - [ ] Sauvegarde faite avant la mise à jour, et lisible (`pg_restore --list`)
 - [ ] Serveur central mis à jour d'abord (si l'officine est synchronisée)
-- [ ] Service arrêté puis redémarré, `http://localhost:5080/api/sante` répond
+- [ ] Service arrêté puis redémarré, `http://localhost:5080/api/healthcheck` répond
 - [ ] Scripts `database\migration` appliqués dans l'ordre, sans erreur ; pas de `schema.sql` ni de `clean.sql`
 - [ ] Scripts 112 et suivants lancés avec le rôle propriétaire (`pharma_proprietaire`), jamais avec `pharma_app`
 - [ ] API republiée et remplacée ; `appsettings.Https.json` toujours présent

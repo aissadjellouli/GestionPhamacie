@@ -68,7 +68,7 @@ public static class CoffreCle
     public static byte[] Dechiffrer(byte[] fichier, string motDePasse)
     {
         if (fichier is null || fichier.Length != TailleEnTete + TailleNonce + TailleEtiquette + TailleCle || !fichier.AsSpan(0, Entete.Length).SequenceEqual(Entete))
-            throw new RegleMetierException("Ce fichier n'est pas un export de clé de scellement Pharma Officine.");
+            throw new RegleMetierException("Ce fichier n'est pas un export de clé de scellement Tracodex Officine.");
         var iterations = BinaryPrimitives.ReadInt32BigEndian(fichier.AsSpan(Entete.Length, 4));
         if (iterations is < IterationsMin or > IterationsMax)
             throw new RegleMetierException("Fichier de clé abîmé.");

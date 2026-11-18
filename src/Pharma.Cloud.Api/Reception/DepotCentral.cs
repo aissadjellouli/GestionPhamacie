@@ -1,5 +1,6 @@
 using Npgsql;
 using NpgsqlTypes;
+using Pharma.Shared;
 
 namespace Pharma.Cloud.Api.Reception;
 
@@ -133,6 +134,40 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         }
         await tx.CommitAsync(ct);
         return maximums;
+    }
+
+    /// <summary>
+    /// Lot S6.5.3 (script 022) : déclaration d'un changement d'époque par l'officine du certificat (cloud_declarer_changement_epoque,
+    /// SECURITY DEFINER). Renvoi identique : la déclaration existante est rendue. PostgresException 22023 (contenu refusé) ou
+    /// 23505 (autre contenu pour la même époque) remontée à l'appelant.
+    /// </summary>
+    public async Task<ReponseDeclarationEpoqueDto> DeclarerEpoqueAsync(Guid officine, DeclarationEpoqueDto d, CancellationToken ct)
+    {
+        var fins = System.Text.Json.JsonSerializer.Serialize(d.FinsChaine.Select(f => new Dictionary<string, object?>
+        {
+            ["journal"] = f.Journal, ["cle_chaine"] = f.CleChaine, ["rang"] = f.Rang, ["id"] = f.Id, ["hash"] = f.Hash
+        }));
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await PoserOfficineAsync(cnx, tx, officine, ct);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT changement_id, recu_le, deja_declare, avant_premier_lot FROM cloud_declarer_changement_epoque($1, $2, $3, $4, $5, $6, $7, $8::jsonb)", cnx, tx);
+        cmd.Parameters.AddWithValue(d.AncienneEpoque);
+        cmd.Parameters.AddWithValue(d.NouvelleEpoque);
+        cmd.Parameters.AddWithValue(d.DernierLotLocal);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)d.DernierLotCentral ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)d.DetecteLe?.UtcDateTime ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.TimestampTz });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = d.DecideLe.UtcDateTime, NpgsqlDbType = NpgsqlDbType.TimestampTz });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)d.TitulaireId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = fins, NpgsqlDbType = NpgsqlDbType.Text });
+        ReponseDeclarationEpoqueDto rep;
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            await r.ReadAsync(ct);
+            rep = new ReponseDeclarationEpoqueDto(r.GetInt64(0), r.GetFieldValue<DateTimeOffset>(1), r.GetBoolean(2), r.GetBoolean(3));
+        }
+        await tx.CommitAsync(ct);
+        return rep;
     }
 
     /// <summary>Chargement complet annoncé et non terminé pour l'officine de ce certificat (script 006).</summary>

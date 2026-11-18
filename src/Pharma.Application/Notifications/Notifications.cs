@@ -112,9 +112,9 @@ public sealed record DonneesRapportQuotidien(
 
 public sealed class NotificationService(INotificationsDepot depot, Administration.IPharmacie? pharmacie = null) : INotificationService
 {
-    /// <summary>Signature des e-mails : le nom de la pharmacie (Administration, Langue et pharmacie), sinon « Pharma Officine ».</summary>
+    /// <summary>Signature des e-mails : le nom de la pharmacie (Administration, Langue et pharmacie), sinon « Tracodex Officine ».</summary>
     public static async Task<string> SignatureAsync(Administration.IPharmacie? pharmacie, CancellationToken ct = default) =>
-        (pharmacie is null ? null : (await pharmacie.LireAsync(ct)).Nom) is { Length: > 0 } nom ? nom.Trim() : "Pharma Officine";
+        (pharmacie is null ? null : (await pharmacie.LireAsync(ct)).Nom) is { Length: > 0 } nom ? nom.Trim() : "Tracodex Officine";
 
     public async Task<int> MettreEnFileAsync(ContenuNotification c, CancellationToken ct = default)
     {
@@ -196,7 +196,7 @@ public sealed class TraiterFileAttente(INotificationsDepot depot, IEnvoiEmail em
                 {
                     if (connexion is null) throw new InvalidOperationException(erreurSmtp ?? "Serveur SMTP non configuré.");
                     // « 3 lot(s) » → « 3 lots », « 1 boîte(s) » → « 1 boîte » (Accord) : textes venus du code et de la base
-                    await email.EnvoyerAsync(connexion, m.Adresse, Accord.Texte(m.Objet ?? "Pharma Officine"), Accord.Texte(m.Corps),
+                    await email.EnvoyerAsync(connexion, m.Adresse, Accord.Texte(m.Objet ?? "Tracodex Officine"), Accord.Texte(m.Corps),
                         m.CorpsHtml is null ? null : Accord.Texte(m.CorpsHtml), ct);
                 }
                 else
@@ -298,7 +298,7 @@ public static class RapportQuotidien
 
         var h = new System.Text.StringBuilder();
         h.Append("<!doctype html><html lang=\"fr\"><body style=\"font-family:Segoe UI,Arial,sans-serif;color:#1f2937;max-width:640px\">");
-        h.Append($"<h1 style=\"color:#0E5A32;font-size:20px\">{E(titre)}</h1>");
+        h.Append($"<h1 style=\"color:#0C655E;font-size:20px\">{E(titre)}</h1>");
         h.Append("<table style=\"border-collapse:collapse\">");
         Ligne(h, "Chiffre du jour", $"{Da(d.ChiffreAffaires)} ({d.NombreVentes} vente(s))");
         Ligne(h, "Dont tiers payant", Da(d.PartTiersPayant));
@@ -315,7 +315,7 @@ public static class RapportQuotidien
         Liste(h, "Nouvelles alertes de péremption", d.Peremptions);
         Liste(h, "Nouvelles ruptures", d.Ruptures);
         // Signé du nom de la pharmacie
-        var signature = string.IsNullOrWhiteSpace(pharmacie) ? "Pharma Officine" : pharmacie.Trim();
+        var signature = string.IsNullOrWhiteSpace(pharmacie) ? "Tracodex Officine" : pharmacie.Trim();
         texte.AppendLine().AppendLine(signature);
         h.Append($"<p style=\"margin:18px 0 0;color:#475467\">{E(signature)}</p>");
         h.Append("<p style=\"color:#6b7280;font-size:12px\">Message automatique. Aucune donnée de patient n’est transmise.</p></body></html>");
@@ -736,9 +736,9 @@ public sealed class EnvoyerMessageTest(INotificationsDepot depot, IPermissionSer
                 ?? throw new RegleMetierException("Destinataire introuvable : seules les adresses enregistrées reçoivent des messages.");
         if (!d.Actif) throw new RegleMetierException("Destinataire désactivé.");
         var reglages = await depot.ReglagesAsync(ct);
-        var contenu = new ContenuNotification(TypeNotification.Test, "Pharma Officine : message de test",
+        var contenu = new ContenuNotification(TypeNotification.Test, "Tracodex Officine : message de test",
             $"Bonjour {d.Nom}, ce message de test confirme que vous recevrez les alertes de la pharmacie. Signalez sa réception au titulaire pour valider votre adresse.",
-            null, "Pharma Officine : message de test. Signalez sa reception au titulaire pour valider votre numero.");
+            null, "Tracodex Officine : message de test. Signalez sa reception au titulaire pour valider votre numero.");
         var messages = NotificationService.Construire(contenu, [d], reglages.SmsActifs, await NotificationService.SignatureAsync(pharmacie, ct));
         if (messages.Count == 0)
             throw new RegleMetierException(d.CanalSms && !reglages.SmsActifs ? "Modem GSM non configuré : aucun SMS possible." : "Aucun canal utilisable pour ce destinataire.");

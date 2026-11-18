@@ -56,7 +56,7 @@
                 <strong>Vente @venteFaite.Numero encaissée : @Libelles.Dinars(venteFaite.MontantTotal, 2)</strong>
                 @if (venteFaite.PartOrganisme > 0) { <span>part organisme @Libelles.Dinars(venteFaite.PartOrganisme, 2)</span> }
                 @if (venteFaite.EcartChifaPatient > 0) { <span>Écart Chifa payé par le patient : @Libelles.Dinars(venteFaite.EcartChifaPatient, 2)</span> }
-                @if (venteFaite.Mode == "especes" && venteFaite.Rendu > 0) { <span style="font-size: 18px; font-weight: 600">Rendu : @Libelles.Dinars(venteFaite.Rendu, 2)</span> }
+                @if (venteFaite.Mode == "especes" && venteFaite.Rendu > 0) { <span class="rendu-vente">Rendu : @Libelles.Dinars(venteFaite.Rendu, 2)</span> }
                 @if (venteFaite.Mode == "credit") { <span>mise en crédit</span> }
                 @if (venteFaite.PayeParAvoir > 0) { <span>payé par avoir : @Libelles.Dinars(venteFaite.PayeParAvoir, 2)</span> }
                 <button type="button" class="btn" disabled="@impressionEnCours" @onclick="ImprimerTicketAsync">@(impressionEnCours ? "Impression…" : "Imprimer le ticket")</button>
@@ -420,9 +420,18 @@
                 @* Lot 7 : produit attendu par un patient (ou dû d'une vente en attente) redevenu disponible *@
                 @if (alertesDispo is { } ad && ad.Patients.Count + ad.VentesEnAttente.Count > 0)
                 {
+                    @* Seules les parties non nulles sont dites (2026-11-18 : « 0 patient à prévenir » laissait croire à un message sur les patients) ;
+                       un seul produit dû : vente et produit nommés ; le lien mène à ce qui est signalé *@
                     <div class="info-bandeau" role="status" data-champ="patients_a_prevenir">
-                        Produit redevenu disponible : @(ad.Patients.Count) patient(s) à prévenir@(ad.VentesEnAttente.Count > 0 ? $", {ad.VentesEnAttente.Count} produit(s) dû(s) de ventes en attente" : "").
-                        <button type="button" class="lien-bouton" @onclick="() => patientsAttenteOuvert = true">Voir les patients en attente</button>
+                        Produit redevenu disponible : @TexteDisponibilite(ad).
+                        @if (ad.Patients.Count > 0)
+                        {
+                            <button type="button" class="lien-bouton" @onclick="() => patientsAttenteOuvert = true">Voir les patients en attente</button>
+                        }
+                        @if (ad.VentesEnAttente.Count > 0 && attentes.Count > 0)
+                        {
+                            <button type="button" class="lien-bouton" @onclick="() => attentesOuvertes = true">Voir les ventes en attente</button>
+                        }
                     </div>
                 }
                 @if (patientsAttenteOuvert)
@@ -726,10 +735,23 @@
                 }
 
                 <!-- 2 · Client et ordonnance -->
-                <section class="panneau bloc-client" aria-label="Client et ordonnance">
+                @* data-repli-auto : poste.js replie le bloc en une ligne si l'écran déborde encore, panier au minimum (2026-11-18, 1366 × 768) *@
+                <section class="panneau bloc-client" aria-label="Client et ordonnance" data-repli-auto="@(RepliAutoPermis ? "1" : null)">
                     <div class="bloc-client-entete">
                         <strong>2 · Client et ordonnance</strong>
-                        @* Bloc réduit : pas d'étiquette (le résumé dit ce qui manque) ; titre et boutons sur une rangée *@
+                        @* Titre et boutons sur la première rangée, la consigne (psychotrope, liste I ou II…) sur toute la rangée suivante
+                           (2026-11-18 : à 1366 × 768, titre, consigne et boutons prenaient trois rangées) *@
+                        <div class="bloc-client-actions">
+                            @if (ClientOuvert && !ClientResume && !nouveauPatient && nouveauMedecin is null)
+                            {
+                                <button type="button" class="lien-bouton" title="Résumer le bloc en une ligne ; « Modifier » le rouvre" @onclick="ReduireClient">Réduire ▴</button>
+                            }
+                            <div class="filtres" role="group" aria-label="Type de vente">
+                                <button type="button" class="puce" aria-pressed="@(!tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(false)">Vente libre</button>
+                                <button type="button" class="puce" aria-pressed="@(tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(true)">Tiers payant</button>
+                            </div>
+                        </div>
+                        @* Bloc réduit : pas d'étiquette (le résumé dit ce qui manque) *@
                         @if (ClientResume) { }
                         else if (OrdonnanceObligatoire)
                         {
@@ -755,15 +777,6 @@
                         {
                             <span class="detail">aucun patient, aucune ordonnance exigée</span>
                         }
-                        <span class="espace"></span>
-                        @if (ClientOuvert && !ClientResume && !nouveauPatient && nouveauMedecin is null)
-                        {
-                            <button type="button" class="lien-bouton" title="Résumer le bloc en une ligne ; « Modifier » le rouvre" @onclick="ReduireClient">Réduire ▴</button>
-                        }
-                        <div class="filtres" role="group" aria-label="Type de vente">
-                            <button type="button" class="puce" aria-pressed="@(!tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(false)">Vente libre</button>
-                            <button type="button" class="puce" aria-pressed="@(tiersPayant ? "true" : "false")" @onclick="() => ChoisirTiersPayantAsync(true)">Tiers payant</button>
-                        </div>
                     </div>
 
                     @if (!ClientOuvert)
@@ -785,7 +798,8 @@
                             <span><strong>@(patient is null ? "Aucun patient" : $"{patient.Nom} {patient.Prenom}".Trim())</strong>@(tiersPayant ? $" · {OrganismeCode} {(resteSaisi is { } r ? $"reste {Libelles.Dinars(r, 2)}" : $"{taux} %")}" : "")@(medecin is not null ? $" · {medecin.Nom}" : "")@(medecin is not null || jetonScan is not null ? $" · ordonnance{(string.IsNullOrWhiteSpace(numeroOrdonnance) ? "" : " " + numeroOrdonnance.Trim())} du {datePrescription:dd/MM/yyyy}" : "")</span>
                             @if (ManqueClient is { } manque) { <span class="texte-attention">à compléter : @manque</span> }
                             <span class="espace"></span>
-                            <button type="button" class="lien-bouton" @onclick="ModifierClient">Modifier ▾</button>
+                            @* data-raccourci="client" : F6 et F5 rouvrent le bloc puis placent le curseur sur le patient ou le médecin (poste.js) *@
+                            <button type="button" class="lien-bouton" data-raccourci="client" @onclick="ModifierClient">Modifier ▾</button>
                         </div>
                     }
                     else
@@ -868,7 +882,15 @@
                             @if (AfficherMedecin)
                             {
                                 <div class="champ recherche">
-                                    <span class="etiquette-champ @(MedecinObligatoire ? "requis" : null)" title="@(OrdonnanceObligatoire ? "Psychotrope ou stupéfiant : ordonnance obligatoire" : MedecinParLeTaux ? "Tiers payant : l’organisme paie une partie du médicament" : null)">Médecin@(MedecinObligatoire ? " (obligatoire)" : jetonScan is not null ? " (ordonnance scannée)" : "") <span class="detail">F5</span></span>
+                                    @* « Nouveau médecin » à droite du libellé, comme « Nouveau patient » (2026-11-18) : le lien « Créer le médecin « … » » qui
+                                       apparaissait sous le champ dès 2 lettres faisait bouger le bloc pendant la frappe *@
+                                    <div class="etiquette-ligne">
+                                        <span class="etiquette-champ @(MedecinObligatoire ? "requis" : null)" title="@(OrdonnanceObligatoire ? "Psychotrope ou stupéfiant : ordonnance obligatoire" : MedecinParLeTaux ? "Tiers payant : l’organisme paie une partie du médicament" : null)">Médecin@(MedecinObligatoire ? " (obligatoire)" : jetonScan is not null ? " (ordonnance scannée)" : "") <span class="detail">F5</span></span>
+                                        @if (medecin is null && nouveauMedecin is null)
+                                        {
+                                            <button type="button" class="lien-bouton" title="Fiche du médecin, nom repris de la recherche" @onclick="OuvrirNouveauMedecin">Nouveau médecin</button>
+                                        }
+                                    </div>
                                     @if (medecin is not null)
                                     {
                                         @* Médecin choisi sur une ligne : nom et « Changer » ; la spécialité au survol *@
@@ -887,10 +909,6 @@
                                         @if (nouveauMedecin is not null)
                                         {
                                             <span class="detail">Nouveau médecin : complétez sa fiche ci-dessous.</span>
-                                        }
-                                        else if (medecinTexte.Trim().Length >= 2)
-                                        {
-                                            <button type="button" class="lien-bouton" style="align-self: flex-start" @onclick="OuvrirNouveauMedecin">Créer le médecin « @medecinTexte.Trim() »</button>
                                         }
                                     }
                                 </div>
@@ -1501,6 +1519,25 @@
         (clientEdition, reduitDemande) = (false, true);
     }
     private void ModifierClient() => (clientEdition, reduitDemande) = (true, false);
+    /// <summary>
+    /// Repli automatique permis (2026-11-18) : bloc exigé par le panier, ouvert, hors saisie (ni « Modifier », ni patient ou médecin
+    /// choisi depuis le dernier produit, ni fiche en création) et sans message à lire dans le bloc (psychotrope interdit, porteur).
+    /// </summary>
+    private bool RepliAutoPermis => ClientExige && !ClientResume && !clientEdition && !nouveauPatient && nouveauMedecin is null
+        && !PsychotropeInterdit && !PorteurDemande;
+
+    /// <summary>
+    /// Écran trop court (1366 × 768, bandeau de lot…) : appelé par poste.js quand l'écran déborde encore avec le panier à sa hauteur
+    /// minimale et que le curseur n'est pas dans le bloc client. Le bloc se résume en une ligne (ce qui manque y est signalé) ;
+    /// « Modifier », F6 ou F5 le rouvrent, et il reste alors ouvert jusqu'au produit suivant.
+    /// </summary>
+    [JSInvokable]
+    public Task ReplierClientAuto()
+    {
+        if (!RepliAutoPermis) return Task.CompletedTask;
+        reduitDemande = true;
+        return InvokeAsync(StateHasChanged);
+    }
     /// <summary>Ce que le panier exige encore du client (patient, médecin, organisme) ; null : rien.</summary>
     private string? ManqueClient => string.Join(", ", new[]
     {
@@ -1610,6 +1647,22 @@
     private string? messageRetour;
     /// <summary>Lot 7 : demandes de patients et produits dus redevenus disponibles (lu à l'ouverture de la Caisse, puis toutes les 5 minutes).</summary>
     private AlertesDisponibiliteDto? alertesDispo;
+
+    /// <summary>
+    /// Texte du bandeau « produit redevenu disponible » (2026-11-18) : seulement les parties non nulles ; un seul produit dû :
+    /// produit, quantité et vente en attente nommés (ex. « AMOXYPEN × 1 dû à la vente en attente « Fictif Client Deux » »).
+    /// </summary>
+    internal static string TexteDisponibilite(AlertesDisponibiliteDto ad)
+    {
+        var parties = new List<string>();
+        if (ad.Patients.Count > 0)
+            parties.Add(ad.Patients.Count == 1 ? "1 patient à prévenir" : $"{ad.Patients.Count} patients à prévenir");
+        if (ad.VentesEnAttente.Count == 1 && ad.VentesEnAttente[0] is { } du)
+            parties.Add($"{du.Produit} × {du.Quantite} dû à la vente en attente « {du.Libelle} »");
+        else if (ad.VentesEnAttente.Count > 1)
+            parties.Add($"{ad.VentesEnAttente.Count} produits dus de ventes en attente");
+        return string.Join(", ", parties);
+    }
     private bool patientsAttenteOuvert;
 
     /// <summary>Fermeture de la fenêtre « Patients en attente » : le bandeau est relu (demandes servies ou prévenues entre-temps).</summary>
@@ -1710,6 +1763,8 @@
         {
             if (PatientManquant) alerterPatient = true;   // la bulle « À renseigner » s'ouvre seulement maintenant
             if (MedecinManquant && !PatientManquant) alerterMedecin = true;          // une bulle à la fois : le patient d’abord
+            // Bloc client replié (écran court, 2026-11-18) : il se rouvre pour que la bulle s'affiche sur le champ à renseigner
+            if ((alerterPatient || alerterMedecin) && ClientResume) ModifierClient();
         }
         StateHasChanged();
     }

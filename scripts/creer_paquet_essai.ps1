@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Fabrique le paquet d'essai de Pharma Officine, à copier sur le PC d'un pharmacien qui veut l'essayer.
+    Fabrique le paquet d'essai de Tracodex Officine, à copier sur le PC d'un pharmacien qui veut l'essayer.
 
 .DESCRIPTION
     Le paquet contient :

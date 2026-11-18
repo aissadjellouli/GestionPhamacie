@@ -20,21 +20,22 @@
   --bordure: #E0D8CB;
   --bordure-2: #F1ECE4;
   --bordure-champ: #CFC6B8;
-  --accent: #0E5A32;
-  --accent-fonce: #0A4526;
-  --accent-clair: #E9F3EC;
-  --accent-trait: #A9D2B6;
+  --accent: #0F766E;          /* vert du logo Tracodex (2026-11-18) */
+  --accent-fonce: #0B5D57;
+  --accent-clair: #E3F3F0;
+  --accent-trait: #99D3CB;
   --ambre: #E08A1E;          /* accent chaud : repères de navigation et soulignés, jamais pour une alerte */
+  --bronze: #8A5A24; --bronze-fond: #F5EADB; --bronze-trait: #C99A64;   /* rendu de monnaie à la caisse (2026-11-18) */
   --urgent: #912018;    --urgent-fond: #FEE4E2;   --urgent-vif: #B42318;
   --attention: #7A2E0E; --attention-fond: #FEF0C7;
   --info: #344054;      --info-fond: #EAECF0;
   --alerte-fond: #FEF3F2; --alerte-bord: #FECDCA;
   --avert-fond: #FFFAEB;  --avert-bord: #FEDF89;
-  --accent-texte: #0E5A32;   /* vert du texte (liens, titres actifs) ; le fond des boutons reste --accent */
+  --accent-texte: #0C655E;   /* vert du texte, un peu plus foncé que le logo (contraste ≥ 5 sur le menu « grès ») (liens, titres actifs) ; le fond des boutons reste --accent */
   --texte-inactif: #98A2B3;
-  --menu-fond: #E3DBCE; --menu-actif: #CFE0D3; --menu-filet: #D2C7B6;   /* colonne du menu vertical, teinte « grès » (2026-11-18 : le blanc cassé fatiguait l'œil) */
+  --menu-fond: #E3DBCE; --menu-actif: #CDE4E0; --menu-filet: #D2C7B6;   /* colonne du menu vertical, teinte « grès » (2026-11-18 : le blanc cassé fatiguait l'œil) */
   --bandeau-fond: #EEF4FF; --bandeau-bord: #C7D7FE; --bandeau-texte: #3538CD;
-  --graphique: #1F8A4C;
+  --graphique: #0D9488;
   color-scheme: light;
   font-family: Poppins, Inter, "Segoe UI", system-ui, sans-serif;
   color: var(--texte);
@@ -148,7 +149,10 @@ input, select, button { font: inherit; }
 .rendu-caisse { display: flex; align-items: center; justify-content: flex-end; box-sizing: border-box; height: 44px; padding: 0 12px; border-radius: 8px;
   border: 1px solid var(--bordure); background: var(--surface-2); color: var(--texte); font-size: 26px; font-weight: 700; white-space: nowrap;
   font-variant-numeric: tabular-nums; overflow: hidden; }
-.rendu-caisse.a-rendre { background: var(--avert-fond); border-color: var(--avert-bord); color: var(--attention); }
+.rendu-caisse.a-rendre { background: var(--bronze-fond); border: 2px solid var(--bronze-trait); color: var(--bronze); }
+/* Rendu en bronze (demande du titulaire, 2026-11-18) : montant, libellé « Rendu » et rendu rappelé après l'encaissement */
+.paiement-especes .champ:has(.rendu-caisse.a-rendre) .etiquette-champ { color: var(--bronze); }
+.rendu-vente { color: var(--bronze); font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
 /* Liste vide : l'étape suivante proposée */
 .action-suivante { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 10px; }
 td.vide .action-suivante { justify-content: center; }
@@ -286,6 +290,9 @@ input[type=date], input[type=time] { height: 44px; padding: 0 12px; border-radiu
 .tableau th { padding: 12px; font-weight: 500; }
 .tableau td { padding: 12px; }
 .tableau th:first-child, .tableau td:first-child { padding-left: 16px; }
+/* Tableau large (une dizaine de colonnes) resserré (2026-11-18, Écarts et risques › Par employé) : tient sans défilement horizontal à 1366 px */
+.tableau.tableau-serre th, .tableau.tableau-serre td { padding: 10px 8px; }
+.tableau.tableau-serre th:first-child, .tableau.tableau-serre td:first-child { padding-left: 12px; }
 .tableau tbody tr { border-top: 1px solid var(--bordure-2); }
 /* Relief pour la lecture : bandeau d'en-tête marqué, trait entre colonnes, une ligne sur deux teintée, ligne survolée
    surlignée, total séparé. Couleurs mêlées au texte ou à l'accent : valables en thème clair comme en sombre. */
@@ -450,6 +457,9 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 .achats-ligne { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
 /* Ligne de valeurs en lecture seule (étiquette + valeur ou pastille) : étiquettes alignées en haut */
 .achats-ligne.ligne-lecture { align-items: flex-start; }
+/* Champs courts (2026-11-18, Emplacements) : la largeur donnée au champ est respectée ; sans cela un champ texte garde sa largeur
+   naturelle (~213 px), la ligne passe à la ligne à 1366 × 768 et un champ tombe sous la liste ouverte du champ du dessus */
+.achats-ligne.champs-courts > .champ { min-width: 0; }
 .ligne-cliquable { cursor: pointer; }
 .ligne-cliquable:hover { background: var(--surface-2); }
 .ligne-cliquable.choisie { background: var(--accent-clair); }
@@ -593,58 +603,60 @@ details.avance[open] summary { margin-bottom: 8px; }
 /* ---- Affichage sombre : choix de l'employé (data-theme sur <html>), « Automatique » suit Windows ---- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="clair"]) {
-    --fond: #121915;
-    --surface: #1A231E;
-    --surface-2: #1F2A24;
-    --texte: #E6ECE8;
-    --texte-2: #B3C0B9;
-    --texte-3: #CAD4CF;
-    --bordure: #2E3B34;
-    --bordure-2: #26322B;
-    --bordure-champ: #4A5C53;
-    --accent: #1F6B43;
-    --accent-fonce: #8FD6AE;
-    --accent-clair: #1C3528;
-    --accent-trait: #2F6A48;
-    --accent-texte: #7CCB9E;
+    --fond: #0D1A20;   /* thème sombre sur l'« encre » du logo Tracodex (#102A33), 2026-11-18 */
+    --surface: #132329;
+    --surface-2: #182B32;
+    --texte: #E4EEF0;
+    --texte-2: #AFC3C8;
+    --texte-3: #C8D7DA;
+    --bordure: #29414A;
+    --bordure-2: #1F343C;
+    --bordure-champ: #45616B;
+    --accent: #0F766E;
+    --accent-fonce: #99F0E0;
+    --accent-clair: #123A36;
+    --accent-trait: #1F5F59;
+    --accent-texte: #2DD4BF;
     --ambre: #F0A040;
+    --bronze: #E3A869; --bronze-fond: #2E2317; --bronze-trait: #7A5530;
     --urgent: #F97066;    --urgent-fond: #3A1A17;   --urgent-vif: #D92D20;
     --attention: #FEC84B; --attention-fond: #3A2A10;
-    --info: #D0D5DD;      --info-fond: #2A3530;
+    --info: #D0D5DD;      --info-fond: #21363E;
     --alerte-fond: #2D1A18; --alerte-bord: #6E2A22;
     --avert-fond: #2E2612;  --avert-bord: #6B5418;
-    --texte-inactif: #7D8B84;
+    --texte-inactif: #7C9097;
     --menu-fond: var(--surface); --menu-actif: var(--accent-clair); --menu-filet: var(--bordure);   /* thème sombre inchangé */
     --bandeau-fond: #1B2140; --bandeau-bord: #3B4A8C; --bandeau-texte: #A4BCFD;
-    --graphique: #3E9D69;
+    --graphique: #14B8A6;
     color-scheme: dark;
   }
 }
 :root[data-theme="sombre"] {
-  --fond: #121915;
-  --surface: #1A231E;
-  --surface-2: #1F2A24;
-  --texte: #E6ECE8;
-  --texte-2: #B3C0B9;
-  --texte-3: #CAD4CF;
-  --bordure: #2E3B34;
-  --bordure-2: #26322B;
-  --bordure-champ: #4A5C53;
-  --accent: #1F6B43;
-  --accent-fonce: #8FD6AE;
-  --accent-clair: #1C3528;
-  --accent-trait: #2F6A48;
-  --accent-texte: #7CCB9E;
+  --fond: #0D1A20;
+  --surface: #132329;
+  --surface-2: #182B32;
+  --texte: #E4EEF0;
+  --texte-2: #AFC3C8;
+  --texte-3: #C8D7DA;
+  --bordure: #29414A;
+  --bordure-2: #1F343C;
+  --bordure-champ: #45616B;
+  --accent: #0F766E;
+  --accent-fonce: #99F0E0;
+  --accent-clair: #123A36;
+  --accent-trait: #1F5F59;
+  --accent-texte: #2DD4BF;
   --ambre: #F0A040;
+  --bronze: #E3A869; --bronze-fond: #2E2317; --bronze-trait: #7A5530;
   --urgent: #F97066;    --urgent-fond: #3A1A17;   --urgent-vif: #D92D20;
   --attention: #FEC84B; --attention-fond: #3A2A10;
-  --info: #D0D5DD;      --info-fond: #2A3530;
+  --info: #D0D5DD;      --info-fond: #21363E;
   --alerte-fond: #2D1A18; --alerte-bord: #6E2A22;
   --avert-fond: #2E2612;  --avert-bord: #6B5418;
-  --texte-inactif: #7D8B84;
+  --texte-inactif: #7C9097;
   --menu-fond: var(--surface); --menu-actif: var(--accent-clair); --menu-filet: var(--bordure);   /* thème sombre inchangé */
   --bandeau-fond: #1B2140; --bandeau-bord: #3B4A8C; --bandeau-texte: #A4BCFD;
-  --graphique: #3E9D69;
+  --graphique: #14B8A6;
   color-scheme: dark;
 }
 
@@ -904,6 +916,21 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .bloc-client { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; flex-shrink: 0; }
 .bloc-client-entete { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .bloc-client-entete .puce { height: 36px; }
+/* 1366 × 768 (2026-11-18) : titre et boutons sur la première rangée, la consigne (.indice) seule sur la rangée suivante */
+.bloc-client-actions { order: 1; margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.bloc-client-entete > .indice { order: 2; flex-basis: 100%; }
+/* Libellé du panier sur une ligne, au-dessus des boutons (à 1366 px, le champ de recherche n'a que ~150 px) */
+.ligne-scan label[for="scan"] { white-space: nowrap; }
+/* Propositions de la caisse sur toute la largeur de la ligne (sous le champ et les boutons) : à 1366 px, réduites à la largeur
+   du champ, elles avaient une barre de défilement horizontale (produits en rupture, remplaçants) */
+.ligne-scan { position: relative; }
+.ligne-scan > .champ.recherche { position: static; }
+/* Fenêtre basse (1366 × 768, 2026-11-18) : en tiers payant avec un produit, la colonne de paiement dépassait de 12 px ; marges
+   du panneau resserrées (rien n'est masqué) */
+@media (max-height: 800px) {
+  .caisse-vente .reglement { padding-top: 14px; padding-bottom: 14px; }
+  .caisse-vente .tiers-payant-paiement { gap: 6px; }
+}
 .indice { padding: 2px 10px; border-radius: 999px; background: var(--info-fond); color: var(--info); font-size: 13px; }
 .indice.requis { background: var(--urgent-fond); color: var(--urgent); }
 .bloc-client-reduit { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }

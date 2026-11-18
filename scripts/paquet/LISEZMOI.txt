@@ -1,7 +1,7 @@
 PHARMA OFFICINE - ESSAI
 =======================
 
-Ce dossier permet d'essayer Pharma Officine sur un PC Windows, avec des données de démonstration
+Ce dossier permet d'essayer Tracodex Officine sur un PC Windows, avec des données de démonstration
 fictives (produits, patients, grossistes, factures). Rien n'est envoyé sur Internet.
 
 1. AVANT DE COMMENCER

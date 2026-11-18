@@ -1,6 +1,6 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-18 (fin de journée, après le commit `f404e6f`). Vue d'ensemble courte ; le détail de chaque point est dans
+Point d'avancement du 2026-11-18 (fin de journée, après le commit `f404e6f` ; défauts d'écran à 1366 × 768 corrigés le soir, non commités). Vue d'ensemble courte ; le détail de chaque point est dans
 [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et dans les documents cités. À mettre à jour à chaque
 point d'avancement.
 
@@ -14,23 +14,47 @@ Rien. Lots clos et commités le 2026-11-18 (branche `develop`, non poussée) :
 
 ## 2. Fait, à commiter
 
-Rien.
+- Défauts d'écran à 1366 × 768 du 2026-11-18 (les 4 du § 4), corrigés et mesurés le soir même (0 px, clair et sombre, 1366 × 768
+  et 1536 × 890 ; architecture 243/243) : Caisse (repli automatique du bloc client, en-tête sur une rangée, paiement resserré),
+  propositions de la caisse sur toute la largeur, menu du contrôle interne, fiche d'un emplacement. Détail : charte-graphique.md
+  (« Défauts à 1 366 × 768 corrigés »), regles-metier.md « Caisse en trois parties ». Fichiers : `Caisse.razor`,
+  `NavControleInterne.razor`, `AdminEmplacements.razor`, `app.css`, `poste.js`, docs.
+- **Nouveau logo Tracodex** (gélule), adopté par le titulaire le 2026-11-18 : en-tête, connexion, icône de la fenêtre et du
+  `.exe` (tailles 16 à 256), application mobile, titre des PDF ; sources et règles dans `docs/branding/` (rattaché au `.sln` et
+  au `.slnx`) ; charte-graphique.md § Logo. Non indexé (les corrections d'écran ci-dessus sont indexées à part).
+- **Vert de l'interface = vert du logo** (2026-11-18) : variables de `app.css` (clair et sombre), application mobile, PDF, e-mails,
+  écran du client ; contrastes vérifiés (≥ 5 pour le texte), captures avant et après ; charte-graphique.md « Fonds ». Non indexé.
+- **Thème sombre sur l'« encre » du logo** (2026-11-18) : fonds, bordures et textes bleu-vert au lieu de gris-vert (poste et
+  mobile), contrastes égaux ou meilleurs, captures ; charte-graphique.md « Fonds ». Non indexé.
+- **Corrections du 2026-11-18 au soir** (non indexées) : champ patient ou médecin de la Caisse qui sautait pendant la frappe
+  (listes de propositions écartées du calcul des cadres, `poste.js` ; « Nouveau médecin » à droite du libellé) ; bandeau « produit
+  redevenu disponible » sans « 0 patient » ; Pertes et vigilance › Par employé à 0 px à 1366 × 768 (`.tableau-serre`) ; nom
+  « PharmaOfficine » puis, sur choix du titulaire, **« Tracodex Officine »** (logiciel local) et **« Tracodex Réseau »** (serveur central) partout (sauf dossier `Documents\Pharma Officine`, identifiants de pilote de la reprise et scripts SQL déjà
+  exécutés). Onglet Jour par jour aussi à 0 px. Rendu de monnaie de la Caisse en bronze (pendant la saisie et après
+  l'encaissement).
 
 ## 3. Ensuite
 
-- [ ] **Push** des 4 commits locaux par le titulaire (branche `develop`).
+- [ ] **Push** des commits locaux par le titulaire (branche `develop` : 44 commits d'avance sur `origin/develop` constatés le 2026-11-18 au soir).
 - [ ] **Port 5432 du poste de développement** (par le titulaire, PowerShell administrateur) : `listen_addresses = 'localhost'` dans
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
       Visual Studio arrêté avant. Constat du 2026-11-18 : écoute sur toutes les adresses, `pg_hba.conf` limité à 127.0.0.1 et ::1, aucune règle de pare-feu.
-- [ ] **S6.5, intégrité après restauration** : conception et décisions S6.5-D1 à D9 validées (recommandations acceptées), code sur « go S6.5 » :
-      [conception-synchronisation.md](conception-synchronisation.md) § 31.
+- [ ] **S6.5, intégrité après restauration** (« go S6.5 » du 2026-11-18) : **central fait** (S6.5.1 à S6.5.3 : scripts 022 et 023,
+      route `POST /api/v1/epoque`, console `--restaurations-integrite`, export de départ ; passés sur `pharmacie_cloud_dev`, non commités).
+      **Reste** : S6.5.4 officine (script 151, envoi de la déclaration, compteur de tickets, prise d'acte, écran), S6.5.5 essai de bout en
+      bout, S6.5.6 documentation : [conception-synchronisation.md](conception-synchronisation.md) § 31.6.
 
-## 4. Défauts d'écran constatés le 2026-11-18 (déjà présents avant, non corrigés)
+## 4. Défauts d'écran constatés le 2026-11-18
 
-- [ ] Caisse en tiers payant, avec produit et bandeau de lot, à 1366 × 768 : la page défile de 145 px (piste : replier le bloc client).
-- [ ] Liste du panier de la caisse à 1366 × 768 : barre de défilement horizontale (bouton « En attente (5) », longues lignes en rupture).
-- [ ] Surveillance à 1366 × 768 : le menu de gauche défile de 37 px.
-- [ ] Emplacements à 1366 × 768 : le champ « Zone » passe sous la liste ouverte des rayons.
+- [x] Caisse en tiers payant, avec produit et bandeau de lot, à 1366 × 768 : défilait de 164 px → 0 (bloc client replié de lui-même).
+- [x] Liste de recherche de la caisse à 1366 × 768 : barre horizontale → liste sur toute la largeur de la ligne.
+- [x] Surveillance à 1366 × 768 : menu de gauche 37 px → 0 (tiroir et produits sensibles dans « Pertes et vigilance »).
+- [x] Emplacements à 1366 × 768 : « Zone » sous la liste des rayons → les cinq champs sur une ligne.
+- [x] Contrôle interne › Pertes et vigilance › Par employé à 1366 × 768 : 33 px et barre horizontale → 0 (corrigé le 2026-11-18).
+- [ ] **Données d'essai dans `pharmacie_test`** (2026-11-18, soir) : ventes en attente de 23:00 (1 produit, 2 412,50 DA) et 23:05
+      (1 produit, 1 930,00 DA), créées par mes essais ; vente en attente de 22:12 (3 produits, 1 417,50 DA, titulaire),
+      créée par mon essai en quittant la Caisse panier rempli ; une autre de 22:13 (2 produits, 782,50 DA, motif « Autre : test »),
+      pas de mon fait (poste de Visual Studio encore ouvert sur mon API ?). Abandon sur accord seulement (l'abandon crée une anomalie).
 - Rappel de la règle (précision du titulaire, 2026-11-18) : seuls les **écrans principaux** ne défilent jamais ; un formulaire ouvert peut faire défiler la page.
 
 ## 5. Décisions attendues du titulaire
@@ -55,6 +79,8 @@ Rien.
 - [ ] Hébergeur en Algérie agréé ARPCE et nom de domaine `.dz` (préalable au serveur central réel).
 - [ ] Déclaration à l'ANPDP ; texte du consentement SMS ; test d'intrusion avant la mise en service du central.
 - [ ] Lettre à la CNAS (format du QR Chifa, export, volets).
+- [ ] Marque Tracodex : recherche d'antériorité à l'INAPI (classes 9, 42 et 5) ; avis sur le croissant du logo (emblème
+      national, ordonnance 03-06) avant le dépôt ([branding/logo.md](branding/logo.md)).
 - [ ] Wilayas 59 à 69 à vérifier au Journal officiel.
 - [ ] Exports de l'ancien logiciel, catalogues des grossistes, tableaux d'amortissement des banques, modèle de feuille CVM/MDN.
 - [ ] Questions au comptable : TVA des pertes et dons, don partiel, intérêts et marge des prêts (mourabaha) ; n° de tickets sautés après une restauration (S6.5-D6).
@@ -69,6 +95,7 @@ Rien.
 - [ ] Synchronisation avec un vrai serveur central (restauration, bascule, départ en réel).
 
 ## 8. Plus tard (sur accord explicite du titulaire)
+
 
 - [ ] **Synchronisation S7** : écrans du central, accès à distance du titulaire, multi-officines (après le choix de l'hébergeur).
 - [ ] Découpage par officine des grandes tables du central.

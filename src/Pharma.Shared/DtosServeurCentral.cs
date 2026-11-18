@@ -51,6 +51,36 @@ public sealed record EtatCentralDto(int Epoque, long DernierRecu, int? EpoqueMax
 public sealed record MaximumsCentralDto(IReadOnlyDictionary<string, long> Tables);
 
 /// <summary>
+/// Lot S6.5 (conception-synchronisation.md § 31) : fin d'une chaîne de l'officine au moment du changement d'époque : journal, clé de
+/// chaîne, dernier rang, n° de la ligne et empreinte (hexadécimal, 64 ou 128 caractères). Rang 0 : journal vide.
+/// </summary>
+public sealed record FinChaineDto(string Journal, string CleChaine, long Rang, string? Id, string? Hash);
+
+/// <summary>
+/// Lot S6.5 (S6.5-D1) : déclaration POST /api/v1/epoque, envoyée par l'officine après « Repartir sur une nouvelle époque », AVANT tout
+/// lot de la nouvelle époque (le central ne classe une restauration que si la déclaration est arrivée avant). Aucune donnée de
+/// ligne, aucun nom : n° du titulaire seulement. Réponse : <see cref="ReponseDeclarationEpoqueDto"/> ; renvoi identique accepté.
+/// </summary>
+public sealed record DeclarationEpoqueDto(int AncienneEpoque, int NouvelleEpoque, long DernierLotLocal, long? DernierLotCentral,
+    DateTimeOffset? DetecteLe, DateTimeOffset DecideLe, long? TitulaireId, IReadOnlyList<FinChaineDto> FinsChaine)
+{
+    /// <summary>Motif du refus, ou null si la déclaration est recevable (mêmes bornes que la fonction du central).</summary>
+    public string? Refus() =>
+        AncienneEpoque < 1 || NouvelleEpoque <= AncienneEpoque ? "Époques hors bornes : la nouvelle doit suivre l'ancienne."
+        : DernierLotLocal < 0 || DernierLotCentral < 0 ? "N° de lot hors bornes."
+        : FinsChaine is null || FinsChaine.Count > 20 ? "Fins de chaîne attendues (20 au plus)."
+        : FinsChaine.Any(f => f is null || f.Rang < 0 || string.IsNullOrEmpty(f.Journal) || f.Journal.Length > 63
+              || !f.Journal.All(c => c is (>= 'a' and <= 'z') or '_') || string.IsNullOrEmpty(f.CleChaine) || f.CleChaine.Length > 100
+              || (f.Id is { Length: > 40 }) || (f.Hash is not null && (f.Hash.Length is not (64 or 128) || !f.Hash.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')))))
+            ? "Fin de chaîne invalide."
+        : null;
+}
+
+/// <summary>Réponse de POST /api/v1/epoque : n° de la déclaration, date de réception au central, renvoi d'une déclaration déjà reçue,
+/// et si elle est arrivée avant tout lot de la nouvelle époque (condition 1 du § 31.2).</summary>
+public sealed record ReponseDeclarationEpoqueDto(long Id, DateTimeOffset RecuLe, bool DejaDeclaree, bool AvantPremierLot);
+
+/// <summary>
 /// Début d'un chargement complet (lot S6) : n° local du chargement, époque, repère (n° de file des lignes de l'instantané),
 /// dernier lot accusé dans l'officine (si le serveur central ne l'a plus, les lots manquants sont abandonnés et remplacés par
 /// le chargement), motif et tables chargées.

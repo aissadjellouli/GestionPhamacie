@@ -258,7 +258,7 @@ public sealed class AssocierCodeChifa(IVoletsChifa volets, IPermissionService dr
 }
 
 /// <summary>
-/// Canal de facturation de la part organisme d'une vente (2026-11-15, script 089) : « logiciel » (facture d'organisme de Pharma Officine),
+/// Canal de facturation de la part organisme d'une vente (2026-11-15, script 089) : « logiciel » (facture d'organisme de Tracodex Officine),
 /// « chifa » (facturée par le logiciel Chifa : volet scanné, ou case « facturée par Chifa » avec le n° de facture Chifa) ou « mdn »
 /// (organisme militaire, code MDN). Une vente « chifa » ou « mdn » n'est jamais refacturée à l'organisme par le logiciel.
 /// </summary>

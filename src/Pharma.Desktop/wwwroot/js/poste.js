@@ -69,11 +69,14 @@ document.addEventListener('keydown', function (e) {
   if ((e.key === 'F5' || e.key === 'F6' || e.key === 'F8') && window.pharma._caisse) {
     e.preventDefault();
     if (document.querySelector('.voile, [aria-modal="true"]')) return;
-    var cible = document.querySelector('[data-raccourci="' + (e.key === 'F6' ? 'patient' : e.key === 'F5' ? 'medecin' : 'tiroir') + '"]');
+    var nom = e.key === 'F6' ? 'patient' : e.key === 'F5' ? 'medecin' : 'tiroir';
+    var cible = document.querySelector('[data-raccourci="' + nom + '"]');
+    // Bloc client résumé en une ligne (2026-11-18) : F6 et F5 le rouvrent (« Modifier ») puis placent le curseur sur le champ
+    if (!cible && nom !== 'tiroir') cible = document.querySelector('[data-raccourci="client"]');
     if (!cible) return;
     if (cible.tagName === 'INPUT') { cible.focus(); cible.select(); return; }
     cible.click();
-    if (e.key === 'F6') setTimeout(function () { var champ = document.querySelector('input[data-raccourci="patient"]'); if (champ) champ.focus(); }, 150);
+    if (nom !== 'tiroir') setTimeout(function () { var champ = document.querySelector('input[data-raccourci="' + nom + '"]'); if (champ) champ.focus(); }, 150);
   }
   // Navigation (docs/navigation.md) : Ctrl + K ouvre la recherche partout ; Ctrl + Maj + lettre ouvre le domaine qui l'affiche
   // dans le menu du haut (data-touche ; un domaine sans droit n'y est pas, le raccourci ne fait alors rien)
@@ -409,7 +412,17 @@ window.pharma.tableaux = (function () {
   // Cadre placé dans un « cadre-unique » (2026-11-15, Encaisser une dette) : c'est le cadre englobant qui défile seul,
   // le cadre intérieur n'a pas de hauteur propre (pas de barres de défilement imbriquées)
   function interieur(c) { return !!(c.parentElement && c.parentElement.closest(".cadre-unique")); }
+  // Listes de propositions ouvertes (.suggestions) écartées de la mesure (2026-11-18) : flottantes et déjà gardées dans la
+  // fenêtre par leur propre placement, elles ne sont pas un débordement de l'écran. Comptées, elles réduisaient le panier le
+  // temps de leur placement : le champ patient ou médecin sautait d'environ 130 px pendant la frappe.
   function ajuster() {
+    const listes = Array.from(document.querySelectorAll(".suggestions")).filter(function (l) { return l.style.display !== "none"; })
+      .map(function (l) { return { l: l, haut: l.scrollTop }; });
+    listes.forEach(function (x) { x.l.style.display = "none"; });
+    try { ajusterCadres(); }
+    finally { listes.forEach(function (x) { x.l.style.display = ""; x.l.scrollTop = x.haut; }); }
+  }
+  function ajusterCadres() {
     const zoom = parseFloat(document.documentElement.style.zoom) || 1;
     const fenetre = window.innerHeight / zoom;
     document.querySelectorAll(".cadre-unique .tableau-cadre, .cadre-unique .cadre-defilant").forEach(function (c) {
@@ -451,6 +464,13 @@ window.pharma.tableaux = (function () {
       // Marges sous les colonnes : si la fenêtre déborde encore, le panier rend l'excédent
       const reste = Math.ceil(Math.max(d.scrollHeight - d.clientHeight, document.documentElement.getBoundingClientRect().height - window.innerHeight) / zoom);
       if (reste > 0) poser(prioritaire, Math.max(minimum(prioritaire), (parseFloat(prioritaire.style.height) || prioritaire.clientHeight) - reste));
+    }
+    // Caisse (2026-11-18) : panier à sa hauteur minimale et écran qui déborde encore (1366 × 768, bandeau de lot…) : le bloc client
+    // se résume en une ligne, jamais pendant sa saisie (curseur dans le bloc) ; la page Caisse dit si le repli est permis (data-repli-auto)
+    const bloc = document.querySelector('.bloc-client[data-repli-auto]');
+    if (bloc && window.pharma._caisse && !bloc.contains(document.activeElement)) {
+      const encore = Math.ceil(Math.max(d.scrollHeight - d.clientHeight, document.documentElement.getBoundingClientRect().height - window.innerHeight) / zoom);
+      if (encore > 0) window.pharma._caisse.invokeMethodAsync('ReplierClientAuto');
     }
   }
   let prevu = false;

@@ -3,7 +3,7 @@
     PC serveur en panne : remet la pharmacie en service sur le PC de secours à partir de la dernière copie de secours.
 
 .DESCRIPTION
-    À lancer sur le PC de secours, où PostgreSQL et l'API Pharma Officine sont déjà installés (docs/mise-en-production.md,
+    À lancer sur le PC de secours, où PostgreSQL et l'API Tracodex Officine sont déjà installés (docs/mise-en-production.md,
     « PC serveur en panne »). Étapes :
       1. dernière copie pharmacie_*.dump du dossier -Copies ;
       2. intégrité : empreinte SHA-256 comparée à celle notée lors de la copie (<copie>.sha256), puis pg_restore --list ;

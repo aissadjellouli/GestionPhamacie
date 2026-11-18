@@ -4,6 +4,7 @@ using System.Text;
 using Npgsql;
 using Pharma.Cloud.Api.Depart;
 using Pharma.Cloud.Api.Reception;
+using Pharma.Shared;
 using BaseCentraleJetable = Pharma.Cloud.Tests.DescendantsMutuV1Tests.BaseCentraleJetable;
 
 namespace Pharma.Cloud.Tests;
@@ -24,6 +25,18 @@ public class DepartOfficineTests
     {
         var contenu = DepartOfficine.ContenuEmpreintes([new("vente.csv", 2, "bb"), new("alerte.csv", 1, "aa")]);
         Assert.Equal("aa  alerte.csv\nbb  vente.csv\n", contenu);
+    }
+
+    [Fact]
+    public void Declaration_epoque_refusee_hors_bornes()
+    {
+        var ok = new DeclarationEpoqueDto(1, 2, 0, null, null, DateTimeOffset.UtcNow, null, []);
+        Assert.Null(ok.Refus());
+        Assert.NotNull((ok with { NouvelleEpoque = 1 }).Refus());
+        Assert.NotNull((ok with { DernierLotLocal = -1 }).Refus());
+        Assert.NotNull((ok with { FinsChaine = [new FinChaineDto("Journal-Vente", "officine", 1, null, null)] }).Refus());
+        Assert.NotNull((ok with { FinsChaine = [new FinChaineDto("journal_vente", "officine", 1, null, "zz")] }).Refus());
+        Assert.Null((ok with { FinsChaine = [new FinChaineDto("journal_vente", "officine", 1, "12", new string('a', 64))] }).Refus());
     }
 
     [Fact]
@@ -63,6 +76,17 @@ public class DepartOfficineTests
         Assert.Equal(40, (await depot.MaximumsAsync(A, ct))["alerte"]);
         Assert.Equal(900, (await depot.MaximumsAsync(B, ct))["alerte"]);
 
+        // Lot S6.5.3 (script 022) : déclaration d'époque ; renvoi identique accepté, autre contenu pour la même époque refusé (23505)
+        var decl = new DeclarationEpoqueDto(2, 3, 1, 1, null, new DateTimeOffset(2026, 11, 18, 10, 0, 0, TimeSpan.Zero), 7,
+            [new FinChaineDto("journal_vente", "officine", 0, null, null)]);
+        Assert.Null(decl.Refus());
+        var rep = await depot.DeclarerEpoqueAsync(A, decl, ct);
+        Assert.False(rep.DejaDeclaree);
+        Assert.True(rep.AvantPremierLot);
+        Assert.True((await depot.DeclarerEpoqueAsync(A, decl, ct)).DejaDeclaree);
+        var autre = await Assert.ThrowsAsync<PostgresException>(() => depot.DeclarerEpoqueAsync(A, decl with { DernierLotLocal = 5 }, ct));
+        Assert.Equal("23505", autre.SqlState);
+
         // Effacement refusé avant le départ, même en simulation
         var avant = await Assert.ThrowsAsync<PostgresException>(() => DepartOfficine.EffacerAsync(db, A, false, null, ct));
         Assert.Equal("P0001", avant.SqlState);
@@ -85,6 +109,7 @@ public class DepartOfficineTests
             var noms = zip.Entries.Select(e => e.FullName).ToHashSet(StringComparer.Ordinal);
             Assert.Contains("alerte.csv", noms);
             Assert.Contains("ligne_remplacee.csv", noms);
+            Assert.Contains("cloud_epoque_changement.csv", noms);   // lot S6.5.3 : déclarations d'époque dans l'export
             Assert.Contains(DepartOfficine.FichierEmpreintes, noms);
             Assert.Equal(export.Fichiers.Count + 1, noms.Count);
             var lignesEmpreintes = Lire(zip, DepartOfficine.FichierEmpreintes).Split('\n', StringSplitOptions.RemoveEmptyEntries);

@@ -1,15 +1,15 @@
-@* Menu vertical commun aux écrans du contrôle interne (anomalies, produits sensibles, écarts et risques) :
+@* Menu vertical commun aux écrans du contrôle interne (anomalies, produits sensibles, pertes et vigilance) :
    chaque entrée est une adresse, « ← Retour » y revient. Les réglages (seuils, horaires) sont dans l'Administration. *@
 <NavDomaine Libelle="Rubriques du contrôle interne">
     <span class="nav-groupe-titre">Anomalies</span>
     @Lien("surveillance", "À examiner", AExaminer)
     @Lien("surveillance?onglet=traitees", "Traitées")
-    <span class="nav-groupe-titre">Écarts et risques</span>
+    <span class="nav-groupe-titre">Pertes et vigilance</span>
     @Lien("surveillance/risques", "Par employé")
     @Lien("surveillance/risques?rubrique=jours", "Jour par jour")
-    <span class="nav-groupe-titre">Caisse</span>
+    @* Tiroir et produits sensibles rangés dans « Pertes et vigilance » (2026-11-18) : à 1366 × 768, les groupes « Caisse » et
+       « Stock » d'une entrée chacun faisaient défiler le menu de 37 px *@
     @Lien("surveillance/tiroir", "Sorties et entrées du tiroir")
-    <span class="nav-groupe-titre">Stock</span>
     @Lien("surveillance?onglet=sensibles", "Produits sensibles")
     <span class="nav-groupe-titre">Réglages</span>
     <a href="admin/controle-interne" class="sous-rubrique">Seuils et horaires</a>

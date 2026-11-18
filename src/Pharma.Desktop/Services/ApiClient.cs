@@ -943,7 +943,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     /// <summary>
     /// Bascule d'un poste : état de la liaison avec l'API du 2e serveur (elle ne démarre qu'une fois sa base promue : jamais un poste
-    /// dirigé vers une copie en lecture seule). Port puis /api/sante, 4 secondes au plus. Le certificat est toujours vérifié par Windows :
+    /// dirigé vers une copie en lecture seule). Port puis /api/healthcheck, 4 secondes au plus. Le certificat est toujours vérifié par Windows :
     /// un refus est seulement reconnu (EtatLiaison.CertificatRefuse) pour afficher la bonne consigne.
     /// </summary>
     public static async Task<EtatLiaison> VerifierApiAsync(string adresse)
@@ -957,7 +957,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         try
         {
             using var client = new HttpClient { BaseAddress = uri, Timeout = TimeSpan.FromSeconds(4) };
-            using var rep = await client.GetAsync("api/sante");
+            using var rep = await client.GetAsync("api/healthcheck");
             var etat = LiaisonServeur.Classer(rep.StatusCode);
             JournalLiaison.Noter("2e serveur", etat, null);
             return etat;
@@ -1169,7 +1169,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // ---- Achats ------------------------------------------------------------------
 
     /// <summary>
-    /// Barre d'état : le serveur répond-il ? (route publique /api/sante, 4 secondes au plus). Sans exception (2026-11-15) : le port est
+    /// Barre d'état : le serveur répond-il ? (route publique /api/healthcheck, 4 secondes au plus). Sans exception (2026-11-15) : le port est
     /// d'abord testé par une connexion qui renvoie un code d'erreur au lieu de lever une exception ; la requête n'est jamais annulée
     /// pendant qu'on l'attend (on cesse seulement de l'attendre après 4 secondes) ; son issue, même en échec, est relevée à part. Le
     /// débogueur ne s'arrête donc plus sur une TaskCanceledException quand l'API est arrêtée, en pause ou lente à démarrer.
@@ -1189,7 +1189,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
         // Requête bornée à 30 s en arrière-plan (jamais attendue au-delà de 4 s) ; issue relevée sans relancer d'exception
         var borne = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var requete = http.GetAsync("api/sante", HttpCompletionOption.ResponseHeadersRead, borne.Token);
+        var requete = http.GetAsync("api/healthcheck", HttpCompletionOption.ResponseHeadersRead, borne.Token);
         _ = requete.ContinueWith(t =>
         {
             if (t.IsCompletedSuccessfully) t.Result.Dispose();

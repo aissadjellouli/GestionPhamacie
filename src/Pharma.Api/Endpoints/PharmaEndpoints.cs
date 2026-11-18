@@ -6,7 +6,8 @@ public static class PharmaEndpoints
 {
     public static void MapPharmaEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/sante", () => Results.Ok(new { statut = "ok", heure = DateTime.Now }));
+        // Santé du serveur (2026-11-19 : /api/healthcheck, ancien nom /api/sante retiré sur demande du titulaire)
+        app.MapGet("/api/healthcheck", () => Results.Ok(new { statut = "ok", heure = DateTime.Now }));
 
         // Toutes les routes : refus prévus (règle métier, droit) renvoyés au poste sans être traités comme des pannes
         var racine = app.MapGroup("").GererErreursMetier();

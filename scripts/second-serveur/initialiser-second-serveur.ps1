@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     À lancer sur le 2e serveur, en administrateur Windows, après preparer-principal.ps1 sur le principal (docs/mise-en-production.md,
-    « 2e serveur »). PostgreSQL (même version majeure que le principal) et l'API Pharma Officine (même version, même installateur)
+    « 2e serveur »). PostgreSQL (même version majeure que le principal) et l'API Tracodex Officine (même version, même installateur)
     sont déjà installés sur ce PC. Étapes :
       1. contrôles : principal joignable (port PostgreSQL), version de PostgreSQL ;
       2. API de secours : service arrêté et mis en démarrage MANUEL (elle refuse de toute façon de démarrer tant que la base est en

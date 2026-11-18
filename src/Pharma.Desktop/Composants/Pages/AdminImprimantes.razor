@@ -274,7 +274,7 @@
         try
         {
             Reglages.Appliquer(Saisie());
-            const string zpl = "^XA^CI28^FO30,30^A0N,32,32^FDEtiquette d'essai^FS^FO30,80^A0N,24,24^FDPharma Officine^FS^XZ";
+            const string zpl = "^XA^CI28^FO30,30^A0N,32,32^FDEtiquette d'essai^FS^FO30,80^A0N,24,24^FDTracodex Officine^FS^XZ";
             var e = await Etiquettes.EnvoyerAsync(zpl);
             if (e is null) message = $"Étiquette d’essai envoyée à {Etiquettes.Adresse}.";
             else erreur = e;

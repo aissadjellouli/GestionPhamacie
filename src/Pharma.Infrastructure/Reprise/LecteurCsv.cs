@@ -7,7 +7,7 @@ using Pharma.Domain.Reprise;
 namespace Pharma.Infrastructure.Reprise;
 
 /// <summary>
-/// Exports CSV de l'ancien logiciel, lus par Pharma Officine sans pilote ODBC : chaque valeur est lue comme du texte
+/// Exports CSV de l'ancien logiciel, lus par Tracodex Officine sans pilote ODBC : chaque valeur est lue comme du texte
 /// (le pilote texte de Windows devine le type d'une colonne d'après ses premières lignes et vide les valeurs qui ne
 /// correspondent pas), l'encodage (UTF-8 ou ANSI Windows-1252) et le séparateur (virgule, point-virgule, tabulation)
 /// sont détectés fichier par fichier. Les fichiers ne sont jamais modifiés.

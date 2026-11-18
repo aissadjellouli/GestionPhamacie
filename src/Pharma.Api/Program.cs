@@ -213,7 +213,7 @@ app.UseStaticFiles(new StaticFileOptions
 app.Use(async (ctx, suite) =>
 {
     var chemin = ctx.Request.Path;
-    if (chemin.StartsWithSegments("/api") && !chemin.StartsWithSegments("/api/super-admin") && !chemin.StartsWithSegments("/api/sante")
+    if (chemin.StartsWithSegments("/api") && !chemin.StartsWithSegments("/api/super-admin") && !chemin.StartsWithSegments("/api/healthcheck")
         && ctx.RequestServices.GetRequiredService<Pharma.Application.SuperAdmin.RestaurationsSuperAdmin>().BaseEnCours)
     {
         ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;

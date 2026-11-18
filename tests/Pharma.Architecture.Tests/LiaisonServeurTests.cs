@@ -56,7 +56,7 @@ public class LiaisonServeurTests
 
             // Validation par défaut de Windows : l'autorité de ce certificat n'est approuvée nulle part
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var ex = await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.GetAsync($"https://127.0.0.1:{port}/api/sante"));
+            var ex = await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.GetAsync($"https://127.0.0.1:{port}/api/healthcheck"));
             await cote;
 
             Assert.Equal(EtatLiaison.CertificatRefuse, LiaisonServeur.Classer(ex));
@@ -68,7 +68,7 @@ public class LiaisonServeurTests
     public async Task Port_ferme_donne_Injoignable()
     {
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        var ex = await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.GetAsync($"https://127.0.0.1:{PortLibre()}/api/sante"));
+        var ex = await Assert.ThrowsAnyAsync<HttpRequestException>(() => client.GetAsync($"https://127.0.0.1:{PortLibre()}/api/healthcheck"));
         Assert.Equal(EtatLiaison.Injoignable, LiaisonServeur.Classer(ex));
     }
 

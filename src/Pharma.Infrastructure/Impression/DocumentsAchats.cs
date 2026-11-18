@@ -203,7 +203,7 @@ public sealed class DocumentsAchats : IDocumentsAchats
     {
         var doc = new Document();
         doc.Info.Title = titre;
-        doc.Info.Author = "Pharma Officine";
+        doc.Info.Author = "Tracodex Officine";
         var normal = doc.Styles[StyleNames.Normal]!;
         normal.Font.Name = "Arial";
         normal.Font.Size = 10;
@@ -211,7 +211,7 @@ public sealed class DocumentsAchats : IDocumentsAchats
         s.PageSetup.PageFormat = PageFormat.A4;
         s.PageSetup.TopMargin = s.PageSetup.BottomMargin = Unit.FromCentimeter(2);
         s.PageSetup.LeftMargin = s.PageSetup.RightMargin = Unit.FromCentimeter(2);
-        var pied = s.Footers.Primary.AddParagraph($"{(pharmacie is null ? "" : pharmacie + " · ")}Pharma Officine · édité le {DateTime.Now.ToString("dd/MM/yyyy HH:mm", Fr)}");
+        var pied = s.Footers.Primary.AddParagraph($"{(pharmacie is null ? "" : pharmacie + " · ")}Tracodex Officine · édité le {DateTime.Now.ToString("dd/MM/yyyy HH:mm", Fr)}");
         pied.Format.Font.Size = 8;
         pied.Format.Font.Color = Gris;
         return (doc, s);

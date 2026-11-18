@@ -44,7 +44,7 @@ public sealed class ObtenirTableauRisques(IRisques risques, IPermissionService d
 
     public async Task<TableauRisques> ExecuterAsync(DateOnly? du, DateOnly? au, long utilisateurId, CancellationToken ct = default)
     {
-        await droits.ExigerTitulaireAsync(utilisateurId, "consulter les écarts et les risques par employé", ct);
+        await droits.ExigerTitulaireAsync(utilisateurId, "consulter les pertes et la vigilance par employé", ct);
         var fin = au ?? horloge.Aujourdhui;
         var debut = du ?? fin.AddDays(-(JoursParDefaut - 1));
         if (fin < debut) throw new RegleMetierException("La période est inversée.", "periode");

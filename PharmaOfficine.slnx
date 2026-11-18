@@ -38,6 +38,23 @@
     <File Path="docs/adr/0003-blazor-hybrid-wpf.md" />
     <File Path="docs/adr/0004-clean-architecture.md" />
   </Folder>
+  <Folder Name="/Documents/branding/">
+    <File Path="docs/branding/logo.md" />
+    <File Path="docs/branding/pharmaofficine-icone.svg" />
+    <File Path="docs/branding/pharmaofficine-icone-sombre.svg" />
+    <File Path="docs/branding/pharmaofficine-logo.svg" />
+    <File Path="docs/branding/pharmaofficine-logo-blanc.svg" />
+    <File Path="docs/branding/favicon.svg" />
+    <File Path="docs/branding/favicon.ico" />
+    <File Path="docs/branding/icone-16.png" />
+    <File Path="docs/branding/icone-32.png" />
+    <File Path="docs/branding/icone-48.png" />
+    <File Path="docs/branding/icone-180.png" />
+    <File Path="docs/branding/icone-192.png" />
+    <File Path="docs/branding/icone-512.png" />
+    <File Path="docs/branding/icone-app-512.png" />
+    <File Path="docs/branding/logo-880.png" />
+  </Folder>
   <Folder Name="/Documents/maquettes/">
     <File Path="docs/maquettes/Achats.html" />
     <File Path="docs/maquettes/Admin.html" />
@@ -280,6 +297,8 @@
     <File Path="database/cloud/019_miroir_associations_produits.sql" />
     <File Path="database/cloud/020_restauration_officine_archive.sql" />
     <File Path="database/cloud/021_depart_officine.sql" />
+    <File Path="database/cloud/022_integrite_restauration_tables.sql" />
+    <File Path="database/cloud/023_integrite_verification_branches.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
     <File Path="database/cloud/tests/003_chargement_complet_officine_tests.sql" />
     <File Path="database/cloud/tests/004_reglage_familles_envoyees_tests.sql" />
@@ -300,6 +319,8 @@
     <File Path="database/cloud/tests/019_miroir_associations_produits_tests.sql" />
     <File Path="database/cloud/tests/020_restauration_officine_archive_tests.sql" />
     <File Path="database/cloud/tests/021_depart_officine_tests.sql" />
+    <File Path="database/cloud/tests/022_integrite_restauration_tables_tests.sql" />
+    <File Path="database/cloud/tests/023_integrite_verification_branches_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

@@ -36,7 +36,7 @@ public static class ProfilsReprise
         ["dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "dd.MM.yyyy", "dd/MM/yy", "yyyy-MM-dd", "yyyy/MM/dd", "yyyyMMdd", "MM/dd/yyyy", "MM/yyyy",
          "dd/MM/yyyy HH:mm:ss", "yyyy-MM-dd HH:mm:ss"];
 
-    /// <summary>Classes de Pharma Officine qu'un code de l'ancien logiciel peut désigner (reconnues par import.classe_src).</summary>
+    /// <summary>Classes de Tracodex Officine qu'un code de l'ancien logiciel peut désigner (reconnues par import.classe_src).</summary>
     public static readonly string[] Classes = ["stupefiant", "psychotrope", "liste_i", "liste_ii", "libre"];
 
     public const int CodesClasseMax = 50;

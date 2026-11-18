@@ -5,10 +5,10 @@
 :root {
   --fond: #FAF7F2; --surface: #FFFFFF; --texte: #1D2939; --texte-2: #475467;
   --bordure: #ECE5DA; --bordure-champ: #CFC6B8;
-  --accent: #0E5A32; --accent-fonce: #0A4526; --accent-clair: #E9F3EC; --ambre: #E08A1E;
+  --accent: #0F766E; --accent-fonce: #0B5D57; --accent-clair: #E3F3F0; --ambre: #E08A1E;
   --urgent: #912018; --urgent-fond: #FEE4E2; --attention: #7A2E0E; --attention-fond: #FEF0C7;
   --info: #344054; --info-fond: #EAECF0;
-  --accent-texte: #0E5A32;
+  --accent-texte: #0C655E;
   color-scheme: light;
 }
 
@@ -91,12 +91,12 @@ form .btn { margin-top: 10px; }
 /* Affichage sombre : suit le réglage du téléphone */
 @media (prefers-color-scheme: dark) {
   :root {
-    --fond: #121915; --surface: #1A231E; --texte: #E6ECE8; --texte-2: #B3C0B9;
-    --bordure: #2E3B34; --bordure-champ: #4A5C53;
-    --accent: #1F6B43; --accent-fonce: #8FD6AE; --accent-clair: #1C3528; --ambre: #F0A040;
+    --fond: #0D1A20; --surface: #132329; --texte: #E4EEF0; --texte-2: #AFC3C8;
+    --bordure: #29414A; --bordure-champ: #45616B;
+    --accent: #0F766E; --accent-fonce: #99F0E0; --accent-clair: #123A36; --ambre: #F0A040;
     --urgent: #F97066; --urgent-fond: #3A1A17; --attention: #FEC84B; --attention-fond: #3A2A10;
-    --info: #D0D5DD; --info-fond: #2A3530;
-    --accent-texte: #7CCB9E;
+    --info: #D0D5DD; --info-fond: #21363E;
+    --accent-texte: #2DD4BF;
     color-scheme: dark;
   }
 }

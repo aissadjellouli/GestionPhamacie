@@ -321,7 +321,7 @@ Les 11 réglages que le serveur central peut proposer ou imposer (`conception-sy
 Arrêter dans cet ordre :
 
 1. **Les boucles de suivi** (vues 2 et 3 de la section 5 bis) : **Ctrl + C** dans chaque fenêtre, puis la fermer.
-2. **Le poste de caisse** : fermer la fenêtre Pharma Officine. Cela libère aussi `Pharma.Desktop.exe` : tant que le poste est ouvert, `dotnet build` échoue sur « fichier verrouillé » (ce n'est pas une erreur de code).
+2. **Le poste de caisse** : fermer la fenêtre Tracodex Officine. Cela libère aussi `Pharma.Desktop.exe` : tant que le poste est ouvert, `dotnet build` échoue sur « fichier verrouillé » (ce n'est pas une erreur de code).
 3. **Les deux serveurs et les bases d'essai** :
 
 ```powershell

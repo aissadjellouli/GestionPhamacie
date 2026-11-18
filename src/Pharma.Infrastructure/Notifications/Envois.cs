@@ -54,7 +54,7 @@ public sealed class EnvoiEmailMailKit : IEnvoiEmail, Pharma.Application.Achats.I
     private static async Task EnvoyerMessageAsync(ConnexionSmtp c, string adresse, string objet, BodyBuilder corps, CancellationToken ct)
     {
         var message = new MimeMessage();
-        message.From.Add(new MailboxAddress("Pharma Officine", c.Expediteur));
+        message.From.Add(new MailboxAddress("Tracodex Officine", c.Expediteur));
         message.To.Add(MailboxAddress.Parse(adresse));
         message.Subject = objet;
         message.Body = corps.ToMessageBody();

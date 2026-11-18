@@ -59,7 +59,7 @@ public partial class App : Application
             MessageBox.Show(
                 "Une erreur imprévue s’est produite. Ce qui était déjà enregistré sur le serveur le reste : vérifiez avant de recommencer.\n\n"
                 + $"{args.Exception.GetType().Name} : {args.Exception.Message}",
-                "Pharma Officine", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "Tracodex Officine", MessageBoxButton.OK, MessageBoxImage.Warning);
             args.Handled = true;
         };
 

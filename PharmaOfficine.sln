@@ -64,6 +64,25 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "adr", "adr", "{35D7AF71-198
 		docs\adr\0004-clean-architecture.md = docs\adr\0004-clean-architecture.md
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "branding", "branding", "{203FB03F-411A-435E-8A49-23D628228AE9}"
+	ProjectSection(SolutionItems) = preProject
+		docs\branding\logo.md = docs\branding\logo.md
+		docs\branding\pharmaofficine-icone.svg = docs\branding\pharmaofficine-icone.svg
+		docs\branding\pharmaofficine-icone-sombre.svg = docs\branding\pharmaofficine-icone-sombre.svg
+		docs\branding\pharmaofficine-logo.svg = docs\branding\pharmaofficine-logo.svg
+		docs\branding\pharmaofficine-logo-blanc.svg = docs\branding\pharmaofficine-logo-blanc.svg
+		docs\branding\favicon.svg = docs\branding\favicon.svg
+		docs\branding\favicon.ico = docs\branding\favicon.ico
+		docs\branding\icone-16.png = docs\branding\icone-16.png
+		docs\branding\icone-32.png = docs\branding\icone-32.png
+		docs\branding\icone-48.png = docs\branding\icone-48.png
+		docs\branding\icone-180.png = docs\branding\icone-180.png
+		docs\branding\icone-192.png = docs\branding\icone-192.png
+		docs\branding\icone-512.png = docs\branding\icone-512.png
+		docs\branding\icone-app-512.png = docs\branding\icone-app-512.png
+		docs\branding\logo-880.png = docs\branding\logo-880.png
+	EndProjectSection
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "maquettes", "maquettes", "{E1DF76AA-DD72-4CD5-8AD0-81C6533C0213}"
 	ProjectSection(SolutionItems) = preProject
 		docs\maquettes\Achats.html = docs\maquettes\Achats.html
@@ -368,6 +387,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\019_miroir_associations_produits.sql = database\cloud\019_miroir_associations_produits.sql
 		database\cloud\020_restauration_officine_archive.sql = database\cloud\020_restauration_officine_archive.sql
 		database\cloud\021_depart_officine.sql = database\cloud\021_depart_officine.sql
+		database\cloud\022_integrite_restauration_tables.sql = database\cloud\022_integrite_restauration_tables.sql
+		database\cloud\023_integrite_verification_branches.sql = database\cloud\023_integrite_verification_branches.sql
 		database\cloud\tests\001_base_centrale_tests.sql = database\cloud\tests\001_base_centrale_tests.sql
 		database\cloud\tests\003_chargement_complet_officine_tests.sql = database\cloud\tests\003_chargement_complet_officine_tests.sql
 		database\cloud\tests\004_reglage_familles_envoyees_tests.sql = database\cloud\tests\004_reglage_familles_envoyees_tests.sql
@@ -388,6 +409,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\tests\019_miroir_associations_produits_tests.sql = database\cloud\tests\019_miroir_associations_produits_tests.sql
 		database\cloud\tests\020_restauration_officine_archive_tests.sql = database\cloud\tests\020_restauration_officine_archive_tests.sql
 		database\cloud\tests\021_depart_officine_tests.sql = database\cloud\tests\021_depart_officine_tests.sql
+		database\cloud\tests\022_integrite_restauration_tables_tests.sql = database\cloud\tests\022_integrite_restauration_tables_tests.sql
+		database\cloud\tests\023_integrite_verification_branches_tests.sql = database\cloud\tests\023_integrite_verification_branches_tests.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EXEMPLE", "EXEMPLE", "{E8EB9343-E715-4099-B51F-8BC7A9D6B1A3}"
@@ -603,6 +626,7 @@ Global
 		{47EA6D26-66C3-4716-8528-539BB21ABA43} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
 		{C098DDCF-4A00-4EF2-BF9F-C940528C8890} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
 		{35D7AF71-198B-4464-B00C-B4E49C87A256} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
+		{203FB03F-411A-435E-8A49-23D628228AE9} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{E1DF76AA-DD72-4CD5-8AD0-81C6533C0213} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
 		{DA96FB93-3AB9-4F60-8D17-2B0C79F7E87D} = {E1DF76AA-DD72-4CD5-8AD0-81C6533C0213}
 		{FA6BA489-4AF9-4CBD-A777-F282E75E959F} = {386EBD72-0D5B-4454-978E-2D35C00026D8}

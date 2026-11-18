@@ -130,6 +130,31 @@ public static class PointsEntree
             return Results.Ok(new MaximumsCentralDto(await depot.MaximumsAsync(appelant.Officine, ct)));
         }).RequireRateLimiting("officine");
 
+        // Lot S6.5.3 (script 022) : déclaration d'un changement d'époque (« Repartir sur une nouvelle époque »), avant tout lot de la
+        // nouvelle époque. Renvoi identique : 200 avec la déclaration existante ; autre contenu pour la même époque : 409 ; refus : 400.
+        v1.MapPost("/epoque", async (DeclarationEpoqueDto d, HttpContext ctx, DepotCentral depot, ILoggerFactory journaux, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            if (d.Refus() is { } motif) return Results.Problem(motif, statusCode: 400);
+            var log = journaux.CreateLogger("Pharma.Cloud.Epoque");
+            try
+            {
+                var rep = await depot.DeclarerEpoqueAsync(appelant.Officine, d, ct);
+                log.LogInformation("Officine {Officine} : époque {Ancienne} -> {Nouvelle} déclarée (déjà reçue : {Deja}, avant le premier lot : {Avant})",
+                    appelant.Officine, d.AncienneEpoque, d.NouvelleEpoque, rep.DejaDeclaree, rep.AvantPremierLot);
+                return Results.Ok(rep);
+            }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "23505")
+            {
+                return Results.Problem("Une autre déclaration de cette époque a déjà été reçue : la première fait foi.", statusCode: 409);
+            }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "22023")
+            {
+                return Results.Problem("Déclaration refusée par le serveur central (époques, n° de lot ou fins de chaîne).", statusCode: 400);
+            }
+        }).RequireRateLimiting("officine");
+
         // Voie descendante (script 005) : échange léger initié par l'officine à chaque passage, même sans lot à envoyer
         v1.MapPost("/echange", async (EchangeDescendantDto d, HttpContext ctx, DepotCentral depot, CancellationToken ct) =>
         {

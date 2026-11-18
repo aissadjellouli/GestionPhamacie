@@ -606,7 +606,7 @@ function Invoke-Etat {
     $a = Get-ProcessusEssai ([int]$etat.PidApi) "Pharma.Api"
     Write-Info ("Serveur central : {0}   https://127.0.0.1:{1}   {2}" -f $(if ($c) { "EN MARCHE (PID $($c.Id))" } else { "ARRETE" }), $etat.PortCentral, $(if ($c -and (Test-PortOuvert ([int]$etat.PortCentral))) { "port ouvert" } else { "port fermé" }))
     $sante = "sans réponse"
-    if ($a) { try { $sante = (Invoke-RestMethod -Uri "http://${AdresseLocale}:$($etat.PortApi)/api/sante" -TimeoutSec 5).statut } catch { $sante = "sans réponse" } }
+    if ($a) { try { $sante = (Invoke-RestMethod -Uri "http://${AdresseLocale}:$($etat.PortApi)/api/healthcheck" -TimeoutSec 5).statut } catch { $sante = "sans réponse" } }
     Write-Info ("API officine   : {0}   http://127.0.0.1:{1}   santé : {2}" -f $(if ($a) { "EN MARCHE (PID $($a.Id))" } else { "ARRETEE" }), $etat.PortApi, $sante)
     Initialize-Pg
     if (-not (Test-BaseExiste $BaseOfficine)) { Write-Avert "La base $BaseOfficine n'existe pas."; return }

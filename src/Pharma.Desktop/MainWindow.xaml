@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:blazor="http://schemas.microsoft.com/winfx/2006/xaml/presentation/blazor"
         xmlns:local="clr-namespace:Pharma.Desktop"
-        Title="Pharma Officine" Icon="logo.ico" Height="800" Width="1280" WindowState="Maximized">
+        Title="Tracodex Officine" Icon="logo.ico" Height="800" Width="1280" WindowState="Maximized">
     <Grid>
         <blazor:BlazorWebView HostPage="wwwroot\index.html" Services="{DynamicResource services}"
                               BlazorWebViewInitialized="SurWebViewInitialisee">

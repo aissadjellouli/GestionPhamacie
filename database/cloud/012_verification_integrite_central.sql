@@ -266,6 +266,13 @@ BEGIN
 END $$;
 
 -- ---- 6. Vérification d'une chaîne (officine courante), à partir du point de reprise ----
+-- Garde de rejeu (2026-11-18, lot S6.5) : définition remplacée par le script 023 ; rejouer ce script après 023 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_integrite_verifier_branches, posée par 023).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('cloud_integrite_verifier_branches(text,text,interval)') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_integrite_verifier_chaine : définition plus récente (script 023) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_integrite_verifier_chaine(p_journal text, p_cle text, p_complete boolean, p_delai interval) RETURNS text
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -346,8 +353,18 @@ BEGIN
         verification_complete_le = coalesce(EXCLUDED.verification_complete_le, x.verification_complete_le);
     RETURN v_statut;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- ---- 7. Ancrages des sceaux : la ligne scellée existe au central avec la même empreinte ----
+-- Garde de rejeu (2026-11-18, lot S6.5) : définition remplacée par le script 023 ; rejouer ce script après 023 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_integrite_verifier_branches, posée par 023).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('cloud_integrite_verifier_branches(text,text,interval)') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_integrite_verifier_sceaux : définition plus récente (script 023) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_integrite_verifier_sceaux(p_complete boolean, p_delai interval) RETURNS void
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -390,6 +407,9 @@ BEGIN
         v_hash := NULL; v_id := NULL;
     END LOOP;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- ---- 8. Continuité des tickets « T- » (même contrôle que journal_vente_continuite de l'officine) ----
 CREATE OR REPLACE FUNCTION cloud_integrite_verifier_tickets(p_complete boolean, p_delai interval) RETURNS void
@@ -454,6 +474,13 @@ BEGIN
 END $$;
 
 -- ---- 9. Vérification croisée : la fin de chaîne vue par l'officine (verification_integrite) contre ce que le central a reçu ----
+-- Garde de rejeu (2026-11-18, lot S6.5) : définition remplacée par le script 023 ; rejouer ce script après 023 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_integrite_verifier_branches, posée par 023).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('cloud_integrite_verifier_branches(text,text,interval)') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_integrite_verifier_croisee : définition plus récente (script 023) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_integrite_verifier_croisee(p_complete boolean, p_delai interval) RETURNS void
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -512,8 +539,18 @@ BEGIN
     INSERT INTO cloud_integrite_officine AS x (officine_id, derniere_verification_id) VALUES (v_off, v_point)
     ON CONFLICT (officine_id) DO UPDATE SET derniere_verification_id = EXCLUDED.derniere_verification_id;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- ---- 10. Passage complet pour l'officine courante : chaînes, sceaux, tickets, croisée, puis publication vers l'officine ----
+-- Garde de rejeu (2026-11-18, lot S6.5) : définition remplacée par le script 023 ; rejouer ce script après 023 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_integrite_verifier_branches, posée par 023).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('cloud_integrite_verifier_branches(text,text,interval)') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_verifier_integrite : définition plus récente (script 023) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_verifier_integrite(p_complete boolean DEFAULT false) RETURNS jsonb
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -579,6 +616,9 @@ BEGIN
     PERFORM cloud_publier_descendant('reglage_central', 'integrite_centrale', v_resume);
     RETURN v_resume || jsonb_build_object('nouvelles', v_nouv);
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Droits : vérification et lecture réservées au propriétaire (outil d'administration) ; l'API n'écrit des anomalies
 -- que par le déclencheur d'ajout seul (SECURITY DEFINER)

@@ -6,7 +6,7 @@ namespace Pharma.Desktop.Services;
 /// </summary>
 public sealed class ConfigurationPoste
 {
-    public string NomLogiciel { get; } = "Pharma Officine";
+    public string NomLogiciel { get; } = "Tracodex Officine";
     public string? Pharmacie { get; } = Lire("PHARMA_PHARMACIE");
     public string Poste { get; } = Lire("PHARMA_POSTE") ?? $"Poste {Environment.MachineName}";
 

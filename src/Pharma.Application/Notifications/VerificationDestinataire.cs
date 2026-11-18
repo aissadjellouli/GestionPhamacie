@@ -40,10 +40,10 @@ public sealed class EnvoyerCodeVerification(INotificationsDepot depot, ICodesVer
         var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
         var reglages = await depot.ReglagesAsync(ct);
         // Type « test » : le seul que la base accepte vers un destinataire pas encore vérifié
-        var contenu = new ContenuNotification(TypeNotification.Test, "Pharma Officine : code de vérification",
+        var contenu = new ContenuNotification(TypeNotification.Test, "Tracodex Officine : code de vérification",
             $"Bonjour {d.Nom},\n\nVotre code de vérification : {code}\nValable {DureeMinutes} minutes.\n\n" +
             "Donnez-le au titulaire : il le saisit dans Administration › Notifications pour que cette adresse reçoive les alertes de la pharmacie.",
-            null, $"Pharma Officine : code de verification {code}, valable {DureeMinutes} min.");
+            null, $"Tracodex Officine : code de verification {code}, valable {DureeMinutes} min.");
         var messages = NotificationService.Construire(contenu, [d], reglages.SmsActifs, await NotificationService.SignatureAsync(pharmacie, ct));
         if (messages.Count == 0)
             throw new RegleMetierException(d.CanalSms && !reglages.SmsActifs ? "Modem GSM non configuré : aucun SMS possible." : "Aucun canal utilisable pour ce destinataire.");

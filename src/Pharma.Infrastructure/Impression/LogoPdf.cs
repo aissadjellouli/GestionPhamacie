@@ -2,7 +2,7 @@ using MigraDoc.DocumentObjectModel;
 
 namespace Pharma.Infrastructure.Impression;
 
-/// <summary>Croix verte avec coupe d'Hygie, intégrée à l'assemblage, placée devant le titre des documents.</summary>
+/// <summary>Logo Tracodex (gélule, icône 192 px), intégré à l'assemblage, placé devant le titre des documents.</summary>
 internal static class LogoPdf
 {
     private static readonly Lazy<string> Base64 = new(() =>
@@ -24,7 +24,7 @@ internal static class LogoPdf
         p.AddText("  " + texte);
         p.Format.Font.Size = 16;
         p.Format.Font.Bold = true;
-        p.Format.Font.Color = Color.FromRgb(0x0E, 0x5A, 0x32);
+        p.Format.Font.Color = Color.FromRgb(0x0C, 0x65, 0x5E);   // vert du texte de la charte (logo Tracodex, 2026-11-18)
         p.Format.SpaceAfter = Unit.FromPoint(8);
         return p;
     }

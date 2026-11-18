@@ -474,7 +474,7 @@ if ($PSCmdlet.ParameterSetName -eq "Importer") {
     Write-ConfigurationApi
     Set-ReglePareFeu
     Write-Host ""
-    Write-Host "Redémarrez le service « PharmaOfficine API » s'il tourne (sur le 2e serveur et le PC de secours il est arrêté tant qu'il n'y a pas de bascule), puis, après une bascule, ouvrez : https://<nom ou adresse du certificat>:$PortHttps/api/sante"
+    Write-Host "Redémarrez le service « PharmaOfficine API » s'il tourne (sur le 2e serveur et le PC de secours il est arrêté tant qu'il n'y a pas de bascule), puis, après une bascule, ouvrez : https://<nom ou adresse du certificat>:$PortHttps/api/healthcheck"
     Write-Host "Aucune autorité n'a été créée sur ce PC : les postes lui font confiance par l'autorité de la pharmacie déjà installée."
     return
 }

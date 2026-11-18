@@ -338,7 +338,7 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
         var utile = (largeurMm - 2 * marge) / 10.0;
         var doc = new Document();
         doc.Info.Title = titre;
-        doc.Info.Author = "Pharma Officine";
+        doc.Info.Author = "Tracodex Officine";
         var normal = doc.Styles[StyleNames.Normal]!;
         normal.Font.Name = "Arial";
         normal.Font.Size = FormatTicket.Etroit(largeurMm) ? 7 : largeurMm >= 100 ? 9 : 8;
@@ -408,7 +408,7 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
         var utile = (largeurMm - 2 * marge) / 10.0;   // cm
         var doc = new Document();
         doc.Info.Title = titre;
-        doc.Info.Author = "Pharma Officine";
+        doc.Info.Author = "Tracodex Officine";
         var normal = doc.Styles[StyleNames.Normal]!;
         normal.Font.Name = "Arial";
         normal.Font.Size = etroit ? 7 : largeurMm >= 100 ? 9 : 8;
@@ -883,7 +883,7 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
     {
         var doc = new Document();
         doc.Info.Title = titre;
-        doc.Info.Author = "Pharma Officine";
+        doc.Info.Author = "Tracodex Officine";
         var normal = doc.Styles[StyleNames.Normal]!;
         normal.Font.Name = "Arial";
         normal.Font.Size = 10;
@@ -891,7 +891,7 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
         section.PageSetup.PageFormat = PageFormat.A4;
         section.PageSetup.TopMargin = section.PageSetup.BottomMargin = Unit.FromCentimeter(2);
         section.PageSetup.LeftMargin = section.PageSetup.RightMargin = Unit.FromCentimeter(2);
-        var pied = section.Footers.Primary.AddParagraph($"{(pharmacie is null ? "" : pharmacie + " · ")}Pharma Officine · édité le {DateTime.Now.ToString("dd/MM/yyyy HH:mm", Fr)}");
+        var pied = section.Footers.Primary.AddParagraph($"{(pharmacie is null ? "" : pharmacie + " · ")}Tracodex Officine · édité le {DateTime.Now.ToString("dd/MM/yyyy HH:mm", Fr)}");
         pied.Format.Font.Size = 8;
         pied.Format.Font.Color = Color.FromRgb(0x47, 0x54, 0x67);
         return doc;

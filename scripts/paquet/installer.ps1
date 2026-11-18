@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Installe Pharma Officine pour un essai, sur ce PC : base de démonstration et configuration du serveur.
+    Installe Tracodex Officine pour un essai, sur ce PC : base de démonstration et configuration du serveur.
 
 .DESCRIPTION
     Prérequis : PostgreSQL 16 ou plus récent installé sur ce PC, et le mot de passe de son compte « postgres ».

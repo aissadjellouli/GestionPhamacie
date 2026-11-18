@@ -23,7 +23,7 @@
         {
             <button type="button" class="btn" style="margin-left: 8px" disabled="@verificationSecours" @onclick="BasculerPosteAsync">Basculer sur le 2e serveur (@secours) sur ce poste</button>
         }
-        @if (basculeFaite) { <strong> Poste réglé sur le 2e serveur : fermez puis rouvrez Pharma Officine.</strong> }
+        @if (basculeFaite) { <strong> Poste réglé sur le 2e serveur : fermez puis rouvrez Tracodex Officine.</strong> }
         @if (LiaisonServeur.MessageSecours(etatSecours) is { } messageSecours) { <strong data-champ="message_secours" style="display: block; margin-top: 6px">@messageSecours</strong> }
     </div>
 }

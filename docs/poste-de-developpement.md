@@ -102,7 +102,7 @@ Contenu attendu avec les données fictives : 30 tables, 8 vues, extensions `pg_t
 
 1. Ouvrir `PharmaOfficine.slnx` (ou `PharmaOfficine.sln`).
 2. Dans la barre d’outils, liste à côté du bouton ▶ : choisir **« API + Poste client »**. Ce profil est défini dans `PharmaOfficine.slnLaunch` : il démarre `Pharma.Api` puis `Pharma.Desktop`.
-3. **F5**. L’API écoute sur http://localhost:5080 (contrôle : http://localhost:5080/api/sante), puis la fenêtre du poste s’ouvre.
+3. **F5**. L’API écoute sur http://localhost:5080 (contrôle : http://localhost:5080/api/healthcheck), puis la fenêtre du poste s’ouvre.
 
 Sans ce profil : clic droit sur la solution > **Configurer les projets de démarrage** > **Plusieurs projets de démarrage** > `Pharma.Api` puis `Pharma.Desktop` sur **Démarrer**.
 
@@ -156,4 +156,4 @@ ni rattachées à la solution. Seules les photos utiles sont gardées.
 | `Could not load file or assembly 'Microsoft.Windows.SDK.NET'` au lancement du poste | WebView2 a besoin de la projection du SDK Windows | Corrigé : le poste cible `net10.0-windows10.0.19041.0`. Si l’erreur revient : *Générer > Régénérer la solution* |
 | `MSB3027 … le fichier est verrouillé par Pharma.Api` | L’API tourne encore pendant un build | Arrêter le débogage (**Maj+F5**) avant de recompiler |
 | `NU1301 … VCFNugets … 401 (Unauthorized)` en ligne de commande | Le feed NuGet VCF de la configuration NuGet globale exige une authentification | Compiler avec `--source https://api.nuget.org/v3/index.json`. Les avertissements NU1507 et NU1900 dans Visual Studio viennent de la même configuration et ne bloquent pas |
-| « Serveur de la pharmacie injoignable » à la connexion | L’API n’est pas démarrée | Lancer le profil « API + Poste client » ou vérifier http://localhost:5080/api/sante |
+| « Serveur de la pharmacie injoignable » à la connexion | L’API n’est pas démarrée | Lancer le profil « API + Poste client » ou vérifier http://localhost:5080/api/healthcheck |

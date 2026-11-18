@@ -10,7 +10,7 @@ using Pharma.Domain.Reprise;
 namespace Pharma.Infrastructure.Reprise;
 
 /// <summary>
-/// Classeur Excel (.xlsx) lu par Pharma Officine sans pilote ni bibliothèque extérieure : le fichier est une archive ZIP de XML
+/// Classeur Excel (.xlsx) lu par Tracodex Officine sans pilote ni bibliothèque extérieure : le fichier est une archive ZIP de XML
 /// (format Office Open XML), lue avec System.IO.Compression et System.Xml de .NET, sur le PC serveur, sans aucun envoi.
 /// Une feuille = une table ; la première ligne non vide donne les noms de colonnes. Chaque valeur est rendue en texte ;
 /// une cellule au format date (nombre de jours Excel) est rendue en aaaa-mm-jj. Le fichier n'est jamais modifié.

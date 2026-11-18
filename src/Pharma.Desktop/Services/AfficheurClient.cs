@@ -27,7 +27,7 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
 
     public string? DerniereErreur { get; private set; }
 
-    private string NomPharmacie => session.NomPharmacie ?? poste.Pharmacie ?? "Pharma Officine";
+    private string NomPharmacie => session.NomPharmacie ?? poste.Pharmacie ?? "Tracodex Officine";
 
     private string Mode => reglages.Actuelles.Afficheur ?? "aucun";
     private bool AvecEcran => Mode is "ecran" or "les_deux";
@@ -242,7 +242,7 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
         private readonly StackPanel lignes = new();
         private readonly TextBlock titre = new() { FontSize = 40, FontWeight = FontWeights.Bold, Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap };
         private readonly TextBlock total = new() { FontSize = 72, FontWeight = FontWeights.Bold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Right };
-        private readonly TextBlock sousTotal = new() { FontSize = 32, Foreground = new SolidColorBrush(Color.FromRgb(0xC8, 0xE6, 0xD2)), HorizontalAlignment = HorizontalAlignment.Right };
+        private readonly TextBlock sousTotal = new() { FontSize = 32, Foreground = new SolidColorBrush(Color.FromRgb(0xCC, 0xEE, 0xEA)), HorizontalAlignment = HorizontalAlignment.Right };
 
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr apres, int x, int y, int l, int ht, uint options);
 
@@ -254,7 +254,7 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
             ShowInTaskbar = false;
             ShowActivated = false;
             Topmost = true;   // toujours visible côté client, sans prendre le focus de la caisse
-            Background = new SolidColorBrush(Color.FromRgb(0x0E, 0x3B, 0x24));
+            Background = new SolidColorBrush(Color.FromRgb(0x10, 0x2A, 0x33));   // « encre » du logo Tracodex Officine (2026-11-18)
             var grille = new Grid { Margin = new Thickness(48) };
             grille.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             grille.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });

@@ -1,4 +1,4 @@
-# Pharma Officine
+# Tracodex Officine
 
 Logiciel de gestion d’officine pour les pharmacies algériennes : caisse, stock par lot, alertes de péremption, traçabilité de chaque boîte du grossiste au patient, contrôle de caisse et reprise des données de l’ancien logiciel. Il fonctionne **sans cloud**, sur le réseau local de la pharmacie, et cohabite avec Chifa_Officine pour le tiers payant.
 
@@ -55,7 +55,7 @@ dotnet run --project src\Pharma.Desktop
 
 Comptes de démonstration (mot de passe `demo`) : `titulaire`, `assistant`, `vendeur`.
 
-Vérification rapide de l’API : `GET http://localhost:5080/api/sante`.
+Vérification rapide de l’API : `GET http://localhost:5080/api/healthcheck`.
 
 ## Documentation
 

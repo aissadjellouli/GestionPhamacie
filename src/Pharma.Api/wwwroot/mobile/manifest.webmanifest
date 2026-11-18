@@ -1,11 +1,11 @@
 {
-  "name": "Pharma Officine – Scanner",
+  "name": "Tracodex Officine – Scanner",
   "short_name": "Scanner",
   "lang": "fr",
   "start_url": "/mobile/",
   "scope": "/mobile/",
   "display": "standalone",
   "background_color": "#FAF7F2",
-  "theme_color": "#0E5A32",
+  "theme_color": "#0F766E",
   "icons": [{ "src": "logo.svg", "sizes": "any", "type": "image/svg+xml" }]
 }

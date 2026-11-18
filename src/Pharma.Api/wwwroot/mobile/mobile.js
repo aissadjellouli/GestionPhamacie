@@ -1,4 +1,4 @@
-// Scanner mobile Pharma Officine : page servie par l'API du PC serveur, sur le Wi-Fi de la pharmacie.
+// Scanner mobile Tracodex Officine : page servie par l'API du PC serveur, sur le Wi-Fi de la pharmacie.
 // Lecture caméra : détecteur du navigateur, sinon ZXing (lib/zxing-0.23.0, Apache-2.0) servi par le serveur.
 // Les données reçues sont toujours affichées comme du texte (jamais comme du HTML).
 "use strict";

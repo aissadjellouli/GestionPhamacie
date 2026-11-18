@@ -18,7 +18,7 @@ public static class ConsoleAdministration
         ["--initialiser-autorite", "--certificat-serveur", "--creer-officine", "--code-activation", "--revoquer", "--revoquer-serveur", "--lister", "--partitions", "--generer-miroir",
          "--reglages", "--regler-famille", "--effacer-famille", "--conservation", "--purge-lots", "--purger-lots",
          "--reglages-mutualises", "--publier-reglage", "--mode-reglage", "--modele-depuis-officine", "--liberer-reglages", "--retablir-reglages", "--journal-reglages",
-         "--verifier-integrite", "--anomalies-integrite", "--conservation-depart", "--depart-officine", "--effacer-officine",
+         "--verifier-integrite", "--anomalies-integrite", "--restaurations-integrite", "--conservation-depart", "--depart-officine", "--effacer-officine",
          .. Ordres.OrdresAdministration.Commandes];
 
     public static bool Concerne(string[] args) => args.Length > 0 && Commandes.Contains(args[0]);
@@ -127,6 +127,12 @@ public static class ConsoleAdministration
                             ? int.TryParse(n, out var v) ? v : throw new ArgumentException("Nombre entier attendu après --nombre.")
                             : Integrite.VerificationIntegriteCentrale.NombreParDefaut;
                         return await Integrite.VerificationIntegriteCentrale.AnomaliesAsync(db, OfficineOption(args), nombre, Console.Out);
+                    }
+                case "--restaurations-integrite":
+                    {
+                        // Lot S6.5.3 (S6.5-D8) : restaurations constatées par la vérification par branches (script 023)
+                        await using var db = Admin();
+                        return await Integrite.VerificationIntegriteCentrale.RestaurationsAsync(db, OfficineOption(args), Console.Out);
                     }
                 case "--partitions":
                     {

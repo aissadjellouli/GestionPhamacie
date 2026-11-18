@@ -7,6 +7,15 @@ et notes explicatives discrètes.
 Tout est défini dans `src/Pharma.Desktop/wwwroot/css/app.css`. Un écran ne redéfinit ni taille, ni couleur, ni police : il
 utilise les classes ci-dessous. Pas de `style="font-size: …"`, `style="color: …"` ni `style="height: …"` dans un écran.
 
+## Logo
+
+**Logo Tracodex** (gélule verte et ambre, croissant et serpent blancs), adopté le 2026-11-18 à la place de la croix verte :
+fichiers sources, couleurs, tailles minimales et règles dans [branding/logo.md](branding/logo.md). Dans le poste, l'icône seule
+(`wwwroot/img/logo.svg`) est posée sur une vignette blanche arrondie de 40 px dans l'en-tête vert (`.logo`) et sans fond sur l'écran
+de connexion (`.logo-connexion`, 64 px). Le logo n'est jamais redessiné, recoloré, déformé ni ombré, et son croissant n'est jamais
+rouge. Depuis le 2026-11-18, le vert de l'interface est celui du logo (« Fonds » ci-dessous). Vérifié le 2026-11-18 à
+1 366 × 768, clair et sombre (connexion, en-tête).
+
 ## En-tête et menu
 
 Une seule ligne, dans cet ordre : logo et nom de la pharmacie (lien vers l'accueil), **« ← *écran précédent* »**, menu des
@@ -166,6 +175,30 @@ Patients en attente déplacés le 2026-11-18 dans le domaine Patients (`/patient
 « Expirés ou bientôt expirés » —, un seul tableau en cadre défilant, 8 colonnes, téléphone sur une ligne, pagination en bas) et
 `/patients/attente` (Patients en attente : même mise en page que l'ancien onglet d'Achats, saisie à gauche, file paginée à droite).
 
+**Défauts à 1 366 × 768 corrigés et mesurés le 2026-11-18** (poste compilé à part sur `pharmacie_test`, titulaire, thèmes sombre et
+clair, 1 366 × 768 et 1 536 × 890, captures regardées) :
+- `/caisse` en tiers payant, produit et bandeau de lot (avant : 164 px) → 0 px. En-tête du bloc client sur une rangée
+  (`.bloc-client-actions` : « Réduire », Vente libre / Tiers payant), consigne `.indice` seule sur la rangée suivante ; libellé du
+  panier sur une ligne ; **repli automatique du bloc client** quand l'écran déborde encore, panier à sa hauteur minimale
+  (`data-repli-auto` posé par la page, déclenché par `pharma.tableaux` dans `poste.js`, jamais curseur dans le bloc ; règle dans
+  regles-metier.md « Caisse en trois parties ») ; colonne de paiement resserrée sous 800 px de haut (marges 14 px). Bloc rouvert
+  (F6, F5, « Modifier ») : la page peut défiler, formulaire ouvert à la demande. 1 536 × 890 : bloc ouvert, 0 px.
+- Propositions de la recherche de la caisse : sur toute la largeur de `.ligne-scan` (champ et boutons), 545 px au lieu de 152 px,
+  plus de défilement horizontal (produits en rupture, remplaçants).
+- `/surveillance` (toutes rubriques) : menu de gauche 37 px trop haut → 0 ; « Sorties et entrées du tiroir » et « Produits
+  sensibles » rangés dans le groupe « Pertes et vigilance » (groupes « Caisse » et « Stock » d'une entrée supprimés).
+- `/admin/emplacements`, fiche ouverte : Rayon, Étagère et Tiroir gardaient 213 px (largeur naturelle d'un champ texte), la ligne
+  passait à la ligne et « Zone » tombait sous la liste ouverte des rayons ; classe **`.achats-ligne.champs-courts`** (champs à leur
+  largeur prévue, `min-width: 0`) : les cinq champs tiennent sur une ligne aux deux tailles.
+- `/surveillance/risques` (Par employé) : défilait de 33 px à 1 366 × 768, tableau de 11 colonnes avec barre horizontale → 0 px,
+  sans barre horizontale : titre du panneau pour les lecteurs d'écran seulement (`.visuellement-cache`, le titre de la page et la
+  période le disent déjà), tableau **`.tableau.tableau-serre`** (cellules 10 × 8 px, à réserver aux tableaux d'une dizaine de
+  colonnes) avec `min-width: 0`, cadre `data-hauteur-min="200"`. Onglet Jour par jour (49 px → 0) : même titre caché et même cadre de 200 px.
+- Caisse : un champ ne bouge plus pendant la frappe. Les listes de propositions ouvertes sont écartées du calcul des cadres
+  (`pharma.tableaux`, `poste.js`) ; « Nouveau médecin » est à droite du libellé, comme « Nouveau patient » (plus de lien qui
+  apparaît sous le champ). Règle : **rien n'apparaît ni ne disparaît dans le flux d'un formulaire pendant la frappe** ; ce qui dépend
+  du texte tapé va dans la liste de propositions (flottante) ou sur la ligne du libellé.
+
 **Mutualisation des réglages mesurée le 2026-11-16 (lot M7 ; poste lancé sur deux copies jetables de la base de démonstration, titulaire, thèmes clair et sombre, 1 536 × 890 et 1 366 × 768 ; états « fixé » et « proposé » des neuf écrans, puis états mélangés ; 0 px de défilement de la page, aucun élément coupé ni chevauché, dans les 133 vues mesurées)** : écrans ajoutés `/admin/reglage-fiscal` et `/admin/reglage-tracabilite` (un panneau, aucun tableau, bouton Enregistrer à côté du titre) ; Administration › Synchronisation › Réglages mutualisés (`/admin/synchronisation?rubrique=reglages-mutualises` : tableau de 11 lignes dans son cadre, liste fermée). **Bandeau « serveur central »** (composant `ReglageCentral`, `.info-bandeau.compact.bandeau-central`, une ligne : texte à gauche, « Comparer » et « Adopter » en `.lien-bouton` à droite) sous le titre de Alertes et seuils (rubriques Péremption et Stock seulement), Motifs, Remises automatiques, Contrôle interne, Substitution, Inventaire › Seuils, Psychotropes › Alertes, Notifications › Formulaire SMS et Sérialisation ; un panneau fixé est un `fieldset.panneau` désactivé (champs grisés, même aspect). Fenêtre « Comparer » : `.voile` + `.fenetre-facture`, tableau filtré et paginé. Pour tenir avec le bandeau : un cadre défilant peut déclarer `data-hauteur-min` (minimum de hauteur posé par `poste.js` ; 240 px par défaut, inchangé) — Psychotropes (120 px : à 1 366 × 768 le tableau des règles ne montre qu'une ligne et défile) ; Contrôle interne place ses trois panneaux dans un `.cadre-defilant` ; Psychotropes garde son bouton à côté du titre (`.titre-actions-cote`) ; le texte du formulaire SMS passe de 12 à 8 lignes.
 
 **Ajouté le 2026-11-16 (lot 8, à mesurer sur le poste)** : Administration › Psychotropes et antibiotiques
@@ -202,7 +235,7 @@ des sous-rubriques (Alertes et seuils, Utilisateurs et droits…) devient un **t
 gris, majuscules), comme « COMMANDES » ou « AUTRES ÉCRANS DU STOCK » dans les autres menus ; sa sous-rubrique affichée porte le
 bandeau. Les autres écrans de l'Administration restent des liens. Utilisé par l'Administration (`.admin`, `.admin-nav`,
 `.admin-contenu`, composant `NavAdmin`), la Trésorerie, Dettes et créances, Stock, Alertes, Registre, Inventaire, Achats, Rapports,
-Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux écarts et risques), le Guide et la Caisse (composant
+Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux pertes et vigilance), le Guide et la Caisse (composant
 `NavCaisse`, commun à la vente, à l'annulation ou au retour, au règlement d'un crédit, à l'état de la caisse, à la relève et à la clôture ;
 une action qui n'est pas un écran, comme ouvrir le tiroir, demande une confirmation dans le menu) (classes génériques ci-dessous).
 
@@ -272,11 +305,39 @@ saisie n'est jamais en blanc ni plus grosse que le texte qu'elle accompagne.
 Thème clair adouci (2026-11-15) : jamais de blanc pur pour les grandes surfaces, qui fatiguait l'œil. Page `--fond` #EEE9E1 (beige),
 panneaux et champs `--surface` #F7F4EE (blanc cassé chaud), en-têtes de tableau `--surface-2` #F0EBE3, bordures `--bordure` #E0D8CB.
 Colonne du menu vertical (2026-11-18, choix du titulaire « grès » : le blanc cassé fatiguait l'œil) : `--menu-fond` #E3DBCE, élément
-actif `--menu-actif` #CFE0D3 (avec la barre ambre), filet `--menu-filet` #D2C7B6 ; en thème sombre ces variables reprennent
+actif `--menu-actif` #CDE4E0 (avec la barre ambre), filet `--menu-filet` #D2C7B6 ; en thème sombre ces variables reprennent
 `--surface`, `--accent-clair` et `--bordure` (inchangé).
 Seuls le logo, les images (ordonnances) et les pastilles de l'en-tête vert restent en blanc. Le thème sombre ne change pas.
 
 Les couleurs passent toujours par les variables (`var(--…)`) : c'est ce qui fait fonctionner les thèmes clair et sombre.
+
+**Vert de l'interface = vert du logo Tracodex** (décision du titulaire, 2026-11-18 ; avant : vert #0E5A32) :
+
+| Variable | Clair | Sombre | Usage |
+|---|---|---|---|
+| `--accent` | #0F766E | #0F766E | fond des boutons principaux, en-tête, « À payer » (texte blanc : contraste 5,47) |
+| `--accent-fonce` | #0B5D57 | #99F0E0 | survol des boutons ; texte des messages de réussite |
+| `--accent-clair` | #E3F3F0 | #123A36 | fonds légers (réussite, survol des menus, élément actif en sombre) |
+| `--accent-trait` | #99D3CB | #1F5F59 | bordures vertes |
+| `--accent-texte` | #0C655E | #2DD4BF | liens, titres et texte vert (contraste ≥ 5 sur le menu « grès » en clair, 8,7 en sombre) |
+| `--menu-actif` | #CDE4E0 | (`--accent-clair`) | élément actif du menu vertical |
+| `--graphique` | #0D9488 | #14B8A6 | barres des graphiques |
+
+**Bronze : le rendu de monnaie** (demande du titulaire, 2026-11-18) : `--bronze` #8A5A24 / #E3A869 (sombre), `--bronze-fond`
+#F5EADB / #2E2317, `--bronze-trait` #C99A64 / #7A5530. Caisse : dès qu'il y a de la monnaie à rendre, le montant (`.rendu-caisse.a-rendre`,
+30 px, cadre de 2 px) et son libellé « Rendu » passent en bronze ; après l'encaissement, « Rendu : … » est rappelé en bronze, 22 px
+(`.rendu-vente`). Contrastes : 4,95 en clair, 7,4 en sombre. Le bronze est réservé au rendu.
+
+Le texte vert est un peu plus foncé que le logo : #0F766E ne fait que 3,99 sur le menu « grès ». L'**ambre reste #E08A1E**
+(#F0A040 en sombre) : l'ambre du logo (#F59E0B) ne ferait que 2,55 sous l'en-tête vert, contre 3,1. Mêmes valeurs dans l'application
+mobile (`mobile.css`, `theme-color`, manifeste), le titre des PDF (#0C655E), le titre des e-mails de notification (#0C655E) ; écran du
+client sur fond « encre » #102A33 (texte #CCEEEA). Fonds neutres du thème clair (beige, « grès ») inchangés.
+**Thème sombre sur l'« encre » du logo** (2026-11-18 ; avant : gris-vert #121915…) : `--fond` #0D1A20, `--surface` #132329,
+`--surface-2` #182B32, `--bordure` #29414A, `--bordure-2` #1F343C, `--bordure-champ` #45616B, `--texte` #E4EEF0, `--texte-2`
+#AFC3C8, `--texte-3` #C8D7DA, `--info-fond` #21363E, `--texte-inactif` #7C9097 (mêmes valeurs dans `mobile.css`) ; contrastes
+égaux ou meilleurs qu'avant (texte secondaire 8,8, texte vert 8,7, texte inactif 4,8 sur `--surface`). Vérifié le
+2026-11-18 à 1 536 × 890, clair et sombre, captures avant et après (Accueil, Caisse, Stock, Achats, Emplacements, Contrôle interne :
+0 px de défilement).
 
 ## Contrôles
 

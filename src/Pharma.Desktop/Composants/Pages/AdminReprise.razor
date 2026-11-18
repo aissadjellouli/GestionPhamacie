@@ -408,7 +408,7 @@
                             }
                             else
                             {
-                                <button type="button" class="btn btn-principal" disabled="@(enCours || bloquants > 0)" @onclick="() => confirmerChargement = true">Charger dans Pharma Officine</button>
+                                <button type="button" class="btn btn-principal" disabled="@(enCours || bloquants > 0)" @onclick="() => confirmerChargement = true">Charger dans Tracodex Officine</button>
                                 <button type="button" class="btn" disabled="@enCours" @onclick="DemanderAbandon">Abandonner cette reprise</button>
                             }
                         </div>
@@ -418,7 +418,7 @@
                 @if (et.Verification.Count > 0)
                 {
                     <section class="panneau" aria-labelledby="t-verif">
-                        <h2 id="t-verif">Vérification : ancien logiciel / Pharma Officine</h2>
+                        <h2 id="t-verif">Vérification : ancien logiciel / Tracodex Officine</h2>
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">Indicateur</th><th scope="col">Ancien</th><th scope="col">Nouveau</th><th scope="col">Écart</th></tr></thead>
                             <tbody>

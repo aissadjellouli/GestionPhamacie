@@ -77,7 +77,11 @@ public static partial class DepartOfficine
                 var tables = new List<(string Nom, string[] Cle)>();
                 await using (var liste = new NpgsqlCommand("""
                     SELECT nom_table, cle FROM cloud_table_miroir WHERE to_regclass('public.' || quote_ident(nom_table)) IS NOT NULL
-                    UNION ALL SELECT 'ligne_remplacee', ARRAY['id'] ORDER BY 1
+                    UNION ALL SELECT 'ligne_remplacee', ARRAY['id']
+                    -- Lot S6.5.3 (script 022) : déclarations d'époque, versions divergentes, restaurations constatées et anomalies rattachées
+                    UNION ALL SELECT t, ARRAY['id'] FROM unnest(ARRAY['cloud_epoque_changement', 'cloud_ligne_divergente',
+                        'cloud_integrite_bifurcation', 'cloud_anomalie_classement']) t WHERE to_regclass('public.' || t) IS NOT NULL
+                    ORDER BY 1
                     """, cnx, tx))
                 await using (var r = await liste.ExecuteReaderAsync(ct))
                     while (await r.ReadAsync(ct)) tables.Add((r.GetString(0), r.GetFieldValue<string[]>(1)));

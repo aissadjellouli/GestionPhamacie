@@ -67,6 +67,36 @@ public static class VerificationIntegriteCentrale
         return 0;
     }
 
+    /// <summary>
+    /// Lot S6.5.3 (script 023, S6.5-D8) : restaurations constatées (bifurcations), pour l'éditeur : journal, époques, rang commun, lignes
+    /// et période de la suite remplacée, montant TTC (journal des ventes), sceaux perdus, classe. Lecture seule.
+    /// </summary>
+    public static async Task<int> RestaurationsAsync(NpgsqlDataSource db, Guid? officine, TextWriter sortie)
+    {
+        foreach (var (id, libelle) in await OfficinesAsync(db, officine))
+        {
+            await using var cnx = await db.OpenConnectionAsync();
+            await using var tx = await cnx.BeginTransactionAsync();
+            await PoserOfficineAsync(cnx, tx, id);
+            await using var cmd = new NpgsqlCommand("""
+                SELECT b.id, b.constatee_le, b.journal, b.ancienne_epoque, b.nouvelle_epoque, b.rang_commun, b.fin_ancienne_rang, b.lignes_ancienne,
+                       b.premiere_date, b.derniere_date, b.montant_ttc, b.sceaux_perdus, b.classe
+                FROM cloud_restaurations_integrite() b
+                """, cnx, tx);
+            await using var r = await cmd.ExecuteReaderAsync();
+            var lignes = new List<string>();
+            while (await r.ReadAsync())
+                lignes.Add(FormattableString.Invariant($"  n° {r.GetInt64(0)}  {r.GetDateTime(1).ToUniversalTime():yyyy-MM-dd HH:mm} UTC  {r.GetString(2)}  époque {r.GetInt32(3)} -> {r.GetInt32(4)}")
+                    + FormattableString.Invariant($"  rangs {r.GetInt64(5) + 1} à {(r.IsDBNull(6) ? "?" : r.GetInt64(6).ToString(CultureInfo.InvariantCulture))} ({r.GetInt64(7)} ligne(s))")
+                    + (r.IsDBNull(8) ? "" : FormattableString.Invariant($" du {r.GetDateTime(8).ToUniversalTime():yyyy-MM-dd} au {r.GetDateTime(9).ToUniversalTime():yyyy-MM-dd}"))
+                    + (r.IsDBNull(10) ? "" : FormattableString.Invariant($"  montant TTC {r.GetDecimal(10):0.00}"))
+                    + FormattableString.Invariant($"  sceaux perdus {r.GetInt32(11)}  {(r.GetString(12) == "restauration_constatee" ? "remplacée après restauration" : "À JUSTIFIER")}"));
+            sortie.WriteLine($"{id}  {libelle}  {(lignes.Count == 0 ? "aucune restauration" : $"{lignes.Count} restauration(s)")}");
+            foreach (var l in lignes) sortie.WriteLine(l);
+        }
+        return 0;
+    }
+
     /// <summary>Ligne de compte rendu d'un passage (résumé integrite-v1 du script 012).</summary>
     public static string Resume(string json)
     {

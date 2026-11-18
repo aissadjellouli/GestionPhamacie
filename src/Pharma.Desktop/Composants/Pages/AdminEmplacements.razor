@@ -21,7 +21,7 @@
         {
             <section class="panneau" aria-labelledby="t-fiche-empl">
                 <h2 id="t-fiche-empl">@(fiche.Id is null ? "Nouvel emplacement" : $"Modifier {fiche.CodeInitial}")</h2>
-                <div class="achats-ligne">
+                <div class="achats-ligne champs-courts">
                     @* Rayon : saisie libre ; les rayons font une lettre, donc TOUS les rayons existants sont proposés, triés, dès l'entrée dans
                        le champ puis filtrés à la frappe (ValeursSaisies « rayon_emplacement », minimum de 0 lettre fixé par le serveur, droit
                        admin.parametres) ; un nouveau rayon peut toujours être tapé *@

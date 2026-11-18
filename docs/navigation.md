@@ -114,7 +114,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Dettes et créances | « Payer » / « Encaisser » (Caisse, Trésorerie › Saisir un mouvement, ou Achats › Payer un grossiste) | Dettes : rubrique du tiers, filtres et page de la liste |
 | Achats › Commandes | « Réceptionner » (Achats › Réceptions) | Commandes : filtres, page, bon ouvert |
 | Caisse | Clôture, Relevé | Caisse (vente reprise, partie « Encaisser une dette » rouverte) |
-| Contrôle interne | Écarts et risques | Contrôle interne (rubrique) |
+| Contrôle interne | Pertes et vigilance | Contrôle interne (rubrique) |
 | Administration › Caisse | Imprimantes | Administration › Caisse (filtres et page du journal) |
 | Barre d'état (en bas) | Caisse ou Clôture, Sauvegardes | écran précédent |
 | Nom d'un tiers cliquable (17 écrans) | sa fiche (fenêtre) | Échap ou « Fermer » referme la fiche |
@@ -150,7 +150,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Trésorerie | `tresorerie` | rubrique dans l'adresse (`comptes`, `mouvements`, `saisie`, `caisses`, `cheques`) ; compte affiché, période, employé, page, type de mouvement en saisie |
 | Dettes et créances | `dettes` | rubrique dans l'adresse (`dettes` : vue d'ensemble ; `?onglet=alertes`, `patient`, `facture`, `bordereau`, `grossiste`, `effet`, `pret` et `titulaire` pour le titulaire seul, `tout`) ; filtres de la liste (tiers, état, période) et page |
 | Financements (titulaire seul) | `financements`, `fiche-pret`, `editeur-echeancier` | rubrique dans l'adresse (`prets`, `echeances`, `titulaire`) et prêt ouvert (`&pret=…`) ; prêts : texte, état (en cours par défaut, remboursés, tous), banque, page ; échéances : prêt ou banque, état (échues et à 7 jours par défaut, échues, à venir, payées, toutes), page ; compte du titulaire : mouvement, période, page ; fiche du prêt : vue (échéancier, usages…), filtre et page de l'échéancier et des usages ; saisie de l'échéancier : « lignes incohérentes seulement », page. La saisie en cours d'un échéancier n'est pas retenue (à enregistrer avant de quitter) |
-| Contrôle interne › Écarts et risques | `risques` | tableau dans l'adresse (par employé, `?rubrique=jours`) ; période, pages des deux tableaux |
+| Contrôle interne › Pertes et vigilance | `risques` | tableau dans l'adresse (par employé, `?rubrique=jours`) ; période, pages des deux tableaux |
 | Administration › Caisse | `journal` | employé, catégorie, période, page du journal |
 | Administration › Notifications | `notifications` | objet, statut, période, page de la file d'attente |
 | Patients › Fichier des patients | `patients` | texte (nom, prénom, n° d'assuré, téléphone), organisme, chronique, crédit, droits Chifa, accord SMS, page, taille ; liste filtrée et paginée par le serveur |

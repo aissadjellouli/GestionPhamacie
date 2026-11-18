@@ -155,6 +155,13 @@ END $$;
 
 -- Lignes de l'officine dans ses tables miroir, ligne_remplacee et lot_recu : simulation (compte) ou effacement (p_confirmer).
 -- Une ligne par table non vide. Refus : officine inconnue, non partie, durée non écoulée, opérateur absent à la confirmation.
+-- Garde de rejeu (2026-11-18, lot S6.5) : définition remplacée par le script 022 ; rejouer ce script après 022 ne la
+-- ramène pas en arrière (marqueur : table cloud_epoque_changement, posée par 022).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.cloud_epoque_changement') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_effacer_officine : définition plus récente (script 022) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_effacer_officine(p_officine uuid, p_confirmer boolean DEFAULT false, p_operateur text DEFAULT NULL)
 RETURNS TABLE (nom_table text, lignes bigint)
 LANGUAGE plpgsql AS $$
@@ -209,6 +216,9 @@ BEGIN
                                                       to_char(o.resiliee_le, 'YYYY-MM-DD'), v_total, v_ans));
     END IF;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- ---- 5. Gardes d'ajout seul : passage pour le seul effacement permis ----
 -- lot_recu (remplace la version de 004) : purge, expurgation (004) et effacement d'une officine partie
@@ -246,6 +256,13 @@ BEGIN
 END $$;
 
 -- Journaux chaînés (remplace la version de 012, identique sauf la première condition)
+-- Garde de rejeu (2026-11-18, lot S6.5) : définition remplacée par le script 022 ; rejouer ce script après 022 ne la
+-- ramène pas en arrière (marqueur : table cloud_epoque_changement, posée par 022).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.cloud_epoque_changement') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_integrite_ajout_seul : définition plus récente (script 022) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_integrite_ajout_seul() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
@@ -279,6 +296,9 @@ BEGIN
         format('suppression de la ligne %s reçue : ligne gardée', v_avant ->> 'id'));
     RETURN NULL;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- ---- Droits : aucune fonction d'administration pour l'API ----
 REVOKE EXECUTE ON FUNCTION cloud_conservation_depart_ans(uuid), cloud_regler_conservation_depart(int, uuid),
