@@ -270,10 +270,17 @@ internal sealed class SauvegardesEnMemoire : ISauvegardesDepot
     public List<NouvelleEntreeSauvegarde> Journal { get; } = [];
     public Task<ReglagesSauvegarde> ReglagesAsync(CancellationToken ct = default) => Task.FromResult(Reglages);
     public Task EnregistrerReglagesAsync(bool actif, string? dossier, TimeOnly heure, int conservation, int? retentionGedJours, int? nettoyageGedAnnees,
-        CancellationToken ct = default)
+        int alerteSansDisqueJours, CancellationToken ct = default)
     {
         Reglages = Reglages with { Actif = actif, Dossier = dossier, Heure = heure, Conservation = conservation, RetentionGedJours = retentionGedJours,
-            NettoyageGedAnnees = nettoyageGedAnnees };
+            NettoyageGedAnnees = nettoyageGedAnnees, AlerteSansDisqueJours = alerteSansDisqueJours };
+        return Task.CompletedTask;
+    }
+    public DateTime? DerniereReussie { get; set; }
+    public Task<DateTime?> DerniereReussieAsync(CancellationToken ct = default) => Task.FromResult(DerniereReussie);
+    public Task NoterAlerteSansDisqueAsync(DateTime utc, CancellationToken ct = default)
+    {
+        Reglages = Reglages with { DerniereAlerteSansDisqueUtc = utc };
         return Task.CompletedTask;
     }
     public Task NoterExecutionAsync(DateOnly jour, CancellationToken ct = default) { Reglages = Reglages with { DerniereExecution = jour }; return Task.CompletedTask; }
@@ -318,6 +325,8 @@ internal sealed class AlertesTitulaireEspion : IAlertesTitulaire
     }
     public Task LotBloqueAsync(string produit, string lot, int stock, int vendues, CancellationToken ct = default) => Task.CompletedTask;
     public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default) { Sauvegardes.Add((disqueAbsent, detail)); return Task.CompletedTask; }
+    public List<(int Jours, string Detail)> SansDisque { get; } = [];
+    public Task SansSauvegardeDisqueAsync(int jours, string detail, CancellationToken ct = default) { SansDisque.Add((jours, detail)); return Task.CompletedTask; }
     public List<(string Rayon, int Lignes)> Inventaires { get; } = [];
     public Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default) { Inventaires.Add((rayon, lignes)); return Task.CompletedTask; }
     public List<(string Poste, int Nombre)> Annulations { get; } = [];

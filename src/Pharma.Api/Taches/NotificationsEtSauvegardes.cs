@@ -48,6 +48,9 @@ public sealed class SauvegardesAutomatiques(IServiceProvider services, ILogger<S
                 // Copie de secours trop ancienne : titulaire prévenu (une alerte par période réglée)
                 if (await scope.ServiceProvider.GetRequiredService<SurveillerCopieSecours>().ExecuterAsync(stoppingToken))
                     logger.LogWarning("Copie de secours en retard : titulaire prévenu");
+                // Aucune sauvegarde réussie sur le disque externe depuis N jours : titulaire prévenu (une alerte par période)
+                if (await scope.ServiceProvider.GetRequiredService<SurveillerSauvegardeDisque>().ExecuterAsync(stoppingToken))
+                    logger.LogWarning("Aucune sauvegarde sur disque externe depuis le délai réglé : titulaire prévenu");
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

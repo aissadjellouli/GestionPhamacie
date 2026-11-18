@@ -1,6 +1,6 @@
 # GED : protection des documents, sujet à reprendre
 
-Note du 2026-11-17. **Recommandation validée par le titulaire le 2026-11-18 (« ok recommandation GED »)** : voir § 5 ; le code (alerte, disques en rotation) reste à lancer sur « go ».
+Note du 2026-11-17. **Recommandation validée par le titulaire le 2026-11-18 (« ok recommandation GED »)** : voir § 5 ; alerte codée le 2026-11-18 (script 148, Administration › Sauvegardes) et rotation des deux disques écrite dans `mise-en-production.md` (étape 11.2 bis).
 
 La GED regroupe les documents de l'officine : ordonnances scannées, fichiers Chifa, factures, pièces des prêts, copies des
 sauvegardes (dossier `Ged__Dossier`, par défaut `C:\ProgramData\PharmaOfficine\GED`). Ce sont des données de santé.
@@ -48,9 +48,9 @@ Autres options écartées pour la copie entre serveurs de l'officine : écriture
 ## 5. Décisions attendues
 
 - [x] Recommandation validée (2026-11-18, « ok recommandation GED ») ; décision n° 2 maintenue : jamais de GED lisible au central.
-- [x] Rotation de deux disques, dont un toujours hors de l'officine : **obligatoire** pour une officine sans 2e serveur (à écrire dans
-      `mise-en-production.md` avec le lot de code).
-- [x] Alerte au titulaire si aucune sauvegarde réussie sur disque externe depuis **7 jours** (réglable) : **oui** ; code à lancer sur « go ».
+- [x] Rotation de deux disques, dont un toujours hors de l'officine : **obligatoire** pour une officine sans 2e serveur (écrite dans
+      `mise-en-production.md`, étape 11.2 bis, le 2026-11-18).
+- [x] Alerte au titulaire si aucune sauvegarde réussie sur disque externe depuis **7 jours** (réglable) : **oui** ; **codée le 2026-11-18** (script 148, réglable de 1 à 90 jours, une alerte par période, même sauvegarde automatique désactivée).
 - [x] Sauvegarde chiffrée de la GED hors de l'officine (option B) : **plus tard**, avec le lot 9 et l'hébergeur, même clé à ouverture à
       deux que `chiffrement-data.md`.
 - [ ] À vérifier : obligations de conservation des ordonnances et documents (durées, support), avis ANPDP pour une copie hors de

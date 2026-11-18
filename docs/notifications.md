@@ -14,7 +14,7 @@ Le titulaire est prévenu à distance **sans cloud ni application mobile** : par
 | Rapport quotidien | Chaque jour à l'heure réglée (21:00 par défaut), une seule fois | Oui | Non |
 | Écart de caisse | Clôture dont l'écart (manque ou excédent) dépasse le seuil SMS (à défaut, le seuil de la caisse) ; l'objet dit « Manque de caisse » ou « Excédent de caisse » | Oui | Oui |
 | Lot bloqué | Rappel de lot (Stock, Traçabilité) | Oui | Si la case « SMS lot bloqué » est cochée |
-| Sauvegarde | Échec de pg_dump ou disque externe absent | Oui | Si la case « SMS sauvegarde » est cochée |
+| Sauvegarde | Échec de pg_dump, disque externe absent, ou aucune sauvegarde réussie sur le disque externe depuis N jours (7 par défaut, une alerte par période) | Oui | Si la case « SMS sauvegarde » est cochée |
 | Écart d'inventaire | Fin d'un inventaire tournant avec des écarts au-delà des seuils (à valider par le titulaire) | Oui | Oui |
 | Contrôle interne | Nouvelle anomalie (caisse, stock, comptes, réception) : objet « Contrôle interne : point à examiner » (« URGENT : … » au double du seuil) | Oui | Si la case « SMS lot bloqué » est cochée |
 | Synchronisation | Retard au-delà de 24 h, erreur d'envoi depuis 60 minutes, certificat à moins de 30 jours de l'échéance, quota ou plafond refusé par le serveur central (au plus une par heure et par sujet ; seuils réglables : Administration › Synchronisation › Supervision et purge ; script 140) ; anomalie d'intégrité constatée par le serveur central (une alerte par nouvelle anomalie, lot S4, script 144) ; ordre du serveur central à confirmer, refusé ou expiré, et employé bloqué par le serveur central (lots S5.1 et S5.5) | Oui | Si la case « SMS sauvegarde » est cochée |
@@ -87,7 +87,7 @@ Droit `admin.sauvegardes`. Le module intégré à l'API lance `pg_dump` (format 
 
 En cas de disque absent ou d'échec, le titulaire reçoit un SMS et un e-mail. `pg_dump` est cherché dans `appsettings.json` (`Sauvegardes:PgDump`), sinon dans `C:\Program Files\PostgreSQL\<version>\bin`. Le mot de passe de la base est passé à `pg_dump` par variable d'environnement, jamais sur la ligne de commande.
 
-> Le script planifié `scripts/sauvegarde_pharmacie.ps1` (voir [mise-en-production.md](mise-en-production.md)) fait un travail proche, mais sans alerte au titulaire. Choisir l'un ou l'autre pour ne pas sauvegarder deux fois.
+> Le script planifié `scripts/sauvegarde_pharmacie.ps1` (voir [mise-en-production.md](mise-en-production.md)) fait un travail proche, sans alerte immédiate au titulaire en cas d'échec ; il inscrit chaque passage au journal des sauvegardes, donc l'alerte « aucune sauvegarde sur disque externe depuis N jours » fonctionne aussi avec lui. Choisir l'un ou l'autre pour ne pas sauvegarder deux fois.
 
 ## Ce qui reste à vérifier avec le vrai matériel
 

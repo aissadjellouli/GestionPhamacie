@@ -223,6 +223,7 @@
     <File Path="database/migration/145_synchronisation_ordres_central.sql" />
     <File Path="database/migration/146_synchronisation_commande_brouillon_central.sql" />
     <File Path="database/migration/147_synchronisation_associations_produits_montantes.sql" />
+    <File Path="database/migration/148_sauvegarde_alerte_sans_disque_externe.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -248,6 +249,7 @@
     <File Path="database/tests/145_synchronisation_ordres_central_tests.sql" />
     <File Path="database/tests/146_synchronisation_commande_brouillon_central_tests.sql" />
     <File Path="database/tests/147_synchronisation_associations_produits_montantes_tests.sql" />
+    <File Path="database/tests/148_sauvegarde_alerte_sans_disque_externe_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
   </Folder>

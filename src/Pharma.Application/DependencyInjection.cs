@@ -360,6 +360,7 @@ public static class DependencyInjection
         services.AddScoped<Notifications.ConsulterFileMessages>();
         services.AddScoped<Sauvegardes.LancerSauvegarde>();
         services.AddScoped<Sauvegardes.SauvegardeAutomatique>();
+        services.AddScoped<Sauvegardes.SurveillerSauvegardeDisque>();
         services.AddScoped<Sauvegardes.ObtenirSauvegardes>();
         services.AddScoped<Sauvegardes.ModifierReglagesSauvegarde>();
         // PC de secours : seconde copie vérifiée, alerte de retard, test de restauration (2026-11-16)

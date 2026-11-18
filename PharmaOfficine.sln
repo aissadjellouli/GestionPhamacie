@@ -267,6 +267,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\145_synchronisation_ordres_central.sql = database\migration\145_synchronisation_ordres_central.sql
 		database\migration\146_synchronisation_commande_brouillon_central.sql = database\migration\146_synchronisation_commande_brouillon_central.sql
 		database\migration\147_synchronisation_associations_produits_montantes.sql = database\migration\147_synchronisation_associations_produits_montantes.sql
+		database\migration\148_sauvegarde_alerte_sans_disque_externe.sql = database\migration\148_sauvegarde_alerte_sans_disque_externe.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -294,6 +295,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\145_synchronisation_ordres_central_tests.sql = database\tests\145_synchronisation_ordres_central_tests.sql
 		database\tests\146_synchronisation_commande_brouillon_central_tests.sql = database\tests\146_synchronisation_commande_brouillon_central_tests.sql
 		database\tests\147_synchronisation_associations_produits_montantes_tests.sql = database\tests\147_synchronisation_associations_produits_montantes_tests.sql
+		database\tests\148_sauvegarde_alerte_sans_disque_externe_tests.sql = database\tests\148_sauvegarde_alerte_sans_disque_externe_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 	EndProjectSection

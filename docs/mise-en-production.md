@@ -81,7 +81,7 @@ chiffrement résistant au quantique.
 | Processeur | 4 cœurs : Intel Core i3 12e génération ou plus, ou AMD Ryzen 3 5000 ou plus | PostgreSQL, API, synchronisation et chiffrement ensemble |
 | Mémoire | **16 Go** (8 Go au strict minimum) | PostgreSQL profite de la mémoire libre ; 4 Go trop juste |
 | Disque | SSD NVMe de 512 Go | Rapidité de la base ; place de la GED **[À VÉRIFIER : volume réel]** |
-| Sauvegarde | Disque externe, ou deux en alternance | [ged-protection-a-decider.md](ged-protection-a-decider.md) |
+| Sauvegarde | Deux disques externes en rotation, dont un toujours hors de l'officine (**obligatoire** sans 2e serveur) | [ged-protection-a-decider.md](ged-protection-a-decider.md) |
 | Réseau | Ethernet gigabit, pas de Wi-Fi | Liaison stable avec les postes |
 | Onduleur | **Obligatoire** | Une coupure pendant une écriture peut abîmer la base |
 | Windows | Windows 11 Pro 24H2 ou plus, à jour | Tableau ci-dessus |
@@ -169,7 +169,7 @@ Côté serveur central (outils d'administration) : voir parcours E, étape 3.2.
 
 | Chemin | Où | Contenu | À sauvegarder |
 | --- | --- | --- | --- |
-| `C:\Program Files\PharmaOfficine\Api` | PC serveur | Programme de l'API, `appsettings.Https.json`, `database\` (scripts 001 à 136, sans `111b`) | Non (republié à chaque mise à jour) |
+| `C:\Program Files\PharmaOfficine\Api` | PC serveur | Programme de l'API, `appsettings.Https.json`, `database\` (scripts 001 à 148, sans `111b`) | Non (republié à chaque mise à jour) |
 | `C:\ProgramData\PharmaOfficine\super-admin.dat` | PC serveur | Compte super admin, chiffré pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\cle-integrite.dat` | PC serveur | Clé de scellement des journaux, chiffrée pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\archives-fiscales\AAAA\MM` | PC serveur | Rapports scellés, à conserver 6 ans au moins | **Oui** |
@@ -323,7 +323,7 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
   dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
   ```
   - `--self-contained true` : aucun runtime .NET à installer sur le PC serveur.
-  - Le dossier publié contient `Pharma.Api.exe` et `database\` (scripts `001` à `136`, sans `111b`, qui se lance à part).
+  - Le dossier publié contient `Pharma.Api.exe` et `database\` (scripts `001` à `148`, sans `111b`, qui se lance à part).
   - Contrepartie : les correctifs de sécurité de .NET n'arrivent qu'avec une nouvelle publication (parcours B).
   - **Attendu** : `Pharma.Api.exe` et le dossier `database` sont présents dans `<dossier de livraison>\Api`.
   - **Si échec** : SDK absent (étape 1.6) ou version différente de .NET 10.
@@ -584,6 +584,11 @@ Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou s
     $LASTEXITCODE
     ```
     Le résultat doit être `0`.
+- [ ] **11.2 bis** **Officine sans 2e serveur : deux disques externes en rotation, obligatoire** (décision du titulaire du 2026-11-18, [ged-protection-a-decider.md](ged-protection-a-decider.md)). **Où** : PC serveur. **Compte** : titulaire.
+  - Deux disques avec la même lettre de lecteur (réglée dans Gestion des disques de Windows) et le même dossier de sauvegarde. Un disque branché au PC serveur, **l'autre toujours hors de l'officine** (domicile du titulaire) ; échange au moins une fois par semaine.
+  - Après chaque échange : « Sauvegarder maintenant » ; la sauvegarde complète le dossier `GED` du disque (documents nouveaux et modifiés).
+  - Délai d'alerte : Administration › Sauvegardes, « Alerte si aucune sauvegarde sur le disque depuis (jours) », 7 par défaut (1 à 90). Le titulaire est prévenu (SMS si « SMS sauvegarde » est coché, et e-mail) quand aucune sauvegarde n'a réussi sur le disque depuis ce délai, même si la sauvegarde automatique est désactivée ; une alerte par période.
+  - L'alerte lit le journal des sauvegardes de l'application ; le script planifié de l'option (b) y inscrit aussi chaque passage (réussie = copiée sur le disque externe, disque absent, échouée) : l'alerte fonctionne avec les deux options.
 - [ ] **11.3** Option (b) : installer le script. **Où** : PC serveur. **Compte** : administrateur Windows.
   1. Créer le fichier de mot de passe (une seule ligne, mot de passe de `pharma_app` **dans le fichier seulement**) :
      `C:\ProgramData\PharmaOfficine\pgpass.conf`, contenu : `localhost:5432:<base>:pharma_app:<mot de passe>`.
@@ -656,7 +661,7 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
     dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
     ```
   - Copier `<dossier de livraison>` (avec son dossier `Api\database\migration`) et le dossier `scripts` du dépôt sur la clé USB. Copier aussi `database\migration\111b_roles_integrite.sql` du dépôt (il est exclu du dossier publié) si la séparation des rôles n'est pas encore faite.
-  - **Attendu** : `Api\Pharma.Api.exe`, `Api\database\migration\136_synchronisation_colonnes_figees_descendant.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
+  - **Attendu** : `Api\Pharma.Api.exe`, `Api\database\migration\148_sauvegarde_alerte_sans_disque_externe.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
 - [ ] **2.** Si l'officine est synchronisée avec le serveur central : **mettre le serveur central à jour d'abord** (parcours E, étape 10), puis l'officine.
 - [ ] **3.** Arrêter le service. **Où** : PC serveur. **Compte** : administrateur Windows. Le script de l'étape 4 refuse de travailler si le service tourne.
   ```powershell
@@ -1204,7 +1209,7 @@ Le serveur central peut proposer ou imposer aux officines la valeur de 11 régla
 ### 10. Mise à jour du serveur central
 
 - [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `019`, **dans cet ordre** (le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `019`, **dans cet ordre** (le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
 - [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
 - [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 
@@ -1249,7 +1254,7 @@ Les sauvegardes utiles sont sur le **disque externe**. La copie de la base dans 
 - [ ] **6.** Ressaisir les opérations faites depuis la sauvegarde. Sur un nouveau PC, ressaisir le mot de passe des notifications (chiffré pour le PC d'origine).
 - [ ] **7.** Si le PC serveur a changé : refaire le parcours A, étape 4.9, et **restaurer l'autorité HTTPS** depuis le PFX du coffre, puis créer le certificat du nouveau PC (procédure F2 bis ci-dessous). L'autorité est **unique pour la pharmacie** : les postes et téléphones n'ont **rien à réinstaller**. Sans le PFX du coffre, une nouvelle autorité serait créée et il faudrait réinstaller `autorite-pharmacie.crt` partout (parcours A, étapes 5.3 à 5.4 et 6.2).
 
-> La copie de la GED sur le disque externe n'a qu'un exemplaire par document : un document abîmé sur le serveur remplace sa copie à la sauvegarde suivante. Garder deux disques externes en rotation.
+> La copie de la GED sur le disque externe n'a qu'un exemplaire par document : un document abîmé sur le serveur remplace sa copie à la sauvegarde suivante. Garder deux disques externes en rotation, dont un toujours hors de l'officine (obligatoire sans 2e serveur, étape 11.2 bis).
 
 ### F2. PC serveur en panne (bascule sur le PC de secours)
 

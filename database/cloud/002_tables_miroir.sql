@@ -355,6 +355,27 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public."catalogue_grossiste" TO pharma_c
 INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('catalogue_grossiste', '{fournisseur_id,produit_id}', '{fournisseur_id,produit_id,code_grossiste,designation,prix_ht,disponible,quantite_disponible,delai_jours,import_id,maj_le,officine_id}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
+CREATE TABLE IF NOT EXISTS public."chifa_code_produit" (
+    officine_id uuid NOT NULL,
+    "code" text NOT NULL,
+    sync_epoque integer NOT NULL,
+    sync_numero bigint NOT NULL,
+    sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (officine_id, "code")
+);
+ALTER TABLE public."chifa_code_produit" ADD COLUMN IF NOT EXISTS "produit_id" bigint;
+ALTER TABLE public."chifa_code_produit" ADD COLUMN IF NOT EXISTS "associe_par" bigint;
+ALTER TABLE public."chifa_code_produit" ADD COLUMN IF NOT EXISTS "associe_le" timestamp with time zone;
+ALTER TABLE public."chifa_code_produit" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."chifa_code_produit" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
+ALTER TABLE public."chifa_code_produit" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."chifa_code_produit" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cloisonnement ON public."chifa_code_produit";
+CREATE POLICY cloisonnement ON public."chifa_code_produit" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public."chifa_code_produit" TO pharma_cloud_api;
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('chifa_code_produit', '{code}', '{code,produit_id,associe_par,associe_le,officine_id}')
+    ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
+
 CREATE TABLE IF NOT EXISTS public."client_facture" (
     officine_id uuid NOT NULL,
     "id" bigint NOT NULL,
@@ -1829,6 +1850,9 @@ ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "conservation
 ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "derniere_execution" date;
 ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "retention_ged_jours" integer;
 ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "nettoyage_ged_annees" integer;
+ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "alerte_sans_disque_jours" integer;
+ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "suivi_disque_depuis" timestamp with time zone;
+ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS "derniere_alerte_sans_disque" timestamp with time zone;
 ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."parametre_sauvegarde" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_sauvegarde" ENABLE ROW LEVEL SECURITY;
@@ -1836,7 +1860,7 @@ ALTER TABLE public."parametre_sauvegarde" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_sauvegarde";
 CREATE POLICY cloisonnement ON public."parametre_sauvegarde" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."parametre_sauvegarde" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('parametre_sauvegarde', '{id}', '{id,actif,dossier,heure,conservation,derniere_execution,retention_ged_jours,nettoyage_ged_annees,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('parametre_sauvegarde', '{id}', '{id,actif,dossier,heure,conservation,derniere_execution,retention_ged_jours,nettoyage_ged_annees,officine_id,alerte_sans_disque_jours,suivi_disque_depuis,derniere_alerte_sans_disque}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."parametre_serialisation" (
@@ -2081,6 +2105,26 @@ DROP POLICY IF EXISTS cloisonnement ON public."produit";
 CREATE POLICY cloisonnement ON public."produit" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."produit" TO pharma_cloud_api;
 INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('produit', '{id}', '{id,num_enregistrement,code_barre,nom_commercial,dci_id,laboratoire_id,dosage,forme,conditionnement,prix_public,tarif_reference,remboursable,taux_tva,classe,est_essentiel,stock_minimum,actif,cree_le,en_tension,jours_orange,jours_rouge,emplacement_id,reserve_id,a_verifier,liste_psychotrope,categorie,bloque_achat,bloque_vente,motif_blocage,sensible,classe_confirmee_par,classe_confirmee_le,fabrication_locale,contenance,officine_id}')
+    ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
+
+CREATE TABLE IF NOT EXISTS public."produit_indication" (
+    officine_id uuid NOT NULL,
+    "produit_id" bigint NOT NULL,
+    "indication_id" bigint NOT NULL,
+    sync_epoque integer NOT NULL,
+    sync_numero bigint NOT NULL,
+    sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (officine_id, "produit_id", "indication_id")
+);
+ALTER TABLE public."produit_indication" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."produit_indication" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."produit_indication" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
+ALTER TABLE public."produit_indication" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."produit_indication" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cloisonnement ON public."produit_indication";
+CREATE POLICY cloisonnement ON public."produit_indication" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public."produit_indication" TO pharma_cloud_api;
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('produit_indication', '{produit_id,indication_id}', '{produit_id,indication_id,cree_le,officine_id}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."reception" (

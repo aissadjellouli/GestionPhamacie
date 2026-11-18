@@ -28,6 +28,10 @@
             {
                 <div class="info-bandeau" role="status">Base de données sauvegardée : <strong>@baseSauvegardee</strong>@(serveurBase is { } sv ? $" · serveur {sv}" : "")</div>
             }
+            @if (sansDisqueEnRetard)
+            {
+                <div class="bandeau-attention" role="status">Aucune sauvegarde réussie sur le disque externe depuis plus de @alerteSansDisqueEnregistree jour(s) : branchez le disque de sauvegarde. Le titulaire est prévenu.</div>
+            }
             <section class="panneau" aria-labelledby="t-reg">
                 <h2 id="t-reg">Réglages</h2>
                 <div class="achats-ligne">
@@ -41,10 +45,13 @@
                         <input id="s-ged-jours" data-champ="retention_ged" type="number" min="1" max="365" placeholder="@($"{retentionParDefaut} (réglage du serveur)")" @bind="r.RetentionGedJours" /></div>
                     <div class="champ" style="flex: 1 1 260px"><label for="s-ged-ans">Nettoyage de la GED : documents de plus de (années)</label>
                         <input id="s-ged-ans" data-champ="nettoyage_ged" type="number" min="1" max="100" placeholder="jamais (la GED est gardée)" @bind="r.NettoyageGedAnnees" /></div>
+                    <div class="champ" style="flex: 1 1 260px"><label for="s-sans-disque">Alerte si aucune sauvegarde sur le disque depuis (jours)</label>
+                        <input id="s-sans-disque" data-champ="alerte_sans_disque" type="number" min="1" max="90" @bind="r.AlerteSansDisqueJours" /></div>
                 </div>
                 <label class="case"><input type="checkbox" @bind="r.Actif" /><span>Sauvegarde automatique chaque jour</span></label>
                 <p class="detail" style="margin: 0">Chaque sauvegarde copie la base sur le disque externe et dans la GED du serveur@(dossierGed is { } dg ? $" ({dg}\\Sauvegardes)" : ""), et les documents de la GED (ordonnances, factures, rapports…) sur le disque externe, dans son dossier GED.</p>
-                <p class="detail" style="margin: 0">Format pg_dump (restauration avec pg_restore). Dernière sauvegarde automatique : @(derniere is { } d ? Libelles.Date(d) : "jamais").</p>
+                <p class="detail" style="margin: 0">Format pg_dump (restauration avec pg_restore). Dernière sauvegarde automatique : @(derniere is { } d ? Libelles.Date(d) : "jamais") · dernière sauvegarde réussie sur le disque : @(derniereReussie is { } dr ? Libelles.DateHeureLocale(dr) : "aucune").</p>
+                <p class="detail" style="margin: 0">Sans 2e serveur : deux disques externes en rotation, dont un toujours hors de l’officine (obligatoire). Le titulaire est prévenu si aucune sauvegarde n’a réussi sur le disque pendant le délai réglé, même sauvegarde automatique désactivée.</p>
             </section>
             }
         }
@@ -131,12 +138,16 @@
         public int Conservation { get; set; } = 14;
         public int? RetentionGedJours { get; set; }
         public int? NettoyageGedAnnees { get; set; }
+        public int AlerteSansDisqueJours { get; set; } = 7;
     }
     private int retentionParDefaut = 7;
     private string? dossierGed;
 
     private Reglages? r;
     private DateOnly? derniere;
+    private DateTime? derniereReussie;
+    private bool sansDisqueEnRetard;
+    private int alerteSansDisqueEnregistree = 7;
     private List<EntreeSauvegardeDto> journal = [];
     private bool enCours;
     private string? erreur, message, baseSauvegardee, serveurBase;
@@ -179,7 +190,9 @@
         var (etat, e) = await Api.SauvegardesAsync();
         if (e is not null) { erreur = e; return; }
         r = new Reglages { Actif = etat!.Reglages.Actif, Dossier = etat.Reglages.Dossier, Heure = etat.Reglages.Heure, Conservation = etat.Reglages.Conservation,
-            RetentionGedJours = etat.Reglages.RetentionGedJours, NettoyageGedAnnees = etat.Reglages.NettoyageGedAnnees };
+            RetentionGedJours = etat.Reglages.RetentionGedJours, NettoyageGedAnnees = etat.Reglages.NettoyageGedAnnees,
+            AlerteSansDisqueJours = etat.Reglages.AlerteSansDisqueJours };
+        (derniereReussie, sansDisqueEnRetard, alerteSansDisqueEnregistree) = (etat.DerniereReussie, etat.SansDisqueEnRetard, etat.Reglages.AlerteSansDisqueJours);
         (retentionParDefaut, dossierGed) = (etat.Reglages.RetentionGedParDefaut, etat.Reglages.DossierGed);
         derniere = etat.Reglages.DerniereExecution;
         (baseSauvegardee, serveurBase) = (etat.Base, etat.Serveur);
@@ -234,7 +247,8 @@
         }
         await Executer(async () =>
         {
-            var e = await Api.ModifierReglagesSauvegardeAsync(new ReglagesSauvegardeDto(r!.Actif, r.Dossier, r.Heure, r.Conservation, null, r.RetentionGedJours, 7, r.NettoyageGedAnnees));
+            var e = await Api.ModifierReglagesSauvegardeAsync(new ReglagesSauvegardeDto(r!.Actif, r.Dossier, r.Heure, r.Conservation, null, r.RetentionGedJours, 7, r.NettoyageGedAnnees,
+                null, r.AlerteSansDisqueJours));
             if (e is not null) return e;
             message = "Réglages enregistrés.";
             controleEnregistrer = false;

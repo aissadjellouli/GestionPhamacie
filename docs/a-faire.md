@@ -27,7 +27,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 
 ## Décisions en attente du titulaire
 
-- [ ] **GED : protection des documents** (recommandation validée le 2026-11-18 : alerte à 7 jours et deux disques en rotation à coder sur « go », sauvegarde chiffrée au central avec le lot 9) : GED consultable au central ou non, sauvegarde chiffrée hors de l'officine (après le lot 9), rotation de deux disques pour une officine à un seul serveur, alerte « pas de sauvegarde sur disque externe ». Détail et recommandation : [ged-protection-a-decider.md](ged-protection-a-decider.md).
+- [ ] **GED : protection des documents** (recommandation validée le 2026-11-18 ; **alerte à 7 jours codée et rotation de deux disques écrite dans mise-en-production.md le 2026-11-18**, script 148 ; reste la sauvegarde chiffrée au central avec le lot 9 ; le script planifié `sauvegarde_pharmacie.ps1` inscrit désormais ses passages au journal des sauvegardes) : GED consultable au central ou non, sauvegarde chiffrée hors de l'officine (après le lot 9), rotation de deux disques pour une officine à un seul serveur, alerte « pas de sauvegarde sur disque externe ». Détail et recommandation : [ged-protection-a-decider.md](ged-protection-a-decider.md).
 
 - [ ] **Écrans de vente** :
   - seuils d'alerte des psychotropes (valeurs de départ proposées : 2 fois en 30 jours, 1 fois par ordonnance et par an, plus de 3 boîtes ou plus de 28 jours, prescripteur à moins d'une délivrance par an) ;

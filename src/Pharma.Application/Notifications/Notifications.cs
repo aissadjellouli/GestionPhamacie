@@ -361,6 +361,8 @@ public interface IAlertesTitulaire
     Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default, bool releve = false);
     Task LotBloqueAsync(string produit, string numeroLot, int boitesEnStock, int boitesVendues, CancellationToken ct = default);
     Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default);
+    /// <summary>Aucune sauvegarde réussie sur le disque externe depuis « jours » jours (même canal que les sauvegardes en échec).</summary>
+    Task SansSauvegardeDisqueAsync(int jours, string detail, CancellationToken ct = default) => SauvegardeEnEchecAsync(false, detail, ct);
     Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default);
     Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default);
     /// <summary>Ancien lot délaissé au profit d'un lot plus récent (le message nomme le vendeur) : inventaire du produit à faire.</summary>
@@ -497,6 +499,17 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
             var r = await depot.ReglagesAsync(ct);
             return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Sauvegarde, objet,
                 $"{objet}.\n\n{detail}", null, r.SmsSauvegarde ? $"{objet}. {detail}" : null), ct);
+        });
+    }
+
+    public Task SansSauvegardeDisqueAsync(int jours, string detail, CancellationToken ct = default)
+    {
+        var objet = $"Aucune sauvegarde sur disque externe depuis {jours} jour(s)";
+        return ProtegerAsync(TypeNotification.Sauvegarde, objet, async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Sauvegarde, objet,
+                $"{objet}.\n\n{detail}", null, r.SmsSauvegarde ? $"{objet}. Branchez le disque de sauvegarde." : null), ct);
         });
     }
 

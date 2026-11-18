@@ -1,6 +1,6 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-17 (après M9). Vue d'ensemble courte ; le détail de chaque point est dans [a-faire.md](a-faire.md) et dans les
+Point d'avancement du 2026-11-18 (après la protection de la GED). Vue d'ensemble courte ; le détail de chaque point est dans [a-faire.md](a-faire.md) et dans les
 documents cités. À mettre à jour à chaque point d'avancement.
 
 ## 1. En cours
@@ -10,7 +10,10 @@ sans le chiffrement) ; copie de la GED vers le 2e serveur et sa fréquence (scri
 
 ## 2. Fait, à commiter
 
-Rien. La lecture de la fréquence de copie de la GED par authentification Windows (SSPI) est commitée (`8854fb3`).
+- **GED, protection des sauvegardes** (2026-11-18, « go ged ») : alerte au titulaire si aucune sauvegarde réussie sur le disque externe depuis
+  7 jours (réglable de 1 à 90, script 148, Administration › Sauvegardes) ; rotation de deux disques obligatoire sans 2e serveur
+  (`mise-en-production.md`, étape 11.2 bis) ; miroir du central `database/cloud/002` régénéré (il manquait aussi les tables du script 147) ; le script planifié
+  `sauvegarde_pharmacie.ps1` inscrit ses passages au journal des sauvegardes ; `docs/fonctionnalites.md` devient l'inventaire complet des fonctionnalités.
 
 ## 3. Ensuite
 
@@ -46,7 +49,6 @@ Rien. La lecture de la fréquence de copie de la GED par authentification Window
 
 ## 7. Plus tard (sur accord explicite du titulaire)
 
-- [ ] **GED, protection des sauvegardes** (décidé le 2026-11-18) : alerte « pas de sauvegarde sur disque externe depuis 7 jours » et rotation de deux disques obligatoire sans 2e serveur, à coder sur « go » ([ged-protection-a-decider.md](ged-protection-a-decider.md)).
 - [ ] **Synchronisation** : S5.1, S5.5, S5.2, S5.3 (nomenclature) et S5.4 (commandes en brouillon) réalisés (conception § 24 à § 27), référentiels antibiotiques suivis, organismes et centres payeurs, prestations, indications et DCI (§ 28) ; deux tables liées aux produits reclassées (§ 29) ; restent
       fin de S6 (restauration de la base d'une officine, bascule, départ), S7 (écrans du central, multi-officines).
 - [ ] Découpage par officine des grandes tables du central ; multi-officines après le choix de l'hébergeur.

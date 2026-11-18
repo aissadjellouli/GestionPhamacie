@@ -457,7 +457,8 @@ public sealed record EcartsCaisseRecentsDto(int Nombre, IReadOnlyList<EcartCaiss
 
 /// <summary>RetentionGedJours : jours de conservation de la copie dans la GED (null : réglage du serveur, 7 jours par défaut).</summary>
 public sealed record ReglagesSauvegardeDto(bool Actif, string? Dossier, TimeOnly Heure, int Conservation, DateOnly? DerniereExecution,
-    int? RetentionGedJours = null, int RetentionGedParDefaut = 7, int? NettoyageGedAnnees = null, string? DossierGed = null);
+    int? RetentionGedJours = null, int RetentionGedParDefaut = 7, int? NettoyageGedAnnees = null, string? DossierGed = null,
+    int AlerteSansDisqueJours = 7);
 
 /// <summary>Document rangé dans la GED du serveur : chemin « Type\nom » sous le dossier de la GED.</summary>
 public sealed record DocumentGedDto(string Chemin);
@@ -468,7 +469,9 @@ public sealed record EntreeSauvegardeDto(
 
 /// <summary>Base et Serveur : base de données que le serveur utilise et sauvegarde (à titre d'information, sans mot de passe).
 /// Le journal se lit à part, par page (api/admin/sauvegardes/journal).</summary>
-public sealed record EtatSauvegardesDto(ReglagesSauvegardeDto Reglages, string? Base = null, string? Serveur = null);
+/// <summary>DerniereReussie : dernière sauvegarde réussie sur le disque externe ; SansDisqueEnRetard : plus vieille que le délai d'alerte réglé.</summary>
+public sealed record EtatSauvegardesDto(ReglagesSauvegardeDto Reglages, string? Base = null, string? Serveur = null,
+    DateTime? DerniereReussie = null, bool SansDisqueEnRetard = false);
 public sealed record ResultatSauvegardeDto(string Statut, string? Fichier, long? TailleOctets, string Message);
 /// <summary>Copie de secours (PC de secours, clé USB, autre disque) : réglages, dernière copie vérifiée, dernier échec, dernier test.</summary>
 public sealed record CopieSecoursDto(string? Dossier, int AlerteHeures, DateTime? DerniereCopie, string? Fichier, long? Taille, string? Sha256,

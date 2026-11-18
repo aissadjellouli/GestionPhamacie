@@ -10,19 +10,25 @@ public sealed class SauvegardesSql(NpgsqlDataSource db) : ISauvegardesDepot
 {
     public async Task<ReglagesSauvegarde> ReglagesAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT actif, dossier, heure, conservation, derniere_execution, retention_ged_jours, nettoyage_ged_annees FROM parametre_sauvegarde WHERE id = 1");
+        await using var cmd = db.CreateCommand("""
+            SELECT actif, dossier, heure, conservation, derniere_execution, retention_ged_jours, nettoyage_ged_annees,
+                   alerte_sans_disque_jours, suivi_disque_depuis, derniere_alerte_sans_disque
+            FROM parametre_sauvegarde WHERE id = 1
+            """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct))
             throw new InvalidOperationException("Réglages des sauvegardes absents : exécutez database/migration/014_sauvegardes.sql.");
         return new ReglagesSauvegarde(r.GetBoolean(0), r.IsDBNull(1) ? null : r.GetString(1), TimeOnly.FromTimeSpan(r.GetTimeSpan(2)),
-            r.GetInt32(3), r.IsDBNull(4) ? null : r.GetFieldValue<DateOnly>(4), r.IsDBNull(5) ? null : r.GetInt32(5), r.IsDBNull(6) ? null : r.GetInt32(6));
+            r.GetInt32(3), r.IsDBNull(4) ? null : r.GetFieldValue<DateOnly>(4), r.IsDBNull(5) ? null : r.GetInt32(5), r.IsDBNull(6) ? null : r.GetInt32(6),
+            r.GetInt32(7), r.GetDateTime(8), r.IsDBNull(9) ? null : r.GetDateTime(9));
     }
 
     public async Task EnregistrerReglagesAsync(bool actif, string? dossier, TimeOnly heure, int conservation, int? retentionGedJours, int? nettoyageGedAnnees,
-        CancellationToken ct = default)
+        int alerteSansDisqueJours, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            UPDATE parametre_sauvegarde SET actif = $1, dossier = $2, heure = $3, conservation = $4, retention_ged_jours = $5, nettoyage_ged_annees = $6
+            UPDATE parametre_sauvegarde SET actif = $1, dossier = $2, heure = $3, conservation = $4, retention_ged_jours = $5, nettoyage_ged_annees = $6,
+                alerte_sans_disque_jours = $7
             WHERE id = 1
             """);
         cmd.Parameters.AddWithValue(actif);
@@ -31,6 +37,20 @@ public sealed class SauvegardesSql(NpgsqlDataSource db) : ISauvegardesDepot
         cmd.Parameters.AddWithValue(conservation);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)retentionGedJours ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)nettoyageGedAnnees ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
+        cmd.Parameters.AddWithValue(alerteSansDisqueJours);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<DateTime?> DerniereReussieAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT max(coalesce(fin, debut)) FROM journal_sauvegarde WHERE statut = 'reussie'");
+        return await cmd.ExecuteScalarAsync(ct) is DateTime d ? d : null;
+    }
+
+    public async Task NoterAlerteSansDisqueAsync(DateTime utc, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("UPDATE parametre_sauvegarde SET derniere_alerte_sans_disque = $1 WHERE id = 1");
+        cmd.Parameters.AddWithValue(utc);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 

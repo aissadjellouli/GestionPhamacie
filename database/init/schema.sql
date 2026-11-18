@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 147 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 148 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 147 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 148 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -24,7 +24,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict oMjudvL2jlsc92tj8QXn36gdE8sr2uQ6MPYlN5cTjEWacwAdfgqn9WPT6VoKqqH
+\restrict pr0uUloXm8umwxRpChsJYfuYsvaaytWVXTcqJHCA9GRzcU0hV5jJyQzRL2cbcQq
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -8629,6 +8629,10 @@ CREATE TABLE public.parametre_sauvegarde (
     retention_ged_jours integer,
     nettoyage_ged_annees integer,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    alerte_sans_disque_jours integer DEFAULT 7 NOT NULL,
+    suivi_disque_depuis timestamp with time zone DEFAULT now() NOT NULL,
+    derniere_alerte_sans_disque timestamp with time zone,
+    CONSTRAINT ck_sauvegarde_alerte_sans_disque CHECK (((alerte_sans_disque_jours >= 1) AND (alerte_sans_disque_jours <= 90))),
     CONSTRAINT ck_sauvegarde_nettoyage_ged CHECK (((nettoyage_ged_annees IS NULL) OR ((nettoyage_ged_annees >= 1) AND (nettoyage_ged_annees <= 100)))),
     CONSTRAINT ck_sauvegarde_retention_ged CHECK (((retention_ged_jours IS NULL) OR ((retention_ged_jours >= 1) AND (retention_ged_jours <= 365)))),
     CONSTRAINT parametre_sauvegarde_conservation_check CHECK (((conservation >= 1) AND (conservation <= 365))),
@@ -8648,6 +8652,27 @@ COMMENT ON COLUMN public.parametre_sauvegarde.retention_ged_jours IS 'Jours de c
 --
 
 COMMENT ON COLUMN public.parametre_sauvegarde.nettoyage_ged_annees IS 'Documents de la GED supprimés au-delà de ce nombre d''années (NULL : jamais)';
+
+
+--
+-- Name: COLUMN parametre_sauvegarde.alerte_sans_disque_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_sauvegarde.alerte_sans_disque_jours IS 'Titulaire prévenu si aucune sauvegarde réussie sur le disque externe depuis N jours (1 à 90, défaut 7) (script 148).';
+
+
+--
+-- Name: COLUMN parametre_sauvegarde.suivi_disque_depuis; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_sauvegarde.suivi_disque_depuis IS 'Point de départ du délai d''alerte tant qu''aucune sauvegarde n''a réussi (script 148).';
+
+
+--
+-- Name: COLUMN parametre_sauvegarde.derniere_alerte_sans_disque; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_sauvegarde.derniere_alerte_sans_disque IS 'Dernière alerte « aucune sauvegarde sur disque externe » envoyée : une par période (script 148).';
 
 
 --
@@ -18800,5 +18825,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict oMjudvL2jlsc92tj8QXn36gdE8sr2uQ6MPYlN5cTjEWacwAdfgqn9WPT6VoKqqH
+\unrestrict pr0uUloXm8umwxRpChsJYfuYsvaaytWVXTcqJHCA9GRzcU0hV5jJyQzRL2cbcQq
 

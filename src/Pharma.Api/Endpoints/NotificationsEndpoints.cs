@@ -103,15 +103,19 @@ internal static class NotificationsEndpoints
         // ---- Sauvegardes ----
         var s = api.MapGroup("/admin/sauvegardes");
 
-        s.MapGet("", async (ObtenirSauvegardes obtenir, IConfiguration config, Pharma.Application.Ged.ReglagesGed ged, CancellationToken ct) =>
+        s.MapGet("", async (ObtenirSauvegardes obtenir, IConfiguration config, Pharma.Application.Ged.ReglagesGed ged, Pharma.Application.Commun.IHorloge horloge,
+                CancellationToken ct) =>
             {
                 var r = await obtenir.ExecuterAsync(ct);
+                var reussie = await obtenir.DerniereReussieAsync(ct);
+                var enRetard = (reussie ?? r.SuiviDisqueDepuisUtc) is { } reference
+                    && SurveillerSauvegardeDisque.EnRetard(reference, r.AlerteSansDisqueJours, horloge.MaintenantUtc);
                 // Base sauvegardée, à titre d'information : nom et serveur seulement, jamais le mot de passe
                 var cnx = new Npgsql.NpgsqlConnectionStringBuilder(config.GetConnectionString("Pharmacie") ?? "");
                 return Results.Ok(new EtatSauvegardesDto(
                     new ReglagesSauvegardeDto(r.Actif, r.Dossier, r.Heure, r.Conservation, r.DerniereExecution, r.RetentionGedJours, ged.RetentionSauvegardesJours,
-                        r.NettoyageGedAnnees, ged.Racine),
-                    cnx.Database, cnx.Host is { } h ? $"{h}:{cnx.Port}" : null));
+                        r.NettoyageGedAnnees, ged.Racine, r.AlerteSansDisqueJours),
+                    cnx.Database, cnx.Host is { } h ? $"{h}:{cnx.Port}" : null, reussie, enRetard));
             })
            .ExigerPermission(Permissions.AdminSauvegardes);
 
@@ -127,7 +131,8 @@ internal static class NotificationsEndpoints
 
         s.MapPut("/reglages", async (ReglagesSauvegardeDto d, ModifierReglagesSauvegarde modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await modifier.ExecuterAsync(d.Actif, d.Dossier, d.Heure, d.Conservation, user.UtilisateurId(), ct, d.RetentionGedJours, d.NettoyageGedAnnees);
+                await modifier.ExecuterAsync(d.Actif, d.Dossier, d.Heure, d.Conservation, user.UtilisateurId(), ct, d.RetentionGedJours, d.NettoyageGedAnnees,
+                    d.AlerteSansDisqueJours);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.AdminSauvegardes);

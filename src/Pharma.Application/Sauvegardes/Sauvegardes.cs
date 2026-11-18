@@ -7,9 +7,15 @@ namespace Pharma.Application.Sauvegardes;
 /// <summary>
 /// RetentionGedJours : jours de conservation de la copie des sauvegardes dans la GED (null : réglage du serveur, 7 jours).
 /// NettoyageGedAnnees : documents de la GED supprimés au-delà de ce nombre d'années (null : jamais, la GED est gardée).
+/// AlerteSansDisqueJours : titulaire prévenu si aucune sauvegarde réussie sur le disque externe depuis ce nombre de jours (script 148).
+/// SuiviDisqueDepuisUtc : point de départ de ce délai tant qu'aucune sauvegarde n'a réussi. DerniereAlerteSansDisqueUtc : dernière alerte envoyée.
 /// </summary>
 public sealed record ReglagesSauvegarde(bool Actif, string? Dossier, TimeOnly Heure, int Conservation, DateOnly? DerniereExecution,
-    int? RetentionGedJours = null, int? NettoyageGedAnnees = null);
+    int? RetentionGedJours = null, int? NettoyageGedAnnees = null, int AlerteSansDisqueJours = ReglagesSauvegarde.AlerteSansDisqueParDefaut,
+    DateTime? SuiviDisqueDepuisUtc = null, DateTime? DerniereAlerteSansDisqueUtc = null)
+{
+    public const int AlerteSansDisqueParDefaut = 7;
+}
 
 /// <summary>Statut : reussie, echouee ou disque_absent. Déclenchement : automatique ou manuel.</summary>
 public sealed record EntreeSauvegarde(
@@ -22,8 +28,12 @@ public interface ISauvegardesDepot
 {
     Task<ReglagesSauvegarde> ReglagesAsync(CancellationToken ct = default);
     Task EnregistrerReglagesAsync(bool actif, string? dossier, TimeOnly heure, int conservation, int? retentionGedJours, int? nettoyageGedAnnees,
-        CancellationToken ct = default);
+        int alerteSansDisqueJours, CancellationToken ct = default);
     Task NoterExecutionAsync(DateOnly jour, CancellationToken ct = default);
+    /// <summary>Fin de la dernière sauvegarde réussie sur le disque externe (statut « reussie »), ou null.</summary>
+    Task<DateTime?> DerniereReussieAsync(CancellationToken ct = default);
+    /// <summary>Note l'envoi de l'alerte « aucune sauvegarde sur disque externe » (une par période).</summary>
+    Task NoterAlerteSansDisqueAsync(DateTime utc, CancellationToken ct = default);
     Task<long> JournaliserAsync(NouvelleEntreeSauvegarde entree, CancellationToken ct = default);
     Task<IReadOnlyList<EntreeSauvegarde>> JournalAsync(int limite, CancellationToken ct = default);
     /// <summary>Journal des sauvegardes par page, les plus récentes d'abord ; filtre sur le résultat et la période (date de début).</summary>
@@ -192,8 +202,45 @@ public sealed class SauvegardeAutomatique(ISauvegardesDepot depot, LancerSauvega
     }
 }
 
+/// <summary>
+/// Vérifiée chaque minute par l'API (décision du titulaire du 2026-11-18, docs/ged-protection-a-decider.md) : si la dernière sauvegarde
+/// réussie sur le disque externe (ou, avant la première, le début du suivi) a plus de AlerteSansDisqueJours jours, le titulaire est
+/// prévenu, même si la sauvegarde automatique est désactivée ; au plus une alerte par période de AlerteSansDisqueJours jours.
+/// </summary>
+public sealed class SurveillerSauvegardeDisque(ISauvegardesDepot depot, IAlertesTitulaire alertes, IHorloge horloge, ITraceErreurs? trace = null)
+{
+    /// <summary>Vrai si une alerte a été envoyée.</summary>
+    public async Task<bool> ExecuterAsync(CancellationToken ct = default)
+    {
+        var r = await depot.ReglagesAsync(ct);
+        var derniere = await depot.DerniereReussieAsync(ct);
+        if ((derniere ?? r.SuiviDisqueDepuisUtc) is not { } reference) return false;
+        var maintenant = horloge.MaintenantUtc;
+        var periode = TimeSpan.FromDays(r.AlerteSansDisqueJours);
+        if (!EnRetard(reference, r.AlerteSansDisqueJours, maintenant)) return false;
+        // Une alerte par période ; une alerte antérieure à la référence (avant la dernière réussite) ne compte pas
+        if (r.DerniereAlerteSansDisqueUtc is { } a && a >= reference && maintenant - a < periode) return false;
+        await depot.NoterAlerteSansDisqueAsync(maintenant, ct);
+        var detail = derniere is { } d
+            ? $"La dernière sauvegarde réussie sur le disque externe date du {d.ToLocalTime():dd/MM/yyyy à HH:mm} (plus de {r.AlerteSansDisqueJours} jour(s))."
+            : $"Aucune sauvegarde réussie sur le disque externe depuis le {reference.ToLocalTime():dd/MM/yyyy} (plus de {r.AlerteSansDisqueJours} jour(s)).";
+        detail += r.Actif ? $" Branchez le disque de sauvegarde ({r.Dossier}) et vérifiez le journal des sauvegardes."
+            : " La sauvegarde automatique est désactivée : activez-la dans Administration › Sauvegardes.";
+        detail += " Sans 2e serveur, deux disques en rotation, dont un toujours hors de l’officine.";
+        await AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.SansSauvegardeDisqueAsync(r.AlerteSansDisqueJours, detail, ct),
+            "aucune sauvegarde sur disque externe", trace);
+        return true;
+    }
+
+    /// <summary>Vrai si la référence (dernière réussite ou début du suivi) a au moins « jours » jours.</summary>
+    public static bool EnRetard(DateTime reference, int jours, DateTime maintenantUtc) => maintenantUtc - reference >= TimeSpan.FromDays(jours);
+}
+
 public sealed class ObtenirSauvegardes(ISauvegardesDepot depot)
 {
+    /// <summary>Dernière sauvegarde réussie sur le disque externe, pour l'écran.</summary>
+    public Task<DateTime?> DerniereReussieAsync(CancellationToken ct = default) => depot.DerniereReussieAsync(ct);
+
     /// <summary>Réglages ; le journal se lit à part, par page (<see cref="JournalAsync"/>).</summary>
     public Task<ReglagesSauvegarde> ExecuterAsync(CancellationToken ct = default) => depot.ReglagesAsync(ct);
 
@@ -205,7 +252,7 @@ public sealed class ObtenirSauvegardes(ISauvegardesDepot depot)
 public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal journal, SuperAdmin.ICompteSuperAdmin? superAdmin = null)
 {
     public async Task ExecuterAsync(bool actif, string? dossier, TimeOnly heure, int conservation, long utilisateurId, CancellationToken ct = default,
-        int? retentionGedJours = null, int? nettoyageGedAnnees = null)
+        int? retentionGedJours = null, int? nettoyageGedAnnees = null, int alerteSansDisqueJours = ReglagesSauvegarde.AlerteSansDisqueParDefaut)
     {
         var d = string.IsNullOrWhiteSpace(dossier) ? null : dossier.Trim();
         if (d is not null && !Path.IsPathFullyQualified(d))
@@ -214,7 +261,9 @@ public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal
         if (conservation is < 1 or > 365) throw new RegleMetierException("Nombre de sauvegardes conservées entre 1 et 365.", "conservation");
         if (retentionGedJours is < 1 or > 365) throw new RegleMetierException("Copie dans la GED : entre 1 et 365 jours (vide : réglage du serveur).", "retention_ged");
         if (nettoyageGedAnnees is < 1 or > 100) throw new RegleMetierException("Nettoyage de la GED : entre 1 et 100 ans (vide : jamais).", "nettoyage_ged");
-        await depot.EnregistrerReglagesAsync(actif, d, heure, conservation, retentionGedJours, nettoyageGedAnnees, ct);
+        if (alerteSansDisqueJours is < 1 or > 90)
+            throw new RegleMetierException("Alerte sans sauvegarde sur le disque externe : entre 1 et 90 jours.", "alerte_sans_disque");
+        await depot.EnregistrerReglagesAsync(actif, d, heure, conservation, retentionGedJours, nettoyageGedAnnees, alerteSansDisqueJours, ct);
         // Copie avec le compte du super admin : la restauration retrouve le disque externe même si la base est détruite
         try
         {
@@ -224,7 +273,7 @@ public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or PlatformNotSupportedException) { }
         await journal.EcrireAsync(utilisateurId, "reglages_sauvegarde", "parametre_sauvegarde", 1,
             new Dictionary<string, object?> { ["actif"] = actif, ["dossier"] = d, ["heure"] = heure.ToString("HH:mm"), ["conservation"] = conservation,
-                ["retention_ged_jours"] = retentionGedJours, ["nettoyage_ged_annees"] = nettoyageGedAnnees },
+                ["retention_ged_jours"] = retentionGedJours, ["nettoyage_ged_annees"] = nettoyageGedAnnees, ["alerte_sans_disque_jours"] = alerteSansDisqueJours },
             Domain.Securite.Permissions.AdminSauvegardes, ct);
     }
 }
