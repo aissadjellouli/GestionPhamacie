@@ -2678,6 +2678,27 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public."substitution_liste_blanche" TO p
 INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('substitution_liste_blanche', '{produit_id,remplacant_id}', '{produit_id,remplacant_id,cree_le,cree_par,officine_id}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
+CREATE TABLE IF NOT EXISTS public."sync_ordre_resultat" (
+    officine_id uuid NOT NULL,
+    "ordre_id" uuid NOT NULL,
+    sync_epoque integer NOT NULL,
+    sync_numero bigint NOT NULL,
+    sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (officine_id, "ordre_id")
+);
+ALTER TABLE public."sync_ordre_resultat" ADD COLUMN IF NOT EXISTS "statut" text;
+ALTER TABLE public."sync_ordre_resultat" ADD COLUMN IF NOT EXISTS "motif" text;
+ALTER TABLE public."sync_ordre_resultat" ADD COLUMN IF NOT EXISTS "traite_le" timestamp with time zone;
+ALTER TABLE public."sync_ordre_resultat" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."sync_ordre_resultat" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
+ALTER TABLE public."sync_ordre_resultat" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."sync_ordre_resultat" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cloisonnement ON public."sync_ordre_resultat";
+CREATE POLICY cloisonnement ON public."sync_ordre_resultat" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public."sync_ordre_resultat" TO pharma_cloud_api;
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('sync_ordre_resultat', '{ordre_id}', '{ordre_id,statut,motif,traite_le,officine_id}')
+    ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
+
 CREATE TABLE IF NOT EXISTS public."utilisateur" (
     officine_id uuid NOT NULL,
     "id" bigint NOT NULL,

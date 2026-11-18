@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)**
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)**
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -190,7 +190,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S2 | API cloud minimale (réception, idempotence, ordre, accusés), base centrale cloisonnée, authentification par certificat | S0, S1 |
 | S3 | Service de sync local (envoi, reprise, bandeau, écran d'état, alertes) | S1, S2 |
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
-| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23)** | S3 |
+| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
 | S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
@@ -1234,3 +1234,67 @@ nomenclature.
 
 S5.1 socle des ordres → S5.2 prix → S5.3 référentiels et nomenclature → S5.4 commandes en brouillon → S5.5 employés et droits.
 Chaque lot sur « go » du titulaire, plan présenté avant tout code.
+
+## 24. Lots S5.1 et S5.5 : réalisés (2026-11-18, « ok plan S5.1 + S5.5 ») — ordres du central, employés et droits
+
+Décisions : S5.1-D1 alerte au titulaire pour un ordre à confirmer, refusé ou expiré, et pour un blocage appliqué (un ordre appliqué
+est seulement tracé et visible) ; S5.1-D2 l'ordre transporte la **valeur attendue** ; S5.1-D3 date limite du central (7 jours),
+contrôlée aussi avec l'horloge de l'officine ; S5.1-D4 type « essai » ; S5.5-D1 don et remise par employé exclus ; S5.5-D2 employé
+désigné par son n° local, rôle par son code ; S5.5-D3 blocage immédiat accepté.
+
+### 24.1 Parcours d'un ordre
+
+1. **Central** : `cloud_creer_ordre` (commande `--ordre-…`, auteur obligatoire) contrôle l'ordre, calcule la valeur attendue depuis
+   les tables miroir (rôle par code, état actif, nom s'il a été reçu ; droits actuels du rôle triés), l'écrit dans `ordre_central`
+   (journal `ordre_central_journal`, ajout seul ; journal de sécurité `ordre_cree`) et le publie par la voie descendante (élément
+   `ordre_central`, clé = identifiant, format `ordre-v1`). Refusés dès la création : compte ou rôle de titulaire, employé ou rôle
+   inconnu, employé déjà bloqué ou déjà actif, type inconnu, auteur absent. Jamais de mot de passe ni de code comptoir (champ retiré).
+2. **Officine, réception** (`sync_recevoir_descendant`, script 145) : la version du script 141 est renommée
+   `sync_recevoir_descendant_reglages` et un aiguillage la remplace ; un ordre bien formé est rangé dans `sync_ordre_recu`
+   (« à appliquer ») ; un élément mal formé est refusé et journalisé (`sync_journal_descendant`) ; un ordre annulé ou expiré au
+   central avant d'être traité passe à l'état correspondant, sans rien appliquer.
+3. **Officine, passage automatique** (`AppliquerOrdresCentraux`, après chaque passage d'envoi, aussi quand la synchronisation est
+   désactivée, jamais sur une base en lecture seule) : ordre périmé → « expiré » ; type inconnu de cette version → « refusé » ;
+   création, modification, déblocage, droits → « à confirmer » ; essai et blocage → appliqués tout de suite.
+4. **Titulaire** (Administration › Synchronisation › Ordres du central) : **Confirmer** (avec le mot de passe provisoire, saisi deux
+   fois, pour une création ; l'employé le change à sa première connexion) ou **Refuser** (motif de 3 à 300 caractères, envoyé au
+   central après filtrage des textes libres). Une erreur de saisie laisse l'ordre à confirmer ; une valeur changée dans l'officine,
+   une cible interdite ou introuvable le refuse définitivement.
+5. **Application** par les cas d'usage existants (`CreerUtilisateur`, `ModifierUtilisateur`, `EnregistrerDroits`) **au nom du
+   titulaire qui confirme** ; le blocage change seulement l'état actif (les sessions de l'employé tombent à l'appel suivant).
+6. **Trace et retour** : `sync_ordre_noter` change l'état, écrit `sync_ordre_resultat` (montante : état, motif, date) et une ligne au
+   journal des actions (`ordre_central_<état>`, utilisateur NULL si automatique, auteur au central, valeurs attendues et voulues) ;
+   au central, le résultat reçu met l'ordre à jour (déclencheur `trg_ordre_resultat_recu`, journal « officine »).
+7. **Expiration au central** : `--expirer-ordres` (tâche planifiée, chaque heure) passe les ordres non traités à « expiré » et les
+   republie.
+
+### 24.2 Types d'ordres
+
+| Type | Données | Valeur attendue | Application |
+|---|---|---|---|
+| `essai` | — | — | Tout de suite, rien ne change |
+| `employe_creer` | nom, identifiant, rôle (code) | — | Après confirmation, avec mot de passe provisoire |
+| `employe_modifier` | nom et/ou rôle | rôle, actif, nom (s'il était reçu) | Après confirmation |
+| `employe_bloquer` | — | rôle, actif | Tout de suite (alerte au titulaire) |
+| `employe_debloquer` | — | rôle, actif | Après confirmation |
+| `droits_role` | liste complète des permissions | permissions actuelles du rôle | Après confirmation |
+
+**Si le central était piraté** : il ne peut que **proposer** (confirmation du titulaire), sauf **bloquer** un employé, jamais un
+titulaire, ce que le titulaire corrige sur place.
+
+### 24.3 Scripts, code, essais
+
+- Central `013_ordres_vers_officines.sql` (+ tests) ; officine `145_synchronisation_ordres_central.sql` (+ tests), `database/init`
+  régénéré depuis `pharmacie_test` ; `002` régénéré (`sync_ordre_resultat`).
+- Officine : `OrdresCentraux.cs` (types, application, confirmation, refus, résumé), `OrdresCentrauxSql`, routes
+  `GET /api/admin/synchronisation/ordres`, `POST …/ordres/{id}/confirmer`, `POST …/ordres/{id}/refuser` ; écran « Ordres du central »
+  (paginé, filtré par état, fenêtre de confirmation). Central : `OrdresAdministration` (commandes).
+- **Essai de bout en bout** (2026-11-18, copies jetables de `pharmacie_test` et d'un central neuf, supprimées) : rôles, employés et
+  droits envoyés au central ; cinq ordres créés et descendus ; la vraie API locale (port 5085) applique l'essai et le blocage, met les
+  trois autres à confirmer ; confirmation par l'API (création avec mot de passe provisoire, modification de rôle), refus des droits
+  avec motif, mot de passe trop court refusé (l'ordre reste à confirmer) ; résultats remontés : le central passe les ordres à
+  « appliqué » / « refusé » ; déblocage d'un titulaire refusé dès la création au central. Écran mesuré à 1 536 × 890 (aucun
+  défilement de page), captures en clair et sombre, fenêtre de confirmation comprise.
+- **Non essayé** : passage réel par l'échange HTTPS avec certificat (la descente a été rejouée par SQL) **[À VÉRIFIER avec
+  `scripts/dev/essai_cloud_officine.ps1`]** ; tâche planifiée réelle `--expirer-ordres`.
+- **Reste de S5** : S5.2 prix, S5.3 référentiels et nomenclature, S5.4 commandes en brouillon (§ 23.4).

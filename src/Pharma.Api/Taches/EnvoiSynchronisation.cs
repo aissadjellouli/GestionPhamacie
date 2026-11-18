@@ -50,6 +50,16 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
                     echecs = 0;
                     if (r.LotsAccuses > 0) logger.LogInformation("Synchronisation : {Lots} lot(s) accusé(s) par le serveur central", r.LotsAccuses);
                 }
+                // Lots S5.1 et S5.5 : ordres reçus du serveur central (descendus par ce passage ou un précédent), appliqués ou mis à confirmer
+                try
+                {
+                    var ordres = await scope.ServiceProvider.GetRequiredService<AppliquerOrdresCentraux>().ExecuterAsync(stoppingToken);
+                    if (ordres > 0) logger.LogInformation("Synchronisation : {Ordres} ordre(s) du serveur central traité(s)", ordres);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Synchronisation : ordres du serveur central non traités");
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

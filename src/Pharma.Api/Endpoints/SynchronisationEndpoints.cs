@@ -82,5 +82,32 @@ public static class SynchronisationEndpoints
             if (r.Erreur is not null) return Results.Problem(r.Erreur, statusCode: StatusCodes.Status502BadGateway);
             return Results.Ok(new ResultatEnvoiSynchronisationDto(r.LotsAccuses, r.Arret, r.Erreur));
         });
+
+        // Lots S5.1 et S5.5 : ordres reçus du serveur central (liste : admin.parametres ; confirmation et refus : titulaire seul)
+        s.MapGet("/ordres", async (string? statut, int? page, int? taille, IOrdresCentrauxDepot ordres,
+            Pharma.Application.Administration.IUtilisateursAdmin admin, CancellationToken ct) =>
+        {
+            if (statut is not null && !StatutsOrdre.Tous.Contains(statut)) return Results.Problem("État d’ordre inconnu.", statusCode: 400);
+            var demande = Pharma.Application.Commun.DemandePage.Lire(page, taille);
+            var p = await ordres.ListerAsync(statut, demande.Page, demande.Taille, ct);
+            var etat = await admin.LireAsync(ct);
+            var lignes = p.Ordres.Select(o => new OrdreCentralDto(o.Id, o.Type, TypesOrdre.Libelle(o.Type), ResumeOrdre.Texte(o, etat), o.Auteur,
+                o.CreeLeUtc, o.ExpireLeUtc, o.Statut, o.Motif, o.RecuLeUtc, o.TraiteLeUtc, o.Type == TypesOrdre.EmployeCreer)).ToList();
+            return Results.Ok(new PageOrdresCentrauxDto(new PageDto<OrdreCentralDto>(lignes, p.Total, demande.Page, demande.Taille), p.AConfirmer));
+        });
+
+        s.MapPost("/ordres/{id:guid}/confirmer", async (Guid id, ConfirmerOrdreCentralDto d, ConfirmerOrdreCentral confirmer, ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            await confirmer.ExecuterAsync(id, d.MotDePasse, user.UtilisateurId(), ct);
+            return Results.NoContent();
+        });
+
+        s.MapPost("/ordres/{id:guid}/refuser", async (Guid id, RefuserOrdreCentralDto d, RefuserOrdreCentral refuser, ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            await refuser.ExecuterAsync(id, d.Motif, user.UtilisateurId(), ct);
+            return Results.NoContent();
+        });
     }
 }

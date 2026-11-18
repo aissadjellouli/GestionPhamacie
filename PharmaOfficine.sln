@@ -256,6 +256,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\142_mutualisation_reglages_modification_locale.sql = database\migration\142_mutualisation_reglages_modification_locale.sql
 		database\migration\143_copie_ged_second_serveur_frequence.sql = database\migration\143_copie_ged_second_serveur_frequence.sql
 		database\migration\144_synchronisation_verification_integrite_centrale.sql = database\migration\144_synchronisation_verification_integrite_centrale.sql
+		database\migration\145_synchronisation_ordres_central.sql = database\migration\145_synchronisation_ordres_central.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -280,6 +281,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\142_mutualisation_reglages_modification_locale_tests.sql = database\tests\142_mutualisation_reglages_modification_locale_tests.sql
 		database\tests\143_copie_ged_second_serveur_frequence_tests.sql = database\tests\143_copie_ged_second_serveur_frequence_tests.sql
 		database\tests\144_synchronisation_verification_integrite_centrale_tests.sql = database\tests\144_synchronisation_verification_integrite_centrale_tests.sql
+		database\tests\145_synchronisation_ordres_central_tests.sql = database\tests\145_synchronisation_ordres_central_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 	EndProjectSection
@@ -339,6 +341,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\010_mutualisation_reglages.sql = database\cloud\010_mutualisation_reglages.sql
 		database\cloud\011_descendant_ajouts_locaux_motifs_remises.sql = database\cloud\011_descendant_ajouts_locaux_motifs_remises.sql
 		database\cloud\012_verification_integrite_central.sql = database\cloud\012_verification_integrite_central.sql
+		database\cloud\013_ordres_vers_officines.sql = database\cloud\013_ordres_vers_officines.sql
 		database\cloud\tests\001_base_centrale_tests.sql = database\cloud\tests\001_base_centrale_tests.sql
 		database\cloud\tests\003_chargement_complet_officine_tests.sql = database\cloud\tests\003_chargement_complet_officine_tests.sql
 		database\cloud\tests\004_reglage_familles_envoyees_tests.sql = database\cloud\tests\004_reglage_familles_envoyees_tests.sql
@@ -350,6 +353,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\tests\010_mutualisation_reglages_tests.sql = database\cloud\tests\010_mutualisation_reglages_tests.sql
 		database\cloud\tests\011_descendant_ajouts_locaux_motifs_remises_tests.sql = database\cloud\tests\011_descendant_ajouts_locaux_motifs_remises_tests.sql
 		database\cloud\tests\012_verification_integrite_central_tests.sql = database\cloud\tests\012_verification_integrite_central_tests.sql
+		database\cloud\tests\013_ordres_vers_officines_tests.sql = database\cloud\tests\013_ordres_vers_officines_tests.sql
 	EndProjectSection
 EndProject
 Global

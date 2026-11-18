@@ -307,6 +307,11 @@ public static class DependencyInjection
         services.AddSingleton<Synchronisation.MemoireSupervisionSync>();
         services.AddScoped<Synchronisation.ConsulterAttenteSync>();
         services.AddScoped<Synchronisation.SurveillerSynchronisation>();
+        // Lots S5.1 et S5.5 : ordres envoyés par le serveur central
+        services.AddScoped<Synchronisation.ExecuterOrdreCentral>();
+        services.AddScoped<Synchronisation.AppliquerOrdresCentraux>();
+        services.AddScoped<Synchronisation.ConfirmerOrdreCentral>();
+        services.AddScoped<Synchronisation.RefuserOrdreCentral>();
         services.AddScoped<Synchronisation.ReglerSupervisionSync>();
         services.AddScoped<Synchronisation.PurgerSortieSync>();
         // Registre des psychotropes renforcé (lot 8) : alertes et forçage, annulations, concordance, scellement mensuel, antibiotiques

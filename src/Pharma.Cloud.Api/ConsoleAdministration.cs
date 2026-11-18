@@ -18,7 +18,7 @@ public static class ConsoleAdministration
         ["--initialiser-autorite", "--certificat-serveur", "--creer-officine", "--code-activation", "--revoquer", "--revoquer-serveur", "--lister", "--partitions", "--generer-miroir",
          "--reglages", "--regler-famille", "--effacer-famille", "--conservation", "--purge-lots", "--purger-lots",
          "--reglages-mutualises", "--publier-reglage", "--mode-reglage", "--modele-depuis-officine", "--liberer-reglages", "--retablir-reglages", "--journal-reglages",
-         "--verifier-integrite", "--anomalies-integrite"];
+         "--verifier-integrite", "--anomalies-integrite", .. Ordres.OrdresAdministration.Commandes];
 
     public static bool Concerne(string[] args) => args.Length > 0 && Commandes.Contains(args[0]);
 
@@ -26,6 +26,12 @@ public static class ConsoleAdministration
     {
         try
         {
+            if (Ordres.OrdresAdministration.Concerne(args[0]))
+            {
+                // Lots S5.1 et S5.5 : ordres envoyés aux officines (script central 013)
+                await using var db = Admin();
+                return await Ordres.OrdresAdministration.ExecuterAsync(db, args, Console.Out);
+            }
             if (ArgumentsReglages.Concerne(args[0]))
                 // Réglages mutualisés (lot M6) : fonctions d'administration du script central 010, connexion du propriétaire
                 return await AdministrationReglages.PourConsole(Admin).ExecuterAsync(args);

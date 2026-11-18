@@ -874,6 +874,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> ReglerSupervisionSynchronisationAsync(ReglagesSupervisionSynchronisationDto d) =>
         (await EnvoyerCorpsAsync<ReglagesSupervisionSynchronisationDto, object>(HttpMethod.Put, "api/admin/synchronisation/supervision", d)).Item2;
     public Task<(AttenteSynchronisationDto?, string?)> AttenteSynchronisationAsync() => GetAsync<AttenteSynchronisationDto?>("api/synchronisation/attente", null);
+    // Lots S5.1 et S5.5 : ordres du serveur central (liste ; confirmation et refus par le titulaire)
+    public Task<(PageOrdresCentrauxDto?, string?)> OrdresCentrauxAsync(string? statut, int page, int taille) =>
+        GetAsync<PageOrdresCentrauxDto?>($"api/admin/synchronisation/ordres?page={page}&taille={taille}{(statut is null ? "" : "&statut=" + Uri.EscapeDataString(statut))}", null);
+    public async Task<string?> ConfirmerOrdreCentralAsync(Guid id, string? motDePasse) =>
+        (await PostAsync<ConfirmerOrdreCentralDto, object>($"api/admin/synchronisation/ordres/{id}/confirmer", new(motDePasse))).Item2;
+    public async Task<string?> RefuserOrdreCentralAsync(Guid id, string motif) =>
+        (await PostAsync<RefuserOrdreCentralDto, object>($"api/admin/synchronisation/ordres/{id}/refuser", new(motif))).Item2;
     // Mutualisation des réglages (lots M5 et M7) : état des 11 tables, « Adopter », réglage fiscal et traçabilité
     public Task<(List<ReglageMutualiseDto>, string?)> ReglagesMutualisesAsync() => GetAsync<List<ReglageMutualiseDto>>("api/reglages-mutualises", []);
     public Task<(ReglageMutualiseDto?, string?)> ReglageMutualiseAsync(string table) =>

@@ -23,7 +23,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 144 (095, 098, 099, 132, 134, 137, 138, 139, 142 et 143 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 145 (095, 098, 099, 132, 134, 137, 138, 139, 142 et 143 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -493,6 +493,8 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('sync_famille_colonne', 'jamais', '{famille,nom_table,colonne}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
     ('sync_journal_descendant', 'jamais', '{id}', '{}', '{}', '{}', false, 'Synchronisation elle-même (journal de la voie descendante, script 136)'),
     ('sync_lot', 'jamais', '{epoque,numero}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('sync_ordre_recu', 'jamais', '{id}', '{}', '{}', '{}', false, 'Ordres reçus du serveur central (données d''employés possibles), script 145'),
+    ('sync_ordre_resultat', 'montante', '{ordre_id}', '{}', '{}', '{motif}', false, 'Résultat des ordres du serveur central, script 145'),
     ('sync_parametre', 'jamais', '{id}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
     ('sync_pseudonyme', 'jamais', '{nature,cle_locale}', '{}', '{}', '{}', false, 'Correspondance personne <-> code : ne quitte jamais l''officine'),
     ('sync_sortie', 'jamais', '{id}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),

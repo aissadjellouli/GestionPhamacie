@@ -1,5 +1,7 @@
 @page "/admin/synchronisation"
 @inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
 
 @* Synchronisation avec le serveur central (2026-11-16, lot S2, script 128) : état de l'envoi, réglages (activer, adresse, options),
    activation de ce serveur par code, chargement complet (lot S6 : progression, « Recharger toutes les données »). Droit admin.parametres. Écran fixe : une sous-rubrique à la fois, aucun défilement de page. *@
@@ -221,6 +223,84 @@
             </div>
         }
 
+        @if (t is not null && rubrique == "ordres")
+        {
+            @* Lots S5.1 et S5.5 : ordres envoyés par le serveur central. Liste paginée et filtrée (règle des listes) ; seul le tableau défile.
+               Confirmation et refus réservés au titulaire (fenêtre) ; un ordre « à confirmer » ne change rien tant qu'il n'est pas confirmé. *@
+            <div class="filtres-liste" role="search" aria-label="Filtrer les ordres du serveur central">
+                <div class="champ" style="flex: 0 0 220px"><label for="or-statut">État</label>
+                    <select id="or-statut" data-champ="statut" @bind="fStatut" @bind:after="PremierePageOrdresAsync">
+                        <option value="">Tous</option>
+                        <option value="a_confirmer">À confirmer</option>
+                        <option value="a_appliquer">À appliquer</option>
+                        <option value="applique">Appliqués</option>
+                        <option value="refuse">Refusés</option>
+                        <option value="expire">Expirés</option>
+                        <option value="annule">Annulés</option>
+                    </select></div>
+                <p class="detail" style="margin: 0; align-self: center" data-zone="ordres-a-confirmer">@TexteAConfirmer</p>
+            </div>
+            <section class="tableau-cadre" aria-label="Ordres du serveur central" data-zone="ordres">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Reçu le</th><th scope="col">Ordre</th><th scope="col">Détail</th><th scope="col">Auteur</th><th scope="col">Expire le</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var o in ordres)
+                        {
+                            <tr data-ordre="@o.Id">
+                                <td>@Date(o.RecuLe)</td>
+                                <td class="nom">@o.Libelle</td>
+                                <td>@o.Resume @if (o.Motif is { } mo) { <br /><span class="detail">@mo</span> }</td>
+                                <td>@o.Auteur</td>
+                                <td>@Date(o.ExpireLe)</td>
+                                <td><span class="pastille @ClasseOrdre(o.Statut)">@LibelleOrdre(o.Statut)</span></td>
+                                <td>
+                                    @if (o.Statut == "a_confirmer" && EstTitulaire)
+                                    {
+                                        <div style="display: flex; gap: 8px">
+                                            <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => OuvrirConfirmation(o)">Confirmer</button>
+                                            <button type="button" class="btn" disabled="@enCours" @onclick="() => OuvrirRefus(o)">Refuser</button>
+                                        </div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        @if (ordres.Count == 0 && erreur is null) { <tr><td colspan="7" class="vide">Aucun ordre du serveur central pour ce filtre.</td></tr> }
+                    </tbody>
+                </table>
+            </section>
+            <Pagination Total="ordresTotal" Numero="ordresPage" Taille="ordresTaille" Libelle="Pages des ordres du serveur central" OnChange="p => ChargerOrdresAsync(p.Numero, p.Taille)" />
+            <p class="detail" style="margin: 0">Le blocage d’un employé s’applique tout de suite ; création, modification, déblocage et droits attendent la confirmation du titulaire. Un ordre est refusé si la valeur a changé ici depuis son envoi, et expire après 7 jours.</p>
+        }
+
+        @if (ordreOuvert is { } oo)
+        {
+            <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-ordre">
+                <section class="panneau" style="max-width: 620px; width: 100%">
+                    <h2 id="t-ordre">@(action == "confirmer" ? "Confirmer" : "Refuser") : @oo.Libelle</h2>
+                    <p style="margin: 0 0 4px">@oo.Resume</p>
+                    <p class="detail" style="margin: 0 0 8px">Envoyé par @oo.Auteur le @Date(oo.CreeLe) ; expire le @Date(oo.ExpireLe).</p>
+                    @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
+                    @if (action == "confirmer" && oo.DemandeMotDePasse)
+                    {
+                        <div class="champ"><label for="or-mdp" class="requis">Mot de passe provisoire du nouvel employé</label>
+                            <input id="or-mdp" data-champ="mot_de_passe" type="password" autocomplete="new-password" @bind="motDePasse" @bind:event="oninput" /></div>
+                        <div class="champ"><label for="or-mdp2" class="requis">Mot de passe provisoire (confirmation)</label>
+                            <input id="or-mdp2" type="password" autocomplete="new-password" aria-invalid="@(motDePasse2 != "" && motDePasse != motDePasse2 ? "true" : null)" @bind="motDePasse2" @bind:event="oninput" /></div>
+                        <p class="detail" style="margin: 0">L’employé devra le changer à sa première connexion. Il n’est jamais envoyé au serveur central.</p>
+                    }
+                    @if (action == "refuser")
+                    {
+                        <div class="champ"><label for="or-motif" class="requis">Motif du refus (envoyé au serveur central)</label>
+                            <input id="or-motif" data-champ="motif" type="text" maxlength="300" autocomplete="off" @bind="motifRefus" @bind:event="oninput" /></div>
+                    }
+                    <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px">
+                        <button type="button" class="btn" disabled="@enCours" @onclick="Fermer">Annuler</button>
+                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderOrdreAsync">@(action == "confirmer" ? "Confirmer et appliquer" : "Refuser l’ordre")</button>
+                    </div>
+                </section>
+            </div>
+        }
+
         @if (t is not null && rubrique == "reglages-mutualises")
         {
             @* Lot M7 : état des 11 tables de réglages que le serveur central peut fixer (imposé) ou proposer. Liste fermée de 11 lignes (bornée par nature), seul le cadre défile. *@
@@ -320,6 +400,15 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (rubrique != "ordres") ordresCharges = false;
+        else if (!ordresCharges)
+        {
+            ordresCharges = true;
+            Historique.Suivre("ordres-central", e => { e.Mettre("statut", fStatut); e.Mettre("page", ordresPage); e.Mettre("taille", ordresTaille); });
+            if (Historique.Restaurer("ordres-central") is { } h)
+                (fStatut, ordresPage, ordresTaille) = (h.Texte("statut") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? ordresTaille);
+            await ChargerOrdresAsync(ordresPage, ordresTaille);
+        }
         if (rubrique != "reglages-mutualises") { reglagesCharges = null; return; }
         if (reglagesCharges is null) await ChargerReglagesMutualisesAsync();
     }
@@ -335,6 +424,7 @@
     private async Task ChargerAsync()
     {
         if (rubrique == "reglages-mutualises") await ChargerReglagesMutualisesAsync();
+        if (rubrique == "ordres") await ChargerOrdresAsync(ordresPage, ordresTaille);
         var (d, e) = await Api.SynchronisationAsync();
         if (d is null) { erreur = e; return; }
         (t, active, adresse, textesLibres, envoyerMedecins, erreur) = (d, d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins, null);
@@ -358,6 +448,61 @@
     });
 
     private static string Date(DateTime? d) => d is { } v ? Libelles.DateHeureLocale(v) : "jamais";
+
+    // Lots S5.1 et S5.5 : ordres du serveur central
+    private List<OrdreCentralDto> ordres = [];
+    private int ordresTotal, ordresPage = 1, ordresTaille = Pagination.TailleParDefaut, aConfirmer;
+    private string fStatut = "";
+    private bool ordresCharges;
+    private OrdreCentralDto? ordreOuvert;
+    private string action = "", motDePasse = "", motDePasse2 = "", motifRefus = "";
+    private string? erreurFenetre;
+    private bool EstTitulaire => Session.A("role.titulaire");
+    private string TexteAConfirmer => aConfirmer == 0 ? "Aucun ordre n’attend de confirmation."
+        : $"{aConfirmer} ordre(s) à confirmer{(EstTitulaire ? "" : " par le titulaire")}.";
+
+    private Task PremierePageOrdresAsync() => ChargerOrdresAsync(1, ordresTaille);
+
+    private async Task ChargerOrdresAsync(int page, int taille)
+    {
+        (ordresPage, ordresTaille) = (page, taille);
+        var (p, e) = await Api.OrdresCentrauxAsync(fStatut == "" ? null : fStatut, page, taille);
+        if (p is null) { erreur = e; return; }
+        (ordres, ordresTotal, aConfirmer) = (p.Page.Lignes.ToList(), p.Page.Total, p.AConfirmer);
+    }
+
+    private void OuvrirConfirmation(OrdreCentralDto o) => Ouvrir(o, "confirmer");
+    private void OuvrirRefus(OrdreCentralDto o) => Ouvrir(o, "refuser");
+    private void Ouvrir(OrdreCentralDto o, string quoi) => (ordreOuvert, action, motDePasse, motDePasse2, motifRefus, erreurFenetre) = (o, quoi, "", "", "", null);
+    private void Fermer() => (ordreOuvert, motDePasse, motDePasse2, erreurFenetre) = (null, "", "", null);
+
+    private async Task ValiderOrdreAsync()
+    {
+        if (ordreOuvert is not { } o) return;
+        if (action == "confirmer" && o.DemandeMotDePasse && motDePasse != motDePasse2) { erreurFenetre = "Les deux mots de passe sont différents."; return; }
+        enCours = true;
+        try
+        {
+            var e = action == "confirmer" ? await Api.ConfirmerOrdreCentralAsync(o.Id, o.DemandeMotDePasse ? motDePasse : null)
+                                          : await Api.RefuserOrdreCentralAsync(o.Id, motifRefus);
+            if (e is not null) { erreurFenetre = e; await ChargerOrdresAsync(ordresPage, ordresTaille); return; }
+            message = action == "confirmer" ? "Ordre confirmé et appliqué." : "Ordre refusé ; le refus est envoyé au serveur central.";
+            Fermer();
+            await ChargerOrdresAsync(ordresPage, ordresTaille);
+        }
+        finally { enCours = false; }
+    }
+
+    private static string LibelleOrdre(string statut) => statut switch
+    {
+        "a_confirmer" => "À confirmer", "a_appliquer" => "À appliquer", "applique" => "Appliqué", "refuse" => "Refusé",
+        "expire" => "Expiré", "annule" => "Annulé", _ => statut
+    };
+
+    private static string ClasseOrdre(string statut) => statut switch
+    {
+        "a_confirmer" => "attention", "a_appliquer" => "info", "applique" => "ok", "refuse" => "urgent", _ => ""
+    };
 
     // Lot S4 : intégrité au central
     private static string ClasseIntegrite(string statut) => statut switch { "ok" => "ok", "attente" => "info", "anomalie" => "urgent", _ => "" };

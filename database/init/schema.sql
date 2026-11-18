@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 144 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 145 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 144 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 145 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -21,30 +21,10 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
     \quit
 \endif
 --
---
---
---
---
---
---
---
---
---
---
---
---
---
---
---
---
---
---
---
---
 -- PostgreSQL database dump
 --
 
-\restrict zTdqLqtMm1kyzJykeOyUMoZl6TfgVjTGErvIrHohcwMjhx4yNWmZ0BB0RYQPVbz
+\restrict O7c9g63lpfpx8DDzsSJxaFz92z8l8hLjREFLSuVogxdK8eiHAjTEBSonLeaqK0d
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3965,6 +3945,36 @@ $$;
 
 
 --
+-- Name: sync_ordre_noter(uuid, text, text, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_ordre_noter(p_id uuid, p_statut text, p_motif text, p_par bigint) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+DECLARE o sync_ordre_recu;
+BEGIN
+    IF p_statut NOT IN ('a_confirmer', 'applique', 'refuse', 'expire', 'annule') THEN
+        RAISE EXCEPTION 'Ordre du serveur central : état inconnu (%)', p_statut;
+    END IF;
+    SELECT * INTO o FROM sync_ordre_recu WHERE id = p_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Ordre du serveur central inconnu : %', p_id; END IF;
+    IF o.statut IN ('applique', 'refuse', 'expire', 'annule') THEN
+        RAISE EXCEPTION 'Ordre du serveur central déjà traité (%)', o.statut;
+    END IF;
+    UPDATE sync_ordre_recu SET statut = p_statut, motif = left(p_motif, 500),
+           traite_le = CASE WHEN p_statut = 'a_confirmer' THEN traite_le ELSE now() END,
+           traite_par = CASE WHEN p_statut = 'a_confirmer' THEN traite_par ELSE p_par END
+    WHERE id = p_id;
+    INSERT INTO sync_ordre_resultat AS r (ordre_id, statut, motif, traite_le) VALUES (p_id, p_statut, left(p_motif, 500), now())
+    ON CONFLICT (ordre_id) DO UPDATE SET statut = EXCLUDED.statut, motif = EXCLUDED.motif, traite_le = EXCLUDED.traite_le;
+    INSERT INTO journal_audit (utilisateur_id, action, table_cible, details)
+    VALUES (p_par, 'ordre_central_' || p_statut, 'sync_ordre_recu',
+            jsonb_build_object('ordre', p_id, 'type', o.type, 'cible', o.cible, 'auteur_central', o.auteur, 'motif', left(p_motif, 500),
+                               'attendu', o.attendu, 'donnees', o.donnees - 'mot_de_passe'));
+END $$;
+
+
+--
 -- Name: sync_parametre_garde_officine(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4047,6 +4057,80 @@ COMMENT ON FUNCTION public.sync_purger(p_delai_jours integer, p_max_lots integer
 --
 
 CREATE FUNCTION public.sync_recevoir_descendant(p_table text, p_cle text, p_version bigint, p_donnees jsonb, p_version_max bigint) RETURNS text
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE
+    p        sync_parametre;
+    v_motif  text;
+    v_id     uuid;
+    v_statut text;
+    o        sync_ordre_recu;
+BEGIN
+    IF p_table IS DISTINCT FROM 'ordre_central' THEN
+        RETURN sync_recevoir_descendant_reglages(p_table, p_cle, p_version, p_donnees, p_version_max);
+    END IF;
+    SELECT * INTO p FROM sync_parametre WHERE id = 1;
+    v_motif := CASE
+        WHEN p_version IS NULL OR p_version < 1 OR p_donnees IS NULL OR jsonb_typeof(p_donnees) <> 'object' THEN 'élément mal formé'
+        WHEN p_version > coalesce(p_version_max, 0) THEN 'version au-delà de la version maximale annoncée'
+        WHEN p_version > p.descendant_version + p.descendant_saut_max THEN 'saut de version anormal'
+        WHEN length(p_donnees::text) > 65536 THEN 'données trop volumineuses (plus de 64 Kio)'
+        WHEN p_donnees ->> 'format' IS DISTINCT FROM 'ordre-v1' THEN 'format d''ordre non pris en charge'
+        WHEN p_cle IS NULL OR p_cle !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             OR p_donnees ->> 'id' IS DISTINCT FROM p_cle THEN 'identifiant d''ordre invalide'
+        WHEN coalesce(p_donnees ->> 'type', '') !~ '^[a-z_]{1,40}$' THEN 'type d''ordre invalide'
+        WHEN coalesce(p_donnees ->> 'auteur', '') = '' OR length(p_donnees ->> 'auteur') > 100 THEN 'auteur de l''ordre absent'
+        WHEN jsonb_typeof(p_donnees -> 'attendu') IS DISTINCT FROM 'object' OR jsonb_typeof(p_donnees -> 'donnees') IS DISTINCT FROM 'object'
+             THEN 'contenu de l''ordre invalide'
+        WHEN coalesce(p_donnees ->> 'statut', '') NOT IN ('en_attente', 'a_confirmer', 'applique', 'refuse', 'expire', 'annule')
+             THEN 'état de l''ordre invalide'
+        ELSE NULL END;
+    IF v_motif IS NULL THEN
+        BEGIN
+            PERFORM (p_donnees ->> 'cree_le')::timestamptz, (p_donnees ->> 'expire_le')::timestamptz;
+        EXCEPTION WHEN others THEN v_motif := 'dates de l''ordre invalides';
+        END;
+    END IF;
+    IF v_motif IS NOT NULL THEN
+        INSERT INTO sync_journal_descendant (nom_table, cle, version, statut, motif)
+        SELECT 'ordre_central', left(coalesce(p_cle, '?'), 200), p_version, 'refuse', v_motif
+        WHERE NOT EXISTS (SELECT 1 FROM sync_journal_descendant j WHERE j.statut = 'refuse' AND j.nom_table = 'ordre_central'
+                          AND j.cle = left(coalesce(p_cle, '?'), 200) AND j.version IS NOT DISTINCT FROM p_version);
+        RETURN 'refuse';
+    END IF;
+
+    v_id := p_cle::uuid;
+    v_statut := p_donnees ->> 'statut';
+    SELECT * INTO o FROM sync_ordre_recu WHERE id = v_id FOR UPDATE;
+    IF NOT FOUND THEN
+        INSERT INTO sync_ordre_recu (id, type, cible, attendu, donnees, auteur, cree_le, expire_le, version, statut)
+        VALUES (v_id, p_donnees ->> 'type', left(p_donnees ->> 'cible', 100), p_donnees -> 'attendu', p_donnees -> 'donnees',
+                p_donnees ->> 'auteur', (p_donnees ->> 'cree_le')::timestamptz, (p_donnees ->> 'expire_le')::timestamptz, p_version,
+                'a_appliquer');
+        -- Annulé ou expiré au central avant d'arriver : jamais appliqué
+        IF v_statut IN ('annule', 'expire') THEN
+            PERFORM sync_ordre_noter(v_id, v_statut, CASE v_statut WHEN 'annule' THEN 'annulé au serveur central' ELSE 'expiré au serveur central' END, NULL);
+        END IF;
+    ELSIF o.version >= p_version THEN
+        RETURN 'ancien';
+    ELSE
+        UPDATE sync_ordre_recu SET version = p_version WHERE id = v_id;
+        -- Seule une annulation ou une expiration décidée au central change un ordre pas encore traité ; le reste est ignoré
+        IF v_statut IN ('annule', 'expire') AND o.statut IN ('a_appliquer', 'a_confirmer') THEN
+            PERFORM sync_ordre_noter(v_id, v_statut, CASE v_statut WHEN 'annule' THEN 'annulé au serveur central' ELSE 'expiré au serveur central' END, NULL);
+        END IF;
+    END IF;
+    INSERT INTO sync_journal_descendant (nom_table, cle, version, statut, avant, apres)
+    VALUES ('ordre_central', p_cle, p_version, 'applique', NULL, jsonb_build_object('type', p_donnees ->> 'type', 'statut', v_statut));
+    RETURN 'applique';
+END $_$;
+
+
+--
+-- Name: sync_recevoir_descendant_reglages(text, text, bigint, jsonb, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_recevoir_descendant_reglages(p_table text, p_cle text, p_version bigint, p_donnees jsonb, p_version_max bigint) RETURNS text
     LANGUAGE plpgsql
     AS $_$
 DECLARE
@@ -10351,6 +10435,65 @@ COMMENT ON COLUMN public.sync_lot.colonnes_retirees IS 'Colonnes (« table.colon
 
 
 --
+-- Name: sync_ordre_recu; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_ordre_recu (
+    id uuid NOT NULL,
+    type text NOT NULL,
+    cible text,
+    attendu jsonb DEFAULT '{}'::jsonb NOT NULL,
+    donnees jsonb DEFAULT '{}'::jsonb NOT NULL,
+    auteur text NOT NULL,
+    cree_le timestamp with time zone NOT NULL,
+    expire_le timestamp with time zone NOT NULL,
+    version bigint NOT NULL,
+    statut text DEFAULT 'a_appliquer'::text NOT NULL,
+    motif text,
+    recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    traite_le timestamp with time zone,
+    traite_par bigint,
+    CONSTRAINT sync_ordre_recu_attendu_check CHECK ((jsonb_typeof(attendu) = 'object'::text)),
+    CONSTRAINT sync_ordre_recu_auteur_check CHECK (((length(auteur) >= 1) AND (length(auteur) <= 100))),
+    CONSTRAINT sync_ordre_recu_cible_check CHECK ((length(cible) <= 100)),
+    CONSTRAINT sync_ordre_recu_donnees_check CHECK ((jsonb_typeof(donnees) = 'object'::text)),
+    CONSTRAINT sync_ordre_recu_motif_check CHECK ((length(motif) <= 500)),
+    CONSTRAINT sync_ordre_recu_statut_check CHECK ((statut = ANY (ARRAY['a_appliquer'::text, 'a_confirmer'::text, 'applique'::text, 'refuse'::text, 'expire'::text, 'annule'::text]))),
+    CONSTRAINT sync_ordre_recu_type_check CHECK ((type ~ '^[a-z_]{1,40}$'::text)),
+    CONSTRAINT sync_ordre_recu_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: TABLE sync_ordre_recu; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_ordre_recu IS 'Ordres reçus du serveur central (format ordre-v1), appliqués par l''API locale ; jamais envoyée (script 145).';
+
+
+--
+-- Name: sync_ordre_resultat; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_ordre_resultat (
+    ordre_id uuid NOT NULL,
+    statut text NOT NULL,
+    motif text,
+    traite_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    CONSTRAINT sync_ordre_resultat_motif_check CHECK ((length(motif) <= 500)),
+    CONSTRAINT sync_ordre_resultat_statut_check CHECK ((statut = ANY (ARRAY['a_confirmer'::text, 'applique'::text, 'refuse'::text, 'expire'::text, 'annule'::text])))
+);
+
+
+--
+-- Name: TABLE sync_ordre_resultat; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_ordre_resultat IS 'Résultat de chaque ordre du serveur central, envoyé au central (script 145).';
+
+
+--
 -- Name: sync_pseudonyme; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13757,6 +13900,22 @@ ALTER TABLE ONLY public.sync_lot
 
 
 --
+-- Name: sync_ordre_recu sync_ordre_recu_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_ordre_recu
+    ADD CONSTRAINT sync_ordre_recu_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: sync_ordre_resultat sync_ordre_resultat_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_ordre_resultat
+    ADD CONSTRAINT sync_ordre_resultat_pkey PRIMARY KEY (ordre_id);
+
+
+--
 -- Name: sync_parametre sync_parametre_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14864,6 +15023,13 @@ CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (pr
 --
 
 CREATE INDEX ix_sync_famille_colonne_table ON public.sync_famille_colonne USING btree (nom_table);
+
+
+--
+-- Name: ix_sync_ordre_recu_statut; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_ordre_recu_statut ON public.sync_ordre_recu USING btree (statut, recu_le);
 
 
 --
@@ -18355,6 +18521,22 @@ ALTER TABLE ONLY public.substitution_liste_blanche
 
 
 --
+-- Name: sync_ordre_recu sync_ordre_recu_traite_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_ordre_recu
+    ADD CONSTRAINT sync_ordre_recu_traite_par_fkey FOREIGN KEY (traite_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: sync_ordre_resultat sync_ordre_resultat_ordre_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_ordre_resultat
+    ADD CONSTRAINT sync_ordre_resultat_ordre_id_fkey FOREIGN KEY (ordre_id) REFERENCES public.sync_ordre_recu(id);
+
+
+--
 -- Name: utilisateur utilisateur_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -18566,5 +18748,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict zTdqLqtMm1kyzJykeOyUMoZl6TfgVjTGErvIrHohcwMjhx4yNWmZ0BB0RYQPVbz
+\unrestrict O7c9g63lpfpx8DDzsSJxaFz92z8l8hLjREFLSuVogxdK8eiHAjTEBSonLeaqK0d
 

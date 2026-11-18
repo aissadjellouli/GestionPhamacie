@@ -198,3 +198,14 @@ public sealed record ReglagesSynchronisationDto(bool Active, string? Adresse, st
 public sealed record ActivationSynchronisationDto(string Code);
 
 public sealed record ResultatEnvoiSynchronisationDto(int LotsAccuses, string? Arret, string? Erreur);
+
+/// <summary>Lots S5.1 et S5.5 : ordre reçu du serveur central (Resume : texte lisible, employé et rôle nommés d'après la base de l'officine).</summary>
+public sealed record OrdreCentralDto(Guid Id, string Type, string Libelle, string Resume, string Auteur, DateTime CreeLe, DateTime ExpireLe,
+    string Statut, string? Motif, DateTime RecuLe, DateTime? TraiteLe, bool DemandeMotDePasse);
+
+/// <summary>Page d'ordres reçus ; AConfirmer : nombre d'ordres qui attendent la confirmation du titulaire.</summary>
+public sealed record PageOrdresCentrauxDto(PageDto<OrdreCentralDto> Page, int AConfirmer);
+
+public sealed record ConfirmerOrdreCentralDto(string? MotDePasse);
+
+public sealed record RefuserOrdreCentralDto(string? Motif);

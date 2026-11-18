@@ -21,7 +21,7 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 147 tables — 80 montantes, 22 bidirectionnelles, 18 descendantes, 27 jamais envoyées (`compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
+**Récapitulatif** : 149 tables — 81 montantes, 22 bidirectionnelles, 18 descendantes, 28 jamais envoyées (`sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
 
 ## Ce que reçoit le serveur central : vue d'ensemble (2026-11-17)
 
@@ -153,6 +153,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `rupture_grossiste` | montante | id | - | - | |
 | `sceau_integrite` | montante | id | - | - | Sceaux recopiés tels quels ; la clé ne part jamais |
 | `session_caisse` | montante | id | - | - | |
+| `sync_ordre_resultat` | montante | ordre_id | - | - | Résultat des ordres du serveur central (état, motif filtré, date), script 145 |
 | `utilisation_financement` | montante | id | - | - | |
 | `vente` | montante | id | remis_a_nom, pour_nom, chifa_qr | patient_id, remis_a_patient_id, pour_patient_id | |
 | `vente_chifa_facture_conflit` | montante | vente_id | - | - | |
@@ -223,6 +224,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `sync_famille_colonne` | jamais | famille, nom_table, colonne | - | - | Synchronisation elle-même (familles nominatives, script 130) |
 | `sync_journal_descendant` | jamais | id | - | - | Synchronisation elle-même (journal de la voie descendante, script 136) |
 | `sync_lot` | jamais | epoque, numero | - | - | Synchronisation elle-même |
+| `sync_ordre_recu` | jamais | id | - | - | Ordres reçus du serveur central (données d'employés possibles), script 145 |
 | `sync_parametre` | jamais | id | - | - | Synchronisation elle-même |
 | `sync_pseudonyme` | jamais | nature, cle_locale | - | - | Correspondance personne <-> code : ne quitte jamais l'officine |
 | `sync_sortie` | jamais | id | - | - | Synchronisation elle-même |

@@ -220,6 +220,8 @@ public static class DependencyInjection
         services.AddScoped<Synchronisation.SupervisionSyncSql>();
         services.AddScoped<Application.Synchronisation.ISupervisionSyncDepot>(sp => sp.GetRequiredService<Synchronisation.SupervisionSyncSql>());
         services.AddScoped<Application.Synchronisation.IPurgeSyncDepot>(sp => sp.GetRequiredService<Synchronisation.SupervisionSyncSql>());
+        // Lots S5.1 et S5.5 : ordres reçus du serveur central (script 145)
+        services.AddScoped<Application.Synchronisation.IOrdresCentrauxDepot, Synchronisation.OrdresCentrauxSql>();
         services.AddSingleton<Application.Synchronisation.ICertificatSync>(new Synchronisation.CertificatSyncFichier(
             string.IsNullOrWhiteSpace(options.DossierSynchronisation)
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Synchronisation")
