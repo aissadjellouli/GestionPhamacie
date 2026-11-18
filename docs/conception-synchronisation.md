@@ -1317,9 +1317,10 @@ alerte ; S5.2-D4 aucun contrôle de marge tant que les règles algériennes (pri
   nom du titulaire qui confirme, sans auteur local sinon.
 - **Écart avec le plan** : une baisse de prix venue du central **ne compte pas** dans la surveillance des baisses de prix des employés
   (elle ne concerne que les employés autres que le titulaire) ; elle reste visible dans « Ordres du central » et au journal.
-- **Point relevé** : le journal des actions affiché aux écrans ne montre que les lignes avec un employé ; les changements appliqués
-  automatiquement par un ordre (sans auteur local) se lisent dans « Ordres du central » **[À DÉCIDER : les afficher aussi au journal
-  des actions]**.
+- **Journal des actions** (corrigé le 2026-11-18, « ok journal ») : l'écran montrait déjà les lignes sans employé, mais avec « — » ;
+  il affiche désormais « Serveur central (auteur) » pour une action faite par un ordre sans auteur local, le filtre « Employé »
+  les retrouve (« central » ou le nom de l'auteur), et les actions `ordre_central_…` ont un libellé et un détail lisibles (type,
+  cible, auteur, motif).
 - **Essai de bout en bout** (2026-11-18, copies jetables, supprimées) : +10 % appliqué tout de suite (120 → 132 DA, journal sans
   auteur local) ; +50 % mis à confirmer puis confirmé par le titulaire (350 → 525 DA, journal à son nom) ; prix changé dans l'officine
   avant l'arrivée de l'ordre → refusé, rien écrit ; résultats remontés au central (appliqué, appliqué, refusé). Écran « Ordres du

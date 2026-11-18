@@ -65,14 +65,15 @@ public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.
     public async Task<Page<EntreeJournal>> PageAsync(FiltreJournal filtre, DemandePage page, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand($"""
-            SELECT j.cree_le, COALESCE(u.nom_complet, '—'), j.action, j.details::text, a.nom_complet, j.permission_code,
+            SELECT j.cree_le, COALESCE(u.nom_complet, 'Serveur central (' || (j.details ->> 'auteur_central') || ')', '—'), j.action, j.details::text, a.nom_complet, j.permission_code,
                    {Lecture.PaginationSql.Total}, j.utilisateur_id, j.autorise_par
             FROM journal_audit j
             LEFT JOIN utilisateur u ON u.id = j.utilisateur_id
             LEFT JOIN utilisateur a ON a.id = j.autorise_par
             WHERE ($1::date IS NULL OR j.cree_le >= $1::date)
               AND ($2::date IS NULL OR j.cree_le < $2::date + 1)
-              AND ($3::text IS NULL OR u.nom_complet ILIKE '%' || $3 || '%' OR u.identifiant ILIKE '%' || $3 || '%')
+              AND ($3::text IS NULL OR u.nom_complet ILIKE '%' || $3 || '%' OR u.identifiant ILIKE '%' || $3 || '%'
+                   OR (j.utilisateur_id IS NULL AND ('serveur central ' || coalesce(j.details ->> 'auteur_central', '')) ILIKE '%' || $3 || '%'))
               AND ($6::text[] IS NULL OR j.action = ANY($6))
             ORDER BY j.cree_le DESC, j.id DESC
             {Lecture.PaginationSql.Limite(4)}
@@ -90,7 +91,7 @@ public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.
     public async Task<IReadOnlyList<EntreeJournal>> DernieresAsync(int nombre, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            SELECT j.cree_le, COALESCE(u.nom_complet, '—'), j.action, j.details::text, a.nom_complet, j.permission_code
+            SELECT j.cree_le, COALESCE(u.nom_complet, 'Serveur central (' || (j.details ->> 'auteur_central') || ')', '—'), j.action, j.details::text, a.nom_complet, j.permission_code
             FROM journal_audit j
             LEFT JOIN utilisateur u ON u.id = j.utilisateur_id
             LEFT JOIN utilisateur a ON a.id = j.autorise_par

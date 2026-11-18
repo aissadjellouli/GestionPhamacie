@@ -223,6 +223,12 @@ public static class Libelles
         "produit_debloque" => "Produit débloqué",
         "produit_classe" => "Catégorie de produit modifiée",
         "prix_modifie" => "Prix de vente modifié",
+        // Lots S5.1, S5.5, S5.2 : ordres du serveur central (« Ordres du central »)
+        "ordre_central_applique" => "Ordre du serveur central appliqué",
+        "ordre_central_a_confirmer" => "Ordre du serveur central à confirmer",
+        "ordre_central_refuse" => "Ordre du serveur central refusé",
+        "ordre_central_expire" => "Ordre du serveur central expiré",
+        "ordre_central_annule" => "Ordre du serveur central annulé",
         "facture_rejet_leve" => "Rejet de facture levé",
         "seuils_alerte" => "Seuils d’alerte",
         "pharmacie_modifiee" => "Identité de la pharmacie",
@@ -439,6 +445,9 @@ public static class Libelles
                                          + (d.TryGetProperty("actif_avant", out var aa) && aa.ValueKind != System.Text.Json.JsonValueKind.Undefined && (aa.ValueKind == System.Text.Json.JsonValueKind.True) != B("actif") ? (B("actif") ? " (réactivé)" : " (désactivé)") : ""),
                 "seuils_alerte" or "pharmacie_modifiee" or "reglages_surveillance" or "produit_modifie" or "patient_modifie" => Differences(d),
                 "prix_modifie" => $"{T("produit")} : {Dinars(N("avant"), 2)} → {Dinars(N("apres"), 2)}" + (T("source") is "—" ? "" : $" ({T("source")})"),
+                "ordre_central_applique" or "ordre_central_a_confirmer" or "ordre_central_refuse" or "ordre_central_expire" or "ordre_central_annule" =>
+                    TypeOrdreCentral(T("type")) + (T("cible") is "—" ? "" : $" · cible {T("cible")}") + $" · envoyé par {T("auteur_central")}"
+                    + (T("motif") is "—" ? "" : $" · {T("motif")}"),
                 "patient_cree" => $"{T("patient")} · plafond de crédit {Dinars(N("plafond_credit"), 2)}",
                 "commande_emise" => $"Bon {T("numero")} · {Dinars(N("montant_ht"), 2)} HT",
                 "commande_annulee" => $"Bon {T("numero")}",
@@ -500,6 +509,19 @@ public static class Libelles
             return detailsJson;
         }
     }
+
+    /// <summary>Type d'un ordre du serveur central (journal des actions), même libellé que l'écran « Ordres du central ».</summary>
+    private static string TypeOrdreCentral(string type) => type switch
+    {
+        "essai" => "Ordre d’essai",
+        "employe_creer" => "Créer un employé",
+        "employe_modifier" => "Modifier un employé",
+        "employe_bloquer" => "Bloquer un employé",
+        "employe_debloquer" => "Débloquer un employé",
+        "droits_role" => "Droits d’un rôle",
+        "prix_produit" => "Prix d’un produit",
+        _ => type
+    };
 
     /// <summary>Un rôle par ligne : droits ajoutés et retirés en clair, et remise maximale.</summary>
     private static string Droits(System.Text.Json.JsonElement d)
