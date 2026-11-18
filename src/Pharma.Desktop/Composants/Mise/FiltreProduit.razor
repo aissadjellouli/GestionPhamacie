@@ -1,0 +1,57 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@*
+    Filtre « Produit » d'un tableau avec propositions pendant la frappe (mode valeur libre de ChampSuggestions, 2026-11-18) :
+    le texte tapé continue de filtrer le tableau à chaque touche (comportement des filtres inchangé) ; choisir une proposition met
+    le nom commercial du produit dans le filtre. Propositions dès la 1re lettre (produit), 10 au plus, sans accents ni majuscules.
+    Source selon le droit de l'employé : GET /api/produits (stock.consulter), sinon GET /api/caisse/produits (caisse.vendre) ;
+    sans l'un de ces droits, aucune proposition (le filtre reste une saisie libre).
+    Ne pas l'utiliser pour un filtre qui porte aussi sur un n° de lot, un code-barres ou un laboratoire (saisie libre telle quelle).
+    Exemple : <FiltreProduit Id="cm-recherche" Libelle="Produit" Style="flex: 1 1 240px" @bind-Valeur="recherche" @bind-Valeur:after="FiltrerAsync"
+                             placeholder="Ex. amlodipine" />
+*@
+
+<ChampSuggestions TItem="ProduitDto" @ref="interieur" Id="@Id" Mode="ModeSuggestions.ValeurLibre" Type="@Type" Rechercher="RechercherAsync"
+                  TexteDe="p => p.NomCommercial" DetailDe="Detail" LettresMin="1" Valeur="@Valeur" ValeurChanged="ValeurChanged"
+                  Libelle="@Libelle" Style="@Style" Cadre="Cadre" LibelleListe="Produits du catalogue" OnChoisi="OnChoisi" @attributes="Attributs" />
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public string? Valeur { get; set; }
+    [Parameter] public EventCallback<string?> ValeurChanged { get; set; }
+    [Parameter] public EventCallback<ProduitDto> OnChoisi { get; set; }
+    [Parameter] public string? Libelle { get; set; }
+    [Parameter] public string? Style { get; set; }
+    /// <summary>Faux : seulement le champ et sa liste, dans un conteneur « .recherche » du parent.</summary>
+    [Parameter] public bool Cadre { get; set; } = true;
+    /// <summary>« search » par défaut : un filtre reste la recherche de l'écran (curseur posé par poste.js, second Échap qui l'efface).</summary>
+    [Parameter] public string Type { get; set; } = "search";
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributs { get; set; }
+
+    private ChampSuggestions<ProduitDto>? interieur;
+
+    /// <summary>Source des propositions permise à l'employé (null : aucune).</summary>
+    public static string? Source(Func<string, bool> a) =>
+        a("stock.consulter") ? "produits" : a("caisse.vendre") ? "caisse" : null;
+
+    private async Task<(List<ProduitDto>, string?)> RechercherAsync(string q)
+    {
+        switch (Source(Session.A))
+        {
+            case "produits":
+                var (produits, _) = await Api.RechercherProduitsAsync(q);
+                return (produits, null);
+            case "caisse":
+                var (comptoir, _) = await Api.RechercherAuComptoirAsync(q, ChampSuggestions<ProduitDto>.Maximum);
+                return (comptoir.Select(c => c.Produit).ToList(), null);
+            default:
+                return ([], null);
+        }
+    }
+
+    private static string? Detail(ProduitDto p) =>
+        string.Join(" · ", new[] { p.Dci, p.Dosage, p.Forme }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    public ValueTask FocusAsync() => interieur?.FocusAsync() ?? ValueTask.CompletedTask;
+}

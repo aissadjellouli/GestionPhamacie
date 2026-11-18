@@ -13,7 +13,7 @@ public sealed record LigneRegistre(
     int? Entree, int? Sortie, int? SoldeProduit, int SoldeLot,
     string? Patient, string? Medecin, string? Ordonnance, string? Fournisseur, string? Reference,
     string? PorteurNom, string? PorteurAdresse, string? PorteurPiece, string Employe, long? PatientId = null,
-    int? DureeTraitementJours = null);
+    int? DureeTraitementJours = null, long? MedecinId = null);
 
 /// <summary>
 /// Balance mensuelle des entrées et sorties d'un produit (arrêté du 23 août 1999, art. 4). SoldeReporte : solde d'ouverture du
@@ -69,9 +69,12 @@ public sealed class ConsulterRegistre(IRegistrePsychotropes registre, IPermissio
 
     /// <summary>Registre complet de la période, pour les exports : un an au plus.</summary>
     /// <param name="patientId">Export d'inspection (lot 8) : lignes de ce patient seulement.</param>
-    /// <param name="prescripteur">Export d'inspection (lot 8) : lignes dont le médecin contient ce texte.</param>
+    /// <param name="prescripteur">Ancien filtre texte (gardé pour compatibilité) : lignes dont le médecin contient ce texte ; ignoré
+    /// quand <paramref name="medecinId"/> est donné.</param>
+    /// <param name="medecinId">Export d'inspection : lignes de ce médecin prescripteur seulement (identifiant, revue 2026-11-18 : un
+    /// homonyme ou un nom qui en contient un autre n'entre pas dans l'extrait).</param>
     public async Task<Registre> ExecuterAsync(long utilisateurId, long? produitId, DateOnly? du, DateOnly? au, DateOnly aujourdhui,
-        CancellationToken ct = default, long? patientId = null, string? prescripteur = null)
+        CancellationToken ct = default, long? patientId = null, string? prescripteur = null, long? medecinId = null)
     {
         var (debut, fin) = await PeriodeAsync(utilisateurId, du, au, aujourdhui, ct);
         if (fin.DayNumber - debut.DayNumber >= JoursMaxExport)
@@ -80,12 +83,13 @@ public sealed class ConsulterRegistre(IRegistrePsychotropes registre, IPermissio
         var lignes = await registre.LireAsync(produitId, debut, fin, ct);
         // Filtres avant le masquage des noms (l'identifiant du patient est retiré hors titulaire)
         if (patientId is { } pid) lignes = lignes.Where(l => l.PatientId == pid).ToList();
-        if (!string.IsNullOrWhiteSpace(prescripteur))
+        if (medecinId is { } mid) lignes = lignes.Where(l => l.MedecinId == mid).ToList();
+        else if (!string.IsNullOrWhiteSpace(prescripteur))
             lignes = lignes.Where(l => l.Medecin?.Contains(prescripteur.Trim(), StringComparison.CurrentCultureIgnoreCase) == true).ToList();
         var masquer = !await droits.EstTitulaireAsync(utilisateurId, ct);
         if (masquer) lignes = lignes.Select(Masquer).ToList();
         // Extrait par patient ou prescripteur : pas de balance (elle ne vaut que pour toutes les lignes du produit)
-        var extrait = patientId is not null || !string.IsNullOrWhiteSpace(prescripteur);
+        var extrait = patientId is not null || medecinId is not null || !string.IsNullOrWhiteSpace(prescripteur);
         return new Registre(debut, fin, await NomProduitAsync(produitId, lignes, ct), lignes, extrait ? [] : Balance(lignes), masquer);
     }
 
@@ -172,13 +176,15 @@ public sealed class ExporterRegistre(ConsulterRegistre consulter, IDocumentsRegi
     public const string TypeXlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     public async Task<(byte[] Contenu, string NomFichier, string Type)> ExecuterAsync(string format, long utilisateurId, long? produitId,
-        DateOnly? du, DateOnly? au, DateOnly aujourdhui, CancellationToken ct = default, long? patientId = null, string? prescripteur = null)
+        DateOnly? du, DateOnly? au, DateOnly aujourdhui, CancellationToken ct = default, long? patientId = null, string? prescripteur = null,
+        long? medecinId = null)
     {
         if (format is not ("pdf" or "csv" or "xlsx")) throw new RegleMetierException("Format d'export inconnu : pdf, xlsx ou csv.");
-        var r = await consulter.ExecuterAsync(utilisateurId, produitId, du, au, aujourdhui, ct, patientId, prescripteur);
+        var r = await consulter.ExecuterAsync(utilisateurId, produitId, du, au, aujourdhui, ct, patientId, prescripteur, medecinId);
         var filtres = new List<string>();
         if (patientId is not null) filtres.Add("patient : " + (r.Lignes.FirstOrDefault()?.Patient ?? "aucune ligne"));
-        if (!string.IsNullOrWhiteSpace(prescripteur)) filtres.Add($"prescripteur : {prescripteur.Trim()}");
+        if (medecinId is not null) filtres.Add("prescripteur : " + (r.Lignes.FirstOrDefault()?.Medecin ?? (string.IsNullOrWhiteSpace(prescripteur) ? "aucune ligne" : prescripteur.Trim())));
+        else if (!string.IsNullOrWhiteSpace(prescripteur)) filtres.Add($"prescripteur : {prescripteur.Trim()}");
         r = r with
         {
             Filtres = filtres.Count == 0 ? null : string.Join(" · ", filtres),

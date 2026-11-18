@@ -26,6 +26,27 @@ public static class RechercheTexte
         return normalise;
     }
 
+    /// <summary>
+    /// Place de la saisie dans le texte (sans majuscules ni accents), comptée en caractères du texte d'origine pour la surligner
+    /// (propositions pendant la frappe) ; (-1, 0) si elle n'y est pas. Chaque caractère est comparé à sa lettre de base (é → e).
+    /// </summary>
+    public static (int Debut, int Longueur) Position(string? texte, string? saisie)
+    {
+        var s = saisie?.Trim() ?? "";
+        if (s.Length == 0 || string.IsNullOrEmpty(texte)) return (-1, 0);
+        var cherche = ParCaractere(s);
+        var i = ParCaractere(texte).IndexOf(cherche, StringComparison.Ordinal);
+        return i < 0 ? (-1, 0) : (i, cherche.Length);
+    }
+
+    private static string ParCaractere(string texte)
+    {
+        var sb = new StringBuilder(texte.Length);
+        foreach (var c in texte)
+            sb.Append(c < 128 ? char.ToLowerInvariant(c) : char.ToLowerInvariant(c.ToString().Normalize(NormalizationForm.FormD)[0]));
+        return sb.ToString();
+    }
+
     /// <summary>Vrai si la saisie est vide, ou si l'un des textes la contient.</summary>
     public static bool Contient(string? saisie, params string?[] textes)
     {

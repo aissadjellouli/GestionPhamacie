@@ -15,10 +15,9 @@
                 <option value="tout">Historique : tout</option>
             </select>
         </div>
-        <div class="champ" style="flex: 1 1 260px">
-            <label for="ru-recherche">Produit@(vue == "partout" ? "" : " ou grossiste")</label>
-            <input id="ru-recherche" type="search" @bind="recherche" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" />
-        </div>
+        @* Produit (ou grossiste) : propositions du catalogue en valeur libre (FiltreProduit, 2026-11-18), le tableau suit la saisie *@
+        <FiltreProduit Id="ru-recherche" Libelle="@($"Produit{(vue == "partout" ? "" : " ou grossiste")}")" Style="flex: 1 1 260px"
+                       @bind-Valeur="recherche" @bind-Valeur:after="() => ChargerAsync(1, taille)" />
     </div>
     @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }
     <p class="detail" style="margin: 0">Disponibilités notées à chaque import du catalogue d’un grossiste (Achats › Catalogues des grossistes) ;

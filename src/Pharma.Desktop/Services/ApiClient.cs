@@ -509,9 +509,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             + (string.IsNullOrEmpty(operation) ? "" : $"&operation={Uri.EscapeDataString(operation)}"), null);
 
     public Task<(byte[]?, string?, string?)> ExporterRegistreAsync(long? produit, DateOnly du, DateOnly au, string format,
-        long? patient = null, string? prescripteur = null) =>
+        long? patient = null, string? prescripteur = null, long? medecin = null) =>
         FichierAsync(HttpMethod.Get, $"api/registre/export?format={format}&{FiltreRegistre(produit, du, au)}"
             + (patient is { } pa ? $"&patient={pa}" : "")
+            + (medecin is { } me ? $"&medecin={me}" : "")
             + (string.IsNullOrWhiteSpace(prescripteur) ? "" : $"&prescripteur={Uri.EscapeDataString(prescripteur.Trim())}"),
             $"registre_psychotropes.{format}");
 
@@ -585,6 +586,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         catch (Exception ex) when (EstEchecAppel(ex)) { return (null, MessageEchec(ex)); }
         catch (IOException e) { return (null, $"Fichier illisible : {e.Message}"); }
     }
+
+    /// <summary>Vrai si une version de la nomenclature est importée (droit catalogue.creer).</summary>
+    public Task<(bool, string?)> NomenclatureImporteeAsync() => GetAsync<bool>("api/nomenclature/importee", true);
 
     public Task<(List<MedicamentNomenclatureDto>, string?)> RechercherNomenclatureAsync(string texte) =>
         GetAsync<List<MedicamentNomenclatureDto>>($"api/nomenclature?q={Uri.EscapeDataString(texte)}", []);
@@ -684,6 +688,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(IdentifiantDto?, string?)> CreerPatientAsync(NouveauPatientDto patient) =>
         PostAsync<NouveauPatientDto, IdentifiantDto>("api/patients", patient);
+
+    /// <summary>
+    /// Valeurs déjà saisies d'un champ libre (suggestions pendant la frappe) : clé de la liste blanche du serveur (ChampsSuggestions),
+    /// 10 valeurs au plus, sans accents ni majuscules.
+    /// </summary>
+    public Task<(List<string>, string?)> SuggestionsAsync(string champ, string q) =>
+        GetAsync<List<string>>($"api/suggestions/{Uri.EscapeDataString(champ)}?q={Uri.EscapeDataString(q)}", []);
 
     public Task<(List<MedecinDto>, string?)> RechercherMedecinsAsync(string q) =>
         GetAsync<List<MedecinDto>>($"api/medecins?q={Uri.EscapeDataString(q)}", []);
@@ -1119,6 +1130,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(RappelLotDto?, string?)> RappelerLotAsync(long produitId, string numeroLot, string motif) =>
         PostAsync<RappelLotRequete, RappelLotDto>("api/tracabilite/rappels", new(produitId, numeroLot, motif));
+
+    /// <summary>Numéros de lot du produit proposés au rappel, épuisés compris, contenant <paramref name="q"/> (10 au plus ; stock.declarer_perime).</summary>
+    public Task<(List<LotRappelDto>, string?)> LotsRappelAsync(long produitId, string q) =>
+        GetAsync<List<LotRappelDto>>($"api/tracabilite/produits/{produitId}/lots?q={Uri.EscapeDataString(q)}", []);
 
     /// <summary>État d'un lot (déjà bloqué ou non) et patients concernés, sans rien bloquer.</summary>
     public Task<(RappelLotDto?, string?)> ConsulterRappelLotAsync(long produitId, string numeroLot) =>

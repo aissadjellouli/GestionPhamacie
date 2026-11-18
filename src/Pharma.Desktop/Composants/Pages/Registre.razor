@@ -52,8 +52,9 @@
             }
             @if (operation != "" && rubrique == "inscriptions") { <button type="button" class="btn" @onclick="ToutesOperationsAsync">Tout afficher</button> }
             @* Exports sur la ligne des filtres (écran fixe : pas de ligne de boutons en plus) ; ils prennent tout le registre du produit et de la période *@
-            @* Export d'inspection (lot 8) : prescripteur (texte) et patient (« Extrait » sur une ligne) en plus ; sceau de la période dans le fichier *@
-            <div class="champ" style="flex: 1 1 150px"><label for="r-prescripteur">Prescripteur (export)</label><input id="r-prescripteur" type="text" maxlength="80" @bind="prescripteur" /></div>
+            @* Export d'inspection (lot 8) : prescripteur (médecin choisi, ChoixMedecin) et patient (« Extrait » sur une ligne) en plus ; sceau de la période dans le fichier *@
+            <ChoixMedecin Id="r-prescripteur" Libelle="Prescripteur (export)" Style="flex: 1 1 280px" Choix="@prescripteur?.Nom"
+                          OnChoisi="m => prescripteur = m" OnEfface="() => prescripteur = null" />
             @if (patientExport is { } pe)
             {
                 <span class="pastille" title="Export limité à ce patient">@pe.Nom <button type="button" class="lien-bouton" aria-label="Retirer le filtre patient" @onclick="() => patientExport = null">×</button></span>
@@ -190,7 +191,8 @@
     private string rubrique => Rubrique is "balance" or "forcages" ? Rubrique! : "inscriptions";
 
     // Export d'inspection (lot 8) et annulation d'écriture (titulaire)
-    private string? prescripteur;
+    /// <summary>Médecin choisi pour l'export : l'export filtre sur son identifiant (jamais sur une partie du nom).</summary>
+    private MedecinDto? prescripteur;
     private (long Id, string Nom)? patientExport;
     private (long Numero, string Produit, string? Motif)? annulation;
     private string? motifAnnulation, erreurAnnulation;
@@ -286,7 +288,7 @@
         (erreur, fichier, enCours) = (null, null, true);
         try
         {
-            var (contenu, nom, e) = await Api.ExporterRegistreAsync(produitId, du, au, format, patientExport?.Id, prescripteur);
+            var (contenu, nom, e) = await Api.ExporterRegistreAsync(produitId, du, au, format, patientExport?.Id, medecin: prescripteur?.Id);
             if (e is not null) { erreur = e; return; }
             var doc = await Documents.RangerAsync(Api, "Registre", nom!, contenu!);
             (fichier, emplacement, erreur) = (doc.CheminLocal, doc.Emplacement, doc.Erreur);

@@ -10,10 +10,12 @@ internal static class PatientsEndpoints
 {
     public static void MapPatients(this RouteGroupBuilder api)
     {
-        api.MapGet("/patients", async (string? q, RechercherPatients rechercher, CancellationToken ct) =>
-                Results.Ok((await rechercher.ExecuterAsync(q, ct)).Select(p => new PatientDto(
-                    p.Id, p.Nom, p.Prenom, p.Telephone, p.NumAssure, p.OrganismeId, p.Organisme, p.PlafondCredit, p.SoldeCredit, p.DateFinDroit))))
-           .ExigerPermission(Permissions.CaisseVendre);
+        // Recherche rapide (suggestions pendant la frappe, décision du titulaire 2026-11-18) : droit de vendre ou Factures ; sans le
+        // droit de vendre, ni organisme, ni fin de droits, ni dette, ni plafond dans la réponse (champs nuls, masqués par l'Application)
+        api.MapGet("/patients", async (string? q, RechercherPatients rechercher, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok((await rechercher.PourEmployeAsync(q, user.UtilisateurId(), ct)).Select(p => new PatientDto(p.Id, p.Nom, p.Prenom,
+                    p.Telephone, p.NumAssure, p.OrganismeId, p.Organisme, p.PlafondCredit, p.SoldeCredit, p.DateFinDroit)).ToList()))
+           .ExigerPermission(DroitsRecherche);
 
         api.MapPost("/patients", async (NouveauPatientDto req, CreerPatient creer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await creer.ExecuterAsync(new NouveauPatient(
@@ -105,7 +107,7 @@ internal static class PatientsEndpoints
         api.MapGet("/medecins", async (string? q, bool? sansWilaya, RechercherMedecins rechercher, CancellationToken ct) =>
                 Results.Ok((sansWilaya == true ? await rechercher.SansWilayaAsync(q, ct) : await rechercher.ExecuterAsync(q, ct))
                     .Select(m => new MedecinDto(m.Id, m.Nom, m.Specialite, m.Telephone, m.Adresse, m.Email, m.NumeroOrdre, m.CodeCnas, m.Wilaya))))
-           .ExigerPermission(Permissions.CaisseVendre);
+           .ExigerPermission(DroitsRechercheMedecins);
 
         // Référentiel des wilayas (liste bornée : fiche médecin, zone de l'officine)
         api.MapGet("/wilayas", async (Pharma.Application.Psychotropes.IZonePsychotropesDepot zone, CancellationToken ct) =>
@@ -127,6 +129,13 @@ internal static class PatientsEndpoints
                 Results.Ok((await lister.ExecuterAsync(ct)).Select(o => new OrganismeDto(o.Id, o.Code, o.Nom, o.DelaiPaiementJours))))
            .ExigerPermission(Permissions.CaisseVendre);
     }
+
+    /// <summary>
+    /// « Droit de l'écran » (décision du titulaire, 2026-11-18) : un patient se cherche avec le droit de vendre ou depuis Factures ;
+    /// un médecin, aussi depuis le registre des psychotropes (prescripteur).
+    /// </summary>
+    private static readonly string[] DroitsRecherche = [.. RechercherPatients.DroitsRecherche];
+    private static readonly string[] DroitsRechercheMedecins = [.. RechercherPatients.DroitsRechercheMedecins];
 
     private static Pharma.Application.Patients.SaisieMedecin VersSaisie(NouveauMedecinDto d) =>
         new(d.Nom, d.Specialite, d.Telephone, d.Adresse, d.Email, d.NumeroOrdre, d.CodeCnas, d.Wilaya);

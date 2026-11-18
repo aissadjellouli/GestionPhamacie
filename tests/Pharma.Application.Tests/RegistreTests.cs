@@ -171,4 +171,22 @@ public class RegistreTests
         await cas.ExecuterAsync(Commande(2, 20, new PorteurOrdonnance("Porteur Fictif", null, null)), 5, "Caisse 1");
         Assert.Null(ventes.Recu!.Ordonnance!.Porteur);
     }
+
+    [Fact]
+    public async Task Export_par_prescripteur_filtre_sur_l_identifiant_du_medecin_et_non_sur_une_partie_du_nom()
+    {
+        // « Dr Ali » (id 1) et « Dr Alice » (id 2) : le nom de l'un est contenu dans l'autre (revue 2026-11-18)
+        LigneRegistre Sortie(long n, long? medecinId, string? medecin) =>
+            Ligne(n, new DateTime(2026, 11, 4, 9, 0, 0, DateTimeKind.Utc), "sortie", null, 1, 10) with { MedecinId = medecinId, Medecin = medecin };
+        var depot = new RegistreEnMemoire(Sortie(10, 1, "Dr Ali"), Sortie(11, 2, "Dr Alice"), Sortie(12, null, null));
+        var consulter = new ConsulterRegistre(depot, new DroitsFactices("psychotropes.registre"));
+        var parId = await consulter.ExecuterAsync(5, null, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 8), Jour, medecinId: 1);
+        Assert.Equal([10L], parId.Lignes.Select(l => l.Numero));
+        Assert.Empty(parId.Balance);   // extrait : pas de balance
+        // L'identifiant prime sur l'ancien texte ; l'ancien paramètre texte reste accepté seul (compatibilité)
+        Assert.Equal([11L], (await consulter.ExecuterAsync(5, null, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 8), Jour, prescripteur: "Dr Ali", medecinId: 2))
+            .Lignes.Select(l => l.Numero));
+        Assert.Equal([10L, 11L], (await consulter.ExecuterAsync(5, null, new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 8), Jour, prescripteur: "dr ali"))
+            .Lignes.Select(l => l.Numero));
+    }
 }

@@ -1,0 +1,54 @@
+@inject ApiClient Api
+
+@*
+    Saisie libre avec les valeurs déjà saisies proposées pendant la frappe (mode valeur libre de ChampSuggestions) : le texte tapé
+    reste accepté. Champ = clé de la liste blanche du serveur (ChampsSuggestions, GET /api/suggestions/{champ}?q=) ; une clé
+    inconnue ou un droit manquant ne propose simplement rien. ValeursDeDepart (facultatif) : valeurs proposées en plus quand elles
+    contiennent la saisie (sans accents ni majuscules), après celles de la base et sans doublon (ex. formes usuelles d'un produit).
+    Exemple : <ValeursSaisies Id="nm-specialite" Champ="specialite_medecin" @bind-Valeur="fiche.Specialite"
+                              aria-label="Spécialité" data-champ="specialite" placeholder="Spécialité" maxlength="120" Cadre="false" />
+*@
+
+<ChampSuggestions TItem="string" @ref="interieur" Id="@Id" Mode="ModeSuggestions.ValeurLibre" Rechercher="RechercherAsync" TexteDe="v => v"
+                  Valeur="@Valeur" ValeurChanged="ValeurChanged" LettresMin="LettresMin" Libelle="@Libelle" Requis="Requis" Invalide="Invalide"
+                  Style="@Style" Cadre="Cadre" LibelleListe="@(LibelleListe ?? "Valeurs déjà saisies")" OnChoisi="OnChoisi" @attributes="Attributs" />
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    /// <summary>Clé du champ dans la liste blanche du serveur (ex. « specialite_medecin »).</summary>
+    [Parameter, EditorRequired] public string Champ { get; set; } = "";
+    [Parameter] public string? Valeur { get; set; }
+    [Parameter] public EventCallback<string?> ValeurChanged { get; set; }
+    [Parameter] public EventCallback<string> OnChoisi { get; set; }
+    [Parameter] public int LettresMin { get; set; } = 2;
+    [Parameter] public string? Libelle { get; set; }
+    [Parameter] public string? LibelleListe { get; set; }
+    /// <summary>Valeurs proposées en plus de celles de la base (après elles, sans doublon), ex. les formes usuelles d'un produit.</summary>
+    [Parameter] public IReadOnlyList<string>? ValeursDeDepart { get; set; }
+    [Parameter] public bool Requis { get; set; }
+    [Parameter] public bool Invalide { get; set; }
+    [Parameter] public string? Style { get; set; }
+    /// <summary>Faux : seulement le champ et sa liste, dans un conteneur « .recherche » du parent.</summary>
+    [Parameter] public bool Cadre { get; set; } = true;
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributs { get; set; }
+
+    private ChampSuggestions<string>? interieur;
+
+    private async Task<(List<string>, string?)> RechercherAsync(string q)
+    {
+        var (valeurs, erreur) = await Api.SuggestionsAsync(Champ, q);
+        return (Fusionner(valeurs, ValeursDeDepart, q), erreur);
+    }
+
+    /// <summary>Valeurs de la base, puis valeurs de départ qui contiennent la saisie (sans accents ni majuscules), sans doublon, 10 au plus.</summary>
+    public static List<string> Fusionner(IEnumerable<string> base_, IEnumerable<string>? depart, string saisie)
+    {
+        var vues = new HashSet<string>(StringComparer.Ordinal);
+        var cherche = RechercheTexte.Normaliser(saisie.Trim());
+        return base_.Concat((depart ?? []).Where(v => RechercheTexte.Normaliser(v).Contains(cherche, StringComparison.Ordinal)))
+            .Where(v => vues.Add(RechercheTexte.Normaliser(v.Trim())))
+            .Take(ChampSuggestions<string>.Maximum).ToList();
+    }
+
+    public ValueTask FocusAsync() => interieur?.FocusAsync() ?? ValueTask.CompletedTask;
+}

@@ -263,9 +263,40 @@ public interface IOrganismes
     Task<IReadOnlyList<Organisme>> ListerAsync(CancellationToken ct = default);
 }
 
+/// <summary>
+/// Patient trouvé par la recherche rapide, tel qu'il est envoyé à l'employé : sans le droit de vendre, organisme, fin de droits,
+/// plafond et dette sont nuls (minimisation : l'écran Factures n'a besoin que du nom, du téléphone et du n° d'assuré).
+/// </summary>
+public sealed record PatientTrouve(
+    long Id, string Nom, string? Prenom, string? Telephone, string? NumAssure,
+    long? OrganismeId, string? Organisme, decimal? PlafondCredit, decimal? SoldeCredit, DateOnly? DateFinDroit);
+
 /// <summary>Recherche au comptoir par nom, prénom, téléphone ou numéro d'assuré.</summary>
-public sealed class RechercherPatients(IPatients patients)
+/// <remarks>
+/// Suggestions pendant la frappe (décision du titulaire, 2026-11-18 : « droit de l'écran ») : un patient se cherche avec le droit de
+/// vendre ou depuis Factures (<see cref="DroitsRecherche"/>) ; un médecin, aussi depuis le registre des psychotropes
+/// (<see cref="DroitsRechercheMedecins"/>). Sans le droit de vendre, ni organisme, ni fin de droits, ni dette, ni plafond (<see cref="PourEmployeAsync"/>).
+/// </remarks>
+public sealed class RechercherPatients(IPatients patients, Securite.IPermissionService? droits = null)
 {
+    /// <summary>Un seul de ces droits ouvre la recherche d'un patient (vendre ; Factures).</summary>
+    public static readonly IReadOnlyList<string> DroitsRecherche =
+        [Pharma.Domain.Securite.Permissions.CaisseVendre, Pharma.Domain.Securite.Permissions.FacturesGerer];
+
+    /// <summary>Un seul de ces droits ouvre la recherche d'un médecin (vendre ; Factures ; prescripteur du registre des psychotropes).</summary>
+    public static readonly IReadOnlyList<string> DroitsRechercheMedecins =
+        [Pharma.Domain.Securite.Permissions.CaisseVendre, Pharma.Domain.Securite.Permissions.FacturesGerer, Pharma.Domain.Securite.Permissions.PsychotropesRegistre];
+
+    /// <summary>Recherche pour un employé : sans le droit de vendre, organisme, fin de droits, plafond et dette sont nuls.</summary>
+    public async Task<IReadOnlyList<PatientTrouve>> PourEmployeAsync(string? texte, long utilisateurId, CancellationToken ct = default)
+    {
+        var vendre = droits is not null && await droits.APermissionAsync(utilisateurId, Pharma.Domain.Securite.Permissions.CaisseVendre, ct);
+        return (await ExecuterAsync(texte, ct)).Select(p => vendre
+                ? new PatientTrouve(p.Id, p.Nom, p.Prenom, p.Telephone, p.NumAssure, p.OrganismeId, p.Organisme, p.PlafondCredit, p.SoldeCredit, p.DateFinDroit)
+                : new PatientTrouve(p.Id, p.Nom, p.Prenom, p.Telephone, p.NumAssure, null, null, null, null, null))
+            .ToList();
+    }
+
     public Task<IReadOnlyList<PatientResume>> ExecuterAsync(string? texte, CancellationToken ct = default)
     {
         var t = texte?.Trim() ?? "";

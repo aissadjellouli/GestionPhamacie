@@ -33,7 +33,7 @@
                 }
                 else
                 {
-                    <ChoixProduit Id="ra-produit" Libelle="Produit (non remboursable)" Requis="true" Style="flex: 2 1 300px"
+                    <ChoixProduit Id="ra-produit" PremierSurEntree="false" Libelle="Produit (non remboursable)" Requis="true" Style="flex: 2 1 300px"
                                   OnChoisi="p => (f.ProduitId, f.ProduitNom) = (p.Id, p.NomCommercial)" OnEfface="() => (f.ProduitId, f.ProduitNom) = (null, null)" />
                 }
             }

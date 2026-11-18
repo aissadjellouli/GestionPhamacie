@@ -23,10 +23,8 @@
         une annulation les remet en stock. Les boîtes identifiées (étiquette interne ou Data Matrix) doivent être scannées.
     </p>
     <div class="achats-ligne">
-        <div class="champ recherche" style="flex: 2 1 280px">
-            <label for="rt-prod">Produit</label>
-            <input id="rt-prod" type="search" autocomplete="off" placeholder="Nom, DCI ou code-barres" @bind="texteProduit" @bind:event="oninput" @bind:after="RechercherAsync" />
-        </div>
+        @* Produit : propositions au clavier dès la 1re lettre (ChoixProduit, 2026-11-18) ; le choix affiche ses lots retournables *@
+        <ChoixProduit Id="rt-prod" PremierSurEntree="false" Placeholder="Nom, DCI ou code-barres" Style="flex: 2 1 280px" OnChoisi="p => ChargerLotsAsync(p.Id, null)" />
         <div class="champ" style="flex: 1 1 200px">
             <label for="rt-motif" class="requis">Motif</label>
             <select data-champ="motif_retour" id="rt-motif" @bind="motif">
@@ -37,15 +35,6 @@
             </select>
         </div>
     </div>
-    @if (trouves.Count > 0)
-    {
-        <ul class="liste-lecture" aria-label="Produits trouvés">
-            @foreach (var p in trouves)
-            {
-                <li><button type="button" @onclick="() => ChargerLotsAsync(p.Id, null)"><span><strong>@p.NomCommercial</strong><br /><span class="detail">stock @p.Stock</span></span><span>Voir les lots</span></button></li>
-            }
-        </ul>
-    }
     @if (proposes.Count > 0)
     {
         <ul class="liste-lecture" aria-label="Lots en stock">
@@ -231,13 +220,10 @@
     private Task AllerPageAsync(int numero, int nouvelleTaille) { (page, taille) = (numero, nouvelleTaille); return RechargerAsync(); }
     private readonly List<Ligne> lignes = [];
     private List<LotRetournableDto> proposes = [];
-    private List<ProduitDto> trouves = [];
     private readonly Dictionary<long, decimal> avoirs = [];
-    private string texteProduit = "";
     private string motif = "peremption_proche";
     private bool enCours;
     private string? message, erreur;
-    private int requete;
 
     // Nombre de boîtes à retourner (RegleRetour) : en rouge après un premier essai de préparation
     private bool controle;
@@ -302,17 +288,8 @@
         erreur ??= e;
     }
 
-    private async Task RechercherAsync()
-    {
-        var n = ++requete;
-        if (texteProduit.Trim().Length < 2) { trouves = []; return; }
-        var (t, _) = await Api.RechercherProduitsAsync(texteProduit);
-        if (n == requete) trouves = t;
-    }
-
     private async Task ChargerLotsAsync(long produitId, string? numeroLot)
     {
-        trouves = [];
         var (l, e) = await Api.LotsRetournablesAsync(produitId, numeroLot);
         if (e is not null) { erreur = e; return; }
         proposes = l.Where(x => lignes.All(y => y.Lot.LotId != x.LotId)).ToList();

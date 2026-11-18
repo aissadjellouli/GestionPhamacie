@@ -75,29 +75,20 @@
 
             @if (rappel is null)
             {
-                <div class="champ recherche">
-                    <label for="r-prod" class="requis">Produit</label>
-                    <input id="r-prod" data-champ="produit_rappel" type="search" autocomplete="off" disabled="@etape2" @ref="champProduit"
-                           class="@Obligatoire.Classe(ProduitManquant)" aria-invalid="@Obligatoire.Aria(ProduitManquant)"
-                           @bind="produitTexte" @bind:event="oninput" @bind:after="RechercherProduitAsync" />
-                    @if (ProduitManquant) { <span class="message-champ">Choisissez le produit dans la liste proposée.</span> }
-                    @if (suggestions.Count > 0)
-                    {
-                        <ul class="suggestions" aria-label="Produits trouvés">
-                            @foreach (var p in suggestions)
-                            {
-                                <li>
-                                    <button type="button" @onclick="() => ChoisirProduitAsync(p.Id, p.NomCommercial)">
-                                        <span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage</span></span>
-                                    </button>
-                                </li>
-                            }
-                        </ul>
-                    }
-                </div>
-                <div class="champ"><label for="r-lot" class="requis">Numéro de lot</label><input id="r-lot" data-champ="lot_rappel" type="text" @ref="champLot" @bind="numeroLot" @bind:event="oninput" @bind:after="LotModifie" @onblur="VerifierLotAsync" disabled="@etape2"
-                    class="@Obligatoire.Classe(LotManquant)" aria-invalid="@Obligatoire.Aria(LotManquant)" /></div>
-                <div class="champ"><label for="r-motif" class="requis">Motif</label><input id="r-motif" data-champ="motif_rappel" type="text" @ref="champMotif" @bind="motif" @bind:event="oninput" disabled="@(etape2 || DejaRappele is not null)"
+                @* Produit : propositions au clavier dès la 1re lettre (composant commun, 2026-11-18), choix affiché avec « Changer » ;
+                   n° de lot : saisie libre, tous les lots du produit proposés, épuisés compris (« épuisé » dans le détail) *@
+                <ChampSuggestions TItem="ProduitDto" @ref="champProduit" Id="r-prod" Libelle="Produit" Requis="true" data-champ="produit_rappel"
+                                  Rechercher="q => Api.RechercherProduitsAsync(q)" TexteDe="p => p.NomCommercial" DetailDe="DetailProduit" Complement="StockProduit"
+                                  LettresMin="1" LibelleAucun="produit" LibelleListe="Produits du catalogue" placeholder="Tapez le nom, la DCI ou scannez le code-barres"
+                                  Invalide="ProduitManquant" class="@Obligatoire.Classe(ProduitManquant)"
+                                  Choix="@(produitId > 0 ? produitNom : null)" ChangerPermis="!etape2"
+                                  OnChoisi="p => ChoisirProduitAsync(p.Id, p.NomCommercial)" OnEfface="EffacerProduit" />
+                @if (ProduitManquant) { <span class="message-champ">Choisissez le produit dans la liste proposée.</span> }
+                <ChampSuggestions TItem="LotRappelDto" @ref="champLot" Id="r-lot" Libelle="Numéro de lot" Requis="true" data-champ="lot_rappel"
+                                  Mode="ModeSuggestions.ValeurLibre" Rechercher="RechercherLotsAsync" TexteDe="l => l.NumeroLot" DetailDe="DetailLot"
+                                  LettresMin="1" LibelleListe="Lots du produit, épuisés compris" Valeur="@numeroLot" ValeurChanged="LotSaisi" OnChoisi="_ => VerifierLotAsync()"
+                                  Invalide="LotManquant" class="@Obligatoire.Classe(LotManquant)" disabled="@etape2" />
+                <div class="champ"><label for="r-motif" class="requis">Motif</label><input id="r-motif" data-champ="motif_rappel" type="text" @ref="champMotif" @bind="motif" @bind:event="oninput" @onfocus="VerifierSiBesoinAsync" disabled="@(etape2 || DejaRappele is not null)"
                     class="@Obligatoire.Classe(MotifManquant)" aria-invalid="@Obligatoire.Aria(MotifManquant)" placeholder="Ex. rappel du laboratoire, suspicion de contrefaçon" /></div>
 
                 @if (erreurRappel is not null) { <div class="erreur" role="alert">@erreurRappel</div> }
@@ -196,13 +187,10 @@
     private string? erreur;
 
     // Rappel de lot
-    private string produitTexte = "";
     private long produitId;
     private string produitNom = "";
     private string numeroLot = "";
     private string motif = "";
-    private List<ProduitDto> suggestions = [];
-    private int requete;
     private bool etape2;
     private bool enCours;
     private string? erreurRappel;
@@ -233,23 +221,42 @@
         }
     }
 
-    private async Task RechercherProduitAsync()
-    {
-        produitId = 0;
-        etatLot = null;
-        var numero = ++requete;
-        if (produitTexte.Trim().Length < 2) { suggestions = []; return; }
-        var (trouves, _) = await Api.RechercherProduitsAsync(produitTexte);
-        if (numero == requete) suggestions = trouves;
-    }
-
     private async Task ChoisirProduitAsync(long id, string nom)
     {
-        (produitId, produitNom, produitTexte, suggestions) = (id, nom, nom, []);
+        (produitId, produitNom) = (id, nom);
         await VerifierLotAsync();
     }
 
-    private void LotModifie() => etatLot = null;
+    private void EffacerProduit() => (produitId, produitNom, etatLot) = (0, "", null);
+
+    private void LotSaisi(string? valeur) => (numeroLot, etatLot) = (valeur ?? "", null);
+
+    private Task VerifierSiBesoinAsync() => etatLot is null ? VerifierLotAsync() : Task.CompletedTask;
+
+    private static string? DetailProduit(ProduitDto p) =>
+        string.Join(" · ", new[] { p.Dci, p.Dosage, p.Forme }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private static RenderFragment StockProduit(ProduitDto p) => __builder =>
+    {
+        <span class="pastille @(p.Stock <= 0 ? "urgent" : "info")">@(p.Stock <= 0 ? "Rupture" : $"Stock {p.Stock}")</span>
+    };
+
+    // Lots proposés pour le n° de lot (2026-11-18) : TOUS les lots du produit choisi, épuisés compris, numéros distincts, filtrés par le
+    // serveur sans accents ni majuscules, 10 au plus (GET api/tracabilite/produits/{id}/lots?q=, droit du rappel stock.declarer_perime) ;
+    // la saisie libre reste possible
+    private bool LotsPermis => Session.A("stock.declarer_perime");
+
+    private async Task<(List<LotRappelDto>, string?)> RechercherLotsAsync(string q)
+    {
+        if (produitId <= 0 || !LotsPermis) return ([], null);
+        var demande = produitId;
+        var (lots, e) = await Api.LotsRappelAsync(demande, q);
+        if (e is not null || demande != produitId) return ([], null);   // erreur : saisie libre seule ; produit changé pendant l'appel
+        return (lots, null);
+    }
+
+    private static string? DetailLot(LotRappelDto l) =>
+        $"exp. {Libelles.Date(l.DatePeremption)} · {(l.Epuise ? "épuisé" : $"{l.Quantite} en stock")}{(l.Bloque ? " · bloqué" : "")}";
 
     /// <summary>Lot déjà rappelé ? Vérifié dès que le produit et le numéro sont connus, sans rien bloquer.</summary>
     private async Task VerifierLotAsync()
@@ -272,7 +279,9 @@
 
     // Champs obligatoires du rappel : produit choisi dans la liste, numéro de lot, motif
     private bool controleRappel;
-    private ElementReference champProduit, champLot, champMotif;
+    private ChampSuggestions<ProduitDto>? champProduit;
+    private ChampSuggestions<LotRappelDto>? champLot;
+    private ElementReference champMotif;
     private bool ProduitManquant => Obligatoire.Manque(controleRappel, produitId);
     private bool LotManquant => Obligatoire.Manque(controleRappel, numeroLot);
     private bool MotifManquant => Obligatoire.Manque(controleRappel, motif);
@@ -291,8 +300,8 @@
             : MotifManquant ? "Indiquez le motif du rappel (il est inscrit au journal)."
             : null;
         etape2 = erreurRappel is null;
-        if (ProduitManquant) await champProduit.FocusAsync();
-        else if (LotManquant) await champLot.FocusAsync();
+        if (ProduitManquant) { if (champProduit is not null) await champProduit.FocusAsync(); }
+        else if (LotManquant) { if (champLot is not null) await champLot.FocusAsync(); }
         else if (MotifManquant) await champMotif.FocusAsync();
     }
 
@@ -319,7 +328,7 @@
     private void NouveauRappel()
     {
         (rappel, fichierExporte, erreurRappel, etape2, controleRappel, etatLot, consultation) = (null, null, null, false, false, null, false);
-        (produitTexte, produitId, produitNom, numeroLot, motif) = ("", 0, "", "", "");
+        (produitId, produitNom, numeroLot, motif) = (0, "", "", "");
     }
 
     private static string ResumeRappel(RappelLotDto r)

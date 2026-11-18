@@ -368,7 +368,7 @@
                                     </div>
                                     @if (choixAutre == p.RefSource)
                                     {
-                                        <ChoixProduit Id="@($"rp-autre-{p.RefSource}")" Libelle="Produit du catalogue" Style="flex: 1 1 260px"
+                                        <ChoixProduit Id="@($"rp-autre-{p.RefSource}")" PremierSurEntree="false" Libelle="Produit du catalogue" Style="flex: 1 1 260px"
                                                       OnChoisi='pr => DeciderAsync(p.RefSource, "autre", pr.Id)' />
                                         <button type="button" class="btn" @onclick="() => choixAutre = null">Annuler</button>
                                     }

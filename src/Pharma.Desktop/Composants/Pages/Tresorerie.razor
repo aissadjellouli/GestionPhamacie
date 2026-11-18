@@ -62,7 +62,7 @@
                 <div class="champ" style="flex: 1 1 200px"><label for="c-nom" class="requis">Nom du compte</label><input id="c-nom" data-champ="nom_compte" type="text" @bind="e.Nom" placeholder="Ex. CPA agence centre" /></div>
                 @if (e.Type != "coffre")
                 {
-                    <div class="champ" style="flex: 1 1 160px"><label for="c-banque">Banque</label><input id="c-banque" type="text" @bind="e.Banque" placeholder="CPA, BNA, BADR, CCP…" /></div>
+                    <ValeursSaisies Id="c-banque" Champ="banque_compte_tresorerie" Libelle="Banque" Style="flex: 1 1 160px" @bind-Valeur="e.Banque" placeholder="CPA, BNA, BADR, CCP…" />
                     <div class="champ" style="flex: 1 1 200px"><label for="c-num">N° de compte (RIB)</label><input id="c-num" type="text" @bind="e.NumeroCompte" /></div>
                 }
                 <div class="champ" style="flex: 0 0 170px"><label for="c-solde">Solde de départ (DA)</label><input id="c-solde" type="number" step="0.01" @bind="e.SoldeInitial" /></div>
@@ -224,8 +224,9 @@
             }
             @if (nature != "transfert")
             {
-                <div class="champ"><label for="m-lib" class="@(nature == "versement_organisme" ? null : "requis")">Libellé</label>
-                    <input id="m-lib" data-champ="libelle" type="text" maxlength="200" @bind="libelle" placeholder="@(nature == "depense" ? "Ex. Facture Sonelgaz octobre" : nature == "encaissement" ? "Ex. Apport du titulaire" : "Facultatif : « Versement CNAS » par défaut")" /></div>
+                @* Libellés déjà saisis à la main proposés (jamais ceux écrits par le logiciel), texte libre accepté *@
+                <ValeursSaisies Id="m-lib" Champ="libelle_mouvement_tresorerie" Libelle="Libellé" Requis="@(nature != "versement_organisme")" @bind-Valeur="libelle"
+                                data-champ="libelle" maxlength="200" placeholder="@(nature == "depense" ? "Ex. Facture Sonelgaz octobre" : nature == "encaissement" ? "Ex. Apport du titulaire" : "Facultatif : « Versement CNAS » par défaut")" />
             }
             @if (nature is "encaissement" or "versement_organisme" && FacturesProposees.Any())
             {

@@ -21,7 +21,7 @@
     else
     {
         <div class="achats-ligne">
-            <ChoixProduit Id="cl-produit" Libelle="Produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => courant = null" />
+            <ChoixProduit Id="cl-produit" PremierSurEntree="false" Libelle="Produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => courant = null" />
         </div>
         @if (courant is { } c)
         {

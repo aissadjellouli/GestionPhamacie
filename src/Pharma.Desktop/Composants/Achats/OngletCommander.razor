@@ -11,8 +11,9 @@
     else if (message is not null) { <div class="succes" role="status" style="margin: 0">@message</div> }
 
     <div class="filtres-liste" role="search" aria-label="Filtrer les produits à commander">
-        <div class="champ" style="flex: 1 1 240px"><label for="cm-recherche">Produit</label>
-            <input id="cm-recherche" type="search" autocomplete="off" placeholder="Ex. amlodipine" value="@recherche" @oninput="RechercheAsync" /></div>
+        @* Produit : propositions du catalogue en valeur libre (FiltreProduit, 2026-11-18), le tableau suit la saisie *@
+        <FiltreProduit Id="cm-recherche" Libelle="Produit" Style="flex: 1 1 240px" placeholder="Ex. amlodipine" Valeur="@recherche"
+                       ValeurChanged="v => RechercheAsync(new ChangeEventArgs { Value = v })" />
         <div class="champ" style="flex: 0 0 160px"><label for="cm-etat">État</label>
             <select id="cm-etat" @bind="statut" @bind:after="() => ChargerAsync(1, taille)">
                 <option value="">Tous</option>

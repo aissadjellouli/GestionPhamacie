@@ -24,6 +24,11 @@ internal static class TracabiliteEndpoints
                 Results.Ok((await consulter.ExecuterAsync(produit, lot, ct)).VersDto()))
            .ExigerPermission(Permissions.StockDeclarerPerime);
 
+        // Numéros de lot proposés au rappel (2026-11-18) : tous les lots du produit, épuisés compris, 10 au plus ; même droit que le rappel
+        api.MapGet("/tracabilite/produits/{id:long}/lots", async (long id, string? q, ProposerLotsRappel proposer, CancellationToken ct) =>
+                Results.Ok((await proposer.ExecuterAsync(id, q, ct)).Select(l => l.VersDto()).ToList()))
+           .ExigerPermission(Permissions.StockDeclarerPerime);
+
         api.MapGet("/tracabilite/boites/{code}", async (string code, ConsulterParcoursBoite consulter, ClaimsPrincipal user, CancellationToken ct) =>
                 await consulter.ExecuterAsync(code, user.UtilisateurId(), ct) is { } parcours
                     ? Results.Ok(parcours.VersDto())

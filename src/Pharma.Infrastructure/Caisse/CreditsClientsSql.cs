@@ -39,13 +39,13 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
     /// </summary>
     private static string Ou(int numeroPrefixe) => $"""
         WHERE (p.solde_credit > 0 OR ($1::text IS NOT NULL AND EXISTS (SELECT 1 FROM credit_mouvement m WHERE m.patient_id = p.id)))
-          AND ($1::text IS NULL OR concat_ws(' ', p.nom, p.prenom) ILIKE '%' || $1 || '%'
+          AND ($1::text IS NULL OR sans_accent(p.nom || ' ' || COALESCE(p.prenom, '')) ILIKE '%' || sans_accent($1) || '%' ESCAPE '\'
                OR (${numeroPrefixe}::text IS NOT NULL AND {Patients.TelephoneSql.Normalise("p.telephone")} LIKE ${numeroPrefixe} || '%'))
         """;
 
     private static void Recherche(NpgsqlCommand cmd, string? recherche)
     {
-        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)Referentiels.MotifRecherche.EchapperOuNull(recherche) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)Pharma.Domain.Ventes.RechercheTelephone.Prefixe(recherche) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
     }
 
@@ -53,7 +53,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
     {
         // Mêmes critères que AvecCreditAsync, sans plafond de 50 : page et total
         await using var cmd = db.CreateCommand($"{Select} {Ou(4)} ORDER BY p.solde_credit DESC, p.id LIMIT $2 OFFSET $3");
-        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)Referentiels.MotifRecherche.EchapperOuNull(recherche) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(page.Taille);
         cmd.Parameters.AddWithValue(page.Decalage);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)Pharma.Domain.Ventes.RechercheTelephone.Prefixe(recherche) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });

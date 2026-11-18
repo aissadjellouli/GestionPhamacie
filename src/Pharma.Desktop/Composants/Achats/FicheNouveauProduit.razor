@@ -15,31 +15,20 @@
     @* Écran fixe (charte) : le formulaire défile dans son cadre, « Créer le produit » reste visible en dessous *@
     <div class="cadre-defilant fiche-produit-champs">
 
-    <div class="champ">
-        <label for="p-nomenclature">Chercher dans la nomenclature nationale (nom, DCI ou n° d’enregistrement)</label>
-        <input id="p-nomenclature" type="search" autocomplete="off" placeholder="ex. lyrica, prégabaline, 595/15 A 068/06/22"
-               @bind="recherche" @bind:event="oninput" @bind:after="RechercherNomenclatureAsync" />
-    </div>
-    @if (resultats.Count > 0)
-    {
-        <div class="resultats-nomenclature" role="listbox" aria-label="Médicaments de la nomenclature">
-            @foreach (var m in resultats)
-            {
-                <button type="button" role="option" disabled="@m.DejaAuCatalogue" @onclick="() => Choisir(m)">
-                    <span><strong>@m.Marque</strong> @m.Dosage · @m.Forme · @m.Conditionnement<br /><span class="detail">@m.Dci · @m.Laboratoire</span></span>
-                    <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px">
-                        @if (m.DejaAuCatalogue) { <span class="pastille info">Déjà au catalogue</span> }
-                        else if (m.Situation != "en_vigueur") { <span class="pastille attention">@Libelles.SituationNomenclature(m.Situation)</span> }
-                        @if (Libelles.EstSousRegistre(m.ClasseProposee)) { <span class="pastille urgent">@Libelles.Classe(m.ClasseProposee)</span> }
-                    </span>
-                </button>
-            }
-        </div>
-    }
-    else if (rechercheFaite)
-    {
-        <p class="detail" style="margin: 0">Aucun médicament trouvé dans la nomenclature@(nomenclatureVide ? " (pas encore importée : Administration, Nomenclature nationale)" : "") : saisissez la fiche à la main.</p>
-    }
+    @* Nomenclature nationale : propositions pendant la frappe (composant commun), au clavier ; un médicament déjà au catalogue est signalé *@
+    <ChampSuggestions TItem="MedicamentNomenclatureDto" @ref="champNomenclature" Id="p-nomenclature" Rechercher="RechercherNomenclatureAsync"
+                      TexteDe="TexteNomenclature" DetailDe="DetailNomenclature" LibelleAucun="médicament"
+                      ComplementAucun="@AucunMedicament"
+                      LibelleListe="Médicaments de la nomenclature" Libelle="Chercher dans la nomenclature nationale (nom, DCI ou n° d’enregistrement)"
+                      OnChoisi="Choisir" placeholder="ex. lyrica, prégabaline, 595/15 A 068/06/22">
+        <Complement Context="m">
+            <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px">
+                @if (m.DejaAuCatalogue) { <span class="pastille info">Déjà au catalogue</span> }
+                else if (m.Situation != "en_vigueur") { <span class="pastille attention">@Libelles.SituationNomenclature(m.Situation)</span> }
+                @if (Libelles.EstSousRegistre(m.ClasseProposee)) { <span class="pastille urgent">@Libelles.Classe(m.ClasseProposee)</span> }
+            </span>
+        </Complement>
+    </ChampSuggestions>
     @if (choisi is not null)
     {
         <div class="@(choisi.Situation == "en_vigueur" ? "info-bandeau" : "erreur")" role="status">
@@ -52,28 +41,16 @@
     <div class="achats-ligne">
         <div class="champ" style="flex: 2 1 240px"><label for="p-nom" class="requis">Nom commercial</label><input id="p-nom" data-champ="nom_commercial" type="text" @ref="champNom" @bind="nom" @bind:event="oninput" placeholder="ex. Sintrom 4 mg cp"
             class="@Obligatoire.Classe(NomManque)" aria-invalid="@Obligatoire.Aria(NomManque)" /></div>
-        <div class="champ recherche" style="flex: 2 1 220px">
-            <label for="p-dci" class="requis">DCI</label>
-            <input id="p-dci" type="text" autocomplete="off" @ref="champDci" @bind="dci" @bind:event="oninput" @bind:after="RechercherDciAsync" placeholder="ex. acénocoumarol"
-                   class="@Obligatoire.Classe(DciManque)" aria-invalid="@Obligatoire.Aria(DciManque)" />
-            @if (dcis.Count > 0)
-            {
-                <ul class="suggestions" aria-label="DCI existantes">
-                    @foreach (var d in dcis)
-                    {
-                        <li><button type="button" @onclick="() => (dci, dcis) = (d, [])">@d</button></li>
-                    }
-                </ul>
-            }
-        </div>
+        <ChampSuggestions TItem="string" @ref="champDci" Id="p-dci" Mode="ModeSuggestions.ValeurLibre" Rechercher="Api.DciAsync" TexteDe="d => d"
+                          Libelle="DCI" Requis="true" Invalide="DciManque" LibelleListe="DCI existantes" Style="flex: 2 1 220px" @bind-Valeur="dci"
+                          placeholder="ex. acénocoumarol" class="@Obligatoire.Classe(DciManque)" />
     </div>
     <div class="achats-ligne">
         <div class="champ" style="flex: 1 1 120px"><label for="p-dosage" class="requis">Dosage</label><input id="p-dosage" type="text" @ref="champDosage" @bind="dosage" @bind:event="oninput" placeholder="ex. 4 mg"
             class="@Obligatoire.Classe(DosageManque)" aria-invalid="@Obligatoire.Aria(DosageManque)" /></div>
-        <div class="champ" style="flex: 1 1 140px"><label for="p-forme" class="requis">Forme</label><input id="p-forme" type="text" list="formes" @ref="champForme" @bind="forme" @bind:event="oninput" placeholder="ex. comprimé"
-            class="@Obligatoire.Classe(FormeManque)" aria-invalid="@Obligatoire.Aria(FormeManque)" />
-            <datalist id="formes"><option value="comprimé" /><option value="gélule" /><option value="sirop" /><option value="ampoule" /><option value="injectable" /><option value="pommade" /><option value="collyre" /><option value="sachet" /><option value="stylo" /></datalist>
-        </div>
+        @* Forme : formes déjà saisies au catalogue, puis les formes usuelles (fusion sans doublon) ; texte libre accepté *@
+        <ValeursSaisies @ref="champForme" Id="p-forme" Champ="forme_produit" Libelle="Forme" Requis="true" Invalide="FormeManque" Style="flex: 1 1 140px"
+                        ValeursDeDepart="FormesUsuelles" @bind-Valeur="forme" placeholder="ex. comprimé" class="@Obligatoire.Classe(FormeManque)" />
         <div class="champ" style="flex: 1 1 140px@(PrixDebloque ? null : "; opacity: .6")" title="@(PrixDebloque ? null : MentionPrix)"><label for="p-prix" class="@(PeutPrix ? "requis" : null)">Prix public (DA)@(PrixDebloque ? null : " : à faire valider par un ayant droit")</label><input id="p-prix" disabled="@(!PrixDebloque)" data-champ="prix_public" type="number" min="0" step="0.01" @ref="champPrix" @bind="prix"
             class="@Obligatoire.Classe(PrixManque)" aria-invalid="@Obligatoire.Aria(PrixManque)" /></div>
         <div class="champ" style="flex: 1 1 160px">
@@ -142,14 +119,18 @@
     private string categorie = "medicament";
     private string listePsychotrope = "";
     private List<CategorieProduitDto> categories = [new("medicament", "Médicament", true)];
-    private List<string> dcis = [];
     private bool enCours;
     private string? erreur;
-    private int requete;
 
     // Champs obligatoires (RegleProduit) : en rouge après un premier essai de création
     private bool controle;
-    private ElementReference champNom, champDci, champDosage, champForme, champPrix, champTarif;
+    private ElementReference champNom, champDosage, champPrix, champTarif;
+    private ChampSuggestions<string>? champDci;
+    private ValeursSaisies? champForme;
+    private ChampSuggestions<MedicamentNomenclatureDto>? champNomenclature;
+
+    /// <summary>Formes usuelles proposées quand le catalogue n'en donne pas encore (fusionnées sans doublon avec les formes déjà saisies).</summary>
+    public static readonly IReadOnlyList<string> FormesUsuelles = ["comprimé", "gélule", "sirop", "ampoule", "injectable", "pommade", "collyre", "sachet", "stylo"];
     private bool NomManque => Obligatoire.Manque(controle, nom);
     private bool DciManque => Obligatoire.Manque(controle, dci);
     private bool DosageManque => Obligatoire.Manque(controle, dosage);
@@ -186,54 +167,63 @@
     }
 
     // Nomenclature nationale : la fiche est remplie depuis le médicament choisi
-    private string? recherche;
-    private List<MedicamentNomenclatureDto> resultats = [];
     private MedicamentNomenclatureDto? choisi;
-    private bool rechercheFaite, nomenclatureVide;
-    private int requeteNomenclature;
+    private bool nomenclatureVide;
+    private bool? nomenclatureImportee;
 
-    private async Task RechercherNomenclatureAsync()
+    private string AucunMedicament =>
+        $" dans la nomenclature{(nomenclatureVide ? " (pas encore importée : Administration, Nomenclature nationale)" : "")} : saisissez la fiche à la main";
+
+    private static string TexteNomenclature(MedicamentNomenclatureDto m) => m.Marque ?? m.Dci ?? m.NumEnregistrement ?? "";
+
+    private static string DetailNomenclature(MedicamentNomenclatureDto m) =>
+        $"{string.Join(" · ", new[] { m.Dosage, m.Forme, m.Conditionnement }.Where(t => !string.IsNullOrWhiteSpace(t)))} — {string.Join(" · ", new[] { m.Dci, m.Laboratoire }.Where(t => !string.IsNullOrWhiteSpace(t)))}";
+
+    private async Task<(List<MedicamentNomenclatureDto>, string?)> RechercherNomenclatureAsync(string q)
     {
-        var n = ++requeteNomenclature;
-        if ((recherche?.Trim().Length ?? 0) < 2) { (resultats, rechercheFaite) = ([], false); return; }
-        var (liste, _) = await Api.RechercherNomenclatureAsync(recherche!.Trim());
-        if (n != requeteNomenclature) return;
-        (resultats, rechercheFaite) = (liste, true);
-        if (liste.Count == 0) nomenclatureVide = (await Api.RechercherNomenclatureAsync("a")).Item1.Count == 0;
+        var (liste, e) = await Api.RechercherNomenclatureAsync(q);
+        // Rien trouvé : la nomenclature est-elle seulement importée ? (message « Aucun médicament … »)
+        if (liste.Count == 0 && e is null)
+        {
+            // Lu une fois : la recherche ne répond rien sous 2 lettres (l'ancien essai avec « a » concluait toujours « pas importée »)
+            if (nomenclatureImportee is null)
+            {
+                var (oui, erreurEtat) = await Api.NomenclatureImporteeAsync();
+                nomenclatureImportee = erreurEtat is null ? oui : true;   // état illisible : pas de message trompeur
+            }
+            nomenclatureVide = nomenclatureImportee == false;
+            StateHasChanged();
+        }
+        return (liste, e);
     }
 
     private void Choisir(MedicamentNomenclatureDto m)
     {
+        champNomenclature?.Afficher("");
+        // Médicament déjà au catalogue : rien n'est rempli (on ne le crée pas deux fois)
+        if (m.DejaAuCatalogue) { erreur = $"« {TexteNomenclature(m)} » est déjà au catalogue : cherchez-le dans le catalogue."; return; }
+        erreur = null;
         choisi = m;
         nom = m.Marque;
         dci = m.Dci;
         dosage = m.Dosage;
         forme = m.Forme;
         classe = m.ClasseProposee;
-        (resultats, rechercheFaite, recherche, dcis) = ([], false, null, []);
-    }
-
-    private async Task RechercherDciAsync()
-    {
-        var n = ++requete;
-        if ((dci?.Trim().Length ?? 0) < 2) { dcis = []; return; }
-        var (liste, _) = await Api.DciAsync(dci!);
-        if (n == requete) dcis = liste.Where(d => !string.Equals(d, dci?.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
     private async Task CreerAsync()
     {
         (erreur, controle) = (null, true);
         // Premier champ manquant : message et curseur dessus, sans appel au serveur
-        (ElementReference Champ, string Message)? manquant =
-            NomManque ? (champNom, "Nom commercial obligatoire.")
-            : DciManque ? (champDci, "DCI obligatoire.")
-            : DosageManque ? (champDosage, "Dosage obligatoire.")
-            : FormeManque ? (champForme, "Forme obligatoire.")
-            : PrixManque ? (champPrix, "Le prix public doit être supérieur à 0.")
-            : TarifManque ? (champTarif, "Un produit remboursable a besoin d’un tarif de référence.")
+        (Func<ValueTask> Focus, string Message)? manquant =
+            NomManque ? (() => champNom.FocusAsync(), "Nom commercial obligatoire.")
+            : DciManque ? (() => champDci?.FocusAsync() ?? ValueTask.CompletedTask, "DCI obligatoire.")
+            : DosageManque ? (() => champDosage.FocusAsync(), "Dosage obligatoire.")
+            : FormeManque ? (() => champForme?.FocusAsync() ?? ValueTask.CompletedTask, "Forme obligatoire.")
+            : PrixManque ? (() => champPrix.FocusAsync(), "Le prix public doit être supérieur à 0.")
+            : TarifManque ? (() => champTarif.FocusAsync(), "Un produit remboursable a besoin d’un tarif de référence.")
             : null;
-        if (manquant is { } m) { erreur = m.Message; await m.Champ.FocusAsync(); return; }
+        if (manquant is { } m) { erreur = m.Message; await m.Focus(); return; }
 
         enCours = true;
         try
@@ -253,7 +243,8 @@
     private void Vider()
     {
         (nom, dci, dosage, forme, codeBarre, prix, tarif, tva, stockMin, remboursable) = (null, null, null, null, null, 0, null, 0, null, false);
-        (classe, categorie, listePsychotrope, dcis, choisi, erreur, controle) = ("libre", "medicament", "", [], null, null, false);
-        (recherche, resultats, rechercheFaite, nomenclatureVide, accordPrix) = (null, [], false, false, null);
+        (classe, categorie, listePsychotrope, choisi, erreur, controle) = ("libre", "medicament", "", null, null, false);
+        (nomenclatureVide, accordPrix) = (false, null);
+        champNomenclature?.Afficher("");
     }
 }

@@ -24,8 +24,8 @@
         }
         <h2 style="margin: 8px 0 0">Liste blanche</h2>
         <p class="detail" style="margin: 0">Produit autorisé en remplacement d’un produit donné, même hors équivalent exact (choix du pharmacien).</p>
-        <div data-champ="produit"><ChoixProduit Id="sb-produit" Libelle="Produit manquant" InclureInactifs="true" OnChoisi="p => produit = p" OnEfface="() => produit = null" /></div>
-        <div data-champ="remplacant"><ChoixProduit Id="sb-remplacant" Libelle="Remplaçant autorisé" OnChoisi="p => remplacant = p" OnEfface="() => remplacant = null" /></div>
+        <div data-champ="produit"><ChoixProduit Id="sb-produit" PremierSurEntree="false" Libelle="Produit manquant" InclureInactifs="true" OnChoisi="p => produit = p" OnEfface="() => produit = null" /></div>
+        <div data-champ="remplacant"><ChoixProduit Id="sb-remplacant" PremierSurEntree="false" Libelle="Remplaçant autorisé" OnChoisi="p => remplacant = p" OnEfface="() => remplacant = null" /></div>
         <div><button type="button" class="btn btn-principal" disabled="@(enCours || produit is null || remplacant is null || !PeutRegler)" @onclick="AjouterAsync">Ajouter à la liste blanche</button></div>
         <p class="detail" style="margin: 0">Ordre des remplaçants proposés : fabriqué en Algérie d’abord, puis le moins cher, puis le plus de stock.</p>
     </section>
@@ -41,10 +41,8 @@
                     <option value="fab-non">Fabriqué en Algérie : non</option>
                 </select>
             </div>
-            <div class="champ" style="flex: 1 1 220px">
-                <label for="sb-recherche">Produit</label>
-                <input id="sb-recherche" type="search" @bind="recherche" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" />
-            </div>
+            @* Produit : propositions du catalogue en valeur libre (FiltreProduit, 2026-11-18), le tableau suit la saisie *@
+            <FiltreProduit Id="sb-recherche" Libelle="Produit" Style="flex: 1 1 220px" @bind-Valeur="recherche" @bind-Valeur:after="() => ChargerAsync(1, taille)" />
         </div>
         <section class="tableau-cadre" aria-label="Substitution">
             <table class="tableau" style="min-width: 0">

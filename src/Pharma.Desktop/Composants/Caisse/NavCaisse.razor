@@ -64,8 +64,9 @@
                                         <option value="">— choisir —</option>
                                         @foreach (var c in categories) { <option value="@c.Code">@c.Libelle</option> }
                                     </select></div>
-                                <div class="champ" style="flex: 1"><label for="ti-libelle" class="requis">Libellé</label>
-                                    <input id="ti-libelle" data-champ="libelle" type="text" maxlength="200" @bind="libelleTiroir" placeholder="Ex. café, ampoules, timbres" /></div>
+                                @* Libellés des dépenses déjà saisies proposés pendant la frappe (2026-11-18), texte libre accepté *@
+                                <ValeursSaisies Id="ti-libelle" Champ="libelle_depense_tiroir" Libelle="Libellé" Requis="true" Style="flex: 1" @bind-Valeur="libelleTiroir"
+                                                data-champ="libelle" maxlength="200" placeholder="Ex. café, ampoules, timbres" />
                             </div>
                             break;
                         case "fournisseur":
@@ -80,25 +81,15 @@
                             </div>
                             @if (grossisteTiroir == 0)
                             {
-                                <div class="champ"><label for="ti-beneficiaire" class="requis">Nom du livreur ou du fournisseur</label>
-                                    <input id="ti-beneficiaire" data-champ="beneficiaire" type="text" maxlength="200" @bind="beneficiaireTiroir" /></div>
+                                <ValeursSaisies Id="ti-beneficiaire" Champ="beneficiaire_tiroir" Libelle="Nom du livreur ou du fournisseur" Requis="true"
+                                                @bind-Valeur="beneficiaireTiroir" data-champ="beneficiaire" maxlength="200" />
                             }
                             break;
                         case "patient":
-                            <div class="champ recherche"><label for="ti-patient" class="requis">Patient remboursé</label>
-                                <input id="ti-patient" data-champ="patient" type="search" autocomplete="off" @bind="recherchePatient" @bind:event="oninput"
-                                       @bind:after="RechercherPatientAsync" placeholder="Nom, téléphone ou n° d’assuré" disabled="@(remboursement is not null)" />
-                                @if (patients.Count > 0)
-                                {
-                                    <ul class="suggestions" aria-label="Patients trouvés">
-                                        @foreach (var p in patients.Take(6))
-                                        {
-                                            <li><button type="button" @onclick="() => ChoisirPatient(p)"><strong>@p.Nom @p.Prenom</strong> <span class="detail">@p.Telephone</span></button></li>
-                                        }
-                                    </ul>
-                                }
-                                @if (patientTiroir is { } pt) { <span class="detail">Choisi : @pt.Nom @pt.Prenom</span> }
-                            </div>
+                            @* Propositions pendant la frappe (composant commun, 2026-11-18) ; trop-payé d'une régularisation : patient imposé, sans « Changer » *@
+                            <ChoixPatient Id="ti-patient" Libelle="Patient remboursé" Requis="true" data-champ="patient"
+                                          Choix="@(patientTiroir is null ? null : ChoixPatient.Nom(patientTiroir))" ChangerPermis="@(remboursement is null)"
+                                          OnChoisi="p => patientTiroir = p" OnEfface="() => patientTiroir = null" />
                             <div class="champ"><label for="ti-raison" class="requis">Raison du remboursement</label>
                                 <input id="ti-raison" data-champ="raison" type="text" maxlength="200" @bind="raisonTiroir" /></div>
                             break;
@@ -170,21 +161,19 @@
     private MotifReglableDto? Choisi => motifsTiroir.FirstOrDefault(m => m.Code == motifTiroir);
     private decimal? montantTiroir;
     private string categorieTiroir = "";
-    private string? libelleTiroir, referenceTiroir, beneficiaireTiroir, raisonTiroir, recherchePatient;
+    private string? libelleTiroir, referenceTiroir, beneficiaireTiroir, raisonTiroir;
     private long grossisteTiroir;
     private PatientDto? patientTiroir;
-    private List<PatientDto> patients = [];
     private List<MotifReglableDto> categories = [];
     private List<FournisseurDto> grossistes = [];
     private OuvertureTiroirDto? bonTiroir;
-    private int requetePatient;
 
     /// <summary>F8 ou clic : la fenêtre s'ouvre avec les motifs actifs (rechargés à chaque fois : le titulaire a pu les changer).</summary>
     private async Task DemanderTiroirAsync()
     {
         (confirmation, messageTiroir, motifTiroir, texteTiroir, bonTiroir) = (true, null, "", null, null);
         (montantTiroir, categorieTiroir, libelleTiroir, referenceTiroir, beneficiaireTiroir, raisonTiroir) = (null, "", null, null, null, null);
-        (grossisteTiroir, patientTiroir, patients, recherchePatient, remboursement) = (0, null, [], null, null);
+        (grossisteTiroir, patientTiroir, remboursement) = (0, null, null);
         var (liste, e) = await Api.MotifsAsync("tiroir");
         (motifsTiroir, messageTiroir) = (liste, e);
     }
@@ -211,7 +200,7 @@
             return;
         }
         motifTiroir = motif.Code;
-        (montantTiroir, raisonTiroir, recherchePatient, remboursement) = (d.Montant, d.Raison, d.Patient, d);
+        (montantTiroir, raisonTiroir, remboursement) = (d.Montant, d.Raison, d);
         patientTiroir = new PatientDto(d.PatientId, d.Patient, null, null, null, null, null, 0, 0);
     }
 
@@ -229,15 +218,6 @@
         }
     }
 
-    private async Task RechercherPatientAsync()
-    {
-        var n = ++requetePatient;
-        if ((recherchePatient ?? "").Trim().Length < 2) { patients = []; return; }
-        var (trouves, _) = await Api.RechercherPatientsAsync(recherchePatient!.Trim());
-        if (n == requetePatient) patients = trouves;
-    }
-
-    private void ChoisirPatient(PatientDto p) => (patientTiroir, patients, recherchePatient) = (p, [], $"{p.Nom} {p.Prenom}".Trim());
 
     private async Task OuvrirTiroirAsync()
     {

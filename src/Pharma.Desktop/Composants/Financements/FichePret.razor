@@ -62,8 +62,8 @@ else
                 <div class="achats-ligne">
                     @if (horsTresorerie)
                     {
-                        <div class="champ" style="flex: 1 1 200px"><label for="mp-preteur" class="requis">Prêteur</label>
-                            <input id="mp-preteur" data-champ="preteur" type="text" maxlength="120" @bind="preteur" /></div>
+                        <ValeursSaisies Id="mp-preteur" Champ="preteur_pret" Libelle="Prêteur" Requis="true" Style="flex: 1 1 200px" @bind-Valeur="preteur"
+                                        data-champ="preteur" maxlength="120" />
                     }
                     else
                     {

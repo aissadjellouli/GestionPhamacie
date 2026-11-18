@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 149 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 150 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 149 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 150 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -15239,6 +15239,34 @@ CREATE INDEX ix_historique_chifa_organisme ON public.historique_chifa USING btre
 
 
 --
+-- Name: ix_lot_produit_numero; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_lot_produit_numero ON public.lot USING btree (produit_id, numero_lot);
+
+
+--
+-- Name: INDEX ix_lot_produit_numero; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON INDEX public.ix_lot_produit_numero IS 'Numéros de lot d''un produit proposés au rappel, épuisés compris (script 150).';
+
+
+--
+-- Name: ix_medecin_nom_sans_accent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_medecin_nom_sans_accent ON public.medecin USING gin (public.sans_accent(nom) public.gin_trgm_ops);
+
+
+--
+-- Name: INDEX ix_medecin_nom_sans_accent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON INDEX public.ix_medecin_nom_sans_accent IS 'Recherche d''un médecin sans accents ni majuscules (script 150).';
+
+
+--
 -- Name: ix_mouvement_tiroir_employe; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15271,6 +15299,20 @@ CREATE INDEX ix_patient_assure_principal ON public.patient USING btree (assure_p
 --
 
 CREATE INDEX ix_patient_nom_minuscule ON public.patient USING btree (lower(nom));
+
+
+--
+-- Name: ix_patient_nom_prenom_sans_accent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_patient_nom_prenom_sans_accent ON public.patient USING gin (public.sans_accent(((nom || ' '::text) || COALESCE(prenom, ''::text))) public.gin_trgm_ops);
+
+
+--
+-- Name: INDEX ix_patient_nom_prenom_sans_accent; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON INDEX public.ix_patient_nom_prenom_sans_accent IS 'Recherche d''un patient sans accents ni majuscules (nom, prénom, « nom prénom ») (script 150).';
 
 
 --

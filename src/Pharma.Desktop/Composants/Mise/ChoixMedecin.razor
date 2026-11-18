@@ -1,0 +1,37 @@
+@inject ApiClient Api
+
+@*
+    Choix d'un médecin prescripteur (mode choix obligatoire de ChampSuggestions) : nom sans accents ni majuscules
+    (GET /api/medecins?q=), spécialité en seconde ligne, 10 propositions au plus.
+    Exemple : <ChoixMedecin Id="medecin" Libelle="Médecin" Choix="@medecin?.Nom" OnChoisi="m => medecin = m" OnEfface="() => medecin = null" />
+*@
+
+<ChampSuggestions TItem="MedecinDto" @ref="interieur" Id="@Id" Rechercher="Api.RechercherMedecinsAsync" TexteDe="m => m.Nom" DetailDe="m => m.Specialite"
+                  LibelleAucun="médecin" LibelleListe="Médecins trouvés" Libelle="@Libelle" Requis="Requis" Invalide="Invalide" Style="@Style"
+                  Cadre="Cadre" Choix="@Choix" ChangerPermis="ChangerPermis" TexteInitial="@TexteInitial" OnChoisi="OnChoisi" OnTexte="OnTexte" OnEfface="OnEfface" OnFocus="OnFocus"
+                  placeholder="@Placeholder" @attributes="Attributs" />
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public string? Libelle { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Nom du médecin";
+    [Parameter] public bool Requis { get; set; }
+    [Parameter] public bool Invalide { get; set; }
+    [Parameter] public string? Style { get; set; }
+    /// <summary>Faux : seulement le champ et sa liste, dans un conteneur « .recherche » du parent.</summary>
+    [Parameter] public bool Cadre { get; set; } = true;
+    /// <summary>Nom du médecin choisi (affiché avec « Changer ») ; null : le champ de recherche.</summary>
+    [Parameter] public string? Choix { get; set; }
+    /// <summary>Faux : le choix affiché n'a pas de lien « Changer » (entité imposée).</summary>
+    [Parameter] public bool ChangerPermis { get; set; } = true;
+    [Parameter] public string? TexteInitial { get; set; }
+    [Parameter] public EventCallback<MedecinDto> OnChoisi { get; set; }
+    [Parameter] public EventCallback<string> OnTexte { get; set; }
+    [Parameter] public EventCallback OnEfface { get; set; }
+    [Parameter] public EventCallback OnFocus { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributs { get; set; }
+
+    private ChampSuggestions<MedecinDto>? interieur;
+
+    public ValueTask FocusAsync() => interieur?.FocusAsync() ?? ValueTask.CompletedTask;
+}

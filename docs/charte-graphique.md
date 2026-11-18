@@ -61,6 +61,10 @@ libellé tronqué, rectangles des éléments sans chevauchement.
 
 ### Écran fixe, sans défilement (règle valable sur tous les écrans, demandée le 2026-11-13)
 
+**Précision du titulaire (2026-11-18)** : la règle vaut pour les **écrans principaux**, mesurés à l'arrivée, formulaires fermés,
+à 1 536 × 890 et à 1 366 × 768. Un formulaire ouvert à la demande (correction d'un médecin, fiche prêt, usage d'un financement…)
+peut faire défiler la page s'il est trop haut : on le signale, ce n'est pas un défaut.
+
 **Un écran ne défile jamais** : titre, menu, filtres, boutons et pagination restent en place dans la fenêtre (1 536 × 890 sur le
 poste de référence, zoom 100 %). Seul un tableau défile, dans son cadre (règle des listes ci-dessous). Un écran dont le contenu
 dépasse la fenêtre est **découpé en rubriques** avec le menu vertical à gauche (ci-dessous) : une rubrique = ce qui tient dans
@@ -89,6 +93,11 @@ vendeur)** : `/`, `/accueil`, `/caisse`, `/caisse/etat`, `/cloture`, `/stock`, `
 `/admin/profils-reprise` et `/admin/historique-chifa` (ajoutés le 2026-11-16, lot 4 : liste paginée et filtrée, seul le tableau défile,
 édition du profil dans une fenêtre `.voile` qui défile dans son cadre ; mesure à 0 px à refaire sur le poste),
 `/admin/restauration`, `/admin/sauvegardes`, `/admin/seuils`, `/guide`, `/mon-code`, `/mot-de-passe`.
+**`/admin/seuils?rubrique=produits` corrigé le 2026-11-18** (l'écran défilait de 75 px à 1 366 × 768, défaut déjà présent avant
+le filtre avec propositions : le tableau restait à son minimum de 240 px sous le choix du produit) : deux colonnes dans le panneau
+(`.colonnes` : « Produit à régler » et la carte du produit à gauche, 340 px ; filtres, tableau et pagination à droite). Mesuré
+(titulaire, clair et sombre, 1 536 × 890 et 1 366 × 768) : 0 px liste fermée, liste du produit ouverte, liste du filtre ouverte,
+carte d'un produit affichée (seuil automatique ou saisi).
 **Écran ajouté le 2026-11-16 (lot 10, sérialisation), conçu fixe (seul le tableau défile, paginé et filtré par statut) ; mesure
 à 1 536 × 890 à faire à l'écran** : `/admin/serialisation`.
 **Écran ajouté le 2026-11-16 (lot 5, 2e serveur), conçu fixe 1 536 × 890 (trois sous-rubriques à gauche : État de la réplication,
@@ -324,6 +333,47 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
     produit), 10 au plus, sans tenir compte des majuscules ni des accents, flèches haut et bas, Entrée pour choisir, Échap pour
     fermer, message « Aucun … pour « saisie » » quand rien ne répond ; le choix fait s'affiche avec un lien « Changer ». Dans
     un filtre de tableau, le tableau suit la saisie (filtre sur une partie du nom) avant même qu'une proposition soit choisie.
+  - **Composant commun (2026-11-18) : `ChampSuggestions`** (`src/Pharma.Desktop/Composants/Mise/ChampSuggestions.razor`), à utiliser pour
+    tout nouveau champ avec propositions ; ne pas recopier de liste à la main. Règles qu'il applique : propositions dès `LettresMin`
+    lettres (2 ; 1 pour un produit ; 0 en valeur libre seulement, pour un champ à valeurs très courtes dont toutes les valeurs sont
+    proposées dès l'entrée dans le champ : rayon d'un emplacement), 250 ms après la dernière touche, réponses périmées ignorées, **10 au plus**, comparaison sans
+    accents ni majuscules, partie tapée surlignée (`mark`), flèches haut et bas **circulaires**, Entrée choisit, Échap ferme la liste
+    **sans vider le champ** (un second Échap efface la recherche, `poste.js`), message « Aucun … pour « … » », accessibilité combobox
+    (`role="combobox"`, `aria-expanded`, `aria-controls`, `aria-activedescendant`, `role="listbox"` / `option`), liste de classe
+    **`.suggestions`** (obligatoire : `poste.js` s'en sert pour Échap et pour le calcul des cadres). La liste ne sort jamais du bas
+    de la fenêtre ni du cadre qui défile autour du champ : raccourcie, ou ouverte vers le haut s'il reste moins de 160 px dessous
+    (`poste.js`). Le composant ne prend jamais le curseur de lui-même (seul `poste.js` met le curseur dans la première recherche de
+    l'écran) ; en valeur libre le champ est de type `text`, jamais pris pour la recherche de l'écran.
+    - **Deux modes** : `ModeSuggestions.ChoixObligatoire` (une entité ; `Choix` = libellé choisi, affiché avec « Changer » qui
+      appelle `OnEfface` ; `ChangerPermis="false"` pour une entité imposée) et `ModeSuggestions.ValeurLibre` (`@bind-Valeur`, valeurs
+      déjà saisies, le texte tapé reste accepté, rien de présélectionné, pas de message quand rien ne répond).
+    - **Paramètres** : `Id`, `Rechercher` (`Func<string, Task<(List<T>, string?)>>`, signature des méthodes d'`ApiClient`), `TexteDe`,
+      `DetailDe` (seconde ligne), `Complement` (gabarit à droite : montant, pastille), `Mode`, `LettresMin`, `LibelleAucun`,
+      `ComplementAucun`, `LibelleListe`, `Libelle`, `Requis`, `Invalide` (aria-invalid), `Style`, `Cadre` (faux : seulement le champ
+      et sa liste dans un conteneur `.recherche` du parent), `Type`, `TexteInitial`, `OnChoisi`, `OnTexte`, `OnEfface`, `OnFocus` ;
+      tout autre attribut (`data-champ`, `data-raccourci`, `aria-label`, `placeholder`, `class`, `maxlength`, `disabled`) est posé
+      tel quel sur le champ (le test `ChampsObligatoiresTests` lit les `data-champ` écrits dans l'écran).
+    - **Dérivés** : `ChoixPatient` et `ChoixMedecin` (choix obligatoire, 10 propositions, sans accents) ; `ValeursSaisies`
+      (valeur libre, `Champ` = clé de la liste blanche du serveur, `GET /api/suggestions/{champ}?q=`, docs/regles-metier.md
+      « Suggestions pendant la frappe » ; `ValeursDeDepart` facultatif : valeurs usuelles proposées après celles de la base, sans
+      doublon, quand elles contiennent la saisie, ex. les formes d'un produit). Exemple :
+      `<ChoixPatient Id="ti-patient" Libelle="Patient remboursé" Requis="true" data-champ="patient" Choix="@(p is null ? null : ChoixPatient.Nom(p))" OnChoisi="x => p = x" OnEfface="() => p = null" />`
+      ou `<ValeursSaisies Id="nm-specialite" Champ="specialite_medecin" @bind-Valeur="fiche.Specialite" aria-label="Spécialité" maxlength="120" />`.
+    - **Mise en avant** (revue 2026-11-18) : une proposition mise en avant par les flèches ou la souris reste en avant à l'arrivée
+      d'une nouvelle réponse si elle y figure encore (même élément, ou même texte et seconde ligne), sinon rien n'est en avant
+      (jamais un autre élément) ; chaque frappe et la fermeture du composant (`IDisposable`) annulent l'attente en cours ; le
+      nombre de propositions est annoncé aux lecteurs d'écran (`aria-live="polite"`, classe `.visuellement-cache`).
+    - `ChoixProduit` reste un composant à part (16 usages) ; paramètre **`PremierSurEntree`** (vrai par défaut) : Entrée pendant
+      une recherche en attente prend le premier résultat (douchette) ; **`PremierSurEntree="false"` partout où ce n'est pas un
+      scan de comptoir ou de réception** (Entrée affiche la liste à jour sans rien choisir : jamais un produit non vu) ;
+      **`PremierSurEntreeSiCode="true"`** sur un écran où l'on tape et où l'on scanne (Achats › Commandes, 2026-11-18) : Entrée
+      prend le premier résultat seulement si le texte ressemble à un scan (8 à 14 chiffres, ou Data Matrix GS1 « 01 » + 14 chiffres). Le
+      panier de la caisse garde sa propre liste (scan, volet Chifa) avec les flèches, `role="none"` sur ses `<li>`.
+    - **Filtre « Produit » d'un tableau : `FiltreProduit`** (2026-11-18, `src/Pharma.Desktop/Composants/Mise/FiltreProduit.razor`) :
+      valeur libre (`@bind-Valeur`), champ de type `search` (il reste la recherche de l'écran), propositions du catalogue dès la
+      1re lettre ; le tableau suit chaque touche, choisir une proposition met le nom commercial dans le filtre. Propositions selon
+      le droit (`stock.consulter` : `api/produits`, sinon `caisse.vendre` : `api/caisse/produits`, sinon aucune). **Pas de
+      propositions** pour un filtre qui porte aussi sur un n° de lot, un code-barres ou un laboratoire : saisie libre telle quelle.
   - Exemples : choix du produit (composant `ChoixProduit`), du patient et du médecin à la caisse, du patient et de l'entreprise dans
     l'éditeur de facture, filtre « Tiers » de Dettes et créances (recherche pour patients, factures clients et organismes des
     bordereaux, demandée le 2026-11-13 ; liste pour grossistes et effets).

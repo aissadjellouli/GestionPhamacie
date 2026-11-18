@@ -98,19 +98,8 @@
                 </div>
                 @if (ajout)
                 {
-                    <div class="champ recherche">
-                        <input type="search" aria-label="Rechercher un produit" placeholder="Nom, DCI ou code-barres" autocomplete="off" autofocus
-                               @bind="recherche" @bind:event="oninput" @bind:after="RechercherAsync" />
-                        @if (suggestions.Count > 0)
-                        {
-                            <ul class="suggestions" aria-label="Produits trouvés">
-                                @foreach (var p in suggestions)
-                                {
-                                    <li><button type="button" @onclick="() => AjouterException(p)"><span><strong>@p.NomCommercial</strong><br /><span class="detail">@p.Dci @p.Dosage</span></span></button></li>
-                                }
-                            </ul>
-                        }
-                    </div>
+                    @* Produit à ajouter : propositions au clavier dès la 1re lettre (ChoixProduit, 2026-11-18) *@
+                    <ChoixProduit Id="as-produit" PremierSurEntree="false" Libelle="Produit à ajouter" OnChoisi="AjouterException" />
                 }
                 @if (exceptions.Count == 0)
                 {
@@ -216,8 +205,6 @@
     private List<ExceptionSaisie> exceptions = [];
     private string? erreur, message;
     private bool enCours, ajout;
-    private string recherche = "";
-    private List<ProduitDto> suggestions = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -257,17 +244,11 @@
         _ => $"environ {Math.Round(jours / 30.0)} mois"
     };
 
-    private async Task RechercherAsync()
-    {
-        if (recherche.Trim().Length < 2) { suggestions = []; return; }
-        (suggestions, _) = await Api.RechercherProduitsAsync(recherche);
-    }
-
     private void AjouterException(ProduitDto p)
     {
         if (exceptions.All(e => e.ProduitId != p.Id))
             exceptions.Add(new ExceptionSaisie { ProduitId = p.Id, Nom = p.NomCommercial });
-        (recherche, suggestions, ajout) = ("", [], false);
+        ajout = false;
     }
 
     private async Task EnregistrerAsync()

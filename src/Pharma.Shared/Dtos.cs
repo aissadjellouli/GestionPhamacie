@@ -92,6 +92,9 @@ public sealed record RappelLotDto(
     public bool ToutBloque => LotsBloques > 0 && LotsNonBloques == 0;
 }
 
+/// <summary>Numéro de lot proposé au rappel (GET /api/tracabilite/produits/{id}/lots), épuisé compris (Quantite à 0, Epuise vrai).</summary>
+public sealed record LotRappelDto(string NumeroLot, DateOnly DatePeremption, int Quantite, bool Bloque, bool Epuise);
+
 public sealed record EtapeParcoursDto(string Type, DateTime Date, string? Commentaire);
 
 public sealed record ParcoursBoiteDto(
@@ -242,9 +245,11 @@ public sealed record EntreeJournalDto(DateTime Date, string Employe, string Acti
 
 // ---- Patients, médecins, organismes -------------------------------------------
 
+/// <summary>Patient trouvé par la recherche rapide.</summary>
+/// <remarks>OrganismeId, Organisme, PlafondCredit, SoldeCredit et DateFinDroit : null quand l'employé n'a pas le droit de vendre (recherche depuis Factures).</remarks>
 public sealed record PatientDto(
     long Id, string Nom, string? Prenom, string? Telephone, string? NumAssure,
-    long? OrganismeId, string? Organisme, decimal PlafondCredit, decimal SoldeCredit, DateOnly? DateFinDroit = null, decimal SoldeAvoir = 0);
+    long? OrganismeId, string? Organisme, decimal? PlafondCredit, decimal? SoldeCredit, DateOnly? DateFinDroit = null, decimal SoldeAvoir = 0);
 
 /// <summary>Fiche complète d'un patient (SoldeCredit en lecture seule).</summary>
 public sealed record FichePatientDto(long Id, string Nom, string? Prenom, DateOnly? DateNaissance, string? Telephone, string? Email, string? NumAssure,

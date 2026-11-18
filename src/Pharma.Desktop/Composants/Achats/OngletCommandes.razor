@@ -34,7 +34,7 @@
                             }
                         </select>
                     </div>
-                    <ChoixProduit @ref="choixProduit" Id="c-prod" Style="flex: 3 1 260px" Requis="true" OnChoisi="Choisir" OnEfface="() => produitChoisi = null" />
+                    <ChoixProduit @ref="choixProduit" Id="c-prod" PremierSurEntree="false" PremierSurEntreeSiCode="true" Style="flex: 3 1 260px" Requis="true" OnChoisi="Choisir" OnEfface="() => produitChoisi = null" />
                     <div class="champ" style="flex: 0 0 110px; min-width: 0">
                         <label for="c-qte" class="requis">Quantité</label>
                         <input id="c-qte" type="number" min="1" @ref="champQuantite" @bind="quantite" class="@Obligatoire.Classe(QuantiteInvalide)" aria-invalid="@Obligatoire.Aria(QuantiteInvalide)" />
@@ -62,8 +62,9 @@
 
             <h2 id="t-sugg" style="margin: 0">À commander (ruptures et stocks critiques)</h2>
             <div class="filtres-liste" role="search" aria-label="Filtrer les produits à commander">
-                <div class="champ" style="flex: 1 1 240px"><label for="fs-recherche">Produit</label>
-                    <input id="fs-recherche" type="search" autocomplete="off" placeholder="Ex. amlodipine" value="@sRecherche" @oninput="RechercheSuggestionsAsync" /></div>
+                @* Produit : propositions du catalogue en valeur libre (FiltreProduit, 2026-11-18), le tableau suit la saisie *@
+                <FiltreProduit Id="fs-recherche" Libelle="Produit" Style="flex: 1 1 240px" placeholder="Ex. amlodipine" Valeur="@sRecherche"
+                               ValeurChanged="v => RechercheSuggestionsAsync(new ChangeEventArgs { Value = v })" />
                 <div class="champ" style="flex: 0 0 160px"><label for="fs-etat">État</label>
                     <select id="fs-etat" @bind="sStatut" @bind:after="PremierePageSuggestionsAsync">
                         <option value="">Tous</option>

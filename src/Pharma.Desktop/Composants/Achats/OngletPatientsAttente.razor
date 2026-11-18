@@ -12,23 +12,9 @@
         <h2 id="t-prevenir">Prévenir quand disponible</h2>
         @if (erreur is not null) { <div class="erreur" role="alert" style="margin: 0">@erreur</div> }
         else if (message is not null) { <div class="succes" role="status" style="margin: 0">@message</div> }
-        <div class="achats-ligne" style="align-items: flex-end">
-            <div class="champ" style="flex: 1 1 200px; min-width: 0">
-                <label for="pa-patient" class="requis">Patient (nom ou téléphone)</label>
-                <input id="pa-patient" type="search" data-champ="patient" @bind="textePatient" @onkeydown="ToucheAsync" />
-            </div>
-            <button type="button" class="btn" disabled="@(enCours || string.IsNullOrWhiteSpace(textePatient))" @onclick="ChercherPatientsAsync">Chercher</button>
-        </div>
-        @if (patients.Count > 0)
-        {
-            <div class="champ">
-                <label for="pa-choix">Fiche</label>
-                <select id="pa-choix" @bind="patientId" @bind:after="ChargerConsentementAsync">
-                    <option value="0">Choisir…</option>
-                    @foreach (var p in patients) { <option value="@p.Id">@($"{p.Nom} {p.Prenom}".Trim())@(p.Telephone is { Length: > 0 } t ? $" · {t}" : "")</option> }
-                </select>
-            </div>
-        }
+        @* Patient : propositions pendant la frappe (ChoixPatient, 2026-11-18), choix affiché avec « Changer » *@
+        <ChoixPatient Id="pa-patient" Libelle="Patient" Requis="true" data-champ="patient" ComplementAucun=" : créez sa fiche (Patients) d’abord"
+                      Choix="@(patient is null ? null : ChoixPatient.Nom(patient))" OnChoisi="ChoisirPatientAsync" OnEfface="EffacerPatient" />
         @if (patientId != 0 && consentement is not null)
         {
             <label style="display: flex; gap: 8px; align-items: center">
@@ -46,7 +32,7 @@
                 </label>
             </div>
         }
-        <div data-champ="produit"><ChoixProduit Id="pa-produit" Libelle="Produit attendu" Requis="true" OnChoisi="p => produit = p" OnEfface="() => produit = null" /></div>
+        <div data-champ="produit"><ChoixProduit Id="pa-produit" PremierSurEntree="false" Libelle="Produit attendu" Requis="true" OnChoisi="p => produit = p" OnEfface="() => produit = null" /></div>
         <div class="achats-ligne" style="align-items: flex-end">
             <div class="champ" style="flex: 0 0 120px">
                 <label for="pa-qte">Quantité</label>
@@ -122,12 +108,12 @@
 </div>
 
 @code {
-    private List<PatientDto> patients = [];
+    private PatientDto? patient;
     private List<DemandePatientDto> demandes = [];
     private AlertesDisponibiliteDto? alertes;
     private ConsentementSmsDto? consentement;
     private ProduitDto? produit;
-    private string? textePatient, recherche, erreur, message;
+    private string? recherche, erreur, message;
     private string statut = "ouvertes";
     private long patientId;
     private int quantite = 1, total, page = 1, taille = Pagination.TailleParDefaut;
@@ -155,7 +141,7 @@
         }
         if (PatientInitial is { } pi)
         {
-            (patients, patientId, textePatient) = ([pi], pi.Id, $"{pi.Nom} {pi.Prenom}".Trim());
+            (patient, patientId) = (pi, pi.Id);
             await ChargerConsentementAsync();
         }
         await RafraichirAsync();
@@ -186,19 +172,13 @@
         _ => d.Statut
     };
 
-    private async Task ToucheAsync(KeyboardEventArgs e)
+    private async Task ChoisirPatientAsync(PatientDto p)
     {
-        if (e.Key == "Enter") await ChercherPatientsAsync();
+        (patient, patientId, consentement, erreur, message) = (p, p.Id, null, null, null);
+        await ChargerConsentementAsync();
     }
 
-    private async Task ChercherPatientsAsync() => await Executer(async () =>
-    {
-        var (liste, e) = await Api.RechercherPatientsAsync(textePatient!.Trim());
-        if (e is not null) return e;
-        (patients, patientId, consentement) = (liste, liste.Count == 1 ? liste[0].Id : 0, null);
-        if (patientId != 0) await ChargerConsentementAsync();
-        return liste.Count == 0 ? "Aucun patient trouvé : créez sa fiche (Patients) d’abord." : null;
-    });
+    private void EffacerPatient() => (patient, patientId, consentement) = (null, 0, null);
 
     private async Task ChargerConsentementAsync()
     {

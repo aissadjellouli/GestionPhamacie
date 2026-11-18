@@ -190,10 +190,18 @@
                         <button type="button" class="puce" aria-pressed="@(parMarge == "produit" ? "true" : "false")" @onclick='() => RegrouperAsync("produit")'>Par produit</button>
                         <button type="button" class="puce" aria-pressed="@(parMarge == "laboratoire" ? "true" : "false")" @onclick='() => RegrouperAsync("laboratoire")'>Par laboratoire</button>
                     </div>
-                    <div class="champ" style="flex: 1 1 260px">
-                        <label for="pf-marge">@(parMarge == "produit" ? "Produit" : "Laboratoire")</label>
-                        <input id="pf-marge" type="search" @bind="rechercheMarge" @bind:event="oninput" @bind:after="() => ChargerMargesAsync(1, tailleMarges)" />
-                    </div>
+                    @if (parMarge == "produit")
+                    {
+                        @* Produit : propositions du catalogue en valeur libre (FiltreProduit, 2026-11-18), le tableau suit la saisie *@
+                        <FiltreProduit Id="pf-marge" Libelle="Produit" Style="flex: 1 1 260px" @bind-Valeur="rechercheMarge" @bind-Valeur:after="() => ChargerMargesAsync(1, tailleMarges)" />
+                    }
+                    else
+                    {
+                        <div class="champ" style="flex: 1 1 260px">
+                            <label for="pf-marge">Laboratoire</label>
+                            <input id="pf-marge" type="search" @bind="rechercheMarge" @bind:event="oninput" @bind:after="() => ChargerMargesAsync(1, tailleMarges)" />
+                        </div>
+                    }
                 </div>
                 <section class="tableau-cadre" aria-label="Marges">
                     <table class="tableau" style="min-width: 0">

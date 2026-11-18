@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<TraiterAlerte>();
         services.AddScoped<RappelerLot>();
         services.AddScoped<ConsulterRappelLot>();
+        services.AddScoped<ProposerLotsRappel>();
         // Sérialisation DataMatrix (script 120, lot 10) : file hors ligne vers la base nationale
         services.AddScoped<Serialisation.TraiterFileSerialisation>();
         services.AddScoped<Serialisation.PiloterFileSerialisation>();
@@ -68,6 +69,8 @@ public static class DependencyInjection
         services.AddScoped<RechercherMedecins>();
         services.AddScoped<CreerMedecin>();
         services.AddScoped<ListerOrganismes>();
+        // Suggestions pendant la frappe : valeurs déjà saisies des champs de la liste blanche (Commun/Suggestions.cs)
+        services.AddScoped<Commun.ProposerValeurs>();
         services.AddScoped<Ordonnances.AnalyserOrdonnance>();
         services.AddScoped<Ordonnances.EnregistrerScanOrdonnance>();
         services.AddScoped<Administration.ObtenirSeuils>();
@@ -143,6 +146,7 @@ public static class DependencyInjection
         services.AddScoped<Catalogue.ImporterNomenclature>();
         services.AddScoped<Catalogue.ObtenirEtatNomenclature>();
         services.AddScoped<Catalogue.RechercherNomenclature>();
+        services.AddScoped<Catalogue.NomenclatureImportee>();
         services.AddScoped<Catalogue.AppliquerClasseNomenclature>();
         services.AddScoped<Stock.ConsulterRegistre>();
         services.AddScoped<Stock.ListerProduitsRegistre>();

@@ -15,9 +15,11 @@
     @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
     @if (message is not null) { <div class="succes" role="status">@message</div> }
 
-    <div class="achats-ligne">
-        <ChoixProduit @ref="choix" Id="sp-produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => courant = null" />
-    </div>
+    @* Écran fixe (2026-11-18) : produit à régler et sa carte à gauche, seuils saisis (filtres, tableau, pagination) à droite ; à
+       1 366 × 768 le tableau gardait ses 240 px sous le choix du produit et l'écran défilait de 75 px *@
+    <div class="colonnes seuils-produits">
+    <div class="colonne-laterale" style="flex: 0 1 340px; min-width: 300px; display: flex; flex-direction: column; gap: 14px">
+        <ChoixProduit @ref="choix" Id="sp-produit" PremierSurEntree="false" Libelle="Produit à régler" OnChoisi="ChoisirAsync" OnEfface="() => courant = null" />
 
     @if (courant is { } c)
     {
@@ -40,11 +42,13 @@
             </div>
         </div>
     }
+    </div>
 
+    <div class="colonne-principale" style="gap: 14px">
     @* Seuils saisis : filtrés et paginés à l'écran (règle des listes) ; le tableau défile dans son cadre *@
     <div class="filtres-liste" role="search" aria-label="Filtrer les seuils saisis">
-        <div class="champ" style="flex: 1 1 240px"><label for="fs-texte">Produit</label>
-            <input id="fs-texte" type="search" autocomplete="off" placeholder="Ex. amoxicilline" @bind="fTexte" @bind:event="oninput" @bind:after="() => page = 1" /></div>
+        @* Produit : propositions du catalogue en valeur libre (FiltreProduit, 2026-11-18), le tableau suit la saisie *@
+        <FiltreProduit Id="fs-texte" Libelle="Produit" Style="flex: 1 1 240px" placeholder="Ex. amoxicilline" Valeur="@fTexte" ValeurChanged="FiltrerTexte" />
         <div class="champ" style="flex: 0 0 190px"><label for="fs-etat">État</label>
             <select id="fs-etat" @bind="fEtat" @bind:after="() => page = 1">
                 <option value="">Tous</option>
@@ -75,6 +79,8 @@
         </table>
     </div>
     <Pagination Total="Filtres.Count" Numero="page" Taille="taille" Libelle="Pages des seuils saisis" OnChange="p => (page, taille) = (p.Numero, p.Taille)" />
+    </div>
+    </div>
 </section>
 
 @code {
@@ -87,6 +93,7 @@
 
     // Filtres et page (à l'écran) ; « ← Retour » les retrouve
     private string fTexte = "", fEtat = "";
+    private void FiltrerTexte(string? v) => (fTexte, page) = (v ?? "", 1);
     private int page = 1, taille = Pagination.TailleParDefaut;
     private bool FiltreActif => fTexte.Trim() != "" || fEtat != "";
     private List<SeuilStockDto> Filtres => manuels.Where(m => RechercheTexte.Contient(fTexte, m.Nom) && (fEtat == "" || m.Statut == fEtat)).ToList();

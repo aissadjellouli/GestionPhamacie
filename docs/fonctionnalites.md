@@ -15,12 +15,12 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 162 |
+| Fait | 164 |
 | En cours | 0 |
 | En attente | 45 |
 | Bloqué | 8 |
 | À vérifier | 1 |
-| **Total** | **216** |
+| **Total** | **218** |
 
 ## Caisse et ventes
 
@@ -47,6 +47,8 @@ Légende des états :
 | Ticket imprimé par Windows après la vente (imprimante du poste ou par défaut, rouleau 80 ou 58 mm) : pharmacie, ticket, vendeur, lignes, remise, part organisme, à payer, mode, rendu ; aucune donnée du patient ; ticket en PDF si l’imprimante enregistre un fichier | Fait (à essayer sur la vraie imprimante de tickets) | Caisse |
 | Impression directe ESC/POS (coupe, logo), tiroir-caisse | Bloqué (modèle d’imprimante et matériel à définir) | feuille-de-route.md |
 | Afficheur client réglé par poste : écran secondaire (fenêtre plein écran, toujours visible, sans prendre le focus : panier, total, payé, rendu, accueil) et/ou afficheur 2 lignes × 20 sur port série (ESC/POS Epson ou CD5220, vitesse réglable) ; essai depuis Administration › Imprimantes et étiquettes ; une panne d’afficheur ne bloque jamais la caisse | Fait (à essayer sur le vrai afficheur) | Caisse ; Administration › Imprimantes |
+| Suggestions pendant la frappe (décision du titulaire, 2026-11-18), lot 0 (socle) et lot 1 (caisse) : composant commun `ChampSuggestions` (choix obligatoire ou valeur libre ; 10 propositions, sans accents ni majuscules, ↑ ↓ Entrée Échap), `ChoixPatient`, `ChoixMedecin`, `ValeursSaisies` ; valeurs déjà saisies par liste blanche du serveur (`GET /api/suggestions/{champ}`) ; recherche patient et médecin sans accents (index du script 150), ouverte aux droits Factures et registre sans dette ni plafond ; caisse : patient F6, médecin F5, flèches dans le panier, spécialité du nouveau médecin, tiroir (patient remboursé, libellé, bénéficiaire), annulation (client, dette), relevé de dette | Fait | Caisse ; regles-metier.md « Suggestions pendant la frappe » |
+| Suggestions pendant la frappe (décision du titulaire, 2026-11-18), lots 2 à 5 : catalogue et médecins (DCI, forme, indications, nomenclature, spécialité, prescripteur du registre, DCI suivies), argent (banques, libellés de trésorerie et de financements, prêteurs), achats, stock et factures (patients en attente, rappel de lot, rayon, exceptions de seuils, produits sensibles, retours, patient et entreprise d’une facture), filtres produit des tableaux (`FiltreProduit`) | Fait (rayons proposés dès l’entrée dans le champ ; lots épuisés proposés au rappel ; écran Seuils par produit sans défilement) | charte-graphique.md « Règle des listes » ; regles-metier.md (suggestions) |
 
 ## Contrôle de caisse
 

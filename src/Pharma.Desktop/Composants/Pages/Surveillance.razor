@@ -30,19 +30,8 @@
             {
                 <section class="panneau" aria-labelledby="t-sensibles">
                     <h2 id="t-sensibles" class="visuellement-cache">Produits sensibles</h2>
-                    <div class="champ recherche" style="max-width: 420px">
-                        <label for="sv-produit">Ajouter un produit</label>
-                        <input id="sv-produit" type="search" autocomplete="off" @bind="rechercheSensible" @bind:event="oninput" @bind:after="RechercherSensibleAsync" placeholder="Nom ou DCI" />
-                        @if (suggestionsSensibles.Count > 0)
-                        {
-                            <ul class="suggestions" aria-label="Produits trouvés">
-                                @foreach (var s in suggestionsSensibles)
-                                {
-                                    <li><button type="button" @onclick="() => MarquerAsync(s.Id, true)"><strong>@s.NomCommercial</strong> <span class="detail">@s.Dci @s.Dosage</span></button></li>
-                                }
-                            </ul>
-                        }
-                    </div>
+                    @* Produit à marquer : propositions au clavier dès la 1re lettre (ChoixProduit, 2026-11-18) *@
+                    <ChoixProduit @ref="champSensible" Id="sv-produit" PremierSurEntree="false" Libelle="Ajouter un produit" Placeholder="Nom ou DCI" Style="max-width: 420px" OnChoisi="p => MarquerAsync(p.Id, true)" />
                     <div class="tableau-cadre">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">Produit</th><th scope="col">En stock</th><th scope="col"></th></tr></thead>
@@ -193,22 +182,12 @@
 
     // Produits sensibles : ajout par recherche, retrait d'un clic
     private List<ProduitSensibleDto> sensibles = [];
-    private List<ProduitDto> suggestionsSensibles = [];
-    private string rechercheSensible = "";
-    private int requeteSensible;
-
-    private async Task RechercherSensibleAsync()
-    {
-        var numero = ++requeteSensible;
-        if (rechercheSensible.Trim().Length < 2) { suggestionsSensibles = []; return; }
-        var (trouves, _) = await Api.RechercherProduitsAsync(rechercheSensible);
-        if (numero == requeteSensible) suggestionsSensibles = trouves;
-    }
+    private ChoixProduit? champSensible;
 
     private async Task MarquerAsync(long produitId, bool sensible)
     {
         erreur = await Api.MarquerSensibleAsync(produitId, sensible);
-        (rechercheSensible, suggestionsSensibles) = ("", []);
+        if (sensible) champSensible?.Afficher(null);
         (sensibles, _) = await Api.ProduitsSensiblesAsync();
     }
 

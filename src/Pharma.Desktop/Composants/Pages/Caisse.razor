@@ -225,20 +225,28 @@
                     <div class="champ recherche">
                         <label for="scan">1 · Panier@(lignes.Count > 0 ? $" · {NombreProduits} produit(s), {lignes.Where(l => !l.EstPrestation).Sum(l => l.Quantite)} boîte(s){(lignes.Any(l => l.EstPrestation) ? $", {lignes.Where(l => l.EstPrestation).Sum(l => l.Quantite)} prestation(s)" : "")}" : "") <span class="detail">F7</span></label>
                         <input id="scan" data-champ="volet_chifa" class="grand" type="search" placeholder="Scanner ou rechercher un produit : nom, DCI, code-barres" autofocus autocomplete="off"
+                               role="combobox" aria-autocomplete="list" aria-expanded="@(suggestions.Count > 0 ? "true" : "false")" aria-controls="scan-liste"
+                               aria-activedescendant="@(ActifScan >= 0 ? $"scan-opt-{ActifScan}" : null)"
                                @bind="texte" @bind:event="oninput" @bind:after="RechercherApresSaisieAsync" @onkeydown="ToucheAsync" />
                         @if (suggestions.Count > 0)
                         {
+                            var numeroOption = 0;
                             @* Recherche au comptoir (2026-11-14) : produits en stock d'abord ; en rupture en bas, non sélectionnables, avec leur remplaçant
                                (équivalent exact le moins cher, sinon autre dosage ou forme à valider) ; même produit d'un autre laboratoire moins cher
                                suggéré sous le produit cherché, qui reste sélectionnable (demande explicite du client). Prix : prix servi. *@
-                            <ul class="suggestions suggestions-caisse" aria-label="Produits trouvés">
+                            @* Flèches haut et bas (2026-11-18) : parcourent les boutons sélectionnables dans l'ordre (produit, « moins cher », remplaçant),
+                               même ordre que OptionsScan ; Entrée ajoute celui mis en avant, sinon Entrée garde son rôle (volet Chifa, boîte, 1er produit) *@
+                            <ul class="suggestions suggestions-caisse" id="scan-liste" role="listbox" aria-label="Produits trouvés">
                                 @foreach (var c in suggestions)
                                 {
                                     var p = c.Produit;
-                                    <li class="@(p.Stock <= 0 ? "en-rupture" : null)">
+                                    var optProduit = p.Stock > 0 ? numeroOption++ : -1;
+                                    var optAutre = (p.Stock > 0 ? c.MoinsCher is not null : c.Remplacant is not null) ? numeroOption++ : -1;
+                                    <li class="@(p.Stock <= 0 ? "en-rupture" : null)" role="none">
                                         @if (p.Stock > 0)
                                         {
-                                            <button type="button" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, c.PrixServi)">
+                                            <button type="button" id="@($"scan-opt-{optProduit}")" role="option" aria-selected="@(optProduit == ActifScan ? "true" : "false")"
+                                                    class="@(optProduit == ActifScan ? "actif" : null)" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, c.PrixServi)">
                                                 <span>
                                                     <strong>@p.NomCommercial</strong><br />
                                                     <span class="detail">@p.Dci @p.Dosage · stock @p.Stock@(Libelles.EstSousRegistre(p.Classe) ? " · ordonnance" : "")</span>
@@ -248,7 +256,8 @@
                                             @if (c.MoinsCher is { } m)
                                             {
                                                 @* Étiquette sans le nom du médicament (même produit) : le laboratoire seulement (2026-11-14) *@
-                                                <button type="button" class="suggestion-equivalent" title="@m.NomCommercial" @onclick="() => AjouterAsync(m.ProduitId, m.NomCommercial, m.PrixPublic)">
+                                                <button type="button" id="@($"scan-opt-{optAutre}")" role="option" aria-selected="@(optAutre == ActifScan ? "true" : "false")"
+                                                        class="suggestion-equivalent @(optAutre == ActifScan ? "actif" : null)" title="@m.NomCommercial" @onclick="() => AjouterAsync(m.ProduitId, m.NomCommercial, m.PrixPublic)">
                                                     <span>Moins cher · <strong>@(m.Laboratoire ?? "autre laboratoire")</strong> · stock @m.Stock</span>
                                                     <span>@Libelles.Dinars(m.PrixPublic, 2) (− @Libelles.Dinars(c.PrixServi - m.PrixPublic, 2))</span>
                                                 </button>
@@ -265,7 +274,8 @@
                                             </div>
                                             @if (c.Remplacant is { } r)
                                             {
-                                                <button type="button" class="suggestion-equivalent" @onclick="() => AjouterAsync(r.ProduitId, r.NomCommercial, r.PrixPublic)">
+                                                <button type="button" id="@($"scan-opt-{optAutre}")" role="option" aria-selected="@(optAutre == ActifScan ? "true" : "false")"
+                                                        class="suggestion-equivalent @(optAutre == ActifScan ? "actif" : null)" @onclick="() => AjouterAsync(r.ProduitId, r.NomCommercial, r.PrixPublic)">
                                                     <span>Remplaçant : <strong>@r.NomCommercial</strong>@(r.Exact ? "" : r.ListeBlanche ? " (liste blanche du pharmacien)" : $" ({r.Dosage} {r.Forme}, à valider par le pharmacien)")@(r.FabricationLocale ? " · fabriqué en Algérie" : "") · stock @r.Stock</span>
                                                     <span>@Libelles.Dinars(r.PrixPublic, 2)</span>
                                                 </button>
@@ -845,18 +855,10 @@
                                 }
                                 else if (!nouveauPatient)
                                 {
-                                    <input type="search" data-raccourci="patient" aria-label="Rechercher un patient" placeholder="Nom, téléphone ou n° d’assuré" autocomplete="off"
-                                           class="@Obligatoire.Classe(PatientManquant)" aria-invalid="@Obligatoire.Aria(PatientManquant && alerterPatient)" @onfocus="() => alerterPatient = false"
-                                           @bind="patientTexte" @bind:event="oninput" @bind:after="RechercherPatientsAsync" />
-                                    @if (patients.Count > 0)
-                                    {
-                                        <ul class="suggestions" aria-label="Patients trouvés">
-                                            @foreach (var p in patients)
-                                            {
-                                                <li><button type="button" @onclick="() => ChoisirPatientAsync(p)"><span><strong>@p.Nom @p.Prenom</strong><br /><span class="detail">@p.Telephone @p.NumAssure</span></span></button></li>
-                                            }
-                                        </ul>
-                                    }
+                                    @* Propositions pendant la frappe (composant commun ChoixPatient, 2026-11-18) : ↑ ↓ Entrée Échap, F6 y met le curseur *@
+                                    <ChoixPatient @key="cleSaisieClient" Id="caisse-patient" Cadre="false" data-raccourci="patient" aria-label="Rechercher un patient"
+                                                  class="@Obligatoire.Classe(PatientManquant)" Invalide="PatientManquant && alerterPatient" OnFocus="() => alerterPatient = false"
+                                                  TexteInitial="@patientTexte" OnTexte="t => patientTexte = t" OnChoisi="ChoisirPatientAsync" />
                                 }
                                 else
                                 {
@@ -877,17 +879,11 @@
                                     }
                                     else
                                     {
-                                        <input type="search" data-raccourci="medecin" aria-label="Rechercher le médecin prescripteur" data-champ="nom_medecin" placeholder="Nom du médecin" autocomplete="off" class="@Obligatoire.Classe(MedecinManquant)" aria-invalid="@Obligatoire.Aria(MedecinManquant && alerterMedecin)" @onfocus="() => alerterMedecin = false"
-                                               @bind="medecinTexte" @bind:event="oninput" @bind:after="RechercherMedecinsAsync" />
-                                        @if (medecins.Count > 0)
-                                        {
-                                            <ul class="suggestions" aria-label="Médecins trouvés">
-                                                @foreach (var m in medecins)
-                                                {
-                                                    <li><button type="button" @onclick="() => (medecin, medecins, medecinTexte, clientEdition) = (m, [], m.Nom, true)"><span><strong>@m.Nom</strong> <span class="detail">@m.Specialite</span></span></button></li>
-                                                }
-                                            </ul>
-                                        }
+                                        @* Propositions pendant la frappe (composant commun ChoixMedecin, 2026-11-18) : attente de frappe, réponses périmées ignorées *@
+                                        <ChoixMedecin @key="cleSaisieClient" Id="caisse-medecin" Cadre="false" data-raccourci="medecin" aria-label="Rechercher le médecin prescripteur"
+                                                      data-champ="nom_medecin" class="@Obligatoire.Classe(MedecinManquant)" Invalide="MedecinManquant && alerterMedecin"
+                                                      OnFocus="() => alerterMedecin = false" TexteInitial="@medecinTexte" OnTexte="t => medecinTexte = t"
+                                                      OnChoisi="m => (medecin, medecinTexte, clientEdition) = (m, m.Nom, true)" />
                                         @if (nouveauMedecin is not null)
                                         {
                                             <span class="detail">Nouveau médecin : complétez sa fiche ci-dessous.</span>
@@ -936,7 +932,9 @@
                                code CNAS facultatifs *@
                             <div class="sous-formulaire fiche-medecin large" role="group" aria-label="Nouveau médecin">
                                 <input type="text" aria-label="Nom du médecin (obligatoire)" data-champ="nom_medecin" placeholder="Nom *" maxlength="120" @bind="nm.Nom" />
-                                <input type="text" aria-label="Spécialité" data-champ="specialite" placeholder="Spécialité" maxlength="120" @bind="nm.Specialite" />
+                                @* Valeurs déjà saisies proposées (spécialités des médecins), texte libre accepté *@
+                                <ValeursSaisies Id="nm-specialite" Champ="specialite_medecin" @bind-Valeur="nm.Specialite" aria-label="Spécialité" data-champ="specialite"
+                                                placeholder="Spécialité" maxlength="120" />
                                 <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" maxlength="30" @bind="nm.Telephone" />
                                 <input type="email" aria-label="E-mail" data-champ="email" placeholder="E-mail" maxlength="120" @bind="nm.Email" />
                                 <input type="text" aria-label="Adresse" data-champ="adresse_medecin" placeholder="Adresse" maxlength="300" @bind="nm.Adresse" />
@@ -1342,7 +1340,8 @@
     private NouveauPatientSaisie np = new();
     private MedecinDto? medecin;
     private string medecinTexte = "";
-    private List<MedecinDto> medecins = [];
+    /// <summary>Change à chaque nouveau panier : les champs patient et médecin repartent vides (composants recréés).</summary>
+    private int cleSaisieClient;
     private DateOnly datePrescription = DateOnly.FromDateTime(DateTime.Today);
     private string? numeroOrdonnance;
     private decimal remisePct;
@@ -1735,6 +1734,7 @@
     /// <summary>Frappe au clavier : recherche lancée 250 ms après la dernière touche (une seule requête par mot tapé).</summary>
     private async Task RechercherApresSaisieAsync()
     {
+        listeActif = null;   // toute frappe (scan compris) annule la proposition mise en avant par les flèches
         var numero = ++requete;
         if (texte.Length > 0) (bandeau, bandeauProduit) = (null, null);   // nouvelle recherche : l'explication précédente n'a plus lieu d'être
         if (texte.Trim().Length < 2) { suggestions = []; return; }
@@ -1752,17 +1752,68 @@
         // Une ligne de plus que l'affichage : elle signale qu'il reste d'autres résultats (2026-11-15)
         var (trouves, err) = await Api.RechercherAuComptoirAsync(texte, SuggestionsMax + 1);
         if (numero != requete) return;   // une frappe plus récente a déjà relancé la recherche
+        // Proposition mise en avant par les flèches pendant la recherche : gardée si elle figure dans la nouvelle réponse (même
+        // produit, même nom), sinon plus rien n'est mis en avant ; Entrée garde alors son rôle (volet Chifa, boîte, 1er produit)
+        var avant = ActifScan is >= 0 and var a && OptionsScan() is var anciennes && a < anciennes.Count ? anciennes[a] : ((long, string, decimal)?)null;
         autresResultats = trouves.Count > SuggestionsMax;
         (suggestions, erreur) = (autresResultats ? trouves.Take(SuggestionsMax).ToList() : trouves, err);
+        var garde = avant is { } o ? OptionsScan().FindIndex(x => x.ProduitId == o.Item1 && x.Nom == o.Item2) : -1;
+        if (garde >= 0) (listeActif, actifScan) = (suggestions, garde);
+        else (listeActif, actifScan) = (null, -1);
     }
 
     private const int SuggestionsMax = 20;
+
+    // Flèches dans la liste du panier : rang du bouton mis en avant, valable seulement pour la liste où il a été choisi
+    // (une nouvelle recherche ou une frappe l'annulent, sans toucher au rôle d'Entrée)
+    private int actifScan = -1;
+    private List<ProduitComptoirDto>? listeActif;
+    private bool voirOptionScan;
+    private int ActifScan => ReferenceEquals(listeActif, suggestions) && suggestions.Count > 0 ? actifScan : -1;
+
+    /// <summary>Boutons sélectionnables de la liste, dans l'ordre de l'écran : produit en stock et son « moins cher », ou remplaçant d'un produit en rupture.</summary>
+    private List<(long ProduitId, string Nom, decimal Prix)> OptionsScan()
+    {
+        var options = new List<(long, string, decimal)>();
+        foreach (var c in suggestions)
+        {
+            if (c.Produit.Stock > 0)
+            {
+                options.Add((c.Produit.Id, c.Produit.NomCommercial, c.PrixServi));
+                if (c.MoinsCher is { } m) options.Add((m.ProduitId, m.NomCommercial, m.PrixPublic));
+            }
+            else if (c.Remplacant is { } r) options.Add((r.ProduitId, r.NomCommercial, r.PrixPublic));
+        }
+        return options;
+    }
     private bool autresResultats;
 
     private async Task ToucheAsync(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape") { suggestions = []; return; }
+        if (e.Key == "Escape") { (suggestions, listeActif) = ([], null); return; }
+        // Flèches haut et bas (2026-11-18) : parcourent les propositions sélectionnables, en boucle
+        if (e.Key is "ArrowDown" or "ArrowUp")
+        {
+            var options = OptionsScan();
+            if (options.Count == 0) return;
+            var a = ActifScan;
+            actifScan = e.Key == "ArrowDown" ? (a + 1) % options.Count : a <= 0 ? options.Count - 1 : a - 1;
+            (listeActif, voirOptionScan) = (suggestions, true);
+            return;
+        }
         if (e.Key != "Enter") return;
+        // Proposition mise en avant par les flèches (sur la liste affichée) : c'est elle qu'on ajoute
+        if (ActifScan is >= 0 and var choisie && OptionsScan() is var liste && choisie < liste.Count)
+        {
+            var o = liste[choisie];
+            (listeActif, actifScan) = (null, -1);
+            ++requete;
+            // Même verrou que les scans : un scan arrivé juste avant est traité d'abord, l'ajout ne se mêle pas au sien
+            await scansEnCours.WaitAsync();
+            try { await AjouterAsync(o.ProduitId, o.Nom, o.Prix); }
+            finally { scansEnCours.Release(); }
+            return;
+        }
         // Le code lu est pris et la saisie vidée tout de suite, avant toute attente : le scan suivant peut déjà arriver.
         // La recherche de frappe en cours n'a plus d'objet.
         var code = texte.Trim();
@@ -2091,6 +2142,12 @@
                 StateHasChanged();
             }
         }
+        // Flèches dans la liste du panier : le bouton mis en avant reste visible (seule la liste défile)
+        if (voirOptionScan)
+        {
+            voirOptionScan = false;
+            if (ActifScan >= 0) await JS.InvokeVoidAsync("pharma.voirOption", $"scan-opt-{ActifScan}");
+        }
         // Produit ajouté ou scanné : sa ligne est amenée dans le cadre du panier (les autres restent au-dessus ou au-dessous)
         if (ligneAVoir is { } aVoir)
         {
@@ -2263,16 +2320,6 @@
         await RecalculerAsync();
     }
 
-    private int requetePatient;
-
-    private async Task RechercherPatientsAsync()
-    {
-        var numero = ++requetePatient;
-        if (patientTexte.Trim().Length < 2) { patients = []; return; }
-        await Task.Delay(DelaiSaisie);
-        if (numero != requetePatient) return;   // une frappe plus récente relancera la recherche
-        (patients, _) = await Api.RechercherPatientsAsync(patientTexte);
-    }
 
     // ---- Volet Chifa repris par son QR code ----
     private VoletChifaDto? volet;
@@ -2563,12 +2610,6 @@
             saisie.OrganismeId, organisme?.Code, saisie.PlafondCredit, 0));
     }
 
-    private async Task RechercherMedecinsAsync()
-    {
-        if (medecinTexte.Trim().Length < 2) { medecins = []; return; }
-        (medecins, _) = await Api.RechercherMedecinsAsync(medecinTexte);
-    }
-
     // ---- Nouveau médecin : fiche ouverte depuis la recherche, nom repris de la saisie ----
     private sealed class FicheMedecin
     {
@@ -2591,7 +2632,7 @@
 
     private async Task OuvrirNouveauMedecin()
     {
-        (nouveauMedecin, erreurMedecin, medecins) = (new FicheMedecin { Nom = medecinTexte.Trim() }, null, []);
+        (nouveauMedecin, erreurMedecin) = (new FicheMedecin { Nom = medecinTexte.Trim() }, null);
         if (wilayas.Count == 0) (wilayas, _) = await Api.WilayasAsync();
     }
 
@@ -2604,8 +2645,8 @@
             var dto = nm.VersDto();
             var (cree, err) = await Api.CreerMedecinAsync(dto);
             if (err is not null) { erreurMedecin = err; return; }
-            (clientEdition, medecin, medecins, nouveauMedecin, erreurMedecin) = (true, new MedecinDto(cree!.Id, dto.Nom, dto.Specialite, dto.Telephone, dto.Adresse, dto.Email,
-                dto.NumeroOrdre, dto.CodeCnas, dto.Wilaya), [], null, null);
+            (clientEdition, medecin, nouveauMedecin, erreurMedecin) = (true, new MedecinDto(cree!.Id, dto.Nom, dto.Specialite, dto.Telephone, dto.Adresse, dto.Email,
+                dto.NumeroOrdre, dto.CodeCnas, dto.Wilaya), null, null);
         }
         finally { creationMedecin = false; }
     }
@@ -2991,6 +3032,7 @@
         (remiseProcheId, remiseProcheNom, remiseAutre, remiseNom) = (p.RemiseProcheId, p.RemiseProcheNom, p.RemiseNom is not null, p.RemiseNom);
         if (remiseProcheId is { } rp && proches.All(x => x.Id != rp)) proches = [.. proches, new ProchePatientDto(rp, remiseProcheNom ?? "", null, null)];
         if (medecin is not null) medecinTexte = medecin.Nom;
+        cleSaisieClient++;   // champs patient et médecin recréés avec la vente reprise
         if (p.VoletChifa is { } brut && (await Api.LireVoletChifaAsync(brut)).Item1 is { } vr) (volet, voletBrut) = (vr, brut);
         // Choix de prix Chifa gardés avec la vente (2026-11-15) : rétablis sans les refaire, revérifiés par le serveur à l'encaissement
         choixChifa = ChoixChifaAttente.Restaurer(p, voletBrut is not null);
@@ -3017,7 +3059,8 @@
         (apercu, bandeau, erreur, montantRecu, remisePct, remiseAdditionnee) = (null, null, null, null, 0, false);
         erreurRemise = null;
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
-        (nouveauPatient, np, controlePatient, patientTexte, patients, medecins, alerterPatient) = (false, new(), false, "", [], [], false);
+        (nouveauPatient, np, controlePatient, patientTexte, patients, alerterPatient) = (false, new(), false, "", [], false);
+        cleSaisieClient++;
         (clientDeplie, remiseDemandee, attentesOuvertes, nouveauMedecin, erreurMedecin, clientEdition, reduitDemande) = (false, false, false, null, null, false, false);
         alerterMedecin = false;
         if (mode == "credit") mode = "especes";

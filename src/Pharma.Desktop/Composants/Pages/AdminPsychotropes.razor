@@ -104,18 +104,12 @@
                 <section class="panneau" aria-labelledby="t-dci" style="display: flex; flex-direction: column; gap: 8px; min-height: 0">
                     <h2 id="t-dci" style="margin: 0">Molécules suivies (@dci.Count)</h2>
                     <div class="filtres-liste" role="search" aria-label="Ajouter une molécule">
-                        <div class="champ" style="flex: 1 1 160px"><label for="ab-q">Ajouter (DCI)</label><input id="ab-q" type="text" @bind="recherche" @bind:event="oninput" @bind:after="ChercherAsync" /></div>
+                        @* Molécule à suivre : propositions pendant la frappe (DCI non suivies), Entrée l'ajoute ; le champ se vide pour la suivante *@
+                        <ChampSuggestions TItem="DciClasseDto" @ref="champAjout" Id="ab-q" Rechercher="ChercherAsync" TexteDe="t => t.Nom" Libelle="Ajouter (DCI)"
+                                          LibelleAucun="résultat" ComplementAucun=" parmi les DCI non suivies" LibelleListe="Molécules à ajouter" Style="flex: 1 1 160px" Type="text"
+                                          OnChoisi="t => AjouterAsync(t)" />
                         <div class="champ" style="flex: 1 1 160px"><label for="ab-filtre">Filtrer la liste</label><input id="ab-filtre" type="text" @bind="filtreDci" @bind:event="oninput" @bind:after="() => pageDci = 1" /></div>
                     </div>
-                    @if (trouvees.Count > 0)
-                    {
-                        <ul class="detail" style="margin: 0; padding-left: 16px; max-height: 120px; overflow: auto">
-                            @foreach (var t in trouvees.Where(t => dci.All(d => d.DciId != t.DciId)))
-                            {
-                                <li>@t.Nom <button type="button" class="lien-bouton" @onclick="() => ModifierAsync(t.DciId, true)">Ajouter</button></li>
-                            }
-                        </ul>
-                    }
                     <div class="tableau-cadre">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">DCI</th><th scope="col"></th></tr></thead>
@@ -174,9 +168,10 @@
     private List<WilayaDto> wilayas = [];
     private string? zoneOfficine;
     private string[] zoneVoisines = [];
-    private List<DciClasseDto> dci = [], trouvees = [];
+    private List<DciClasseDto> dci = [];
+    private ChampSuggestions<DciClasseDto>? champAjout;
     private List<LigneSuiviClasseDto> suivi = [];
-    private string? recherche, filtreDci, erreur, message, fichier;
+    private string? filtreDci, erreur, message, fichier;
     private bool enCours;
     private string? charge;
     private DateOnly du = new(DateTime.Today.Year, 1, 1);
@@ -266,10 +261,17 @@
         message = erreur is null ? "Zone de l’officine enregistrée." : null;
     }
 
-    private async Task ChercherAsync()
+    /// <summary>DCI qui contiennent la saisie, sauf celles déjà suivies.</summary>
+    private async Task<(List<DciClasseDto>, string?)> ChercherAsync(string q)
     {
-        if ((recherche?.Trim().Length ?? 0) < 2) { trouvees = []; return; }
-        (trouvees, erreur) = await Api.ChercherDciClasseAsync(recherche!.Trim());
+        var (trouvees, e) = await Api.ChercherDciClasseAsync(q);
+        return (trouvees.Where(t => dci.All(d => d.DciId != t.DciId)).ToList(), e);
+    }
+
+    private async Task AjouterAsync(DciClasseDto t)
+    {
+        champAjout?.Afficher("");
+        await ModifierAsync(t.DciId, true);
     }
 
     private async Task ModifierAsync(long dciId, bool ajouter)

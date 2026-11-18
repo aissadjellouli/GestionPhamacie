@@ -99,9 +99,13 @@
                     <details style="margin-top: 8px">
                         <summary>Relevé de la dette (@releveTotal mouvement(s))</summary>
                         <div class="filtres-liste" role="search" aria-label="Filtrer le relevé" style="margin-top: 8px">
-                            <div class="champ" style="flex: 1 1 220px"><label for="rp-patient">Patient (nom ou téléphone)</label>
-                                <input id="rp-patient" type="search" placeholder="@s.Patient.Nom" @bind="recherchePatientReleve" @bind:event="oninput" @bind:after="ChercherPatientReleveAsync" />
-                            </div>
+                            @* Changer de patient sans quitter le relevé : propositions pendant la frappe (composant commun, 2026-11-18), patients avec un relevé *@
+                            <ChampSuggestions TItem="PatientEnCreditDto" @key="s.Patient.Id" Id="rp-patient" Libelle="Patient (nom ou téléphone)" Style="flex: 1 1 220px"
+                                              Rechercher="ChercherPatientsReleveAsync" TexteDe="p => p.Nom" DetailDe="p => p.Telephone"
+                                              LibelleAucun="patient avec un relevé" LibelleListe="Patients avec un relevé" placeholder="@s.Patient.Nom"
+                                              OnChoisi="p => ChangerPatientReleveAsync(p.Id)">
+                                <Complement Context="p"><span class="@(p.Solde > 0 ? "montant-du" : null)">@Libelles.Dinars(p.Solde, 2)</span></Complement>
+                            </ChampSuggestions>
                             <div class="champ" style="flex: 0 0 230px"><label for="rp-type">Mouvement</label>
                                 <select id="rp-type" @bind="releveType" @bind:after="FiltrerReleveAsync">
                                     <option value="">Tous</option>
@@ -112,22 +116,6 @@
                             <div class="champ" style="flex: 0 0 160px"><label for="rp-type-au">Au</label><input id="rp-type-au" type="date" @bind="releveAu" @bind:after="FiltrerReleveAsync" /></div>
                             @if (FiltreReleveActif) { <button type="button" class="btn" @onclick="EffacerFiltresReleveAsync">Tout afficher</button> }
                         </div>
-                        @if (patientsReleve.Count > 0)
-                        {
-                            <div class="liste-ventes" style="margin-top: 8px">
-                                @foreach (var p in patientsReleve)
-                                {
-                                    <button type="button" class="ligne-vente" @onclick="() => ChangerPatientReleveAsync(p.Id)">
-                                        <span><strong>@p.Nom</strong>@(p.Telephone is { } tel ? $" · {tel}" : "")</span>
-                                        <span class="@(p.Solde > 0 ? "montant-du" : null)">@Libelles.Dinars(p.Solde, 2)</span>
-                                    </button>
-                                }
-                            </div>
-                        }
-                        else if (patientCherche)
-                        {
-                            <p class="detail" style="margin: 8px 0 0">Aucun patient avec un relevé pour cette recherche.</p>
-                        }
                         <div class="tableau-cadre" style="margin-top: 8px">
                             <table class="tableau" style="min-width: 0">
                                 <thead><tr><th scope="col">Date</th><th scope="col">Mouvement</th><th scope="col">Montant</th><th scope="col">Dette après</th><th scope="col">Par</th></tr></thead>
@@ -303,28 +291,14 @@
     ];
 
     // Choix du patient depuis le filtre du relevé : on change de patient sans quitter le relevé
-    private string? recherchePatientReleve;
-    private List<PatientEnCreditDto> patientsReleve = [];
-    private bool patientCherche;
-    private int requetePatientReleve;
-
-    private async Task ChercherPatientReleveAsync()
+    // Patients avec un relevé (route api/caisse/credits), sauf celui affiché ; attente de frappe et réponses périmées : composant commun
+    private async Task<(List<PatientEnCreditDto>, string?)> ChercherPatientsReleveAsync(string q)
     {
-        var n = ++requetePatientReleve;
-        await Task.Delay(TimeSpan.FromMilliseconds(250));
-        if (n != requetePatientReleve) return;
-        if (string.IsNullOrWhiteSpace(recherchePatientReleve)) { (patientsReleve, patientCherche) = ([], false); return; }
-        var (liste, _) = await Api.PatientsEnCreditAsync(recherchePatientReleve);
-        if (n != requetePatientReleve) return;
-        (patientsReleve, patientCherche) = (liste.Where(p => p.Id != situation?.Patient.Id).Take(6).ToList(), true);
+        var (liste, e) = await Api.PatientsEnCreditAsync(q);
+        return (liste.Where(p => p.Id != situation?.Patient.Id).ToList(), e);
     }
 
-    private async Task ChangerPatientReleveAsync(long id)
-    {
-        requetePatientReleve++;
-        (recherchePatientReleve, patientsReleve, patientCherche) = (null, [], false);
-        await ChoisirAsync(id);
-    }
+    private Task ChangerPatientReleveAsync(long id) => ChoisirAsync(id);
 
     private async Task ChargerMouvementsAsync(int numero, int taille)
     {

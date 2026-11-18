@@ -23,7 +23,9 @@
     {
         <div class="sous-formulaire fiche-medecin" role="group" aria-label="Correction du médecin">
             <input type="text" aria-label="Nom du médecin (obligatoire)" data-champ="nom_medecin" placeholder="Nom *" maxlength="120" @bind="e.Nom" />
-            <input type="text" aria-label="Spécialité" data-champ="specialite" placeholder="Spécialité" maxlength="120" @bind="e.Specialite" />
+            @* Valeurs déjà saisies proposées (spécialités des médecins), texte libre accepté *@
+            <ValeursSaisies Id="pm-specialite" Champ="specialite_medecin" @bind-Valeur="e.Specialite" aria-label="Spécialité" data-champ="specialite"
+                            placeholder="Spécialité" maxlength="120" />
             <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" maxlength="30" @bind="e.Telephone" />
             <input type="email" aria-label="E-mail" data-champ="email" placeholder="E-mail" maxlength="120" @bind="e.Email" />
             <input type="text" aria-label="Adresse" data-champ="adresse_medecin" placeholder="Adresse" maxlength="300" @bind="e.Adresse" />

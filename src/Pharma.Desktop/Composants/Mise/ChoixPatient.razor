@@ -1,0 +1,48 @@
+@inject ApiClient Api
+
+@*
+    Choix d'un patient (mode choix obligatoire de ChampSuggestions) : nom, prénom, téléphone ou n° d'assuré, sans accents ni
+    majuscules (GET /api/patients?q=), 10 propositions au plus. Sans le droit de vendre, la réponse ne contient ni dette ni plafond.
+    Exemple : <ChoixPatient Id="ti-patient" Libelle="Patient remboursé" Requis="true" data-champ="patient"
+                            Choix="@(choisi is null ? null : ChoixPatient.Nom(choisi))" OnChoisi="p => choisi = p" OnEfface="() => choisi = null" />
+*@
+
+<ChampSuggestions TItem="PatientDto" @ref="interieur" Id="@Id" Rechercher="Api.RechercherPatientsAsync" TexteDe="Nom" DetailDe="@(DetailDe ?? Detail)"
+                  Complement="Complement" LibelleAucun="patient" ComplementAucun="@ComplementAucun" LibelleListe="Patients trouvés"
+                  Libelle="@Libelle" Requis="Requis" Invalide="Invalide" Style="@Style" Cadre="Cadre" Choix="@Choix" ChangerPermis="ChangerPermis" TexteInitial="@TexteInitial"
+                  OnChoisi="OnChoisi" OnTexte="OnTexte" OnEfface="OnEfface" OnFocus="OnFocus" placeholder="@Placeholder" @attributes="Attributs" />
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public string? Libelle { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Nom, téléphone ou n° d’assuré";
+    [Parameter] public bool Requis { get; set; }
+    [Parameter] public bool Invalide { get; set; }
+    [Parameter] public string? Style { get; set; }
+    /// <summary>Faux : seulement le champ et sa liste, dans un conteneur « .recherche » du parent.</summary>
+    [Parameter] public bool Cadre { get; set; } = true;
+    /// <summary>Libellé du patient choisi (affiché avec « Changer ») ; null : le champ de recherche.</summary>
+    [Parameter] public string? Choix { get; set; }
+    /// <summary>Faux : le choix affiché n'a pas de lien « Changer » (entité imposée).</summary>
+    [Parameter] public bool ChangerPermis { get; set; } = true;
+    [Parameter] public string? TexteInitial { get; set; }
+    /// <summary>Seconde ligne d'une proposition (par défaut : téléphone et n° d'assuré).</summary>
+    [Parameter] public Func<PatientDto, string?>? DetailDe { get; set; }
+    [Parameter] public RenderFragment<PatientDto>? Complement { get; set; }
+    [Parameter] public string? ComplementAucun { get; set; }
+    [Parameter] public EventCallback<PatientDto> OnChoisi { get; set; }
+    [Parameter] public EventCallback<string> OnTexte { get; set; }
+    [Parameter] public EventCallback OnEfface { get; set; }
+    [Parameter] public EventCallback OnFocus { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributs { get; set; }
+
+    private ChampSuggestions<PatientDto>? interieur;
+
+    /// <summary>Nom affiché d'un patient : « Nom Prénom ».</summary>
+    public static string Nom(PatientDto p) => $"{p.Nom} {p.Prenom}".Trim();
+
+    private static string? Detail(PatientDto p) =>
+        string.Join(" · ", new[] { p.Telephone, p.NumAssure is null ? null : $"assuré {p.NumAssure}" }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    public ValueTask FocusAsync() => interieur?.FocusAsync() ?? ValueTask.CompletedTask;
+}

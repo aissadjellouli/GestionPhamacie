@@ -85,6 +85,7 @@ public static class DependencyInjection
         services.AddScoped<Pharma.Application.Essai.IRetoursEssai, Securite.RetoursEssaiSql>();
         services.AddScoped<IEmplacements, EmplacementsSql>();
         services.AddScoped<Pharma.Application.Referentiels.IMotifsReglables, Referentiels.MotifsReglablesSql>();
+        services.AddScoped<Pharma.Application.Commun.ISuggestionsDepot, Referentiels.SuggestionsSql>();
         services.AddScoped<IInventaires, InventairesSql>();
         services.AddScoped<Pharma.Application.Mobile.IMobile, MobileSql>();
         services.AddScoped<Pharma.Application.Securite.ICodesComptoir, Securite.CodesComptoirSql>();
@@ -114,6 +115,7 @@ public static class DependencyInjection
         services.AddSingleton<Application.Commun.ITraceErreurs, Systeme.TraceErreurs>();
         services.AddScoped<IAlertesEcriture, AlertesEcriture>();
         services.AddScoped<IRappelLot, RappelLotSql>();
+        services.AddScoped<ILotsRappelables, LotsRappelablesSql>();
         // Sérialisation (script 120) : adaptateur FACTICE tant que l'API du MIPH n'est pas connue [À VÉRIFIER]
         services.AddScoped<Application.Serialisation.IFileSerialisation, Serialisation.FileSerialisationSql>();
         services.AddScoped<Application.Serialisation.ISerialisationConnecteur, Serialisation.SerialisationFactice>();

@@ -26,9 +26,9 @@
     }
 </div>
 <div class="achats-ligne">
-    <div class="champ" style="flex: 1 1 260px"><label for="us-lib" class="@(usage == "depense" ? "requis" : null)">Libellé</label>
-        <input id="us-lib" data-champ="libelle usage" type="text" maxlength="200" @bind="libelle"
-               placeholder="@(usage == "depense" ? "Ex. Facture Sonelgaz octobre" : "Facultatif")" /></div>
+    @* Libellés déjà saisis pour un usage de financement proposés (jamais ceux écrits par le logiciel), texte libre accepté *@
+    <ValeursSaisies Id="us-lib" Champ="libelle_usage_financement" Libelle="Libellé" Requis="@(usage == "depense")" Style="flex: 1 1 260px" @bind-Valeur="libelle"
+                    data-champ="libelle usage" maxlength="200" placeholder="@(usage == "depense" ? "Ex. Facture Sonelgaz octobre" : "Facultatif")" />
     <div class="champ" style="flex: 1 1 160px"><label for="us-ref">Référence</label><input id="us-ref" type="text" maxlength="100" @bind="reference" /></div>
 </div>
 @if (usage == "depense")

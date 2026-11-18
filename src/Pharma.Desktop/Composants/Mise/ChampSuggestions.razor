@@ -1,0 +1,326 @@
+@typeparam TItem
+@implements IDisposable
+@inject IJSRuntime JS
+
+@*
+    Champ avec propositions pendant la frappe (docs/charte-graphique.md, « Propositions pendant la frappe ») : composant commun à
+    tout le logiciel. Propositions dès LettresMin lettres (2 par défaut), 250 ms après la dernière touche, réponses périmées
+    ignorées, 10 au plus ; flèches haut et bas (circulaires), Entrée pour choisir, Échap pour fermer ; partie tapée surlignée sans
+    tenir compte des majuscules ni des accents ; liste « .suggestions » (poste.js : Échap, calcul des cadres).
+    Deux modes :
+      - ChoixObligatoire : une entité (patient, médecin…). « Aucun … pour « … » » quand rien ne répond ; si le parent passe Choix
+        (libellé de l'entité choisie), le choix s'affiche avec un lien « Changer » (OnEfface) à la place du champ.
+      - ValeurLibre : valeurs déjà saisies proposées, le texte tapé reste accepté (@bind-Valeur) ; rien n'est présélectionné, pas de
+        message quand rien ne répond. LettresMin="0" (valeur libre seulement) : toutes les valeurs sont proposées dès l'entrée dans
+        le champ, puis filtrées à la frappe (rayon d'un emplacement).
+    Attributs libres (data-champ, data-raccourci, aria-label, placeholder, class, maxlength, disabled…) : posés tels quels sur le champ.
+    Mise en avant (revue 2026-11-18) : une proposition mise en avant par les flèches ou la souris le reste à l'arrivée d'une nouvelle
+    réponse si elle y figure encore (même élément ou même texte), sinon plus rien n'est mis en avant (Entrée garde alors son rôle
+    normal). Chaque frappe et la fermeture du composant annulent l'attente en cours : aucune recherche ne part après fermeture.
+    Le nombre de propositions est annoncé aux lecteurs d'écran (aria-live="polite").
+*@
+
+@if (Cadre)
+{
+    <div class="champ recherche" style="@Style">
+        @if (Libelle is not null)
+        {
+            @if (Choix is null)
+            {
+                <label for="@Id" class="@(Requis ? "requis" : null)">@Libelle</label>
+            }
+            else
+            {
+                <span class="etiquette-champ @(Requis ? "requis" : null)">@Libelle</span>
+            }
+        }
+        @Contenu
+    </div>
+}
+else
+{
+    @Contenu
+}
+
+@code {
+    /// <summary>Plus grand nombre de propositions affichées (charte : 10).</summary>
+    public const int Maximum = 10;
+    /// <summary>Attente après la dernière touche avant de chercher (charte : 250 ms).</summary>
+    public static readonly TimeSpan Attente = TimeSpan.FromMilliseconds(250);
+
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    /// <summary>Recherche : texte tapé (sans espaces autour) → propositions et message d'erreur éventuel (signature des méthodes d'ApiClient).</summary>
+    [Parameter, EditorRequired] public Func<string, Task<(List<TItem>, string?)>> Rechercher { get; set; } = default!;
+    /// <summary>Texte d'une proposition : affiché (partie tapée surlignée) et mis dans le champ quand on la choisit.</summary>
+    [Parameter, EditorRequired] public Func<TItem, string> TexteDe { get; set; } = default!;
+    /// <summary>Seconde ligne d'une proposition (facultatif).</summary>
+    [Parameter] public Func<TItem, string?>? DetailDe { get; set; }
+    /// <summary>Gabarit d'une proposition, à droite du texte (pastille, montant…) ; facultatif.</summary>
+    [Parameter] public RenderFragment<TItem>? Complement { get; set; }
+    [Parameter] public ModeSuggestions Mode { get; set; } = ModeSuggestions.ChoixObligatoire;
+    /// <summary>Lettres tapées avant de proposer : 2 (charte), 1 pour un produit ; 0 (valeur libre seulement) : proposé dès l'entrée dans le champ.</summary>
+    [Parameter] public int LettresMin { get; set; } = 2;
+    /// <summary>Mot du message « Aucun … pour « saisie » » (choix obligatoire), ex. « patient ».</summary>
+    [Parameter] public string LibelleAucun { get; set; } = "résultat";
+    /// <summary>Suite du message « Aucun … » (ex. « : aucune dette connue »).</summary>
+    [Parameter] public string? ComplementAucun { get; set; }
+    /// <summary>Nom de la liste pour les lecteurs d'écran.</summary>
+    [Parameter] public string? LibelleListe { get; set; }
+    /// <summary>Libellé au-dessus du champ (null : aucun, donner alors aria-label).</summary>
+    [Parameter] public string? Libelle { get; set; }
+    [Parameter] public bool Requis { get; set; }
+    /// <summary>Champ obligatoire manquant : aria-invalid (bulle « À renseigner », bordure rouge avec class="champ-invalide").</summary>
+    [Parameter] public bool Invalide { get; set; }
+    [Parameter] public string? Style { get; set; }
+    /// <summary>Faux : seulement le champ et sa liste, dans un conteneur « .recherche » du parent (libellé géré par le parent).</summary>
+    [Parameter] public bool Cadre { get; set; } = true;
+    /// <summary>Type du champ : « search » en choix obligatoire, « text » en valeur libre (poste.js ne met le curseur que dans une recherche).</summary>
+    [Parameter] public string? Type { get; set; }
+    /// <summary>Choix obligatoire : libellé de l'entité choisie (affichée avec « Changer ») ; null : le champ de recherche.</summary>
+    [Parameter] public string? Choix { get; set; }
+    /// <summary>Faux : le choix affiché n'a pas de lien « Changer » (entité imposée).</summary>
+    [Parameter] public bool ChangerPermis { get; set; } = true;
+    /// <summary>Texte du champ à son apparition (choix obligatoire).</summary>
+    [Parameter] public string? TexteInitial { get; set; }
+    /// <summary>Valeur libre : texte du champ (@bind-Valeur).</summary>
+    [Parameter] public string? Valeur { get; set; }
+    [Parameter] public EventCallback<string?> ValeurChanged { get; set; }
+    [Parameter] public EventCallback<TItem> OnChoisi { get; set; }
+    /// <summary>Texte tapé, à chaque touche (ex. « Créer le médecin « … » »).</summary>
+    [Parameter] public EventCallback<string> OnTexte { get; set; }
+    /// <summary>« Changer » : le choix n'est plus valable (le parent remet Choix à null).</summary>
+    [Parameter] public EventCallback OnEfface { get; set; }
+    [Parameter] public EventCallback OnFocus { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? Attributs { get; set; }
+
+    private ElementReference champ;
+    private string texte = "";
+    private string? valeurRecue;
+    private List<TItem> resultats = [];
+    private string? erreur;
+    private int actif = -1, requete;
+    private bool ouverte, chargement, voirActif, focusApresRendu, ferme;
+    /// <summary>Vrai quand l'employé a lui-même mis une proposition en avant (flèches, souris) : gardée d'une réponse à l'autre.</summary>
+    private bool actifManuel;
+    private CancellationTokenSource? attente;
+
+    private bool Libre => Mode == ModeSuggestions.ValeurLibre;
+    private bool AssezDeLettres => texte.Trim().Length >= Math.Max(LettresMin, Libre ? 0 : 1);
+    /// <summary>Valeur libre avec LettresMin à 0 : propositions dès l'entrée dans le champ, sans rien taper.</summary>
+    private bool DesLeFocus => Libre && LettresMin <= 0;
+    /// <summary>Liste affichée : en valeur libre, seulement s'il y a des valeurs à proposer.</summary>
+    private bool Ouverte => ouverte && AssezDeLettres && (!Libre || resultats.Count > 0);
+    private string IdListe => $"{Id}-liste";
+    private string IdOption(int i) => $"{Id}-opt-{i}";
+
+    protected override void OnInitialized() => texte = (Libre ? Valeur : TexteInitial) ?? "";
+
+    protected override void OnParametersSet()
+    {
+        // Valeur libre changée par le parent (fiche vidée, valeur reprise) : le champ la suit, sans écraser la frappe en cours
+        if (Libre && Valeur != valeurRecue)
+        {
+            valeurRecue = Valeur;
+            if ((Valeur ?? "") != texte) (texte, resultats, ouverte) = (Valeur ?? "", [], false);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool premierRendu)
+    {
+        if (focusApresRendu)
+        {
+            focusApresRendu = false;
+            try { await champ.FocusAsync(); } catch (InvalidOperationException) { }   // champ retiré entre-temps
+        }
+        if (voirActif && actif >= 0)
+        {
+            voirActif = false;
+            try { await JS.InvokeVoidAsync("pharma.voirOption", IdOption(actif)); } catch (JSException) { }
+        }
+    }
+
+    /// <summary>Remplace le texte du champ (ex. vidé après un ajout) sans lancer de recherche.</summary>
+    public void Afficher(string? valeur)
+    {
+        ++requete;
+        attente?.Cancel();
+        (texte, resultats, actif, actifManuel, ouverte, chargement, erreur) = (valeur ?? "", [], -1, false, false, false, null);
+        StateHasChanged();
+    }
+
+    /// <summary>Met le curseur dans le champ.</summary>
+    public ValueTask FocusAsync() => champ.FocusAsync();
+
+    private async Task SaisieAsync(ChangeEventArgs e)
+    {
+        texte = e.Value?.ToString() ?? "";
+        (ouverte, erreur) = (true, null);
+        if (Libre) { valeurRecue = texte; await ValeurChanged.InvokeAsync(texte); }
+        await OnTexte.InvokeAsync(texte);
+        var n = ++requete;
+        var jeton = NouvelleAttente();
+        if (!AssezDeLettres) { (resultats, chargement, actif, actifManuel) = ([], false, -1, false); return; }
+        chargement = true;
+        // Une seule requête par mot tapé : recherche après la dernière touche ; une réponse plus ancienne que la frappe est ignorée
+        try { await Task.Delay(Attente, jeton); } catch (OperationCanceledException) { return; }
+        if (n != requete || ferme) return;
+        await RechercherAsync(n);
+    }
+
+    /// <summary>Annule l'attente précédente (frappe suivante) et en prépare une nouvelle.</summary>
+    private CancellationToken NouvelleAttente()
+    {
+        attente?.Cancel();
+        attente?.Dispose();
+        attente = new CancellationTokenSource();
+        return attente.Token;
+    }
+
+    private async Task RechercherAsync(int n)
+    {
+        if (ferme) return;
+        var (liste, e) = await Rechercher(texte.Trim());
+        if (n != requete || ferme) return;
+        var avaitManuel = actifManuel && actif >= 0 && actif < resultats.Count;
+        var avant = avaitManuel ? resultats[actif] : default;
+        (resultats, erreur, chargement) = (liste.Take(Maximum).ToList(), e, false);
+        if (avaitManuel)
+        {
+            // Même proposition toujours présente : elle reste en avant ; sinon rien n'est mis en avant (jamais un autre élément)
+            actif = resultats.FindIndex(r => MemeProposition(r, avant!));
+            actifManuel = actif >= 0;
+        }
+        else
+            actif = !Libre && resultats.Count > 0 ? 0 : -1;
+    }
+
+    /// <summary>Même élément (égalité de l'objet, ex. enregistrement identique) ou même texte et même seconde ligne.</summary>
+    private bool MemeProposition(TItem a, TItem b) =>
+        EqualityComparer<TItem>.Default.Equals(a, b) || (TexteDe(a) == TexteDe(b) && DetailDe?.Invoke(a) == DetailDe?.Invoke(b));
+
+    /// <summary>Fermeture de l'écran : l'attente en cours est annulée, aucune recherche ne part ensuite.</summary>
+    public void Dispose()
+    {
+        ferme = true;
+        ++requete;
+        attente?.Cancel();
+        attente?.Dispose();
+        attente = null;
+    }
+
+    /// <summary>Annonce aux lecteurs d'écran (aria-live) : nombre de propositions, une fois la réponse arrivée.</summary>
+    private string Annonce => !Ouverte || chargement ? ""
+        : resultats.Count == 0 ? (Libre ? "" : "Aucune proposition.")
+        : resultats.Count == 1 ? "1 proposition." : $"{resultats.Count} propositions.";
+
+    private async Task ToucheAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when resultats.Count > 0:
+                (ouverte, voirActif, actifManuel) = (true, true, true);
+                actif = (actif + 1) % resultats.Count;
+                break;
+            case "ArrowUp" when resultats.Count > 0:
+                (ouverte, voirActif, actifManuel) = (true, true, true);
+                actif = actif <= 0 ? resultats.Count - 1 : actif - 1;
+                break;
+            // Recherche en attente (Entrée tapée vite) : la liste est mise à jour tout de suite ; le choix se fait ensuite, sur la bonne liste
+            case "Enter" when chargement && AssezDeLettres && !Libre:
+                var n = ++requete;
+                attente?.Cancel();
+                ouverte = true;
+                await RechercherAsync(n);
+                break;
+            case "Enter" when Ouverte && actif >= 0 && actif < resultats.Count:
+                await ChoisirAsync(resultats[actif]);
+                break;
+            // Valeur libre : Entrée garde le texte tapé (une recherche encore en route n'a plus d'objet)
+            case "Enter":
+            case "Escape":
+                if (Libre && e.Key == "Enter") { (requete, chargement) = (requete + 1, false); attente?.Cancel(); }
+                ouverte = false;
+                break;
+        }
+    }
+
+    private async Task ChoisirAsync(TItem item)
+    {
+        ++requete;   // une recherche encore en route ne rouvre pas la liste
+        attente?.Cancel();
+        (texte, ouverte, resultats, actif, actifManuel, chargement, erreur) = (TexteDe(item), false, [], -1, false, false, null);
+        if (Libre) { valeurRecue = texte; await ValeurChanged.InvokeAsync(texte); }
+        await OnChoisi.InvokeAsync(item);
+    }
+
+    private async Task ChangerAsync()
+    {
+        ++requete;
+        attente?.Cancel();
+        (texte, resultats, actif, actifManuel, ouverte, chargement, erreur, focusApresRendu) = ("", [], -1, false, false, false, null, true);
+        await OnEfface.InvokeAsync();
+    }
+
+    private async Task FocusRecuAsync()
+    {
+        ouverte = resultats.Count > 0;
+        await OnFocus.InvokeAsync();
+        if (DesLeFocus && AssezDeLettres)
+        {
+            // Toutes les valeurs (ou celles qui contiennent le texte déjà présent) proposées dès l'entrée dans le champ
+            ouverte = true;
+            await RechercherAsync(++requete);
+        }
+    }
+
+    private void Fermer() => ouverte = false;
+
+    private RenderFragment Contenu => __builder =>
+    {
+        if (Choix is not null)
+        {
+            <div class="choix">
+                <strong>@Choix</strong>
+                @if (ChangerPermis)
+                {
+                    <button type="button" class="lien-bouton" @onclick="ChangerAsync">Changer</button>
+                }
+            </div>
+            return;
+        }
+        <input @ref="champ" @attributes="Attributs" id="@Id" type="@(Type ?? (Libre ? "text" : "search"))" autocomplete="off"
+               aria-invalid="@(Invalide ? "true" : null)" role="combobox" aria-autocomplete="list"
+               aria-expanded="@(Ouverte ? "true" : "false")" aria-controls="@IdListe"
+               aria-activedescendant="@(Ouverte && actif >= 0 ? IdOption(actif) : null)"
+               value="@texte" @oninput="SaisieAsync" @onkeydown="ToucheAsync" @onfocus="FocusRecuAsync" @onblur="Fermer" />
+        <span class="visuellement-cache" aria-live="polite" aria-atomic="true">@Annonce</span>
+        @if (Ouverte)
+        {
+            <ul class="suggestions" id="@IdListe" role="listbox" aria-label="@(LibelleListe ?? "Propositions")">
+                @if (resultats.Count == 0)
+                {
+                    <li class="choix-vide" role="option" aria-disabled="true">@(chargement ? "Recherche…" : erreur ?? $"Aucun {LibelleAucun} pour « {texte.Trim()} »{ComplementAucun}.")</li>
+                }
+                @for (var i = 0; i < resultats.Count; i++)
+                {
+                    var item = resultats[i];
+                    var index = i;
+                    var detail = DetailDe?.Invoke(item);
+                    <li id="@IdOption(index)" role="option" aria-selected="@(index == actif ? "true" : "false")">
+                        <button type="button" tabindex="-1" class="@(index == actif ? "actif" : null)"
+                                @onmousedown:preventDefault @onmousedown="() => ChoisirAsync(item)" @onmouseenter="() => (actif, actifManuel) = (index, true)">
+                            <span>
+                                <strong>@Surlignage.Surligner(TexteDe(item), texte)</strong>
+                                @if (!string.IsNullOrWhiteSpace(detail))
+                                {
+                                    <br /><span class="detail">@detail</span>
+                                }
+                            </span>
+                            @if (Complement is not null) { @Complement(item) }
+                        </button>
+                    </li>
+                }
+            </ul>
+        }
+    };
+}

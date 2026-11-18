@@ -13,15 +13,17 @@
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
         @if (message is not null) { <div class="succes" role="status">@message</div> }
         <div class="achats-ligne">
-            <ChoixProduit Id="mp-produit" Libelle="Produit (désactivés compris)" InclureInactifs="true" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => fiche = null" />
+            <ChoixProduit Id="mp-produit" PremierSurEntree="false" Libelle="Produit (désactivés compris)" InclureInactifs="true" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => fiche = null" />
         </div>
         @if (fiche is { } f)
         {
             <div class="achats-ligne">
                 <div class="champ" style="flex: 1 1 220px"><label for="mp-nom" class="requis">Nom commercial</label><input id="mp-nom" data-champ="nom_commercial" type="text" maxlength="120" @bind="f.NomCommercial" /></div>
-                <div class="champ" style="flex: 3 1 300px"><label for="mp-dci">DCI</label><input id="mp-dci" type="text" @bind="f.Dci" /></div>
+                @* DCI et forme : valeurs déjà connues proposées pendant la frappe (DCI du référentiel, formes déjà saisies), texte libre accepté *@
+                <ChampSuggestions TItem="string" Id="mp-dci" Mode="ModeSuggestions.ValeurLibre" Rechercher="Api.DciAsync" TexteDe="d => d" Libelle="DCI"
+                                  LibelleListe="DCI existantes" Style="flex: 3 1 300px" @bind-Valeur="f.Dci" />
                 <div class="champ" style="flex: 0 1 130px"><label for="mp-dosage">Dosage</label><input id="mp-dosage" type="text" @bind="f.Dosage" /></div>
-                <div class="champ" style="flex: 2 1 220px"><label for="mp-forme">Forme</label><input id="mp-forme" type="text" @bind="f.Forme" /></div>
+                <ValeursSaisies Id="mp-forme" Champ="forme_produit" Libelle="Forme" Style="flex: 2 1 220px" ValeursDeDepart="FicheNouveauProduit.FormesUsuelles" @bind-Valeur="f.Forme" />
             </div>
             <div class="achats-ligne">
                 <div class="champ" style="flex: 1 1 170px"><label for="mp-cb">Code-barres</label><input id="mp-cb" data-champ="code_barre" type="text" inputmode="numeric" @bind="f.CodeBarre" /></div>
@@ -51,19 +53,9 @@
             </div>
             @* Indications thérapeutiques (script 104) : recherche au comptoir par indication (« toux », « fièvre ») *@
             <div class="achats-ligne" style="align-items: flex-end">
-                <div class="champ" style="flex: 0 1 280px; position: relative">
-                    <label for="mp-indication">Ajouter une indication</label>
-                    <input id="mp-indication" data-champ="indications" type="search" autocomplete="off" placeholder="ex. toux, fièvre" value="@texteIndication" @oninput="ChercherIndicationsAsync" />
-                    @if (propositions.Count > 0)
-                    {
-                        <ul class="suggestions" aria-label="Indications proposées">
-                            @foreach (var i in propositions)
-                            {
-                                <li><button type="button" @onclick="() => AjouterIndication(i)">@i.Libelle</button></li>
-                            }
-                        </ul>
-                    }
-                </div>
+                <ChampSuggestions TItem="IndicationDto" @ref="champIndication" Id="mp-indication" Rechercher="ChercherIndicationsAsync" TexteDe="i => i.Libelle"
+                                  Libelle="Ajouter une indication" LibelleAucun="résultat" ComplementAucun=" parmi les indications actives" LibelleListe="Indications proposées" Style="flex: 0 1 280px"
+                                  OnChoisi="AjouterIndication" data-champ="indications" placeholder="ex. toux, fièvre" />
                 <div style="flex: 1 1 320px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 44px" aria-label="Indications du produit">
                     @if (indications.Count == 0) { <span class="detail">Aucune indication.</span> }
                     @foreach (var i in indications)
@@ -103,34 +95,28 @@
     private Fiche? fiche;
     private string? erreur, message;
     private bool enCours;
-    private List<IndicationDto> indications = [], propositions = [];
-    private string texteIndication = "";
-    private int saisieIndication;
+    private List<IndicationDto> indications = [];
+    private ChampSuggestions<IndicationDto>? champIndication;
 
-    private async Task ChercherIndicationsAsync(ChangeEventArgs a)
+    /// <summary>Indications actives qui contiennent la saisie, sauf celles déjà associées au produit.</summary>
+    private async Task<(List<IndicationDto>, string?)> ChercherIndicationsAsync(string q)
     {
-        texteIndication = a.Value?.ToString() ?? "";
-        var n = ++saisieIndication;
-        if (texteIndication.Trim().Length == 0) { propositions = []; return; }
-        await Task.Delay(250);
-        if (n != saisieIndication) return;
-        var (p, e) = await Api.IndicationsAsync(true, texteIndication.Trim(), 1, 8);
-        if (n != saisieIndication) return;
-        propositions = p?.Lignes.Where(i => indications.All(x => x.Id != i.Id)).ToList() ?? [];
-        if (p is null) erreur = e;
+        var (p, e) = await Api.IndicationsAsync(true, q, 1, ChampSuggestions<IndicationDto>.Maximum + indications.Count);
+        return (p?.Lignes.Where(i => indications.All(x => x.Id != i.Id)).ToList() ?? [], e);
     }
 
+    /// <summary>Indication choisie : ajoutée au produit, le champ est vidé pour la suivante.</summary>
     private void AjouterIndication(IndicationDto i)
     {
         if (indications.All(x => x.Id != i.Id)) indications.Add(i);
-        (propositions, texteIndication) = ([], "");
-        saisieIndication++;
+        champIndication?.Afficher("");
     }
 
     private async Task ChoisirAsync(ProduitDto p)
     {
         (erreur, message) = (null, null);
-        (indications, propositions, texteIndication) = ([], [], "");
+        indications = [];
+        champIndication?.Afficher("");
         var (f, e) = await Api.FicheProduitAsync(p.Id);
         erreur = e;
         if (f is not null)

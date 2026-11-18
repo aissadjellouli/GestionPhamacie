@@ -16,7 +16,7 @@
     @if (Session.A("produits.bloquer"))
     {
         <div class="achats-ligne">
-            <ChoixProduit Id="bl-produit" Libelle="Bloquer ou débloquer un produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => courant = null" />
+            <ChoixProduit Id="bl-produit" PremierSurEntree="false" Libelle="Bloquer ou débloquer un produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => courant = null" />
         </div>
         @if (courant is { } c)
         {

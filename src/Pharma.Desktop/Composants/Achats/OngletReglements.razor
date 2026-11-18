@@ -130,7 +130,7 @@
                     }
                     @if (moyen is "cheque" or "virement")
                     {
-                        <div class="champ" style="flex: 1 1 160px"><label for="r-banque">Banque du grossiste</label><input id="r-banque" type="text" @bind="banque" /></div>
+                        <ValeursSaisies Id="r-banque" Champ="banque_reglement_fournisseur" Libelle="Banque du grossiste" Style="flex: 1 1 160px" @bind-Valeur="banque" />
                     }
                     @if (moyen == "effet")
                     {

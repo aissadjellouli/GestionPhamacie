@@ -111,6 +111,12 @@ public sealed class ObtenirEtatNomenclature(INomenclature nomenclature, IPermiss
 }
 
 /// <summary>Recherche par nom de marque, DCI ou n° d'enregistrement, pour créer un produit (droit catalogue.creer).</summary>
+/// <summary>Une version de la nomenclature est-elle importée ? (message « pas encore importée » de la nouvelle fiche produit)</summary>
+public sealed class NomenclatureImportee(INomenclature nomenclature)
+{
+    public async Task<bool> ExecuterAsync(CancellationToken ct = default) => await nomenclature.VersionAsync(ct) is not null;
+}
+
 public sealed class RechercherNomenclature(INomenclature nomenclature)
 {
     public Task<IReadOnlyList<MedicamentNomenclature>> ExecuterAsync(string? texte, CancellationToken ct = default) =>

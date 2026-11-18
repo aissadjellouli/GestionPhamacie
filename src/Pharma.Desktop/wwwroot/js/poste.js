@@ -18,6 +18,17 @@ window.pharma = {
     setTimeout(voir, 500);
   },
 
+  // Liste de propositions (.suggestions, flèches haut et bas) : amène l'option active dans le cadre de la liste, en ne faisant
+  // défiler que la liste, jamais l'écran
+  voirOption: function (id) {
+    var option = document.getElementById(id);
+    var liste = option && option.closest('.suggestions');
+    if (!liste) return;
+    var cadre = liste.getBoundingClientRect(), r = option.getBoundingClientRect();
+    if (r.bottom > cadre.bottom) liste.scrollTop += r.bottom - cadre.bottom;
+    else if (r.top < cadre.top) liste.scrollTop -= cadre.top - r.top;
+  },
+
   // Menu de gauche de l'Administration : amène le lien affiché (bandeau ambre) dans le cadre du menu, au plus près
   // (comme scrollIntoView block « nearest »), en ne déplaçant que le menu, jamais l'écran
   voirLienActif: function (nav) {
@@ -101,6 +112,15 @@ document.addEventListener('keydown', function (e) {
   new MutationObserver(function () { if (!prevu) { prevu = true; requestAnimationFrame(placer); } })
     .observe(document.documentElement, { childList: true, subtree: true });
 
+  // Échap dans un champ dont la liste de propositions est ouverte (2026-11-18) : la liste se ferme (Blazor) et le texte tapé reste
+  // (sans cela, un champ « search » se vide de lui-même) ; un second Échap, liste fermée, efface la recherche comme ci-dessous
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var c = document.activeElement;
+    var cadre = c && c.closest && c.closest('.recherche');
+    if (cadre && cadre.querySelector('.suggestions')) e.preventDefault();
+  }, true);
+
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || e.defaultPrevented) return;
     var c = document.activeElement;
@@ -111,6 +131,52 @@ document.addEventListener('keydown', function (e) {
     c.dispatchEvent(new Event('input', { bubbles: true }));
     c.dispatchEvent(new Event('change', { bubbles: true }));
   });
+})();
+
+// Listes de propositions (.suggestions, 2026-11-18) : jamais au-delà du bas de la fenêtre (écran sans défilement, la barre d'état
+// comprise). Si la place manque sous le champ (moins de 160 px) et qu'il y en a plus au-dessus, la liste s'ouvre vers le haut ; sinon elle est
+// raccourcie et défile seule. Recalculé à chaque changement de l'écran et à chaque redimensionnement.
+(function () {
+  var prevu = false;
+  function placer() {
+    prevu = false;
+    var zoom = parseFloat(document.documentElement.style.zoom) || 1;
+    var entete = document.querySelector('.entete');
+    var haut = entete ? entete.getBoundingClientRect().bottom : 0;
+    document.querySelectorAll('.suggestions').forEach(function (l) {
+      var cadre = l.parentElement;
+      if (!cadre) return;
+      var c = cadre.getBoundingClientRect();
+      // Cadre qui défile autour du champ (relevé dans « Encaisser une dette »…) : la liste ne doit pas non plus en sortir, elle y serait coupée
+      var bas = window.innerHeight - 40 * zoom, plafond = haut;
+      for (var e = cadre.parentElement; e && e !== document.body; e = e.parentElement) {
+        var oy = getComputedStyle(e).overflowY;
+        if (oy === 'auto' || oy === 'scroll' || oy === 'hidden') {
+          var r = e.getBoundingClientRect();
+          bas = Math.min(bas, r.bottom); plafond = Math.max(plafond, r.top);
+          break;
+        }
+      }
+      // Place libre sous et au-dessus du champ, marge et bord de la liste déduits (12 px)
+      var dessous = Math.floor((bas - c.bottom) / zoom) - 4 - 12;
+      var dessus = Math.floor((c.top - plafond) / zoom) - 4 - 12 - 8;
+      var naturel = Math.min(360, l.scrollHeight);
+      // Vers le bas tant qu'il y a la place pour quelques propositions (160 px) ; vers le haut seulement s'il y en a plus là
+      if (naturel <= dessous || dessous >= 160 || dessous >= dessus) {
+        l.style.top = ''; l.style.bottom = '';
+        l.style.maxHeight = naturel > dessous ? Math.max(dessous, 80) + 'px' : '';
+      } else {
+        l.style.top = 'auto'; l.style.bottom = 'calc(100% + 4px)';
+        l.style.maxHeight = Math.min(360, dessus) + 'px';
+      }
+    });
+  }
+  function planifier() { if (!prevu) { prevu = true; requestAnimationFrame(placer); } }
+  new MutationObserver(function (changes) {
+    // Nos propres changements de style ne relancent rien (attributs non observés) : seulement les ajouts et retraits d'éléments
+    if (document.querySelector('.suggestions')) planifier();
+  }).observe(document.documentElement, { childList: true, subtree: true });
+  window.addEventListener('resize', planifier);
 })();
 
 // Caméra au comptoir : photo de l'ordonnance (l'autorisation est accordée par la fenêtre du poste)

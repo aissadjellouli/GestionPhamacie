@@ -10,14 +10,14 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
 {
     public async Task<IReadOnlyList<PatientResume>> RechercherAsync(string texte, int limite, CancellationToken ct = default)
     {
+        // Nom, prénom ou « nom prénom » sans accents ni majuscules (suggestions pendant la frappe, 2026-11-18) : une seule expression,
+        // qui contient le nom et le prénom, servie par l'index ix_patient_nom_prenom_sans_accent (script 150).
         // Téléphone : par début de numéro, à partir de 4 chiffres, séparateurs ignorés, +213 = 0 (même règle que les crédits clients)
         await using var cmd = db.CreateCommand($"""
             SELECT p.id, p.nom, p.prenom, p.telephone, p.num_assure, p.organisme_id, o.code, p.plafond_credit, p.solde_credit, p.date_fin_droit
             FROM patient p
             LEFT JOIN organisme o ON o.id = p.organisme_id
-            WHERE p.nom ILIKE '%' || $1 || '%'
-               OR p.prenom ILIKE '%' || $1 || '%'
-               OR (p.nom || ' ' || COALESCE(p.prenom, '')) ILIKE '%' || $1 || '%'
+            WHERE sans_accent(p.nom || ' ' || COALESCE(p.prenom, '')) ILIKE '%' || sans_accent($4) || '%' ESCAPE '\'
                OR ($3::text IS NOT NULL AND {TelephoneSql.Normalise("p.telephone")} LIKE $3 || '%')
                OR p.num_assure = $1
                -- N° d'assuré saisi avec un autre séparateur (« 690755003842 80 » = « 690755003842/80 ») : chiffres seuls (index ux_patient_num_assure)
@@ -29,6 +29,7 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         cmd.Parameters.AddWithValue(texte);
         cmd.Parameters.AddWithValue(limite);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)RechercheTelephone.Prefixe(texte) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.AddWithValue(Referentiels.MotifRecherche.Echapper(texte));   // $4 : \, % et _ tapés pris à la lettre
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<PatientResume>();
         while (await r.ReadAsync(ct))
@@ -192,9 +193,9 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
     {
         await using var cmd = db.CreateCommand("""
             SELECT id, nom, specialite, telephone, adresse, email, numero_ordre, code_prestataire, wilaya FROM medecin
-            WHERE nom ILIKE '%' || $1 || '%' ORDER BY nom LIMIT $2
+            WHERE sans_accent(nom) ILIKE '%' || sans_accent($1) || '%' ESCAPE '\' ORDER BY nom LIMIT $2   -- index ix_medecin_nom_sans_accent (script 150)
             """);
-        cmd.Parameters.AddWithValue(texte);
+        cmd.Parameters.AddWithValue(Referentiels.MotifRecherche.Echapper(texte));
         cmd.Parameters.AddWithValue(limite);
         return await LireMedecinsAsync(cmd, ct);
     }
@@ -203,9 +204,10 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
     {
         await using var cmd = db.CreateCommand("""
             SELECT id, nom, specialite, telephone, adresse, email, numero_ordre, code_prestataire, wilaya FROM medecin
-            WHERE wilaya IS NULL AND ($1::text IS NULL OR nom ILIKE '%' || $1 || '%') ORDER BY nom LIMIT $2
+            WHERE wilaya IS NULL AND ($1::text IS NULL OR sans_accent(nom) ILIKE '%' || sans_accent($1) || '%' ESCAPE '\') ORDER BY nom LIMIT $2
             """);
-        cmd.Parameters.Add(Nullable(texte, NpgsqlDbType.Text));
+        // Sans accents ni majuscules, comme la recherche des médecins ; \, % et _ tapés pris à la lettre
+        cmd.Parameters.Add(Nullable(Referentiels.MotifRecherche.EchapperOuNull(texte), NpgsqlDbType.Text));
         cmd.Parameters.AddWithValue(limite);
         return await LireMedecinsAsync(cmd, ct);
     }

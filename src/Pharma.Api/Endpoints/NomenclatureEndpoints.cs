@@ -40,6 +40,10 @@ internal static class NomenclatureEndpoints
             })
            .ExigerTitulaire();
 
+        // Nomenclature importée ou non (même droit que la recherche) : la recherche ne dit rien sous 2 lettres
+        api.MapGet("/nomenclature/importee", async (NomenclatureImportee importee, CancellationToken ct) => Results.Ok(await importee.ExecuterAsync(ct)))
+           .ExigerPermission(Permissions.CatalogueCreer);
+
         // Recherche pour créer un produit à partir de la nomenclature
         api.MapGet("/nomenclature", async (string? q, RechercherNomenclature rechercher, CancellationToken ct) =>
                 Results.Ok((await rechercher.ExecuterAsync(q, ct)).Select(m => new MedicamentNomenclatureDto(

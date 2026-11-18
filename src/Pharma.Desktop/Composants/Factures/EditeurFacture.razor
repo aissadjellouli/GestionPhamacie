@@ -34,56 +34,27 @@
     }
     else if (destinataire == "patient")
     {
-        @if (patient is { } p)
-        {
-            <p style="margin: 0"><strong>@p.Nom @p.Prenom</strong>@(p.NumAssure is { } n ? $" · n° d’assuré {n}" : "")
-                <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => { patient = null; candidates = []; }">Changer</button></p>
-        }
-        else
-        {
-            <div class="champ recherche">
-                <label for="f-patient">Patient (nom, téléphone ou n° d’assuré)</label>
-                <input id="f-patient" type="search" @bind="recherchePatient" @bind:event="oninput" @bind:after="ChercherPatientsAsync" />
-                @if (patients.Count > 0)
-                {
-                    <ul class="suggestions" aria-label="Patients trouvés">
-                        @foreach (var x in patients)
-                        {
-                            <li><button type="button" @onclick="() => { patient = x; patients = []; }"><span><strong>@x.Nom @x.Prenom</strong><br /><span class="detail">@x.Telephone @x.NumAssure</span></span></button></li>
-                        }
-                    </ul>
-                }
-            </div>
-        }
+        @* Patient : propositions pendant la frappe (ChoixPatient, 2026-11-18 ; le droit factures.gerer suffit), choix affiché avec « Changer » *@
+        <ChoixPatient Id="f-patient" Libelle="Patient" data-champ="patient" TexteInitial="@recherchePatient" OnTexte="t => recherchePatient = t"
+                      Choix="@(patient is { } p ? ChoixPatient.Nom(p) + (p.NumAssure is { } n ? $" · n° d’assuré {n}" : "") : null)"
+                      OnChoisi="x => patient = x" OnEfface="() => { patient = null; candidates = []; }" />
     }
     else if (destinataire == "entreprise")
     {
         @* Entreprises clientes : liste sans fin, donc recherche avec propositions (règle des listes, docs/charte-graphique.md) *@
-        @if (clients.FirstOrDefault(c => c.Id == clientId) is { } choisi)
-        {
-            <p style="margin: 0"><strong>@choisi.RaisonSociale</strong>@(choisi.Nif is { Length: > 0 } nif ? $" · NIF {nif}" : "")
-                <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="() => { clientId = 0; rechercheClient = null; }">Changer</button></p>
-        }
-        else
-        {
-            <div class="achats-ligne" style="align-items: flex-end">
-                <div class="champ recherche" style="flex: 1 1 260px">
-                    <label for="f-client">Client (raison sociale ou NIF, 2 lettres au moins)</label>
-                    <input id="f-client" type="search" autocomplete="off" @bind="rechercheClient" @bind:event="oninput" />
-                    @if (ClientsTrouves.Count > 0 || rechercheClient?.Trim().Length >= 2)
-                    {
-                        <ul class="suggestions" aria-label="Clients trouvés">
-                            @if (ClientsTrouves.Count == 0) { <li class="choix-vide" aria-disabled="true">Aucun client pour « @rechercheClient ».</li> }
-                            @foreach (var c in ClientsTrouves)
-                            {
-                                <li><button type="button" @onclick="() => { clientId = c.Id ?? 0; rechercheClient = null; SuivreEcheance(); }"><span><strong>@c.RaisonSociale</strong>@if (c.Nif is { Length: > 0 }) { <br /><span class="detail">NIF @c.Nif</span> }</span></button></li>
-                            }
-                        </ul>
-                    }
-                </div>
+        <div class="achats-ligne" style="align-items: flex-end">
+            @* Composant commun (2026-11-18) : clients lus une fois (api/factures/clients), filtrés sur le poste, 10 au plus *@
+            <ChampSuggestions TItem="ClientFactureDto" Id="f-client" Libelle="Client (raison sociale ou NIF)" Style="flex: 1 1 260px" data-champ="client"
+                              Rechercher="q => Task.FromResult((ClientsTrouves(q), (string?)null))" TexteDe="c => c.RaisonSociale"
+                              DetailDe="@(c => c.Nif is { Length: > 0 } nif ? $"NIF {nif}" : null)" LibelleAucun="client" LibelleListe="Clients trouvés"
+                              placeholder="Raison sociale ou NIF"
+                              Choix="@(clients.FirstOrDefault(c => c.Id == clientId) is { } choisi ? choisi.RaisonSociale + (choisi.Nif is { Length: > 0 } nif ? $" · NIF {nif}" : "") : null)"
+                              OnChoisi="c => { clientId = c.Id ?? 0; SuivreEcheance(); }" OnEfface="() => clientId = 0" />
+            @if (clientId == 0)
+            {
                 <button type="button" class="btn" @onclick="() => nouveauClient = new()">Nouveau client</button>
-            </div>
-        }
+            }
+        </div>
         @if (nouveauClient is { } nc)
         {
             <div class="carte" style="display: grid; gap: 8px">
@@ -234,14 +205,11 @@
     private string destinataire = "patient";
     private List<string> mentionsManquantes = [];
     private PatientDto? patient;
-    private List<PatientDto> patients = [];
     private List<ClientFactureDto> clients = [];
-    // Recherche d'une entreprise cliente : 10 propositions au plus, sans majuscules ni accents, dès 2 lettres
-    private string? rechercheClient;
-    private List<ClientFactureDto> ClientsTrouves => rechercheClient?.Trim() is { Length: >= 2 } r
-        ? clients.Where(c => c.Actif && (RechercheTexte.Contient(r, c.RaisonSociale)
-            || (c.Nif ?? "").Contains(r, StringComparison.OrdinalIgnoreCase))).Take(10).ToList()
-        : [];
+    // Recherche d'une entreprise cliente : clients actifs, 10 propositions au plus, sans majuscules ni accents, dès 2 lettres (ChampSuggestions)
+    private List<ClientFactureDto> ClientsTrouves(string r) =>
+        clients.Where(c => c.Actif && (RechercheTexte.Contient(r, c.RaisonSociale)
+            || (c.Nif ?? "").Contains(r, StringComparison.OrdinalIgnoreCase))).Take(ChampSuggestions<ClientFactureDto>.Maximum).ToList();
     private List<OrganismeDto> organismes = [];
     private long clientId, organismeId;
     private NouveauClient? nouveauClient;
@@ -352,12 +320,6 @@
         SuivreEcheance();
         (candidates, charge) = ([], false);
         ventes.Clear();
-    }
-
-    private async Task ChercherPatientsAsync()
-    {
-        if (string.IsNullOrWhiteSpace(recherchePatient) || recherchePatient.Trim().Length < 2) { patients = []; return; }
-        (patients, _) = await Api.RechercherPatientsAsync(recherchePatient);
     }
 
     private async Task CreerClientAsync()

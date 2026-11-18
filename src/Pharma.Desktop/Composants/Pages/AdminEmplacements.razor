@@ -22,8 +22,12 @@
             <section class="panneau" aria-labelledby="t-fiche-empl">
                 <h2 id="t-fiche-empl">@(fiche.Id is null ? "Nouvel emplacement" : $"Modifier {fiche.CodeInitial}")</h2>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 0 0 110px"><label for="e-rayon" class="requis">Rayon</label><input id="e-rayon" type="text" maxlength="10" placeholder="A" @ref="champRayon" @bind="fiche.Rayon" @bind:event="oninput"
-                        class="@Obligatoire.Classe(RayonManque)" aria-invalid="@Obligatoire.Aria(RayonManque)" /></div>
+                    @* Rayon : saisie libre ; les rayons font une lettre, donc TOUS les rayons existants sont proposés, triés, dès l'entrée dans
+                       le champ puis filtrés à la frappe (ValeursSaisies « rayon_emplacement », minimum de 0 lettre fixé par le serveur, droit
+                       admin.parametres) ; un nouveau rayon peut toujours être tapé *@
+                    <ValeursSaisies @ref="champRayon" Id="e-rayon" Champ="rayon_emplacement" LettresMin="0" LibelleListe="Rayons existants" Libelle="Rayon" Requis="true" Style="flex: 0 0 110px"
+                                    @bind-Valeur="fiche.Rayon" maxlength="10" placeholder="A"
+                                    class="@Obligatoire.Classe(RayonManque)" Invalide="RayonManque" />
                     <div class="champ" style="flex: 0 0 110px"><label for="e-etagere">Étagère</label><input id="e-etagere" type="text" maxlength="10" placeholder="02" @bind="fiche.Etagere" @bind:event="oninput" /></div>
                     <div class="champ" style="flex: 0 0 110px"><label for="e-tiroir">Tiroir</label><input id="e-tiroir" type="text" maxlength="10" placeholder="3" @bind="fiche.Tiroir" @bind:event="oninput" /></div>
                     <div class="champ" style="flex: 2 1 240px"><label for="e-libelle">Libellé</label><input id="e-libelle" type="text" placeholder="ex. Antibiotiques, Réfrigérateur" @bind="fiche.Libelle" /></div>
@@ -143,7 +147,7 @@
 
     // Rayon en rouge s'il manque au clic sur Créer ou Enregistrer
     private bool controle;
-    private ElementReference champRayon;
+    private ValeursSaisies? champRayon;
     private bool RayonManque => fiche is not null && Obligatoire.Manque(controle, fiche.Rayon);
 
     private async Task EnregistrerAsync()
@@ -152,7 +156,7 @@
         if (RayonManque)
         {
             (erreur, message) = ("Le rayon est obligatoire (ex. A).", null);
-            await champRayon.FocusAsync();
+            if (champRayon is not null) await champRayon.FocusAsync();
             return;
         }
         (enCours, erreur, message) = (true, null, null);

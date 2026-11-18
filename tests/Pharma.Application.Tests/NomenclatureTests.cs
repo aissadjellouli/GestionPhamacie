@@ -47,6 +47,18 @@ public class NomenclatureApplicationTests
     }
 
     [Fact]
+    public async Task Nomenclature_importee_lue_par_sa_version_et_non_par_une_recherche_d_une_lettre()
+    {
+        var stock = new NomenclatureEnMemoire();
+        Assert.False(await new NomenclatureImportee(stock).ExecuterAsync());
+        await new ImporterNomenclature(new LecteurFactice(200), stock, new DroitsFactices { Titulaire = true }, new JournalEspion())
+            .ExecuterAsync(new MemoryStream(), "n.xlsx", 1);
+        Assert.True(await new NomenclatureImportee(stock).ExecuterAsync());
+        // La recherche ne répond rien sous 2 lettres : elle ne peut pas servir à savoir si la nomenclature est importée
+        Assert.Empty(await new RechercherNomenclature(stock).ExecuterAsync("a"));
+    }
+
+    [Fact]
     public async Task Import_remplace_la_version_et_ecrit_au_journal()
     {
         var stock = new NomenclatureEnMemoire();

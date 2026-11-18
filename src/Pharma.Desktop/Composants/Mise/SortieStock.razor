@@ -20,7 +20,7 @@
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
         @if (message is not null) { <div class="succes" role="status">@message</div> }
         <div class="achats-ligne">
-            <ChoixProduit Id="so-produit" Libelle="Produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => (lots, lot) = ([], null)" />
+            <ChoixProduit Id="so-produit" PremierSurEntree="false" Libelle="Produit" Style="flex: 1 1 320px" OnChoisi="ChoisirAsync" OnEfface="() => (lots, lot) = ([], null)" />
         </div>
         @if (lots.Count > 0)
         {

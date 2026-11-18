@@ -51,8 +51,8 @@
                     <div class="achats-ligne">
                         @if (nouveauHorsTresorerie)
                         {
-                            <div class="champ" style="flex: 1 1 200px"><label for="np-preteur" class="requis">Prêteur</label>
-                                <input id="np-preteur" data-champ="preteur" type="text" maxlength="120" @bind="nouveauPreteur" placeholder="Ex. banque non suivie en trésorerie" /></div>
+                            <ValeursSaisies Id="np-preteur" Champ="preteur_pret" Libelle="Prêteur" Requis="true" Style="flex: 1 1 200px" @bind-Valeur="nouveauPreteur"
+                                            data-champ="preteur" maxlength="120" placeholder="Ex. banque non suivie en trésorerie" />
                         }
                         else
                         {
@@ -273,7 +273,8 @@
                                 <input id="rt-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montantRemboursement" /></div>
                             <div class="champ" style="flex: 1 1 160px"><label for="rt-ref">Référence</label><input id="rt-ref" type="text" maxlength="100" @bind="referenceRemboursement" /></div>
                         </div>
-                        <div class="champ"><label for="rt-lib">Libellé</label><input id="rt-lib" data-champ="libelle" type="text" maxlength="200" @bind="libelleRemboursement" placeholder="Remboursement du titulaire" /></div>
+                        <ValeursSaisies Id="rt-lib" Champ="libelle_remboursement_titulaire" Libelle="Libellé" @bind-Valeur="libelleRemboursement"
+                                        data-champ="libelle" maxlength="200" placeholder="Remboursement du titulaire" />
                         <div><button type="button" class="btn btn-principal" disabled="@enCours" @onclick="RembourserAsync">Enregistrer le remboursement</button></div>
                     </section>
                 }

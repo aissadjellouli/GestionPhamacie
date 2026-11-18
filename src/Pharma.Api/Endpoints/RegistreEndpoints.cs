@@ -45,12 +45,13 @@ internal static class RegistreEndpoints
                 return Results.Ok(new InscriptionsRegistreDto(new PageDto<LigneRegistreDto>(p.Lignes, p.Total, p.Numero, p.Taille), operations, r.NomsMasques));
             });
 
-        // Export d'inspection (lot 8) : PDF, Excel (xlsx) ou CSV ; produit, période, patient, prescripteur ; sceau de la période
-        registre.MapGet("/export", async (string? format, long? produit, DateOnly? du, DateOnly? au, long? patient, string? prescripteur,
+        // Export d'inspection (lot 8) : PDF, Excel (xlsx) ou CSV ; produit, période, patient, prescripteur ; sceau de la période.
+        // medecin : identifiant du prescripteur choisi (filtre exact) ; prescripteur (texte, « nom contient ») gardé pour compatibilité
+        registre.MapGet("/export", async (string? format, long? produit, DateOnly? du, DateOnly? au, long? patient, string? prescripteur, long? medecin,
                 ExporterRegistre exporter, IHorloge horloge, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 var (contenu, nom, type) = await exporter.ExecuterAsync(format ?? "pdf", user.UtilisateurId(), produit, du, au, horloge.Aujourdhui, ct,
-                    patient, prescripteur);
+                    patient, prescripteur, medecin);
                 return Results.File(contenu, type, nom);
             });
 

@@ -1,7 +1,9 @@
 @inject ApiClient Api
 
 @* Saisie assistée d'un produit du catalogue : liste sous le champ dès la première lettre (nom, DCI ou code-barres),
-   flèches haut et bas pour se déplacer, Entrée pour choisir, Échap pour fermer. *@
+   flèches haut et bas pour se déplacer, Entrée pour choisir, Échap pour fermer.
+   PremierSurEntree (vrai par défaut) : Entrée pendant une recherche en attente prend le premier résultat (douchette au comptoir ou
+   à la réception) ; faux : Entrée lance la recherche et affiche la liste, sans rien choisir (jamais un produit non vu). *@
 
 <div class="champ recherche" style="@Style">
     <label for="@Id" class="@(Requis ? "requis" : null)">@Libelle</label>
@@ -51,6 +53,24 @@
     [Parameter] public EventCallback OnEfface { get; set; }
     /// <summary>Texte tapé (ex. pour proposer de créer un produit absent du catalogue).</summary>
     [Parameter] public EventCallback<string> OnTexte { get; set; }
+    /// <summary>
+    /// Vrai (défaut) : Entrée pendant une recherche en attente choisit le premier résultat (scan au comptoir ou à la réception).
+    /// Faux : Entrée ne choisit jamais un produit que la liste n'a pas encore montré (marquage, exceptions, retours…).
+    /// </summary>
+    [Parameter] public bool PremierSurEntree { get; set; } = true;
+    /// <summary>
+    /// Écran où l'on tape ET où l'on scanne (Achats › Commandes, décision du titulaire du 2026-11-18) : avec PremierSurEntree faux,
+    /// Entrée prend quand même le premier résultat si le texte ressemble à un scan (code-barres en chiffres ou Data Matrix GS1).
+    /// </summary>
+    [Parameter] public bool PremierSurEntreeSiCode { get; set; }
+
+    /// <summary>Texte venu d'une douchette : 8 à 14 chiffres (EAN, GTIN, étiquette interne) ou Data Matrix GS1 (commence par « 01 » + 14 chiffres).</summary>
+    public static bool RessembleScan(string? texte)
+    {
+        var t = (texte ?? "").Trim();
+        if (t.Length is >= 8 and <= 14 && t.All(char.IsAsciiDigit)) return true;
+        return t.Length >= 16 && t.StartsWith("01", StringComparison.Ordinal) && t[..16].All(char.IsAsciiDigit);
+    }
 
     private string texte = "";
     private List<ProduitDto> resultats = [];
@@ -105,7 +125,7 @@
             case "Enter" when chargement && texte.Trim().Length > 0:
                 var n = ++requete;
                 await RechercherMaintenantAsync(n);
-                if (n == requete && resultats.Count > 0) await ChoisirAsync(resultats[0]);
+                if ((PremierSurEntree || (PremierSurEntreeSiCode && RessembleScan(texte))) && n == requete && resultats.Count > 0) await ChoisirAsync(resultats[0]);
                 break;
             case "Enter" when Ouverte && actif >= 0 && actif < resultats.Count:
                 await ChoisirAsync(resultats[actif]);
