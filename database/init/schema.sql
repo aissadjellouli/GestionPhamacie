@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 150 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 151 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 150 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 151 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -24,7 +24,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict pr0uUloXm8umwxRpChsJYfuYsvaaytWVXTcqJHCA9GRzcU0hV5jJyQzRL2cbcQq
+\restrict DXdI1zeaae1og5ZNqC3Pg9Gt8TRFsNjgKOf2c5HP8SuRHZA2roaV1Er15FZCSP2
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -977,6 +977,12 @@ BEGIN
        AND NEW.premier_numero_continu = OLD.premier_numero_continu AND NEW.mis_en_service_le = OLD.mis_en_service_le THEN
         RETURN NEW;
     END IF;
+    IF TG_OP = 'UPDATE' AND NEW.dernier_numero > OLD.dernier_numero + 1
+       AND coalesce(current_setting('pharma.saut_ticket', true), '') = NEW.dernier_numero::text
+       AND (to_jsonb(NEW) - 'dernier_numero') = (to_jsonb(OLD) - 'dernier_numero')
+       AND EXISTS (SELECT 1 FROM compteur_ticket_saut s WHERE s.du = OLD.dernier_numero + 1 AND s.au = NEW.dernier_numero) THEN
+        RETURN NEW;
+    END IF;
     RAISE EXCEPTION 'Le compteur des tickets avance d''une unité à la fois ; il ne se modifie pas et ne se supprime pas';
 END;
 $$;
@@ -1393,6 +1399,18 @@ $$;
 
 
 --
+-- Name: integrite_ajout_seul_restauration(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.integrite_ajout_seul_restauration() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION '% : ajout seul (ni modification ni suppression)', TG_TABLE_NAME;
+END $$;
+
+
+--
 -- Name: integrite_chainer(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1685,6 +1703,7 @@ CREATE FUNCTION public.journal_vente_continuite() RETURNS TABLE(anomalie text, n
     SELECT 'numero_manquant', c.prefixe || lpad(s.n::text, GREATEST(6, char_length(s.n::text)), '0'), NULL::bigint
     FROM c, generate_series(c.premier_numero_continu, c.dernier_numero) AS s(n)
     WHERE NOT EXISTS (SELECT 1 FROM v WHERE v.n = s.n)
+      AND NOT EXISTS (SELECT 1 FROM compteur_ticket_saut z WHERE s.n BETWEEN z.du AND z.au)
     UNION ALL
     SELECT 'numero_hors_compteur', v.numero, v.id FROM v, c WHERE v.n > c.dernier_numero
     UNION ALL
@@ -3304,6 +3323,36 @@ END $$;
 
 
 --
+-- Name: sync_avancer_compteur_ticket(bigint, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_avancer_compteur_ticket(p_numero bigint, p_epoque integer DEFAULT NULL::integer) RETURNS bigint
+    LANGUAGE plpgsql
+    AS $$
+DECLARE c compteur_ticket;
+BEGIN
+    IF p_numero IS NULL OR p_numero < 1 THEN RETURN 0; END IF;
+    SELECT * INTO c FROM compteur_ticket WHERE id = 1 FOR UPDATE;
+    IF NOT FOUND OR p_numero <= c.dernier_numero THEN RETURN 0; END IF;
+    IF p_numero - c.dernier_numero > 10000000 THEN
+        RAISE EXCEPTION 'Compteur des tickets : saut de % n° refusé (plus de 10 millions)', p_numero - c.dernier_numero USING ERRCODE = 'check_violation';
+    END IF;
+    INSERT INTO compteur_ticket_saut (du, au, motif, epoque) VALUES (c.dernier_numero + 1, p_numero, 'restauration', p_epoque);
+    PERFORM set_config('pharma.saut_ticket', p_numero::text, true);
+    UPDATE compteur_ticket SET dernier_numero = p_numero WHERE id = 1;
+    PERFORM set_config('pharma.saut_ticket', '', true);
+    RETURN p_numero - c.dernier_numero;
+END $$;
+
+
+--
+-- Name: FUNCTION sync_avancer_compteur_ticket(p_numero bigint, p_epoque integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_avancer_compteur_ticket(p_numero bigint, p_epoque integer) IS 'Après un retour en arrière : compteur des tickets avancé au-delà du plus grand n° reçu par le serveur central, plage notée (script 151, S6.5-D6 a).';
+
+
+--
 -- Name: sync_avancer_sequences(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3760,6 +3809,32 @@ END $$;
 
 
 --
+-- Name: sync_fins_chaine(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_fins_chaine() RETURNS jsonb
+    LANGUAGE plpgsql STABLE
+    AS $$
+DECLARE r record; v jsonb := '[]'; l record; n int;
+BEGIN
+    FOR r IN SELECT journal FROM chaine_integrite ORDER BY journal LOOP
+        IF to_regclass('public.' || quote_ident(r.journal)) IS NULL THEN CONTINUE; END IF;
+        n := 0;
+        FOR l IN EXECUTE format(
+            'SELECT DISTINCT ON (cle_chaine) cle_chaine, rang, id::text AS id, encode(hash, ''hex'') AS hash FROM public.%I
+             WHERE cle_chaine IS NOT NULL ORDER BY cle_chaine, rang DESC', r.journal) LOOP
+            v := v || jsonb_build_array(jsonb_build_object('journal', r.journal, 'cle_chaine', l.cle_chaine, 'rang', l.rang, 'id', l.id, 'hash', l.hash));
+            n := n + 1;
+        END LOOP;
+        IF n = 0 THEN
+            v := v || jsonb_build_array(jsonb_build_object('journal', r.journal, 'cle_chaine', 'officine', 'rang', 0, 'id', NULL, 'hash', NULL));
+        END IF;
+    END LOOP;
+    RETURN v;
+END $$;
+
+
+--
 -- Name: sync_inscrire(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3966,6 +4041,18 @@ $$;
 
 
 --
+-- Name: sync_noter_declaration(integer, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_declaration(p_nouvelle integer, p_avant_premier_lot boolean, p_resultat text) RETURNS void
+    LANGUAGE sql
+    AS $$
+    UPDATE sync_declaration_epoque SET envoyee_le = now(), avant_premier_lot = p_avant_premier_lot, resultat = left(p_resultat, 500)
+    WHERE nouvelle_epoque = p_nouvelle AND envoyee_le IS NULL
+$$;
+
+
+--
 -- Name: sync_noter_envoi(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4113,6 +4200,10 @@ BEGIN
     END IF;
     -- Jamais une époque déjà connue du central (deux restaurations successives, 2e serveur) : au-delà des deux
     v_nouvelle := greatest(p.epoque, coalesce(p_epoque_central, 0)) + 1;
+    -- Script 151 : déclaration à envoyer au serveur central AVANT tout lot de la nouvelle époque (ancienne époque, lots, dates, fins de chaîne)
+    INSERT INTO sync_declaration_epoque (nouvelle_epoque, ancienne_epoque, dernier_lot_local, dernier_lot_central, detecte_le, titulaire_id, fins_chaine)
+    VALUES (v_nouvelle, p.epoque, p.dernier_lot, p.retour_arriere_central, p.retour_arriere_le, p_utilisateur, sync_fins_chaine())
+    ON CONFLICT (nouvelle_epoque) DO NOTHING;
     -- Chargement en cours de l'ancienne époque : son instantané (lignes de l'ancienne époque) ne partira jamais
     UPDATE sync_chargement c SET etat = 'remplace' WHERE c.etat NOT IN ('termine', 'remplace');
     UPDATE sync_parametre SET epoque = v_nouvelle, dernier_lot = 0, dernier_accuse = 0,
@@ -6358,6 +6449,44 @@ CREATE TABLE public.compteur_ticket (
 
 
 --
+-- Name: compteur_ticket_saut; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.compteur_ticket_saut (
+    id bigint NOT NULL,
+    du bigint NOT NULL,
+    au bigint NOT NULL,
+    motif text NOT NULL,
+    epoque integer,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_compteur_ticket_saut_motif CHECK ((motif = 'restauration'::text)),
+    CONSTRAINT ck_compteur_ticket_saut_plage CHECK ((au >= du)),
+    CONSTRAINT compteur_ticket_saut_du_check CHECK ((du >= 1))
+);
+
+
+--
+-- Name: TABLE compteur_ticket_saut; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.compteur_ticket_saut IS 'Plages de n° de tickets sautées après un retour en arrière de la base (restauration, bascule) : n° déjà attribués à des ventes reçues par le serveur central ; ajout seul (script 151, décision S6.5-D6 a).';
+
+
+--
+-- Name: compteur_ticket_saut_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.compteur_ticket_saut ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.compteur_ticket_saut_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: connexion_employe; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7311,6 +7440,43 @@ CREATE TABLE public.integrite_essai (
 
 ALTER TABLE public.integrite_essai ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.integrite_essai_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: integrite_prise_acte; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.integrite_prise_acte (
+    id bigint NOT NULL,
+    nouvelle_epoque integer NOT NULL,
+    cause text NOT NULL,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    CONSTRAINT integrite_prise_acte_cause_check CHECK (((length(btrim(cause)) >= 3) AND (length(btrim(cause)) <= 500))),
+    CONSTRAINT integrite_prise_acte_nouvelle_epoque_check CHECK ((nouvelle_epoque >= 2))
+);
+
+
+--
+-- Name: TABLE integrite_prise_acte; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.integrite_prise_acte IS 'Prise d''acte du titulaire d''une restauration constatée par le serveur central (cause), envoyée au central ; ajout seul (script 151, S6.5-D4).';
+
+
+--
+-- Name: integrite_prise_acte_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.integrite_prise_acte ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.integrite_prise_acte_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -10600,6 +10766,34 @@ ALTER TABLE public.sync_chargement ALTER COLUMN numero ADD GENERATED ALWAYS AS I
 
 
 --
+-- Name: sync_declaration_epoque; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sync_declaration_epoque (
+    nouvelle_epoque integer NOT NULL,
+    ancienne_epoque integer NOT NULL,
+    dernier_lot_local bigint NOT NULL,
+    dernier_lot_central bigint,
+    detecte_le timestamp with time zone,
+    decide_le timestamp with time zone DEFAULT now() NOT NULL,
+    titulaire_id bigint,
+    fins_chaine jsonb DEFAULT '[]'::jsonb NOT NULL,
+    envoyee_le timestamp with time zone,
+    avant_premier_lot boolean,
+    resultat text,
+    CONSTRAINT ck_sync_declaration_epoque_ordre CHECK ((nouvelle_epoque > ancienne_epoque)),
+    CONSTRAINT sync_declaration_epoque_resultat_check CHECK ((length(resultat) <= 500))
+);
+
+
+--
+-- Name: TABLE sync_declaration_epoque; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sync_declaration_epoque IS 'Changement d''époque à déclarer au serveur central avant tout lot de la nouvelle époque (script 151, S6.5-D1).';
+
+
+--
 -- Name: sync_famille_colonne; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -13199,6 +13393,14 @@ ALTER TABLE ONLY public.compteur_ticket
 
 
 --
+-- Name: compteur_ticket_saut compteur_ticket_saut_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.compteur_ticket_saut
+    ADD CONSTRAINT compteur_ticket_saut_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: connexion_employe connexion_employe_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13428,6 +13630,22 @@ ALTER TABLE ONLY public.indication
 
 ALTER TABLE ONLY public.integrite_essai
     ADD CONSTRAINT integrite_essai_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: integrite_prise_acte integrite_prise_acte_nouvelle_epoque_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integrite_prise_acte
+    ADD CONSTRAINT integrite_prise_acte_nouvelle_epoque_key UNIQUE (nouvelle_epoque);
+
+
+--
+-- Name: integrite_prise_acte integrite_prise_acte_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integrite_prise_acte
+    ADD CONSTRAINT integrite_prise_acte_pkey PRIMARY KEY (id);
 
 
 --
@@ -14156,6 +14374,14 @@ ALTER TABLE ONLY public.surveillance_replication
 
 ALTER TABLE ONLY public.sync_chargement
     ADD CONSTRAINT sync_chargement_pkey PRIMARY KEY (numero);
+
+
+--
+-- Name: sync_declaration_epoque sync_declaration_epoque_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_declaration_epoque
+    ADD CONSTRAINT sync_declaration_epoque_pkey PRIMARY KEY (nouvelle_epoque);
 
 
 --
@@ -16004,6 +16230,20 @@ CREATE TRIGGER trg_compteur_ticket_proteger BEFORE DELETE OR UPDATE ON public.co
 
 
 --
+-- Name: compteur_ticket_saut trg_compteur_ticket_saut_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_compteur_ticket_saut_ajout_seul BEFORE DELETE OR UPDATE ON public.compteur_ticket_saut FOR EACH ROW EXECUTE FUNCTION public.integrite_ajout_seul_restauration();
+
+
+--
+-- Name: compteur_ticket_saut trg_compteur_ticket_saut_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_compteur_ticket_saut_non_vidable BEFORE TRUNCATE ON public.compteur_ticket_saut FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_ajout_seul_restauration();
+
+
+--
 -- Name: annulation_vente trg_conservation_fiscale; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -16169,6 +16409,13 @@ CREATE TRIGGER trg_integrite_non_vidable BEFORE TRUNCATE ON public.journal_regis
 --
 
 CREATE TRIGGER trg_integrite_non_vidable BEFORE TRUNCATE ON public.journal_vente FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_interdire_modification();
+
+
+--
+-- Name: integrite_prise_acte trg_integrite_prise_acte_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_integrite_prise_acte_ajout_seul BEFORE DELETE OR UPDATE ON public.integrite_prise_acte FOR EACH ROW EXECUTE FUNCTION public.integrite_ajout_seul_restauration();
 
 
 --
@@ -17619,6 +17866,14 @@ ALTER TABLE ONLY public.import_catalogue_grossiste
 
 ALTER TABLE ONLY public.import_catalogue_grossiste
     ADD CONSTRAINT import_catalogue_grossiste_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: integrite_prise_acte integrite_prise_acte_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.integrite_prise_acte
+    ADD CONSTRAINT integrite_prise_acte_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
 
 
 --
@@ -19089,5 +19344,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict pr0uUloXm8umwxRpChsJYfuYsvaaytWVXTcqJHCA9GRzcU0hV5jJyQzRL2cbcQq
+\unrestrict DXdI1zeaae1og5ZNqC3Pg9Gt8TRFsNjgKOf2c5HP8SuRHZA2roaV1Er15FZCSP2
 

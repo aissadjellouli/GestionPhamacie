@@ -206,8 +206,16 @@
             else
             {
                 <section class="panneau" aria-labelledby="s-integrite">
-                    <h2 id="s-integrite">Vérification par le serveur central</h2>
-                    <div class="achats-ligne ligne-lecture">
+                    @* 1366 × 768 (2026-11-19) : lien vers les restaurations dans le titre, champs resserrés sur une rangée, tableau des anomalies de
+                       120 px au moins : rubrique à 0 px *@
+                    @{ var nbRestaurations = ic.Restaurations?.Count ?? 0; }
+                    <h2 id="s-integrite">Vérification par le serveur central
+                        @if (nbRestaurations > 0)
+                        {
+                            <span> · </span><a href="admin/synchronisation?rubrique=restaurations" class="lien-bouton" data-zone="lien-restaurations">@nbRestaurations restauration(s)</a>
+                        }
+                    </h2>
+                    <div class="achats-ligne ligne-lecture champs-courts">
                         <div class="champ" style="flex: 1 1 160px"><span class="etiquette-champ">État</span>
                             <span><span class="pastille @ClasseIntegrite(ic.Statut)" data-zone="integrite-statut">@LibelleIntegrite(ic.Statut)</span></span></div>
                         <div class="champ" style="flex: 1 1 200px"><span class="etiquette-champ">Dernière vérification</span>
@@ -232,7 +240,7 @@
                 </section>
                 <section class="panneau" aria-labelledby="s-anomalies">
                     <h2 id="s-anomalies">Anomalies constatées (@ic.AnomaliesTotal)</h2>
-                    <div class="tableau-cadre" data-zone="integrite-anomalies">
+                    <div class="tableau-cadre" data-zone="integrite-anomalies" data-hauteur-min="120">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col" class="nombre">N°</th><th scope="col">Constatée le</th><th scope="col">Nature</th><th scope="col">Journal</th><th scope="col">Rang ou pièce</th><th scope="col">Détail</th></tr></thead>
                             <tbody>
@@ -241,7 +249,7 @@
                                     <tr data-anomalie="@a.Id">
                                         <td class="nombre">@a.Id</td>
                                         <td>@Date(a.DetecteeLe)</td>
-                                        <td class="nom">@a.Libelle</td>
+                                        <td class="nom">@a.Libelle@if (a.Classee) {<br /><span class="detail">rattachée à une restauration</span>}</td>
                                         <td>@LibelleJournal(a.Journal)</td>
                                         <td>@(a.Rang is { } rg ? $"rang {rg}" : a.Ligne ?? "—")</td>
                                         <td class="detail">@(a.Detail ?? "—")</td>
@@ -255,6 +263,64 @@
                 </section>
             }
             </div>
+        }
+
+        @if (t is not null && rubrique == "restaurations")
+        {
+            @* Lot S6.5 (§ 31, S6.5-D4) : rubrique à part (2026-11-19) : avec le résumé et les anomalies, la rubrique Intégrité dépassait
+               la fenêtre (écran fixe) *@
+            @if (t.IntegriteCentrale?.Restaurations is not { Count: > 0 } restaurations)
+            {
+                <section class="panneau" aria-labelledby="s-restaurations">
+                    <h2 id="s-restaurations">Restaurations constatées</h2>
+                    <p class="detail" style="margin: 0" data-zone="restaurations-aucune">Aucune restauration constatée par le serveur central.</p>
+                </section>
+            }
+            else
+            {
+                    @* Lot S6.5 (§ 31, S6.5-D4) : restaurations constatées par le serveur central ; l'ancienne suite y est gardée comme preuve.
+                       Prise d'acte du titulaire (cause) : le statut repasse à « Aucune anomalie » si rien d'autre n'est en anomalie. *@
+                    <section class="panneau" aria-labelledby="s-restaurations" data-zone="integrite-restaurations">
+                        <h2 id="s-restaurations">Restaurations constatées (@restaurations.Count)</h2>
+                        <div class="tableau-cadre">
+                            <table class="tableau" style="min-width: 0">
+                                <thead><tr><th scope="col">Époque</th><th scope="col">Journal</th><th scope="col">Lignes remplacées</th><th scope="col">Période</th>
+                                    <th scope="col" class="nombre">Montant TTC</th><th scope="col">Classe</th><th scope="col">Prise d’acte</th></tr></thead>
+                                <tbody>
+                                    @foreach (var b in restaurations)
+                                    {
+                                        <tr data-restauration="@b.Id">
+                                            <td>@b.AncienneEpoque → @b.NouvelleEpoque</td>
+                                            <td>@LibelleJournal(b.Journal)</td>
+                                            <td>@b.Lignes (rangs @(b.RangCommun + 1) à @(b.FinAncienneRang?.ToString() ?? "?"))@(b.SceauxPerdus > 0 ? $" · {b.SceauxPerdus} scellée(s)" : "")</td>
+                                            <td>@(b.Du is { } du ? du.ToLocalTime().ToString("dd/MM/yyyy") : "—")@(b.Au is { } au ? " au " + au.ToLocalTime().ToString("dd/MM/yyyy") : "")</td>
+                                            <td class="nombre">@(b.MontantTtc is { } m ? Libelles.Dinars(m, 2) : "—")</td>
+                                            <td><span class="pastille @(b.Classe == "restauration_a_justifier" ? "urgent" : "attention")">@(b.Classe == "restauration_a_justifier" ? "À justifier auprès de l’éditeur" : "Remplacée après restauration")</span></td>
+                                            <td>
+                                                @if (b.PriseActe) { <span class="pastille ok">Faite</span> }
+                                                else if (EstTitulaire) { <button type="button" class="lien-bouton" @onclick="() => (priseActeEpoque, causePriseActe, erreurPriseActe) = (b.NouvelleEpoque, null, null)">Prendre acte</button> }
+                                                else { <span class="detail">par le titulaire</span> }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (priseActeEpoque is { } ep)
+                        {
+                            <div class="achats-ligne" data-zone="prise-acte">
+                                <div class="champ" style="flex: 1 1 360px">
+                                    <label for="pa-cause" class="requis">Cause de la restauration de l’époque @ep</label>
+                                    <input id="pa-cause" data-champ="cause" type="text" maxlength="500" placeholder="Ex. panne du disque, sauvegarde du 17/11 au soir" @bind="causePriseActe" @bind:event="oninput" />
+                                </div>
+                                <button type="button" class="btn btn-principal" disabled="@enCoursPriseActe" @onclick="PrendreActeAsync">Prendre acte</button>
+                                <button type="button" class="btn" @onclick="() => priseActeEpoque = null">Annuler</button>
+                            </div>
+                            @if (erreurPriseActe is not null) { <div class="erreur" role="alert">@erreurPriseActe</div> }
+                        }
+                        <p class="detail" style="margin: 0">Les lignes remplacées restent au serveur central comme preuve. À faire : ne rien corriger, garder la sauvegarde utilisée, noter la cause.</p>
+                    </section>
+            }
         }
 
         @if (t is not null && rubrique == "ordres")
@@ -540,8 +606,34 @@
     };
 
     // Lot S4 : intégrité au central
-    private static string ClasseIntegrite(string statut) => statut switch { "ok" => "ok", "attente" => "info", "anomalie" => "urgent", _ => "" };
-    private static string LibelleIntegrite(string statut) => statut switch { "ok" => "Aucune anomalie", "attente" => "En attente de données", "anomalie" => "Anomalie", _ => statut };
+    private static string ClasseIntegrite(string statut) => statut switch { "ok" => "ok", "attente" => "info", "anomalie" => "urgent", "restauration" => "attention", _ => "" };
+    private static string LibelleIntegrite(string statut) => statut switch
+    {
+        "ok" => "Aucune anomalie", "attente" => "En attente de données", "anomalie" => "Anomalie",
+        "restauration" => "Restauration constatée", _ => statut
+    };
+
+    // Lot S6.5.4 : prise d'acte du titulaire d'une restauration constatée
+    private int? priseActeEpoque;
+    private string? causePriseActe, erreurPriseActe;
+    private bool enCoursPriseActe;
+
+    private async Task PrendreActeAsync()
+    {
+        if (priseActeEpoque is not { } ep) return;
+        enCoursPriseActe = true;
+        try
+        {
+            erreurPriseActe = await Api.PrendreActeRestaurationAsync(ep, causePriseActe ?? "");
+            if (erreurPriseActe is null)
+            {
+                priseActeEpoque = null;
+                message = $"Prise d’acte de la restauration de l’époque {ep} enregistrée : elle part au serveur central au prochain envoi.";
+                await ChargerAsync();
+            }
+        }
+        finally { enCoursPriseActe = false; }
+    }
     private static string LibelleChaine(string statut) => statut switch { "ok" => "Intacte", "attente" => "En attente", "rupture" => "Rompue", _ => statut };
     private static string LibelleJournal(string journal) => journal switch
     {

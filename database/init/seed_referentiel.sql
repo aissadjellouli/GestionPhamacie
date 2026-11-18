@@ -23,7 +23,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 150 (095, 098, 099, 132, 134, 137, 138, 139, 142, 143, 148, 149 et 150 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 146 : classement de commande_ordre_central (jamais) ; 147 : chifa_code_produit et produit_indication passées montantes ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 151 (151 : classement sync_table de integrite_prise_acte (montante), compteur_ticket_saut et sync_declaration_epoque (jamais) ; 095, 098, 099, 132, 134, 137, 138, 139, 142, 143, 148, 149 et 150 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 146 : classement de commande_ordre_central (jamais) ; 147 : chifa_code_produit et produit_indication passées montantes ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -390,6 +390,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('compte_carte_periode', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('compte_tresorerie', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('compteur_ticket', 'montante', '{id}', '{}', '{}', '{}', false, 'Compteur des tickets : continuité vérifiée au serveur central (lot S4, script 144)'),
+    ('compteur_ticket_saut', 'jamais', '{id}', '{}', '{}', '{}', false, 'Plages de n° de tickets sautées après un retour en arrière, script 151'),
     ('connexion_employe', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('correction_lot', 'montante', '{id}', '{}', '{}', '{motif}', false, NULL),
     ('correspondance_echeancier', 'montante', '{compte_id}', '{}', '{}', '{}', false, NULL),
@@ -415,6 +416,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('import_catalogue_grossiste', 'jamais', '{id}', '{}', '{}', '{}', false, 'Journal d''import local'),
     ('indication', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
     ('integrite_essai', 'jamais', '{id}', '{}', '{}', '{}', false, 'Table d''essai interne'),
+    ('integrite_prise_acte', 'montante', '{id}', '{}', '{}', '{cause}', false, 'Prise d''acte du titulaire d''une restauration constatée par le serveur central, script 151'),
     ('inventaire', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('journal_audit', 'montante', '{id}', '{details}', '{}', '{}', false, 'Détails libres retirés (peuvent contenir des données personnelles)'),
     ('journal_registre_psychotrope', 'montante', '{id}', '{porteur_nom,porteur_adresse,porteur_piece}', '{patient_id}', '{motif}', true, 'Journal chaîné : colonnes du porteur retirées, le serveur central ne peut pas recalculer l''empreinte (lot S4)'),
@@ -491,6 +493,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('substitution_liste_blanche', 'bidirectionnelle', '{produit_id,remplacant_id}', '{}', '{}', '{}', false, NULL),
     ('surveillance_replication', 'jamais', '{id}', '{}', '{}', '{}', false, 'Réplication locale'),
     ('sync_chargement', 'jamais', '{numero}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('sync_declaration_epoque', 'jamais', '{nouvelle_epoque}', '{}', '{}', '{}', false, 'Déclaration du changement d''époque envoyée par la route du serveur central, script 151'),
     ('sync_famille_colonne', 'jamais', '{famille,nom_table,colonne}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
     ('sync_journal_descendant', 'jamais', '{id}', '{}', '{}', '{}', false, 'Synchronisation elle-même (journal de la voie descendante, script 136)'),
     ('sync_lot', 'jamais', '{epoque,numero}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),

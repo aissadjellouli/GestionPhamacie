@@ -46,7 +46,10 @@ public static class SynchronisationEndpoints
                     ic.DerniereAnomalieId, ic.SceauxOk, ic.SceauxAttente, ic.SceauxIncoherents, ic.TicketsVerifiesJusquA,
                     ic.Chaines.Select(c => new ChaineIntegriteCentraleDto(c.Journal, c.Cle, c.Mode, c.Statut, c.DernierRang, c.NonVerifiables)).ToList(),
                     ic.Anomalies.Select(a => new AnomalieIntegriteCentraleDto(a.Id, a.Nature, IntegriteCentrale.LibelleNature(a.Nature), a.Journal, a.Rang,
-                        a.Ligne, a.Detail, a.DetecteeLeUtc)).ToList()),
+                        a.Ligne, a.Detail, a.DetecteeLeUtc, a.Classee)).ToList(),
+                    ic.RestaurationsListe.Select(b => new RestaurationCentraleDto(b.Id, b.Journal, b.AncienneEpoque, b.NouvelleEpoque, b.RangCommun,
+                        b.FinAncienneRang, b.Lignes, b.DuUtc, b.AuUtc, b.MontantTtc, b.SceauxPerdus, b.Classe, b.PriseActe)).ToList(),
+                    ic.AnomaliesClassees),
                 p.RetourArriereLe is not { } ra ? null : new RetourArriereSynchronisationDto(ra, p.Epoque, p.RetourArriereCentral ?? 0, p.DernierLot,
                     p.RetourArriereSequencesLe is not null, sup.RetourArriere?.AlerteLeUtc)));
         });
@@ -57,6 +60,14 @@ public static class SynchronisationEndpoints
         {
             var r = await repartir.ExecuterAsync(d.EpoqueAffichee, d.MotDePasse, user.UtilisateurId(), ct);
             return Results.Ok(new ResultatNouvelleEpoqueSynchronisationDto(r.Epoque, r.AncienneEpoque, r.Chargement));
+        });
+
+        // Lot S6.5.4 (S6.5-D4) : prise d'acte du titulaire d'une restauration constatée par le serveur central (cause), journalisée,
+        // envoyée au central ; une fois par époque
+        s.MapPost("/integrite/prise-acte", async (PriseActeRestaurationDto d, PrendreActeRestaurationSync prendre, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            await prendre.ExecuterAsync(d.NouvelleEpoque, d.Cause, user.UtilisateurId(), ct);
+            return Results.NoContent();
         });
 
         // Lot S6 : rechargement complet demandé par le titulaire (traité par le passage d'envoi suivant)

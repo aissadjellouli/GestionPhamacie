@@ -91,6 +91,14 @@ BEGIN
     -- Repassage : rien n'est doublé
     v := cloud_verifier_integrite(false);
     ASSERT (SELECT count(*) FROM cloud_integrite_bifurcation) = 1 AND (SELECT count(*) FROM cloud_anomalie_integrite) = 1, 'A : repassage sans doublon';
+    -- Prise d'acte du titulaire reçue de l'officine (table miroir integrite_prise_acte, script officine 151) : statut « ok », restauration listée
+    IF to_regclass('public.integrite_prise_acte') IS NOT NULL THEN
+        INSERT INTO integrite_prise_acte (officine_id, id, sync_epoque, sync_numero, nouvelle_epoque, cause, utilisateur_id, cree_le)
+        VALUES ('aaaaaaaa-0000-0000-0000-000000000023', 1, 2, 99, 2, 'Panne du disque', 1, now());
+        v := cloud_verifier_integrite(false);
+        ASSERT v ->> 'statut' = 'ok', 'A : après la prise d''acte, statut ok : ' || (v ->> 'statut');
+        ASSERT (v -> 'restaurations' -> 0 ->> 'prise_acte')::boolean, 'A : restauration toujours listée, prise d''acte notée';
+    END IF;
     -- Une nouvelle vente de la suite vivante est vérifiée au passage suivant
     PERFORM pg_temp.lot(2, 2, jsonb_build_array(pg_temp.l(7, 'creation', pg_temp.jv(8, 7, 'vente', now(), 13, pg_temp.h(n6)))));
     v := cloud_verifier_integrite(false);

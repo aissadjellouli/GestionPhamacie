@@ -1,37 +1,22 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-18 (fin de journée, après le commit `f404e6f` ; défauts d'écran à 1366 × 768 corrigés le soir, non commités). Vue d'ensemble courte ; le détail de chaque point est dans
+Point d'avancement du 2026-11-19 (nuit, après le commit `a87035b` ; lot S6.5.4 réalisé ensuite, non commité). Vue d'ensemble courte ; le détail de chaque point est dans
 [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et dans les documents cités. À mettre à jour à chaque
 point d'avancement.
 
 ## 1. En cours
 
-Rien. Lots clos et commités le 2026-11-18 (branche `develop`, non poussée) :
-- `200439b` : GED, alerte « aucune sauvegarde sur disque externe depuis N jours » (script 148), rotation de deux disques ; inventaire complet des fonctionnalités.
-- `71ca1a6` : documents d'analyse sans nom d'autre logiciel ; feuille de route alignée.
-- `968fce9` : synchronisation S6 (restauration, bascule, départ d'une officine ; scripts officine 149, central 020 et 021 ; essai de bout en bout S6.4 ; corrections après revue) ; analyse S6.5 ; domaine Patients (fichier des patients, patients en attente) ; menu vertical en teinte « grès ».
-- `f404e6f` : suggestions pendant la frappe dans tout le logiciel (composant commun, liste blanche, script 150) ; message de nomenclature corrigé.
+Rien. Commits locaux (branche `develop`, non poussée) : jusqu'à `f404e6f` le 2026-11-18, puis `a87035b` (2026-11-19) : écrans à
+1366 × 768 (Caisse, contrôle interne, emplacements, Pertes et vigilance), logo et couleurs Tracodex, thème sombre « encre », nom
+Tracodex Officine / Tracodex Réseau, « Pertes et vigilance », rendu en bronze, S6.5 côté central (scripts 022, 023), route `/api/healthcheck`.
 
 ## 2. Fait, à commiter
 
-- Défauts d'écran à 1366 × 768 du 2026-11-18 (les 4 du § 4), corrigés et mesurés le soir même (0 px, clair et sombre, 1366 × 768
-  et 1536 × 890 ; architecture 243/243) : Caisse (repli automatique du bloc client, en-tête sur une rangée, paiement resserré),
-  propositions de la caisse sur toute la largeur, menu du contrôle interne, fiche d'un emplacement. Détail : charte-graphique.md
-  (« Défauts à 1 366 × 768 corrigés »), regles-metier.md « Caisse en trois parties ». Fichiers : `Caisse.razor`,
-  `NavControleInterne.razor`, `AdminEmplacements.razor`, `app.css`, `poste.js`, docs.
-- **Nouveau logo Tracodex** (gélule), adopté par le titulaire le 2026-11-18 : en-tête, connexion, icône de la fenêtre et du
-  `.exe` (tailles 16 à 256), application mobile, titre des PDF ; sources et règles dans `docs/branding/` (rattaché au `.sln` et
-  au `.slnx`) ; charte-graphique.md § Logo. Non indexé (les corrections d'écran ci-dessus sont indexées à part).
-- **Vert de l'interface = vert du logo** (2026-11-18) : variables de `app.css` (clair et sombre), application mobile, PDF, e-mails,
-  écran du client ; contrastes vérifiés (≥ 5 pour le texte), captures avant et après ; charte-graphique.md « Fonds ». Non indexé.
-- **Thème sombre sur l'« encre » du logo** (2026-11-18) : fonds, bordures et textes bleu-vert au lieu de gris-vert (poste et
-  mobile), contrastes égaux ou meilleurs, captures ; charte-graphique.md « Fonds ». Non indexé.
-- **Corrections du 2026-11-18 au soir** (non indexées) : champ patient ou médecin de la Caisse qui sautait pendant la frappe
-  (listes de propositions écartées du calcul des cadres, `poste.js` ; « Nouveau médecin » à droite du libellé) ; bandeau « produit
-  redevenu disponible » sans « 0 patient » ; Pertes et vigilance › Par employé à 0 px à 1366 × 768 (`.tableau-serre`) ; nom
-  « PharmaOfficine » puis, sur choix du titulaire, **« Tracodex Officine »** (logiciel local) et **« Tracodex Réseau »** (serveur central) partout (sauf dossier `Documents\Pharma Officine`, identifiants de pilote de la reprise et scripts SQL déjà
-  exécutés). Onglet Jour par jour aussi à 0 px. Rendu de monnaie de la Caisse en bronze (pendant la saisie et après
-  l'encaissement).
+- **Lot S6.5.4, intégrité après restauration côté officine** (2026-11-19) : script officine `151` (déclaration d'époque, tickets
+  avancés au-delà du central avec plage notée, prise d'acte), script central `024` (dernier n° de ticket), `002` régénéré, envoi de
+  la déclaration avant tout lot de la nouvelle époque, rubrique « Restaurations constatées » et prise d'acte du titulaire ; passés sur
+  `pharmacie_dev`, `pharmacie_test` et `pharmacie_cloud_dev` (sauvegardes faites), `database/init` régénéré ; tests 1 646 / 243 / 78 ;
+  rendu mesuré à 0 px (clair et sombre, 1366 × 768 et 1536 × 890). Détail : conception-synchronisation.md § 31.7.
 
 ## 3. Ensuite
 
@@ -39,10 +24,10 @@ Rien. Lots clos et commités le 2026-11-18 (branche `develop`, non poussée) :
 - [ ] **Port 5432 du poste de développement** (par le titulaire, PowerShell administrateur) : `listen_addresses = 'localhost'` dans
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
       Visual Studio arrêté avant. Constat du 2026-11-18 : écoute sur toutes les adresses, `pg_hba.conf` limité à 127.0.0.1 et ::1, aucune règle de pare-feu.
-- [ ] **S6.5, intégrité après restauration** (« go S6.5 » du 2026-11-18) : **central fait** (S6.5.1 à S6.5.3 : scripts 022 et 023,
-      route `POST /api/v1/epoque`, console `--restaurations-integrite`, export de départ ; passés sur `pharmacie_cloud_dev`, non commités).
-      **Reste** : S6.5.4 officine (script 151, envoi de la déclaration, compteur de tickets, prise d'acte, écran), S6.5.5 essai de bout en
-      bout, S6.5.6 documentation : [conception-synchronisation.md](conception-synchronisation.md) § 31.6.
+- [ ] **S6.5, intégrité après restauration** (« go S6.5 » du 2026-11-18) : **central et officine faits** (S6.5.1 à S6.5.4 : scripts
+      centraux 022 à 024, script officine 151, déclaration d'époque, tickets avancés (choix D6 a), prise d'acte, rubrique « Restaurations
+      constatées » ; passés sur dev, test et `pharmacie_cloud_dev`). **Reste** : S6.5.5 essai de bout en bout avec le vrai central,
+      S6.5.6 documentation finale : [conception-synchronisation.md](conception-synchronisation.md) § 31.6 et § 31.7.
 
 ## 4. Défauts d'écran constatés le 2026-11-18
 

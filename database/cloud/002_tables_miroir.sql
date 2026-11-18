@@ -1116,6 +1116,28 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public."fournisseur_mouvement" TO pharma
 INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('fournisseur_mouvement', '{id}', '{id,fournisseur_id,type,montant,solde_apres,utilisateur_id,reference,cree_le,officine_id}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
+CREATE TABLE IF NOT EXISTS public."integrite_prise_acte" (
+    officine_id uuid NOT NULL,
+    "id" bigint NOT NULL,
+    sync_epoque integer NOT NULL,
+    sync_numero bigint NOT NULL,
+    sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (officine_id, "id")
+);
+ALTER TABLE public."integrite_prise_acte" ADD COLUMN IF NOT EXISTS "nouvelle_epoque" integer;
+ALTER TABLE public."integrite_prise_acte" ADD COLUMN IF NOT EXISTS "cause" text;
+ALTER TABLE public."integrite_prise_acte" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
+ALTER TABLE public."integrite_prise_acte" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."integrite_prise_acte" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."integrite_prise_acte" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
+ALTER TABLE public."integrite_prise_acte" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."integrite_prise_acte" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cloisonnement ON public."integrite_prise_acte";
+CREATE POLICY cloisonnement ON public."integrite_prise_acte" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public."integrite_prise_acte" TO pharma_cloud_api;
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('integrite_prise_acte', '{id}', '{id,nouvelle_epoque,cause,utilisateur_id,cree_le,officine_id}')
+    ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
+
 CREATE TABLE IF NOT EXISTS public."inventaire" (
     officine_id uuid NOT NULL,
     "id" bigint NOT NULL,

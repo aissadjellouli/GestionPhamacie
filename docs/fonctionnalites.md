@@ -313,6 +313,7 @@ Légende des états :
 | S3 : envoi environ chaque minute, supervision, purge de la file, bandeau des postes, alertes au titulaire | Fait | Administration › Synchronisation ; § 20 |
 | Valeurs de départ de la supervision (bandeau, retard, erreur, conservation) | En attente (à confirmer par le titulaire) | a-faire.md « Plus tard » |
 | S4 : vérification d’intégrité au serveur central, alerte au titulaire | Fait | Synchronisation › Intégrité au central ; § 22 |
+| S6.5 : intégrité après restauration (déclaration de la nouvelle époque, restaurations constatées au central, prise d’acte du titulaire, tickets avancés au-delà du central) | Fait (essai de bout en bout S6.5.5 à faire ; avis du comptable sur les n° sautés à demander) | Synchronisation › Restaurations constatées ; § 31 |
 | S5.1 et S5.5 : ordres du central, employés et droits | Fait | Ordres du central ; § 24 |
 | S5.2 : prix d’un produit envoyé par le central | Fait | § 25 |
 | S5.3 : nomenclature nationale envoyée par le central | Fait | § 26 |

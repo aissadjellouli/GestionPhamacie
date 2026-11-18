@@ -21,7 +21,7 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 150 tables — 83 montantes, 22 bidirectionnelles, 16 descendantes, 29 jamais envoyées (`chifa_code_produit` et `produit_indication` passées de descendantes à montantes par le script 147 ; `commande_ordre_central`, jamais, par le script 146, lot S5.4 ; `sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
+**Récapitulatif** : 153 tables — 84 montantes, 22 bidirectionnelles, 16 descendantes, 31 jamais envoyées (`integrite_prise_acte`, montante, `compteur_ticket_saut` et `sync_declaration_epoque`, jamais, par le script 151, lot S6.5.4 ; `chifa_code_produit` et `produit_indication` passées de descendantes à montantes par le script 147 ; `commande_ordre_central`, jamais, par le script 146, lot S5.4 ; `sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
 
 ## Ce que reçoit le serveur central : vue d'ensemble (2026-11-17)
 
@@ -156,6 +156,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `sync_ordre_resultat` | montante | ordre_id | - | - | Résultat des ordres du serveur central (état, motif filtré, date), script 145 |
 | `chifa_code_produit` | montante | code | - | - | Code CHIFA associé à un produit dans l'officine (n° de produit local), script 147 |
 | `produit_indication` | montante | produit_id, indication_id | - | - | Indications associées à un produit dans l'officine (n° de produit local), script 147 |
+| `integrite_prise_acte` | montante | id | - | - | Prise d'acte du titulaire d'une restauration constatée par le serveur central (cause filtrée), script 151 |
 | `utilisation_financement` | montante | id | - | - | |
 | `vente` | montante | id | remis_a_nom, pour_nom, chifa_qr | patient_id, remis_a_patient_id, pour_patient_id | |
 | `vente_chifa_facture_conflit` | montante | vente_id | - | - | |
@@ -204,6 +205,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `alerte_non_envoyee` | jamais | id | - | - | Technique, local |
 | `chaine_integrite` | jamais | journal | - | - | Registre technique local |
 | `commande_ordre_central` | jamais | commande_id | - | - | Lien commande / ordre du serveur central (local), script 146 |
+| `compteur_ticket_saut` | jamais | id | - | - | Plages de n° de tickets sautées après un retour en arrière (preuve locale), script 151 |
 | `destinataire_notification` | jamais | id | - | - | Coordonnées personnelles |
 | `facture_compteur` | jamais | type, annee | - | - | Compteur local |
 | `historique_chifa` | jamais | id | - | - | Reprise : nom et n° d'assuré en clair |
@@ -222,6 +224,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `serveur_officine` | jamais | nom | - | - | Réglages propres à chaque serveur |
 | `surveillance_replication` | jamais | id | - | - | Réplication locale |
 | `sync_chargement` | jamais | numero | - | - | Synchronisation elle-même (chargements complets, script 129) |
+| `sync_declaration_epoque` | jamais | nouvelle_epoque | - | - | Déclaration du changement d'époque (envoyée par la route du serveur central, pas comme table), script 151 |
 | `sync_famille_colonne` | jamais | famille, nom_table, colonne | - | - | Synchronisation elle-même (familles nominatives, script 130) |
 | `sync_journal_descendant` | jamais | id | - | - | Synchronisation elle-même (journal de la voie descendante, script 136) |
 | `sync_lot` | jamais | epoque, numero | - | - | Synchronisation elle-même |

@@ -165,6 +165,17 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
     public async Task<IReadOnlyDictionary<string, long>> MaximumsAsync(string adresse, CancellationToken ct = default) =>
         (await LireGetAsync<MaximumsCentralDto>(adresse, "api/v1/maximums", ct)).Tables ?? new Dictionary<string, long>();
 
+    /// <summary>Lot S6.5.4 : déclaration du changement d'époque (POST /api/v1/epoque) ; route absente : ServeurCentralException 404.</summary>
+    public async Task<ReponseDeclarationSync> DeclarerEpoqueAsync(string adresse, DeclarationEpoqueSync d, CancellationToken ct = default)
+    {
+        var dto = new DeclarationEpoqueDto(d.AncienneEpoque, d.NouvelleEpoque, d.DernierLotLocal, d.DernierLotCentral,
+            d.DetecteLeUtc is { } det ? new DateTimeOffset(DateTime.SpecifyKind(det, DateTimeKind.Utc)) : null,
+            new DateTimeOffset(DateTime.SpecifyKind(d.DecideLeUtc, DateTimeKind.Utc)), d.TitulaireId,
+            d.FinsChaine.Select(f => new FinChaineDto(f.Journal, f.CleChaine, f.Rang, f.Id, f.Hash)).ToList());
+        var r = await PosterAsync<DeclarationEpoqueDto, ReponseDeclarationEpoqueDto>(adresse, "api/v1/epoque", dto, ct);
+        return new ReponseDeclarationSync(r.DejaDeclaree, r.AvantPremierLot);
+    }
+
     private async Task<T> LireGetAsync<T>(string adresse, string route, CancellationToken ct)
     {
         var (http, cert) = await ClientCertifieAsync(adresse, ct);

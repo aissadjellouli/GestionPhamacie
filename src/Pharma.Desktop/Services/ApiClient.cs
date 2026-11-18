@@ -931,6 +931,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(ResultatNouvelleEpoqueSynchronisationDto?, string?)> NouvelleEpoqueSynchronisationAsync(int epoqueAffichee, string motDePasse) =>
         PostAsync<NouvelleEpoqueSynchronisationDto, ResultatNouvelleEpoqueSynchronisationDto>("api/admin/synchronisation/nouvelle-epoque",
             new NouvelleEpoqueSynchronisationDto(epoqueAffichee, motDePasse));
+    /// <summary>Lot S6.5.4 : prise d'acte du titulaire d'une restauration constatée par le serveur central (cause).</summary>
+    public async Task<string?> PrendreActeRestaurationAsync(int nouvelleEpoque, string cause) =>
+        (await EnvoyerCorpsAsync<PriseActeRestaurationDto, object>(HttpMethod.Post, "api/admin/synchronisation/integrite/prise-acte",
+            new PriseActeRestaurationDto(nouvelleEpoque, cause))).Item2;
     public Task<(SecondServeurDto?, string?)> SecondServeurAsync() => GetAsync<SecondServeurDto?>("api/admin/second-serveur", null);
     public async Task<string?> ModifierServeurOfficineAsync(ModifierServeurOfficineDto d) =>
         (await EnvoyerCorpsAsync<ModifierServeurOfficineDto, object>(HttpMethod.Put, "api/admin/second-serveur/serveurs", d)).Item2;

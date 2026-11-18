@@ -193,6 +193,68 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
         return liste;
     }
 
+    /// <summary>Lot S6.5.4 (script 151) : déclaration pas encore envoyée, la plus récente (une époque dépassée est notée par l'appelant).</summary>
+    public async Task<DeclarationEpoqueSync?> DeclarationAEnvoyerAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT ancienne_epoque, nouvelle_epoque, dernier_lot_local, dernier_lot_central, detecte_le, decide_le, titulaire_id, fins_chaine::text
+            FROM sync_declaration_epoque WHERE envoyee_le IS NULL ORDER BY nouvelle_epoque DESC LIMIT 1
+            """);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return null;
+        var fins = new List<FinChaineSync>();
+        using (var doc = System.Text.Json.JsonDocument.Parse(r.GetString(7)))
+            foreach (var f in doc.RootElement.EnumerateArray())
+                fins.Add(new FinChaineSync(f.GetProperty("journal").GetString() ?? "", f.GetProperty("cle_chaine").GetString() ?? "",
+                    f.GetProperty("rang").GetInt64(),
+                    f.TryGetProperty("id", out var id) && id.ValueKind == System.Text.Json.JsonValueKind.String ? id.GetString() : null,
+                    f.TryGetProperty("hash", out var h) && h.ValueKind == System.Text.Json.JsonValueKind.String ? h.GetString() : null));
+        return new DeclarationEpoqueSync(r.GetInt32(0), r.GetInt32(1), r.GetInt64(2), r.IsDBNull(3) ? null : r.GetInt64(3),
+            r.IsDBNull(4) ? null : r.GetFieldValue<DateTime>(4), r.GetFieldValue<DateTime>(5), r.IsDBNull(6) ? null : r.GetInt64(6), fins);
+    }
+
+    public async Task NoterDeclarationAsync(int nouvelleEpoque, bool? avantPremierLot, string resultat, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_noter_declaration($1, $2, $3)");
+        cmd.Parameters.AddWithValue(nouvelleEpoque);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)avantPremierLot ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Boolean });
+        cmd.Parameters.AddWithValue(resultat);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Lot S6.5.4 (S6.5-D6 a) : compteur des tickets avancé (jamais en arrière), plage notée ; nombre de n° sautés.</summary>
+    public async Task<long> AvancerCompteurTicketAsync(long dernierTicketCentral, int epoque, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_avancer_compteur_ticket($1, $2)");
+        cmd.Parameters.AddWithValue(dernierTicketCentral);
+        cmd.Parameters.AddWithValue(epoque);
+        return await cmd.ExecuteScalarAsync(ct) is long n ? n : 0;
+    }
+
+    /// <summary>Prise d'acte (script 151) et entrée du journal des actions dans UNE transaction ; une seule par époque.</summary>
+    public async Task PrendreActeRestaurationAsync(int nouvelleEpoque, string cause, long titulaireId, IReadOnlyDictionary<string, object?> journal,
+        CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        long id;
+        try
+        {
+            await using var cmd = new NpgsqlCommand(
+                "INSERT INTO integrite_prise_acte (nouvelle_epoque, cause, utilisateur_id) VALUES ($1, $2, $3) RETURNING id", cnx, tx);
+            cmd.Parameters.AddWithValue(nouvelleEpoque);
+            cmd.Parameters.AddWithValue(cause);
+            cmd.Parameters.AddWithValue(titulaireId);
+            id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new Pharma.Domain.Commun.RegleMetierException($"La prise d’acte de la restauration de l’époque {nouvelleEpoque} est déjà enregistrée.");
+        }
+        await Securite.JournalSql.EcrireAsync(cnx, tx, titulaireId, "integrite_prise_acte", "integrite_prise_acte", id, journal, null, ct);
+        await tx.CommitAsync(ct);
+    }
+
     /// <summary>Nouvelle époque et entrée du journal des actions dans UNE transaction (rien n'est noté si l'une échoue).</summary>
     public async Task<NouvelleEpoqueSync> NouvelleEpoqueAsync(long titulaireId, int? epoqueCentral, int epoqueAttendue,
         Func<NouvelleEpoqueSync, IReadOnlyDictionary<string, object?>> journal, CancellationToken ct = default)

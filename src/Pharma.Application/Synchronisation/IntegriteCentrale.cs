@@ -12,18 +12,38 @@ namespace Pharma.Application.Synchronisation;
 public sealed record ChaineIntegriteCentrale(string Journal, string Cle, string Mode, string Statut, long DernierRang, long NonVerifiables);
 
 /// <summary>Une anomalie constatée au central (les 20 plus récentes sont transmises).</summary>
-public sealed record AnomalieIntegriteCentrale(long Id, string Nature, string Journal, long? Rang, string? Ligne, string? Detail, DateTime? DetecteeLeUtc);
+public sealed record AnomalieIntegriteCentrale(long Id, string Nature, string Journal, long? Rang, string? Ligne, string? Detail, DateTime? DetecteeLeUtc,
+    bool Classee = false);
+
+/// <summary>
+/// Lot S6.5 (script central 023) : restauration constatée au central (deux suites du même journal après un changement d'époque
+/// déclaré). L'ancienne suite est gardée au central comme preuve ; Classe : « restauration_constatee » ou « restauration_a_justifier »
+/// (ligne scellée perdue, restaurations trop fréquentes) ; PriseActe : le titulaire a noté la cause (integrite_prise_acte, script 151).
+/// </summary>
+public sealed record RestaurationCentrale(long Id, string Journal, int AncienneEpoque, int NouvelleEpoque, long RangCommun, long? FinAncienneRang,
+    long Lignes, DateTime? DuUtc, DateTime? AuUtc, decimal? MontantTtc, long SceauxPerdus, string Classe, bool PriseActe)
+{
+    public const string ClasseConstatee = "restauration_constatee";
+    public const string ClasseAJustifier = "restauration_a_justifier";
+    public bool AJustifier => Classe == ClasseAJustifier;
+}
 
 /// <summary>Résumé de la dernière vérification du serveur central (statut : ok, attente ou anomalie).</summary>
 public sealed record IntegriteCentrale(string Statut, DateTime? VerifieLeUtc, DateTime? CompleteLeUtc, long AnomaliesTotal, long DerniereAnomalieId,
     long SceauxOk, long SceauxAttente, long SceauxIncoherents, long? TicketsVerifiesJusquA,
-    IReadOnlyList<ChaineIntegriteCentrale> Chaines, IReadOnlyList<AnomalieIntegriteCentrale> Anomalies)
+    IReadOnlyList<ChaineIntegriteCentrale> Chaines, IReadOnlyList<AnomalieIntegriteCentrale> Anomalies,
+    IReadOnlyList<RestaurationCentrale>? Restaurations = null, long AnomaliesClassees = 0)
 {
     public const string Cle = "integrite_centrale";
     public const string Format = "integrite-v1";
     public const string StatutOk = "ok";
     public const string StatutAttente = "attente";
     public const string StatutAnomalie = "anomalie";
+    /// <summary>Lot S6.5 (S6.5-D4) : restauration constatée dont le titulaire n'a pas encore pris acte (aucune autre anomalie).</summary>
+    public const string StatutRestauration = "restauration";
+
+    /// <summary>Restaurations constatées (vide pour un serveur central antérieur au script 023).</summary>
+    public IReadOnlyList<RestaurationCentrale> RestaurationsListe => Restaurations ?? [];
 
     /// <summary>Libellé d'une nature d'anomalie (écran et alerte au titulaire).</summary>
     public static string LibelleNature(string nature) => nature switch
@@ -42,6 +62,9 @@ public sealed record IntegriteCentrale(string Statut, DateTime? VerifieLeUtc, Da
         "annulation_sans_ligne" => "Annulation sans ligne au journal fiscal",
         "reecriture_apres_envoi" => "Ligne réécrite dans l’officine après son envoi",
         "chaine_officine_plus_courte" => "Lignes déjà envoyées absentes de l’officine",
+        "remplacee_apres_restauration" => "Lignes remplacées après une restauration (gardées au serveur central comme preuve)",
+        "sceau_perdu_restauration" => "Ligne scellée perdue par une restauration",
+        "ticket_reattribue_restauration" => "N° de ticket réattribué après une restauration",
         _ => nature
     };
 
@@ -63,14 +86,21 @@ public sealed record IntegriteCentrale(string Statut, DateTime? VerifieLeUtc, Da
             if (r.TryGetProperty("anomalies", out var an) && an.ValueKind == JsonValueKind.Array)
                 foreach (var a in an.EnumerateArray())
                     anomalies.Add(new AnomalieIntegriteCentrale(Nombre(a, "id") ?? 0, Texte(a, "nature") ?? "?", Texte(a, "journal") ?? "?",
-                        Nombre(a, "rang"), Texte(a, "ligne"), Texte(a, "detail"), Date(a, "detectee_le")));
+                        Nombre(a, "rang"), Texte(a, "ligne"), Texte(a, "detail"), Date(a, "detectee_le"), Booleen(a, "classee")));
+            var restaurations = new List<RestaurationCentrale>();
+            if (r.TryGetProperty("restaurations", out var rs) && rs.ValueKind == JsonValueKind.Array)
+                foreach (var b in rs.EnumerateArray())
+                    restaurations.Add(new RestaurationCentrale(Nombre(b, "id") ?? 0, Texte(b, "journal") ?? "?", (int)(Nombre(b, "ancienne_epoque") ?? 0),
+                        (int)(Nombre(b, "nouvelle_epoque") ?? 0), Nombre(b, "rang_commun") ?? 0, Nombre(b, "fin_ancienne_rang"), Nombre(b, "lignes") ?? 0,
+                        Date(b, "du"), Date(b, "au"), Decimal(b, "montant_ttc"), Nombre(b, "sceaux_perdus") ?? 0,
+                        Texte(b, "classe") ?? RestaurationCentrale.ClasseAJustifier, Booleen(b, "prise_acte")));
             var sceaux = r.TryGetProperty("sceaux", out var s) && s.ValueKind == JsonValueKind.Object ? s : default;
             return new IntegriteCentrale(Texte(r, "statut") ?? StatutAttente, Date(r, "verifie_le"), Date(r, "complete_le"),
                 Nombre(r, "anomalies_total") ?? 0, Nombre(r, "derniere_anomalie_id") ?? 0,
                 sceaux.ValueKind == JsonValueKind.Object ? Nombre(sceaux, "ok") ?? 0 : 0,
                 sceaux.ValueKind == JsonValueKind.Object ? Nombre(sceaux, "attente") ?? 0 : 0,
                 sceaux.ValueKind == JsonValueKind.Object ? Nombre(sceaux, "incoherents") ?? 0 : 0,
-                Nombre(r, "tickets_verifies_jusqu_a"), chaines, anomalies);
+                Nombre(r, "tickets_verifies_jusqu_a"), chaines, anomalies, restaurations, Nombre(r, "anomalies_classees") ?? 0);
         }
         catch (JsonException)
         {
@@ -83,6 +113,12 @@ public sealed record IntegriteCentrale(string Statut, DateTime? VerifieLeUtc, Da
 
     private static long? Nombre(JsonElement e, string nom) =>
         e.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : null;
+
+    private static bool Booleen(JsonElement e, string nom) =>
+        e.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.True;
+
+    private static decimal? Decimal(JsonElement e, string nom) =>
+        e.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDecimal(out var d) ? d : null;
 
     private static DateTime? Date(JsonElement e, string nom) =>
         Texte(e, nom) is { } t && DateTimeOffset.TryParse(t, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var d)

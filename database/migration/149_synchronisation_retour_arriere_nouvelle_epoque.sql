@@ -174,6 +174,13 @@ DROP FUNCTION IF EXISTS sync_nouvelle_epoque(bigint);
 
 -- p_epoque_central : plus grande époque connue du serveur central pour cette officine (NULL : serveur central sans ce
 -- renseignement, époque locale seule) ; p_epoque_attendue : époque affichée à l'écran, refus si elle a changé.
+-- Garde de rejeu (2026-11-19, lot S6.5.4) : définition remplacée par le script 151 ; rejouer ce script après 151
+-- ne la ramène pas en arrière (marqueur : sync_declaration_epoque).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.sync_declaration_epoque') IS NOT NULL THEN
+        RAISE NOTICE 'sync_nouvelle_epoque : définition plus récente (script 151) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION sync_nouvelle_epoque(p_utilisateur bigint, p_epoque_central int, p_epoque_attendue int)
 RETURNS TABLE (epoque int, ancienne_epoque int, chargement int)
 LANGUAGE plpgsql AS $$
@@ -209,6 +216,9 @@ BEGIN
     epoque := v_nouvelle; ancienne_epoque := p.epoque; chargement := n;
     RETURN NEXT;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 COMMENT ON FUNCTION sync_noter_retour_arriere(bigint) IS 'Pose la détection « base revenue en arrière » (serveur central en avance sur cette base pour l''époque en cours) ; true à la première détection (script 149).';
 COMMENT ON FUNCTION sync_avancer_sequences(jsonb) IS 'Avance (jamais en arrière, table verrouillée) les séquences id des tables envoyées au-delà des n° connus du serveur central ; échec rendu par table (script 149).';

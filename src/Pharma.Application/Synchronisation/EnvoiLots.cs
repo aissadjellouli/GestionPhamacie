@@ -94,6 +94,17 @@ public interface IEnvoiSyncDepot
     /// transaction.</summary>
     Task<NouvelleEpoqueSync> NouvelleEpoqueAsync(long titulaireId, int? epoqueCentral, int epoqueAttendue,
         Func<NouvelleEpoqueSync, IReadOnlyDictionary<string, object?>> journal, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Lot S6.5.4 (script 151) : déclaration du changement d'époque pas encore envoyée (la plus récente) ; null : rien à déclarer.</summary>
+    Task<DeclarationEpoqueSync?> DeclarationAEnvoyerAsync(CancellationToken ct = default) => Task.FromResult<DeclarationEpoqueSync?>(null);
+    /// <summary>Lot S6.5.4 : résultat de l'envoi de la déclaration (envoyée, déjà reçue, route absente, refus), noté une fois.</summary>
+    Task NoterDeclarationAsync(int nouvelleEpoque, bool? avantPremierLot, string resultat, CancellationToken ct = default) => Task.CompletedTask;
+    /// <summary>Lot S6.5.4 (S6.5-D6 a) : compteur des tickets avancé au-delà du plus grand n° reçu par le central, plage notée
+    /// (sync_avancer_compteur_ticket) ; rend le nombre de n° sautés (0 : rien à faire).</summary>
+    Task<long> AvancerCompteurTicketAsync(long dernierTicketCentral, int epoque, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Lot S6.5.4 (S6.5-D4, script 151) : prise d'acte du titulaire d'une restauration constatée (cause) et entrée du journal des
+    /// actions dans UNE transaction ; déjà prise pour cette époque : RegleMetierException.</summary>
+    Task PrendreActeRestaurationAsync(int nouvelleEpoque, string cause, long titulaireId, IReadOnlyDictionary<string, object?> journal,
+        CancellationToken ct = default) => throw new NotSupportedException();
 }
 
 /// <summary>Clé privée et certificat client de ce serveur : clé générée ici, jamais envoyée, stockée hors dépôt et hors base.</summary>
@@ -109,6 +120,16 @@ public interface ICertificatSync
     /// <summary>Autorité épinglée du serveur central (null avant activation).</summary>
     X509Certificate2? Autorite();
 }
+
+/// <summary>Lot S6.5.4 : fin d'une chaîne de l'officine au changement d'époque (journal, clé, dernier rang, n°, empreinte hexadécimale).</summary>
+public sealed record FinChaineSync(string Journal, string CleChaine, long Rang, string? Id, string? Hash);
+
+/// <summary>Lot S6.5.4 (S6.5-D1) : déclaration du changement d'époque, envoyée au central avant tout lot de la nouvelle époque.</summary>
+public sealed record DeclarationEpoqueSync(int AncienneEpoque, int NouvelleEpoque, long DernierLotLocal, long? DernierLotCentral,
+    DateTime? DetecteLeUtc, DateTime DecideLeUtc, long? TitulaireId, IReadOnlyList<FinChaineSync> FinsChaine);
+
+/// <summary>Réponse du central à la déclaration : déjà reçue (renvoi), arrivée avant tout lot de la nouvelle époque.</summary>
+public sealed record ReponseDeclarationSync(bool DejaDeclaree, bool AvantPremierLot);
 
 /// <summary>Certificat délivré par le serveur central (activation ou renouvellement).</summary>
 public sealed record ReponseActivationSync(Guid OfficineId, string Serveur, string CertificatPem, string AutoritePem, DateTime EcheanceUtc, string? Epinglage);
@@ -160,6 +181,10 @@ public interface IClientServeurCentral
     /// <summary>Correction 2026-11-18 : plus grande époque connue du serveur central pour cette officine (GET /api/v1/etat, champ
     /// facultatif EpoqueMax) ; null : serveur central sans ce renseignement. Sans implémentation : NotSupportedException.</summary>
     Task<int?> EpoqueMaxCentralAsync(string adresse, int epoque, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Lot S6.5.4 : déclaration du changement d'époque (POST /api/v1/epoque). Route absente : ServeurCentralException 404 ;
+    /// autre déclaration déjà reçue pour cette époque : 409. Sans implémentation : NotSupportedException.</summary>
+    Task<ReponseDeclarationSync> DeclarerEpoqueAsync(string adresse, DeclarationEpoqueSync declaration, CancellationToken ct = default) =>
+        throw new NotSupportedException();
 }
 
 /// <summary>Un seul passage de synchronisation à la fois dans l'API (singleton).</summary>
@@ -224,6 +249,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
             interdites = (await depot.ParametresAsync(ct)).ColonnesInterdites ?? [];
             // Lot S6.2 : base revenue en arrière (restauration, bascule) ? Contrôlé AVANT de former, d'annoncer ou d'envoyer quoi que ce soit
             if (await RetourArriereAsync(p, ct) is { } suspendu) return suspendu;
+            // Lot S6.5.4 : changement d'époque déclaré au central AVANT tout lot de la nouvelle époque (chargement compris)
+            if (await DeclarerEpoqueAsync(p, ct) is { } arret) return arret;
             // Chargement complet demandé : instantané puis annonce, AVANT de former les lots (lot S6)
             if (chargement is not null) await chargement.PreparerAsync(p.Adresse, p.DernierAccuse, ct);
             await constitution.ConstituerAsync(10, ct);
@@ -416,13 +443,54 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         return await SuspendreAsync(p, 0, null, ct);
     }
 
+    /// <summary>
+    /// Lot S6.5.4 (S6.5-D1, conception § 31) : déclaration du changement d'époque notée par « Repartir sur une nouvelle époque »,
+    /// envoyée au central avant tout lot de cette époque (le central ne reconnaît une restauration que si elle est arrivée avant).
+    /// Central injoignable : rien n'est envoyé à ce passage (nouvel essai) ; route absente (404), autre déclaration déjà reçue (409) ou
+    /// refus (400) : résultat noté, les lots partent (sans indulgence au contrôle d'intégrité). Époque dépassée : notée non envoyée.
+    /// </summary>
+    private async Task<ResultatEnvoi?> DeclarerEpoqueAsync(ParametresEnvoiSync p, CancellationToken ct)
+    {
+        var d = await depot.DeclarationAEnvoyerAsync(ct);
+        if (d is null) return null;
+        if (d.NouvelleEpoque != p.Epoque)
+        {
+            await depot.NoterDeclarationAsync(d.NouvelleEpoque, null, $"Non envoyée : époque {d.NouvelleEpoque} dépassée (époque en cours {p.Epoque}).", ct);
+            return null;
+        }
+        try
+        {
+            var r = await client.DeclarerEpoqueAsync(p.Adresse!, d, ct);
+            await depot.NoterDeclarationAsync(d.NouvelleEpoque, r.AvantPremierLot,
+                (r.DejaDeclaree ? "Déjà reçue par le serveur central." : "Reçue par le serveur central.")
+                + (r.AvantPremierLot ? "" : " Arrivée après un lot de la nouvelle époque : aucune indulgence au contrôle d'intégrité."), ct);
+            return null;
+        }
+        catch (ServeurCentralException e) when (e.CodeHttp is 404)
+        {
+            await depot.NoterDeclarationAsync(d.NouvelleEpoque, null,
+                "Non envoyée : le serveur central ne connaît pas la route de déclaration (scripts centraux 022 à 024) ; lots envoyés sans déclaration.", ct);
+            return null;
+        }
+        catch (ServeurCentralException e) when (e.CodeHttp is 409 or 400)
+        {
+            await depot.NoterDeclarationAsync(d.NouvelleEpoque, null, $"Refusée par le serveur central ({e.Message}) ; lots envoyés sans cette déclaration.", ct);
+            return null;
+        }
+        catch (Exception e) when (e is ServeurCentralException or HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            return await ErreurAsync(0, $"Serveur central injoignable pour la déclaration de l'époque {d.NouvelleEpoque} "
+                + $"({(e is TaskCanceledException ? "délai dépassé" : e.Message)}) : rien n'est envoyé à ce passage, nouvel essai au prochain passage.", false, ct);
+        }
+    }
+
     public static string MessageEtatInjoignable(string detail) =>
         $"Serveur central injoignable pour le contrôle de l'état ({detail}) : rien n'est formé ni envoyé à ce passage, nouvel essai au prochain passage.";
 
     /// <summary>Suspension (détection posée) : avance des n° si elle n'est pas faite, message clair gardé tant que la détection dure.</summary>
     private async Task<ResultatEnvoi> SuspendreAsync(ParametresEnvoiSync p, int accuses, long? dernierCentral, CancellationToken ct)
     {
-        var avance = p.RetourArriereSequencesLe is null ? await AvancerSequencesAsync(p.Adresse!, ct) : PhraseAvanceFaite;
+        var avance = p.RetourArriereSequencesLe is null ? await AvancerSequencesAsync(p.Adresse!, p.Epoque, ct) : PhraseAvanceFaite;
         var message = MessageRetourArriere(p.RetourArriereCentral ?? dernierCentral ?? 0, p.Epoque, p.DernierLot) + avance;
         await depot.NoterEnvoiAsync(message, ct);
         // Pas une erreur d'envoi « persistante » : l'alerte propre à la détection (une par détection) remplace l'alerte horaire
@@ -445,7 +513,7 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     public const int MaxTablesMaximums = 1000;
 
     /// <summary>Avance des séquences ; renvoie le complément du message (fait, ou pourquoi pas).</summary>
-    private async Task<string> AvancerSequencesAsync(string adresse, CancellationToken ct)
+    private async Task<string> AvancerSequencesAsync(string adresse, int epoque, CancellationToken ct)
     {
         IReadOnlyDictionary<string, long> maximums;
         try { maximums = await client.MaximumsAsync(adresse, ct); }
@@ -459,20 +527,44 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         }
         var retenus = maximums.Where(m => m.Value >= 1 && NomTableValide(m.Key)).Take(MaxTablesMaximums)
             .ToDictionary(m => m.Key, m => m.Value, StringComparer.Ordinal);
+        // Compteur des tickets AVANT les séquences : l'avance des séquences pose « avance faite » ; un échec du compteur doit donc
+        // l'empêcher, pour que tout soit réessayé au passage suivant (l'avance du compteur ne recule jamais : sans effet si déjà faite)
+        var tickets = await AvancerCompteurTicketAsync(maximums, epoque, ct);
+        if (tickets.StartsWith(PhraseTicketNonAvance, StringComparison.Ordinal)) return tickets;
         IReadOnlyList<SequenceAvancee> faites;
         try { faites = await depot.AvancerSequencesAsync(retenus, ct); }
         catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // Erreur de la base (séquence trop petite pour le n° du central…) : la suspension et son message clair restent
-            return $" Avance des n° non faite (erreur de la base : {e.GetType().Name}) ; nouvel essai au prochain passage.";
+            return $" Avance des n° non faite (erreur de la base : {e.GetType().Name}) ; nouvel essai au prochain passage." + tickets;
         }
         var echecs = faites.Where(s => s.Erreur is not null).Select(s => s.Table).ToList();
         var avancees = faites.Count(s => s.Erreur is null && s.Apres > s.Avant);
         if (echecs.Count > 0)
             return $" Avance des n° incomplète : {echecs.Count} table(s) en échec ({string.Join(", ", echecs.Take(10))}{(echecs.Count > 10 ? ", …" : "")}), "
-                + $"{avancees} autre(s) avancée(s) ; nouvel essai au prochain passage.";
-        return $" N° des nouvelles opérations avancés au-delà de ceux du serveur central ({avancees} table(s) avancée(s) sur {faites.Count}).";
+                + $"{avancees} autre(s) avancée(s) ; nouvel essai au prochain passage." + tickets;
+        return $" N° des nouvelles opérations avancés au-delà de ceux du serveur central ({avancees} table(s) avancée(s) sur {faites.Count})." + tickets;
     }
+
+    /// <summary>Entrée réservée de la réponse des maximums (script central 024) : plus grand n° de ticket reçu par le central.</summary>
+    public const string CleTicketCentral = "#ticket";
+
+    /// <summary>Lot S6.5.4 (S6.5-D6 a) : compteur des tickets avancé au-delà du plus grand n° reçu par le central ; complément du message.</summary>
+    private async Task<string> AvancerCompteurTicketAsync(IReadOnlyDictionary<string, long> maximums, int epoque, CancellationToken ct)
+    {
+        if (!maximums.TryGetValue(CleTicketCentral, out var dernier) || dernier < 1) return "";
+        try
+        {
+            var sautes = await depot.AvancerCompteurTicketAsync(dernier, epoque, ct);
+            return sautes > 0 ? $" Compteur des tickets avancé au-delà du n° {dernier} reçu par le serveur central ({sautes} n° sauté(s), plage notée)." : "";
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            return $"{PhraseTicketNonAvance} (erreur de la base : {e.GetType().Name}) ; avance des n° et du compteur réessayée au prochain passage.";
+        }
+    }
+
+    private const string PhraseTicketNonAvance = " Compteur des tickets non avancé";
 
     private static bool NomTableValide(string nom) =>
         nom.Length is >= 1 and <= 63 && (char.IsAsciiLetterLower(nom[0]) || nom[0] == '_') && nom.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '_');

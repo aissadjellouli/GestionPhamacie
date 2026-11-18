@@ -14,6 +14,31 @@ public sealed record SequenceAvancee(string Table, long? Avant, long? Apres, str
 
 public sealed record NouvelleEpoqueSync(int Epoque, int AncienneEpoque, int? Chargement);
 
+/// <summary>
+/// Lot S6.5.4 (S6.5-D4, conception § 31) : le titulaire prend acte d'une restauration constatée par le serveur central (Administration ›
+/// Synchronisation › Intégrité au central) en notant sa cause (3 à 500 caractères). Une fois par époque ; ajout seul, envoyée au serveur
+/// central (texte filtré comme tout texte libre) ; le statut « restauration » du résumé passe alors à « ok » si rien d'autre n'est en
+/// anomalie (la restauration reste listée). Rien n'est corrigé ni effacé.
+/// </summary>
+public sealed class PrendreActeRestaurationSync(IEnvoiSyncDepot depot, IPermissionService droits)
+{
+    public async Task ExecuterAsync(int nouvelleEpoque, string? cause, long titulaireId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(titulaireId, "prendre acte d'une restauration constatée par le serveur central", ct);
+        var texte = (cause ?? "").Trim();
+        if (texte.Length is < 3 or > 500)
+            throw new RegleMetierException("Indiquez la cause de la restauration (3 à 500 caractères : panne, sauvegarde utilisée, date).", "cause");
+        if (nouvelleEpoque < 2) throw new RegleMetierException("Époque de la restauration invalide.");
+        var p = await depot.ParametresAsync(ct);
+        if (nouvelleEpoque > p.Epoque) throw new RegleMetierException("Cette époque n’existe pas encore dans l’officine : actualisez l’écran.");
+        await depot.PrendreActeRestaurationAsync(nouvelleEpoque, texte, titulaireId, new Dictionary<string, object?>
+        {
+            ["epoque"] = nouvelleEpoque,
+            ["cause_longueur"] = texte.Length
+        }, ct);
+    }
+}
+
 /// <summary>Détection en cours (supervision, écran) : date, dernier lot vu au serveur central et formé ici, époque, avance des n° faite,
 /// dernière alerte envoyée pour une détection.</summary>
 public sealed record RetourArriereSync(DateTime LeUtc, long DernierLotCentral, long DernierLotLocal, int Epoque, bool SequencesAvancees, DateTime? AlerteLeUtc);

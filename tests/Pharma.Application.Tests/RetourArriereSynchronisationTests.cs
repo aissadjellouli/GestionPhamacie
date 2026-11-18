@@ -131,6 +131,35 @@ public class RetourArriereSynchronisationTests
             Journal.Add(journal(r));   // même transaction que le changement d'époque
             return Task.FromResult(r);
         }
+
+        // Script 151 (lot S6.5.4)
+        public DeclarationEpoqueSync? Declaration;
+        public readonly List<(int Epoque, bool? Avant, string Resultat)> Declarations = [];
+        public long CompteurTicket = 480;
+        public bool EchecCompteur;
+        public readonly List<(int Epoque, string Cause, long Titulaire)> PrisesActe = [];
+        public Task<DeclarationEpoqueSync?> DeclarationAEnvoyerAsync(CancellationToken ct = default) => Task.FromResult(Declaration);
+        public Task NoterDeclarationAsync(int nouvelleEpoque, bool? avantPremierLot, string resultat, CancellationToken ct = default)
+        {
+            if (Declaration?.NouvelleEpoque == nouvelleEpoque) Declaration = null;   // notée une fois, comme sync_noter_declaration
+            Declarations.Add((nouvelleEpoque, avantPremierLot, resultat));
+            return Task.CompletedTask;
+        }
+        public Task<long> AvancerCompteurTicketAsync(long dernier, int epoque, CancellationToken ct = default)
+        {
+            if (EchecCompteur) throw new InvalidOperationException("verrou");
+            var sautes = Math.Max(0, dernier - CompteurTicket);
+            CompteurTicket = Math.Max(CompteurTicket, dernier);
+            return Task.FromResult(sautes);
+        }
+        public Task PrendreActeRestaurationAsync(int nouvelleEpoque, string cause, long titulaireId, IReadOnlyDictionary<string, object?> journal,
+            CancellationToken ct = default)
+        {
+            if (PrisesActe.Any(x => x.Epoque == nouvelleEpoque)) throw new RegleMetierException("déjà enregistrée");
+            PrisesActe.Add((nouvelleEpoque, cause, titulaireId));
+            Journal.Add(journal);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class Certificat : ICertificatSync
@@ -151,6 +180,16 @@ public class RetourArriereSynchronisationTests
         /// <summary>Plus grande époque renvoyée par /etat (null : serveur central antérieur, champ absent).</summary>
         public int? EpoqueMax;
         public int AppelsEtat, AppelsMaximums, Depots;
+        /// <summary>Lot S6.5.4 : réponse à la déclaration (null : reçue ; 404, 409 : refus ; -1 : injoignable) et ordre des appels.</summary>
+        public int? CodeDeclaration;
+        public readonly List<string> Appels = [];
+        public Task<ReponseDeclarationSync> DeclarerEpoqueAsync(string adresse, DeclarationEpoqueSync declaration, CancellationToken ct = default)
+        {
+            Appels.Add("declaration " + declaration.NouvelleEpoque);
+            if (CodeDeclaration == -1) throw new HttpRequestException("Connexion impossible");
+            if (CodeDeclaration is { } c) throw new ServeurCentralException($"serveur central : {c}", c);
+            return Task.FromResult(new ReponseDeclarationSync(false, !Dernier.ContainsKey(declaration.NouvelleEpoque) || Dernier[declaration.NouvelleEpoque] == 0));
+        }
 
         public Task<long?> DernierLotCentralAsync(string adresse, int epoque, CancellationToken ct = default)
         {
@@ -177,6 +216,7 @@ public class RetourArriereSynchronisationTests
         {
             Depots++;
             var lot = SerialisationSyncV1.Lire(contenu);
+            Appels.Add($"lot {lot.EnTete.Epoque}/{lot.EnTete.NumeroLot}");
             var (e, n) = (lot.EnTete.Epoque, lot.EnTete.NumeroLot);
             if (n != Dernier.GetValueOrDefault(e) + 1) return Task.FromResult(new AccuseLotSync(e, n, StatutsLotSync.EmpreinteDifferente, Dernier.GetValueOrDefault(e)));
             Dernier[e] = n;
@@ -572,5 +612,148 @@ public class RetourArriereSynchronisationTests
         Assert.True(verrou.Prendre());
         await Assert.ThrowsAsync<RegleMetierException>(() => Repartir(b, s, v: verrou).ExecuterAsync(1, BonMotDePasse, 1));
         Assert.Equal(0, b.NouvellesEpoques);
+    }
+
+    // ---- Lot S6.5.4 : déclaration du changement d'époque, compteur des tickets, prise d'acte ----
+
+    private static DeclarationEpoqueSync DeclarationEpoque2() => new(1, 2, 5, 9, Maintenant.AddMinutes(-30), Maintenant.AddMinutes(-20), 1,
+        [new FinChaineSync("journal_vente", "officine", 4, "4", new string('a', 64))]);
+
+    /// <summary>Base repartie sur l'époque 2 (nouvelle époque faite), déclaration notée, trois lignes à envoyer.</summary>
+    private static (Base, Central) NouvelleEpoque2()
+    {
+        var (b, s) = (new Base(), new Central());
+        b.P = b.P with { Epoque = 2, DernierLot = 0, DernierAccuse = 0 };
+        b.Declaration = DeclarationEpoque2();
+        b.Ajouter(3);
+        return (b, s);
+    }
+
+    [Fact]
+    public async Task Declaration_envoyee_avant_tout_lot_de_la_nouvelle_epoque_puis_plus_jamais()
+    {
+        var (b, s) = NouvelleEpoque2();
+        var r = await Envoi(b, s).ExecuterAsync(Maintenant);
+
+        Assert.Null(r.Erreur);
+        Assert.Equal("declaration 2", s.Appels[0]);                 // avant le premier lot de l'époque 2
+        Assert.StartsWith("lot 2/", s.Appels[1]);
+        Assert.Equal((2, (bool?)true), (b.Declarations.Single().Epoque, b.Declarations.Single().Avant));
+        Assert.StartsWith("Reçue", b.Declarations.Single().Resultat);
+        b.Ajouter(1);
+        await Envoi(b, s).ExecuterAsync(Maintenant.AddMinutes(1));
+        Assert.Single(s.Appels, a => a.StartsWith("declaration", StringComparison.Ordinal));   // jamais renvoyée
+    }
+
+    [Fact]
+    public async Task Central_injoignable_pour_la_declaration_rien_n_est_envoye_puis_nouvel_essai()
+    {
+        var (b, s) = NouvelleEpoque2();
+        s.CodeDeclaration = -1;
+        var r = await Envoi(b, s).ExecuterAsync(Maintenant);
+        Assert.Contains("déclaration de l'époque 2", r.Erreur);
+        Assert.False(r.Bloquant);
+        Assert.Equal(0, s.Depots);                                   // aucun lot sans la déclaration
+        Assert.Empty(b.Declarations);
+
+        s.CodeDeclaration = null;
+        var r2 = await Envoi(b, s).ExecuterAsync(Maintenant.AddMinutes(1));
+        Assert.Null(r2.Erreur);
+        Assert.Single(b.Declarations);
+        Assert.True(s.Depots > 0);
+    }
+
+    [Theory]
+    [InlineData(404, "ne connaît pas la route")]
+    [InlineData(409, "Refusée par le serveur central")]
+    public async Task Route_absente_ou_autre_declaration_resultat_note_et_lots_envoyes(int code, string attendu)
+    {
+        var (b, s) = NouvelleEpoque2();
+        s.CodeDeclaration = code;
+        var r = await Envoi(b, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Contains(attendu, b.Declarations.Single().Resultat);
+        Assert.Null(b.Declarations.Single().Avant);
+        Assert.True(s.Depots > 0);
+    }
+
+    [Fact]
+    public async Task Declaration_d_une_epoque_depassee_notee_sans_appel()
+    {
+        var (b, s) = NouvelleEpoque2();
+        b.P = b.P with { Epoque = 3 };
+        await Envoi(b, s).ExecuterAsync(Maintenant);
+        Assert.DoesNotContain(s.Appels, a => a.StartsWith("declaration", StringComparison.Ordinal));
+        Assert.Contains("dépassée", b.Declarations.Single().Resultat);
+    }
+
+    [Fact]
+    public async Task Compteur_des_tickets_avance_au_dela_du_central_avec_les_sequences()
+    {
+        var (b, s) = Restauree();
+        s.Maximums = new(StringComparer.Ordinal) { ["vente"] = 120, [EnvoyerLotsSync.CleTicketCentral] = 500 };
+        var r = await Envoi(b, s).ExecuterAsync(Maintenant);
+        Assert.Equal(500, b.CompteurTicket);
+        Assert.Contains("Compteur des tickets avancé au-delà du n° 500", r.Erreur);
+        Assert.Contains("(20 n° sauté(s)", r.Erreur);
+        Assert.Equal(120, b.Sequences["vente"]);
+        Assert.NotNull(b.P.RetourArriereSequencesLe);
+    }
+
+    [Fact]
+    public async Task Echec_du_compteur_des_tickets_rien_n_est_note_fait_tout_est_reessaye()
+    {
+        var (b, s) = Restauree();
+        s.Maximums = new(StringComparer.Ordinal) { ["vente"] = 120, [EnvoyerLotsSync.CleTicketCentral] = 500 };
+        b.EchecCompteur = true;
+        var r = await Envoi(b, s).ExecuterAsync(Maintenant);
+        Assert.Contains("Compteur des tickets non avancé", r.Erreur);
+        Assert.Null(b.P.RetourArriereSequencesLe);                    // avance non notée : réessayée
+        Assert.Equal(40, b.Sequences["vente"]);
+        Assert.Equal(480, b.CompteurTicket);
+
+        b.EchecCompteur = false;
+        await Envoi(b, s).ExecuterAsync(Maintenant.AddMinutes(1));
+        Assert.Equal((500L, 120L), (b.CompteurTicket, b.Sequences["vente"]));
+        Assert.NotNull(b.P.RetourArriereSequencesLe);
+    }
+
+    [Fact]
+    public async Task Prise_d_acte_reservee_au_titulaire_cause_obligatoire_une_fois_par_epoque()
+    {
+        var b = new Base();
+        b.P = b.P with { Epoque = 2 };
+        await Assert.ThrowsAsync<DroitRefuseException>(() => new PrendreActeRestaurationSync(b, new Droits(false)).ExecuterAsync(2, "Panne du disque", 2));
+        var prendre = new PrendreActeRestaurationSync(b, new Droits(true));
+        await Assert.ThrowsAsync<RegleMetierException>(() => prendre.ExecuterAsync(2, "  x ", 1));
+        await Assert.ThrowsAsync<RegleMetierException>(() => prendre.ExecuterAsync(3, "Panne du disque", 1));   // époque inconnue ici
+        await prendre.ExecuterAsync(2, "  Panne du disque, sauvegarde de la veille  ", 1);
+        Assert.Equal((2, "Panne du disque, sauvegarde de la veille", 1L), b.PrisesActe.Single());
+        Assert.Equal(2, b.Journal.Single()["epoque"]);
+        await Assert.ThrowsAsync<RegleMetierException>(() => prendre.ExecuterAsync(2, "Encore", 1));
+    }
+
+    [Fact]
+    public void Resume_du_central_avec_restauration_lu_statut_classe_et_anomalies_classees()
+    {
+        var json = """
+            {"format":"integrite-v1","statut":"restauration","anomalies_total":2,"anomalies_classees":2,"derniere_anomalie_id":7,
+             "chaines":[],"sceaux":{"ok":1,"attente":0,"incoherents":0},
+             "anomalies":[{"id":7,"nature":"remplacee_apres_restauration","journal":"journal_vente","rang":4,"classee":true}],
+             "restaurations":[{"id":3,"journal":"journal_vente","ancienne_epoque":1,"nouvelle_epoque":2,"rang_commun":3,"fin_ancienne_rang":5,
+               "lignes":2,"du":"2026-11-17T08:00:00Z","au":"2026-11-17T09:00:00Z","montant_ttc":70.00,"sceaux_perdus":1,
+               "classe":"restauration_a_justifier","prise_acte":false}]}
+            """;
+        var ic = IntegriteCentrale.Lire(json)!;
+        Assert.Equal(IntegriteCentrale.StatutRestauration, ic.Statut);
+        Assert.Equal(2, ic.AnomaliesClassees);
+        Assert.True(ic.Anomalies.Single().Classee);
+        var b = ic.RestaurationsListe.Single();
+        Assert.Equal((1, 2, 3L, 5L, 2L, 70.00m, 1L, false), (b.AncienneEpoque, b.NouvelleEpoque, b.RangCommun, b.FinAncienneRang, b.Lignes, b.MontantTtc,
+            b.SceauxPerdus, b.PriseActe));
+        Assert.True(b.AJustifier);
+        Assert.StartsWith("Lignes remplacées après une restauration", IntegriteCentrale.LibelleNature("remplacee_apres_restauration"));
+        // Résumé d'un central antérieur : aucune restauration, rien ne casse
+        Assert.Empty(IntegriteCentrale.Lire("""{"format":"integrite-v1","statut":"ok","chaines":[],"anomalies":[]}""")!.RestaurationsListe);
     }
 }

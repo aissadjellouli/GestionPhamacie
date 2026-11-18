@@ -66,6 +66,13 @@ FROM (SELECT COALESCE(max(substring(numero FROM '^T-([0-9]+)$')::bigint), 0) AS 
 ON CONFLICT (id) DO NOTHING;
 
 -- Le compteur n'avance que d'une unité à la fois, ne recule jamais et ne se supprime pas
+-- Garde de rejeu (2026-11-19, lot S6.5.4) : définition remplacée par le script 151 ; rejouer ce script après 151
+-- ne la ramène pas en arrière (marqueur : compteur_ticket_saut).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.compteur_ticket_saut') IS NOT NULL THEN
+        RAISE NOTICE 'compteur_ticket_proteger : définition plus récente (script 151) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION compteur_ticket_proteger() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -76,6 +83,9 @@ BEGIN
     RAISE EXCEPTION 'Le compteur des tickets avance d''une unité à la fois ; il ne se modifie pas et ne se supprime pas';
 END;
 $$;
+$def$;
+    END IF;
+END $rejeu$;
 CREATE OR REPLACE TRIGGER trg_compteur_ticket_proteger
     BEFORE UPDATE OR DELETE ON compteur_ticket
     FOR EACH ROW EXECUTE FUNCTION compteur_ticket_proteger();
@@ -411,6 +421,13 @@ CREATE OR REPLACE TRIGGER trg_conservation_fiscale BEFORE DELETE ON retour_clien
 
 -- ---- 8. Contrôles et récapitulatif -------------------------------------------
 -- Continuité depuis la mise en service : n° manquant, n° au-delà du compteur, vente ou annulation sans sa ligne au journal
+-- Garde de rejeu (2026-11-19, lot S6.5.4) : définition remplacée par le script 151 ; rejouer ce script après 151
+-- ne la ramène pas en arrière (marqueur : compteur_ticket_saut).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.compteur_ticket_saut') IS NOT NULL THEN
+        RAISE NOTICE 'journal_vente_continuite : définition plus récente (script 151) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION journal_vente_continuite()
 RETURNS TABLE (anomalie text, numero text, vente_id bigint)
 LANGUAGE sql STABLE AS $$
@@ -432,6 +449,9 @@ LANGUAGE sql STABLE AS $$
       AND NOT EXISTS (SELECT 1 FROM journal_vente j WHERE j.vente_id = v.id AND j.evenement = 'annulation')
     ORDER BY 1, 2
 $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Trous de l'historique (avant la mise en service) : signalés, jamais corrigés
 CREATE OR REPLACE FUNCTION journal_vente_trous_historique()

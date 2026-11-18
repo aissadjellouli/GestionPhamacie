@@ -194,6 +194,12 @@ clair, 1 366 × 768 et 1 536 × 890, captures regardées) :
   sans barre horizontale : titre du panneau pour les lecteurs d'écran seulement (`.visuellement-cache`, le titre de la page et la
   période le disent déjà), tableau **`.tableau.tableau-serre`** (cellules 10 × 8 px, à réserver aux tableaux d'une dizaine de
   colonnes) avec `min-width: 0`, cadre `data-hauteur-min="200"`. Onglet Jour par jour (49 px → 0) : même titre caché et même cadre de 200 px.
+- Administration › Synchronisation (2026-11-19, lot S6.5.4) : nouvelle rubrique **« Restaurations constatées »**
+  (`?rubrique=restaurations` : tableau borné par nature, prise d'acte du titulaire au-dessous, champ « cause » avec `data-champ`) ; la
+  rubrique « Intégrité au central » porte un lien « n restauration(s) » dans le titre de son panneau, ses champs sont resserrés sur une
+  rangée (`.champs-courts`) et le tableau des anomalies descend à 120 px au moins (`data-hauteur-min`). Mesurées avec un résumé de
+  démonstration (copie jetable, supprimée) : 0 px, sans défilement horizontal, à 1 536 × 890 et 1 366 × 768, clair et sombre, captures
+  regardées (avant correction : 187 et 428 px avec les trois panneaux empilés).
 - Caisse : un champ ne bouge plus pendant la frappe. Les listes de propositions ouvertes sont écartées du calcul des cadres
   (`pharma.tableaux`, `poste.js`) ; « Nouveau médecin » est à droite du libellé, comme « Nouveau patient » (plus de lien qui
   apparaît sous le champ). Règle : **rien n'apparaît ni ne disparaît dans le flux d'un formulaire pendant la frappe** ; ce qui dépend

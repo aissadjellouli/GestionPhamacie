@@ -48,7 +48,11 @@ public sealed record EtatCentralDto(int Epoque, long DernierRecu, int? EpoqueMax
 /// miroir dont la clé est la seule colonne « id » (bigint), le plus grand id reçu de cette officine, toutes époques confondues
 /// (lignes absentes et archivées comprises). Aucune donnée de ligne. Sert à avancer les séquences locales après une restauration.
 /// </summary>
-public sealed record MaximumsCentralDto(IReadOnlyDictionary<string, long> Tables);
+public sealed record MaximumsCentralDto(IReadOnlyDictionary<string, long> Tables)
+{
+    /// <summary>Lot S6.5.4 (S6.5-D6 a) : entrée réservée (jamais un nom de table) portant le plus grand n° de ticket reçu de l'officine.</summary>
+    public const string CleTicket = "#ticket";
+}
 
 /// <summary>
 /// Lot S6.5 (conception-synchronisation.md § 31) : fin d'une chaîne de l'officine au moment du changement d'époque : journal, clé de
@@ -217,14 +221,21 @@ public sealed record ResultatNouvelleEpoqueSynchronisationDto(int Epoque, int An
 /// </summary>
 public sealed record IntegriteCentraleDto(string Statut, DateTime? VerifieLe, DateTime? CompleteLe, long AnomaliesTotal, long DerniereAnomalieId,
     long SceauxOk, long SceauxAttente, long SceauxIncoherents, long? TicketsVerifiesJusquA, IReadOnlyList<ChaineIntegriteCentraleDto> Chaines,
-    IReadOnlyList<AnomalieIntegriteCentraleDto> Anomalies);
+    IReadOnlyList<AnomalieIntegriteCentraleDto> Anomalies, IReadOnlyList<RestaurationCentraleDto>? Restaurations = null, long AnomaliesClassees = 0);
+
+/// <summary>Lot S6.5 : restauration constatée au central (suite remplacée gardée comme preuve) ; PriseActe : cause notée par le titulaire.</summary>
+public sealed record RestaurationCentraleDto(long Id, string Journal, int AncienneEpoque, int NouvelleEpoque, long RangCommun, long? FinAncienneRang,
+    long Lignes, DateTime? Du, DateTime? Au, decimal? MontantTtc, long SceauxPerdus, string Classe, bool PriseActe);
+
+/// <summary>Lot S6.5.4 : prise d'acte du titulaire d'une restauration constatée (époque de la restauration, cause 3 à 500 caractères).</summary>
+public sealed record PriseActeRestaurationDto(int NouvelleEpoque, string Cause);
 
 /// <summary>Chaîne vérifiée au central : mode « complet » (empreintes recalculées) ou « liaison » (rangs et chaînage seulement).</summary>
 public sealed record ChaineIntegriteCentraleDto(string Journal, string Cle, string Mode, string Statut, long DernierRang, long NonVerifiables);
 
 /// <summary>Anomalie constatée au central (20 plus récentes) ; Nature : code, Libelle : texte affiché.</summary>
 public sealed record AnomalieIntegriteCentraleDto(long Id, string Nature, string Libelle, string Journal, long? Rang, string? Ligne, string? Detail,
-    DateTime? DetecteeLe);
+    DateTime? DetecteeLe, bool Classee = false);
 
 /// <summary>
 /// Dernier chargement complet (lot S6) : état (demande, constitution, pret, annonce, termine, remplace), progression (lignes

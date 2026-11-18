@@ -132,6 +132,10 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         {
             while (await r.ReadAsync(ct)) maximums[r.GetString(0)] = r.GetInt64(1);
         }
+        // Lot S6.5.4 (script 024, S6.5-D6 a) : plus grand n° de ticket reçu, sous une entrée réservée qui n'est pas un nom de table
+        // (une officine antérieure l'ignore : seuls les noms de table valides sont retenus pour l'avance des séquences)
+        await using (var ticket = new NpgsqlCommand("SELECT cloud_dernier_ticket()", cnx, tx) { CommandTimeout = 120 })
+            if (await ticket.ExecuteScalarAsync(ct) is long t && t > 0) maximums[MaximumsCentralDto.CleTicket] = t;
         await tx.CommitAsync(ct);
         return maximums;
     }
