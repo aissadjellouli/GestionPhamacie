@@ -40,6 +40,9 @@ public static class NaturesAlerteSync
     /// <summary>Nouvelle anomalie d'intégrité constatée par le serveur central (lot S4) : une alerte par nouvelle anomalie, sans délai
     /// d'une heure ; la dernière anomalie signalée est notée à part (sync_parametre.integrite_anomalie_signalee, script 144).</summary>
     public const string Integrite = "integrite";
+    /// <summary>Base de l'officine revenue en arrière (lot S6.2) : une alerte par détection, sans délai d'une heure ; envoi noté à part
+    /// (sync_parametre.retour_arriere_alerte_le, script 149).</summary>
+    public const string RetourArriere = "retour_arriere";
     /// <summary>Sujets répétés au plus une fois par heure tant que le problème dure (colonnes alerte_*_le, script 140).</summary>
     public static readonly IReadOnlyList<string> Toutes = [Retard, Erreur, Certificat, Quota];
 }
@@ -49,7 +52,7 @@ public static class NaturesAlerteSync
 /// <param name="IntegriteSignalee">N° de la dernière anomalie du serveur central déjà signalée au titulaire.</param>
 public sealed record EtatSupervisionSync(bool Active, bool BaseEnLectureSeule, AttenteSync Attente, DateTime? ErreurDepuisLe, string? ErreurNature,
     string? DerniereErreur, IReadOnlyDictionary<string, DateTime> DernieresAlertes, ReglagesSupervisionSync Reglages,
-    IntegriteCentrale? Integrite = null, long IntegriteSignalee = 0);
+    IntegriteCentrale? Integrite = null, long IntegriteSignalee = 0, RetourArriereSync? RetourArriere = null);
 
 public interface ISupervisionSyncDepot
 {
@@ -59,6 +62,8 @@ public interface ISupervisionSyncDepot
     /// <summary>Note la dernière anomalie d'intégrité du serveur central signalée au titulaire (jamais en arrière, script 144).</summary>
     Task NoterIntegriteSignaleeAsync(long derniereAnomalieId, CancellationToken ct = default);
     Task EnregistrerReglagesAsync(ReglagesSupervisionSync reglages, CancellationToken ct = default);
+    /// <summary>Lot S6.2 : alerte « base revenue en arrière » envoyée pour la détection en cours (script 149).</summary>
+    Task NoterAlerteRetourArriereAsync(DateTime quandUtc, CancellationToken ct = default) => throw new NotSupportedException();
 }
 
 /// <summary>Mémoire de 30 secondes de l'état de supervision : chaque poste interroge le bandeau toutes les minutes.</summary>
@@ -143,6 +148,9 @@ public sealed class SurveillerSynchronisation(ISupervisionSyncDepot depot, ICert
             if (nature == NaturesAlerteSync.Integrite)
                 // Une alerte par nouvelle anomalie du serveur central : la dernière signalée est notée AVANT l'envoi
                 await depot.NoterIntegriteSignaleeAsync(e.Integrite!.DerniereAnomalieId, ct);
+            else if (nature == NaturesAlerteSync.RetourArriere)
+                // Une alerte par détection : notée AVANT l'envoi (une mise en file impossible est signalée, jamais répétée chaque minute)
+                await depot.NoterAlerteRetourArriereAsync(maintenant, ct);
             else
             {
                 if (e.DernieresAlertes.TryGetValue(nature, out var derniere) && maintenant >= derniere && maintenant - derniere < Intervalle) continue;
@@ -222,6 +230,18 @@ public sealed class SurveillerSynchronisation(ISupervisionSyncDepot depot, ICert
                 + "\n\nÀ faire : ne rien corriger ; voir Administration › Synchronisation › Intégrité au central, puis prévenir l’éditeur.",
                 $"Synchronisation : {nombre} anomalie(s) d'integrite constatee(s) par le serveur central."));
         }
+        if (e.RetourArriere is { } ra && (ra.AlerteLeUtc is null || ra.AlerteLeUtc < ra.LeUtc))
+            liste.Add((NaturesAlerteSync.RetourArriere, "Synchronisation suspendue : base de l’officine revenue en arrière",
+                $"Le serveur central a reçu jusqu’au lot {ra.DernierLotCentral} de l’époque {ra.Epoque}, alors que cette base n’en a formé que {ra.DernierLotLocal} : "
+                + "la base a été restaurée depuis une sauvegarde, ou le 2e serveur a pris le relais avec un retard de réplication. "
+                + "L’envoi au serveur central est suspendu ; le travail de l’officine n’est pas affecté. "
+                + (ra.SequencesAvancees ? "Les n° des nouvelles opérations ont été avancés au-delà de ceux déjà reçus par le serveur central."
+                    : "Les n° des nouvelles opérations n’ont pas encore pu être avancés au-delà de ceux du serveur central (nouvel essai à chaque passage).")
+                + " Le serveur central garde les données qu’il a reçues et que la base n’a plus. "
+                + EnvoyerLotsSync.PhraseIntegrite.Replace('\'', '’')
+                + "\n\nÀ faire (titulaire) : Administration › Synchronisation › État, « Repartir sur une nouvelle époque ».",
+                "Synchronisation suspendue : base revenue en arriere (restauration ou bascule). Titulaire : repartir sur une nouvelle epoque. "
+                + "Anomalies d'integrite attendues au central pour les rangs restaures : pas une falsification."));
         return liste;
     }
 

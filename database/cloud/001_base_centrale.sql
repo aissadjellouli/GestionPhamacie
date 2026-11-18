@@ -248,6 +248,13 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 $$;
 
 -- Refus répétés (même officine, même certificat, même événement) : une ligne par heure au plus, pas une par appel
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 004 ; rejouer ce script après 004 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_lot_sans_colonnes, posé par 004).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('public.cloud_lot_sans_colonnes(jsonb,text[])') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_journaliser : définition plus récente (script 004) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_journaliser(p_officine uuid, p_certificat text, p_evenement text, p_detail text)
 RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -261,6 +268,9 @@ BEGIN
     INSERT INTO journal_securite (officine_id, certificat_empreinte, evenement, detail)
     VALUES (p_officine, p_certificat, p_evenement, left(p_detail, 500));
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 CREATE INDEX IF NOT EXISTS ix_journal_securite_evenement ON journal_securite (evenement, le);
 
 -- Révocation en cascade : un certificat révoqué entraîne ses successeurs (renouvellements obtenus avec lui)
@@ -308,6 +318,13 @@ CREATE POLICY cloisonnement ON officine_volume_jour USING (officine_id = cloud_o
 -- Suppression : la clé est relue depuis l'id du contrat (valeurs jointes par « | », format sync-v1) et convertie au type de la
 -- colonne (comparaison indexée) ; pour une clé composée, l'id reconstitué doit aussi être identique (une valeur contenant « | »
 -- ne peut donc jamais retirer une autre ligne : au pire la suppression n'est pas appliquée).
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 003 ; rejouer ce script après 003 ne la
+-- ramène pas en arrière (marqueur : table chargement, posé par 003).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.chargement') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_appliquer_lot : définition plus récente (script 003) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_appliquer_lot(p_epoque int, p_numero bigint, p_empreinte text, p_version text, p_contenu bytea)
 RETURNS TABLE (statut text, dernier bigint)
 LANGUAGE plpgsql AS $$
@@ -385,6 +402,9 @@ BEGIN
     UPDATE officine_epoque SET dernier_lot = p_numero, dernier_recu_le = now() WHERE officine_id = v_off AND epoque = p_epoque;
     RETURN QUERY SELECT 'accepte'::text, p_numero;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Dernier lot reçu (reprise après coupure)
 CREATE OR REPLACE FUNCTION cloud_dernier_lot(p_epoque int) RETURNS bigint

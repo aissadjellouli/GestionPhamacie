@@ -1,0 +1,147 @@
+@page "/patients"
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Patients › « Fichier des patients » (2026-11-18) : tous les patients, filtrés et paginés par le serveur ; écran fixe, seul le tableau
+   défile. Droits : ceux de la recherche de patients et de la fiche patient (droit de vendre) ; le filtre « à crédit » et la colonne de
+   la dette suivent le droit qui montre déjà la dette d'un patient (ListerFichierPatients.DroitCredit). Le nom ouvre la fiche patient. *@
+<div class="page avec-menu">
+    <NavDomaine Libelle="Écrans des patients" />
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Fichier des patients<AideEcran Cle="patients" /></h1>
+                <p class="sous-titre">Tous les patients de l’officine : cliquez sur un nom pour ouvrir et modifier sa fiche.</p>
+            </div>
+        </div>
+
+        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+
+        <div class="filtres-liste" role="search" aria-label="Filtrer la liste">
+            <div class="champ" style="flex: 1 1 200px"><label for="fp-texte">Nom, prénom, n° d’assuré, téléphone</label>
+                <input id="fp-texte" type="search" data-champ="texte" maxlength="100" @bind="texte" @bind:event="oninput" @bind:after="() => ChargerAsync(1, taille)" /></div>
+            <div class="champ" style="flex: 0 1 150px"><label for="fp-org">Organisme</label>
+                <select id="fp-org" data-champ="organisme" @bind="filtreOrganisme" @bind:after="() => ChargerAsync(1, taille)">
+                    <option value="">Tous</option>
+                    <option value="aucun">Non assuré</option>
+                    @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                </select></div>
+            <div class="champ" style="flex: 0 1 130px"><label for="fp-chronique">Malade chronique</label>
+                <select id="fp-chronique" data-champ="chronique" @bind="filtreChronique" @bind:after="() => ChargerAsync(1, taille)">
+                    <option value="">Tous</option><option value="oui">Oui</option><option value="non">Non</option>
+                </select></div>
+            @if (VoitCredit)
+            {
+                <div class="champ" style="flex: 0 1 130px"><label for="fp-credit">Crédit</label>
+                    <select id="fp-credit" data-champ="credit" @bind="filtreCredit" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="">Tous</option><option value="oui">À crédit</option><option value="non">Sans crédit</option>
+                    </select></div>
+            }
+            <div class="champ" style="flex: 0 1 230px"><label for="fp-droits">Droits Chifa</label>
+                <select id="fp-droits" data-champ="droits" @bind="filtreDroits" @bind:after="() => ChargerAsync(1, taille)">
+                    <option value="">Tous</option><option value="expires_ou_bientot">Expirés ou bientôt expirés</option>
+                    <option value="expires">Expirés</option><option value="bientot">Bientôt expirés</option>
+                </select></div>
+            <div class="champ" style="flex: 0 1 120px"><label for="fp-sms">Accord SMS</label>
+                <select id="fp-sms" data-champ="sms" @bind="filtreSms" @bind:after="() => ChargerAsync(1, taille)">
+                    <option value="">Tous</option><option value="oui">Oui</option><option value="non">Non</option>
+                </select></div>
+        </div>
+
+        <div class="tableau-cadre">
+            <table class="tableau">
+                <thead><tr><th scope="col">Patient</th><th scope="col">Téléphone</th><th scope="col">Organisme</th><th scope="col">N° d’assuré</th>
+                    <th scope="col">Droits jusqu’au</th><th scope="col">Chronique</th><th scope="col">Accord SMS</th>
+                    @if (VoitCredit) { <th scope="col" class="nombre">Dette</th> }</tr></thead>
+                <tbody>
+                    @if (liste is null) { <tr><td colspan="@Colonnes"><Chargement /></td></tr> }
+                    else
+                    {
+                        @foreach (var p in liste.Lignes)
+                        {
+                            <tr>
+                                <td><LienContact Type="patient" Id="p.Id" Nom="@($"{p.Nom} {p.Prenom}".Trim())" /></td>
+                                <td style="white-space: nowrap">@(p.Telephone ?? "—")</td>
+                                <td>@(p.Organisme ?? "—")</td>
+                                <td>@(p.NumAssure ?? "—")</td>
+                                <td>@(p.DateFinDroit is { } fin ? Libelles.Date(fin) : "—")
+                                    @if (p.EtatDroits is { } etat)
+                                    {
+                                        <br /><span class="pastille @(etat == "expires" ? "urgent" : "attention")">@(etat == "expires" ? "expirés" : "bientôt expirés")</span>
+                                    }</td>
+                                <td>@(p.Chronique ? "Oui" : "Non")</td>
+                                <td>@(p.ConsentementSms ? "Oui" : "Non")</td>
+                                @if (VoitCredit)
+                                {
+                                    <td class="nombre"><span class="@(p.SoldeCredit is > 0 ? "montant-du" : null)">@(p.SoldeCredit is > 0 ? Libelles.Dinars(p.SoldeCredit, 2) : "—")</span></td>
+                                }
+                            </tr>
+                        }
+                        @if (liste.Lignes.Count == 0) { <tr><td colspan="@Colonnes" class="vide">@(FiltreActif ? "Aucun patient ne répond à ces filtres." : "Aucun patient enregistré : les fiches se créent à la caisse.")</td></tr> }
+                    }
+                </tbody>
+            </table>
+        </div>
+        <Pagination Total="@(liste?.Total ?? 0)" Numero="@(liste?.Numero ?? 1)" Taille="taille" Occupe="enCours"
+                    Libelle="Pages du fichier des patients" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+    </div>
+</div>
+
+@code {
+    private PageDto<PatientFichierDto>? liste;
+    private List<OrganismeDto> organismes = [];
+    private string? texte;
+    private string filtreOrganisme = "", filtreChronique = "", filtreCredit = "", filtreDroits = "", filtreSms = "";
+    private int taille = Pagination.TailleParDefaut;
+    private bool enCours;
+    private string? erreur;
+    private int demande;
+
+    /// <summary>Même droit que l'API (ListerFichierPatients.DroitCredit) : celui qui montre déjà la dette d'un patient.</summary>
+    private bool VoitCredit => Session.A("caisse.vendre");
+    private int Colonnes => VoitCredit ? 8 : 7;
+    private bool FiltreActif => !string.IsNullOrWhiteSpace(texte) || filtreOrganisme != "" || filtreChronique != "" || filtreCredit != ""
+                                || filtreDroits != "" || filtreSms != "";
+
+    private static readonly string[] Droits = ["expires_ou_bientot", "expires", "bientot"];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("patients", e =>
+        {
+            e.Mettre("texte", texte); e.Mettre("organisme", filtreOrganisme); e.Mettre("chronique", filtreChronique);
+            e.Mettre("credit", filtreCredit); e.Mettre("droits", filtreDroits); e.Mettre("sms", filtreSms);
+            e.Mettre("page", liste?.Numero ?? 1); e.Mettre("taille", taille);
+        });
+        var numero = 1;
+        if (Historique.Restaurer("patients") is { } h)
+        {
+            texte = h.Texte("texte");
+            filtreOrganisme = h.Texte("organisme") ?? "";
+            filtreChronique = OuiNon(h.Texte("chronique"));
+            filtreCredit = OuiNon(h.Texte("credit"));
+            filtreDroits = h.Texte("droits") is { } d && Droits.Contains(d) ? d : "";
+            filtreSms = OuiNon(h.Texte("sms"));
+            (numero, taille) = (h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        }
+        (organismes, var e) = await Api.OrganismesAsync();
+        erreur = e;
+        await ChargerAsync(numero, taille);
+    }
+
+    private static string OuiNon(string? v) => v is "oui" or "non" ? v : "";
+    private static bool? Booleen(string v) => v switch { "oui" => true, "non" => false, _ => null };
+
+    private async Task ChargerAsync(int numero, int t)
+    {
+        // Saisie au clavier : seule la dernière demande est affichée
+        var n = ++demande;
+        enCours = true;
+        taille = t;
+        var (p, e) = await Api.FichierPatientsAsync(texte, filtreOrganisme == "" ? null : filtreOrganisme, Booleen(filtreChronique),
+            VoitCredit ? Booleen(filtreCredit) : null, filtreDroits == "" ? null : filtreDroits, Booleen(filtreSms), numero, t);
+        if (n != demande) return;
+        (liste, erreur, enCours) = (p ?? liste, e, false);
+    }
+}

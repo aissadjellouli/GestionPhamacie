@@ -46,7 +46,17 @@ public static class SynchronisationEndpoints
                     ic.DerniereAnomalieId, ic.SceauxOk, ic.SceauxAttente, ic.SceauxIncoherents, ic.TicketsVerifiesJusquA,
                     ic.Chaines.Select(c => new ChaineIntegriteCentraleDto(c.Journal, c.Cle, c.Mode, c.Statut, c.DernierRang, c.NonVerifiables)).ToList(),
                     ic.Anomalies.Select(a => new AnomalieIntegriteCentraleDto(a.Id, a.Nature, IntegriteCentrale.LibelleNature(a.Nature), a.Journal, a.Rang,
-                        a.Ligne, a.Detail, a.DetecteeLeUtc)).ToList())));
+                        a.Ligne, a.Detail, a.DetecteeLeUtc)).ToList()),
+                p.RetourArriereLe is not { } ra ? null : new RetourArriereSynchronisationDto(ra, p.Epoque, p.RetourArriereCentral ?? 0, p.DernierLot,
+                    p.RetourArriereSequencesLe is not null, sup.RetourArriere?.AlerteLeUtc)));
+        });
+
+        // Lot S6.2 : base revenue en arrière (restauration, bascule) : le titulaire repart sur une nouvelle époque (confirmation : époque
+        // affichée et mot de passe du titulaire ressaisi), journalisé ; refusé sans détection. Le chargement complet part au passage suivant.
+        s.MapPost("/nouvelle-epoque", async (NouvelleEpoqueSynchronisationDto d, RepartirNouvelleEpoqueSync repartir, ClaimsPrincipal user, CancellationToken ct) =>
+        {
+            var r = await repartir.ExecuterAsync(d.EpoqueAffichee, d.MotDePasse, user.UtilisateurId(), ct);
+            return Results.Ok(new ResultatNouvelleEpoqueSynchronisationDto(r.Epoque, r.AncienneEpoque, r.Chargement));
         });
 
         // Lot S6 : rechargement complet demandé par le titulaire (traité par le passage d'envoi suivant)
@@ -79,6 +89,8 @@ public static class SynchronisationEndpoints
         {
             var r = await envoyer.ExecuterAsync(DateTime.UtcNow, ct: ct);
             if (r.Arret == EnvoyerLotsSync.ArretEnCours) return Results.Problem(r.Arret, statusCode: StatusCodes.Status409Conflict);
+            // Envoi suspendu (base revenue en arrière) : réponse normale, le poste montre le message comme un avertissement
+            if (r.Suspendu) return Results.Ok(new ResultatEnvoiSynchronisationDto(r.LotsAccuses, null, null, r.Erreur));
             if (r.Erreur is not null) return Results.Problem(r.Erreur, statusCode: StatusCodes.Status502BadGateway);
             return Results.Ok(new ResultatEnvoiSynchronisationDto(r.LotsAccuses, r.Arret, r.Erreur));
         });

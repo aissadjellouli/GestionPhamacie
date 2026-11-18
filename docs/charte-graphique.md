@@ -149,6 +149,13 @@ filtres sur une ligne, un seul tableau en cadre défilant, pagination ; Achats �
 (`/achats?onglet=patients-attente`) et Achats › Substitution (`/achats?onglet=substitution`) : saisie et réglages dans un panneau
 défilant à gauche, liste paginée et filtrée à droite (`.achats-grille`) ; bandeau « Produit redevenu disponible » de la Caisse
 (`.info-bandeau`, une ligne). Page attendue à 0 px ; mesure à 1 536 × 890 non faite (poste non lancé) : à vérifier.
+Patients en attente déplacés le 2026-11-18 dans le domaine Patients (`/patients/attente`, voir ci-dessous) ; l'ancienne adresse y renvoie.
+
+**Domaine Patients mesuré le 2026-11-18** (poste lancé sur `pharmacie_test`, titulaire, thèmes sombre et clair, 1 536 × 890 et
+1 366 × 768 ; défilement de la page 0 px en vertical et en horizontal, 0 px de défilement horizontal du tableau, captures regardées) :
+`/patients` (Fichier des patients : six filtres sur une ligne `.filtres-liste` — à 1 366 px aussi, libellés courts « Non assuré »,
+« Expirés ou bientôt expirés » —, un seul tableau en cadre défilant, 8 colonnes, téléphone sur une ligne, pagination en bas) et
+`/patients/attente` (Patients en attente : même mise en page que l'ancien onglet d'Achats, saisie à gauche, file paginée à droite).
 
 **Mutualisation des réglages mesurée le 2026-11-16 (lot M7 ; poste lancé sur deux copies jetables de la base de démonstration, titulaire, thèmes clair et sombre, 1 536 × 890 et 1 366 × 768 ; états « fixé » et « proposé » des neuf écrans, puis états mélangés ; 0 px de défilement de la page, aucun élément coupé ni chevauché, dans les 133 vues mesurées)** : écrans ajoutés `/admin/reglage-fiscal` et `/admin/reglage-tracabilite` (un panneau, aucun tableau, bouton Enregistrer à côté du titre) ; Administration › Synchronisation › Réglages mutualisés (`/admin/synchronisation?rubrique=reglages-mutualises` : tableau de 11 lignes dans son cadre, liste fermée). **Bandeau « serveur central »** (composant `ReglageCentral`, `.info-bandeau.compact.bandeau-central`, une ligne : texte à gauche, « Comparer » et « Adopter » en `.lien-bouton` à droite) sous le titre de Alertes et seuils (rubriques Péremption et Stock seulement), Motifs, Remises automatiques, Contrôle interne, Substitution, Inventaire › Seuils, Psychotropes › Alertes, Notifications › Formulaire SMS et Sérialisation ; un panneau fixé est un `fieldset.panneau` désactivé (champs grisés, même aspect). Fenêtre « Comparer » : `.voile` + `.fenetre-facture`, tableau filtré et paginé. Pour tenir avec le bandeau : un cadre défilant peut déclarer `data-hauteur-min` (minimum de hauteur posé par `poste.js` ; 240 px par défaut, inchangé) — Psychotropes (120 px : à 1 366 × 768 le tableau des règles ne montre qu'une ligne et défile) ; Contrôle interne place ses trois panneaux dans un `.cadre-defilant` ; Psychotropes garde son bouton à côté du titre (`.titre-actions-cote`) ; le texte du formulaire SMS passe de 12 à 8 lignes.
 
@@ -177,7 +184,7 @@ de tableau. **Produit ou lot cliquable** : rendu des noms de contact (souligné 
 côté du titre, panneau de 380 px à droite (titre vert 17 px, liste courte, raccourcis en gris, « Guide complet » et « Fermer »).
 
 **Le menu est collé au bord gauche de la fenêtre** (demandé le 2026-11-13) : colonne de 240 px sur toute la hauteur, de l'en-tête
-à la barre d'état, fond `--surface` et filet `--bordure` à droite ; la page n'est plus centrée ni limitée à 1 280 px, le contenu
+à la barre d'état, fond `--menu-fond` et filet `--menu-filet` à droite, élément actif `--menu-actif` ; la page n'est plus centrée ni limitée à 1 280 px, le contenu
 prend toute la largeur restante (32 px d'écart avec la colonne). Tout vient de `.page.admin` et `.page.avec-menu` dans `app.css` :
 aucun écran n'a de style propre pour cela. Les écrans sans menu vertical restent centrés (1 280 px au plus).
 
@@ -255,6 +262,9 @@ saisie n'est jamais en blanc ni plus grosse que le texte qu'elle accompagne.
 
 Thème clair adouci (2026-11-15) : jamais de blanc pur pour les grandes surfaces, qui fatiguait l'œil. Page `--fond` #EEE9E1 (beige),
 panneaux et champs `--surface` #F7F4EE (blanc cassé chaud), en-têtes de tableau `--surface-2` #F0EBE3, bordures `--bordure` #E0D8CB.
+Colonne du menu vertical (2026-11-18, choix du titulaire « grès » : le blanc cassé fatiguait l'œil) : `--menu-fond` #E3DBCE, élément
+actif `--menu-actif` #CFE0D3 (avec la barre ambre), filet `--menu-filet` #D2C7B6 ; en thème sombre ces variables reprennent
+`--surface`, `--accent-clair` et `--bordure` (inchangé).
 Seuls le logo, les images (ordonnances) et les pastilles de l'en-tête vert restent en blanc. Le thème sombre ne change pas.
 
 Les couleurs passent toujours par les variables (`var(--…)`) : c'est ce qui fait fonctionner les thèmes clair et sombre.

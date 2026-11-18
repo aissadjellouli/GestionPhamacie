@@ -17,7 +17,8 @@ public sealed record ParametresEnvoiSync(bool Active, Guid? OfficineId, int Epoq
     string? Adresse, DateTime? InscriteLe, DateTime? DernierEnvoiLe, DateTime? DernierAccuseLe, string? DerniereErreur, DateTime? DerniereErreurLe,
     string TextesLibres, bool EnvoyerMedecins, long LignesEnAttente, long LotsEnAttente, bool BaseEnLectureSeule = false, long LotsAutresEpoques = 0,
     IReadOnlyList<string>? FamillesEnvoyees = null, DateTime? FamillesLuesLe = null, long DescendantVersion = 0, long FamillesVersion = 0,
-    IReadOnlyList<string>? ColonnesInterdites = null);
+    IReadOnlyList<string>? ColonnesInterdites = null, DateTime? RetourArriereLe = null, long? RetourArriereCentral = null,
+    DateTime? RetourArriereSequencesLe = null);
 
 /// <summary>Élément descendant reçu du serveur central (contrat desc-v1) : table locale, clé, version, données JSON.</summary>
 public sealed record ChangementDescendantSync(string Table, string Cle, long Version, string DonneesJson);
@@ -77,6 +78,22 @@ public interface IEnvoiSyncDepot
     Task EnregistrerInscriptionAsync(Guid officine, CancellationToken ct = default);
     /// <summary>Adresse, options et activation dans UNE transaction.</summary>
     Task ReglerAsync(string? adresse, string textesLibres, bool envoyerMedecins, bool active, CancellationToken ct = default);
+    /// <summary>Lot S6.2 (script 149) : pose la détection « base revenue en arrière » si le serveur central a reçu plus de lots que cette
+    /// base n'en a formé pour l'époque en cours (sync_noter_retour_arriere) ; true à la première détection seulement.</summary>
+    Task<bool> NoterRetourArriereAsync(long dernierLotCentral, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Correction 2026-11-18 (script 149) : même détection, posée sans comparaison au dernier lot formé ici, quand un lot jamais
+    /// reformé est refusé « empreinte différente » alors que le serveur central a reçu au moins ce n° (sync_noter_retour_arriere_refus).</summary>
+    Task<bool> NoterRetourArriereRefusAsync(long dernierLotCentral, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Lot S6.2 : avance (jamais en arrière) les séquences id des tables envoyées au-delà des n° connus du serveur central
+    /// (sync_avancer_sequences) ; une ligne par table retenue.</summary>
+    Task<IReadOnlyList<SequenceAvancee>> AvancerSequencesAsync(IReadOnlyDictionary<string, long> maximums, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+    /// <summary>Lot S6.2 : nouvelle époque (sync_nouvelle_epoque), refusée en base sans détection ou si l'époque n'est plus celle attendue ;
+    /// au-delà de l'époque locale et de <paramref name="epoqueCentral"/> (plus grande époque connue du serveur central, null : inconnue) ;
+    /// chargement complet demandé. L'entrée du journal des actions (détails calculés depuis le résultat) est écrite dans la MÊME
+    /// transaction.</summary>
+    Task<NouvelleEpoqueSync> NouvelleEpoqueAsync(long titulaireId, int? epoqueCentral, int epoqueAttendue,
+        Func<NouvelleEpoqueSync, IReadOnlyDictionary<string, object?>> journal, CancellationToken ct = default) => throw new NotSupportedException();
 }
 
 /// <summary>Clé privée et certificat client de ce serveur : clé générée ici, jamais envoyée, stockée hors dépôt et hors base.</summary>
@@ -134,6 +151,15 @@ public interface IClientServeurCentral
     Task<ReponseActivationSync> RenouvelerAsync(string adresse, string demandePem, CancellationToken ct = default);
     /// <summary>Échange léger (chaque passage, même sans lot) : éléments descendants plus récents que la version appliquée.</summary>
     Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default);
+    /// <summary>Lot S6.2 : dernier lot de l'époque reçu par le serveur central (GET /api/v1/etat) ; null : réponse pour une autre époque
+    /// (inexploitable). Sans implémentation : NotSupportedException (jamais « pas de contrôle » en silence).</summary>
+    Task<long?> DernierLotCentralAsync(string adresse, int epoque, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Lot S6.2 : plus grand id reçu par table de cette officine (GET /api/v1/maximums, aucune donnée de ligne).
+    /// Route absente du serveur central : ServeurCentralException 404. Sans implémentation : NotSupportedException.</summary>
+    Task<IReadOnlyDictionary<string, long>> MaximumsAsync(string adresse, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Correction 2026-11-18 : plus grande époque connue du serveur central pour cette officine (GET /api/v1/etat, champ
+    /// facultatif EpoqueMax) ; null : serveur central sans ce renseignement. Sans implémentation : NotSupportedException.</summary>
+    Task<int?> EpoqueMaxCentralAsync(string adresse, int epoque, CancellationToken ct = default) => throw new NotSupportedException();
 }
 
 /// <summary>Un seul passage de synchronisation à la fois dans l'API (singleton).</summary>
@@ -145,7 +171,9 @@ public sealed class VerrouSync
 }
 
 /// <param name="Bloquant">Erreur qui ne se résoudra pas seule (contenu refusé, lots manquants) : nouvel essai espacé au maximum.</param>
-public sealed record ResultatEnvoi(int LotsAccuses, string? Arret, string? Erreur, bool Bloquant = false)
+/// <param name="Suspendu">Envoi suspendu par un retour en arrière de la base (lot S6.2) : Erreur porte le message, ce n'est pas une
+/// panne du serveur central (« Synchroniser maintenant » le montre comme un avertissement).</param>
+public sealed record ResultatEnvoi(int LotsAccuses, string? Arret, string? Erreur, bool Bloquant = false, bool Suspendu = false)
 {
     public bool EnErreur => Erreur is not null;
 }
@@ -194,6 +222,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
             // Mutualisation des réglages (lot M4) : les modèles déjà reçus sont dans la base, même si l'échange vient d'échouer
             await AppliquerReglagesAsync(ct);
             interdites = (await depot.ParametresAsync(ct)).ColonnesInterdites ?? [];
+            // Lot S6.2 : base revenue en arrière (restauration, bascule) ? Contrôlé AVANT de former, d'annoncer ou d'envoyer quoi que ce soit
+            if (await RetourArriereAsync(p, ct) is { } suspendu) return suspendu;
             // Chargement complet demandé : instantané puis annonce, AVANT de former les lots (lot S6)
             if (chargement is not null) await chargement.PreparerAsync(p.Adresse, p.DernierAccuse, ct);
             await constitution.ConstituerAsync(10, ct);
@@ -228,6 +258,11 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
                         break;
                     case StatutsLotSync.Trou:
                         return await ErreurAsync(accuses, $"Le serveur central n'a reçu que jusqu'au lot {a.DernierRecu} de l'époque {lot.Epoque} (lot {lot.Numero} refusé) : à examiner.", true, ct);
+                    case StatutsLotSync.EmpreinteDifferente when lot.ReformeLe is null && a.DernierRecu >= lot.Numero:
+                        // Lot jamais reformé ici, que le central a déjà reçu sous ce n° avec un autre contenu : la base est revenue en
+                        // arrière (lots reformés depuis la restauration). Même suspension que la détection par /etat.
+                        await depot.NoterRetourArriereRefusAsync(a.DernierRecu, ct);
+                        return await SuspendreAsync(await depot.ParametresAsync(ct), accuses, a.DernierRecu, ct);
                     default:
                         return await ErreurAsync(accuses, $"Lot {lot.Epoque}/{lot.Numero} refusé par le serveur central ({a.Statut}).", true, ct);
                 }
@@ -350,6 +385,97 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
             erreurDescendante = $"Réglages mutualisés non appliqués ({e.GetType().Name}) : repris au prochain passage.";
         }
     }
+
+    /// <summary>
+    /// Lot S6.2 (conception § 30) : si le serveur central a reçu, pour l'époque en cours, un lot plus grand que le dernier lot formé ici,
+    /// la base est revenue en arrière (restauration d'une sauvegarde, bascule sur le 2e serveur avec retard de réplication) : les lots
+    /// suivants seraient refusés (autre contenu) et les nouveaux n° de lignes reprendraient des n° déjà reçus. La détection est notée
+    /// une fois (l'alerte au titulaire part par la supervision), les séquences sont avancées au-delà des n° connus du central (nouvel
+    /// essai à chaque passage tant que ce n'est pas fait) et rien n'est formé ni envoyé tant que le titulaire n'a pas repris sur une
+    /// nouvelle époque. Correction 2026-11-18 : central injoignable ou réponse inexploitable pour /etat : rien n'est formé ni envoyé à
+    /// ce passage (erreur non bloquante, nouvel essai au passage suivant) ; un lot ne part jamais sans ce contrôle.
+    /// </summary>
+    /// <returns>null : rien de détecté, le passage continue ; sinon le passage arrêté (suspension ou contrôle impossible).</returns>
+    private async Task<ResultatEnvoi?> RetourArriereAsync(ParametresEnvoiSync p, CancellationToken ct)
+    {
+        var adresse = p.Adresse!;
+        if (p.RetourArriereLe is null)
+        {
+            long? central;
+            try { central = await client.DernierLotCentralAsync(adresse, p.Epoque, ct); }
+            catch (Exception e) when (e is ServeurCentralException or HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+            {
+                return await ErreurAsync(0, MessageEtatInjoignable(e is TaskCanceledException ? "délai dépassé" : e.Message), false, ct);
+            }
+            if (central is not { } c) return await ErreurAsync(0, MessageEtatInjoignable("réponse pour une autre époque"), false, ct);
+            if (c <= p.DernierLot) return null;
+            await depot.NoterRetourArriereAsync(c, ct);
+            p = await depot.ParametresAsync(ct);
+            if (p.RetourArriereLe is null) return null; // lot formé entre-temps (autre passage) : rien de posé
+        }
+        return await SuspendreAsync(p, 0, null, ct);
+    }
+
+    public static string MessageEtatInjoignable(string detail) =>
+        $"Serveur central injoignable pour le contrôle de l'état ({detail}) : rien n'est formé ni envoyé à ce passage, nouvel essai au prochain passage.";
+
+    /// <summary>Suspension (détection posée) : avance des n° si elle n'est pas faite, message clair gardé tant que la détection dure.</summary>
+    private async Task<ResultatEnvoi> SuspendreAsync(ParametresEnvoiSync p, int accuses, long? dernierCentral, CancellationToken ct)
+    {
+        var avance = p.RetourArriereSequencesLe is null ? await AvancerSequencesAsync(p.Adresse!, ct) : PhraseAvanceFaite;
+        var message = MessageRetourArriere(p.RetourArriereCentral ?? dernierCentral ?? 0, p.Epoque, p.DernierLot) + avance;
+        await depot.NoterEnvoiAsync(message, ct);
+        // Pas une erreur d'envoi « persistante » : l'alerte propre à la détection (une par détection) remplace l'alerte horaire
+        await depot.NoterPassageAsync(null, ct);
+        return new(accuses, null, message, Suspendu: true);
+    }
+
+    /// <summary>Décision du titulaire (2026-11-18) : dite dans l'alerte et à l'écran Synchronisation.</summary>
+    public const string PhraseIntegrite = "Des anomalies d’intégrité sont attendues au serveur central pour les rangs restaurés (journal des ventes et "
+        + "autres journaux chaînés) : elles ne signifient pas une falsification.";
+
+    /// <summary>Gardée dans le message tant que l'avance est faite (pas seulement au passage qui l'a faite).</summary>
+    public const string PhraseAvanceFaite = " N° des nouvelles opérations avancés au-delà de ceux du serveur central.";
+
+    public static string MessageRetourArriere(long central, int epoque, long local) =>
+        $"Base revenue en arrière (restauration ou bascule) : le serveur central a reçu jusqu’au lot {central} de l’époque {epoque}, "
+        + $"cette base jusqu’au lot {local}. Le titulaire doit repartir sur une nouvelle époque dans Synchronisation. " + PhraseIntegrite;
+
+    /// <summary>Plafonds de la réponse des maximums (noms de table PostgreSQL, n° positifs).</summary>
+    public const int MaxTablesMaximums = 1000;
+
+    /// <summary>Avance des séquences ; renvoie le complément du message (fait, ou pourquoi pas).</summary>
+    private async Task<string> AvancerSequencesAsync(string adresse, CancellationToken ct)
+    {
+        IReadOnlyDictionary<string, long> maximums;
+        try { maximums = await client.MaximumsAsync(adresse, ct); }
+        catch (ServeurCentralException e) when (e.CodeHttp == 404)
+        {
+            return " Avance des n° non faite : le serveur central ne connaît pas encore la route des maximums (script central 020) ; nouvel essai au prochain passage.";
+        }
+        catch (Exception e) when (e is ServeurCentralException or HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            return $" Avance des n° non faite ({e.Message}) ; nouvel essai au prochain passage.";
+        }
+        var retenus = maximums.Where(m => m.Value >= 1 && NomTableValide(m.Key)).Take(MaxTablesMaximums)
+            .ToDictionary(m => m.Key, m => m.Value, StringComparer.Ordinal);
+        IReadOnlyList<SequenceAvancee> faites;
+        try { faites = await depot.AvancerSequencesAsync(retenus, ct); }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // Erreur de la base (séquence trop petite pour le n° du central…) : la suspension et son message clair restent
+            return $" Avance des n° non faite (erreur de la base : {e.GetType().Name}) ; nouvel essai au prochain passage.";
+        }
+        var echecs = faites.Where(s => s.Erreur is not null).Select(s => s.Table).ToList();
+        var avancees = faites.Count(s => s.Erreur is null && s.Apres > s.Avant);
+        if (echecs.Count > 0)
+            return $" Avance des n° incomplète : {echecs.Count} table(s) en échec ({string.Join(", ", echecs.Take(10))}{(echecs.Count > 10 ? ", …" : "")}), "
+                + $"{avancees} autre(s) avancée(s) ; nouvel essai au prochain passage.";
+        return $" N° des nouvelles opérations avancés au-delà de ceux du serveur central ({avancees} table(s) avancée(s) sur {faites.Count}).";
+    }
+
+    private static bool NomTableValide(string nom) =>
+        nom.Length is >= 1 and <= 63 && (char.IsAsciiLetterLower(nom[0]) || nom[0] == '_') && nom.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '_');
 
     private async Task RenouvelerAsync(string adresse, CancellationToken ct)
     {

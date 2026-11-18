@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 148 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 149 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 148 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 149 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -3304,6 +3304,79 @@ END $$;
 
 
 --
+-- Name: sync_avancer_sequences(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_avancer_sequences(p_maximums jsonb) RETURNS TABLE(nom_table text, avant bigint, apres bigint, erreur text)
+    LANGUAGE plpgsql
+    AS $_$
+#variable_conflict use_column
+DECLARE
+    p          sync_parametre;
+    r          record;
+    v_seq      text;
+    v_max      bigint;
+    v_dernier  bigint;
+    v_appele   boolean;
+    v_actuel   bigint;
+    v_echecs   int := 0;
+BEGIN
+    IF pg_is_in_recovery() THEN
+        RAISE EXCEPTION 'Synchronisation : avance des n° impossible sur une base en lecture seule';
+    END IF;
+    IF p_maximums IS NULL OR jsonb_typeof(p_maximums) <> 'object' THEN
+        RAISE EXCEPTION 'Synchronisation : maximums attendus sous la forme { table : n° }';
+    END IF;
+    SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
+    PERFORM set_config('lock_timeout', '5s', true);
+    FOR r IN
+        SELECT s.nom_table AS t, m.value AS v
+        FROM jsonb_each(p_maximums) m
+        JOIN sync_table s ON s.nom_table = m.key
+        JOIN pg_tables pt ON pt.schemaname = 'public' AND pt.tablename = s.nom_table
+        WHERE sync_sens_effectif(s, p) IN ('montante', 'bidirectionnelle') AND s.cle_colonnes = '{id}'
+        ORDER BY s.nom_table
+    LOOP
+        CONTINUE WHEN jsonb_typeof(r.v) <> 'number' OR (r.v #>> '{}') !~ '^[0-9]{1,18}$';
+        v_max := (r.v #>> '{}')::bigint;
+        CONTINUE WHEN v_max < 1;
+        v_seq := pg_get_serial_sequence(format('public.%I', r.t), 'id');
+        CONTINUE WHEN v_seq IS NULL;
+        nom_table := r.t; avant := NULL; apres := NULL; erreur := NULL;
+        BEGIN
+            EXECUTE format('LOCK TABLE public.%I IN SHARE ROW EXCLUSIVE MODE', r.t);
+            EXECUTE format('SELECT last_value, is_called FROM %s', v_seq) INTO v_dernier, v_appele;
+            -- n° déjà attribué au plus : last_value si la séquence a servi, sinon last_value - 1
+            v_actuel := CASE WHEN v_appele THEN v_dernier ELSE v_dernier - 1 END;
+            avant := v_actuel;
+            IF v_max > v_actuel THEN
+                PERFORM setval(v_seq, v_max, true);
+                apres := v_max;
+            ELSE
+                apres := v_actuel;
+            END IF;
+        EXCEPTION WHEN others THEN
+            -- Sous-transaction annulée (verrou relâché, séquence inchangée) : la table est signalée, les suivantes sont traitées
+            v_echecs := v_echecs + 1;
+            avant := NULL; apres := NULL;
+            erreur := SQLSTATE || ' ' || left(SQLERRM, 200);
+        END;
+        RETURN NEXT;
+    END LOOP;
+    IF p.retour_arriere_le IS NOT NULL AND v_echecs = 0 THEN
+        UPDATE sync_parametre SET retour_arriere_sequences_le = now() WHERE id = 1;
+    END IF;
+END $_$;
+
+
+--
+-- Name: FUNCTION sync_avancer_sequences(p_maximums jsonb); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_avancer_sequences(p_maximums jsonb) IS 'Avance (jamais en arrière, table verrouillée) les séquences id des tables envoyées au-delà des n° connus du serveur central ; échec rendu par table (script 149).';
+
+
+--
 -- Name: sync_chargement_accuse(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3881,6 +3954,18 @@ END $$;
 
 
 --
+-- Name: sync_noter_alerte_retour_arriere(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_alerte_retour_arriere(p_quand timestamp with time zone) RETURNS void
+    LANGUAGE sql
+    AS $$
+    -- greatest : jamais avant la détection (horloge du poste en retard sur celle de la base : sinon une alerte par minute)
+    UPDATE sync_parametre SET retour_arriere_alerte_le = greatest(p_quand, retour_arriere_le) WHERE id = 1 AND retour_arriere_le IS NOT NULL
+$$;
+
+
+--
 -- Name: sync_noter_envoi(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3934,6 +4019,62 @@ $$;
 
 
 --
+-- Name: sync_noter_retour_arriere(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_retour_arriere(p_dernier_central bigint) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE p sync_parametre;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
+    IF NOT FOUND OR p_dernier_central IS NULL OR p_dernier_central <= p.dernier_lot THEN RETURN false; END IF;
+    IF p.retour_arriere_le IS NOT NULL THEN
+        UPDATE sync_parametre SET retour_arriere_central = greatest(retour_arriere_central, p_dernier_central) WHERE id = 1;
+        RETURN false;
+    END IF;
+    UPDATE sync_parametre SET retour_arriere_le = now(), retour_arriere_central = p_dernier_central, retour_arriere_sequences_le = NULL
+    WHERE id = 1;
+    RETURN true;
+END $$;
+
+
+--
+-- Name: FUNCTION sync_noter_retour_arriere(p_dernier_central bigint); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_noter_retour_arriere(p_dernier_central bigint) IS 'Pose la détection « base revenue en arrière » (serveur central en avance sur cette base pour l''époque en cours) ; true à la première détection (script 149).';
+
+
+--
+-- Name: sync_noter_retour_arriere_refus(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_retour_arriere_refus(p_dernier_central bigint) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE p sync_parametre;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
+    IF NOT FOUND OR p_dernier_central IS NULL OR p_dernier_central < 1 THEN RETURN false; END IF;
+    IF p.retour_arriere_le IS NOT NULL THEN
+        UPDATE sync_parametre SET retour_arriere_central = greatest(retour_arriere_central, p_dernier_central) WHERE id = 1;
+        RETURN false;
+    END IF;
+    UPDATE sync_parametre SET retour_arriere_le = now(), retour_arriere_central = p_dernier_central, retour_arriere_sequences_le = NULL
+    WHERE id = 1;
+    RETURN true;
+END $$;
+
+
+--
+-- Name: FUNCTION sync_noter_retour_arriere_refus(p_dernier_central bigint); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_noter_retour_arriere_refus(p_dernier_central bigint) IS 'Pose la détection « base revenue en arrière » sur refus « empreinte différente » d''un lot jamais reformé déjà reçu par le central (sans comparaison à dernier_lot) ; true à la première détection (script 149).';
+
+
+--
 -- Name: sync_noter_version_descendante(bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3942,6 +4083,54 @@ CREATE FUNCTION public.sync_noter_version_descendante(p_version bigint) RETURNS 
     AS $$
     UPDATE sync_parametre SET descendant_version = greatest(descendant_version, coalesce(p_version, 0)) WHERE id = 1 RETURNING descendant_version
 $$;
+
+
+--
+-- Name: sync_nouvelle_epoque(bigint, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_nouvelle_epoque(p_utilisateur bigint, p_epoque_central integer, p_epoque_attendue integer) RETURNS TABLE(epoque integer, ancienne_epoque integer, chargement integer)
+    LANGUAGE plpgsql
+    AS $$
+#variable_conflict use_column
+DECLARE p sync_parametre; n int; v_nouvelle int;
+BEGIN
+    IF pg_is_in_recovery() THEN
+        RAISE EXCEPTION 'Synchronisation : nouvelle époque impossible sur une base en lecture seule';
+    END IF;
+    SELECT * INTO p FROM sync_parametre WHERE id = 1 FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Synchronisation : réglage absent (script 126)'; END IF;
+    IF p.retour_arriere_le IS NULL THEN
+        RAISE EXCEPTION 'Synchronisation : aucun retour en arrière détecté, nouvelle époque refusée'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF p_epoque_attendue IS NULL OR p_epoque_attendue <> p.epoque THEN
+        RAISE EXCEPTION 'Synchronisation : l''époque a changé (attendue %, actuelle %), nouvelle époque refusée', p_epoque_attendue, p.epoque
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF p_epoque_central IS NOT NULL AND (p_epoque_central < 0 OR p_epoque_central >= 2147483647) THEN
+        RAISE EXCEPTION 'Synchronisation : époque du serveur central invalide (%)', p_epoque_central USING ERRCODE = 'check_violation';
+    END IF;
+    -- Jamais une époque déjà connue du central (deux restaurations successives, 2e serveur) : au-delà des deux
+    v_nouvelle := greatest(p.epoque, coalesce(p_epoque_central, 0)) + 1;
+    -- Chargement en cours de l'ancienne époque : son instantané (lignes de l'ancienne époque) ne partira jamais
+    UPDATE sync_chargement c SET etat = 'remplace' WHERE c.etat NOT IN ('termine', 'remplace');
+    UPDATE sync_parametre SET epoque = v_nouvelle, dernier_lot = 0, dernier_accuse = 0,
+                              purge_epoque = NULL, purge_dernier_lot = 0,
+                              retour_arriere_le = NULL, retour_arriere_central = NULL, retour_arriere_sequences_le = NULL,
+                              derniere_erreur = NULL, derniere_erreur_le = NULL, modifie_le = now()
+    WHERE id = 1;
+    n := sync_demander_chargement('demande', p_utilisateur);
+    epoque := v_nouvelle; ancienne_epoque := p.epoque; chargement := n;
+    RETURN NEXT;
+END $$;
+
+
+--
+-- Name: FUNCTION sync_nouvelle_epoque(p_utilisateur bigint, p_epoque_central integer, p_epoque_attendue integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_nouvelle_epoque(p_utilisateur bigint, p_epoque_central integer, p_epoque_attendue integer) IS 'Titulaire : nouvelle époque (au-delà de l''époque locale et de la plus grande connue du central) après un retour en arrière détecté, époque attendue contrôlée, puis chargement complet demandé (script 149).';
 
 
 --
@@ -4352,6 +4541,10 @@ CREATE TABLE public.sync_parametre (
     alerte_certificat_le timestamp with time zone,
     alerte_quota_le timestamp with time zone,
     integrite_anomalie_signalee bigint DEFAULT 0 NOT NULL,
+    retour_arriere_le timestamp with time zone,
+    retour_arriere_central bigint,
+    retour_arriere_sequences_le timestamp with time zone,
+    retour_arriere_alerte_le timestamp with time zone,
     CONSTRAINT sync_parametre_adresse_serveur_check CHECK (((adresse_serveur IS NULL) OR (adresse_serveur ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'::text))),
     CONSTRAINT sync_parametre_check CHECK (((dernier_accuse >= 0) AND (dernier_accuse <= dernier_lot))),
     CONSTRAINT sync_parametre_dernier_lot_check CHECK ((dernier_lot >= 0)),
@@ -4362,6 +4555,7 @@ CREATE TABLE public.sync_parametre (
     CONSTRAINT sync_parametre_lot_max_lignes_check CHECK (((lot_max_lignes >= 1) AND (lot_max_lignes <= 10000))),
     CONSTRAINT sync_parametre_lot_max_octets_check CHECK (((lot_max_octets >= 1024) AND (lot_max_octets <= 16777216))),
     CONSTRAINT sync_parametre_purge_check CHECK (((purge_dernier_lot >= 0) AND (purge_dernier_lot <= dernier_accuse) AND (derniere_purge_lignes >= 0) AND (purge_lignes_total >= 0))),
+    CONSTRAINT sync_parametre_retour_arriere_check CHECK ((((retour_arriere_le IS NULL) = (retour_arriere_central IS NULL)) AND ((retour_arriere_central IS NULL) OR (retour_arriere_central >= 1)) AND ((retour_arriere_sequences_le IS NULL) OR (retour_arriere_le IS NOT NULL)))),
     CONSTRAINT sync_parametre_supervision_check CHECK ((((bandeau_minutes >= 1) AND (bandeau_minutes <= 10080)) AND ((alerte_retard_heures >= 1) AND (alerte_retard_heures <= 720)) AND ((alerte_erreur_minutes >= 1) AND (alerte_erreur_minutes <= 10080)) AND ((purge_jours >= 1) AND (purge_jours <= 365)))),
     CONSTRAINT sync_parametre_textes_libres_check CHECK ((textes_libres = ANY (ARRAY['filtres'::text, 'retires'::text]))),
     CONSTRAINT sync_parametre_version_contrat_check CHECK ((version_contrat ~ '^sync-v[0-9]+$'::text))
@@ -4387,6 +4581,34 @@ COMMENT ON COLUMN public.sync_parametre.descendant_version IS 'Plus grande versi
 --
 
 COMMENT ON COLUMN public.sync_parametre.integrite_anomalie_signalee IS 'N° de la dernière anomalie d''intégrité du serveur central signalée au titulaire (script 144).';
+
+
+--
+-- Name: COLUMN sync_parametre.retour_arriere_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.retour_arriere_le IS 'Base revenue en arrière détectée (le serveur central a reçu plus de lots que cette base n''en a formé) : envoi suspendu jusqu''à une nouvelle époque (script 149).';
+
+
+--
+-- Name: COLUMN sync_parametre.retour_arriere_central; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.retour_arriere_central IS 'Dernier lot de l''époque en cours reçu par le serveur central, vu à la détection (script 149).';
+
+
+--
+-- Name: COLUMN sync_parametre.retour_arriere_sequences_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.retour_arriere_sequences_le IS 'Séquences des tables envoyées avancées au-delà des n° connus du serveur central pour la détection en cours (script 149).';
+
+
+--
+-- Name: COLUMN sync_parametre.retour_arriere_alerte_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.retour_arriere_alerte_le IS 'Dernière alerte « base revenue en arrière » envoyée au titulaire : une par détection (script 149).';
 
 
 --

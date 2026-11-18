@@ -2,7 +2,7 @@
 
 ## Menu en deux niveaux, accueil, recherche et raccourcis (validé le 2026-11-13)
 
-- **En haut, les domaines seulement** : Caisse, Stock, Achats, Finances, Pilotage (et ⚙ Administration). Un clic ouvre le premier
+- **En haut, les domaines seulement** : Caisse, Stock, Achats, Finances, Patients, Pilotage (et ⚙ Administration). Un clic ouvre le premier
   écran permis du domaine. Plus de menus déroulants. Le compteur des alertes urgentes est sur « Stock ».
 - **À gauche, les écrans du domaine** ; l'écran affiché est déplié avec ses rubriques (composant `NavDomaine`). Domaine d'un seul
   écran (Caisse, Achats) : ses rubriques directement. Les groupes « Autres écrans du stock » ont disparu (le test
@@ -14,10 +14,13 @@
   | Stock (Ctrl + Maj + S) | Alertes, Stock, Inventaire, Registre des psychotropes, Étiquettes internes (`stock/etiquettes`), Traçabilité et rappel de lot |
   | Achats (Ctrl + Maj + H) | Achats (commandes, réceptions et réimpression des étiquettes d'une livraison, retours, règlements, traites à payer, grossistes) |
   | Finances (Ctrl + Maj + F) | Factures, Trésorerie, Dettes et créances, Financements (titulaire seul) (Chifa : à venir) |
+  | Patients (Ctrl + Maj + T) | Fichier des patients (`patients`), Droits expirés ou bientôt expirés (`patients/droits-chifa`), Patients en attente (`patients/attente`) |
   | Pilotage (Ctrl + Maj + P) | Rapports, Contrôle interne |
 
   Étiquettes internes : dans le Stock depuis le 2026-11-13 (stock.consulter ou achats.receptionner ; imprimer : achats.receptionner) ;
-  l'ancienne adresse `achats?onglet=etiquettes` y renvoie. Un écran sans droit n'apparaît pas ; un domaine sans écran permis non plus. Description unique : `Services/Domaines.cs`.
+  l'ancienne adresse `achats?onglet=etiquettes` y renvoie. Patients en attente (« Prévenir quand disponible ») : dans le domaine
+  Patients depuis le 2026-11-18 (droit de vendre, comme avant) ; l'ancienne adresse `achats?onglet=patients-attente` y renvoie ;
+  Achats › Ruptures garde sa colonne « Patients en attente » (nombre). Domaine Patients réservé au droit de vendre (`MiseEnPage`). Un écran sans droit n'apparaît pas ; un domaine sans écran permis non plus. Description unique : `Services/Domaines.cs`.
 - **Accueil selon les droits** : qui a un droit de gestion (achats, stock, rapports, trésorerie, factures, paramètres, titulaire)
   arrive sur le **tableau de bord** (`/accueil` : alertes urgentes, lots périmant dans les 6 mois, réceptions en attente, écarts
   d'inventaire à valider ; chaque tuile ouvre son écran et n'apparaît que si l'employé peut l'ouvrir) ; les autres (vendeur,
@@ -150,6 +153,9 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Contrôle interne › Écarts et risques | `risques` | tableau dans l'adresse (par employé, `?rubrique=jours`) ; période, pages des deux tableaux |
 | Administration › Caisse | `journal` | employé, catégorie, période, page du journal |
 | Administration › Notifications | `notifications` | objet, statut, période, page de la file d'attente |
+| Patients › Fichier des patients | `patients` | texte (nom, prénom, n° d'assuré, téléphone), organisme, chronique, crédit, droits Chifa, accord SMS, page, taille ; liste filtrée et paginée par le serveur |
+| Patients › Droits expirés ou bientôt expirés | `patients/droits-chifa` | état, organisme, période, page, taille |
+| Patients › Patients en attente | `patients-attente` | état des demandes, recherche (patient ou produit), page, taille (pas en fenêtre de la Caisse) |
 
 ## La Caisse
 

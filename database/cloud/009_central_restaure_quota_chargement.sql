@@ -23,6 +23,13 @@
 -- =====================================================================
 
 -- ---- 1. Central restauré ----
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 010 ; rejouer ce script après 010 ne la
+-- ramène pas en arrière (marqueur : table cloud_reglage_table, posé par 010).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.cloud_reglage_table') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_descendants : définition plus récente (script 010) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_descendants(p_apres bigint)
 RETURNS TABLE (nom_table text, cle text, version bigint, donnees jsonb, version_max bigint)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -50,6 +57,9 @@ BEGIN
     RETURN QUERY SELECT d.nom_table, d.cle, d.version, d.donnees, v_max FROM descendant d
                  WHERE d.officine_id = v_off AND d.version > coalesce(p_apres, 0) ORDER BY d.version;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 REVOKE EXECUTE ON FUNCTION cloud_descendants(bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION cloud_descendants(bigint) TO pharma_cloud_api;
 
@@ -105,6 +115,13 @@ END $$;
 GRANT EXECUTE ON FUNCTION cloud_debut_chargement(int, int, bigint, bigint, text, text[]) TO pharma_cloud_api;
 
 -- Dépôt d'un lot (remplace la version de 006) : plafond cumulé sur 24 h (tous chargements, remplacés compris), puis quota par chargement pendant un chargement complet, quota du jour sinon
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 020 ; rejouer ce script après 020 ne la
+-- ramène pas en arrière (marqueur : table ligne_remplacee, posé par 020).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.ligne_remplacee') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_appliquer_lot : définition plus récente (script 020) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_appliquer_lot(p_epoque int, p_numero bigint, p_empreinte text, p_version text, p_contenu bytea)
 RETURNS TABLE (statut text, dernier bigint)
 LANGUAGE plpgsql AS $$
@@ -219,6 +236,9 @@ BEGIN
     UPDATE officine_epoque SET dernier_lot = p_numero, dernier_recu_le = now() WHERE officine_id = v_off AND epoque = p_epoque;
     RETURN QUERY SELECT 'accepte'::text, p_numero;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 GRANT EXECUTE ON FUNCTION cloud_appliquer_lot(int, bigint, text, text, bytea) TO pharma_cloud_api;
 

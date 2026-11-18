@@ -36,3 +36,6 @@ docs/taches/
 docs/pharma-officine-differenciation.md
 docs/opportunites-logiciels-algerie.md
 docs/idees-pharma.md
+
+# Sorties d'essais et de tests locaux (jamais dans le dépôt)
+.essai-*/

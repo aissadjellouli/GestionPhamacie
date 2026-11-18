@@ -98,6 +98,43 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         return n;
     }
 
+    /// <summary>Dernier lot reçu d'une époque et plus grande époque reçue de l'officine (cloud_epoque_max, script 020), en une lecture.</summary>
+    public async Task<(long Dernier, int EpoqueMax)> EtatAsync(Guid officine, int epoque, CancellationToken ct)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await PoserOfficineAsync(cnx, tx, officine, ct);
+        await using var cmd = new NpgsqlCommand("SELECT cloud_dernier_lot($1), cloud_epoque_max()", cnx, tx);
+        cmd.Parameters.AddWithValue(epoque);
+        (long, int) res;
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            await r.ReadAsync(ct);
+            res = (r.GetInt64(0), r.GetInt32(1));
+        }
+        await tx.CommitAsync(ct);
+        return res;
+    }
+
+    /// <summary>
+    /// Lot S6.1 (script 020) : plus grand id reçu de cette officine par table miroir à clé « id » entière, toutes époques, lignes absentes
+    /// et archivées comprises. Aucune donnée de ligne ; une table sans ligne n'apparaît pas.
+    /// </summary>
+    public async Task<Dictionary<string, long>> MaximumsAsync(Guid officine, CancellationToken ct)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await PoserOfficineAsync(cnx, tx, officine, ct);
+        await using var cmd = new NpgsqlCommand("SELECT nom_table, maximum FROM cloud_maximums_officine()", cnx, tx) { CommandTimeout = 120 };
+        var maximums = new Dictionary<string, long>(StringComparer.Ordinal);
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await r.ReadAsync(ct)) maximums[r.GetString(0)] = r.GetInt64(1);
+        }
+        await tx.CommitAsync(ct);
+        return maximums;
+    }
+
     /// <summary>Chargement complet annoncé et non terminé pour l'officine de ce certificat (script 006).</summary>
     public async Task<bool> ChargementEnCoursAsync(string empreinteCertificat, CancellationToken ct)
     {

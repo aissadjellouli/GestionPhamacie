@@ -39,7 +39,16 @@ public sealed record ChangementDescendantDto(string Table, string Cle, long Vers
 /// <summary>Échange léger (chaque passage, même sans lot à envoyer) : version descendante appliquée par l'officine.</summary>
 public sealed record EchangeDescendantDto(long VersionAppliquee);
 
-public sealed record EtatCentralDto(int Epoque, long DernierRecu);
+/// <summary>Réponse de GET /api/v1/etat. EpoqueMax (facultatif, 2026-11-18) : plus grande époque reçue de l'officine appelante ; absent
+/// (null) pour un serveur central antérieur. Une officine antérieure ignore ce champ.</summary>
+public sealed record EtatCentralDto(int Epoque, long DernierRecu, int? EpoqueMax = null);
+
+/// <summary>
+/// Lot S6 (conception-synchronisation.md § 30) : réponse de GET /api/v1/maximums, réservée à l'officine appelante. Pour chaque table
+/// miroir dont la clé est la seule colonne « id » (bigint), le plus grand id reçu de cette officine, toutes époques confondues
+/// (lignes absentes et archivées comprises). Aucune donnée de ligne. Sert à avancer les séquences locales après une restauration.
+/// </summary>
+public sealed record MaximumsCentralDto(IReadOnlyDictionary<string, long> Tables);
 
 /// <summary>
 /// Début d'un chargement complet (lot S6) : n° local du chargement, époque, repère (n° de file des lignes de l'instantané),
@@ -156,7 +165,21 @@ public sealed record EtatSynchronisationDto(bool Active, string? OfficineId, str
     DateTime? EcheanceCertificat, string? EmpreinteCertificat, string? DerniereErreur, DateTime? DerniereErreurLe, string TextesLibres,
     bool EnvoyerMedecins, int Epoque, string VersionContrat, long LotsAutresEpoques = 0, bool BaseEnLectureSeule = false,
     ChargementSynchronisationDto? Chargement = null, IReadOnlyList<string>? FamillesEnvoyees = null, DateTime? FamillesLuesLe = null,
-    long FamillesVersion = 0, SupervisionSynchronisationDto? Supervision = null, IntegriteCentraleDto? IntegriteCentrale = null);
+    long FamillesVersion = 0, SupervisionSynchronisationDto? Supervision = null, IntegriteCentraleDto? IntegriteCentrale = null,
+    RetourArriereSynchronisationDto? RetourArriere = null);
+
+/// <summary>
+/// Lot S6.2 : base de l'officine revenue en arrière (restauration, bascule) détectée ; envoi suspendu jusqu'à « Repartir sur une
+/// nouvelle époque » (titulaire). Dernier lot de l'époque vu au serveur central et formé ici, avance des n° faite, alerte envoyée.
+/// </summary>
+public sealed record RetourArriereSynchronisationDto(DateTime DetecteLe, int Epoque, long DernierLotCentral, long DernierLotLocal,
+    bool SequencesAvancees, DateTime? AlerteLe);
+
+/// <summary>« Repartir sur une nouvelle époque » : époque affichée à l'écran (confirmation ; refus si elle a changé entre-temps).</summary>
+/// <param name="MotDePasse">Mot de passe du titulaire ressaisi (validation de l'action sensible, 2026-11-18).</param>
+public sealed record NouvelleEpoqueSynchronisationDto(int EpoqueAffichee, string? MotDePasse = null);
+
+public sealed record ResultatNouvelleEpoqueSynchronisationDto(int Epoque, int AncienneEpoque, int? Chargement);
 
 /// <summary>
 /// Lot S4 : dernière vérification d'intégrité faite par le serveur central (résumé reçu par la voie descendante, format integrite-v1).
@@ -197,7 +220,8 @@ public sealed record ReglagesSynchronisationDto(bool Active, string? Adresse, st
 
 public sealed record ActivationSynchronisationDto(string Code);
 
-public sealed record ResultatEnvoiSynchronisationDto(int LotsAccuses, string? Arret, string? Erreur);
+/// <param name="Avertissement">Envoi suspendu (base revenue en arrière) : message à montrer comme un avertissement, pas une erreur.</param>
+public sealed record ResultatEnvoiSynchronisationDto(int LotsAccuses, string? Arret, string? Erreur, string? Avertissement = null);
 
 /// <summary>Lots S5.1 et S5.5 : ordre reçu du serveur central (Resume : texte lisible, employé et rôle nommés d'après la base de l'officine).</summary>
 public sealed record OrdreCentralDto(Guid Id, string Type, string Libelle, string Resume, string Auteur, DateTime CreeLe, DateTime ExpireLe,

@@ -231,6 +231,13 @@ public sealed record FinDroitDto(DateOnly? DateFinDroit);
 public sealed record SuiviDroitChifaDto(long PatientId, string Nom, string? NumAssure, string? Rang, string? Organisme, DateOnly DateFinDroit,
     string Etat, DateTime? DerniereVente);
 
+/// <summary>
+/// Ligne de Patients › « Fichier des patients ». EtatDroits : expires, bientot (CNAS/CASNOS, comme la liste de suivi) ou null.
+/// SoldeCredit : dette non soldée, null sans le droit qui montre les crédits des patients.
+/// </summary>
+public sealed record PatientFichierDto(long Id, string Nom, string? Prenom, string? Telephone, string? NumAssure, string? Organisme,
+    DateOnly? DateFinDroit, string? EtatDroits, bool Chronique, bool ConsentementSms, decimal? SoldeCredit);
+
 public sealed record EntreeJournalDto(DateTime Date, string Employe, string Action, string? Details, string? AutorisePar, long? EmployeId = null, long? AutoriseParId = null);
 
 // ---- Patients, médecins, organismes -------------------------------------------

@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 à 019 dans l'ordre, contrôles, tests facultatifs.
+    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 à 021 dans l'ordre, contrôles, tests facultatifs.
 
 .DESCRIPTION
     À utiliser pour le parcours E, étape 2 (serveur central). Ne sert jamais sur la base d'une officine.
@@ -13,7 +13,7 @@
 
     Étapes :
       1. création de la base (propriétaire = -Proprietaire, UTF8) par -CompteAdmin si elle n'existe pas ;
-      2. scripts 001 à 019 de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
+      2. scripts 001 à 021 de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
          applicatif pharma_cloud_api SANS connexion (non propriétaire des tables : la sécurité au niveau des lignes s'applique) ;
       3. contrôles : tables centrales et miroir présentes, sécurité au niveau des lignes activée sur les tables de données,
          rôle pharma_cloud_api sans connexion et non propriétaire, partitions de lot_recu ;
@@ -53,7 +53,7 @@
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire
-    Crée la base et passe 001 à 019.
+    Crée la base et passe 001 à 021.
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire -AvecTests -WhatIf
@@ -105,6 +105,11 @@ Invoke-Principal {
     if ($connexionAdmin) {
         Write-Etape "Contrôles du serveur"
         $version = Get-Scalaire -Compte $CompteAdmin -Base "postgres" -Sql "SHOW server_version"
+        # Scripts 020 et 021 : PostgreSQL 18 exigé (RETURNING old/new) ; refus avant toute création
+        $versionNum = Get-Scalaire -Compte $CompteAdmin -Base "postgres" -Sql "SHOW server_version_num"
+        if ([int]$versionNum -lt 180000) {
+            throw "PostgreSQL 18 ou plus récent exigé pour le serveur central (scripts 020 et 021 : RETURNING old/new) ; ce serveur est en version $version. Rien n'a été créé."
+        }
         Write-Ok "PostgreSQL joignable ($Hote`:$Port), version $version."
         if ((Get-Scalaire -Compte $CompteAdmin -Base "postgres" -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$Proprietaire'") -eq "0") {
             throw "Le compte propriétaire « $Proprietaire » n'existe pas. Le créer d'abord (parcours E, étape 1.3), il n'est pas créé par ce script."

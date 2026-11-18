@@ -32,6 +32,7 @@
   --avert-fond: #FFFAEB;  --avert-bord: #FEDF89;
   --accent-texte: #0E5A32;   /* vert du texte (liens, titres actifs) ; le fond des boutons reste --accent */
   --texte-inactif: #98A2B3;
+  --menu-fond: #E3DBCE; --menu-actif: #CFE0D3; --menu-filet: #D2C7B6;   /* colonne du menu vertical, teinte « grès » (2026-11-18 : le blanc cassé fatiguait l'œil) */
   --bandeau-fond: #EEF4FF; --bandeau-bord: #C7D7FE; --bandeau-texte: #3538CD;
   --graphique: #1F8A4C;
   color-scheme: light;
@@ -394,7 +395,7 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 .page.admin, .page.avec-menu { --largeur-menu: 240px; max-width: none; margin: 0; padding: 28px 24px 36px 0; column-gap: 32px; }
 /* Colonne du menu sur toute la hauteur, de l'en-tête (qui la recouvre en haut, quelle que soit sa hauteur) à la barre d'état */
 .page.admin::before, .page.avec-menu::before { content: ""; position: fixed; z-index: 0; top: 0; bottom: 32px; left: 0; width: var(--largeur-menu);
-  background: var(--surface); border-right: 1px solid var(--bordure); }
+  background: var(--menu-fond); border-right: 1px solid var(--menu-filet); }
 /* Menu et contenu au-dessus de la colonne (sinon le fond de la page la recouvre) ; l'en-tête (z-index 20) reste au-dessus de tout */
 .page.admin > *, .page.avec-menu > * { position: relative; z-index: 1; }
 /* Écran d'administration sans menu de gauche (super admin, 2026-11-16) : ni colonne vide ni contenu collé au bord,
@@ -406,7 +407,7 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 .page.admin > *:has(.voile), .page.avec-menu > *:has(.voile) { z-index: 41; }
 .admin-nav, .nav-laterale { flex: 0 0 var(--largeur-menu, 220px); box-sizing: border-box; padding: 0 12px; display: flex; flex-direction: column; gap: 2px; }
 .admin-nav a, .admin-nav .nav-inactif, .nav-laterale a { padding: 10px 12px; border-radius: 6px; font-size: 14px; color: var(--texte-3); text-decoration: none; }
-.admin-nav a.active, .nav-laterale a.active { color: var(--accent-texte); background: var(--accent-clair); font-weight: 600; box-shadow: inset 3px 0 0 var(--ambre); }
+.admin-nav a.active, .nav-laterale a.active { color: var(--accent-texte); background: var(--menu-actif); font-weight: 600; box-shadow: inset 3px 0 0 var(--ambre); }
 .admin-nav .nav-inactif { color: var(--texte-inactif); cursor: not-allowed; }
 .admin-contenu, .contenu-rubrique { flex: 1 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
 .nav-laterale .nav-groupe-titre { margin: 14px 12px 2px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texte-2); }
@@ -467,6 +468,8 @@ select, .panneau input[type="date"] { height: 44px; padding: 0 10px; border-radi
 .pagination .btn { height: 36px; padding: 0 12px; }
 .tableau td input { height: 36px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--bordure-champ); font-size: 14px; }
 .bandeau-attention { padding: 12px 14px; border-radius: 8px; background: var(--attention-fond); color: var(--attention); font-size: 14px; line-height: 1.45; }
+/* Boutons d'action sous le texte d'un bandeau d'attention (Synchronisation : « Repartir sur une nouvelle époque ») */
+.bandeau-attention .actions { margin-top: 8px; align-items: flex-end; }
 .code-emplacement { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--accent-clair); color: var(--accent-fonce); font-weight: 600; font-size: 13px; letter-spacing: 0.02em; white-space: nowrap; }
 .ligne-comptee { background: var(--accent-clair); }
 .texte-urgent { color: var(--urgent); }
@@ -611,6 +614,7 @@ details.avance[open] summary { margin-bottom: 8px; }
     --alerte-fond: #2D1A18; --alerte-bord: #6E2A22;
     --avert-fond: #2E2612;  --avert-bord: #6B5418;
     --texte-inactif: #7D8B84;
+    --menu-fond: var(--surface); --menu-actif: var(--accent-clair); --menu-filet: var(--bordure);   /* thème sombre inchangé */
     --bandeau-fond: #1B2140; --bandeau-bord: #3B4A8C; --bandeau-texte: #A4BCFD;
     --graphique: #3E9D69;
     color-scheme: dark;
@@ -638,6 +642,7 @@ details.avance[open] summary { margin-bottom: 8px; }
   --alerte-fond: #2D1A18; --alerte-bord: #6E2A22;
   --avert-fond: #2E2612;  --avert-bord: #6B5418;
   --texte-inactif: #7D8B84;
+  --menu-fond: var(--surface); --menu-actif: var(--accent-clair); --menu-filet: var(--bordure);   /* thème sombre inchangé */
   --bandeau-fond: #1B2140; --bandeau-bord: #3B4A8C; --bandeau-texte: #A4BCFD;
   --graphique: #3E9D69;
   color-scheme: dark;

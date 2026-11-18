@@ -1016,7 +1016,7 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 019). Ils ne
   .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
   - Le compte `<propriétaire>` doit exister (étape 1.3) ; le script ne le crée pas. Pour voir le plan sans rien créer : ajouter `-WhatIf`. Si le serveur est distant : `-Hote <hôte>`.
-  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` à `009` ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
+  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` à `021` (tous les scripts numérotés du dossier) ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
   - `001` crée le rôle applicatif `pharma_cloud_api` **sans connexion** et non propriétaire des tables.
   - **Attendu** : « Terminé », code de sortie 0 (`$LASTEXITCODE`).
   - **Si échec** : le script s'arrête au premier script en erreur et le nomme. « Le compte propriétaire n'existe pas » : l'étape 1.3 n'est pas faite. « contient déjà des tables centrales » : base déjà installée ; pour une mise à jour du central, voir l'étape 10.
@@ -1104,6 +1104,7 @@ Outil d'administration (`PHARMA_CLOUD_ADMIN_CONNEXION`). Chaque réglage est ins
 - [ ] **7.5** Renouvellement des certificats d'officine : accepté seulement dans les 60 derniers jours, une fois par jour au plus.
 - [ ] **7.6** Révocation : voir procédure F5.
 - [ ] **7.7** Proxy inverse : les limites par adresse lisent l'adresse de la connexion. Derrière un proxy, c'est celle du proxy. **[À VÉRIFIER à l'hébergement.]** Réglage : `Cloud:LimiteParAdresseMinute` (600 par défaut).
+- [ ] **7.8** Conservation des données d'une officine partie (script `021`) : 6 ans par défaut, **6 ans minimum** (refus en dessous), pas de maximum, comptée depuis la date de départ. `--conservation-depart <ans>` (globale), `--conservation-depart <ans> --officine <code>` (surcharge), `--conservation-depart global --officine <code>` (retour). `--reglages` affiche aussi les officines parties et la date à partir de laquelle leur effacement est possible. **[À VÉRIFIER : avis du juriste, loi 18-07 et durée fiscale.]** Départ et effacement : procédure F8.
 
 ### 8. Activer une officine
 
@@ -1159,7 +1160,19 @@ Le serveur central a perdu des lots déjà accusés (restauration du central) :
 - si l'officine les a encore (`sync_lot`), elle les renvoie à l'identique, sans intervention ;
 - sinon, elle demande **d'elle-même** un chargement complet (message « rechargement complet de l'officine demandé »). Au passage suivant, l'instantané est pris et annoncé. Le central abandonne les lots perdus (journal de sécurité `lots_abandonnes`) et l'envoi reprend normalement. **Ne rien supprimer dans l'officine.**
 - si le même message revient alors qu'un chargement « lots manquants » est déjà annoncé (« reprise impossible automatiquement … procédure »), comparer `officine_epoque`, `lot_recu` et `chargement` du central avec `sync_lot` et `sync_chargement` de l'officine. Les opérations restent en attente dans l'officine : rien n'est perdu. **Appeler le développeur.**
-- **Restauration de la base de l'officine** (n° de lots revenus en arrière : lots « déjà reçus avec un autre contenu ») : nouvelle époque, **non réalisée** à ce jour. **[À FAIRE]**
+- **Restauration de la base de l'officine** (n° de lots revenus en arrière) : voir ci-dessous.
+
+### Base de l'officine revenue en arrière (restauration, bascule ; script 149)
+
+Après une **restauration** de la base de l'officine (F1, ou la restauration faite par une bascule sur le PC de secours, F2) ou une **bascule sur le 2e serveur** (F3) qui a perdu les dernières transactions, le serveur central a pu recevoir des lots que la base n'a plus. **Ordre de mise en production** : script central `020` passé **avant** le script `149` des officines (étape 10.2 du parcours E) ; sans lui, la détection et la nouvelle époque fonctionnent, mais les n° ne sont pas avancés (message « Avance des n° non faite… », nouvel essai à chaque passage).
+
+- **Détection (automatique)** : à chaque passage, avant de former un lot, l'officine lit le dernier lot reçu par le serveur central pour l'époque en cours. S'il est plus grand que le dernier lot formé ici, ou si un lot jamais reformé est refusé « empreinte différente » alors que le central a déjà reçu ce n° : **envoi suspendu** (rien n'est formé ni envoyé), message dans Administration, Synchronisation, État (« Base revenue en arrière… »), une **alerte** au titulaire (SMS et e-mail, sujet « Synchronisation ») par détection, et les n° des nouvelles opérations sont **avancés** au-delà de ceux déjà reçus par le central (table verrouillée le temps de l'avance : jamais en arrière). Le travail de l'officine continue normalement ; les opérations restent en file. Depuis le 2026-11-18, si le serveur central ne répond pas à ce contrôle, **rien n'est formé ni envoyé** à ce passage (« Serveur central injoignable pour le contrôle de l'état… », nouvel essai au passage suivant).
+- **Intégrité (décision du titulaire, 2026-11-18)** : des anomalies d'intégrité sont **attendues** au serveur central pour les rangs restaurés (journal des ventes et autres journaux chaînés) : elles ne signifient pas une falsification. Ne rien corriger ; leur traitement de fond est le futur lot S6.5.
+- [ ] **À faire par le titulaire**, une fois le service redémarré et les postes reconnectés : Administration, Synchronisation, État, bandeau « Envoi suspendu… », **« Repartir sur une nouvelle époque »**, saisir **son mot de passe** (même vérification que « Changer mon mot de passe » : 5 mots de passe faux bloquent quelques minutes), puis **Confirmer**. **Compte** : titulaire connecté par mot de passe (refusé à tout autre compte, et refusé s'il n'y a pas de retour en arrière détecté). Le serveur central doit répondre (il donne la plus grande époque qu'il connaît pour l'officine) ; sinon refus, rien ne change, recommencer plus tard. Action inscrite au journal des actions (`synchronisation_nouvelle_epoque`) dans la même transaction que le changement d'époque.
+  - **Effet** : époque = plus grande des deux (époque locale, plus grande époque connue du central) + 1, compteurs de lots à 0, puis **chargement complet** (il part au passage suivant ; « Synchroniser maintenant » pour le lancer tout de suite). Les lots et opérations de l'ancienne époque restent dans la base (signalés « lot(s) d'une époque précédente jamais accusé(s) », jamais renvoyés). À la fin du chargement, le serveur central **signale sans les effacer** les données qu'il a et que la base n'a plus (ventes perdues par la restauration) : le titulaire décide (ressaisie, annulation tracée ou justification).
+  - **Attendu** : bandeau disparu, « Lots constitués » à l'époque suivante, chargement « en cours (demande) » puis terminé.
+- **Ne rien supprimer** dans l'officine ni au serveur central. Si la détection revient juste après une nouvelle époque (base restaurée deux fois), recommencer : chaque nouvelle époque est sûre (jamais une époque déjà connue du central).
+- « Synchroniser maintenant » pendant la suspension : réponse normale, le message s'affiche comme un **avertissement** (plus d'erreur « serveur central »).
 
 ### 9. Réglages mutualisés (titulaire et technicien)
 
@@ -1209,7 +1222,7 @@ Le serveur central peut proposer ou imposer aux officines la valeur de 11 régla
 ### 10. Mise à jour du serveur central
 
 - [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `019`, **dans cet ordre** (le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `021`, **dans cet ordre** (le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; le `020` **avant** le script `149` des officines : route `GET /api/v1/maximums` et archive des lignes remplacées ; `020` et `021` demandent PostgreSQL 18 et le refusent clairement en tête sinon ; depuis le 2026-11-18 rejouer un ancien script (`001` à `012`) ne ramène plus en arrière une fonction redéfinie par un script plus récent ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
 - [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
 - [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 
@@ -1235,6 +1248,7 @@ Les sauvegardes utiles sont sur le **disque externe**. La copie de la base dans 
   - Il faut le droit `CREATEDB` du compte `pharma_app` (parcours A, étape 2.2).
 - [ ] **4.** **GED** : « Recopier les documents de la GED ». Les documents du disque externe absents ou plus anciens au serveur sont recopiés. Rien n'est supprimé.
 - [ ] **5.** Contrôler les totaux et ressaisir les opérations faites depuis la sauvegarde (en général la journée). La restauration est inscrite au journal de la base restaurée.
+- [ ] **6.** Synchronisation activée : à la première minute, l'envoi se suspend (« Base revenue en arrière… ») ; le **titulaire** repart sur une nouvelle époque (parcours E, « Base de l'officine revenue en arrière »).
 
 **Méthode 2 : sans l'application** (API hors service, PC serveur remplacé).
 
@@ -1252,6 +1266,7 @@ Les sauvegardes utiles sont sur le **disque externe**. La copie de la base dans 
 - [ ] **4.** Sauvegarde plus ancienne que la version du logiciel : rejouer les scripts de mise à jour avec `scripts\mep\mettre_a_jour_base_officine.ps1` (parcours B, étapes 3 à 10).
 - [ ] **5.** Démarrer le service et vérifier : `Start-Service "PharmaOfficine API"`, puis `http://localhost:5080/api/sante`. Les documents restés sur les postes (« A envoyer ») repartent dans la GED à la connexion suivante.
 - [ ] **6.** Ressaisir les opérations faites depuis la sauvegarde. Sur un nouveau PC, ressaisir le mot de passe des notifications (chiffré pour le PC d'origine).
+- [ ] **6 bis.** Synchronisation activée : après le redémarrage, le **titulaire** repart sur une nouvelle époque (parcours E, « Base de l'officine revenue en arrière »).
 - [ ] **7.** Si le PC serveur a changé : refaire le parcours A, étape 4.9, et **restaurer l'autorité HTTPS** depuis le PFX du coffre, puis créer le certificat du nouveau PC (procédure F2 bis ci-dessous). L'autorité est **unique pour la pharmacie** : les postes et téléphones n'ont **rien à réinstaller**. Sans le PFX du coffre, une nouvelle autorité serait créée et il faudrait réinstaller `autorite-pharmacie.crt` partout (parcours A, étapes 5.3 à 5.4 et 6.2).
 
 > La copie de la GED sur le disque externe n'a qu'un exemplaire par document : un document abîmé sur le serveur remplace sa copie à la sauvegarde suivante. Garder deux disques externes en rotation, dont un toujours hors de l'officine (obligatoire sans 2e serveur, étape 11.2 bis).
@@ -1277,6 +1292,7 @@ Prérequis : parcours D fait. La pharmacie repart à partir de la **dernière co
   - Aucune réinstallation d'autorité n'est nécessaire sur les postes : c'est la même autorité que celle du PC serveur.
 - [ ] **5.** GED : recopier le dossier `GED` du disque externe si besoin : `.\scripts\restaurer_pharmacie.ps1 -SansBase` (paramètre `-DossierGed` du PC de secours).
 - [ ] **6.** Ressaisir les opérations faites depuis la copie. Ressaisir le mot de passe des notifications.
+- [ ] **6 bis.** Synchronisation activée : après le redémarrage, le **titulaire** repart sur une nouvelle époque (parcours E, « Base de l'officine revenue en arrière »).
 - [ ] **7.** Retour sur le PC serveur réparé : procédure F4.
 
 ### F2 bis. Restaurer l'autorité HTTPS (PC serveur détruit ou remplacé)
@@ -1335,6 +1351,7 @@ Prérequis : parcours C fait. Décision du titulaire.
 - [ ] **4.** Sur chaque poste : bouton **« Basculer sur le 2e serveur »**, puis fermer et rouvrir Pharma Officine.
 - [ ] **5.** Titulaire : écran « 2e serveur ». Ce serveur est maintenant « Principal ». Vérifier les dossiers Chifa et MDN, la clé (identique). **CHIFA-Officine, lecteur de carte et Token** : à confirmer sur ce PC (question posée à la CNAS, `docs/taches/2026-11-15-recette-complete/demande-cnas.md`).
 - [ ] **6.** Le principal ne doit **jamais** redevenir actif sans la procédure F4 : l'API refuse de démarrer si l'autre serveur a aussi une base principale.
+- [ ] **7.** Synchronisation activée : si des transactions non répliquées avaient déjà été envoyées au serveur central, l'envoi se suspend (« Base revenue en arrière… ») ; le **titulaire** repart alors sur une nouvelle époque (parcours E, « Base de l'officine revenue en arrière »). Sans message, rien à faire.
 
 ### F4. Retour du serveur réparé
 
@@ -1416,6 +1433,30 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
 - [ ] **3.** Faire (ou refaire) l'étape 4.6 du parcours A, puis installer la **nouvelle** autorité sur les postes et téléphones (étapes 5.3, 5.4, 6.1, 6.2).
 - [ ] **4.** Quand **tous** les postes fonctionnent en HTTPS : retirer l'ancienne **à la main**. Sur le PC serveur : `Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -eq "CN=PharmaOfficine Autorite locale" } | Remove-Item`. Sur chaque poste : `certutil -delstore Root "PharmaOfficine Autorite locale"`. Décision du titulaire ; garder une trace de l'empreinte retirée.
 
+
+### F8. Départ d'une officine (fin de contrat)
+
+**Où** : serveur central. **Compte** : compte d'administration (`PHARMA_CLOUD_ADMIN_CONNEXION`, propriétaire de la base centrale). Script `021` passé.
+
+- [ ] **1.** Enregistrer le départ et écrire l'export complet remis au titulaire :
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --depart-officine <code officine> --sortie "<dossier>\officine-<code>.zip" --operateur "<nom de l'opérateur>"
+  ```
+  - Tous les certificats de l'officine sont révoqués, la date de départ est posée (gardée si la commande est rejouée) : la synchronisation de l'officine est refusée dès son appel suivant. Rien d'autre à faire dans l'officine.
+  - L'archive contient un fichier CSV par table copiée au central et `ligne_remplacee.csv` (UTF-8, séparateur « ; », en-tête), et `empreintes.txt` (SHA-256 de chaque CSV, contrôle : `Get-FileHash -Algorithm SHA256 <fichier>`). Un fichier existant n'est jamais écrasé. Patients sous code, comme au central.
+  - Le départ, l'export et l'empreinte SHA-256 de l'archive (affichée) sont notés au journal des départs (`journal_depart_officine`, ajout seul) et au journal de sécurité.
+  - Remettre l'archive au titulaire **par un canal sûr** ; noter son empreinte. **[À VÉRIFIER : mode de remise et accusé de réception du titulaire.]**
+- [ ] **2.** Ne rien effacer : l'effacement n'est **jamais automatique**. Il est refusé (même en simulation) tant que la durée de conservation après départ (étape 7.8) n'est pas écoulée.
+- [ ] **3.** Après la durée de conservation : simulation (nombre de lignes par table, rien n'est effacé) :
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --effacer-officine <code officine>
+  ```
+- [ ] **4.** Effacement réel, **suppression de données : validation du titulaire obligatoire** et sauvegarde de la base centrale juste avant :
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --effacer-officine <code officine> --confirmer <code officine> --operateur "<nom de l'opérateur>"
+  ```
+  - Efface les tables copiées, `ligne_remplacee` et les lots bruts de l'officine, en une seule transaction ; procès-verbal (date, officine, opérateur, lignes par table) dans `journal_depart_officine` et `officine_effacee` au journal de sécurité.
+  - Restent : la fiche de l'officine, ses certificats révoqués, les journaux, et ses éléments techniques (époques, chargements, éléments descendants, ordres, anomalies d'intégrité). **[À VÉRIFIER avec le titulaire : faut-il aussi les effacer ?]** Les sauvegardes de la base centrale gardent les données jusqu'à leur propre expiration. **[À VÉRIFIER : durée de conservation des sauvegardes du central.]**
 ---
 
 ## Annexes

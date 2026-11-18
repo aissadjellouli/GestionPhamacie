@@ -47,6 +47,13 @@ GRANT SELECT, INSERT, UPDATE ON chargement TO pharma_cloud_api;
 -- Début d'un chargement pour l'officine courante. Idempotent (même n° : réponse enregistrée). Un chargement en cours plus
 -- ancien est remplacé. Si l'officine a des lots accusés que le serveur central n'a plus (p_reprendre_apres > dernier reçu),
 -- ces lots sont abandonnés : le n° attendu saute à p_reprendre_apres + 1 et le chargement remplace leur contenu.
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 009 ; rejouer ce script après 009 ne la
+-- ramène pas en arrière (marqueur : colonne cloud_parametre.quota_chargements_octets_24h, posé par 009).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.cloud_parametre'::regclass AND attname = 'quota_chargements_octets_24h' AND NOT attisdropped) THEN
+        RAISE NOTICE 'cloud_debut_chargement : définition plus récente (script 009) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_debut_chargement(p_numero int, p_epoque int, p_repere bigint, p_reprendre_apres bigint,
     p_motif text, p_tables text[])
 RETURNS TABLE (dernier bigint, abandonnes bigint)
@@ -78,8 +85,18 @@ BEGIN
     PERFORM cloud_journaliser(v_off, NULL, 'chargement_debut', format('chargement %s (%s), %s table(s)', p_numero, p_motif, cardinality(p_tables)));
     RETURN QUERY SELECT greatest(e.dernier_lot, p_reprendre_apres), v_ab;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Fin d'un chargement : lignes vues, lignes absentes de l'officine marquées (jamais effacées). Idempotent.
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 020 ; rejouer ce script après 020 ne la
+-- ramène pas en arrière (marqueur : table ligne_remplacee, posé par 020).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.ligne_remplacee') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_fin_chargement : définition plus récente (script 020) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_fin_chargement(p_numero int, p_lignes jsonb)
 RETURNS TABLE (absentes bigint, absentes_par_table jsonb, lignes_vues jsonb)
 LANGUAGE plpgsql AS $$
@@ -109,9 +126,19 @@ BEGIN
         format('chargement %s : %s ligne(s) du serveur central absente(s) de l''officine (gardées)', p_numero, v_total));
     RETURN QUERY SELECT v_total, v_abs, v_vues;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Dépôt d'un lot (remplace la version de 001) : en plus, lignes « instantane » marquées vues par le chargement en cours,
 -- marque « absente » retirée d'une ligne reçue de nouveau.
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 004 ; rejouer ce script après 004 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_lot_sans_colonnes, posé par 004).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('public.cloud_lot_sans_colonnes(jsonb,text[])') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_appliquer_lot : définition plus récente (script 004) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_appliquer_lot(p_epoque int, p_numero bigint, p_empreinte text, p_version text, p_contenu bytea)
 RETURNS TABLE (statut text, dernier bigint)
 LANGUAGE plpgsql AS $$
@@ -200,6 +227,9 @@ BEGIN
     UPDATE officine_epoque SET dernier_lot = p_numero, dernier_recu_le = now() WHERE officine_id = v_off AND epoque = p_epoque;
     RETURN QUERY SELECT 'accepte'::text, p_numero;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 GRANT EXECUTE ON FUNCTION cloud_debut_chargement(int, int, bigint, bigint, text, text[]), cloud_fin_chargement(int, jsonb),
     cloud_appliquer_lot(int, bigint, text, text, bytea) TO pharma_cloud_api;

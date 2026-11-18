@@ -172,6 +172,13 @@ END $$;
 -- ---------------------------------------------------------------------
 -- lot_recu : ajout seul, sauf deux chemins contrôlés
 -- ---------------------------------------------------------------------
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 021 ; rejouer ce script après 021 ne la
+-- ramène pas en arrière (marqueur : table journal_depart_officine, posé par 021).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.journal_depart_officine') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_lot_recu_garde : définition plus récente (script 021) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_lot_recu_garde() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE v_op text := coalesce(current_setting('cloud.lot_recu_operation', true), '');
@@ -191,6 +198,9 @@ BEGIN
     END IF;
     RAISE EXCEPTION '% : ajout seul', TG_TABLE_NAME;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 DROP TRIGGER IF EXISTS trg_lot_recu_ajout_seul ON lot_recu;
 CREATE TRIGGER trg_lot_recu_ajout_seul BEFORE UPDATE OR DELETE ON lot_recu FOR EACH ROW EXECUTE FUNCTION cloud_lot_recu_garde();
 
@@ -198,6 +208,13 @@ CREATE TRIGGER trg_lot_recu_ajout_seul BEFORE UPDATE OR DELETE ON lot_recu FOR E
 -- Dépôt d'un lot (remplace la version de 003) : en plus, colonnes des familles non autorisées pour l'officine effacées
 -- AVANT toute écriture (tables miroir et lot brut gardé) et journalisées (une fois par jour)
 -- ---------------------------------------------------------------------
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 006 ; rejouer ce script après 006 ne la
+-- ramène pas en arrière (marqueur : colonne cloud_parametre.quota_chargement_octets, posé par 006).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.cloud_parametre'::regclass AND attname = 'quota_chargement_octets' AND NOT attisdropped) THEN
+        RAISE NOTICE 'cloud_appliquer_lot : définition plus récente (script 006) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_appliquer_lot(p_epoque int, p_numero bigint, p_empreinte text, p_version text, p_contenu bytea)
 RETURNS TABLE (statut text, dernier bigint)
 LANGUAGE plpgsql AS $$
@@ -297,6 +314,9 @@ BEGIN
     UPDATE officine_epoque SET dernier_lot = p_numero, dernier_recu_le = now() WHERE officine_id = v_off AND epoque = p_epoque;
     RETURN QUERY SELECT 'accepte'::text, p_numero;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- ---------------------------------------------------------------------
 -- Administration (propriétaire de la base, outil d'administration seulement)

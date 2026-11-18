@@ -162,6 +162,8 @@ public class ChargementSynchronisationTests
         public Task<ReponseActivationSync> ActiverAsync(string adresse, string code, string demandePem, Guid officine, CancellationToken ct = default) =>
             Task.FromResult(new ReponseActivationSync(Officine, "principal", "CERT", "AC", Maintenant.AddYears(3), "0123"));
         public Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default) => Task.FromResult(DescendantsRecus.Aucun);
+        /// <summary>Contrôle « base revenue en arrière » (lot S6.2) : le central de ces essais n'a qu'une époque ; jamais en avance sur l'officine.</summary>
+        public Task<long?> DernierLotCentralAsync(string adresse, int epoque, CancellationToken ct = default) => Task.FromResult<long?>(epoque == 1 ? Dernier : 0);
 
         public Task<ReponseActivationSync> RenouvelerAsync(string adresse, string demandePem, CancellationToken ct = default) =>
             Task.FromResult(new ReponseActivationSync(Officine, "principal", "CERT", "AC", Maintenant.AddYears(3), null));

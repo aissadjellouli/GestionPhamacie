@@ -25,12 +25,46 @@
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
         @if (message is not null) { <div class="succes" role="status">@message</div> }
+        @* Avertissement de « Synchroniser maintenant » : masqué sur l'état quand le bandeau de retour en arrière, qui dit la même chose, est affiché *@
+        @if (avertissement is not null && !(rubrique == "etat" && t?.RetourArriere is not null)) { <div class="bandeau-attention" role="status" data-zone="avertissement-envoi">@avertissement</div> }
 
         @if (t is not null && rubrique == "etat")
         {
             @if (t.BaseEnLectureSeule) { <div class="bandeau-attention" role="status">Base en lecture seule (2e serveur en veille) : seul le serveur principal envoie.</div> }
             @if (t.LotsAutresEpoques > 0) { <div class="bandeau-attention" role="status">@t.LotsAutresEpoques lot(s) d’une époque précédente jamais accusé(s) : à examiner avec l’éditeur (non renvoyés automatiquement).</div> }
-            @if (t.DerniereErreur is { } de) { <div class="bandeau-attention" role="status">Dernière erreur@(t.DerniereErreurLe is { } dl ? $" ({Libelles.DateHeureLocale(dl)})" : "") : @de</div> }
+            @if (t.RetourArriere is { } ra)
+            {
+                @* Lot S6.2 : base revenue en arrière (restauration, bascule) ; envoi suspendu jusqu'à la nouvelle époque (titulaire). Remplace le
+                   bandeau « Dernière erreur », qui porte le même message. *@
+                <div class="bandeau-attention" role="alert" data-zone="retour-arriere">
+                    <strong>Envoi suspendu : base revenue en arrière (restauration d’une sauvegarde ou bascule sur le 2e serveur).</strong>
+                    Le serveur central a reçu jusqu’au lot @ra.DernierLotCentral de l’époque @ra.Epoque, cette base jusqu’au lot @ra.DernierLotLocal (constaté le @Date(ra.DetecteLe)).
+                    @(ra.SequencesAvancees ? "Les n° des nouvelles opérations sont déjà avancés au-delà de ceux du serveur central." : "Les n° des nouvelles opérations ne sont pas encore avancés (nouvel essai à chaque passage).")
+                    Une nouvelle époque renvoie toutes les données ; le serveur central garde et signale celles que cette base n’a plus.
+                    Des anomalies d’intégrité sont attendues au serveur central pour les rangs restaurés (journal des ventes et autres journaux chaînés) : elles ne signifient pas une falsification.
+                    <div class="actions">
+                        @if (!EstTitulaire)
+                        {
+                            <span>Seul le titulaire peut repartir sur une nouvelle époque.</span>
+                        }
+                        else if (confirmerEpoque)
+                        {
+                            @* Action sensible : époque affichée ET mot de passe du titulaire ressaisi (même vérification que « Changer mon mot de passe ») *@
+                            <span><strong>Repartir sur une nouvelle époque (après l’époque @ra.Epoque) ?</strong></span>
+                            <div class="champ" style="flex: 0 0 200px"><label for="s-mdp-epoque">Votre mot de passe</label>
+                                <input id="s-mdp-epoque" data-champ="mot_de_passe" type="password" autocomplete="current-password"
+                                       @bind="motDePasseEpoque" @bind:event="oninput" /></div>
+                            <button type="button" class="btn btn-principal" disabled="@(enCours || motDePasseEpoque.Length == 0)" @onclick="NouvelleEpoqueAsync">Confirmer</button>
+                            <button type="button" class="btn" disabled="@enCours" @onclick="AnnulerEpoque">Annuler</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn" disabled="@(enCours || t.BaseEnLectureSeule)" @onclick="() => confirmerEpoque = true">Repartir sur une nouvelle époque</button>
+                        }
+                    </div>
+                </div>
+            }
+            else if (t.DerniereErreur is { } de) { <div class="bandeau-attention" role="status">Dernière erreur@(t.DerniereErreurLe is { } dl ? $" ({Libelles.DateHeureLocale(dl)})" : "") : @de</div> }
             @* Bandeaux toujours visibles ; les deux panneaux dans un cadre défilant (hauteur posée par poste.js) : la page reste fixe même avec
                plusieurs bandeaux, un message ou une fenêtre basse (docs/charte-graphique.md, écran fixe) *@
             <div class="cadre-defilant" style="display: flex; flex-direction: column; gap: 20px">
@@ -68,7 +102,7 @@
                         }
                         else
                         {
-                            <button type="button" class="btn" disabled="@(enCours || !t.Active || !t.Activee || t.BaseEnLectureSeule || ChargementEnCours)" @onclick="() => confirmerRecharge = true">Recharger toutes les données</button>
+                            <button type="button" class="btn" disabled="@(enCours || !t.Active || !t.Activee || t.BaseEnLectureSeule || ChargementEnCours || t.RetourArriere is not null)" @onclick="() => confirmerRecharge = true">Recharger toutes les données</button>
                         }
                     </div>
                 </div>
@@ -358,7 +392,7 @@
     private bool purgeActive = true;
     private string code = "";
     private bool enCours;
-    private string? erreur, message;
+    private string? erreur, message, avertissement;
 
     protected override Task OnInitializedAsync() => ChargerAsync();
 
@@ -568,6 +602,25 @@
         return null;
     });
 
+    // Lot S6.2 : « Repartir sur une nouvelle époque » (titulaire), confirmée avec l'époque affichée et le mot de passe ressaisi
+    private bool confirmerEpoque;
+    private string motDePasseEpoque = "";
+
+    private void AnnulerEpoque() => (confirmerEpoque, motDePasseEpoque) = (false, "");
+
+    private Task NouvelleEpoqueAsync() => Executer(async () =>
+    {
+        if (t?.RetourArriere is not { } ra) return null;
+        var mdp = motDePasseEpoque;
+        motDePasseEpoque = "";   // jamais gardé à l'écran après l'essai
+        var (r, e) = await Api.NouvelleEpoqueSynchronisationAsync(ra.Epoque, mdp);
+        if (r is null) return e;   // mot de passe faux, central injoignable… : la confirmation reste ouverte
+        confirmerEpoque = false;
+        message = $"Nouvelle époque {r.Epoque} : l’envoi reprend au prochain passage avec un chargement complet (« Synchroniser maintenant » pour le lancer tout de suite).";
+        await ChargerAsync();
+        return null;
+    });
+
     private Task EnregistrerAsync() => Executer(async () =>
     {
         var e = await Api.ReglerSynchronisationAsync(new ReglagesSynchronisationDto(active, adresse, textesLibres, envoyerMedecins));
@@ -591,14 +644,16 @@
     {
         var (r, e) = await Api.EnvoyerSynchronisationAsync();
         if (r is null) return e;
-        message = r.Erreur is null ? (r.Arret ?? $"{r.LotsAccuses} lot(s) accusé(s) par le serveur central.") : null;
+        // Envoi suspendu (base revenue en arrière) : avertissement, pas une erreur du serveur central
+        avertissement = r.Avertissement;
+        message = r.Erreur is null && r.Avertissement is null ? (r.Arret ?? $"{r.LotsAccuses} lot(s) accusé(s) par le serveur central.") : null;
         await ChargerAsync();
         return r.Erreur;
     });
 
     private async Task Executer(Func<Task<string?>> action)
     {
-        (enCours, erreur, message) = (true, null, null);
+        (enCours, erreur, message, avertissement) = (true, null, null, null);
         try { erreur = await action(); }
         finally { enCours = false; }
     }

@@ -21,7 +21,7 @@ Option retenue : HTTPS seul sur le réseau, HTTP limité au PC serveur (`localho
 - [x] Mise à jour de `docs/mise-en-production.md` (installation du certificat sur chaque poste, `PHARMA_API=https://<serveur>:5443/`, vérifications), `scanner-mobile.md`, `acces-distant.md`.
 - [x] Poste : exemple d'adresse `https://192.168.1.20:5443/` (écran Imprimantes), avertissement pour `http://` hors localhost (non bloquant : choix confirmé par le titulaire le 2026-11-16), bandeau à trois messages (injoignable, certificat refusé, pas encore basculé) ; journal local `liaison.log`.
 - [ ] Essai réel en HTTPS : connexion, vente, impression, scanner mobile ; API en production en HTTPS jamais vérifiée.
-- [ ] Port 5432 de la base fermé aux autres postes : aucune vérification tracée.
+- [ ] Port 5432 de la base fermé aux autres postes : **procédure et contrôle écrits** dans mise-en-production.md (étape 2.4 : écoute sur 127.0.0.1 seulement ; étape 4 bis : ouvert au seul 2e serveur ; liste finale de contrôle) ; reste à les dérouler sur le vrai PC serveur. Constat sur le poste de développement (2026-11-18) : `listen_addresses = '*'` (écoute sur toutes les adresses), mais `pg_hba.conf` n'accepte que 127.0.0.1 et ::1 et aucune règle de pare-feu n'ouvre 5432 : connexion distante refusée, réglage différent de celui demandé pour la mise en production.
 
 Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a-faire-synthese.md).
 
@@ -193,7 +193,7 @@ récemment »). Restent :
 - [ ] **Data Matrix** : part des boîtes qui en portent un dans la pharmacie (cela dépend des laboratoires et de la réglementation).
 - [ ] **Modem GSM** : code PIN, opérateur, longueur réelle des SMS.
 - [ ] **Compte SMTP** : serveur, port et mode TLS du fournisseur de la pharmacie.
-- [ ] **Matériel** : scanner, caméra, tiroir-caisse, imprimantes ; essai sur iPhone ; SQL Server jamais essayé.
+- [ ] **Matériel** : scanner, caméra, tiroir-caisse, imprimantes ; essai sur iPhone. (Base de données : PostgreSQL seul, SQL Server non pris en charge, décision du 2026-11-18.)
 - [ ] **Disque externe de sauvegarde** : lettre de lecteur stable et droits d'écriture du service Windows.
 - [ ] **Imprimante d'étiquettes thermique** : adresse IP (variable `PHARMA_IMPRIMANTE_ETIQUETTES`).
 - [ ] **DPAPI** : le service de l'API doit tourner sur le PC serveur qui a enregistré le mot de passe SMTP.

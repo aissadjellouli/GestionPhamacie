@@ -224,6 +224,7 @@
     <File Path="database/migration/146_synchronisation_commande_brouillon_central.sql" />
     <File Path="database/migration/147_synchronisation_associations_produits_montantes.sql" />
     <File Path="database/migration/148_sauvegarde_alerte_sans_disque_externe.sql" />
+    <File Path="database/migration/149_synchronisation_retour_arriere_nouvelle_epoque.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -250,6 +251,7 @@
     <File Path="database/tests/146_synchronisation_commande_brouillon_central_tests.sql" />
     <File Path="database/tests/147_synchronisation_associations_produits_montantes_tests.sql" />
     <File Path="database/tests/148_sauvegarde_alerte_sans_disque_externe_tests.sql" />
+    <File Path="database/tests/149_synchronisation_retour_arriere_nouvelle_epoque_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
   </Folder>
@@ -274,6 +276,8 @@
     <File Path="database/cloud/017_referentiels_vers_officines.sql" />
     <File Path="database/cloud/018_referentiels_prestations_indications_dci.sql" />
     <File Path="database/cloud/019_miroir_associations_produits.sql" />
+    <File Path="database/cloud/020_restauration_officine_archive.sql" />
+    <File Path="database/cloud/021_depart_officine.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
     <File Path="database/cloud/tests/003_chargement_complet_officine_tests.sql" />
     <File Path="database/cloud/tests/004_reglage_familles_envoyees_tests.sql" />
@@ -292,6 +296,8 @@
     <File Path="database/cloud/tests/017_referentiels_vers_officines_tests.sql" />
     <File Path="database/cloud/tests/018_referentiels_prestations_indications_dci_tests.sql" />
     <File Path="database/cloud/tests/019_miroir_associations_produits_tests.sql" />
+    <File Path="database/cloud/tests/020_restauration_officine_archive_tests.sql" />
+    <File Path="database/cloud/tests/021_depart_officine_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

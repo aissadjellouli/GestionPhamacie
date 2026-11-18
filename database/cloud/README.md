@@ -35,6 +35,10 @@ Ils ne se passent **jamais** sur la base d'une officine (celle-ci a ses scripts 
 | `tests/018_referentiels_prestations_indications_dci_tests.sql` | Tests : codes en majuscules, tarif seulement si remboursable, prix et TVA, doublons, textes nettoyés et dédoublonnés, libellé trop long, liste vide. |
 | `019_miroir_associations_produits.sql` | Reclassement (§ 29) : tables miroir `chifa_code_produit` et `produit_indication` (cloisonnées, droits de l'API, `cloud_table_miroir`). À passer après `018` et **avant le script 147 des officines**. |
 | `tests/019_miroir_associations_produits_tests.sql` | Tests : réception d'un code CHIFA et d'associations, suppression, cloisonnement entre officines. |
+| `020_restauration_officine_archive.sql` | Lot S6.1 (§ 30) : `ligne_remplacee` (version d'une ligne miroir remplacée avec un autre contenu ou supprimée par une époque **plus récente**, cloisonnée, **ajout seul**, l'API n'y fait qu'ajouter) ; `cloud_appliquer_lot` remplacée (seul changement : archive avant remplacement, même époque inchangée, renvoi identique non archivé ; `RETURNING old/new`, PostgreSQL 18) ; `cloud_maximums_officine` (route `GET /api/v1/maximums`) ; `cloud_fin_chargement` remplacée (lignes archivées depuis le début de l'époque comptées : `chargement.lignes_remplacees`, journal). À passer après `019` et **avant le script 149 des officines**. Corrections du 2026-11-18 : **PostgreSQL 18 exigé** (refus clair en tête du script) ; chemin de `009` sans `to_jsonb` ni archive quand l'officine n'a aucune époque antérieure à celle du lot ; fin de chargement : lignes archivées **depuis le début du chargement** (`cloud_lignes_remplacees(époque, depuis)`) ; `cloud_epoque_max` (plus grande époque de l'officine, champ facultatif `EpoqueMax` de `GET /api/v1/etat`). |
+| `tests/020_restauration_officine_archive_tests.sql` | Tests : pas d'archive à même époque, archive à l'époque supérieure (remplacement et suppression), renvoi identique non archivé, maximums (archives comprises, autre officine jamais comptée), compte rendu de fin de chargement, cloisonnement, droits de l'API, ajout seul. |
+| `021_depart_officine.sql` | Lot S6.3 (§ 30) : `conservation_depart_ans` (6 ans par défaut, 6 minimum, surchargeable par officine), `journal_depart_officine` (départ, export, procès-verbal d'effacement ; ajout seul), `cloud_depart_officine` (certificats révoqués, `resiliee_le`), `cloud_effacer_officine` (**refusée** avant départ et avant la fin de la durée, **simulation par défaut**, effacement des tables miroir, de `ligne_remplacee` et des lots bruts sur confirmation) ; gardes d'ajout seul ouvertes pour ce seul effacement (`cloud_lot_recu_garde`, `cloud_ligne_remplacee_garde`, `cloud_integrite_ajout_seul` redéfinies). Fonctions sans `EXECUTE` pour l'API. À passer après `020`. **PostgreSQL 18 exigé** (refus clair en tête). Depuis le 2026-11-18, rejouer `004` ou `012` après `021` ne referme plus les gardes (voir « Rejeu protégé »). |
+| `tests/021_depart_officine_tests.sql` | Tests : réglage (défaut, minimum, surcharge), refus avant départ et avant le délai (simulation comprise), départ (révocation, date gardée si rejoué), gardes fermées avant le délai même opération posée, simulation puis effacement confirmé avec procès-verbal, autre officine intacte, droits de l'API, ajout seul. |
 | `tests/010_mutualisation_reglages_tests.sql` | Tests : 11 modèles sans valeur, droits de l'API (lecture seule, aucune fonction d'administration), contrôles à la publication, journal avant / après en ajout seul, élément `mutu_` publié une fois et renouvelé seulement s'il change, libération et rétablissement d'une officine, central restauré, état des officines. |
 | `tests/007_familles_banque_clients_tests.sql` | Tests : défauts, effacement à la réception, nouvelle version descendue une fois cochées. |
 | `tests/006_debit_chargement_tests.sql` | Tests : quota du jour hors chargement, ignoré pendant, plafond du chargement, détection du chargement en cours. |
@@ -46,9 +50,24 @@ Ils ne se passent **jamais** sur la base d'une officine (celle-ci a ses scripts 
 ## Règles
 
 - Scripts **idempotents**, numérotés, passés dans l'ordre par le **propriétaire** de la base (jamais par `pharma_cloud_api`).
+- **Rejeu protégé (2026-11-18)** : une fonction redéfinie par un script plus récent n'est plus écrasée quand on rejoue un ancien script.
+  Chaque ancienne définition est entourée d'un bloc `DO $rejeu$` qui ne la recrée que si le marqueur du script suivant est absent
+  (`cloud_appliquer_lot` : 001 → table `chargement` (003), 003 → fonction `cloud_lot_sans_colonnes` (004), 004 → colonne
+  `cloud_parametre.quota_chargement_octets` (006), 006 → colonne `quota_chargements_octets_24h` (009), 009 → table `ligne_remplacee` (020) ;
+  `cloud_debut_chargement` 003 → 009 ; `cloud_fin_chargement` 003 → 020 ; `cloud_lot_recu_garde` 004 → table `journal_depart_officine` (021) ;
+  `cloud_integrite_ajout_seul` 012 → 021 ; `cloud_journaliser` 001 → 004 ; `cloud_descendants` 005 → 009, 009 → table `cloud_reglage_table` (010)).
+  Un message `NOTICE` dit « définition plus récente gardée ». Le rejeu complet `001` → `021` donne toujours les dernières définitions.
+  **Non protégés** (même risque, hors champ de la correction) : `cloud_descendants` 010 → 011, `cloud_creer_ordre` 013 → 018 : après un
+  rejeu isolé de l'un d'eux, repasser les scripts suivants jusqu'au dernier.
+- **PostgreSQL 18 exigé** à partir de `020` (`RETURNING old/new`) : `020`, `021` et `scripts/mep/creer_base_centrale.ps1` refusent un
+  serveur plus ancien avec un message clair, avant toute modification.
+- **Encodage** : passer les scripts avec `PGCLIENTENCODING=UTF8` (fait par les scripts de mise en production) ; `001` à `011` ne posent pas
+  `client_encoding` eux-mêmes et, passés depuis une console Windows, enregistreraient les messages accentués de leurs fonctions mal encodés.
 - **Lots bruts** (`lot_recu`) : ajout seul. Deux exceptions contrôlées par le déclencheur `cloud_lot_recu_garde` : suppression d'un lot dont
   la durée de conservation de son officine est dépassée, effacement activé et opération posée par `cloud_purger_lots` ; retrait de colonnes
-  nominatives par `cloud_effacer_famille` (contenu recontrôlé : seules les colonnes listées disparaissent). Les partitions étant communes
+  nominatives par `cloud_effacer_famille` (contenu recontrôlé : seules les colonnes listées disparaissent). Script `021` : effacement de tous
+  les lots d'une officine **partie** dont la durée de conservation après départ est écoulée, par `cloud_effacer_officine` confirmé
+  (même règle pour `ligne_remplacee` et les journaux chaînés). Les partitions étant communes
   à toutes les officines, une partition n'est supprimée qu'une fois vide.
 - **Cloisonnement** : chaque table de données a `ENABLE` + `FORCE ROW LEVEL SECURITY` et la politique `cloisonnement`
   (`officine_id = cloud_officine_courante()`). L'API centrale pose l'officine du **certificat** par `set_config('app.officine_id', …, true)`
@@ -68,8 +87,9 @@ Ils ne se passent **jamais** sur la base d'une officine (celle-ci a ses scripts 
 
 ```powershell
 $env:PGPASSWORD = "<mot de passe de pharma_app>"
+$env:PGCLIENTENCODING = "UTF8"
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U pharma_app -h localhost -d postgres -c "CREATE DATABASE pharmacie_cloud_dev"
-foreach ($f in "001_base_centrale.sql", "002_tables_miroir.sql", "003_chargement_complet_officine.sql", "004_reglage_familles_envoyees.sql", "005_voie_descendante_elements.sql", "006_debit_chargement.sql", "007_familles_banque_clients.sql", "008_famille_banque_elargie.sql", "009_central_restaure_quota_chargement.sql", "010_mutualisation_reglages.sql", "011_descendant_ajouts_locaux_motifs_remises.sql", "012_verification_integrite_central.sql", "013_ordres_vers_officines.sql", "014_ordre_prix_produit.sql", "015_nomenclature_vers_officines.sql", "016_commande_brouillon_vers_officines.sql", "017_referentiels_vers_officines.sql", "018_referentiels_prestations_indications_dci.sql", "019_miroir_associations_produits.sql") {
+foreach ($f in "001_base_centrale.sql", "002_tables_miroir.sql", "003_chargement_complet_officine.sql", "004_reglage_familles_envoyees.sql", "005_voie_descendante_elements.sql", "006_debit_chargement.sql", "007_familles_banque_clients.sql", "008_famille_banque_elargie.sql", "009_central_restaure_quota_chargement.sql", "010_mutualisation_reglages.sql", "011_descendant_ajouts_locaux_motifs_remises.sql", "012_verification_integrite_central.sql", "013_ordres_vers_officines.sql", "014_ordre_prix_produit.sql", "015_nomenclature_vers_officines.sql", "016_commande_brouillon_vers_officines.sql", "017_referentiels_vers_officines.sql", "018_referentiels_prestations_indications_dci.sql", "019_miroir_associations_produits.sql", "020_restauration_officine_archive.sql", "021_depart_officine.sql") {
     & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U pharma_app -h localhost -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f "database\cloud\$f" }
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U pharma_app -h localhost -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database\cloud\tests\001_base_centrale_tests.sql
 ```

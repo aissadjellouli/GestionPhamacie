@@ -65,9 +65,6 @@
             case "ruptures":
                 <OngletRuptures />
                 break;
-            case "patients-attente":
-                <OngletPatientsAttente />
-                break;
             case "substitution":
                 <OngletSubstitution />
                 break;
@@ -106,7 +103,6 @@
         new("catalogues", null, "Catalogues des grossistes", "Import du catalogue et de la disponibilité de chaque grossiste (Excel ou CSV)", Session.A("achats.commander"), true),
         new("", null, "", "", Groupe: "Ruptures"),
         new("ruptures", null, "Ruptures chez les grossistes", "En rupture chez tous les grossistes, depuis quand, retours en stock", Session.A("achats.commander"), true),
-        new("patients-attente", null, "Patients en attente", "Prévenir quand disponible : file des patients, alerte au retour du produit, SMS avec accord", Session.A("caisse.vendre"), true),
         new("substitution", null, "Substitution", "Équivalent exact seulement, liste blanche, fabriqué en Algérie", Session.A("admin.parametres"), true),
         new("", null, "", "", Groupe: "Réceptions"),
         new("receptions", "saisie", "Réceptionner", "Compter ou saisir une livraison", Session.A("achats.receptionner"), true),
@@ -136,6 +132,8 @@
         // Étiquettes internes : passées dans le domaine Stock (stock/etiquettes) ; une ancienne adresse y renvoie
         // (l'onglet affiché est quand même calculé ci-dessous : l'écran reste valide le temps de la redirection)
         if (Onglet == "etiquettes") Nav.NavigateTo(Lot is { } l ? $"stock/etiquettes?lot={l}" : "stock/etiquettes", replace: true);
+        // Patients en attente : passés dans le domaine Patients (patients/attente) le 2026-11-18 ; une ancienne adresse y renvoie
+        if (Onglet == "patients-attente") Nav.NavigateTo("patients/attente", replace: true);
         var voulu = Onglet ?? "commandes";
         // Premier onglet autorisé si celui demandé ne l'est pas
         onglet = Rubriques.FirstOrDefault(r => r.Groupe is null && r.Onglet == voulu && r.Permis)?.Onglet

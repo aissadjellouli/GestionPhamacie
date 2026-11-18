@@ -18,7 +18,8 @@ public static class ConsoleAdministration
         ["--initialiser-autorite", "--certificat-serveur", "--creer-officine", "--code-activation", "--revoquer", "--revoquer-serveur", "--lister", "--partitions", "--generer-miroir",
          "--reglages", "--regler-famille", "--effacer-famille", "--conservation", "--purge-lots", "--purger-lots",
          "--reglages-mutualises", "--publier-reglage", "--mode-reglage", "--modele-depuis-officine", "--liberer-reglages", "--retablir-reglages", "--journal-reglages",
-         "--verifier-integrite", "--anomalies-integrite", .. Ordres.OrdresAdministration.Commandes];
+         "--verifier-integrite", "--anomalies-integrite", "--conservation-depart", "--depart-officine", "--effacer-officine",
+         .. Ordres.OrdresAdministration.Commandes];
 
     public static bool Concerne(string[] args) => args.Length > 0 && Commandes.Contains(args[0]);
 
@@ -204,6 +205,61 @@ public static class ConsoleAdministration
                         Console.WriteLine($"Conservation des lots bruts : {(ans is null ? "valeur globale" : $"{ans} ans")}{(officine is null ? " (globale)" : $" (officine {officine})")}.");
                         return 0;
                     }
+                case "--conservation-depart":
+                    {
+                        // Lot S6.3 : --conservation-depart <ans>|global [--officine <code>] : 6 ans minimum, pas de maximum
+                        var valeur = args.Length > 1 ? args[1] : throw new ArgumentException("Attendu : --conservation-depart <ans>|global [--officine <code>].");
+                        int? ans = valeur == "global" ? null : int.TryParse(valeur, out var a) ? a : throw new ArgumentException("Nombre d'années attendu (6 minimum).");
+                        var officine = OfficineOption(args);
+                        await using var db = Admin();
+                        await using var cmd = db.CreateCommand("SELECT cloud_regler_conservation_depart($1, $2)");
+                        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)ans ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer });
+                        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)officine ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Uuid });
+                        await cmd.ExecuteNonQueryAsync();
+                        Console.WriteLine($"Conservation après départ : {(ans is null ? "valeur globale" : $"{ans} ans")}{(officine is null ? " (globale)" : $" (officine {officine})")}.");
+                        return 0;
+                    }
+                case "--depart-officine":
+                    {
+                        // Lot S6.3 : --depart-officine <code> --sortie <fichier.zip> --operateur <nom>
+                        var officine = args.Length > 1 && Guid.TryParse(args[1], out var g) ? g
+                            : throw new ArgumentException("Attendu : --depart-officine <code officine> --sortie <fichier.zip> --operateur <nom>.");
+                        var operateur = Option(args, "--operateur") ?? throw new ArgumentException("Opérateur attendu : --operateur <nom>.");
+                        var chemin = Depart.DepartOfficine.VerifierChemin(Option(args, "--sortie"));
+                        using var arret = AnnulationConsole();
+                        await using var db = Admin();
+                        var depart = await Depart.DepartOfficine.PartirAsync(db, officine, operateur, arret.Token);
+                        Console.WriteLine(depart.DejaPartie
+                            ? $"Départ déjà enregistré le {depart.ResilieeLe:yyyy-MM-dd} (date gardée) ; certificats révoqués maintenant : {depart.CertificatsRevoques}."
+                            : $"Départ enregistré le {depart.ResilieeLe:yyyy-MM-dd} : {depart.CertificatsRevoques} certificat(s) révoqué(s), synchronisation refusée dès le prochain appel.");
+                        var export = await Depart.DepartOfficine.ExporterAsync(db, officine, chemin, arret.Token);
+                        await Depart.DepartOfficine.NoterExportAsync(db, officine, operateur, export, arret.Token);
+                        foreach (var f in export.Fichiers.Where(f => f.Lignes > 0)) Console.WriteLine($"  {f.Fichier} : {f.Lignes} ligne(s)");
+                        Console.WriteLine($"Export complet écrit : {export.Chemin} ({export.Fichiers.Count} fichier(s) CSV, {export.Fichiers.Sum(f => f.Lignes)} ligne(s)) ;"
+                            + $" SHA-256 de l'archive : {export.EmpreinteArchive} (noté au journal des départs).");
+                        Console.WriteLine("Effacement : jamais automatique ; --effacer-officine après la durée de conservation après départ (--reglages).");
+                        return 0;
+                    }
+                case "--effacer-officine":
+                    {
+                        // Lot S6.3 : SUPPRESSION de données. Simulation sans --confirmer <code> (le code de l'officine répété) ; --operateur exigé pour confirmer
+                        var officine = args.Length > 1 && Guid.TryParse(args[1], out var g) ? g
+                            : throw new ArgumentException("Attendu : --effacer-officine <code officine> [--confirmer <code officine> --operateur <nom>].");
+                        var confirmation = Option(args, "--confirmer");
+                        var confirmee = confirmation is not null && Guid.TryParse(confirmation, out var c) && c == officine;
+                        if (confirmation is not null && !confirmee) throw new ArgumentException("Confirmation refusée : --confirmer doit répéter le code de l'officine.");
+                        var operateur = Option(args, "--operateur");
+                        if (confirmee && string.IsNullOrWhiteSpace(operateur)) throw new ArgumentException("Opérateur attendu pour l'effacement : --operateur <nom>.");
+                        using var arret = AnnulationConsole();
+                        await using var db = Admin();
+                        var lignes = await Depart.DepartOfficine.EffacerAsync(db, officine, confirmee, operateur, arret.Token);
+                        foreach (var (table, n) in lignes) Console.WriteLine($"  {table} : {n} ligne(s)");
+                        var total = lignes.Sum(l => l.Lignes);
+                        Console.WriteLine(confirmee
+                            ? $"{total} ligne(s) effacée(s) ; procès-verbal écrit (journal_depart_officine, officine_effacee au journal de sécurité)."
+                            : $"SIMULATION : {total} ligne(s) seraient effacées, rien n'a été effacé. Pour effacer (définitif) : ajoutez --confirmer {officine} --operateur <nom>.");
+                        return 0;
+                    }
                 case "--purge-lots":
                     {
                         var active = args.Length > 1 && args[1] == "activer" ? true
@@ -246,7 +302,7 @@ public static class ConsoleAdministration
                     }
             }
         }
-        catch (Exception e) when (e is InvalidOperationException or ArgumentException or NpgsqlException or IOException)
+        catch (Exception e) when (e is InvalidOperationException or ArgumentException or NpgsqlException or IOException or OperationCanceledException)
         {
             Console.Error.WriteLine(e.Message);
             return 1;
@@ -299,7 +355,12 @@ public static class ConsoleAdministration
         }
         await using (var cmd = db.CreateCommand("""
             SELECT p.conservation_lots_ans, p.purge_lots_active,
-                   (SELECT string_agg(o.id || ' : ' || o.conservation_lots_ans || ' ans', ', ') FROM officine o WHERE o.conservation_lots_ans IS NOT NULL)
+                   (SELECT string_agg(o.id || ' : ' || o.conservation_lots_ans || ' ans', ', ') FROM officine o WHERE o.conservation_lots_ans IS NOT NULL),
+                   p.conservation_depart_ans,
+                   (SELECT string_agg(o.id || ' : ' || o.conservation_depart_ans || ' ans', ', ') FROM officine o WHERE o.conservation_depart_ans IS NOT NULL),
+                   (SELECT string_agg(o.id || ' partie le ' || to_char(o.resiliee_le, 'YYYY-MM-DD') || ', effacement possible à partir du '
+                                      || to_char(o.resiliee_le + make_interval(years => cloud_conservation_depart_ans(o.id)), 'YYYY-MM-DD'), ' ; ' ORDER BY o.resiliee_le)
+                    FROM officine o WHERE o.resiliee_le IS NOT NULL)
             FROM cloud_parametre p WHERE p.id = 1
             """))
         await using (var r = await cmd.ExecuteReaderAsync())
@@ -308,8 +369,22 @@ public static class ConsoleAdministration
             {
                 Console.WriteLine($"Conservation des lots bruts : {r.GetInt32(0)} ans (6 minimum){(r.IsDBNull(2) ? "" : " ; officines : " + r.GetString(2))}");
                 Console.WriteLine($"Effacement automatique des lots trop anciens : {(r.GetBoolean(1) ? "ACTIVÉ" : "désactivé")}");
+                Console.WriteLine($"Conservation après départ d'une officine : {r.GetInt32(3)} ans (6 minimum){(r.IsDBNull(4) ? "" : " ; officines : " + r.GetString(4))}");
+                Console.WriteLine($"Officines parties : {(r.IsDBNull(5) ? "aucune" : r.GetString(5))}");
             }
         }
+    }
+
+    /// <summary>Annulation par Ctrl+C (export ou effacement long) : la transaction en cours est abandonnée, rien n'est à moitié fait.</summary>
+    private static CancellationTokenSource AnnulationConsole()
+    {
+        var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            try { cts.Cancel(); } catch (ObjectDisposedException) { /* commande déjà terminée */ }
+        };
+        return cts;
     }
 
     private static Guid? OfficineOption(string[] args) => Option(args, "--officine") is { } o

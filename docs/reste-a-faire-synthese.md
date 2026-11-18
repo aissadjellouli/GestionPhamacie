@@ -21,7 +21,6 @@ sans le chiffrement) ; copie de la GED vers le 2e serveur et sa fréquence (scri
 
 ## 4. Décisions attendues du titulaire
 
-- [ ] **Bases jetables orphelines** : `pharmacie_jetable_m4_2b2cf86a`, `pharmacie_jetable_m4_3b48212e`, `pharmacie_jetable_rejeu_e51efbd8` (suppression sur accord).
 - [ ] **Compte `postgres`** : fichier `pgpass.conf` (hors dépôt) pour essayer le script 111b et la méthode `SET ROLE` sur une copie.
 - [ ] **Écrans de vente** : seuils d'alerte des psychotropes, liste des DCI d'antibiotiques, format de l'export pour les impôts et taux de TVA.
 - [ ] **Majorations Chifa** : quels types en plus de « Garde ».
@@ -44,7 +43,7 @@ sans le chiffrement) ; copie de la GED vers le 2e serveur et sa fréquence (scri
 
 - [ ] HTTPS : script `certificat_https.ps1` en réel, autorité commune aux serveurs, postes et téléphones.
 - [ ] Copie de la GED entre deux vrais serveurs (partage SMB hors domaine, droit du compte de tâche, durée de la première copie), lecture de la fréquence par authentification Windows (SSPI, nom du compte présenté par Windows).
-- [ ] Matériel (modem GSM, SMTP, imprimantes, disque de sauvegarde, iPhone), SQL Server jamais essayé.
+- [ ] Matériel (modem GSM, SMTP, imprimantes, disque de sauvegarde, iPhone).
 - [ ] Chifa (double saisie, suffixe du n° d'assuré), reprise de données réelle, étiquetage du stock.
 
 ## 7. Plus tard (sur accord explicite du titulaire)

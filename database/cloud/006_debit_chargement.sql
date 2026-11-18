@@ -37,6 +37,13 @@ REVOKE EXECUTE ON FUNCTION cloud_chargement_en_cours(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION cloud_chargement_en_cours(text) TO pharma_cloud_api;
 
 -- Dépôt d'un lot (remplace la version de 004) : quota par chargement pendant un chargement complet, quota du jour sinon
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 009 ; rejouer ce script après 009 ne la
+-- ramène pas en arrière (marqueur : colonne cloud_parametre.quota_chargements_octets_24h, posé par 009).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.cloud_parametre'::regclass AND attname = 'quota_chargements_octets_24h' AND NOT attisdropped) THEN
+        RAISE NOTICE 'cloud_appliquer_lot : définition plus récente (script 009) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_appliquer_lot(p_epoque int, p_numero bigint, p_empreinte text, p_version text, p_contenu bytea)
 RETURNS TABLE (statut text, dernier bigint)
 LANGUAGE plpgsql AS $$
@@ -149,6 +156,9 @@ BEGIN
     UPDATE officine_epoque SET dernier_lot = p_numero, dernier_recu_le = now() WHERE officine_id = v_off AND epoque = p_epoque;
     RETURN QUERY SELECT 'accepte'::text, p_numero;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 GRANT EXECUTE ON FUNCTION cloud_appliquer_lot(int, bigint, text, text, bytea) TO pharma_cloud_api;
 COMMENT ON COLUMN cloud_parametre.quota_chargement_octets IS 'Plafond d''octets reçus par chargement complet (remplace le quota du jour pendant un chargement) (script 006).';

@@ -113,12 +113,21 @@ public static class PointsEntree
             }
         }).RequireRateLimiting("lots");
 
-        // Dernier lot reçu d'une époque (reprise)
+        // Dernier lot reçu d'une époque (reprise) et plus grande époque reçue de l'officine (champ facultatif, 2026-11-18)
         v1.MapGet("/etat", async (int epoque, HttpContext ctx, DepotCentral depot, CancellationToken ct) =>
         {
             var (appelant, refus) = await AppelantAsync(ctx, ct);
             if (appelant is null) return refus!;
-            return Results.Ok(new EtatCentralDto(epoque, await depot.DernierLotAsync(appelant.Officine, epoque, ct)));
+            var (dernier, epoqueMax) = await depot.EtatAsync(appelant.Officine, epoque, ct);
+            return Results.Ok(new EtatCentralDto(epoque, dernier, epoqueMax));
+        }).RequireRateLimiting("officine");
+
+        // Lot S6.1 (script 020) : plus grand id reçu par table, réservé à l'officine appelante (avance des séquences après une restauration)
+        v1.MapGet("/maximums", async (HttpContext ctx, DepotCentral depot, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            return Results.Ok(new MaximumsCentralDto(await depot.MaximumsAsync(appelant.Officine, ct)));
         }).RequireRateLimiting("officine");
 
         // Voie descendante (script 005) : échange léger initié par l'officine à chaque passage, même sans lot à envoyer

@@ -15,12 +15,12 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 157 |
+| Fait | 162 |
 | En cours | 0 |
 | En attente | 45 |
 | Bloqué | 8 |
-| À vérifier | 3 |
-| **Total** | **213** |
+| À vérifier | 1 |
+| **Total** | **216** |
 
 ## Caisse et ventes
 
@@ -149,12 +149,13 @@ Légende des états :
 | Fonction | État | Où / référence |
 | --- | --- | --- |
 | Patients : création depuis la caisse, recherche (nom, téléphone par début de numéro, n° d’assuré), modifications journalisées, un seul patient par n° d’assuré | Fait | Caisse ; fiche contact |
+| Fichier des patients : liste paginée et filtrée par le serveur (nom, prénom, n° d’assuré, téléphone ; organisme, malade chronique, à crédit, droits Chifa expirés ou bientôt expirés, accord SMS), nom cliquable vers la fiche patient, dette selon le droit qui la montre déjà | Fait | Patients › Fichier des patients ; regles-metier.md « Patients » |
 | Lien avec l’assuré principal (conjoint, enfant…), rattachement proposé | Fait | Fiche patient |
 | Vente à crédit (droit « credit.accorder »), plafond et dépassement par droit ou code | Fait | Caisse |
 | Encaisser une dette : patients avec un crédit, dette, plafond et dernières ventes à crédit ; remboursement total ou partiel en espèces, carte, chèque ou avoir, ventes à solder cochées, surplus annoncé ; reçu imprimable ; journal | Fait | Caisse › Encaisser une dette |
 | Correction d’une dette (titulaire), relevé de dette jamais modifié | Fait | Caisse |
 | Fiche contact (patient, grossiste, entreprise, organisme, employé) | Fait | Partout |
-| Prévenir un patient quand un produit redevient disponible (SMS avec accord enregistré, formulaire papier d’accord) | Fait (à essayer avec le vrai modem) | Caisse › Patients en attente |
+| Prévenir un patient quand un produit redevient disponible (SMS avec accord enregistré, formulaire papier d’accord) | Fait (à essayer avec le vrai modem) | Patients › Patients en attente (déplacé d’Achats le 2026-11-18) ; aussi en fenêtre depuis la Caisse |
 | Fidélisation parapharmacie | En attente (V2) | a-faire.md « Questions pour la V2 » |
 
 ## Chifa / tiers payant
@@ -272,7 +273,7 @@ Légende des états :
 | Compte super admin hors de la base (fichier chiffré du PC serveur, au moins un canal vérifié SMS ou e-mail), réservé à la reprise et à la restauration : chaque action sensible validée par mot de passe ressaisi et code à 6 chiffres, 3 codes faux = 15 minutes de blocage | Fait | Administration › Reprise, Restauration |
 | HTTPS sur le réseau de l’officine (HTTP limité au PC serveur), autorité unique par pharmacie | Fait (à essayer en réel) | scripts/certificat_https.ps1 ; mise-en-production.md |
 | Journaux du serveur et du poste sans données personnelles | Fait | securite-et-droits.md |
-| Port 5432 de la base fermé aux autres postes | À vérifier | a-faire.md « HTTPS » |
+| Port 5432 de la base fermé aux autres postes (écoute sur 127.0.0.1 seulement, contrôle à l'installation) | Fait (procédure écrite, à dérouler sur le vrai PC serveur) | mise-en-production.md, étapes 2.4 et 4 bis |
 
 ## Administration et réglages
 
@@ -316,7 +317,9 @@ Légende des états :
 | S5.4 : commandes en brouillon envoyées par le central | Fait (plafond de 200 lignes à confirmer) | § 27 |
 | Référentiels envoyés par le central : antibiotiques suivis, organismes, centres payeurs, prestations, indications, DCI | Fait | § 28 |
 | Reclassement de deux tables liées aux produits (montantes) | Fait | § 29 |
-| S6, fin : restauration de la base d’une officine depuis le central, bascule, départ d’une officine | En attente | conception-synchronisation.md § 10 |
+| S6, fin : restauration ou bascule de la base d’une officine (retour en arrière détecté, envoi suspendu, avance des n°, alerte, « Repartir sur une nouvelle époque » par le titulaire, puis chargement complet) | Fait (essai de bout en bout avec le serveur central à faire, lot S6.4) | Synchronisation › État ; conception-synchronisation.md § 30 |
+| S6, fin : départ d’une officine (console du central : révocation des certificats, export zip avec empreintes, conservation après départ réglable, 6 ans par défaut, effacement en simulation puis sur confirmation après le délai, procès-verbal) ; archive au central des lignes remplacées par une époque plus récente | Fait (durée à confirmer par le juriste) | conception-synchronisation.md § 30.5 ; mise-en-production.md F8 |
+| S6.5 : intégrité après restauration (époque déclarée au central, version divergente gardée à part, vérification par branches, classement « remplacée après restauration » sous conditions, alerte et export) | En attente (décisions D1 à D9 validées, code sur « go S6.5 ») | conception-synchronisation.md § 31 |
 | S7 : écrans du central, accès à distance du titulaire, multi-officines | En attente (après l’hébergeur) | conception-synchronisation.md § 10 |
 | Découpage par officine des grandes tables du central | En attente | reste-a-faire-synthese.md § 7 |
 | Compatibilité des versions du format d’échange | En attente (à l’arrivée d’une version 2) | a-faire.md « Plus tard » |
@@ -360,7 +363,6 @@ Uniquement sur « go chiffrement » du titulaire. Conception et décisions DC1 �
 | Installateur et mises à jour automatiques des postes | En attente | feuille-de-route.md ; mise-en-production.md |
 | Démonstration (page, démo interactive ou démo cloud) | En attente (décision du titulaire) | reste-a-faire-synthese.md § 4 |
 | Essais du matériel : modem GSM, compte SMTP, imprimantes, tiroir-caisse, disque de sauvegarde, iPhone | Bloqué (matériel de la pharmacie pilote) | a-faire.md « À vérifier sur le terrain » |
-| SQL Server | À vérifier (jamais essayé) | a-faire.md « À vérifier sur le terrain » |
 | CHIFA-Officine, lecteur de carte et Token : procédure d’installation | En attente | a-faire.md « Mise en production : à décider » |
 
 ## Ordonnances manuscrites

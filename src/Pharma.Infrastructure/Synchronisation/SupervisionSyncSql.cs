@@ -24,7 +24,9 @@ public sealed class SupervisionSyncSql(NpgsqlDataSource db) : ISupervisionSyncDe
                    p.erreur_depuis_le, p.erreur_nature, p.derniere_erreur,
                    p.alerte_retard_le, p.alerte_erreur_le, p.alerte_certificat_le, p.alerte_quota_le,
                    p.bandeau_minutes, p.alerte_retard_heures, p.alerte_erreur_minutes, p.purge_active, p.purge_jours,
-                   (SELECT rc.valeur::text FROM reglage_central rc WHERE rc.cle = 'integrite_centrale'), p.integrite_anomalie_signalee
+                   (SELECT rc.valeur::text FROM reglage_central rc WHERE rc.cle = 'integrite_centrale'), p.integrite_anomalie_signalee,
+                   p.retour_arriere_le, p.retour_arriere_central, p.dernier_lot, p.epoque, p.retour_arriere_sequences_le IS NOT NULL,
+                   p.retour_arriere_alerte_le
             FROM sync_parametre p WHERE p.id = 1
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -35,7 +37,9 @@ public sealed class SupervisionSyncSql(NpgsqlDataSource db) : ISupervisionSyncDe
         return new EtatSupervisionSync(r.GetBoolean(0), r.GetBoolean(1), new AttenteSync(Date(r, 2), Convert.ToInt64(r.GetValue(3))), Date(r, 4),
             r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6), alertes,
             new ReglagesSupervisionSync(r.GetInt32(11), r.GetInt32(12), r.GetInt32(13), r.GetBoolean(14), r.GetInt32(15)),
-            IntegriteCentrale.Lire(r.IsDBNull(16) ? null : r.GetString(16)), r.GetInt64(17));
+            IntegriteCentrale.Lire(r.IsDBNull(16) ? null : r.GetString(16)), r.GetInt64(17),
+            Date(r, 18) is { } ra && !r.IsDBNull(19)
+                ? new RetourArriereSync(ra, r.GetInt64(19), r.GetInt64(20), r.GetInt32(21), r.GetBoolean(22), Date(r, 23)) : null);
     }
 
     public async Task NoterIntegriteSignaleeAsync(long derniereAnomalieId, CancellationToken ct = default)
@@ -49,6 +53,13 @@ public sealed class SupervisionSyncSql(NpgsqlDataSource db) : ISupervisionSyncDe
     {
         await using var cmd = db.CreateCommand("SELECT sync_noter_alerte($1, $2)");
         cmd.Parameters.AddWithValue(nature);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = DateTime.SpecifyKind(quandUtc, DateTimeKind.Utc), NpgsqlDbType = NpgsqlDbType.TimestampTz });
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task NoterAlerteRetourArriereAsync(DateTime quandUtc, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_noter_alerte_retour_arriere($1)");
         cmd.Parameters.Add(new NpgsqlParameter { Value = DateTime.SpecifyKind(quandUtc, DateTimeKind.Utc), NpgsqlDbType = NpgsqlDbType.TimestampTz });
         await cmd.ExecuteNonQueryAsync(ct);
     }

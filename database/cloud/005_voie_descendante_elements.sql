@@ -63,6 +63,13 @@ END $$;
 REVOKE EXECUTE ON FUNCTION cloud_publier_descendant(text, text, jsonb) FROM PUBLIC;
 
 -- Échange pour l'officine courante (API) : publie le réglage effectif, enregistre l'acquittement, renvoie les éléments plus récents
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 009 ; rejouer ce script après 009 ne la
+-- ramène pas en arrière (marqueur : colonne cloud_parametre.quota_chargements_octets_24h, posé par 009).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.cloud_parametre'::regclass AND attname = 'quota_chargements_octets_24h' AND NOT attisdropped) THEN
+        RAISE NOTICE 'cloud_descendants : définition plus récente (script 009) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_descendants(p_apres bigint)
 RETURNS TABLE (nom_table text, cle text, version bigint, donnees jsonb, version_max bigint)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -79,6 +86,9 @@ BEGIN
     RETURN QUERY SELECT d.nom_table, d.cle, d.version, d.donnees, v_max FROM descendant d
                  WHERE d.officine_id = v_off AND d.version > coalesce(p_apres, 0) ORDER BY d.version;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 REVOKE EXECUTE ON FUNCTION cloud_descendants(bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION cloud_descendants(bigint) TO pharma_cloud_api;
 

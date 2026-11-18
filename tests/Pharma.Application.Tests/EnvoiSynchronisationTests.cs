@@ -188,6 +188,8 @@ public class EnvoiSynchronisationTests
             return Task.FromResult(Plus(versionAppliquee));
         }
         public Guid OfficineRendue = Officine;
+        /// <summary>Contrôle « base revenue en arrière » (lot S6.2) : le central de ces essais n'a qu'une époque ; jamais en avance sur l'officine.</summary>
+        public Task<long?> DernierLotCentralAsync(string adresse, int epoque, CancellationToken ct = default) => Task.FromResult<long?>(epoque == 1 ? Dernier : 0);
         public int Renouvellements;
 
         public Task<ReponseActivationSync> ActiverAsync(string adresse, string code, string demandePem, Guid officine, CancellationToken ct = default) =>

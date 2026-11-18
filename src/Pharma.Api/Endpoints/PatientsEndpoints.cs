@@ -89,6 +89,18 @@ internal static class PatientsEndpoints
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
+        // Patients › « Fichier des patients » (2026-11-18) : liste paginée et filtrée par le serveur (la recherche rapide GET /patients?q= reste
+        // inchangée). organisme : id ou « aucun » ; droits : expires_ou_bientot, expires, bientot ; dette : selon le droit qui la montre déjà
+        api.MapGet("/patients/fichier", async (string? texte, string? organisme, bool? chronique, bool? credit, string? droits, bool? sms,
+                int? page, int? taille, ListerFichierPatients lister, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await lister.ExecuterAsync(new SaisieFiltreFichierPatients(texte, organisme, chronique, credit, droits, sms),
+                    user.UtilisateurId(), Pharma.Application.Commun.DemandePage.Lire(page, taille), ct);
+                return Results.Ok(new PageDto<PatientFichierDto>(p.Lignes.Select(l => new PatientFichierDto(l.Id, l.Nom, l.Prenom, l.Telephone,
+                    l.NumAssure, l.Organisme, l.DateFinDroit, l.EtatDroits, l.Chronique, l.ConsentementSms, l.SoldeCredit)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.CaisseVendre);
+
         // sansWilaya : filtre « wilaya à renseigner » de l'écran des médecins (2026-11-16)
         api.MapGet("/medecins", async (string? q, bool? sansWilaya, RechercherMedecins rechercher, CancellationToken ct) =>
                 Results.Ok((sansWilaya == true ? await rechercher.SansWilayaAsync(q, ct) : await rechercher.ExecuterAsync(q, ct))

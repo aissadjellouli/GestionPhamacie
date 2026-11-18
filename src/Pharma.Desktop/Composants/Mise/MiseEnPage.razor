@@ -265,6 +265,8 @@
         ("rapports", ["rapports.ventes"]), ("pilotage-financier", ["role.titulaire", "rapports.marges"]), ("surveillance",["role.titulaire"]), ("financements", ["role.titulaire"]),("factures", ["factures.gerer"]), ("tresorerie", ["tresorerie.gerer"]), ("dettes", ["tresorerie.gerer"]),
         ("achats", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]), ("stock/registre", ["psychotropes.registre"]),
         ("stock/etiquettes", ["stock.consulter", "achats.receptionner"]),
+        // Domaine Patients (fichier, droits Chifa, patients en attente) : droit de vendre, comme les routes de l'API
+        ("patients", ["caisse.vendre"]),
         .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))
     ];
     private string? messageAcces;

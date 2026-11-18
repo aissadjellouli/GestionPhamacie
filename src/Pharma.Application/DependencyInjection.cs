@@ -18,6 +18,8 @@ public static class DependencyInjection
         services.AddSingleton<Securite.EssaisCodeDemandeur>();
         services.AddScoped<SeConnecter>();
         services.AddScoped<ChangerMonMotDePasse>();
+        // Ressaisie du mot de passe avant une action sensible du titulaire (nouvelle époque de synchronisation)
+        services.AddScoped<VerificationMotDePasseActuel>();
         services.AddScoped<RechercherProduits>();
         services.AddScoped<ObtenirLotFefo>();
         services.AddScoped<ListerAlternatives>();
@@ -200,6 +202,7 @@ public static class DependencyInjection
         services.AddScoped<Patients.ModifierPatient>();
         services.AddScoped<Patients.MettreAJourFinDroit>();
         services.AddScoped<Patients.ListerSuiviDroitsChifa>();
+        services.AddScoped<Patients.ListerFichierPatients>();
         services.AddScoped<Patients.LireFichePatient>();
         services.AddScoped<Contacts.ModifierCoordonneesContact>();
         services.AddScoped<Essai.RetoursEssai>();
@@ -303,6 +306,8 @@ public static class DependencyInjection
         services.AddSingleton<Synchronisation.SuiviChargementSync>();
         services.AddScoped<Synchronisation.ChargementCompletSync>();
         services.AddScoped<Synchronisation.RechargerSync>();
+        // Synchronisation, lot S6.2 : base revenue en arrière, nouvelle époque (titulaire)
+        services.AddScoped<Synchronisation.RepartirNouvelleEpoqueSync>();
         // Synchronisation, lot S3 : bandeau, alertes au titulaire, réglages de supervision, purge de la file
         services.AddSingleton<Synchronisation.MemoireSupervisionSync>();
         services.AddScoped<Synchronisation.ConsulterAttenteSync>();

@@ -1,0 +1,17 @@
+@page "/patients/attente"
+
+@* Patients › « Patients en attente » (« Prévenir quand disponible ») : déplacé d'Achats le 2026-11-18, mêmes droits (droit de vendre,
+   comme les routes /caisse/demandes-patients et la fenêtre ouverte depuis la Caisse). Saisie à gauche, file paginée et filtrée à droite ;
+   l'ancienne adresse achats?onglet=patients-attente renvoie ici. Achats › Ruptures garde sa colonne « Patients en attente ». *@
+<div class="page avec-menu">
+    <NavDomaine Libelle="Écrans des patients" />
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>Patients en attente<AideEcran Cle="patients/attente" /></h1>
+                <p class="sous-titre">Prévenir quand disponible : file des patients, alerte au retour du produit, SMS avec accord.</p>
+            </div>
+        </div>
+        <OngletPatientsAttente />
+    </div>
+</div>

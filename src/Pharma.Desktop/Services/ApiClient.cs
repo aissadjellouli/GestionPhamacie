@@ -707,6 +707,11 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         GetAsync<PageDto<SuiviDroitChifaDto>?>($"api/patients/droits-chifa?page={page}&taille={taille}"
             + (etat is null ? "" : $"&etat={etat}") + (organisme is null ? "" : $"&organisme={organisme}")
             + (du is { } d ? $"&du={d:yyyy-MM-dd}" : "") + (au is { } a ? $"&au={a:yyyy-MM-dd}" : ""), null);
+    /// <summary>Patients › « Fichier des patients » ; organisme : id ou « aucun » ; droits : expires_ou_bientot, expires, bientot.</summary>
+    public Task<(PageDto<PatientFichierDto>?, string?)> FichierPatientsAsync(string? texte, string? organisme, bool? chronique, bool? credit,
+        string? droits, bool? sms, int page, int taille) =>
+        GetAsync<PageDto<PatientFichierDto>?>("api/patients/fichier?" + Requete(("texte", texte?.Trim()), ("organisme", organisme), ("chronique", chronique),
+            ("credit", credit), ("droits", droits), ("sms", sms), ("page", page), ("taille", taille)), null);
     public Task<(List<VendeurComptoirDto>, string?)> ValidateursBlocageAsync() =>
         GetAsync<List<VendeurComptoirDto>>("api/produits/validateurs-blocage", []);
     public Task<(FicheProduitModifiableDto?, string?)> FicheProduitAsync(long id) => GetAsync<FicheProduitModifiableDto?>($"api/produits/{id}/fiche", null);
@@ -911,6 +916,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // Synchronisation (lot S6) : rechargement complet
     public async Task<string?> RechargerSynchronisationAsync() =>
         (await PostAsync<object, object>("api/admin/synchronisation/recharger", new())).Item2;
+    /// <summary>Lot S6.2 : « Repartir sur une nouvelle époque » (titulaire), confirmée avec l'époque affichée et le mot de passe du titulaire.</summary>
+    public Task<(ResultatNouvelleEpoqueSynchronisationDto?, string?)> NouvelleEpoqueSynchronisationAsync(int epoqueAffichee, string motDePasse) =>
+        PostAsync<NouvelleEpoqueSynchronisationDto, ResultatNouvelleEpoqueSynchronisationDto>("api/admin/synchronisation/nouvelle-epoque",
+            new NouvelleEpoqueSynchronisationDto(epoqueAffichee, motDePasse));
     public Task<(SecondServeurDto?, string?)> SecondServeurAsync() => GetAsync<SecondServeurDto?>("api/admin/second-serveur", null);
     public async Task<string?> ModifierServeurOfficineAsync(ModifierServeurOfficineDto d) =>
         (await EnvoyerCorpsAsync<ModifierServeurOfficineDto, object>(HttpMethod.Put, "api/admin/second-serveur/serveurs", d)).Item2;

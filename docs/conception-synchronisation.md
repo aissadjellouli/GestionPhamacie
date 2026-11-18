@@ -1467,3 +1467,423 @@ au reclassement, si la synchronisation est active ; RC-D3 `associe_par` (n° d'e
 - **Essais** : tests SQL `019` (réception, suppression, cloisonnement) et `147` (classement, rejeu sans effet, envoi unique des
   lignes existantes) ; `147` passé deux fois sur `pharmacie_dev` et `pharmacie_test` (synchronisation inactive sur les deux : seul le
   classement a changé), `019` deux fois sur `pharmacie_cloud_dev`.
+
+## 30. Lot S6, fin : restauration, bascule, départ d'une officine (analyse du 2026-11-18, « go S6 », à valider avant le code)
+
+### 30.1 Décisions du titulaire (2026-11-18)
+
+| N° | Sujet | Décision |
+|---|---|---|
+| S6-D1 | Officine revenue en arrière (restauration d'une sauvegarde, bascule sur le 2e serveur) | **Validée par le titulaire** : envoi suspendu, alerte SMS et e-mail, bouton « Repartir sur une nouvelle époque » (titulaire) dans Synchronisation, puis chargement complet ; lignes du central absentes de l'officine signalées et gardées (décision n° 8) |
+| S6-D2 | Reconstruire la base d'une officine depuis le central | **Non** : la restauration se fait toujours depuis les sauvegardes locales (disque externe, copie de secours, 2e serveur) ; le central sert de preuve et signale les lignes manquantes |
+| S6-D3 | Départ d'une officine | **Maintenant, piloté par les réglages du central** : durée de conservation après départ réglée au central ; effacement jamais automatique (simulation par défaut, puis commande explicite après le délai) |
+
+### 30.2 Constat : ce qui casse aujourd'hui
+
+- Après une restauration (ou une bascule avec retard de réplication), la base locale revient avec `dernier_lot` plus petit que le dernier
+  lot reçu par le central pour l'époque en cours. Les lots suivants, reformés avec un autre contenu, reçoivent un refus définitif
+  (409 « autre contenu ») : la synchronisation s'arrête en erreur, sans explication pour le titulaire.
+- **Collision des identifiants** : les séquences locales reviennent aussi en arrière. Les nouvelles ventes peuvent reprendre des n°
+  (`id`) déjà reçus par le central pour des ventes perdues par la restauration. Avec la règle « plus grand (époque, n°) gagne »,
+  la ligne de la nouvelle époque **écraserait** la ligne perdue dans la table miroir (elle ne resterait que dans le lot brut
+  `lot_recu`) : contraire à la décision n° 8 (« signaler et garder »).
+
+### 30.3 Proposition technique
+
+**Officine (script 149)**
+1. Détection, à chaque passage d'envoi, avant de former un lot : `GET /api/v1/etat?epoque=` (déjà existant) ; si le dernier lot
+   reçu par le central est **plus grand** que le dernier lot formé ici pour la même époque, l'officine est « revenue en arrière ».
+   `sync_parametre.retour_arriere_le`, `retour_arriere_central` (n° vu au central) notés ; rien n'est formé ni envoyé ; message clair à
+   l'écran Synchronisation et dans le bandeau ; une alerte au titulaire (SMS et e-mail) par détection.
+2. **Protection immédiate des identifiants (sans attendre la validation, rien n'est supprimé)** : à la détection, les séquences des
+   tables montantes à clé `id` sont avancées au-delà du plus grand `id` connu du central pour cette officine (nouvelle route
+   `GET /api/v1/maximums`, réservée à l'officine appelante, aucune donnée de ligne). Les ventes faites ensuite ne reprennent plus
+   les n° perdus ; il reste un risque pour celles faites entre le redémarrage et la première détection (une minute au plus).
+3. « Repartir sur une nouvelle époque » (titulaire, code de confirmation, journal des actions) : `sync_nouvelle_epoque()` :
+   époque + 1, `dernier_lot` et `dernier_accuse` à 0, lots non accusés de l'ancienne époque gardés et signalés (comme aujourd'hui),
+   puis chargement complet demandé (mécanisme du § 13).
+
+**Central (script 020)**
+4. **Archive avant remplacement** : dans `cloud_appliquer_lot`, quand une ligne d'une époque plus récente remplace une ligne d'une
+   époque plus ancienne, l'ancienne version est d'abord copiée dans `ligne_remplacee` (table, clé, ancienne ligne en jsonb, époque
+   et n°, date), cloisonnée par officine. Rien n'est perdu même en cas de collision restante.
+5. Fin du chargement de la nouvelle époque : lignes absentes marquées (déjà fait, § 13) ; en plus, les lignes archivées par
+   `ligne_remplacee` sont comptées dans le compte rendu et l'alerte « lignes absentes ».
+6. Contrôle d'intégrité (S4) : une nouvelle époque redémarre les chaînes à leur rang restauré ; les rangs déjà reçus de l'ancienne
+   époque sont signalés « remplacés après restauration », pas « falsifiés » **[À VÉRIFIER en codant : forme exacte du compte rendu]**.
+
+**Départ d'une officine (central, console d'administration)**
+7. Réglage central `cloud_parametre.conservation_depart_ans` (6 par défaut, 6 minimum **[À VÉRIFIER : avis du juriste, loi 18-07 et
+   durée fiscale]**), surchargeable par officine comme `conservation_lots_ans`.
+8. `--depart-officine <id>` : révocation de tous ses certificats, `officine.resiliee_le`, export complet remis au titulaire
+   (un fichier CSV par table miroir dans une archive zip, avec un fichier d'empreintes SHA-256 ; patients sous code, comme au central),
+   journal. `--effacer-officine <id>` : **simulation par défaut** (nombre de lignes par table), refusée avant la fin de la durée de
+   conservation, puis effacement réel sur `--confirmer`, procès-verbal écrit (journal ajout seul).
+9. Côté officine : synchronisation désactivée par la révocation (certificat refusé), rien d'autre à faire.
+
+### 30.4 Découpage proposé
+
+| Lot | Contenu |
+|---|---|
+| S6.1 | Central 020 : `ligne_remplacee`, archive avant remplacement, route `maximums` ; tests SQL |
+| S6.2 | Officine 149 : détection, avance des séquences, `sync_nouvelle_epoque`, alerte ; écran Synchronisation (bouton titulaire) ; tests |
+| S6.3 | Départ : réglage de conservation, `--depart-officine`, export zip, `--effacer-officine` (simulation, confirmation, procès-verbal) |
+| S6.4 | Essai de bout en bout sur bases jetables : restauration simulée, nouvelle époque, chargement, lignes archivées, départ |
+
+### 30.5 Réalisation S6.1 et S6.3 (2026-11-18, « go » du titulaire sur le plan § 30)
+
+**Fait (central seulement ; l'officine, S6.2, est réalisée à part)**
+
+| Élément | Réalisation |
+|---|---|
+| `ligne_remplacee` | Script `020` : officine, table, clé (jsonb), ancienne ligne (jsonb), ancienne et nouvelle époque et n°, opération (`remplacement` / `suppression`), date. RLS forcée (politique `cloisonnement`), ajout seul (déclencheurs ligne et TRUNCATE). `pharma_cloud_api` : `INSERT` seulement (aucune lecture directe). |
+| Archive avant remplacement | `cloud_appliquer_lot` reprise de sa dernière définition (script `009`) ; seul ajout : `RETURNING old/new` (PostgreSQL 18) sur l'insertion et la suppression, copie dans `ligne_remplacee` quand l'ancienne époque est **plus petite**. Même époque : inchangé. **Précision** : une ligne renvoyée avec le même contenu (colonnes `sync_*` exclues), cas de tout chargement complet d'une nouvelle époque, n'est pas archivée (rien n'est perdu, sinon chaque nouvelle époque recopierait toute l'officine). Colonnes des familles nominatives non autorisées retirées de la copie. Une modification ou suppression refusée par les journaux chaînés (§ 22) n'est pas archivée : l'original reste en place. |
+| Route `GET /api/v1/maximums` | `cloud_maximums_officine()` (`SECURITY DEFINER`, cloisonnée) : tables de `cloud_table_miroir` à clé `{id}` dont `id` est `smallint`, `integer` ou `bigint` ; `max(id)` de l'officine (toutes époques, lignes absentes comprises) et plus grand `id` de `ligne_remplacee` ; table sans ligne absente de la réponse. Même authentification que `/etat` (certificat client + jeton lié, officine du certificat), limite `officine`. Réponse `MaximumsCentralDto` (contrat inchangé). |
+| Fin de chargement | `cloud_fin_chargement` (dernière définition : `003`) : nombre de lignes archivées depuis le début de l'époque (`cloud_lignes_remplacees`) dans `chargement.lignes_remplacees` et dans le journal ; l'alerte `chargement_absentes` est levée aussi quand ce nombre n'est pas nul. **Écart** : la réponse à l'officine (`ReponseFinChargementDto`) ne porte pas ce nombre (contrat partagé non modifié) ; il est au central (journal, table `chargement`). |
+| Conservation après départ | Script `021` : `cloud_parametre.conservation_depart_ans` (6, minimum 6), `officine.conservation_depart_ans` (surcharge), `cloud_regler_conservation_depart`, console `--conservation-depart`, affichage dans `--reglages` (officines parties et date d'effacement possible). |
+| `--depart-officine <code> --sortie <fichier.zip> --operateur <nom>` | `cloud_depart_officine` : tous les certificats révoqués, `resiliee_le` posée (gardée si rejoué), journaux. Export (`src/Pharma.Cloud.Api/Depart/DepartOfficine.cs`) en une image cohérente (`REPEATABLE READ`, lecture seule) : un CSV par table miroir et `ligne_remplacee.csv` (UTF-8 sans BOM, « ; », en-tête, `COPY … TO STDOUT`, trié par clé), `empreintes.txt` (« empreinte  fichier », SHA-256), fichier `.partiel` renommé à la fin, jamais d'écrasement ; empreinte de l'archive notée (`cloud_noter_export_depart`). |
+| `--effacer-officine <code> [--confirmer <code> --operateur <nom>]` | `cloud_effacer_officine` : refusée (même en simulation) si l'officine n'est pas partie ou si la durée n'est pas écoulée ; simulation par défaut (lignes par table) ; confirmée : tables miroir, `ligne_remplacee`, `lot_recu`, en une transaction, une ligne restée annule tout ; procès-verbal dans `journal_depart_officine` (ajout seul : date, officine, opérateur, lignes par table) et `officine_effacee` au journal de sécurité. La confirmation répète le code de l'officine (même règle que `--effacer-famille`). |
+| Gardes d'ajout seul | Ouvertes seulement si l'opération est posée dans la transaction (`cloud.effacement_officine`) **et** que l'officine est partie avec sa durée écoulée (`cloud_effacement_officine_en_cours`, `SECURITY DEFINER`) : `cloud_lot_recu_garde` (004), `cloud_ligne_remplacee_garde` (020), `cloud_integrite_ajout_seul` (012) redéfinies dans `021`. |
+| Droits | Aucune fonction d'administration du départ n'est exécutable par `pharma_cloud_api` ; `journal_depart_officine` lui est fermé. |
+
+**Essais (2026-11-18)**
+
+- Base centrale de dev `pharmacie_cloud_dev` : sauvegarde `pg_dump -Fc --enable-row-security` avant (la RLS forcée empêche un `pg_dump` ordinaire du propriétaire ; base sans officine, les deux tables cloisonnées non vides — `cloud_reglage_table`, `cloud_reglage_modele` — sont bien dans la sauvegarde) ; `020` puis `021` passés **deux fois** chacun (idempotence), tests `020` et `021` réussis, toute la suite `database/cloud/tests` (001 à 021) réussie après coup.
+- `tests/Pharma.Cloud.Tests` : 78 tests, 77 réussis, 1 ignoré (essai réel M6 existant, variable d'environnement absente). Nouveaux : `DepartOfficineTests` (empreintes, chemin de sortie, et sur base centrale jetable : maximums cloisonnés, départ, contenu de l'export et empreintes recalculées, CSV avec « ; », guillemets, retour à la ligne et accents, refus avant départ et avant le délai, simulation puis effacement, procès-verbal).
+
+**Limites et points ouverts**
+
+- La route `/maximums` n'est pas essayée en HTTP (pas d'hôte de test dans le projet) : la lecture (`DepotCentral.MaximumsAsync`) et la fonction SQL le sont ; l'authentification est celle de `/etat` (même code).
+- `cloud_effacer_famille` (004) ne touche pas `ligne_remplacee` : une famille décochée **après** l'archivage d'une ligne y reste jusqu'à l'effacement de l'officine. **[À VÉRIFIER avec le titulaire : faut-il l'étendre ?]**
+- L'effacement d'une officine garde sa fiche, ses certificats, les journaux et ses éléments techniques (époques, chargements, éléments descendants, ordres et leur journal, anomalies et état d'intégrité, volumes du jour). **[À VÉRIFIER avec le titulaire : faut-il aussi les effacer ?]**
+- Durée de conservation après départ (6 ans minimum) : **[À VÉRIFIER : avis du juriste, loi 18-07 et durée fiscale]** ; durée de conservation des sauvegardes de la base centrale (les données effacées y restent jusqu'à leur expiration) : **[À VÉRIFIER]**.
+- Rejouer `004` ou `012` après `021` referme les gardes (l'effacement échoue sur « Effacement incomplet », rien n'est perdu) : repasser `021`. `020` ne remplace pas la garde de `ligne_remplacee` posée par `021`.
+- Contrôle d'intégrité (§ 30.3 point 6, « remplacés après restauration ») : non traité ici (hors S6.1 / S6.3) **[À VÉRIFIER : lot à prévoir]**.
+- `creer_base_centrale.ps1 -AvecTests` exige que chaque test finisse par « tous réussis » : les tests `012` à `019` ne le disent pas (défaut antérieur, non corrigé ici) ; `020` et `021` le disent.
+
+### 30.6 Réalisation S6.2 (2026-11-18, « go » du titulaire sur le plan § 30) — officine
+
+**Script `149_synchronisation_retour_arriere_nouvelle_epoque.sql`** (à passer après le script central `020`) : colonnes de
+`sync_parametre` `retour_arriere_le`, `retour_arriere_central` (dernier lot vu au central), `retour_arriere_sequences_le` (avance des n°
+faite), `retour_arriere_alerte_le` (alerte envoyée), contrainte `sync_parametre_retour_arriere_check` ; fonctions `sync_noter_retour_arriere`,
+`sync_avancer_sequences(jsonb)`, `sync_noter_alerte_retour_arriere`, `sync_nouvelle_epoque`. Test SQL en transaction annulée
+(`database/tests/149_…_tests.sql`, séquences consommées remises à leur valeur de départ, avance essayée sur une table créée dans la transaction).
+
+**Détection** (`EnvoyerLotsSync`, chaque passage, après les contrôles d'activation, l'échange descendant et l'application des réglages, **avant**
+le chargement complet et la constitution des lots) : `GET /api/v1/etat?epoque=` ; dernier lot reçu par le central **>** `dernier_lot` local →
+détection notée une fois, `GET /api/v1/maximums` et avance des séquences, rien n'est formé, annoncé ni envoyé, message clair (`derniere_erreur`).
+Tant que la détection est posée : le central n'est plus interrogé sur `/etat`, l'envoi reste suspendu à chaque passage, l'avance des n° est
+réessayée tant qu'elle n'a pas réussi (route absente en 404, central injoignable). Central injoignable pour `/etat` (ou réponse d'une autre
+époque) : aucun contrôle à ce passage, l'envoi suit son cours comme avant ce lot. La suspension est notée comme passage **sans** erreur
+persistante (`sync_noter_passage(NULL)`) : l'alerte propre à la détection remplace l'alerte horaire « erreur d'envoi ».
+
+**Alerte** : `SurveillerSynchronisation`, nature `retour_arriere`, une par détection (`retour_arriere_alerte_le < retour_arriere_le`), notée
+avant l'envoi comme l'alerte d'intégrité ; SMS sans accents, e-mail avec les n° de lots et la marche à suivre.
+
+**Nouvelle époque** : route `POST /api/admin/synchronisation/nouvelle-epoque` (groupe `admin.parametres`, puis **titulaire** exigé par
+`RepartirNouvelleEpoqueSync`), corps `{ epoqueAffichee }` (confirmation : refus si l'époque a changé), verrou d'envoi, journal
+`synchronisation_nouvelle_epoque`. `sync_nouvelle_epoque` : époque + 1, `dernier_lot`/`dernier_accuse` à 0, `purge_epoque` à NULL et
+`purge_dernier_lot` à 0 (sinon la contrainte `purge_dernier_lot <= dernier_accuse` refuserait la remise à zéro ; la purge ne traite que
+l'époque courante, § 20.1), détection effacée, chargement en cours de l'ancienne époque passé « remplacé » (ses lignes d'instantané sont de
+l'ancienne époque et ne partiraient jamais), puis `sync_demander_chargement('demande', titulaire)` : motif existant, le contrat `DebutChargementDto`
+et le central ne sont pas changés.
+
+**Écran** (Administration › Synchronisation › État) : bandeau d'attention (remplace « Dernière erreur », même message) avec les n° de lots,
+l'état de l'avance des n° et le bouton titulaire « Repartir sur une nouvelle époque » → « Repartir sur l'époque N + 1 ? » Confirmer / Annuler ;
+autres comptes : « Seul le titulaire peut repartir sur une nouvelle époque ». « Recharger toutes les données » est grisé pendant la détection.
+Nouvelle règle CSS `.bandeau-attention .actions` (boutons sous le texte du bandeau).
+
+**Tests** : `RetourArriereSynchronisationTests` (9 tests : central en avance → suspendu, détection et avance une seule fois ; central égal ou
+injoignable → envoi normal ; maximums en 404 → détection quand même puis avance au passage suivant ; noms de table invalides filtrés ; une alerte
+par détection ; nouvelle époque refusée sans détection, réservée au titulaire, refusée sur écran périmé ou pendant un envoi, autorisée et
+journalisée, puis lots de l'époque suivante acceptés). Suites `Pharma.Application.Tests` (1 600) et `Pharma.Architecture.Tests` (227, dont le
+rejeu de toute la suite des scripts) vertes ; `SchemaMiroirTests` du central inchangé et vert.
+
+**Écarts au plan** : (1) l'alerte n'est pas envoyée par le passage d'envoi lui-même mais par la tâche de supervision (chaque minute), avec la
+règle « une par détection » ; (2) le message apparaît à l'écran Synchronisation, **pas** dans le bandeau « Synchronisation en attente » des
+postes (§ 20.2), qui n'a pas été modifié ; (3) les opérations non envoyées de l'ancienne époque (hors lot) restent dans la file sans jamais
+partir ni être purgées (la garde de `sync_sortie` n'autorise la suppression qu'après accusé) : leur état part avec le chargement complet.
+
+**[À VÉRIFIER]** : rendu de l'écran (captures clair et sombre, mesure du défilement à 1 536 × 890 et 1 366 × 768) non fait : poste non lancé ;
+essai de bout en bout avec le vrai serveur central (lot S6.4) ; risque restant pour les opérations faites entre le redémarrage de la base
+restaurée et la première détection (une minute environ) : leurs n° peuvent reprendre des n° déjà reçus par le central (archivées par
+`ligne_remplacee`, script central 020) ; séquences `integer` : une valeur du central au-delà de 2 147 483 647 ferait échouer l'avance
+(non rencontré ; l'envoi reste suspendu avec le message « Avance des n° non faite (erreur de la base…) », nouvel essai à chaque passage).
+
+### 30.7 Lot S6.4 : essai de bout en bout (2026-11-18)
+
+**Environnement** : `scripts/dev/essai_cloud_officine.ps1` avec un `TEMP` dédié (hors dépôt), central 5194 (HTTPS) et API 5195 (HTTP) sur
+127.0.0.1, exécutables compilés à part (`dotnet build --artifacts-path`, dossier temporaire hors dépôt). Bases jetables
+`pharmacie_cloud_essai` (scripts central 001 à 021 par `creer_base_centrale.ps1`) et `pharmacie_essai_officine` (copie de
+`pharmacie_dev`, qui contenait déjà le script 149). Comptes d'essai (titulaire et assistant) créés dans la copie jetable seulement.
+Les lignes d'essai sont des fournisseurs et des patients écrits en SQL dans la copie jetable (journalisés comme une saisie : file
+`sync_sortie`) ; aucune vente faite à la caisse. Fin d'essai : `-Arreter` (processus arrêtés par leur PID, deux bases, rôle et dossier
+supprimés ; vérifié : aucune base d'essai, aucun port 5194 / 5195 / 9222 en écoute). `pharmacie_dev`, `pharmacie_test`,
+`pharmacie_cloud_dev` non modifiées.
+
+| N° | Étape | Constaté | Résultat |
+|---|---|---|---|
+| 1 | Activation, chargement complet, lots | officine activée ; chargement 52 terminé (37 886 lignes, 10 lots par minute observés) ; fournisseurs A1 (44), A2 (45), patient P1 envoyés ; lots 1 à 77 accusés | OK |
+| 2 | Point de restauration, puis suite | `pg_dump -Fc` à `dernier_lot` 77 ; ensuite fournisseurs B1 (46), B2 (47), B3 (48), patient P2, modifications de A1 (téléphone) et A2 (adresse) : lots 78 à 80 accusés | OK |
+| 3 | Restauration et redémarrage | API arrêtée, base jetable recréée depuis la sauvegarde (`dernier_lot` 77) ; avant redémarrage, fournisseur C1 créé (reprend le n° 46 de B1 : collision voulue) et patient P3 ; API relancée : en 31 s `retour_arriere_le` posé, `retour_arriere_central` = 80, `retour_arriere_sequences_le` posé ; séquences égales aux maximums du central (fournisseur 48, vente 17 916, journal_audit 12 917) ; fournisseur créé ensuite : n° 49 ; rien formé ni envoyé (`dernier_lot` 77, 121 opérations hors lot) ; une seule alerte « Synchronisation suspendue : base de l'officine revenue en arrière » (en `alerte_non_envoyee` : aucun destinataire d'essai), toujours une seule après plus de 5 minutes. La route `GET /api/v1/maximums` n'a pas été appelée directement : sa réponse est constatée par l'avance des séquences, seule source possible | OK |
+| 4 | Nouvelle époque | route refusée à un compte assistant (403) et avec une époque périmée (422) ; confirmée depuis le poste (bouton titulaire) : époque 2, compteurs à 0, détection effacée, journal `synchronisation_nouvelle_epoque` ; chargement 53 terminé. Central : B2 et B3 gardés et marqués `sync_absente_le`, patient P2 gardé et marqué absent (P3 a reçu un autre code patient : pas de collision sur `patient`), 3 connexions perdues marquées ; `ligne_remplacee` : B1 (écrasé par C1), A1 et A2 (versions modifiées après la sauvegarde), 107 alertes et 4 alertes de surveillance (recalculées au redémarrage), 1 utilisateur : 115 lignes, compte rendu `chargement_absentes` (6 absentes, 115 archivées). Comparaison des 106 tables miroir avant / après : aucune table en baisse | OK |
+| 5 | Départ | `--depart-officine` : 1 certificat révoqué, zip de 107 CSV (106 tables + `ligne_remplacee`, 38 024 lignes), 107 empreintes SHA-256 recalculées identiques, empreinte de l'archive conforme au journal, patients sous code ; envoi suivant refusé (« 401 Certificat révoqué », `certificat_refuse` au journal du central) ; `--effacer-officine` refusé avant départ puis avant le délai (6 ans), simulation comprise ; `--conservation-depart 1` refusé (6 ans minimum, global et par officine) : **délai court impossible par le réglage** ; date de départ reculée de 6 ans et 1 jour par SQL dans la base centrale jetable pour la suite ; simulation (38 180 lignes), confirmation refusée si le code n'est pas répété ou sans opérateur, puis effacement confirmé : tables miroir, `ligne_remplacee` et `lot_recu` vides, fiche officine gardée, procès-verbal `journal_depart_officine` (total 38 180) et `officine_effacee` au journal de sécurité | OK |
+| 6 | Écran Synchronisation › État | voir ci-dessous | OK |
+
+**Rendu de l'écran** (poste compilé à part, `PHARMA_API` vers l'API d'essai, piloté par CDP ; compte titulaire d'essai) : trois états
+mesurés — bandeau de retour en arrière avec « Repartir sur une nouvelle époque », confirmation « Repartir sur l'époque 2 ? » Confirmer /
+Annuler, puis message de réussite après confirmation — en thèmes sombre et clair, à 1 536 × 890 et 1 366 × 768 : `scrollHeight -
+innerHeight` = 0 et `scrollWidth - innerWidth` = 0 dans les 12 vues, aucun libellé tronqué. Captures regardées : bandeau d'attention
+au-dessus, boutons de 44 px sous le texte (`.bandeau-attention .actions`), panneaux État et Chargement complet dans le cadre défilant
+(seul à défiler à 1 366 × 768), « Recharger toutes les données » grisé pendant la détection, en-tête sur une ligne (nom de la
+pharmacie masqué à 1 366), couleurs du thème respectées. Remarque : à 1 366 × 768 avec le bandeau, environ 60 px restent libres sous le cadre
+défilant (hauteur du cadre non recalculée à l'apparition du bandeau ou au changement de taille simulé) : sans défilement de la page, non
+corrigé.
+
+**Constats sans correction (aucun code modifié)**
+- « Synchroniser maintenant » pendant la suspension répond **502** (`SynchronisationEndpoints.cs`, route `/envoyer`, ligne 92 : le
+  passage suspendu rend son message dans `Erreur`) : le poste affiche le message comme une erreur du serveur central ; un statut 409 ou un
+  résultat 200 avec l'arrêt serait plus juste. Gêne mineure.
+- `derniere_erreur` perd, dès le passage suivant, la phrase sur l'avance des n° (`EnvoiLots.cs`, `RetourArriereAsync`, lignes 394 à 397 :
+  le complément n'est ajouté que le passage où l'avance est faite) ; l'écran, lui, l'affiche d'après `retour_arriere_sequences_le`.
+- Toute nouvelle époque archive dans `ligne_remplacee` les lignes recalculées au démarrage (alertes : 111 lignes ici) : attendu par la
+  règle « contenu différent », à garder en tête pour le volume.
+- Contrôle d'intégrité « remplacés après restauration » (§ 30.3 point 6) : non essayé (`--anomalies-integrite` : aucune anomalie, sans
+  vérification lancée).
+
+### 30.8 Corrections après revue et essai (2026-11-18)
+
+Corrections validées par le titulaire (relecture du lot S6 et essai S6.4), réalisées le 2026-11-18 sur le code non commité.
+
+| N° | Point | Ce qui a changé |
+|---|---|---|
+| 1 | `/etat` injoignable, refus « empreinte différente » | `EnvoyerLotsSync` : si `/etat` ne répond pas (ou répond pour une autre époque), **rien n'est formé ni envoyé** à ce passage (« Serveur central injoignable pour le contrôle de l'état… », erreur non bloquante, nouvel essai au passage suivant). Un lot jamais reformé (`ReformeLe` nul) refusé « empreinte différente » alors que le central a reçu au moins ce n° (`DernierRecu >= n°`) pose la détection par `sync_noter_retour_arriere_refus` (script 149, sans comparaison à `dernier_lot`), puis même suspension (avance des n°, message). Test : `/etat` injoignable puis dépôt refusé. |
+| 2 | Avance des séquences jamais en arrière | `sync_avancer_sequences` : `LOCK TABLE public.%I IN SHARE ROW EXCLUSIVE MODE` avant la lecture de la séquence et `setval` (aucune insertion ne peut s'intercaler), `lock_timeout` 5 s. Aucun `nextval` explicite sur ces séquences dans l'application (seulement des séquences de numérotation, vérifié par recherche dans `src` et `database/migration`). |
+| 3 | Échec par table | Un bloc `BEGIN … EXCEPTION WHEN others` par table : la table en échec est rendue (nouvelle colonne `erreur`, type de retour changé : l'ancienne version est retirée par le script) et listée dans le message (« Avance des n° incomplète : … ») ; les autres sont avancées ; `retour_arriere_sequences_le` n'est posée que si aucune table n'a échoué (nouvel essai au passage suivant, sans effet sur les tables déjà avancées). |
+| 4 | Nouvelle époque au-delà du central | Contrat : champ **facultatif** `EtatCentralDto.EpoqueMax` (défaut null : une officine ou un central antérieur restent compatibles) ; central : `cloud_epoque_max()` (script 020, plus grande époque de `officine_epoque` pour l'officine courante), lue par `/etat` avec le dernier lot (`DepotCentral.EtatAsync`). Officine : `IClientServeurCentral.EpoqueMaxCentralAsync` ; `sync_nouvelle_epoque(titulaire, époque du central, époque attendue)` refuse si l'époque a changé et pose `greatest(locale, central) + 1` ; ancienne signature `(bigint)` retirée. Central injoignable au moment de confirmer : refus, rien ne change. |
+| 5 | Rejeu des scripts centraux | Les anciennes définitions sont sous condition (`DO $rejeu$ … EXECUTE $def$`) : non recréées si le marqueur du script suivant existe. `cloud_appliquer_lot` (001, 003, 004, 006, 009), `cloud_debut_chargement` et `cloud_fin_chargement` (003), `cloud_lot_recu_garde` (004, marqueur `journal_depart_officine` de 021), `cloud_integrite_ajout_seul` (012, même marqueur) ; en plus `cloud_journaliser` (001) et `cloud_descendants` (005, 009) : le rejeu de 009 demandé ici ramenait `cloud_descendants` à sa version de 009 (constaté : tests 010 et 011 en échec, corrigé par la garde et le rejeu de 010 et 011). Liste des marqueurs : `database/cloud/README.md`. **Non protégés** : `cloud_descendants` 010 → 011, `cloud_creer_ordre` 013 → 018 **[À VÉRIFIER avec le titulaire : les protéger aussi ?]**. |
+| 6 | PostgreSQL 18 | Refus clair en tête de `020` et `021` (`server_version_num < 180000`) et dans `scripts/mep/creer_base_centrale.ps1` (avant toute création). |
+| 7 | Intégrité (décision du titulaire) | L'alerte « retour en arrière » (e-mail, et SMS sans accents en version courte), le message de suspension et le bandeau de l'écran Synchronisation disent : « Des anomalies d'intégrité sont attendues au serveur central pour les rangs restaurés (journal des ventes et autres journaux chaînés) : elles ne signifient pas une falsification. » Traitement de fond : futur lot S6.5 (non codé). |
+| 8 | Validation de la nouvelle époque | **Constat** : dans l'officine, les autres actions sensibles du titulaire (confirmer un ordre du central, payer une traite, clôturer un inventaire…) n'exigent que la session du titulaire **connecté par mot de passe** (`ExigerTitulaireAsync` : jamais par code comptoir, ni avec un mot de passe provisoire) ; le code reçu par SMS ou e-mail n'existe que pour le **super admin** (hors base), et la validation sur place par code comptoir exclut le rôle de titulaire. **Retenu** : la ressaisie du **mot de passe du titulaire**, mécanisme existant de « Changer mon mot de passe » extrait dans `VerificationMotDePasseActuel` (même compteur et même blocage que la connexion, refus au journal ; `ChangerMonMotDePasse` l'utilise désormais), en plus de l'époque affichée. Route `POST /nouvelle-epoque` : champ `MotDePasse` ; écran : champ « Votre mot de passe » dans la confirmation (vidé après chaque essai). **[À VÉRIFIER avec le titulaire : ce choix lui convient-il, ou faut-il un code reçu par SMS ou e-mail (mécanisme à créer pour le titulaire) ?]** |
+| 9 | Fichier `.partiel` | `DepartOfficine.ExporterAsync` ne supprime `…zip.partiel` en cas d'erreur que si ce passage l'a créé. |
+| 10 | Fin de chargement | `cloud_fin_chargement` compte les lignes archivées depuis le **début du chargement** (`cloud_lignes_remplacees(époque, chargement.debut_le)`, `remplacee_le >= debut`). |
+| 11 | Coût du cas courant | `cloud_appliquer_lot` : si l'officine n'a aucune époque antérieure à celle du lot (`officine_epoque`), chemin de 009 sans `RETURNING old/new` ni `to_jsonb` (aucune archive possible). |
+| 12 | Alerte chaque minute | `sync_noter_alerte_retour_arriere` pose `greatest(p_quand, retour_arriere_le)`. |
+| 13 | Journal et changement d'époque | `EnvoiSyncSql.NouvelleEpoqueAsync` : `sync_nouvelle_epoque` et l'entrée `synchronisation_nouvelle_epoque` du journal des actions dans **une** transaction (`JournalSql.EcrireAsync` sur la même connexion, mécanisme déjà utilisé ailleurs). |
+| 14 | Implémentations par défaut | `IClientServeurCentral.DernierLotCentralAsync`, `MaximumsAsync` et `EpoqueMaxCentralAsync` lèvent `NotSupportedException` ; doublures adaptées (`EnvoiSynchronisationTests`, `ChargementSynchronisationTests` : `DernierLotCentralAsync` du central simulé). |
+| 15 | « Synchroniser maintenant » pendant la suspension | `ResultatEnvoi.Suspendu` ; route `/envoyer` : 200 avec `ResultatEnvoiSynchronisationDto.Avertissement` (champ facultatif) au lieu de 502 ; l'écran l'affiche en `.bandeau-attention`. |
+| 16 | Message gardé | `derniere_erreur` garde « N° des nouvelles opérations avancés au-delà de ceux du serveur central. » tant que `retour_arriere_sequences_le` est posée. |
+| 17 | Archive des lignes recalculées | **Règle inchangée.** Chaque nouvelle époque archive aussi dans `ligne_remplacee` les lignes **recalculées au démarrage** de l'officine (à l'essai S6.4 : 111 alertes et alertes de surveillance) : leur contenu diffère de la version de l'ancienne époque, la règle « autre contenu » les archive. **Piste à décider par le titulaire** : exclure de l'archive les tables techniques recalculées (par exemple `alerte`, `alerte_surveillance`) par une liste réglée au central, les autres restant archivées. **[À VÉRIFIER : décision du titulaire.]** |
+
+**Bases (2026-11-18)** : sauvegardes `pg_dump -Fc` de `pharmacie_dev`, `pharmacie_test` et `pharmacie_cloud_dev` (`--enable-row-security`) dans `C:\MesAtlassian\sauvegardes-bd\*_avant_corr_s6_*.dump` ; `149` passé deux fois sur dev et test (dev et test au même schéma, `init/schema.sql` régénéré) ; au central `003`, `004`, `006`, `009`, `012`, `020`, `021` puis `020`, `021`, définitions finales vérifiées (`pg_get_functiondef`) ; toute la suite `database/cloud/tests` réussie. **Incident constaté et corrigé** : un premier rejeu sans `PGCLIENTENCODING=UTF8` a enregistré mal encodés les messages accentués des fonctions des scripts `003` à `011` (ils ne posent pas `client_encoding`) ; rejeu avec `PGCLIENTENCODING=UTF8`, aucun texte mal encodé restant (vérifié dans `pg_proc` et `pg_description`) ; README central complété.
+
+**Écran** : rendu (charte, captures clair et sombre, défilement à 1 536 × 890 et 1 366 × 768) **non revérifié** après l'ajout du champ mot de passe, de la phrase d'intégrité et du bandeau d'avertissement **[À VÉRIFIER]**.
+
+## 31. Lot S6.5 : intégrité après restauration (analyse du 2026-11-18 ; décisions S6.5-D1 à D9 validées le 2026-11-18, recommandations acceptées ; code sur « go S6.5 »)
+
+Rien n'est codé. Analyse faite **par lecture du code** (scripts central 002, 012, 020, 021 ; officine 111, 112, 144, 149 ;
+`IntegriteCentrale.cs`, `Supervision.cs`, `RetourArriere.cs`) : aucun essai n'a été lancé. Tout comportement décrit ci-dessous
+qui n'a pas été observé en essai est à confirmer par le premier test du lot (S6.5.5) **[À VÉRIFIER par essai]**.
+
+Rappel des décisions : décision n° 8 (signaler et garder, jamais effacer) ; S6-D1 (nouvelle époque puis chargement complet) ;
+titulaire, 2026-11-18 : mention à court terme dans l'alerte de retour en arrière, puis S6.5 : les rangs remplacés après une
+nouvelle époque sont classés « remplacés après restauration », pas « falsifiés ».
+
+### 31.1 Constat : ce qui se passe aujourd'hui, rang par rang
+
+**Faits établis par le code**
+
+- Au central, la table miroir `journal_vente` (et `journal_registre_psychotrope`) a pour clé `(officine_id, id)` seulement
+  (script 002) : **aucune unicité sur `(cle_chaine, rang)`**, contrairement à l'officine (`ux_<journal>_chaine` sur
+  `(cle_chaine, rang)`, script 111). `cle_chaine` vaut « officine » pour toutes les lignes.
+- À l'officine, le rang d'une nouvelle ligne est `max(rang) + 1` de la base **restaurée** (`integrite_chainer`, script 111) ;
+  l'`id` vient de la séquence d'identité, avancée par `sync_avancer_sequences` (script 149) au-delà du plus grand `id` reçu par
+  le central (`cloud_maximums_officine`, script 020) dès la détection, pas avant.
+- `cloud_integrite_ajout_seul` (012, dernière définition 021) sur `journal_vente`, `journal_registre_psychotrope`,
+  `sceau_integrite`, `cloture_fiscale`, `verification_integrite` : mise à jour au contenu identique (hors colonnes `sync_*`)
+  acceptée ; contenu différent : **non appliquée** (`RETURN NULL`), anomalie `modification_refusee`, sans regarder l'époque.
+  La version reçue n'est gardée que dans le lot brut `lot_recu` : ni dans la table miroir, ni dans `ligne_remplacee` (020 n'archive
+  que ce qui a été réellement remplacé ; une mise à jour annulée par le déclencheur ne remonte pas dans `RETURNING`).
+- `cloud_appliquer_lot` (020) marque « vue par le chargement » (`sync_chargement`, `sync_absente_le = NULL`) toute ligne de
+  l'instantané **par sa clé**, même si son contenu a été refusé : la mise à jour ne touche que des colonnes `sync_*`, que le
+  déclencheur laisse passer.
+- Le central n'a **aucune trace d'un changement d'époque déclaré** : une époque naît au premier lot reçu
+  (`INSERT INTO officine_epoque … ON CONFLICT DO NOTHING`) ; `chargement.motif` reste « demande » (S6.2 n'a pas changé le
+  contrat). Seule trace indirecte : la ligne `journal_audit` « synchronisation_nouvelle_epoque » écrite par
+  `RepartirNouvelleEpoqueSync`, si `journal_audit` part bien au central **[À VÉRIFIER : sens et colonnes envoyées de journal_audit]**.
+
+**Exemple déroulé.** Le central a reçu, en époque 1, les rangs 1 à 100 (`id` 1 à 100). La base est restaurée à l'état du rang 80.
+Avant la première détection (une minute au plus, § 30.6), deux ventes sont enregistrées : rangs 81 et 82, avec les `id` 81 et 82
+(séquence pas encore avancée). Détection, avance des séquences (prochain `id` : 101), titulaire « Repartir sur une nouvelle
+époque » (époque 2), chargement complet ; d'autres ventes suivent : rangs 83, 84… avec les `id` 101, 102…
+
+| Rang(s) | Officine (après restauration) | Au central, après le chargement de l'époque 2 | Anomalie notée aujourd'hui |
+|---|---|---|---|
+| 1 à 80 | lignes d'origine | renvoyées à l'identique : acceptées, `sync_epoque` passe à 2 | aucune |
+| 81, 82 | **nouvelles** ventes, `id` 81 et 82 | `id` 81 et 82 reçus avec un autre contenu : **refusés**, version de l'époque 1 gardée, marquée « vue » ; la nouvelle version n'existe que dans `lot_recu` | `modification_refusee` (×2), alerte au titulaire « Ligne renvoyée avec un autre contenu » |
+| 83 à 100 (époque 1) | absentes | `id` 83 à 100 gardés, `sync_absente_le` posée à la fin du chargement (§ 13, 020) | aucune (alerte « lignes absentes » du chargement) |
+| 83 et suivants (époque 2) | `id` 101, 102… | insérés : **deux lignes par rang** de 83 à 100 | voir vérification ci-dessous |
+
+Vérification d'intégrité (`cloud_integrite_verifier_chaine`, 012) :
+
+- **Incrémentale** : le point de reprise (`cloud_integrite_etat.dernier_rang`) est à 100 ; les rangs 83 à 100 de l'époque 2 ne sont
+  **jamais relus** (`rang > 100`). Au rang 101 de l'époque 2 : `hash_precedent` (empreinte du nouveau rang 100) ≠ empreinte de
+  l'ancien rang 100 → `chainage_rompu`, statut `rupture`, et la chaîne **n'est plus relue** aux passages incrémentaux.
+- **Complète** (hebdomadaire, depuis le rang 1) : rangs 1 à 82 vérifiés sur les lignes de l'époque 1 ; au rang 83, deux lignes,
+  ordre indéterminé (`ORDER BY r.rang` seul). Si l'ancienne passe d'abord, la nouvelle (même rang) est prise pour un **trou** :
+  `attente`, puis après 24 h `ligne_manquante` au rang 84 (fausse) ; si la nouvelle passe d'abord : `chainage_rompu` au rang 83
+  (elle s'enchaîne sur le nouveau rang 82, absent du miroir). Dans les deux cas, statut `rupture`.
+- Sans ligne en collision (aucune vente avant la détection), même effet dès le rang 81 (deux lignes chaînées sur le rang 80).
+
+Effets de bord sur les autres contrôles :
+
+- **Sceaux** (`cloud_integrite_verifier_sceaux`) : la ligne scellée est cherchée par `(cle_chaine, rang)` seulement
+  (`EXECUTE … INTO` sans `STRICT` ni ordre) ; pour un rang en double, la ligne lue peut être celle de l'autre époque →
+  `sceau_incoherent`, pour d'anciens comme pour de nouveaux sceaux.
+- **Vérification croisée** (`cloud_integrite_verifier_croisee`) : même recherche par rang → `reecriture_apres_envoi` possible à tort ;
+  et `chaine_officine_plus_courte` est notée dès qu'une vérification de l'officine s'arrête à un rang M < 100 alors que l'ancien
+  rang M + 1 a été enregistré avant : constat **exact** (lignes perdues), mais classé comme une falsification.
+- **Tickets** (`cloud_integrite_verifier_tickets`) : `compteur_ticket` revient en arrière (il n'est pas dans l'ajout seul : il est
+  remplacé et archivé dans `ligne_remplacee`) et n'est pas avancé par S6.2 ; les n° « T- » perdus sont **réattribués** à de
+  nouvelles ventes (`vente.id` différent, même `numero`) : aucun contrôle ne le voit ; la vérification complète note
+  `ticket_hors_compteur` pour les anciennes ventes au-delà du compteur restauré, jusqu'à ce qu'il les rattrape.
+- **Registre des psychotropes** (mode « liaison ») : mêmes effets sur les rangs et le chaînage.
+- **Officine** : une alerte par nouvelle anomalie (`Supervision.cs`, libellés de `IntegriteCentrale.LibelleNature`) ; le résumé
+  `integrite-v1` reste au statut `anomalie` **pour toujours** (`v_total > 0` : une anomalie n'est jamais close) et la chaîne en
+  `rupture` : **la surveillance du journal par le central est aveugle** pour la suite, au-delà de la fausse alerte relevée en revue.
+- La mention à court terme dans l'alerte de retour en arrière n'est pas encore dans `Supervision.cs` (texte lu le 2026-11-18)
+  **[À VÉRIFIER : faite à part ou à faire]**.
+
+### 31.2 Proposition
+
+**Principe.** Le central ne peut pas prouver qu'une restauration est innocente : effacer des ventes en restaurant une sauvegarde
+est justement une manière de frauder. Il peut en revanche **prouver la forme** de ce qui s'est passé (une chaîne commune jusqu'au
+rang R, puis deux suites intactes) et **garder les deux suites**. S6.5 change le **classement** et le ton de l'alerte, jamais la
+preuve : l'ancienne suite reste en place, vérifiée, comptée (lignes, période, montants) et exportable.
+
+**1. Déclaration du changement d'époque (preuve que l'époque a changé).** À `sync_nouvelle_epoque`, l'officine envoie au central,
+**avant tout lot de la nouvelle époque**, une déclaration : ancienne et nouvelle époque, dernier lot local et dernier lot vu au
+central à la détection (`retour_arriere_central`), dates de détection et de décision, titulaire (n° d'utilisateur, pas de nom),
+et pour chaque journal de `chaine_integrite` la **fin de chaîne locale** (rang, `id`, empreinte). Le central la range dans une
+table ajout seul `cloud_epoque_changement` avec sa propre date de réception (horloge du central, digne de foi). Sans déclaration,
+rien ne change : les anomalies sont notées comme aujourd'hui (S6.5-D1).
+
+**2. Lignes en collision dans les tables à ajout seul.** `cloud_integrite_ajout_seul` est redéfinie : contenu différent **et**
+époque reçue plus grande que celle de la ligne **et** changement d'époque déclaré → l'original reste en place (règle S4 inchangée),
+la version reçue est copiée dans une nouvelle table ajout seul `cloud_ligne_divergente` (table, clé, ligne jsonb, époque, n° de
+lot, date), **sans anomalie à ce moment** : c'est la vérification qui classe (point 4). Sinon : `modification_refusee` comme
+aujourd'hui. La condition « effacement d'une officine partie » de 021 est gardée telle quelle (S6.5-D2).
+
+**3. Vérification par branches.** `cloud_integrite_verifier_chaine` ne suit plus « le rang suivant » mais **le lien d'empreinte** :
+la ligne suivante de la branche est celle du rang r + 1 dont `hash_precedent` = empreinte de la ligne courante, prise dans la
+table miroir **et** `cloud_ligne_divergente`. Deux lignes du même rang chaînées sur la même ligne = **bifurcation** au rang R.
+- Branche vivante : celle qui porte les lignes de l'époque la plus récente non absentes ; son point de reprise reste dans
+  `cloud_integrite_etat` (une colonne `epoque_branche` en plus).
+- Ancienne branche (R + 1 à N) : vérifiée **de bout en bout** une fois (empreintes recalculées en mode « complet », chaînage),
+  puis figée : plus aucune ligne ne doit y arriver.
+- Les recherches par rang des sceaux et de la vérification croisée passent par `(rang, id)` (`dernier_id` du sceau) ou par la
+  branche de l'époque de la ligne, jamais par le rang seul : correction utile même sans restauration (requête indéterminée).
+
+**4. Constat de restauration : conditions, toutes exigées.** Une bifurcation est classée « remplacée après restauration »
+seulement si :
+1. un changement d'époque E → E' est **déclaré** (point 1) et reçu **avant** le premier lot de E' ;
+2. le chargement complet de E' est **terminé** (`chargement.etat = 'termine'`, époque E') : avant, rien n'est classé (attente) ;
+3. le rang R est le dernier rang **commun** : lignes 1 à R reçues en E puis renvoyées **identiques** en E' ; toute ligne de rang ≤ R
+   reçue différente reste une `modification_refusee` (falsification possible) ;
+4. R ≤ fin de chaîne déclarée par l'officine ≤ R + (lignes en collision), et ces lignes en collision sont celles de
+   `cloud_ligne_divergente` ;
+5. toutes les lignes de l'ancienne branche ont été **reçues en époque < E' et avant la déclaration** (`sync_recu_le`, horloge du
+   central) ; une ligne d'ancienne époque reçue après est une anomalie ;
+6. toutes les lignes de la nouvelle branche sont **postérieures** à la dernière réception de l'ancienne branche
+   (`enregistre_le` / `cree_le` ≥ dernier `sync_recu_le` de l'ancienne branche − tolérance d'horloge, S6.5-D7), et celles d'`id`
+   non en collision ont un `id` > plus grand `id` connu du central au moment de la déclaration ; une nouvelle branche qui
+   **réécrit le passé** (dates anciennes, mêmes tickets) n'est pas une restauration ;
+7. les deux branches se vérifient de bout en bout (point 3) ;
+8. les sceaux reçus avant la déclaration restent tous vérifiés : ceux de rang ≤ R ancrés dans la partie commune ; ceux de rang > R
+   ancrés dans l'ancienne branche (`(rang, id, empreinte)`) et **signalés à part** (point 5).
+
+Si une condition manque : anomalie d'aujourd'hui (`modification_refusee`, `chainage_rompu`…), avec dans le détail la condition
+non remplie.
+
+**5. Rangement et natures d'anomalies.**
+- Table ajout seul `cloud_integrite_bifurcation` : officine, journal, `cle_chaine`, ancienne et nouvelle époque, référence de la
+  déclaration, rang commun R et son empreinte, fin de l'ancienne branche (rang N, `id`, empreinte), nombre de lignes de l'ancienne
+  branche, période (première et dernière date), pour `journal_vente` montant TTC des événements « vente » et « annulation » de
+  l'ancienne branche, sceaux de l'ancienne branche, classe (`restauration_constatee` / `restauration_a_justifier`), date du constat.
+- Nouvelles natures dans `ck_cloud_anomalie_integrite_nature` : `remplacee_apres_restauration` (une par bifurcation et par
+  journal, pas une par ligne : le détail est dans la table), `sceau_perdu_restauration` (sceau d'une ligne de l'ancienne branche),
+  `ticket_reattribue_restauration` (selon S6.5-D6). Elles **restent** des anomalies (ajout seul, journal de sécurité
+  `integrite_anomalie`) : seul leur classement change.
+- Anomalies déjà notées à tort (restauration antérieure à S6.5, ou notées avant la fin du chargement) : `cloud_anomalie_integrite`
+  est en ajout seul, on ne les modifie pas ; une table ajout seul `cloud_anomalie_classement` (anomalie, bifurcation, classe, date)
+  les rattache à la bifurcation. L'anomalie d'origine reste visible, avec la mention « classée : remplacée après restauration »
+  (S6.5-D5).
+
+**6. Ce que voit le titulaire.**
+- **Alerte** (une par bifurcation constatée, nature d'alerte nouvelle, sujet « Synchronisation ») : « Après le retour à l'époque N
+  le JJ/MM, X ligne(s) du journal des ventes enregistrées du … au … (montant TTC …) n'existent plus dans l'officine. Elles sont
+  gardées au serveur central comme preuve et classées « remplacées après restauration ». La nouvelle chaîne a été vérifiée de bout
+  en bout. À faire : ne rien corriger ; garder la sauvegarde utilisée et la cause de la restauration ; prévenir l'éditeur. »
+  Classe « à justifier » (S6.5-D3) : ton d'anomalie, « à justifier auprès de l'éditeur ».
+- **Compte rendu** `integrite-v1` : champ en plus `restaurations` (liste des bifurcations : journal, époques, rang commun, lignes,
+  période, montant, sceaux perdus, classe) ; les natures nouvelles ont un libellé dans `IntegriteCentrale.LibelleNature`. Une
+  officine non mise à jour ignore le champ et affiche la nature brute (comportement actuel de `Lire` et du `switch`) : compatible.
+  Statut : selon S6.5-D4.
+- **Écran** Administration › Synchronisation › Intégrité au central : rubrique « Restaurations constatées » (tableau paginé, lecture
+  seule, droit `admin.parametres`) ; chaque chaîne affiche « vérifiée depuis la restauration du … » au lieu de « rupture ». Règle des
+  écrans sans défilement et charte graphique (captures clair et sombre).
+
+**7. Ce que doit garder un contrôle fiscal (rien n'est effacé ni masqué).**
+- Au central : les lignes de l'ancienne branche dans la table miroir (avec `sync_absente_le`), `ligne_remplacee`,
+  `cloud_ligne_divergente`, les lots bruts `lot_recu` (durée `conservation_lots_ans`), la déclaration, les bifurcations, les
+  anomalies et leur classement, le journal de sécurité ; dates de réception du central.
+- Un export « restauration » par officine et par bifurcation (CSV des deux branches + empreintes SHA-256, même forme que l'export
+  de départ, `DepartOfficine.cs`) ; l'export de départ inclut les nouvelles tables.
+- À l'officine : la ligne `journal_audit` de la nouvelle époque, l'alerte, et ce que le titulaire a noté de la cause
+  (S6.5-D4). La base locale ne contient plus les lignes perdues (S6-D2 : pas de reconstruction depuis le central) : seul l'export
+  du central les présente (S6.5-D9).
+
+### 31.3 Risques
+
+| Risque | Parade proposée |
+|---|---|
+| **Falsification déguisée en restauration** (réécrire le journal à partir d'un rang r, puis « repartir sur une nouvelle époque ») | (1) L'ancienne branche n'est jamais perdue : les ventes « effacées » restent au central, comptées et chiffrées dans l'alerte, l'écran et l'export ; (2) condition 6 : une nouvelle branche qui réécrit des événements passés (dates antérieures à la dernière réception, mêmes tickets) n'est pas classée « restauration » ; (3) condition 1 : déclaration par le titulaire avant tout lot, horodatée par le central ; (4) bifurcation sous un sceau ou une clôture fiscale : classe « à justifier » (S6.5-D3) ; (5) fréquence : au-delà d'un seuil de restaurations, alerte éditeur (S6.5-D7, D8) |
+| Horloge de l'officine faussée pour satisfaire la condition 6 | La référence est `sync_recu_le` (horloge du central) ; une nouvelle ligne datée avant la dernière réception est refusée au classement ; une datation dans le futur est déjà visible (`survenu_le`, tickets) **[À VÉRIFIER : contrôle de vraisemblance des dates existant ou non]** |
+| Lot tardif de l'ancienne époque reçu après la déclaration | Condition 5 : anomalie ; l'officine ne renvoie jamais seule ces lots (§ 30.6) |
+| Lignes en collision dans `sceau_integrite`, `cloture_fiscale`, `verification_integrite` (fenêtre d'une minute) | Même mécanisme `cloud_ligne_divergente` pour les cinq tables à ajout seul |
+| Double vie (deux serveurs actifs en même temps après une bascule) | Hors S6.5 : même époque, deux suites → refus de lot 409 (§ 30.2) ; une 2e bifurcation sans déclaration reste une anomalie |
+| Restaurations successives (E → E' → E'') | Bifurcations multiples, chacune avec sa déclaration ; algorithme par liens d'empreinte, sans limite de profondeur |
+| Durée de la vérification par branches sur gros volume | Index au central sur `(officine_id, cle_chaine, rang)` (non unique) des journaux miroir (aucun aujourd'hui) ; ancienne branche vérifiée une fois puis figée **[À VÉRIFIER : volume réel, déjà ouvert au § 22.5]** |
+| Ordre de passage des scripts | 021 porte la dernière définition de `cloud_integrite_ajout_seul` : le nouveau script la redéfinit en gardant la condition d'effacement ; rejouer 012 ou 021 après lui la rétrécirait (même piège qu'au § 30.5) : à écrire dans l'en-tête |
+| Contrat partagé modifié (déclaration) | Nouvelle route versionnée ; officine ancienne = pas de déclaration = comportement d'aujourd'hui (aucune régression) |
+
+### 31.4 Décisions à demander au titulaire
+
+| N° | Question | Recommandation |
+|---|---|---|
+| S6.5-D1 | Le changement d'époque doit-il être **déclaré** au central (nouvelle route, contrat modifié) ou **déduit** (premier lot d'une époque plus grande + ligne `journal_audit`) ? | **Déclaré**, avant tout lot de la nouvelle époque, avec les fins de chaîne locales ; sans déclaration, aucune indulgence |
+| S6.5-D2 | Ligne d'un journal chaîné reçue d'une époque plus récente avec un autre contenu : (a) original en place, nouvelle version dans `cloud_ligne_divergente` ; (b) nouvelle version appliquée, ancienne dans `ligne_remplacee` (comme les autres tables depuis S6.1) | **(a)** : la règle S4 « l'original reste » ne change pas ; la table miroir garde la première version reçue |
+| S6.5-D3 | Restauration qui fait disparaître des lignes **déjà scellées** (clôture journalière ou mensuelle) | Classe **« restauration à justifier »** (rouge, alerte titulaire et éditeur), jamais « remplacée » simple |
+| S6.5-D4 | Statut du compte rendu après une restauration constatée | Nouveau statut **« restauration »** (orange) tant que le titulaire n'a pas **pris acte** avec la cause (texte court, journal ajout seul envoyé au central) ; ensuite « ok » avec la restauration toujours listée ; une vraie anomalie garde « anomalie » |
+| S6.5-D5 | Anomalies déjà notées à tort (avant S6.5 ou avant la fin du chargement) | Les **rattacher** par une table de classement ajout seul ; ne jamais les modifier ni les cacher |
+| S6.5-D6 | N° de tickets « T- » après restauration : (a) avancer `compteur_ticket` au-delà du plus grand n° reçu par le central (pas de doublon ; trou à expliquer dans le contrôle local de continuité) ; (b) laisser réattribuer (doublons de n° au central, signalés `ticket_reattribue_restauration`) | **(a)**, avec la plage sautée notée à l'officine et reconnue par `journal_vente_continuite` **[À VÉRIFIER : avis du comptable / de l'administration fiscale sur un trou ou un doublon de n°]** |
+| S6.5-D7 | Seuils de vraisemblance | Tolérance d'horloge **10 minutes** (condition 6) ; plus de **2 restaurations sur 12 mois** : alerte éditeur et classe « à justifier » |
+| S6.5-D8 | L'éditeur est-il prévenu de chaque restauration constatée ? | **Oui** (journal de sécurité du central + console `--restaurations-integrite`), conformément au § 5 (« alerte titulaire et éditeur ») ; écran central avec S7 |
+| S6.5-D9 | Faut-il redescendre à l'officine les lignes perdues (pour un contrôle sur place) ? | **Non** (S6-D2) ; export du central remis sur demande (console), inclus dans l'export de départ |
+
+### 31.5 Découpage proposé (rien n'est lancé)
+
+| Lot | Contenu |
+|---|---|
+| S6.5.0 | Mention à court terme dans l'alerte de retour en arrière (décidée) **[À VÉRIFIER : état]** |
+| S6.5.1 | Central `022_integrite_restauration_tables.sql` : `cloud_epoque_changement`, `cloud_ligne_divergente`, `cloud_integrite_bifurcation`, `cloud_anomalie_classement` (RLS forcée, ajout seul, gardes d'effacement de départ comme 021) ; natures nouvelles ; index `(officine_id, cle_chaine, rang)` ; redéfinition de `cloud_integrite_ajout_seul` (point 2) ; tests SQL |
+| S6.5.2 | Central `023_integrite_verification_branches.sql` : vérification par liens d'empreinte, constat de bifurcation (conditions 1 à 8), sceaux et croisée par `(rang, id)`, tickets (selon D6), résumé `integrite-v1` étendu (`restaurations`, statut D4) ; tests SQL : restauration sans collision, avec collisions, falsification déguisée (dates passées), bifurcation sous sceau, lot tardif d'ancienne époque, deux restaurations successives, registre en mode « liaison », anomalies antérieures rattachées |
+| S6.5.3 | API centrale : route de déclaration (certificat de l'officine, cloisonnée), DTO partagé ; console `--restaurations-integrite` et export « restauration » ; export de départ complété ; tests `Pharma.Cloud.Tests` |
+| S6.5.4 | Officine `150_…` : déclaration envoyée par `sync_nouvelle_epoque` / `EnvoyerLotsSync` avant le premier lot (et réessayée) ; compteur de tickets (D6) ; prise d'acte du titulaire (D4) ; `IntegriteCentrale` (libellés, `restaurations`), alerte, écran ; `database/init` à jour ; tests |
+| S6.5.5 | Essai de bout en bout sur bases jetables (avec S6.4) : restauration simulée, ventes pendant la fenêtre, nouvelle époque, chargement, vérification incrémentale puis complète, alerte et écran (captures clair et sombre, mesures) |
+| S6.5.6 | Documentation : ce § 31 complété, `docs/regles-metier.md` (règles de classement), README de `database/cloud` (ordre de passage 021 → 022 → 023) |
+
+**[À VÉRIFIER]** : comportement réel du § 31.1 par un essai (lecture du code seulement) ; `journal_audit` envoyé au central et avec
+quelles colonnes ; existence d'un contrôle de vraisemblance des dates à l'officine ; règle locale de `compteur_ticket` (peut-il
+être avancé sans casser `journal_vente_continuite`) ; durée de la vérification par branches sur le volume réel d'une officine ;
+avis du juriste sur la présentation des lignes perdues lors d'un contrôle fiscal.

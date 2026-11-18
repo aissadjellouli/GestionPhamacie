@@ -167,6 +167,13 @@ END $$;
 REVOKE EXECUTE ON FUNCTION cloud_integrite_noter(text, text, bigint, text, text, text, text, text) FROM PUBLIC;
 
 -- ---- 4. Ajout seul des journaux chaînés et de leurs pièces au central ----
+-- Garde de rejeu (2026-11-18) : définition remplacée par le script 021 ; rejouer ce script après 021 ne la
+-- ramène pas en arrière (marqueur : table journal_depart_officine, posé par 021).
+DO $rejeu$ BEGIN
+    IF to_regclass('public.journal_depart_officine') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_integrite_ajout_seul : définition plus récente (script 021) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_integrite_ajout_seul() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
@@ -197,6 +204,9 @@ BEGIN
         format('suppression de la ligne %s reçue : ligne gardée', v_avant ->> 'id'));
     RETURN NULL;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 DO $declencheurs$
 DECLARE t text;
 BEGIN

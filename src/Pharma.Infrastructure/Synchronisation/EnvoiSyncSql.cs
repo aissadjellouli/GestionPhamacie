@@ -17,7 +17,7 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
                    pg_is_in_recovery(),
                    (SELECT count(*) FROM sync_lot l WHERE l.accuse_le IS NULL AND l.epoque < p.epoque),
                    CASE WHEN rc.cle IS NULL THEN NULL ELSE sync_familles_effectives() END, rc.recu_le, p.descendant_version, coalesce(rc.version, 0),
-                   sync_colonnes_interdites()
+                   sync_colonnes_interdites(), p.retour_arriere_le, p.retour_arriere_central, p.retour_arriere_sequences_le
             FROM sync_parametre p LEFT JOIN reglage_central rc ON rc.cle = 'familles_envoyees'
             WHERE p.id = 1
             """);
@@ -26,7 +26,8 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
         return new ParametresEnvoiSync(r.GetBoolean(0), r.IsDBNull(1) ? null : r.GetGuid(1), r.GetInt32(2), r.GetString(3), r.GetInt64(4), r.GetInt64(5),
             r.IsDBNull(6) ? null : r.GetString(6), Date(r, 7), Date(r, 8), Date(r, 9), r.IsDBNull(10) ? null : r.GetString(10), Date(r, 11),
             r.GetString(12), r.GetBoolean(13), r.GetInt64(14), r.GetInt64(15), r.GetBoolean(16), r.GetInt64(17),
-            r.IsDBNull(18) ? null : r.GetFieldValue<string[]>(18), Date(r, 19), r.GetInt64(20), r.GetInt64(21), r.GetFieldValue<string[]>(22));
+            r.IsDBNull(18) ? null : r.GetFieldValue<string[]>(18), Date(r, 19), r.GetInt64(20), r.GetInt64(21), r.GetFieldValue<string[]>(22),
+            Date(r, 23), r.IsDBNull(24) ? null : r.GetInt64(24), Date(r, 25));
     }
 
     public async Task<IReadOnlyList<LotEnregistre>> LotsNonAccusesAsync(int maximum, CancellationToken ct = default)
@@ -162,6 +163,55 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
             await c.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
+    }
+
+    // ---- Lot S6.2 : base revenue en arrière, nouvelle époque (script 149) ----
+    public async Task<bool> NoterRetourArriereAsync(long dernierLotCentral, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_noter_retour_arriere($1)");
+        cmd.Parameters.AddWithValue(dernierLotCentral);
+        return await cmd.ExecuteScalarAsync(ct) is true;
+    }
+
+    public async Task<bool> NoterRetourArriereRefusAsync(long dernierLotCentral, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_noter_retour_arriere_refus($1)");
+        cmd.Parameters.AddWithValue(dernierLotCentral);
+        return await cmd.ExecuteScalarAsync(ct) is true;
+    }
+
+    /// <summary>Une ligne par table retenue ; une table en échec (verrou, séquence trop petite…) porte son erreur, les autres sont avancées.</summary>
+    public async Task<IReadOnlyList<SequenceAvancee>> AvancerSequencesAsync(IReadOnlyDictionary<string, long> maximums, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT nom_table, avant, apres, erreur FROM sync_avancer_sequences($1)");
+        cmd.Parameters.Add(new NpgsqlParameter { Value = System.Text.Json.JsonSerializer.Serialize(maximums), NpgsqlDbType = NpgsqlDbType.Jsonb });
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var liste = new List<SequenceAvancee>();
+        while (await r.ReadAsync(ct))
+            liste.Add(new SequenceAvancee(r.GetString(0), r.IsDBNull(1) ? null : r.GetInt64(1), r.IsDBNull(2) ? null : r.GetInt64(2),
+                r.IsDBNull(3) ? null : r.GetString(3)));
+        return liste;
+    }
+
+    /// <summary>Nouvelle époque et entrée du journal des actions dans UNE transaction (rien n'est noté si l'une échoue).</summary>
+    public async Task<NouvelleEpoqueSync> NouvelleEpoqueAsync(long titulaireId, int? epoqueCentral, int epoqueAttendue,
+        Func<NouvelleEpoqueSync, IReadOnlyDictionary<string, object?>> journal, CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        NouvelleEpoqueSync res;
+        await using (var cmd = new NpgsqlCommand("SELECT epoque, ancienne_epoque, chargement FROM sync_nouvelle_epoque($1, $2, $3)", cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(titulaireId);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)epoqueCentral ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
+            cmd.Parameters.AddWithValue(epoqueAttendue);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (!await r.ReadAsync(ct)) throw new InvalidOperationException("Nouvelle époque : aucune réponse de sync_nouvelle_epoque.");
+            res = new NouvelleEpoqueSync(r.GetInt32(0), r.GetInt32(1), r.IsDBNull(2) ? null : r.GetInt32(2));
+        }
+        await Securite.JournalSql.EcrireAsync(cnx, tx, titulaireId, "synchronisation_nouvelle_epoque", "sync_parametre", 1, journal(res), null, ct);
+        await tx.CommitAsync(ct);
+        return res;
     }
 
     private async Task ExecuterAsync(string sql, CancellationToken ct, params object[] valeurs)

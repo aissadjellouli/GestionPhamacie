@@ -121,8 +121,11 @@ public class DescendantsMutuV1Tests
         return liste;
     }
 
-    /// <summary>Base centrale « pharmacie_cloud_jetable_m11_… » : scripts database/cloud passés par psql, supprimée à la fin.</summary>
-    private sealed class BaseCentraleJetable : IDisposable
+    /// <summary>
+    /// Base centrale « pharmacie_cloud_jetable_m11_… » : scripts database/cloud passés par psql, supprimée à la fin. Partagée avec les
+    /// tests du départ d'une officine (DepartOfficineTests).
+    /// </summary>
+    internal sealed class BaseCentraleJetable : IDisposable
     {
         private readonly string administration;
         private readonly string nom;

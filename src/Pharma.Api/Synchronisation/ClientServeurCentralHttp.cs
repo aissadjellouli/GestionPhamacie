@@ -145,6 +145,37 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         return memoire.ToArray();
     }
 
+    // ---- Lot S6.2 : base revenue en arrière ----
+    /// <summary>Dernier lot de l'époque reçu par le serveur central ; réponse pour une autre époque : null (pas de contrôle).</summary>
+    public async Task<long?> DernierLotCentralAsync(string adresse, int epoque, CancellationToken ct = default)
+    {
+        var r = await LireGetAsync<EtatCentralDto>(adresse, $"api/v1/etat?epoque={epoque.ToString(System.Globalization.CultureInfo.InvariantCulture)}", ct);
+        return r.Epoque == epoque && r.DernierRecu >= 0 ? r.DernierRecu : null;
+    }
+
+    /// <summary>Plus grande époque connue du serveur central pour cette officine (champ facultatif de /etat ; null : serveur central
+    /// antérieur à cette correction).</summary>
+    public async Task<int?> EpoqueMaxCentralAsync(string adresse, int epoque, CancellationToken ct = default)
+    {
+        var r = await LireGetAsync<EtatCentralDto>(adresse, $"api/v1/etat?epoque={epoque.ToString(System.Globalization.CultureInfo.InvariantCulture)}", ct);
+        return r.EpoqueMax is >= 0 ? r.EpoqueMax : null;
+    }
+
+    /// <summary>Plus grand id reçu par table (aucune donnée de ligne) ; route absente : ServeurCentralException 404.</summary>
+    public async Task<IReadOnlyDictionary<string, long>> MaximumsAsync(string adresse, CancellationToken ct = default) =>
+        (await LireGetAsync<MaximumsCentralDto>(adresse, "api/v1/maximums", ct)).Tables ?? new Dictionary<string, long>();
+
+    private async Task<T> LireGetAsync<T>(string adresse, string route, CancellationToken ct)
+    {
+        var (http, cert) = await ClientCertifieAsync(adresse, ct);
+        var j = await JetonAsync(http, cert, ct);
+        using var req = new HttpRequestMessage(HttpMethod.Get, route);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", j);
+        using var rep = await http.SendAsync(req, ct);
+        if (rep.StatusCode == System.Net.HttpStatusCode.Unauthorized) await OublierJetonAsync(ct);
+        return await LireAsync<T>(rep, ct);
+    }
+
     private async Task<TOut> PosterAsync<TIn, TOut>(string adresse, string route, TIn corps, CancellationToken ct)
     {
         var (http, cert) = await ClientCertifieAsync(adresse, ct);

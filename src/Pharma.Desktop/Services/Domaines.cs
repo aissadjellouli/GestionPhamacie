@@ -48,10 +48,13 @@ public static class Domaines
             // Bordereaux Chifa / MDN (script 110) : dépôt, rejets, paiements
             new("Bordereaux Chifa", "bordereaux-chifa", ["bordereaux-chifa"], ["chifa.bordereaux"]),
         ]),
-        // Contrôle de fin de droits Chifa (2026-11-15) : suivi des patients CNAS/CASNOS aux droits expirés ou bientôt expirés
+        // Patients (2026-11-18) : fichier des patients (droits de la recherche et de la fiche patient), suivi des droits Chifa
+        // expirés ou bientôt expirés (2026-11-15), patients en attente d'un produit (déplacés d'Achats, droit de vendre comme avant)
         new("patients", "Patients", 'T',
         [
+            new("Fichier des patients", "patients", ["patients"], ["caisse.vendre"]),
             new("Droits expirés ou bientôt expirés", "patients/droits-chifa", ["patients/droits-chifa"], ["caisse.vendre"]),
+            new("Patients en attente", "patients/attente", ["patients/attente"], ["caisse.vendre"]),
         ]),
         new("pilotage", "Pilotage", 'P',
         [

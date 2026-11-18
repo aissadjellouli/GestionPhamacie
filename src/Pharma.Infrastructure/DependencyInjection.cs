@@ -125,6 +125,7 @@ public static class DependencyInjection
         services.AddScoped<IMedecins>(sp => sp.GetRequiredService<PatientsSql>());
         services.AddScoped<IOrganismes>(sp => sp.GetRequiredService<PatientsSql>());
         services.AddScoped<ISuiviDroitsChifa, SuiviDroitsChifaSql>();
+        services.AddScoped<IFichierPatients, FichierPatientsSql>();
         services.AddScoped<IPreparationVente, PreparationVenteSql>();
         services.AddScoped<IVentesEcriture, VentesEcritureSql>();
         services.AddScoped<RemisesAutomatiquesSql>();
