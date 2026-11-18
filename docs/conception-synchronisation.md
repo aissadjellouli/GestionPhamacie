@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)**
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)** ; **lot S5.3 réalisé le 2026-11-18 (§ 26 : nomenclature nationale envoyée par le central)**
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -190,7 +190,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S2 | API cloud minimale (réception, idempotence, ordre, accusés), base centrale cloisonnée, authentification par certificat | S0, S1 |
 | S3 | Service de sync local (envoi, reprise, bandeau, écran d'état, alertes) | S1, S2 |
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
-| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25)** | S3 |
+| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
 | S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
@@ -1325,3 +1325,33 @@ alerte ; S5.2-D4 aucun contrôle de marge tant que les règles algériennes (pri
   auteur local) ; +50 % mis à confirmer puis confirmé par le titulaire (350 → 525 DA, journal à son nom) ; prix changé dans l'officine
   avant l'arrivée de l'ordre → refusé, rien écrit ; résultats remontés au central (appliqué, appliqué, refusé). Écran « Ordres du
   central » mesuré à 1 536 × 890, captures en clair et sombre.
+
+## 26. Lot S5.3 : réalisé (2026-11-18, « ok plan S5.3 ») — nomenclature nationale envoyée par le central
+
+Décisions : S5.3-D1 la nomenclature d'abord, les autres référentiels (wilayas, organismes, substances surveillées…) plus tard, un
+par un ; S5.3-D2 confirmation du titulaire ; S5.3-D3 fichier officiel gardé une fois au central et téléchargé par l'officine,
+empreinte SHA-256 vérifiée ; S5.3-D4 l'import manuel reste possible ; S5.3-D5 version déjà chargée : rien ne change.
+
+- **Central** (script `015`) : table `referentiel_fichier` (classeur du MIPH gardé une fois pour toutes les officines : libellé,
+  nom, contenu, empreinte SHA-256 unique, taille de 20 Mo au plus **[À VÉRIFIER : plafond à confirmer avec les prochains fichiers
+  du MIPH ; celui de juin 2026 fait 1,4 Mo]**, auteur) ; contrôle à l'enregistrement : archive .xlsx, non vide. Type d'ordre
+  `nomenclature` (données : n° du fichier, libellé, nom, empreinte, taille). `cloud_referentiel_contenu` remet le contenu à l'API
+  **seulement pour l'officine de la transaction et seulement si un de ses ordres désigne ce fichier** ; l'API n'a aucun droit sur
+  la table. Commandes `--importer-nomenclature <fichier.xlsx> --libelle <libellé> --auteur <nom>` puis
+  `--publier-nomenclature <n°> (--officine <code> | --toutes) --auteur <nom>` (un ordre par officine en service).
+- **Route** `GET /api/v1/referentiels/{n°}` : mêmes protections que les autres (certificat de l'officine, jeton, limite de débit) ;
+  404 si le fichier n'est pas destiné à l'officine ; téléchargement et refus inscrits au journal de sécurité.
+- **Officine** (aucun nouveau script) : l'ordre attend toujours le titulaire. À la confirmation, l'API télécharge le fichier (lu en
+  flux, arrêté au-delà de la taille annoncée), vérifie taille et empreinte, puis l'importe **par le même chemin que l'import
+  manuel** (`ImporterNomenclature` : contrôles, remplacement en une transaction, journal `nomenclature_importee`, produits « à
+  vérifier »). Version chargée de même libellé et de même nombre de lignes : rien ne change, journal `nomenclature_deja_a_jour`.
+  Central injoignable : l'ordre reste à confirmer (nouvel essai) ; fichier inconnu (404), différent (empreinte) ou refusé à la
+  lecture : ordre refusé, rien d'importé.
+- **Essai de bout en bout** (2026-11-18, `scripts\dev\essai_cloud_officine.ps1`, HTTPS avec certificats, bases jetables
+  supprimées ensuite) : vrai fichier « NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx » (1 454 522 octets) enregistré puis publié ;
+  1er ordre confirmé sur une officine qui avait déjà cette version → « déjà à jour », rien remplacé ; 2e ordre après avoir fait
+  croire à une version plus ancienne → importé en 1 s environ au nom du titulaire (5 381 en vigueur, 1 495 non renouvelés,
+  2 679 retraits, 9 555 lignes) ; deux téléchargements tracés au central ; résultats remontés (appliqué, appliqué). Écran « Ordres
+  du central » mesuré à 1 536 × 890 sans défilement, captures en clair et sombre.
+- **Point relevé** (outil d'essai) : `essai_cloud_officine.ps1 -Arreter` a annoncé deux fois « n'a pas pu être arrêté » alors que
+  le processus s'arrêtait un peu plus tard ; relancé, il a tout supprimé. À rendre plus patient **[À DÉCIDER]**.

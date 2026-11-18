@@ -255,6 +255,7 @@
     <File Path="database/cloud/012_verification_integrite_central.sql" />
     <File Path="database/cloud/013_ordres_vers_officines.sql" />
     <File Path="database/cloud/014_ordre_prix_produit.sql" />
+    <File Path="database/cloud/015_nomenclature_vers_officines.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
     <File Path="database/cloud/tests/003_chargement_complet_officine_tests.sql" />
     <File Path="database/cloud/tests/004_reglage_familles_envoyees_tests.sql" />
@@ -268,6 +269,7 @@
     <File Path="database/cloud/tests/012_verification_integrite_central_tests.sql" />
     <File Path="database/cloud/tests/013_ordres_vers_officines_tests.sql" />
     <File Path="database/cloud/tests/014_ordre_prix_produit_tests.sql" />
+    <File Path="database/cloud/tests/015_nomenclature_vers_officines_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

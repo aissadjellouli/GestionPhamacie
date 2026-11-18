@@ -118,6 +118,33 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         return new ReponseFinChargementSync(r.Numero, r.Absentes, r.AbsentesParTable);
     }
 
+    /// <summary>
+    /// Lot S5.3 : fichier de référentiel (nomenclature). Lu en flux, hors du plafond des réponses JSON, et arrêté au-delà de
+    /// <paramref name="octetsMax"/> octets (taille annoncée par l'ordre).
+    /// </summary>
+    public async Task<byte[]> TelechargerReferentielAsync(string adresse, long fichier, long octetsMax, CancellationToken ct = default)
+    {
+        var (http, cert) = await ClientCertifieAsync(adresse, ct);
+        var j = await JetonAsync(http, cert, ct);
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"api/v1/referentiels/{fichier}");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", j);
+        using var rep = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (rep.StatusCode == System.Net.HttpStatusCode.Unauthorized) await OublierJetonAsync(ct);
+        if (!rep.IsSuccessStatusCode) await LireAsync<object>(rep, ct); // lève ServeurCentralException avec le motif
+        if (rep.Content.Headers.ContentLength is > 0 and var l && l > octetsMax)
+            throw new ServeurCentralException("fichier plus gros que la taille annoncée par l'ordre");
+        await using var flux = await rep.Content.ReadAsStreamAsync(ct);
+        using var memoire = new MemoryStream();
+        var tampon = new byte[81920];
+        int lus;
+        while ((lus = await flux.ReadAsync(tampon, ct)) > 0)
+        {
+            if (memoire.Length + lus > octetsMax) throw new ServeurCentralException("fichier plus gros que la taille annoncée par l'ordre");
+            memoire.Write(tampon, 0, lus);
+        }
+        return memoire.ToArray();
+    }
+
     private async Task<TOut> PosterAsync<TIn, TOut>(string adresse, string route, TIn corps, CancellationToken ct)
     {
         var (http, cert) = await ClientCertifieAsync(adresse, ct);

@@ -106,6 +106,19 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         return await cmd.ExecuteScalarAsync(ct) is true;
     }
 
+    /// <summary>Lot S5.3 (script 015) : contenu d'un fichier de référentiel, seulement si un ordre de cette officine le désigne (sinon null).</summary>
+    public async Task<byte[]?> ReferentielAsync(Guid officine, long id, CancellationToken ct)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await PoserOfficineAsync(cnx, tx, officine, ct);
+        await using var cmd = new NpgsqlCommand("SELECT cloud_referentiel_contenu($1)", cnx, tx);
+        cmd.Parameters.AddWithValue(id);
+        var contenu = await cmd.ExecuteScalarAsync(ct) as byte[];
+        await tx.CommitAsync(ct);
+        return contenu;
+    }
+
     /// <summary>Voie descendante (script 005) : éléments de version plus grande que celle appliquée par l'officine (acquittement enregistré).</summary>
     public async Task<Pharma.Shared.ChangementsDescendantsDto> DescendantsAsync(Guid officine, long versionAppliquee, CancellationToken ct)
     {

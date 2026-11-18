@@ -229,6 +229,7 @@ public static class Libelles
         "ordre_central_refuse" => "Ordre du serveur central refusé",
         "ordre_central_expire" => "Ordre du serveur central expiré",
         "ordre_central_annule" => "Ordre du serveur central annulé",
+        "nomenclature_deja_a_jour" => "Nomenclature déjà à jour",
         "facture_rejet_leve" => "Rejet de facture levé",
         "seuils_alerte" => "Seuils d’alerte",
         "pharmacie_modifiee" => "Identité de la pharmacie",
@@ -520,6 +521,7 @@ public static class Libelles
         "employe_debloquer" => "Débloquer un employé",
         "droits_role" => "Droits d’un rôle",
         "prix_produit" => "Prix d’un produit",
+        "nomenclature" => "Nomenclature nationale",
         _ => type
     };
 

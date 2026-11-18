@@ -343,6 +343,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\012_verification_integrite_central.sql = database\cloud\012_verification_integrite_central.sql
 		database\cloud\013_ordres_vers_officines.sql = database\cloud\013_ordres_vers_officines.sql
 		database\cloud\014_ordre_prix_produit.sql = database\cloud\014_ordre_prix_produit.sql
+		database\cloud\015_nomenclature_vers_officines.sql = database\cloud\015_nomenclature_vers_officines.sql
 		database\cloud\tests\001_base_centrale_tests.sql = database\cloud\tests\001_base_centrale_tests.sql
 		database\cloud\tests\003_chargement_complet_officine_tests.sql = database\cloud\tests\003_chargement_complet_officine_tests.sql
 		database\cloud\tests\004_reglage_familles_envoyees_tests.sql = database\cloud\tests\004_reglage_familles_envoyees_tests.sql
@@ -356,6 +357,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\tests\012_verification_integrite_central_tests.sql = database\cloud\tests\012_verification_integrite_central_tests.sql
 		database\cloud\tests\013_ordres_vers_officines_tests.sql = database\cloud\tests\013_ordres_vers_officines_tests.sql
 		database\cloud\tests\014_ordre_prix_produit_tests.sql = database\cloud\tests\014_ordre_prix_produit_tests.sql
+		database\cloud\tests\015_nomenclature_vers_officines_tests.sql = database\cloud\tests\015_nomenclature_vers_officines_tests.sql
 	EndProjectSection
 EndProject
 Global

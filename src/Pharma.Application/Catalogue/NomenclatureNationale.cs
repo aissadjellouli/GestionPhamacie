@@ -47,7 +47,7 @@ public interface INomenclature
     Task<string?> ClasseSurveilleeProduitAsync(long produitId, CancellationToken ct = default);
 }
 
-/// <summary>Import du fichier Excel de la nomenclature (titulaire), inscrit au journal.</summary>
+/// <summary>Import du fichier Excel de la nomenclature (titulaire), inscrit au journal ; aussi par un ordre du serveur central (lot S5.3).</summary>
 public sealed class ImporterNomenclature(ILecteurNomenclature lecteur, INomenclature nomenclature, IPermissionService droits, IJournal journal)
 {
     public const long TailleMax = 40 * 1024 * 1024;
@@ -55,11 +55,37 @@ public sealed class ImporterNomenclature(ILecteurNomenclature lecteur, INomencla
     public async Task<VersionNomenclature> ExecuterAsync(Stream contenu, string? fichier, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "importer la nomenclature nationale", ct);
+        return await RemplacerAsync(Lire(contenu), fichier, utilisateurId, ct);
+    }
+
+    /// <summary>
+    /// Lot S5.3 (ordre du serveur central) : même import, sauf si la version chargée est déjà celle-ci (même libellé et même nombre
+    /// de lignes) : rien ne change, « déjà à jour » est inscrit au journal et null est renvoyé (décision S5.3-D5).
+    /// </summary>
+    public async Task<VersionNomenclature?> ImporterSiNouvelleAsync(Stream contenu, string? fichier, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(utilisateurId, "importer la nomenclature nationale", ct);
+        var lue = Lire(contenu);
+        if (await nomenclature.VersionAsync(ct) is { } v && v.Libelle == lue.Libelle && v.EnVigueur + v.NonRenouveles + v.Retraits == lue.Lignes.Count)
+        {
+            await journal.EcrireAsync(utilisateurId, "nomenclature_deja_a_jour", "nomenclature_version", null,
+                new Dictionary<string, object?> { ["version"] = v.Libelle, ["source"] = "ordre du serveur central" }, null, ct);
+            return null;
+        }
+        return await RemplacerAsync(lue, fichier, utilisateurId, ct);
+    }
+
+    private NomenclatureLue Lire(Stream contenu)
+    {
         NomenclatureLue lue;
         try { lue = lecteur.Lire(contenu); }
         catch (FormatException e) { throw new RegleMetierException(e.Message); }
         Nomenclature.Verifier(lue.Lignes);
+        return lue;
+    }
 
+    private async Task<VersionNomenclature> RemplacerAsync(NomenclatureLue lue, string? fichier, long utilisateurId, CancellationToken ct)
+    {
         var nom = string.IsNullOrWhiteSpace(fichier) ? "nomenclature.xlsx" : Path.GetFileName(fichier.Trim());
         var id = await nomenclature.RemplacerAsync(lue, nom, utilisateurId, ct);
         var version = await nomenclature.VersionAsync(ct) ?? throw new InvalidOperationException("Version introuvable après import.");

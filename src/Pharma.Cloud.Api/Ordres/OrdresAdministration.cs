@@ -20,7 +20,7 @@ public static class OrdresAdministration
 {
     public static readonly string[] Commandes =
         ["--ordres", "--ordre-essai", "--ordre-employe-creer", "--ordre-employe-modifier", "--ordre-employe-bloquer", "--ordre-employe-debloquer",
-         "--ordre-droits-role", "--ordre-prix", "--annuler-ordre", "--expirer-ordres"];
+         "--ordre-droits-role", "--ordre-prix", "--annuler-ordre", "--expirer-ordres", "--importer-nomenclature", "--publier-nomenclature"];
 
     public static bool Concerne(string commande) => Commandes.Contains(commande);
 
@@ -65,6 +65,8 @@ public static class OrdresAdministration
                 return 0;
             }
             if (args[0] == "--ordres") return await ListerAsync(db, Officine(args, false), args, sortie);
+            if (args[0] == "--importer-nomenclature") return await ImporterNomenclatureAsync(db, args, sortie);
+            if (args[0] == "--publier-nomenclature") return await PublierNomenclatureAsync(db, args, sortie);
             if (args[0] == "--annuler-ordre")
             {
                 var id = args.Length > 1 && Guid.TryParse(args[1], out var g) ? g : throw new ArgumentException("Identifiant de l'ordre attendu après --annuler-ordre.");
@@ -93,6 +95,62 @@ public static class OrdresAdministration
             sortie.WriteLine($"Refusé : {e.MessageText}");
             return 1;
         }
+    }
+
+    /// <summary>Taille maximale d'un fichier de référentiel (décision S5.3, à confirmer avec le vrai fichier du MIPH).</summary>
+    public const int TailleMaxReferentiel = 20 * 1024 * 1024;
+
+    /// <summary>
+    /// Lot S5.3 : --importer-nomenclature &lt;fichier.xlsx&gt; --libelle &lt;libellé&gt; --auteur &lt;nom&gt;. Contrôle minimal ici (classeur .xlsx,
+    /// 20 Mo au plus) ; la lecture complète se fait dans l'officine, par le même lecteur que l'import manuel, à la confirmation.
+    /// </summary>
+    private static async Task<int> ImporterNomenclatureAsync(NpgsqlDataSource db, string[] args, TextWriter sortie)
+    {
+        var chemin = args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1]
+            : throw new ArgumentException("Chemin du fichier attendu après --importer-nomenclature.");
+        var libelle = Option(args, "--libelle") is { Length: > 0 } l ? l : throw new ArgumentException("Option --libelle obligatoire (ex. « Nomenclature Juin 2026 »).");
+        var info = new FileInfo(chemin);
+        if (!info.Exists) throw new ArgumentException($"Fichier introuvable : {chemin}");
+        if (info.Length > TailleMaxReferentiel) throw new ArgumentException("Fichier de plus de 20 Mo.");
+        await using var cmd = db.CreateCommand("SELECT cloud_importer_referentiel('nomenclature', $1, $2, $3, $4)");
+        cmd.Parameters.AddWithValue(libelle);
+        cmd.Parameters.AddWithValue(info.Name);
+        cmd.Parameters.AddWithValue(await File.ReadAllBytesAsync(chemin));
+        cmd.Parameters.AddWithValue(Auteur(args));
+        sortie.WriteLine($"Fichier de nomenclature enregistré : n° {await cmd.ExecuteScalarAsync()} ({info.Length} octets). Publication : --publier-nomenclature <n°>.");
+        return 0;
+    }
+
+    /// <summary>Lot S5.3 : --publier-nomenclature &lt;n°&gt; (--officine &lt;code&gt; | --toutes) --auteur &lt;nom&gt; : un ordre par officine.</summary>
+    private static async Task<int> PublierNomenclatureAsync(NpgsqlDataSource db, string[] args, TextWriter sortie)
+    {
+        var fichier = args.Length > 1 && long.TryParse(args[1], out var f) ? f : throw new ArgumentException("N° du fichier attendu après --publier-nomenclature.");
+        var une = Officine(args, false);
+        if (une is null && !args.Contains("--toutes")) throw new ArgumentException("Option --officine <code> ou --toutes attendue.");
+        await using var liste = db.CreateCommand("SELECT id FROM officine WHERE resiliee_le IS NULL AND ($1::uuid IS NULL OR id = $1) ORDER BY cree_le");
+        liste.Parameters.Add(new NpgsqlParameter { Value = (object?)une ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid });
+        var officines = new List<Guid>();
+        await using (var r = await liste.ExecuteReaderAsync())
+            while (await r.ReadAsync()) officines.Add(r.GetGuid(0));
+        var refus = 0;
+        foreach (var o in officines)
+        {
+            try
+            {
+                await using var cmd = db.CreateCommand("SELECT cloud_creer_ordre($1, 'nomenclature', NULL, $2::jsonb, $3)");
+                cmd.Parameters.AddWithValue(o);
+                cmd.Parameters.AddWithValue($"{{\"fichier\":{fichier}}}");
+                cmd.Parameters.AddWithValue(Auteur(args));
+                sortie.WriteLine($"{o}  ordre {await cmd.ExecuteScalarAsync()}");
+            }
+            catch (PostgresException e) when (e.SqlState == "P0001")
+            {
+                refus++;
+                sortie.WriteLine($"{o}  refusé : {e.MessageText}");
+            }
+        }
+        sortie.WriteLine($"{officines.Count - refus} ordre(s) de nomenclature créé(s), {refus} refusé(s).");
+        return refus == 0 ? 0 : 1;
     }
 
     private static async Task<int> ListerAsync(NpgsqlDataSource db, Guid? officine, string[] args, TextWriter sortie)

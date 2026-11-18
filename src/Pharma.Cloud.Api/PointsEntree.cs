@@ -130,6 +130,21 @@ public static class PointsEntree
             return Results.Ok(await depot.DescendantsAsync(appelant.Officine, d.VersionAppliquee, ct));
         }).RequireRateLimiting("officine");
 
+        // Lot S5.3 : téléchargement d'un fichier de référentiel (nomenclature) désigné par un ordre de cette officine ; 404 sinon
+        v1.MapGet("/referentiels/{id:long}", async (long id, HttpContext ctx, DepotCentral depot, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            var contenu = await depot.ReferentielAsync(appelant.Officine, id, ct);
+            if (contenu is null)
+            {
+                await depot.JournaliserAsync(appelant.Officine, appelant.EmpreinteCertificat, "referentiel_refuse", $"fichier {id}", ct);
+                return Results.Problem("Fichier inconnu ou non destiné à cette officine.", statusCode: 404);
+            }
+            await depot.JournaliserAsync(appelant.Officine, appelant.EmpreinteCertificat, "referentiel_telecharge", $"fichier {id}", ct);
+            return Results.Bytes(contenu, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }).RequireRateLimiting("officine");
+
         // Lot S6 : début d'un chargement complet (avant le premier lot qui contient ses lignes « instantane »)
         v1.MapPost("/chargement/debut", async (DebutChargementDto d, HttpContext ctx, DepotCentral depot, ILoggerFactory lf, CancellationToken ct) =>
         {

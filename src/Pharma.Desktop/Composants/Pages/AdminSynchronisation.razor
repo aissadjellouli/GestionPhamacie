@@ -269,7 +269,7 @@
                 </table>
             </section>
             <Pagination Total="ordresTotal" Numero="ordresPage" Taille="ordresTaille" Libelle="Pages des ordres du serveur central" OnChange="p => ChargerOrdresAsync(p.Numero, p.Taille)" />
-            <p class="detail" style="margin: 0">Le blocage d’un employé s’applique tout de suite ; création, modification, déblocage et droits attendent la confirmation du titulaire, de même qu’un prix qui change de plus de 20 %. Un ordre est refusé si la valeur a changé ici depuis son envoi, et expire après 7 jours.</p>
+            <p class="detail" style="margin: 0">Le blocage d’un employé s’applique tout de suite ; création, modification, déblocage et droits attendent la confirmation du titulaire, de même qu’un prix qui change de plus de 20 % et une nouvelle nomenclature nationale. Un ordre est refusé si la valeur a changé ici depuis son envoi, et expire après 7 jours.</p>
         }
 
         @if (ordreOuvert is { } oo)

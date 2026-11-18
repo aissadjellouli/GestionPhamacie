@@ -17,8 +17,23 @@ public class OrdresCentrauxTests
         public DateOnly Aujourdhui => DateOnly.FromDateTime(utc);
     }
 
+    /// <summary>Lot S5.3 : fichier remis par le « serveur central » (ou erreur), nombre d'appels.</summary>
+    private sealed class ReferentielsFactices : ITelechargementReferentiel
+    {
+        public byte[] Contenu { get; set; } = [0x50, 0x4b, 0x03, 0x04, 1, 2, 3];
+        public Exception? Erreur { get; set; }
+        public int Appels { get; private set; }
+        public Task<byte[]> TelechargerAsync(long fichier, long octets, CancellationToken ct = default)
+        {
+            Appels++;
+            return Erreur is null ? Task.FromResult(Contenu) : Task.FromException<byte[]>(Erreur);
+        }
+    }
+
     private sealed class Depot : IOrdresCentrauxDepot
     {
+        public NomenclatureEnMemoire Nomenclature { get; } = new();
+        public ReferentielsFactices Referentiels { get; } = new();
         public readonly List<OrdreRecu> Ordres = [];
         public readonly List<(Guid Id, string Statut, string? Motif, long? Par)> Notes = [];
         public Task<IReadOnlyList<OrdreRecu>> EnCoursAsync(CancellationToken ct = default) =>
@@ -71,7 +86,8 @@ public class OrdresCentrauxTests
         var (depot, admin, alertes, journal) = (new Depot(), new UtilisateursEnMemoire(), new Alertes(), new JournalEspion());
         var droits = new DroitsFactices("admin.utilisateurs") { Titulaire = titulaire };
         var executer = new ExecuterOrdreCentral(admin, new CreerUtilisateur(admin, new HacheurFactice(), journal, droits),
-            new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot);
+            new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot,
+            new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), depot.Nomenclature, droits, journal), depot.Referentiels);
         var horloge = new Horloge(Maintenant);
         return (depot, admin, alertes, journal, new AppliquerOrdresCentraux(depot, executer, horloge, alertes),
             new ConfirmerOrdreCentral(depot, executer, droits, horloge), new RefuserOrdreCentral(depot, droits));
@@ -290,5 +306,89 @@ public class OrdresCentrauxTests
         Assert.False(ExecuterOrdreCentral.EcartTropGrand(100m, null));     // rien ne change
         Assert.Equal("Produit : prix 100,00 DA → 110,00 DA.",
             ResumeOrdre.Texte(Prix("""{"nom":"Produit","prix_public":110.00}"""), new UtilisateursEnMemoire().Etat).Replace('\u202f', ' ').Replace('\u00a0', ' '));
+    }
+
+    // ---- Lot S5.3 : nomenclature nationale ----
+
+    private static OrdreRecu Nomenclature(byte[] contenu, string? empreinte = null) =>
+        Ordre(TypesOrdre.Nomenclature, null, "{}", System.Text.Json.JsonSerializer.Serialize(new
+        {
+            fichier = 7, libelle = "Nomenclature Juin 2026", nom_fichier = "nomenclature.xlsx",
+            empreinte = empreinte ?? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(contenu)), octets = contenu.Length
+        }));
+
+    [Fact]
+    public async Task Nomenclature_attend_le_titulaire_puis_s_importe_a_son_nom()
+    {
+        var m = Monter();
+        var o = Nomenclature(m.Depot.Referentiels.Contenu);
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        Assert.Equal(0, m.Depot.Referentiels.Appels);                        // rien téléchargé avant la confirmation
+        await m.Confirmer.ExecuterAsync(o.Id, null, 1);
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+        Assert.Equal(200, m.Depot.Nomenclature.Recue!.Lignes.Count);
+        Assert.Contains("nomenclature_importee", m.Journal.Actions);
+    }
+
+    [Fact]
+    public async Task Nomenclature_deja_chargee_ne_change_rien()
+    {
+        var m = Monter();
+        var premiere = Nomenclature(m.Depot.Referentiels.Contenu);
+        var seconde = Nomenclature(m.Depot.Referentiels.Contenu);
+        m.Depot.Ordres.AddRange([premiere, seconde]);
+        await m.Auto.ExecuterAsync();
+        await m.Confirmer.ExecuterAsync(premiere.Id, null, 1);
+        await m.Confirmer.ExecuterAsync(seconde.Id, null, 1);
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(seconde.Id));
+        Assert.Single(m.Journal.Actions, "nomenclature_importee");
+        Assert.Contains("nomenclature_deja_a_jour", m.Journal.Actions);
+    }
+
+    [Fact]
+    public async Task Nomenclature_empreinte_differente_ou_fichier_inconnu_refuse()
+    {
+        var m = Monter();
+        var faux = Nomenclature(m.Depot.Referentiels.Contenu, new string('0', 64));
+        m.Depot.Ordres.Add(faux);
+        await m.Auto.ExecuterAsync();
+        var e = await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(faux.Id, null, 1));
+        Assert.Contains("empreinte", e.Message);
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(faux.Id));
+        Assert.Null(m.Depot.Nomenclature.Recue);
+
+        var inconnu = Nomenclature(m.Depot.Referentiels.Contenu);
+        m.Depot.Ordres.Add(inconnu);
+        await m.Auto.ExecuterAsync();
+        m.Depot.Referentiels.Erreur = new ServeurCentralException("serveur central : 404", 404);
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(inconnu.Id, null, 1));
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(inconnu.Id));
+    }
+
+    [Fact]
+    public async Task Nomenclature_central_injoignable_reste_a_confirmer()
+    {
+        var m = Monter();
+        var o = Nomenclature(m.Depot.Referentiels.Contenu);
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        m.Depot.Referentiels.Erreur = new ServeurCentralException("délai dépassé");
+        var e = await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(o.Id, null, 1));
+        Assert.Contains("reste à confirmer", e.Message);
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        m.Depot.Referentiels.Erreur = null;                                   // nouvel essai : importé
+        await m.Confirmer.ExecuterAsync(o.Id, null, 1);
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+    }
+
+    [Fact]
+    public void Nomenclature_resume_lisible()
+    {
+        var o = Nomenclature(new byte[3 * 1048576]);
+        var texte = ResumeOrdre.Texte(o, new EtatDroits([], [], []));
+        Assert.Contains("« Nomenclature Juin 2026 » (3,0 Mo)", texte);
+        Assert.Contains("à vérifier", texte);
     }
 }

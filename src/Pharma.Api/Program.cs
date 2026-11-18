@@ -90,6 +90,7 @@ builder.Services.AddSingleton<Pharma.Application.Synchronisation.IFormatLotSync,
 builder.Services.AddSingleton<Pharma.Api.Synchronisation.ClientServeurCentralHttp>();
 builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientServeurCentral>(sp => sp.GetRequiredService<Pharma.Api.Synchronisation.ClientServeurCentralHttp>());
 builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientChargementCentral>(sp => sp.GetRequiredService<Pharma.Api.Synchronisation.ClientServeurCentralHttp>());
+builder.Services.AddScoped<Pharma.Application.Synchronisation.ITelechargementReferentiel, Pharma.Api.Synchronisation.TelechargementReferentielHttp>();
 builder.Services.AddHostedService<Pharma.Api.Taches.EnvoiSynchronisation>();
 // Synchronisation, lot S3 : alertes au titulaire (retard, erreur persistante, certificat, quota) et purge de la file après accusé
 builder.Services.AddHostedService<Pharma.Api.Taches.SurveillanceSynchronisation>();

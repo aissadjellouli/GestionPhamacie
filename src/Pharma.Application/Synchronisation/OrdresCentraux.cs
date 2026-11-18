@@ -24,11 +24,13 @@ public static class TypesOrdre
     public const string DroitsRole = "droits_role";
     /// <summary>Lot S5.2 : prix public et/ou tarif de référence d'un produit (jamais le remboursement ni la TVA).</summary>
     public const string PrixProduit = "prix_produit";
+    /// <summary>Lot S5.3 : nouvelle nomenclature nationale (fichier téléchargé au serveur central à la confirmation).</summary>
+    public const string Nomenclature = "nomenclature";
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
-        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit };
+        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
-    public static bool ConfirmationRequise(string type) => type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole;
+    public static bool ConfirmationRequise(string type) => type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole or Nomenclature;
 
     public static string Libelle(string type) => type switch
     {
@@ -39,6 +41,7 @@ public static class TypesOrdre
         EmployeDebloquer => "Débloquer un employé",
         DroitsRole => "Droits d’un rôle",
         PrixProduit => "Prix d’un produit",
+        Nomenclature => "Nomenclature nationale",
         _ => type
     };
 }
@@ -83,7 +86,8 @@ public sealed class OrdreInapplicableException(string message) : Exception(messa
 
 /// <summary>Application d'un ordre par les cas d'usage existants ; <paramref name="titulaireId"/> : titulaire qui confirme (null : automatique).</summary>
 public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole,
-    Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot)
+    Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot, Catalogue.ImporterNomenclature nomenclature,
+    ITelechargementReferentiel referentiels)
 {
     public const string ModifieDansOfficine = "modifié dans l’officine depuis l’envoi de l’ordre";
     /// <summary>Écart de prix au-delà duquel le titulaire confirme (décision S5.2-D1) : 20 %.</summary>
@@ -101,6 +105,37 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
         using var donnees = JsonDocument.Parse(o.DonneesJson);
         return EcartTropGrand(fiche.PrixPublic, Montant(donnees.RootElement, "prix_public"))
                || EcartTropGrand(fiche.TarifReference, Montant(donnees.RootElement, "tarif_reference"));
+    }
+
+    /// <summary>
+    /// Lot S5.3 : télécharge le fichier désigné, vérifie taille et empreinte SHA-256, puis l'importe comme un import manuel
+    /// (journal, produits « à vérifier ») ; même version déjà chargée : rien ne change (décision S5.3-D5). Central injoignable :
+    /// l'ordre reste à confirmer ; fichier refusé (404), différent ou illisible : refus définitif.
+    /// </summary>
+    private async Task ImporterNomenclatureAsync(JsonElement d, long titulaireId, CancellationToken ct)
+    {
+        var fichier = d.TryGetProperty("fichier", out var f) && f.TryGetInt64(out var fid) ? fid
+            : throw new OrdreInapplicableException("Ordre de nomenclature sans n° de fichier.");
+        var empreinte = d.TryGetProperty("empreinte", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString()! : "";
+        var octets = d.TryGetProperty("octets", out var t) && t.TryGetInt64(out var n) ? n : 0;
+        if (octets is <= 0 or > Catalogue.ImporterNomenclature.TailleMax)
+            throw new OrdreInapplicableException("Taille du fichier de nomenclature absente ou trop grande.");
+        byte[] contenu;
+        try { contenu = await referentiels.TelechargerAsync(fichier, octets, ct); }
+        catch (ServeurCentralException x) when (x.CodeHttp == 404)
+        {
+            throw new OrdreInapplicableException("Fichier de nomenclature inconnu du serveur central.");
+        }
+        catch (ServeurCentralException x)
+        {
+            throw new RegleMetierException($"Téléchargement de la nomenclature impossible ({x.Message}) : l’ordre reste à confirmer, réessayez plus tard.");
+        }
+        if (contenu.LongLength != octets || !string.Equals(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(contenu)), empreinte, StringComparison.Ordinal))
+            throw new OrdreInapplicableException("Fichier de nomenclature reçu différent de celui envoyé (empreinte) : rien n’est importé.");
+        var nom = d.TryGetProperty("nom_fichier", out var nf) && nf.ValueKind == JsonValueKind.String ? nf.GetString() : null;
+        using var flux = new MemoryStream(contenu, writable: false);
+        try { await nomenclature.ImporterSiNouvelleAsync(flux, nom, titulaireId, ct); }
+        catch (RegleMetierException x) { throw new OrdreInapplicableException($"Fichier de nomenclature refusé : {x.Message}"); }
     }
 
     private static decimal? Montant(JsonElement e, string nom) =>
@@ -161,6 +196,9 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                     throw new OrdreInapplicableException($"Prix de « {fiche.NomCommercial} » {ModifieDansOfficine}.");
                 return;
             }
+            case TypesOrdre.Nomenclature:
+                await ImporterNomenclatureAsync(d, titulaireId!.Value, ct);
+                return;
             case TypesOrdre.DroitsRole:
             {
                 var role = Role(etat, o.Cible);
@@ -319,9 +357,20 @@ public sealed class RefuserOrdreCentral(IOrdresCentrauxDepot depot, IPermissionS
     }
 }
 
+/// <summary>Lot S5.3 : téléchargement d'un fichier de référentiel du serveur central (adresse et certificat de l'officine).</summary>
+public interface ITelechargementReferentiel
+{
+    /// <summary>Contenu du fichier n° <paramref name="fichier"/> ; plus de <paramref name="octets"/> octets reçus ou erreur : ServeurCentralException.</summary>
+    Task<byte[]> TelechargerAsync(long fichier, long octets, CancellationToken ct = default);
+}
+
 /// <summary>Résumé lisible d'un ordre (écran) : employé et rôle nommés d'après la base de l'officine.</summary>
 public static class ResumeOrdre
 {
+    private static string Taille(JsonElement d) =>
+        d.TryGetProperty("octets", out var o) && o.TryGetInt64(out var n)
+            ? (n / 1048576m).ToString("N1", System.Globalization.CultureInfo.GetCultureInfo("fr-FR")) + " Mo" : "taille inconnue";
+
     public static string Texte(OrdreRecu o, EtatDroits etat)
     {
         try
@@ -347,6 +396,8 @@ public static class ResumeOrdre
                 TypesOrdre.EmployeBloquer => $"{Employe()} : bloqué (plus aucune connexion).",
                 TypesOrdre.EmployeDebloquer => $"{Employe()} : débloqué (connexion de nouveau possible).",
                 TypesOrdre.DroitsRole => ResumeDroits(o, a, d, NomRole(o.Cible)),
+                TypesOrdre.Nomenclature => $"Nouvelle version « {T(d, "libelle")} » ({Taille(d)}) : remplace la nomenclature chargée ; "
+                                           + "les produits concernés passeront « à vérifier ».",
                 TypesOrdre.PrixProduit => $"{T(d, "nom") ?? $"Produit n° {o.Cible}"} : "
                     + string.Join(" ; ", new[] { Changement(a, d, "prix_public", "prix"), Changement(a, d, "tarif_reference", "tarif de référence") }
                         .Where(x => x is not null)) + ".",
