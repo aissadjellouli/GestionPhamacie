@@ -1394,7 +1394,7 @@ l'usage]** ; S5.4-D6 prix facultatif : à défaut, le dernier prix d'achat (mêm
 |---|---|---|
 | A. Listes fixes livrées par nos scripts | `wilaya`, `categorie_produit`, `substance_surveillee`, `parametre_gs1_ai`, `classe_suivie` | R-D1 : **pas d'envoi par le central** ; les scripts de mise à jour suffisent (à revoir si un changement doit arriver entre deux versions) |
 | B. Listes nationales que l'officine complète | `classe_suivie_dci`, `organisme`, `centre_payeur`, `type_prestation`, `indication`, `dci` | R-D2 / R-D3 : un lot par table, lignes désignées par leur clé naturelle (nom, sigle, code), jamais par le n° local, confirmation du titulaire avec l'aperçu des changements. **Toutes faites : `classe_suivie_dci` (lot 1), `organisme` + `centre_payeur` (lot 2), `type_prestation` (lot 3), `indication` (lot 4), `dci` (lot 5, § 28.1).** |
-| C. Liens vers les produits de l'officine | `chifa_code_produit`, `produit_indication` | R-D4 : à reclasser « jamais envoyées » ou « montantes » (données propres à l'officine) **[À DÉCIDER]** |
+| C. Liens vers les produits de l'officine | `chifa_code_produit`, `produit_indication` | R-D4 : **reclassées montantes le 2026-11-18 (§ 29)** |
 | D. À clarifier | `laboratoire` (vide, rien ne l'écrit), `zone_psychotrope_wilaya` (réglée par l'officine) | R-D5 **[À VÉRIFIER]** |
 
 Correction de l'analyse : `classe_suivie_dci` est la liste des **antibiotiques suivis** (rapport des quantités délivrées), amorcée
@@ -1446,3 +1446,24 @@ par `substance_surveillee`).
   « 1 ajout (Toux sèche) » (Fièvre et Mal de gorge déjà là), « 1 ajout (TEDIZOLIDE) » (daptomycine et amoxicilline déjà là, casse
   ignorée) ; confirmés, appliqués au nom du titulaire, journaux écrits, résultats remontés au central (3 appliqués). Arrêt de l'outil
   d'essai : un seul passage.
+
+## 29. Reclassement de deux tables liées aux produits : réalisé (2026-11-18, « go reclassement »)
+
+`chifa_code_produit` (code CHIFA relié à un produit local) et `produit_indication` (produit local relié à une indication) étaient
+classées « descendantes » à tort : ce sont des associations faites dans l'officine, qui désignent les produits par leur n° local ;
+le central ne peut pas les fournir. Effet du mauvais classement : rien n'était copié au central (associations perdues en cas de
+restauration d'une officine depuis le central).
+
+Décisions (recommandations acceptées) : RC-D1 **montantes** (copie au central) ; RC-D2 lignes déjà présentes envoyées **une fois**
+au reclassement, si la synchronisation est active ; RC-D3 `associe_par` (n° d'employé) envoyé comme les autres n° d'employés.
+
+- **Central** (script `019`) : tables miroir `chifa_code_produit` (clé `code`) et `produit_indication` (clé `produit_id`,
+  `indication_id`), cloisonnées par officine (RLS forcée), droits de l'API, déclarées dans `cloud_table_miroir`. **À passer AVANT le
+  script 147 des officines** : un lot qui contient une table inconnue du central est refusé en entier.
+- **Officine** (script `147`) : sens « montante » et clés ; seulement pour les tables encore « descendantes » (le rejeu ne change
+  rien). Synchronisation active : déclencheurs posés, puis lignes existantes inscrites une fois dans la file (« creation »,
+  minimisées comme par le déclencheur). Synchronisation inactive : seul le classement change ; l'activation fera le chargement
+  initial comme pour les autres tables.
+- **Essais** : tests SQL `019` (réception, suppression, cloisonnement) et `147` (classement, rejeu sans effet, envoi unique des
+  lignes existantes) ; `147` passé deux fois sur `pharmacie_dev` et `pharmacie_test` (synchronisation inactive sur les deux : seul le
+  classement a changé), `019` deux fois sur `pharmacie_cloud_dev`.

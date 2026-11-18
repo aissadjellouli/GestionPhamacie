@@ -21,7 +21,7 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 150 tables — 81 montantes, 22 bidirectionnelles, 18 descendantes, 29 jamais envoyées (`commande_ordre_central`, jamais, par le script 146, lot S5.4 ; `sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
+**Récapitulatif** : 150 tables — 83 montantes, 22 bidirectionnelles, 16 descendantes, 29 jamais envoyées (`chifa_code_produit` et `produit_indication` passées de descendantes à montantes par le script 147 ; `commande_ordre_central`, jamais, par le script 146, lot S5.4 ; `sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
 
 ## Ce que reçoit le serveur central : vue d'ensemble (2026-11-17)
 
@@ -154,6 +154,8 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `sceau_integrite` | montante | id | - | - | Sceaux recopiés tels quels ; la clé ne part jamais |
 | `session_caisse` | montante | id | - | - | |
 | `sync_ordre_resultat` | montante | ordre_id | - | - | Résultat des ordres du serveur central (état, motif filtré, date), script 145 |
+| `chifa_code_produit` | montante | code | - | - | Code CHIFA associé à un produit dans l'officine (n° de produit local), script 147 |
+| `produit_indication` | montante | produit_id, indication_id | - | - | Indications associées à un produit dans l'officine (n° de produit local), script 147 |
 | `utilisation_financement` | montante | id | - | - | |
 | `vente` | montante | id | remis_a_nom, pour_nom, chifa_qr | patient_id, remis_a_patient_id, pour_patient_id | |
 | `vente_chifa_facture_conflit` | montante | vente_id | - | - | |
@@ -185,7 +187,6 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `utilisateur` | bidirectionnelle | id | mot_de_passe_hash, pin_hash, code_comptoir_essais, code_comptoir_bloque_jusqu, telephone, email, jetons_revoques_le | - | Jamais de mot de passe ni de code comptoir ; nom et identifiant : famille `employes` (défaut non) |
 | `categorie_produit` | descendante | code | - | - | |
 | `centre_payeur` | descendante | id | - | - | |
-| `chifa_code_produit` | descendante | code | - | - | |
 | `classe_suivie` | descendante | code | - | - | |
 | `classe_suivie_dci` | descendante | classe_code, dci_id | - | - | |
 | `dci` | descendante | id | - | - | |
@@ -195,7 +196,6 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `nomenclature_version` | descendante | id | - | - | |
 | `organisme` | descendante | id | - | - | |
 | `parametre_gs1_ai` | descendante | code | - | - | |
-| `produit_indication` | descendante | produit_id, indication_id | - | - | |
 | `substance_surveillee` | descendante | motif | - | - | |
 | `type_prestation` | descendante | id | - | - | |
 | `wilaya` | descendante | code | - | - | |

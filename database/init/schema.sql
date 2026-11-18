@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 146 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 147 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 146 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 147 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -24,7 +24,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict qpc6ubJcVS6VMIpNnjxTtif9ygwhmxozn5WUlKnfED6cSeM7joAkfnKgIoRB65o
+\restrict oMjudvL2jlsc92tj8QXn36gdE8sr2uQ6MPYlN5cTjEWacwAdfgqn9WPT6VoKqqH
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -18800,5 +18800,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict qpc6ubJcVS6VMIpNnjxTtif9ygwhmxozn5WUlKnfED6cSeM7joAkfnKgIoRB65o
+\unrestrict oMjudvL2jlsc92tj8QXn36gdE8sr2uQ6MPYlN5cTjEWacwAdfgqn9WPT6VoKqqH
 

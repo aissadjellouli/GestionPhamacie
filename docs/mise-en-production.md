@@ -996,7 +996,7 @@ Option facultative. Le serveur central reçoit la copie des données des officin
 
 Règles : aucun secret dans un fichier du dépôt ni dans `appsettings*.json`. Tout passe par des variables d'environnement du compte de service. **Ne jamais copier le dossier `Synchronisation` d'un serveur d'officine à l'autre.**
 
-Les scripts de la base centrale sont dans `database\cloud\` (001 à 018). Ils ne se passent **jamais** sur la base d'une officine.
+Les scripts de la base centrale sont dans `database\cloud\` (001 à 019). Ils ne se passent **jamais** sur la base d'une officine.
 
 ### 1. Hébergement et prérequis
 
@@ -1006,7 +1006,7 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 018). Ils ne
 
 ### 2. Base centrale
 
-- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `018` **dans l'ordre**. **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
+- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `019` **dans l'ordre**. **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
   ```powershell
   .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
@@ -1204,7 +1204,7 @@ Le serveur central peut proposer ou imposer aux officines la valeur de 11 régla
 ### 10. Mise à jour du serveur central
 
 - [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `018`, **dans cet ordre**, avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `019`, **dans cet ordre** (le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
 - [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
 - [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 
