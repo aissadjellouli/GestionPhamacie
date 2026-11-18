@@ -108,7 +108,7 @@ Le choix « pseudonymiser ou envoyer en clair » est structurant pour la sauvega
 | Catalogue commun / nomenclature | Diffusé ; l'officine garde ses produits et leurs réglages propres ; un changement de classe réglementaire passe par l'état « à vérifier » existant. |
 | Employés / droits (si modifiables à distance) | Même règle que les réglages. |
 
-**Modification des deux côtés** : l'officine gagne (elle a déjà servi des clients avec sa valeur). L'ordre distant est refusé, tracé, et visible à distance. Proposition d'un **délai d'expiration** des ordres non appliqués (ex. 7 jours) **[DÉCISION]**.
+**Modification des deux côtés** : l'officine gagne (elle a déjà servi des clients avec sa valeur). L'ordre distant est refusé, tracé, et visible à distance. **Délai d'expiration** des ordres non appliqués : **7 jours** (décision S5-D1 du 2026-11-18, § 23).
 
 ## 5. Intégrité : vérification sans réécriture
 
@@ -190,7 +190,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S2 | API cloud minimale (réception, idempotence, ordre, accusés), base centrale cloisonnée, authentification par certificat | S0, S1 |
 | S3 | Service de sync local (envoi, reprise, bandeau, écran d'état, alertes) | S1, S2 |
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
-| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation | S3 |
+| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
 | S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
@@ -1195,3 +1195,42 @@ toute autre différence est une anomalie. Les autres tables gardent l'option « 
   clair et sombre.
 - **Non essayé** : volume réel d'une officine (durée d'une vérification complète sur des centaines de milliers de lignes)
   **[À VÉRIFIER]** ; tâche planifiée réelle sur le serveur central.
+
+## 23. Lot S5 : analyse et décisions (2026-11-18, « ok recommandations S5 »), rien n'est codé
+
+**Déjà fait** : la voie descendante générique (§ 15) et la mutualisation des 11 tables de réglages (§ 16 bis, lots M1 à M9), qui
+couvrent les « réglages » de la décision 3. **Reste** : prix, commandes en brouillon, employés et droits, référentiels nationaux et
+nomenclature.
+
+### 23.1 Ordres restants
+
+| Ordre | État actuel | Règle (§ 4) | Point dur |
+|---|---|---|---|
+| Prix (`produit.prix_public`, `tarif_reference`) | `produit` remonte (bidirectionnelle) | Appliqué par l'API locale avec les contrôles existants (`ModifierProduit` : prix > 0, produit remboursable ⇒ tarif de référence) **seulement si la valeur locale n'a pas changé** depuis la version vue au central ; sinon refusé « modifié dans l'officine », sans fusion | Désignation du produit (S5-D2) ; marges réglementées **[À VÉRIFIER]** |
+| Commandes en brouillon (`commande_fournisseur`, `ligne_commande`) | Statut `brouillon` existant | Créées en brouillon, envoyées au grossiste depuis l'officine seulement | Le central ne choisit pas les n° locaux : identifiant central (uuid) porté par l'ordre, lignes créées par l'officine |
+| Employés et droits (`utilisateur`, `role`, `role_permission`) | Remontent sans mot de passe | Même règle que les réglages | Jamais de mot de passe ni de code comptoir envoyé ; compte créé à distance activé dans l'officine ; titulaire et super admin jamais modifiables à distance |
+| Référentiels nationaux et nomenclature (18 tables descendantes, groupe 1 du § 16) | Scripts ou import local | Le central fait foi ; l'officine garde ses produits ; un changement de classe passe par l'état « à vérifier » existant | Volume : `nomenclature_produit` = 9 555 lignes ; un élément descendant est limité à 64 Kio : envoi découpé |
+
+### 23.2 Socle commun (S5.1)
+
+- Central : table des ordres (identifiant, officine, type, cible, version vue, données, auteur, créé le, expire le, statut
+  `en_attente` / `applique` / `refuse` / `expire`, motif) ; ordres publiés par la voie descendante (`desc-v1`).
+- Officine : ordres reçus rangés, appliqués par l'API locale **en C#** (mêmes cas d'usage et contrôles que les écrans) ; un ordre
+  aberrant est refusé et journalisé (§ 6.1, point 9) ; résultat remonté au central par une table montante ; trace des deux côtés
+  (qui, quand, valeur avant / après) ; alerte au titulaire.
+- Avant les écrans S7 : commandes d'administration du central avec `--auteur` obligatoire (D10).
+
+### 23.3 Décisions du titulaire (2026-11-18, recommandations acceptées)
+
+| N° | Sujet | Décision |
+|---|---|---|
+| S5-D1 | Délai d'expiration d'un ordre non appliqué | **7 jours**, puis « expiré » (tracé, visible au central) |
+| S5-D2 | Désignation du produit d'un ordre de prix | **Par officine** (n° local du produit) ; le prix « toutes les officines » par code national viendra avec S7 |
+| S5-D3 | Employés et droits | **Confirmation du titulaire** dans l'officine avant application ; exception : le **blocage** d'un employé s'applique tout de suite (protecteur) |
+| S5-D4 | Commande en brouillon reçue | Alerte au titulaire ; envoi au grossiste uniquement depuis l'officine |
+| S5-D5 | Nomenclature | Diffusée par le central en plusieurs morceaux ; l'import local par fichier reste possible |
+
+### 23.4 Découpage (rien n'est lancé)
+
+S5.1 socle des ordres → S5.2 prix → S5.3 référentiels et nomenclature → S5.4 commandes en brouillon → S5.5 employés et droits.
+Chaque lot sur « go » du titulaire, plan présenté avant tout code.

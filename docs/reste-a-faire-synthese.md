@@ -20,9 +20,6 @@ Rien. La lecture de la fréquence de copie de la GED par authentification Window
 
 - [ ] **Bases jetables orphelines** : `pharmacie_jetable_m4_2b2cf86a`, `pharmacie_jetable_m4_3b48212e`, `pharmacie_jetable_rejeu_e51efbd8` (suppression sur accord).
 - [ ] **Compte `postgres`** : fichier `pgpass.conf` (hors dépôt) pour essayer le script 111b et la méthode `SET ROLE` sur une copie.
-- [ ] **GED** : protection des documents (GED consultable ou non au central, sauvegarde chiffrée hors de l'officine après le lot 9,
-      rotation de deux disques pour une officine à un seul serveur, alerte « pas de sauvegarde ») :
-      [ged-protection-a-decider.md](ged-protection-a-decider.md).
 - [ ] **Écrans de vente** : seuils d'alerte des psychotropes, liste des DCI d'antibiotiques, format de l'export pour les impôts et taux de TVA.
 - [ ] **Majorations Chifa** : quels types en plus de « Garde ».
 - [ ] **Démo** : page de démonstration, démo interactive ou démonstration cloud.
@@ -49,7 +46,8 @@ Rien. La lecture de la fréquence de copie de la GED par authentification Window
 
 ## 7. Plus tard (sur accord explicite du titulaire)
 
-- [ ] **Synchronisation** : S5 (prix, commandes, employés envoyés par le central),
+- [ ] **GED, protection des sauvegardes** (décidé le 2026-11-18) : alerte « pas de sauvegarde sur disque externe depuis 7 jours » et rotation de deux disques obligatoire sans 2e serveur, à coder sur « go » ([ged-protection-a-decider.md](ged-protection-a-decider.md)).
+- [ ] **Synchronisation** : S5 analysé et décidé (conception § 23 : lots S5.1 à S5.5, sur « go S5.1 »),
       fin de S6 (restauration de la base d'une officine, bascule, départ), S7 (écrans du central, multi-officines).
 - [ ] Découpage par officine des grandes tables du central ; multi-officines après le choix de l'hébergeur.
 - [ ] Script 101b (suppression de `vente.num_facture_chifa`) : à exécuter à la mise à jour de l'officine, conflits tranchés.
