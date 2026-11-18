@@ -308,6 +308,7 @@ public static class DependencyInjection
         services.AddScoped<Synchronisation.ConsulterAttenteSync>();
         services.AddScoped<Synchronisation.SurveillerSynchronisation>();
         // Lots S5.1 et S5.5 : ordres envoyés par le serveur central
+        services.AddScoped<Synchronisation.IOrganismesCentraux, Synchronisation.OrganismesCentraux>();
         services.AddScoped<Synchronisation.ExecuterOrdreCentral>();
         services.AddScoped<Synchronisation.AppliquerOrdresCentraux>();
         services.AddScoped<Synchronisation.ConfirmerOrdreCentral>();

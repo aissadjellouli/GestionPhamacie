@@ -14,6 +14,8 @@ namespace Pharma.Cloud.Api.Ordres;
 ///   --ordre-employe-bloquer | --ordre-employe-debloquer --officine &lt;code&gt; --employe &lt;n°&gt; --auteur &lt;nom&gt;
 ///   --ordre-droits-role --officine &lt;code&gt; --role &lt;code&gt; --permissions &lt;a,b,c&gt; --auteur &lt;nom&gt;
 ///   --ordre-commande --officine &lt;code&gt; --grossiste &lt;n°&gt; --ligne &lt;produit&gt;:&lt;qté&gt;[:&lt;prix HT&gt;] … --auteur &lt;nom&gt;
+///   --ordre-classe-suivie --officine &lt;code&gt; --classe antibiotiques --fichier &lt;dci.txt : un nom par ligne&gt; --auteur &lt;nom&gt;
+///   --ordre-organismes --officine &lt;code&gt; --fichier &lt;organismes.json&gt; --auteur &lt;nom&gt;
 ///   --annuler-ordre &lt;id&gt; --officine &lt;code&gt; --auteur &lt;nom&gt;
 ///   --expirer-ordres                                                                  tâche planifiée (chaque heure)
 /// </summary>
@@ -22,7 +24,7 @@ public static class OrdresAdministration
     public static readonly string[] Commandes =
         ["--ordres", "--ordre-essai", "--ordre-employe-creer", "--ordre-employe-modifier", "--ordre-employe-bloquer", "--ordre-employe-debloquer",
          "--ordre-droits-role", "--ordre-prix", "--annuler-ordre", "--expirer-ordres", "--importer-nomenclature", "--publier-nomenclature",
-         "--ordre-commande"];
+         "--ordre-commande", "--ordre-classe-suivie", "--ordre-organismes"];
 
     public static bool Concerne(string commande) => Commandes.Contains(commande);
 
@@ -50,8 +52,36 @@ public static class OrdresAdministration
                     : new() { ["prix_public"] = Montant(O("--prix")), ["tarif_reference"] = Montant(O("--tarif")) }),
             // Lot S5.4 : --ordre-commande --officine <code> --grossiste <n°> --ligne <produit>:<qté>[:<prix HT>] (répétée) --auteur <nom>
             "--ordre-commande" => ("commande", Exiger("--grossiste"), new() { ["lignes"] = LignesCommande(args) }),
+            // Référentiels, lot 1 : liste complète des DCI d'une classe suivie, un nom par ligne (un nom peut contenir une virgule)
+            "--ordre-classe-suivie" => ("classe_suivie", Exiger("--classe"), new() { ["dci"] = NomsDci(Exiger("--fichier")) }),
+            // Référentiels, lot 2 : {"organismes":[{"code":"CNAS","nom":"…","centres":[{"code":"16","nom":"…"}]}]}
+            "--ordre-organismes" => ("organismes", null, new() { ["organismes"] = Organismes(Exiger("--fichier")) }),
             _ => null
         };
+    }
+
+    /// <summary>Noms de DCI d'un fichier texte : un par ligne, lignes vides et lignes commençant par # ignorées.</summary>
+    private static List<string> NomsDci(string fichier)
+    {
+        if (!File.Exists(fichier)) throw new ArgumentException($"Fichier introuvable : {fichier}");
+        var noms = File.ReadAllLines(fichier).Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToList();
+        return noms.Count > 0 ? noms : throw new ArgumentException("Le fichier ne contient aucun nom de DCI.");
+    }
+
+    /// <summary>Organismes d'un fichier JSON : objet {"organismes":[…]} ou tableau ; contrôles détaillés par cloud_creer_ordre.</summary>
+    private static JsonElement Organismes(string fichier)
+    {
+        if (!File.Exists(fichier)) throw new ArgumentException($"Fichier introuvable : {fichier}");
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(fichier));
+            var racine = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("organismes", out var o) ? o : doc.RootElement;
+            return racine.ValueKind == JsonValueKind.Array ? racine.Clone() : throw new ArgumentException("Liste d'organismes attendue (tableau JSON).");
+        }
+        catch (JsonException e)
+        {
+            throw new ArgumentException($"Fichier JSON illisible : {e.Message}");
+        }
     }
 
     /// <summary>Lignes d'un ordre de commande : chaque --ligne vaut produit:quantité ou produit:quantité:prix HT.</summary>

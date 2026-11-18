@@ -996,7 +996,7 @@ Option facultative. Le serveur central reçoit la copie des données des officin
 
 Règles : aucun secret dans un fichier du dépôt ni dans `appsettings*.json`. Tout passe par des variables d'environnement du compte de service. **Ne jamais copier le dossier `Synchronisation` d'un serveur d'officine à l'autre.**
 
-Les scripts de la base centrale sont dans `database\cloud\` (001 à 016). Ils ne se passent **jamais** sur la base d'une officine.
+Les scripts de la base centrale sont dans `database\cloud\` (001 à 017). Ils ne se passent **jamais** sur la base d'une officine.
 
 ### 1. Hébergement et prérequis
 
@@ -1006,7 +1006,7 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 016). Ils ne
 
 ### 2. Base centrale
 
-- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `016` **dans l'ordre**. **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
+- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `017` **dans l'ordre**. **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
   ```powershell
   .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
@@ -1074,7 +1074,7 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 016). Ils ne
 - [ ] **6.1** Chaque mois : `Pharma.Cloud.Api.exe --partitions` (partitions mensuelles des lots reçus). **Où** : serveur central. **Compte** : compte de service. Planificateur de tâches.
 - [ ] **6.3** Toutes les 15 minutes : `Pharma.Cloud.Api.exe --verifier-integrite` (vérification d'intégrité des données reçues, lot S4 ; résultat renvoyé à chaque officine, anomalies : `--anomalies-integrite`). **Où** : serveur central. **Compte** : compte de service (variable `PHARMA_CLOUD_ADMIN_CONNEXION`, propriétaire de la base). Planificateur de tâches.
 - [ ] **6.4** Chaque semaine : `Pharma.Cloud.Api.exe --verifier-integrite --complete` (depuis le rang 1 : retrouve aussi une ligne modifiée directement dans la base centrale). Même compte.
-- [ ] **6.5** Chaque heure : `Pharma.Cloud.Api.exe --expirer-ordres` (ordres envoyés aux officines non traités dans les 7 jours : « expiré », republiés ; lots S5.1 et S5.5). Même compte. Ordres : `--ordres`, `--ordre-essai`, `--ordre-employe-creer`, `--ordre-employe-modifier`, `--ordre-employe-bloquer`, `--ordre-employe-debloquer`, `--ordre-droits-role`, `--ordre-prix` (lot S5.2), `--importer-nomenclature` puis `--publier-nomenclature` (lot S5.3), `--ordre-commande` (lot S5.4), `--annuler-ordre` (auteur obligatoire).
+- [ ] **6.5** Chaque heure : `Pharma.Cloud.Api.exe --expirer-ordres` (ordres envoyés aux officines non traités dans les 7 jours : « expiré », republiés ; lots S5.1 et S5.5). Même compte. Ordres : `--ordres`, `--ordre-essai`, `--ordre-employe-creer`, `--ordre-employe-modifier`, `--ordre-employe-bloquer`, `--ordre-employe-debloquer`, `--ordre-droits-role`, `--ordre-prix` (lot S5.2), `--importer-nomenclature` puis `--publier-nomenclature` (lot S5.3), `--ordre-commande` (lot S5.4), `--ordre-classe-suivie` et `--ordre-organismes` (référentiels), `--annuler-ordre` (auteur obligatoire).
 - [ ] **6.2** Chaque jour (facultatif) : `Pharma.Cloud.Api.exe --purger-lots`. **Sans effet** tant que l'effacement des lots trop anciens n'est pas activé (défaut). Voir les réglages (étape 7.3).
 
 ### 7. Réglages du serveur central (titulaire et technicien)
@@ -1204,7 +1204,7 @@ Le serveur central peut proposer ou imposer aux officines la valeur de 11 régla
 ### 10. Mise à jour du serveur central
 
 - [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `016`, **dans cet ordre**, avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `017`, **dans cet ordre**, avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
 - [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
 - [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 

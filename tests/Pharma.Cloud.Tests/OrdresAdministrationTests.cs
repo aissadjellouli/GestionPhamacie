@@ -44,4 +44,32 @@ public class OrdresAdministrationTests
         Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-commande", "--grossiste", "4", "--ligne", "42"]));
         Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-commande", "--ligne", "42:1"]));
     }
+
+    [Fact]
+    public void Ordres_de_referentiels_lisent_leur_fichier()
+    {
+        var dossier = Directory.CreateTempSubdirectory("ordres-ref-");
+        try
+        {
+            var dci = Path.Combine(dossier.FullName, "dci.txt");
+            File.WriteAllLines(dci, ["# antibiotiques", "AMOXICILLINE", "", "  ACIDE CLAVULANIQUE, AMOXICILLINE  "]);
+            var c = OrdresAdministration.Creation(["--ordre-classe-suivie", "--classe", "antibiotiques", "--fichier", dci])!.Value;
+            Assert.Equal(("classe_suivie", "antibiotiques"), (c.Type, c.Cible));
+            Assert.Equal(["AMOXICILLINE", "ACIDE CLAVULANIQUE, AMOXICILLINE"], (List<string>)c.Donnees["dci"]!);
+
+            var org = Path.Combine(dossier.FullName, "organismes.json");
+            File.WriteAllText(org, """{"organismes":[{"code":"CNAS","nom":"Caisse"}]}""");
+            var o = OrdresAdministration.Creation(["--ordre-organismes", "--fichier", org])!.Value;
+            Assert.Equal(("organismes", (string?)null), (o.Type, o.Cible));
+            Assert.Equal(1, ((System.Text.Json.JsonElement)o.Donnees["organismes"]!).GetArrayLength());
+
+            File.WriteAllText(org, "{ pas du json");
+            Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-organismes", "--fichier", org]));
+            Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-classe-suivie", "--classe", "antibiotiques", "--fichier", Path.Combine(dossier.FullName, "absent.txt")]));
+        }
+        finally
+        {
+            dossier.Delete(true);
+        }
+    }
 }

@@ -44,8 +44,16 @@ internal sealed class FacturesEnMemoire : IFactures
     public Task HorsSuiviAsync(long id, bool h, string? m, CancellationToken ct = default) { Suivi = (id, h, m); return Task.CompletedTask; }
     public Task<IReadOnlyList<ClientFacture>> ClientsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ClientFacture>>([]);
     public Task<long> EnregistrerClientAsync(ClientFacture c, CancellationToken ct = default) => Task.FromResult(1L);
-    public Task<IReadOnlyList<OrganismeFiche>> OrganismesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<OrganismeFiche>>([]);
-    public Task<long> EnregistrerOrganismeAsync(OrganismeFiche o, CancellationToken ct = default) => Task.FromResult(1L);
+    /// <summary>Organismes enregistrés (aucun par défaut) ; l'enregistrement crée (id null) ou remplace.</summary>
+    public List<OrganismeFiche> Organismes { get; } = [];
+    public Task<IReadOnlyList<OrganismeFiche>> OrganismesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<OrganismeFiche>>(Organismes.ToList());
+    public Task<long> EnregistrerOrganismeAsync(OrganismeFiche o, CancellationToken ct = default)
+    {
+        var id = o.Id ?? (Organismes.Count == 0 ? 1 : Organismes.Max(x => x.Id!.Value) + 1);
+        Organismes.RemoveAll(x => x.Id == id);
+        Organismes.Add(o with { Id = id });
+        return Task.FromResult(id);
+    }
 }
 
 public class FacturesTests

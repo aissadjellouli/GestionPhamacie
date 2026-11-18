@@ -46,6 +46,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{
 		docs\analyse-ecarts.md = docs\analyse-ecarts.md
 		docs\conception-synchronisation.md = docs\conception-synchronisation.md
 		docs\synchronisation-inventaire.md = docs\synchronisation-inventaire.md
+		docs\Gestion-des-grossistes-PharmaOfficine-V11.md = docs\Gestion-des-grossistes-PharmaOfficine-V11.md
+		docs\autres-plateformes-fonctionnalites.md = docs\autres-plateformes-fonctionnalites.md
+		docs\chiffrement-data.md = docs\chiffrement-data.md
+		docs\idees-pharma.md = docs\idees-pharma.md
+		docs\opportunites-logiciels-algerie.md = docs\opportunites-logiciels-algerie.md
+		docs\pharma-officine-differenciation.md = docs\pharma-officine-differenciation.md
+		docs\pharma-officine-differenciationV2.md = docs\pharma-officine-differenciationV2.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "adr", "adr", "{35D7AF71-198B-4464-B00C-B4E49C87A256}"
@@ -347,6 +354,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\014_ordre_prix_produit.sql = database\cloud\014_ordre_prix_produit.sql
 		database\cloud\015_nomenclature_vers_officines.sql = database\cloud\015_nomenclature_vers_officines.sql
 		database\cloud\016_commande_brouillon_vers_officines.sql = database\cloud\016_commande_brouillon_vers_officines.sql
+		database\cloud\017_referentiels_vers_officines.sql = database\cloud\017_referentiels_vers_officines.sql
 		database\cloud\tests\001_base_centrale_tests.sql = database\cloud\tests\001_base_centrale_tests.sql
 		database\cloud\tests\003_chargement_complet_officine_tests.sql = database\cloud\tests\003_chargement_complet_officine_tests.sql
 		database\cloud\tests\004_reglage_familles_envoyees_tests.sql = database\cloud\tests\004_reglage_familles_envoyees_tests.sql
@@ -362,6 +370,26 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\tests\014_ordre_prix_produit_tests.sql = database\cloud\tests\014_ordre_prix_produit_tests.sql
 		database\cloud\tests\015_nomenclature_vers_officines_tests.sql = database\cloud\tests\015_nomenclature_vers_officines_tests.sql
 		database\cloud\tests\016_commande_brouillon_vers_officines_tests.sql = database\cloud\tests\016_commande_brouillon_vers_officines_tests.sql
+		database\cloud\tests\017_referentiels_vers_officines_tests.sql = database\cloud\tests\017_referentiels_vers_officines_tests.sql
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EXEMPLE", "EXEMPLE", "{E8EB9343-E715-4099-B51F-8BC7A9D6B1A3}"
+	ProjectSection(SolutionItems) = preProject
+		docs\EXEMPLE\WhatsApp Image 2025-11-27 at 12.41.09.jpeg = docs\EXEMPLE\WhatsApp Image 2025-11-27 at 12.41.09.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.14.09.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.14.09.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09 V11.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09 V11.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.09.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.10.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 20.25.10.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.11.07.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.11.07.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.10.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.10.jpeg
+		docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.16.jpeg = docs\EXEMPLE\WhatsApp Image 2026-11-10 at 21.23.16.jpeg
+		docs\EXEMPLE\chifa+.png = docs\EXEMPLE\chifa+.png
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "aid", "aid", "{5C34D9A9-5CA5-437D-A8B9-360F0CA99753}"
+	ProjectSection(SolutionItems) = preProject
+		docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58 V11.jpeg = docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58 V11.jpeg
+		docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58.jpeg = docs\EXEMPLE\aid\WhatsApp Image 2026-11-11 at 16.21.58.jpeg
 	EndProjectSection
 EndProject
 Global
@@ -523,6 +551,8 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{E8EB9343-E715-4099-B51F-8BC7A9D6B1A3} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
+		{5C34D9A9-5CA5-437D-A8B9-360F0CA99753} = {E8EB9343-E715-4099-B51F-8BC7A9D6B1A3}
 		{A8314956-6467-45DE-90F5-6E180390EA5B} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{37188A88-124B-4C94-9543-9F8284DA8D73} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{FB519F12-139E-4EE0-AD20-830F3AC0D3F9} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}

@@ -30,11 +30,41 @@ public class OrdresCentrauxTests
         }
     }
 
+    /// <summary>Référentiels, lot 2 : changements prévus (ou erreur), titulaires qui ont appliqué.</summary>
+    private sealed class OrganismesFactices : IOrganismesCentraux
+    {
+        public ChangementsOrganismes Changements { get; set; } = new(["MDN"], ["CNAS"], 2, 0);
+        public Exception? Erreur { get; set; }
+        public readonly List<long> Appliques = [];
+        public Task<ChangementsOrganismes> CalculerAsync(System.Text.Json.JsonElement d, CancellationToken ct = default) =>
+            Erreur is null ? Task.FromResult(Changements) : Task.FromException<ChangementsOrganismes>(Erreur);
+        public Task<ChangementsOrganismes> AppliquerAsync(System.Text.Json.JsonElement d, long titulaireId, CancellationToken ct = default)
+        {
+            Appliques.Add(titulaireId);
+            return Task.FromResult(Changements);
+        }
+    }
+
     private sealed class Depot : IOrdresCentrauxDepot
     {
         public NomenclatureEnMemoire Nomenclature { get; } = new();
         public ReferentielsFactices Referentiels { get; } = new();
         public AchatsEnMemoire Achats { get; } = new();
+        public OrganismesFactices Organismes { get; } = new();
+        /// <summary>Référentiels, lot 1 : DCI connues de l'officine et classe « antibiotiques » (Paracétamol s'y trouve à tort).</summary>
+        public readonly List<string> Dci = ["Amoxicilline", "Azithromycine", "Doxycycline", "Paracétamol"];
+        public readonly List<string> Antibiotiques = ["Amoxicilline", "Paracétamol"];
+        public long? ClasseModifieePar;
+        public Task<ChangementsClasseSuivie> ClasseSuivieAsync(string classe, IReadOnlyList<string> noms, bool appliquer, long? par, string auteurCentral,
+            Guid ordre, CancellationToken ct = default)
+        {
+            if (classe != "antibiotiques") return Task.FromResult(new ChangementsClasseSuivie(false, [], [], [], 0));
+            var voulues = Dci.Where(d => noms.Any(n => string.Equals(n, d, StringComparison.OrdinalIgnoreCase))).ToList();
+            var c = new ChangementsClasseSuivie(true, voulues.Except(Antibiotiques).ToList(), Antibiotiques.Except(voulues).ToList(),
+                noms.Where(n => !Dci.Any(d => string.Equals(n, d, StringComparison.OrdinalIgnoreCase))).ToList(), voulues.Count);
+            if (appliquer) { Antibiotiques.Clear(); Antibiotiques.AddRange(voulues); ClasseModifieePar = par; }
+            return Task.FromResult(c);
+        }
         public readonly List<(long Grossiste, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> Lignes, string Auteur, Guid Ordre)> Commandes = [];
         public Task<string> CreerCommandeAsync(long fournisseurId, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> lignes, string auteurCentral,
             Guid ordre, CancellationToken ct = default)
@@ -96,7 +126,7 @@ public class OrdresCentrauxTests
         var executer = new ExecuterOrdreCentral(admin, new CreerUtilisateur(admin, new HacheurFactice(), journal, droits),
             new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot,
             new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), depot.Nomenclature, droits, journal), depot.Referentiels,
-            depot.Achats);
+            depot.Achats, depot.Organismes);
         var horloge = new Horloge(Maintenant);
         return (depot, admin, alertes, journal, new AppliquerOrdresCentraux(depot, executer, horloge, alertes),
             new ConfirmerOrdreCentral(depot, executer, droits, horloge), new RefuserOrdreCentral(depot, droits));
@@ -465,5 +495,78 @@ public class OrdresCentrauxTests
         var texte = ResumeOrdre.Texte(o, new EtatDroits([], [], []));
         Assert.Equal("Bon en brouillon chez Grossiste 1 : 4 ligne(s) (Doliprane × 5, Augmentin × 2, Smecta × 1, …). Envoyé au grossiste depuis l’officine seulement.", texte);
         Assert.False(TypesOrdre.ConfirmationRequise(TypesOrdre.Commande));
+    }
+
+    // ---- Référentiels : liste d'une classe suivie (lot 1), organismes et centres payeurs (lot 2) ----
+
+    private static OrdreRecu Classe(string classe, params string[] dci) =>
+        Ordre(TypesOrdre.ClasseSuivie, classe, "{}", System.Text.Json.JsonSerializer.Serialize(new { dci }));
+
+    [Fact]
+    public async Task Classe_suivie_attend_le_titulaire_avec_l_apercu_puis_remplace_la_liste()
+    {
+        var m = Monter();
+        var o = Classe("antibiotiques", "amoxicilline", "Azithromycine", "Inconnuemycine");
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        Assert.Equal("1 ajout(s) (Azithromycine), 1 retrait(s) (Paracétamol), 1 DCI absente(s) de l’officine, ignorée(s) (Inconnuemycine).",
+            m.Depot.Ordres.Single().Motif);
+        Assert.Equal(["Amoxicilline", "Paracétamol"], m.Depot.Antibiotiques);              // rien n'est changé avant la confirmation
+        await m.Confirmer.ExecuterAsync(o.Id, null, 1);
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+        Assert.Equal(["Amoxicilline", "Azithromycine"], m.Depot.Antibiotiques);
+        Assert.Equal(1, m.Depot.ClasseModifieePar);
+    }
+
+    [Fact]
+    public async Task Classe_suivie_inconnue_ou_sans_aucune_dci_reconnue_refusee_sans_rien_changer()
+    {
+        var m = Monter();
+        var vide = Classe("antibiotiques", "Inconnuemycine");
+        var inconnue = Classe("antifongiques", "Amoxicilline");
+        m.Depot.Ordres.AddRange([vide, inconnue]);
+        await m.Auto.ExecuterAsync();
+        var e = await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(vide.Id, null, 1));
+        Assert.Contains("Aucune DCI de la liste", e.Message);
+        e = await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(inconnue.Id, null, 1));
+        Assert.Contains("inconnue dans l’officine", e.Message);
+        Assert.All(m.Depot.Ordres, x => Assert.Equal(StatutsOrdre.Refuse, x.Statut));
+        Assert.Equal(["Amoxicilline", "Paracétamol"], m.Depot.Antibiotiques);
+        Assert.Null(m.Depot.ClasseModifieePar);
+    }
+
+    [Fact]
+    public async Task Organismes_apercu_puis_application_au_nom_du_titulaire_ou_refus_des_l_arrivee()
+    {
+        var m = Monter();
+        var o = Ordre(TypesOrdre.Organismes, null, "{}", """{"organismes":[{"code":"CNAS","nom":"Caisse"},{"code":"MDN","nom":"Défense"}]}""");
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        Assert.Equal("organisme(s) ajouté(s) : MDN ; corrigé(s) : CNAS ; 2 centre(s) payeur(s) ajouté(s).", m.Depot.Ordres.Single().Motif);
+        Assert.Empty(m.Depot.Organismes.Appliques);
+        await m.Confirmer.ExecuterAsync(o.Id, null, 1);
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+        Assert.Equal([1L], m.Depot.Organismes.Appliques);
+
+        var invalide = Ordre(TypesOrdre.Organismes, null, "{}", """{"organismes":[{"code":"CNAS","nom":"Caisse","telephone":"abc"}]}""");
+        m.Depot.Ordres.Add(invalide);
+        m.Depot.Organismes.Erreur = new OrdreInapplicableException("Organismes refusés, rien n’a été changé : Numéro de téléphone invalide.");
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(invalide.Id));
+        Assert.Single(m.Depot.Organismes.Appliques);
+    }
+
+    [Fact]
+    public void Referentiels_resumes_lisibles_et_confirmation_requise()
+    {
+        var etat = new EtatDroits([], [], []);
+        Assert.Equal("Liste « antibiotiques » envoyée (2 DCI) : elle remplace la liste suivie de l’officine. Ajouts et retraits sous cette ligne.",
+            ResumeOrdre.Texte(Classe("antibiotiques", "A", "B"), etat));
+        Assert.Equal("2 organisme(s) (CNAS, MDN), 1 centre(s) payeur(s) : ajouts et corrections seulement, rien n’est supprimé ni désactivé.",
+            ResumeOrdre.Texte(Ordre(TypesOrdre.Organismes, null, "{}", """{"organismes":[{"code":"CNAS","nom":"C","centres":[{"code":"16","nom":"Alger"}]},{"code":"MDN","nom":"D"}]}"""), etat));
+        Assert.True(TypesOrdre.ConfirmationRequise(TypesOrdre.ClasseSuivie));
+        Assert.True(TypesOrdre.ConfirmationRequise(TypesOrdre.Organismes));
     }
 }

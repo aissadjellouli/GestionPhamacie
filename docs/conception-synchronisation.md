@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)** ; **lot S5.3 réalisé le 2026-11-18 (§ 26 : nomenclature nationale envoyée par le central)** ; **lot S5.4 réalisé le 2026-11-18 (§ 27 : commandes en brouillon envoyées par le central)**
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)** ; **lot S5.3 réalisé le 2026-11-18 (§ 26 : nomenclature nationale envoyée par le central)** ; **lot S5.4 réalisé le 2026-11-18 (§ 27 : commandes en brouillon envoyées par le central)** ; **référentiels (antibiotiques suivis, organismes et centres payeurs) réalisés le 2026-11-18 (§ 28)**
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -190,7 +190,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S2 | API cloud minimale (réception, idempotence, ordre, accusés), base centrale cloisonnée, authentification par certificat | S0, S1 |
 | S3 | Service de sync local (envoi, reprise, bandeau, écran d'état, alertes) | S1, S2 |
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
-| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26) ; S5.4 (commandes en brouillon) réalisé le 2026-11-18 (§ 27)** | S3 |
+| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26) ; S5.4 (commandes en brouillon) réalisé le 2026-11-18 (§ 27) ; référentiels : antibiotiques suivis, organismes et centres payeurs réalisés le 2026-11-18 (§ 28)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
 | S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
@@ -1354,7 +1354,9 @@ empreinte SHA-256 vérifiée ; S5.3-D4 l'import manuel reste possible ; S5.3-D5 
   2 679 retraits, 9 555 lignes) ; deux téléchargements tracés au central ; résultats remontés (appliqué, appliqué). Écran « Ordres
   du central » mesuré à 1 536 × 890 sans défilement, captures en clair et sombre.
 - **Point relevé** (outil d'essai) : `essai_cloud_officine.ps1 -Arreter` a annoncé deux fois « n'a pas pu être arrêté » alors que
-  le processus s'arrêtait un peu plus tard ; relancé, il a tout supprimé. À rendre plus patient **[À DÉCIDER]**.
+  le processus s'arrêtait un peu plus tard ; relancé, il a tout supprimé. **Corrigé le 2026-11-18** (« ok arrêt essai ») : attente jusqu'à 60 s au lieu de 15 s, second
+  arrêt forcé (avec les processus enfants) à mi-parcours, pour `-Arreter` et `-ArreterCentral` ; essai démarrer puis arrêter : un seul
+  passage, tout supprimé en 3 s.
 
 ## 27. Lot S5.4 : réalisé (2026-11-18, « go S5.4 ») — commandes en brouillon envoyées par le central
 
@@ -1382,4 +1384,43 @@ l'usage]** ; S5.4-D6 prix facultatif : à défaut, le dernier prix d'achat (mêm
   « Rien n'a été créé : … bloqué à l'achat », aucun bon. Produit inconnu refusé dès le central. C-000220 émis depuis l'officine (PDF,
   « envoyée ») ; un produit ajouté ensuite depuis l'écran a ouvert un nouveau brouillon (C-000221), pas le bon du central. Résultats
   remontés au central (appliqué, appliqué, refusé avec motif). Écran « Bons de commande » mesuré à 1 536 × 890 sans défilement de
-  la page, captures en clair et sombre. Arrêt de l'outil d'essai : même défaut qu'en S5.3 (deux annonces d'échec avant succès).
+  la page, captures en clair et sombre. Arrêt de l'outil d'essai : même défaut qu'en S5.3 (deux annonces d'échec avant succès). Corrigé ensuite (voir § 26).
+
+## 28. Référentiels envoyés par le central : lots 1 et 2 réalisés (2026-11-18, « go référentiels ») — antibiotiques suivis, organismes et centres payeurs
+
+**Analyse des 15 tables « descendantes » restantes** (hors nomenclature, § 26, et réglages) et décisions (recommandations acceptées) :
+
+| Groupe | Tables | Décision |
+|---|---|---|
+| A. Listes fixes livrées par nos scripts | `wilaya`, `categorie_produit`, `substance_surveillee`, `parametre_gs1_ai`, `classe_suivie` | R-D1 : **pas d'envoi par le central** ; les scripts de mise à jour suffisent (à revoir si un changement doit arriver entre deux versions) |
+| B. Listes nationales que l'officine complète | `classe_suivie_dci`, `organisme`, `centre_payeur`, `type_prestation`, `indication`, `dci` | R-D2 / R-D3 : un lot par table, lignes désignées par leur clé naturelle (nom, sigle, code), jamais par le n° local, confirmation du titulaire avec l'aperçu des changements. **Faits : `classe_suivie_dci` (lot 1), `organisme` + `centre_payeur` (lot 2).** Restent `type_prestation`, `indication`, `dci`. |
+| C. Liens vers les produits de l'officine | `chifa_code_produit`, `produit_indication` | R-D4 : à reclasser « jamais envoyées » ou « montantes » (données propres à l'officine) **[À DÉCIDER]** |
+| D. À clarifier | `laboratoire` (vide, rien ne l'écrit), `zone_psychotrope_wilaya` (réglée par l'officine) | R-D5 **[À VÉRIFIER]** |
+
+Correction de l'analyse : `classe_suivie_dci` est la liste des **antibiotiques suivis** (rapport des quantités délivrées), amorcée
+par le script 117 sur des morceaux de noms de DCI **[À VÉRIFIER : nomenclature]**, pas une liste de psychotropes (ceux-ci passent
+par `substance_surveillee`).
+
+- **Central** (script `017`) : types d'ordre `classe_suivie` (cible = code de la classe, données = liste COMPLÈTE des noms de DCI,
+  1 à 2 000, nettoyés, doublons retirés sans tenir compte de la casse) et `organismes` (1 à 50 organismes par sigle, mis en
+  majuscules ; nom, coordonnées et délai de paiement facultatifs ; centres payeurs seulement pour la CNAS et la CASNOS, par code) ;
+  taille d'un ordre limitée à 60 000 octets (élément descendant de 64 Kio au plus). Commandes
+  `--ordre-classe-suivie --officine <code> --classe antibiotiques --fichier <dci.txt> --auteur <nom>` (un nom par ligne : un nom de
+  DCI peut contenir une virgule) et `--ordre-organismes --officine <code> --fichier <organismes.json> --auteur <nom>`.
+- **Officine** (aucun nouveau script) : les deux types attendent la confirmation du titulaire ; à l'arrivée, l'**aperçu des
+  changements** est calculé et affiché sous le résumé (tableau et fenêtre de confirmation) ; une donnée invalide refuse l'ordre dès
+  l'arrivée.
+  - Antibiotiques : noms comparés sans tenir compte de la casse à la table des DCI de l'officine ; ajouts et retraits en une
+    transaction sous verrou de la classe, journal `classe_suivie_mise_a_jour` (listes des ajouts et retraits) ; noms absents de
+    l'officine ignorés et listés ; classe inconnue ou **aucun nom reconnu → refus** (garde-fou : la classe ne se vide jamais).
+  - Organismes et centres : **ajouts et corrections seulement**, rien n'est supprimé ni désactivé, l'état actif d'une ligne
+    existante n'est jamais changé ; une valeur absente de l'ordre garde celle de l'officine ; écrits par les cas d'usage des écrans
+    (`Facturation.EnregistrerOrganismeAsync`, `CentresPayeurs.EnregistrerAsync` : mêmes contrôles, journaux `organisme_cree` /
+    `organisme_modifie` / `centre_payeur_cree` / `centre_payeur_modifie`) ; tous les contrôles sont faits avant la première écriture
+    (pas de transaction unique sur l'ensemble **[À VÉRIFIER]** : une erreur de base au milieu laisserait une partie appliquée).
+- **Essai de bout en bout** (2026-11-18, `scripts\dev\essai_cloud_officine.ps1`, HTTPS, bases jetables supprimées ensuite) : liste de
+  213 DCI (les 214 de l'officine moins deux associations trétinoïne + érythromycine, plus la daptomycine et un nom inconnu) →
+  aperçu « 1 ajout, 2 retraits, 1 DCI absente, ignorée », confirmé depuis l'écran, appliqué ; organismes (CNAS : délai 45 jours et
+  deux centres ; DGSN nouveau) → aperçu « ajouté : DGSN ; corrigé : CNAS ; 2 centres ajoutés », confirmé, appliqué, CASNOS et MDN
+  inchangés ; journaux au nom du titulaire ; résultats remontés au central (appliqué, appliqué). Écran « Ordres du central » avec la
+  fenêtre de confirmation : sans défilement, captures en clair et sombre. Arrêt de l'outil d'essai : un seul passage, 3 s.

@@ -231,6 +231,7 @@ public static class Libelles
         "ordre_central_annule" => "Ordre du serveur central annulé",
         "nomenclature_deja_a_jour" => "Nomenclature déjà à jour",
         "commande_preparee_central" => "Commande préparée par le serveur central",
+        "classe_suivie_mise_a_jour" => "Liste suivie mise à jour par le serveur central",
         "facture_rejet_leve" => "Rejet de facture levé",
         "seuils_alerte" => "Seuils d’alerte",
         "pharmacie_modifiee" => "Identité de la pharmacie",
@@ -453,6 +454,8 @@ public static class Libelles
                 "patient_cree" => $"{T("patient")} · plafond de crédit {Dinars(N("plafond_credit"), 2)}",
                 "commande_emise" => $"Bon {T("numero")} · {Dinars(N("montant_ht"), 2)} HT",
                 "commande_annulee" => $"Bon {T("numero")}",
+                "classe_suivie_mise_a_jour" => $"{T("classe")} : {(d.TryGetProperty("ajouts", out var aj) ? aj.GetArrayLength() : 0)} ajout(s), "
+                    + $"{(d.TryGetProperty("retraits", out var rt) ? rt.GetArrayLength() : 0)} retrait(s) · envoyé par {T("auteur_central")}",
                 "commande_preparee_central" => $"Bon {T("numero")} en brouillon · {T("lignes")} ligne(s) · {Dinars(N("montant_ht"), 2)} HT · envoyé par {T("auteur_central")}",
                 "reception" => $"BL {T("bl")} · {T("lots")} lot(s) · {Dinars(N("montant_ttc"), 2)} TTC",
                 "retour_prepare" => $"{MotifRetour(T("motif"))} · {T("boites")} boîte(s) · avoir attendu {Dinars(N("montant_attendu"), 2)}",
@@ -525,6 +528,8 @@ public static class Libelles
         "prix_produit" => "Prix d’un produit",
         "nomenclature" => "Nomenclature nationale",
         "commande" => "Commande en brouillon",
+        "classe_suivie" => "Liste d’une classe suivie",
+        "organismes" => "Organismes et centres payeurs",
         _ => type
     };
 

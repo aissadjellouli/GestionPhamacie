@@ -41,7 +41,8 @@ internal sealed class VentesChifaEnMemoire : IVentesChifa
 internal sealed class CentresEnMemoire : ICentresPayeurs
 {
     public List<CentrePayeur> Centres { get; } = [new(3, 1, "CNAS", "1600", "Centre A", true), new(4, 2, "CASNOS", "16", "Centre B", true), new(5, 1, "CNAS", "1601", "Ancien", false)];
-    public Task<Page<CentrePayeur>> ListerAsync(long? o, bool? a, string? q, DemandePage page, CancellationToken ct = default) => Task.FromResult(PageEnMemoire.Paginer(Centres, page));
+    public Task<Page<CentrePayeur>> ListerAsync(long? o, bool? a, string? q, DemandePage page, CancellationToken ct = default) =>
+        Task.FromResult(PageEnMemoire.Paginer(Centres.Where(c => o is null || c.OrganismeId == o).ToList(), page));
     public Task<CentrePayeur?> LireAsync(long id, CancellationToken ct = default) => Task.FromResult(Centres.FirstOrDefault(c => c.Id == id));
     public Task<string?> CodeOrganismeAsync(long id, CancellationToken ct = default) => Task.FromResult<string?>(id switch { 1 => "CNAS", 2 => "CASNOS", 9 => "MDN", _ => null });
     public Task<long> EnregistrerAsync(long? id, long o, string code, string nom, bool actif, CancellationToken ct = default)

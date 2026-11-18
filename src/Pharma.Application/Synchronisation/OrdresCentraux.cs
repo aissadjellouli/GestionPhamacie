@@ -28,11 +28,16 @@ public static class TypesOrdre
     public const string Nomenclature = "nomenclature";
     /// <summary>Lot S5.4 : commande préparée au central, créée en brouillon (envoi au grossiste depuis l'officine seulement).</summary>
     public const string Commande = "commande";
+    /// <summary>Référentiels, lot 1 : liste complète des DCI d'une classe suivie (antibiotiques), désignées par leur nom.</summary>
+    public const string ClasseSuivie = "classe_suivie";
+    /// <summary>Référentiels, lot 2 : organismes payeurs et centres payeurs (ajouts et corrections seulement).</summary>
+    public const string Organismes = "organismes";
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
-        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande };
+        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande, ClasseSuivie, Organismes };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
-    public static bool ConfirmationRequise(string type) => type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole or Nomenclature;
+    public static bool ConfirmationRequise(string type) =>
+        type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole or Nomenclature or ClasseSuivie or Organismes;
 
     public static string Libelle(string type) => type switch
     {
@@ -45,6 +50,8 @@ public static class TypesOrdre
         PrixProduit => "Prix d’un produit",
         Nomenclature => "Nomenclature nationale",
         Commande => "Commande en brouillon",
+        ClasseSuivie => "Liste d’une classe suivie",
+        Organismes => "Organismes et centres payeurs",
         _ => type
     };
 }
@@ -89,6 +96,24 @@ public interface IOrdresCentrauxDepot
     /// </summary>
     Task<string> CreerCommandeAsync(long fournisseurId, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> lignes, string auteurCentral,
         Guid ordre, CancellationToken ct = default);
+    /// <summary>
+    /// Référentiels, lot 1 : compare la liste reçue (noms de DCI, sans tenir compte de la casse) à la classe suivie de l'officine ; avec
+    /// <paramref name="appliquer"/>, ajoute et retire en une transaction (sous verrou de la classe) et écrit le journal
+    /// « classe_suivie_mise_a_jour » au nom de <paramref name="par"/>. Les noms absents de la table des DCI sont ignorés et listés.
+    /// </summary>
+    Task<ChangementsClasseSuivie> ClasseSuivieAsync(string classe, IReadOnlyList<string> noms, bool appliquer, long? par, string auteurCentral,
+        Guid ordre, CancellationToken ct = default);
+}
+
+/// <summary>Changements d'une classe suivie : DCI ajoutées, retirées, noms inconnus de l'officine, nombre de noms reconnus.</summary>
+public sealed record ChangementsClasseSuivie(bool ClasseConnue, IReadOnlyList<string> Ajouts, IReadOnlyList<string> Retraits,
+    IReadOnlyList<string> Inconnues, int Reconnues)
+{
+    private static string Liste(IReadOnlyList<string> n) => n.Count == 0 ? "" : $" ({string.Join(", ", n.Take(5))}{(n.Count > 5 ? ", …" : "")})";
+
+    public string Texte() => !ClasseConnue ? "Classe suivie inconnue dans l’officine."
+        : $"{Ajouts.Count} ajout(s){Liste(Ajouts)}, {Retraits.Count} retrait(s){Liste(Retraits)}"
+          + (Inconnues.Count > 0 ? $", {Inconnues.Count} DCI absente(s) de l’officine, ignorée(s){Liste(Inconnues)}" : "") + ".";
 }
 
 /// <summary>L'ordre ne peut pas être appliqué tel quel (valeur changée dans l'officine, cible interdite ou introuvable) : refus définitif.</summary>
@@ -97,7 +122,7 @@ public sealed class OrdreInapplicableException(string message) : Exception(messa
 /// <summary>Application d'un ordre par les cas d'usage existants ; <paramref name="titulaireId"/> : titulaire qui confirme (null : automatique).</summary>
 public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole,
     Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot, Catalogue.ImporterNomenclature nomenclature,
-    ITelechargementReferentiel referentiels, Achats.IAchats achats)
+    ITelechargementReferentiel referentiels, Achats.IAchats achats, IOrganismesCentraux organismes)
 {
     /// <summary>Lignes au plus dans un ordre de commande (décision S5.4-D5).</summary>
     public const int LignesCommandeMax = 200;
@@ -215,6 +240,19 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
             case TypesOrdre.Commande:
                 await CreerCommandeAsync(o, d, ct);
                 return;
+            case TypesOrdre.ClasseSuivie:
+            {
+                var noms = NomsDci(d);
+                var prevu = await depot.ClasseSuivieAsync(o.Cible ?? "", noms, false, null, o.Auteur, o.Id, ct);
+                if (!prevu.ClasseConnue) throw new OrdreInapplicableException($"Classe suivie « {o.Cible} » inconnue dans l’officine.");
+                // Garde-fou : une liste dont aucun nom n'est reconnu viderait la classe
+                if (prevu.Reconnues == 0) throw new OrdreInapplicableException("Aucune DCI de la liste n’existe dans l’officine : rien n’est changé.");
+                await depot.ClasseSuivieAsync(o.Cible!, noms, true, titulaireId, o.Auteur, o.Id, ct);
+                return;
+            }
+            case TypesOrdre.Organismes:
+                await organismes.AppliquerAsync(d, titulaireId!.Value, ct);
+                return;
             case TypesOrdre.DroitsRole:
             {
                 var role = Role(etat, o.Cible);
@@ -230,6 +268,24 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                 throw new OrdreInapplicableException($"Type d’ordre non pris en charge : {o.Type}.");
         }
     }
+
+    /// <summary>Aperçu des changements d'un ordre à confirmer (référentiels), montré au titulaire avant sa décision ; null : sans objet.</summary>
+    public async Task<string?> ApercuAsync(OrdreRecu o, CancellationToken ct = default)
+    {
+        using var donnees = JsonDocument.Parse(o.DonneesJson);
+        var d = donnees.RootElement;
+        return o.Type switch
+        {
+            TypesOrdre.ClasseSuivie => (await depot.ClasseSuivieAsync(o.Cible ?? "", NomsDci(d), false, null, o.Auteur, o.Id, ct)).Texte(),
+            TypesOrdre.Organismes => (await organismes.CalculerAsync(d, ct)).Texte(),
+            _ => null
+        };
+    }
+
+    private static List<string> NomsDci(JsonElement d) =>
+        d.TryGetProperty("dci", out var l) && l.ValueKind == JsonValueKind.Array
+            ? l.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!.Trim()).Where(x => x.Length > 0).ToList()
+            : throw new OrdreInapplicableException("Liste des DCI absente de l’ordre.");
 
     /// <summary>
     /// Lot S5.4 : mêmes contrôles que l'ajout d'un produit à l'écran (AjouterACommande) pour chaque ligne : grossiste actif, produit connu
@@ -335,8 +391,17 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
             }
             if (await executer.ConfirmationRequiseAsync(o, ct))
             {
+                // Référentiels : l'aperçu des changements devient le motif affiché au titulaire
+                string? apercu = null;
+                try { apercu = await executer.ApercuAsync(o, ct); }
+                catch (Exception e) when (e is OrdreInapplicableException or JsonException)
+                {
+                    await NoterEtPrevenirAsync(o, StatutsOrdre.Refuse, e is JsonException ? "ordre mal formé" : e.Message, ct);
+                    n++;
+                    continue;
+                }
                 await NoterEtPrevenirAsync(o, StatutsOrdre.AConfirmer,
-                    o.Type == TypesOrdre.PrixProduit ? "écart de prix de plus de 20 % : confirmation du titulaire" : null, ct);
+                    o.Type == TypesOrdre.PrixProduit ? "écart de prix de plus de 20 % : confirmation du titulaire" : apercu, ct);
                 n++;
                 continue;
             }
@@ -465,6 +530,9 @@ public static class ResumeOrdre
                 TypesOrdre.Nomenclature => $"Nouvelle version « {T(d, "libelle")} » ({Taille(d)}) : remplace la nomenclature chargée ; "
                                            + "les produits concernés passeront « à vérifier ».",
                 TypesOrdre.Commande => ResumeCommande(d, T(d, "grossiste") ?? $"grossiste n° {o.Cible}"),
+                TypesOrdre.ClasseSuivie => $"Liste « {o.Cible} » envoyée ({(d.TryGetProperty("dci", out var dl) && dl.ValueKind == JsonValueKind.Array ? dl.GetArrayLength() : 0)} DCI) : "
+                                           + "elle remplace la liste suivie de l’officine. Ajouts et retraits sous cette ligne.",
+                TypesOrdre.Organismes => ResumeOrganismes(d),
                 TypesOrdre.PrixProduit => $"{T(d, "nom") ?? $"Produit n° {o.Cible}"} : "
                     + string.Join(" ; ", new[] { Changement(a, d, "prix_public", "prix"), Changement(a, d, "tarif_reference", "tarif de référence") }
                         .Where(x => x is not null)) + ".",
@@ -484,6 +552,15 @@ public static class ResumeOrdre
         if (!d.TryGetProperty(nom, out var n) || n.ValueKind != JsonValueKind.Number) return null;
         var avant = a.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal().ToString("N2", Fr) + " DA" : "aucun";
         return $"{libelle} {avant} → {n.GetDecimal().ToString("N2", Fr)} DA";
+    }
+
+    private static string ResumeOrganismes(JsonElement d)
+    {
+        var liste = d.TryGetProperty("organismes", out var l) && l.ValueKind == JsonValueKind.Array ? l.EnumerateArray().ToList() : [];
+        var centres = liste.Sum(e => e.TryGetProperty("centres", out var c) && c.ValueKind == JsonValueKind.Array ? c.GetArrayLength() : 0);
+        var sigles = liste.Select(e => e.TryGetProperty("code", out var c) ? c.GetString() : "?");
+        return $"{liste.Count} organisme(s) ({string.Join(", ", sigles)}), {centres} centre(s) payeur(s) : ajouts et corrections seulement, "
+               + "rien n’est supprimé ni désactivé.";
     }
 
     private static string ResumeCommande(JsonElement d, string grossiste)

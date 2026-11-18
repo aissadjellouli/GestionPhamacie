@@ -269,7 +269,7 @@
                 </table>
             </section>
             <Pagination Total="ordresTotal" Numero="ordresPage" Taille="ordresTaille" Libelle="Pages des ordres du serveur central" OnChange="p => ChargerOrdresAsync(p.Numero, p.Taille)" />
-            <p class="detail" style="margin: 0">Le blocage d’un employé s’applique tout de suite ; création, modification, déblocage et droits attendent la confirmation du titulaire, de même qu’un prix qui change de plus de 20 % et une nouvelle nomenclature nationale. Un ordre est refusé si la valeur a changé ici depuis son envoi, et expire après 7 jours.</p>
+            <p class="detail" style="margin: 0">Le blocage d’un employé s’applique tout de suite ; création, modification, déblocage et droits attendent la confirmation du titulaire, de même qu’un prix qui change de plus de 20 %, une nouvelle nomenclature nationale, la liste des antibiotiques suivis et les organismes payeurs (aperçu des changements affiché). Un ordre est refusé si la valeur a changé ici depuis son envoi, et expire après 7 jours.</p>
         }
 
         @if (ordreOuvert is { } oo)
@@ -278,6 +278,7 @@
                 <section class="panneau" style="max-width: 620px; width: 100%">
                     <h2 id="t-ordre">@(action == "confirmer" ? "Confirmer" : "Refuser") : @oo.Libelle</h2>
                     <p style="margin: 0 0 4px">@oo.Resume</p>
+                    @if (oo.Motif is { } apercu) { <p class="detail" style="margin: 0 0 4px">@apercu</p> }
                     <p class="detail" style="margin: 0 0 8px">Envoyé par @oo.Auteur le @Date(oo.CreeLe) ; expire le @Date(oo.ExpireLe).</p>
                     @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
                     @if (action == "confirmer" && oo.DemandeMotDePasse)

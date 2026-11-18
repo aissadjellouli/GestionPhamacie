@@ -23,6 +23,13 @@
     <File Path="docs/scanner-mobile.md" />
     <File Path="docs/securite-et-droits.md" />
     <File Path="docs/tracabilite.md" />
+    <File Path="docs/Gestion-des-grossistes-PharmaOfficine-V11.md" />
+    <File Path="docs/autres-plateformes-fonctionnalites.md" />
+    <File Path="docs/chiffrement-data.md" />
+    <File Path="docs/idees-pharma.md" />
+    <File Path="docs/opportunites-logiciels-algerie.md" />
+    <File Path="docs/pharma-officine-differenciation.md" />
+    <File Path="docs/pharma-officine-differenciationV2.md" />
   </Folder>
   <Folder Name="/Documents/adr/">
     <File Path="docs/adr/0001-architecture-locale.md" />
@@ -259,6 +266,7 @@
     <File Path="database/cloud/014_ordre_prix_produit.sql" />
     <File Path="database/cloud/015_nomenclature_vers_officines.sql" />
     <File Path="database/cloud/016_commande_brouillon_vers_officines.sql" />
+    <File Path="database/cloud/017_referentiels_vers_officines.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
     <File Path="database/cloud/tests/003_chargement_complet_officine_tests.sql" />
     <File Path="database/cloud/tests/004_reglage_familles_envoyees_tests.sql" />
@@ -274,6 +282,7 @@
     <File Path="database/cloud/tests/014_ordre_prix_produit_tests.sql" />
     <File Path="database/cloud/tests/015_nomenclature_vers_officines_tests.sql" />
     <File Path="database/cloud/tests/016_commande_brouillon_vers_officines_tests.sql" />
+    <File Path="database/cloud/tests/017_referentiels_vers_officines_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -331,5 +340,20 @@
     <Project Path="tests/Pharma.Architecture.Tests/Pharma.Architecture.Tests.csproj" />
     <Project Path="tests/Pharma.Cloud.Tests/Pharma.Cloud.Tests.csproj" />
     <Project Path="tests/Pharma.Cloud.Charge/Pharma.Cloud.Charge.csproj" />
+  </Folder>
+  <Folder Name="/Documents/EXEMPLE/">
+    <File Path="docs/EXEMPLE/WhatsApp Image 2025-11-27 at 12.41.09.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.14.09.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.09 V11.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.09.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 20.25.10.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.11.07.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.23.10.jpeg" />
+    <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.23.16.jpeg" />
+    <File Path="docs/EXEMPLE/chifa+.png" />
+  </Folder>
+  <Folder Name="/Documents/EXEMPLE/aid/">
+    <File Path="docs/EXEMPLE/aid/WhatsApp Image 2026-11-11 at 16.21.58 V11.jpeg" />
+    <File Path="docs/EXEMPLE/aid/WhatsApp Image 2026-11-11 at 16.21.58.jpeg" />
   </Folder>
 </Solution>

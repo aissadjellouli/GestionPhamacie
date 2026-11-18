@@ -171,6 +171,91 @@ public sealed class OrdresCentrauxSql(NpgsqlDataSource db) : IOrdresCentrauxDepo
         return numero;
     }
 
+    public async Task<ChangementsClasseSuivie> ClasseSuivieAsync(string classe, IReadOnlyList<string> noms, bool appliquer, long? par,
+        string auteurCentral, Guid ordre, CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await using (var verrou = new NpgsqlCommand($"SELECT 1 FROM classe_suivie WHERE code = $1{(appliquer ? " FOR UPDATE" : "")}", cnx, tx))
+        {
+            verrou.Parameters.AddWithValue(classe);
+            if (await verrou.ExecuteScalarAsync(ct) is null)
+            {
+                await tx.CommitAsync(ct);
+                return new ChangementsClasseSuivie(false, [], [], [], 0);
+            }
+        }
+        var (ajouts, retraits, inconnues) = (new List<(long Id, string Nom)>(), new List<(long Id, string Nom)>(), new List<string>());
+        var reconnues = 0;
+        await using (var cmd = new NpgsqlCommand("""
+            WITH noms AS (SELECT DISTINCT ON (lower(btrim(n))) btrim(n) AS original, lower(btrim(n)) AS cle FROM unnest($2::text[]) n
+                          WHERE btrim(n) <> '' ORDER BY lower(btrim(n))),
+                 voulues AS (SELECT d.id, d.nom FROM dci d JOIN noms ON lower(btrim(d.nom)) = noms.cle)
+            SELECT 'ajout', v.id, v.nom FROM voulues v
+            WHERE NOT EXISTS (SELECT 1 FROM classe_suivie_dci c WHERE c.classe_code = $1 AND c.dci_id = v.id)
+            UNION ALL
+            SELECT 'retrait', d.id, d.nom FROM classe_suivie_dci c JOIN dci d ON d.id = c.dci_id
+            WHERE c.classe_code = $1 AND NOT EXISTS (SELECT 1 FROM voulues v WHERE v.id = c.dci_id)
+            UNION ALL
+            SELECT 'inconnue', NULL, noms.original FROM noms WHERE NOT EXISTS (SELECT 1 FROM dci d WHERE lower(btrim(d.nom)) = noms.cle)
+            UNION ALL
+            SELECT 'reconnues', count(*), NULL FROM voulues
+            """, cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(classe);
+            cmd.Parameters.AddWithValue(noms.ToArray());
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+            {
+                switch (r.GetString(0))
+                {
+                    case "ajout": ajouts.Add((r.GetInt64(1), r.GetString(2))); break;
+                    case "retrait": retraits.Add((r.GetInt64(1), r.GetString(2))); break;
+                    case "inconnue": inconnues.Add(r.GetString(2)); break;
+                    default: reconnues = (int)r.GetInt64(1); break;
+                }
+            }
+        }
+        var resultat = new ChangementsClasseSuivie(true, ajouts.Select(a => a.Nom).Order(StringComparer.CurrentCultureIgnoreCase).ToList(),
+            retraits.Select(a => a.Nom).Order(StringComparer.CurrentCultureIgnoreCase).ToList(), inconnues.Order(StringComparer.CurrentCultureIgnoreCase).ToList(),
+            reconnues);
+        if (!appliquer)
+        {
+            await tx.CommitAsync(ct);
+            return resultat;
+        }
+        await using (var ajout = new NpgsqlCommand("""
+            INSERT INTO classe_suivie_dci (classe_code, dci_id, ajoute_par) SELECT $1, i, $3 FROM unnest($2::bigint[]) i ON CONFLICT DO NOTHING
+            """, cnx, tx))
+        {
+            ajout.Parameters.AddWithValue(classe);
+            ajout.Parameters.AddWithValue(ajouts.Select(a => a.Id).ToArray());
+            ajout.Parameters.Add(new NpgsqlParameter { Value = (object?)par ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+            await ajout.ExecuteNonQueryAsync(ct);
+        }
+        await using (var retrait = new NpgsqlCommand("DELETE FROM classe_suivie_dci WHERE classe_code = $1 AND dci_id = ANY($2)", cnx, tx))
+        {
+            retrait.Parameters.AddWithValue(classe);
+            retrait.Parameters.AddWithValue(retraits.Select(a => a.Id).ToArray());
+            await retrait.ExecuteNonQueryAsync(ct);
+        }
+        await using (var j = new NpgsqlCommand("""
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details)
+            VALUES ($1, 'classe_suivie_mise_a_jour', 'classe_suivie_dci', NULL, $2::jsonb)
+            """, cnx, tx))
+        {
+            j.Parameters.Add(new NpgsqlParameter { Value = (object?)par ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+            j.Parameters.AddWithValue(System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["classe"] = classe, ["ajouts"] = resultat.Ajouts, ["retraits"] = resultat.Retraits, ["inconnues"] = resultat.Inconnues.Count,
+                ["source"] = "ordre du serveur central", ["auteur_central"] = auteurCentral, ["ordre"] = ordre
+            }));
+            await j.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        return resultat;
+    }
+
     private static async Task<IReadOnlyList<OrdreRecu>> LireListeAsync(NpgsqlCommand cmd, CancellationToken ct)
     {
         await using var r = await cmd.ExecuteReaderAsync(ct);

@@ -13,7 +13,7 @@
         2. dossier d'essai %TEMP%\pharma-essai-cloud (hors dépôt) : autorité, certificat HTTPS, journaux, PID, mots de passe d'essai
            tirés au hasard (jamais écrits ailleurs) ;
         3. compilation des deux serveurs dans ce dossier (le dépôt et les exécutables en service ne sont pas touchés) ;
-        4. base centrale jetable pharmacie_cloud_essai (scripts database\cloud 001 à 016 par scripts\mep\creer_base_centrale.ps1)
+        4. base centrale jetable pharmacie_cloud_essai (scripts database\cloud 001 à 017 par scripts\mep\creer_base_centrale.ps1)
            et copie jetable pharmacie_essai_officine de pharmacie_dev (pg_dump en lecture seule, puis restauration) ;
         5. autorité d'essai + certificat HTTPS de 127.0.0.1 ; serveur central (port -PortCentral) et API officine (port -PortApi) lancés ;
         6. officine créée au central puis ACTIVÉE par l'API (réglages, code d'activation, certificat), comme le fait l'écran ;
@@ -181,6 +181,25 @@ function Get-ProcessusEssai([int]$ProcessId, [string]$NomAttendu) {
     $p = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
     if ($p -and $p.ProcessName -eq $NomAttendu) { return $p }
     return $null
+}
+
+# Arrêt d'un serveur d'essai, patient : un serveur .NET peut mettre plus de 15 s à se terminer (écritures en cours, journaux) ;
+# attente jusqu'à $Secondes, second arrêt forcé (par son PID, jamais par nom) à mi-parcours. Vrai : le processus n'existe plus.
+function Stop-ProcessusEssai([int]$ProcessId, [string]$NomAttendu, [int]$Secondes = 60) {
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+    $limite = (Get-Date).AddSeconds($Secondes)
+    $relance = (Get-Date).AddSeconds([math]::Floor($Secondes / 2))
+    while ((Get-Date) -lt $limite) {
+        $p = Get-ProcessusEssai $ProcessId $NomAttendu
+        if (-not $p -or $p.HasExited) { return $true }
+        if ($relance -and (Get-Date) -ge $relance) {
+            Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+            $relance = $null
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    $p = Get-ProcessusEssai $ProcessId $NomAttendu
+    return (-not $p -or $p.HasExited)
 }
 
 function Get-MotDePassePg {
@@ -616,8 +635,8 @@ function Invoke-Arreter {
     $etat = if ($dossierPresent) { Lire-Etat } else { $null }
     $pids = @()
     if ($etat) {
-        if (Get-ProcessusEssai ([int]$etat.PidCentral) "Pharma.Cloud.Api") { $pids += @{ Id = [int]$etat.PidCentral; Nom = "serveur central" } }
-        if (Get-ProcessusEssai ([int]$etat.PidApi) "Pharma.Api") { $pids += @{ Id = [int]$etat.PidApi; Nom = "API officine" } }
+        if (Get-ProcessusEssai ([int]$etat.PidCentral) "Pharma.Cloud.Api") { $pids += @{ Id = [int]$etat.PidCentral; Nom = "serveur central"; Processus = "Pharma.Cloud.Api" } }
+        if (Get-ProcessusEssai ([int]$etat.PidApi) "Pharma.Api") { $pids += @{ Id = [int]$etat.PidApi; Nom = "API officine"; Processus = "Pharma.Api" } }
     }
     if ($simul) {
         Write-Etape2 "Plan (simulation, rien n'est supprimé)"
@@ -628,10 +647,8 @@ function Invoke-Arreter {
         return
     }
     foreach ($p in $pids) {
-        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-        Wait-Process -Id $p.Id -Timeout 15 -ErrorAction SilentlyContinue
         # Rien n'est supprimé tant qu'un serveur d'essai tourne encore (processus lancé avec d'autres droits : l'arrêter soi-même)
-        if (Get-Process -Id $p.Id -ErrorAction SilentlyContinue) { throw "Le $($p.Nom) (PID $($p.Id)) n'a pas pu être arrêté (droits insuffisants ?). Arrêter ce processus soi-même (Stop-Process -Id $($p.Id) -Force, dans une fenêtre PowerShell lancée avec les mêmes droits que lui), puis relancer -Arreter. Aucune base n'a été supprimée." }
+        if (-not (Stop-ProcessusEssai $p.Id $p.Processus)) { throw "Le $($p.Nom) (PID $($p.Id)) tourne encore après 60 s (droits insuffisants ?). Arrêter ce processus soi-même (Stop-Process -Id $($p.Id) -Force, dans une fenêtre PowerShell lancée avec les mêmes droits que lui), puis relancer -Arreter. Aucune base n'a été supprimée." }
         Write-Ok "$($p.Nom) arrêté (PID $($p.Id))."
     }
     if ($etat) {
@@ -667,8 +684,7 @@ function Invoke-ArreterCentral {
     $p = Get-ProcessusEssai ([int]$etat.PidCentral) "Pharma.Cloud.Api"
     if (-not $p) { Write-Info "Le serveur central d'essai est déjà arrêté."; return }
     if ($WhatIfPreference) { Write-Simul "arrêt du serveur central (PID $($p.Id))"; return }
-    Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-    Wait-Process -Id $p.Id -Timeout 15 -ErrorAction SilentlyContinue
+    if (-not (Stop-ProcessusEssai $p.Id "Pharma.Cloud.Api")) { throw "Le serveur central (PID $($p.Id)) tourne encore après 60 s (droits insuffisants ?). L'arrêter soi-même (Stop-Process -Id $($p.Id) -Force), puis relancer -ArreterCentral." }
     $etat.PidCentral = 0
     Enregistrer-Etat $etat
     Write-Ok "Serveur central arrêté (PID $($p.Id)). L'officine continue ; -Demarrer le relance."
