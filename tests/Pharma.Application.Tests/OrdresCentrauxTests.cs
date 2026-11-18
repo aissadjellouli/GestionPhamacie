@@ -45,12 +45,34 @@ public class OrdresCentrauxTests
         }
     }
 
+    /// <summary>Référentiels, lots 3 et 4 : changements prévus par type, applications (type, titulaire).</summary>
+    private sealed class ListesFactices : IListesCentrales
+    {
+        public readonly List<(string Type, long Titulaire)> Appliques = [];
+        public Task<ChangementsListe> CalculerAsync(string type, System.Text.Json.JsonElement d, CancellationToken ct = default) =>
+            Task.FromResult(new ChangementsListe(["TENSION"], type == TypesOrdre.Prestations ? ["INJ"] : []));
+        public Task<ChangementsListe> AppliquerAsync(string type, System.Text.Json.JsonElement d, long titulaireId, CancellationToken ct = default)
+        {
+            Appliques.Add((type, titulaireId));
+            return CalculerAsync(type, d, ct);
+        }
+    }
+
     private sealed class Depot : IOrdresCentrauxDepot
     {
         public NomenclatureEnMemoire Nomenclature { get; } = new();
         public ReferentielsFactices Referentiels { get; } = new();
         public AchatsEnMemoire Achats { get; } = new();
         public OrganismesFactices Organismes { get; } = new();
+        public ListesFactices Listes { get; } = new();
+        public readonly List<(IReadOnlyList<string> Noms, long? Par)> DciAjoutees = [];
+        public Task<ChangementsListe> AjouterDciAsync(IReadOnlyList<string> noms, bool appliquer, long? par, string auteurCentral, Guid ordre,
+            CancellationToken ct = default)
+        {
+            var nouvelles = noms.Where(n => !Dci.Contains(n, StringComparer.OrdinalIgnoreCase)).ToList();
+            if (appliquer) { Dci.AddRange(nouvelles); DciAjoutees.Add((nouvelles, par)); }
+            return Task.FromResult(new ChangementsListe(nouvelles, []));
+        }
         /// <summary>Référentiels, lot 1 : DCI connues de l'officine et classe « antibiotiques » (Paracétamol s'y trouve à tort).</summary>
         public readonly List<string> Dci = ["Amoxicilline", "Azithromycine", "Doxycycline", "Paracétamol"];
         public readonly List<string> Antibiotiques = ["Amoxicilline", "Paracétamol"];
@@ -126,7 +148,7 @@ public class OrdresCentrauxTests
         var executer = new ExecuterOrdreCentral(admin, new CreerUtilisateur(admin, new HacheurFactice(), journal, droits),
             new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot,
             new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), depot.Nomenclature, droits, journal), depot.Referentiels,
-            depot.Achats, depot.Organismes);
+            depot.Achats, depot.Organismes, depot.Listes);
         var horloge = new Horloge(Maintenant);
         return (depot, admin, alertes, journal, new AppliquerOrdresCentraux(depot, executer, horloge, alertes),
             new ConfirmerOrdreCentral(depot, executer, droits, horloge), new RefuserOrdreCentral(depot, droits));
@@ -568,5 +590,32 @@ public class OrdresCentrauxTests
             ResumeOrdre.Texte(Ordre(TypesOrdre.Organismes, null, "{}", """{"organismes":[{"code":"CNAS","nom":"C","centres":[{"code":"16","nom":"Alger"}]},{"code":"MDN","nom":"D"}]}"""), etat));
         Assert.True(TypesOrdre.ConfirmationRequise(TypesOrdre.ClasseSuivie));
         Assert.True(TypesOrdre.ConfirmationRequise(TypesOrdre.Organismes));
+    }
+
+    // ---- Référentiels : prestations (lot 3), indications (lot 4), DCI (lot 5) ----
+
+    [Fact]
+    public async Task Prestations_indications_et_dci_attendent_le_titulaire_avec_l_apercu_puis_s_appliquent()
+    {
+        var m = Monter();
+        var prestations = Ordre(TypesOrdre.Prestations, null, "{}", """{"prestations":[{"code":"TENSION","libelle":"Tension"}]}""");
+        var indications = Ordre(TypesOrdre.Indications, null, "{}", """{"indications":["Toux"]}""");
+        var dci = Ordre(TypesOrdre.Dci, null, "{}", """{"dci":["amoxicilline","Linézolide"]}""");
+        m.Depot.Ordres.AddRange([prestations, indications, dci]);
+        await m.Auto.ExecuterAsync();
+        Assert.All(m.Depot.Ordres, o => Assert.Equal(StatutsOrdre.AConfirmer, o.Statut));
+        Assert.Equal("1 ajout(s) (TENSION), 1 correction(s) (INJ).", m.Depot.Ordres[0].Motif);
+        Assert.Equal("1 ajout(s) (Linézolide).", m.Depot.Ordres[2].Motif);                // Amoxicilline existe déjà (casse ignorée)
+        Assert.Empty(m.Depot.Listes.Appliques);
+        Assert.Empty(m.Depot.DciAjoutees);
+        foreach (var o in new[] { prestations, indications, dci }) await m.Confirmer.ExecuterAsync(o.Id, null, 1);
+        Assert.All(m.Depot.Ordres, o => Assert.Equal(StatutsOrdre.Applique, o.Statut));
+        Assert.Equal([(TypesOrdre.Prestations, 1L), (TypesOrdre.Indications, 1L)], m.Depot.Listes.Appliques);
+        var ajout = Assert.Single(m.Depot.DciAjoutees);
+        Assert.Equal(["Linézolide"], ajout.Noms);
+        Assert.Equal(1, ajout.Par);
+        Assert.Equal("3 prestation(s) : ajouts et corrections seulement, rien n’est supprimé ni désactivé.",
+            ResumeOrdre.Texte(Ordre(TypesOrdre.Prestations, null, "{}", """{"prestations":[{},{},{}]}"""), new EtatDroits([], [], [])));
+        Assert.Equal("2 DCI à ajouter si elles manquent ; rien n’est renommé ni supprimé.", ResumeOrdre.Texte(dci, new EtatDroits([], [], [])));
     }
 }

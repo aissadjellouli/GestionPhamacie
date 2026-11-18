@@ -232,6 +232,7 @@ public static class Libelles
         "nomenclature_deja_a_jour" => "Nomenclature déjà à jour",
         "commande_preparee_central" => "Commande préparée par le serveur central",
         "classe_suivie_mise_a_jour" => "Liste suivie mise à jour par le serveur central",
+        "dci_ajoutees" => "DCI ajoutées par le serveur central",
         "facture_rejet_leve" => "Rejet de facture levé",
         "seuils_alerte" => "Seuils d’alerte",
         "pharmacie_modifiee" => "Identité de la pharmacie",
@@ -454,6 +455,7 @@ public static class Libelles
                 "patient_cree" => $"{T("patient")} · plafond de crédit {Dinars(N("plafond_credit"), 2)}",
                 "commande_emise" => $"Bon {T("numero")} · {Dinars(N("montant_ht"), 2)} HT",
                 "commande_annulee" => $"Bon {T("numero")}",
+                "dci_ajoutees" => $"{(d.TryGetProperty("ajouts", out var da) ? da.GetArrayLength() : 0)} DCI ajoutée(s) sur {T("recues")} reçue(s) · envoyé par {T("auteur_central")}",
                 "classe_suivie_mise_a_jour" => $"{T("classe")} : {(d.TryGetProperty("ajouts", out var aj) ? aj.GetArrayLength() : 0)} ajout(s), "
                     + $"{(d.TryGetProperty("retraits", out var rt) ? rt.GetArrayLength() : 0)} retrait(s) · envoyé par {T("auteur_central")}",
                 "commande_preparee_central" => $"Bon {T("numero")} en brouillon · {T("lignes")} ligne(s) · {Dinars(N("montant_ht"), 2)} HT · envoyé par {T("auteur_central")}",
@@ -530,6 +532,9 @@ public static class Libelles
         "commande" => "Commande en brouillon",
         "classe_suivie" => "Liste d’une classe suivie",
         "organismes" => "Organismes et centres payeurs",
+        "prestations" => "Prestations",
+        "indications" => "Indications thérapeutiques",
+        "dci" => "Dénominations communes (DCI)",
         _ => type
     };
 

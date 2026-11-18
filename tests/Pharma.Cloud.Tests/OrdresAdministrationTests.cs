@@ -72,4 +72,29 @@ public class OrdresAdministrationTests
             dossier.Delete(true);
         }
     }
+
+    [Fact]
+    public void Ordres_prestations_indications_et_dci_lisent_leur_fichier()
+    {
+        var dossier = Directory.CreateTempSubdirectory("ordres-listes-");
+        try
+        {
+            var json = Path.Combine(dossier.FullName, "prestations.json");
+            File.WriteAllText(json, """[{"code":"TENSION","libelle":"Prise de tension","prix":150}]""");
+            var p = OrdresAdministration.Creation(["--ordre-prestations", "--fichier", json])!.Value;
+            Assert.Equal(("prestations", (string?)null), (p.Type, p.Cible));
+            Assert.Equal(1, ((System.Text.Json.JsonElement)p.Donnees["prestations"]!).GetArrayLength());
+
+            var txt = Path.Combine(dossier.FullName, "liste.txt");
+            File.WriteAllLines(txt, ["# liste", "Toux", "Mal de gorge"]);
+            Assert.Equal(["Toux", "Mal de gorge"], (List<string>)OrdresAdministration.Creation(["--ordre-indications", "--fichier", txt])!.Value.Donnees["indications"]!);
+            Assert.Equal("dci", OrdresAdministration.Creation(["--ordre-dci", "--fichier", txt])!.Value.Type);
+            File.WriteAllLines(txt, ["# vide"]);
+            Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-dci", "--fichier", txt]));
+        }
+        finally
+        {
+            dossier.Delete(true);
+        }
+    }
 }

@@ -13,7 +13,7 @@ namespace Pharma.Application.Tests;
 /// <summary>Indications thérapeutiques et motif réglable du retour client (2026-11-15, script 104).</summary>
 public class IndicationsTests
 {
-    private sealed class IndicationsEnMemoire : IIndications
+    internal sealed class IndicationsEnMemoire : IIndications
     {
         public List<Indication> Toutes { get; } = [new(1, "Toux", true), new(2, "Fièvre", true), new(3, "Ancienne", false)];
         public Dictionary<long, List<long>> ParProduit { get; } = new() { [10] = [] };

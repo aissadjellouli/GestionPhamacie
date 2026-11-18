@@ -32,12 +32,22 @@ public static class TypesOrdre
     public const string ClasseSuivie = "classe_suivie";
     /// <summary>Référentiels, lot 2 : organismes payeurs et centres payeurs (ajouts et corrections seulement).</summary>
     public const string Organismes = "organismes";
+    /// <summary>Référentiels, lot 3 : prestations par code (ajouts et corrections).</summary>
+    public const string Prestations = "prestations";
+    /// <summary>Référentiels, lot 4 : indications à ajouter (par libellé).</summary>
+    public const string Indications = "indications";
+    /// <summary>Référentiels, lot 5 : DCI à ajouter (par nom).</summary>
+    public const string Dci = "dci";
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
-        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande, ClasseSuivie, Organismes };
+    {
+        Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande, ClasseSuivie, Organismes,
+        Prestations, Indications, Dci
+    };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
     public static bool ConfirmationRequise(string type) =>
-        type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole or Nomenclature or ClasseSuivie or Organismes;
+        type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole or Nomenclature or ClasseSuivie or Organismes
+            or Prestations or Indications or Dci;
 
     public static string Libelle(string type) => type switch
     {
@@ -52,6 +62,9 @@ public static class TypesOrdre
         Commande => "Commande en brouillon",
         ClasseSuivie => "Liste d’une classe suivie",
         Organismes => "Organismes et centres payeurs",
+        Prestations => "Prestations",
+        Indications => "Indications thérapeutiques",
+        Dci => "Dénominations communes (DCI)",
         _ => type
     };
 }
@@ -103,6 +116,13 @@ public interface IOrdresCentrauxDepot
     /// </summary>
     Task<ChangementsClasseSuivie> ClasseSuivieAsync(string classe, IReadOnlyList<string> noms, bool appliquer, long? par, string auteurCentral,
         Guid ordre, CancellationToken ct = default);
+    /// <summary>
+    /// Référentiels, lot 5 : DCI de la liste absentes de l'officine (comparées sans tenir compte de la casse) ; avec
+    /// <paramref name="appliquer"/>, ajoutées en une transaction avec le journal « dci_ajoutees » au nom de <paramref name="par"/>.
+    /// Jamais de renommage ni de suppression.
+    /// </summary>
+    Task<ChangementsListe> AjouterDciAsync(IReadOnlyList<string> noms, bool appliquer, long? par, string auteurCentral, Guid ordre,
+        CancellationToken ct = default);
 }
 
 /// <summary>Changements d'une classe suivie : DCI ajoutées, retirées, noms inconnus de l'officine, nombre de noms reconnus.</summary>
@@ -122,7 +142,7 @@ public sealed class OrdreInapplicableException(string message) : Exception(messa
 /// <summary>Application d'un ordre par les cas d'usage existants ; <paramref name="titulaireId"/> : titulaire qui confirme (null : automatique).</summary>
 public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole,
     Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot, Catalogue.ImporterNomenclature nomenclature,
-    ITelechargementReferentiel referentiels, Achats.IAchats achats, IOrganismesCentraux organismes)
+    ITelechargementReferentiel referentiels, Achats.IAchats achats, IOrganismesCentraux organismes, IListesCentrales listes)
 {
     /// <summary>Lignes au plus dans un ordre de commande (décision S5.4-D5).</summary>
     public const int LignesCommandeMax = 200;
@@ -253,6 +273,12 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
             case TypesOrdre.Organismes:
                 await organismes.AppliquerAsync(d, titulaireId!.Value, ct);
                 return;
+            case TypesOrdre.Prestations or TypesOrdre.Indications:
+                await listes.AppliquerAsync(o.Type, d, titulaireId!.Value, ct);
+                return;
+            case TypesOrdre.Dci:
+                await depot.AjouterDciAsync(Textes(d, "dci"), true, titulaireId, o.Auteur, o.Id, ct);
+                return;
             case TypesOrdre.DroitsRole:
             {
                 var role = Role(etat, o.Cible);
@@ -278,14 +304,18 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
         {
             TypesOrdre.ClasseSuivie => (await depot.ClasseSuivieAsync(o.Cible ?? "", NomsDci(d), false, null, o.Auteur, o.Id, ct)).Texte(),
             TypesOrdre.Organismes => (await organismes.CalculerAsync(d, ct)).Texte(),
+            TypesOrdre.Prestations or TypesOrdre.Indications => (await listes.CalculerAsync(o.Type, d, ct)).Texte(),
+            TypesOrdre.Dci => (await depot.AjouterDciAsync(Textes(d, "dci"), false, null, o.Auteur, o.Id, ct)).Texte(),
             _ => null
         };
     }
 
-    private static List<string> NomsDci(JsonElement d) =>
-        d.TryGetProperty("dci", out var l) && l.ValueKind == JsonValueKind.Array
+    private static List<string> NomsDci(JsonElement d) => Textes(d, "dci");
+
+    private static List<string> Textes(JsonElement d, string nom) =>
+        d.TryGetProperty(nom, out var l) && l.ValueKind == JsonValueKind.Array
             ? l.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!.Trim()).Where(x => x.Length > 0).ToList()
-            : throw new OrdreInapplicableException("Liste des DCI absente de l’ordre.");
+            : throw new OrdreInapplicableException($"Liste « {nom} » absente de l’ordre.");
 
     /// <summary>
     /// Lot S5.4 : mêmes contrôles que l'ajout d'un produit à l'écran (AjouterACommande) pour chaque ligne : grossiste actif, produit connu
@@ -533,6 +563,9 @@ public static class ResumeOrdre
                 TypesOrdre.ClasseSuivie => $"Liste « {o.Cible} » envoyée ({(d.TryGetProperty("dci", out var dl) && dl.ValueKind == JsonValueKind.Array ? dl.GetArrayLength() : 0)} DCI) : "
                                            + "elle remplace la liste suivie de l’officine. Ajouts et retraits sous cette ligne.",
                 TypesOrdre.Organismes => ResumeOrganismes(d),
+                TypesOrdre.Prestations => $"{Nombre(d, "prestations")} prestation(s) : ajouts et corrections seulement, rien n’est supprimé ni désactivé.",
+                TypesOrdre.Indications => $"{Nombre(d, "indications")} indication(s) à ajouter si elles manquent ; rien n’est renommé ni supprimé.",
+                TypesOrdre.Dci => $"{Nombre(d, "dci")} DCI à ajouter si elles manquent ; rien n’est renommé ni supprimé.",
                 TypesOrdre.PrixProduit => $"{T(d, "nom") ?? $"Produit n° {o.Cible}"} : "
                     + string.Join(" ; ", new[] { Changement(a, d, "prix_public", "prix"), Changement(a, d, "tarif_reference", "tarif de référence") }
                         .Where(x => x is not null)) + ".",
@@ -553,6 +586,9 @@ public static class ResumeOrdre
         var avant = a.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal().ToString("N2", Fr) + " DA" : "aucun";
         return $"{libelle} {avant} → {n.GetDecimal().ToString("N2", Fr)} DA";
     }
+
+    private static int Nombre(JsonElement d, string nom) =>
+        d.TryGetProperty(nom, out var l) && l.ValueKind == JsonValueKind.Array ? l.GetArrayLength() : 0;
 
     private static string ResumeOrganismes(JsonElement d)
     {

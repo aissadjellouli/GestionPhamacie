@@ -30,6 +30,7 @@
     <File Path="docs/opportunites-logiciels-algerie.md" />
     <File Path="docs/pharma-officine-differenciation.md" />
     <File Path="docs/pharma-officine-differenciationV2.md" />
+    <File Path="docs/fonctionnalites-a-reprendre.md" />
   </Folder>
   <Folder Name="/Documents/adr/">
     <File Path="docs/adr/0001-architecture-locale.md" />
@@ -267,6 +268,7 @@
     <File Path="database/cloud/015_nomenclature_vers_officines.sql" />
     <File Path="database/cloud/016_commande_brouillon_vers_officines.sql" />
     <File Path="database/cloud/017_referentiels_vers_officines.sql" />
+    <File Path="database/cloud/018_referentiels_prestations_indications_dci.sql" />
     <File Path="database/cloud/tests/001_base_centrale_tests.sql" />
     <File Path="database/cloud/tests/003_chargement_complet_officine_tests.sql" />
     <File Path="database/cloud/tests/004_reglage_familles_envoyees_tests.sql" />
@@ -283,6 +285,7 @@
     <File Path="database/cloud/tests/015_nomenclature_vers_officines_tests.sql" />
     <File Path="database/cloud/tests/016_commande_brouillon_vers_officines_tests.sql" />
     <File Path="database/cloud/tests/017_referentiels_vers_officines_tests.sql" />
+    <File Path="database/cloud/tests/018_referentiels_prestations_indications_dci_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -351,9 +354,26 @@
     <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.23.10.jpeg" />
     <File Path="docs/EXEMPLE/WhatsApp Image 2026-11-10 at 21.23.16.jpeg" />
     <File Path="docs/EXEMPLE/chifa+.png" />
+    <File Path="docs/EXEMPLE/exemple-ecran-logiciel-tiers.jpeg" />
   </Folder>
   <Folder Name="/Documents/EXEMPLE/aid/">
     <File Path="docs/EXEMPLE/aid/WhatsApp Image 2026-11-11 at 16.21.58 V11.jpeg" />
     <File Path="docs/EXEMPLE/aid/WhatsApp Image 2026-11-11 at 16.21.58.jpeg" />
+  </Folder>
+  <Folder Name="/Documents/EXEMPLE/aid/ordonnances-photos/">
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-13 at 16.43.33.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-13 at 16.44.36.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.36.28.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.37.19.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.37.35.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.39.17.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.39.41.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.39.55.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.40.06.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.40.55.jpeg" />
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos/WhatsApp Image 2026-11-15 at 19.44.06.jpeg" />
+  </Folder>
+  <Folder Name="/Documents/EXEMPLE/aid/ordonnances-photos-2/">
+    <File Path="docs/EXEMPLE/aid/ordonnances-photos-2/WhatsApp Image 2026-11-12 at 19.58.54.jpeg" />
   </Folder>
 </Solution>

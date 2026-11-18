@@ -190,7 +190,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S2 | API cloud minimale (réception, idempotence, ordre, accusés), base centrale cloisonnée, authentification par certificat | S0, S1 |
 | S3 | Service de sync local (envoi, reprise, bandeau, écran d'état, alertes) | S1, S2 |
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
-| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26) ; S5.4 (commandes en brouillon) réalisé le 2026-11-18 (§ 27) ; référentiels : antibiotiques suivis, organismes et centres payeurs réalisés le 2026-11-18 (§ 28)** | S3 |
+| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26) ; S5.4 (commandes en brouillon) réalisé le 2026-11-18 (§ 27) ; référentiels : antibiotiques suivis, organismes et centres payeurs, prestations, indications, DCI réalisés le 2026-11-18 (§ 28)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
 | S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
@@ -1393,7 +1393,7 @@ l'usage]** ; S5.4-D6 prix facultatif : à défaut, le dernier prix d'achat (mêm
 | Groupe | Tables | Décision |
 |---|---|---|
 | A. Listes fixes livrées par nos scripts | `wilaya`, `categorie_produit`, `substance_surveillee`, `parametre_gs1_ai`, `classe_suivie` | R-D1 : **pas d'envoi par le central** ; les scripts de mise à jour suffisent (à revoir si un changement doit arriver entre deux versions) |
-| B. Listes nationales que l'officine complète | `classe_suivie_dci`, `organisme`, `centre_payeur`, `type_prestation`, `indication`, `dci` | R-D2 / R-D3 : un lot par table, lignes désignées par leur clé naturelle (nom, sigle, code), jamais par le n° local, confirmation du titulaire avec l'aperçu des changements. **Faits : `classe_suivie_dci` (lot 1), `organisme` + `centre_payeur` (lot 2).** Restent `type_prestation`, `indication`, `dci`. |
+| B. Listes nationales que l'officine complète | `classe_suivie_dci`, `organisme`, `centre_payeur`, `type_prestation`, `indication`, `dci` | R-D2 / R-D3 : un lot par table, lignes désignées par leur clé naturelle (nom, sigle, code), jamais par le n° local, confirmation du titulaire avec l'aperçu des changements. **Toutes faites : `classe_suivie_dci` (lot 1), `organisme` + `centre_payeur` (lot 2), `type_prestation` (lot 3), `indication` (lot 4), `dci` (lot 5, § 28.1).** |
 | C. Liens vers les produits de l'officine | `chifa_code_produit`, `produit_indication` | R-D4 : à reclasser « jamais envoyées » ou « montantes » (données propres à l'officine) **[À DÉCIDER]** |
 | D. À clarifier | `laboratoire` (vide, rien ne l'écrit), `zone_psychotrope_wilaya` (réglée par l'officine) | R-D5 **[À VÉRIFIER]** |
 
@@ -1424,3 +1424,25 @@ par `substance_surveillee`).
   deux centres ; DGSN nouveau) → aperçu « ajouté : DGSN ; corrigé : CNAS ; 2 centres ajoutés », confirmé, appliqué, CASNOS et MDN
   inchangés ; journaux au nom du titulaire ; résultats remontés au central (appliqué, appliqué). Écran « Ordres du central » avec la
   fenêtre de confirmation : sans défilement, captures en clair et sombre. Arrêt de l'outil d'essai : un seul passage, 3 s.
+
+### 28.1 Référentiels, lots 3 à 5 : prestations, indications, DCI (2026-11-18, « go » du titulaire, les trois tables)
+
+- **Central** (script `018`) : types d'ordre `prestations` (1 à 200 par code, mis en majuscules ; libellé, prix, TVA, remboursable
+  et tarif de référence ; tarif donné ⇒ « remboursable : vrai » exigé), `indications` (1 à 500 libellés de 80 caractères au plus) et
+  `dci` (1 à 2 000 noms de 200 caractères au plus) ; textes nettoyés, doublons retirés sans tenir compte de la casse. Commandes
+  `--ordre-prestations --fichier <prestations.json>`, `--ordre-indications --fichier <liste.txt>`, `--ordre-dci --fichier <liste.txt>`
+  (avec `--officine <code> --auteur <nom>`).
+- **Officine** (aucun nouveau script) : les trois types attendent la confirmation du titulaire, avec l'aperçu des changements.
+  - Prestations (`ListesCentrales`, par `TypesPrestation.EnregistrerAsync` : mêmes contrôles, journaux `type_prestation_cree` /
+    `_modifie`) : ajouts et corrections ; une valeur absente garde celle de l'officine ; l'état actif n'est jamais changé ; une
+    prestation nouvelle sans prix est créée à 0 DA (jamais vendue tant que son prix n'est pas fixé, garde-fou existant).
+  - Indications (`Indications.EnregistrerAsync`, journal `indication_creee`) : **ajouts seulement** ; une indication existante, même
+    désactivée, n'est jamais recréée ni réactivée.
+  - DCI (dépôt des ordres, une transaction sous verrou de la table, journal `dci_ajoutees`) : **ajouts seulement**, jamais de
+    renommage ni de suppression.
+  - Prestations et indications : tous les contrôles avant la première écriture, sans transaction unique **[À VÉRIFIER]** (comme les
+    organismes).
+- **Essai de bout en bout** (2026-11-18, HTTPS, bases jetables supprimées ensuite) : aperçus « 2 ajouts (INJ, TENSION) »,
+  « 1 ajout (Toux sèche) » (Fièvre et Mal de gorge déjà là), « 1 ajout (TEDIZOLIDE) » (daptomycine et amoxicilline déjà là, casse
+  ignorée) ; confirmés, appliqués au nom du titulaire, journaux écrits, résultats remontés au central (3 appliqués). Arrêt de l'outil
+  d'essai : un seul passage.

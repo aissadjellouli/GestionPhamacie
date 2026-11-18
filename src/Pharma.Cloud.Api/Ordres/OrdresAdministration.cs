@@ -16,6 +16,8 @@ namespace Pharma.Cloud.Api.Ordres;
 ///   --ordre-commande --officine &lt;code&gt; --grossiste &lt;n°&gt; --ligne &lt;produit&gt;:&lt;qté&gt;[:&lt;prix HT&gt;] … --auteur &lt;nom&gt;
 ///   --ordre-classe-suivie --officine &lt;code&gt; --classe antibiotiques --fichier &lt;dci.txt : un nom par ligne&gt; --auteur &lt;nom&gt;
 ///   --ordre-organismes --officine &lt;code&gt; --fichier &lt;organismes.json&gt; --auteur &lt;nom&gt;
+///   --ordre-prestations --officine &lt;code&gt; --fichier &lt;prestations.json&gt; --auteur &lt;nom&gt;
+///   --ordre-indications | --ordre-dci --officine &lt;code&gt; --fichier &lt;liste.txt : une ligne par élément&gt; --auteur &lt;nom&gt;
 ///   --annuler-ordre &lt;id&gt; --officine &lt;code&gt; --auteur &lt;nom&gt;
 ///   --expirer-ordres                                                                  tâche planifiée (chaque heure)
 /// </summary>
@@ -24,7 +26,7 @@ public static class OrdresAdministration
     public static readonly string[] Commandes =
         ["--ordres", "--ordre-essai", "--ordre-employe-creer", "--ordre-employe-modifier", "--ordre-employe-bloquer", "--ordre-employe-debloquer",
          "--ordre-droits-role", "--ordre-prix", "--annuler-ordre", "--expirer-ordres", "--importer-nomenclature", "--publier-nomenclature",
-         "--ordre-commande", "--ordre-classe-suivie", "--ordre-organismes"];
+         "--ordre-commande", "--ordre-classe-suivie", "--ordre-organismes", "--ordre-prestations", "--ordre-indications", "--ordre-dci"];
 
     public static bool Concerne(string commande) => Commandes.Contains(commande);
 
@@ -55,28 +57,32 @@ public static class OrdresAdministration
             // Référentiels, lot 1 : liste complète des DCI d'une classe suivie, un nom par ligne (un nom peut contenir une virgule)
             "--ordre-classe-suivie" => ("classe_suivie", Exiger("--classe"), new() { ["dci"] = NomsDci(Exiger("--fichier")) }),
             // Référentiels, lot 2 : {"organismes":[{"code":"CNAS","nom":"…","centres":[{"code":"16","nom":"…"}]}]}
-            "--ordre-organismes" => ("organismes", null, new() { ["organismes"] = Organismes(Exiger("--fichier")) }),
+            "--ordre-organismes" => ("organismes", null, new() { ["organismes"] = Tableau(Exiger("--fichier"), "organismes") }),
+            // Référentiels, lots 3 à 5 : {"prestations":[{"code":"…","libelle":"…","prix":150}]} ; indications et DCI : une ligne par élément
+            "--ordre-prestations" => ("prestations", null, new() { ["prestations"] = Tableau(Exiger("--fichier"), "prestations") }),
+            "--ordre-indications" => ("indications", null, new() { ["indications"] = NomsDci(Exiger("--fichier")) }),
+            "--ordre-dci" => ("dci", null, new() { ["dci"] = NomsDci(Exiger("--fichier")) }),
             _ => null
         };
     }
 
-    /// <summary>Noms de DCI d'un fichier texte : un par ligne, lignes vides et lignes commençant par # ignorées.</summary>
+    /// <summary>Éléments d'un fichier texte (DCI, indications) : un par ligne, lignes vides et lignes commençant par # ignorées.</summary>
     private static List<string> NomsDci(string fichier)
     {
         if (!File.Exists(fichier)) throw new ArgumentException($"Fichier introuvable : {fichier}");
         var noms = File.ReadAllLines(fichier).Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToList();
-        return noms.Count > 0 ? noms : throw new ArgumentException("Le fichier ne contient aucun nom de DCI.");
+        return noms.Count > 0 ? noms : throw new ArgumentException("Le fichier ne contient aucun élément.");
     }
 
-    /// <summary>Organismes d'un fichier JSON : objet {"organismes":[…]} ou tableau ; contrôles détaillés par cloud_creer_ordre.</summary>
-    private static JsonElement Organismes(string fichier)
+    /// <summary>Liste d'un fichier JSON : objet {"&lt;cle&gt;":[…]} ou tableau ; contrôles détaillés par cloud_creer_ordre.</summary>
+    private static JsonElement Tableau(string fichier, string cle)
     {
         if (!File.Exists(fichier)) throw new ArgumentException($"Fichier introuvable : {fichier}");
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(fichier));
-            var racine = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("organismes", out var o) ? o : doc.RootElement;
-            return racine.ValueKind == JsonValueKind.Array ? racine.Clone() : throw new ArgumentException("Liste d'organismes attendue (tableau JSON).");
+            var racine = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty(cle, out var o) ? o : doc.RootElement;
+            return racine.ValueKind == JsonValueKind.Array ? racine.Clone() : throw new ArgumentException($"Liste « {cle} » attendue (tableau JSON).");
         }
         catch (JsonException e)
         {

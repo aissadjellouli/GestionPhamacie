@@ -256,6 +256,49 @@ public sealed class OrdresCentrauxSql(NpgsqlDataSource db) : IOrdresCentrauxDepo
         return resultat;
     }
 
+    public async Task<ChangementsListe> AjouterDciAsync(IReadOnlyList<string> noms, bool appliquer, long? par, string auteurCentral, Guid ordre,
+        CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        // Verrou de la table des DCI en écriture (deux ordres simultanés n'ajoutent pas deux fois le même nom, casse différente)
+        if (appliquer) await using (var v = new NpgsqlCommand("LOCK TABLE dci IN SHARE ROW EXCLUSIVE MODE", cnx, tx)) await v.ExecuteNonQueryAsync(ct);
+        var nouvelles = new List<string>();
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT DISTINCT ON (lower(btrim(n))) btrim(n) FROM unnest($1::text[]) n
+            WHERE btrim(n) <> '' AND NOT EXISTS (SELECT 1 FROM dci d WHERE lower(btrim(d.nom)) = lower(btrim(n)))
+            ORDER BY lower(btrim(n))
+            """, cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(noms.ToArray());
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct)) nouvelles.Add(r.GetString(0));
+        }
+        if (appliquer && nouvelles.Count > 0)
+        {
+            await using (var ins = new NpgsqlCommand("INSERT INTO dci (nom) SELECT unnest($1::text[]) ON CONFLICT (nom) DO NOTHING", cnx, tx))
+            {
+                ins.Parameters.AddWithValue(nouvelles.ToArray());
+                await ins.ExecuteNonQueryAsync(ct);
+            }
+        }
+        if (appliquer)
+        {
+            await using var j = new NpgsqlCommand("""
+                INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details)
+                VALUES ($1, 'dci_ajoutees', 'dci', NULL, $2::jsonb)
+                """, cnx, tx);
+            j.Parameters.Add(new NpgsqlParameter { Value = (object?)par ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+            j.Parameters.AddWithValue(System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["ajouts"] = nouvelles, ["recues"] = noms.Count, ["source"] = "ordre du serveur central", ["auteur_central"] = auteurCentral, ["ordre"] = ordre
+            }));
+            await j.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        return new ChangementsListe(nouvelles, []);
+    }
+
     private static async Task<IReadOnlyList<OrdreRecu>> LireListeAsync(NpgsqlCommand cmd, CancellationToken ct)
     {
         await using var r = await cmd.ExecuteReaderAsync(ct);
