@@ -21,7 +21,7 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 149 tables — 81 montantes, 22 bidirectionnelles, 18 descendantes, 28 jamais envoyées (`sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
+**Récapitulatif** : 150 tables — 81 montantes, 22 bidirectionnelles, 18 descendantes, 29 jamais envoyées (`commande_ordre_central`, jamais, par le script 146, lot S5.4 ; `sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
 
 ## Ce que reçoit le serveur central : vue d'ensemble (2026-11-17)
 
@@ -203,6 +203,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `reglage_central` | descendante | cle | - | - | Réglages décidés au serveur central (familles nominatives), voie descendante, script 131 |
 | `alerte_non_envoyee` | jamais | id | - | - | Technique, local |
 | `chaine_integrite` | jamais | journal | - | - | Registre technique local |
+| `commande_ordre_central` | jamais | commande_id | - | - | Lien commande / ordre du serveur central (local), script 146 |
 | `destinataire_notification` | jamais | id | - | - | Coordonnées personnelles |
 | `facture_compteur` | jamais | type, annee | - | - | Compteur local |
 | `historique_chifa` | jamais | id | - | - | Reprise : nom et n° d'assuré en clair |

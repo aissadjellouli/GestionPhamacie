@@ -31,4 +31,17 @@ public class OrdresAdministrationTests
         var p = OrdresAdministration.Creation(["--ordre-prix", "--produit", "2", "--prix", "380,50"])!.Value;
         Assert.Equal(("prix_produit", "2", (object?)380.50m, (object?)null), (p.Type, p.Cible, p.Donnees["prix_public"], p.Donnees["tarif_reference"]));
     }
+
+    [Fact]
+    public void Ordre_commande_lit_chaque_ligne_et_refuse_une_ligne_mal_ecrite()
+    {
+        var c = OrdresAdministration.Creation(["--ordre-commande", "--officine", "x", "--grossiste", "4", "--ligne", "42:10", "--ligne", "43:2:350.50", "--auteur", "a"])!.Value;
+        Assert.Equal(("commande", "4"), (c.Type, c.Cible));
+        var lignes = Assert.IsType<List<Dictionary<string, object?>>>(c.Donnees["lignes"]);
+        Assert.Equal([42L, 43L], lignes.Select(l => (long)l["produit"]!));
+        Assert.Equal([null, 350.50m], lignes.Select(l => (decimal?)l["prix_achat_ht"]));
+        Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-commande", "--grossiste", "4"]));
+        Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-commande", "--grossiste", "4", "--ligne", "42"]));
+        Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-commande", "--ligne", "42:1"]));
+    }
 }

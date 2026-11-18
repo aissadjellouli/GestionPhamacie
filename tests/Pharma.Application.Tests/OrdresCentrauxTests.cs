@@ -34,6 +34,14 @@ public class OrdresCentrauxTests
     {
         public NomenclatureEnMemoire Nomenclature { get; } = new();
         public ReferentielsFactices Referentiels { get; } = new();
+        public AchatsEnMemoire Achats { get; } = new();
+        public readonly List<(long Grossiste, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> Lignes, string Auteur, Guid Ordre)> Commandes = [];
+        public Task<string> CreerCommandeAsync(long fournisseurId, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> lignes, string auteurCentral,
+            Guid ordre, CancellationToken ct = default)
+        {
+            Commandes.Add((fournisseurId, lignes, auteurCentral, ordre));
+            return Task.FromResult($"C-{Commandes.Count:000000}");
+        }
         public readonly List<OrdreRecu> Ordres = [];
         public readonly List<(Guid Id, string Statut, string? Motif, long? Par)> Notes = [];
         public Task<IReadOnlyList<OrdreRecu>> EnCoursAsync(CancellationToken ct = default) =>
@@ -87,7 +95,8 @@ public class OrdresCentrauxTests
         var droits = new DroitsFactices("admin.utilisateurs") { Titulaire = titulaire };
         var executer = new ExecuterOrdreCentral(admin, new CreerUtilisateur(admin, new HacheurFactice(), journal, droits),
             new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot,
-            new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), depot.Nomenclature, droits, journal), depot.Referentiels);
+            new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), depot.Nomenclature, droits, journal), depot.Referentiels,
+            depot.Achats);
         var horloge = new Horloge(Maintenant);
         return (depot, admin, alertes, journal, new AppliquerOrdresCentraux(depot, executer, horloge, alertes),
             new ConfirmerOrdreCentral(depot, executer, droits, horloge), new RefuserOrdreCentral(depot, droits));
@@ -390,5 +399,71 @@ public class OrdresCentrauxTests
         var texte = ResumeOrdre.Texte(o, new EtatDroits([], [], []));
         Assert.Contains("« Nomenclature Juin 2026 » (3,0 Mo)", texte);
         Assert.Contains("à vérifier", texte);
+    }
+
+    // ---- Lot S5.4 : commandes en brouillon ----
+
+    private static OrdreRecu Commande(string grossiste, params object[] lignes) =>
+        Ordre(TypesOrdre.Commande, grossiste, "{}", System.Text.Json.JsonSerializer.Serialize(new { grossiste = "Grossiste 1", lignes }));
+
+    [Fact]
+    public async Task Commande_creee_en_brouillon_sans_confirmation_et_titulaire_alerte()
+    {
+        var m = Monter();
+        m.Depot.Achats.Dernier = new Pharma.Application.Achats.DernierAchat(80m, 1);
+        var o = Commande("1", new { produit = 3, nom = "Produit 3", quantite = 5, prix_achat_ht = 120.5m }, new { produit = 4, nom = "Produit 4", quantite = 2 });
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+        var c = Assert.Single(m.Depot.Commandes);
+        Assert.Equal((1L, "admin.essai", o.Id), (c.Grossiste, c.Auteur, c.Ordre));
+        Assert.Equal([(3L, 5, 120.5m), (4L, 2, 80m)], c.Lignes.Select(l => (l.ProduitId, l.Quantite, l.PrixAchatHt)));  // sans prix : dernier achat
+        Assert.Contains(m.Alertes.Objets, a => a.Contains("commande préparée"));
+    }
+
+    [Fact]
+    public async Task Commande_une_ligne_refusee_refuse_tout_l_ordre_avec_chaque_motif()
+    {
+        var m = Monter();
+        m.Depot.Achats.BloquesAchat.Add(5);
+        var o = Commande("1", new { produit = 99, quantite = 1 }, new { produit = 5, quantite = 1, prix_achat_ht = 10m }, new { produit = 6, quantite = 1 },
+            new { produit = 7, quantite = 1, prix_achat_ht = 10m });
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(o.Id));
+        Assert.Empty(m.Depot.Commandes);
+        var motif = m.Depot.Ordres.Single().Motif!;
+        Assert.Contains("produit n° 99 introuvable", motif);
+        Assert.Contains("Produit 5 bloqué à l’achat", motif);
+        Assert.Contains("Produit 6 : aucun achat précédent", motif);
+        Assert.DoesNotContain("Produit 7", motif);
+    }
+
+    [Fact]
+    public async Task Commande_grossiste_inconnu_trop_de_lignes_ou_doublon_refuses()
+    {
+        var m = Monter();
+        var inconnu = Commande("8", new { produit = 3, quantite = 1, prix_achat_ht = 1m });
+        var trop = Commande("1", Enumerable.Range(1, ExecuterOrdreCentral.LignesCommandeMax + 1).Select(i => (object)new { produit = i, quantite = 1, prix_achat_ht = 1m }).ToArray());
+        var doublon = Commande("1", new { produit = 3, quantite = 1, prix_achat_ht = 1m }, new { produit = 3, quantite = 2, prix_achat_ht = 1m });
+        var illisible = Ordre(TypesOrdre.Commande, "1", "{}", """{"lignes":[{"produit":"trois","quantite":1}]}""");
+        m.Depot.Ordres.AddRange([inconnu, trop, doublon, illisible]);
+        await m.Auto.ExecuterAsync();
+        Assert.All(m.Depot.Ordres, o => Assert.Equal(StatutsOrdre.Refuse, o.Statut));
+        Assert.Contains("Grossiste n° 8 introuvable", m.Depot.Ordres[0].Motif);
+        Assert.Contains("de 1 à 200 lignes", m.Depot.Ordres[1].Motif);
+        Assert.Contains("deux lignes", m.Depot.Ordres[2].Motif);
+        Assert.Contains("mal formée", m.Depot.Ordres[3].Motif);
+        Assert.Empty(m.Depot.Commandes);
+    }
+
+    [Fact]
+    public void Commande_resume_lisible()
+    {
+        var o = Commande("1", new { produit = 3, nom = "Doliprane", quantite = 5 }, new { produit = 4, nom = "Augmentin", quantite = 2 },
+            new { produit = 5, nom = "Smecta", quantite = 1 }, new { produit = 6, nom = "Spasfon", quantite = 3 });
+        var texte = ResumeOrdre.Texte(o, new EtatDroits([], [], []));
+        Assert.Equal("Bon en brouillon chez Grossiste 1 : 4 ligne(s) (Doliprane × 5, Augmentin × 2, Smecta × 1, …). Envoyé au grossiste depuis l’officine seulement.", texte);
+        Assert.False(TypesOrdre.ConfirmationRequise(TypesOrdre.Commande));
     }
 }

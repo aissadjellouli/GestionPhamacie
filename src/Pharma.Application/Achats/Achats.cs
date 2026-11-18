@@ -52,10 +52,13 @@ public sealed class EnregistrerGrossiste(IGrossistes grossistes, IPermissionServ
     }
 }
 
-/// <summary>Statuts de la base : brouillon, envoyee, recue_partielle, recue, annulee.</summary>
+/// <summary>
+/// Statuts de la base : brouillon, envoyee, recue_partielle, recue, annulee. AuteurCentral : bon préparé par le serveur central
+/// (lot S5.4), auteur au central ; null sinon.
+/// </summary>
 public sealed record CommandeResume(
     long Id, string Numero, long FournisseurId, string Fournisseur, DateTime Date, string Statut,
-    int NombreLignes, decimal MontantHt);
+    int NombreLignes, decimal MontantHt, string? AuteurCentral = null);
 
 public sealed record LigneCommandeAchat(
     long Id, long ProduitId, string Produit, int QteCommandee, int QteRecue, decimal PrixAchatHt);

@@ -315,9 +315,10 @@ public sealed record FournisseurDto(long Id, string RaisonSociale, string? Telep
 public sealed record FicheGrossisteDto(long? Id, string? RaisonSociale, string? Telephone, string? Email, string? Adresse, string? Nif, string? Rc,
     int? DelaiRepriseJours, bool Actif = true);
 
-/// <summary>Statut : brouillon, envoyee, recue_partielle, recue ou annulee.</summary>
+/// <summary>Statut : brouillon, envoyee, recue_partielle, recue ou annulee. AuteurCentral : bon préparé par le serveur central (lot S5.4).</summary>
 public sealed record CommandeAchatDto(
-    long Id, string Numero, long FournisseurId, string Fournisseur, DateTime Date, string Statut, int NombreLignes, decimal? MontantHt);
+    long Id, string Numero, long FournisseurId, string Fournisseur, DateTime Date, string Statut, int NombreLignes, decimal? MontantHt,
+    string? AuteurCentral = null);
 
 public sealed record LigneCommandeAchatDto(long Id, long ProduitId, string Produit, int QteCommandee, int QteRecue, decimal? PrixAchatHt);
 public sealed record CommandeAchatDetailDto(CommandeAchatDto Entete, IReadOnlyList<LigneCommandeAchatDto> Lignes);

@@ -35,13 +35,15 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
     private const string SelectCommande = """
         SELECT c.id, c.numero, c.fournisseur_id, f.raison_sociale, c.date_commande, c.statut,
                (SELECT count(*) FROM ligne_commande l WHERE l.commande_id = c.id)::int,
-               COALESCE((SELECT SUM(l.qte_commandee * l.prix_achat_ht) FROM ligne_commande l WHERE l.commande_id = c.id), 0)
+               COALESCE((SELECT SUM(l.qte_commandee * l.prix_achat_ht) FROM ligne_commande l WHERE l.commande_id = c.id), 0),
+               (SELECT x.auteur FROM commande_ordre_central x WHERE x.commande_id = c.id)
         FROM commande_fournisseur c
         JOIN fournisseur f ON f.id = c.fournisseur_id
         """;
 
     private static CommandeResume LireCommande(NpgsqlDataReader r) =>
-        new(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetString(3), r.GetDateTime(4), r.GetString(5), r.GetInt32(6), r.GetDecimal(7));
+        new(r.GetInt64(0), r.GetString(1), r.GetInt64(2), r.GetString(3), r.GetDateTime(4), r.GetString(5), r.GetInt32(6), r.GetDecimal(7),
+            r.IsDBNull(8) ? null : r.GetString(8));
 
     public async Task<Page<CommandeResume>> CommandesAsync(DemandePage page, FiltreAchats? filtre = null, CancellationToken ct = default)
     {
@@ -157,7 +159,13 @@ public sealed class AchatsSql(NpgsqlDataSource db) : IAchats
         // Verrou du grossiste : deux postes ne créent pas deux brouillons en même temps
         await Executer(cnx, tx, "SELECT 1 FROM fournisseur WHERE id = $1 FOR UPDATE", ct, fournisseurId);
         await using (var cherche = new NpgsqlCommand(
-            "SELECT id FROM commande_fournisseur WHERE fournisseur_id = $1 AND statut = 'brouillon' ORDER BY id LIMIT 1", cnx, tx))
+            // Lot S5.4 : un bon préparé par le serveur central reste à part (jamais complété depuis l'écran)
+            """
+            SELECT c.id FROM commande_fournisseur c
+            WHERE c.fournisseur_id = $1 AND c.statut = 'brouillon'
+              AND NOT EXISTS (SELECT 1 FROM commande_ordre_central x WHERE x.commande_id = c.id)
+            ORDER BY c.id LIMIT 1
+            """, cnx, tx))
         {
             cherche.Parameters.AddWithValue(fournisseurId);
             if (await cherche.ExecuteScalarAsync(ct) is long existant)

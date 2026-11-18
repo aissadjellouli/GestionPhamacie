@@ -13,6 +13,7 @@ namespace Pharma.Cloud.Api.Ordres;
 ///   --ordre-employe-modifier --officine &lt;code&gt; --employe &lt;n°&gt; [--nom &lt;nom&gt;] [--role &lt;code&gt;] --auteur &lt;nom&gt;
 ///   --ordre-employe-bloquer | --ordre-employe-debloquer --officine &lt;code&gt; --employe &lt;n°&gt; --auteur &lt;nom&gt;
 ///   --ordre-droits-role --officine &lt;code&gt; --role &lt;code&gt; --permissions &lt;a,b,c&gt; --auteur &lt;nom&gt;
+///   --ordre-commande --officine &lt;code&gt; --grossiste &lt;n°&gt; --ligne &lt;produit&gt;:&lt;qté&gt;[:&lt;prix HT&gt;] … --auteur &lt;nom&gt;
 ///   --annuler-ordre &lt;id&gt; --officine &lt;code&gt; --auteur &lt;nom&gt;
 ///   --expirer-ordres                                                                  tâche planifiée (chaque heure)
 /// </summary>
@@ -20,7 +21,8 @@ public static class OrdresAdministration
 {
     public static readonly string[] Commandes =
         ["--ordres", "--ordre-essai", "--ordre-employe-creer", "--ordre-employe-modifier", "--ordre-employe-bloquer", "--ordre-employe-debloquer",
-         "--ordre-droits-role", "--ordre-prix", "--annuler-ordre", "--expirer-ordres", "--importer-nomenclature", "--publier-nomenclature"];
+         "--ordre-droits-role", "--ordre-prix", "--annuler-ordre", "--expirer-ordres", "--importer-nomenclature", "--publier-nomenclature",
+         "--ordre-commande"];
 
     public static bool Concerne(string commande) => Commandes.Contains(commande);
 
@@ -46,8 +48,25 @@ public static class OrdresAdministration
             "--ordre-prix" => ("prix_produit", Exiger("--produit"),
                 O("--prix") is null && O("--tarif") is null ? throw new ArgumentException("Option --prix ou --tarif attendue.")
                     : new() { ["prix_public"] = Montant(O("--prix")), ["tarif_reference"] = Montant(O("--tarif")) }),
+            // Lot S5.4 : --ordre-commande --officine <code> --grossiste <n°> --ligne <produit>:<qté>[:<prix HT>] (répétée) --auteur <nom>
+            "--ordre-commande" => ("commande", Exiger("--grossiste"), new() { ["lignes"] = LignesCommande(args) }),
             _ => null
         };
+    }
+
+    /// <summary>Lignes d'un ordre de commande : chaque --ligne vaut produit:quantité ou produit:quantité:prix HT.</summary>
+    private static List<Dictionary<string, object?>> LignesCommande(string[] args)
+    {
+        var lignes = new List<Dictionary<string, object?>>();
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] != "--ligne") continue;
+            var p = args[i + 1].Split(':', StringSplitOptions.TrimEntries);
+            if (p.Length is < 2 or > 3 || !long.TryParse(p[0], out var produit) || !int.TryParse(p[1], out var quantite))
+                throw new ArgumentException($"Ligne invalide : {args[i + 1]} (attendu produit:quantité ou produit:quantité:prix, ex. 42:10 ou 42:10:350.50).");
+            lignes.Add(new() { ["produit"] = produit, ["quantite"] = quantite, ["prix_achat_ht"] = p.Length == 3 ? Montant(p[2]) : null });
+        }
+        return lignes.Count > 0 ? lignes : throw new ArgumentException("Option --ligne <produit>:<quantité>[:<prix HT>] attendue (au moins une).");
     }
 
     private static decimal? Montant(string? v) => v is null ? null

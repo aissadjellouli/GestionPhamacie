@@ -101,6 +101,76 @@ public sealed class OrdresCentrauxSql(NpgsqlDataSource db) : IOrdresCentrauxDepo
         return true;
     }
 
+    public async Task<string> CreerCommandeAsync(long fournisseurId, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> lignes, string auteurCentral,
+        Guid ordre, CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        // Verrou de l'ordre : deux passages simultanés ne créent pas deux bons
+        await using (var verrou = new NpgsqlCommand("SELECT 1 FROM sync_ordre_recu WHERE id = $1 FOR UPDATE", cnx, tx))
+        {
+            verrou.Parameters.AddWithValue(ordre);
+            await verrou.ExecuteNonQueryAsync(ct);
+        }
+        await using (var deja = new NpgsqlCommand("""
+            SELECT c.numero FROM commande_ordre_central x JOIN commande_fournisseur c ON c.id = x.commande_id WHERE x.ordre_id = $1
+            """, cnx, tx))
+        {
+            deja.Parameters.AddWithValue(ordre);
+            if (await deja.ExecuteScalarAsync(ct) is string existant)
+            {
+                await tx.CommitAsync(ct);
+                return existant;
+            }
+        }
+        long id;
+        string numero;
+        await using (var cree = new NpgsqlCommand("""
+            INSERT INTO commande_fournisseur (fournisseur_id, numero, utilisateur_id, montant_total)
+            VALUES ($1, prochain_numero_commande(), NULL, $2) RETURNING id, numero
+            """, cnx, tx))
+        {
+            cree.Parameters.AddWithValue(fournisseurId);
+            cree.Parameters.AddWithValue(lignes.Sum(l => l.Quantite * l.PrixAchatHt));
+            await using var r = await cree.ExecuteReaderAsync(ct);
+            await r.ReadAsync(ct);
+            (id, numero) = (r.GetInt64(0), r.GetString(1));
+        }
+        await using (var l = new NpgsqlCommand("""
+            INSERT INTO ligne_commande (commande_id, produit_id, qte_commandee, prix_achat_ht)
+            SELECT $1, p, q, x FROM unnest($2::bigint[], $3::int[], $4::numeric[]) AS t(p, q, x)
+            """, cnx, tx))
+        {
+            l.Parameters.AddWithValue(id);
+            l.Parameters.AddWithValue(lignes.Select(x => x.ProduitId).ToArray());
+            l.Parameters.AddWithValue(lignes.Select(x => x.Quantite).ToArray());
+            l.Parameters.AddWithValue(lignes.Select(x => x.PrixAchatHt).ToArray());
+            await l.ExecuteNonQueryAsync(ct);
+        }
+        await using (var lien = new NpgsqlCommand("INSERT INTO commande_ordre_central (commande_id, ordre_id, auteur) VALUES ($1, $2, $3)", cnx, tx))
+        {
+            lien.Parameters.AddWithValue(id);
+            lien.Parameters.AddWithValue(ordre);
+            lien.Parameters.AddWithValue(auteurCentral);
+            await lien.ExecuteNonQueryAsync(ct);
+        }
+        await using (var j = new NpgsqlCommand("""
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details)
+            VALUES (NULL, 'commande_preparee_central', 'commande_fournisseur', $1, $2::jsonb)
+            """, cnx, tx))
+        {
+            j.Parameters.AddWithValue(id);
+            j.Parameters.AddWithValue(System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                ["numero"] = numero, ["lignes"] = lignes.Count, ["montant_ht"] = lignes.Sum(x => x.Quantite * x.PrixAchatHt),
+                ["source"] = "ordre du serveur central", ["auteur_central"] = auteurCentral, ["ordre"] = ordre
+            }));
+            await j.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        return numero;
+    }
+
     private static async Task<IReadOnlyList<OrdreRecu>> LireListeAsync(NpgsqlCommand cmd, CancellationToken ct)
     {
         await using var r = await cmd.ExecuteReaderAsync(ct);

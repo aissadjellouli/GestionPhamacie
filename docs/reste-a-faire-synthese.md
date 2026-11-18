@@ -47,7 +47,7 @@ Rien. La lecture de la fréquence de copie de la GED par authentification Window
 ## 7. Plus tard (sur accord explicite du titulaire)
 
 - [ ] **GED, protection des sauvegardes** (décidé le 2026-11-18) : alerte « pas de sauvegarde sur disque externe depuis 7 jours » et rotation de deux disques obligatoire sans 2e serveur, à coder sur « go » ([ged-protection-a-decider.md](ged-protection-a-decider.md)).
-- [ ] **Synchronisation** : S5.1, S5.5, S5.2 et S5.3 (nomenclature) réalisés (conception § 24 à § 26) ; restent les autres référentiels, S5.4 commandes en brouillon,
+- [ ] **Synchronisation** : S5.1, S5.5, S5.2, S5.3 (nomenclature) et S5.4 (commandes en brouillon) réalisés (conception § 24 à § 27) ; restent les autres référentiels,
       fin de S6 (restauration de la base d'une officine, bascule, départ), S7 (écrans du central, multi-officines).
 - [ ] Découpage par officine des grandes tables du central ; multi-officines après le choix de l'hébergeur.
 - [ ] Script 101b (suppression de `vente.num_facture_chifa`) : à exécuter à la mise à jour de l'officine, conflits tranchés.

@@ -327,7 +327,7 @@ internal static class AchatsEndpoints
         new(p.Lignes.Select(convertir).ToList(), p.Total, p.Numero, p.Taille);
 
     private static CommandeAchatDto VersDto(CommandeResume c, VisibiliteAchats v) =>
-        new(c.Id, c.Numero, c.FournisseurId, c.Fournisseur, c.Date, c.Statut, c.NombreLignes, v.Prix(c.MontantHt));
+        new(c.Id, c.Numero, c.FournisseurId, c.Fournisseur, c.Date, c.Statut, c.NombreLignes, v.Prix(c.MontantHt), c.AuteurCentral);
 
     private static CommandeAchatDetailDto VersDto(CommandeDetail c, VisibiliteAchats v) =>
         new(VersDto(c.Entete, v), c.Lignes.Select(l => new LigneCommandeAchatDto(l.Id, l.ProduitId, l.Produit, l.QteCommandee, l.QteRecue, v.Prix(l.PrixAchatHt))).ToList());

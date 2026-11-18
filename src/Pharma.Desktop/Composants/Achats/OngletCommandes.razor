@@ -130,7 +130,7 @@
                     @foreach (var c in commandes)
                     {
                         <tr class="ligne-cliquable @(detail?.Entete.Id == c.Id ? "choisie" : null)" @onclick="() => OuvrirAsync(c.Id)">
-                            <td><button type="button" class="lien" @onclick="() => OuvrirAsync(c.Id)" @onclick:stopPropagation="true">@c.Numero</button><br /><span class="detail">@c.NombreLignes ligne(s)</span></td>
+                            <td><button type="button" class="lien" @onclick="() => OuvrirAsync(c.Id)" @onclick:stopPropagation="true">@c.Numero</button><br /><span class="detail">@c.NombreLignes ligne(s)@(c.AuteurCentral is null ? "" : " · serveur central")</span></td>
                             <td><LienContact Type="grossiste" Id="c.FournisseurId" Nom="@c.Fournisseur" /></td>
                             <td>@Libelles.DateLocale(c.Date)</td>
                             @if (VoitPrix) { <td>@Libelles.Dinars(c.MontantHt, 2)</td> }
@@ -163,6 +163,10 @@
                 <h2>Bon @detail.Entete.Numero</h2>
                 <span class="pastille @Libelles.ClasseStatutCommande(detail.Entete.Statut)">@Libelles.StatutCommande(detail.Entete.Statut)</span>
             </div>
+            @if (detail.Entete.AuteurCentral is { } auteurCentral)
+            {
+                <p class="detail" style="margin: 4px 0 0">Préparé par le serveur central (@auteurCentral)@(brouillon ? " : vérifiez-le, puis émettez-le vers le grossiste." : ".")</p>
+            }
             <p class="detail" style="margin: 0"><LienContact Type="grossiste" Id="detail.Entete.FournisseurId" Nom="@detail.Entete.Fournisseur" /> · @Libelles.DateLocale(detail.Entete.Date)</p>
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Produit</th><th scope="col">Qté</th>@if (VoitPrix) { <th scope="col">Prix HT</th> }@if (!brouillon){<th scope="col">Reçu</th>}</tr></thead>

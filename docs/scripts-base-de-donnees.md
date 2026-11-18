@@ -98,7 +98,7 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 | `-AvecTests` | Passe aussi les tests de `database\cloud\tests` (transaction annulée) |
 | `-WhatIf` | Simulation |
 
-**Ce que fait le script** : contrôle la suite `database\cloud\001` à `015` (sans trou) ; refuse si la base contient déjà des tables centrales ; crée la base si elle n'existe pas ; passe `001` à `015` dans l'ordre avec le compte propriétaire (il n'y a pas de `schema.sql` central : un seul endroit à tenir à jour) ; vérifie les tables, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api` (créé **sans connexion** par `001`, propriétaire d'aucune table) ; avec `-AvecTests`, chaque fichier de test doit finir par « tous réussis ».
+**Ce que fait le script** : contrôle la suite `database\cloud\001` à `016` (sans trou) ; refuse si la base contient déjà des tables centrales ; crée la base si elle n'existe pas ; passe `001` à `016` dans l'ordre avec le compte propriétaire (il n'y a pas de `schema.sql` central : un seul endroit à tenir à jour) ; vérifie les tables, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api` (créé **sans connexion** par `001`, propriétaire d'aucune table) ; avec `-AvecTests`, chaque fichier de test doit finir par « tous réussis ».
 
 **Après le script** : le mot de passe de `pharma_cloud_api` se règle à part, par le superutilisateur (parcours E, étape 2.4) : `ALTER ROLE pharma_cloud_api LOGIN;` puis `\password pharma_cloud_api`. Ne jamais lancer les tests sur la base de production du central (parcours E, étape 2.2, **[À CONFIRMER]**).
 
@@ -112,7 +112,7 @@ Pour une mise à jour qui a échoué ou qu'on abandonne : la sauvegarde `.dump` 
 | --- | --- |
 | `database\init\` | **Base neuve** d'officine : `schema.sql` (toute la structure) et `seed_referentiel.sql` (référentiel de départ) équivalent aux scripts 001 à NNN. À tenir à jour **à chaque nouveau script** : leur en-tête cite « 001 à NNN » et `creer_base_officine.ps1` refuse de créer une base si NNN n'est pas le dernier script. `clean.sql` remet une base à vierge (jamais en service) |
 | `database\migration\` | **Mise à jour** d'une base existante : scripts `NNN_nom.sql` rejoués dans l'ordre, idempotents. Les scripts « b » (`101b`, `111b`) sont à part (3.1, 3.2) |
-| `database\cloud\` | Base **centrale** : scripts `001` à `015`, jamais sur une base d'officine |
+| `database\cloud\` | Base **centrale** : scripts `001` à `016`, jamais sur une base d'officine |
 | `database\tests\` | Tests SQL des scripts de `migration` (transaction annulée) ; `rejeu_complet.ps1` : rejeu de toute la suite sur une copie jetable (pas un test SQL) |
 | `database\cloud\tests\` | Tests SQL des scripts du central (lancés par `-AvecTests`) |
 | `database\data\` | Données **fictives** de démonstration (`9xx_*.sql`) : développement et recette seulement, **jamais en production** |

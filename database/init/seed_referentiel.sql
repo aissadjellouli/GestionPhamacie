@@ -23,7 +23,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 145 (095, 098, 099, 132, 134, 137, 138, 139, 142 et 143 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 146 (095, 098, 099, 132, 134, 137, 138, 139, 142 et 143 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 146 : classement de commande_ordre_central (jamais) ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -382,6 +382,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('client_facture', 'montante', '{id}', '{telephone,email}', '{}', '{}', false, NULL),
     ('cloture_fiscale', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('commande_fournisseur', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, 'Commande en brouillon préparée à distance'),
+    ('commande_ordre_central', 'jamais', '{commande_id}', '{}', '{}', '{}', false, 'Lien commande / ordre du serveur central (local), script 146'),
     ('comptage_caisse', 'montante', '{session_id,coupure}', '{}', '{}', '{}', false, NULL),
     ('comptage_intermediaire', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('comptage_reception', 'montante', '{id}', '{}', '{}', '{}', false, NULL),

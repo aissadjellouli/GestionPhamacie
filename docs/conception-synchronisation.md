@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)** ; **lot S5.3 réalisé le 2026-11-18 (§ 26 : nomenclature nationale envoyée par le central)**
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)** ; **lot S5.3 réalisé le 2026-11-18 (§ 26 : nomenclature nationale envoyée par le central)** ; **lot S5.4 réalisé le 2026-11-18 (§ 27 : commandes en brouillon envoyées par le central)**
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -190,7 +190,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S2 | API cloud minimale (réception, idempotence, ordre, accusés), base centrale cloisonnée, authentification par certificat | S0, S1 |
 | S3 | Service de sync local (envoi, reprise, bandeau, écran d'état, alertes) | S1, S2 |
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
-| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26)** | S3 |
+| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26) ; S5.4 (commandes en brouillon) réalisé le 2026-11-18 (§ 27)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
 | S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
@@ -1355,3 +1355,31 @@ empreinte SHA-256 vérifiée ; S5.3-D4 l'import manuel reste possible ; S5.3-D5 
   du central » mesuré à 1 536 × 890 sans défilement, captures en clair et sombre.
 - **Point relevé** (outil d'essai) : `essai_cloud_officine.ps1 -Arreter` a annoncé deux fois « n'a pas pu être arrêté » alors que
   le processus s'arrêtait un peu plus tard ; relancé, il a tout supprimé. À rendre plus patient **[À DÉCIDER]**.
+
+## 27. Lot S5.4 : réalisé (2026-11-18, « go S5.4 ») — commandes en brouillon envoyées par le central
+
+Décisions (recommandations acceptées) : S5.4-D1 grossiste et produits désignés par leur n° local dans l'officine ; S5.4-D2 un bon
+**séparé**, jamais mélangé au brouillon en cours de l'officine ; S5.4-D3 **sans confirmation** : le bon est créé tout de suite et le
+titulaire est alerté (rien ne part au grossiste sans lui, décision S5-D4) ; S5.4-D4 une seule ligne refusée → tout l'ordre est
+refusé, avec le motif de chaque ligne, aucun bon à moitié créé ; S5.4-D5 200 lignes au plus **[À DÉCIDER : plafond à confirmer à
+l'usage]** ; S5.4-D6 prix facultatif : à défaut, le dernier prix d'achat (même règle qu'à l'écran), sinon refus.
+
+- **Central** (script `016`) : type d'ordre `commande` ; cible = n° du grossiste ; données = 1 à 200 lignes (n° du produit,
+  quantité entière de 1 à 999 999, prix d'achat HT facultatif, 0 ou plus, deux décimales), un produit une seule fois. Grossiste
+  (connu, actif) et produits (connus) contrôlés dans les tables miroir de l'officine ; noms ajoutés pour l'affichage. Commande
+  `--ordre-commande --officine <code> --grossiste <n°> --ligne <produit>:<qté>[:<prix HT>] … --auteur <nom>`.
+- **Officine** (script `146`) : table locale `commande_ordre_central` (jamais envoyée) qui relie le bon à l'ordre (n° d'ordre
+  unique : un même ordre ne crée jamais deux bons) ; `commande_fournisseur` inchangée, donc la remontée des commandes aussi. À
+  l'application, mêmes contrôles que l'ajout d'un produit à l'écran (`AjouterACommande`) : grossiste actif, produit connu et non
+  bloqué à l'achat, prix, quantité ; puis bon `brouillon` créé avec toutes ses lignes en une transaction, sans auteur local, journal
+  `commande_preparee_central` (« Serveur central (auteur) » au journal des actions) et alerte au titulaire (« À voir : Achats ›
+  Commandes »). L'ajout d'un produit depuis l'écran ne complète jamais un bon du central (`BrouillonAsync` l'exclut). Écran
+  « Commandes » : « · serveur central » sous le n° du bon, et dans le détail « Préparé par le serveur central (auteur) : vérifiez-le,
+  puis émettez-le vers le grossiste. ». L'émission, la modification et l'annulation restent celles de l'écran.
+- **Essai de bout en bout** (2026-11-18, `scripts\dev\essai_cloud_officine.ps1`, HTTPS avec certificats, bases jetables supprimées
+  ensuite) : trois ordres pour le grossiste n° 42. 1er ordre (3 lignes dont une sans prix) → bon C-000220 en brouillon, sans auteur
+  local, prix manquant repris du dernier achat ; 2e ordre → bon séparé C-000219 ; 3e ordre avec un produit bloqué à l'achat → refusé
+  « Rien n'a été créé : … bloqué à l'achat », aucun bon. Produit inconnu refusé dès le central. C-000220 émis depuis l'officine (PDF,
+  « envoyée ») ; un produit ajouté ensuite depuis l'écran a ouvert un nouveau brouillon (C-000221), pas le bon du central. Résultats
+  remontés au central (appliqué, appliqué, refusé avec motif). Écran « Bons de commande » mesuré à 1 536 × 890 sans défilement de
+  la page, captures en clair et sombre. Arrêt de l'outil d'essai : même défaut qu'en S5.3 (deux annonces d'échec avant succès).

@@ -26,8 +26,10 @@ public static class TypesOrdre
     public const string PrixProduit = "prix_produit";
     /// <summary>Lot S5.3 : nouvelle nomenclature nationale (fichier téléchargé au serveur central à la confirmation).</summary>
     public const string Nomenclature = "nomenclature";
+    /// <summary>Lot S5.4 : commande préparée au central, créée en brouillon (envoi au grossiste depuis l'officine seulement).</summary>
+    public const string Commande = "commande";
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
-        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature };
+        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
     public static bool ConfirmationRequise(string type) => type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole or Nomenclature;
@@ -42,6 +44,7 @@ public static class TypesOrdre
         DroitsRole => "Droits d’un rôle",
         PrixProduit => "Prix d’un produit",
         Nomenclature => "Nomenclature nationale",
+        Commande => "Commande en brouillon",
         _ => type
     };
 }
@@ -79,6 +82,13 @@ public interface IOrdresCentrauxDepot
     /// </summary>
     Task<bool> ModifierPrixAsync(long produitId, decimal? prix, decimal? tarif, decimal prixAttendu, decimal? tarifAttendu, long? par,
         string auteurCentral, Guid ordre, CancellationToken ct = default);
+    /// <summary>
+    /// Lot S5.4 : bon de commande EN BROUILLON avec toutes ses lignes, en une transaction, sans auteur local, rattaché à l'ordre
+    /// (commande_ordre_central, script 146 : un même ordre ne crée jamais deux bons) ; journal « commande_preparee_central ».
+    /// Renvoie le n° du bon (celui déjà créé si l'ordre a déjà été traité).
+    /// </summary>
+    Task<string> CreerCommandeAsync(long fournisseurId, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> lignes, string auteurCentral,
+        Guid ordre, CancellationToken ct = default);
 }
 
 /// <summary>L'ordre ne peut pas être appliqué tel quel (valeur changée dans l'officine, cible interdite ou introuvable) : refus définitif.</summary>
@@ -87,8 +97,11 @@ public sealed class OrdreInapplicableException(string message) : Exception(messa
 /// <summary>Application d'un ordre par les cas d'usage existants ; <paramref name="titulaireId"/> : titulaire qui confirme (null : automatique).</summary>
 public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole,
     Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot, Catalogue.ImporterNomenclature nomenclature,
-    ITelechargementReferentiel referentiels)
+    ITelechargementReferentiel referentiels, Achats.IAchats achats)
 {
+    /// <summary>Lignes au plus dans un ordre de commande (décision S5.4-D5).</summary>
+    public const int LignesCommandeMax = 200;
+
     public const string ModifieDansOfficine = "modifié dans l’officine depuis l’envoi de l’ordre";
     /// <summary>Écart de prix au-delà duquel le titulaire confirme (décision S5.2-D1) : 20 %.</summary>
     public const decimal EcartPrixMax = 0.20m;
@@ -199,6 +212,9 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
             case TypesOrdre.Nomenclature:
                 await ImporterNomenclatureAsync(d, titulaireId!.Value, ct);
                 return;
+            case TypesOrdre.Commande:
+                await CreerCommandeAsync(o, d, ct);
+                return;
             case TypesOrdre.DroitsRole:
             {
                 var role = Role(etat, o.Cible);
@@ -213,6 +229,52 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
             default:
                 throw new OrdreInapplicableException($"Type d’ordre non pris en charge : {o.Type}.");
         }
+    }
+
+    /// <summary>
+    /// Lot S5.4 : mêmes contrôles que l'ajout d'un produit à l'écran (AjouterACommande) pour chaque ligne : grossiste actif, produit connu
+    /// et non bloqué à l'achat, prix donné ou dernier prix d'achat, quantité. Une seule ligne refusée : tout l'ordre est refusé, rien n'est
+    /// créé (décision S5.4-D4), avec le motif de chaque ligne.
+    /// </summary>
+    private async Task CreerCommandeAsync(OrdreRecu o, JsonElement d, CancellationToken ct)
+    {
+        var grossiste = long.TryParse(o.Cible, out var gid) ? await achats.FournisseurAsync(gid, ct) : null;
+        if (grossiste is null) throw new OrdreInapplicableException($"Grossiste n° {o.Cible} introuvable dans l’officine.");
+        if (!grossiste.Actif) throw new OrdreInapplicableException($"{grossiste.RaisonSociale} est désactivé dans l’officine.");
+        List<(long Produit, int Quantite, decimal? Prix)> demandes;
+        try
+        {
+            if (!d.TryGetProperty("lignes", out var l) || l.ValueKind != JsonValueKind.Array) throw new FormatException();
+            demandes = l.EnumerateArray().Select(e => (e.GetProperty("produit").GetInt64(), e.GetProperty("quantite").GetInt32(),
+                e.TryGetProperty("prix_achat_ht", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDecimal() : (decimal?)null)).ToList();
+        }
+        catch (Exception e) when (e is FormatException or InvalidOperationException or KeyNotFoundException)
+        {
+            throw new OrdreInapplicableException("Commande mal formée (lignes : n° de produit, quantité, prix facultatif).");
+        }
+        if (demandes.Count is 0 or > LignesCommandeMax)
+            throw new OrdreInapplicableException($"Une commande compte de 1 à {LignesCommandeMax} lignes.");
+        if (demandes.Select(x => x.Produit).Distinct().Count() != demandes.Count)
+            throw new OrdreInapplicableException("Un même produit apparaît sur deux lignes.");
+        var infos = (await achats.InfosAchatAsync(demandes.Select(x => x.Produit).ToList(), ct)).ToDictionary(i => i.ProduitId);
+        var lignes = new List<Pharma.Domain.Achats.LigneCommandeSaisie>();
+        var erreurs = new List<string>();
+        foreach (var x in demandes)
+        {
+            var nom = await achats.NomProduitAsync(x.Produit, ct);
+            if (nom is null) { erreurs.Add($"produit n° {x.Produit} introuvable"); continue; }
+            if (infos.GetValueOrDefault(x.Produit) is { BloqueAchat: true } b)
+            {
+                erreurs.Add($"{nom} bloqué à l’achat{(b.MotifBlocage is { } m ? $" ({m})" : "")}");
+                continue;
+            }
+            var prix = x.Prix ?? (await achats.DernierAchatAsync(x.Produit, grossiste.Id, ct))?.PrixAchatHt;
+            if (prix is null) { erreurs.Add($"{nom} : aucun achat précédent, prix d’achat à indiquer"); continue; }
+            lignes.Add(new Pharma.Domain.Achats.LigneCommandeSaisie(x.Produit, nom, x.Quantite, prix.Value));
+        }
+        if (erreurs.Count > 0) throw new OrdreInapplicableException($"Rien n’a été créé : {string.Join(" ; ", erreurs)}.");
+        Pharma.Domain.Achats.RegleAchats.VerifierCommande(lignes);
+        await depot.CreerCommandeAsync(grossiste.Id, lignes, o.Auteur, o.Id, ct);
     }
 
     private static RoleAdmin Role(EtatDroits etat, string? code)
@@ -282,7 +344,7 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
             {
                 await executer.ExecuterAsync(o, null, null, ct);
                 await depot.NoterAsync(o.Id, StatutsOrdre.Applique, null, null, ct);
-                if (o.Type == TypesOrdre.EmployeBloquer) await PrevenirAsync(o, StatutsOrdre.Applique, null, ct);
+                if (o.Type is TypesOrdre.EmployeBloquer or TypesOrdre.Commande) await PrevenirAsync(o, StatutsOrdre.Applique, null, ct);
             }
             catch (Exception e) when (e is OrdreInapplicableException or RegleMetierException or JsonException or KeyNotFoundException)
             {
@@ -301,7 +363,11 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
 
     private Task PrevenirAsync(OrdreRecu o, string statut, string? motif, CancellationToken ct)
     {
-        var (objet, phrase) = statut switch
+        // Lot S5.4 : bon créé en brouillon, à vérifier puis envoyer au grossiste depuis l'officine (décision S5-D4)
+        var commande = o.Type == TypesOrdre.Commande && statut == StatutsOrdre.Applique;
+        var (objet, phrase) = commande
+            ? ("Synchronisation : commande préparée par le serveur central", "a créé un bon de commande en brouillon, à vérifier puis à envoyer au grossiste")
+            : statut switch
         {
             StatutsOrdre.AConfirmer => ("Synchronisation : ordre du serveur central à confirmer", "attend votre confirmation"),
             StatutsOrdre.Refuse => ("Synchronisation : ordre du serveur central refusé", "a été refusé"),
@@ -309,7 +375,7 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
             _ => ("Synchronisation : employé bloqué par le serveur central", "a été appliqué")
         };
         var detail = $"L’ordre « {TypesOrdre.Libelle(o.Type)} » envoyé par {o.Auteur} {phrase}{(motif is null ? "" : $" : {motif}")}."
-            + "\n\nÀ voir : Administration › Synchronisation › Ordres du central.";
+            + (commande ? "\n\nÀ voir : Achats › Commandes (bon en brouillon)." : "\n\nÀ voir : Administration › Synchronisation › Ordres du central.");
         return AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.SynchronisationAsync(objet, detail,
             $"{objet} : {TypesOrdre.Libelle(o.Type)}.", ct), $"ordre du serveur central ({statut})", trace);
     }
@@ -398,6 +464,7 @@ public static class ResumeOrdre
                 TypesOrdre.DroitsRole => ResumeDroits(o, a, d, NomRole(o.Cible)),
                 TypesOrdre.Nomenclature => $"Nouvelle version « {T(d, "libelle")} » ({Taille(d)}) : remplace la nomenclature chargée ; "
                                            + "les produits concernés passeront « à vérifier ».",
+                TypesOrdre.Commande => ResumeCommande(d, T(d, "grossiste") ?? $"grossiste n° {o.Cible}"),
                 TypesOrdre.PrixProduit => $"{T(d, "nom") ?? $"Produit n° {o.Cible}"} : "
                     + string.Join(" ; ", new[] { Changement(a, d, "prix_public", "prix"), Changement(a, d, "tarif_reference", "tarif de référence") }
                         .Where(x => x is not null)) + ".",
@@ -417,6 +484,16 @@ public static class ResumeOrdre
         if (!d.TryGetProperty(nom, out var n) || n.ValueKind != JsonValueKind.Number) return null;
         var avant = a.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal().ToString("N2", Fr) + " DA" : "aucun";
         return $"{libelle} {avant} → {n.GetDecimal().ToString("N2", Fr)} DA";
+    }
+
+    private static string ResumeCommande(JsonElement d, string grossiste)
+    {
+        var lignes = d.TryGetProperty("lignes", out var l) && l.ValueKind == JsonValueKind.Array ? l.EnumerateArray().ToList() : [];
+        var premieres = lignes.Take(3).Select(e =>
+            $"{(e.TryGetProperty("nom", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : $"produit n° {e.GetProperty("produit")}")}"
+            + $" × {(e.TryGetProperty("quantite", out var q) ? q.ToString() : "?")}");
+        return $"Bon en brouillon chez {grossiste} : {lignes.Count} ligne(s) ({string.Join(", ", premieres)}{(lignes.Count > 3 ? ", …" : "")}). "
+               + "Envoyé au grossiste depuis l’officine seulement.";
     }
 
     private static string ResumeDroits(OrdreRecu o, JsonElement a, JsonElement d, string role)

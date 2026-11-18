@@ -13,7 +13,7 @@
         2. dossier d'essai %TEMP%\pharma-essai-cloud (hors dépôt) : autorité, certificat HTTPS, journaux, PID, mots de passe d'essai
            tirés au hasard (jamais écrits ailleurs) ;
         3. compilation des deux serveurs dans ce dossier (le dépôt et les exécutables en service ne sont pas touchés) ;
-        4. base centrale jetable pharmacie_cloud_essai (scripts database\cloud 001 à 015 par scripts\mep\creer_base_centrale.ps1)
+        4. base centrale jetable pharmacie_cloud_essai (scripts database\cloud 001 à 016 par scripts\mep\creer_base_centrale.ps1)
            et copie jetable pharmacie_essai_officine de pharmacie_dev (pg_dump en lecture seule, puis restauration) ;
         5. autorité d'essai + certificat HTTPS de 127.0.0.1 ; serveur central (port -PortCentral) et API officine (port -PortApi) lancés ;
         6. officine créée au central puis ACTIVÉE par l'API (réglages, code d'activation, certificat), comme le fait l'écran ;
