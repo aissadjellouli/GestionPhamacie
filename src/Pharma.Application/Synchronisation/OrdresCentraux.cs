@@ -22,8 +22,10 @@ public static class TypesOrdre
     public const string EmployeBloquer = "employe_bloquer";
     public const string EmployeDebloquer = "employe_debloquer";
     public const string DroitsRole = "droits_role";
+    /// <summary>Lot S5.2 : prix public et/ou tarif de référence d'un produit (jamais le remboursement ni la TVA).</summary>
+    public const string PrixProduit = "prix_produit";
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
-        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole };
+        { Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
     public static bool ConfirmationRequise(string type) => type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole;
@@ -36,6 +38,7 @@ public static class TypesOrdre
         EmployeBloquer => "Bloquer un employé",
         EmployeDebloquer => "Débloquer un employé",
         DroitsRole => "Droits d’un rôle",
+        PrixProduit => "Prix d’un produit",
         _ => type
     };
 }
@@ -66,15 +69,42 @@ public interface IOrdresCentrauxDepot
     /// <summary>Change l'état (sync_ordre_noter) : ordre, résultat envoyé au central, journal des actions.</summary>
     Task NoterAsync(Guid id, string statut, string? motif, long? par, CancellationToken ct = default);
     Task<bool> BaseEnLectureSeuleAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Lot S5.2 : prix public et/ou tarif de référence (null : inchangé), écrits SEULEMENT si les valeurs actuelles sont encore celles
+    /// attendues (vérifié sous verrou de la ligne) ; journal « prix_modifie » (source : ordre du serveur central, auteur, n° d'ordre),
+    /// au nom du titulaire qui confirme ou sans auteur local. Faux : valeurs changées entre-temps, rien n'est écrit.
+    /// </summary>
+    Task<bool> ModifierPrixAsync(long produitId, decimal? prix, decimal? tarif, decimal prixAttendu, decimal? tarifAttendu, long? par,
+        string auteurCentral, Guid ordre, CancellationToken ct = default);
 }
 
 /// <summary>L'ordre ne peut pas être appliqué tel quel (valeur changée dans l'officine, cible interdite ou introuvable) : refus définitif.</summary>
 public sealed class OrdreInapplicableException(string message) : Exception(message);
 
 /// <summary>Application d'un ordre par les cas d'usage existants ; <paramref name="titulaireId"/> : titulaire qui confirme (null : automatique).</summary>
-public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole)
+public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole,
+    Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot)
 {
     public const string ModifieDansOfficine = "modifié dans l’officine depuis l’envoi de l’ordre";
+    /// <summary>Écart de prix au-delà duquel le titulaire confirme (décision S5.2-D1) : 20 %.</summary>
+    public const decimal EcartPrixMax = 0.20m;
+
+    /// <summary>Écart trop grand (ou valeur actuelle absente ou nulle) : confirmation du titulaire.</summary>
+    public static bool EcartTropGrand(decimal? actuel, decimal? nouveau) =>
+        nouveau is { } n && (actuel is not { } a || a <= 0 || Math.Abs(n - a) / a > EcartPrixMax);
+
+    /// <summary>Confirmation du titulaire exigée pour cet ordre : par type (employés, droits), ou prix hors de l'écart permis.</summary>
+    public async Task<bool> ConfirmationRequiseAsync(OrdreRecu o, CancellationToken ct = default)
+    {
+        if (TypesOrdre.ConfirmationRequise(o.Type)) return true;
+        if (o.Type != TypesOrdre.PrixProduit || !long.TryParse(o.Cible, out var id) || await produits.LireAsync(id, ct) is not { } fiche) return false;
+        using var donnees = JsonDocument.Parse(o.DonneesJson);
+        return EcartTropGrand(fiche.PrixPublic, Montant(donnees.RootElement, "prix_public"))
+               || EcartTropGrand(fiche.TarifReference, Montant(donnees.RootElement, "tarif_reference"));
+    }
+
+    private static decimal? Montant(JsonElement e, string nom) =>
+        e.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal() : null;
 
     public async Task ExecuterAsync(OrdreRecu o, long? titulaireId, string? motDePasse, CancellationToken ct = default)
     {
@@ -112,6 +142,23 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                     ? n.GetString()! : u.NomComplet;
                 var actif = o.Type == TypesOrdre.EmployeDebloquer || u.Actif;
                 await modifier.ExecuterAsync(u.Id, nom, roleId, actif, null, titulaireId!.Value, u.Telephone, u.Email, ct);
+                return;
+            }
+            case TypesOrdre.PrixProduit:
+            {
+                var fiche = long.TryParse(o.Cible, out var pid) ? await produits.LireAsync(pid, ct) : null;
+                if (fiche is null) throw new OrdreInapplicableException($"Produit n° {o.Cible} introuvable dans l’officine.");
+                decimal? prixAttendu = Montant(a, "prix_public"), tarifAttendu = Montant(a, "tarif_reference");
+                if (prixAttendu != fiche.PrixPublic || tarifAttendu != fiche.TarifReference)
+                    throw new OrdreInapplicableException($"Prix de « {fiche.NomCommercial} » {ModifieDansOfficine}.");
+                decimal? prix = Montant(d, "prix_public"), tarif = Montant(d, "tarif_reference");
+                // Mêmes contrôles que la fiche produit (ModifierProduit) pour ce qui peut changer ici
+                if (prix is <= 0) throw new OrdreInapplicableException("Le prix public doit être supérieur à 0.");
+                if (tarif is <= 0) throw new OrdreInapplicableException("Le tarif de référence doit être supérieur à 0.");
+                if (titulaireId is null && (EcartTropGrand(fiche.PrixPublic, prix) || EcartTropGrand(fiche.TarifReference, tarif)))
+                    throw new InvalidOperationException("Écart de prix au-delà de 20 % : confirmation du titulaire exigée.");
+                if (!await depot.ModifierPrixAsync(fiche.Id, prix, tarif, fiche.PrixPublic, fiche.TarifReference, titulaireId, o.Auteur, o.Id, ct))
+                    throw new OrdreInapplicableException($"Prix de « {fiche.NomCommercial} » {ModifieDansOfficine}.");
                 return;
             }
             case TypesOrdre.DroitsRole:
@@ -186,9 +233,10 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
                 n++;
                 continue;
             }
-            if (TypesOrdre.ConfirmationRequise(o.Type))
+            if (await executer.ConfirmationRequiseAsync(o, ct))
             {
-                await NoterEtPrevenirAsync(o, StatutsOrdre.AConfirmer, null, ct);
+                await NoterEtPrevenirAsync(o, StatutsOrdre.AConfirmer,
+                    o.Type == TypesOrdre.PrixProduit ? "écart de prix de plus de 20 % : confirmation du titulaire" : null, ct);
                 n++;
                 continue;
             }
@@ -299,6 +347,9 @@ public static class ResumeOrdre
                 TypesOrdre.EmployeBloquer => $"{Employe()} : bloqué (plus aucune connexion).",
                 TypesOrdre.EmployeDebloquer => $"{Employe()} : débloqué (connexion de nouveau possible).",
                 TypesOrdre.DroitsRole => ResumeDroits(o, a, d, NomRole(o.Cible)),
+                TypesOrdre.PrixProduit => $"{T(d, "nom") ?? $"Produit n° {o.Cible}"} : "
+                    + string.Join(" ; ", new[] { Changement(a, d, "prix_public", "prix"), Changement(a, d, "tarif_reference", "tarif de référence") }
+                        .Where(x => x is not null)) + ".",
                 _ => $"Type inconnu : {o.Type}."
             };
         }
@@ -306,6 +357,15 @@ public static class ResumeOrdre
         {
             return "Ordre illisible.";
         }
+    }
+
+    private static readonly System.Globalization.CultureInfo Fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+
+    private static string? Changement(JsonElement a, JsonElement d, string nom, string libelle)
+    {
+        if (!d.TryGetProperty(nom, out var n) || n.ValueKind != JsonValueKind.Number) return null;
+        var avant = a.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal().ToString("N2", Fr) + " DA" : "aucun";
+        return $"{libelle} {avant} → {n.GetDecimal().ToString("N2", Fr)} DA";
     }
 
     private static string ResumeDroits(OrdreRecu o, JsonElement a, JsonElement d, string role)

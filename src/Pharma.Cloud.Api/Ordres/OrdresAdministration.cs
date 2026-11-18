@@ -20,7 +20,7 @@ public static class OrdresAdministration
 {
     public static readonly string[] Commandes =
         ["--ordres", "--ordre-essai", "--ordre-employe-creer", "--ordre-employe-modifier", "--ordre-employe-bloquer", "--ordre-employe-debloquer",
-         "--ordre-droits-role", "--annuler-ordre", "--expirer-ordres"];
+         "--ordre-droits-role", "--ordre-prix", "--annuler-ordre", "--expirer-ordres"];
 
     public static bool Concerne(string commande) => Commandes.Contains(commande);
 
@@ -42,9 +42,17 @@ public static class OrdresAdministration
             {
                 ["permissions"] = Exiger("--permissions").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             }),
+            // Lot S5.2 : --ordre-prix --officine <code> --produit <n°> [--prix <DA>] [--tarif <DA>] --auteur <nom>
+            "--ordre-prix" => ("prix_produit", Exiger("--produit"),
+                O("--prix") is null && O("--tarif") is null ? throw new ArgumentException("Option --prix ou --tarif attendue.")
+                    : new() { ["prix_public"] = Montant(O("--prix")), ["tarif_reference"] = Montant(O("--tarif")) }),
             _ => null
         };
     }
+
+    private static decimal? Montant(string? v) => v is null ? null
+        : decimal.TryParse(v.Replace(',', '.'), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var m) ? m
+        : throw new ArgumentException($"Montant invalide : {v} (exemple : 380 ou 380.50).");
 
     public static async Task<int> ExecuterAsync(NpgsqlDataSource db, string[] args, TextWriter sortie)
     {

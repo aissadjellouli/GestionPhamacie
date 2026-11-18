@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)**
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)**
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -190,7 +190,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S2 | API cloud minimale (réception, idempotence, ordre, accusés), base centrale cloisonnée, authentification par certificat | S0, S1 |
 | S3 | Service de sync local (envoi, reprise, bandeau, écran d'état, alertes) | S1, S2 |
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
-| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24)** | S3 |
+| S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
 | S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
@@ -1298,3 +1298,29 @@ titulaire, ce que le titulaire corrige sur place.
 - **Non essayé** : passage réel par l'échange HTTPS avec certificat (la descente a été rejouée par SQL) **[À VÉRIFIER avec
   `scripts/dev/essai_cloud_officine.ps1`]** ; tâche planifiée réelle `--expirer-ordres`.
 - **Reste de S5** : S5.2 prix, S5.3 référentiels et nomenclature, S5.4 commandes en brouillon (§ 23.4).
+
+## 25. Lot S5.2 : réalisé (2026-11-18, « ok plan S5.2 ») — prix d'un produit
+
+Décisions : S5.2-D1 application automatique si l'écart reste dans **20 %**, au-delà confirmation du titulaire ; S5.2-D2 seuls le prix
+public et le tarif de référence changent par ordre (jamais le remboursement ni la TVA) ; S5.2-D3 prix appliqué tracé et visible, sans
+alerte ; S5.2-D4 aucun contrôle de marge tant que les règles algériennes (prix public algérien de la vignette, marges) ne sont pas
+établies **[À VÉRIFIER : comptable ou juriste]**.
+
+- **Central** (script `014`) : type `prix_produit` (cible = n° local du produit) ; données = nouveau prix et/ou tarif (DA, > 0, deux
+  décimales au plus) et nom du produit (affichage) ; valeur attendue = prix et tarif actuels du miroir ; refusé à la création si le
+  produit est inconnu, si un montant est invalide, ou si rien ne change. `cloud_creer_ordre` redéfinie (version 013 + cette branche),
+  contrainte des types élargie avec garde. Commande `--ordre-prix --officine <code> --produit <n°> [--prix <DA>] [--tarif <DA>] --auteur <nom>`.
+- **Officine** (aucun nouveau script : socle du § 24) : écart de plus de 20 % sur le prix ou le tarif, ou valeur actuelle absente ou
+  nulle → « à confirmer » ; sinon appliqué tout de suite. Écriture limitée au prix et au tarif (`ModifierPrixAsync`) : **seulement si
+  les valeurs actuelles sont encore celles attendues**, vérifié sous verrou de la ligne ; mêmes contrôles que la fiche produit (prix et
+  tarif > 0) ; journal `prix_modifie` (avant, après, tarif avant / après, source « ordre du serveur central », auteur, n° d'ordre), au
+  nom du titulaire qui confirme, sans auteur local sinon.
+- **Écart avec le plan** : une baisse de prix venue du central **ne compte pas** dans la surveillance des baisses de prix des employés
+  (elle ne concerne que les employés autres que le titulaire) ; elle reste visible dans « Ordres du central » et au journal.
+- **Point relevé** : le journal des actions affiché aux écrans ne montre que les lignes avec un employé ; les changements appliqués
+  automatiquement par un ordre (sans auteur local) se lisent dans « Ordres du central » **[À DÉCIDER : les afficher aussi au journal
+  des actions]**.
+- **Essai de bout en bout** (2026-11-18, copies jetables, supprimées) : +10 % appliqué tout de suite (120 → 132 DA, journal sans
+  auteur local) ; +50 % mis à confirmer puis confirmé par le titulaire (350 → 525 DA, journal à son nom) ; prix changé dans l'officine
+  avant l'arrivée de l'ordre → refusé, rien écrit ; résultats remontés au central (appliqué, appliqué, refusé). Écran « Ordres du
+  central » mesuré à 1 536 × 890, captures en clair et sombre.

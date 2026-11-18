@@ -26,5 +26,9 @@ public class OrdresAdministrationTests
         Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-employe-modifier", "--employe", "11"]));
         Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-employe-bloquer"]));
         Assert.True(OrdresAdministration.Concerne("--expirer-ordres"));
+        Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-prix", "--produit", "2"]));
+        Assert.Throws<ArgumentException>(() => OrdresAdministration.Creation(["--ordre-prix", "--produit", "2", "--prix", "abc"]));
+        var p = OrdresAdministration.Creation(["--ordre-prix", "--produit", "2", "--prix", "380,50"])!.Value;
+        Assert.Equal(("prix_produit", "2", (object?)380.50m, (object?)null), (p.Type, p.Cible, p.Donnees["prix_public"], p.Donnees["tarif_reference"]));
     }
 }

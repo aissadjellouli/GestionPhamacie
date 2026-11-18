@@ -60,6 +60,47 @@ public sealed class OrdresCentrauxSql(NpgsqlDataSource db) : IOrdresCentrauxDepo
         return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
+    public async Task<bool> ModifierPrixAsync(long produitId, decimal? prix, decimal? tarif, decimal prixAttendu, decimal? tarifAttendu, long? par,
+        string auteurCentral, Guid ordre, CancellationToken ct = default)
+    {
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await using var cmd = new NpgsqlCommand("""
+            WITH avant AS (SELECT id, nom_commercial, prix_public, tarif_reference FROM produit WHERE id = $1 FOR UPDATE)
+            UPDATE produit p SET prix_public = coalesce($2, p.prix_public), tarif_reference = coalesce($3, p.tarif_reference)
+            FROM avant WHERE p.id = avant.id AND avant.prix_public = $4 AND avant.tarif_reference IS NOT DISTINCT FROM $5
+            RETURNING avant.nom_commercial, avant.prix_public, avant.tarif_reference, p.prix_public, p.tarif_reference
+            """, cnx, tx);
+        cmd.Parameters.AddWithValue(produitId);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)prix ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Numeric });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)tarif ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Numeric });
+        cmd.Parameters.AddWithValue(prixAttendu);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)tarifAttendu ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Numeric });
+        string nom;
+        decimal prixAvant, prixApres;
+        decimal? tarifAvant, tarifApres;
+        await using (var r = await cmd.ExecuteReaderAsync(ct))
+        {
+            if (!await r.ReadAsync(ct)) return false;
+            (nom, prixAvant, tarifAvant, prixApres, tarifApres) = (r.GetString(0), r.GetDecimal(1), r.IsDBNull(2) ? null : r.GetDecimal(2),
+                r.GetDecimal(3), r.IsDBNull(4) ? null : r.GetDecimal(4));
+        }
+        await using var j = new NpgsqlCommand("""
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details)
+            VALUES ($1, 'prix_modifie', 'produit', $2, $3::jsonb)
+            """, cnx, tx);
+        j.Parameters.Add(new NpgsqlParameter { Value = (object?)par ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        j.Parameters.AddWithValue(produitId);
+        j.Parameters.AddWithValue(System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["produit"] = nom, ["avant"] = prixAvant, ["apres"] = prixApres, ["tarif_avant"] = tarifAvant, ["tarif_apres"] = tarifApres,
+            ["source"] = "ordre du serveur central", ["auteur_central"] = auteurCentral, ["ordre"] = ordre
+        }));
+        await j.ExecuteNonQueryAsync(ct);
+        await tx.CommitAsync(ct);
+        return true;
+    }
+
     private static async Task<IReadOnlyList<OrdreRecu>> LireListeAsync(NpgsqlCommand cmd, CancellationToken ct)
     {
         await using var r = await cmd.ExecuteReaderAsync(ct);

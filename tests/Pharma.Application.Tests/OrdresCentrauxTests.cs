@@ -35,6 +35,17 @@ public class OrdresCentrauxTests
         }
         public Task<bool> BaseEnLectureSeuleAsync(CancellationToken ct = default) => Task.FromResult(false);
         public string Statut(Guid id) => Ordres.Single(o => o.Id == id).Statut;
+        public ProduitsModifEnMemoire Produits = new();
+        public readonly List<(long Produit, decimal? Prix, decimal? Tarif, long? Par)> Prix = [];
+        public Task<bool> ModifierPrixAsync(long produitId, decimal? prix, decimal? tarif, decimal prixAttendu, decimal? tarifAttendu, long? par,
+            string auteurCentral, Guid ordre, CancellationToken ct = default)
+        {
+            var f = Produits.Fiche;
+            if (f.Id != produitId || f.PrixPublic != prixAttendu || f.TarifReference != tarifAttendu) return Task.FromResult(false);
+            Produits.Fiche = f with { PrixPublic = prix ?? f.PrixPublic, TarifReference = tarif ?? f.TarifReference };
+            Prix.Add((produitId, prix, tarif, par));
+            return Task.FromResult(true);
+        }
     }
 
     private sealed class Alertes : IAlertesTitulaire
@@ -60,7 +71,7 @@ public class OrdresCentrauxTests
         var (depot, admin, alertes, journal) = (new Depot(), new UtilisateursEnMemoire(), new Alertes(), new JournalEspion());
         var droits = new DroitsFactices("admin.utilisateurs") { Titulaire = titulaire };
         var executer = new ExecuterOrdreCentral(admin, new CreerUtilisateur(admin, new HacheurFactice(), journal, droits),
-            new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal));
+            new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot);
         var horloge = new Horloge(Maintenant);
         return (depot, admin, alertes, journal, new AppliquerOrdresCentraux(depot, executer, horloge, alertes),
             new ConfirmerOrdreCentral(depot, executer, droits, horloge), new RefuserOrdreCentral(depot, droits));
@@ -208,5 +219,76 @@ public class OrdresCentrauxTests
             ResumeOrdre.Texte(Ordre(TypesOrdre.DroitsRole, "vendeur", """{"permissions":["caisse.vendre"]}""", """{"permissions":["admin.utilisateurs","caisse.vendre"]}"""), etat));
         Assert.True(TypesOrdre.ConfirmationRequise(TypesOrdre.EmployeCreer));
         Assert.False(TypesOrdre.ConfirmationRequise(TypesOrdre.EmployeBloquer));
+    }
+
+    // ---- Lot S5.2 : prix d'un produit (fiche d'essai : produit n° 5, prix 100, tarif 90) ----
+
+    private static OrdreRecu Prix(string donnees, string attendu = """{"prix_public":100.00,"tarif_reference":90.00}""") =>
+        Ordre(TypesOrdre.PrixProduit, "5", attendu, donnees);
+
+    [Fact]
+    public async Task Prix_dans_l_ecart_de_20_pourcent_applique_tout_de_suite_sans_auteur_local()
+    {
+        var m = Monter();
+        var o = Prix("""{"nom":"Produit","prix_public":110.00}""");
+        var tarif = Prix("""{"tarif_reference":99}""");
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+        Assert.Equal((5L, (decimal?)110.00m, (decimal?)null, (long?)null), m.Depot.Prix.Single());
+        Assert.Equal(110m, m.Depot.Produits.Fiche.PrixPublic);
+        Assert.Empty(m.Alertes.Objets);                                    // appliqué : tracé, sans alerte (S5.2-D3)
+        // Tarif seul : comparé à la valeur actuelle (le prix a déjà changé : l'ordre de tarif vu à 100 est refusé)
+        m.Depot.Ordres.Add(tarif);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(tarif.Id));
+        Assert.Contains(ExecuterOrdreCentral.ModifieDansOfficine, m.Depot.Ordres.Single(x => x.Id == tarif.Id).Motif);
+    }
+
+    [Fact]
+    public async Task Prix_au_dela_de_20_pourcent_confirme_par_le_titulaire_a_son_nom()
+    {
+        var m = Monter();
+        var o = Prix("""{"nom":"Produit","prix_public":130}""");
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        Assert.Contains("20 %", m.Depot.Ordres.Single(x => x.Id == o.Id).Motif);
+        Assert.Empty(m.Depot.Prix);
+        await m.Confirmer.ExecuterAsync(o.Id, null, 1);
+        Assert.Equal((5L, (decimal?)130m, (decimal?)null, (long?)1L), m.Depot.Prix.Single());
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+    }
+
+    [Fact]
+    public async Task Prix_modifie_dans_l_officine_ou_produit_inconnu_refuse()
+    {
+        var m = Monter();
+        var change = Prix("""{"prix_public":105}""", """{"prix_public":95.00,"tarif_reference":90.00}""");
+        var inconnu = Ordre(TypesOrdre.PrixProduit, "99", """{"prix_public":10}""", """{"prix_public":11}""");
+        m.Depot.Ordres.AddRange([change, inconnu]);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(change.Id));
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(inconnu.Id));
+        Assert.Empty(m.Depot.Prix);
+        Assert.Equal(100m, m.Depot.Produits.Fiche.PrixPublic);
+    }
+
+    [Theory]
+    [InlineData(100, 120, false)]
+    [InlineData(100, 80, false)]
+    [InlineData(100, 120.01, true)]
+    [InlineData(100, 79.99, true)]
+    [InlineData(0, 10, true)]
+    public void Ecart_de_prix_au_dela_de_20_pourcent(decimal actuel, decimal nouveau, bool tropGrand) =>
+        Assert.Equal(tropGrand, ExecuterOrdreCentral.EcartTropGrand(actuel, nouveau));
+
+    [Fact]
+    public void Ecart_sans_valeur_actuelle_ou_sans_changement()
+    {
+        Assert.True(ExecuterOrdreCentral.EcartTropGrand(null, 10m));       // premier tarif : confirmation
+        Assert.False(ExecuterOrdreCentral.EcartTropGrand(100m, null));     // rien ne change
+        Assert.Equal("Produit : prix 100,00 DA → 110,00 DA.",
+            ResumeOrdre.Texte(Prix("""{"nom":"Produit","prix_public":110.00}"""), new UtilisateursEnMemoire().Etat).Replace('\u202f', ' ').Replace('\u00a0', ' '));
     }
 }
