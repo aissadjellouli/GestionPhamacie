@@ -1,6 +1,6 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-19 (nuit, après le commit `a87035b` ; lots S6.5.4 et S6.5.5 commités en `610939a` et `c80fd28` ; S6.5.6 fait ensuite, non commité). Vue d'ensemble courte ; le détail de chaque point est dans
+Point d'avancement du 2026-11-19 (après le commit `48d8818` : lots S6.5.4, S6.5.5 et S6.5.6 commités en `610939a`, `c80fd28` et `48d8818`). Vue d'ensemble courte ; le détail de chaque point est dans
 [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et dans les documents cités. À mettre à jour à chaque
 point d'avancement.
 
@@ -9,18 +9,17 @@ point d'avancement.
 Rien. Commits locaux (branche `develop`, non poussée) : jusqu'à `f404e6f` le 2026-11-18, puis `a87035b` (2026-11-19) : écrans à
 1366 × 768 (Caisse, contrôle interne, emplacements, Pertes et vigilance), logo et couleurs Tracodex, thème sombre « encre », nom
 Tracodex Officine / Tracodex Réseau, « Pertes et vigilance », rendu en bronze, S6.5 côté central (scripts 022, 023), route `/api/healthcheck`.
+Puis `610939a` (S6.5.4), `c80fd28` (S6.5.5) et `48d8818` (S6.5.6 et n° de tickets après une restauration, choix « A + B » :
+scripts officine `152` et central `025`, conception § 31.10).
 
 ## 2. Fait, à commiter
 
-- **Lot S6.5.6, documentation finale de S6.5** (2026-11-19) : conception § 31 (état, § 31.9 synthèse et questions tranchées), README
-  du central (ordre 021 → 024 avant le 151, sauvegarde avec `--enable-row-security`), RAF.
-- **N° de tickets après une restauration, choix « A + B » du titulaire** (2026-11-19) : script officine `152` (caisse en attente du
-  contrôle du serveur central au démarrage, 120 s au plus, réglable), script central `025` (n° réattribués signalés, rattachés à la
-  restauration, colonne « Tickets réutilisés »), passés sur dev, test et `pharmacie_cloud_dev` ; conception § 31.10.
+- **Conception § 31.10, essai rejoué** (2026-11-19) : `docs/conception-synchronisation.md`, essai neuf de l'attente du serveur
+  central au démarrage (vente refusée pendant l'attente, puis acceptée ; nouvel essai d'envoi au bout de 2 min au lieu de 30) ; RAF.
 
 ## 3. Ensuite
 
-- [ ] **Push** des commits locaux par le titulaire (branche `develop` : 44 commits d'avance sur `origin/develop` constatés le 2026-11-18 au soir).
+- [ ] **Push** des commits locaux par le titulaire (branche `develop` : 48 commits d'avance sur `origin/develop` constatés le 2026-11-19).
 - [ ] **Port 5432 du poste de développement** (par le titulaire, PowerShell administrateur) : `listen_addresses = 'localhost'` dans
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
       Visual Studio arrêté avant. Constat du 2026-11-18 : écoute sur toutes les adresses, `pg_hba.conf` limité à 127.0.0.1 et ::1, aucune règle de pare-feu.

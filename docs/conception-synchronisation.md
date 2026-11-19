@@ -2039,8 +2039,9 @@ ventes faites entre le redémarrage et la détection (30 s au moins avant) repre
 | 8 | Écrans | Caisse (bandeau), Réglages, Restaurations constatées : 0 px aux deux tailles, clair et sombre (charte-graphique.md) | OK après correction des Réglages |
 
 **Défauts trouvés et corrigés pendant l'essai** : attente croissante gonflée par les essais rapprochés du démarrage (corrigé dans
-`EnvoiSynchronisation`, vérifié par compilation ; l'API d'essai tournait avec l'ancien code, envois relancés à la main) ; Réglages à
-1 366 × 768 (119 px → 0).
+`EnvoiSynchronisation` ; rejoué le 2026-11-19 sur un essai neuf : API redémarrée central coupé, vente refusée pendant l'attente
+(422), délai écoulé à 09:02:26, vente acceptée, central relancé à 09:02:38 ; dernier essai manqué 09:02:37, passage suivant 09:04:37
+(**2 min**, au lieu de 30 min avant correction), lots accusés et contrôle noté) ; Réglages à 1 366 × 768 (119 px → 0).
 
 **Limites** : pendant l'attente, seul l'encaissement est refusé (une vente déjà en panier attend) ; au-delà du délai sans Internet, les
 n° repris restent possibles : ils sont alors signalés par le central (A). **[À VÉRIFIER : avis du comptable sur les n° repris et sautés.]**
