@@ -130,6 +130,7 @@ public class EnvoiSynchronisationTests
         }
         public Task NoterEnvoiAsync(string? erreur, CancellationToken ct = default) { Envois.Add(erreur); P = P with { DerniereErreur = erreur }; return Task.CompletedTask; }
         public Task EnregistrerInscriptionAsync(Guid officine, CancellationToken ct = default) { P = P with { InscriteLe = Maintenant }; return Task.CompletedTask; }
+        public Task ReglerControleDemarrageAsync(int secondes, CancellationToken ct = default) { P = P with { DelaiControleDemarrage = secondes }; return Task.CompletedTask; }
         public Task ReglerAsync(string? a, string t, bool m, bool active, CancellationToken ct = default)
         {
             P = P with { Adresse = a, TextesLibres = t, EnvoyerMedecins = m, Active = active };
@@ -413,6 +414,13 @@ public class EnvoiSynchronisationTests
         Assert.Equal(["reglages_synchronisation"], journal.Actions);
         await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerSync(b, journal).ExecuterAsync(new ReglagesSync(true, "http://x", "filtres", false), 3));
         await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerSync(b, journal).ExecuterAsync(new ReglagesSync(true, null, "tout", false), 3));
+        // Script 152 : attente de la caisse au démarrage, 0 à 600 s ; null : inchangée
+        await new ReglerSync(b, journal).ExecuterAsync(new ReglagesSync(true, "https://central:5090", "retires", true, 30), 3);
+        Assert.Equal(30, b.P.DelaiControleDemarrage);
+        await new ReglerSync(b, journal).ExecuterAsync(new ReglagesSync(true, "https://central:5090", "retires", true), 3);
+        Assert.Equal(30, b.P.DelaiControleDemarrage);
+        await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerSync(b, journal).ExecuterAsync(new ReglagesSync(true, null, "filtres", false, 601), 3));
+        await Assert.ThrowsAsync<RegleMetierException>(() => new ReglerSync(b, journal).ExecuterAsync(new ReglagesSync(true, null, "filtres", false, -1), 3));
     }
 
     // ---- Familles nominatives réglées au serveur central (script 130) ----

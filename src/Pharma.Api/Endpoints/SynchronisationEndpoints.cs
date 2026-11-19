@@ -18,6 +18,10 @@ public static class SynchronisationEndpoints
             return Results.Ok(new AttenteSynchronisationDto(b.Affiche, b.Depuis, b.Operations));
         }).ExigerConnexion();
 
+        // Script 152 : encaissement suspendu au démarrage jusqu'au contrôle du serveur central (bandeau de la Caisse)
+        api.MapGet("/caisse/attente-encaissement", async (IEnvoiSyncDepot depot, CancellationToken ct) =>
+            Results.Ok(new AttenteEncaissementDto(await depot.AttenteEncaissementAsync(ct)))).ExigerPermission(Permissions.CaisseVendre);
+
         var s = api.MapGroup("/admin/synchronisation").ExigerPermission(Permissions.AdminParametres);
 
         s.MapGet("", async (IEnvoiSyncDepot depot, ICertificatSync certificat, IChargementSyncDepot chargements, SuiviChargementSync suivi,
@@ -48,10 +52,10 @@ public static class SynchronisationEndpoints
                     ic.Anomalies.Select(a => new AnomalieIntegriteCentraleDto(a.Id, a.Nature, IntegriteCentrale.LibelleNature(a.Nature), a.Journal, a.Rang,
                         a.Ligne, a.Detail, a.DetecteeLeUtc, a.Classee)).ToList(),
                     ic.RestaurationsListe.Select(b => new RestaurationCentraleDto(b.Id, b.Journal, b.AncienneEpoque, b.NouvelleEpoque, b.RangCommun,
-                        b.FinAncienneRang, b.Lignes, b.DuUtc, b.AuUtc, b.MontantTtc, b.SceauxPerdus, b.Classe, b.PriseActe)).ToList(),
+                        b.FinAncienneRang, b.Lignes, b.DuUtc, b.AuUtc, b.MontantTtc, b.SceauxPerdus, b.Classe, b.PriseActe, b.TicketsReattribues)).ToList(),
                     ic.AnomaliesClassees),
                 p.RetourArriereLe is not { } ra ? null : new RetourArriereSynchronisationDto(ra, p.Epoque, p.RetourArriereCentral ?? 0, p.DernierLot,
-                    p.RetourArriereSequencesLe is not null, sup.RetourArriere?.AlerteLeUtc)));
+                    p.RetourArriereSequencesLe is not null, sup.RetourArriere?.AlerteLeUtc), p.DelaiControleDemarrage));
         });
 
         // Lot S6.2 : base revenue en arrière (restauration, bascule) : le titulaire repart sur une nouvelle époque (confirmation : époque
@@ -79,7 +83,7 @@ public static class SynchronisationEndpoints
 
         s.MapPut("/reglages", async (ReglagesSynchronisationDto d, ReglerSync regler, ClaimsPrincipal user, CancellationToken ct) =>
         {
-            await regler.ExecuterAsync(new ReglagesSync(d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins), user.UtilisateurId(), ct);
+            await regler.ExecuterAsync(new ReglagesSync(d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins, d.DelaiControleDemarrage), user.UtilisateurId(), ct);
             return Results.NoContent();
         });
 

@@ -889,6 +889,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // Synchronisation (lot S3) : seuils du bandeau et des alertes, conservation des lots accusés ; bandeau de la barre d'état
     public async Task<string?> ReglerSupervisionSynchronisationAsync(ReglagesSupervisionSynchronisationDto d) =>
         (await EnvoyerCorpsAsync<ReglagesSupervisionSynchronisationDto, object>(HttpMethod.Put, "api/admin/synchronisation/supervision", d)).Item2;
+    /// <summary>Script 152 : secondes avant que l'encaissement soit permis (contrôle de démarrage du serveur central).</summary>
+    public Task<(AttenteEncaissementDto?, string?)> AttenteEncaissementAsync() => GetAsync<AttenteEncaissementDto?>("api/caisse/attente-encaissement", null);
     public Task<(AttenteSynchronisationDto?, string?)> AttenteSynchronisationAsync() => GetAsync<AttenteSynchronisationDto?>("api/synchronisation/attente", null);
     // Lots S5.1 et S5.5 : ordres du serveur central (liste ; confirmation et refus par le titulaire)
     public Task<(PageOrdresCentrauxDto?, string?)> OrdresCentrauxAsync(string? statut, int page, int taille) =>

@@ -18,7 +18,7 @@ public sealed record ParametresEnvoiSync(bool Active, Guid? OfficineId, int Epoq
     string TextesLibres, bool EnvoyerMedecins, long LignesEnAttente, long LotsEnAttente, bool BaseEnLectureSeule = false, long LotsAutresEpoques = 0,
     IReadOnlyList<string>? FamillesEnvoyees = null, DateTime? FamillesLuesLe = null, long DescendantVersion = 0, long FamillesVersion = 0,
     IReadOnlyList<string>? ColonnesInterdites = null, DateTime? RetourArriereLe = null, long? RetourArriereCentral = null,
-    DateTime? RetourArriereSequencesLe = null);
+    DateTime? RetourArriereSequencesLe = null, int DelaiControleDemarrage = 120);
 
 /// <summary>Élément descendant reçu du serveur central (contrat desc-v1) : table locale, clé, version, données JSON.</summary>
 public sealed record ChangementDescendantSync(string Table, string Cle, long Version, string DonneesJson);
@@ -105,6 +105,15 @@ public interface IEnvoiSyncDepot
     /// actions dans UNE transaction ; déjà prise pour cette époque : RegleMetierException.</summary>
     Task PrendreActeRestaurationAsync(int nouvelleEpoque, string cause, long titulaireId, IReadOnlyDictionary<string, object?> journal,
         CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Script 152 : démarrage de l'API noté (sync_noter_demarrage) ; true : contrôle du serveur central attendu avant tout
+    /// encaissement (synchronisation active, serveur activé).</summary>
+    Task<bool> NoterDemarrageAsync(CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>Script 152 : le serveur central a répondu au contrôle de démarrage (encaissement permis).</summary>
+    Task NoterControleDemarrageAsync(CancellationToken ct = default) => Task.CompletedTask;
+    /// <summary>Script 152 : secondes avant que l'encaissement soit permis (0 : permis).</summary>
+    Task<int> AttenteEncaissementAsync(CancellationToken ct = default) => Task.FromResult(0);
+    /// <summary>Script 152 : attente maximale au démarrage, en secondes (0 à 600).</summary>
+    Task ReglerControleDemarrageAsync(int secondes, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>Clé privée et certificat client de ce serveur : clé générée ici, jamais envoyée, stockée hors dépôt et hors base.</summary>
@@ -435,12 +444,20 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
                 return await ErreurAsync(0, MessageEtatInjoignable(e is TaskCanceledException ? "délai dépassé" : e.Message), false, ct);
             }
             if (central is not { } c) return await ErreurAsync(0, MessageEtatInjoignable("réponse pour une autre époque"), false, ct);
-            if (c <= p.DernierLot) return null;
+            if (c <= p.DernierLot)
+            {
+                // Script 152 : pas de retour en arrière, l'encaissement suspendu au démarrage est permis
+                await depot.NoterControleDemarrageAsync(ct);
+                return null;
+            }
             await depot.NoterRetourArriereAsync(c, ct);
             p = await depot.ParametresAsync(ct);
-            if (p.RetourArriereLe is null) return null; // lot formé entre-temps (autre passage) : rien de posé
+            if (p.RetourArriereLe is null) { await depot.NoterControleDemarrageAsync(ct); return null; } // lot formé entre-temps : rien de posé
         }
-        return await SuspendreAsync(p, 0, null, ct);
+        var suspendu = await SuspendreAsync(p, 0, null, ct);
+        // Script 152 : retour en arrière, encaissement permis seulement une fois le compteur des tickets avancé (sinon : au bout du délai)
+        if ((await depot.ParametresAsync(ct)).RetourArriereSequencesLe is not null) await depot.NoterControleDemarrageAsync(ct);
+        return suspendu;
     }
 
     /// <summary>
@@ -620,13 +637,17 @@ public sealed class ActiverSync(IEnvoiSyncDepot depot, ICertificatSync certifica
 }
 
 /// <summary>Réglages de l'écran Admin › Synchronisation.</summary>
-public sealed record ReglagesSync(bool Active, string? Adresse, string TextesLibres, bool EnvoyerMedecins);
+/// <param name="DelaiControleDemarrage">Script 152 : attente maximale de l'encaissement au démarrage, en secondes (0 à 600) ; null : inchangée.</param>
+public sealed record ReglagesSync(bool Active, string? Adresse, string TextesLibres, bool EnvoyerMedecins, int? DelaiControleDemarrage = null);
 
 /// <param name="chargements">Lot S6 : réactivation d'une officine inscrite = chargement complet (les modifications faites
 /// pendant la désactivation n'ont pas été inscrites) ; null : aucun.</param>
 public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal, IChargementSyncDepot? chargements = null,
     Reglages.LibererReglagesMutualises? liberation = null)
 {
+    /// <summary>Script 152 : plafond de l'attente de l'encaissement au démarrage (10 minutes).</summary>
+    public const int DelaiControleDemarrageMax = 600;
+
     public static readonly IReadOnlySet<string> ModesTextes = new HashSet<string>(StringComparer.Ordinal) { "filtres", "retires" };
 
     public static bool AdresseValide(string? a) =>
@@ -637,12 +658,15 @@ public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal, IChargem
     {
         if (!AdresseValide(r.Adresse)) throw new RegleMetierException("Adresse du serveur central : https://nom-du-serveur[:port] attendu.", "adresse");
         if (!ModesTextes.Contains(r.TextesLibres)) throw new RegleMetierException("Textes libres : « filtres » ou « retires ».", "textes_libres");
+        if (r.DelaiControleDemarrage is < 0 or > DelaiControleDemarrageMax)
+            throw new RegleMetierException($"Attente au démarrage : entre 0 et {DelaiControleDemarrageMax} secondes.", "delai_controle_demarrage");
         var avant = await depot.ParametresAsync(ct);
         var adresse = string.IsNullOrWhiteSpace(r.Adresse) ? null : r.Adresse.Trim().TrimEnd('/');
         // Désactivation (D3) : les réglages imposés par le serveur central redeviennent modifiables aussitôt (mode en vigueur « local »), valeurs gardées ;
         // une ligne par table au journal, écrite AVANT la désactivation pour que l'état de chaque table soit encore celui reçu du serveur central
         if (avant.Active && !r.Active && liberation is not null) await liberation.ExecuterAsync(utilisateurId, ct);
         await depot.ReglerAsync(adresse, r.TextesLibres, r.EnvoyerMedecins, r.Active, ct);
+        if (r.DelaiControleDemarrage is { } delai && delai != avant.DelaiControleDemarrage) await depot.ReglerControleDemarrageAsync(delai, ct);
         if (!avant.Active && r.Active && avant.InscriteLe is not null && chargements is not null)
             await chargements.DemanderAsync(MotifsChargement.Reactivation, utilisateurId, ct);
         await journal.EcrireAsync(utilisateurId, "reglages_synchronisation", "sync_parametre", 1, new Dictionary<string, object?>
@@ -650,7 +674,8 @@ public sealed class ReglerSync(IEnvoiSyncDepot depot, IJournal journal, IChargem
             ["active"] = $"{avant.Active} -> {r.Active}",
             ["adresse"] = $"{avant.Adresse ?? "-"} -> {adresse ?? "-"}",
             ["textes_libres"] = $"{avant.TextesLibres} -> {r.TextesLibres}",
-            ["envoyer_medecins"] = $"{avant.EnvoyerMedecins} -> {r.EnvoyerMedecins}"
+            ["envoyer_medecins"] = $"{avant.EnvoyerMedecins} -> {r.EnvoyerMedecins}",
+            ["delai_controle_demarrage"] = $"{avant.DelaiControleDemarrage} -> {r.DelaiControleDemarrage ?? avant.DelaiControleDemarrage}"
         }, null, ct);
     }
 }

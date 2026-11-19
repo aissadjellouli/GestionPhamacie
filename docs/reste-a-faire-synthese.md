@@ -1,6 +1,6 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-19 (nuit, après le commit `a87035b` ; lot S6.5.4 commité en `610939a`, essai S6.5.5 fait ensuite, non commité). Vue d'ensemble courte ; le détail de chaque point est dans
+Point d'avancement du 2026-11-19 (nuit, après le commit `a87035b` ; lots S6.5.4 et S6.5.5 commités en `610939a` et `c80fd28` ; S6.5.6 fait ensuite, non commité). Vue d'ensemble courte ; le détail de chaque point est dans
 [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et dans les documents cités. À mettre à jour à chaque
 point d'avancement.
 
@@ -12,10 +12,11 @@ Tracodex Officine / Tracodex Réseau, « Pertes et vigilance », rendu en bronze
 
 ## 2. Fait, à commiter
 
-- **Lot S6.5.5, essai de bout en bout** (2026-11-19) : corrections du script officine `151` (fins de chaîne des seuls journaux
-  envoyés) et du script central `023` (ancienne branche écartée quand la nouvelle suite est plus courte, cas D des tests), raison d'un
-  refus de déclaration au journal du central, message effacé au changement de rubrique ; passés sur `pharmacie_dev`, `pharmacie_test`
-  et `pharmacie_cloud_dev`, `database/init/schema.sql` régénéré ; tests 1 646 / 243 / 78 / 630. Détail : conception-synchronisation.md § 31.8.
+- **Lot S6.5.6, documentation finale de S6.5** (2026-11-19) : conception § 31 (état, § 31.9 synthèse et questions tranchées), README
+  du central (ordre 021 → 024 avant le 151, sauvegarde avec `--enable-row-security`), RAF.
+- **N° de tickets après une restauration, choix « A + B » du titulaire** (2026-11-19) : script officine `152` (caisse en attente du
+  contrôle du serveur central au démarrage, 120 s au plus, réglable), script central `025` (n° réattribués signalés, rattachés à la
+  restauration, colonne « Tickets réutilisés »), passés sur dev, test et `pharmacie_cloud_dev` ; conception § 31.10.
 
 ## 3. Ensuite
 
@@ -23,10 +24,9 @@ Tracodex Officine / Tracodex Réseau, « Pertes et vigilance », rendu en bronze
 - [ ] **Port 5432 du poste de développement** (par le titulaire, PowerShell administrateur) : `listen_addresses = 'localhost'` dans
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
       Visual Studio arrêté avant. Constat du 2026-11-18 : écoute sur toutes les adresses, `pg_hba.conf` limité à 127.0.0.1 et ::1, aucune règle de pare-feu.
-- [ ] **S6.5, intégrité après restauration** (« go S6.5 » du 2026-11-18) : central et officine faits (S6.5.1 à S6.5.4), **essai de
-      bout en bout S6.5.5 réussi le 2026-11-19** après deux corrections (déclaration refusée à cause d'une table interne ; fausse rupture
-      quand la nouvelle suite est plus courte). **Reste** : S6.5.6 documentation finale ; décision sur les n° de tickets repris avant la
-      détection ; avis du comptable. Détail : [conception-synchronisation.md](conception-synchronisation.md) § 31.8.
+- [x] **S6.5, intégrité après restauration** : **terminé** le 2026-11-19 (S6.5.0 à S6.5.6 ; essai de bout en bout réussi). Restent
+      hors lot : avis du comptable (§ 6) ; n° repris avant la détection : traité le 2026-11-19 (§ 31.10). Synthèse :
+      [conception-synchronisation.md](conception-synchronisation.md) § 31.9.
 
 ## 4. Défauts d'écran constatés le 2026-11-18
 
@@ -43,10 +43,6 @@ Tracodex Officine / Tracodex Réseau, « Pertes et vigilance », rendu en bronze
 
 ## 5. Décisions attendues du titulaire
 
-- [ ] **N° de tickets repris avant la détection d'une restauration** (essai S6.5.5, 2026-11-19) : les ventes faites entre le
-      redémarrage et la détection (30 s au moins) reprennent des n° déjà reçus par le central ; aucune anomalie ne les signale
-      (`ticket_reattribue_restauration` prévue, jamais produite). À décider : les signaler au central (anomalie classée), et/ou bloquer
-      la caisse tant que le premier échange avec le central n'a pas eu lieu. Détail : conception-synchronisation.md § 31.8.
 - [ ] **Nouvelle époque de synchronisation** : la ressaisie du mot de passe du titulaire suffit-elle, ou faut-il un code reçu par SMS ou e-mail (à créer pour le titulaire) ?
 - [ ] **Archive du central** (`ligne_remplacee`) : exclure les tables recalculées au démarrage (`alerte`, `alerte_surveillance` ; 111 lignes archivées à l'essai) ?
 - [ ] **Rejeu des scripts du central** : protéger aussi `cloud_descendants` (010 → 011) et `cloud_creer_ordre` (013 → 018) ?

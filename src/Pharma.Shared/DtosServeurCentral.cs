@@ -200,7 +200,7 @@ public sealed record EtatSynchronisationDto(bool Active, string? OfficineId, str
     bool EnvoyerMedecins, int Epoque, string VersionContrat, long LotsAutresEpoques = 0, bool BaseEnLectureSeule = false,
     ChargementSynchronisationDto? Chargement = null, IReadOnlyList<string>? FamillesEnvoyees = null, DateTime? FamillesLuesLe = null,
     long FamillesVersion = 0, SupervisionSynchronisationDto? Supervision = null, IntegriteCentraleDto? IntegriteCentrale = null,
-    RetourArriereSynchronisationDto? RetourArriere = null);
+    RetourArriereSynchronisationDto? RetourArriere = null, int DelaiControleDemarrage = 120);
 
 /// <summary>
 /// Lot S6.2 : base de l'officine revenue en arrière (restauration, bascule) détectée ; envoi suspendu jusqu'à « Repartir sur une
@@ -225,7 +225,8 @@ public sealed record IntegriteCentraleDto(string Statut, DateTime? VerifieLe, Da
 
 /// <summary>Lot S6.5 : restauration constatée au central (suite remplacée gardée comme preuve) ; PriseActe : cause notée par le titulaire.</summary>
 public sealed record RestaurationCentraleDto(long Id, string Journal, int AncienneEpoque, int NouvelleEpoque, long RangCommun, long? FinAncienneRang,
-    long Lignes, DateTime? Du, DateTime? Au, decimal? MontantTtc, long SceauxPerdus, string Classe, bool PriseActe);
+    long Lignes, DateTime? Du, DateTime? Au, decimal? MontantTtc, long SceauxPerdus, string Classe, bool PriseActe,
+    IReadOnlyList<string>? TicketsReattribues = null);
 
 /// <summary>Lot S6.5.4 : prise d'acte du titulaire d'une restauration constatée (époque de la restauration, cause 3 à 500 caractères).</summary>
 public sealed record PriseActeRestaurationDto(int NouvelleEpoque, string Cause);
@@ -257,7 +258,11 @@ public sealed record ReglagesSupervisionSynchronisationDto(int BandeauMinutes, i
 /// <summary>Bandeau « Synchronisation en attente » d'un poste : Affiche faux = rien à montrer (désactivée, sous le seuil, droit absent).</summary>
 public sealed record AttenteSynchronisationDto(bool Affiche, DateTime? Depuis, long Operations);
 
-public sealed record ReglagesSynchronisationDto(bool Active, string? Adresse, string TextesLibres, bool EnvoyerMedecins);
+/// <param name="DelaiControleDemarrage">Script 152 : attente maximale de l'encaissement au démarrage, en secondes (0 à 600) ; null : inchangée.</param>
+public sealed record ReglagesSynchronisationDto(bool Active, string? Adresse, string TextesLibres, bool EnvoyerMedecins, int? DelaiControleDemarrage = null);
+
+/// <summary>Script 152 : secondes avant que l'encaissement soit permis (0 : permis) ; bandeau de la Caisse au démarrage.</summary>
+public sealed record AttenteEncaissementDto(int Secondes);
 
 public sealed record ActivationSynchronisationDto(string Code);
 

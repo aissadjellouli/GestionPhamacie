@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 151 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 152 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 151 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 152 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -24,7 +24,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict uwMJLkUGIty2dKSt0YQgeADYhjrt5TSXCcDub4AHLcSPRLuXsIVvO4zHgAkuk6D
+\restrict wam9EwkWt27C8UivU4E4M5LAfAslp8eS26EsW29KL9ccRnw6s1SBtTrsrVlPTIm
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -1102,6 +1102,44 @@ BEGIN
     RETURN ((10 - somme % 10) % 10)::text;
 END;
 $_$;
+
+
+--
+-- Name: encaissement_attente_secondes(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.encaissement_attente_secondes() RETURNS integer
+    LANGUAGE plpgsql STABLE
+    AS $$
+DECLARE
+    p        sync_parametre;
+    v_delai  interval;
+    v_fin    timestamptz;
+BEGIN
+    SELECT * INTO p FROM sync_parametre WHERE id = 1;
+    IF NOT FOUND OR NOT p.active OR p.controle_demarrage_delai_s = 0 THEN
+        RETURN 0;
+    END IF;
+    v_delai := make_interval(secs => p.controle_demarrage_delai_s);
+    IF p.demarrage_le IS NOT NULL AND p.controle_demarrage_le IS NULL THEN
+        v_fin := p.demarrage_le + v_delai;
+    END IF;
+    -- Retour en arrière détecté, avance des n° (compteur des tickets compris, script 151) pas encore faite
+    IF p.retour_arriere_le IS NOT NULL AND p.retour_arriere_sequences_le IS NULL THEN
+        v_fin := greatest(v_fin, p.retour_arriere_le + v_delai);
+    END IF;
+    IF v_fin IS NULL OR v_fin <= now() THEN
+        RETURN 0;
+    END IF;
+    RETURN greatest(1, ceil(extract(epoch FROM v_fin - now()))::int);
+END $$;
+
+
+--
+-- Name: FUNCTION encaissement_attente_secondes(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.encaissement_attente_secondes() IS 'Secondes avant que l''encaissement soit permis (0 : permis) : contrôle de démarrage du serveur central attendu, au plus le délai réglé (script 152).';
 
 
 --
@@ -2225,7 +2263,12 @@ CREATE FUNCTION public.prochain_numero_vente() RETURNS text
 DECLARE
     v_numero  bigint;
     v_prefixe text;
+    v_attente int;
 BEGIN
+    v_attente := encaissement_attente_secondes();
+    IF v_attente > 0 THEN
+        RAISE EXCEPTION 'Encaissement en attente du contrôle de démarrage avec le serveur central (n° de tickets vérifiés après une restauration) : réessayez dans % s au plus.', v_attente;
+    END IF;
     UPDATE compteur_ticket SET dernier_numero = dernier_numero + 1 WHERE id = 1 RETURNING dernier_numero, prefixe INTO v_numero, v_prefixe;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Compteur des tickets absent (script 112)';
@@ -4045,6 +4088,25 @@ $$;
 
 
 --
+-- Name: sync_noter_controle_demarrage(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_controle_demarrage() RETURNS void
+    LANGUAGE sql
+    AS $$
+    UPDATE sync_parametre SET controle_demarrage_le = now()
+     WHERE id = 1 AND demarrage_le IS NOT NULL AND controle_demarrage_le IS NULL;
+$$;
+
+
+--
+-- Name: FUNCTION sync_noter_controle_demarrage(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_noter_controle_demarrage() IS 'Le serveur central a répondu au contrôle de démarrage : encaissement permis (script 152).';
+
+
+--
 -- Name: sync_noter_declaration(integer, boolean, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4054,6 +4116,31 @@ CREATE FUNCTION public.sync_noter_declaration(p_nouvelle integer, p_avant_premie
     UPDATE sync_declaration_epoque SET envoyee_le = now(), avant_premier_lot = p_avant_premier_lot, resultat = left(p_resultat, 500)
     WHERE nouvelle_epoque = p_nouvelle AND envoyee_le IS NULL
 $$;
+
+
+--
+-- Name: sync_noter_demarrage(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_noter_demarrage() RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE v_attendu boolean;
+BEGIN
+    UPDATE sync_parametre
+       SET demarrage_le = CASE WHEN active AND adresse_serveur IS NOT NULL AND inscrite_le IS NOT NULL THEN now() END,
+           controle_demarrage_le = NULL
+     WHERE id = 1
+    RETURNING demarrage_le IS NOT NULL INTO v_attendu;
+    RETURN coalesce(v_attendu, false);
+END $$;
+
+
+--
+-- Name: FUNCTION sync_noter_demarrage(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_noter_demarrage() IS 'Démarrage de l''API : contrôle du serveur central attendu avant tout encaissement (true), ou rien à attendre (script 152).';
 
 
 --
@@ -4554,6 +4641,21 @@ $$;
 
 
 --
+-- Name: sync_regler_controle_demarrage(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_regler_controle_demarrage(p_delai_s integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF p_delai_s IS NULL OR p_delai_s NOT BETWEEN 0 AND 600 THEN
+        RAISE EXCEPTION 'Attente au démarrage : entre 0 et 600 secondes.';
+    END IF;
+    UPDATE sync_parametre SET controle_demarrage_delai_s = p_delai_s WHERE id = 1;
+END $$;
+
+
+--
 -- Name: sync_regler_supervision(integer, integer, integer, boolean, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4640,8 +4742,12 @@ CREATE TABLE public.sync_parametre (
     retour_arriere_central bigint,
     retour_arriere_sequences_le timestamp with time zone,
     retour_arriere_alerte_le timestamp with time zone,
+    demarrage_le timestamp with time zone,
+    controle_demarrage_le timestamp with time zone,
+    controle_demarrage_delai_s integer DEFAULT 120 NOT NULL,
     CONSTRAINT sync_parametre_adresse_serveur_check CHECK (((adresse_serveur IS NULL) OR (adresse_serveur ~ '^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$'::text))),
     CONSTRAINT sync_parametre_check CHECK (((dernier_accuse >= 0) AND (dernier_accuse <= dernier_lot))),
+    CONSTRAINT sync_parametre_controle_demarrage_delai_check CHECK (((controle_demarrage_delai_s >= 0) AND (controle_demarrage_delai_s <= 600))),
     CONSTRAINT sync_parametre_dernier_lot_check CHECK ((dernier_lot >= 0)),
     CONSTRAINT sync_parametre_descendant_saut_max_check CHECK ((descendant_saut_max >= 1)),
     CONSTRAINT sync_parametre_epoque_check CHECK ((epoque >= 1)),
@@ -4704,6 +4810,27 @@ COMMENT ON COLUMN public.sync_parametre.retour_arriere_sequences_le IS 'Séquenc
 --
 
 COMMENT ON COLUMN public.sync_parametre.retour_arriere_alerte_le IS 'Dernière alerte « base revenue en arrière » envoyée au titulaire : une par détection (script 149).';
+
+
+--
+-- Name: COLUMN sync_parametre.demarrage_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.demarrage_le IS 'Démarrage de l''API (synchronisation active et serveur activé) : encaissement suspendu jusqu''au contrôle du serveur central, au plus controle_demarrage_delai_s (script 152).';
+
+
+--
+-- Name: COLUMN sync_parametre.controle_demarrage_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.controle_demarrage_le IS 'Contrôle de démarrage fait : le serveur central a répondu (pas de retour en arrière, ou compteur des tickets avancé) (script 152).';
+
+
+--
+-- Name: COLUMN sync_parametre.controle_demarrage_delai_s; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_parametre.controle_demarrage_delai_s IS 'Attente maximale de l''encaissement au démarrage, en secondes (0 : aucune attente ; 120 par défaut, choix du titulaire le 2026-11-19) (script 152).';
 
 
 --
@@ -19348,5 +19475,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict uwMJLkUGIty2dKSt0YQgeADYhjrt5TSXCcDub4AHLcSPRLuXsIVvO4zHgAkuk6D
+\unrestrict wam9EwkWt27C8UivU4E4M5LAfAslp8eS26EsW29KL9ccRnw6s1SBtTrsrVlPTIm
 

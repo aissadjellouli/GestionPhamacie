@@ -17,7 +17,8 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
                    pg_is_in_recovery(),
                    (SELECT count(*) FROM sync_lot l WHERE l.accuse_le IS NULL AND l.epoque < p.epoque),
                    CASE WHEN rc.cle IS NULL THEN NULL ELSE sync_familles_effectives() END, rc.recu_le, p.descendant_version, coalesce(rc.version, 0),
-                   sync_colonnes_interdites(), p.retour_arriere_le, p.retour_arriere_central, p.retour_arriere_sequences_le
+                   sync_colonnes_interdites(), p.retour_arriere_le, p.retour_arriere_central, p.retour_arriere_sequences_le,
+                   p.controle_demarrage_delai_s
             FROM sync_parametre p LEFT JOIN reglage_central rc ON rc.cle = 'familles_envoyees'
             WHERE p.id = 1
             """);
@@ -27,8 +28,26 @@ public sealed class EnvoiSyncSql(NpgsqlDataSource db) : IEnvoiSyncDepot
             r.IsDBNull(6) ? null : r.GetString(6), Date(r, 7), Date(r, 8), Date(r, 9), r.IsDBNull(10) ? null : r.GetString(10), Date(r, 11),
             r.GetString(12), r.GetBoolean(13), r.GetInt64(14), r.GetInt64(15), r.GetBoolean(16), r.GetInt64(17),
             r.IsDBNull(18) ? null : r.GetFieldValue<string[]>(18), Date(r, 19), r.GetInt64(20), r.GetInt64(21), r.GetFieldValue<string[]>(22),
-            Date(r, 23), r.IsDBNull(24) ? null : r.GetInt64(24), Date(r, 25));
+            Date(r, 23), r.IsDBNull(24) ? null : r.GetInt64(24), Date(r, 25), r.GetInt32(26));
     }
+
+    // ---- Script 152 : encaissement suspendu au démarrage jusqu'au contrôle du serveur central ----
+    public async Task<bool> NoterDemarrageAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT sync_noter_demarrage()");
+        return await cmd.ExecuteScalarAsync(ct) is true;
+    }
+
+    public Task NoterControleDemarrageAsync(CancellationToken ct = default) => ExecuterAsync("SELECT sync_noter_controle_demarrage()", ct);
+
+    public async Task<int> AttenteEncaissementAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT encaissement_attente_secondes()");
+        return (int)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    public Task ReglerControleDemarrageAsync(int secondes, CancellationToken ct = default) =>
+        ExecuterAsync("SELECT sync_regler_controle_demarrage($1)", ct, secondes);
 
     public async Task<IReadOnlyList<LotEnregistre>> LotsNonAccusesAsync(int maximum, CancellationToken ct = default)
     {

@@ -19,10 +19,15 @@ public sealed record AnomalieIntegriteCentrale(long Id, string Nature, string Jo
 /// Lot S6.5 (script central 023) : restauration constatée au central (deux suites du même journal après un changement d'époque
 /// déclaré). L'ancienne suite est gardée au central comme preuve ; Classe : « restauration_constatee » ou « restauration_a_justifier »
 /// (ligne scellée perdue, restaurations trop fréquentes) ; PriseActe : le titulaire a noté la cause (integrite_prise_acte, script 151).
+/// TicketsReattribues (script central 025) : n° de tickets de l'ancienne suite repris par des ventes faites avant la détection.
 /// </summary>
 public sealed record RestaurationCentrale(long Id, string Journal, int AncienneEpoque, int NouvelleEpoque, long RangCommun, long? FinAncienneRang,
-    long Lignes, DateTime? DuUtc, DateTime? AuUtc, decimal? MontantTtc, long SceauxPerdus, string Classe, bool PriseActe)
+    long Lignes, DateTime? DuUtc, DateTime? AuUtc, decimal? MontantTtc, long SceauxPerdus, string Classe, bool PriseActe,
+    IReadOnlyList<string>? TicketsReattribues = null)
 {
+    /// <summary>Plafond des n° lus dans le résumé (réponse d'un tiers : bornée).</summary>
+    public const int MaxTicketsReattribues = 1000;
+
     public const string ClasseConstatee = "restauration_constatee";
     public const string ClasseAJustifier = "restauration_a_justifier";
     public bool AJustifier => Classe == ClasseAJustifier;
@@ -93,7 +98,7 @@ public sealed record IntegriteCentrale(string Statut, DateTime? VerifieLeUtc, Da
                     restaurations.Add(new RestaurationCentrale(Nombre(b, "id") ?? 0, Texte(b, "journal") ?? "?", (int)(Nombre(b, "ancienne_epoque") ?? 0),
                         (int)(Nombre(b, "nouvelle_epoque") ?? 0), Nombre(b, "rang_commun") ?? 0, Nombre(b, "fin_ancienne_rang"), Nombre(b, "lignes") ?? 0,
                         Date(b, "du"), Date(b, "au"), Decimal(b, "montant_ttc"), Nombre(b, "sceaux_perdus") ?? 0,
-                        Texte(b, "classe") ?? RestaurationCentrale.ClasseAJustifier, Booleen(b, "prise_acte")));
+                        Texte(b, "classe") ?? RestaurationCentrale.ClasseAJustifier, Booleen(b, "prise_acte"), Textes(b, "tickets_reattribues")));
             var sceaux = r.TryGetProperty("sceaux", out var s) && s.ValueKind == JsonValueKind.Object ? s : default;
             return new IntegriteCentrale(Texte(r, "statut") ?? StatutAttente, Date(r, "verifie_le"), Date(r, "complete_le"),
                 Nombre(r, "anomalies_total") ?? 0, Nombre(r, "derniere_anomalie_id") ?? 0,
@@ -110,6 +115,13 @@ public sealed record IntegriteCentrale(string Statut, DateTime? VerifieLeUtc, Da
 
     private static string? Texte(JsonElement e, string nom) =>
         e.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    /// <summary>Liste de textes courts (n° de tickets), bornée ; absente : vide.</summary>
+    private static IReadOnlyList<string> Textes(JsonElement e, string nom) =>
+        e.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Array
+            ? v.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).Where(x => x.Length is > 0 and <= 40)
+                .Take(RestaurationCentrale.MaxTicketsReattribues).ToList()
+            : [];
 
     private static long? Nombre(JsonElement e, string nom) =>
         e.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : null;

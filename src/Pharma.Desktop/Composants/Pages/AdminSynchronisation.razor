@@ -116,13 +116,17 @@
             <section class="panneau" aria-labelledby="s-reglages">
                 <h2 id="s-reglages">Réglages</h2>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 2 1 360px"><label for="s-adresse">Adresse du serveur central</label>
+                    <div class="champ" style="flex: 2 1 300px"><label for="s-adresse">Adresse du serveur central</label>
                         <input id="s-adresse" data-champ="adresse" type="text" placeholder="https://serveur-central:5090" @bind="adresse" @bind:event="oninput" /></div>
                     <div class="champ" style="flex: 1 1 260px"><label for="s-textes">Textes libres (motifs, commentaires)</label>
                         <select id="s-textes" data-champ="textes_libres" @bind="textesLibres">
                             <option value="filtres">Envoyés filtrés (courriels, téléphones, n°, noms masqués)</option>
                             <option value="retires">Jamais envoyés</option>
                         </select></div>
+                    @* Script 152 (2026-11-19) : la caisse attend la réponse du serveur central au démarrage (n° de tickets), au plus ce délai ;
+                       sur la première rangée (1366 × 768 : une rangée de plus faisait déborder la rubrique) *@
+                    <div class="champ" style="flex: 0 0 170px"><label for="s-delai-demarrage" title="Au démarrage du serveur, la caisse attend que le serveur central confirme les n° de tickets (quelques secondes), au plus ce délai en secondes (0 : pas d’attente)">Attente au démarrage (s)</label>
+                        <input id="s-delai-demarrage" data-champ="delai_controle_demarrage" type="number" min="0" max="600" step="10" @bind="delaiControleDemarrage" /></div>
                 </div>
                 <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center">
                     <label class="case"><input type="checkbox" @bind="active" /><span>Synchronisation activée</span></label>
@@ -285,7 +289,7 @@
                         <div class="tableau-cadre">
                             <table class="tableau" style="min-width: 0">
                                 <thead><tr><th scope="col">Époque</th><th scope="col">Journal</th><th scope="col">Lignes remplacées</th><th scope="col">Période</th>
-                                    <th scope="col" class="nombre">Montant TTC</th><th scope="col">Classe</th><th scope="col">Prise d’acte</th></tr></thead>
+                                    <th scope="col" class="nombre">Montant TTC</th><th scope="col">Tickets réutilisés</th><th scope="col">Classe</th><th scope="col">Prise d’acte</th></tr></thead>
                                 <tbody>
                                     @foreach (var b in restaurations)
                                     {
@@ -295,6 +299,8 @@
                                             <td>@b.Lignes (rangs @(b.RangCommun + 1) à @(b.FinAncienneRang?.ToString() ?? "?"))@(b.SceauxPerdus > 0 ? $" · {b.SceauxPerdus} scellée(s)" : "")</td>
                                             <td>@(b.Du is { } du ? du.ToLocalTime().ToString("dd/MM/yyyy") : "—")@(b.Au is { } au ? " au " + au.ToLocalTime().ToString("dd/MM/yyyy") : "")</td>
                                             <td class="nombre">@(b.MontantTtc is { } m ? Libelles.Dinars(m, 2) : "—")</td>
+                                            @* Script central 025 : n° repris par des ventes faites avant la détection (5 affichés, tous dans l'infobulle) *@
+                                            <td data-champ="tickets_reutilises" title="@(b.TicketsReattribues is { Count: > 0 } tr ? string.Join(", ", tr) : null)">@TicketsReutilises(b.TicketsReattribues)</td>
                                             <td><span class="pastille @(b.Classe == "restauration_a_justifier" ? "urgent" : "attention")">@(b.Classe == "restauration_a_justifier" ? "À justifier auprès de l’éditeur" : "Remplacée après restauration")</span></td>
                                             <td>
                                                 @if (b.PriseActe) { <span class="pastille ok">Faite</span> }
@@ -451,9 +457,14 @@
     private string rubrique => NavAdmin.RubriqueCourante("admin/synchronisation", Rubrique);
 
     private EtatSynchronisationDto? t;
+
+    /// <summary>Script central 025 : « 2 : T-017620, T-017621 » ; au-delà de 5 n°, « … » (liste complète dans l'infobulle).</summary>
+    internal static string TicketsReutilises(IReadOnlyList<string>? n) => n is not { Count: > 0 } ? "Aucun"
+        : $"{n.Count} : {string.Join(", ", n.Take(5))}{(n.Count > 5 ? ", …" : "")}";
     private bool active, envoyerMedecins;
     private string? adresse;
     private string textesLibres = "filtres";
+    private int delaiControleDemarrage = 120;
     private int bandeauMinutes = 60, retardHeures = 24, erreurMinutes = 60, purgeJours = 30;
     private bool purgeActive = true;
     private string code = "";
@@ -534,6 +545,7 @@
         var (d, e) = await Api.SynchronisationAsync();
         if (d is null) { erreur = e; return; }
         (t, active, adresse, textesLibres, envoyerMedecins, erreur) = (d, d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins, null);
+        delaiControleDemarrage = d.DelaiControleDemarrage;
         if (d.Supervision is { } s) (bandeauMinutes, retardHeures, erreurMinutes, purgeActive, purgeJours) = (s.BandeauMinutes, s.RetardHeures, s.ErreurMinutes, s.PurgeActive, s.PurgeJours);
     }
 
@@ -720,7 +732,7 @@
 
     private Task EnregistrerAsync() => Executer(async () =>
     {
-        var e = await Api.ReglerSynchronisationAsync(new ReglagesSynchronisationDto(active, adresse, textesLibres, envoyerMedecins));
+        var e = await Api.ReglerSynchronisationAsync(new ReglagesSynchronisationDto(active, adresse, textesLibres, envoyerMedecins, delaiControleDemarrage));
         if (e is not null) return e;
         message = "Réglages de synchronisation enregistrés.";
         await ChargerAsync();

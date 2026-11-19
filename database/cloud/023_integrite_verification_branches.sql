@@ -640,6 +640,13 @@ END $$;
 --   * anomalies_classees : anomalies rattachées à une restauration (S6.5-D5), chaque anomalie de la liste porte « classee » ;
 --   * statut (S6.5-D4) : « anomalie » s'il reste une anomalie NON rattachée ou une chaîne en rupture ; sinon « restauration » tant
 --     qu'une restauration n'a pas fait l'objet d'une prise d'acte du titulaire ; sinon « attente » ou « ok » comme avant.
+-- Garde de rejeu (2026-11-19) : définition remplacée par le script 025 (n° de tickets réattribués) ; rejouer ce script après 025
+-- ne la ramène pas en arrière (marqueur : cloud_integrite_tickets_reattribues).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('public.cloud_integrite_tickets_reattribues()') IS NOT NULL THEN
+        RETURN;
+    END IF;
+    EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_verifier_integrite(p_complete boolean DEFAULT false) RETURNS jsonb
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -673,6 +680,8 @@ BEGIN
     PERFORM cloud_integrite_verifier_sceaux(p_complete, v_delai);
     PERFORM cloud_integrite_verifier_tickets(p_complete, v_delai);
     PERFORM cloud_integrite_verifier_croisee(p_complete, v_delai);
+    -- Script 025 : n° de tickets repris par les ventes faites avant la détection, signalés et rattachés à la restauration
+    PERFORM cloud_integrite_tickets_reattribues();
 
     INSERT INTO cloud_integrite_officine AS x (officine_id, verifie_le, verification_complete_le)
     VALUES (v_off, now(), CASE WHEN p_complete THEN now() END)
@@ -701,7 +710,11 @@ BEGIN
                                                  'nouvelle_epoque', b.nouvelle_epoque, 'rang_commun', b.rang_commun, 'fin_ancienne_rang', b.fin_ancienne_rang,
                                                  'lignes', b.lignes_ancienne, 'du', b.premiere_date, 'au', b.derniere_date, 'montant_ttc', b.montant_ttc,
                                                  'sceaux_perdus', b.sceaux_perdus, 'classe', b.classe, 'constatee_le', b.constatee_le,
-                                                 'prise_acte', cloud_integrite_prise_acte(b.nouvelle_epoque)) ORDER BY b.id), '[]'::jsonb)
+                                                 'prise_acte', cloud_integrite_prise_acte(b.nouvelle_epoque),
+                                                 'tickets_reattribues', (SELECT coalesce(jsonb_agg(a.attendu ORDER BY a.attendu), '[]'::jsonb)
+                                                     FROM cloud_anomalie_classement c JOIN cloud_anomalie_integrite a
+                                                       ON a.officine_id = c.officine_id AND a.id = c.anomalie_id AND a.nature = 'ticket_reattribue_restauration'
+                                                     WHERE c.officine_id = v_off AND c.bifurcation_id = b.id)) ORDER BY b.id), '[]'::jsonb)
       INTO v_rest FROM cloud_integrite_bifurcation b WHERE b.officine_id = v_off;
     v_nouv := (SELECT count(*) FROM cloud_anomalie_integrite WHERE officine_id = v_off AND id > v_avant);
     v_statut := CASE WHEN v_vraies > 0 OR EXISTS (SELECT 1 FROM cloud_integrite_etat WHERE officine_id = v_off AND statut = 'rupture') THEN 'anomalie'
@@ -725,6 +738,8 @@ BEGIN
     PERFORM cloud_publier_descendant('reglage_central', 'integrite_centrale', v_resume);
     RETURN v_resume || jsonb_build_object('nouvelles', v_nouv);
 END $$;
+$def$;
+END $rejeu$;
 
 -- Restaurations constatées de l'officine courante (console --restaurations-integrite, export « restauration »)
 CREATE OR REPLACE FUNCTION cloud_restaurations_integrite() RETURNS SETOF cloud_integrite_bifurcation

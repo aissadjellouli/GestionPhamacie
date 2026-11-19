@@ -194,6 +194,13 @@ clair, 1 366 × 768 et 1 536 × 890, captures regardées) :
   sans barre horizontale : titre du panneau pour les lecteurs d'écran seulement (`.visuellement-cache`, le titre de la page et la
   période le disent déjà), tableau **`.tableau.tableau-serre`** (cellules 10 × 8 px, à réserver aux tableaux d'une dizaine de
   colonnes) avec `min-width: 0`, cadre `data-hauteur-min="200"`. Onglet Jour par jour (49 px → 0) : même titre caché et même cadre de 200 px.
+- N° de tickets après une restauration (2026-11-19, scripts 152 et central 025) : **Caisse**, bandeau « Contrôle de démarrage avec le
+  serveur central : encaissement possible dans 1 min 58 au plus » (`bandeau-attention`, `data-champ="attente_encaissement"`, relu
+  toutes les 5 s, retiré à 0) ; **Synchronisation › Réglages**, champ « Attente au démarrage (s) » sur la première rangée (explication
+  dans l'infobulle) ; **Restaurations constatées**, colonne « Tickets réutilisés » (« 2 : T-017618, T-017619 », 5 n° au plus, liste
+  complète dans l'infobulle). Mesurés sur l'essai de bout en bout : 0 px, sans défilement horizontal, à 1 536 × 890 et 1 366 × 768,
+  clair et sombre, captures regardées (Caisse panier vide). Réglages : 119 px puis 79 px puis 19 px avant correction (champ seul sur
+  une rangée, puis sur la rangée des cases, puis phrase ajoutée sous les réglages retirée).
 - Administration › Synchronisation (2026-11-19, lot S6.5.4) : nouvelle rubrique **« Restaurations constatées »**
   (`?rubrique=restaurations` : tableau borné par nature, prise d'acte du titulaire au-dessous, champ « cause » avec `data-champ`) ; la
   rubrique « Intégrité au central » porte un lien « n restauration(s) » dans le titre de son panneau, ses champs sont resserrés sur une

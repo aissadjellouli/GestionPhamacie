@@ -92,6 +92,13 @@ CREATE OR REPLACE TRIGGER trg_compteur_ticket_proteger
 
 -- N° du prochain ticket : la ligne du compteur reste verrouillée jusqu'à la fin de la transaction (deux caisses attendent
 -- l'une l'autre) ; une transaction annulée rend son numéro. Au moins 6 chiffres (au-delà de 999 999 : 7 chiffres, jamais tronqué).
+-- Garde de rejeu (2026-11-19) : définition remplacée par le script 152 (attente du contrôle de démarrage) ; rejouer ce script
+-- après 152 ne la ramène pas en arrière (marqueur : encaissement_attente_secondes).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('public.encaissement_attente_secondes()') IS NOT NULL THEN
+        RETURN;
+    END IF;
+    EXECUTE $def$
 CREATE OR REPLACE FUNCTION prochain_numero_vente() RETURNS text
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -105,6 +112,8 @@ BEGIN
     RETURN v_prefixe || lpad(v_numero::text, GREATEST(6, char_length(v_numero::text)), '0');
 END;
 $$;
+$def$;
+END $rejeu$;
 
 -- ---- 3. Journal des ventes ---------------------------------------------------
 CREATE TABLE IF NOT EXISTS journal_vente (

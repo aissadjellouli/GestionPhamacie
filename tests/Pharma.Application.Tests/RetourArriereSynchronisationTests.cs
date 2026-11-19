@@ -40,7 +40,8 @@ public class RetourArriereSynchronisationTests
         public readonly Dictionary<long, long> Rattachement = [];
         public readonly List<(LotEnregistre Lot, bool Accuse)> Lots = [];
         public readonly Dictionary<string, long> Sequences = new(StringComparer.Ordinal) { ["vente"] = 40, ["paiement"] = 900 };
-        public int Detections, DetectionsRefus, Avances, NouvellesEpoques;
+        public int Detections, DetectionsRefus, Avances, NouvellesEpoques, ControlesDemarrage;
+        public Task NoterControleDemarrageAsync(CancellationToken ct = default) { ControlesDemarrage++; return Task.CompletedTask; }
         public string? Natures;
         /// <summary>Tables dont l'avance échoue (verrou, séquence trop petite) : rendues avec une erreur, comme le script 149.</summary>
         public readonly HashSet<string> EchecsAvance = new(StringComparer.Ordinal);
@@ -270,6 +271,35 @@ public class RetourArriereSynchronisationTests
         Assert.Equal(r2.Erreur, b.P.DerniereErreur);
         Assert.Equal((1, 1, 1, 0), (b.Detections, b.Avances, s.AppelsEtat, s.Depots));
         Assert.Empty(b.Lots);
+    }
+
+    /// <summary>Script 152 : l'encaissement suspendu au démarrage n'est permis que sur une réponse du serveur central (pas de retour en
+    /// arrière, ou retour en arrière avec compteur et séquences avancés) ; jamais sur un central injoignable.</summary>
+    [Fact]
+    public async Task Controle_de_demarrage_note_seulement_sur_une_reponse_du_central()
+    {
+        var (b, s) = (new Base(), new Central());
+        b.P = b.P with { DernierLot = 2, DernierAccuse = 2 };
+        s.Dernier[1] = 2;
+        s.EtatInjoignable = true;
+        await Envoi(b, s).ExecuterAsync(Maintenant);
+        Assert.Equal(0, b.ControlesDemarrage);
+        s.EtatInjoignable = false;
+        await Envoi(b, s).ExecuterAsync(Maintenant);
+        Assert.Equal(1, b.ControlesDemarrage);
+
+        // Retour en arrière : noté une fois le compteur des tickets et les séquences avancés
+        var (b2, s2) = Restauree();
+        await Envoi(b2, s2).ExecuterAsync(Maintenant);
+        Assert.NotNull(b2.P.RetourArriereSequencesLe);
+        Assert.Equal(1, b2.ControlesDemarrage);
+
+        // Avance non faite (route des maximums absente) : pas noté, l'attente plafonnée s'applique
+        var (b3, s3) = Restauree();
+        s3.Maximums = null;
+        await Envoi(b3, s3).ExecuterAsync(Maintenant);
+        Assert.Null(b3.P.RetourArriereSequencesLe);
+        Assert.Equal(0, b3.ControlesDemarrage);
     }
 
     [Fact]
@@ -742,7 +772,7 @@ public class RetourArriereSynchronisationTests
              "anomalies":[{"id":7,"nature":"remplacee_apres_restauration","journal":"journal_vente","rang":4,"classee":true}],
              "restaurations":[{"id":3,"journal":"journal_vente","ancienne_epoque":1,"nouvelle_epoque":2,"rang_commun":3,"fin_ancienne_rang":5,
                "lignes":2,"du":"2026-11-17T08:00:00Z","au":"2026-11-17T09:00:00Z","montant_ttc":70.00,"sceaux_perdus":1,
-               "classe":"restauration_a_justifier","prise_acte":false}]}
+               "classe":"restauration_a_justifier","prise_acte":false,"tickets_reattribues":["T-017620","T-017621",12,""]}]}
             """;
         var ic = IntegriteCentrale.Lire(json)!;
         Assert.Equal(IntegriteCentrale.StatutRestauration, ic.Statut);
@@ -752,8 +782,13 @@ public class RetourArriereSynchronisationTests
         Assert.Equal((1, 2, 3L, 5L, 2L, 70.00m, 1L, false), (b.AncienneEpoque, b.NouvelleEpoque, b.RangCommun, b.FinAncienneRang, b.Lignes, b.MontantTtc,
             b.SceauxPerdus, b.PriseActe));
         Assert.True(b.AJustifier);
+        // Script central 025 : n° de tickets réutilisés lus (valeurs non textuelles ou vides écartées)
+        Assert.Equal(["T-017620", "T-017621"], b.TicketsReattribues);
         Assert.StartsWith("Lignes remplacées après une restauration", IntegriteCentrale.LibelleNature("remplacee_apres_restauration"));
         // Résumé d'un central antérieur : aucune restauration, rien ne casse
         Assert.Empty(IntegriteCentrale.Lire("""{"format":"integrite-v1","statut":"ok","chaines":[],"anomalies":[]}""")!.RestaurationsListe);
+        // Central sans le script 025 : aucun n° réutilisé
+        var sans = IntegriteCentrale.Lire(json.Replace(""","tickets_reattribues":["T-017620","T-017621",12,""]""", ""))!;
+        Assert.Empty(sans.RestaurationsListe.Single().TicketsReattribues!);
     }
 }

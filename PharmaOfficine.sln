@@ -290,6 +290,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\149_synchronisation_retour_arriere_nouvelle_epoque.sql = database\migration\149_synchronisation_retour_arriere_nouvelle_epoque.sql
 		database\migration\150_index_recherche_suggestions.sql = database\migration\150_index_recherche_suggestions.sql
 		database\migration\151_integrite_restauration_officine.sql = database\migration\151_integrite_restauration_officine.sql
+		database\migration\152_controle_demarrage_encaissement.sql = database\migration\152_controle_demarrage_encaissement.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -321,6 +322,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\149_synchronisation_retour_arriere_nouvelle_epoque_tests.sql = database\tests\149_synchronisation_retour_arriere_nouvelle_epoque_tests.sql
 		database\tests\150_index_recherche_suggestions_tests.sql = database\tests\150_index_recherche_suggestions_tests.sql
 		database\tests\151_integrite_restauration_officine_tests.sql = database\tests\151_integrite_restauration_officine_tests.sql
+		database\tests\152_controle_demarrage_encaissement_tests.sql = database\tests\152_controle_demarrage_encaissement_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 	EndProjectSection
@@ -392,6 +394,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\022_integrite_restauration_tables.sql = database\cloud\022_integrite_restauration_tables.sql
 		database\cloud\023_integrite_verification_branches.sql = database\cloud\023_integrite_verification_branches.sql
 		database\cloud\024_dernier_ticket_officine.sql = database\cloud\024_dernier_ticket_officine.sql
+		database\cloud\025_integrite_tickets_reattribues.sql = database\cloud\025_integrite_tickets_reattribues.sql
 		database\cloud\tests\001_base_centrale_tests.sql = database\cloud\tests\001_base_centrale_tests.sql
 		database\cloud\tests\003_chargement_complet_officine_tests.sql = database\cloud\tests\003_chargement_complet_officine_tests.sql
 		database\cloud\tests\004_reglage_familles_envoyees_tests.sql = database\cloud\tests\004_reglage_familles_envoyees_tests.sql
@@ -415,6 +418,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\tests\022_integrite_restauration_tables_tests.sql = database\cloud\tests\022_integrite_restauration_tables_tests.sql
 		database\cloud\tests\023_integrite_verification_branches_tests.sql = database\cloud\tests\023_integrite_verification_branches_tests.sql
 		database\cloud\tests\024_dernier_ticket_officine_tests.sql = database\cloud\tests\024_dernier_ticket_officine_tests.sql
+		database\cloud\tests\025_integrite_tickets_reattribues_tests.sql = database\cloud\tests\025_integrite_tickets_reattribues_tests.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "EXEMPLE", "EXEMPLE", "{E8EB9343-E715-4099-B51F-8BC7A9D6B1A3}"

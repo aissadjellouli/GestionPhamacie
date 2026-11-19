@@ -1679,9 +1679,11 @@ Corrections validées par le titulaire (relecture du lot S6 et essai S6.4), réa
 
 **Écran** : rendu (charte, captures clair et sombre, défilement à 1 536 × 890 et 1 366 × 768) **non revérifié** après l'ajout du champ mot de passe, de la phrase d'intégrité et du bandeau d'avertissement **[À VÉRIFIER]**.
 
-## 31. Lot S6.5 : intégrité après restauration (analyse du 2026-11-18 ; décisions S6.5-D1 à D9 validées le 2026-11-18, recommandations acceptées ; code sur « go S6.5 »)
+## 31. Lot S6.5 : intégrité après restauration (analyse du 2026-11-18 ; décisions S6.5-D1 à D9 validées le 2026-11-18 ; **réalisé** du 2026-11-18 au 2026-11-19, S6.5.0 à S6.5.6)
 
-Rien n'est codé. Analyse faite **par lecture du code** (scripts central 002, 012, 020, 021 ; officine 111, 112, 144, 149 ;
+**État (2026-11-19)** : réalisé et essayé de bout en bout (§ 31.6 à 31.8) ; synthèse et points ouverts au § 31.9. Les § 31.1 à 31.5 sont l'analyse d'origine, gardée telle quelle ; ses « [À VÉRIFIER par essai] » sont tranchés au § 31.9.
+
+Analyse d'origine (avant tout code) : analyse faite **par lecture du code** (scripts central 002, 012, 020, 021 ; officine 111, 112, 144, 149 ;
 `IntegriteCentrale.cs`, `Supervision.cs`, `RetourArriere.cs`) : aucun essai n'a été lancé. Tout comportement décrit ci-dessous
 qui n'a pas été observé en essai est à confirmer par le premier test du lot (S6.5.5) **[À VÉRIFIER par essai]**.
 
@@ -1871,7 +1873,7 @@ non remplie.
 | S6.5-D8 | L'éditeur est-il prévenu de chaque restauration constatée ? | **Oui** (journal de sécurité du central + console `--restaurations-integrite`), conformément au § 5 (« alerte titulaire et éditeur ») ; écran central avec S7 |
 | S6.5-D9 | Faut-il redescendre à l'officine les lignes perdues (pour un contrôle sur place) ? | **Non** (S6-D2) ; export du central remis sur demande (console), inclus dans l'export de départ |
 
-### 31.5 Découpage proposé (rien n'est lancé)
+### 31.5 Découpage (proposé le 2026-11-18, réalisé : § 31.6 à 31.8)
 
 | Lot | Contenu |
 |---|---|
@@ -1879,7 +1881,7 @@ non remplie.
 | S6.5.1 | Central `022_integrite_restauration_tables.sql` : `cloud_epoque_changement`, `cloud_ligne_divergente`, `cloud_integrite_bifurcation`, `cloud_anomalie_classement` (RLS forcée, ajout seul, gardes d'effacement de départ comme 021) ; natures nouvelles ; index `(officine_id, cle_chaine, rang)` ; redéfinition de `cloud_integrite_ajout_seul` (point 2) ; tests SQL |
 | S6.5.2 | Central `023_integrite_verification_branches.sql` : vérification par liens d'empreinte, constat de bifurcation (conditions 1 à 8), sceaux et croisée par `(rang, id)`, tickets (selon D6), résumé `integrite-v1` étendu (`restaurations`, statut D4) ; tests SQL : restauration sans collision, avec collisions, falsification déguisée (dates passées), bifurcation sous sceau, lot tardif d'ancienne époque, deux restaurations successives, registre en mode « liaison », anomalies antérieures rattachées |
 | S6.5.3 | API centrale : route de déclaration (certificat de l'officine, cloisonnée), DTO partagé ; console `--restaurations-integrite` et export « restauration » ; export de départ complété ; tests `Pharma.Cloud.Tests` |
-| S6.5.4 | Officine `150_…` : déclaration envoyée par `sync_nouvelle_epoque` / `EnvoyerLotsSync` avant le premier lot (et réessayée) ; compteur de tickets (D6) ; prise d'acte du titulaire (D4) ; `IntegriteCentrale` (libellés, `restaurations`), alerte, écran ; `database/init` à jour ; tests |
+| S6.5.4 | Officine `150_…` (devenu `151`, le n° 150 ayant été pris entre-temps) : déclaration envoyée par `sync_nouvelle_epoque` / `EnvoyerLotsSync` avant le premier lot (et réessayée) ; compteur de tickets (D6) ; prise d'acte du titulaire (D4) ; `IntegriteCentrale` (libellés, `restaurations`), alerte, écran ; `database/init` à jour ; tests |
 | S6.5.5 | Essai de bout en bout sur bases jetables (avec S6.4) : restauration simulée, ventes pendant la fenêtre, nouvelle époque, chargement, vérification incrémentale puis complète, alerte et écran (captures clair et sombre, mesures) |
 | S6.5.6 | Documentation : ce § 31 complété, `docs/regles-metier.md` (règles de classement), README de `database/cloud` (ordre de passage 021 → 022 → 023) |
 
@@ -1899,7 +1901,7 @@ avis du juriste sur la présentation des lignes perdues lors d'un contrôle fisc
 
 **Essais** : copie jetable de `pharmacie_cloud_dev` (supprimée) : `022` et `023` passés deux fois ; rejeu de `021` puis `012` après eux : définitions de 022 et 023 gardées (NOTICE) ; toute la suite `database/cloud/tests` (001 à 023) réussie. `pharmacie_cloud_dev` : sauvegarde `C:\MesAtlassian\sauvegardes-bd\pharmacie_cloud_dev_avant_s65_20261118_2338.dump` (`--enable-row-security`), puis `021`, `022`, `023` et tests 022 / 023 réussis. Tests `023` : restauration avec collision (attente avant la fin du chargement, reconnue après, anomalie unique, suite vivante prolongée, repassage sans doublon), réécriture du passé refusée (condition 6), ligne scellée perdue (« à justifier », sceau toujours ancré), cloisonnement. `Pharma.Cloud.Tests` : 78 réussis, 1 ignoré (déclaration : première, renvoi identique, autre contenu 23505 ; bornes du contrat ; déclaration présente dans l'export). Solution compilée, `Pharma.Architecture.Tests` 243/243.
 
-**Reste (S6.5.4 à S6.5.6)** : officine — script `151` (table montante `integrite_prise_acte` : nouvelle époque, cause, titulaire ; compteur de tickets avancé au-delà du plus grand n° reçu par le central et plage sautée reconnue par `journal_vente_continuite`, D6), envoi de la déclaration par `EnvoyerLotsSync` avant le premier lot de la nouvelle époque (réessayée ; route absente en 404 : lots envoyés sans déclaration, comme avant), fins de chaîne lues dans `chaine_integrite`, `IntegriteCentrale` (statut `restauration`, libellés des trois natures, `restaurations`), prise d'acte du titulaire et écran Synchronisation › Intégrité au central (rubrique « Restaurations constatées »), alerte ; puis régénération du `002` (`--generer-miroir`) pour `integrite_prise_acte` ; essai de bout en bout (S6.5.5) ; documentation finale (S6.5.6). **[À VÉRIFIER]** : volume réel (vérification par branches toujours depuis le rang 1 quand une restauration est déclarée) ; bifurcation à trois suites ou bifurcation dans l'ancienne suite : refusée (anomalie), non rencontrée.
+**Reste (S6.5.4 à S6.5.6)**, fait depuis (§ 31.7 à 31.9) : officine — script `151` (table montante `integrite_prise_acte` : nouvelle époque, cause, titulaire ; compteur de tickets avancé au-delà du plus grand n° reçu par le central et plage sautée reconnue par `journal_vente_continuite`, D6), envoi de la déclaration par `EnvoyerLotsSync` avant le premier lot de la nouvelle époque (réessayée ; route absente en 404 : lots envoyés sans déclaration, comme avant), fins de chaîne lues dans `chaine_integrite`, `IntegriteCentrale` (statut `restauration`, libellés des trois natures, `restaurations`), prise d'acte du titulaire et écran Synchronisation › Intégrité au central (rubrique « Restaurations constatées »), alerte ; puis régénération du `002` (`--generer-miroir`) pour `integrite_prise_acte` ; essai de bout en bout (S6.5.5) ; documentation finale (S6.5.6). **[À VÉRIFIER]** : volume réel (vérification par branches toujours depuis le rang 1 quand une restauration est déclarée) ; bifurcation à trois suites ou bifurcation dans l'ancienne suite : refusée (anomalie), non rencontrée.
 
 ### 31.7 Réalisation S6.5.4 (2026-11-19, « go S6.5.4 ») — officine
 
@@ -1913,7 +1915,7 @@ avis du juriste sur la présentation des lignes perdues lors d'un contrôle fisc
 
 **Essais** : copie jetable de `pharmacie_test` : `151` passé deux fois, tests `151` et `149` réussis, rejeu de `112` et `149` sans retour en arrière. `pharmacie_dev` et `pharmacie_test` : sauvegardes `*_avant_151_20261119_0042.dump`, `151` passé deux fois, tests réussis ; `database/init/schema.sql` régénéré (001 à 151) et `seed_referentiel.sql` (classement des trois tables). Central : `002` régénéré (`integrite_prise_acte`) et `024` passés sur une copie jetable puis sur `pharmacie_cloud_dev` (sauvegarde `pharmacie_cloud_dev_avant_024_20261119_0044.dump`) ; suite `database/cloud/tests` 001 à 024 réussie. Tests : `Pharma.Application.Tests` 1 646 (9 nouveaux : déclaration avant tout lot et jamais renvoyée, central injoignable, 404 et 409, époque dépassée, compteur avancé et réessayé, prise d'acte, lecture du résumé), `Pharma.Architecture.Tests` 243, `Pharma.Cloud.Tests` 78. Écran : rendu mesuré et regardé (charte-graphique.md), prise d'acte essayée dans le poste sur une copie jetable (refus de la cause courte, champ en rouge, enregistrement, journal).
 
-**Reste** : S6.5.5, essai de bout en bout avec le vrai serveur central (restauration simulée, ventes pendant la fenêtre, nouvelle époque, déclaration, chargement, vérification incrémentale puis complète, prise d'acte, tickets) ; S6.5.6, documentation finale. **[À VÉRIFIER]** : volume de la vérification par branches sur une vraie officine ; avis du comptable (plage de n° sautée) et du juriste (présentation des lignes perdues lors d'un contrôle).
+**Reste**, fait depuis (§ 31.8 et 31.9) : S6.5.5, essai de bout en bout avec le vrai serveur central (restauration simulée, ventes pendant la fenêtre, nouvelle époque, déclaration, chargement, vérification incrémentale puis complète, prise d'acte, tickets) ; S6.5.6, documentation finale. **[À VÉRIFIER]** : volume de la vérification par branches sur une vraie officine ; avis du comptable (plage de n° sautée) et du juriste (présentation des lignes perdues lors d'un contrôle).
 
 ### 31.8 Lot S6.5.5 : essai de bout en bout (2026-11-19, « go S6.5.5 »)
 
@@ -1963,3 +1965,82 @@ Cloud 78, Domain 630.
 - Données de la page Synchronisation lues une fois : passer d'une rubrique à l'autre ne relit pas l'état (« Actualiser » le fait).
 - Opérations de l'ancienne époque restées dans la file (`sync_sortie`, 154 ici) : jamais envoyées (le chargement les remplace), purgées
   comme prévu en S6.
+
+### 31.9 Synthèse finale du lot S6.5 (2026-11-19, S6.5.6)
+
+**Ce que fait le logiciel après la restauration d'une base d'officine** (ou une bascule sur une base en retard) :
+
+1. **Détection** (S6, § 30) : au premier échange, l'officine voit que le central a reçu plus de lots qu'elle n'en a envoyé ; elle
+   suspend l'envoi, avance ses séquences et **son compteur de tickets** au-delà de ce que le central a reçu (plage de n° sautée notée,
+   non comptée comme manquante), et alerte le titulaire.
+2. **Nouvelle époque** (titulaire, mot de passe ressaisi) : l'officine note une **déclaration** (époques, lots, fins de chaîne des
+   journaux envoyés) et l'envoie au central **avant tout lot** de la nouvelle époque, puis repart sur un chargement complet.
+3. **Réception au central** : une ligne de journal chaîné reçue avec un autre contenu laisse l'original en place ; la nouvelle version est
+   gardée à part (`cloud_ligne_divergente`).
+4. **Vérification** (toutes les 15 min, complète chaque semaine) : elle suit les liens d'empreinte ; deux suites au même rang sont
+   classées « remplacée après restauration » si les huit conditions sont réunies, « à justifier auprès de l'éditeur » si une ligne scellée
+   est perdue ou si les restaurations sont trop fréquentes, sinon « chaînage rompu ». Une ancienne branche plus longue que la nouvelle
+   n'est pas une rupture. L'ancienne suite n'est jamais effacée.
+5. **Officine** : Administration › Synchronisation › « Restaurations constatées » ; statut « Restauration constatée » jusqu'à la
+   **prise d'acte** du titulaire (cause), puis « Aucune anomalie » si rien d'autre n'est en anomalie.
+
+**Ordre de mise en production** : scripts centraux `022`, `023`, `024` (et `002` régénéré) **avant** le script officine `151`
+(`docs/mise-en-production.md` étape 10.2, `database/cloud/README.md`). Un central non mis à jour répond 404 à la déclaration :
+l'officine le note et envoie ses lots sans indulgence (comportement d'avant S6.5).
+
+**Questions de l'analyse d'origine, tranchées**
+
+| Question (§ 31.1 à 31.5) | Réponse |
+|---|---|
+| Comportement réel décrit au § 31.1 | Observé à l'essai S6.4 et S6.5.5 (§ 30.7, § 31.8) : conforme, sans déclaration ; avec déclaration, classement attendu |
+| Règle locale de `compteur_ticket` : peut-il être avancé ? | Oui, seulement par `sync_avancer_compteur_ticket` (saut annoncé et noté) ; continuité locale sans faux manquant (script 151) |
+| `journal_audit` envoyé au central, colonnes | Non tranché dans ce lot (hors du classement des journaux chaînés) **[À VÉRIFIER]** |
+| Contrôle de vraisemblance des dates à l'officine | Non tranché ; le central tolère 10 minutes d'écart d'horloge (condition 6) **[À VÉRIFIER]** |
+| Durée de la vérification par branches sur un volume réel | Non mesurée (essai : quelques lignes) **[À VÉRIFIER sur une vraie officine]** |
+| Présentation des lignes perdues lors d'un contrôle fiscal | **[À VÉRIFIER : avis du juriste]** |
+
+**Points ouverts**
+- ~~Décision du titulaire : n° de tickets repris avant la détection~~ : choix « A + B » le 2026-11-19, réalisé (§ 31.10).
+- **Avis du comptable** : plage de n° de tickets sautée après une restauration (S6.5-D6 a).
+- Page Synchronisation : l'état n'est relu qu'avec « Actualiser » (gêne mineure, § 31.8).
+
+### 31.10 N° de tickets repris avant la détection : choix « A + B » (2026-11-19)
+
+**Constat (§ 31.8)** : une base restaurée ne le sait pas d'elle-même ; seul le serveur central peut dire qu'il a reçu plus de lots. Les
+ventes faites entre le redémarrage et la détection (30 s au moins avant) reprenaient des n° de tickets déjà reçus, sans aucune anomalie.
+
+**Choix du titulaire** : **A** le central signale ces n° ; **B** la caisse attend le contrôle du central au démarrage, **120 s au plus**
+(réglable, 0 à 600, 0 : pas d'attente), puis la vente est permise même sans Internet.
+
+| Élément | Réalisé |
+|---|---|
+| B, officine `152` | `sync_parametre.demarrage_le`, `controle_demarrage_le`, `controle_demarrage_delai_s` ; `sync_noter_demarrage()` (seulement synchronisation active, adresse réglée, serveur activé), `sync_noter_controle_demarrage()`, `sync_regler_controle_demarrage()`, `encaissement_attente_secondes()` (aussi après une détection tant que l'avance des n° n'est pas faite, même plafond) ; `prochain_numero_vente()` refuse pendant l'attente (P0001 → 422, message clair, compteur inchangé). Garde de rejeu dans `112`. |
+| B, API | `EnvoiSynchronisation` : démarrage noté, premier passage **aussitôt** (plus les 30 s), puis toutes les 10 s tant que l'attente dure ; ces essais rapprochés ne comptent pas pour l'attente croissante (constaté à l'essai : sinon le passage suivant partait 30 min plus tard). `EnvoyerLotsSync` note le contrôle quand le central répond « pas de retour en arrière », ou après un retour en arrière une fois le compteur et les séquences avancés ; jamais sur un central injoignable. Route `GET /api/caisse/attente-encaissement` (droit `caisse.vendre`). |
+| B, écrans | Caisse : bandeau du temps restant ; Synchronisation › Réglages : « Attente au démarrage (s) » (journalisé, refus hors 0 à 600). |
+| A, central `025` | `cloud_integrite_tickets_reattribues()` : pour chaque restauration constatée du journal des ventes, une vente de la nouvelle suite qui reprend le n° d'une vente de l'ancienne (reçue avant la nouvelle époque, après le rang commun) → anomalie `ticket_reattribue_restauration` (une par vente, n° dans « attendu »), rattachée à la restauration et classée comme elle ; `cloud_verifier_integrite` l'appelle, le résumé porte `tickets_reattribues` par restauration. Garde de rejeu dans `023`. **Ordre** : `025` avant `152`. |
+| A, officine | `IntegriteCentrale` lit `tickets_reattribues` (borné à 1 000, textes de 1 à 40 caractères) ; Restaurations constatées : colonne « Tickets réutilisés ». |
+
+**Essais** : copies jetables (`152` et `025` passés deux fois, rejeux de `112` et `023` sans retour en arrière, tests 151, 152, 012, 022
+à 025 réussis), puis `pharmacie_dev`, `pharmacie_test` et `pharmacie_cloud_dev` (sauvegardes `*_avant_152_20261119_0236.dump` et
+`pharmacie_cloud_dev_avant_025_20261119_0236.dump`, prises avec `--enable-row-security` pour le central et vérifiées avant) ;
+`database/init/schema.sql` régénéré (001 à 152). Tests : Application 1 647, Architecture 243, Cloud 78.
+
+**Essai de bout en bout** (`essai_cloud_officine.ps1`, central 5196, API 5197, bases jetables supprimées ensuite)
+
+| N° | Étape | Constaté | Résultat |
+|---|---|---|---|
+| 1 | Redémarrage de l'API, central joignable | contrôle noté **0,25 s** après le démarrage ; vente aussitôt acceptée (T-017617) | OK |
+| 2 | Point de restauration, 3 ventes envoyées | T-017618 à 620, lot 78 accusé | OK |
+| 3 | Restauration, central injoignable, redémarrage | attente 117 s ; vente **refusée** (422, message clair) ; Caisse : bandeau « encaissement possible dans 1 min 58 au plus » | OK |
+| 4 | Délai écoulé, sans central | 2 ventes acceptées : T-017618 et 619 **repris** (prévu) | OK |
+| 5 | Central rétabli | détection, compteur avancé à 17620 (plage notée), nouvelle époque 2, déclaration reçue avant le premier lot, chargement terminé | OK |
+| 6 | Vérification complète au central | restauration constatée (rangs 3 à 5) ; **2 anomalies `ticket_reattribue_restauration`** (T-017618, T-017619), rattachées et classées ; statut « restauration » (pas « anomalie ») | OK |
+| 7 | Officine | résumé reçu : `ticketsReattribues` = T-017618, T-017619 ; colonne « Tickets réutilisés » ; vente suivante T-017621 (aucun n° repris) | OK |
+| 8 | Écrans | Caisse (bandeau), Réglages, Restaurations constatées : 0 px aux deux tailles, clair et sombre (charte-graphique.md) | OK après correction des Réglages |
+
+**Défauts trouvés et corrigés pendant l'essai** : attente croissante gonflée par les essais rapprochés du démarrage (corrigé dans
+`EnvoiSynchronisation`, vérifié par compilation ; l'API d'essai tournait avec l'ancien code, envois relancés à la main) ; Réglages à
+1 366 × 768 (119 px → 0).
+
+**Limites** : pendant l'attente, seul l'encaissement est refusé (une vente déjà en panier attend) ; au-delà du délai sans Internet, les
+n° repris restent possibles : ils sont alors signalés par le central (A). **[À VÉRIFIER : avis du comptable sur les n° repris et sautés.]**

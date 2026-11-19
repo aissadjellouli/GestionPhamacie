@@ -49,6 +49,12 @@
         }
         else
         {
+        @* Script 152 (2026-11-19) : au démarrage du serveur, l'encaissement attend que le serveur central confirme les n° de tickets
+           (quelques secondes), au plus le délai réglé dans Synchronisation › Réglages *@
+        @if (attenteEncaissement > 0)
+        {
+            <div class="bandeau-attention" role="status" data-champ="attente_encaissement">Contrôle de démarrage avec le serveur central : encaissement possible dans @DureeAttente(attenteEncaissement) au plus.</div>
+        }
 
         @if (venteFaite is not null)
         {
@@ -1637,6 +1643,7 @@
         await ChargerEtatAsync();
         if (Session.A("caisse.vendre")) (alertesDispo, _) = await Api.AlertesDisponibiliteAsync();
         _ = ActualiserAlertesDispoAsync();
+        if (Session.A("caisse.vendre")) _ = SuivreAttenteEncaissementAsync();
         if (aReprendre is { } id) await ReprendreAuRetourAsync(id);
         // Vente laissée en attente au « Changer d'utilisateur » : reprise par l'employé qui se connecte ensuite sur ce poste
         else if (Session.A("caisse.vendre") && Session.PrendreVenteAReprendre() is { } laissee) await ReprendreLaisseeAsync(laissee.Id, laissee.LaisseePar);
@@ -1685,6 +1692,31 @@
                     if (e is null && !arretAlertesDispo.IsCancellationRequested) await InvokeAsync(() => { alertesDispo = a; StateHasChanged(); });
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException) { }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    // ---- Script 152 : encaissement suspendu au démarrage jusqu'au contrôle du serveur central ----
+    private int attenteEncaissement;
+    private readonly CancellationTokenSource arretAttenteEncaissement = new();
+
+    internal static string DureeAttente(int secondes) => secondes >= 60 ? $"{secondes / 60} min {secondes % 60:00}" : $"{secondes} s";
+
+    /// <summary>Attente relue toutes les 5 s jusqu'à ce que l'encaissement soit permis ; erreur réseau : bandeau retiré (la vente
+    /// refusée dit pourquoi).</summary>
+    private async Task SuivreAttenteEncaissementAsync()
+    {
+        try
+        {
+            while (!arretAttenteEncaissement.IsCancellationRequested)
+            {
+                var (a, e) = await Api.AttenteEncaissementAsync();
+                var secondes = e is null ? a?.Secondes ?? 0 : 0;
+                if (arretAttenteEncaissement.IsCancellationRequested) return;
+                await InvokeAsync(() => { attenteEncaissement = secondes; StateHasChanged(); });
+                if (secondes <= 0) return;
+                await Task.Delay(TimeSpan.FromSeconds(Math.Min(5, secondes)), arretAttenteEncaissement.Token);
             }
         }
         catch (OperationCanceledException) { }
@@ -3182,6 +3214,8 @@
         // Actualisation du bandeau « produit redevenu disponible » arrêtée (2026-11-16)
         arretAlertesDispo.Cancel();
         arretAlertesDispo.Dispose();
+        arretAttenteEncaissement.Cancel();
+        arretAttenteEncaissement.Dispose();
         Historique.Oublier("caisse");
         SauverPanierRestant();
         // Écran quitté : l'afficheur client revient à l'accueil, la caméra s'éteint (même si elle était encore en train de démarrer)

@@ -12,6 +12,8 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
 {
     public static readonly TimeSpan Intervalle = TimeSpan.FromMinutes(1);
     public static readonly TimeSpan AttenteMax = TimeSpan.FromMinutes(30);
+    /// <summary>Script 152 : passage répété toutes les 10 s tant que l'encaissement attend le contrôle de démarrage du serveur central.</summary>
+    public static readonly TimeSpan IntervalleControleDemarrage = TimeSpan.FromSeconds(10);
 
     /// <summary>Attente avant le passage suivant : 1 min, puis doublée à chaque échec consécutif, plafonnée.</summary>
     public static TimeSpan Attente(int echecsConsecutifs) =>
@@ -32,7 +34,19 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
         {
             logger.LogError(ex, "Réglages mutualisés : application au démarrage impossible");
         }
-        await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+        // Script 152 (2026-11-19) : une base restaurée ne le sait pas d'elle-même ; l'encaissement attend la réponse du serveur central,
+        // au plus le délai réglé. Premier passage aussitôt (sans les 30 s), puis toutes les 10 s tant que l'attente dure.
+        var controleAttendu = false;
+        try
+        {
+            using var demarrage = services.CreateScope();
+            controleAttendu = await demarrage.ServiceProvider.GetRequiredService<IEnvoiSyncDepot>().NoterDemarrageAsync(stoppingToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Synchronisation : démarrage non noté (encaissement non suspendu)");
+        }
+        if (!controleAttendu) await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -66,7 +80,29 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
                 echecs++;
                 logger.LogError(ex, "Synchronisation : passage impossible");
             }
-            await Task.Delay(Attente(echecs), stoppingToken);
+            var attente = Attente(echecs);
+            if (controleAttendu)
+            {
+                try
+                {
+                    using var scope = services.CreateScope();
+                    var reste = await scope.ServiceProvider.GetRequiredService<IEnvoiSyncDepot>().AttenteEncaissementAsync(stoppingToken);
+                    if (reste > 0) attente = IntervalleControleDemarrage;
+                    else
+                    {
+                        // Essais rapprochés du démarrage (central injoignable) : ils ne comptent pas pour l'attente croissante, sinon le
+                        // passage suivant (détection, avance du compteur) partirait 30 min plus tard (constaté à l'essai du 2026-11-19)
+                        controleAttendu = false;
+                        echecs = Math.Min(echecs, 1);
+                        attente = Attente(echecs);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Synchronisation : attente de l'encaissement non lue");
+                }
+            }
+            await Task.Delay(attente, stoppingToken);
         }
     }
 }

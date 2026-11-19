@@ -313,7 +313,8 @@ Légende des états :
 | S3 : envoi environ chaque minute, supervision, purge de la file, bandeau des postes, alertes au titulaire | Fait | Administration › Synchronisation ; § 20 |
 | Valeurs de départ de la supervision (bandeau, retard, erreur, conservation) | En attente (à confirmer par le titulaire) | a-faire.md « Plus tard » |
 | S4 : vérification d’intégrité au serveur central, alerte au titulaire | Fait | Synchronisation › Intégrité au central ; § 22 |
-| S6.5 : intégrité après restauration (déclaration de la nouvelle époque, restaurations constatées au central, prise d’acte du titulaire, tickets avancés au-delà du central) | Fait, essai de bout en bout réussi le 2026-11-19 (S6.5.5) ; en attente : n° repris avant la détection (décision), avis du comptable sur les n° sautés | Synchronisation › Restaurations constatées ; § 31 |
+| S6.5 : intégrité après restauration (déclaration de la nouvelle époque, restaurations constatées au central, prise d’acte du titulaire, tickets avancés au-delà du central) | Fait (lot terminé le 2026-11-19, essai de bout en bout réussi ; synthèse § 31.9) ; en attente : avis du comptable sur les n° sautés | Synchronisation › Restaurations constatées ; § 31 |
+| N° de tickets après une restauration : caisse en attente du contrôle du serveur central au démarrage (120 s au plus, réglable), n° réattribués signalés au central et listés avec la restauration | Fait (2026-11-19, scripts 152 et central 025) | Caisse (bandeau) ; Synchronisation › Réglages et › Restaurations constatées ; § 31.10 |
 | S5.1 et S5.5 : ordres du central, employés et droits | Fait | Ordres du central ; § 24 |
 | S5.2 : prix d’un produit envoyé par le central | Fait | § 25 |
 | S5.3 : nomenclature nationale envoyée par le central | Fait | § 26 |
